@@ -1,0 +1,74 @@
+# XcodeGen spec. The same sources as the xtool package, as a normal Xcode project.
+# Used by CI for the simulator screenshots and as a second way to build the .ipa,
+# and by anyone who wants to open the app in Xcode on a Mac: brew install xcodegen; xcodegen
+name: Transport
+options:
+  bundleIdPrefix: bot.tab
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+targets:
+  TransportKit:
+    type: library.static
+    platform: iOS
+    sources: [Sources/TransportKit]
+  Transport:
+    type: application
+    platform: iOS
+    sources:
+      - Sources/Transport
+      - Support/Assets.xcassets
+    info:
+      path: Build/Transport-Info.plist
+      properties:
+        CFBundleDisplayName: Transport
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
+        NSLocationWhenInUseUsageDescription: Shows the stops closest to you.
+        UILaunchScreen: {}
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers: [bot.tab.nswtransport.refresh]
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        ITSAppUsesNonExemptEncryption: false
+        CFBundleURLTypes:
+          - CFBundleURLName: bot.tab.nswtransport
+            CFBundleURLSchemes: [nswtransport]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: bot.tab.nswtransport
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    dependencies:
+      - target: TransportKit
+      - target: TransportWidget
+        embed: true
+  TransportWidget:
+    type: app-extension
+    platform: iOS
+    sources: [Sources/TransportWidget]
+    info:
+      path: Build/TransportWidget-Info.plist
+      properties:
+        CFBundleDisplayName: Transport
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: bot.tab.nswtransport.widget
+    dependencies:
+      - target: TransportKit
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+schemes:
+  Transport:
+    build:
+      targets:
+        Transport: all

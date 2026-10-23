@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+xtool/
+*.ipa
+Tools/KitCheck/.build/
+.DS_Store

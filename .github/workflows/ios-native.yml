@@ -1,0 +1,137 @@
+name: iOS native build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "ios-native/**"
+      - ".github/workflows/ios-native.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-native
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: ios-native
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          X=$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)
+          echo "Using $X"
+          sudo xcode-select -s "$X"
+          xcodebuild -version
+          mkdir -p ../out
+          xcodebuild -version > ../out/xcode-version.txt
+
+      - name: App icon and project
+        run: |
+          python3 -m pip install --quiet --break-system-packages pillow || python3 -m pip install --quiet pillow
+          python3 Tools/make_icon.py
+          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip
+          unzip -q /tmp/xcodegen.zip -d /tmp/xg
+          XG=$(find /tmp/xg -type f -name xcodegen -perm -u+x | head -1)
+          "$XG" generate
+
+      - name: Build for simulator
+        run: |
+          set -o pipefail
+          xcodebuild -project Transport.xcodeproj -scheme Transport -configuration Debug \
+            -sdk iphonesimulator -destination "generic/platform=iOS Simulator" -derivedDataPath dd-sim \
+            CODE_SIGNING_ALLOWED=NO build > ../xcode-sim.log 2>&1 || { grep -E "error:" ../xcode-sim.log | sort -u | head -80; exit 1; }
+          find dd-sim -path "*Debug-iphonesimulator/Transport.app" -maxdepth 6 | head -1 > ../sim-app-path.txt
+          test -s ../sim-app-path.txt
+
+      - name: Build for device (unsigned ipa)
+        run: |
+          set -o pipefail
+          xcodebuild -project Transport.xcodeproj -scheme Transport -configuration Release \
+            -sdk iphoneos -destination "generic/platform=iOS" -derivedDataPath dd-device \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build > ../xcode-device.log 2>&1 || { grep -E "error:" ../xcode-device.log | sort -u | head -80; exit 1; }
+          APP=$(find dd-device -path "*Release-iphoneos/Transport.app" -maxdepth 6 | head -1)
+          test -n "$APP"
+          mkdir -p ../out/Payload
+          cp -R "$APP" ../out/Payload/
+          (cd ../out && zip -qry Transport-unsigned.ipa Payload && rm -rf Payload)
+          plutil -p "$APP/Info.plist" > ../out/info-plist.txt
+          ls "$APP/PlugIns" >> ../out/info-plist.txt 2>&1 || true
+
+      - name: Screenshots in the simulator
+        continue-on-error: true
+        timeout-minutes: 12
+        run: |
+          bash Tools/ci_screens.sh "$(cat ../sim-app-path.txt)" ../out/screens
+
+      - name: Build with xtool (second toolchain check)
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          curl -fsSL -o /tmp/xtool.zip https://github.com/xtool-org/xtool/releases/latest/download/xtool.app.zip
+          ditto -x -k /tmp/xtool.zip /tmp/xt
+          XT=$(find /tmp/xt -path "*Contents/MacOS/xtool" -type f | head -1)
+          "$XT" --version || true
+          set -o pipefail
+          "$XT" dev build --ipa --configuration release < /dev/null > ../xtool-build.log 2>&1
+          find . -name "*.ipa" -not -path "./.build/*" -not -path "./dd-*" -exec cp {} ../out/Transport-xtool-unsigned.ipa \;
+          ls -la ../out
+
+      - name: Report
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd ..
+          R=report.txt
+          echo "run ${{ github.run_number }} sha ${{ github.sha }}" > $R
+          cat out/xcode-version.txt >> $R 2>/dev/null || true
+          for L in xcode-sim.log xcode-device.log xtool-build.log; do
+            if [ -f $L ]; then
+              echo "== $L: $(grep -c 'error:' $L) error lines; $(grep -E '\*\* BUILD' $L | tail -1)" >> $R
+              grep -E "error:" $L | sed -E "s#.*/ios-native/##" | sort -u | head -40 >> $R
+            fi
+          done
+          tail -5 xtool-build.log >> $R 2>/dev/null || true
+          ls out out/screens >> $R 2>/dev/null || true
+          zip -qry bundle.zip out xcode-sim.log xcode-device.log xtool-build.log 2>/dev/null || true
+          URL=""
+          for i in 1 2 3; do
+            URL=$(curl -s -m 120 -F reqtype=fileupload -F time=72h -F fileToUpload=@bundle.zip https://litterbox.catbox.moe/resources/internals/api.php || true)
+            case "$URL" in https://*) break;; *) URL="";; esac
+            sleep 5
+          done
+          if [ -z "$URL" ]; then URL=$(curl -s -m 120 -F file=@bundle.zip https://tmpfiles.org/api/v1/upload || true); fi
+          echo "bundle: $URL" >> $R
+          head -c 7000 $R > r2.txt
+          git config user.name "ci"
+          git config user.email "ci@users.noreply.github.com"
+          git fetch -q origin ci-out || true
+          git checkout -q -B ci-out
+          git rm -rq --cached . > /dev/null
+          git add -f r2.txt
+          git commit -qm "Build report ${{ github.run_number }}"
+          git push -qf origin ci-out
+
+      - name: Release the unsigned ipa
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="ios-native-build-${{ github.run_number }}"
+          cd ../out
+          test -f Transport-unsigned.ipa
+          FILES="Transport-unsigned.ipa"
+          [ -f Transport-xtool-unsigned.ipa ] && FILES="$FILES Transport-xtool-unsigned.ipa"
+          gh release create "$TAG" $FILES --repo "${{ github.repository }}" --prerelease \
+            --title "iPhone app build ${{ github.run_number }}" \
+            --notes "Unsigned iPhone app. Sideload with Sideloadly or AltStore using your own Apple ID. See ios-native/INSTALL.md."

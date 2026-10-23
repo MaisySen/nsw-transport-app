@@ -1,0 +1,54 @@
+import type { Commute, DeparturesResp, Saved, SearchItem, ServiceResp, TripResp, Watch, WatchesResp, Place } from './types';
+import { getDevice, PROFILE } from './device';
+
+export const BASE = 'https://nsw-transport-bot.sites.tab.bot';
+
+function qs(o: Record<string, any>) {
+  return Object.entries(o)
+    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+    .join('&');
+}
+
+async function req<T>(path: string, init?: RequestInit, timeoutMs = 20000): Promise<T> {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const headers: Record<string, string> = init?.body ? { 'content-type': 'application/json' } : {};
+    const r = await fetch(BASE + path, { ...init, signal: ctl.signal, headers: { ...headers, ...((init?.headers as any) || {}) } });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((body && (body as any).error) || `Something went wrong (${r.status})`);
+    return body as T;
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw new Error('No answer from the server. Check your connection.');
+    if (String(e?.message || '').includes('Network request failed')) throw new Error("You're offline. Showing the last times I had.");
+    throw e;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+export const api = {
+  search: (q: string) => req<{ items: SearchItem[] }>(`/api/search?${qs({ q })}`),
+  nearby: (lat: number, lon: number) => req<{ stops: (SearchItem & { distanceM?: number; dist?: number })[] }>(`/api/nearby?${qs({ lat: lat.toFixed(5), lon: lon.toFixed(5) })}`),
+  departures: async (stop: string, refresh = false) => req<DeparturesResp>(`/api/departures?${qs({ stop, device: await getDevice(), profile: PROFILE, refresh: refresh ? 1 : '' })}`),
+  trip: async (from: Place, to: Place, opts: { refresh?: boolean; count?: number; time?: string; arriveBy?: boolean } = {}) =>
+    req<TripResp>(`/api/trip?${qs({ from: from.id, to: to.id, fromName: from.name, toName: to.name, count: opts.count || 5, time: opts.time, arriveBy: opts.arriveBy ? 1 : '', device: await getDevice(), profile: PROFILE, refresh: opts.refresh ? 1 : '' })}`),
+  service: (q: Record<string, string | undefined>) => req<ServiceResp>(`/api/service?${qs(q)}`),
+  alerts: (q = '') => req<{ items?: any[]; alerts?: any[] }>(`/api/alerts?${qs({ q })}`),
+  saved: () => req<{ items: Saved[] }>(`/api/saved?${qs({ profile: PROFILE })}`),
+  saveTrip: (name: string, from: Place, to: Place) => req<{ ok: boolean }>(`/api/saved`, { method: 'POST', body: JSON.stringify({ profile: PROFILE, name, from, to }) }),
+  deleteSaved: (name: string) => req<{ ok: boolean }>(`/api/saved?${qs({ profile: PROFILE, name })}`, { method: 'DELETE' }),
+  commutes: () => req<{ items: Commute[]; suggestion: any; now: number }>(`/api/commutes?${qs({ profile: PROFILE })}`),
+  saveCommute: (body: Partial<Commute> & { from?: Place; to?: Place }) => req<{ ok: boolean; item: Commute }>(`/api/commutes?${qs({ profile: PROFILE })}`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteCommute: (id: string) => req<{ ok: boolean }>(`/api/commutes?${qs({ profile: PROFILE, id })}`, { method: 'DELETE' }),
+  dismissSuggestion: (key: string) => req<{ ok: boolean }>(`/api/commutes/dismiss?${qs({ profile: PROFILE })}`, { method: 'POST', body: JSON.stringify({ key }) }),
+  watches: async (since = 0) => req<WatchesResp>(`/api/watches?${qs({ device: await getDevice(), profile: PROFILE, since })}`),
+  watch: async (body: any) => req<{ ok: boolean; watch: { id: string } }>(`/api/watch`, { method: 'POST', body: JSON.stringify({ device: await getDevice(), profile: PROFILE, ...body }) }),
+  watchDetail: (id: string) => req<{ watch: Watch; notes: any[]; now: number }>(`/api/watch?${qs({ id })}`),
+  stopWatch: async (id: string) => req<{ ok: boolean }>(`/api/watch?${qs({ id, device: await getDevice() })}`, { method: 'DELETE' }),
+  registerExpo: async (token: string, platform: string, welcome = false) =>
+    req<{ ok: boolean; test?: any }>(`/api/push/expo`, { method: 'POST', body: JSON.stringify({ device: await getDevice(), profile: PROFILE, token, platform, welcome }) }),
+  unregisterExpo: async (token: string) => req<{ ok: boolean }>(`/api/push/expo/unregister`, { method: 'POST', body: JSON.stringify({ device: await getDevice(), token }) }),
+  testPush: async () => req<{ ok: boolean; pushed: any[]; expo?: any[] }>(`/api/push/test`, { method: 'POST', body: JSON.stringify({ device: await getDevice() }) }),
+};
