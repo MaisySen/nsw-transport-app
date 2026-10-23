@@ -1,18 +1,25 @@
-import { useState } from 'react';
-import { Alert, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Alert, Linking, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius, modeColor } from '@/lib/theme';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
-import { useStore } from '@/lib/store';
+import { store, useStore } from '@/lib/store';
 import type { Journey, Leg, Place } from '@/lib/types';
 import { startWatch, stopWatch, tripSpec } from '@/lib/watch';
 import { Icon, I } from '@/components/Icon';
 import { openService } from '@/components/Cards';
-import { JourneyCard, LineBadge, LiveStamp, StatusLine } from '@/components/Transit';
+import { LineBadge, StatusLine } from '@/components/Transit';
+import { arrOf, ServiceRow } from '@/components/Home';
 import { Button, Empty, Screen, Sep, T } from '@/components/ui';
+
+/** "8:00:30", Sydney time. */
+function hms(t: number) {
+  try { return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, ''); }
+  catch { return new Date(t).toLocaleTimeString(); }
+}
 
 function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
   const c = usePalette();
@@ -134,6 +141,17 @@ export default function TripScreen() {
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
   const { data, error, updatedAt, refreshing, refresh } = useLive((r) => api.trip(from, to, { refresh: r, count: 6 }), 20000, [from.id, to.id]);
   const js = (data?.journeys || []).filter((j) => ms(j.leave) > now - 120000);
+  const [showAlerts, setShowAlerts] = useState(false);
+  const arrs = js.map(arrOf);
+  const alertList: { title: string; url?: string }[] = [];
+  js.forEach((j) => j.legs.forEach((l) => (l.alerts || []).forEach((a: any) => {
+    const title = typeof a === 'string' ? a : a?.title;
+    if (title && !alertList.some((x) => x.title === title)) alertList.push({ title, url: typeof a === 'string' ? undefined : a.url });
+  })));
+  const fromName = data?.from?.name || from.name;
+  const toName = data?.to?.name || to.name;
+  // Remember opened A to B trips for Home's Your trips.
+  useEffect(() => { if (fromName && toName) store.addRecentTrip({ id: from.id, name: fromName }, { id: to.id, name: toName }); }, [from.id, to.id, fromName, toName]);
 
   const save = () => {
     const doSave = async (name: string) => {
@@ -150,17 +168,46 @@ export default function TripScreen() {
   return (
     <>
       <Stack.Screen options={{
-        title: `${shortName(from.name)} to ${shortName(to.name)}`,
+        title: `${shortName(fromName).replace(/ Station$/, '')} to ${shortName(toName).replace(/ Station$/, '')}`,
         headerRight: () => <Pressable hitSlop={10} onPress={save}><Icon name={I.starOpen} size={22} color={c.tint} /></Pressable>,
       }} />
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
-        <View style={{ paddingHorizontal: 20, paddingTop: 10 }}><LiveStamp updatedAt={updatedAt} error={error} /></View>
-        {js.map((j, i) => (
-          <View key={j.leave + i} style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
-            <JourneyCard j={j} now={now} best={i === 0} onPress={() => { Haptics.selectionAsync(); setOpen(open === i ? null : i); }} />
-            {open === i ? <JourneyDetail j={j} now={now} from={from} to={to} /> : null}
+        {alertList.length ? (
+          <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
+            <Pressable onPress={() => setShowAlerts(!showAlerts)} android_ripple={{ color: c.fill }} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 }}>
+              <Icon name={I.warn} size={16} color={c.orange} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <T kind="headline">Service information</T>
+                <T kind="foot" tone="text2">{alertList.length} {alertList.length === 1 ? 'alert' : 'alerts'}. Tap for details.</T>
+              </View>
+              <Icon name={I.chevron} size={13} color={c.text3} style={{ transform: [{ rotate: showAlerts ? '90deg' : '0deg' }] }} />
+            </Pressable>
+            {showAlerts ? alertList.map((a, k) => (
+              <View key={k}>
+                <Sep inset={16} />
+                <Pressable disabled={!a.url} onPress={() => a.url && Linking.openURL(a.url)} style={{ paddingHorizontal: 16, paddingVertical: 10 }}>
+                  <T kind="sub" style={{ color: a.url ? c.tint : c.text }}>{a.title}</T>
+                </Pressable>
+              </View>
+            )) : null}
           </View>
-        ))}
+        ) : null}
+        {js.length ? (
+          <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
+            {js.map((j, i) => (
+              <View key={j.leave + i}>
+                {i ? <Sep inset={0} /> : null}
+                <ServiceRow j={j} now={now} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { Haptics.selectionAsync(); setOpen(open === i ? null : i); }} />
+                {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} /></View> : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
+        {updatedAt ? (
+          <T kind="foot" tone={error ? 'lateText' : 'text2'} style={{ textAlign: 'center', marginTop: 14, fontVariant: ['tabular-nums'] }}>
+            {error ? `Offline. Live data updated ${hms(updatedAt)}` : `Live data updated ${hms(updatedAt)}`}
+          </T>
+        ) : null}
         {data && !js.length ? <Empty icon={I.route} title="No trips found" body={data.error || 'Try a different time or nearby stop.'} /> : null}
         {!data && error ? <Empty icon={I.warn} title="Can't plan this trip" body={error} /> : null}
         {!data && !error ? <T kind="sub" tone="text2" style={{ textAlign: 'center', marginTop: 40 }}>Finding live trips</T> : null}

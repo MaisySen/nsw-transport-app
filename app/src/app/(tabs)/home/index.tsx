@@ -1,26 +1,40 @@
 import { useState } from 'react';
-import { Alert, RefreshControl, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, View } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { usePalette } from '@/lib/theme';
 import { useStore } from '@/lib/store';
-import { daysText, shortName } from '@/lib/format';
+import { shortName } from '@/lib/format';
+import type { Place } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
-import { StopCard, TripCard, watchLine } from '@/components/Cards';
-import { LiveStamp } from '@/components/Transit';
-import { Button, Empty, Row, Screen, Section, Sep, T } from '@/components/ui';
+import { watchLine } from '@/components/Cards';
+import { ActionRow, HomeSection, LiveTag, pullHome, SearchField, StopBoard, TripBoard, TripItem, useNearby } from '@/components/Home';
+import { Button, Empty, Row, Section, Screen, Sep, T } from '@/components/ui';
 
-function greeting() {
-  const h = Number(new Date().toLocaleString('en-AU', { hour: 'numeric', hour12: false, timeZone: 'Australia/Sydney' }));
-  return h < 5 ? 'Late night' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+const POPULAR: Place[] = [
+  { id: '200060', name: 'Central Station' },
+  { id: '200070', name: 'Town Hall Station' },
+  { id: '213510', name: 'Strathfield Station' },
+];
+
+function AddButton() {
+  const c = usePalette();
+  return (
+    <Pressable onPress={() => router.push('/add-trip')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add a trip"
+      style={({ pressed }) => ({ width: 32, height: 32, borderRadius: 16, backgroundColor: c.fill, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
+      <Icon name={I.plus} size={17} color={c.tint} />
+    </Pressable>
+  );
 }
 
 export default function Home() {
   const c = usePalette();
   const now = useNow(1000);
   const st = useStore();
+  const near = useNearby();
   const [busy, setBusy] = useState(false);
+  const [pulling, setPulling] = useState(false);
   const live = useLive(async () => {
     const [commutes, saved, watches] = await Promise.all([
       api.commutes().catch(() => ({ items: [], suggestion: null })),
@@ -28,11 +42,38 @@ export default function Home() {
       api.watches().catch(() => ({ items: [], notes: [] })),
     ]);
     return { commutes, saved, watches };
-  }, 20000);
+  }, 15000);
   const d = live.data;
   const activeWatches = (d?.watches.items || []).filter((w: any) => w.active);
   const sugg: any = d?.commutes.suggestion;
-  const nothing = d && !d.commutes.items.length && !d.saved.items.length && !st.starred.length && !activeWatches.length;
+
+  // Your trips: commutes, saved trips, then up to 2 recent A to B trips. Max 4.
+  const trips: TripItem[] = [];
+  const seen = new Set<string>();
+  const add = (t: TripItem) => {
+    const k = `${t.from.id}>${t.to.id}`;
+    if (seen.has(k) || trips.length >= 4) return;
+    seen.add(k);
+    trips.push({ ...t, key: k });
+  };
+  (d?.commutes.items || []).filter((x) => x.active).forEach((cm) => add({ key: '', from: cm.from, to: cm.to, kind: 'commute', name: cm.name }));
+  (d?.saved.items || []).forEach((s) => add({ key: '', from: s.from, to: s.to, kind: 'saved', name: s.name }));
+  let recentCount = 0;
+  for (const r of st.recentTrips || []) {
+    if (recentCount >= 2) break;
+    const k = `${r.from.id}>${r.to.id}`;
+    if (seen.has(k)) continue;
+    add({ key: '', from: r.from, to: r.to, kind: 'recent' });
+    recentCount++;
+  }
+
+  // Recent stops: starred first, then recently opened. Max 4.
+  const stops: (Place & { starred: boolean })[] = [];
+  for (const p of st.starred) if (stops.length < 4 && !stops.some((x) => x.id === p.id)) stops.push({ ...p, starred: true });
+  for (const p of st.recents) if (stops.length < 4 && !stops.some((x) => x.id === p.id)) stops.push({ ...p, starred: false });
+  const nearIds = new Set(near.stops.map((x) => x.id));
+
+  const firstLaunch = !!d && !trips.length && !stops.length;
 
   const acceptSuggestion = async () => {
     setBusy(true);
@@ -43,32 +84,28 @@ export default function Home() {
     setBusy(false);
   };
 
+  const onPull = async () => {
+    setPulling(true);
+    pullHome();
+    await live.refresh();
+    setPulling(false);
+  };
+
   return (
     <>
-      <Stack.Screen options={{ title: 'Transport' }} />
-      <Screen refreshControl={<RefreshControl refreshing={live.refreshing} onRefresh={live.refresh} />}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 4 }}>
-          <T kind="sub" tone="text2">{greeting()}</T>
-          <LiveStamp updatedAt={live.updatedAt} error={live.error} />
-        </View>
+      <Stack.Screen options={{
+        title: 'Home',
+        headerRight: () => (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <LiveTag />
+            <AddButton />
+          </View>
+        ),
+      }} />
+      <Screen refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} />}>
+        <SearchField />
 
-        {sugg ? (
-          <Section>
-            <View style={{ padding: 16 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Icon name={I.clock} size={18} color={c.tint} />
-                <T kind="headline">Make this your {(sugg.name || 'regular trip').toLowerCase()}?</T>
-              </View>
-              <T kind="sub" tone="text2" style={{ marginTop: 6 }}>
-                {shortName(sugg.from?.name)} to {shortName(sugg.to?.name)}{sugg.todText ? ` around ${sugg.todText}` : ''}, searched on {sugg.days} days. You'll get a leave now alert, and a heads up only when something is wrong.
-              </T>
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
-                <View style={{ flex: 1 }}><Button title="Make it my commute" onPress={acceptSuggestion} disabled={busy} /></View>
-                <Button title="Not now" kind="tinted" onPress={() => api.dismissSuggestion(sugg.key).then(live.refresh)} />
-              </View>
-            </View>
-          </Section>
-        ) : null}
+        {firstLaunch ? <ActionRow icon={I.plus} title="Add a trip" onPress={() => router.push('/add-trip')} /> : null}
 
         {activeWatches.length ? (
           <Section title="Watching now">
@@ -81,19 +118,54 @@ export default function Home() {
           </Section>
         ) : null}
 
-        {d?.commutes.items.filter((x) => x.active).map((cm) => (
-          <TripCard key={cm.id} from={cm.from} to={cm.to} title={cm.name} subtitle={`${daysText(cm.days)} around ${cm.todText}`} icon={I.clock} />
-        ))}
-        {d?.saved.items.map((s) => (
-          <TripCard key={s.name} from={s.from} to={s.to} title={s.name.charAt(0).toUpperCase() + s.name.slice(1)} />
-        ))}
-        {st.starred.map((p) => <StopCard key={p.id} stop={p} />)}
-
-        {nothing ? (
-          <Empty icon={I.star} title="Your live board"
-            body="Star a stop or save a trip and it shows up here with live times that update themselves. Swipe left on any service to get alerts for it."
-            action={<Button title="Find a stop" icon={I.search} onPress={() => router.navigate('/search')} />} />
+        {sugg ? (
+          <Section>
+            <View style={{ padding: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Icon name={I.clock} size={18} color={c.tint} />
+                <T kind="headline" style={{ flex: 1 }}>Make this your {(sugg.name || 'regular trip').toLowerCase()}?</T>
+              </View>
+              <T kind="sub" tone="text2" style={{ marginTop: 6 }}>
+                {shortName(sugg.from?.name)} to {shortName(sugg.to?.name)}{sugg.todText ? ` around ${sugg.todText}` : ''}, searched on {sugg.days} days. You'll get a leave now alert, and a heads up only when something is wrong.
+              </T>
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+                <View style={{ flex: 1 }}><Button title="Make it my commute" onPress={acceptSuggestion} disabled={busy} /></View>
+                <Button title="Not now" kind="tinted" onPress={() => api.dismissSuggestion(sugg.key).then(live.refresh)} />
+              </View>
+            </View>
+          </Section>
         ) : null}
+
+        {trips.length ? (
+          <HomeSection title="Your trips">
+            {trips.map((t) => <TripBoard key={t.key} trip={t} now={now} />)}
+            <ActionRow icon={I.plus} title="Add a trip" onPress={() => router.push('/add-trip')} />
+          </HomeSection>
+        ) : null}
+
+        {stops.length ? (
+          <HomeSection title="Recent stops">
+            {stops.map((p) => <StopBoard key={p.id} stop={p} starred={p.starred} now={now} />)}
+          </HomeSection>
+        ) : null}
+
+        {near.phase !== 'checking' ? (
+          <HomeSection title="Nearby">
+            {near.phase === 'on' && near.stops.length ? near.stops.map((p) => <StopBoard key={p.id} stop={p} distance={p.distance} now={now} />) : null}
+            {near.phase === 'on' && !near.stops.length ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>No stops within walking distance</T> : null}
+            {near.phase === 'off' || near.phase === 'loading' || near.phase === 'error' ? (
+              <ActionRow icon={I.location} title="Show stops near me" onPress={near.ask} busy={near.phase === 'loading'} />
+            ) : null}
+            {near.phase === 'error' ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 6 }}>{near.error}</T> : null}
+          </HomeSection>
+        ) : null}
+
+        {firstLaunch ? (
+          <HomeSection title="Popular stations">
+            {POPULAR.filter((p) => !nearIds.has(p.id)).map((p) => <StopBoard key={p.id} stop={p} now={now} />)}
+          </HomeSection>
+        ) : null}
+
         {!d && !live.error ? <T kind="sub" tone="text2" style={{ textAlign: 'center', marginTop: 40 }}>Loading</T> : null}
         {!d && live.error ? <Empty icon={I.warn} title="Can't reach the live feed" body={live.error} action={<Button title="Try again" onPress={live.refresh} />} /> : null}
       </Screen>

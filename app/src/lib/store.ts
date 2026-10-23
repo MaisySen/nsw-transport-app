@@ -2,8 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import type { Place } from './types';
 
-type State = { starred: Place[]; recents: Place[]; watchedTrips: Record<string, string> };
-let state: State = { starred: [], recents: [], watchedTrips: {} };
+export type RecentTrip = { from: Place; to: Place; at: number };
+type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; watchedTrips: Record<string, string> };
+let state: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {} };
 let loaded = false;
 const listeners = new Set<() => void>();
 
@@ -40,6 +41,19 @@ export const store = {
     save();
   },
   clearRecents() { state = { ...state, recents: [] }; save(); },
+  /** Remembers an A to B trip the user opened, newest first. */
+  addRecentTrip(from: Place, to: Place) {
+    if (!from?.id || !to?.id || from.id === to.id) return;
+    const rest = (state.recentTrips || []).filter((t) => !(t.from.id === from.id && t.to.id === to.id));
+    const top = state.recentTrips?.[0];
+    if (top && top.from.id === from.id && top.to.id === to.id && top.from.name === from.name && top.to.name === to.name) return;
+    state = { ...state, recentTrips: [{ from, to, at: Date.now() }, ...rest].slice(0, 6) };
+    save();
+  },
+  removeRecentTrip(fromId: string, toId: string) {
+    state = { ...state, recentTrips: (state.recentTrips || []).filter((t) => !(t.from.id === fromId && t.to.id === toId)) };
+    save();
+  },
   markWatched(tripKey: string, watchId: string) { state = { ...state, watchedTrips: { ...state.watchedTrips, [tripKey]: watchId } }; save(); },
   unmarkWatched(watchId: string) {
     const w = { ...state.watchedTrips };

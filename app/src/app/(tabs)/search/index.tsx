@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { router, Stack } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
 import { usePalette, radius } from '@/lib/theme';
@@ -52,6 +52,15 @@ export default function Search() {
   const [nearby, setNearby] = useState<(SearchItem & { distance?: number })[] | null>(null);
   const [locBusy, setLocBusy] = useState(false);
   const toRef = useRef<any>(null);
+  const stopRef = useRef<any>(null);
+  // Home's search field opens this tab with focus=<nonce>: switch to stops and focus the field.
+  const { focus } = useLocalSearchParams<{ focus?: string }>();
+  useEffect(() => {
+    if (!focus) return;
+    setMode('stop'); setField('stop');
+    const t = setTimeout(() => stopRef.current?.focus(), 250);
+    return () => clearTimeout(t);
+  }, [focus]);
   const text = mode === 'stop' ? q : field === 'from' ? fromText : toText;
   const { items, loading } = useStopSearch(text);
 
@@ -103,7 +112,7 @@ export default function Search() {
           {mode === 'stop' ? (
             <View style={[s.field, { borderColor: 'transparent' }]}>
               <Icon name={I.search} size={17} color={c.text2} style={{ marginRight: 8 }} />
-              <TextInput value={q} onChangeText={setQ} placeholder="Stop, station or stop number" placeholderTextColor={c.text3} autoCorrect={false}
+              <TextInput ref={stopRef} value={q} onChangeText={setQ} placeholder="Stop, station or stop number" placeholderTextColor={c.text3} autoCorrect={false}
                 style={[font.body, { flex: 1, color: c.text, paddingVertical: Platform.OS === 'android' ? 6 : 10 }]} clearButtonMode="while-editing" returnKeyType="search" />
               {loading ? <ActivityIndicator size="small" /> : null}
             </View>
