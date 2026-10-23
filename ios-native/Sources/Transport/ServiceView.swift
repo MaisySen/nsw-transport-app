@@ -15,7 +15,7 @@ struct ServiceView: View {
     @State private var camera: MapCameraPosition = .automatic
     @State private var following = true
     @State private var showSheet = false
-    @State private var detent: PresentationDetent = .fraction(0.38)
+    @State private var detent: PresentationDetent = .fraction(0.45)
 
     var body: some View {
         Map(position: $camera, interactionModes: .all) {
@@ -73,8 +73,8 @@ struct ServiceView: View {
         .onDisappear { showSheet = false }
         .sheet(isPresented: $showSheet) {
             ServiceSheet(key: key, data: data, updated: updated, loading: loading, error: error)
-                .presentationDetents([.height(170), .fraction(0.38), .large], selection: $detent)
-                .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.38)))
+                .presentationDetents([.height(250), .fraction(0.45), .large], selection: $detent)
+                .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.45)))
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(22)
                 .interactiveDismissDisabled()
@@ -197,7 +197,9 @@ struct ServiceSheet: View {
                                 Task { await store.watch(d.watchRequest(device: store.device, profile: store.api.profile)) }
                             }
                         } label: {
-                            Label("Watch", systemImage: "bell.fill").frame(maxWidth: .infinity)
+                            Label("Watch", systemImage: "bell.fill")
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(key.departure == nil)
@@ -205,7 +207,9 @@ struct ServiceSheet: View {
                             Task { await LiveActivities.shared.start(key: key, service: data) }
                             store.success()
                         } label: {
-                            Label("Lock Screen", systemImage: "platter.filled.bottom.iphone").frame(maxWidth: .infinity)
+                            Label("Lock screen", systemImage: "lock.iphone")
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
                     }

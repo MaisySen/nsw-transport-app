@@ -85,7 +85,7 @@ struct HomeView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle(greeting)
+            .navigationTitle("Home")
             .navigationDestination(for: StopRef.self) { s in StopView(stop: s) }
             .navigationDestination(for: ServiceKey.self) { k in ServiceView(key: k) }
             .refreshable {
@@ -124,14 +124,6 @@ struct HomeView: View {
                 path.append(ServiceKey(first))
             }
         }
-    }
-
-    private var greeting: String {
-        let h = Clock.minuteOfDay(Date()) / 60
-        if h < 5 { return "Late night" }
-        if h < 12 { return "Good morning" }
-        if h < 18 { return "Good afternoon" }
-        return "Good evening"
     }
 }
 

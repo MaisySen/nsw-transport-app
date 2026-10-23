@@ -2,6 +2,11 @@ name: iOS native build
 
 on:
   workflow_dispatch:
+    inputs:
+      xtool:
+        description: "Also try the xtool build (it has hung on the runner, so it is off by default)"
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -74,8 +79,9 @@ jobs:
           bash Tools/ci_screens.sh "$(cat ../sim-app-path.txt)" ../out/screens
 
       - name: Build with xtool (second toolchain check)
+        if: ${{ inputs.xtool == true }}
         continue-on-error: true
-        timeout-minutes: 10
+        timeout-minutes: 6
         run: |
           set -o pipefail
           {

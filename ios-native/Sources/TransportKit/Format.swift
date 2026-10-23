@@ -6,20 +6,20 @@ public enum Countdown {
         max(0, Int(floor(date.timeIntervalSince(now) / 60)))
     }
 
-    /// The big number on a row: "Now", "4" or "1:12".
+    /// The big number on a row: "Now", "4" or "1h 12m".
     public static func big(until date: Date, now: Date = Date()) -> String {
         let s = date.timeIntervalSince(now)
         if s < 60 { return "Now" }
         let m = Int(s / 60)
         if m < 60 { return "\(m)" }
-        return "\(m / 60):" + String(format: "%02d", m % 60)
+        return m % 60 == 0 ? "\(m / 60)h" : "\(m / 60)h \(m % 60)m"
     }
 
     /// The unit under the big number.
     public static func unit(until date: Date, now: Date = Date()) -> String {
         let s = date.timeIntervalSince(now)
         if s < 60 { return "" }
-        return s < 3600 ? "min" : "hr"
+        return s < 3600 ? "min" : ""
     }
 
     /// A sentence fragment: "now", "in 4 min", "in 1 hr 12 min".

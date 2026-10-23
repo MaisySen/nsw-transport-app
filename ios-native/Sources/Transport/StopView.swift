@@ -34,26 +34,31 @@ struct DepartureRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             LineBadge(line: d.line, colorHex: d.color, mode: d.mode)
-                .frame(minWidth: 56, alignment: .leading)
+                .frame(minWidth: 44, alignment: .leading)
             VStack(alignment: .leading, spacing: 3) {
                 Text(Naming.short(d.dest ?? d.description ?? d.line))
                     .font(.body.weight(.semibold))
                     .lineLimit(1)
                 HStack(spacing: 6) {
                     TimePair(planned: d.planned, estimated: d.estimated, isLive: d.isLive)
+                        .fixedSize()
                     if let p = d.platform, !p.isEmpty {
-                        Text(p).foregroundStyle(.secondary)
+                        Text(p).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
                 .font(.subheadline)
+                .lineLimit(1)
                 HStack(spacing: 6) {
                     StatusText(delayMin: d.delayMin, isLive: d.isLive, cancelled: d.isCancelled)
                     if let n = d.stopsAway, d.isLive, n > 0 {
-                        Text(n == 1 ? "1 stop away" : "\(n) stops away").foregroundStyle(.secondary)
+                        Text(n == 1 ? "1 stop away" : "\(n) stops away")
+                            .foregroundStyle(.secondary)
+                            .layoutPriority(-1)
                     }
                     CrowdView(occupancy: d.occupancy ?? d.vehicle?.occupancy)
                 }
                 .font(.footnote)
+                .lineLimit(1)
                 if let from = d.platformChangedFrom, !from.isEmpty {
                     Label("Platform changed from \(from)", systemImage: "arrow.triangle.swap")
                         .font(.footnote.weight(.semibold))
@@ -94,6 +99,7 @@ struct StopView: View {
     @State private var error: String?
     @State private var mode: String = "all"
     @State private var selected: ServiceKey?
+    @State private var recentName: String?
 
     var body: some View {
         List {
@@ -105,7 +111,13 @@ struct StopView: View {
                     Picker("Mode", selection: $mode) {
                         Text("All").tag("all")
                         ForEach(modes, id: \.self) { m in
-                            Text(Mode(raw: m).title).tag(m)
+                            if modes.count > 2 {
+                                Image(systemName: Mode(raw: m).symbol)
+                                    .accessibilityLabel(Mode(raw: m).title)
+                                    .tag(m)
+                            } else {
+                                Text(Mode(raw: m).title).tag(m)
+                            }
                         }
                     }
                     .pickerStyle(.segmented)
@@ -209,6 +221,10 @@ struct StopView: View {
             withAnimation(.snappy) { data = d }
             updated = Date()
             error = nil
+            if let name = d.stop?.name, !name.isEmpty, recentName != name {
+                recentName = name
+                store.remember(StopRef(id: stop.id, name: Naming.short(name)))
+            }
         } catch {
             self.error = error.localizedDescription
         }
