@@ -23,7 +23,7 @@
     },
     "android": {
       "package": "com.maisysen.nswtransport",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "backgroundColor": "#2E8BFF",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -80,7 +80,8 @@
         {
           "locationWhenInUsePermission": "Transport uses your location to show stops near you."
         }
-      ]
+      ],
+      "./plugins/withTransportWidget"
     ],
     "experiments": {
       "typedRoutes": true,

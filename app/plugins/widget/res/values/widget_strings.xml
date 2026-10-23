@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_trip_label">Next trip</string>
+    <string name="widget_trip_description">A live countdown for your trip. Smart shows Home to Work in the morning and back in the evening.</string>
+</resources>
