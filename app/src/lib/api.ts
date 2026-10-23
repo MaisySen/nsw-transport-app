@@ -10,21 +10,40 @@ function qs(o: Record<string, any>) {
     .join('&');
 }
 
-async function req<T>(path: string, init?: RequestInit, timeoutMs = 20000): Promise<T> {
+async function once<T>(path: string, init: RequestInit | undefined, timeoutMs: number): Promise<T> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
     const headers: Record<string, string> = init?.body ? { 'content-type': 'application/json' } : {};
     const r = await fetch(BASE + path, { ...init, signal: ctl.signal, headers: { ...headers, ...((init?.headers as any) || {}) } });
     const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error((body && (body as any).error) || `Something went wrong (${r.status})`);
+    if (!r.ok) throw Object.assign(new Error((body && (body as any).error) || `Something went wrong (${r.status})`), { http: r.status });
     return body as T;
-  } catch (e: any) {
-    if (e?.name === 'AbortError') throw new Error('No answer from the server. Check your connection.');
-    if (String(e?.message || '').includes('Network request failed')) throw new Error("You're offline. Showing the last times I had.");
-    throw e;
   } finally {
     clearTimeout(t);
+  }
+}
+
+/** Network or timeout failure, as opposed to an answer from the server. Android reports an aborted fetch as "canceled". */
+function isNetErr(e: any) {
+  const m = String(e?.message || '');
+  return !e?.http && (e?.name === 'AbortError' || /cancel|network request failed|timed? ?out|fetch failed/i.test(m));
+}
+
+async function req<T>(path: string, init?: RequestInit, timeoutMs = 20000): Promise<T> {
+  const read = !init?.method || init.method === 'GET';
+  try {
+    return await once<T>(path, init, timeoutMs);
+  } catch (e: any) {
+    if (read && isNetErr(e)) {
+      // One quiet retry for reads: mobile networks drop the odd request.
+      try { return await once<T>(path, init, timeoutMs); } catch (e2: any) { e = e2; }
+    }
+    if (isNetErr(e)) {
+      if (/network request failed/i.test(String(e?.message || ''))) throw new Error("You're offline. Showing the last times I had.");
+      throw new Error('No answer from the server. Check your connection.');
+    }
+    throw e;
   }
 }
 

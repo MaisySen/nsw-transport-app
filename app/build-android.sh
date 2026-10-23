@@ -1,5 +1,5 @@
 #!/bin/bash
-# Local release build of the Android app. Signing secrets come from ~/.nsw-secrets (never in the repo).
+# Local release build (native libs stored compressed and extracted on install, arm64 plus x86_64) of the Android app. Signing secrets come from ~/.nsw-secrets (never in the repo).
 set -e
 export ANDROID_HOME=/home/user/android-sdk ANDROID_SDK_ROOT=/home/user/android-sdk NODE_ENV=production
 cd /home/user/nsw-app
@@ -26,11 +26,12 @@ if 'signingConfigs.release' not in s.split('buildTypes')[1]:
     open(p,'w').write(s)
 g='gradle.properties'; t=open(g).read()
 t=re.sub(r'android.enableMinifyInReleaseBuilds=true','android.enableMinifyInReleaseBuilds=false',t)
+t=re.sub(r'expo.useLegacyPackaging=.*','expo.useLegacyPackaging=true',t)
 t=re.sub(r'org.gradle.jvmargs=.*','org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g',t)
 if 'org.gradle.workers.max' not in t: t+='\norg.gradle.workers.max=6\nkotlin.daemon.jvmargs=-Xmx2g\n'
 open(g,'w').write(t)
 PY
 export NSW_KEYSTORE_PASSWORD=$(python3 -c "import json;print(json.load(open('/home/user/.nsw-secrets/android-keystore.json'))['store_password'])")
-./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --console=plain
+./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon --console=plain
 ls -la app/build/outputs/apk/release/
 echo BUILD_DONE

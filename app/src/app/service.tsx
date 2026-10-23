@@ -15,7 +15,7 @@ import { LineBadge, LiveStamp, StatusLine } from '@/components/Transit';
 import { Button, T } from '@/components/ui';
 
 export default function ServiceScreen() {
-  const p = useLocalSearchParams<{ trip: string; line: string; stop: string; planned: string; mode: string; destId: string; color: string; dest: string }>();
+  const p = useLocalSearchParams<{ trip: string; line: string; stop: string; planned: string; mode: string; destId: string; color: string; dest: string; rt: string; est: string; delay: string }>();
   const c = usePalette();
   const now = useNow(1000);
   const insets = useSafeAreaInsets();
@@ -29,10 +29,15 @@ export default function ServiceScreen() {
   const watchedId = st.watchedTrips[key];
   const stops = data?.stops || [];
   const nextIdx = data?.nextIndex ?? stops.findIndex((s) => !s.passed);
+  // One live flag for the whole app: the board said live, or the trip feed says live.
+  const boardLive = p.rt === '1';
+  const live = boardLive || !!data?.live;
+  const delayMin = data?.live && data?.delayMin != null ? data.delayMin : boardLive && p.delay ? Number(p.delay) : data?.delayMin;
+  const mineEst = data?.mine?.estimated || (boardLive && p.est ? p.est : null);
 
   const watch = () => {
     const mine = stops.find((s) => s.mine);
-    toggleWatch(svcSpec({ mode: p.mode || data?.mode || 'bus', line: p.line || data?.line || '', dest: p.dest || data?.dest || '', destId: p.destId, stopId: p.stop, stopName: mine?.name, tripId: p.trip, planned: p.planned, estimated: mine?.estimated, realtime: !!data?.live, color, platform: mine?.platform } as any), watchedId)
+    toggleWatch(svcSpec({ mode: p.mode || data?.mode || 'bus', line: p.line || data?.line || '', dest: p.dest || data?.dest || '', destId: p.destId, stopId: p.stop, stopName: mine?.name, tripId: p.trip, planned: p.planned, estimated: mine?.estimated || mineEst, realtime: live, color, platform: mine?.platform } as any), watchedId)
       .then((id) => { if (id) Alert.alert('Watching', "I'll alert you when it's time to leave, if it runs late or the platform changes."); });
   };
 
@@ -52,14 +57,14 @@ export default function ServiceScreen() {
               <T kind="title3" numberOfLines={1} style={{ flex: 1 }}>to {shortName(p.dest || data?.dest)}</T>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
-              <StatusLine realtime={data?.live} delayMin={data?.delayMin} cancelled={data?.cancelled} />
+              <StatusLine realtime={live} delayMin={delayMin} cancelled={data?.cancelled} />
               {data?.vehicle?.occupancy?.text ? <T kind="foot" tone="text2">{'\u00b7'} {data.vehicle.occupancy.text}</T> : null}
               {data && !data.vehicle ? <T kind="foot" tone="text2">{'\u00b7'} No GPS position yet</T> : null}
             </View>
             {data?.where?.text ? <T kind="body" style={{ marginTop: 10 }}>{data.where.text}</T> : null}
             {data?.mine ? (
               <T kind="sub" tone="text2" style={{ marginTop: 4 }}>
-                At {shortName(data.mine.name)} {clock(bestTime(data.mine.planned, data.mine.estimated))}{data.stopsAway != null && data.stopsAway > 0 ? `, ${data.stopsAway} stop${data.stopsAway === 1 ? '' : 's'} away` : ''}
+                At {shortName(data.mine.name)} {clock(bestTime(data.mine.planned, mineEst))}{data.stopsAway != null && data.stopsAway > 0 ? `, ${data.stopsAway} stop${data.stopsAway === 1 ? '' : 's'} away` : ''}
               </T>
             ) : null}
             <View style={{ marginTop: 10 }}><LiveStamp updatedAt={updatedAt} error={error} /></View>
@@ -77,8 +82,9 @@ export default function ServiceScreen() {
           <View style={{ marginTop: 18, paddingHorizontal: 20 }}>
             {stops.map((s, i) => {
               const isNext = i === nextIdx;
-              const t = bestTime(s.planned, s.estimated);
-              const changed = s.estimated && s.planned && Math.abs(ms(s.estimated) - ms(s.planned)) >= 60000;
+              const est = s.estimated || (s.mine ? mineEst : null);
+              const t = bestTime(s.planned, est);
+              const changed = est && s.planned && Math.abs(ms(est) - ms(s.planned)) >= 60000;
               const dim = s.passed;
               return (
                 <View key={s.id + i} style={{ flexDirection: 'row', minHeight: 44 }}>
@@ -93,7 +99,7 @@ export default function ServiceScreen() {
                       {s.mine && !isNext ? <T kind="caption" tone="tint" style={{ fontWeight: '700', marginTop: 1 }}>YOUR STOP</T> : null}
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
-                      <T kind="sub" tone={dim ? 'text3' : data?.live ? 'text' : 'text2'} style={{ fontVariant: ['tabular-nums'], fontWeight: s.mine ? '600' : '400' }}>{clock(t)}</T>
+                      <T kind="sub" tone={dim ? 'text3' : live ? 'text' : 'text2'} style={{ fontVariant: ['tabular-nums'], fontWeight: s.mine ? '600' : '400' }}>{clock(t)}</T>
                       {changed && !dim ? <T kind="caption" tone="text3" style={{ textDecorationLine: 'line-through' }}>{clock(ms(s.planned))}</T> : null}
                     </View>
                   </View>
