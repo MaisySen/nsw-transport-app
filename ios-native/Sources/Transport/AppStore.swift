@@ -126,7 +126,7 @@ final class AppStore {
             show(Banner(title: "Removed from Home", symbol: "star.slash"))
         } else {
             starred.append(StopRef(id: stop.id, name: Naming.short(stop.name)))
-            show(Banner(title: "Starred. It is on Home now.", symbol: "star.fill"))
+            show(Banner(title: "Added to Home", symbol: "star.fill"))
         }
         tap()
     }
@@ -165,9 +165,12 @@ final class AppStore {
 
     func watch(_ request: WatchRequest) async {
         do {
-            try await api.watch(request)
+            let created = try await api.watch(request)
             await Notifier.requestPermission()
-            show(Banner(title: "Watching \(request.title)", detail: "I will tap you when it is time to go or anything changes.", symbol: "bell.fill"))
+            let first = created.watch?.sent?.first
+            show(Banner(title: "Watching \(Naming.compact(request.title))",
+                        detail: first?.body ?? "You get an alert when it is time to go or anything changes.",
+                        symbol: "bell.fill"))
             success()
             await loadWatches(notify: false)
         } catch {

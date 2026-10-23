@@ -78,22 +78,19 @@ final class WidgetSnapshotTests: XCTestCase {
 
     private func lockScreen(entry: NextTripEntry, attrs: TripActivityAttributes, state: TripActivityAttributes.ContentState) -> some View {
         VStack(spacing: 6) {
-            Text(Date.now, format: .dateTime.weekday(.wide).day().month(.wide))
-                .font(.title3.weight(.semibold))
-            Text(Date.now, format: .dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
-                .font(.system(size: 92, weight: .semibold, design: .rounded))
-            HStack(spacing: 12) {
+            VStack(spacing: 6) {
+                NextTripView(entry: entry, familyOverride: .accessoryInline)
+                    .font(.title3.weight(.semibold))
+                Text(Date.now, format: .dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
+                    .font(.system(size: 92, weight: .semibold, design: .rounded))
                 NextTripView(entry: entry, familyOverride: .accessoryRectangular)
                     .frame(width: 160, height: 72, alignment: .leading)
-                NextTripView(entry: entry, familyOverride: .accessoryInline)
-                    .font(.footnote)
-                    .frame(width: 160, height: 72, alignment: .leading)
             }
+            .foregroundStyle(.white)
             Spacer(minLength: 120)
             liveActivityCard(attrs: attrs, state: state)
                 .padding(.horizontal, 12)
         }
-        .foregroundStyle(.white)
         .padding(.top, 70)
         .padding(.bottom, 40)
         .frame(width: 393, height: 852)

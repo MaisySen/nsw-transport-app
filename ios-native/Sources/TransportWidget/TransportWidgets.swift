@@ -65,8 +65,14 @@ struct NextTripProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<NextTripEntry>) -> Void) {
         Task {
             let e = await Self.load()
-            // Ask again in five minutes; the countdown text ticks on its own in between.
-            completion(Timeline(entries: [e], policy: .after(Date().addingTimeInterval(5 * 60))))
+            // One entry a minute so the "4 min" text stays right; fresh data every five minutes.
+            let entries = (0..<15).map { i -> NextTripEntry in
+                var x = e
+                x.date = e.date.addingTimeInterval(Double(i) * 60)
+                x.trips = e.trips.filter { $0.leave > x.date.addingTimeInterval(-30) }
+                return x
+            }
+            completion(Timeline(entries: entries, policy: .after(e.date.addingTimeInterval(5 * 60))))
         }
     }
 
@@ -100,7 +106,7 @@ struct NextTripProvider: TimelineProvider {
                             status: Delay.text(delayMin: f.delayMin, live: f.isLive, cancelled: j.anyCancelled == true),
                             platform: f.fromPlatform)
         }
-        return NextTripEntry(date: .now, title: title, from: Naming.short(from.name), to: Naming.short(to.name),
+        return NextTripEntry(date: .now, title: title, from: Naming.compact(Naming.short(from.name)), to: Naming.compact(Naming.short(to.name)),
                              trips: Array(trips.prefix(3)), message: trips.isEmpty ? "No trips soon." : nil)
     }
 }
@@ -132,11 +138,25 @@ struct NextTripView: View {
 
     private var family: WidgetFamily { familyOverride ?? hostFamily }
 
+    /// "Now", "4 min", "1 hr 5 min", the way Maps shows a wait.
+    static func wait(_ leave: Date, from now: Date, inline: Bool = false) -> String {
+        let m = Int((leave.timeIntervalSince(now) / 60).rounded(.down))
+        if m <= 0 { return "Now" }
+        let text = m < 60 ? "\(m) min" : (m % 60 == 0 ? "\(m / 60) hr" : "\(m / 60) hr \(m % 60) min")
+        return inline ? "in \(text)" : text
+    }
+
+    static func statusColor(_ t: TripLine) -> Color {
+        if t.status == "Cancelled" { return .red }
+        if !t.isLive { return .secondary }
+        return t.status.contains("late") ? .orange : .green
+    }
+
     var body: some View {
         switch family {
         case .accessoryInline:
             if let t = entry.trips.first {
-                Text("\(t.line) \(Text(timerInterval: Date.now...max(t.leave, Date.now), countsDown: true))")
+                Text("\(t.line) \(Self.wait(t.leave, from: entry.date, inline: true))")
             } else {
                 Text(entry.message ?? "No trips")
             }
@@ -146,7 +166,7 @@ struct NextTripView: View {
                 if let t = entry.trips.first {
                     HStack(spacing: 4) {
                         Text(t.line).fontWeight(.bold)
-                        Text(timerInterval: Date.now...max(t.leave, Date.now), countsDown: true).monospacedDigit()
+                        Text(Self.wait(t.leave, from: entry.date)).monospacedDigit()
                     }
                     Text(t.isLive ? t.status : "Scheduled").font(.caption)
                 } else {
@@ -160,12 +180,14 @@ struct NextTripView: View {
                 Spacer(minLength: 0)
                 if let t = entry.trips.first {
                     WidgetLineBadge(line: t.line, colorHex: t.colorHex, mode: t.mode)
-                    Text(timerInterval: Date.now...max(t.leave, Date.now), countsDown: true)
+                    Text(Self.wait(t.leave, from: entry.date))
                         .font(.title.weight(.bold))
                         .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                     Text(t.isLive ? t.status : "Scheduled")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(t.isLive ? Color.green : Color.secondary)
+                        .foregroundStyle(Self.statusColor(t))
                 } else {
                     Text(entry.message ?? "No trips").font(.caption).foregroundStyle(.secondary)
                 }
@@ -188,14 +210,14 @@ struct NextTripView: View {
                             Text(Clock.time(t.leave)).font(.subheadline.weight(.semibold)).monospacedDigit()
                             Text(t.isLive ? t.status : "Scheduled")
                                 .font(.caption2)
-                                .foregroundStyle(t.isLive ? Color.green : Color.secondary)
+                                .foregroundStyle(Self.statusColor(t))
                         }
                         Spacer()
-                        Text(timerInterval: Date.now...max(t.leave, Date.now), countsDown: true)
+                        Text(Self.wait(t.leave, from: entry.date))
                             .font(.title3.weight(.semibold))
                             .monospacedDigit()
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 70, alignment: .trailing)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                     }
                 }
                 Spacer(minLength: 0)

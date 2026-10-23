@@ -132,9 +132,24 @@ struct StopView: View {
                 }
             }
 
-            if !seriousAlerts.isEmpty {
-                Section("Alerts") {
-                    ForEach(Array(seriousAlerts.prefix(3))) { a in AlertRow(alert: a) }
+            if let first = seriousAlerts.first {
+                Section {
+                    if seriousAlerts.count == 1 {
+                        AlertRow(alert: first)
+                    } else {
+                        NavigationLink {
+                            AlertsList(alerts: Array(seriousAlerts))
+                        } label: {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("\(seriousAlerts.count) service alerts").font(.subheadline.weight(.semibold))
+                                    Text(first.title ?? "").font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                            } icon: {
+                                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -237,7 +252,16 @@ struct AlertRow: View {
 
     var body: some View {
         if let s = alert.url, let url = URL(string: s) {
-            Link(destination: url) { content }
+            Link(destination: url) {
+                HStack {
+                    content
+                    Spacer(minLength: 8)
+                    Image(systemName: "arrow.up.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .tint(.primary)
         } else {
             content
         }
@@ -252,5 +276,18 @@ struct AlertRow: View {
             Image(systemName: alert.isSerious ? "exclamationmark.octagon.fill" : "exclamationmark.triangle.fill")
                 .foregroundStyle(alert.isSerious ? .red : .orange)
         }
+    }
+}
+
+struct AlertsList: View {
+    var alerts: [ServiceAlert]
+
+    var body: some View {
+        List {
+            ForEach(alerts) { AlertRow(alert: $0) }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Alerts")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

@@ -124,7 +124,7 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(alert.waitForExistence(timeout: 5), "name alert")
         let name = alert.textFields.firstMatch
         name.tap()
-        name.typeText("uitest")
+        name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 12) + "uitest")
         shot("trip-name-alert")
         alert.buttons["Save"].tap()
         pause(2)
@@ -164,7 +164,7 @@ final class FlowTests: XCTestCase {
         shot("settings-haptics-off")
         haptics.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.5)).tap()
 
-        let refresh = app.buttons["Refresh every"].firstMatch
+        let refresh = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Refresh every")).firstMatch
         if refresh.waitForExistence(timeout: 3) {
             refresh.tap()
             pause(0.8)
@@ -184,8 +184,11 @@ final class FlowTests: XCTestCase {
     func test07DynamicIslandAndLockScreen() {
         app.launchArguments += ["-screen", "stop/200060"]
         app.launch()
-        let row = element("departure")
-        XCTAssertTrue(row.waitForExistence(timeout: 25), "departures")
+        let first = element("departure")
+        XCTAssertTrue(first.waitForExistence(timeout: 25), "departures")
+        // A service a few minutes out, so the countdown is not already at zero.
+        let rows = app.descendants(matching: .any).matching(identifier: "departure")
+        let row = rows.count > 3 ? rows.element(boundBy: 3) : first
         row.press(forDuration: 1.2)
         let follow = app.buttons["Follow on Lock Screen"].firstMatch
         if follow.waitForExistence(timeout: 5) {
@@ -202,8 +205,43 @@ final class FlowTests: XCTestCase {
         start.press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.75)))
         pause(2.5)
         shot("lock-screen-live-activity")
+        let allow = springboard.buttons["Allow"].firstMatch
+        if allow.waitForExistence(timeout: 2) {
+            allow.tap()
+            pause(2)
+            shot("lock-screen-live-activity-allowed")
+        }
         springboard.swipeUp()
         pause(1)
+    }
+
+    /// Clean up: deletes the saved test trip from Home with its swipe action, and stops the
+    /// first watch from the Watching tab with its swipe action.
+    func test08SwipeToDeleteAndStop() {
+        app.launch()
+        tab("Home")
+        let saved = app.staticTexts["Uitest"].firstMatch
+        if saved.waitForExistence(timeout: 15) {
+            saved.swipeLeft()
+            let delete = app.buttons["Delete"].firstMatch
+            XCTAssertTrue(delete.waitForExistence(timeout: 5), "delete swipe action on the saved trip")
+            shot("home-swipe-delete")
+            delete.tap()
+            pause(2)
+            XCTAssertFalse(app.staticTexts["Uitest"].firstMatch.exists, "saved trip removed")
+        } else {
+            XCTFail("saved trip on Home")
+        }
+        tab("Watching")
+        let cell = app.cells.firstMatch
+        if cell.waitForExistence(timeout: 8) {
+            cell.swipeLeft()
+            let stop = app.buttons["Stop"].firstMatch
+            XCTAssertTrue(stop.waitForExistence(timeout: 5), "stop swipe action on a watch")
+            shot("watching-swipe-stop")
+            stop.tap()
+            pause(2)
+        }
     }
 
     // MARK: Helpers

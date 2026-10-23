@@ -39,11 +39,18 @@ struct StopRow: View {
     }
     private var subtitle: String {
         var parts: [String] = []
-        let rest = stop.name.split(separator: ",").dropFirst().map { $0.trimmingCharacters(in: .whitespaces) }
+        let title = Naming.short(stop.name)
+        // Drop the suburb when the title already says it: "Platform 5, Burwood" under "Burwood Station".
+        let rest = stop.name.split(separator: ",").dropFirst()
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !title.localizedCaseInsensitiveContains($0) }
         if !rest.isEmpty { parts.append(rest.joined(separator: ", ")) }
-        if let d = stop.distance { parts.append("\(Int(d)) m away") }
-        if Int(stop.id) != nil && stop.id.count <= 8 { parts.append("Stop \(stop.id)") }
-        return parts.joined(separator: ", ")
+        if let d = stop.distance {
+            parts.append(d < 1000 ? "\(Int(d)) m" : String(format: "%.1f km", d / 1000))
+        } else if Int(stop.id) != nil && stop.id.count <= 8 {
+            parts.append("Stop \(stop.id)")
+        }
+        return parts.joined(separator: " \u{00B7} ")
     }
 }
 

@@ -88,7 +88,7 @@ struct WatchRow: View {
                 LineBadge(line: l.line ?? "", colorHex: l.color, mode: l.mode)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(watch.title ?? "Trip").font(.body.weight(.semibold)).lineLimit(1)
+                Text(Naming.compact(watch.title ?? "Trip")).font(.body.weight(.semibold)).lineLimit(1)
                 Text(phaseText).font(.footnote).foregroundStyle(.secondary)
                 if let snap = watch.snap?.legs?.first {
                     HStack(spacing: 6) {

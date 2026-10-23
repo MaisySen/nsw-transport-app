@@ -372,8 +372,20 @@ public struct WatchRequest: Codable, Sendable {
     }
 }
 
+/// The answer to POST /api/watch: the new watch id and the first note the server sent about it.
 public struct WatchCreated: Codable, Sendable {
-    public var watch: Watch?
+    public struct Created: Codable, Sendable {
+        public var id: FlexID?
+        public var phase: String?
+        public var ended: Bool?
+        public var sent: [Sent]?
+    }
+    public struct Sent: Codable, Sendable {
+        public var title: String?
+        public var body: String?
+    }
+    public var ok: Bool?
+    public var watch: Created?
 }
 
 // MARK: Building watches, matching the web app (svcSpec and tripSpec in app.js)
@@ -414,6 +426,11 @@ public enum Naming {
     public static func short(_ s: String) -> String {
         let first = s.split(separator: ",").first.map(String.init) ?? s
         return first.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// For tight spaces: "Burwood Station to Central Station" becomes "Burwood to Central".
+    public static func compact(_ s: String) -> String {
+        s.replacingOccurrences(of: " Station", with: "")
     }
 }
 
