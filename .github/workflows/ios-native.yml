@@ -77,12 +77,15 @@ jobs:
         continue-on-error: true
         timeout-minutes: 10
         run: |
-          curl -fsSL -o /tmp/xtool.zip https://github.com/xtool-org/xtool/releases/latest/download/xtool.app.zip
-          ditto -x -k /tmp/xtool.zip /tmp/xt
-          XT=$(find /tmp/xt -path "*Contents/MacOS/xtool" -type f | head -1)
-          "$XT" --version || true
           set -o pipefail
-          "$XT" dev build --ipa --configuration release < /dev/null > ../xtool-build.log 2>&1
+          {
+            curl -fsSL -o /tmp/xtool.zip https://github.com/xtool-org/xtool/releases/latest/download/xtool.app.zip
+            ditto -x -k /tmp/xtool.zip /tmp/xt
+            XT=$(find /tmp/xt -path "*Contents/MacOS/xtool" -type f | head -1)
+            echo "xtool at $XT"
+            "$XT" --version || true
+            "$XT" dev build --ipa --configuration release < /dev/null
+          } > ../xtool-build.log 2>&1
           find . -name "*.ipa" -not -path "./.build/*" -not -path "./dd-*" -exec cp {} ../out/Transport-xtool-unsigned.ipa \;
           ls -la ../out
 

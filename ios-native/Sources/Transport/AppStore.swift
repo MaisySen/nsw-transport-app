@@ -104,6 +104,14 @@ final class AppStore {
         }
     }
 
+    /// Test and screenshot hook: launching with `-screen stop/213516` opens that screen,
+    /// the same as the nswtransport://stop/213516 link but without the system prompt.
+    func openLaunchScreen() {
+        guard let s = UserDefaults.standard.string(forKey: "screen"),
+              let url = URL(string: "nswtransport://\(s)") else { return }
+        open(url)
+    }
+
     // MARK: Stars and recents
 
     func isStarred(_ id: String) -> Bool { starred.contains { $0.id == id } }

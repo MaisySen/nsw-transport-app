@@ -44,6 +44,7 @@ struct RootView: View {
         }
         .overlay(alignment: .top) { BannerOverlay() }
         .onOpenURL { url in store.open(url) }
+        .task { store.openLaunchScreen() }
         .sensoryFeedback(.selection, trigger: store.tab)
     }
 }
