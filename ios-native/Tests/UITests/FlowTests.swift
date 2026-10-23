@@ -143,16 +143,16 @@ final class FlowTests: XCTestCase {
 
         // Add home and Add work: the To work and To home trips then lead Home.
         if element("addHome").waitForExistence(timeout: 5) {
-            pick("addHome", "Burwood", expect: "Burwood Station")
-            pick("addWork", "Central", expect: "Central Station")
+            pick("addHome", "Strathfield", expect: "Strathfield Station")
+            pick("addWork", "Town Hall", expect: "Town Hall Station")
             pause(5)
             shot("home-places")
         }
         let toWork = app.staticTexts["To work"].firstMatch
         if toWork.waitForExistence(timeout: 10) {
             toWork.tap()
-            let later = element("laterServices")
-            XCTAssertTrue(later.waitForExistence(timeout: 30), "Later services on the trip screen")
+            let earlier = element("earlierServices")
+            XCTAssertTrue(earlier.waitForExistence(timeout: 30), "Earlier services on the trip screen")
             pause(2)
             shot("trip-screen")
             let travel = app.buttons["Travel time"].firstMatch
@@ -240,7 +240,8 @@ final class FlowTests: XCTestCase {
         app.launch()
         tab("Trips")
         let saved = app.staticTexts["Uitest"].firstMatch
-        if saved.waitForExistence(timeout: 15) {
+        if !saved.waitForExistence(timeout: 15) { app.swipeUp(); pause(1) }
+        if saved.waitForExistence(timeout: 5) {
             let row = app.cells.containing(.staticText, identifier: "Uitest").firstMatch
             (row.exists ? row : saved).swipeLeft()
             let delete = app.buttons["Delete"].firstMatch

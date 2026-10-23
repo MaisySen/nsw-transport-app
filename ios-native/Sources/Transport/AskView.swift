@@ -276,7 +276,7 @@ struct AskView: View {
                 Text(d.dest).font(.body.weight(.semibold)).lineLimit(1)
                 HStack(spacing: 6) {
                     if let p = d.platform { Text(p.replacingOccurrences(of: "Platform ", with: "Plat ")) }
-                    Text(t, style: .time)
+                    Text(Clock.time(t))
                     statusText(realtime: d.realtime, delay: d.delayMin, cancelled: d.cancelled)
                 }
                 .font(.footnote).foregroundStyle(.secondary).monospacedDigit()
@@ -293,7 +293,7 @@ struct AskView: View {
         let tl = j.legs.filter { $0.kind == "transit" }
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("\(j.leave.formatted(date: .omitted, time: .shortened)) to \(j.arrive.formatted(date: .omitted, time: .shortened))").font(.body.weight(.semibold)).monospacedDigit()
+                Text("\(Clock.time(j.leave)) to \(Clock.time(j.arrive))").font(.body.weight(.semibold)).monospacedDigit()
                 HStack(spacing: 4) {
                     ForEach(Array(tl.enumerated()), id: \.offset) { _, l in LineBadge(line: l.line ?? "", colorHex: l.color, mode: l.mode, compact: true) }
                     Text("\(j.durationMin) min, \(j.changes == 0 ? "Direct" : "\(j.changes) change\(j.changes > 1 ? "s" : "")")").font(.footnote).foregroundStyle(.secondary)
@@ -326,7 +326,7 @@ struct AskView: View {
                     Text("\(m)").font(.title2.bold()).monospacedDigit()
                     Text("min").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
                 } else {
-                    Text(t, style: .time).font(.callout.weight(.semibold)).monospacedDigit()
+                    Text(Clock.time(t)).font(.callout.weight(.semibold)).monospacedDigit()
                 }
             }
             .foregroundStyle(live ? Color.green : Color.primary)

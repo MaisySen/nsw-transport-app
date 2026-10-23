@@ -848,8 +848,7 @@ struct ServiceRow: View {
         var parts: [String] = []
         if let d = journey.durationMin { parts.append("\(d) min") }
         let c = journey.changes ?? max(0, journey.transitLegs.count - 1)
-        if journey.transitLegs.count <= 1 || c == 0 { parts.append("Direct") }
-        else { parts.append(c == 1 ? "1 change" : "\(c) changes") }
+        if journey.transitLegs.count > 1 && c > 0 { parts.append(c == 1 ? "1 change" : "\(c) changes") }
         return parts.joined(separator: ", ")
     }
 }
