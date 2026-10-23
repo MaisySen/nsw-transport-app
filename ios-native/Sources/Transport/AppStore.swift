@@ -16,6 +16,9 @@ final class AppStore {
     var starred: [StopRef] = [] { didSet { Persist.save(starred, "starred") } }
     var recents: [StopRef] = [] { didSet { Persist.save(recents, "recents") } }
     var recentTrips: [TripPair] = [] { didSet { Persist.save(recentTrips, "recentTrips") } }
+    /// Home and work stops set with Add home and Add work. Siri reads home too.
+    var homePlace: StopRef? { didSet { Persist.save(homePlace, "placeHome") } }
+    var workPlace: StopRef? { didSet { Persist.save(workPlace, "placeWork") } }
     /// Set by Home's search field so the Search tab opens with its field focused.
     var focusSearch = false
     var hapticsOn: Bool = true { didSet { UserDefaults.standard.set(hapticsOn, forKey: "haptics") } }
@@ -49,11 +52,13 @@ final class AppStore {
         }
         if d.bool(forKey: "uiTestReset") {
             // UI tests start from a clean device.
-            for k in ["starred", "recents", "recentTrips", "haptics", "refresh", "seenNotes"] { d.removeObject(forKey: k) }
+            for k in ["starred", "recents", "recentTrips", "haptics", "refresh", "seenNotes", "placeHome", "placeWork"] { d.removeObject(forKey: k) }
         }
         starred = Persist.load([StopRef].self, "starred") ?? []
         recents = Persist.load([StopRef].self, "recents") ?? []
         recentTrips = Persist.load([TripPair].self, "recentTrips") ?? []
+        homePlace = Persist.load(StopRef.self, "placeHome")
+        workPlace = Persist.load(StopRef.self, "placeWork")
         hapticsOn = d.object(forKey: "haptics") as? Bool ?? true
         let r = d.integer(forKey: "refresh")
         refreshSeconds = r == 0 ? 15 : r

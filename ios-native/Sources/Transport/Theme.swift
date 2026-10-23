@@ -108,7 +108,7 @@ struct CountdownLabel: View {
     }
 }
 
-/// "Live, updated 11:21:05" with a dot that flashes on each refresh.
+/// "Live data updated 11:21:05" with a dot that flashes on each refresh.
 struct UpdatedLine: View {
     var updated: Date?
     var isLoading: Bool
@@ -122,7 +122,7 @@ struct UpdatedLine: View {
                 .scaleEffect(isLoading ? 1.4 : 1)
                 .animation(.easeInOut(duration: 0.4), value: isLoading)
             if let updated {
-                Text("Live, updated \(Clock.seconds(updated))")
+                Text("Live data updated \(Clock.seconds(updated))")
             } else {
                 Text("Loading live times")
             }

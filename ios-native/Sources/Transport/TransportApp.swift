@@ -29,7 +29,7 @@ struct RootView: View {
         @Bindable var store = store
         TabView(selection: $store.tab) {
             HomeView()
-                .tabItem { Label("Home", systemImage: "house.fill") }
+                .tabItem { Label("Trips", systemImage: "tram.fill") }
                 .tag(AppTab.home)
             SearchView()
                 .tabItem { Label("Search", systemImage: "magnifyingglass") }

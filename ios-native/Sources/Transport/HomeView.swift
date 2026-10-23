@@ -10,6 +10,10 @@ struct HomeView: View {
     @State private var board = HomeBoard()
     @State private var location = LocationFinder()
     @State private var addingTrip = false
+    @State private var pickingPlace: PlaceKind?
+
+    enum PlaceKind: String, Identifiable { case home, work; var id: String { rawValue } }
+    struct PlanRoute: Hashable {}
 
     static let popular = [
         StopRef(id: "200060", name: "Central Station", modes: [1]),
@@ -22,7 +26,15 @@ struct HomeView: View {
             List {
                 searchSection
 
+                if store.homePlace == nil || store.workPlace == nil {
+                    placesSection
+                }
+
                 let trips = homeTrips
+                let serious = seriousAlerts(trips)
+                if !serious.isEmpty {
+                    Section { alertsBanner(serious) }
+                }
                 if trips.isEmpty {
                     Section { addTripRow }
                 }
@@ -49,11 +61,8 @@ struct HomeView: View {
                     ForEach(Array(trips.enumerated()), id: \.element.id) { i, t in
                         Section {
                             tripCard(t)
-                        } header: {
-                            if i == 0 { Text("Your trips") }
                         }
                     }
-                    Section { addTripRow }
                 }
 
                 let stops = homeStops
@@ -79,7 +88,8 @@ struct HomeView: View {
             }
             .listStyle(.insetGrouped)
             .listSectionSpacing(.compact)
-            .navigationTitle("Home")
+            .navigationTitle("Trips")
+            .navigationDestination(for: PlanRoute.self) { _ in TripPlannerView() }
             .navigationDestination(for: StopRef.self) { s in StopView(stop: s) }
             .navigationDestination(for: ServiceKey.self) { k in ServiceView(key: k) }
             .navigationDestination(for: TripPair.self) { p in TripPlannerView(from: p.from, to: p.to) }
@@ -111,6 +121,15 @@ struct HomeView: View {
             .sheet(isPresented: $addingTrip) {
                 AddTripSheet().environment(store)
             }
+            .sheet(item: $pickingPlace) { kind in
+                StopPicker(title: kind == .home ? "Home" : "Work") { stop in
+                    if kind == .home { store.homePlace = stop } else { store.workPlace = stop }
+                    store.success()
+                    pickingPlace = nil
+                }
+                .presentationDetents([.large])
+                .environment(store)
+            }
             .autoRefresh(every: max(store.refreshSeconds, 15), active: store.isActive && store.tab == .home) { await refresh() }
             .task(id: refreshKey) { await refresh() }
             .onChange(of: location.coordinate?.latitude) { _, _ in
@@ -137,12 +156,12 @@ struct HomeView: View {
     private var searchSection: some View {
         Section {
             Button {
-                store.focusSearch = true
-                store.tab = .search
+                store.tap()
+                path.append(PlanRoute())
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
-                    Text("Stop, station or trip")
+                    Text("Where to?")
                     Spacer()
                 }
                 .font(.body)
@@ -153,7 +172,7 @@ struct HomeView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Search")
+            .accessibilityLabel("Where to?")
             .accessibilityIdentifier("homeSearch")
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
@@ -164,6 +183,75 @@ struct HomeView: View {
             }
             .padding(.top, 2)
         }
+    }
+
+    /// Add home and Add work, side by side, until both are set.
+    private var placesSection: some View {
+        Section {
+            HStack(spacing: 10) {
+                placeButton(.home, title: store.homePlace.map { Naming.short($0.name) } ?? "Add home", symbol: "house.fill", set: store.homePlace != nil)
+                placeButton(.work, title: store.workPlace.map { Naming.short($0.name) } ?? "Add work", symbol: "briefcase.fill", set: store.workPlace != nil)
+            }
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+        }
+    }
+
+    private func placeButton(_ kind: PlaceKind, title: String, symbol: String, set: Bool) -> some View {
+        Button { pickingPlace = kind } label: {
+            HStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .background(kind == .home ? Color.blue : Color.brown, in: Circle())
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(set ? Color.primary : Color.accentColor)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .frame(minHeight: 48)
+            .frame(maxWidth: .infinity)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(kind == .home ? "addHome" : "addWork")
+    }
+
+    /// High priority alerts on the services shown in the trip cards, each once.
+    private func seriousAlerts(_ trips: [HomeTrip]) -> [ServiceAlert] {
+        var seen = Set<String>()
+        var out: [ServiceAlert] = []
+        let now = Date()
+        for t in trips {
+            let shown = (board.journeys[t.id] ?? []).filter { ($0.leave ?? .distantPast) > now.addingTimeInterval(-30) }.prefix(3)
+            for a in shown.flatMap({ $0.transitLegs.flatMap { $0.alerts ?? [] } }) where a.isSerious && seen.insert(a.id).inserted {
+                out.append(a)
+            }
+        }
+        return out
+    }
+
+    private func alertsBanner(_ alerts: [ServiceAlert]) -> some View {
+        NavigationLink { AlertsList(alerts: alerts) } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(alerts.count == 1 ? "Service information" : "\(alerts.count) service alerts")
+                        .font(.subheadline.weight(.semibold))
+                    Text(alerts.first?.title ?? "")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+        }
+        .listRowBackground(Color.orange.opacity(0.14))
+        .accessibilityIdentifier("alertsBanner")
     }
 
     private var addTripRow: some View {
@@ -220,6 +308,11 @@ struct HomeView: View {
                 Button(role: .destructive) {
                     store.forgetTrip(from: t.from, to: t.to)
                 } label: { Label("Remove", systemImage: "minus.circle") }
+            case .place:
+                Button(role: .destructive) {
+                    store.homePlace = nil
+                    store.workPlace = nil
+                } label: { Label("Clear", systemImage: "minus.circle") }
             case .commute:
                 EmptyView()
             }
@@ -315,6 +408,15 @@ struct HomeView: View {
             out.append(t)
             return true
         }
+        if let h = store.homePlace, let w = store.workPlace, h.id != w.id {
+            let toWork = HomeTrip(kind: .place, name: "To work", from: h, to: w)
+            let toHome = HomeTrip(kind: .place, name: "To home", from: w, to: h)
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = Clock.sydney
+            let morning = cal.component(.hour, from: Date()) < 12
+            _ = add(morning ? toWork : toHome)
+            _ = add(morning ? toHome : toWork)
+        }
         for c in store.commutes where c.active != false {
             _ = add(HomeTrip(kind: .commute, name: c.name, from: c.from, to: c.to))
         }
@@ -325,7 +427,7 @@ struct HomeView: View {
         for r in store.recentTrips where recent < 2 {
             if add(HomeTrip(kind: .recent, name: nil, from: r.from, to: r.to)) { recent += 1 }
         }
-        return Array(out.prefix(4))
+        return Array(out.prefix(5))
     }
 
     /// Starred stops first, then stops opened recently. At most 4.
@@ -382,7 +484,7 @@ struct JourneyLink: Hashable {
 }
 
 struct HomeTrip: Identifiable, Hashable {
-    enum Kind: Hashable { case commute, saved, recent }
+    enum Kind: Hashable { case place, commute, saved, recent }
     var kind: Kind
     var name: String?
     var from: StopRef
@@ -437,7 +539,8 @@ final class HomeBoard {
     private func load(api: TransportAPI, device: String, trips: [HomeTrip], stops: [String]) async {
         let tripJobs = trips.map { ($0.id, $0.from.id, $0.to.id) }
         let stopJobs = Array(Set(stops))
-        let results = await withTaskGroup(of: HomeFetch.self, returning: [HomeFetch].self) { group in
+        let now = Date()
+        await withTaskGroup(of: HomeFetch.self) { group in
             for (key, from, to) in tripJobs {
                 group.addTask {
                     let r = try? await api.trip(from: from, to: to, count: 5)
@@ -450,27 +553,26 @@ final class HomeBoard {
                     return HomeFetch.stop(id, r)
                 }
             }
-            var out: [HomeFetch] = []
-            for await r in group { out.append(r) }
-            return out
-        }
-        let now = Date()
-        withAnimation(.snappy) {
-            for r in results {
-                switch r {
-                case .trip(let key, let resp):
-                    if let resp {
-                        journeys[key] = resp.journeys
-                        for j in resp.journeys { note(j, now: now) }
-                    }
-                    loaded.insert("t:" + key)
-                case .stop(let id, let resp):
-                    if let resp { departures[id] = resp.items }
-                    loaded.insert("s:" + id)
-                }
+            // Each card fills in as soon as its own answer lands.
+            for await r in group {
+                withAnimation(.snappy) { apply(r, now: now) }
             }
         }
         updated = now
+    }
+
+    private func apply(_ r: HomeFetch, now: Date) {
+        switch r {
+        case .trip(let key, let resp):
+            if let resp {
+                journeys[key] = resp.journeys
+                for j in resp.journeys { note(j, now: now) }
+            }
+            loaded.insert("t:" + key)
+        case .stop(let id, let resp):
+            if let resp { departures[id] = resp.items }
+            loaded.insert("s:" + id)
+        }
     }
 
     private static func key(_ j: Journey) -> String? {
@@ -511,7 +613,7 @@ final class HomeBoard {
     /// Departures grouped by line and destination, cancelled ones skipped. At most 3 groups.
     static func lineGroups(_ items: [Departure], now: Date) -> [[Departure]] {
         var groups: [[Departure]] = []
-        for d in items where !d.isCancelled && (d.bestTime ?? .distantPast) > now.addingTimeInterval(-30) {
+        for d in items where !d.isCancelled && (d.bestTime ?? .distantPast) > now {
             let k = d.line + "|" + (d.dest ?? "")
             if let i = groups.firstIndex(where: { $0[0].line + "|" + ($0[0].dest ?? "") == k }) {
                 groups[i].append(d)
@@ -569,6 +671,15 @@ struct ServiceStatus: Hashable {
     var text: String
     var tone: Tone
 
+    /// The status from the journey alone, without the remembered live delay Home keeps.
+    static func of(_ j: Journey) -> ServiceStatus {
+        let f = j.firstTransit
+        if j.anyCancelled == true || f?.cancelled == true { return ServiceStatus(text: "Cancelled", tone: .bad) }
+        guard let f, f.isLive else { return ServiceStatus(text: "Scheduled", tone: .plain) }
+        let d = f.delayMin ?? 0
+        return ServiceStatus(text: Delay.text(delayMin: d, live: true, cancelled: false), tone: d > 0 ? .late : .good)
+    }
+
     var color: Color {
         switch tone {
         case .good: return .liveGreen
@@ -597,6 +708,8 @@ struct TripHeader: View {
                 HStack(spacing: 5) {
                     if trip.kind == .saved {
                         Image(systemName: "star.fill").font(.caption).foregroundStyle(.yellow)
+                    } else if trip.kind == .place {
+                        Image(systemName: trip.name == "To work" ? "briefcase.fill" : "house.fill").font(.caption).foregroundStyle(.blue)
                     } else if trip.kind == .commute {
                         Image(systemName: "clock.fill").font(.caption).foregroundStyle(.secondary)
                     }
@@ -610,9 +723,12 @@ struct TripHeader: View {
                         .foregroundStyle(.secondary)
                 }
                 if alertCount > 0 {
-                    Label(alertCount == 1 ? "1 alert" : "\(alertCount) alerts", systemImage: "exclamationmark.triangle.fill")
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(.orange)
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill").imageScale(.small)
+                        Text(alertCount == 1 ? "1 alert" : "\(alertCount) alerts")
+                    }
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.orange)
                 }
             }
         }
@@ -628,22 +744,30 @@ struct ServiceRow: View {
     var status: ServiceStatus
     var dimmed = false
     var first = false
+    /// Travel time mode: the chip shows the trip length instead of the countdown.
+    var showDuration = false
 
     var body: some View {
         let f = journey.firstTransit
-        let hex = f?.color ?? Mode(raw: f?.mode).fallbackHex
-        let whiteText = RGB(hex: hex)?.prefersWhiteText ?? true
         let cancelled = status.tone == .bad
         let leave = journey.leave ?? f?.departTime
         HStack(spacing: 12) {
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                let secs = leave.map { $0.timeIntervalSince(ctx.date) } ?? 0
+                let tone = showDuration ? ChipTone.duration : ChipTone.of(seconds: secs, cancelled: cancelled)
                 VStack(spacing: 0) {
-                    if let leave {
-                        Text(TransportKit.Countdown.big(until: leave, now: ctx.date))
+                    if showDuration, let d = journey.durationMin {
+                        Text("\(d)")
                             .font((first ? Font.title2 : Font.title3).weight(.bold))
                             .monospacedDigit()
-                            .contentTransition(.numericText(countsDown: true))
+                        Text("min").font(.caption2.weight(.semibold))
+                    } else if let leave {
+                        let big = TransportKit.Countdown.big(until: leave, now: ctx.date)
                         let unit = TransportKit.Countdown.unit(until: leave, now: ctx.date)
+                        Text(big)
+                            .font((unit.isEmpty ? Font.subheadline : (first ? Font.title2 : Font.title3)).weight(.bold))
+                            .monospacedDigit()
+                            .contentTransition(.numericText(countsDown: true))
                         if !unit.isEmpty {
                             Text(unit).font(.caption2.weight(.semibold))
                         }
@@ -651,11 +775,10 @@ struct ServiceRow: View {
                 }
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
-                .foregroundStyle(cancelled ? Color.secondary : (whiteText ? Color.white : Color.black))
+                .foregroundStyle(tone.text)
                 .frame(width: 56)
                 .frame(maxHeight: .infinity)
-                .background(cancelled ? Color(.systemGray5) : Color(hex: hex),
-                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(tone.fill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
             .frame(width: 56)
 
@@ -694,6 +817,7 @@ struct ServiceRow: View {
                     ForEach(Array(journey.transitLegs.prefix(2).enumerated()), id: \.offset) { _, l in
                         LineBadge(line: l.line ?? "", colorHex: l.color, mode: l.mode, compact: true)
                     }
+                    CrowdView(occupancy: journey.transitLegs.first?.occupancy)
                     Text(summary)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -727,6 +851,27 @@ struct ServiceRow: View {
         if journey.transitLegs.count <= 1 || c == 0 { parts.append("Direct") }
         else { parts.append(c == 1 ? "1 change" : "\(c) changes") }
         return parts.joined(separator: ", ")
+    }
+}
+
+/// Countdown chip colour by time left, not the line colour: red at 3 min or less, amber
+/// 4 to 9 min, green 10 min or more, grey when cancelled.
+struct ChipTone: Sendable {
+    var fill: Color
+    var text: Color
+
+    static let red = ChipTone(fill: Color(red: 0.86, green: 0.17, blue: 0.15), text: .white)
+    static let amber = ChipTone(fill: Color(red: 0.98, green: 0.66, blue: 0.08), text: .black)
+    static let green = ChipTone(fill: Color(red: 0.12, green: 0.6, blue: 0.3), text: .white)
+    static let grey = ChipTone(fill: Color(.systemGray5), text: .secondary)
+    static let duration = ChipTone(fill: Color(.systemIndigo), text: .white)
+
+    static func of(seconds: Double, cancelled: Bool) -> ChipTone {
+        if cancelled { return grey }
+        let m = Int(seconds / 60)
+        if m <= 3 { return red }
+        if m <= 9 { return amber }
+        return green
     }
 }
 

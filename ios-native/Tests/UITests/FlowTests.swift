@@ -90,7 +90,7 @@ final class FlowTests: XCTestCase {
 
     func test03PlanWatchAndSaveTrip() {
         app.launch()
-        tab("Home")
+        tab("Trips")
         let plan = app.navigationBars.buttons["Plan a trip"].firstMatch
         XCTAssertTrue(plan.waitForExistence(timeout: 10), "plan button on Home")
         plan.tap()
@@ -132,13 +132,32 @@ final class FlowTests: XCTestCase {
 
     func test04HomeWithSavedItems() {
         app.launch()
-        tab("Home")
+        tab("Trips")
         XCTAssertTrue(app.staticTexts["Uitest"].firstMatch.waitForExistence(timeout: 20), "saved trip on Home")
         pause(3)
         shot("home-filled")
         app.swipeUp()
         pause(1)
         shot("home-filled-scrolled")
+        app.swipeDown()
+
+        // Add home and Add work: the To work and To home trips then lead Home.
+        if element("addHome").waitForExistence(timeout: 5) {
+            pick("addHome", "Burwood", expect: "Burwood Station")
+            pick("addWork", "Central", expect: "Central Station")
+            pause(5)
+            shot("home-places")
+        }
+        let toWork = app.staticTexts["To work"].firstMatch
+        if toWork.waitForExistence(timeout: 10) {
+            toWork.tap()
+            let later = element("laterServices")
+            XCTAssertTrue(later.waitForExistence(timeout: 30), "Later services on the trip screen")
+            pause(2)
+            shot("trip-screen")
+            let travel = app.buttons["Travel time"].firstMatch
+            if travel.exists { travel.tap(); pause(1); shot("trip-travel-time") }
+        }
     }
 
     func test05Watching() {
@@ -219,7 +238,7 @@ final class FlowTests: XCTestCase {
     /// first watch from the Watching tab with its swipe action.
     func test08SwipeToDeleteAndStop() {
         app.launch()
-        tab("Home")
+        tab("Trips")
         let saved = app.staticTexts["Uitest"].firstMatch
         if saved.waitForExistence(timeout: 15) {
             let row = app.cells.containing(.staticText, identifier: "Uitest").firstMatch
@@ -234,13 +253,18 @@ final class FlowTests: XCTestCase {
             XCTFail("saved trip on Home")
         }
         tab("Watching")
-        let cell = app.cells.firstMatch
-        if cell.waitForExistence(timeout: 8) {
-            cell.swipeLeft()
+        // Only an active watch has the Stop action; one that already finished has none.
+        let watch = element("activeWatch")
+        if watch.waitForExistence(timeout: 8) {
+            let cell = app.cells.containing(.any, identifier: "activeWatch").firstMatch
+            (cell.exists ? cell : watch).swipeLeft()
             let stop = app.buttons["Stop"].firstMatch
+            if !stop.waitForExistence(timeout: 3) {
+                (cell.exists ? cell : watch).swipeLeft()
+            }
             XCTAssertTrue(stop.waitForExistence(timeout: 5), "stop swipe action on a watch")
             shot("watching-swipe-stop")
-            stop.tap()
+            if stop.exists { stop.tap() }
             pause(2)
         }
     }

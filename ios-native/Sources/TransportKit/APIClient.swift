@@ -114,8 +114,9 @@ public struct TransportAPI: Sendable {
         try await send(DeparturesResponse.self, "api/departures", query: ["stop": stop, "device": device])
     }
 
-    public func trip(from: String, to: String, count: Int = 5) async throws -> TripResponse {
-        try await send(TripResponse.self, "api/trip", query: ["from": from, "to": to, "count": String(count)])
+    /// `time` is HHmm Sydney time, for earlier or later services.
+    public func trip(from: String, to: String, count: Int = 5, time: String? = nil) async throws -> TripResponse {
+        try await send(TripResponse.self, "api/trip", query: ["from": from, "to": to, "count": String(count), "time": time])
     }
 
     public func service(trip: String?, line: String?, stop: String?, planned: Date?, mode: String?, destId: String?) async throws -> ServiceResponse {

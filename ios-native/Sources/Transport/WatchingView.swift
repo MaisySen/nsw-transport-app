@@ -22,6 +22,7 @@ struct WatchingView: View {
                     Section("Now") {
                         ForEach(active) { w in
                             WatchRow(watch: w)
+                                .accessibilityIdentifier("activeWatch")
                                 .swipeActions {
                                     Button(role: .destructive) { Task { await store.unwatch(w) } } label: {
                                         Label("Stop", systemImage: "bell.slash.fill")

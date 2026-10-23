@@ -11,6 +11,9 @@ struct TripPlannerView: View {
     @State private var updated: Date?
     @State private var loading = false
     @State private var error: String?
+    @State private var extra: [Journey] = []
+    @State private var showDuration = false
+    @State private var loadingMore = false
 
     enum PickTarget: String, Identifiable { case from, to; var id: String { rawValue } }
 
@@ -36,21 +39,44 @@ struct TripPlannerView: View {
             }
 
             if from != nil && to != nil {
-                Section {
-                    UpdatedLine(updated: updated, isLoading: loading, liveCount: nil)
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
-                }
                 if let error, data == nil {
                     Section { ContentUnavailableView("No trips found", systemImage: "point.topleft.down.to.point.bottomright.curvepath", description: Text(error)) }
                 }
-                if let journeys = data?.journeys {
-                    Section(data?.tomorrow == true ? "Tomorrow" : "Next trips") {
+                if data != nil {
+                    let journeys = merged
+                    let alerts = Self.uniqueAlerts(journeys)
+                    if !alerts.isEmpty {
+                        Section {
+                            NavigationLink { AlertsList(alerts: alerts) } label: {
+                                Label {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Service information").font(.body.weight(.semibold))
+                                        Text(alerts.count == 1 ? "1 alert. Tap for details." : "\(alerts.count) alerts. Tap for details.")
+                                            .font(.footnote)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                } icon: {
+                                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                                }
+                            }
+                        }
+                    }
+                    Section {
+                        Picker("Show", selection: $showDuration) {
+                            Text("Departs in").tag(false)
+                            Text("Travel time").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                    }
+                    Section {
+                        moreButton("Earlier services", direction: -1)
                         ForEach(journeys) { j in
                             NavigationLink {
                                 JourneyDetailView(journey: j, from: from!, to: to!)
                             } label: {
-                                JourneyRow(journey: j)
+                                ServiceRow(journey: j, status: ServiceStatus.of(j), dimmed: HomeBoard.isBeaten(j, among: journeys), showDuration: showDuration)
                             }
                             .accessibilityIdentifier("journey")
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -60,6 +86,11 @@ struct TripPlannerView: View {
                                 .tint(.indigo)
                             }
                         }
+                        moreButton("Later services", direction: 1)
+                    } header: {
+                        Text(data?.tomorrow == true ? "Tomorrow" : "Next trips")
+                    } footer: {
+                        UpdatedLine(updated: updated, isLoading: loading, liveCount: nil)
                     }
                 }
             } else {
@@ -81,9 +112,67 @@ struct TripPlannerView: View {
         }
         .refreshable { await load() }
         .autoRefresh(every: max(store.refreshSeconds, 20), active: store.isActive && from != nil && to != nil) { await load() }
-        .onChange(of: from) { _, _ in data = nil; Task { await load() } }
-        .onChange(of: to) { _, _ in data = nil; Task { await load() } }
+        .onChange(of: from) { _, _ in data = nil; extra = []; Task { await load() } }
+        .onChange(of: to) { _, _ in data = nil; extra = []; Task { await load() } }
         .appHaptics()
+    }
+
+    /// The loaded journeys plus any earlier or later ones, each once, in leave order.
+    private var merged: [Journey] {
+        var seen = Set<String>()
+        var out: [Journey] = []
+        for j in (data?.journeys ?? []) + extra where seen.insert(j.id).inserted {
+            out.append(j)
+        }
+        let cutoff = Date().addingTimeInterval(-30 * 60)
+        return out
+            .filter { ($0.leave ?? .distantFuture) > cutoff }
+            .sorted { ($0.leave ?? .distantFuture) < ($1.leave ?? .distantFuture) }
+    }
+
+    private func moreButton(_ title: String, direction: Int) -> some View {
+        Button {
+            store.tap()
+            Task { await more(direction) }
+        } label: {
+            HStack {
+                Spacer()
+                if loadingMore { ProgressView().controlSize(.small) }
+                Text(title).font(.subheadline.weight(.semibold))
+                Spacer()
+            }
+        }
+        .disabled(loadingMore || merged.isEmpty)
+        .accessibilityIdentifier(direction < 0 ? "earlierServices" : "laterServices")
+    }
+
+    /// Loads services before the first one shown, or after the last one.
+    private func more(_ direction: Int) async {
+        guard let from, let to else { return }
+        let cur = merged
+        guard let firstLeave = cur.first?.leave, let lastLeave = cur.last?.leave else { return }
+        let t = direction < 0
+            ? max(Date().addingTimeInterval(-25 * 60), firstLeave.addingTimeInterval(-40 * 60))
+            : lastLeave.addingTimeInterval(60)
+        let f = DateFormatter()
+        f.dateFormat = "HHmm"
+        f.timeZone = Clock.sydney
+        f.locale = Locale(identifier: "en_AU_POSIX")
+        loadingMore = true
+        defer { loadingMore = false }
+        if let r = try? await store.api.trip(from: from.id, to: to.id, count: 5, time: f.string(from: t)) {
+            withAnimation(.snappy) { extra += r.journeys }
+        }
+    }
+
+    /// Alerts across all journeys, each once.
+    static func uniqueAlerts(_ journeys: [Journey]) -> [ServiceAlert] {
+        var seen = Set<String>()
+        var out: [ServiceAlert] = []
+        for a in journeys.flatMap({ $0.transitLegs.flatMap { $0.alerts ?? [] } }) where seen.insert(a.id).inserted {
+            out.append(a)
+        }
+        return out
     }
 
     private func load() async {
