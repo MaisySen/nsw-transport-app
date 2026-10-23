@@ -97,6 +97,12 @@ final class AppStore {
         case "track" where parts.count > 1:
             tab = .home
             pendingRoute = .track(stopID: parts[1])
+        case "follow" where parts.count > 1:
+            // The widget's Track button: open the next service on the map and start its Lock Screen countdown.
+            tab = .home
+            pendingRoute = .track(stopID: parts[1])
+            let stopID = parts[1], line = parts.count > 2 ? parts[2] : nil
+            Task { await followNext(stopID: stopID, line: line) }
         case "trip" where parts.count > 2:
             tab = .home
             pendingRoute = .trip(from: StopRef(id: parts[1], name: "Stop \(parts[1])"), to: StopRef(id: parts[2], name: "Stop \(parts[2])"))

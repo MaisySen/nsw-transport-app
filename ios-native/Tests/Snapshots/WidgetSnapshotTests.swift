@@ -17,6 +17,9 @@ final class WidgetSnapshotTests: XCTestCase {
 
         let (attrs, state) = try await liveActivityData()
 
+        let board = await StopBoardProvider.entry(stop: StopRef(id: "200060", name: "Central Station"), lines: nil)
+        let boardT1 = await StopBoardProvider.entry(stop: from, lines: "T1, T2")
+
         for scheme in [ColorScheme.light, .dark] {
             let tag = scheme == .dark ? "dark" : "light"
             save(homeScreen(entry: entry), "\(tag)-w1-home-screen-widgets", scheme)
@@ -24,7 +27,14 @@ final class WidgetSnapshotTests: XCTestCase {
             save(widget(entry, .systemMedium, size: CGSize(width: 338, height: 158)), "\(tag)-w3-widget-medium", scheme)
             save(lockScreen(entry: entry, attrs: attrs, state: state), "\(tag)-w4-lock-screen", scheme)
             save(liveActivityCard(attrs: attrs, state: state).padding(12).background(Wallpaper()), "\(tag)-w5-live-activity", scheme)
+            save(widget(entry, .systemLarge, size: CGSize(width: 338, height: 354)), "\(tag)-w6-widget-large", scheme)
+            save(boardWidget(board, .systemSmall, size: CGSize(width: 158, height: 158)), "\(tag)-b1-board-small", scheme)
+            save(boardWidget(board, .systemMedium, size: CGSize(width: 338, height: 158)), "\(tag)-b2-board-medium", scheme)
+            save(boardWidget(board, .systemLarge, size: CGSize(width: 338, height: 354)), "\(tag)-b3-board-large", scheme)
+            save(boardWidget(boardT1, .systemMedium, size: CGSize(width: 338, height: 158)), "\(tag)-b4-board-filtered", scheme)
         }
+        save(standBy(entry: entry), "standby-1-next-trip", .dark)
+        save(lockAccessories(entry: entry, board: board), "lock-accessories", .dark)
         // The Dynamic Island is always dark.
         save(islandCompact(attrs: attrs, state: state), "island-1-compact", .dark)
         save(islandExpanded(attrs: attrs, state: state), "island-2-expanded", .dark)
@@ -148,6 +158,50 @@ final class WidgetSnapshotTests: XCTestCase {
             .background(Circle().fill(.black))
             .padding(20)
             .background(Wallpaper())
+    }
+
+    private func boardWidget(_ e: StopBoardEntry, _ family: WidgetFamily, size: CGSize) -> some View {
+        StopBoardView(entry: e, familyOverride: family)
+            .padding(16)
+            .frame(width: size.width, height: size.height)
+            .background(Color(.systemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    /// StandBy: the phone on its side on a charger, the widget drawn without its background.
+    private func standBy(entry: NextTripEntry) -> some View {
+        HStack(spacing: 16) {
+            NextTripView(entry: entry, familyOverride: .systemSmall, standByOverride: true)
+                .padding(20)
+                .frame(width: 330, height: 330)
+            Text(Date.now, format: .dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
+                .font(.system(size: 120, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.9))
+                .frame(width: 400)
+        }
+        .foregroundStyle(.white)
+        .frame(width: 852, height: 393)
+        .background(Color.black)
+    }
+
+    /// The Lock Screen widget row: the ring, the trip and the stop board, white on the wallpaper.
+    private func lockAccessories(entry: NextTripEntry, board: StopBoardEntry) -> some View {
+        VStack(spacing: 14) {
+            NextTripView(entry: entry, familyOverride: .accessoryInline)
+                .font(.headline)
+            HStack(spacing: 12) {
+                NextTripView(entry: entry, familyOverride: .accessoryCircular)
+                    .frame(width: 72, height: 72)
+                NextTripView(entry: entry, familyOverride: .accessoryRectangular)
+                    .frame(width: 170, height: 72, alignment: .leading)
+            }
+            StopBoardView(entry: board, familyOverride: .accessoryRectangular)
+                .frame(width: 170, height: 72, alignment: .leading)
+        }
+        .foregroundStyle(.white)
+        .padding(30)
+        .frame(width: 393)
+        .background(Wallpaper())
     }
 
     // MARK: Output
