@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, StyleSheet, useColorScheme, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { api } from '@/lib/api';
@@ -14,6 +14,16 @@ import { openService } from '@/components/Cards';
 import { LineBadge, StatusLine } from '@/components/Transit';
 import { arrOf, ServiceRow } from '@/components/Home';
 import { Button, Empty, Screen, Sep, T } from '@/components/ui';
+
+/** "0745" for the trip API's time parameter, Sydney time. */
+function hhmm(t: number) {
+  try {
+    return new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Australia/Sydney' }).replace(':', '').slice(0, 4);
+  } catch {
+    const d = new Date(t);
+    return `${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+}
 
 /** "8:00:30", Sydney time. */
 function hms(t: number) {
@@ -140,7 +150,40 @@ export default function TripScreen() {
   const now = useNow(1000);
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
   const { data, error, updatedAt, refreshing, refresh } = useLive((r) => api.trip(from, to, { refresh: r, count: 6 }), 20000, [from.id, to.id]);
-  const js = (data?.journeys || []).filter((j) => ms(j.leave) > now - 120000);
+  const [extra, setExtra] = useState<Journey[]>([]);
+  const [more, setMore] = useState<number>(0);
+  const [showTravel, setShowTravel] = useState(false);
+  const dark = useColorScheme() === 'dark';
+  const firstT = (j: Journey) => j.legs.find((l) => l.kind === 'transit');
+  const jKey = (j: Journey) => { const l = firstT(j); return l ? l.tripId || `${l.line}|${l.planned}` : String(j.leave); };
+  const depMs = (j: Journey) => { const l = firstT(j); return l ? bestTime(l.planned, l.realtime ? l.estimated : null) : ms(j.leave); };
+  // Main results drop services gone over 2 min ago; ones loaded with Earlier services stay up to 30 min back.
+  const js = (() => {
+    const seen = new Set<string>();
+    const out: Journey[] = [];
+    for (const j of [...(data?.journeys || []).filter((x) => ms(x.leave) > now - 120000), ...extra.filter((x) => ms(x.leave) > now - 30 * 60000)]) {
+      const k = jKey(j);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(j);
+    }
+    return out.sort((a, b) => depMs(a) - depMs(b));
+  })();
+  const loadMore = async (dir: -1 | 1) => {
+    if (!js.length || more) return;
+    Haptics.selectionAsync();
+    const t = dir < 0 ? Math.max(now - 25 * 60000, depMs(js[0]) - 40 * 60000) : depMs(js[js.length - 1]) + 60000;
+    setMore(dir);
+    try {
+      const r = await api.trip(from, to, { time: hhmm(t), count: 5, refresh: true });
+      setExtra((e) => [...e, ...(r.journeys || [])]);
+      if (dir < 0) setOpen(null);
+    } catch (e: any) {
+      Alert.alert("Couldn't load more services", String(e?.message || e));
+    } finally {
+      setMore(0);
+    }
+  };
   const [showAlerts, setShowAlerts] = useState(false);
   const arrs = js.map(arrOf);
   const alertList: { title: string; url?: string }[] = [];
@@ -193,14 +236,30 @@ export default function TripScreen() {
           </View>
         ) : null}
         {js.length ? (
+          <View style={[st.seg, { backgroundColor: c.fill }]} accessibilityRole="tablist">
+            {(['Departs in', 'Travel time'] as const).map((label, k) => {
+              const on = (k === 1) === showTravel;
+              return (
+                <Pressable key={label} accessibilityRole="tab" accessibilityState={{ selected: on }} onPress={() => { Haptics.selectionAsync(); setShowTravel(k === 1); }}
+                  style={[st.segBtn, on ? { backgroundColor: dark ? '#636366' : c.card, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 1 } : null]}>
+                  <T kind="foot" style={{ color: c.text, fontWeight: on ? '600' : '500' }}>{label}</T>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+        {js.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
+            <MoreButton title="Earlier services" busy={more === -1} onPress={() => loadMore(-1)} />
             {js.map((j, i) => (
-              <View key={j.leave + i}>
-                {i ? <Sep inset={0} /> : null}
-                <ServiceRow j={j} now={now} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { Haptics.selectionAsync(); setOpen(open === i ? null : i); }} />
+              <View key={jKey(j) + i}>
+                <Sep inset={0} />
+                <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { Haptics.selectionAsync(); setOpen(open === i ? null : i); }} />
                 {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} /></View> : null}
               </View>
             ))}
+            <Sep inset={0} />
+            <MoreButton title="Later services" busy={more === 1} onPress={() => loadMore(1)} />
           </View>
         ) : null}
         {updatedAt ? (
@@ -217,7 +276,20 @@ export default function TripScreen() {
   );
 }
 
+function MoreButton({ title, busy, onPress }: { title: string; busy: boolean; onPress: () => void }) {
+  const c = usePalette();
+  return (
+    <Pressable onPress={onPress} disabled={busy} accessibilityRole="button" android_ripple={{ color: c.fill }}
+      style={({ pressed }) => [st.more, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
+      {busy ? <ActivityIndicator size="small" color={c.tint} /> : <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>{title}</T>}
+    </Pressable>
+  );
+}
+
 const st = StyleSheet.create({
+  seg: { flexDirection: 'row', marginHorizontal: 16, marginTop: 12, borderRadius: 9, padding: 2 },
+  segBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 6, borderRadius: 7 },
+  more: { alignItems: 'center', justifyContent: 'center', paddingVertical: 12, minHeight: 44 },
   walk: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
   leg: { flexDirection: 'row', paddingVertical: 8 },
   dotBig: { width: 14, height: 14, borderRadius: 7, borderWidth: 3.5 },

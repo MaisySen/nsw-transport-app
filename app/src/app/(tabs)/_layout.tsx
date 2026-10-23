@@ -6,7 +6,7 @@ export default function TabsLayout() {
   return (
     <NativeTabs tintColor={c.tint} labelVisibilityMode="labeled">
       <NativeTabs.Trigger labelVisibilityMode="labeled" name="home">
-        <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>Trips</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: 'house', selected: 'house.fill' }} md="home" />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger labelVisibilityMode="labeled" name="search">

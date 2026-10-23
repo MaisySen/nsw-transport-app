@@ -3,8 +3,9 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import type { Place } from './types';
 
 export type RecentTrip = { from: Place; to: Place; at: number };
-type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; watchedTrips: Record<string, string> };
-let state: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {} };
+export type Places = { home?: Place; work?: Place };
+type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; watchedTrips: Record<string, string>; places: Places };
+let state: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {}, places: {} };
 let loaded = false;
 const listeners = new Set<() => void>();
 
@@ -52,6 +53,13 @@ export const store = {
   },
   removeRecentTrip(fromId: string, toId: string) {
     state = { ...state, recentTrips: (state.recentTrips || []).filter((t) => !(t.from.id === fromId && t.to.id === toId)) };
+    save();
+  },
+  /** Home and work stops for the Home to Work and Work to Home trips. */
+  setPlace(kind: 'home' | 'work', p: Place | null) {
+    const places = { ...(state.places || {}) };
+    if (p) places[kind] = { id: p.id, name: p.name }; else delete places[kind];
+    state = { ...state, places };
     save();
   },
   markWatched(tripKey: string, watchId: string) { state = { ...state, watchedTrips: { ...state.watchedTrips, [tripKey]: watchId } }; save(); },

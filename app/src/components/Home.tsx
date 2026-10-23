@@ -44,6 +44,39 @@ function useHomeLive<T>(load: (refresh: boolean) => Promise<T>, deps: any[]) {
   return live;
 }
 
+// ---------- high priority alerts reported by the trip cards ----------
+
+const highAlerts = new Map<string, { title: string; url?: string; open: () => void }[]>();
+const alertSubs = new Set<() => void>();
+let alertSnap: { title: string; url?: string; open: () => void }[] = [];
+function reportHigh(key: string, list: { title: string; url?: string; open: () => void }[]) {
+  const before = (highAlerts.get(key) || []).map((a) => a.title).join('|');
+  if (list.length) highAlerts.set(key, list); else highAlerts.delete(key);
+  if (before === list.map((a) => a.title).join('|')) return;
+  const seen = new Set<string>();
+  alertSnap = [...highAlerts.values()].flat().filter((a) => (seen.has(a.title) ? false : (seen.add(a.title), true)));
+  alertSubs.forEach((f) => f());
+}
+/** Unique high priority alerts across the trips on Home, for the banner. */
+export function useHighAlerts() {
+  return useSyncExternalStore((l) => { alertSubs.add(l); return () => { alertSubs.delete(l); }; }, () => alertSnap, () => alertSnap);
+}
+
+export function AlertBanner() {
+  const c = usePalette();
+  const list = useHighAlerts();
+  if (!list.length) return null;
+  const a = list[0];
+  return (
+    <Pressable onPress={() => (a.url ? Linking.openURL(a.url).catch(a.open) : a.open())} accessibilityRole="button"
+      style={({ pressed }) => [s.banner, { backgroundColor: c.orange + '26', opacity: pressed ? 0.7 : 1 }]}>
+      <Icon name={I.warn} size={16} color={c.orange} style={{ marginTop: 1 }} />
+      <T kind="sub" numberOfLines={2} style={{ flex: 1, marginLeft: 10, color: c.text }}>{a.title}</T>
+      {list.length > 1 ? <T kind="foot" style={{ marginLeft: 8, color: c.lateText, fontWeight: '600' }}>+{list.length - 1}</T> : null}
+    </Pressable>
+  );
+}
+
 // ---------- small formatters ----------
 
 /** "7:52" with no am or pm, Sydney time. */
@@ -68,6 +101,14 @@ function cd(t: number, now: number): { big: string; unit: string } {
   if (m < 60) return { big: String(m), unit: 'min' };
   return { big: hm(t), unit: '' };
 }
+
+/** Countdown chip colour by time left: red at 3 min or less, amber 4 to 9, green 10 plus, grey when cancelled. */
+export function cdColor(t: number, now: number, cancelled: boolean, c: { red: string; green: string; text3: string }) {
+  if (cancelled) return c.text3;
+  const m = Math.floor((t - now) / 60000);
+  return m <= 3 ? c.red : m <= 9 ? AMBER : c.green;
+}
+const AMBER = '#F5A300';
 
 const plat = (p?: string | null) => (p ? p.replace(/^Platform\s*/i, 'Plat ') : '');
 
@@ -161,7 +202,7 @@ function statusOf(j: Journey, now: number): Status {
   return { text: 'Scheduled', tone: 'grey' };
 }
 
-export type TripItem = { key: string; from: Place; to: Place; kind: 'commute' | 'saved' | 'recent'; name?: string };
+export type TripItem = { key: string; from: Place; to: Place; kind: 'commute' | 'saved' | 'recent' | 'place'; name?: string; tag?: string };
 
 export function TripBoard({ trip, now }: { trip: TripItem; now: number }) {
   const c = usePalette();
@@ -181,16 +222,27 @@ export function TripBoard({ trip, now }: { trip: TripItem; now: number }) {
   const arrs = js.map(arrOf);
   const alerts = new Set<string>();
   js.forEach((j) => j.legs.forEach((l) => (l.alerts || []).forEach((a: any) => alerts.add(typeof a === 'string' ? a : a.title))));
+  const highKey = (data?.journeys || []).slice(0, 3).map((j) => j.legs.map((l) => (l.alerts || []).map((a: any) => (typeof a === 'string' ? '' : `${a.priority}:${a.title}`)).join()).join()).join();
 
   const fromName = shortName(from.name).replace(/ Station$/, ''), toName = shortName(to.name).replace(/ Station$/, '');
   const route = `${fromName} to ${toName}`;
   const custom = trip.name && trip.name.toLowerCase() !== route.toLowerCase() ? trip.name.charAt(0).toUpperCase() + trip.name.slice(1) : '';
   const open = (pick?: number) => router.push({ pathname: '/trip', params: { from: from.id, fromName: from.name, to: to.id, toName: to.name, ...(pick != null ? { pick: String(pick) } : {}) } });
-  const glyph = trip.kind === 'saved' ? I.star : trip.kind === 'commute' ? I.clock : undefined;
+  const glyph = trip.kind === 'saved' ? I.star : trip.kind === 'commute' ? I.clock : trip.kind === 'place' ? (trip.tag === 'To work' ? I.briefcase : I.home) : undefined;
   const removeRecent = trip.kind === 'recent' ? () => Alert.alert(route, 'Remove this trip from Home?', [
     { text: 'Cancel', style: 'cancel' },
     { text: 'Remove', style: 'destructive', onPress: () => store.removeRecentTrip(from.id, to.id) },
   ]) : undefined;
+
+  useEffect(() => {
+    const list: { title: string; url?: string; open: () => void }[] = [];
+    for (const j of (data?.journeys || []).slice(0, 3)) for (const l of j.legs) for (const a of (l.alerts || []) as any[]) {
+      if (typeof a !== 'string' && /high/i.test(a.priority || '') && !list.some((x) => x.title === a.title)) list.push({ title: a.title, url: a.url, open: () => open() });
+    }
+    reportHigh(trip.key, list);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highKey, trip.key]);
+  useEffect(() => () => reportHigh(trip.key, []), [trip.key]);
 
   const stripe = (() => { const l = js.map(firstLeg).find(Boolean); return l ? l.color || modeColor[l.mode || 'train'] : c.tint; })();
 
@@ -199,7 +251,7 @@ export function TripBoard({ trip, now }: { trip: TripItem; now: number }) {
       <View style={{ flexDirection: 'row' }}>
         <View style={{ width: 4, backgroundColor: stripe }} />
         <View style={{ flex: 1 }}>
-          <CardHeader title={custom ? `${custom}: ${route}` : route} glyph={glyph} glyphColor={trip.kind === 'saved' ? c.yellow : c.tint} onPress={() => open()} onLongPress={removeRecent}
+          <CardHeader title={custom ? `${custom}: ${route}` : route} glyph={glyph} glyphColor={trip.kind === 'saved' ? c.yellow : c.tint} right={trip.tag} onPress={() => open()} onLongPress={removeRecent}
             sub={alerts.size ? (
               <Pressable onPress={() => open()} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
                 <Icon name={I.warn} size={11} color={c.orange} />
@@ -208,7 +260,7 @@ export function TripBoard({ trip, now }: { trip: TripItem; now: number }) {
             ) : null} />
         </View>
       </View>
-      {!data ? <T kind="foot" tone="text2" style={s.note}>{error || 'Loading live times'}</T> : null}
+      {!data ? <T kind="foot" tone="text2" style={s.note}>{error ? 'Live times unavailable right now, trying again' : 'Loading live times'}</T> : null}
       {data && !js.length ? <T kind="foot" tone="text2" style={s.note}>{data.error || 'No more services today'}</T> : null}
       {js.map((j, i) => (
         <View key={legKey(firstLeg(j)) + i}>
@@ -220,26 +272,42 @@ export function TripBoard({ trip, now }: { trip: TripItem; now: number }) {
   );
 }
 
-/** TripView style service row: countdown block in the line colour, leave time and status, arrive time. */
-export function ServiceRow({ j, now, arrive, beaten, onPress }: { j: Journey; now: number; arrive: number; beaten?: boolean; onPress: () => void }) {
+/** Up to 3 small person icons from the first leg's occupancy level. */
+function Crowd({ l }: { l?: Leg }) {
+  const c = usePalette();
+  const lv = (l?.occupancy as any)?.level;
+  if (!lv) return null;
+  const n = Math.max(1, Math.min(3, Number(lv) || 1));
+  return (
+    <View style={{ flexDirection: 'row', marginRight: 4 }} accessibilityLabel={(l?.occupancy as any)?.text || `${n} of 3 full`}>
+      {[1, 2, 3].map((i) => <Icon key={i} name={I.person} size={10} color={i <= n ? c.text2 : c.text3} style={{ opacity: i <= n ? 1 : 0.45, marginLeft: -1 }} />)}
+    </View>
+  );
+}
+
+/** TripView style service row: countdown chip coloured by time left, leave time and status, arrive time with line badges. */
+export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j: Journey; now: number; arrive: number; beaten?: boolean; onPress: () => void; showTravel?: boolean }) {
   const c = usePalette();
   const l = firstLeg(j);
   const dep = depOf(j);
   const stt = statusOf(j, now);
-  const t = cd(dep, now);
+  const t = showTravel ? { big: String(j.durationMin), unit: 'min' } : cd(dep, now);
   const tone = stt.tone === 'live' ? c.green : stt.tone === 'late' ? c.orange : stt.tone === 'red' ? c.red : c.text3;
   const toneText = stt.tone === 'live' ? c.liveText : stt.tone === 'late' ? c.lateText : stt.tone === 'red' ? c.red : c.text2;
   const legs = j.legs.filter((x) => x.kind === 'transit');
   const last = legs[legs.length - 1];
-  const block = l?.color || modeColor[l?.mode || 'train'];
-  const lines = Array.from(new Set(legs.map((x) => x.line).filter(Boolean))).join(', ');
-  const boardAt = [shortName(l?.from || '').replace(/ Station$/, ''), plat(l?.fromPlatform)].filter(Boolean).join(', ');
   const cancelled = stt.tone === 'red';
+  const chip = showTravel ? (cancelled ? c.text3 : '#8E8E93') : cdColor(dep, now, cancelled, c);
+  const badges: Leg[] = [];
+  for (const x of legs) if (x.line && !badges.some((b) => b.line === x.line)) badges.push(x);
+  const changes = j.changes || Math.max(0, legs.length - 1);
+  const boardAt = [shortName(l?.from || '').replace(/ Station$/, ''), plat(l?.fromPlatform)].filter(Boolean).join(', ');
+  const bigSize = t.unit ? 22 : t.big === 'Now' ? 16 : 13;
   return (
     <Pressable onPress={onPress} android_ripple={{ color: c.fill }} accessibilityLabel={`Leaves ${hm(dep)}, ${t.big} ${t.unit}, arrives ${hm(arrive)}, ${stt.text}`}
-      style={({ pressed }) => [s.svc, beaten && { opacity: 0.45 }, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
-      <View style={[s.block, { backgroundColor: cancelled ? c.text3 : block }]}>
-        <Text allowFontScaling={false} style={{ color: '#fff', fontSize: t.unit ? 22 : t.big === 'Now' ? 17 : 15, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }} numberOfLines={1} adjustsFontSizeToFit>{t.big}</Text>
+      style={({ pressed }) => [s.svc, (beaten || dep < now - 30000) && { opacity: 0.45 }, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
+      <View style={[s.block, { backgroundColor: chip }]}>
+        <Text allowFontScaling={false} style={{ color: '#fff', fontSize: bigSize, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }} numberOfLines={1} adjustsFontSizeToFit>{t.big}</Text>
         {t.unit ? <Text allowFontScaling={false} style={{ color: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: '600', marginTop: -2 }}>{t.unit}</Text> : null}
       </View>
       <View style={{ flex: 1, minWidth: 0, marginLeft: 12 }}>
@@ -249,13 +317,30 @@ export function ServiceRow({ j, now, arrive, beaten, onPress }: { j: Journey; no
           <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: tone, marginRight: 5 }} />
           <T kind="foot" numberOfLines={1} style={{ color: toneText, flexShrink: 1 }}>{stt.text}</T>
         </View>
+        {l?.platformChangedFrom ? <T kind="foot" numberOfLines={1} style={{ color: c.lateText, marginTop: 1 }}>Platform changed from {plat(l.platformChangedFrom)}</T> : null}
       </View>
-      <View style={{ alignItems: 'flex-end', marginLeft: 8, maxWidth: '40%' }}>
-        <T kind="foot" tone="text2" numberOfLines={1}>{shortName(last?.to || '').replace(/ Station$/, '')}</T>
+      <View style={{ alignItems: 'flex-end', marginLeft: 8, maxWidth: '44%' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+          {badges.slice(0, 3).map((b, i) => <MiniBadge key={`${b.line}${i}`} line={b.line} color={b.color || modeColor[b.mode || 'train']} />)}
+          {changes ? <T kind="foot" tone="text2" numberOfLines={1}>{` \u00b7 ${changes} change${changes > 1 ? 's' : ''}`}</T> : null}
+        </View>
         <Text maxFontSizeMultiplier={1.4} style={[font.title3, { color: c.text, fontVariant: ['tabular-nums'] }]}>{hm(arrive)}</Text>
-        <T kind="foot" tone="text2" numberOfLines={1} style={{ fontVariant: ['tabular-nums'] }}>{[lines, `${j.durationMin} min`].filter(Boolean).join(' \u00b7 ')}</T>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Crowd l={l} />
+          <T kind="foot" tone="text2" numberOfLines={1} style={{ fontVariant: ['tabular-nums'] }}>{j.durationMin} min</T>
+        </View>
       </View>
     </Pressable>
+  );
+}
+
+/** Small line badge for the right column: "T1" on the line colour. */
+function MiniBadge({ line, color }: { line?: string; color: string }) {
+  if (!line) return null;
+  return (
+    <View style={{ backgroundColor: color, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, minWidth: 22, alignItems: 'center' }}>
+      <Text allowFontScaling={false} numberOfLines={1} style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{line}</Text>
+    </View>
   );
 }
 
@@ -266,7 +351,8 @@ function groupDepartures(items: Departure[], now: number): Group[] {
   const out: Group[] = [];
   const by = new Map<string, Group>();
   const ok = items
-    .filter((d) => !d.cancelled && bestTime(d.planned, d.realtime ? d.estimated : null) > now - 30000)
+    // Skip services already gone: the departures feed keeps ones that left up to a minute ago.
+    .filter((d) => !d.cancelled && bestTime(d.planned, d.realtime ? d.estimated : null) > now)
     .sort((a, b) => bestTime(a.planned, a.realtime ? a.estimated : null) - bestTime(b.planned, b.realtime ? b.estimated : null));
   for (const d of ok) {
     const k = `${d.line}|${d.dest}`;
@@ -289,7 +375,7 @@ export function StopBoard({ stop, now, starred, distance }: { stop: Place; now: 
     <Card>
       <CardHeader title={name} glyph={starred ? I.star : undefined} glyphColor={c.yellow} right={distText(distance)}
         onPress={() => router.push({ pathname: '/stop/[id]', params: { id: stop.id, name: data?.stop?.name || stop.name } })} />
-      {!data ? <T kind="foot" tone="text2" style={s.note}>{error || 'Loading live times'}</T> : null}
+      {!data ? <T kind="foot" tone="text2" style={s.note}>{error ? 'Live times unavailable right now, trying again' : 'Loading live times'}</T> : null}
       {data && !groups.length ? <T kind="foot" tone="text2" style={s.note}>No more services right now</T> : null}
       {groups.map(({ d, next }, i) => {
         const t = cd(bestTime(d.planned, d.realtime ? d.estimated : null), now);
@@ -410,13 +496,31 @@ export function useNearby() {
 export function SearchField() {
   const c = usePalette();
   return (
-    <Pressable accessibilityRole="search" accessibilityLabel="Search for a stop, station or trip"
+    <Pressable accessibilityRole="search" accessibilityLabel="Where to?"
       onPress={() => router.navigate({ pathname: '/search', params: { focus: String(Date.now()) } })}
       style={[s.search, { backgroundColor: Platform.OS === 'android' ? c.card : c.fill, borderRadius: Platform.OS === 'android' ? 28 : 10, height: Platform.OS === 'android' ? 52 : undefined }]}>
       <Icon name={I.search} size={Platform.OS === 'android' ? 20 : 17} color={c.text2} />
-      <T kind="body" style={{ color: c.text2, marginLeft: 8, flex: 1 }} numberOfLines={1}>Stop, station or trip</T>
+      <T kind="body" style={{ color: c.text2, marginLeft: 8, flex: 1 }} numberOfLines={1}>Where to?</T>
     </Pressable>
   );
+}
+
+/** "Add home" and "Add work" buttons, shown until both are set. */
+export function PlaceBar({ places }: { places: { home?: Place; work?: Place } }) {
+  const c = usePalette();
+  if (places.home && places.work) return null;
+  const btn = (k: 'home' | 'work') => {
+    const p = places[k];
+    const label = p ? shortName(p.name).replace(/ Station$/, '') : k === 'home' ? 'Add home' : 'Add work';
+    return (
+      <Pressable key={k} onPress={() => router.push({ pathname: '/add-trip', params: { place: k } })} accessibilityRole="button" android_ripple={{ color: c.fill }}
+        style={({ pressed }) => [s.place, { backgroundColor: c.card, opacity: pressed && Platform.OS !== 'android' ? 0.6 : 1 }]}>
+        <View style={[s.actionIcon, { backgroundColor: c.fill, marginRight: 10 }]}><Icon name={k === 'home' ? I.home : I.briefcase} size={14} color={c.tint} /></View>
+        <T kind="body" numberOfLines={1} style={{ flex: 1, color: p ? c.text : c.tint }}>{label}</T>
+      </Pressable>
+    );
+  };
+  return <View style={{ flexDirection: 'row', gap: 10, marginHorizontal: 16, marginTop: 12 }}>{btn('home')}{btn('work')}</View>;
 }
 
 /** Small "Live 07:55" stamp with a green dot. */
@@ -440,5 +544,7 @@ const s = StyleSheet.create({
   dep: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, minHeight: 46 },
   action: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, minHeight: 48 },
   actionIcon: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  banner: { flexDirection: 'row', alignItems: 'flex-start', marginHorizontal: 16, marginTop: 12, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 12 },
+  place: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, borderRadius: 12, minHeight: 46 },
   search: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 6, paddingHorizontal: 10, paddingVertical: 8 },
 });

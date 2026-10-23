@@ -32,6 +32,8 @@ export const I = {
   trash: { ios: 'trash', android: 'delete' },
   route: { ios: 'point.topleft.down.to.point.bottomright.curvepath', android: 'route' },
   plus: { ios: 'plus', android: 'add' },
+  briefcase: { ios: 'briefcase.fill', android: 'work' },
+  person: { ios: 'person.fill', android: 'person' },
   dot: { ios: 'circle.fill', android: 'circle' },
 } satisfies Record<string, IconName>;
 

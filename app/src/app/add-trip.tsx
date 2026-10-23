@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { router, Stack } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
 import { usePalette, radius } from '@/lib/theme';
 import { MODE_BY_CODE, shortName } from '@/lib/format';
-import { useStore } from '@/lib/store';
+import { store, useStore } from '@/lib/store';
 import type { Place, SearchItem } from '@/lib/types';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { nearbyStops, pullHome } from '@/components/Home';
@@ -51,6 +51,9 @@ function useNearbyIfAllowed() {
 export default function AddTrip() {
   const c = usePalette();
   const st = useStore();
+  // "Add home" and "Add work" on Home reuse this screen as a one field stop picker.
+  const { place } = useLocalSearchParams<{ place?: string }>();
+  const placeKind = place === 'home' || place === 'work' ? place : null;
   const [field, setField] = useState<Field>('from');
   const [from, setFrom] = useState<Place | null>(null);
   const [to, setTo] = useState<Place | null>(null);
@@ -69,6 +72,12 @@ export default function AddTrip() {
 
   const pick = (p: Place) => {
     Haptics.selectionAsync();
+    if (placeKind) {
+      store.setPlace(placeKind, { id: p.id, name: p.name });
+      Keyboard.dismiss();
+      router.back();
+      return;
+    }
     if (field === 'from') {
       setFrom(p); setFromText(shortName(p.name));
       if (!to) { setField('to'); setTimeout(() => toRef.current?.focus(), 50); } else Keyboard.dismiss();
@@ -110,9 +119,9 @@ export default function AddTrip() {
   return (
     <>
       <Stack.Screen options={{
-        title: 'Add a trip',
+        title: placeKind === 'home' ? 'Add home' : placeKind === 'work' ? 'Add work' : 'Add a trip',
         headerLeft: Platform.OS === 'ios' ? () => <Pressable hitSlop={10} onPress={() => router.back()}><T kind="body" tone="tint">Cancel</T></Pressable> : undefined,
-        headerRight: () => (
+        headerRight: placeKind ? () => null : () => (
           <Pressable hitSlop={10} disabled={!ready || saving} onPress={save} accessibilityLabel="Save trip">
             {saving ? <ActivityIndicator color={c.tint} /> : <T kind="headline" style={{ color: ready ? c.tint : c.text3 }}>Save</T>}
           </Pressable>
@@ -121,23 +130,23 @@ export default function AddTrip() {
       <Screen>
         <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
           <View style={s.fields}>
-            <View style={s.rail}>
+            {placeKind ? <Icon name={placeKind === 'home' ? I.home : I.briefcase} size={16} color={c.tint} style={{ marginRight: 10 }} /> : <View style={s.rail}>
               <View style={[s.dot, { borderColor: c.tint }]} />
               <View style={[s.line, { backgroundColor: c.tint }]} />
               <View style={[s.dot, { backgroundColor: c.tint, borderColor: c.tint }]} />
-            </View>
+            </View>}
             <View style={{ flex: 1 }}>
-              <TextInput ref={fromRef} value={fromText} placeholder="From" placeholderTextColor={c.text3} onFocus={() => setField('from')}
+              <TextInput ref={fromRef} value={fromText} placeholder={placeKind === 'home' ? 'Your home stop or station' : placeKind === 'work' ? 'Your work stop or station' : 'From'} placeholderTextColor={c.text3} onFocus={() => setField('from')}
                 onChangeText={(t) => { setFromText(t); setFrom(null); }} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing"
                 style={[font.body, s.input, noOutline, { color: c.text, fontWeight: field === 'from' ? '600' : '400' }]} />
-              <Sep inset={0} />
-              <TextInput ref={toRef} value={toText} placeholder="To" placeholderTextColor={c.text3} onFocus={() => setField('to')}
+              {placeKind ? null : <Sep inset={0} />}
+              {placeKind ? null : <TextInput ref={toRef} value={toText} placeholder="To" placeholderTextColor={c.text3} onFocus={() => setField('to')}
                 onChangeText={(t) => { setToText(t); setTo(null); }} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing"
-                style={[font.body, s.input, noOutline, { color: c.text, fontWeight: field === 'to' ? '600' : '400' }]} />
+                style={[font.body, s.input, noOutline, { color: c.text, fontWeight: field === 'to' ? '600' : '400' }]} />}
             </View>
-            <Pressable hitSlop={8} accessibilityLabel="Swap from and to" onPress={() => { setFrom(to); setTo(from); setFromText(toText); setToText(fromText); }} style={{ paddingLeft: 10 }}>
+            {placeKind ? null : <Pressable hitSlop={8} accessibilityLabel="Swap from and to" onPress={() => { setFrom(to); setTo(from); setFromText(toText); setToText(fromText); }} style={{ paddingLeft: 10 }}>
               <Icon name={I.swap} size={18} color={c.tint} />
-            </Pressable>
+            </Pressable>}
           </View>
         </View>
 

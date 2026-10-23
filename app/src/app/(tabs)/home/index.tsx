@@ -9,7 +9,7 @@ import { shortName } from '@/lib/format';
 import type { Place } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
 import { watchLine } from '@/components/Cards';
-import { ActionRow, HomeSection, LiveTag, pullHome, SearchField, StopBoard, TripBoard, TripItem, useNearby } from '@/components/Home';
+import { ActionRow, AlertBanner, HomeSection, LiveTag, PlaceBar, pullHome, SearchField, StopBoard, TripBoard, TripItem, useNearby } from '@/components/Home';
 import { Button, Empty, Row, Section, Screen, Sep, T } from '@/components/ui';
 
 const POPULAR: Place[] = [
@@ -17,6 +17,15 @@ const POPULAR: Place[] = [
   { id: '200070', name: 'Town Hall Station' },
   { id: '213510', name: 'Strathfield Station' },
 ];
+
+/** Hour of the day in Sydney, 0 to 23. */
+function sydneyHour(t: number) {
+  try {
+    return Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Australia/Sydney' }).format(new Date(t))) % 24;
+  } catch {
+    return new Date(t).getHours();
+  }
+}
 
 function AddButton() {
   const c = usePalette();
@@ -47,15 +56,22 @@ export default function Home() {
   const activeWatches = (d?.watches.items || []).filter((w: any) => w.active);
   const sugg: any = d?.commutes.suggestion;
 
-  // Your trips: commutes, saved trips, then up to 2 recent A to B trips. Max 4.
+  // Trips: Home to Work and Work to Home first (the one for this time of day on top), then commutes, saved trips and up to 2 recent A to B trips.
   const trips: TripItem[] = [];
+  const places = st.places || {};
   const seen = new Set<string>();
   const add = (t: TripItem) => {
     const k = `${t.from.id}>${t.to.id}`;
-    if (seen.has(k) || trips.length >= 4) return;
+    if (seen.has(k) || trips.length >= (places.home && places.work ? 5 : 4)) return;
     seen.add(k);
     trips.push({ ...t, key: k });
   };
+  if (places.home && places.work && places.home.id !== places.work.id) {
+    const toWork: TripItem = { key: '', from: places.home, to: places.work, kind: 'place', tag: 'To work' };
+    const toHome: TripItem = { key: '', from: places.work, to: places.home, kind: 'place', tag: 'To home' };
+    const morning = sydneyHour(now) < 12;
+    (morning ? [toWork, toHome] : [toHome, toWork]).forEach(add);
+  }
   (d?.commutes.items || []).filter((x) => x.active).forEach((cm) => add({ key: '', from: cm.from, to: cm.to, kind: 'commute', name: cm.name }));
   (d?.saved.items || []).forEach((s) => add({ key: '', from: s.from, to: s.to, kind: 'saved', name: s.name }));
   let recentCount = 0;
@@ -94,7 +110,7 @@ export default function Home() {
   return (
     <>
       <Stack.Screen options={{
-        title: 'Home',
+        title: 'Trips',
         headerRight: () => (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <LiveTag />
@@ -104,8 +120,8 @@ export default function Home() {
       }} />
       <Screen refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} />}>
         <SearchField />
-
-        {firstLaunch ? <ActionRow icon={I.plus} title="Add a trip" onPress={() => router.push('/add-trip')} /> : null}
+        <PlaceBar places={places} />
+        <AlertBanner />
 
         {activeWatches.length ? (
           <Section title="Watching now">
@@ -136,12 +152,10 @@ export default function Home() {
           </Section>
         ) : null}
 
-        {trips.length ? (
-          <HomeSection title="Your trips">
-            {trips.map((t) => <TripBoard key={t.key} trip={t} now={now} />)}
-            <ActionRow icon={I.plus} title="Add a trip" onPress={() => router.push('/add-trip')} />
-          </HomeSection>
-        ) : null}
+        <View style={{ marginTop: 6 }}>
+          {trips.map((t) => <TripBoard key={t.key} trip={t} now={now} />)}
+          {d && !trips.length ? <ActionRow icon={I.plus} title="Add a trip" onPress={() => router.push('/add-trip')} /> : null}
+        </View>
 
         {stops.length ? (
           <HomeSection title="Recent stops">
