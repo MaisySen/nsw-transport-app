@@ -36,21 +36,33 @@ struct TripPlannerView: View {
             }
 
             if from != nil && to != nil {
-                Section {
-                    UpdatedLine(updated: updated, isLoading: loading, liveCount: nil)
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
-                }
                 if let error, data == nil {
                     Section { ContentUnavailableView("No trips found", systemImage: "point.topleft.down.to.point.bottomright.curvepath", description: Text(error)) }
                 }
                 if let journeys = data?.journeys {
-                    Section(data?.tomorrow == true ? "Tomorrow" : "Next trips") {
+                    let alerts = Self.uniqueAlerts(journeys)
+                    if !alerts.isEmpty {
+                        Section {
+                            NavigationLink { AlertsList(alerts: alerts) } label: {
+                                Label {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Service information").font(.body.weight(.semibold))
+                                        Text(alerts.count == 1 ? "1 alert. Tap for details." : "\(alerts.count) alerts. Tap for details.")
+                                            .font(.footnote)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                } icon: {
+                                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                                }
+                            }
+                        }
+                    }
+                    Section {
                         ForEach(journeys) { j in
                             NavigationLink {
                                 JourneyDetailView(journey: j, from: from!, to: to!)
                             } label: {
-                                JourneyRow(journey: j)
+                                ServiceRow(journey: j, status: ServiceStatus.of(j), dimmed: HomeBoard.isBeaten(j, among: journeys))
                             }
                             .accessibilityIdentifier("journey")
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -60,6 +72,10 @@ struct TripPlannerView: View {
                                 .tint(.indigo)
                             }
                         }
+                    } header: {
+                        Text(data?.tomorrow == true ? "Tomorrow" : "Next trips")
+                    } footer: {
+                        UpdatedLine(updated: updated, isLoading: loading, liveCount: nil)
                     }
                 }
             } else {
@@ -84,6 +100,16 @@ struct TripPlannerView: View {
         .onChange(of: from) { _, _ in data = nil; Task { await load() } }
         .onChange(of: to) { _, _ in data = nil; Task { await load() } }
         .appHaptics()
+    }
+
+    /// Alerts across all journeys, each once.
+    static func uniqueAlerts(_ journeys: [Journey]) -> [ServiceAlert] {
+        var seen = Set<String>()
+        var out: [ServiceAlert] = []
+        for a in journeys.flatMap({ $0.transitLegs.flatMap { $0.alerts ?? [] } }) where seen.insert(a.id).inserted {
+            out.append(a)
+        }
+        return out
     }
 
     private func load() async {
