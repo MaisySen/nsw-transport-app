@@ -207,7 +207,7 @@ struct ServiceSheet: View {
                             Task { await LiveActivities.shared.start(key: key, service: data) }
                             store.success()
                         } label: {
-                            Label("Lock screen", systemImage: "lock.iphone")
+                            Label("Lock Screen", systemImage: "lock.iphone")
                                 .labelStyle(.titleOnly)
                                 .lineLimit(1)
                                 .frame(maxWidth: .infinity)
@@ -237,6 +237,7 @@ struct ServiceSheet: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .accessibilityIdentifier("serviceSheet")
             .toolbar(.hidden, for: .navigationBar)
         }
     }

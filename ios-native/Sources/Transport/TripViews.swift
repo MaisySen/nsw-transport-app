@@ -18,7 +18,9 @@ struct TripPlannerView: View {
         List {
             Section {
                 PlaceField(label: "From", place: from) { picking = .from }
+                    .accessibilityIdentifier("fromField")
                 PlaceField(label: "To", place: to) { picking = .to }
+                    .accessibilityIdentifier("toField")
             } footer: {
                 HStack {
                     Spacer()
@@ -50,6 +52,7 @@ struct TripPlannerView: View {
                             } label: {
                                 JourneyRow(journey: j)
                             }
+                            .accessibilityIdentifier("journey")
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button {
                                     Task { await store.watch(j.watchRequest(device: store.device, profile: store.api.profile, from: from!, to: to!)) }
@@ -166,6 +169,7 @@ struct StopPicker: View {
 
     private func row(_ s: StopRef) -> some View {
         Button { onPick(s) } label: { StopRow(stop: s) }
+            .accessibilityIdentifier("pickResult")
             .buttonStyle(.plain)
     }
 }

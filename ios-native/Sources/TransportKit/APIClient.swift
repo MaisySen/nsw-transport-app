@@ -21,7 +21,7 @@ public enum APIError: LocalizedError, Sendable {
 /// Talks to the live Transport Bot backend. No keys live in the app: the server holds them.
 public struct TransportAPI: Sendable {
     public static let defaultBase = URL(string: "https://nsw-transport-bot.sites.tab.bot")!
-    public static let shared = TransportAPI()
+    public static let shared = TransportAPI(profile: UserDefaults.standard.string(forKey: "apiProfile") ?? "bidur")
 
     public var base: URL
     public var profile: String

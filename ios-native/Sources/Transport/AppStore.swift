@@ -44,6 +44,10 @@ final class AppStore {
             d.set(id, forKey: "device")
             device = id
         }
+        if d.bool(forKey: "uiTestReset") {
+            // UI tests start from a clean device.
+            for k in ["starred", "recents", "haptics", "refresh", "seenNotes"] { d.removeObject(forKey: k) }
+        }
         starred = Persist.load([StopRef].self, "starred") ?? []
         recents = Persist.load([StopRef].self, "recents") ?? []
         hapticsOn = d.object(forKey: "haptics") as? Bool ?? true

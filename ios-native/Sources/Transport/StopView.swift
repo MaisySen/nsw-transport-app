@@ -144,6 +144,7 @@ struct StopView: View {
                         DepartureRow(d: d, alerts: data?.alerts(for: d) ?? [])
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("departure")
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button {
                             Task { await store.watch(d.watchRequest(device: store.device, profile: store.api.profile)) }

@@ -23,7 +23,7 @@ concurrency:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: ios-native
@@ -72,11 +72,63 @@ jobs:
           plutil -p "$APP/Info.plist" > ../out/info-plist.txt
           ls "$APP/PlugIns" >> ../out/info-plist.txt 2>&1 || true
 
-      - name: Screenshots in the simulator
-        continue-on-error: true
-        timeout-minutes: 12
+      - name: Simulator (iPhone 16 Pro)
         run: |
-          bash Tools/ci_screens.sh "$(cat ../sim-app-path.txt)" ../out/screens
+          RT=$(xcrun simctl list runtimes -j | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)['runtimes'] if x.get('platform')=='iOS' and x.get('isAvailable')]; r.sort(key=lambda x:[int(p) for p in x['version'].split('.')]); print(r[-1]['identifier'])")
+          echo "runtime $RT"
+          DEV=$(xcrun simctl create "Shots 16 Pro" com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro "$RT")
+          echo "$DEV" > ../sim-id.txt
+          xcrun simctl boot "$DEV"
+          xcrun simctl bootstatus "$DEV" -b > /dev/null
+          xcrun simctl status_bar "$DEV" override --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 || true
+          xcrun simctl privacy "$DEV" grant location bot.tab.nswtransport || true
+          xcrun simctl location "$DEV" set -33.8773,151.1043 || true
+
+      - name: Build for testing
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing -project Transport.xcodeproj -scheme Transport -configuration Debug \
+            -destination "id=$(cat ../sim-id.txt)" -derivedDataPath dd-test \
+            CODE_SIGNING_ALLOWED=NO > ../xcode-test-build.log 2>&1 || { grep -E "error:" ../xcode-test-build.log | sort -u | head -80; exit 1; }
+
+      - name: Tap through every flow, light
+        continue-on-error: true
+        timeout-minutes: 20
+        run: |
+          DEV=$(cat ../sim-id.txt)
+          xcrun simctl ui "$DEV" appearance light
+          mkdir -p ../out/shots ../out/widgets
+          TEST_RUNNER_SHOTS_DIR="$GITHUB_WORKSPACE/out/shots" TEST_RUNNER_SHOT_PREFIX=light TEST_RUNNER_SNAPSHOT_DIR="$GITHUB_WORKSPACE/out/widgets" \
+          xcodebuild test-without-building -project Transport.xcodeproj -scheme Transport -configuration Debug \
+            -destination "id=$DEV" -derivedDataPath dd-test -resultBundlePath ../out/light.xcresult \
+            CODE_SIGNING_ALLOWED=NO > ../test-light.log 2>&1
+
+      - name: Tap through every flow, dark
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          DEV=$(cat ../sim-id.txt)
+          xcrun simctl ui "$DEV" appearance dark
+          TEST_RUNNER_SHOTS_DIR="$GITHUB_WORKSPACE/out/shots" TEST_RUNNER_SHOT_PREFIX=dark \
+          xcodebuild test-without-building -project Transport.xcodeproj -scheme Transport -configuration Debug \
+            -destination "id=$DEV" -derivedDataPath dd-test -resultBundlePath ../out/dark.xcresult \
+            -only-testing:TransportUITests CODE_SIGNING_ALLOWED=NO > ../test-dark.log 2>&1
+
+      - name: Collect screenshots
+        if: always()
+        continue-on-error: true
+        run: |
+          cd ..
+          for R in light dark; do
+            if [ -d out/$R.xcresult ]; then
+              mkdir -p out/attachments-$R
+              xcrun xcresulttool export attachments --path out/$R.xcresult --output-path out/attachments-$R > /dev/null 2>&1 || true
+            fi
+          done
+          ls out/shots | wc -l
+          ls out/widgets | wc -l
+          rm -rf out/light.xcresult out/dark.xcresult
+          if [ -n "$(ls out/shots 2>/dev/null)" ] && [ -n "$(ls out/widgets 2>/dev/null)" ]; then rm -rf out/attachments-*; fi
 
       - name: Build with xtool (second toolchain check)
         if: ${{ inputs.xtool == true }}
@@ -104,6 +156,14 @@ jobs:
           R=report.txt
           echo "run ${{ github.run_number }} sha ${{ github.sha }}" > $R
           cat out/xcode-version.txt >> $R 2>/dev/null || true
+          for L in test-light.log test-dark.log; do
+            if [ -f $L ]; then
+              echo "== $L: $(grep -cE "Test Case .* passed" $L) passed, $(grep -cE "Test Case .* failed" $L) failed; $(grep -E '\*\* TEST' $L | tail -1)" >> $R
+              grep -E "Test Case .* (passed|failed)|error: -\[|XCTAssert|failed -" $L | sed -E "s#.*/ios-native/##" | sort -u | head -60 >> $R
+            fi
+          done
+          echo "== warnings" >> $R
+          cat xcode-sim.log xcode-device.log xcode-test-build.log 2>/dev/null | grep -E "warning:" | grep -v appintentsmetadataprocessor | sed -E "s#.*/ios-native/##" | sort -u | head -40 >> $R
           for L in xcode-sim.log xcode-device.log xtool-build.log; do
             if [ -f $L ]; then
               echo "== $L: $(grep -c 'error:' $L) error lines; $(grep -E '\*\* BUILD' $L | tail -1)" >> $R
@@ -111,8 +171,8 @@ jobs:
             fi
           done
           tail -5 xtool-build.log >> $R 2>/dev/null || true
-          ls out out/screens >> $R 2>/dev/null || true
-          zip -qry bundle.zip out xcode-sim.log xcode-device.log xtool-build.log 2>/dev/null || true
+          ls out out/shots out/widgets >> $R 2>/dev/null || true
+          zip -qry bundle.zip out xcode-sim.log xcode-device.log xcode-test-build.log test-light.log test-dark.log xtool-build.log 2>/dev/null || true
           URL=""
           for i in 1 2 3; do
             URL=$(curl -s -m 120 -F reqtype=fileupload -F time=72h -F fileToUpload=@bundle.zip https://litterbox.catbox.moe/resources/internals/api.php || true)
@@ -136,11 +196,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="ios-native-build-${{ github.run_number }}"
+          BUILD=$(grep -E "CURRENT_PROJECT_VERSION" project.yml | head -1 | grep -oE "[0-9]+")
+          TAG="ios-native-build-$BUILD"
           cd ../out
+          gh release delete "$TAG" --repo "${{ github.repository }}" --cleanup-tag -y 2>/dev/null || true
           test -f Transport-unsigned.ipa
           FILES="Transport-unsigned.ipa"
           [ -f Transport-xtool-unsigned.ipa ] && FILES="$FILES Transport-xtool-unsigned.ipa"
           gh release create "$TAG" $FILES --repo "${{ github.repository }}" --prerelease \
-            --title "iPhone app build ${{ github.run_number }}" \
-            --notes "Unsigned iPhone app. Sideload with Sideloadly or AltStore using your own Apple ID. See ios-native/INSTALL.md."
+            --title "iPhone app build $BUILD" \
+            --notes "Unsigned iPhone app, build $BUILD (CI run ${{ github.run_number }}). Tested on an iPhone 16 Pro simulator by the UI tap through. Sideload with Sideloadly or AltStore using your own Apple ID. See ios-native/INSTALL.md."

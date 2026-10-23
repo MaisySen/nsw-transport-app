@@ -72,6 +72,7 @@ struct SearchView: View {
                                 Image(systemName: "arrow.triangle.turn.up.right.diamond.fill").foregroundStyle(.tint)
                             }
                         }
+                        .accessibilityIdentifier("planTrip")
                     }
                     Section {
                         if nearby.isEmpty {
@@ -99,6 +100,7 @@ struct SearchView: View {
                     }
                     ForEach(results) { s in
                         NavigationLink(value: s) { StopRow(stop: s) }
+                            .accessibilityIdentifier("stopResult")
                             .swipeActions(edge: .leading) {
                                 Button { store.toggleStar(s) } label: { Label("Star", systemImage: "star.fill") }
                                     .tint(.yellow)

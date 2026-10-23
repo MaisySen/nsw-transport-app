@@ -10,7 +10,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "5"
     TARGETED_DEVICE_FAMILY: "1"
 targets:
   TransportKit:
@@ -36,6 +36,7 @@ targets:
         UIBackgroundModes: [fetch]
         BGTaskSchedulerPermittedIdentifiers: [bot.tab.nswtransport.refresh]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIRequiresFullScreen: true
         ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
           - CFBundleURLName: bot.tab.nswtransport
@@ -67,8 +68,38 @@ targets:
       - target: TransportKit
       - sdk: WidgetKit.framework
       - sdk: SwiftUI.framework
+  TransportUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [Tests/UITests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: bot.tab.nswtransport.uitests
+        TEST_TARGET_NAME: Transport
+    dependencies:
+      - target: Transport
+  TransportSnapshotTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Sources/TransportWidget
+      - Tests/Snapshots
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: bot.tab.nswtransport.snapshots
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) SNAPSHOT_TESTS"
+    dependencies:
+      - target: TransportKit
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
 schemes:
   Transport:
     build:
       targets:
         Transport: all
+    test:
+      targets:
+        - TransportUITests
+        - TransportSnapshotTests

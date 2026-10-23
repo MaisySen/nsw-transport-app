@@ -63,3 +63,10 @@ It compiles the models and API client and decodes saved and live answers for Str
 * No TestFlight or App Store until there is a paid Apple Developer account.
 
 See INSTALL.md for the install steps and the TestFlight path.
+
+## Tests
+
+The CI workflow runs two test targets on an iPhone 16 Pro simulator with live data:
+
+- TransportUITests taps through every flow (search, star, board, swipe to watch, live map and sheet, trip planner, watch and save a trip, Home, Watching, Settings, Dynamic Island) and saves a screenshot of each step, once in light and once in dark. It uses the "uitest" profile on the backend, so real saved trips are never touched.
+- TransportSnapshotTests renders the home screen widgets, the Lock Screen widgets, the Live Activity and the Dynamic Island from the widget extension's own views with ImageRenderer.

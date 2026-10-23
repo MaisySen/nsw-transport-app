@@ -2,6 +2,7 @@ import WidgetKit
 import SwiftUI
 import TransportKit
 
+#if !SNAPSHOT_TESTS
 @main
 struct TransportWidgets: WidgetBundle {
     var body: some Widget {
@@ -9,6 +10,7 @@ struct TransportWidgets: WidgetBundle {
         TripLiveActivity()
     }
 }
+#endif
 
 // MARK: Next trip widget
 
@@ -81,6 +83,12 @@ struct NextTripProvider: TimelineProvider {
                                  message: "Save a trip in the app to see it here.")
         }
         let (title, from, to) = pick
+        return await entry(title: title, from: from, to: to)
+    }
+
+    /// Live trips for one pair of stops. Also used by the snapshot tests.
+    static func entry(title: String, from: StopRef, to: StopRef) async -> NextTripEntry {
+        let api = TransportAPI.shared
         guard let r = try? await api.trip(from: from.id, to: to.id, count: 4) else {
             return NextTripEntry(date: .now, title: title, from: Naming.short(from.name), to: Naming.short(to.name),
                                  trips: [], message: "Live times will be back shortly.")
@@ -118,7 +126,11 @@ struct WidgetLineBadge: View {
 
 struct NextTripView: View {
     var entry: NextTripEntry
-    @Environment(\.widgetFamily) private var family
+    /// Set by the snapshot tests, which render the view outside a widget host.
+    var familyOverride: WidgetFamily?
+    @Environment(\.widgetFamily) private var hostFamily
+
+    private var family: WidgetFamily { familyOverride ?? hostFamily }
 
     var body: some View {
         switch family {
