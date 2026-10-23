@@ -52,7 +52,7 @@ final class AppStore {
         }
         if d.bool(forKey: "uiTestReset") {
             // UI tests start from a clean device.
-            for k in ["starred", "recents", "recentTrips", "haptics", "refresh", "seenNotes", "placeHome", "placeWork"] { d.removeObject(forKey: k) }
+            for k in ["starred", "recents", "recentTrips", "haptics", "refresh", "seenNotes", "placeHome", "placeWork", "ask.chat.v1"] { d.removeObject(forKey: k) }
         }
         starred = Persist.load([StopRef].self, "starred") ?? []
         recents = Persist.load([StopRef].self, "recents") ?? []
@@ -114,6 +114,7 @@ final class AppStore {
         case "tab":
             switch parts.count > 1 ? parts[1] : "" {
             case "search": tab = .search
+            case "ask": tab = .ask
             case "watching": tab = .watching
             case "settings": tab = .settings
             default: tab = .home

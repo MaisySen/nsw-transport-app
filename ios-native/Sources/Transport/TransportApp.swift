@@ -34,6 +34,9 @@ struct RootView: View {
             SearchView()
                 .tabItem { Label("Search", systemImage: "magnifyingglass") }
                 .tag(AppTab.search)
+            AskView()
+                .tabItem { Label("Ask", systemImage: "bubble.left.and.bubble.right.fill") }
+                .tag(AppTab.ask)
             WatchingView()
                 .tabItem { Label("Watching", systemImage: "bell.badge.fill") }
                 .badge(store.activeWatchCount)
@@ -50,5 +53,5 @@ struct RootView: View {
 }
 
 enum AppTab: Hashable {
-    case home, search, watching, settings
+    case home, search, ask, watching, settings
 }

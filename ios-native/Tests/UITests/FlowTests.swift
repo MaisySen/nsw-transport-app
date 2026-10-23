@@ -269,6 +269,22 @@ final class FlowTests: XCTestCase {
         }
     }
 
+    /// The Ask tab: a starter question gets a live answer with cards.
+    func test09Ask() {
+        app.launch()
+        tab("Ask")
+        let clear = app.navigationBars.buttons["Clear"].firstMatch
+        if clear.waitForExistence(timeout: 3) && clear.isEnabled { clear.tap(); pause(1) }
+        let starter = element("askStarter")
+        XCTAssertTrue(starter.waitForExistence(timeout: 10), "starter questions on Ask")
+        shot("ask-start")
+        starter.tap()
+        let reply = element("askReply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 40), "a reply from Ask")
+        pause(2)
+        shot("ask-answer")
+    }
+
     // MARK: Helpers
 
     private func element(_ id: String) -> XCUIElement {
