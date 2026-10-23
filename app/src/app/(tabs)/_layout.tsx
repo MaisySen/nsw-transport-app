@@ -13,6 +13,10 @@ export default function TabsLayout() {
         <NativeTabs.Trigger.Label>Search</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="magnifyingglass" md="search" />
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger labelVisibilityMode="labeled" name="ask">
+        <NativeTabs.Trigger.Label>Ask</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf={{ default: 'bubble.left.and.bubble.right', selected: 'bubble.left.and.bubble.right.fill' }} md="chat" />
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger labelVisibilityMode="labeled" name="watching">
         <NativeTabs.Trigger.Label>Watching</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: 'bell', selected: 'bell.fill' }} md="notifications" />
