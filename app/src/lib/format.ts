@@ -83,3 +83,12 @@ export function modeIcon(mode?: string): { sf: string; md: string } {
 }
 
 export const MODE_BY_CODE: Record<number, string> = { 1: 'train', 2: 'metro', 4: 'lightrail', 5: 'bus', 7: 'coach', 9: 'ferry', 11: 'school' };
+
+/** The one alert worth showing on a departure row: resolves alert ids against the board's alerts and skips low priority ones (lifts and the like). */
+export function rowAlert(alerts: any[] | undefined, board: any[] | undefined): string | null {
+  for (const a of alerts || []) {
+    const al = typeof a === 'string' ? (board || []).find((b) => b.id === a) : a;
+    if (al && al.title && al.priority !== 'low' && al.priority !== 'veryLow') return al.title;
+  }
+  return null;
+}

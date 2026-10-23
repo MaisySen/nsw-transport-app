@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius } from '@/lib/theme';
-import { clock, ms, shortName } from '@/lib/format';
+import { clock, ms, rowAlert, shortName } from '@/lib/format';
 import type { Place } from '@/lib/types';
 import { svcSpec, toggleWatch, tripKey } from '@/lib/watch';
 import { useStore } from '@/lib/store';
@@ -47,7 +47,7 @@ export function StopCard({ stop }: { stop: Place }) {
         return (
           <View key={key + i}>
             <Sep inset={16} />
-            <DepartureRow d={d} now={now} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), st.watchedTrips[key])} />
+            <DepartureRow d={d} now={now} alertText={rowAlert(d.alerts, data?.alerts)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), st.watchedTrips[key])} />
           </View>
         );
       })}

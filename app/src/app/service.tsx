@@ -39,7 +39,7 @@ export default function ServiceScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <Stack.Screen options={{ headerShown: false }} />
-      <TransitMap path={data?.path} stops={stops} vehicle={data?.vehicle || null} color={color} dark={c.dark} bottomInset={height * 0.38} />
+      <TransitMap path={data?.path} stops={stops} vehicle={data?.vehicle || null} color={color} mode={p.mode || data?.mode} dark={c.dark} bottomInset={height * 0.38} />
       <Pressable onPress={() => router.back()} style={[sx.back, { top: insets.top + 8, backgroundColor: c.card }]} hitSlop={8}>
         <Icon name={Platform.OS === 'ios' ? { ios: 'chevron.left', android: 'arrow_back' } : { ios: 'chevron.left', android: 'arrow_back' }} size={20} color={c.text} />
       </Pressable>

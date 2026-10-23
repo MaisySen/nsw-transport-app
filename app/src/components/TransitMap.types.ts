@@ -6,6 +6,7 @@ export type TransitMapProps = {
   stops?: MapStop[];
   vehicle?: { lat: number; lon: number; bearing?: number | null } | null;
   color: string;
+  mode?: string;
   dark: boolean;
   bottomInset?: number;
   style?: StyleProp<ViewStyle>;

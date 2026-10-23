@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { View } from 'react-native';
 import { Camera, GeoJSONSource, Layer, Map, Marker } from '@maplibre/maplibre-react-native';
-import { Icon, I } from './Icon';
+import { Icon, modeIconName } from './Icon';
 import { TransitMapProps, boundsOf } from './TransitMap.types';
 
 // Android: MapLibre with OpenFreeMap vector tiles (OpenStreetMap data). No Google key needed.
@@ -39,7 +39,7 @@ export default function TransitMap(p: TransitMapProps) {
       {p.vehicle ? (
         <Marker id="vehicle" lngLat={[p.vehicle.lon, p.vehicle.lat]} anchor="center">
           <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: p.color, borderWidth: 3, borderColor: '#fff', alignItems: 'center', justifyContent: 'center', elevation: 4 }}>
-            <Icon name={I.bus} size={16} color="#fff" />
+            <Icon name={modeIconName(p.mode)} size={16} color="#fff" />
           </View>
         </Marker>
       ) : null}

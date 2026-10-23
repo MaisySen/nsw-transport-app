@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { View } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
-import { Icon, I } from './Icon';
+import { Icon, modeIconName } from './Icon';
 import { TransitMapProps, boundsOf } from './TransitMap.types';
 
 // Apple Maps on iPhone: no key needed, native look, follows light and dark mode.
@@ -28,7 +28,7 @@ export default function TransitMap(p: TransitMapProps) {
       {p.vehicle ? (
         <Marker coordinate={{ latitude: p.vehicle.lat, longitude: p.vehicle.lon }} anchor={{ x: 0.5, y: 0.5 }} zIndex={10}>
           <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: p.color, borderWidth: 3, borderColor: '#fff', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } }}>
-            <Icon name={I.bus} size={16} color="#fff" />
+            <Icon name={modeIconName(p.mode)} size={16} color="#fff" />
           </View>
         </Marker>
       ) : null}

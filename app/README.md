@@ -1,56 +1,50 @@
-# Welcome to your Expo app 👋
+# Transport app (Android and iPhone)
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+The native app for the NSW Transport Bot. One Expo (React Native, TypeScript, expo-router) codebase that talks to the live backend at https://nsw-transport-bot.sites.tab.bot.
 
-## Get started
+Get it: https://nsw-transport-bot.sites.tab.bot/download/
 
-1. Install dependencies
+* Android: a signed APK, installed straight from the download page. It updates its own JavaScript over the air from the `production` channel each time it opens.
+* iPhone today: a preview in the free Expo Go app (EAS Update, `expo-go` channel).
+* iPhone for real: TestFlight, then the App Store, once there is an Apple Developer account. See NEEDS_BIDUR.md.
 
-   ```bash
-   npm install
-   ```
+## What it does
 
-2. Start the app
+* Home: your commutes, saved trips and starred stops as live cards, plus what you are watching.
+* Stop boards with a ticking countdown, Live or Scheduled on every row, platform changes, crowding and alerts. Refresh every 15 seconds while open, pull to refresh.
+* Trip planner: live leave in countdown, every leg with platform and delay, change times, tight changes flagged. Save a trip as Home or Work.
+* Service view: the vehicle on a live map (Apple Maps on iPhone, MapLibre with OpenStreetMap data on Android) with the stop list in a pull up sheet.
+* Watch anything: swipe left on a departure, or tap Watch this trip. Alerts for leave now, delays, platform changes, cancellations, connection rescue and arriving at your stop.
+* Native tab bar (UITabBar on iPhone, Material bottom navigation on Android), large titles, haptics, swipe actions, light and dark mode, Dynamic Type.
 
-   ```bash
-   npx expo start
-   ```
+## Notifications
 
-In the output, you'll find options to open the app in a
+The backend sends each alert to every place a device is registered: Web Push for the web app, and Expo push (APNs for iPhone, FCM for Android) for the native app.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+* `POST /api/push/expo` `{device, profile, token, platform, welcome}` saves an Expo push token.
+* `POST /api/push/expo/unregister` `{device, token}` removes it.
+* While the app is open it also polls `/api/watches` and shows any alert that push did not deliver as a local notification.
 
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+Android builds need a Firebase project (google-services.json and an FCM key uploaded to Expo) before closed app push works. Until then Android alerts arrive while the app is open or in the background. Expo Go on iPhone gets real push through Expo.
 
-## Get a fresh project
-
-When you're ready, run:
+## Build
 
 ```bash
-npm run reset-project
+npm install
+npx tsc --noEmit
+npx expo start                      # dev server, open in Expo Go
+./build-android.sh                  # local signed release APK (keystore and password come from ~/.nsw-secrets, never this repo)
+npx eas-cli update --branch production --environment production --platform android   # over the air update for installed APKs
+EXPO_GO=1 npx eas-cli update --branch expo-go --environment production --platform ios  # Expo Go preview (move the android folder aside first)
+npx eas-cli build -p ios --profile production   # TestFlight build, once an Apple Developer account exists
+npx eas-cli submit -p ios --profile production
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+Bundle id and package: `com.maisysen.nswtransport`. Expo project: `@bidurtab/nsw-transport`.
 
-### Other setup steps
+## Layout
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+* `src/app` routes: `(tabs)/home`, `(tabs)/search`, `(tabs)/watching`, `(tabs)/settings`, `stop/[id]`, `trip`, `service`, `watch/[id]`
+* `src/components` UI kit, transit rows, cards, platform maps (`TransitMap.ios.tsx`, `TransitMap.android.tsx`, web preview in `TransitMap.tsx`)
+* `src/lib` API client, live refresh hook, local store, push, watch helpers
+* `store/` store listing and privacy policy text

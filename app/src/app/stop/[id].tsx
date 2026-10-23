@@ -5,7 +5,7 @@ import * as Haptics from 'expo-haptics';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius } from '@/lib/theme';
-import { ms, shortName } from '@/lib/format';
+import { ms, rowAlert, shortName } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
 import { svcSpec, toggleWatch, tripKey } from '@/lib/watch';
 import { Icon, I } from '@/components/Icon';
@@ -54,7 +54,7 @@ export default function StopScreen() {
           <View style={{ marginHorizontal: 16, marginTop: 14, backgroundColor: c.card, borderRadius: radius, padding: 14, flexDirection: 'row', gap: 10 }}>
             <Icon name={I.warn} size={18} color={c.orange} />
             <View style={{ flex: 1 }}>
-              {data.alerts.slice(0, 2).map((a, i) => <T key={i} kind="sub" numberOfLines={3} style={{ marginTop: i ? 6 : 0 }}>{a.title}</T>)}
+              {[...data.alerts].sort((a, b) => (a.priority === 'low' ? 1 : 0) - (b.priority === 'low' ? 1 : 0)).slice(0, 2).map((a, i) => <T key={i} kind="sub" numberOfLines={3} style={{ marginTop: i ? 6 : 0 }}>{a.title}</T>)}
             </View>
           </View>
         ) : null}
@@ -66,7 +66,7 @@ export default function StopScreen() {
               return (
                 <View key={key + i}>
                   {i ? <Sep inset={82} /> : null}
-                  <DepartureRow d={d} now={now} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), st.watchedTrips[key])} />
+                  <DepartureRow d={d} now={now} alertText={rowAlert(d.alerts, data?.alerts)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), st.watchedTrips[key])} />
                 </View>
               );
             })}

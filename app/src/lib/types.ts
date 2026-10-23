@@ -1,13 +1,13 @@
 export type Occupancy = { level: number; text: string } | null;
 export type Vehicle = { lat: number; lon: number; bearing?: number | null; speedKmh?: number | null; ageS?: number; occupancy?: Occupancy; label?: string } | null;
-export type Alert = { title: string; url?: string; priority?: string; body?: string };
+export type Alert = { id?: string; title: string; url?: string; priority?: string; body?: string; lines?: string[] };
 export type Prediction = { delayMin: number; n: number; days: number; text: string; short: string; basis: string; kind: 'prediction' } | null;
 
 export type Departure = {
   mode: string; modeName?: string; line: string; color?: string; dest: string; destId?: string; description?: string;
   platform?: string; platformChangedFrom?: string | null; stopId: string; stopName?: string; tripId?: string;
   planned: string; estimated?: string | null; realtime: boolean; delayMin?: number | null; cancelled?: boolean;
-  wheelchair?: boolean; occupancy?: Occupancy; alerts?: Alert[]; vehicle?: Vehicle; stopsAway?: number | null;
+  wheelchair?: boolean; occupancy?: Occupancy; alerts?: (Alert | string)[]; vehicle?: Vehicle; stopsAway?: number | null;
   status?: { key: string; text: string }; pred?: Prediction;
 };
 

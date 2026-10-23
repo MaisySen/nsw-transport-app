@@ -82,7 +82,7 @@ export function Countdown({ planned, estimated, realtime, cancelled, now, align 
   );
 }
 
-export function DepartureRow({ d, now, onPress, onWatch, watched, showStop }: { d: Departure; now: number; onPress: () => void; onWatch?: () => void; watched?: boolean; showStop?: boolean }) {
+export function DepartureRow({ d, now, onPress, onWatch, watched, showStop, alertText }: { d: Departure; now: number; onPress: () => void; onWatch?: () => void; watched?: boolean; showStop?: boolean; alertText?: string | null }) {
   const c = usePalette();
   const sw = useRef<any>(null);
   const extra: string[] = [];
@@ -111,10 +111,10 @@ export function DepartureRow({ d, now, onPress, onWatch, watched, showStop }: { 
         </View>
         {d.platformChangedFrom ? <T kind="foot" style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }}>Platform changed from {d.platformChangedFrom}</T> : null}
         {d.pred && !d.realtime ? <T kind="caption" tone="text2" style={{ marginTop: 2 }}>Prediction: {d.pred.short || d.pred.text} ({d.pred.n} trips)</T> : null}
-        {d.alerts?.length ? (
+        {alertText ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
             <Icon name={I.warn} size={12} color={c.orange} />
-            <T kind="foot" numberOfLines={1} style={{ color: c.lateText, marginLeft: 4, flex: 1 }}>{d.alerts[0].title}</T>
+            <T kind="foot" numberOfLines={1} style={{ color: c.lateText, marginLeft: 4, flex: 1 }}>{alertText}</T>
           </View>
         ) : null}
       </View>
