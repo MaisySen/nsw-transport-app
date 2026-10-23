@@ -437,8 +437,7 @@ final class HomeBoard {
     private func load(api: TransportAPI, device: String, trips: [HomeTrip], stops: [String]) async {
         let tripJobs = trips.map { ($0.id, $0.from.id, $0.to.id) }
         let stopJobs = Array(Set(stops))
-        let now = Date()
-        await withTaskGroup(of: HomeFetch.self) { group in
+        let results = await withTaskGroup(of: HomeFetch.self, returning: [HomeFetch].self) { group in
             for (key, from, to) in tripJobs {
                 group.addTask {
                     let r = try? await api.trip(from: from, to: to, count: 5)
@@ -451,26 +450,27 @@ final class HomeBoard {
                     return HomeFetch.stop(id, r)
                 }
             }
-            // Each card fills in as soon as its own answer lands.
-            for await r in group {
-                withAnimation(.snappy) { apply(r, now: now) }
+            var out: [HomeFetch] = []
+            for await r in group { out.append(r) }
+            return out
+        }
+        let now = Date()
+        withAnimation(.snappy) {
+            for r in results {
+                switch r {
+                case .trip(let key, let resp):
+                    if let resp {
+                        journeys[key] = resp.journeys
+                        for j in resp.journeys { note(j, now: now) }
+                    }
+                    loaded.insert("t:" + key)
+                case .stop(let id, let resp):
+                    if let resp { departures[id] = resp.items }
+                    loaded.insert("s:" + id)
+                }
             }
         }
         updated = now
-    }
-
-    private func apply(_ r: HomeFetch, now: Date) {
-        switch r {
-        case .trip(let key, let resp):
-            if let resp {
-                journeys[key] = resp.journeys
-                for j in resp.journeys { note(j, now: now) }
-            }
-            loaded.insert("t:" + key)
-        case .stop(let id, let resp):
-            if let resp { departures[id] = resp.items }
-            loaded.insert("s:" + id)
-        }
     }
 
     private static func key(_ j: Journey) -> String? {
@@ -569,15 +569,6 @@ struct ServiceStatus: Hashable {
     var text: String
     var tone: Tone
 
-    /// The status from the journey alone, without the remembered live delay Home keeps.
-    static func of(_ j: Journey) -> ServiceStatus {
-        let f = j.firstTransit
-        if j.anyCancelled == true || f?.cancelled == true { return ServiceStatus(text: "Cancelled", tone: .bad) }
-        guard let f, f.isLive else { return ServiceStatus(text: "Scheduled", tone: .plain) }
-        let d = f.delayMin ?? 0
-        return ServiceStatus(text: Delay.text(delayMin: d, live: true, cancelled: false), tone: d > 0 ? .late : .good)
-    }
-
     var color: Color {
         switch tone {
         case .good: return .liveGreen
@@ -619,12 +610,9 @@ struct TripHeader: View {
                         .foregroundStyle(.secondary)
                 }
                 if alertCount > 0 {
-                    HStack(spacing: 4) {
-                        Image(systemName: "exclamationmark.triangle.fill").imageScale(.small)
-                        Text(alertCount == 1 ? "1 alert" : "\(alertCount) alerts")
-                    }
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(.orange)
+                    Label(alertCount == 1 ? "1 alert" : "\(alertCount) alerts", systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.orange)
                 }
             }
         }
