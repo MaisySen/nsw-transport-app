@@ -73,7 +73,7 @@ struct DepartureRow: View {
                     Label(a.title ?? "Service alert", systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
                         .foregroundStyle(.orange)
-                        .lineLimit(2)
+                        .lineLimit(1)
                 }
             }
             Spacer(minLength: 4)

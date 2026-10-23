@@ -208,6 +208,7 @@ struct ServiceSheet: View {
                             store.success()
                         } label: {
                             Label("Lock screen", systemImage: "lock.iphone")
+                                .labelStyle(.titleOnly)
                                 .lineLimit(1)
                                 .frame(maxWidth: .infinity)
                         }
