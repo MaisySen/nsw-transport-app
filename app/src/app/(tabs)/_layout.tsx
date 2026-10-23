@@ -4,7 +4,7 @@ import { usePalette } from '@/lib/theme';
 export default function TabsLayout() {
   const c = usePalette();
   return (
-    <NativeTabs tintColor={c.tint}>
+    <NativeTabs tintColor={c.tint} labelVisibilityMode="labeled">
       <NativeTabs.Trigger name="home">
         <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: 'house', selected: 'house.fill' }} md="home" />

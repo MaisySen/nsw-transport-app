@@ -21,7 +21,7 @@ export default function TransitMap(p: TransitMapProps) {
   return (
     <Map style={[{ flex: 1 }, p.style]} mapStyle={p.dark ? 'https://tiles.openfreemap.org/styles/dark' : 'https://tiles.openfreemap.org/styles/positron'}
       logo={false} compass={false} attribution attributionPosition={{ bottom: (p.bottomInset || 0) + 8, right: 8 }}>
-      <Camera initialViewState={b ? { bounds: b as any, padding: { top: 80, left: 40, right: 40, bottom: (p.bottomInset || 0) + 40 } } : { center: [151.2093, -33.8688], zoom: 11 }} />
+      <Camera key={b ? 'fit' : 'wait'} initialViewState={b ? { bounds: b as any, padding: { top: 80, left: 40, right: 40, bottom: (p.bottomInset || 0) + 40 } } : { center: [151.2093, -33.8688], zoom: 11 }} />
       {line.geometry.coordinates.length > 1 ? (
         <GeoJSONSource id="route" data={line}>
           <Layer id="route-casing" type="line" paint={{ 'line-color': '#ffffff', 'line-width': 8 }} layout={{ 'line-cap': 'round', 'line-join': 'round' }} />
