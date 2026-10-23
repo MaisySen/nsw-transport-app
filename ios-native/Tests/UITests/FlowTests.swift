@@ -30,7 +30,7 @@ final class FlowTests: XCTestCase {
 
         tab("Search")
         let near = app.buttons["Show stops near me"].firstMatch
-        if near.waitForExistence(timeout: 5) {
+        if near.waitForExistence(timeout: 5) && near.isHittable {
             near.tap()
             allowSystemAlert()
             pause(4)

@@ -122,6 +122,7 @@ struct SearchView: View {
             .navigationTitle("Search")
             .navigationDestination(for: StopRef.self) { s in StopView(stop: s) }
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Station, stop or stop number")
+            .modifier(FocusSearchOnRequest())
             .autocorrectionDisabled()
             .task(id: query) { await search() }
             .onChange(of: location.coordinate?.latitude) { _, _ in

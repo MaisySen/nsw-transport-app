@@ -15,6 +15,9 @@ final class AppStore {
 
     var starred: [StopRef] = [] { didSet { Persist.save(starred, "starred") } }
     var recents: [StopRef] = [] { didSet { Persist.save(recents, "recents") } }
+    var recentTrips: [TripPair] = [] { didSet { Persist.save(recentTrips, "recentTrips") } }
+    /// Set by Home's search field so the Search tab opens with its field focused.
+    var focusSearch = false
     var hapticsOn: Bool = true { didSet { UserDefaults.standard.set(hapticsOn, forKey: "haptics") } }
     var refreshSeconds: Int = 15 { didSet { UserDefaults.standard.set(refreshSeconds, forKey: "refresh") } }
 
@@ -46,10 +49,11 @@ final class AppStore {
         }
         if d.bool(forKey: "uiTestReset") {
             // UI tests start from a clean device.
-            for k in ["starred", "recents", "haptics", "refresh", "seenNotes"] { d.removeObject(forKey: k) }
+            for k in ["starred", "recents", "recentTrips", "haptics", "refresh", "seenNotes"] { d.removeObject(forKey: k) }
         }
         starred = Persist.load([StopRef].self, "starred") ?? []
         recents = Persist.load([StopRef].self, "recents") ?? []
+        recentTrips = Persist.load([TripPair].self, "recentTrips") ?? []
         hapticsOn = d.object(forKey: "haptics") as? Bool ?? true
         let r = d.integer(forKey: "refresh")
         refreshSeconds = r == 0 ? 15 : r
@@ -135,6 +139,19 @@ final class AppStore {
         recents.removeAll { $0.id == stop.id }
         recents.insert(StopRef(id: stop.id, name: stop.name), at: 0)
         if recents.count > 8 { recents = Array(recents.prefix(8)) }
+    }
+
+    /// A to B trips opened lately, newest first. Home shows up to 2 of them.
+    func rememberTrip(from: StopRef, to: StopRef) {
+        if let top = recentTrips.first, top.from.id == from.id, top.to.id == to.id { return }
+        recentTrips.removeAll { $0.from.id == from.id && $0.to.id == to.id }
+        recentTrips.insert(TripPair(from: StopRef(id: from.id, name: from.name), to: StopRef(id: to.id, name: to.name)), at: 0)
+        if recentTrips.count > 6 { recentTrips = Array(recentTrips.prefix(6)) }
+    }
+
+    func forgetTrip(from: StopRef, to: StopRef) {
+        recentTrips.removeAll { $0.from.id == from.id && $0.to.id == to.id }
+        tap()
     }
 
     // MARK: Server state

@@ -94,6 +94,7 @@ struct TripPlannerView: View {
             let r = try await store.api.trip(from: from.id, to: to.id, count: 5)
             withAnimation(.snappy) { data = r }
             updated = Date()
+            if !r.journeys.isEmpty { store.rememberTrip(from: from, to: to) }
             // A trip opened from a link only knows stop numbers; name them from the first journey.
             if from.name.hasPrefix("Stop "), let n = r.journeys.first?.legs.first?.from {
                 self.from = StopRef(id: from.id, name: n)
