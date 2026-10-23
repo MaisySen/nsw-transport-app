@@ -75,20 +75,29 @@ public struct TransportAPI: Sendable {
                             method: String = "GET", body: Data? = nil) async throws -> T {
         var req = URLRequest(url: try url(path, query))
         req.httpMethod = method
-        req.timeoutInterval = 20
+        req.timeoutInterval = 12
         req.cachePolicy = .reloadIgnoringLocalCacheData
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body {
             req.httpBody = body
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        let (data, resp) = try await Self.fetch(req, retry: method == "GET")
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else {
             let text = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
             throw APIError.http(code, text ?? "")
         }
         return try Self.makeDecoder().decode(T.self, from: data)
+    }
+
+    /// One quiet retry for reads; the live feed sometimes stalls for a moment.
+    static func fetch(_ req: URLRequest, retry: Bool) async throws -> (Data, URLResponse) {
+        do {
+            return try await URLSession.shared.data(for: req)
+        } catch let e as URLError where retry && (e.code == .timedOut || e.code == .networkConnectionLost) {
+            return try await URLSession.shared.data(for: req)
+        }
     }
 
     // MARK: Endpoints

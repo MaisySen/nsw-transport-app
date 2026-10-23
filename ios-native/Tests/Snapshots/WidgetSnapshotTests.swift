@@ -23,7 +23,7 @@ final class WidgetSnapshotTests: XCTestCase {
             save(widget(entry, .systemSmall, size: CGSize(width: 158, height: 158)), "\(tag)-w2-widget-small", scheme)
             save(widget(entry, .systemMedium, size: CGSize(width: 338, height: 158)), "\(tag)-w3-widget-medium", scheme)
             save(lockScreen(entry: entry, attrs: attrs, state: state), "\(tag)-w4-lock-screen", scheme)
-            save(liveActivityCard(attrs: attrs, state: state), "\(tag)-w5-live-activity", scheme)
+            save(liveActivityCard(attrs: attrs, state: state).padding(12).background(Wallpaper()), "\(tag)-w5-live-activity", scheme)
         }
         // The Dynamic Island is always dark.
         save(islandCompact(attrs: attrs, state: state), "island-1-compact", .dark)
@@ -100,8 +100,9 @@ final class WidgetSnapshotTests: XCTestCase {
     private func liveActivityCard(attrs: TripActivityAttributes, state: TripActivityAttributes.ContentState) -> some View {
         LockScreenCard(attrs: attrs, state: state)
             .padding(16)
+            .environment(\.colorScheme, .dark)
             .frame(width: 369)
-            .background(Color(.systemBackground).opacity(0.85))
+            .background(Color.black.opacity(0.6))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 

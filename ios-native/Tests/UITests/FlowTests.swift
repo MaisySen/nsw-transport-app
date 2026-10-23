@@ -222,7 +222,8 @@ final class FlowTests: XCTestCase {
         tab("Home")
         let saved = app.staticTexts["Uitest"].firstMatch
         if saved.waitForExistence(timeout: 15) {
-            saved.swipeLeft()
+            let row = app.cells.containing(.staticText, identifier: "Uitest").firstMatch
+            (row.exists ? row : saved).swipeLeft()
             let delete = app.buttons["Delete"].firstMatch
             XCTAssertTrue(delete.waitForExistence(timeout: 5), "delete swipe action on the saved trip")
             shot("home-swipe-delete")

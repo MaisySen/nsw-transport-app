@@ -7,10 +7,12 @@ import TransportKit
 struct TripLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: TripActivityAttributes.self) { context in
+            // Dark glass on every wallpaper, like the system's own Lock Screen activities.
             LockScreenCard(attrs: context.attributes, state: context.state)
                 .padding(16)
-                .activityBackgroundTint(Color(.systemBackground).opacity(0.85))
-                .activitySystemActionForegroundColor(.primary)
+                .environment(\.colorScheme, .dark)
+                .activityBackgroundTint(Color.black.opacity(0.6))
+                .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             let a = context.attributes
             let s = context.state

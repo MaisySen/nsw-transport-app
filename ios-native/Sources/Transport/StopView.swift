@@ -128,7 +128,14 @@ struct StopView: View {
 
             if let error, data == nil {
                 Section {
-                    ContentUnavailableView("Could not load", systemImage: "wifi.exclamationmark", description: Text(error))
+                    ContentUnavailableView {
+                        Label("Could not load", systemImage: "wifi.exclamationmark")
+                    } description: {
+                        Text(error)
+                    } actions: {
+                        Button("Try Again") { Task { await load() } }
+                            .buttonStyle(.bordered)
+                    }
                 }
             }
 
