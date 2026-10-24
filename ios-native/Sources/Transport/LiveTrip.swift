@@ -506,6 +506,7 @@ struct LiveTripSheet: View {
                         onEnd()
                     }
                 }
+                .accessibilityIdentifier("confirmEndTrip")
                 Button("Keep going", role: .cancel) {}
             } message: {
                 Text("Alerts for this trip stop and any shared link stops working.")

@@ -81,7 +81,7 @@ final class FlowTests: XCTestCase {
         shot("live-map")
 
         let top = sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.0)).withOffset(CGVector(dx: 0, dy: 12))
-        let target = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06))
+        let target = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
         top.press(forDuration: 0.1, thenDragTo: target)
         pause(1.5)
         shot("live-map-sheet-up")
@@ -503,6 +503,10 @@ final class FlowTests: XCTestCase {
         pick("fromField", "Strathfield", expect: "Strathfield Station")
         pick("toField", "Central", expect: "Central Station")
         let journey = element("journey")
+        // The trip planner sometimes times out ("No trips found. The request timed out."): pull to refresh and wait again.
+        for _ in 0..<2 where !journey.waitForExistence(timeout: 30) {
+            app.collectionViews.firstMatch.swipeDown(velocity: .slow)
+        }
         XCTAssertTrue(journey.waitForExistence(timeout: 30), "journeys from Strathfield to Central")
         XCTAssertTrue(element("fareBar").waitForExistence(timeout: 10), "fare bar on the trip screen")
         pause(1)
@@ -542,9 +546,12 @@ final class FlowTests: XCTestCase {
             pause(1)
         }
         end.tap()
-        let confirm = app.buttons["End trip"].firstMatch
-        if confirm.waitForExistence(timeout: 5) { confirm.tap() }
-        pause(2)
+        // The bar button is also labelled End trip, so the dialog's button is found by its own identifier.
+        let confirm = element("confirmEndTrip")
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "End this trip dialog")
+        confirm.tap()
+        let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: element("endTrip"))
+        wait(for: [gone], timeout: 15)
         XCTAssertFalse(element("endTrip").exists, "live trip closed after End trip")
         shot("live-trip-ended")
     }
@@ -649,7 +656,16 @@ final class FlowTests: XCTestCase {
         let switchButton = app.buttons["Switch profile"].firstMatch
         XCTAssertTrue(switchButton.waitForExistence(timeout: 10), "profile link asks first")
         shot("profile-link-prompt")
-        app.buttons["Cancel"].firstMatch.tap()
+        // iOS 26 shows this dialog without a Cancel button; a tap outside it cancels.
+        let cancel = app.buttons["Cancel"].firstMatch
+        if cancel.exists && cancel.isHittable {
+            cancel.tap()
+        } else {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).tap()
+        }
+        let dismissed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: switchButton)
+        wait(for: [dismissed], timeout: 8)
+        XCTAssertFalse(switchButton.exists, "profile link prompt cancelled")
     }
 
     /// Scrolls Trips until the element is on screen.
