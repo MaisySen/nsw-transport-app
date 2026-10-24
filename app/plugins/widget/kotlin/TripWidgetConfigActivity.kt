@@ -59,7 +59,7 @@ class TripWidgetConfigActivity : Activity() {
         setContentView(scroll)
 
         list.addView(label("Choose a trip", 28f, textColor, bold = true))
-        list.addView(label("The widget shows the next services with a live countdown.", 15f, secondary).apply { setPadding(0, dp(4), 0, dp(16)) })
+        list.addView(label("The widget shows the next services with a live countdown. Trips with changes show every leg, the arrival time and tight changes.", 15f, secondary).apply { setPadding(0, dp(4), 0, dp(16)) })
 
         list.addView(row("Smart", "Home to Work in the morning, back in the evening") { finishWith(null) })
 
@@ -99,7 +99,8 @@ class TripWidgetConfigActivity : Activity() {
                 saved.removeAllViews()
                 if (choices.isEmpty()) saved.addView(label("No saved trips yet. Pick two stops below.", 14f, secondary))
                 choices.forEach { c ->
-                    saved.addView(row(c.title, "${TransitApi.shortName(c.from.name)} to ${TransitApi.shortName(c.to.name)}") { finishWith(c) })
+                    val via = c.vias().let { v -> if (v.isEmpty()) "" else " via ${v.joinToString(", ")}" }
+                    saved.addView(row(c.title, "${TransitApi.shortName(c.from.name)} to ${TransitApi.shortName(c.to.name)}$via") { finishWith(c) })
                 }
             }
         }

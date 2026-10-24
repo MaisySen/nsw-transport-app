@@ -23,6 +23,16 @@
                 <TextView android:id="@+id/badge" android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:background="@drawable/widget_badge" android:paddingStart="6dp" android:paddingEnd="6dp" android:paddingTop="1dp" android:paddingBottom="1dp"
                     android:textSize="12sp" android:textStyle="bold" android:textColor="#FFFFFF"/>
+                <TextView android:id="@+id/sep2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:visibility="gone"
+                    android:paddingStart="3dp" android:paddingEnd="3dp" android:text="›" android:textSize="13sp" android:textStyle="bold" android:textColor="@color/widget_secondary"/>
+                <TextView android:id="@+id/badge2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:visibility="gone"
+                    android:background="@drawable/widget_badge" android:paddingStart="6dp" android:paddingEnd="6dp" android:paddingTop="1dp" android:paddingBottom="1dp"
+                    android:textSize="12sp" android:textStyle="bold" android:textColor="#FFFFFF" android:maxLines="1"/>
+                <TextView android:id="@+id/sep3" android:layout_width="wrap_content" android:layout_height="wrap_content" android:visibility="gone"
+                    android:paddingStart="3dp" android:paddingEnd="3dp" android:text="›" android:textSize="13sp" android:textStyle="bold" android:textColor="@color/widget_secondary"/>
+                <TextView android:id="@+id/badge3" android:layout_width="wrap_content" android:layout_height="wrap_content" android:visibility="gone"
+                    android:background="@drawable/widget_badge" android:paddingStart="6dp" android:paddingEnd="6dp" android:paddingTop="1dp" android:paddingBottom="1dp"
+                    android:textSize="12sp" android:textStyle="bold" android:textColor="#FFFFFF" android:maxLines="1"/>
                 <TextView android:id="@+id/platform" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp"
                     android:textSize="11sp" android:textColor="@color/widget_secondary" android:maxLines="1"/>
             </LinearLayout>

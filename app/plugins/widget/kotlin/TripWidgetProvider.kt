@@ -65,14 +65,20 @@ class TripWidgetProvider : AppWidgetProvider() {
                 })
                 return
             }
-            val result = try { TransitApi.trips(choice.from, choice.to) } catch (e: Exception) { null }
+            val result = try { TransitApi.trips(choice) } catch (e: Exception) { null }
+            val vias = choice.vias()
             val now = System.currentTimeMillis()
             manager.updateAppWidget(id, views(context, manager, id) { v, medium ->
                 val fromName = result?.fromName ?: TransitApi.shortName(choice.from.name)
                 val toName = result?.toName ?: TransitApi.shortName(choice.to.name)
                 v.setTextViewText(R.id.title, choice.title)
-                v.setTextViewText(R.id.subtitle, if (medium) "$fromName to $toName" else "to $toName")
-                v.setOnClickPendingIntent(R.id.root, openTrip(context, id, choice.from, choice.to, fromName, toName))
+                v.setTextViewText(R.id.subtitle, when {
+                    medium && vias.isNotEmpty() -> "$fromName to $toName via ${vias.joinToString(", ")}"
+                    medium -> "$fromName to $toName"
+                    vias.isNotEmpty() -> "to $toName, ${vias.size + 1} legs"
+                    else -> "to $toName"
+                })
+                v.setOnClickPendingIntent(R.id.root, openTrip(context, id, choice, fromName, toName))
                 v.setOnClickPendingIntent(R.id.refresh, refreshIntent(context, id))
                 val trips = result?.trips ?: emptyList()
                 val t = trips.firstOrNull()
@@ -84,7 +90,7 @@ class TripWidgetProvider : AppWidgetProvider() {
                     v.setTextViewText(R.id.badge, t.line)
                     tint(v, R.id.badge, t.color)
                     v.setTextColor(R.id.badge, if (prefersWhite(t.color)) Color.WHITE else Color.BLACK)
-                    v.setTextViewText(R.id.platform, t.platform?.replace("Platform", "Plat") ?: "")
+                    chainBadges(v, t, medium)
                     val left = t.leave - now
                     if (left in 0 until 3_600_000) {
                         v.setViewVisibility(R.id.countdown, View.VISIBLE)
@@ -97,12 +103,17 @@ class TripWidgetProvider : AppWidgetProvider() {
                         v.setTextViewText(R.id.clock, if (left < 0) "Now" else TransitApi.clock(t.leave))
                     }
                     val walk = ((t.board - t.leave) / 60_000).toInt()
-                    val status = if (walk > 0) "$walk min walk first. ${t.status}" else t.status
+                    val status = when {
+                        choice.multi && t.arrive > 0 -> "Arrive ${TransitApi.clock(t.arrive)}, ${duration(t.minutes)}" + (if (medium) ". ${t.status}" else "")
+                        walk > 0 -> "$walk min walk first. ${t.status}"
+                        else -> t.status
+                    }
                     val notice = result?.notice
                     v.setTextViewText(R.id.status, if (!medium && notice != null) notice else status)
                     v.setTextColor(R.id.status, when {
                         !medium && notice != null -> if (result?.severe == true) RED else ORANGE
                         t.cancelled -> RED
+                        choice.multi -> context.getColor(R.color.widget_text)
                         !t.live -> context.getColor(R.color.widget_secondary)
                         t.status.contains("late") -> ORANGE
                         else -> GREEN
@@ -110,7 +121,9 @@ class TripWidgetProvider : AppWidgetProvider() {
                     if (medium) {
                         val then = trips.drop(1).take(3).joinToString("\n") { x ->
                             val w = ((x.leave - now) / 60_000).toInt()
-                            "${TransitApi.clock(x.leave)}   ${x.line}   ${if (w <= 0) "Now" else "$w min"}   ${x.status}"
+                            if (choice.multi) "${TransitApi.clock(x.leave)}  ${x.lines.joinToString(" ") { it.name }}  arr ${TransitApi.clock(x.arrive)}" +
+                                (if (x.risk == "tight") "  Tight" else if (x.risk == "miss") "  Missed" else "")
+                            else "${TransitApi.clock(x.leave)}   ${x.line}   ${if (w <= 0) "Now" else "$w min"}   ${x.status}"
                         }
                         v.setTextViewText(R.id.next, if (then.isEmpty()) "No more services soon" else then)
                         v.setTextViewText(R.id.notice, notice ?: "Updated ${TransitApi.clock(now)}")
@@ -121,6 +134,30 @@ class TripWidgetProvider : AppWidgetProvider() {
             // Fresh data when the next service leaves, and at least every 15 minutes.
             val next = (result?.trips?.firstOrNull()?.leave ?: now) + 30_000
             schedule(context, id, next.coerceIn(now + 60_000, now + 15 * 60_000))
+        }
+
+        private fun duration(m: Int) = if (m >= 60) "${m / 60} h ${m % 60} min" else "$m min"
+
+        /** Line badges for the first services of a multi leg trip (up to 3), or one badge and the platform. */
+        private fun chainBadges(v: RemoteViews, t: TransitApi.Trip, medium: Boolean) {
+            val lines = if (t.lines.size > 1) t.lines else emptyList()
+            val ids = listOf(R.id.badge2 to R.id.sep2, R.id.badge3 to R.id.sep3)
+            val maxBadges = if (medium) 3 else 2
+            ids.forEachIndexed { i, (b, s) ->
+                val l = lines.getOrNull(i + 1)
+                if (l == null || i + 1 >= maxBadges) { v.setViewVisibility(b, View.GONE); v.setViewVisibility(s, View.GONE); return@forEachIndexed }
+                v.setViewVisibility(b, View.VISIBLE); v.setViewVisibility(s, View.VISIBLE)
+                v.setTextViewText(b, l.name)
+                tint(v, b, l.color)
+                v.setTextColor(b, if (prefersWhite(l.color)) Color.WHITE else Color.BLACK)
+            }
+            val more = lines.size - maxBadges
+            v.setTextViewText(R.id.platform, when {
+                lines.isEmpty() -> t.platform?.replace("Platform", "Plat") ?: ""
+                more > 0 -> "+$more"
+                medium -> t.platform?.replace("Platform", "Plat") ?: ""
+                else -> ""
+            })
         }
 
         private val RED = Color.parseColor("#FF3B30")
@@ -157,10 +194,17 @@ class TripWidgetProvider : AppWidgetProvider() {
 
         private fun flags() = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 
-        private fun openTrip(context: Context, id: Int, from: TransitApi.Stop, to: TransitApi.Stop, fromName: String, toName: String): PendingIntent {
-            val uri = Uri.parse("nswtransport://trip").buildUpon()
-                .appendQueryParameter("from", from.id).appendQueryParameter("fromName", fromName)
-                .appendQueryParameter("to", to.id).appendQueryParameter("toName", toName).build()
+        /** Opens the trip screen; a multi leg trip opens with all its legs. */
+        fun tripUri(choice: TransitApi.Choice, fromName: String = TransitApi.shortName(choice.from.name), toName: String = TransitApi.shortName(choice.to.name)): Uri {
+            val b = Uri.parse("nswtransport://trip").buildUpon()
+                .appendQueryParameter("from", choice.from.id).appendQueryParameter("fromName", fromName)
+                .appendQueryParameter("to", choice.to.id).appendQueryParameter("toName", toName)
+            choice.legs?.let { b.appendQueryParameter("legs", TransitApi.appLegs(it)).appendQueryParameter("name", choice.title) }
+            return b.build()
+        }
+
+        private fun openTrip(context: Context, id: Int, choice: TransitApi.Choice, fromName: String, toName: String): PendingIntent {
+            val uri = tripUri(choice, fromName, toName)
             val i = Intent(Intent.ACTION_VIEW, uri).setPackage(context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             return PendingIntent.getActivity(context, id, i, flags())
         }
@@ -194,6 +238,7 @@ object WidgetPrefs {
         else e.putString("w$id.kind", "trip").putString("w$id.title", choice.title)
             .putString("w$id.from", choice.from.id).putString("w$id.fromName", choice.from.name)
             .putString("w$id.to", choice.to.id).putString("w$id.toName", choice.to.name)
+            .putString("w$id.legs", choice.legs)
         e.apply()
     }
 
@@ -202,12 +247,13 @@ object WidgetPrefs {
         if (p.getString("w$id.kind", "smart") != "trip") return null
         return TransitApi.Choice(p.getString("w$id.title", "Trip") ?: "Trip",
             TransitApi.Stop(p.getString("w$id.from", "") ?: "", p.getString("w$id.fromName", "") ?: ""),
-            TransitApi.Stop(p.getString("w$id.to", "") ?: "", p.getString("w$id.toName", "") ?: ""))
+            TransitApi.Stop(p.getString("w$id.to", "") ?: "", p.getString("w$id.toName", "") ?: ""),
+            p.getString("w$id.legs", null))
     }
 
     fun clear(c: Context, id: Int) {
         val e = prefs(c).edit()
-        listOf("kind", "title", "from", "fromName", "to", "toName").forEach { e.remove("w$id.$it") }
+        listOf("kind", "title", "from", "fromName", "to", "toName", "legs").forEach { e.remove("w$id.$it") }
         e.apply()
     }
 }
