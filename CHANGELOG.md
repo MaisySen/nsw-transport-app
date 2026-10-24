@@ -4,6 +4,17 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Battery and smoothness (over the air update for iPhone and Android, 25 Oct, 10:44 AM)
+* Nothing refreshes in the background any more, and a screen stops refreshing when another screen covers it. Coming back refreshes once.
+* After a failed refresh the app waits longer each time (up to 5 minutes) instead of trying again every 15 seconds.
+* Countdowns update every 5 seconds, exactly on the minute, instead of redrawing every screen every second.
+* Live trip map: your position uses about 100 m accuracy every 10 seconds instead of GPS every 5 seconds, and only while that screen is open.
+* Two parts of the app asking for the same times share one request.
+* Buttons that talk to the server show a spinner and ignore a second tap. Every button says it is a button to VoiceOver and TalkBack.
+* Close on the departure board, Cancel on a new trip and Back on a service go somewhere when the screen was opened from a link or notification. Before, they did nothing.
+* Stop watching and Not now say when they fail.
+* iPhone: the tab bar uses the system look, so iOS 26 shows Liquid Glass.
+
 ### Plan: addresses, leave and arrive times, Clear All (over the air update for iPhone and Android, 25 Oct, 10:33 AM)
 * Plan finds addresses, streets, landmarks and suburbs, not only stops, and plans trips from and to them. Each result says what it is, for example "Address, Sydney".
 * Leave now, Leave at or Arrive by: tap the When row under From and To, pick a time on the wheel, and the trip shows services for that time. A time already gone today means tomorrow, and the row says so.
