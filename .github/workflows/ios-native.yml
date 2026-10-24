@@ -228,7 +228,7 @@ jobs:
           done
           if [ -z "$URL" ]; then URL=$(curl -s -m 120 -F file=@bundle.zip https://tmpfiles.org/api/v1/upload || true); fi
           echo "bundle: $URL" >> $R
-          head -c 7000 $R > r2.txt
+          { grep -E "^bundle: " $R; head -c 7000 $R; } > r2.txt
           git config user.name "ci"
           git config user.email "ci@users.noreply.github.com"
           git fetch -q origin ci-out || true

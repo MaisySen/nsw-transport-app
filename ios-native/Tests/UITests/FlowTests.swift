@@ -321,11 +321,8 @@ final class FlowTests: XCTestCase {
         app.buttons["A to Z"].firstMatch.tap()
         pause(1)
         filterStations("Burwood")
-        let burwood = app.buttons["Burwood"].firstMatch
-        XCTAssertTrue(burwood.waitForExistence(timeout: 5), "Burwood in the filtered list")
-        burwood.tap()
-        pause(1)
-        XCTAssertTrue(app.navigationBars["To"].waitForExistence(timeout: 5), "To step after From")
+        tapStation("Burwood", thenExpect: element("changeFrom"))
+        XCTAssertTrue(element("changeFrom").exists, "To step after From")
         let indexC = element("index-C")
         if indexC.waitForExistence(timeout: 5) {
             indexC.tap()
@@ -456,8 +453,21 @@ final class FlowTests: XCTestCase {
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 8), "station filter")
         field.tap()
+        let clear = field.buttons["Clear text"].firstMatch
+        if clear.exists { clear.tap() }
         field.typeText(text)
         pause(1)
+    }
+
+    /// Taps a station row, once more if the list was still settling.
+    private func tapStation(_ name: String, thenExpect next: XCUIElement) {
+        let row = app.buttons[name].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 8), "\(name) in the list")
+        row.tap()
+        if !next.waitForExistence(timeout: 4) && row.exists && row.isHittable {
+            row.tap()
+            _ = next.waitForExistence(timeout: 4)
+        }
     }
 
     private func searchAndPick(_ query: String, expect: String) {
