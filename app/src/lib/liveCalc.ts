@@ -1,11 +1,15 @@
 // Live trip maths, shared by the live trip screen and its tests. No React Native imports here.
 import type { ServiceResp, ServiceStop, WatchLeg } from './types';
 
-export type LegLive = { dep: number; arr: number; delay: number; live: boolean; d: ServiceResp | null; gone?: boolean };
+export type LegLive = { dep: number; arr: number; delay: number; live: boolean; d: ServiceResp | null; gone?: boolean;
+  /** The change to this leg was missed: dep and arr are the earliest you could go, not this service's times. */
+  missed?: boolean; /** The departure of the service you missed. */ was?: number };
 export type Conn = { i: number; at: string; spare: number; risk: 'ok' | 'tight' | 'miss'; next: WatchLeg; nextDep: number };
 export type LiveState =
   | { done: true; L2: LegLive[]; eta: number }
-  | { done: false; cur: number; phase: 'wait' | 'ride'; nextIdx: number; stopsLeft: number | null; L2: LegLive[]; conns: Conn[]; eta: number; live: boolean };
+  | { done: false; cur: number; phase: 'wait' | 'ride'; nextIdx: number; stopsLeft: number | null; L2: LegLive[]; conns: Conn[]; eta: number; live: boolean;
+      /** True when a missed change moved the arrival later than the legs' own times (no next service known yet). */
+      etaLate?: boolean };
 
 const tms = (s?: string | null) => (s ? new Date(s).getTime() : NaN);
 export const tOf = (s?: ServiceStop | null) => (s ? tms(s.estimated || s.planned) : NaN);
@@ -41,28 +45,108 @@ export function computeLive(legs: WatchLeg[], svc: (ServiceResp | null | undefin
     const mineS = d && mi >= 0 ? d.stops[mi] : null, offS = d && ai >= 0 ? d.stops[ai] : null;
     const delay = mineS && mineS.estimated && mineS.planned ? tms(mineS.estimated) - tms(mineS.planned) : l.estimated ? tms(l.estimated) - tms(l.planned) : 0;
     const dep = mineS && Number.isFinite(tOf(mineS)) ? tOf(mineS) : tms(l.estimated || l.planned);
-    const arr = offS && Number.isFinite(tOf(offS)) ? tOf(offS) : l.arrPlanned ? tms(l.arrPlanned) + delay : dep + 10 * 60000;
-    const past = !!d && ai >= 0 && idx(d.nextIndex) > ai;
+    const arr0 = offS && Number.isFinite(tOf(offS)) ? tOf(offS) : l.arrPlanned ? tms(l.arrPlanned) + delay : dep + 10 * 60000;
+    // A fresh vehicle position short of your stop wins over a stop list that has moved on by the clock.
+    const short = vehicleShort(d, mi, ai);
+    const past = !!d && ai >= 0 && idx(d.nextIndex) > ai && !short;
+    const arr = heldArrival(d, ai, arr0, t, short);
     // Once the vehicle is past your stop the leg is over, but its arrival time stays the real one.
     return { dep, arr, delay: delay || 0, live: !!d?.live, d, gone: past };
   });
+  // A change you missed: you rode the leg before, and the live times say this leg left before you could get to it.
+  // It is not your train any more, so it neither counts down nor ends the trip; its times move to the earliest you
+  // could leave, and the next service found for the change (CardAlt, NextOption) replaces that guess.
+  for (let i = 1; i < L2.length; i++) {
+    const prev = rode[i - 1];
+    if (prev == null || !Number.isFinite(L2[i].dep)) continue;
+    const ready = prev + (legs[i].walkBefore || 0) * 60000;
+    if (connRisk(Math.round((L2[i].dep - ready) / 60000)) !== 'miss') continue;
+    const lateBy = ready - L2[i].dep;
+    L2[i] = { ...L2[i], dep: ready, arr: L2[i].arr + lateBy, gone: false, missed: true, was: L2[i].dep };
+  }
   const cur = L2.findIndex((x) => !x.gone && t < x.arr + 45000);
   if (cur < 0) return { done: true, L2, eta: L2[last].arr };
   const x = L2[cur], d = x.d;
   const mi = idx(d?.mineIndex), ai = idx(d?.alightIndex);
   let phase: 'wait' | 'ride' = 'wait';
-  if (d && mi >= 0 && idx(d.nextIndex) > mi) phase = 'ride';
+  if (x.missed) phase = 'wait';
+  else if (d && mi >= 0 && idx(d.nextIndex) > mi) phase = 'ride';
   else if (!d || mi < 0) phase = t >= x.dep ? 'ride' : 'wait';
   let nextIdx = d ? idx(d.nextIndex) : -1;
   if (d && nextIdx >= 0) { while (nextIdx < d.stops.length - 1 && nextIdx !== ai && !timed(d.stops[nextIdx])) nextIdx++; }
   const stopsLeft = d && ai >= 0 && phase === 'ride' ? d.stops.slice(Math.max(nextIdx, mi + 1), ai + 1).filter(timed).length : null;
   const conns: Conn[] = [];
+  if (x.missed && cur > 0) {
+    conns.push({ i: cur - 1, at: legs[cur - 1].to || '', spare: -1, risk: 'miss', next: legs[cur], nextDep: x.was ?? x.dep });
+  }
   for (let i = cur; i < last; i++) {
     const a = L2[i], b = L2[i + 1];
     const spare = Math.round((b.dep - a.arr) / 60000 - (legs[i + 1].walkBefore || 0));
-    conns.push({ i, at: legs[i].to || '', spare, risk: spare < 0 ? 'miss' : spare < 2 ? 'tight' : 'ok', next: legs[i + 1], nextDep: b.dep });
+    conns.push({ i, at: legs[i].to || '', spare, risk: connRisk(spare), next: legs[i + 1], nextDep: b.dep });
   }
-  return { done: false, cur, phase, nextIdx, stopsLeft, L2, conns, eta: L2[last].arr, live: x.live };
+  const e = etaFrom(legs, L2, cur);
+  return { done: false, cur, phase, nextIdx, stopsLeft, L2, conns, eta: e.eta, live: x.live, ...(e.late ? { etaLate: true } : {}) };
+}
+
+/** A change with less than 2 minutes to spare is tight; a negative spare means the next leg leaves before you get there. */
+export const connRisk = (spare: number): Conn['risk'] => (spare < 0 ? 'miss' : spare < 2 ? 'tight' : 'ok');
+
+/**
+ * The arrival time to count to while the live feed still shows the vehicle before your stop. An estimate that has
+ * passed while the train is still on its way is wrong, so once the estimate is 30 seconds old the arrival stays 30 seconds ahead of now until the feed
+ * shows the train at or past your stop (for at most 10 minutes past the estimate). This is what keeps "Get off now"
+ * from showing before the train gets there.
+ */
+export function heldArrival(d: ServiceResp | null, ai: number, arr: number, t: number, short = false) {
+  if (!d || ai < 0 || !Number.isFinite(arr)) return arr;
+  if (!short) {
+    if (!d.live) return arr;
+    const ni = idx(d.nextIndex);
+    if (ni < 0 || ni > ai || d.stops[ai]?.passed) return arr;
+  }
+  // Feeds trail the train by up to half a minute, so an estimate under 30 seconds old stands.
+  if (t - arr < 30000 || t - arr > 10 * 60000) return arr;
+  return t + 30000;
+}
+
+/**
+ * True when the feed has a vehicle position under 3 minutes old that is clearly before the stop you get off at: more
+ * than 500 m from it and less than 90% of the way along the straight line from your boarding stop. The stop list's
+ * "next stop" falls back to the timetable clock when a feed has no live times for it, which moved a 4 minute late T1
+ * past Redfern on time (25 Oct 2026); the train's own position does not lie that way.
+ */
+export function vehicleShort(d: ServiceResp | null, mi: number, ai: number) {
+  const v = d?.vehicle as { lat?: number; lon?: number; ageS?: number | null } | undefined;
+  if (!d || !v || ai < 0 || mi < 0 || ai <= mi) return false;
+  if (typeof v.lat !== 'number' || typeof v.lon !== 'number' || (typeof v.ageS === 'number' && v.ageS > 180)) return false;
+  const A = d.stops[mi], B = d.stops[ai];
+  if (typeof A?.lat !== 'number' || typeof A?.lon !== 'number' || typeof B?.lat !== 'number' || typeof B?.lon !== 'number') return false;
+  const k = Math.cos((B.lat * Math.PI) / 180);
+  const ax = A.lon * k, ay = A.lat, bx = B.lon * k, by = B.lat, vx = v.lon * k, vy = v.lat;
+  const L2 = (bx - ax) ** 2 + (by - ay) ** 2;
+  if (!(L2 > 0)) return false;
+  const f = ((vx - ax) * (bx - ax) + (vy - ay) * (by - ay)) / L2;
+  const distM = Math.hypot(vx - bx, vy - by) * 111320;
+  return f < 0.9 && distM > 500;
+}
+
+/**
+ * When you get to the end, from the leg you are on. A change you will make keeps the next leg's live arrival. A change
+ * the live times say you will miss moves everything after it later by at least the time you are short, so the
+ * arrival never reads earlier than you can get there; the next service found for that change replaces this guess.
+ */
+export function etaFrom(legs: WatchLeg[], L2: LegLive[], cur: number) {
+  let end = L2[cur].arr;
+  let late = false;
+  for (let i = cur + 1; i < L2.length; i++) {
+    const b = L2[i];
+    const ready = end + (legs[i].walkBefore || 0) * 60000;
+    const spare = Math.round((b.dep - ready) / 60000);
+    if (connRisk(spare) !== 'miss' || !Number.isFinite(b.dep)) { end = b.arr; continue; }
+    late = true;
+    end = b.arr + (ready - b.dep);
+  }
+  return { eta: end, late };
 }
 
 /** What the live trip remembers between refreshes: when each leg was last seen being ridden, and its arrival then. */
@@ -148,6 +232,7 @@ export function liveWords(legs: WatchLeg[], s: LiveState, now: number, f: Fmt) {
   if (s.done) return { title: "You've arrived", body: `${f.short(legs[last].to)} at ${f.clock(s.eta)}` };
   const l = legs[s.cur], x = s.L2[s.cur], d = x.d;
   const arrive = `Arrive ${f.clock(s.eta)} (${minsWords((s.eta - now) / 60000)})`;
+  if (x.missed) return { title: `Change at risk at ${f.short(l.from)}`, body: `The ${x.was ? f.clock(x.was) + ' ' : ''}${l.line} has likely left. Open the app for the next way on. Arrive about ${f.clock(s.eta)}` };
   if (s.phase === 'wait') {
     const dm = Math.round((x.dep - now) / 60000);
     return { title: `${l.line} to ${f.short(l.towards || l.to)}`, body: `${s.cur ? 'Change to' : 'Board'} the ${l.line} ${dm <= 0 ? 'now' : `at ${f.clock(x.dep)}`}${l.fromPlatform ? `, ${f.plat(l.fromPlatform)}` : ''}. ${arrive}` };

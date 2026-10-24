@@ -17,7 +17,8 @@ import { api } from '@/lib/api';
 import { computeLive } from '@/lib/liveCalc';
 import type { LiveTrip } from '@/lib/live';
 import type { ServiceResp, WatchLeg } from '@/lib/types';
-import { cardFor, shortName } from './tripCard';
+import { boardTime, missedConn, missedPlanLegs, pickNextOption, sydHHMM } from '@/lib/smart';
+import { cardFor, shortName, staleAt, type CardAlt, type CardOpts } from './tripCard';
 import { homeWorkFor, liveCardFor } from './widgetShare';
 
 const ARRIVED_KEEP_S = 120;
@@ -31,9 +32,36 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   const origService = api.service;
   (api as any).service = async (q: Record<string, string | undefined>) => {
     const r = await origService(q);
-    if (r && !r.error) { svcByKey.set(keyOf(q), r); setTimeout(() => refreshCard(), 0); }
+    if (r && !r.error) { svcByKey.set(keyOf(q), r); lastSvcAt = Date.now(); setTimeout(() => refreshCard(), 0); }
     return r;
   };
+
+  let lastSvcAt = 0;
+  // The card can only change while the app runs (no push updates yet). Builds whose card shows "Updated" when stale
+  // get a stale date 2 minutes after the live times; older builds get "Updated 8:21am" written on the card itself
+  // when the app goes to the background.
+  const honestStale = iosNative.cardVersion() >= 2;
+
+  // The next service for a change the live times say you will miss, from the same plan the trip screen shows.
+  let alt: { key: string; at: number; v: CardAlt | null; busy: boolean } = { key: '', at: 0, v: null, busy: false };
+  function altFor(g: LiveTrip, s: ReturnType<typeof stateFor>): CardAlt | null {
+    const m = s.done ? null : missedConn(g.legs, s, g.to);
+    if (!m) return null;
+    const key = `${g.id}:${m.i}:${m.missing.tripId || m.missing.planned}`;
+    if (alt.key !== key || (!alt.busy && Date.now() - alt.at > 60000)) {
+      if (alt.key !== key) alt = { key, at: 0, v: null, busy: false };
+      alt.busy = true; alt.at = Date.now();
+      api.plan(missedPlanLegs(m) as any, { count: 5, time: sydHHMM(m.readyAt - 60000) })
+        .then((r: any) => {
+          const j = pickNextOption(r?.journeys || [], m);
+          const l = j?.legs.find((x) => x.kind === 'transit');
+          if (alt.key === key) alt.v = j && l ? { line: l.line || '', dep: boardTime(j), arr: Date.parse(j.arrive) } : null;
+        })
+        .catch(() => {})
+        .finally(() => { if (alt.key === key) { alt.busy = false; refreshCard(); } });
+    }
+    return alt.v;
+  }
 
   let trip: LiveTrip | null = null;
   let activityId: string | null = null;
@@ -44,14 +72,16 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   const stateFor = (g: LiveTrip) =>
     computeLive(g.legs, g.legs.map((l) => svcByKey.get(legKey(l)) || null), Date.now(), { rode: g.rode, arrivedAt: g.arrivedAt });
 
-  async function refreshCard() {
+  async function refreshCard(background = false) {
     const g = trip;
     if (!g) return;
-    if (!iosNative.activitiesEnabled() && !activityId) { shareLive(g, cardFor(g, stateFor(g))); return; }
     const s = stateFor(g);
-    const card = cardFor(g, s);
+    const updated = lastSvcAt || null;
+    const o: CardOpts = { alt: altFor(g, s), updated, asOf: background && !honestStale ? updated || Date.now() : null };
+    if (!iosNative.activitiesEnabled() && !activityId) { shareLive(g, cardFor(g, s, Date.now(), o)); return; }
+    const card = cardFor(g, s, Date.now(), o);
     shareLive(g, card);
-    const stale = card.phase === 'arrived' ? null : card.arrival + ARRIVED_KEEP_S * 1000;
+    const stale = staleAt(card, updated, honestStale, ARRIVED_KEEP_S * 1000);
     if (!activityId || activityTrip !== g.id) {
       if (starting || card.phase === 'arrived') return;
       starting = true;
@@ -159,5 +189,6 @@ if (Platform.OS === 'ios' && iosNative.available()) {
 
   boot();
   setInterval(() => { if (trip && AppState.currentState === 'active') refreshCard(); }, TICK_MS);
-  AppState.addEventListener('change', (s) => { if (s === 'active') { shareWidgetData(); refreshCard(); } });
+  // Going to the background: the last chance to say on the card when its live times are from.
+  AppState.addEventListener('change', (s) => { if (s === 'active') { shareWidgetData(); refreshCard(); } else if (s === 'background') refreshCard(true); });
 }

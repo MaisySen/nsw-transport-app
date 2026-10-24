@@ -13,6 +13,8 @@ type Native = {
   startTripActivity(title: string, legsCount: number, stateJSON: string, staleMs: number | null): Promise<string | null>;
   updateTripActivity(id: string, stateJSON: string, staleMs: number | null): Promise<boolean>;
   endTripActivity(id: string | null, stateJSON: string | null, dismissAfterSeconds: number): Promise<void>;
+  /** 2 from the build that draws a stale trip card as "Updated 8:21am" instead of "You've arrived". Absent before. */
+  liveCardVersion?: () => number;
 };
 
 const native: Native | null = Platform.OS === 'ios' ? requireOptionalNativeModule<Native>('TransportIOS') : null;
@@ -30,6 +32,8 @@ export const iosNative = {
   setBool(key: string, value: boolean) { try { native?.setSharedBool(key, value); } catch {} },
   reloadWidgets(kind?: string) { try { native?.reloadWidgets(kind || null); } catch {} },
   activitiesEnabled: () => { try { return !!native?.areActivitiesEnabled(); } catch { return false; } },
+  /** 1 on builds up to 204 (a stale card reads "You've arrived"), 2 once the card shows "Updated" when stale. */
+  cardVersion: (): number => { try { return typeof native?.liveCardVersion === 'function' ? Number(native.liveCardVersion()) || 1 : 1; } catch { return 1; } },
   activityIds: (): string[] => { try { return native?.tripActivityIds() || []; } catch { return []; } },
   async startTrip(title: string, legsCount: number, s: TripCardState, staleMs?: number | null) {
     if (!native) return null;

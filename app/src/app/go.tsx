@@ -182,7 +182,11 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
   const late = Math.round(x.delay / 60000);
   const badge = x.live ? (late >= 2 ? { t: `${late} min late`, bg: c.orange } : { t: 'Live', bg: c.green }) : { t: 'Scheduled', bg: c.text3 };
   let now1 = '', now2 = '';
-  if (st.phase === 'wait') {
+  if (x.missed) {
+    // The live times say this leg left before you got to the change: no countdown to a train you cannot catch.
+    now1 = `Change at risk: the ${x.was ? clock(x.was) + ' ' : ''}${l.line} has likely left`;
+    now2 = `From ${short(l.from)}. The next way on is below.`;
+  } else if (st.phase === 'wait') {
     const dm = Math.round((x.dep - now) / 60000);
     now1 = `${st.cur > 0 ? 'Change to' : 'Board'} the ${l.line} to ${short(l.towards || l.to)}`;
     now2 = `${dm <= 0 ? 'Due now' : `Leaves in ${dm} min, ${clock(x.dep)}`}${l.fromPlatform ? ' \u00b7 ' + plat(l.fromPlatform) : ''}${d && d.stopsAway != null && d.vehicle ? ` \u00b7 ${d.stopsAway === 0 ? 'arriving' : `${d.stopsAway} stop${d.stopsAway > 1 ? 's' : ''} away`}` : ''}`;
@@ -201,7 +205,7 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
     <View>
       <View style={{ paddingHorizontal: 20, paddingTop: 2, flexDirection: 'row', alignItems: 'flex-end' }}>
         <View style={{ flex: 1 }}>
-          <T kind="foot" tone="text2">Arrive at {short(legs[last].to)}</T>
+          <T kind="foot" tone="text2">{st.etaLate || x.missed ? `Arrive at ${short(legs[last].to)}, about` : `Arrive at ${short(legs[last].to)}`}</T>
           <Text style={{ fontSize: 34, fontWeight: '700', color: c.text, fontVariant: ['tabular-nums'], letterSpacing: -0.5 }} maxFontSizeMultiplier={1.3}>{clock(st.eta)}</Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
