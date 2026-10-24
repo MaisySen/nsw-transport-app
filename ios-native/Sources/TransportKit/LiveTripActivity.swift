@@ -21,14 +21,27 @@ public struct LiveTripAttributes: ActivityAttributes {
         public var warning: String?
         /// Share of stops done on this leg, 0 to 1.
         public var progress: Double
-        /// "Opal fare estimate $3.76 (Adult, off peak)"
+        /// Not shown on the Lock Screen any more; kept so older cards still decode.
         public var fareLine: String?
+        /// "Central": where this leg's service is going.
+        public var towards: String?
+        /// "Platform 2" for the leg you are waiting for.
+        public var platform: String?
+        /// When this leg leaves your stop.
+        public var departs: Date?
+        /// When this leg gets to where you get off.
+        public var legArrives: Date?
+        /// "Kings Cross": the end of the whole trip.
+        public var destination: String?
 
         public init(line: String, lineColorHex: String, mode: String, nextStop: String?, stopsLeft: Int?, getOffAt: String,
-                    arrival: Date, phase: String, warning: String?, progress: Double, fareLine: String?) {
+                    arrival: Date, phase: String, warning: String?, progress: Double, fareLine: String? = nil,
+                    towards: String? = nil, platform: String? = nil, departs: Date? = nil, legArrives: Date? = nil, destination: String? = nil) {
             self.line = line; self.lineColorHex = lineColorHex; self.mode = mode; self.nextStop = nextStop
             self.stopsLeft = stopsLeft; self.getOffAt = getOffAt; self.arrival = arrival; self.phase = phase
             self.warning = warning; self.progress = progress; self.fareLine = fareLine
+            self.towards = towards; self.platform = platform; self.departs = departs; self.legArrives = legArrives
+            self.destination = destination
         }
     }
 

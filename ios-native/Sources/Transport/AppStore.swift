@@ -43,6 +43,10 @@ final class AppStore {
     var accessibleTrips: Bool = TripPrefs.accessible { didSet { TripPrefs.accessible = accessibleTrips } }
     /// Lift outage alerts for the stations on your trips.
     var liftAlerts: Bool = UserDefaults.standard.bool(forKey: "tb_liftAlerts") { didSet { UserDefaults.standard.set(liftAlerts, forKey: "tb_liftAlerts") } }
+    /// Server settings: features shown, kill switches, copy, timings and tab order. The last good
+    /// copy is used until a fresh one arrives; with none, the built in defaults.
+    var config: RemoteConfig = RemoteConfigCache.load() { didSet { applyConfig() } }
+    @ObservationIgnored private var configFetched: Date?
 
     /// The trip you started with Start trip, kept on this phone until you end it.
     var liveTrip: LiveTripRecord? { didSet { Persist.save(liveTrip, "liveTrip") } }
@@ -165,10 +169,9 @@ final class AppStore {
             if liveTrip != nil { tab = .home; openLiveTrip = true }
         case "tab":
             switch parts.count > 1 ? parts[1] : "" {
-            case "search": tab = .search
-            case "ask": tab = .ask
+            case "search", "plan": tab = .plan
+            case "ask", "settings", "more": tab = .more
             case "watching": tab = .watching
-            case "settings": tab = .settings
             default: tab = .home
             }
         default:
@@ -294,7 +297,7 @@ final class AppStore {
         do {
             try await api.saveTrip(name: name, from: from, to: to)
             await loadSaved()
-            show(Banner(title: "Saved as \(name)", detail: "Type \(name) in WhatsApp too.", symbol: "bookmark.fill"))
+            show(Banner(title: "Saved as \(name)", detail: "It shows on Home with live times.", symbol: "star.fill"))
             success()
         } catch {
             show(Banner(title: "Could not save", detail: error.localizedDescription, symbol: "exclamationmark.triangle.fill"))
@@ -305,10 +308,10 @@ final class AppStore {
         do {
             try await api.saveCommute(id: nil, from: from, to: to, tod: tod, days: "12345", name: name, active: true)
             await loadCommutes()
-            show(Banner(title: "Commute set", detail: "Weekdays around \(Clock.todText(tod)).", symbol: "clock.badge.checkmark"))
+            show(Banner(title: "Weekday reminder set", detail: "Weekdays around \(Clock.todText(tod)). It shows on Home.", symbol: "clock.badge.checkmark"))
             success()
         } catch {
-            show(Banner(title: "Could not set commute", detail: error.localizedDescription, symbol: "exclamationmark.triangle.fill"))
+            show(Banner(title: "Could not set the reminder", detail: error.localizedDescription, symbol: "exclamationmark.triangle.fill"))
         }
     }
 
@@ -369,8 +372,11 @@ enum Notifier {
 
     /// Posts a notification now. The same moment is posted once (see NoticeDeduper), and the
     /// identifier is stable, so a repeat replaces instead of adding.
+    /// How long the same alert is held back, from the server config (minutes, 1 to 120).
+    nonisolated(unsafe) static var repeatWindow: TimeInterval = 15 * 60
+
     static func post(title: String, body: String, id: String) {
-        guard dedupe.shouldPost(title: title) else {
+        guard dedupe.shouldPost(title: title, window: repeatWindow) else {
             Task { @MainActor in ReplayLog.shared.add("alert held back (already said): " + title) }
             return
         }
@@ -383,4 +389,30 @@ enum Notifier {
         let req = UNNotificationRequest(identifier: "note-\(id)", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req)
     }
+}
+
+// MARK: Remote config
+
+extension AppStore {
+    /// Fetches the server config at launch and when the app comes to the front, at most every
+    /// few minutes. Offline or on an error the last good copy stays.
+    func refreshConfig(force: Bool = false) async {
+        let every = config.number("configRefreshMin", 30, min: 1, max: 24 * 60) * 60
+        if !force, let last = configFetched, Date().timeIntervalSince(last) < min(every, 300) { return }
+        configFetched = Date()
+        guard let fresh = try? await api.appConfig() else { return }
+        if fresh != config {
+            config = fresh
+            RemoteConfigCache.save(fresh)
+        }
+    }
+
+    /// Pushes timings into the parts of the app that read them.
+    func applyConfig() {
+        Notifier.repeatWindow = config.number("alertRepeatWindowMin", 15, min: 1, max: 120) * 60
+        LiveTripLogic.sameRunTolerance = config.number("sameRunToleranceSec", 120, min: 30, max: 600)
+    }
+
+    /// Seconds between live trip refreshes (5 to 120).
+    var liveRefreshSeconds: Double { config.number("liveRefreshSec", 15, min: 5, max: 120) }
 }

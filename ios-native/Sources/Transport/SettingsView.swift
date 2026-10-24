@@ -9,32 +9,8 @@ struct SettingsView: View {
 
     var body: some View {
         @Bindable var store = store
-        NavigationStack {
+        Group {
             Form {
-                Section {
-                    if store.commutes.isEmpty {
-                        Text("No commute yet. Open a trip and tap Make this my commute.")
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(store.commutes) { c in
-                        Button { editing = c } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(c.name ?? "Commute").foregroundStyle(.primary)
-                                    Text("\(Naming.short(c.from.name)) to \(Naming.short(c.to.name))")
-                                        .font(.footnote).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text(c.active == false ? "Off" : (c.todText ?? Clock.todText(c.tod)))
-                                    .foregroundStyle(.secondary)
-                                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
-                            }
-                        }
-                    }
-                } header: { Text("Commutes") } footer: {
-                    Text("A heads up about 30 minutes before when something is wrong, then a leave now alert.")
-                }
-
                 Section("Live times") {
                     Picker("Refresh every", selection: $store.refreshSeconds) {
                         Text("15 seconds").tag(15)
@@ -49,7 +25,7 @@ struct SettingsView: View {
                     Button("End Lock Screen activities", role: .destructive) {
                         Task { await LiveActivities.shared.endAll() }
                     }
-                } header: { Text("Alerts") }
+                } header: { Text("Notifications") }
 
                 Section {
                     Picker("Fare type", selection: $store.fareType) {
@@ -80,22 +56,13 @@ struct SettingsView: View {
                         }
                     }
                     .accessibilityIdentifier("liftAlerts")
-                    NavigationLink { OpalMachinesView() } label: {
-                        Label("Opal top up machines near me", systemImage: "creditcard.fill")
-                    }
+
                 } header: {
                     Text("Accessibility")
                 }
 
                 Section {
-                    Button("Clear recent stops") { store.clearRecentStops() }
-                        .disabled(store.recents.isEmpty)
-                        .badge(store.recents.isEmpty ? Text("None") : Text("\(store.recents.count)"))
-                        .accessibilityIdentifier("clearRecentStopsSetting")
-                    Button("Clear recent trips") { store.clearRecentTrips() }
-                        .disabled(store.recentTrips.isEmpty)
-                        .badge(store.recentTrips.isEmpty ? Text("None") : Text("\(store.recentTrips.count)"))
-                        .accessibilityIdentifier("clearRecentTripsSetting")
+
                     Button("Delete my trip history on server", role: .destructive) { confirmHistory = true }
                         .accessibilityIdentifier("deleteServerHistory")
                     Button("Delete all my data", role: .destructive) { confirmAll = true }
@@ -103,18 +70,9 @@ struct SettingsView: View {
                 } header: {
                     Text("Clear history")
                 } footer: {
-                    Text("Recent stops and trips are kept only on this phone. The server keeps the trips you search for 90 days, under this app's private id, to suggest commutes. Delete them here at any time.")
+                    Text("The server keeps the trips you search for 90 days, under this app's private id, to suggest weekday reminders. Recent stops and trips stay only on this phone; clear them on the Plan tab.")
                 }
 
-                Section {
-                    LabeledContent("Version", value: "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""))")
-                    LabeledContent("Live data", value: "Transport for NSW")
-                    Link("Open the web version", destination: TransportAPI.defaultBase)
-                    Link("Help and support", destination: URL(string: "https://nsw-transport-bot.sites.tab.bot/support/")!)
-                    Link("Privacy policy", destination: URL(string: "https://nsw-transport-bot.sites.tab.bot/privacy/")!)
-                } footer: {
-                    Text("Contains transport data from Transport for NSW, licensed under Creative Commons Attribution 4.0. Transport is an independent app and is not made or endorsed by Transport for NSW. Install ID \(store.device).")
-                }
             }
             .navigationTitle("Settings")
             .sheet(item: $editing) { c in
@@ -180,7 +138,7 @@ struct CommuteEditor: View {
                     }
                 }
                 Section {
-                    Button("Delete commute", role: .destructive) {
+                    Button("Delete reminder", role: .destructive) {
                         Task {
                             try? await store.api.deleteCommute(id: commute.id)
                             await store.loadCommutes()

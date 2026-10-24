@@ -72,4 +72,53 @@ final class LiveTripLogicTests: XCTestCase {
         XCTAssertFalse(d.shouldPost(title: "Next stop: Redfern, change here", now: now))
         XCTAssertTrue(d.shouldPost(title: "Arriving at Kings Cross Station in 2 min", now: now.addingTimeInterval(16 * 60)), "a new trip later")
     }
+
+    // MARK: One Lock Screen card
+
+    @MainActor
+    final class FakeHost: LiveCardHost {
+        var cards: [String] = []
+        var asked = 0
+        var cardIDs: [String] { cards }
+        func endCard(_ id: String) async { cards.removeAll { $0 == id } }
+        func requestCard() throws -> String {
+            asked += 1
+            let id = "card\(asked)"
+            cards.append(id)
+            return id
+        }
+    }
+
+    @MainActor
+    func testStartingTwiceLeavesOneCard() async {
+        let host = FakeHost()
+        await LiveCardRule.startOne(on: host)
+        await LiveCardRule.startOne(on: host)
+        XCTAssertEqual(host.cards, ["card2"])
+    }
+
+    @MainActor
+    func testStartEndsCardsLeftFromEarlierTrips() async {
+        let host = FakeHost()
+        host.cards = ["old trip", "followed service", "another"]
+        await LiveCardRule.startOne(on: host)
+        XCTAssertEqual(host.cards.count, 1)
+    }
+
+    @MainActor
+    func testTrimLeavesOne() async {
+        let host = FakeHost()
+        host.cards = ["a", "b"]
+        await LiveCardRule.trimToOne(on: host)
+        XCTAssertEqual(host.cards, ["a"])
+    }
+
+    func testMinutesNotSeconds() {
+        let now = Date(timeIntervalSince1970: Self.t0)
+        XCTAssertEqual(LiveCardText.minutes(until: now.addingTimeInterval(26 * 60 + 21), now: now), "27 min")
+        XCTAssertEqual(LiveCardText.minutes(until: now.addingTimeInterval(51), now: now), "1 min")
+        XCTAssertEqual(LiveCardText.minutes(until: now.addingTimeInterval(-5), now: now), "Now")
+        XCTAssertEqual(LiveCardText.place("Strathfield Station, Platform 2"), "Strathfield")
+        XCTAssertEqual(LiveCardText.place("Kings Cross Station"), "Kings Cross")
+    }
 }

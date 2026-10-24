@@ -2904,6 +2904,63 @@ async function rescuePlan(env, spec, i, live, now) {
   return { legs, arrive: ms(j.arrive), journey: j };
 }
 
+// Remote config for the phone apps (GET /api/app/config?platform=ios). Native code cannot be
+// replaced over the air, so the apps read this at launch and when they come to the front: which
+// features show, a kill switch per feature, copy, alert timings and the tab order. Defaults live
+// here; an admin POST stores overrides in D1 (merged over the defaults), so a change needs no app
+// build and no deploy. The apps keep the last good copy and fall back to their own defaults.
+const APP_CONFIG_DEFAULTS = {
+  version: 1,
+  flags: { ask: true, parkRide: true, opalMachines: true, liveTrip: true, shareTrip: true, weekdayReminder: true, nearby: true },
+  kill: {},
+  copy: {},
+  tabs: ["home", "plan", "watching", "more"],
+  timing: { liveRefreshSec: 15, alertRepeatWindowMin: 15, arriveLeadSec: 150, sameRunToleranceSec: 120, configRefreshMin: 30 },
+};
+const APP_CONFIG_SECTIONS = ["flags", "kill", "copy", "timing"];
+
+function mergeAppConfig(over) {
+  const out = JSON.parse(JSON.stringify(APP_CONFIG_DEFAULTS));
+  if (!over || typeof over !== "object") return out;
+  for (const k of APP_CONFIG_SECTIONS) {
+    if (over[k] && typeof over[k] === "object" && !Array.isArray(over[k])) Object.assign(out[k], over[k]);
+  }
+  if (Array.isArray(over.tabs) && over.tabs.length) out.tabs = over.tabs.filter((t) => typeof t === "string").slice(0, 6);
+  if (Number.isFinite(over.version)) out.version = over.version;
+  return out;
+}
+
+async function appConfigRoute(request, env, p, adminOk) {
+  const platform = (p.get("platform") || "ios").toLowerCase().replace(/[^a-z]/g, "").slice(0, 12) || "ios";
+  const d = env.DB;
+  let over = null;
+  if (d) {
+    try {
+      await d.prepare("CREATE TABLE IF NOT EXISTS app_config (platform TEXT PRIMARY KEY, body TEXT NOT NULL, at INTEGER)").run();
+      if (request.method === "POST") {
+        if (!adminOk) return json({ error: "forbidden" }, 403);
+        const text = await request.text();
+        if (text.length > 16000) return json({ error: "too big" }, 413);
+        let body;
+        try { body = JSON.parse(text); } catch (e) { return json({ error: "not JSON" }, 400); }
+        if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "send an object" }, 400);
+        await d.prepare("INSERT INTO app_config (platform, body, at) VALUES (?1, ?2, ?3) ON CONFLICT(platform) DO UPDATE SET body = ?2, at = ?3").bind(platform, JSON.stringify(body), Date.now()).run();
+        over = body;
+      } else {
+        const row = await d.prepare("SELECT body FROM app_config WHERE platform = ?1").bind(platform).first();
+        if (row && row.body) over = JSON.parse(row.body);
+      }
+    } catch (e) {
+      if (request.method === "POST") return json({ error: "could not save" }, 500);
+    }
+  } else if (request.method === "POST") {
+    return json({ error: "no database" }, 503);
+  }
+  const res = json({ ...mergeAppConfig(over), platform });
+  res.headers.set("cache-control", "public, max-age=300");
+  return res;
+}
+
 // Claims one alert of one watch before it is sent, so two checks that run at the same time
 // (the minute tick and an open app) send it once. True when this check may send it.
 async function claimOnce(env, watchId, key) {
@@ -4118,6 +4175,8 @@ async function handleRequest(request, env, exec) {
           const r = await runTick(env, { force: p.get("force") === "1" && adminOk(request, p), noSample: p.get("nosample") === "1" });
           return json(r);
         }
+        case "/api/app/config":
+          return await appConfigRoute(request, env, p, adminOk(request, p));
         case "/api/push/key":
           return json({ publicKey: VAPID_PUBLIC });
         case "/api/push/subscribe": {

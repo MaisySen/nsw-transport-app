@@ -90,9 +90,9 @@ final class FlowTests: XCTestCase {
 
     func test03PlanWatchAndSaveTrip() {
         app.launch()
-        tab("Trips")
-        let plan = app.navigationBars.buttons["Plan a trip"].firstMatch
-        XCTAssertTrue(plan.waitForExistence(timeout: 10), "plan button on Home")
+        tab("Plan")
+        let plan = element("planTrip")
+        XCTAssertTrue(plan.waitForExistence(timeout: 10), "Plan a trip on the Plan tab")
         plan.tap()
         shot("plan-empty")
 
@@ -112,7 +112,7 @@ final class FlowTests: XCTestCase {
         shot("trip-detail")
 
         app.swipeUp()
-        let save = app.buttons["Save as a named trip"].firstMatch
+        let save = element("saveNamedTrip")
         XCTAssertTrue(save.waitForExistence(timeout: 5), "save trip button")
         shot("trip-detail-bottom")
         save.tap()
@@ -492,9 +492,9 @@ final class FlowTests: XCTestCase {
     /// sheet, the share button and End trip, and Home shows Trip in progress while it runs.
     func test12FaresAndLiveTrip() {
         app.launch()
-        tab("Trips")
-        let plan = app.navigationBars.buttons["Plan a trip"].firstMatch
-        XCTAssertTrue(plan.waitForExistence(timeout: 10), "plan button on Home")
+        tab("Plan")
+        let plan = element("planTrip")
+        XCTAssertTrue(plan.waitForExistence(timeout: 10), "Plan a trip on the Plan tab")
         plan.tap()
         pick("fromField", "Strathfield", expect: "Strathfield Station")
         pick("toField", "Central", expect: "Central Station")
@@ -573,9 +573,9 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(access.waitForExistence(timeout: 10), "Access and facilities on the Tallawong screen")
         shot("station-access")
 
-        tab("Search")
+        tab("More")
         let machines = element("opalMachines")
-        XCTAssertTrue(machines.waitForExistence(timeout: 10), "Opal machines row in Search")
+        XCTAssertTrue(machines.waitForExistence(timeout: 10), "Opal machines row in More")
         machines.tap()
         allowSystemAlert()
         XCTAssertTrue(element("opalMachine").waitForExistence(timeout: 30), "at least one Opal machine")
@@ -634,7 +634,7 @@ final class FlowTests: XCTestCase {
         }
         if adult.exists { adult.tap() }
 
-        tab("Trips")
+        tab("Plan")
         let clear = element("clearRecentTrips")
         if reveal(clear) {
             shot("home-recent")
@@ -705,7 +705,7 @@ final class FlowTests: XCTestCase {
         if element("confirmEndTrip").waitForExistence(timeout: 5) { element("confirmEndTrip").tap() }
         pause(2)
 
-        let save = app.buttons["Save as a named trip"].firstMatch
+        let save = element("saveNamedTrip")
         if reveal(save) {
             save.tap()
             let alert = app.alerts.firstMatch
@@ -713,12 +713,14 @@ final class FlowTests: XCTestCase {
             alert.buttons["Cancel"].tap()
         }
 
-        tab("Search")
-        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 8), "the Search tab opens")
         tab("Watching")
         XCTAssertTrue(app.navigationBars["Watching"].waitForExistence(timeout: 8), "the Watching tab opens")
-        tab("Trips")
-        XCTAssertTrue(app.navigationBars.buttons["Plan a trip"].firstMatch.waitForExistence(timeout: 8), "the Trips tab opens")
+        tab("More")
+        XCTAssertTrue(element("moreSettings").waitForExistence(timeout: 8), "the More tab opens")
+        tab("Home")
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8), "the Home tab opens")
+        tab("Plan")
+        XCTAssertTrue(element("planTrip").waitForExistence(timeout: 8), "the Plan tab opens")
         shot("tabs-after-trip")
     }
 
@@ -748,9 +750,9 @@ final class FlowTests: XCTestCase {
     }
 
     private func openTrip(from: String, fromName: String, to: String, toName: String) {
-        tab("Trips")
-        let plan = app.navigationBars.buttons["Plan a trip"].firstMatch
-        XCTAssertTrue(plan.waitForExistence(timeout: 10), "plan button on Home")
+        tab("Plan")
+        let plan = element("planTrip")
+        XCTAssertTrue(plan.waitForExistence(timeout: 10), "Plan a trip on the Plan tab")
         plan.tap()
         pick("fromField", from, expect: fromName)
         pick("toField", to, expect: toName)
@@ -838,11 +840,28 @@ final class FlowTests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: id).firstMatch
     }
 
+    /// Opens a part of the app by the name the tests used before the four tab layout:
+    /// Trips is Home, Search is Plan, and Ask and Settings are rows in More.
     private func tab(_ name: String) {
-        let inBar = app.tabBars.buttons[name].firstMatch
-        if inBar.waitForExistence(timeout: 8) { inBar.tap() } else { app.buttons[name].firstMatch.tap() }
+        let map: [String: (String, String?)] = [
+            "Trips": ("Home", nil), "Search": ("Plan", nil),
+            "Ask": ("More", "moreAsk"), "Settings": ("More", "moreSettings"), "About": ("More", "moreAbout"),
+        ]
+        let (barName, row) = map[name] ?? (name, nil)
+        let inBar = app.tabBars.buttons[barName].firstMatch
+        if inBar.waitForExistence(timeout: 8) { inBar.tap() } else { app.buttons[barName].firstMatch.tap() }
         pause(1)
         allowSystemAlert()
+        if let row {
+            let cell = element(row)
+            if !cell.waitForExistence(timeout: 3) {
+                // Tapping the selected tab again goes back to its first screen.
+                inBar.tap()
+                pause(1)
+            }
+            if cell.waitForExistence(timeout: 8) { cell.tap() }
+            pause(1)
+        }
     }
 
     /// Answers a system permission alert (notifications, location) if one is showing.

@@ -78,8 +78,15 @@ struct TripPlannerView: View {
                     let picked = TripPlan.directFilter(merged, extended: via != nil, all: showAll || (legs?.count ?? 0) > 2)
                     let journeys = picked.list
                     let alerts = Self.uniqueAlerts(journeys)
-                    if !alerts.isEmpty {
+                    let lifts = Array(Set(journeys.compactMap(\.liftOutage))).sorted()
+                    if !alerts.isEmpty || !lifts.isEmpty {
                         Section {
+                            ForEach(lifts, id: \.self) { out in
+                                Label("Lift out: \(out)", systemImage: "figure.roll")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.red)
+                            }
+                            if !alerts.isEmpty {
                             NavigationLink { AlertsList(alerts: alerts) } label: {
                                 Label {
                                     VStack(alignment: .leading, spacing: 2) {
@@ -91,6 +98,7 @@ struct TripPlannerView: View {
                                 } icon: {
                                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                                 }
+                            }
                             }
                         }
                     }
@@ -119,10 +127,6 @@ struct TripPlannerView: View {
                             Text("Travel time").tag(true)
                         }
                         .pickerStyle(.segmented)
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                    }
-                    Section {
                         Toggle("All services", isOn: allServicesBinding)
                             .accessibilityIdentifier("allServices")
                     } footer: {
@@ -136,7 +140,7 @@ struct TripPlannerView: View {
                         moreButton("Earlier services", direction: -1)
                         ForEach(journeys) { j in
                             NavigationLink(value: JourneyLink(journey: j, from: from!, to: to!, legs: legs)) {
-                                ServiceRow(journey: j, status: ServiceStatus.of(j), dimmed: HomeBoard.isBeaten(j, among: journeys), showDuration: showDuration)
+                                ServiceRow(journey: j, status: ServiceStatus.of(j), dimmed: HomeBoard.isBeaten(j, among: journeys), showDuration: showDuration, showLift: false)
                             }
                             .accessibilityIdentifier("journey")
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -449,6 +453,14 @@ struct JourneyDetailView: View {
                 .padding(.vertical, 4)
             }
 
+            if !store.config.isOn("liveTrip") {
+                // Paused from the server config: say so instead of a button that cannot work.
+                Section {
+                    Label(store.config.killMessage("liveTrip") ?? "Start trip is not available right now.", systemImage: "pause.circle")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("startTripPaused")
+                }
+            } else {
             Section {
                 Button {
                     Task { await store.startLiveTrip(journey, from: from, to: to) }
@@ -465,7 +477,8 @@ struct JourneyDetailView: View {
                 .accessibilityIdentifier("startTrip")
                 .accessibilityHint("Live map, next stop, alerts on the way and a Lock Screen countdown")
             } footer: {
-                Text("Live map, next stop and alerts on the way, with a countdown on the Lock Screen. It ends when you arrive.")
+                Text(store.config.text("startTripFooter", "Live map, next stop and alerts on the way, with a countdown on the Lock Screen. It ends when you arrive."))
+            }
             }
 
             Section("Your trip") {
@@ -494,13 +507,17 @@ struct JourneyDetailView: View {
 
 
             Section {
-                Button { naming = true } label: { Label("Save as a named trip", systemImage: "bookmark") }
-                Button {
-                    let tod = Clock.minuteOfDay(journey.leave ?? Date())
-                    Task { await store.makeCommute(from: from, to: to, tod: tod, name: nil) }
-                } label: { Label("Make this my commute", systemImage: "clock.arrow.circlepath") }
+                Button { naming = true } label: { Label("Save trip", systemImage: "star") }
+                    .accessibilityIdentifier("saveNamedTrip")
+                if store.config.isOn("weekdayReminder") {
+                    Button {
+                        let tod = Clock.minuteOfDay(journey.leave ?? Date())
+                        Task { await store.makeCommute(from: from, to: to, tod: tod, name: nil) }
+                    } label: { Label("Remind me every weekday", systemImage: "clock.arrow.circlepath") }
+                        .accessibilityIdentifier("makeCommute")
+                }
             } footer: {
-                Text("A named trip like home works here and in WhatsApp. A commute gets a leave now alert every weekday.")
+                Text("Saved trips show on Home with live times. A weekday reminder tells you when to leave, at this time.")
             }
 
             if let f = journey.fare {
@@ -510,12 +527,12 @@ struct JourneyDetailView: View {
         .listStyle(.insetGrouped)
         .navigationTitle("\(Naming.short(from.name)) to \(Naming.short(to.name))")
         .navigationBarTitleDisplayMode(.inline)
-        .alert("Name this trip", isPresented: $naming) {
+        .alert("Save trip", isPresented: $naming) {
             TextField("home", text: $name)
             Button("Save") { Task { await store.saveTrip(name: name.lowercased(), from: from, to: to) } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Then type the name to get the next live services.")
+            Text("Give it a short name. Type the name in Ask to get the next services.")
         }
         .appHaptics()
     }

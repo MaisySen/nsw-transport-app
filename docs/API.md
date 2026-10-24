@@ -37,6 +37,7 @@ Example: `/api/ask?q=campsie%20to%20newcastle%20via%20chatswood&format=text`
 | `/api/service` | GET | `trip`, `mode`, `line`, `stop`, `destId`, `planned`, `to`, `stopName`, `dest`, `color` | One service: live vehicle position, stop list with live times, crowding |
 | `/api/status` | GET | Same as `/api/service` | The service without the stop list and path, plus a `text` summary. Also used as a health check |
 | `/api/alerts` | GET | `q` (for example `T1`, `buses`) | `kind: "alerts"` |
+| `/api/app/config` | GET | `platform` (`ios`, default) | Remote config for the phone apps, see below |
 | `/api/predict` | GET | `line`, `stop`, `planned` | `prediction`: usual delay from recorded history, or null when there are fewer than 5 trips |
 
 `/api/plan` leg fields: `f` from stop id, `fn` from name, `t` to stop id, `tn` to name, `m` mode (`train`, `metro`, `bus`, `ferry`, `lightrail`, `walk`), `c` connection minutes before this leg (0 to 60, default 5), `a` all services for this leg (1 or 0), `w` walk minutes (1 to 90). The first leg cannot be a walk.
@@ -159,3 +160,27 @@ Nearly full means 10 percent or fewer spaces left, or 10 or fewer on a small car
 Trip results: `/api/trip`, `/api/plan`, `/api/next` and `/api/ask` take `acc=1` for step free trips only (the Trip Planner `wheelchair=on` option; the answer then has `accessible: true`). Every transit leg gets `access: {from, to}`, each `{id, level, lift, outage, outages}` for the station where you board and get off. When the first leg starts at a Park and Ride station the answer has `parking: {station, carparks, source}`. Ask trip replies add lines for step free only, a lift outage on the trip, and the Park and Ride spaces.
 
 Ask: parking, lift and top up questions answer with `kind: "facility"`, a `reply`, and cards of type `parking` (`title`, `items` as above, `source`) or `station` (`station`: `id`, `name`, `access`, `ticket`, `outages`, `parking`, `source`). Clients that do not know these card types can show the reply text alone.
+
+## Remote config for the phone apps
+
+`GET /api/app/config?platform=ios` returns the settings the iPhone app reads at launch and each time it comes to the front (cached for 5 minutes at the edge; the app keeps its last good copy and has the same defaults built in, so it works offline). Native code cannot be changed over the air, so this only switches what the app already has.
+
+```json
+{
+  "version": 1,
+  "flags": { "ask": true, "parkRide": true, "opalMachines": true, "liveTrip": true, "shareTrip": true, "weekdayReminder": true, "nearby": true },
+  "kill": {},
+  "copy": {},
+  "tabs": ["home", "plan", "watching", "more"],
+  "timing": { "liveRefreshSec": 15, "alertRepeatWindowMin": 15, "arriveLeadSec": 150, "sameRunToleranceSec": 120, "configRefreshMin": 30 },
+  "platform": "ios"
+}
+```
+
+* `flags`: `false` hides a feature (Ask, Park and Ride, Opal machines on More; Start trip; Share trip on the live trip; Remind me every weekday; Nearby on Home).
+* `kill`: feature name to the words shown in its place, for example `{"liveTrip": "Live trips are paused for a moment."}`. A killed feature is hidden even if its flag is true.
+* `copy`: `welcomeTitle` (Home welcome) and `startTripFooter` (under Start trip). Empty or missing uses the text in the app.
+* `tabs`: tab order. Unknown keys are ignored and a missing tab is added at the end, so no tab can disappear.
+* `timing`: `liveRefreshSec` (5 to 120), `alertRepeatWindowMin` (how long the same alert is held back, 1 to 120), `sameRunToleranceSec` (how far a service's boarding time may be from the planned one and still count as the same run, 30 to 600), `configRefreshMin`. Values outside the range are clamped in the app.
+
+Change it without a build or a deploy: `POST /api/app/config?platform=ios` with the `x-admin-key` header and a JSON object holding only the parts to change. It is stored in D1 (`app_config`) and merged over the defaults. Send `{}` to go back to the defaults.

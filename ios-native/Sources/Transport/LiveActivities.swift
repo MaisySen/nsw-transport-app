@@ -55,8 +55,11 @@ final class LiveActivities {
 
     private func request(attrs: TripActivityAttributes, state: TripActivityAttributes.ContentState, key: ServiceKey) async {
         guard enabled else { return }
-        // One followed service at a time keeps the Lock Screen calm.
+        // One card at a time keeps the Lock Screen calm: this replaces any other card.
         for a in Activity<TripActivityAttributes>.activities {
+            await a.end(nil, dismissalPolicy: .immediate)
+        }
+        for a in Activity<LiveTripAttributes>.activities {
             await a.end(nil, dismissalPolicy: .immediate)
         }
         followed.removeAll()
@@ -90,6 +93,9 @@ final class LiveActivities {
             }
         }
     }
+
+    /// Forgets followed services after their cards were ended elsewhere.
+    func forgetAll() { followed.removeAll() }
 
     func endAll() async {
         for a in Activity<TripActivityAttributes>.activities { await a.end(nil, dismissalPolicy: .immediate) }

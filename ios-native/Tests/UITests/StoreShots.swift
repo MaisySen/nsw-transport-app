@@ -69,8 +69,12 @@ final class StoreShots: XCTestCase {
             }
         }
 
-        tab("Search")
+        tab("Home")
         let near = app.buttons["Show stops near me"].firstMatch
+        for _ in 0..<4 where !(near.exists && near.isHittable) {
+            app.swipeUp()
+            pause(0.6)
+        }
         if near.waitForExistence(timeout: 5) && near.isHittable {
             near.tap()
             allowSystemAlert()
@@ -83,11 +87,28 @@ final class StoreShots: XCTestCase {
         app.descendants(matching: .any).matching(identifier: id).firstMatch
     }
 
+    /// Opens a part of the app by the name the tests used before the four tab layout:
+    /// Trips is Home, Search is Plan, and Ask and Settings are rows in More.
     private func tab(_ name: String) {
-        let inBar = app.tabBars.buttons[name].firstMatch
-        if inBar.waitForExistence(timeout: 8) { inBar.tap() } else { app.buttons[name].firstMatch.tap() }
+        let map: [String: (String, String?)] = [
+            "Trips": ("Home", nil), "Search": ("Plan", nil),
+            "Ask": ("More", "moreAsk"), "Settings": ("More", "moreSettings"), "About": ("More", "moreAbout"),
+        ]
+        let (barName, row) = map[name] ?? (name, nil)
+        let inBar = app.tabBars.buttons[barName].firstMatch
+        if inBar.waitForExistence(timeout: 8) { inBar.tap() } else { app.buttons[barName].firstMatch.tap() }
         pause(1)
         allowSystemAlert()
+        if let row {
+            let cell = element(row)
+            if !cell.waitForExistence(timeout: 3) {
+                // Tapping the selected tab again goes back to its first screen.
+                inBar.tap()
+                pause(1)
+            }
+            if cell.waitForExistence(timeout: 8) { cell.tap() }
+            pause(1)
+        }
     }
 
     private func allowSystemAlert() {
@@ -140,7 +161,7 @@ final class OfflineLaunchTests: XCTestCase {
         app.launchArguments = ["-apiProfile", "uitest-offline", "-apiBase", "http://127.0.0.1:9", "-uiTestReset", "YES"]
         app.launch()
         XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 15), "tab bar after an offline start")
-        for name in ["Trips", "Search", "Ask", "Watching", "Settings", "Trips"] {
+        for name in ["Home", "Plan", "Watching", "More", "Home"] {
             let b = app.tabBars.buttons[name].firstMatch
             if b.waitForExistence(timeout: 5) { b.tap() }
             Thread.sleep(forTimeInterval: 2.5)

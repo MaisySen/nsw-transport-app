@@ -47,7 +47,7 @@ extension AppStore {
             while !Task.isCancelled {
                 guard let self, self.liveTrip != nil else { return }
                 if self.isActive { await self.refreshLive() }
-                try? await Task.sleep(for: .seconds(15))
+                try? await Task.sleep(for: .seconds(self.liveRefreshSeconds))
             }
         }
     }
@@ -195,38 +195,78 @@ enum LiveTripActivities {
             let n = s.nextIndex ?? m
             progress = Double(max(0, min(n, a) - m)) / Double(a - m)
         }
-        var fareLine: String?
-        if let f = record.fare, let t = f.total {
-            fareLine = "Opal fare estimate \(Money.text(t)) (\(f.summary))"
-        }
+        let times = (st?.times.count ?? 0) > i ? st?.times[i] : nil
         return LiveTripAttributes.ContentState(
             line: leg.line ?? "", lineColorHex: leg.color ?? Mode(raw: leg.mode).fallbackHex, mode: leg.mode ?? "train",
-            nextStop: st?.phase == "wait" ? Optional(Naming.short(leg.from ?? "")) : st?.nextStop,
-            stopsLeft: st?.stopsLeft, getOffAt: Naming.short(leg.to ?? record.to.name),
+            nextStop: st?.phase == "wait" ? Optional(LiveCardText.place(leg.from)) : st?.nextStop.map { LiveCardText.place($0) },
+            stopsLeft: st?.stopsLeft, getOffAt: LiveCardText.place(leg.to ?? record.to.name),
             arrival: st?.eta ?? record.legs.last?.arrPlanned ?? Date().addingTimeInterval(1800),
-            phase: st?.phase ?? "wait", warning: warning, progress: progress, fareLine: fareLine)
+            phase: st?.phase ?? "wait", warning: warning, progress: progress, fareLine: nil,
+            towards: LiveCardText.place(leg.towards ?? leg.to), platform: leg.fromPlatform,
+            departs: times?.dep ?? leg.planned, legArrives: times?.arr ?? leg.arrPlanned,
+            destination: LiveCardText.place(record.to.name))
     }
 
+    /// True while a card is being asked for, so a refresh cannot ask for a second one.
+    private static var requesting = false
+
+    /// Starts the one Lock Screen card for this trip. Every other card (an earlier trip, a
+    /// followed service) is ended first.
     static func start(record: LiveTripRecord, state st: LiveTripState?) {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled, !requesting else { return }
+        requesting = true
         let c = content(record: record, state: st)
-        _ = try? Activity.request(attributes: LiveTripAttributes(title: record.title, legsCount: record.legs.count),
-                                  content: ActivityContent(state: c, staleDate: c.arrival.addingTimeInterval(15 * 60)),
-                                  pushType: nil)
+        let host = ActivityCardHost(attributes: LiveTripAttributes(title: record.title, legsCount: record.legs.count), content: c)
+        Task { @MainActor in
+            await LiveCardRule.startOne(on: host)
+            LiveActivities.shared.forgetAll()
+            requesting = false
+        }
     }
 
     static func update(record: LiveTripRecord, state st: LiveTripState, services: [ServiceResponse?]) {
         let c = content(record: record, state: st, services: services)
-        for a in Activity<LiveTripAttributes>.activities {
+        let cards = Activity<LiveTripAttributes>.activities
+        // Never two cards for one trip.
+        for extra in cards.dropFirst() { Task { await extra.end(nil, dismissalPolicy: .immediate) } }
+        if let a = cards.first {
             Task { await a.update(ActivityContent(state: c, staleDate: c.arrival.addingTimeInterval(15 * 60))) }
+        } else if !st.done && !requesting && Activity<TripActivityAttributes>.activities.isEmpty {
+            start(record: record, state: st)
         }
-        if Activity<LiveTripAttributes>.activities.isEmpty && !st.done { start(record: record, state: st) }
     }
 
     static func endAll() async {
         for a in Activity<LiveTripAttributes>.activities {
             await a.end(nil, dismissalPolicy: .immediate)
         }
+    }
+}
+
+/// ActivityKit behind LiveCardRule: every trip and service card, and a trip card to ask for.
+@MainActor
+final class ActivityCardHost: LiveCardHost {
+    let attributes: LiveTripAttributes
+    let content: LiveTripAttributes.ContentState
+
+    init(attributes: LiveTripAttributes, content: LiveTripAttributes.ContentState) {
+        self.attributes = attributes
+        self.content = content
+    }
+
+    var cardIDs: [String] {
+        Activity<LiveTripAttributes>.activities.map(\.id) + Activity<TripActivityAttributes>.activities.map(\.id)
+    }
+
+    func endCard(_ id: String) async {
+        for a in Activity<LiveTripAttributes>.activities where a.id == id { await a.end(nil, dismissalPolicy: .immediate) }
+        for a in Activity<TripActivityAttributes>.activities where a.id == id { await a.end(nil, dismissalPolicy: .immediate) }
+    }
+
+    func requestCard() throws -> String {
+        try Activity.request(attributes: attributes,
+                             content: ActivityContent(state: content, staleDate: content.arrival.addingTimeInterval(15 * 60)),
+                             pushType: nil).id
     }
 }
 
@@ -513,16 +553,18 @@ struct LiveTripSheet: View {
             .safeAreaInset(edge: .bottom) {
                 if let trip = store.liveTrip {
                     HStack(spacing: 12) {
-                        Button {
-                            Task {
-                                if let url = await store.liveShareURL() { shareURL = url; sharing = true }
+                        if store.config.isOn("shareTrip") {
+                            Button {
+                                Task {
+                                    if let url = await store.liveShareURL() { shareURL = url; sharing = true }
+                                }
+                            } label: {
+                                Label(trip.share == nil ? "Share trip" : "Share link", systemImage: "square.and.arrow.up")
+                                    .frame(maxWidth: .infinity)
                             }
-                        } label: {
-                            Label(trip.share == nil ? "Share trip" : "Share link", systemImage: "square.and.arrow.up")
-                                .frame(maxWidth: .infinity)
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("shareTrip")
                         }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("shareTrip")
                         Button(role: .destructive) { confirmEnd = true } label: {
                             Label("End trip", systemImage: "stop.circle.fill")
                                 .frame(maxWidth: .infinity)

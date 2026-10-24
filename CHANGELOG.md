@@ -24,6 +24,27 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * No Lock screen button: the ongoing notification starts with the trip.
 * New replay test (`app/test/livereplay.test.mjs`): a two leg trip changing at Redfern to the T4 for Kings Cross, on time, delayed and early, to 15 minutes past arrival.
 
+### Remote config for the iPhone app (10:45 PM)
+* New `GET /api/app/config` on the server (deployed) and a matching reader in the app, fetched at launch and when the app comes to the front, with the last good copy kept for offline launches. From the server, without a new build: hide a feature, pause one with a message (kill switch), change the welcome title and the Start trip footer, change alert timings and the live refresh rate, and reorder the tabs. Trip and alert decisions stay on the server as before. Details in docs/API.md.
+* An admin can change it with `POST /api/app/config` (stored in D1, merged over the defaults).
+* Tests: backend `appconfig.test.mjs` (defaults, merge, admin only, junk ignored); app `RemoteConfigTests` (defaults, flags, kill, copy, tab order, bounds, bad parts ignored). 87 backend tests pass.
+
+### iPhone app: simpler layout, four tabs (10:40 PM)
+* Four tabs instead of five: Home, Plan, Watching, More. Ask, Park and Ride, Opal machines, Settings and About now live under More.
+* One way to plan: the Plan tab, with Plan a trip at the top, then recent trips and recent stops, each with Clear. Home no longer has its own search field, plan icon or recent lists.
+* Home shows your trips under "Your trips", starred stops and nearby stops. With nothing saved it shows a welcome with one Plan a trip button. Watching lives only on its tab. Commute reminders live on their trip, not in Settings too.
+* A lift outage shows once per trip card and once in the planner, not on every service row. A stop board shows a shared alert once at the top, not on every departure.
+* Trip screen: Start trip, then Save trip and Remind me every weekday. The save banner reads "Saved as X. It shows on Home with live times".
+* Settings: "Alerts" is now "Notifications"; the clear history buttons moved to the Plan tab next to the lists they clear; About is its own screen with the publisher, Fintex Australia Pty Ltd.
+* New UI test FullJourneyTests walks every screen in light and dark.
+
+### iPhone app: one Lock Screen card per trip (10:35 PM)
+* Fixed: a trip could show two Live Activities at once (a followed service card and the trip card). Starting a trip now ends every card first, including ones left from earlier trips, and a refresh can never ask for a second one. Following a service replaces the trip card the same way.
+* The one card changes with the trip. Waiting: "To Central, leaves 9:51pm, Platform 2". On board: "Get off at Redfern, 3 stops". After a change it shows the next leg. The bottom line always reads "Arrive Kings Cross 10:36pm".
+* The countdown is whole minutes ("in 26 min") on iOS 18 and later, not a 26:21 seconds timer. iOS 17 shows the clock time. Followed service cards count the same way.
+* Short names without "Station", so "Board at Strathfield St..." no longer cuts off. The fare line is gone from the Lock Screen.
+* Unit tests: starting a trip twice leaves one card, cards from earlier trips are ended, minutes never show seconds.
+
 ### iPhone app: trip screen buttons, one Start trip, journey replay (10:25 PM)
 * Fixed: on the trip screen the map link and Start trip could buzz and do nothing. Every link in the trip flow now opens by value (trip, map, planner), so each stack knows where it goes, and Start trip presents the live trip again even when an earlier one left it marked open.
 * Start trip and Watch trip were the same job: Watch trip is gone. Start trip asks for notifications once and also follows the trip on the server, so alerts arrive with the app closed. It ends at your stop.

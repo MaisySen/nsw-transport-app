@@ -402,8 +402,12 @@ public enum LiveTripLogic {
     /// the next service on the line; that answer must not move the trip onto the next train.
     public static func matches(_ r: ServiceResponse, leg l: WatchLeg) -> Bool {
         guard let m = r.mineIndex, r.stops.indices.contains(m), let p = r.stops[m].planned, let lp = l.planned else { return true }
-        return abs(p.timeIntervalSince(lp)) <= 120
+        return abs(p.timeIntervalSince(lp)) <= sameRunTolerance
     }
+
+    /// Seconds a service's planned boarding time may differ from the leg's and still be the same
+    /// run. 120 by default; the server config can change it.
+    nonisolated(unsafe) public static var sameRunTolerance: TimeInterval = 120
 
     /// `services[i]` is the latest /api/service answer for leg i, or nil.
     public static func compute(legs: [WatchLeg], services raw: [ServiceResponse?], now: Date = Date()) -> LiveTripState? {

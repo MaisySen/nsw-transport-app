@@ -140,17 +140,19 @@ struct StopView: View {
                 }
             }
 
-            if let first = seriousAlerts.first {
+            let top = topAlerts
+            let shared = Set(top.map(\.id))
+            if let first = top.first {
                 Section {
-                    if seriousAlerts.count == 1 {
+                    if top.count == 1 {
                         AlertRow(alert: first)
                     } else {
                         NavigationLink {
-                            AlertsList(alerts: Array(seriousAlerts))
+                            AlertsList(alerts: top)
                         } label: {
                             Label {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("\(seriousAlerts.count) service alerts").font(.subheadline.weight(.semibold))
+                                    Text("\(top.count) service alerts").font(.subheadline.weight(.semibold))
                                     Text(first.title ?? "").font(.footnote).foregroundStyle(.secondary).lineLimit(1)
                                 }
                             } icon: {
@@ -168,7 +170,8 @@ struct StopView: View {
             Section {
                 ForEach(rows) { d in
                     Button { selected = ServiceKey(d) } label: {
-                        DepartureRow(d: d, alerts: data?.alerts(for: d) ?? [])
+                        // An alert already said at the top is not repeated on every row.
+                        DepartureRow(d: d, alerts: (data?.alerts(for: d) ?? []).filter { !shared.contains($0.id) })
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("departure")
@@ -177,12 +180,6 @@ struct StopView: View {
                             Task { await store.watch(d.watchRequest(device: store.device, profile: store.api.profile)) }
                         } label: { Label("Watch", systemImage: "bell.fill") }
                         .tint(.indigo)
-                    }
-                    .swipeActions(edge: .leading) {
-                        Button { store.toggleStar(stop) } label: {
-                            Label(store.isStarred(stop.id) ? "Unstar" : "Star", systemImage: store.isStarred(stop.id) ? "star.slash" : "star.fill")
-                        }
-                        .tint(.yellow)
                     }
                     .contextMenu {
                         Button { Task { await store.watch(d.watchRequest(device: store.device, profile: store.api.profile)) } } label: {
@@ -198,7 +195,7 @@ struct StopView: View {
                 if data != nil && rows.isEmpty {
                     Text("No services in the next while.")
                 } else {
-                    Text("Swipe left to watch a service. Swipe right to star this stop.")
+                    Text("Tap a service to see it on the map. Swipe left to watch it.")
                 }
             }
 
@@ -246,6 +243,23 @@ struct StopView: View {
         return (data?.alerts ?? []).filter { a in
             a.isSerious || (a.lines ?? []).contains(where: { lines.contains($0) })
         }
+    }
+
+    /// Serious alerts, plus any alert that applies to more than one service on the board.
+    private var topAlerts: [ServiceAlert] {
+        var count: [String: Int] = [:]
+        let perRow = rows.map { data?.alerts(for: $0) ?? [] }
+        for list in perRow { for a in Set(list.map(\.id)) { count[a, default: 0] += 1 } }
+        let seriousIDs = Set(seriousAlerts.map(\.id))
+        var seen = Set<String>()
+        var out: [ServiceAlert] = []
+        let candidates: [ServiceAlert] = seriousAlerts + perRow.flatMap { $0 }
+        for a in candidates {
+            let many = (count[a.id] ?? 0) > 1
+            guard seriousIDs.contains(a.id) || many else { continue }
+            if seen.insert(a.id).inserted { out.append(a) }
+        }
+        return out
     }
 
     private var rows: [Departure] {

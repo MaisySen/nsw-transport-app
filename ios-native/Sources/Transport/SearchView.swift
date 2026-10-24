@@ -54,13 +54,13 @@ struct StopRow: View {
     }
 }
 
+/// The Plan tab: the one place to search. Find a stop by name or number, or plan a trip from
+/// A to B. Recent trips and stops sit under the search, each list clearable.
 struct SearchView: View {
     @Environment(AppStore.self) private var store
     @State private var query = ""
     @State private var results: [StopRef] = []
     @State private var searching = false
-    @State private var location = LocationFinder()
-    @State private var nearby: [StopRef] = []
 
     var body: some View {
         NavigationStack {
@@ -68,44 +68,38 @@ struct SearchView: View {
                 if query.isEmpty {
                     Section {
                         NavigationLink(value: HomeView.PlanRoute()) {
-                            Label {
+                            HStack(spacing: 14) {
+                                Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(.white)
+                                    .frame(width: 44, height: 44)
+                                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    .accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Plan a trip").font(.body.weight(.semibold))
-                                    Text("A to B with live leave in times").font(.footnote).foregroundStyle(.secondary)
+                                    Text("Choose where from and where to").font(.subheadline).foregroundStyle(.secondary)
                                 }
-                            } icon: {
-                                Image(systemName: "arrow.triangle.turn.up.right.diamond.fill").foregroundStyle(.tint)
                             }
+                            .padding(.vertical, 6)
                         }
                         .accessibilityIdentifier("planTrip")
                     }
-                    Section {
-                        if nearby.isEmpty {
-                            Button {
-                                location.request()
-                            } label: {
-                                Label("Show stops near me", systemImage: "location.fill")
-                            }
-                        } else {
-                            ForEach(nearby.prefix(6)) { s in
-                                NavigationLink(value: s) { StopRow(stop: s) }
-                            }
-                        }
-                    } header: { Text("Nearby") }
-                    Section {
-                        NavigationLink { ParkRideListView() } label: {
-                            Label("Park and Ride spaces", systemImage: "car.fill")
-                        }
-                        .accessibilityIdentifier("parkRideList")
-                        NavigationLink { OpalMachinesView() } label: {
-                            Label("Opal top up machines", systemImage: "creditcard.fill")
-                        }
-                        .accessibilityIdentifier("opalMachines")
-                    }
-                    if !store.recents.isEmpty {
+
+                    let trips = recentTripRows
+                    if !trips.isEmpty {
                         Section {
-                            ForEach(store.recents) { s in
+                            ForEach(trips, id: \.self) { r in recentTripRow(r) }
+                        } header: {
+                            groupHeader("Recent trips", id: "clearRecentTrips") { store.clearRecentTrips() }
+                        }
+                    }
+
+                    let stops = Array(store.recents.prefix(6))
+                    if !stops.isEmpty {
+                        Section {
+                            ForEach(stops) { s in
                                 NavigationLink(value: s) { StopRow(stop: s) }
+                                    .accessibilityIdentifier("recentStop")
                                     .swipeActions(edge: .trailing) {
                                         Button(role: .destructive) { store.forgetStop(s.id) } label: {
                                             Label("Remove", systemImage: "minus.circle")
@@ -113,14 +107,9 @@ struct SearchView: View {
                                     }
                             }
                         } header: {
-                            HStack {
-                                Text("Recent")
-                                Spacer()
-                                Button("Clear") { store.clearRecentStops() }
-                                    .font(.subheadline)
-                                    .textCase(nil)
-                                    .accessibilityLabel("Clear recent stops")
-                            }
+                            groupHeader("Recent stops", id: "clearRecentStops") { store.clearRecentStops() }
+                        } footer: {
+                            Text("Kept only on this phone. Swipe left to remove one.")
                         }
                     }
                 } else {
@@ -141,18 +130,66 @@ struct SearchView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle("Search")
+            .listSectionSpacing(.custom(16))
+            .navigationTitle("Plan")
             .navigationDestination(for: StopRef.self) { s in StopView(stop: s) }
             .navigationDestination(for: HomeView.PlanRoute.self) { _ in TripPlannerView() }
             .navigationDestination(for: JourneyLink.self) { l in JourneyDetailView(journey: l.journey, from: l.from, to: l.to, legs: l.legs) }
             .navigationDestination(for: ServiceKey.self) { k in ServiceView(key: k) }
+            .navigationDestination(for: TripPair.self) { p in TripPlannerView(from: p.from, to: p.to, via: p.via, conn: p.conn ?? 5, legs: p.legs) }
             .overlay(alignment: .bottom) { UndoToast() }
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Station, stop or stop number")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Find a stop, station or stop number")
             .modifier(FocusSearchOnRequest())
             .autocorrectionDisabled()
             .task(id: query) { await search() }
-            .onChange(of: location.coordinate?.latitude) { _, _ in
-                Task { await loadNearby() }
+        }
+    }
+
+    /// Up to 5 trips you looked at, each once.
+    private var recentTripRows: [TripPair] {
+        var out: [TripPair] = []
+        for r in store.recentTrips where r.from.id != r.to.id {
+            if !out.contains(where: { $0.from.id == r.from.id && $0.to.id == r.to.id }) { out.append(r) }
+            if out.count == 5 { break }
+        }
+        return out
+    }
+
+    /// A group header with Clear on the right.
+    private func groupHeader(_ title: String, id: String, clear: @escaping () -> Void) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Button("Clear") { clear() }
+                .font(.subheadline)
+                .textCase(nil)
+                .accessibilityIdentifier(id)
+                .accessibilityLabel("Clear \(title.lowercased())")
+        }
+    }
+
+    private func recentTripRow(_ r: TripPair) -> some View {
+        NavigationLink(value: TripPair(from: r.from, to: r.to)) {
+            Label {
+                Text("\(Naming.compact(Naming.short(r.from.name))) to \(Naming.compact(Naming.short(r.to.name)))")
+                    .lineLimit(1)
+            } icon: {
+                Image(systemName: "clock.arrow.circlepath").foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityIdentifier("recentTrip")
+        .contextMenu {
+            Button {
+                store.saveMyTrip(MyTrip(name: "\(Naming.compact(Naming.short(r.from.name))) to \(Naming.compact(Naming.short(r.to.name)))",
+                                        from: r.from, to: r.to, via: nil, conn: nil, modes: nil))
+            } label: { Label("Save trip", systemImage: "star") }
+            Button(role: .destructive) { store.forgetTrip(from: r.from, to: r.to) } label: {
+                Label("Remove from recent", systemImage: "minus.circle")
+            }
+        }
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) { store.forgetTrip(from: r.from, to: r.to) } label: {
+                Label("Remove", systemImage: "minus.circle")
             }
         }
     }
@@ -170,13 +207,6 @@ struct SearchView: View {
             r.insert(StopRef(id: q, name: "Stop \(q)"), at: 0)
         }
         results = r
-    }
-
-    private func loadNearby() async {
-        guard let c = location.coordinate else { return }
-        if let r = try? await store.api.nearby(lat: c.latitude, lon: c.longitude) {
-            withAnimation { nearby = r }
-        }
     }
 }
 

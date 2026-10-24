@@ -169,7 +169,7 @@ struct AskView: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        NavigationStack {
+        Group {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {

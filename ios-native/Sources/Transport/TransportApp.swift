@@ -11,8 +11,10 @@ struct TransportApp: App {
             RootView()
                 .environment(store)
                 .task { await store.start() }
+                .task { store.applyConfig(); await store.refreshConfig(force: true) }
                 .onChange(of: scenePhase) { _, phase in
                     store.isActive = (phase == .active)
+                    if phase == .active { Task { await store.refreshConfig() } }
                     if phase == .background { BackgroundRefresh.schedule() }
                 }
         }
@@ -27,23 +29,11 @@ struct RootView: View {
 
     var body: some View {
         @Bindable var store = store
+        // The order comes from the server config; every tab is always there.
         TabView(selection: $store.tab) {
-            HomeView()
-                .tabItem { Label("Trips", systemImage: "tram.fill") }
-                .tag(AppTab.home)
-            SearchView()
-                .tabItem { Label("Search", systemImage: "magnifyingglass") }
-                .tag(AppTab.search)
-            AskView()
-                .tabItem { Label("Ask", systemImage: "bubble.left.and.bubble.right.fill") }
-                .tag(AppTab.ask)
-            WatchingView()
-                .tabItem { Label("Watching", systemImage: "bell.badge.fill") }
-                .badge(store.activeWatchCount)
-                .tag(AppTab.watching)
-            SettingsView()
-                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
-                .tag(AppTab.settings)
+            ForEach(store.config.tabOrder.compactMap(AppTab.init(key:)), id: \.self) { t in
+                tabContent(t)
+            }
         }
         .overlay(alignment: .top) { BannerOverlay() }
         .overlay(alignment: .top) { ReplayOverlay().padding(.top, 52) }
@@ -66,6 +56,29 @@ struct RootView: View {
         .task { if UserDefaults.standard.bool(forKey: "liveReplayDemo") { await store.startReplayDemo() } }
         .sensoryFeedback(.selection, trigger: store.tab)
     }
+
+    @ViewBuilder
+    private func tabContent(_ t: AppTab) -> some View {
+        switch t {
+        case .home:
+            HomeView()
+                .tabItem { Label("Home", systemImage: "house.fill") }
+                .tag(AppTab.home)
+        case .plan:
+            SearchView()
+                .tabItem { Label("Plan", systemImage: "magnifyingglass") }
+                .tag(AppTab.plan)
+        case .watching:
+            WatchingView()
+                .tabItem { Label("Watching", systemImage: "bell.badge.fill") }
+                .badge(store.activeWatchCount)
+                .tag(AppTab.watching)
+        case .more:
+            MoreView()
+                .tabItem { Label("More", systemImage: "ellipsis.circle.fill") }
+                .tag(AppTab.more)
+        }
+    }
 }
 
 extension RootView {
@@ -74,6 +87,18 @@ extension RootView {
     }
 }
 
+/// Four tabs, one job each: Home is your live board, Plan finds a stop or plans a trip,
+/// Watching lists the services you follow, More holds Ask, station tools, Settings and About.
 enum AppTab: Hashable {
-    case home, search, ask, watching, settings
+    case home, plan, watching, more
+
+    init?(key: String) {
+        switch key {
+        case "home": self = .home
+        case "plan": self = .plan
+        case "watching": self = .watching
+        case "more": self = .more
+        default: return nil
+        }
+    }
 }

@@ -46,7 +46,7 @@ enum SiriAsk {
     /// Next service home: from where you are, or from work when there is no recent location.
     static func nextHome() async -> String {
         guard let home = place("placeHome") else {
-            return "Set your home stop first. Open Transport, go to Trips and tap Add home."
+            return "Set your home stop first. Open Transport, go to Home and tap Add home."
         }
         if recentLocation() != nil {
             return await answer("next train to home")

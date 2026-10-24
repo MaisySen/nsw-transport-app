@@ -21,11 +21,13 @@ struct LiveTripActivityWidget: Widget {
                         .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(timerInterval: Date.now...max(s.arrival, Date.now), countsDown: true)
+                    MinutesUntil(date: liveTripTarget(s))
                         .font(.title3.weight(.semibold))
                         .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                         .multilineTextAlignment(.trailing)
-                        .frame(width: 72, alignment: .trailing)
+                        .frame(width: 80, alignment: .trailing)
                 }
                 DynamicIslandExpandedRegion(.center) {
                     Text(liveTripHeadline(s)).font(.subheadline.weight(.semibold)).lineLimit(1)
@@ -36,9 +38,11 @@ struct LiveTripActivityWidget: Widget {
             } compactLeading: {
                 WidgetLineBadge(line: s.line, colorHex: s.lineColorHex, mode: s.mode)
             } compactTrailing: {
-                Text(timerInterval: Date.now...max(s.arrival, Date.now), countsDown: true)
+                MinutesUntil(date: liveTripTarget(s))
                     .monospacedDigit()
-                    .frame(width: 44)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .frame(maxWidth: 56)
             } minimal: {
                 WidgetLineBadge(line: s.line, colorHex: s.lineColorHex, mode: s.mode)
             }
@@ -47,16 +51,44 @@ struct LiveTripActivityWidget: Widget {
     }
 }
 
+/// Wait: "To Central". On board: "Get off at Redfern". Short names, no "Station".
 func liveTripHeadline(_ s: LiveTripAttributes.ContentState) -> String {
-    if s.phase == "wait" { return "Board at \(s.nextStop ?? s.getOffAt)" }
-    if let n = s.nextStop { return "Next stop: \(n)" }
-    return "To \(s.getOffAt)"
+    if s.phase == "wait" { return "To \(s.towards ?? s.getOffAt)" }
+    return "Get off at \(s.getOffAt)"
 }
 
-func liveTripStopsLine(_ s: LiveTripAttributes.ContentState) -> String {
-    guard let n = s.stopsLeft else { return "Get off at \(s.getOffAt)" }
-    if n <= 0 { return "Get off at \(s.getOffAt)" }
-    return n == 1 ? "1 stop to \(s.getOffAt)" : "\(n) stops to \(s.getOffAt)"
+/// Wait: "Leaves 9:51pm, Platform 2". On board: "3 stops" or "Next stop: Central".
+func liveTripDetail(_ s: LiveTripAttributes.ContentState) -> String {
+    if s.phase == "wait" {
+        var t = s.departs.map { "Leaves \(Clock.time($0))" } ?? "Board at \(s.nextStop ?? "")"
+        if let p = s.platform, !p.isEmpty { t += ", \(p)" }
+        return t
+    }
+    if let n = s.stopsLeft, n > 1 { return "\(n) stops" }
+    if let n = s.stopsLeft, n == 1 { return "Next stop" }
+    return s.nextStop.map { "Next stop: \($0)" } ?? ""
+}
+
+/// The moment the big number counts to: leaving while you wait, getting off while on board.
+func liveTripTarget(_ s: LiveTripAttributes.ContentState) -> Date {
+    s.phase == "wait" ? (s.departs ?? s.arrival) : (s.legArrives ?? s.arrival)
+}
+
+func liveTripArriveLine(_ s: LiveTripAttributes.ContentState) -> String {
+    "Arrive \(s.destination ?? s.getOffAt) \(Clock.time(s.arrival))"
+}
+
+/// "26 min", "1 min", "Now": whole minutes that keep counting on the Lock Screen (iOS 18), or
+/// the clock time on iOS 17, which has no minutes only countdown. Never a seconds timer.
+struct MinutesUntil: View {
+    var date: Date
+    var body: some View {
+        if #available(iOS 18.0, *) {
+            Text(.currentDate, format: .reference(to: date, allowedFields: [.hour, .minute]))
+        } else {
+            Text(Clock.time(date))
+        }
+    }
 }
 
 struct LiveTripIslandBottom: View {
@@ -64,9 +96,9 @@ struct LiveTripIslandBottom: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(liveTripStopsLine(state)).foregroundStyle(.secondary).lineLimit(1)
+                Text(liveTripDetail(state)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
-                Text("Arrive \(Clock.time(state.arrival))").monospacedDigit()
+                Text(liveTripArriveLine(state)).monospacedDigit().lineLimit(1)
             }
             if let w = state.warning {
                 Label(w, systemImage: "exclamationmark.triangle.fill")
@@ -78,6 +110,7 @@ struct LiveTripIslandBottom: View {
     }
 }
 
+/// One card that changes with the trip: waiting, on board, at a change, then the last leg.
 struct LiveTripLockCard: View {
     var attrs: LiveTripAttributes
     var state: LiveTripAttributes.ContentState
@@ -88,10 +121,10 @@ struct LiveTripLockCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode)
-                        Text(liveTripHeadline(state)).font(.headline).lineLimit(1)
+                        Text(liveTripHeadline(state)).font(.headline).lineLimit(1).minimumScaleFactor(0.8)
                     }
-                    Text(liveTripStopsLine(state))
-                        .font(.caption)
+                    Text(liveTripDetail(state))
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     if let w = state.warning {
@@ -101,22 +134,20 @@ struct LiveTripLockCard: View {
                             .lineLimit(1)
                     }
                 }
-                Spacer()
+                Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 0) {
-                    Text("Arrive").font(.caption2).foregroundStyle(.secondary)
-                    Text(timerInterval: Date.now...max(state.arrival, Date.now), countsDown: true)
-                        .font(.title.weight(.bold))
+                    Text(state.phase == "wait" ? "Leaves" : "Get off").font(.caption2).foregroundStyle(.secondary)
+                    MinutesUntil(date: liveTripTarget(state))
+                        .font(.title2.weight(.bold))
                         .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                         .multilineTextAlignment(.trailing)
-                        .frame(width: 96, alignment: .trailing)
-                    Text(Clock.time(state.arrival)).font(.caption).foregroundStyle(.secondary)
                 }
             }
             ProgressView(value: min(max(state.progress, 0), 1))
                 .tint(RGB(hex: state.lineColorHex).map { Color(red: $0.r, green: $0.g, blue: $0.b) } ?? Color.blue)
-            if let f = state.fareLine {
-                Text(f).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-            }
+            Text(liveTripArriveLine(state)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
     }
 }

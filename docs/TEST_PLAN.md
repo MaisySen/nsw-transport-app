@@ -80,7 +80,7 @@ Run on an iPhone 16 Pro simulator with location set to Burwood, against the live
 | --- | --- | --- |
 | FlowTests | test01SearchStarAndBoard | Search Central, swipe to star, open the board |
 | FlowTests | test02LiveMapAndSheet | Live vehicle map and pull up sheet |
-| FlowTests | test03PlanWatchAndSaveTrip | Plan Burwood to Central, watch, save |
+| FlowTests | test03PlanWatchAndSaveTrip | Plan Burwood to Central, one Start trip button (no Watch trip, no Lock Screen button), save |
 | FlowTests | test04HomeWithSavedItems | Trips home with saved trips and stops |
 | FlowTests | test05Watching | Watching tab |
 | FlowTests | test06SettingsToggles | Settings switches and menus |
@@ -89,6 +89,11 @@ Run on an iPhone 16 Pro simulator with location set to Burwood, against the live
 | FlowTests | test09Ask | Ask tab answers |
 | FlowTests | test10NewTripByModeConfirmAndReorder | New trip by mode, A to Z side index, Confirm trip, reorder |
 | FlowTests | test11NewBusTrip | Bus route, direction and stops |
+| FlowTests | test15TripScreenButtonsAct | Every trip screen button acts on the first tap: map, Start trip, End trip, Start again, Save, every tab |
+| FlowTests | test16ReplayBurwoodToStrathfield | Plans Burwood to Strathfield with live data, Start trip, replays on a fake clock (2 min late) to 15 min after arrival; each alert once, one You've arrived, ends at arrival, nothing after; timeline and stage screenshots |
+| FlowTests | test17ReplayWithChange | Replays Strathfield to Redfern (T1 3 min late), change to the T4 (1 min early), off at Kings Cross; same checks |
+| FullJourneyTests | testFullJourney | Walks every screen in light and dark for the before and after contact sheet |
+| LiveTripLogicTests | 5 tests | Live trip ends at arrival, no rollover to the next service, each alert once |
 | OfflineLaunchTests | testStartsWithoutNetwork | App starts with no server and opens every tab |
 | WidgetSnapshotTests | testRenderWidgetsAndLiveActivity | Renders every widget size and the Live Activity (light pass only) |
 | StoreShots | 2 tests | App Store screenshots |

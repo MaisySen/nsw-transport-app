@@ -53,11 +53,13 @@ struct IslandLeading: View {
 struct IslandTrailing: View {
     var state: TripActivityAttributes.ContentState
     var body: some View {
-        Text(timerInterval: Date.now...max(state.departs, Date.now), countsDown: true)
+        MinutesUntil(date: state.departs)
             .font(.title3.weight(.semibold))
             .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
             .multilineTextAlignment(.trailing)
-            .frame(width: 72, alignment: .trailing)
+            .frame(width: 80, alignment: .trailing)
     }
 }
 
@@ -85,9 +87,11 @@ struct IslandBottom: View {
 struct IslandCompactTrailing: View {
     var state: TripActivityAttributes.ContentState
     var body: some View {
-        Text(timerInterval: Date.now...max(state.departs, Date.now), countsDown: true)
+        MinutesUntil(date: state.departs)
             .monospacedDigit()
-            .frame(width: 44)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .frame(maxWidth: 56)
             .foregroundStyle(activityStatusColor(state))
     }
 }
@@ -133,11 +137,13 @@ struct LockScreenCard: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 0) {
                 Text("Leaves").font(.caption2).foregroundStyle(.secondary)
-                Text(timerInterval: Date.now...max(state.departs, Date.now), countsDown: true)
-                    .font(.title.weight(.bold))
+                MinutesUntil(date: state.departs)
+                    .font(.title2.weight(.bold))
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                     .multilineTextAlignment(.trailing)
-                    .frame(width: 96, alignment: .trailing)
+                    .frame(width: 110, alignment: .trailing)
                 Text(Clock.time(state.departs)).font(.caption).foregroundStyle(.secondary)
             }
         }

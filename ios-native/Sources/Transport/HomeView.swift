@@ -20,41 +20,24 @@ struct HomeView: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
-                searchSection
-
                 if let live = store.liveTrip {
                     Section {
                         LiveTripBar(record: live, state: store.liveState) { store.openLiveTrip = true }
                     }
                 }
 
+                let trips = homeTrips
+                if trips.isEmpty && store.starred.isEmpty {
+                    welcomeSection
+                }
+
                 if store.homePlace == nil || store.workPlace == nil {
                     placesSection
                 }
 
-                let trips = homeTrips
                 let serious = seriousAlerts(trips)
                 if !serious.isEmpty {
                     Section { alertsBanner(serious) }
-                }
-                if trips.isEmpty {
-                    Section {
-                        addTripRow
-                    } footer: {
-                        Text("Save the trips you take, like home to work. They show here with live times. Nothing is added for you.")
-                    }
-                }
-
-                let active = store.watches.filter { $0.active == true }
-                if !active.isEmpty {
-                    Section {
-                        ForEach(active.prefix(3)) { w in WatchRow(watch: w) }
-                        if active.count > 3 {
-                            Button("See all \(active.count)") { store.tab = .watching }
-                        }
-                    } header: {
-                        Text("Watching")
-                    }
                 }
 
                 if let s = store.suggestion, let from = s.from, let to = s.to {
@@ -65,9 +48,11 @@ struct HomeView: View {
 
                 if !trips.isEmpty {
                     let keys = orderKeys(trips)
-                    ForEach(trips) { t in
+                    ForEach(Array(trips.enumerated()), id: \.element.id) { i, t in
                         Section {
                             tripCard(t, keys: keys)
+                        } header: {
+                            if i == 0 { Text("Your trips") }
                         }
                     }
                 }
@@ -81,33 +66,13 @@ struct HomeView: View {
                     }
                 }
 
-                let recentList = recentTripRows
-                if !recentList.isEmpty {
-                    Section {
-                        ForEach(recentList, id: \.self) { r in recentTripRow(r) }
-                    } header: {
-                        groupHeader("Recent trips", id: "clearRecentTrips") { store.clearRecentTrips() }
-                    } footer: {
-                        Text("Trips you looked at. Tap and hold, or swipe left, to remove one.")
-                    }
+                if store.config.isOn("nearby") {
+                    nearbySection
                 }
-
-                let recentStopList = recentStops
-                ForEach(Array(recentStopList.enumerated()), id: \.element.id) { i, s in
-                    Section {
-                        stopCard(s, distance: nil, kind: .recent)
-                    } header: {
-                        if i == 0 {
-                            groupHeader("Recent stops", id: "clearRecentStops") { store.clearRecentStops() }
-                        }
-                    }
-                }
-
-                nearbySection
             }
             .listStyle(.insetGrouped)
-            .listSectionSpacing(.compact)
-            .navigationTitle("Trips")
+            .listSectionSpacing(.custom(16))
+            .navigationTitle("Home")
             .navigationDestination(for: PlanRoute.self) { _ in TripPlannerView() }
             .navigationDestination(for: StopRef.self) { s in StopView(stop: s) }
             .navigationDestination(for: ServiceKey.self) { k in ServiceView(key: k) }
@@ -124,11 +89,8 @@ struct HomeView: View {
                 await refresh()
             }
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { path.append(PlanRoute()) } label: {
-                        Image(systemName: "arrow.triangle.turn.up.right.diamond")
-                    }
-                    .accessibilityLabel("Plan a trip")
+                ToolbarItem(placement: .topBarLeading) {
+                    LiveStamp(updated: board.updated, loading: board.loading)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { addingTrip = true } label: {
@@ -182,36 +144,48 @@ struct HomeView: View {
 
     // MARK: Sections
 
-    private var searchSection: some View {
+    /// First launch: what each tab is for and one clear next step. It goes away once a trip
+    /// is saved or a stop is starred.
+    private var welcomeSection: some View {
         Section {
-            Button {
-                store.tap()
-                path.append(PlanRoute())
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                    Text("Where to?")
-                    Spacer()
+            VStack(alignment: .leading, spacing: 14) {
+                Text(store.config.text("welcomeTitle", "Live times for the trips you take"))
+                    .font(.title3.weight(.bold))
+                    .fixedSize(horizontal: false, vertical: true)
+                welcomeLine("magnifyingglass", "Plan", "Find a stop or plan a trip from A to B.")
+                welcomeLine("star.fill", "Save", "Save a trip or star a stop and it shows here with live times.")
+                welcomeLine("bell.badge.fill", "Watch", "Swipe left on a service to get alerts when it runs late.")
+                Button {
+                    store.tap()
+                    store.tab = .plan
+                } label: {
+                    Text("Plan a trip")
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity)
                 }
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .frame(minHeight: 38)
-                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                .contentShape(Rectangle())
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .accessibilityIdentifier("welcomePlan")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Where to?")
-            .accessibilityIdentifier("homeSearch")
-            .listRowInsets(EdgeInsets())
-            .listRowBackground(Color.clear)
-        } footer: {
-            HStack {
-                Spacer()
-                LiveStamp(updated: board.updated, loading: board.loading)
-            }
-            .padding(.top, 2)
+            .padding(.vertical, 8)
         }
+        .accessibilityIdentifier("welcome")
+    }
+
+    private func welcomeLine(_ symbol: String, _ title: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: symbol)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.tint)
+                .frame(width: 28)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.semibold))
+                Text(text).font(.subheadline).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     /// Add home and Add work, side by side, until both are set.
@@ -283,15 +257,6 @@ struct HomeView: View {
         .accessibilityIdentifier("alertsBanner")
     }
 
-    private var addTripRow: some View {
-        Button { addingTrip = true } label: {
-            Label("Add a trip", systemImage: "plus.circle.fill")
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.tint)
-        }
-        .accessibilityIdentifier("addTrip")
-    }
-
     @ViewBuilder
     private var nearbySection: some View {
         if board.nearby.isEmpty {
@@ -326,6 +291,8 @@ struct HomeView: View {
         let pos = keys.firstIndex(of: t.orderKey) ?? 0
         let alertCount = Set(shown.flatMap { $0.transitLegs.flatMap { $0.alerts ?? [] } }.map(\.id)).count
         let hex = shown.first?.firstTransit.map { $0.color ?? Mode(raw: $0.mode).fallbackHex }
+        // A lift outage usually hits every service on the trip: say it once, not on each row.
+        let lifts = Array(Set(shown.compactMap(\.liftOutage))).sorted()
 
         NavigationLink(value: TripPair(from: t.from, to: t.to, via: t.via, conn: t.via == nil ? nil : t.conn, legs: t.legs)) {
             TripHeader(trip: t, colorHex: hex, alertCount: alertCount, fare: shown.first?.fare)
@@ -375,7 +342,16 @@ struct HomeView: View {
                 Button(role: .destructive) {
                     if let c = commute(for: t) { Task { await store.deleteCommute(c) } }
                 } label: { Label("Delete", systemImage: "trash") }
+                Button { if let c = commute(for: t) { editingCommute = c } } label: { Label("Edit", systemImage: "pencil") }
+                    .tint(.gray)
             }
+        }
+
+        ForEach(lifts, id: \.self) { out in
+            Label("Lift out: \(out)", systemImage: "figure.roll")
+                .font(.footnote)
+                .foregroundStyle(.red)
+                .lineLimit(2)
         }
 
         if shown.isEmpty {
@@ -394,7 +370,8 @@ struct HomeView: View {
                     ServiceRow(journey: j,
                                status: board.status(for: j, now: now),
                                dimmed: HomeBoard.isBeaten(j, among: upcoming),
-                               first: i == 0)
+                               first: i == 0,
+                               showLift: false)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("tripService")
@@ -550,70 +527,6 @@ struct HomeView: View {
         store.tap()
     }
 
-    /// Up to 3 trips you looked at that are not already one of your trips.
-    private var recentTripRows: [TripPair] {
-        let mine = Set(homeTrips.map { "\($0.from.id)>\($0.to.id)" })
-        var out: [TripPair] = []
-        for r in store.recentTrips where !mine.contains("\(r.from.id)>\(r.to.id)") && r.from.id != r.to.id {
-            if !out.contains(where: { $0.from.id == r.from.id && $0.to.id == r.to.id }) { out.append(r) }
-            if out.count == 3 { break }
-        }
-        return out
-    }
-
-    /// Up to 3 stops you opened lately that are not starred.
-    private var recentStops: [StopRef] {
-        var out: [StopRef] = []
-        for s in store.recents where !store.isStarred(s.id) && !out.contains(where: { $0.id == s.id }) {
-            out.append(s)
-            if out.count == 3 { break }
-        }
-        return out
-    }
-
-    private var stopIDs: [String] {
-        Array(store.starred.prefix(4)).map(\.id) + recentStops.map(\.id) + board.nearby.map(\.stop.id)
-    }
-
-    /// A group header with Clear on the right.
-    private func groupHeader(_ title: String, id: String, clear: @escaping () -> Void) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Button("Clear") { clear() }
-                .font(.subheadline)
-                .textCase(nil)
-                .accessibilityIdentifier(id)
-                .accessibilityLabel("Clear \(title.lowercased())")
-        }
-    }
-
-    private func recentTripRow(_ r: TripPair) -> some View {
-        NavigationLink(value: TripPair(from: r.from, to: r.to)) {
-            Label {
-                Text("\(Naming.compact(Naming.short(r.from.name))) to \(Naming.compact(Naming.short(r.to.name)))")
-                    .lineLimit(1)
-            } icon: {
-                Image(systemName: "clock.arrow.circlepath").foregroundStyle(.secondary)
-            }
-        }
-        .accessibilityIdentifier("recentTrip")
-        .contextMenu {
-            Button {
-                store.saveMyTrip(MyTrip(name: "\(Naming.compact(Naming.short(r.from.name))) to \(Naming.compact(Naming.short(r.to.name)))",
-                                        from: r.from, to: r.to, via: nil, conn: nil, modes: nil))
-            } label: { Label("Save trip", systemImage: "bookmark") }
-            Button(role: .destructive) { store.forgetTrip(from: r.from, to: r.to) } label: {
-                Label("Remove from Recent", systemImage: "minus.circle")
-            }
-        }
-        .swipeActions(edge: .trailing) {
-            Button(role: .destructive) { store.forgetTrip(from: r.from, to: r.to) } label: {
-                Label("Remove", systemImage: "minus.circle")
-            }
-        }
-    }
-
     /// The long press menu on a trip card.
     @ViewBuilder
     private func tripMenu(_ t: HomeTrip) -> some View {
@@ -632,8 +545,8 @@ struct HomeView: View {
             } label: { Label("Remove home and work", systemImage: "minus.circle") }
         case .commute:
             if let c = commute(for: t) {
-                Button { editingCommute = c } label: { Label("Edit commute", systemImage: "pencil") }
-                Button(role: .destructive) { Task { await store.deleteCommute(c) } } label: { Label("Delete commute", systemImage: "trash") }
+                Button { editingCommute = c } label: { Label("Edit reminder", systemImage: "pencil") }
+                Button(role: .destructive) { Task { await store.deleteCommute(c) } } label: { Label("Delete reminder", systemImage: "trash") }
             }
         case .recent:
             Button(role: .destructive) { store.forgetTrip(from: t.from, to: t.to) } label: { Label("Remove from Recent", systemImage: "minus.circle") }
@@ -993,6 +906,8 @@ struct ServiceRow: View {
     var first = false
     /// Travel time mode: the chip shows the trip length instead of the countdown.
     var showDuration = false
+    /// Off where the list says the lift outage once above the services.
+    var showLift = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -1003,7 +918,7 @@ struct ServiceRow: View {
                     .foregroundStyle(journey.risk == "tight" ? Color.orange : Color.red)
                     .accessibilityIdentifier("tripWarn")
             }
-            if let out = journey.liftOutage {
+            if showLift, let out = journey.liftOutage {
                 Label("Lift out: \(out)", systemImage: "figure.roll")
                     .font(.footnote)
                     .foregroundStyle(.red)
