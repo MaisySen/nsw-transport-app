@@ -1,0 +1,117 @@
+name: iOS TestFlight upload
+
+# Signs the iPhone app with an App Store Connect API key and uploads it to TestFlight.
+# Run it from the Actions tab (Run workflow). Needs these repository secrets:
+#   ASC_KEY_ID       Key ID of the App Store Connect API key (Admin access)
+#   ASC_ISSUER_ID    Issuer ID shown on the same page
+#   ASC_KEY_P8       The full text of the AuthKey_XXXX.p8 file
+#   APPLE_TEAM_ID    The 10 character Team ID (developer.apple.com, Membership details)
+# Automatic signing with the key creates the App IDs, the app group and the distribution
+# certificate on the developer account the first time it runs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      build:
+        description: "Build number (leave empty to use 100 plus the run number)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: ios-native
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for v in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 APPLE_TEAM_ID; do
+            if [ -z "${!v}" ]; then echo "Missing repository secret $v"; exit 1; fi
+          done
+
+      - name: Pick Xcode
+        run: |
+          X=$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)
+          sudo xcode-select -s "$X"
+          xcodebuild -version
+
+      - name: App icon and project
+        run: |
+          python3 -m pip install --quiet --break-system-packages pillow || python3 -m pip install --quiet pillow
+          python3 Tools/make_icon.py
+          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip
+          unzip -q /tmp/xcodegen.zip -d /tmp/xg
+          XG=$(find /tmp/xg -type f -name xcodegen -perm -u+x | head -1)
+          "$XG" generate
+
+      - name: API key file
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8"
+          chmod 600 "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8"
+
+      - name: Archive (signed)
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -o pipefail
+          BUILD="${{ inputs.build }}"
+          if [ -z "$BUILD" ]; then BUILD=$((100 + ${{ github.run_number }})); fi
+          echo "Build number $BUILD"
+          xcodebuild archive -project Transport.xcodeproj -scheme Transport -configuration Release \
+            -destination "generic/platform=iOS" -archivePath "$RUNNER_TEMP/Transport.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic CURRENT_PROJECT_VERSION="$BUILD" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            > ../archive.log 2>&1 || { grep -E "error:" ../archive.log | sort -u | head -60; exit 1; }
+
+      - name: Upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Transport.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            > ../export.log 2>&1 || { grep -E "error|Error" ../export.log | sort -u | head -60; exit 1; }
+          grep -E "Upload succeeded|EXPORT SUCCEEDED|Uploaded" ../export.log || tail -20 ../export.log
+
+      - name: Clean up the key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys"

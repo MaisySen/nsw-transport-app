@@ -87,10 +87,14 @@ export default function Settings() {
           )) : <Row title="No saved trips" subtitle="Open a trip and tap the star to save it as Home or Work." chevron={false} />}
         </Section>
 
-        <Section title="About" footer="Live times come from Transport for NSW open data. Green times are live from the vehicle. Grey times are the timetable. Predictions are always labelled.">
+        <Section title="About" footer="Contains transport data from Transport for NSW, licensed under Creative Commons Attribution 4.0. Map data from OpenStreetMap contributors. Transport is an independent app and is not made or endorsed by Transport for NSW. Green times are live from the vehicle, grey times are the timetable, and predictions are always labelled.">
           <Row title="Version" right={<T kind="body" tone="text2">{Constants.expoConfig?.version || '1.0.0'}</T>} chevron={false} />
           <Sep />
           <Row title="Open the web version" onPress={() => Linking.openURL('https://nsw-transport-bot.sites.tab.bot/')} />
+          <Sep />
+          <Row title="Help and support" onPress={() => Linking.openURL('https://nsw-transport-bot.sites.tab.bot/support/')} />
+          <Sep />
+          <Row title="Privacy policy" onPress={() => Linking.openURL('https://nsw-transport-bot.sites.tab.bot/privacy/')} />
         </Section>
       </Screen>
     </>

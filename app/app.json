@@ -38,7 +38,12 @@
       "predictiveBackGestureEnabled": true,
       "edgeToEdgeEnabled": true,
       "blockedPermissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION"
       ]
     },
     "web": {
@@ -71,7 +76,8 @@
           "locationWhenInUsePermission": "Transport uses your location to show stops near you."
         }
       ],
-      "./plugins/withTransportWidget"
+      "./plugins/withTransportWidget",
+      "./plugins/withStoreManifest"
     ],
     "experiments": {
       "typedRoutes": true,
