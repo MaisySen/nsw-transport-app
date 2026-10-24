@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import { api } from '@/lib/api';
@@ -14,6 +14,8 @@ import { openService } from '@/components/Cards';
 import { DepartureRow, LiveStamp } from '@/components/Transit';
 import { Chip, Empty, Screen, Sep, T } from '@/components/ui';
 import { StationInfo } from '@/components/Access';
+import * as WebBrowser from 'expo-web-browser';
+import { useStationMap } from '@/lib/stationMap';
 import type { Station } from '@/lib/access';
 
 const MODE_LABEL: Record<string, string> = { train: 'Trains', metro: 'Metro', bus: 'Buses', lightrail: 'Light rail', ferry: 'Ferries', coach: 'Coaches', school: 'School buses' };
@@ -32,6 +34,7 @@ export default function StopScreen() {
   // Remember opened stops for Home's Recent stops.
   useEffect(() => { if (id && stopName) store.addRecent({ id: String(id), name: stopName }); }, [id, stopName]);
   // Station access, lifts and Park and Ride: once, then every 2 minutes. No data (404) shows nothing.
+  const map = useStationMap(id ? String(id) : undefined);
   const [station, setStation] = useState<Station | null>(null);
   useEffect(() => {
     let live = true;
@@ -100,6 +103,18 @@ export default function StopScreen() {
         {data && !items.length ? <Empty icon={I.clock} title="No more services" body="Nothing is due from here in the next few hours." /> : null}
         {!data && error ? <Empty icon={I.warn} title="Can't load this stop" body={error} /> : null}
         {data ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>Touch and hold a service to watch it. Green times are live.</T> : null}
+        {map ? (
+          <Pressable onPress={() => { haptic.tap(); WebBrowser.openBrowserAsync(map.url).catch(() => {}); }} accessibilityRole="link" accessibilityLabel={`Station map, ${map.label}, from Transport for NSW`}
+            android_ripple={{ color: c.fill }}
+            style={({ pressed }) => ({ marginHorizontal: 16, marginTop: 14, backgroundColor: pressed && Platform.OS !== 'android' ? c.card2 : c.card, borderRadius: radius, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, minHeight: 56 })}>
+            <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: c.fill, alignItems: 'center', justifyContent: 'center' }}><Icon name={I.pin} size={16} color={c.tint} /></View>
+            <View style={{ flex: 1, marginLeft: 12, paddingVertical: 10 }}>
+              <T kind="body">Station map</T>
+              <T kind="foot" tone="text2">Entrances, lifts and platforms, from Transport for NSW</T>
+            </View>
+            <Icon name={I.chevron} size={14} color={c.text3} />
+          </Pressable>
+        ) : null}
         <StationInfo st={station} />
       </Screen>
     </>
