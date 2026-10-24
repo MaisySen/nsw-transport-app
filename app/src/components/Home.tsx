@@ -235,7 +235,7 @@ export function tripMenu(trip: TripItem, route?: string) {
   const title = route || `${shortName(from.name)} to ${shortName(to.name)}`;
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   const key = tripKeyOf({ from, to, via, legs: trip.legs });
-  const editParams = { from: from.id, fromName: from.name, to: to.id, toName: to.name, ...(trip.legs && trip.legs.length > 1 ? { legs: JSON.stringify(trip.legs) } : {}), ...(trip.name ? { name: trip.name } : {}), edit: key };
+  const editParams = { from: from.id, fromName: from.name, to: to.id, toName: to.name, ...(trip.modes?.[0] ? { mode: trip.modes[0] } : {}), ...(trip.legs && trip.legs.length > 1 ? { legs: JSON.stringify(trip.legs) } : {}), ...(trip.name ? { name: trip.name } : {}), edit: key };
   if (trip.kind === 'mine') {
     Alert.alert(trip.name || title, undefined, [
       { text: 'Edit trip', onPress: () => router.push({ pathname: '/new-trip', params: editParams }) },
