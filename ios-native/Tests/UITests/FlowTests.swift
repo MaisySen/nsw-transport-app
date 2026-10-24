@@ -241,6 +241,10 @@ final class FlowTests: XCTestCase {
             let row = app.cells.containing(.staticText, identifier: "Uitest").firstMatch
             (row.exists ? row : saved).swipeLeft()
             let delete = app.buttons["Delete"].firstMatch
+            // A quick swipe sometimes lands as a tap on the card: swipe again, slower.
+            if !delete.waitForExistence(timeout: 3) {
+                (row.exists ? row : saved).swipeLeft(velocity: .slow)
+            }
             XCTAssertTrue(delete.waitForExistence(timeout: 5), "delete swipe action on the saved trip")
             shot("home-swipe-delete")
             delete.tap()

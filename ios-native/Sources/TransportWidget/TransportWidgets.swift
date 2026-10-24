@@ -360,8 +360,8 @@ struct NextTripView: View {
 
     private var small: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.headline).lineLimit(1).minimumScaleFactor(0.8)
-            if let s = subtitle { Text(s).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+            Text(title).font(.subheadline.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.85)
+            if let s = subtitle { Text(s).font(.caption2).foregroundStyle(Color.secondary).lineLimit(1) }
             Spacer(minLength: 0)
             if let t = entry.trips.first {
                 HStack(spacing: 4) {
@@ -414,7 +414,7 @@ struct NextTripView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(title).font(.headline).lineLimit(1).layoutPriority(1)
-            if let s = subtitle { Text(s).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+            if let s = subtitle { Text(s).font(.caption).foregroundStyle(Color.secondary).lineLimit(1) }
             Spacer(minLength: 0)
         }
         .accessibilityElement(children: .combine)
@@ -425,8 +425,8 @@ struct NextTripView: View {
     private func statusLine(_ t: TripLine, font: Font = .caption2) -> some View {
         HStack(spacing: 4) {
             Text(status(t)).foregroundStyle(Self.statusColor(t)).fontWeight(.semibold)
-            if let c = WidgetText.changes(t.changes) { Text(c).foregroundStyle(.secondary) }
-            if t.walkMinutes > 0 { Text("\(t.walkMinutes) min walk").foregroundStyle(.secondary) }
+            if let c = WidgetText.changes(t.changes) { Text(c).foregroundStyle(Color.secondary) }
+            if t.walkMinutes > 0 { Text("\(t.walkMinutes) min walk").foregroundStyle(Color.secondary) }
         }
         .font(font)
         .lineLimit(1)
@@ -439,7 +439,8 @@ struct NextTripView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 4) {
                     Text(Clock.time(t.leave)).font((first ? Font.subheadline : .footnote).weight(.semibold)).monospacedDigit()
-                    if let p = WidgetText.plat(t.platform) { Text(p).font(.caption2).foregroundStyle(.secondary) }
+                        .foregroundStyle(Color.primary)
+                    if let p = WidgetText.plat(t.platform) { Text(p).font(.caption2).foregroundStyle(Color.secondary) }
                 }
                 .lineLimit(1)
                 statusLine(t)
@@ -452,7 +453,7 @@ struct NextTripView: View {
                 .lineLimit(1)
         }
         .accessibilityElement(children: .combine)
-        if let u = link(t) { Link(destination: u) { r } } else { r }
+        if let u = link(t) { Link(destination: u) { r }.tint(Color.primary) } else { r }
     }
 
     @ViewBuilder private var noticeOrUpdated: some View {
