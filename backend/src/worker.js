@@ -55,14 +55,28 @@ function apiKey(env) {
   return (env && env.TFNSW_API_KEY) || API_KEY_PLACEHOLDER;
 }
 
-function sydneyParts(d = new Date()) {
-  const f = new Intl.DateTimeFormat("en-AU", {
-    timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  });
+// Intl formatters are costly to build (well over a millisecond each on a cold isolate), so each
+// one is made once per isolate and reused.
+const DTF = new Map(); // opts object -> { locale: formatter }
+function dtf(locale, opts) {
+  let byLocale = DTF.get(opts);
+  if (!byLocale) { byLocale = {}; DTF.set(opts, byLocale); }
+  return byLocale[locale] || (byLocale[locale] = new Intl.DateTimeFormat(locale, opts));
+}
+const CLOCK_OPTS = { timeZone: TZ, hour: "numeric", minute: "2-digit" };
+const CLOCK_S_OPTS = { timeZone: TZ, hour: "numeric", minute: "2-digit", second: "2-digit" };
+const SYD_PARTS_OPTS = { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false };
+function sydneyPartsIntl(d) {
+  const f = dtf("en-AU", SYD_PARTS_OPTS);
   const p = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]));
   const hh = p.hour === "24" ? "00" : p.hour;
   return { date: `${p.year}${p.month}${p.day}`, time: `${hh}${p.minute}` };
+}
+// The same answer from the per hour memo in sydneyNow (below).
+function sydneyParts(d = new Date()) {
+  if (!Number.isFinite(+d)) return sydneyPartsIntl(d);
+  const s = sydneyNow(d);
+  return { date: s.day, time: String(Math.floor(s.tod / 60)).padStart(2, "0") + String(s.tod % 60).padStart(2, "0") };
 }
 
 async function tp(env, endpoint, params) {
@@ -140,15 +154,29 @@ class PB {
     for (i = 0; i < 5; i++) { x = b[this.p++]; hi |= (x & 127) << (i * 7 + 3); if (x < 128) break; }
     return { lo: lo >>> 0, hi: hi >>> 0 };
   }
-  uint() { const v = this.varint(); return v.hi * 4294967296 + v.lo; }
-  int32() { return this.varint().lo | 0; }
-  int64() { const v = this.varint(); return v.hi & 0x80000000 ? -((~v.hi >>> 0) * 4294967296 + ((~v.lo >>> 0) + 1)) : v.hi * 4294967296 + v.lo; }
+  // Plain number for varints up to 7 bytes (under 2^49), which is every id, count and timestamp in
+  // these feeds; longer ones (negative numbers) go through varint() as before. Returns -1 to say so.
+  small() {
+    const b = this.b, s = this.p;
+    let x = b[s];
+    if (x < 128) { this.p = s + 1; return x; }
+    let v = x & 127, m = 128;
+    for (let i = 1; i < 7; i++) {
+      x = b[s + i]; v += (x & 127) * m;
+      if (x < 128) { this.p = s + i + 1; return v; }
+      m *= 128;
+    }
+    return -1;
+  }
+  uint() { const n = this.small(); if (n >= 0) return n; const v = this.varint(); return v.hi * 4294967296 + v.lo; }
+  int32() { const s = this.p, n = this.small(); if (n >= 0 && n < 2147483648) return n; this.p = s; return this.varint().lo | 0; }
+  int64() { const n = this.small(); if (n >= 0) return n; const v = this.varint(); return v.hi & 0x80000000 ? -((~v.hi >>> 0) * 4294967296 + ((~v.lo >>> 0) + 1)) : v.hi * 4294967296 + v.lo; }
   float() { const dv = new DataView(this.b.buffer, this.b.byteOffset + this.p, 4); this.p += 4; return dv.getFloat32(0, true); }
   double() { const dv = new DataView(this.b.buffer, this.b.byteOffset + this.p, 8); this.p += 8; return dv.getFloat64(0, true); }
   bytes() { const n = this.uint(); const s = this.p; this.p += n; return [s, this.p]; }
   str() { const [s, e] = this.bytes(); return TD.decode(this.b.subarray(s, e)); }
   skip(wt) {
-    if (wt === 0) this.varint();
+    if (wt === 0) { while (this.b[this.p++] >= 128); }
     else if (wt === 1) this.p += 8;
     else if (wt === 2) this.bytes();
     else if (wt === 5) this.p += 4;
@@ -166,73 +194,82 @@ class PB {
 }
 const TD = new TextDecoder();
 
+// The readers below loop over fields directly (no callback per field): a board decodes about
+// eighty trips per request, and this shape is much cheaper before the JIT has warmed up.
 function readTripDescriptor(pb) {
   const t = {};
-  pb.each((f) => {
+  while (pb.p < pb.e) {
+    const tag = pb.uint(), f = Math.floor(tag / 8);
     if (f === 1) t.tripId = pb.str();
     else if (f === 2) t.startTime = pb.str();
     else if (f === 3) t.startDate = pb.str();
     else if (f === 4) t.rel = pb.uint();
     else if (f === 5) t.routeId = pb.str();
-    else return false;
-  });
+    else pb.skip(tag & 7);
+  }
   return t;
 }
 function readVehicleDescriptor(pb) {
   const v = {};
-  pb.each((f) => {
+  while (pb.p < pb.e) {
+    const tag = pb.uint(), f = Math.floor(tag / 8);
     if (f === 1) v.id = pb.str();
     else if (f === 2) v.label = pb.str();
     else if (f === 3) v.plate = pb.str();
-    else return false;
-  });
+    else pb.skip(tag & 7);
+  }
   return v;
 }
 function readStopTimeEvent(pb) {
   const ev = {};
-  pb.each((f) => {
+  while (pb.p < pb.e) {
+    const tag = pb.uint(), f = Math.floor(tag / 8);
     if (f === 1) ev.delay = pb.int32();
     else if (f === 2) ev.time = pb.int64();
-    else return false;
-  });
+    else pb.skip(tag & 7);
+  }
   return ev;
 }
 function readTripUpdate(pb) {
   const tu = { stus: [], ts: 0 };
-  pb.each((f) => {
+  while (pb.p < pb.e) {
+    const tag = pb.uint(), f = Math.floor(tag / 8);
     if (f === 1) Object.assign(tu, readTripDescriptor(pb.sub()));
     else if (f === 2) {
       const s = pb.sub(); const u = {};
-      s.each((g) => {
+      while (s.p < s.e) {
+        const t2 = s.uint(), g = Math.floor(t2 / 8);
         if (g === 1) u.seq = s.uint();
         else if (g === 2) u.arr = readStopTimeEvent(s.sub());
         else if (g === 3) u.dep = readStopTimeEvent(s.sub());
         else if (g === 4) u.stopId = s.str();
         else if (g === 5) u.rel = s.uint();
-        else return false;
-      });
+        else s.skip(t2 & 7);
+      }
       tu.stus.push(u);
     }
     else if (f === 3) tu.vehicle = readVehicleDescriptor(pb.sub());
     else if (f === 4) tu.ts = pb.uint();
     else if (f === 5) tu.delay = pb.int32();
-    else return false;
-  });
+    else pb.skip(tag & 7);
+  }
   return tu;
 }
 function readVehiclePosition(pb) {
   const v = {};
-  pb.each((f) => {
+  while (pb.p < pb.e) {
+    const tag = pb.uint(), f = Math.floor(tag / 8);
     if (f === 1) v.trip = readTripDescriptor(pb.sub());
     else if (f === 2) {
       const s = pb.sub();
-      s.each((g, wt) => {
+      while (s.p < s.e) {
+        const t2 = s.uint(), g = Math.floor(t2 / 8), wt = t2 & 7;
         if (g === 1 && wt === 5) v.lat = s.float();
         else if (g === 2 && wt === 5) v.lon = s.float();
         else if (g === 3 && wt === 5) v.bearing = s.float();
         else if (g === 5 && wt === 5) v.speed = s.float();
-        else return false;
-      });
+        else s.skip(wt);
+      }
     }
     else if (f === 3) v.stopSeq = pb.uint();
     else if (f === 4) v.status = pb.uint();
@@ -241,41 +278,66 @@ function readVehiclePosition(pb) {
     else if (f === 7) v.stopId = pb.str();
     else if (f === 8) v.vehicle = readVehicleDescriptor(pb.sub());
     else if (f === 9) v.occupancy = pb.uint();
-    else return false;
-  });
+    else pb.skip(tag & 7);
+  }
   return v;
 }
 
 // Quick pass: map trip_id -> [start, end] of the trip_update (field 3) or vehicle (field 4).
+// Hand rolled for speed: it walks only the entity level and the first bytes of each entity,
+// so a 2 MB bus feed costs one short loop per trip instead of a step per stop time update.
+let QP = 0;
+function qv(b) { // varint at QP, as a plain number (exact up to 2^53)
+  let x = b[QP++];
+  if (x < 128) return x;
+  let v = x & 127, m = 128;
+  for (;;) { x = b[QP++]; v += (x & 127) * m; if (x < 128) return v; m *= 128; }
+}
+function qskip(b, wt) {
+  if (wt === 0) { while (b[QP++] >= 128); }
+  else if (wt === 1) QP += 8;
+  else if (wt === 2) { const n = qv(b); QP += n; }
+  else if (wt === 5) QP += 4;
+  else throw new Error("bad wire type " + wt);
+}
 function indexFeed(buf, kind) {
   const want = kind === "tu" ? 3 : 4;
   const idx = new Map();
   let headerTs = 0;
-  const top = new PB(buf);
-  top.each((f) => {
+  const end = buf.length;
+  QP = 0;
+  while (QP < end) {
+    const tag = qv(buf), f = Math.floor(tag / 8), wt = tag & 7;
     if (f === 1) {
-      const h = top.sub();
-      h.each((g) => { if (g === 3) { headerTs = h.uint(); return; } return false; });
-      return;
+      const he = qv(buf) + QP;
+      while (QP < he) { const t = qv(buf); if (Math.floor(t / 8) === 3) headerTs = qv(buf); else qskip(buf, t & 7); }
+      continue;
     }
-    if (f !== 2) return false;
-    const ent = top.sub();
-    ent.each((g) => {
-      if (g !== want) return false;
-      const [s, e] = ent.bytes();
-      const inner = new PB(buf, s, e);
+    if (f !== 2) { qskip(buf, wt); continue; }
+    const ee = qv(buf) + QP;
+    while (QP < ee) {
+      const t = qv(buf);
+      if (Math.floor(t / 8) !== want) { qskip(buf, t & 7); continue; }
+      const n = qv(buf), s = QP, e = s + n;
       let tripId = null;
-      inner.each((h) => {
-        if (h === 1 && tripId === null) {
-          const td = inner.sub();
-          td.each((k) => { if (k === 1) { tripId = td.str(); return; } return false; });
-          return;
+      while (QP < e) {
+        const t2 = qv(buf);
+        if (Math.floor(t2 / 8) === 1) {
+          const de = qv(buf) + QP;
+          while (QP < de) {
+            const t3 = qv(buf);
+            if (Math.floor(t3 / 8) === 1) { const l = qv(buf); tripId = TD.decode(buf.subarray(QP, QP + l)); QP += l; }
+            else qskip(buf, t3 & 7);
+          }
+          break; // the descriptor is all this pass needs; the rest of the message is skipped below
         }
-        return false;
-      });
+        qskip(buf, t2 & 7);
+      }
+      QP = e;
       if (tripId) idx.set(tripId, [s, e]);
-    });
-  });
+    }
+    QP = ee;
+  }
   return { idx, headerTs };
 }
 
@@ -769,7 +831,18 @@ function farePeak(t, family) {
   if (s.dow > 4 || FARE_HOLIDAYS.has(s.day)) return false;
   return (s.tod >= 390 && s.tod < 600) || (s.tod >= 900 && s.tod < 1140);
 }
+// fareOf runs once per fare type (and again for the off peak price), so the distance along a
+// leg's path, the costly part, is worked out once per leg and family.
+const fareKmMemo = new WeakMap();
 function fareKm(l, family) {
+  if (!l || typeof l !== "object") return fareKmRaw(l, family);
+  const hit = fareKmMemo.get(l);
+  if (hit && hit.path === l.path && hit.km0 === l.km && hit.family === family) return hit.v;
+  const v = fareKmRaw(l, family);
+  fareKmMemo.set(l, { path: l.path, km0: l.km, family, v });
+  return v;
+}
+function fareKmRaw(l, family) {
   const p = l.path || [];
   if (p.length < 2) return l.km != null ? l.km : null;
   if (family === "bus" || family === "lr") return distM(p[0][0], p[0][1], p[p.length - 1][0], p[p.length - 1][1]) / 1000;
@@ -2148,10 +2221,10 @@ async function askText(env, d) {
 // ---------- plain text answers (WhatsApp, Telegram, SMS) ----------
 
 function hm(t) {
-  return new Date(t).toLocaleTimeString("en-AU", { timeZone: TZ, hour: "numeric", minute: "2-digit" }).replace(/\s/g, "").toLowerCase();
+  return dtf("en-AU", CLOCK_OPTS).format(new Date(t)).replace(/\s/g, "").toLowerCase();
 }
 function hms(t) {
-  return new Date(t).toLocaleTimeString("en-AU", { timeZone: TZ, hour: "numeric", minute: "2-digit", second: "2-digit" }).replace(/\s/g, "").toLowerCase();
+  return dtf("en-AU", CLOCK_S_OPTS).format(new Date(t)).replace(/\s/g, "").toLowerCase();
 }
 function inMins(t) {
   const m = Math.round((ms(t) - Date.now()) / 60000);
@@ -2599,15 +2672,34 @@ async function ensureSchema3(env) {
   return schema3Ready;
 }
 
-function sydneyNow(d = new Date()) {
-  const f = new Intl.DateTimeFormat("en-AU", { timeZone: TZ, weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false, year: "numeric", month: "2-digit", day: "2-digit" });
+const SYD_NOW_OPTS = { timeZone: TZ, weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false, year: "numeric", month: "2-digit", day: "2-digit" };
+function sydneyNowIntl(d) {
+  const f = dtf("en-AU", SYD_NOW_OPTS);
   const p = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]));
   const dow = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[p.weekday] || 1;
   const h = p.hour === "24" ? 0 : Number(p.hour);
   return { day: `${p.year}${p.month}${p.day}`, dow, tod: h * 60 + Number(p.minute) };
 }
+// Sydney is always a whole number of hours away from UTC (10 or 11), and daylight saving starts
+// and ends on a UTC hour boundary, so the local date, weekday and hour of any instant follow from
+// the start of its UTC hour. Those are worked out with Intl once per hour and kept: predictions
+// and the reliability pick ask this for every recorded row (thousands per request).
+const sydHourMemo = new Map();
+function sydneyNow(d = new Date()) {
+  const t = +d;
+  if (!Number.isFinite(t)) return sydneyNowIntl(d);
+  const h0 = t - (((t % 3600000) + 3600000) % 3600000);
+  let hp = sydHourMemo.get(h0);
+  if (!hp) {
+    const s = sydneyNowIntl(new Date(h0));
+    hp = { day: s.day, dow: s.dow, tod0: s.tod };
+    if (sydHourMemo.size > 5000) sydHourMemo.clear();
+    sydHourMemo.set(h0, hp);
+  }
+  return { day: hp.day, dow: hp.dow, tod: hp.tod0 + Math.floor((t - h0) / 60000) };
+}
 function clock(t) {
-  return new Date(t).toLocaleTimeString("en-AU", { timeZone: TZ, hour: "numeric", minute: "2-digit" }).replace(/\s/g, "").toLowerCase();
+  return dtf("en-AU", CLOCK_OPTS).format(new Date(t)).replace(/\s/g, "").toLowerCase();
 }
 function hhmmOf(tod) { tod = ((tod % 1440) + 1440) % 1440; return String(Math.floor(tod / 60)).padStart(2, "0") + String(tod % 60).padStart(2, "0"); }
 function todText(tod) {
@@ -2776,11 +2868,25 @@ async function predictions(env, items, max = 14) {
   if (!want.length) return;
   const pairs = [...new Map(want.map((w) => [w.it.line + "|" + w.it.stopId, w.it])).values()];
   const since = Date.now() - 28 * 86400000;
+  // Same 600 latest rows per line and stop as always; from those, only rows that can be within
+  // 75 min of a wanted time of day come back (Sydney is UTC+10 or +11, so a 210 min window in UTC
+  // minutes covers both), and only the three columns used below. The exact check stays in JS.
+  // This keeps the answer identical and cuts the rows read back from D1 by about 85%.
+  const todsBy = new Map();
+  for (const w of want) {
+    const k = w.it.line + "|" + w.it.stopId;
+    if (!todsBy.has(k)) todsBy.set(k, new Set());
+    todsBy.get(k).add(w.tod);
+  }
   let res;
   try {
-    res = await d.batch(pairs.map((it) => d.prepare(
-      "SELECT route, stop_id, planned, est, delay_s, last_seen, day FROM obs WHERE route = ?1 AND stop_id = ?2 AND planned > ?3 AND planned < ?4 AND last_seen >= est - 600000 ORDER BY planned DESC LIMIT 600"
-    ).bind(it.line, it.stopId, since, Date.now() - 60000)));
+    res = await d.batch(pairs.map((it) => {
+      const tods = [...todsBy.get(it.line + "|" + it.stopId)];
+      const win = tods.map((_, i) => `(((m - ?${5 + i}) % 1440) + 1440) % 1440 <= 210`).join(" OR ");
+      return d.prepare(
+        "SELECT planned, delay_s, day FROM (SELECT planned, delay_s, day, planned / 60000 AS m FROM obs WHERE route = ?1 AND stop_id = ?2 AND planned > ?3 AND planned < ?4 AND last_seen >= est - 600000 ORDER BY planned DESC LIMIT 600) WHERE " + win
+      ).bind(it.line, it.stopId, since, Date.now() - 60000, ...tods.map((t) => (((t - 735) % 1440) + 1440) % 1440));
+    }));
   } catch (e) { return; }
   const rowsBy = new Map();
   pairs.forEach((it, i) => rowsBy.set(it.line + "|" + it.stopId, (res[i] && res[i].results) || []));
@@ -4198,12 +4304,15 @@ function facDist(aLat, aLon, bLat, bLon) {
   const r = Math.PI / 180, x = (bLon - aLon) * r * Math.cos(((aLat + bLat) / 2) * r), y = (bLat - aLat) * r;
   return Math.round(Math.sqrt(x * x + y * y) * 6371000);
 }
+// The same fields toLocaleString("en-US", { timeZone }) prints, as reusable formatters.
+const LOCAL_SYD_OPTS = { timeZone: TZ, year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" };
+const LOCAL_UTC_OPTS = { ...LOCAL_SYD_OPTS, timeZone: "UTC" };
 function sydneyLocalMs(s) {
   // "2026-10-24T15:39:23" in Sydney time to epoch ms.
   const asUtc = Date.parse(String(s || "") + "Z");
   if (!Number.isFinite(asUtc)) return null;
   const d = new Date(asUtc);
-  const syd = new Date(d.toLocaleString("en-US", { timeZone: TZ })), utc = new Date(d.toLocaleString("en-US", { timeZone: "UTC" }));
+  const syd = new Date(dtf("en-US", LOCAL_SYD_OPTS).format(d)), utc = new Date(dtf("en-US", LOCAL_UTC_OPTS).format(d));
   return asUtc - (syd - utc);
 }
 
@@ -4215,7 +4324,10 @@ async function liftOutages(env) {
     liftMem.p = (async () => {
       const now = sydneyParts(new Date());
       const [y, m, dd] = String(now.date).replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3").split("-");
-      const data = await tp(env, "add_info", { filterDateValid: `${dd}-${m}-${y}`, filterPublicationStatus: "current" });
+      // Lift and escalator notices are the Trip Planner's "infrastructure" infos. Asking for just
+      // those brings about 40 KB instead of the whole 2.5 MB alert list, which was the single
+      // biggest parse on the server.
+      const data = await tp(env, "add_info", { filterDateValid: `${dd}-${m}-${y}`, filterPublicationStatus: "current", filterInfoType: "infrastructure" });
       const out = [], seen = new Set();
       for (const i of (data.infos && data.infos.current) || []) {
         const inf = (i.affected && i.affected.Infrastructures) || [];
