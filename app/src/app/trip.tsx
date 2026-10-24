@@ -22,6 +22,8 @@ import { Icon, I, modeIconName } from '@/components/Icon';
 import { openService } from '@/components/Cards';
 import { LineBadge, OccupancyChip } from '@/components/Transit';
 import { arrOf, ServiceRow, WarnLine } from '@/components/Home';
+import { RemindLastButton } from '@/components/LastHome';
+import { canRemind, lastTonightIndex, modeOfLegs } from '@/lib/lastHomeCore';
 import { Button, Empty, Screen, Sep, T } from '@/components/ui';
 
 /** "0745" for the trip API's time parameter, Sydney time. */
@@ -253,6 +255,8 @@ export default function TripScreen() {
   })();
   const df = directFilter(jsAll, plan, allOn, (j) => j);
   const js = df.list;
+  // Last way home: the last service tonight, only when the list shows the night gap after it.
+  const lastIdx = lastTonightIndex(js.map(depMs));
   const loadMore = async (dir: -1 | 1) => {
     if (!js.length || more) return;
     haptic.select();
@@ -348,6 +352,7 @@ export default function TripScreen() {
                 <Sep inset={0} />
                 <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />
                 <WarnLine j={j} />
+                {!chain && i === lastIdx && canRemind(depMs(j), now) ? <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}><T kind="foot" tone="text2">Last service tonight</T><RemindLastButton hint={{ from, to, mode: modeOfLegs(j.legs) }} acc={accOn} /></View> : null}
                 {data?.accessible ? <JourneyAccessLine j={j} liftOn={liftOn} /> : null}
                 {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} /></View> : null}
               </View>

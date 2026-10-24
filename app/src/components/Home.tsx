@@ -15,6 +15,7 @@ import { Icon, I, IconName } from './Icon';
 import { safeUrl } from '@/lib/access';
 import { openService } from './Cards';
 import { LineBadge, OccupancyChip } from './Transit';
+import { useReliabilityText } from '@/lib/reliability';
 import { font, Sep, T } from './ui';
 
 // ---------- shared refresh signals for every card on Home ----------
@@ -375,11 +376,13 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
   const l = firstLeg(j);
   const dep = depOf(j);
   const stt = statusOf(j, now);
+  const relRaw = useReliabilityText(l);
   const t = showTravel ? { big: String(j.durationMin), unit: 'min' } : cd(dep, now);
   const toneText = stt.tone === 'live' ? c.liveText : stt.tone === 'late' ? c.lateText : stt.tone === 'red' ? c.redText : c.text2;
   const legs = j.legs.filter((x) => x.kind === 'transit');
   const last = legs[legs.length - 1];
   const cancelled = stt.tone === 'red';
+  const rel = cancelled ? null : relRaw;
   const chip = showTravel ? (cancelled ? c.text3 : '#8E8E93') : cdColor(dep, now, cancelled, c);
   const badges: Leg[] = [];
   for (const x of legs) if (x.line && !badges.some((b) => b.line === x.line)) badges.push(x);
@@ -387,7 +390,7 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
   const boardAt = plat(l?.fromPlatform);
   const bigSize = t.unit ? 22 : t.big === 'Now' ? 16 : 13;
   return (
-    <Pressable onPress={onPress} android_ripple={{ color: c.fill }} accessibilityLabel={`Leaves ${hm(dep)}${boardAt ? ` from ${boardAt}` : ''}, ${t.big} ${t.unit}, arrives ${hm(arrive)}, ${stt.text}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}`}
+    <Pressable onPress={onPress} android_ripple={{ color: c.fill }} accessibilityLabel={`Leaves ${hm(dep)}${boardAt ? ` from ${boardAt}` : ''}, ${t.big} ${t.unit}, arrives ${hm(arrive)}, ${stt.text}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}${rel ? `. ${rel}` : ''}`}
       style={({ pressed }) => [s.svc, (beaten || dep < now - 30000) && { opacity: 0.45 }, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
       <View style={[s.block, { backgroundColor: chip + (c.dark ? '33' : '1F') }]}>
         <Text maxFontSizeMultiplier={1.3} style={{ color: cdText(chip, c), fontSize: bigSize, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }} numberOfLines={1} adjustsFontSizeToFit>{t.big}</Text>
@@ -402,6 +405,7 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
         </T>
         {l?.platformChangedFrom ? <T kind="foot" numberOfLines={1} style={{ color: c.lateText, marginTop: 1 }}>Platform changed from {plat(l.platformChangedFrom)}</T> : null}
         <OccupancyChip o={l?.occupancy} style={{ marginTop: 3 }} />
+        {rel ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{rel}</T> : null}
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 8 }}>
         {badges.slice(0, 3).map((b, i) => <MiniBadge key={`${b.line}${i}`} line={b.line} color={b.color || modeColor[b.mode || 'train']} />)}

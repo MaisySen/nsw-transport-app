@@ -14,13 +14,15 @@ import { store, useStore } from '@/lib/store';
 import type { Fare } from '@/lib/types';
 import { ACC_LABEL, accessKit, outageText, parkBadge, safeUrl, ticketText, type CarPark, type Station } from '@/lib/access';
 import { LineBadge } from '@/components/Transit';
+import { RemindLastButton } from '@/components/LastHome';
+import { canRemind, type LastHomeHint } from '@/lib/lastHomeCore';
 
 type Link = { kind?: string; label?: string; href?: string; id?: string; name?: string; from?: string; to?: string; fn?: string; tn?: string; [k: string]: any };
 type Dep = { line: string; color?: string; mode?: string; dest: string; platform?: string | null; planned: string; estimated?: string | null; realtime: boolean; delayMin: number; cancelled: boolean; link?: Link };
 type Leg = { kind: string; mode?: string; line?: string; color?: string; fromPlatform?: string | null; realtime: boolean; delayMin: number; cancelled: boolean; planned?: string; link?: Link | null };
 type Jny = { leave: string; arrive: string; durationMin: number; changes: number; legs: Leg[]; warn?: string | null; fare?: Fare | null };
 type Card = { type: 'departures' | 'trip' | 'alerts' | 'stops' | 'parking' | 'station' | string; station?: Station; title?: string; titleOnly?: boolean; link?: Link | null; items?: any[]; journeys?: Jny[]; from?: { id: string; name: string }; to?: { id: string; name: string } };
-type Msg = { id: string; role: 'me' | 'bot'; text: string; cards?: Card[]; links?: Link[]; suggestions?: string[]; ask?: string | null; t: number };
+type Msg = { id: string; role: 'me' | 'bot'; text: string; cards?: Card[]; links?: Link[]; suggestions?: string[]; ask?: string | null; t: number; lastHome?: LastHomeHint | null };
 
 const KEY = 'ask_chat_v1';
 
@@ -86,7 +88,7 @@ export default function AskScreen() {
       const qs = Object.entries(p).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
       const r = await fetch(`${apiBase()}/api/ask?${qs}`);
       const d = await r.json();
-      setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: d.reply || d.text || "Sorry, I didn't get that.", cards: d.cards || [], links: d.links || [], suggestions: d.suggestions || [], ask: d.ask || null, t: Date.now() }]);
+      setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: d.reply || d.text || "Sorry, I didn't get that.", cards: d.cards || [], links: d.links || [], suggestions: d.suggestions || [], ask: d.ask || null, t: Date.now(), lastHome: d.lastHome && d.lastHome.from && d.lastHome.to ? d.lastHome : null }]);
     } catch {
       setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: 'No connection right now. Check your signal and try again.', suggestions: [q], t: Date.now() }]);
     } finally { setBusy(false); }
@@ -219,6 +221,7 @@ export default function AskScreen() {
     <View style={{ alignItems: 'flex-start', marginTop: 6 }}>
       <View style={[st.bubble, st.bot, { backgroundColor: c.dark ? '#26252A' : '#E9E9EB' }]}><Text style={[st.botText, { color: c.text }]}>{item.text}</Text></View>
       {(item.cards || []).map((card, i) => <CardView key={i} card={card} />)}
+      {item.lastHome && canRemind(Date.parse(item.lastHome.leave || ''), now) ? <RemindLastButton hint={item.lastHome} known acc={store.accOn()} /> : null}
       {item.links && item.links.length ? <View style={st.chips}>{item.links.map((l, i) => <Chip key={i} label={l.label || 'Open'} onPress={() => open(l)} />)}</View> : null}
       {index === msgs.length - 1 && (item.ask === 'location' || (item.suggestions || []).length) ? (
         <View style={st.chips}>

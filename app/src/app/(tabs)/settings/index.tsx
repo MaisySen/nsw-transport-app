@@ -21,6 +21,7 @@ import { COMPANY } from '@/lib/company';
 import { PRIVACY_URL, SUPPORT_URL } from '@/lib/server';
 import { useFlag } from '@/lib/config';
 import { checkSubtitle, checkTitle } from '@/lib/morning';
+import { clearLastHomeLocal } from '@/lib/lastHome';
 
 export default function Settings() {
   const c = usePalette();
@@ -59,6 +60,7 @@ export default function Settings() {
       await endLive().catch(() => {});
       await disablePush().catch(() => {});
       await syncLiftAlerts(false).catch(() => {});
+      clearLastHomeLocal();
       store.resetAll();
       // Everything this app keeps on the phone goes, except the install's private id, device id, and the server
       // address and switches (not personal data; the widgets read the address).
