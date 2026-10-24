@@ -2990,8 +2990,10 @@ function lineOfRoute(id, table) {
 function digestAlerts(raw, table, now) {
   const items = [];
   for (const a of raw) {
-    const effect = ALERT_EFFECTS[a.effect];
-    if (!effect || !a.header) continue;
+    // Unknown effect counts as changed service when the cause is maintenance or construction (Transport
+    // for NSW files some closures that way), except station notices. Extra services are not a problem.
+    const effect = ALERT_EFFECTS[a.effect] || (a.effect === 8 && ALERT_PLANNED_CAUSES.has(a.cause) && !/^station update/i.test(a.header) ? "modified" : null);
+    if (!effect || !a.header || /^(extra|additional) /i.test(a.header)) continue;
     const periods = a.periods.filter(([s, e]) => !e || e > now - 6 * 3600000).filter(([s]) => s < now + 10 * 86400000);
     if (a.periods.length && !periods.length) continue;
     const lines = [...new Set(a.routes.map((r) => lineOfRoute(r, table)).filter(Boolean))].slice(0, 12);

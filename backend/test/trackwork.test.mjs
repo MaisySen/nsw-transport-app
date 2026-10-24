@@ -65,9 +65,12 @@ test("the digest keeps planned and disruptive alerts with lines or stops, drops 
     alert({ id: "old", start: WED - 3 * D, end: WED - 2 * D, routes: ["ESI_1a"], header: "Old trackwork" }),
     alert({ id: "late", cause: 3, effect: 3, routes: ["SMNW_M1"], header: "Metro North West Line: Allow extra travel time" }),
     alert({ id: "bus", cause: 10, effect: 4, routes: ["2507_540"], stops: ["G2141123"], header: "Route 540 diversion" }),
+    alert({ id: "extra", cause: 10, effect: 6, routes: ["1001_L2"], header: "Extra L2 and L3 light rail services run during train trackwork in the City" }),
+    alert({ id: "nights", cause: 10, effect: 8, routes: ["1001_L2"], header: "L2 Randwick Line weeknight closures due to maintenance" }),
   ]));
   const items = W.digestAlerts(raw, TABLE, WED);
-  assert.deepEqual(items.map((i) => i.id), ["work", "late", "bus"]);
+  assert.deepEqual(items.map((i) => i.id), ["work", "late", "bus", "nights"]);
+  assert.equal(items[3].e, "modified");
   assert.equal(items[0].pl, 1); assert.deepEqual(items[0].l, ["T4"]);
   assert.equal(items[1].pl, 0); assert.equal(items[1].e, "delays");
   assert.deepEqual(items[2].s, ["2141123"]);
