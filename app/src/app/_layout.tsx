@@ -59,6 +59,7 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="stop/[id]" options={stopHeaderOptions(Platform.OS)} />
           <Stack.Screen name="trip" options={{ title: 'Trips', headerLargeTitle: false }} />
+          <Stack.Screen name="board" options={{ headerShown: false, presentation: Platform.OS === 'ios' ? 'fullScreenModal' : 'card', orientation: 'all' }} />
           <Stack.Screen name="service" options={{ headerShown: false, presentation: 'card' }} />
           <Stack.Screen name="go" options={{ headerShown: false, presentation: 'card' }} />
           <Stack.Screen name="topup" options={{ title: 'Opal machines' }} />

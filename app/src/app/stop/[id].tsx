@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
@@ -60,6 +60,12 @@ export default function StopScreen() {
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 4 }}>
           <LiveStamp updatedAt={updatedAt} error={error} offlineAt={offlineAt} />
+          <Pressable onPress={() => { haptic.tap(); router.push({ pathname: '/board', params: { id: String(id), name: stopName } }); }} hitSlop={8}
+            accessibilityRole="button" accessibilityLabel="Open departure board, full screen"
+            style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 16, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>
+            <Icon name={I.clock} size={14} color={c.tint} />
+            <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Board</T>
+          </Pressable>
         </View>
 
         {modes.length > 1 ? (
