@@ -605,6 +605,7 @@ async function findLocations(env, q, max = 20) {
   const data = await tp(env, "stop_finder", { type_sf: "any", name_sf: q, TfNSWSF: "true", anyMaxSizeHitList: String(max) });
   const list = (data.locations || []).map((l) => ({
     id: l.id, name: l.name, type: l.type, quality: l.matchQuality || 0, best: !!l.isBest, modes: l.modes || [],
+    area: (l.parent && l.parent.name) || null, coord: Array.isArray(l.coord) && l.coord.length === 2 ? l.coord : null,
   }));
   if (stopCache.size > 500) stopCache.clear();
   stopCache.set(k, { at: Date.now(), data: list });
@@ -616,6 +617,28 @@ async function findStops(env, q) {
   const stops = all.filter((l) => (l.type === "stop" || l.type === "platform") && isNswStop(l));
   stops.sort((a, b) => b.quality - a.quality);
   return { stops, all };
+}
+// Places for the app's search box: stops plus addresses, streets, landmarks and suburbs, each with a kind,
+// in the Trip Planner's own match order. Every id is one the Trip Planner takes back as a trip end (type any),
+// so a result can be a trip origin or destination as it is. NSW only.
+const PLACE_KINDS = { stop: "stop", platform: "stop", singlehouse: "address", street: "street", poi: "place", suburb: "suburb", locality: "suburb" };
+function placesFrom(all, max = 10) {
+  const out = [];
+  const seen = new Set();
+  const list = all.filter((l) => PLACE_KINDS[l.type] && isNswStop(l)).sort((a, b) => (b.best ? 1 : 0) - (a.best ? 1 : 0) || b.quality - a.quality);
+  for (const l of list) {
+    const kind = PLACE_KINDS[l.type];
+    const name = shortName(l.name);
+    const key = kind + "|" + name.toLowerCase();
+    if (!l.id || seen.has(key)) continue;
+    seen.add(key);
+    // The suburb line under the name, unless the name already ends with it.
+    const area = l.area && !name.toLowerCase().endsWith(String(l.area).toLowerCase()) ? shortName(l.area) : null;
+    out.push({ id: String(l.id), name, kind, ...(kind === "stop" ? { modes: l.modes || [] } : {}), ...(area && kind !== "stop" && kind !== "suburb" ? { area } : {}),
+      ...(l.coord ? { lat: Math.round(l.coord[0] * 1e5) / 1e5, lon: Math.round(l.coord[1] * 1e5) / 1e5 } : {}) });
+    if (out.length >= max) break;
+  }
+  return out;
 }
 async function bestPlace(env, q) {
   if (/^\d{5,8}$/.test(q)) return { place: { id: q, name: "Stop " + q, type: "stop" }, others: [] };
@@ -731,6 +754,8 @@ function legKind(t) {
   return "transit";
 }
 
+// "151.21070:-33.86760:EPSG:4326": a point (longitude:latitude) the Trip Planner takes with type coord.
+function isCoordId(id) { return /^-?\d{1,3}(\.\d+)?:-?\d{1,2}(\.\d+)?:EPSG:4326$/.test(String(id || "")); }
 async function trip(env, fromId, toId, opts = {}) {
   let { date, time } = sydneyParts();
   let tomorrow = false;
@@ -741,8 +766,8 @@ async function trip(env, fromId, toId, opts = {}) {
   }
   const data = await tp(env, "trip", {
     depArrMacro: opts.arriveBy ? "arr" : "dep", itdDate: date, itdTime: time,
-    type_origin: opts.fromType || "any", name_origin: fromId,
-    type_destination: opts.toType || "any", name_destination: toId,
+    type_origin: opts.fromType || (isCoordId(fromId) ? "coord" : "any"), name_origin: fromId,
+    type_destination: opts.toType || (isCoordId(toId) ? "coord" : "any"), name_destination: toId,
     calcNumberOfTrips: String(opts.count || 5), TfNSWTR: "true",
     ...(opts.via ? { type_via: opts.viaType || "any", name_via: opts.via } : {}),
     // Step free trips only (Settings > Accessible trips): the Trip Planner's wheelchair option.
@@ -1495,7 +1520,15 @@ async function answer(env, raw, ctx = {}) {
   if (q.length < 2) return { kind: "help" };
   const { stops } = await findStops(env, q);
   if (!stops.length) return { kind: "text", text: `I couldn't find a stop called "${q}". Try a station name like "Strathfield", a stop number from the sign, or a trip like "Burwood to Central".` };
-  const top = stops[0];
+  let top = stops[0];
+  // The Trip Planner always offers something, even for "asdfgh qwerty". Take its stop only when the words
+  // asked are in the stop's name; otherwise try the station, suburb and typo matching, then say so plainly.
+  if (!askHasAll(askWords(q), top.name)) {
+    const pl = await askPlace(env, q, ctx.origin).catch(() => null);
+    if (pl && pl.ambiguous) return { kind: "didYouMean", role: "stop", q, options: pl.options, suggestions: pl.options.slice(0, 3).map((o) => "Departures " + o.name) };
+    if (!pl || !pl.id || /EPSG/.test(String(pl.id)) || pl.type === "poi" || pl.type === "street") return { kind: "text", text: ASK_NOT_UNDERSTOOD };
+    top = { id: pl.id, name: pl.name, quality: top.quality };
+  }
   const r = await departures(env, top.id, { mode, ctx: ctx.exec });
   const close = stops.slice(1, 4).filter((s) => s.quality >= top.quality - 10).map((s) => ({ id: s.id, name: shortName(s.name) }));
   return { kind: "departures", mode, ...r, alternatives: close };
@@ -1546,12 +1579,24 @@ function askDep(it) {
     occupancy: it.occupancy ? it.occupancy.text : null, link: askSvc(it),
   };
 }
+// Intercity lines by name: the codes alone ("BMT") mean little to most people.
+const ASK_LINE_NAMES = { BMT: "Blue Mountains Line", CCN: "Central Coast and Newcastle Line", SCO: "South Coast Line", SHL: "Southern Highlands Line", HUN: "Hunter Line" };
+function askLineName(line) { return ASK_LINE_NAMES[String(line || "").toUpperCase()] || null; }
+// " (T4 then T9, Plat 1, change at Redfern)": every service of one journey, so the sentence matches its card row.
+function askLinesWords(j) {
+  const tl = askTransit(j || {});
+  if (!tl.length) return "";
+  const names = tl.map((l) => askLineName(l.line) || l.line).filter(Boolean);
+  const at = [...new Set(tl.slice(1).map((l) => askShort(String(l.from || "").split(",")[0].trim())).filter(Boolean))];
+  return ` (${names.join(" then ")}${askPlat(tl[0].fromPlatform)}${at.length ? `, change at ${askJoin(at)}` : ""})`;
+}
 function askLegOut(l) {
   return {
     kind: l.kind, mode: l.mode || null, line: l.line || null, color: l.color || null, towards: l.towards || null,
     from: l.from || null, fromPlatform: l.fromPlatform || null, to: l.to || null, planned: l.planned || null,
     estimated: l.estimated || null, realtime: !!l.realtime, delayMin: l.delayMin || 0, cancelled: !!l.cancelled,
     durationMin: l.durationMin || null, link: l.kind === "transit" && l.tripId ? askSvc(l) : null,
+    ...(askLineName(l.line) ? { lineName: askLineName(l.line) } : {}),
   };
 }
 function askJourneyOut(j) {
@@ -2011,11 +2056,28 @@ async function askRouteAt(env, line, placeQ, ctx) {
   return { kind: "routeAt", line, stop: { id: cands[0].id, name: cands[0].name }, items: [], alerts: [], now, nearbyTried: !placeQ };
 }
 
+// The trip inside a fare question, or null: "how much is the fare from Central to Parramatta" gives
+// "Central to Parramatta"; "Opal fare to Bondi from Central" gives "Bondi from Central".
+function askFareQ(text) {
+  const t = String(text || "").trim().replace(/[?.!]+$/, "");
+  if (!/\b(fares?|how much|costs?|price)\b/i.test(t) || !/\s(to|>|->)\s/i.test(t)) return null;
+  const fm = t.match(/\bfrom\s+(.+?\s(?:to|>|->)\s.+)$/i);
+  let rest = fm ? fm[1] : t.replace(/^.*?\b(?:fares?|costs?|price|how much)\b\s*/i, "");
+  for (let k = 0; k < 4; k++) rest = rest.replace(/^(?:is it|does it cost|would it cost|will it cost|it cost|it|is|be|of|for|the|a|an|to go|to get|to travel|trip|ride|journey|opal|fares?)\s+/i, "");
+  if (/^to\s/i.test(rest) && /\sfrom\s/i.test(rest)) rest = rest.replace(/^to\s+/i, "");
+  rest = rest.trim();
+  return rest && /\s(to|>|->|from)\s/i.test(rest) ? rest : null;
+}
+const ASK_NOT_UNDERSTOOD = `I didn't get that. Try a station like "Strathfield", a trip like "Burwood to Central", "Is the T1 late" or a stop number from the sign.`;
 async function askRoute(env, raw, ctx) {
   const text = askClean(raw);
   const lower = text.toLowerCase();
   if (!text) return { kind: "help" };
   if (/^(thanks|thank you|cheers|ta|thx)$/i.test(lower)) return { kind: "text", text: "No worries." };
+
+  // Fare questions ("how much is the fare from Central to Parramatta", "fare Central to Parramatta") are trips that lead with the fare.
+  const fq = askFareQ(text);
+  if (fq) { const r = await askRoute(env, fq, ctx); if (r && r.kind === "trip") r.fareAsked = true; return r; }
 
   // Parking, lifts and step free access, top up machines (facilities block below).
   const fx = await askFacilities(env, text, ctx);
@@ -2173,7 +2235,7 @@ function askDecorate(d, ctx) {
         const tl = askTransit(j)[0];
         const ch = j.changes ? ` with ${j.changes} change${j.changes > 1 ? "s" : ""}` : "";
         reply = head + " " + (d.modeNote ? d.modeNote + " " : "") + (tl
-          ? `Next: the ${tl.line} from ${tl.from || askShort(d.from.name)}${askPlat(tl.fromPlatform)} at ${hm(tl.estimated || tl.planned)}${ms(j.leave) < ms(tl.planned) - 60000 ? ` (leave ${askWhen(j.leave)})` : ` (${askWhen(tl.estimated || tl.planned)})`}, arriving ${d.to.name} ${hm(j.arrive)}${ch}. ${cap(askStatusWords(tl))}.`
+          ? `Next: the ${askLineName(tl.line) || tl.line} from ${tl.from || askShort(d.from.name)}${askPlat(tl.fromPlatform)} at ${hm(tl.estimated || tl.planned)}${ms(j.leave) < ms(tl.planned) - 60000 ? ` (leave ${askWhen(j.leave)})` : ` (${askWhen(tl.estimated || tl.planned)})`}, arriving ${d.to.name} ${hm(j.arrive)}${ch}. ${cap(askStatusWords(tl))}.`
           : `Leave ${askWhen(j.leave)} (${hm(j.leave)}), arrive ${hm(j.arrive)}.`);
       }
       const tlink = geo(d.from) || geo(d.to) ? null : askTripLink(d.from, d.to);
@@ -2190,7 +2252,7 @@ function askDecorate(d, ctx) {
     case "didYouMean": {
       const names = d.options.map((x) => x.name);
       const list = names.length > 1 ? names.slice(0, -1).join(", ") + " or " + names[names.length - 1] : names[0];
-      const role = d.role === "from" ? "start" : d.role === "via" ? "via stop" : "destination";
+      const role = d.role === "from" ? "start" : d.role === "via" ? "via stop" : d.role === "stop" ? "stop" : "destination";
       reply = `I'm not sure which ${role} you mean by "${d.q}". Did you mean ${list}?`;
       sugg = d.suggestions || [];
       break;
@@ -2207,7 +2269,7 @@ function askDecorate(d, ctx) {
         const tl = askTransit(l)[0];
         const gone = ms(l.leave) < now;
         reply = (gone ? `The last ${noun} from ${askFromName(d.from)} to ${d.to.name} has gone. ` : `${d.sure ? "Last" : "Latest I can see for the last"} ${noun} from ${askFromName(d.from)} to ${d.to.name}: `) +
-          (gone ? "" : `leave ${hm(l.leave)}, arrive ${hm(l.arrive)}` + (tl ? ` (${tl.line}${askPlat(tl.fromPlatform)})` : "") + ".") +
+          (gone ? "" : `leave ${hm(l.leave)}, arrive ${hm(l.arrive)}` + askLinesWords(l) + ".") +
           (d.after ? ` After that: ${askTransit(d.after).filter((x) => x.mode === "bus").map((x) => x.line).join(" then ") || askTransit(d.after).map((x) => x.line).join(" then ")} ${askTransit(d.after).some((x) => x.mode === "bus") ? "bus " : ""}at ${hm(askTransit(d.after).filter((x) => x.mode === "bus")[0] ? askTransit(d.after).filter((x) => x.mode === "bus")[0].planned : d.after.leave)}.` : "");
       }
       const js = [d.before, d.last, d.after].filter(Boolean);
@@ -5318,10 +5380,13 @@ function parkSentence(p) {
   return `${p.name}: ${p.free} of ${p.spots} spaces free${p.status === "nearly" ? ", nearly full" : ""}.`;
 }
 
+// Station facilities belong to stations. The facilities data also lists bus interchanges such as Railway Square,
+// with lifts, escalators and access copied from the station nearby, so those entries are left out.
+function facBusOnly(s) { return /\b(bus|coach)\s+(interchange|station|stop|terminal|bay|layover)s?\b/i.test(String((s && s.n) || "")); }
 async function stationInfo(env, id, live = true) {
   const fac = await facData(env, "facilities");
   const s = fac && fac.stations ? fac.stations[String(id)] : null;
-  if (!s) return null;
+  if (!s || facBusOnly(s)) return null;
   const x = s.x || [], f = s.f || [];
   const out = {
     id: String(id), name: s.n, lat: s.lat, lon: s.lon, modes: s.m ? s.m.split(/,\s*/) : [],
@@ -5363,7 +5428,7 @@ async function addAccess(env, d, opts = {}) {
   const outs = await liftOutages(env).catch(() => []);
   const brief = (id) => {
     const s = fac.stations[String(id || "")];
-    if (!s) return null;
+    if (!s || facBusOnly(s)) return null;
     const b = { id: String(id), level: ACCESS_LEVEL[s.a] || "unknown", lift: (s.x || []).includes("lift") };
     const o = outs.filter((x) => x.stops.includes(String(id)));
     if (o.length) { b.outage = o[0].title; b.outages = o.length; }
@@ -5400,12 +5465,12 @@ async function askFacStation(env, q) {
   const fac = await facData(env, "facilities");
   if (!fac || !q) return null;
   const want = q.toLowerCase().replace(/\s+(station|wharf|light rail)$/, "").trim();
-  const ent = Object.entries(fac.stations);
+  const ent = Object.entries(fac.stations).filter(([, s]) => !facBusOnly(s));
   const exact = ent.find(([, s]) => s.n.toLowerCase().replace(/\s+(station|wharf|light rail|b-line)$/, "") === want);
   if (exact) return exact[0];
   try {
     const { stops } = await findStops(env, q);
-    for (const s of (stops || []).slice(0, 4)) if (fac.stations[String(s.id)]) return String(s.id);
+    for (const s of (stops || []).slice(0, 4)) if (fac.stations[String(s.id)] && !facBusOnly(fac.stations[String(s.id)])) return String(s.id);
   } catch (e) { /* fall through to a name match */ }
   const part = ent.find(([, s]) => s.n.toLowerCase().startsWith(want));
   return part ? part[0] : null;
@@ -5770,7 +5835,9 @@ async function handleRequest(request, env, exec) {
           pickFares(d, fareType(p));
           const fj = (d.journeys || []).find((j) => j.fare && ms(j.board || j.leave) >= Date.now() - 60000) || (d.journeys || [])[0];
           const fs = d.kind === "trip" && fj ? fareSentence(fj.fare) : "";
-          if (fs && d.reply) { d.reply += "\n" + fs; d.fare = fj.fare; }
+          // A fare question leads with the fare.
+          if (fs && d.reply) { d.reply = d.fareAsked ? fs + "\n" + d.reply : d.reply + "\n" + fs; d.fare = fj.fare; }
+          else if (d.fareAsked && d.reply && d.kind === "trip") d.reply = "I couldn't work out an Opal fare for this trip.\n" + d.reply;
           if (asTxt) { const tx = await askText(env, d); return textRes(fs && !tx.includes(fs) ? tx + "\n" + fs : tx); }
           return json(askSlim(d));
         }
@@ -5884,6 +5951,12 @@ async function handleRequest(request, env, exec) {
             body = hit;
           }
           return new Response(JSON.stringify(body), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=86400", "access-control-allow-origin": "*" } });
+        }
+        case "/api/places": {
+          // Stops, addresses, streets, landmarks and suburbs for the Plan search box (the app falls back to /api/search on a 404).
+          const q = (p.get("q") || "").trim().slice(0, 80);
+          if (q.length < 2) return json({ items: [] });
+          return json({ items: placesFrom(await findLocations(env, q)) });
         }
         case "/api/search": {
           const q = (p.get("q") || "").trim();

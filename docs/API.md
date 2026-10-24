@@ -24,6 +24,7 @@ Errors: `400` for bad input with an `error` message (checked before any upstream
 | --- | --- | --- | --- |
 | `/api/ask` | GET | `q` (the question), `home`, `work` (optional saved places), `profile`, `device`, `lat`, `lon`, `format` | `reply`, `cards`, `links`, `suggestions`; for trips also `understood {from, via, to}`. Trip answers carry their journeys inside the `trip` card only, trimmed to the fields the Ask screens read (5 to 21 KB a reply). Alert `url` values are `https://` or null. When a place is unclear it returns `options` (Did you mean choices, each a full question). Rule based, no AI model |
 | `/api/search` | GET | `q` (2 or more characters) | `items`: up to 8 stops with `id`, `name`, `modes` |
+| `/api/places` | GET | `q` (2 to 80 characters) | api.transportsydney.app only. `items`: up to 10 places in the Trip Planner's match order, each with `id`, `name`, `kind` (`stop`, `address`, `street`, `place` for a landmark, `suburb`), `modes` for stops, `area` (suburb) when the name has none, `lat`, `lon`. Every `id` works as `from` or `to` of `/api/trip`. The app uses it for the Plan search box and falls back to `/api/search` (stops only) when this answers 404 or fails |
 | `/api/nearby` | GET | `lat`, `lon` | `stops` near the point |
 | `/api/stations` | GET | `mode` = `train`, `metro`, `ferry`, `lightrail` or `bus`; for bus, optional `route` (for example `461X`) | Station list A to Z; for bus, the route list or one route's directions and stops. Cached for a day |
 
@@ -200,7 +201,7 @@ The service checked is the one whose first train, bus or ferry is planned closes
 
 Fields:
 * `device`: the same device id used for trip alerts (6 to 64 of `A` to `Z`, `a` to `z`, `0` to `9`, `_ . : -`).
-* `from`, `to`: stop or station ids from `/api/search` or `/api/stations`, with the names to show.
+* `from`, `to`: stop or station ids from `/api/search` or `/api/stations`, place ids from `/api/places`, or a point as `longitude:latitude:EPSG:4326` (api.transportsydney.app), with the names to show.
 * `time`: usual departure, `"HH:MM"` 24 hour Sydney time (`"7:45"` and `"0745"` also work).
 * `days`: weekday numbers, 1 is Monday to 7 is Sunday. Default `[1, 2, 3, 4, 5]`.
 * `lead`: minutes before `time` that the check runs, 5 to 45. Default 15.
