@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Home opens at the top with its header (over the air update for iPhone and Android, 25 Oct, 8:22 AM)
+* On iPhone, Home opened with an empty dark band at the top (only the Live pill showing) and the content starting lower down; a scroll up was needed to see the normal Home header. The large "Home" title was being drawn behind the header's blur.
+* Home, Plan, Ask, More and the stop screen now use the normal header title, the same one you saw after scrolling, so every launch and every return to the app looks the same. Pull to refresh and the tab bar are unchanged.
+* Android looks the same as before. No new build needed: iPhone builds 201, 202 and 203 get it over the air.
+
 ### iPhone build 203: widgets share your trips, simpler widget settings (TestFlight, 25 Oct, 8:05 AM)
 * The app and the widgets now share the app group `group.com.maisysen.nswtransport`, so widgets see the app's profile, starred stops and saved trips without picking them again.
 * Next trip widget, Edit Widget: one Show choice (Home and Work (auto), Saved trip, Pick stops). Saved trip shows only Trip, Pick stops shows only From and To, Home and Work shows nothing more. With no saved trips the Trip list says "Save a trip in the app first".
