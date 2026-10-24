@@ -7,6 +7,7 @@ import * as Location from 'expo-location';
 import { api } from '@/lib/api';
 import { useLive } from '@/lib/hooks';
 import { cacheKey, offlineText } from '@/lib/offlineCore';
+import { foldNear, type NearPick } from '@/lib/nearCore';
 import { modeColor, onColor, radius, usePalette } from '@/lib/theme';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
 import type { Departure, Journey, Leg, Place } from '@/lib/types';
@@ -543,16 +544,16 @@ export async function nearbyStops(lat: number, lon: number): Promise<Near[]> {
     if (Number.isFinite(dist)) g.distance = Math.min(g.distance, dist);
     groups.set(seg, g);
   }
-  const sorted = [...groups.values()].sort((a, b) => a.distance - b.distance).slice(0, 5);
-  const out: Near[] = [];
+  const sorted = [...groups.values()].sort((a, b) => a.distance - b.distance).slice(0, 6);
+  const picks: NearPick[] = [];
   for (const g of sorted) {
     let p: Near | null = null;
     if (/(Station|Wharf)$/i.test(g.seg) || g.members.length > 1) p = await parentOf(g.seg);
     const pick: Near = p ? { ...p, distance: g.distance } : g.members.sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0))[0];
-    if (!out.some((o) => o.id === pick.id)) out.push(pick);
-    if (out.length >= 3) break;
+    picks.push({ ...pick, seg: g.seg, parent: !!p });
   }
-  return out;
+  // Up to 5, so Home still has 3 after leaving out starred stops.
+  return foldNear(picks, 5).map(({ seg, parent, ...n }) => n);
 }
 
 type NearState = { phase: 'checking' | 'off' | 'loading' | 'on' | 'error'; stops: Near[]; error?: string };

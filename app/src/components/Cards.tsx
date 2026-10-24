@@ -41,7 +41,7 @@ export function StopCard({ stop }: { stop: Place }) {
     <View style={{ backgroundColor: c.card, borderRadius: radius, marginHorizontal: 16, marginTop: 12, overflow: 'hidden' }}>
       <CardHead icon={I.star} title={shortName(data?.stop?.name || stop.name)} live={!!updatedAt && !error} beat={updatedAt}
         onPress={() => router.push({ pathname: '/stop/[id]', params: { id: stop.id, name: stop.name } })} />
-      {!data ? <T kind="foot" tone="text2" style={{ paddingHorizontal: 16, paddingBottom: 14 }}>{error || 'Loading live times'}</T> : null}
+      {!data ? <T kind="foot" tone="text2" style={{ paddingHorizontal: 16, paddingBottom: 14 }}>{error ? 'Live times unavailable right now, trying again' : 'Loading live times'}</T> : null}
       {data && !items.length ? <T kind="foot" tone="text2" style={{ paddingHorizontal: 16, paddingBottom: 14 }}>No more services right now</T> : null}
       {items.map((d, i) => {
         const key = tripKey(d.tripId, d.planned, d.line);

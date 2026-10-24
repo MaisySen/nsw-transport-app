@@ -92,3 +92,11 @@ export function rowAlert(alerts: any[] | undefined, board: any[] | undefined): s
   }
   return null;
 }
+
+/** The Version row: "1.0.0 (204) · update 01a16ff7" (build and update only when known; the update is the code over the air). */
+export function versionLine(version?: string | null, build?: string | null, updateId?: string | null): string {
+  const v = (version || '1.0.0').trim();
+  const b = build && String(build).trim() && String(build).trim() !== v ? ` (${String(build).trim()})` : '';
+  const u = updateId && /^[0-9a-f-]{8,}$/i.test(updateId) ? ` \u00b7 update ${updateId.replace(/-/g, '').slice(0, 8)}` : '';
+  return v + b + u;
+}

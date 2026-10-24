@@ -44,7 +44,7 @@ export default function Watching() {
         })}
         {data && !active.length ? (
           <Empty icon={I.bell} title="Nothing watched"
-            body="Swipe left on a departure to watch it. You get an alert if it runs late or the platform changes." />
+            body="Swipe left on a departure, or touch and hold it, to watch it. You get an alert if it runs late or the platform changes." />
         ) : null}
         {notes.length ? (
           <Section title="Recent alerts">

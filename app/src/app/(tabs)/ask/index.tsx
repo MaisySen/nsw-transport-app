@@ -81,11 +81,19 @@ export default function AskScreen() {
       if (places?.home?.id) p.home = `${places.home.id}|${places.home.name || ''}`;
       if (places?.work?.id) p.work = `${places.work.id}|${places.work.name || ''}`;
       const qs = Object.entries(p).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-      const r = await fetch(`${apiBase()}/api/ask?${qs}`);
-      const d = await r.json();
+      // A slow answer ends after 25 s like a dropped one, so the chat never waits on a spinner for good.
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 25000);
+      let d: any;
+      try {
+        const r = await fetch(`${apiBase()}/api/ask?${qs}`, { signal: ctl.signal });
+        if (!r.ok) throw Object.assign(new Error(String(r.status)), { http: r.status });
+        d = await r.json();
+      } finally { clearTimeout(timer); }
       setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: d.reply || d.text || "Sorry, I didn't get that.", kind: typeof d.kind === 'string' ? d.kind : null, fare: d.fare || null, cards: d.cards || [], links: d.links || [], suggestions: d.suggestions || [], ask: d.ask || null, t: Date.now(), lastHome: d.lastHome && d.lastHome.from && d.lastHome.to ? d.lastHome : null }]);
-    } catch {
-      setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: 'No connection right now. Check your signal and try again.', suggestions: [q], t: Date.now() }]);
+    } catch (e: any) {
+      const text = e?.http ? "Ask isn't answering right now. Try again in a minute." : 'No connection right now. Check your signal and try again.';
+      setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text, suggestions: [q], t: Date.now() }]);
     } finally { setBusy(false); }
   }, [busy, places]);
 
@@ -104,7 +112,7 @@ export default function AskScreen() {
   useEffect(() => { setTimeout(() => list.current?.scrollToEnd({ animated: true }), 50); }, [msgs.length, busy]);
 
   const Row = ({ onPress, children, dim }: { onPress?: () => void; children: any; dim?: boolean }) => (
-    <Pressable onPress={onPress} style={({ pressed }) => [st.row, { borderTopColor: c.sep, opacity: dim ? 0.45 : 1, backgroundColor: pressed ? c.fill : 'transparent' }]}>{children}</Pressable>
+    <Pressable onPress={onPress} disabled={!onPress} accessibilityRole={onPress ? 'button' : undefined} style={({ pressed }) => [st.row, { borderTopColor: c.sep, opacity: dim ? 0.45 : 1, backgroundColor: pressed ? c.fill : 'transparent' }]}>{children}</Pressable>
   );
   const Count = ({ t, live }: { t: string; live?: boolean }) => {
     const x = cd(t, now);
@@ -118,7 +126,7 @@ export default function AskScreen() {
   const CardView = ({ card }: { card: Card }) => (
     <View style={[st.card, { backgroundColor: c.card, borderColor: c.sep }]}>
       {card.type !== 'alerts' && card.type !== 'stops' ? (
-        <Pressable onPress={() => open(card.link)} style={st.head}>
+        <Pressable onPress={() => open(card.link)} disabled={!card.link} accessibilityRole={card.link ? 'button' : 'header'} style={st.head}>
           <Text numberOfLines={1} style={[st.headText, { color: c.text2 }]}>{card.type === 'trip' ? (card.titleOnly && card.title ? card.title : `${card.title ? card.title + ': ' : ''}${shortPlace(card.from?.name)} to ${shortPlace(card.to?.name)}`) : card.type === 'station' ? card.station?.name : card.title}</Text>
           {card.link ? <Text style={{ color: c.text3, fontSize: 17 }}>{'\u203a'}</Text> : null}
         </Pressable>
@@ -205,7 +213,7 @@ export default function AskScreen() {
     </View>
   );
   const Chip = ({ label, onPress }: { label: string; onPress: () => void }) => (
-    <Pressable onPress={onPress} style={({ pressed }) => [st.chip, { backgroundColor: pressed ? c.fill : c.card, borderColor: c.sep }]}>
+    <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [st.chip, { backgroundColor: pressed ? c.fill : c.card, borderColor: c.sep }]}>
       <Text style={{ color: c.tint, fontSize: 15 }}>{label}</Text>
     </Pressable>
   );
@@ -251,11 +259,12 @@ export default function AskScreen() {
           onChangeText={setText}
           onSubmitEditing={() => ask(text)}
           returnKeyType="send"
+          accessibilityLabel="Ask about a train, bus or trip"
           placeholder="Ask about a train, bus or trip"
           placeholderTextColor={c.text3}
           style={[st.input, { color: c.text, backgroundColor: c.bg, borderColor: c.sep }]}
         />
-        <Pressable accessibilityLabel="Send" disabled={!text.trim() || busy} onPress={() => ask(text)} style={[st.send, { backgroundColor: text.trim() ? c.tint : c.fill }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Send" accessibilityState={{ disabled: !text.trim() || busy }} hitSlop={6} disabled={!text.trim() || busy} onPress={() => ask(text)} style={[st.send, { backgroundColor: text.trim() ? c.tint : c.fill }]}>
           <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>{'\u2191'}</Text>
         </Pressable>
       </View>

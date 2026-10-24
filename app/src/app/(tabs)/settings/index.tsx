@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, Switch, View } from 'react-native';
 import { router, Stack } from 'expo-router';
 import Constants from 'expo-constants';
+import * as Application from 'expo-application';
+import * as Updates from 'expo-updates';
+import { versionLine } from '@/lib/format';
 import { api } from '@/lib/api';
 import { useLive } from '@/lib/hooks';
 import { usePalette } from '@/lib/theme';
@@ -23,6 +26,15 @@ import { PRIVACY_URL, SUPPORT_URL } from '@/lib/server';
 import { useFlag } from '@/lib/config';
 import { checkSubtitle, checkTitle } from '@/lib/morning';
 import { clearLastHomeLocal } from '@/lib/lastHome';
+
+/** "1.0.0 (204) · update 01a16ff7": the build on the phone and the update it runs, for support. */
+function versionText() {
+  try {
+    return versionLine(Application.nativeApplicationVersion || Constants.expoConfig?.version, Application.nativeBuildVersion, Platform.OS === 'web' ? null : Updates.updateId);
+  } catch {
+    return Constants.expoConfig?.version || '1.0.0';
+  }
+}
 
 export default function Settings() {
   const c = usePalette();
@@ -108,7 +120,7 @@ export default function Settings() {
       ...(nStops ? [{ text: `Clear recent stops${n(nStops)}`, onPress: () => { store.clearRecents(); haptic.select(); } }] : []),
       ...(nTrips ? [{ text: `Clear recent trips${n(nTrips)}`, onPress: () => { store.clearRecentTrips(); haptic.select(); } }] : []),
       ...(askCount ? [{ text: `Clear Ask chat${n(askCount)}`, onPress: () => { AsyncStorage.removeItem('ask_chat_v1').catch(() => {}); setAskCount(0); haptic.select(); } }] : []),
-      { text: `Email ${COMPANY.privacyEmail}`, onPress: () => { Linking.openURL(`mailto:${COMPANY.privacyEmail}`).catch(() => {}); } },
+      { text: `Email ${COMPANY.privacyEmail}`, onPress: () => { Linking.openURL(`mailto:${COMPANY.privacyEmail}`).catch(() => Alert.alert('No email app', `Write to ${COMPANY.privacyEmail}`)); } },
       { text: 'Delete my trip history on server', icon: I.trash, destructive: true, onPress: deleteServerHistory },
       { text: 'Delete all my data', icon: I.trash, destructive: true, onPress: deleteAll },
     ] });
@@ -200,15 +212,15 @@ export default function Settings() {
         <Section title="About" footer={`Transport: Sydney Live is made by Fintex Australia Pty Ltd. Data from Transport for NSW (CC BY 4.0) and OpenStreetMap contributors. Not made or endorsed by Transport for NSW.\n\u00A9 ${new Date().getFullYear()} Fintex Australia Pty Ltd`}>
           <Row title="Made by" right={<T kind="body" tone="text2">Fintex Australia Pty Ltd</T>} chevron={false} />
           <Sep />
-          <Row title="Contact us" subtitle={COMPANY.email} onPress={() => Linking.openURL(`mailto:${COMPANY.email}`)} accessibilityHint="Opens your email app" />
+          <Row title="Contact us" subtitle={COMPANY.email} onPress={() => Linking.openURL(`mailto:${COMPANY.email}`).catch(() => Alert.alert('No email app', `Write to ${COMPANY.email}`))} accessibilityHint="Opens your email app" />
           <Sep />
-          <Row title="Fintex website" subtitle={COMPANY.site.replace('https://', '')} onPress={() => Linking.openURL(COMPANY.site)} accessibilityHint="Opens in your browser" />
+          <Row title="Fintex website" subtitle={COMPANY.site.replace('https://', '')} onPress={() => Linking.openURL(COMPANY.site).catch(() => {})} accessibilityHint="Opens in your browser" />
           <Sep />
-          <Row title="Help and support" onPress={() => Linking.openURL(SUPPORT_URL)} />
+          <Row title="Help and support" onPress={() => Linking.openURL(SUPPORT_URL).catch(() => {})} />
           <Sep />
-          <Row title="Privacy policy" onPress={() => Linking.openURL(PRIVACY_URL)} />
+          <Row title="Privacy policy" onPress={() => Linking.openURL(PRIVACY_URL).catch(() => {})} />
           <Sep />
-          <Row title="Version" right={<T kind="body" tone="text2">{Constants.expoConfig?.version || '1.0.0'}</T>} chevron={false} />
+          <Row title="Version" right={<T kind="body" tone="text2" selectable>{versionText()}</T>} chevron={false} />
         </Section>
       </Screen>
       <ActionSheet visible={!!sheet} title={sheet?.title} message={sheet?.message} actions={sheet?.actions || []} onClose={() => setSheet(null)} />

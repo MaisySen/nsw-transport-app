@@ -42,7 +42,7 @@ async function req<T>(path: string, init?: RequestInit, timeoutMs = 20000): Prom
     }
     if (isNetErr(e)) {
       // offline marks a failure to reach the server, so screens can fall back to the copy kept on the phone.
-      if (/network request failed|failed to fetch/i.test(String(e?.message || ''))) throw Object.assign(new Error("You're offline. Showing the last times I had."), { offline: true });
+      if (/network request failed|failed to fetch/i.test(String(e?.message || ''))) throw Object.assign(new Error("You're offline. Check your connection."), { offline: true });
       throw Object.assign(new Error('No answer from the server. Check your connection.'), { offline: true });
     }
     throw e;

@@ -68,7 +68,7 @@ export function LiveStamp({ updatedAt, error, offlineAt }: { updatedAt: number |
       </View>
     );
   }
-  if (!updatedAt) return <T kind="foot" tone="text2">Loading live times</T>;
+  if (!updatedAt) return <T kind="foot" tone="text2">{error ? 'Live times unavailable right now, trying again' : 'Loading live times'}</T>;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       <LiveDot beat={updatedAt} color={error ? c.orange : undefined} />

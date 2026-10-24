@@ -6,7 +6,8 @@ import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { cacheKey } from '@/lib/offlineCore';
 import { usePalette, radius } from '@/lib/theme';
-import { ms, rowAlert, shortName } from '@/lib/format';
+import { ms, shortName } from '@/lib/format';
+import { rowNote, topAlerts } from '@/lib/stopAlertsCore';
 import { store, useStore } from '@/lib/store';
 import { svcSpec, toggleWatch, tripKey } from '@/lib/watch';
 import { Icon, I } from '@/components/Icon';
@@ -44,10 +45,10 @@ export default function StopScreen() {
     const t = setInterval(load, 120000);
     return () => { live = false; clearInterval(t); };
   }, [id]);
-  // The stop's alerts show once at the top; a row repeats an alert only when it is not already there.
-  const topAlerts = [...(data?.alerts || [])].sort((a, b) => (a.priority === 'low' ? 1 : 0) - (b.priority === 'low' ? 1 : 0)).slice(0, 2);
-  const topTitles = new Set(topAlerts.map((a) => a.title));
-  const rowNote = (d: any) => { const t = rowAlert(d.alerts, data?.alerts); return t && !topTitles.has(t) ? t : null; };
+  // The stop's alerts show once at the top: the two that touch the most services here. A row adds an alert
+  // only when the top does not already show it.
+  const top = useMemo(() => topAlerts(data?.alerts, mode ? (data?.items || []).filter((d) => d.mode === mode) : data?.items, 2, !!mode), [data, mode]);
+  const noteFor = (d: any) => rowNote(d.alerts, data?.alerts, top);
   const items = (data?.items || []).filter((d) => (!mode || d.mode === mode) && ms(d.realtime ? d.estimated : d.planned) > now - 60000);
 
   return (
@@ -78,11 +79,11 @@ export default function StopScreen() {
           </ScrollView>
         ) : null}
 
-        {data?.alerts?.length ? (
+        {top.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 14, backgroundColor: c.card, borderRadius: radius, padding: 14, flexDirection: 'row', gap: 10 }}>
             <Icon name={I.warn} size={18} color={c.orange} />
             <View style={{ flex: 1 }}>
-              {topAlerts.map((a, i) => <T key={i} kind="sub" numberOfLines={3} style={{ marginTop: i ? 6 : 0 }}>{a.title}</T>)}
+              {top.map((a, i) => <T key={i} kind="sub" numberOfLines={3} style={{ marginTop: i ? 6 : 0 }}>{a.title}</T>)}
             </View>
           </View>
         ) : null}
@@ -94,7 +95,7 @@ export default function StopScreen() {
               return (
                 <View key={key + i}>
                   {i ? <Sep inset={82} /> : null}
-                  <DepartureRow d={d} now={now} alertText={rowNote(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), st.watchedTrips[key])} />
+                  <DepartureRow d={d} now={now} alertText={noteFor(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), st.watchedTrips[key])} />
                 </View>
               );
             })}
