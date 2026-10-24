@@ -156,12 +156,21 @@ extension Journey {
 }
 
 /// Two small capsules on a leg: step free or lift out where you board and get off.
+extension Leg {
+    /// True when a lift is out at the station where you board or get off.
+    var liftOutAtEnds: Bool {
+        [access?.from, access?.to].contains { ($0?.outage ?? "").isEmpty == false }
+    }
+}
+
 struct LegAccessChips: View {
     var leg: Leg
 
     var body: some View {
+        // Only what needs attention: a lift out. Step free levels are on each station's screen.
         let items: [(String, AccessPoint)] = [(leg.from ?? "", leg.access?.from), (leg.to ?? "", leg.access?.to)]
             .compactMap { p in p.1.map { (p.0, $0) } }
+            .filter { ($0.1.outage ?? "").isEmpty == false }
         if !items.isEmpty {
             HStack(spacing: 6) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, it in

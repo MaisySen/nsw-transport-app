@@ -67,9 +67,7 @@ struct SearchView: View {
             List {
                 if query.isEmpty {
                     Section {
-                        NavigationLink {
-                            TripPlannerView()
-                        } label: {
+                        NavigationLink(value: HomeView.PlanRoute()) {
                             Label {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Plan a trip").font(.body.weight(.semibold))
@@ -145,6 +143,9 @@ struct SearchView: View {
             .listStyle(.insetGrouped)
             .navigationTitle("Search")
             .navigationDestination(for: StopRef.self) { s in StopView(stop: s) }
+            .navigationDestination(for: HomeView.PlanRoute.self) { _ in TripPlannerView() }
+            .navigationDestination(for: JourneyLink.self) { l in JourneyDetailView(journey: l.journey, from: l.from, to: l.to, legs: l.legs) }
+            .navigationDestination(for: ServiceKey.self) { k in ServiceView(key: k) }
             .overlay(alignment: .bottom) { UndoToast() }
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Station, stop or stop number")
             .modifier(FocusSearchOnRequest())

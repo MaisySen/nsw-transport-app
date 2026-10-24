@@ -370,7 +370,11 @@ enum Notifier {
     /// Posts a notification now. The same moment is posted once (see NoticeDeduper), and the
     /// identifier is stable, so a repeat replaces instead of adding.
     static func post(title: String, body: String, id: String) {
-        guard dedupe.shouldPost(title: title) else { return }
+        guard dedupe.shouldPost(title: title) else {
+            Task { @MainActor in ReplayLog.shared.add("alert held back (already said): " + title) }
+            return
+        }
+        Task { @MainActor in ReplayLog.shared.add("alert: " + title + (body.isEmpty ? "" : " | " + body)) }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body

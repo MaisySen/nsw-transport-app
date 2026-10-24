@@ -4,6 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 24 Oct 2026
 
+### iPhone app: trip screen buttons, one Start trip, journey replay (10:25 PM)
+* Fixed: on the trip screen the map link and Start trip could buzz and do nothing. Every link in the trip flow now opens by value (trip, map, planner), so each stack knows where it goes, and Start trip presents the live trip again even when an earlier one left it marked open.
+* Start trip and Watch trip were the same job: Watch trip is gone. Start trip asks for notifications once and also follows the trip on the server, so alerts arrive with the app closed. It ends at your stop.
+* The trip card shows one LIVE badge (at the top), not one per leg. Step free chips show only when a lift is out.
+* "Track" on each leg is now "Map".
+* Journey replay (launch argument -liveReplay YES): Start trip on any planned trip runs the real live trip engine on a fake clock, 60 times faster, with fake live data, and logs every alert, Lock Screen state and trip state. -liveReplayDemo YES replays a trip with a change (T1 late to Redfern, T4 early to Kings Cross).
+* New UI tests: test15 taps every button on the trip screen and checks each one acts; test16 plans Burwood to Strathfield with live data and replays it to 15 minutes past arrival; test17 replays the trip with a change. Both check each alert once, one You've arrived, the trip ends at arrival and nothing after.
+* CI: ios-native.yml takes `only` and `note` inputs to run chosen tests.
+
 ### Server: trip alerts once, and a trip ends at your stop (10:15 PM)
 * Fixed: two checks of the same watch running together (the minute tick and an open app) could both send "Arriving at Kings Cross in 2 min". Each alert is now claimed in D1 (new table `watch_sent`) before it is sent, so it goes out once.
 * A leg gets one get ready alert: "Next stop" (from where the train really is) or "Arriving in N min", never both.

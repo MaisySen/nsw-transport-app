@@ -104,16 +104,12 @@ final class FlowTests: XCTestCase {
         shot("plan-burwood-central")
 
         journey.tap()
-        let watchTrip = app.buttons["Watch trip"].firstMatch
-        XCTAssertTrue(watchTrip.waitForExistence(timeout: 10), "journey detail")
+        // One Start trip button: watching starts with it, so there is no separate Watch trip.
+        let start = element("startTrip")
+        XCTAssertTrue(start.waitForExistence(timeout: 10), "journey detail")
+        XCTAssertFalse(app.buttons["Watch trip"].exists, "no separate Watch trip button")
+        XCTAssertFalse(app.buttons["Lock Screen"].exists, "no Lock Screen button")
         shot("trip-detail")
-        watchTrip.tap()
-        allowSystemAlert()
-        pause(2)
-        shot("trip-watched")
-
-        let lock = app.buttons["Lock Screen"].firstMatch
-        if lock.exists { lock.tap(); pause(1.5) }
 
         app.swipeUp()
         let save = app.buttons["Save as a named trip"].firstMatch
@@ -666,6 +662,157 @@ final class FlowTests: XCTestCase {
         let dismissed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: switchButton)
         wait(for: [dismissed], timeout: 8)
         XCTAssertFalse(switchButton.exists, "profile link prompt cancelled")
+    }
+
+    // MARK: Trip screen buttons and journey replay
+
+    /// Every button on the trip screen acts on the first tap: the map opens, Start trip opens the
+    /// live trip, End trip closes it, Save trip asks for a name, and the tab bar still switches.
+    func test15TripScreenButtonsAct() {
+        app.launch()
+        openTrip(from: "Burwood", fromName: "Burwood Station", to: "Strathfield", toName: "Strathfield Station")
+        let start = element("startTrip")
+        XCTAssertTrue(start.waitForExistence(timeout: 10), "Start trip")
+        shot("trip-screen")
+
+        let map = element("legMap")
+        XCTAssertTrue(map.waitForExistence(timeout: 5), "leg with its map link")
+        map.tap()
+        XCTAssertTrue(element("serviceSheet").waitForExistence(timeout: 20), "the map opens on the first tap")
+        pause(2)
+        shot("trip-screen-map")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(start.waitForExistence(timeout: 8), "back on the trip screen")
+
+        start.tap()
+        allowSystemAlert()
+        let end = element("endTrip")
+        XCTAssertTrue(end.waitForExistence(timeout: 15), "Start trip opens the live trip on the first tap")
+        pause(2)
+        shot("trip-screen-started")
+        if !end.isHittable { app.collectionViews.firstMatch.swipeUp(); pause(1) }
+        end.tap()
+        let confirm = element("confirmEndTrip")
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "End this trip dialog")
+        confirm.tap()
+        let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: element("endTrip"))
+        wait(for: [gone], timeout: 15)
+
+        XCTAssertTrue(start.waitForExistence(timeout: 8), "back on the trip screen after End trip")
+        start.tap()
+        XCTAssertTrue(element("endTrip").waitForExistence(timeout: 15), "Start trip works a second time")
+        element("endTrip").tap()
+        if element("confirmEndTrip").waitForExistence(timeout: 5) { element("confirmEndTrip").tap() }
+        pause(2)
+
+        let save = app.buttons["Save as a named trip"].firstMatch
+        if reveal(save) {
+            save.tap()
+            let alert = app.alerts.firstMatch
+            XCTAssertTrue(alert.waitForExistence(timeout: 5), "Save trip asks for a name on the first tap")
+            alert.buttons["Cancel"].tap()
+        }
+
+        tab("Search")
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 8), "the Search tab opens")
+        tab("Watching")
+        XCTAssertTrue(app.navigationBars["Watching"].waitForExistence(timeout: 8), "the Watching tab opens")
+        tab("Trips")
+        XCTAssertTrue(app.navigationBars.buttons["Plan a trip"].firstMatch.waitForExistence(timeout: 8), "the Trips tab opens")
+        shot("tabs-after-trip")
+    }
+
+    /// Bidur's short trip: Burwood to Strathfield planned with live data, then Start trip replayed
+    /// on a fake clock (2 min late) to arrival and 15 minutes past it.
+    func test16ReplayBurwoodToStrathfield() {
+        app.launchArguments += ["-liveReplay", "YES", "-liveReplayShift", "2", "-liveReplayTick", "900"]
+        app.launch()
+        openTrip(from: "Burwood", fromName: "Burwood Station", to: "Strathfield", toName: "Strathfield Station")
+        let start = element("startTrip")
+        XCTAssertTrue(start.waitForExistence(timeout: 10), "Start trip")
+        shot("replay-short-trip-screen")
+        start.tap()
+        allowSystemAlert()
+        let log = runReplay(name: "short", stages: [("waiting", "state: leg 1 waiting"), ("on-board", "on board"), ("get-off", "alert: "), ("arrived", "You've arrived")])
+        checkReplay(log, legs: 1)
+    }
+
+    /// A trip with a change: Strathfield to Redfern on a T1 3 min late, change to a T4 1 min
+    /// early, off at Kings Cross, replayed to arrival and 15 minutes past it.
+    func test17ReplayWithChange() {
+        app.launchArguments += ["-liveReplay", "YES", "-liveReplayDemo", "YES", "-liveReplayTick", "700"]
+        app.launch()
+        let log = runReplay(name: "change", stages: [("start", "start:"), ("leg1", "state: leg 1 on board"), ("change", "Next stop: Redfern"), ("leg2", "state: leg 2 on board"), ("get-off", "Next stop: Kings Cross"), ("arrived", "You've arrived")])
+        checkReplay(log, legs: 2)
+        XCTAssertTrue(log.contains("change here"), "an alert for the change at Redfern")
+    }
+
+    private func openTrip(from: String, fromName: String, to: String, toName: String) {
+        tab("Trips")
+        let plan = app.navigationBars.buttons["Plan a trip"].firstMatch
+        XCTAssertTrue(plan.waitForExistence(timeout: 10), "plan button on Home")
+        plan.tap()
+        pick("fromField", from, expect: fromName)
+        pick("toField", to, expect: toName)
+        let journey = element("journey")
+        for _ in 0..<2 where !journey.waitForExistence(timeout: 30) {
+            app.collectionViews.firstMatch.swipeDown(velocity: .slow)
+        }
+        XCTAssertTrue(journey.waitForExistence(timeout: 30), "live journeys from \(fromName) to \(toName)")
+        shot("replay-plan-\(from.lowercased())")
+        journey.tap()
+    }
+
+    /// Waits for the replay to finish, taking a screenshot the first time each stage shows in the
+    /// log, then saves the whole timeline next to the screenshots.
+    private func runReplay(name: String, stages: [(String, String)]) -> String {
+        let logView = element("replayLog")
+        XCTAssertTrue(logView.waitForExistence(timeout: 20), "replay running")
+        var pending = stages
+        var text = ""
+        let deadline = Date().addingTimeInterval(240)
+        while Date() < deadline {
+            text = (logView.value as? String) ?? ""
+            while let s = pending.first, text.contains(s.1) {
+                shot("replay-\(name)-\(s.0)")
+                pending.removeFirst()
+            }
+            if logView.label == "Replay finished" { break }
+            pause(0.4)
+        }
+        text = (logView.value as? String) ?? text
+        shot("replay-\(name)-15-min-after")
+        XCTAssertEqual(logView.label, "Replay finished", "replay ran to 15 minutes after arrival")
+        XCTAssertTrue(pending.isEmpty, "stages not seen: \(pending.map { $0.0 })\n\(text)")
+        let a = XCTAttachment(string: text)
+        a.name = "replay-\(name)-timeline"
+        a.lifetime = .keepAlways
+        add(a)
+        if let dir = ProcessInfo.processInfo.environment["SHOTS_DIR"] {
+            let prefix = ProcessInfo.processInfo.environment["SHOT_PREFIX"] ?? "light"
+            try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+            try? (text + "\n").write(toFile: dir + "/\(prefix)-replay-\(name)-timeline.txt", atomically: true, encoding: .utf8)
+        }
+        return text
+    }
+
+    /// Each alert once, one arrived alert, the trip ends once at arrival and nothing after it.
+    private func checkReplay(_ log: String, legs: Int) {
+        let lines = log.components(separatedBy: "\n")
+        let alerts = lines.compactMap { l -> String? in
+            guard let r = l.range(of: " alert: ") else { return nil }
+            let title = l[r.upperBound...].components(separatedBy: " | ")[0]
+            return title.replacingOccurrences(of: #" in \d+ min$"#, with: "", options: .regularExpression)
+        }
+        XCTAssertEqual(Set(alerts).count, alerts.count, "each alert once:\n\(log)")
+        XCTAssertEqual(alerts.filter { $0.hasPrefix("You've arrived") }.count, 1, "one You've arrived:\n\(log)")
+        XCTAssertEqual(lines.filter { $0.contains("trip ended") }.count, 1, "the trip ends once:\n\(log)")
+        if let end = lines.firstIndex(where: { $0.contains("trip ended") }) {
+            XCTAssertFalse(lines[(end + 1)...].contains { $0.contains(" alert: ") || $0.contains("state: leg") }, "nothing after the trip ended:\n\(log)")
+            XCTAssertTrue(lines[..<end].contains { $0.contains("state: arrived") }, "ended at arrival:\n\(log)")
+        }
+        XCTAssertTrue(log.contains("15 min after arrival: no trip running"), "no trip 15 min after arrival:\n\(log)")
+        XCTAssertFalse(log.contains("-next"), "never moved on to the next service")
     }
 
     /// Scrolls Trips until the element is on screen.

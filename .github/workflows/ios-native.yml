@@ -7,6 +7,14 @@ on:
         description: "Also try the xtool build (it has hung on the runner, so it is off by default)"
         type: boolean
         default: false
+      only:
+        description: "Only these tests, comma separated (for example TransportUITests/FlowTests/test15TripScreenButtonsAct). Empty runs everything."
+        type: string
+        default: ""
+      note:
+        description: "Free text so each dispatch is distinct"
+        type: string
+        default: ""
   push:
     branches: [main]
     paths:
@@ -107,28 +115,36 @@ jobs:
 
       - name: Tap through every flow, light
         continue-on-error: true
-        timeout-minutes: 32
+        timeout-minutes: 45
+        env:
+          ONLY: ${{ inputs.only }}
         run: |
           DEV=$(cat ../sim-id.txt)
+          SEL=""; for t in $(echo "$ONLY" | tr "," " "); do SEL="$SEL -only-testing:$t"; done
           xcrun simctl ui "$DEV" appearance light
           mkdir -p ../out/shots ../out/widgets
           TEST_RUNNER_SHOTS_DIR="$GITHUB_WORKSPACE/out/shots" TEST_RUNNER_SHOT_PREFIX=light TEST_RUNNER_SNAPSHOT_DIR="$GITHUB_WORKSPACE/out/widgets" \
           xcodebuild test-without-building -project Transport.xcodeproj -scheme Transport -configuration Debug \
             -destination "id=$DEV" -derivedDataPath dd-test -resultBundlePath ../out/light.xcresult \
-            CODE_SIGNING_ALLOWED=NO > ../test-light.log 2>&1
+            $SEL CODE_SIGNING_ALLOWED=NO > ../test-light.log 2>&1
 
       - name: Tap through every flow, dark
         continue-on-error: true
-        timeout-minutes: 28
+        timeout-minutes: 42
+        env:
+          ONLY: ${{ inputs.only }}
         run: |
           DEV=$(cat ../sim-id.txt)
+          SEL="-only-testing:TransportUITests"; if [ -n "$ONLY" ]; then SEL=""; for t in $(echo "$ONLY" | tr "," " "); do case "$t" in TransportUITests*) SEL="$SEL -only-testing:$t";; esac; done; fi
+          if [ -z "$SEL" ]; then echo "nothing for dark"; exit 0; fi
           xcrun simctl ui "$DEV" appearance dark
           TEST_RUNNER_SHOTS_DIR="$GITHUB_WORKSPACE/out/shots" TEST_RUNNER_SHOT_PREFIX=dark \
           xcodebuild test-without-building -project Transport.xcodeproj -scheme Transport -configuration Debug \
             -destination "id=$DEV" -derivedDataPath dd-test -resultBundlePath ../out/dark.xcresult \
-            -only-testing:TransportUITests CODE_SIGNING_ALLOWED=NO > ../test-dark.log 2>&1
+            $SEL CODE_SIGNING_ALLOWED=NO > ../test-dark.log 2>&1
 
       - name: App Store screenshots (6.9 and 6.5 inch, live data)
+        if: ${{ !inputs.only }}
         continue-on-error: true
         timeout-minutes: 35
         run: |

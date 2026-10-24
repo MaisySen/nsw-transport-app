@@ -112,7 +112,7 @@ struct HomeView: View {
             .navigationDestination(for: StopRef.self) { s in StopView(stop: s) }
             .navigationDestination(for: ServiceKey.self) { k in ServiceView(key: k) }
             .navigationDestination(for: TripPair.self) { p in TripPlannerView(from: p.from, to: p.to, via: p.via, conn: p.conn ?? 5, legs: p.legs) }
-            .navigationDestination(for: JourneyLink.self) { l in JourneyDetailView(journey: l.journey, from: l.from, to: l.to) }
+            .navigationDestination(for: JourneyLink.self) { l in JourneyDetailView(journey: l.journey, from: l.from, to: l.to, legs: l.legs) }
             .refreshable {
                 async let a: Void = store.loadSaved()
                 async let b: Void = store.loadCommutes()
@@ -125,7 +125,7 @@ struct HomeView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink { TripPlannerView() } label: {
+                    Button { path.append(PlanRoute()) } label: {
                         Image(systemName: "arrow.triangle.turn.up.right.diamond")
                     }
                     .accessibilityLabel("Plan a trip")
@@ -698,6 +698,7 @@ struct JourneyLink: Hashable {
     var journey: Journey
     var from: StopRef
     var to: StopRef
+    var legs: [TripLeg]? = nil
 }
 
 struct HomeTrip: Identifiable, Hashable {

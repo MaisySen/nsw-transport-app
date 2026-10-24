@@ -46,10 +46,12 @@ struct RootView: View {
                 .tag(AppTab.settings)
         }
         .overlay(alignment: .top) { BannerOverlay() }
+        .overlay(alignment: .top) { ReplayOverlay().padding(.top, 52) }
         .fullScreenCover(isPresented: $store.openLiveTrip) {
             LiveTripView()
                 .environment(store)
                 .overlay(alignment: .top) { BannerOverlay().environment(store) }
+                .overlay(alignment: .top) { ReplayOverlay().padding(.top, 52) }
         }
         .onOpenURL { url in store.open(url) }
         .confirmationDialog("Switch to this profile?", isPresented: profilePrompt, titleVisibility: .visible) {
@@ -61,6 +63,7 @@ struct RootView: View {
             Text("Transport will load the saved trips, commutes and alerts kept under this private profile. Only open profile links you made yourself.")
         }
         .task { store.openLaunchScreen() }
+        .task { if UserDefaults.standard.bool(forKey: "liveReplayDemo") { await store.startReplayDemo() } }
         .sensoryFeedback(.selection, trigger: store.tab)
     }
 }

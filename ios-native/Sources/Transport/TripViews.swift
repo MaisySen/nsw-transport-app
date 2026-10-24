@@ -135,9 +135,7 @@ struct TripPlannerView: View {
                     Section {
                         moreButton("Earlier services", direction: -1)
                         ForEach(journeys) { j in
-                            NavigationLink {
-                                JourneyDetailView(journey: j, from: from!, to: to!, legs: legs)
-                            } label: {
+                            NavigationLink(value: JourneyLink(journey: j, from: from!, to: to!, legs: legs)) {
                                 ServiceRow(journey: j, status: ServiceStatus.of(j), dimmed: HomeBoard.isBeaten(j, among: journeys), showDuration: showDuration)
                             }
                             .accessibilityIdentifier("journey")
@@ -420,7 +418,6 @@ struct JourneyDetailView: View {
     var to: StopRef
     var legs: [TripLeg]? = nil
     @Environment(AppStore.self) private var store
-    @State private var selected: ServiceKey?
     @State private var naming = false
     @State private var name = "home"
 
@@ -466,17 +463,9 @@ struct JourneyDetailView: View {
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets())
                 .accessibilityIdentifier("startTrip")
-                .accessibilityHint("Live map, next stop, get off alerts and a Lock Screen countdown")
-            }
-
-            Section {
-                Button {
-                    Task { await store.watch(journey.watchRequest(device: store.device, profile: store.api.profile, from: from, to: to)) }
-                } label: { Label("Watch trip", systemImage: "bell.fill").frame(maxWidth: .infinity) }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
+                .accessibilityHint("Live map, next stop, alerts on the way and a Lock Screen countdown")
+            } footer: {
+                Text("Live map, next stop and alerts on the way, with a countdown on the Lock Screen. It ends when you arrive.")
             }
 
             Section("Your trip") {
@@ -486,11 +475,12 @@ struct JourneyDetailView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     } else {
-                        Button { selected = ServiceKey(leg) } label: {
+                        // A value link: every stack that shows a trip knows how to open a service map.
+                        NavigationLink(value: ServiceKey(leg)) {
                             LegCard(leg: leg, changeMinutes: changeMinutes(before: i))
                         }
-                        .buttonStyle(.plain)
-                        if leg.access != nil {
+                        .accessibilityIdentifier("legMap")
+                        if leg.liftOutAtEnds {
                             LegAccessChips(leg: leg)
                         }
                     }
@@ -520,7 +510,6 @@ struct JourneyDetailView: View {
         .listStyle(.insetGrouped)
         .navigationTitle("\(Naming.short(from.name)) to \(Naming.short(to.name))")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(item: $selected) { key in ServiceView(key: key) }
         .alert("Name this trip", isPresented: $naming) {
             TextField("home", text: $name)
             Button("Save") { Task { await store.saveTrip(name: name.lowercased(), from: from, to: to) } }
@@ -568,7 +557,6 @@ struct LegCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer()
-                LiveBadge(isLive: leg.isLive, cancelled: leg.cancelled == true)
             }
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -591,7 +579,7 @@ struct LegCard: View {
                 if let n = leg.stops, n > 0 { Text("\(n) stops").foregroundStyle(.secondary) }
                 CrowdView(occupancy: leg.occupancy)
                 Spacer()
-                Label("Track", systemImage: "map").labelStyle(.titleAndIcon).foregroundStyle(.tint)
+                Label("Map", systemImage: "map").labelStyle(.titleAndIcon).foregroundStyle(.tint)
             }
             .font(.footnote)
             if let from = leg.platformChangedFrom, !from.isEmpty {

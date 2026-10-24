@@ -18,11 +18,21 @@ extension AppStore {
         liveServices = Array(repeating: nil, count: req.legs.count)
         liveState = LiveTripLogic.compute(legs: req.legs, services: liveServices)
         liveAlerted = []
+        // Present again even if an earlier live trip screen left the flag set.
+        if openLiveTrip {
+            openLiveTrip = false
+            try? await Task.sleep(for: .milliseconds(350))
+        }
         openLiveTrip = true
         success()
+        if LiveReplay.enabled {
+            startReplay(for: record)
+            return
+        }
         LiveTripActivities.start(record: record, state: liveState)
         startLiveLoop()
-        // The server follows the trip too when notifications are on, so alerts arrive with the app closed.
+        // Start trip also watches it: the server follows the trip, so alerts arrive with the app closed.
+        if await Notifier.status() == .notDetermined { await Notifier.requestPermission() }
         if await Notifier.status() == .authorized {
             if let created = try? await api.trackWatch(req), let id = created.watch?.id?.value {
                 record.watchID = id
@@ -46,17 +56,30 @@ extension AppStore {
         guard let trip = liveTrip else { return }
         let api = self.api
         var services = liveServices.count == trip.legs.count ? liveServices : Array(repeating: nil, count: trip.legs.count)
-        await withTaskGroup(of: (Int, ServiceResponse?).self) { group in
-            for (i, l) in trip.legs.enumerated() where l.tripId != nil || l.stopId != nil {
-                group.addTask { (i, try? await api.liveService(l)) }
+        let replay = LiveReplay.current
+        if let replay {
+            services = replay.services()
+        } else {
+            await withTaskGroup(of: (Int, ServiceResponse?).self) { group in
+                for (i, l) in trip.legs.enumerated() where l.tripId != nil || l.stopId != nil {
+                    group.addTask { (i, try? await api.liveService(l)) }
+                }
+                for await (i, r) in group where r != nil { services[i] = r }
             }
-            for await (i, r) in group where r != nil { services[i] = r }
         }
         guard liveTrip?.started == trip.started else { return }
         liveServices = services
-        let st = LiveTripLogic.compute(legs: trip.legs, services: services)
+        let st = LiveTripLogic.compute(legs: trip.legs, services: services, now: replay?.now ?? Date())
         liveState = st
         guard let st else { return }
+        if let replay {
+            var words = st.done ? "arrived" : "leg \(st.current + 1) \(st.phase == "ride" ? "on board" : "waiting")"
+            if let n = st.nextStop, !st.done { words += ", next \(n)" }
+            if let n = st.stopsLeft, !st.done { words += ", \(n) stops left" }
+            words += ", arrive \(Clock.time(st.eta))"
+            ReplayLog.shared.state(words)
+            replay.lockScreen(st.done ? "Arrived at \(Naming.short(trip.to.name))" : "\(st.nextStop.map { "Next stop: \($0)" } ?? "Leg \(st.current + 1)"), arrive \(Clock.time(st.eta))")
+        }
         liveAlerts(trip: trip, state: st)
         LiveTripActivities.update(record: trip, state: st, services: services)
         if let share = trip.share {
@@ -145,6 +168,7 @@ extension AppStore {
         liveServices = []
         if let s = trip.share { try? await api.endShare(s) }
         if !keepServerWatch, let id = trip.watchID { try? await api.unwatch(id: FlexID(id), device: device) }
+        ReplayLog.shared.add("trip ended, Lock Screen card ended")
         await LiveTripActivities.endAll()
         if !silent {
             show(Banner(title: "Trip ended", symbol: "checkmark.circle.fill"))
