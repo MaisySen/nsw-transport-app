@@ -57,9 +57,11 @@ public enum AppIdentity {
     /// Moves this install to another profile (for example the one used on a previous phone).
     /// Takes effect the next time the app starts.
     public static func adopt(_ p: String) -> Bool {
-        let clean = p.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+        // The server takes 6 to 40 of a to z, 0 to 9, _ . : and -.
+        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789_.:-")
+        let clean = p.lowercased().filter { allowed.contains($0) }
         // The old shared profile is never adopted: everyone gets a private one.
-        guard clean.count >= 5, clean.count <= 40, !sharedProfiles.contains(clean) else { return false }
+        guard clean.count >= 6, clean.count <= 40, !sharedProfiles.contains(clean) else { return false }
         UserDefaults.standard.set(clean, forKey: "apiProfile")
         groupDefaults.set(clean, forKey: "apiProfile")
         return true
