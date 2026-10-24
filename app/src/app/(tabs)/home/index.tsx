@@ -6,6 +6,7 @@ import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeabl
 import { Pressable as GHPressable } from 'react-native-gesture-handler';
 import { haptic } from '@/lib/haptic';
 import { gripStep, type GripEvent, type GripState } from '@/lib/gesture';
+import { sameEnds } from '@/lib/homeCore';
 import { router, Stack } from 'expo-router';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
@@ -16,7 +17,7 @@ import { shortName } from '@/lib/format';
 import type { Place } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
 import { watchLine } from '@/components/Cards';
-import { ActionRow, AlertBanner, deleteTrip, HomeSection, LiveTag, PlaceBar, pullHome, StopBoard, TripBoard, TripItem, useNearby } from '@/components/Home';
+import { ActionRow, AlertBanner, deleteTrip, deletedSaved, HomeSection, LiveTag, PlaceBar, pullHome, StopBoard, TripBoard, TripItem, useNearby } from '@/components/Home';
 import { LineBadge } from '@/components/Transit';
 import { useLiveTrip } from '@/lib/live';
 import { modeColor, radius } from '@/lib/theme';
@@ -87,7 +88,10 @@ export default function Home() {
   }, [loaded, st.onboarded, places.home, places.work]);
   (d?.commutes.items || []).filter((x) => x.active).forEach((cm) => add({ key: '', from: cm.from, to: cm.to, kind: 'commute', name: cm.name, id: cm.id }));
   (st.myTrips || []).forEach((m) => add({ key: '', from: m.from, to: m.to, via: m.via, conn: m.conn, legs: m.legs, modes: m.modes, kind: 'mine', name: m.name }));
-  (d?.saved.items || []).forEach((s) => add({ key: '', from: s.from, to: s.to, kind: 'saved', name: s.name }));
+  const savedItems = deletedSaved.filter(d?.saved.items || []);
+  savedItems.forEach((s) => add({ key: '', from: s.from, to: s.to, kind: 'saved', name: s.name }));
+  // A saved trip with the same two ends as the commute shows in the commute card, not twice; say so.
+  const twin = commute ? [...(st.myTrips || []), ...savedItems].find((t: any) => t.name && sameEnds(t, commute!)) as { name: string } | undefined : undefined;
 
   // Your own order from dragging wins; home and work move together and keep their morning and evening order.
   const order = st.tripOrder || [];
@@ -176,7 +180,7 @@ export default function Home() {
 
         <HomeSection title="Your trips" action={{ title: 'Add', label: 'Add a trip', onPress: () => router.push('/new-trip') }}>
           <DragTrips trips={sorted} now={now} all={st.allServices || {}} onScroll={setScrollOn} />
-          {d && !trips.length ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 6 }}>Save the trips you take. They show here with live times.</T> : null}
+          {d && !trips.length ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 6 }}>{twin ? `${twin.name.charAt(0).toUpperCase() + twin.name.slice(1)} is the same trip as your commute, so it shows in the card above.` : 'Save the trips you take. They show here with live times.'}</T> : null}
           <PlaceBar places={places} />
         </HomeSection>
 

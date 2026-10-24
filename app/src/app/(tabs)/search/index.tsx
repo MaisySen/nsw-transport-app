@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { usePalette, radius } from '@/lib/theme';
 import { MODE_BY_CODE, shortName } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
+import { noMatchText, planResults } from '@/lib/homeCore';
 import type { Place, SearchItem } from '@/lib/types';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { Row, Screen, Section, Sep, T, font } from '@/components/ui';
@@ -18,16 +19,18 @@ type Field = 'stop' | 'from' | 'to';
 function useStopSearch(q: string) {
   const [items, setItems] = useState<SearchItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
-    if (q.trim().length < 2) { setItems([]); return; }
+    if (q.trim().length < 2) { setItems([]); setFailed(false); return; }
     let live = true;
     setLoading(true);
     const t = setTimeout(() => {
-      api.search(q.trim()).then((r) => { if (live) setItems(r.items || []); }).catch(() => {}).finally(() => live && setLoading(false));
+      api.search(q.trim()).then((r) => { if (live) { setItems(r.items || []); setFailed(false); } })
+        .catch(() => { if (live) { setItems([]); setFailed(true); } }).finally(() => live && setLoading(false));
     }, 220);
     return () => { live = false; clearTimeout(t); };
   }, [q]);
-  return { items, loading };
+  return { items, loading, failed };
 }
 
 function Field({ label, value, placeholder, active, onFocus, onChange, inputRef, onClear }: any) {
@@ -63,7 +66,9 @@ export default function Search() {
     return () => clearTimeout(t);
   }, [focus]);
   const text = mode === 'stop' ? q : field === 'from' ? fromText : toText;
-  const { items, loading } = useStopSearch(text);
+  const { items, loading, failed } = useStopSearch(text);
+  // A field that already holds a chosen stop shows no results (its text is that stop's name).
+  const chosen = mode === 'trip' && (field === 'from' ? !!from : !!to);
 
   const pick = (p: Place) => {
     store.addRecent(p);
@@ -94,7 +99,8 @@ export default function Search() {
     { text: 'Remove from Recent', style: 'destructive', onPress: () => store.removeRecent(p.id) },
   ]);
 
-  const list = text.trim().length >= 2 ? items : [];
+  const list = planResults(items, text, chosen);
+  const noMatch = chosen ? null : noMatchText(text, loading, items.length, failed);
   const recentTrips = (st.recentTrips || []).slice(0, 6);
   const recentStops = (st.recents || []).slice(0, 6);
   const tripLabel = (r: { from: Place; to: Place }) => `${shortName(r.from.name).replace(/ Station$/, '')} to ${shortName(r.to.name).replace(/ Station$/, '')}`;
@@ -159,6 +165,14 @@ export default function Search() {
                 </View>
               );
             })}
+          </Section>
+        ) : null}
+
+        {noMatch ? <T kind="sub" tone="text2" style={{ marginHorizontal: 32, marginTop: 16 }}>{noMatch}</T> : null}
+
+        {!list.length && mode === 'trip' && from && to ? (
+          <Section>
+            <Row icon={I.route} iconBg={c.tint} title={`${shortName(from.name).replace(/ Station$/, '')} to ${shortName(to.name).replace(/ Station$/, '')}`} subtitle="Show this trip" onPress={() => go(from, to)} />
           </Section>
         ) : null}
 

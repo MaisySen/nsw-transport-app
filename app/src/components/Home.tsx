@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { useLive } from '@/lib/hooks';
 import { cacheKey, offlineText } from '@/lib/offlineCore';
 import { foldNear, type NearPick } from '@/lib/nearCore';
+import { chipTime, makeDeletedNames } from '@/lib/homeCore';
 import { modeColor, onColor, radius, usePalette } from '@/lib/theme';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
 import type { Departure, Journey, Leg, Place } from '@/lib/types';
@@ -119,15 +120,8 @@ export function hm24(t: number) {
   }
 }
 
-/** Countdown parts: "4" + "min", "Now", or a clock time past an hour. */
-function cd(t: number, now: number): { big: string; unit: string } {
-  const diff = t - now;
-  if (!Number.isFinite(diff)) return { big: '', unit: '' };
-  if (diff < 60000) return { big: 'Now', unit: '' };
-  const m = Math.floor(diff / 60000);
-  if (m < 60) return { big: String(m), unit: 'min' };
-  return { big: hm(t), unit: '' };
-}
+/** Countdown parts: "4" + "min", "Now", "Left" once gone, or a clock time past an hour. */
+const cd = (t: number, now: number) => chipTime(t, now, hm);
 
 /** Countdown chip colour by time left: red at 3 min or less, amber 4 to 9, green 10 plus, grey when cancelled. */
 export function cdColor(t: number, now: number, cancelled: boolean, c: { red: string; green: string; text3: string }) {
@@ -294,6 +288,7 @@ export function tripMenu(trip: TripItem, route?: string) {
       { text: 'Change home', onPress: () => router.push({ pathname: '/add-trip', params: { place: 'home' } }) },
       { text: 'Change work', onPress: () => router.push({ pathname: '/add-trip', params: { place: 'work' } }) },
       { text: 'Remove both', style: 'destructive', onPress: () => { store.setPlace('home', null); store.setPlace('work', null); } },
+      { text: 'Cancel', style: 'cancel' },
     ], { cancelable: true });
   } else {
     Alert.alert(title, undefined, [
@@ -305,12 +300,15 @@ export function tripMenu(trip: TripItem, route?: string) {
 }
 
 /** Delete trip: off this phone, out of the Home order, and the server copy too. */
+/** Saved trip names deleted on this phone, hidden from the server list until it catches up. */
+export const deletedSaved = makeDeletedNames();
+
 export function deleteTrip(trip: TripItem) {
   const key = tripKeyOf({ from: trip.from, to: trip.to, via: trip.via, legs: trip.legs });
   if (trip.kind === 'mine') store.removeMyTrip(key);
   const st = store.getOrder();
   if (st.includes(key)) store.setTripOrder(st.filter((k) => k !== key));
-  if (trip.name) api.deleteSaved(trip.name).then(pullHome).catch(() => {});
+  if (trip.name) { deletedSaved.add(trip.name); api.deleteSaved(trip.name).then(pullHome).catch(() => {}); }
   haptic.success();
 }
 

@@ -1,5 +1,6 @@
 // Live trip: the trip you are on now. Full screen map, then a sheet with your arrival, the next stop,
 // stops left, change warnings, Share trip and End trip. Refreshes every 15 seconds from /api/service.
+import { plural } from '@/lib/homeCore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Linking, Platform, Pressable, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
@@ -243,7 +244,7 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
                 <View style={{ position: 'absolute', top: k === 0 ? 15 : 0, bottom: k === show.length - 1 ? 15 : 0, width: 4, backgroundColor: legColor(l), opacity: 0.35 }} />
                 <View style={{ marginTop: 9, width: s?.alight ? 14 : 10, height: s?.alight ? 14 : 10, borderRadius: 7, backgroundColor: s ? '#fff' : 'transparent', borderWidth: s ? (s.alight ? 3.5 : 2.5) : 0, borderColor: legColor(l) }} />
               </View>
-              <T kind={s?.alight ? 'headline' : 'body'} tone={s ? 'text' : 'text2'} style={{ flex: 1, marginLeft: 10 }} numberOfLines={1}>{s ? short(s.name) : `${list.length - 6} more stops`}</T>
+              <T kind={s?.alight ? 'headline' : 'body'} tone={s ? 'text' : 'text2'} style={{ flex: 1, marginLeft: 10 }} numberOfLines={1}>{s ? short(s.name) : `${plural(list.length - 6, 'more stop', 'more stops')}`}</T>
               {s ? <T kind="foot" tone="text2" style={{ fontVariant: ['tabular-nums'] }}>{clock(tOf(s))}</T> : null}
             </View>
           ))}

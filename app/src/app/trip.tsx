@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { plural } from '@/lib/homeCore';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, StyleSheet, Switch, useColorScheme, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
@@ -80,7 +81,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
           <View style={{ flex: 1, marginLeft: 8 }}>
             <T kind="sub" numberOfLines={1}>Towards {shortName(l.towards)}</T>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-              <T kind="foot" tone="text2">{l.durationMin} min{l.stops ? `, ${l.stops} stops` : ''}</T>
+              <T kind="foot" tone="text2">{l.durationMin} min{l.stops ? `, ${plural(l.stops, 'stop')}` : ''}</T>
               <OccupancyChip o={l.occupancy} />
             </View>
           </View>
