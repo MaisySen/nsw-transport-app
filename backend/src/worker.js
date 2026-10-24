@@ -4883,9 +4883,73 @@ async function facSchema(env) {
       d.prepare(`CREATE TABLE IF NOT EXISTS lift_alerts (device TEXT PRIMARY KEY, profile TEXT, stations TEXT, seen TEXT, created INTEGER, updated INTEGER)`),
       d.prepare(`CREATE TABLE IF NOT EXISTS park_watches (id TEXT PRIMARY KEY, device TEXT, profile TEXT, facility TEXT, name TEXT, station TEXT,
         created INTEGER, expires INTEGER, done INTEGER DEFAULT 0)`),
+      d.prepare(`CREATE TABLE IF NOT EXISTS park_full (facility TEXT NOT NULL, day TEXT NOT NULL, first_tod INTEGER, full_tod INTEGER, PRIMARY KEY (facility, day))`),
     ]).then(() => true).catch((e) => { facSchemaReady = null; throw e; });
   }
   return facSchemaReady;
+}
+// ---------- car park "usually full by" ----------
+// Weekday mornings, 5am to 11am, the tick reads the Park and Ride car parks, a quarter of them each
+// minute, so each one every PARK_SAMPLE_EVERY minutes. It keeps one row per car park per day: the
+// first reading that morning and the first time it read full. At most two row writes per car park per
+// day; a car park already full today is not read again.
+const PARK_SAMPLE_EVERY = 4, PARK_SAMPLE_FROM = 5 * 60, PARK_SAMPLE_TO = 11 * 60;
+const PARK_MIN_DAYS = 5, PARK_DAYS_BACK = 56;
+const parkDayMem = new Map(); // facility -> { day, full }, so an isolate skips writes it already made today
+async function sampleParking(env, now, sn) {
+  if (sn.dow > 5 || sn.tod < PARK_SAMPLE_FROM || sn.tod >= PARK_SAMPLE_TO) return null;
+  const list = await carparkList(env);
+  const due = list.filter((c, i) => i % PARK_SAMPLE_EVERY === sn.tod % PARK_SAMPLE_EVERY).filter((c) => { const m = parkDayMem.get(c.id); return !(m && m.day === sn.day && m.full); });
+  const out = { due: due.length, read: 0, full: 0, writes: 0 };
+  for (let i = 0; i < due.length; i += 4) {
+    // Four at a time, under a second apart: the open data API allows about 5 calls a second.
+    if (i) await new Promise((r) => setTimeout(r, 900));
+    const got = await Promise.all(due.slice(i, i + 4).map((c) => carparkLive(env, c).catch(() => null)));
+    for (const p of got) {
+      if (!p || p.status === "unknown" || p.free == null) continue;
+      out.read++;
+      let m = parkDayMem.get(p.id);
+      if (!m || m.day !== sn.day) {
+        const r = await db(env).prepare("INSERT OR IGNORE INTO park_full (facility, day, first_tod, full_tod) VALUES (?1, ?2, ?3, NULL)").bind(p.id, sn.day, sn.tod).run();
+        out.writes += (r.meta && r.meta.changes) || 0;
+        m = { day: sn.day, full: false }; parkDayMem.set(p.id, m);
+      }
+      if (p.status === "full") {
+        const r = await db(env).prepare("UPDATE park_full SET full_tod = ?3 WHERE facility = ?1 AND day = ?2 AND full_tod IS NULL").bind(p.id, sn.day, sn.tod).run();
+        out.writes += (r.meta && r.meta.changes) || 0;
+        m.full = true; out.full++;
+      }
+    }
+  }
+  if (parkDayMem.size > 200) parkDayMem.clear();
+  return out;
+}
+function weekdayOf(day) { return new Date(Date.UTC(+day.slice(0, 4), +day.slice(4, 6) - 1, +day.slice(6, 8))).getUTCDay() || 7; }
+// The words for one car park from its rows: weekdays only; today counts only once it has filled
+// (a morning still under way says nothing yet). Usually full by: the time it was full by on 70
+// percent of the mornings recorded, rounded up to 5 minutes.
+function usualFull(rows, today, nowTod) {
+  const days = rows.filter((r) => weekdayOf(r.day) <= 5 && (r.day !== today || r.full_tod != null || nowTod >= PARK_SAMPLE_TO));
+  const n = days.length;
+  if (n < PARK_MIN_DAYS) return { state: "learning", n, need: PARK_MIN_DAYS, text: `Learning when it fills: ${n} of ${PARK_MIN_DAYS} weekday mornings recorded` };
+  const fulls = days.map((r) => r.full_tod).filter((t) => t != null).sort((a, b) => a - b);
+  const k = Math.ceil(0.7 * n);
+  const up5 = (t) => Math.ceil(t / 5) * 5;
+  if (fulls.length >= k) { const tod = up5(fulls[k - 1]); return { state: "full", n, tod, text: `Usually full by ${todText(tod)} on weekdays` }; }
+  if (!fulls.length) return { state: "space", n, text: `Had spaces every weekday morning lately (${n} days)` };
+  const mid = up5(fulls[Math.floor((fulls.length - 1) / 2)]);
+  return { state: "some", n, tod: mid, text: `Full by ${todText(mid)} on ${fulls.length} of the last ${n} weekdays` };
+}
+// Adds usual to each car park. A database without the table (or any read error) leaves them as they are.
+async function withUsual(env, items) {
+  if (!items || !items.length || !db(env)) return items;
+  const sn = sydneyNow();
+  const from = sydneyNow(Date.now() - PARK_DAYS_BACK * 86400000).day;
+  let rows;
+  try { rows = await d1all(env, "SELECT facility, day, full_tod FROM park_full WHERE day >= ?1", from); } catch (e) { return items; }
+  const by = new Map();
+  for (const r of rows) { if (!by.has(r.facility)) by.set(r.facility, []); by.get(r.facility).push(r); }
+  return items.map((p) => ({ ...p, usual: usualFull(by.get(p.id) || [], sn.day, sn.tod) }));
 }
 async function facTick(env, now, sn, opts = {}) {
   if (!(await facSchema(env).catch(() => false))) return { skipped: "no storage" };
@@ -4921,7 +4985,9 @@ async function facTick(env, now, sn, opts = {}) {
       }
     }
   }
+  if (!opts.noSample) out.parkFull = await sampleParking(env, now, sn).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   if (sn.tod % 60 === 8) await db(env).prepare("DELETE FROM park_watches WHERE expires < ?1").bind(now - 86400000).run().catch(() => null);
+  if (sn.tod === 3 * 60 + 8) await db(env).prepare("DELETE FROM park_full WHERE day < ?1").bind(sydneyNow(now - 70 * 86400000).day).run().catch(() => null);
   return out;
 }
 
@@ -4941,13 +5007,13 @@ async function facRoutes(request, env, url) {
     if (p.get("id")) {
       const c = (await carparkList(env)).find((x) => x.id === cleanId(p.get("id"), 8));
       if (!c) return json({ error: "no such car park" }, 404);
-      return cache({ carpark: await carparkLive(env, c), source: FAC_SRC.parking }, 60);
+      return cache({ carpark: (await withUsual(env, [await carparkLive(env, c)]))[0], source: FAC_SRC.parking }, 60);
     }
     if (p.get("stop")) {
       const id = cleanId(p.get("stop"), 12);
-      return cache({ station: id, carparks: await parkingFor(env, id), source: FAC_SRC.parking }, 60);
+      return cache({ station: id, carparks: await withUsual(env, await parkingFor(env, id)), source: FAC_SRC.parking }, 60);
     }
-    const items = p.get("live") === "0" ? (await carparkList(env)).map((c) => parkOut(c, null)) : await parkingAll(env);
+    const items = await withUsual(env, p.get("live") === "0" ? (await carparkList(env)).map((c) => parkOut(c, null)) : await parkingAll(env));
     return cache({ carparks: items, source: FAC_SRC.parking }, p.get("live") === "0" ? 86400 : 120);
   }
   if (path === "/api/topup") {

@@ -170,6 +170,13 @@ Trip results: `/api/trip`, `/api/plan`, `/api/next` and `/api/ask` take `acc=1` 
 
 Ask: parking, lift and top up questions answer with `kind: "facility"`, a `reply`, and cards of type `parking` (`title`, `items` as above, `source`) or `station` (`station`: `id`, `name`, `access`, `ticket`, `outages`, `parking`, `source`). Clients that do not know these card types can show the reply text alone.
 
+
+**Usually full by** (api.transportsydney.app only). Each car park in every `/api/parking` answer gets `usual`: `{state, n, text}` (plus `tod`, minutes after midnight, for `full` and `some`; `need` for `learning`). Weekday mornings from 5am to 11am the minute tick reads a quarter of the car parks each minute (each one every 4 minutes) and keeps one row per car park per day in `park_full` (`first_tod`, the first reading that morning, and `full_tod`, the first reading that showed it full): at most two row writes per car park per day, and a car park already full that day is not read again. Rows older than 70 days are deleted. From the last 8 weeks of weekdays (today only once it has filled or after 11am):
+* under 5 mornings: `learning`, "Learning when it fills: 2 of 5 weekday mornings recorded"
+* full on at least 70 percent of mornings: `full`, "Usually full by 7:40am on weekdays" (the time it was full by on 70 percent of mornings, rounded up to 5 minutes)
+* full on some: `some`, "Full by 8:00am on 2 of the last 6 weekdays" (the middle full time)
+* never full: `space`, "Had spaces every weekday morning lately (6 days)"
+The readings are every 4 minutes, so a full time can be up to 4 minutes late. A morning when the tick stopped early counts as not full.
 ## Morning check (per device)
 
 A device registers a usual trip. About 15 minutes before the usual departure (Sydney time) the minute tick looks at live data once and sends ONE alert to that device, only if something is wrong. When all is fine it stays silent. Alerts go to the same push targets as trip alerts: the device's Expo push tokens (`/api/push/expo`) and Web Push sign ups (`/api/push/subscribe`). No login: everything is keyed by `device`, and `/api/history/delete` with `scope: "all"` and the `device` removes it too.

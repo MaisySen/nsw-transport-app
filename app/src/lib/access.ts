@@ -7,7 +7,12 @@ export type TicketKind = 'cash' | 'card' | 'topup' | 'none' | 'unknown';
 export type Ticket = { kind: TicketKind; label?: string; topUp?: boolean; cash?: boolean; extraTopUp?: boolean };
 export type Outage = { id?: string; kind?: string; title: string; url?: string };
 export type CarPark = { id: string; name: string; station: string; spots: number; free: number | null; occupied?: number | null;
-  status: 'ok' | 'nearly' | 'full' | 'unknown'; label?: string; updated?: string | null; stale?: boolean; lat?: number; lon?: number; address?: string; distance?: number };
+  status: 'ok' | 'nearly' | 'full' | 'unknown'; label?: string; updated?: string | null; stale?: boolean; lat?: number; lon?: number; address?: string; distance?: number;
+  /** api.transportsydney.app only: when it usually fills on weekday mornings, or how many mornings are recorded so far. */
+  usual?: ParkUsual };
+export type ParkUsual = { state: 'learning' | 'full' | 'some' | 'space'; n: number; need?: number; tod?: number; text: string };
+/** The usual line under a car park, or null when the server has none (the address in use before api_base moves). */
+export const usualLine = (p: { usual?: ParkUsual | null }): string | null => (p.usual && typeof p.usual.text === 'string' && p.usual.text ? p.usual.text : null);
 export type Station = { id: string; name: string; lat?: number; lon?: number; modes?: string[]; access: Access; ticket: Ticket; facilities?: string[];
   parkRide?: boolean; peak?: { morning?: string; afternoon?: string } | null; shortPlatform?: boolean; outages?: Outage[]; parking?: CarPark[]; sources?: string[]; read?: string };
 export type LegAccessEnd = { id: string; level: AccessLevel; lift?: boolean; outage?: string; outages?: number };

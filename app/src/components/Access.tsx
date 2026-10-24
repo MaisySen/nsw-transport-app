@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 import { radius, usePalette } from '@/lib/theme';
 import { clock } from '@/lib/format';
 import { enablePush, getPushState } from '@/lib/push';
-import { ACC_COLOR, accChip, accessKit, outageText, parkBadge, parkFill, parkName, parkTotals, safeUrl, ticketText, type CarPark, type LegAccess, type Station } from '@/lib/access';
+import { ACC_COLOR, accChip, accessKit, outageText, parkBadge, parkFill, parkName, parkTotals, safeUrl, ticketText, usualLine, type CarPark, type LegAccess, type Station } from '@/lib/access';
 import { Icon, I } from './Icon';
 import { Sep, T } from './ui';
 
@@ -55,6 +55,7 @@ export function ParkCell({ p, station, watch, onPress, dist }: { p: CarPark; sta
   const [busy, setBusy] = useState(false);
   const b = parkBadge(p);
   const fill = parkFill(p);
+  const usual = usualLine(p);
   const barCol = p.status === 'full' ? c.red : p.status === 'nearly' ? c.orange : c.green;
   return (
     <Pressable onPress={onPress} disabled={!onPress} android_ripple={onPress ? { color: c.fill } : undefined} style={({ pressed }) => [s.row, pressed && Platform.OS === 'ios' && onPress ? { backgroundColor: c.fill } : null]}>
@@ -68,6 +69,7 @@ export function ParkCell({ p, station, watch, onPress, dist }: { p: CarPark; sta
           </T>
         </View>
         <View style={[s.bar, { backgroundColor: c.fill }]}><View style={{ width: `${fill ?? 0}%`, height: '100%', backgroundColor: barCol, borderRadius: 2 }} /></View>
+        {usual ? <T kind="foot" tone={p.usual?.state === 'learning' ? 'text3' : 'text2'} style={{ marginTop: 5 }}>{usual}</T> : null}
       </View>
       {watch ? (
         <Pressable hitSlop={6} accessibilityRole="button" accessibilityLabel={`Alert me when ${p.name} is nearly full`} disabled={busy || on}
