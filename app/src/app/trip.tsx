@@ -23,6 +23,7 @@ import { openService } from '@/components/Cards';
 import { LineBadge, OccupancyChip } from '@/components/Transit';
 import { arrOf, ServiceRow, tripCacheId, tripPkey, WarnLine } from '@/components/Home';
 import { cacheKey, offlineText } from '@/lib/offlineCore';
+import { planB, problemOf } from '@/lib/planBCore';
 import { RemindLastButton } from '@/components/LastHome';
 import { canRemind, lastTonightIndex, modeOfLegs } from '@/lib/lastHomeCore';
 import { Button, Empty, Screen, Sep, T } from '@/components/ui';
@@ -274,6 +275,20 @@ export default function TripScreen() {
       setMore(0);
     }
   };
+  // Plan B: the chosen trip (the open one, else the first) has a cancelled service, a suspended line or a missed change.
+  const chosen = js.length ? js[open != null && open < js.length ? open : 0] : null;
+  const prob = problemOf(chosen);
+  const pbShown = prob ? planB(js, chosen, now) : null;
+  const pbAll = prob && !pbShown ? planB(jsAll, chosen, now) : null;
+  const probKey = prob && chosen ? `${prob.kind}|${jKey(chosen)}` : '';
+  const [pbAsked, setPbAsked] = useState('');
+  useEffect(() => {
+    // Nothing in the results avoids it: ask the planner once for the services leaving from now.
+    if (!probKey || pbShown || pbAll || pbAsked === probKey || offlineAt) return;
+    setPbAsked(probKey);
+    planTrip(plan, { time: hhmm(now), count: 8, refresh: true, all: chain && allOn }).then((r) => setExtra((e) => [...e, ...(r.journeys || [])])).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [probKey, !!pbShown, !!pbAll, offlineAt]);
   const [showAlerts, setShowAlerts] = useState(false);
   const arrs = js.map(arrOf);
   const alertList: { title: string; url?: string }[] = [];
@@ -344,6 +359,30 @@ export default function TripScreen() {
               {!allOn && (df.none || (chain && (data?.fallback || []).some(Boolean))) ? <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{df.none ? 'No direct service, so all are shown' : 'One leg has no direct service, so all are used there'}</T> : null}
             </View>
             <Switch value={allOn} onValueChange={(v) => { haptic.select(); store.setAllServices(tkey, v); }} accessibilityLabel="Include trips with a change" />
+          </View>
+        ) : null}
+        {prob ? (
+          <View accessibilityRole="summary" style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, padding: 16, borderLeftWidth: 4, borderLeftColor: c.red }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon name={I.warn} size={16} color={c.red} />
+              <T kind="headline" style={{ marginLeft: 8 }}>Plan B</T>
+            </View>
+            <T kind="sub" numberOfLines={3} style={{ color: c.redText, marginTop: 6 }}>{prob.text}</T>
+            {pbShown || pbAll ? (
+              <>
+                <T kind="body" style={{ marginTop: 10 }}>{(pbShown || pbAll)!.label}</T>
+                <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{(pbShown || pbAll)!.why}{pbAll ? ', with a change' : ''}</T>
+                <Pressable accessibilityRole="button" onPress={() => {
+                  haptic.select();
+                  if (pbShown) { const i = js.indexOf(pbShown.j); if (i >= 0) setOpen(i); }
+                  else store.setAllServices(tkey, true);
+                }} style={({ pressed }) => ({ alignSelf: 'flex-start', marginTop: 12, paddingHorizontal: 16, minHeight: 44, borderRadius: 22, justifyContent: 'center', backgroundColor: c.tint, opacity: pressed ? 0.8 : 1 })}>
+                  <T kind="sub" style={{ color: '#FFFFFF', fontWeight: '600' }}>{pbShown ? 'Show this trip' : 'Show trips with a change'}</T>
+                </Pressable>
+              </>
+            ) : (
+              <T kind="foot" tone="text2" style={{ marginTop: 8 }}>{pbAsked === probKey || offlineAt ? 'No other way found in the next services. Pull down to check again.' : 'Looking for another way'}</T>
+            )}
           </View>
         ) : null}
         {js.length ? (
