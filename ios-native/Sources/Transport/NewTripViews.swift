@@ -601,7 +601,7 @@ struct StationPickerView: View {
         Button { pick(s) } label: {
             HStack(spacing: 8) {
                 Text(s.short)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color.primary)
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 if let d = distance {
@@ -802,7 +802,7 @@ struct BusStopsView: View {
                                 store.tap()
                             } label: {
                                 HStack {
-                                    Text("To \(Naming.short(dirs[i].to))").foregroundStyle(.primary)
+                                    Text("To \(Naming.short(dirs[i].to))").foregroundStyle(Color.primary)
                                     Spacer()
                                     if dir == i { Image(systemName: "checkmark").foregroundStyle(.tint) }
                                 }
@@ -819,7 +819,7 @@ struct BusStopsView: View {
                         } label: {
                             HStack(spacing: 12) {
                                 RouteStopDot(first: i == 0, last: i == list.count - 1, tint: NewTripMode.bus.tint)
-                                Text(Naming.short(s.name)).foregroundStyle(.primary).lineLimit(2)
+                                Text(Naming.short(s.name)).foregroundStyle(Color.primary).lineLimit(2)
                                 Spacer(minLength: 0)
                             }
                         }

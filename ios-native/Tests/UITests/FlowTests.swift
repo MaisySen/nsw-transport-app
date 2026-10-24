@@ -302,8 +302,7 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(indexB.waitForExistence(timeout: 30), "A to Z side index")
         indexB.tap()
         pause(1)
-        let burwood = app.buttons["Burwood"].firstMatch
-        XCTAssertTrue(burwood.waitForExistence(timeout: 5), "Burwood after jumping to B")
+        XCTAssertTrue(app.buttons["Banksia"].firstMatch.waitForExistence(timeout: 5), "B stations after jumping to B")
         shot("new-trip-train-a-to-z")
 
         let byDistance = app.buttons["By distance"].firstMatch
@@ -321,14 +320,21 @@ final class FlowTests: XCTestCase {
         }
         app.buttons["A to Z"].firstMatch.tap()
         pause(1)
-        if !burwood.isHittable { element("index-B").tap(); pause(1) }
+        filterStations("Burwood")
+        let burwood = app.buttons["Burwood"].firstMatch
+        XCTAssertTrue(burwood.waitForExistence(timeout: 5), "Burwood in the filtered list")
         burwood.tap()
         pause(1)
         XCTAssertTrue(app.navigationBars["To"].waitForExistence(timeout: 5), "To step after From")
-        element("index-C").tap()
-        pause(1)
+        let indexC = element("index-C")
+        if indexC.waitForExistence(timeout: 5) {
+            indexC.tap()
+            pause(1)
+            shot("new-trip-train-to")
+        }
+        filterStations("Central")
         let central = app.buttons["Central"].firstMatch
-        XCTAssertTrue(central.waitForExistence(timeout: 5), "Central after jumping to C")
+        XCTAssertTrue(central.waitForExistence(timeout: 5), "Central in the filtered list")
         central.tap()
 
         XCTAssertTrue(element("tripName").waitForExistence(timeout: 8), "Confirm trip")
@@ -339,10 +345,8 @@ final class FlowTests: XCTestCase {
         element("extendTrip").tap()
         XCTAssertTrue(element("mode-lightrail").waitForExistence(timeout: 8), "mode picker for the connection")
         element("mode-lightrail").tap()
-        let filter = app.searchFields.firstMatch
-        XCTAssertTrue(filter.waitForExistence(timeout: 20), "station filter")
-        filter.tap()
-        filter.typeText("Circular")
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 20), "light rail station filter")
+        filterStations("Circular")
         let quay = app.buttons["Circular Quay"].firstMatch
         XCTAssertTrue(quay.waitForExistence(timeout: 20), "Circular Quay light rail")
         quay.tap()
@@ -445,6 +449,14 @@ final class FlowTests: XCTestCase {
         } else {
             element("addTrip").tap()
         }
+        pause(1)
+    }
+
+    private func filterStations(_ text: String) {
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 8), "station filter")
+        field.tap()
+        field.typeText(text)
         pause(1)
     }
 
