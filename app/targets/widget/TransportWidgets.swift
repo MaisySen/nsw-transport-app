@@ -18,7 +18,8 @@ struct TransportWidgets: WidgetBundle {
 
 /// The next services for a saved trip or two stops you pick, or Home and Work (auto): Home to Work in the
 /// morning and back in the evening.
-/// Data comes from the server, so the widget needs no shared storage with the app.
+/// Live times come from the server. Home and Work, the trips saved on the phone and a trip in progress come
+/// from the app through the app group.
 struct NextTripWidget: Widget {
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: "NextTrip", intent: NextTripIntent.self, provider: NextTripProvider()) { entry in
@@ -32,7 +33,7 @@ struct NextTripWidget: Widget {
     }
 }
 
-struct TripLine: Hashable {
+struct TripLine: Hashable, Codable {
     var line: String
     var colorHex: String
     var mode: String
@@ -135,9 +136,12 @@ struct NextTripProvider: AppIntentTimelineProvider {
         case .auto:
             break
         }
+        if let live = SharedLiveCard.load() {
+            return liveEntry(live)
+        }
         guard let pick = await SmartTrip.pick() else {
             return NextTripEntry(date: .now, title: "Next trip", from: "", to: "", trips: [],
-                                 message: "Touch and hold, then Edit Widget to pick a trip.")
+                                 message: SmartTrip.emptyMessage())
         }
         var e = await entry(title: pick.title, from: pick.from, to: pick.to)
         e.relevance = TimelineEntryRelevance(score: pick.relevance, duration: 30 * 60)
@@ -149,8 +153,23 @@ struct NextTripProvider: AppIntentTimelineProvider {
         let api = TransportAPI.shared
         let fromName = Naming.compact(Naming.short(from.name)), toName = Naming.compact(Naming.short(to.name))
         guard let r = try? await api.trip(from: from.id, to: to.id, count: 6) else {
+            // Offline: the last live times for this trip that have not left yet, marked as not live.
+            if let c = TripCache.load(from: from.id, to: to.id) {
+                let now = Date()
+                let left: [TripLine] = c.trips.filter { $0.leave > now }.map { t in
+                    var x = t
+                    x.isLive = false
+                    return x
+                }
+                if !left.isEmpty {
+                    return NextTripEntry(date: now, title: title, from: fromName, to: toName, trips: left, message: nil,
+                                         fromID: from.id, toID: to.id,
+                                         notice: WidgetNotice(text: "Offline, times from \(Clock.time(c.updated))", level: .info),
+                                         updated: now)
+                }
+            }
             return NextTripEntry(date: .now, title: title, from: fromName, to: toName,
-                                 trips: [], message: "Live times will be back shortly.", fromID: from.id, toID: to.id)
+                                 trips: [], message: "Offline. Live times will be back shortly.", fromID: from.id, toID: to.id)
         }
         let now = Date()
         let ok = r.journeys.filter { ($0.leave ?? .distantPast) > now && $0.firstTransit != nil }
@@ -161,6 +180,7 @@ struct NextTripProvider: AppIntentTimelineProvider {
                             status: Delay.text(delayMin: f.delayMin, live: f.isLive, cancelled: j.anyCancelled == true),
                             platform: f.fromPlatform, changes: j.changes ?? 0, stopID: f.stopId, board: j.board)
         }
+        TripCache.save(Array(trips.prefix(6)), from: from.id, to: to.id, at: now)
         let rName = r.from.map { Naming.compact(Naming.short($0.name)) }
         let toResolved = r.to.map { Naming.compact(Naming.short($0.name)) }
         return NextTripEntry(date: now, title: title,
@@ -168,6 +188,21 @@ struct NextTripProvider: AppIntentTimelineProvider {
                              to: (toResolved?.allSatisfy(\.isNumber) == false ? toResolved : nil) ?? toName,
                              trips: Array(trips.prefix(6)), message: trips.isEmpty ? "No trips soon." : nil,
                              fromID: from.id, toID: to.id, notice: notice(for: Array(ok.prefix(3))), updated: now)
+    }
+
+    /// A trip in progress, from the app: the next thing to do and the minutes to it.
+    static func liveEntry(_ c: SharedLiveCard, now: Date = Date()) -> NextTripEntry {
+        let to = Naming.compact(Naming.short(c.destination ?? c.getOffAt))
+        let off = Naming.compact(Naming.short(c.getOffAt))
+        let waiting = c.phase == "wait"
+        let status: String
+        if waiting { status = "Leaves" } else if off == to { status = "Get off at \(off)" } else { status = "Change at \(off)" }
+        let line = TripLine(line: c.line, colorHex: c.lineColorHex, mode: c.mode.isEmpty ? "train" : c.mode,
+                            leave: c.target, arrive: Date(timeIntervalSince1970: c.arrival / 1000), isLive: true,
+                            status: status, platform: waiting ? c.platform : nil)
+        let from = waiting ? Naming.compact(Naming.short(c.nextStop ?? "")) : "On board"
+        return NextTripEntry(date: now, title: "Your trip", from: from, to: to, trips: [line], message: nil,
+                             notice: WidgetNotice(text: waiting ? "Trip started" : status, level: .info), updated: now)
     }
 
     /// The one thing worth knowing before you leave, most serious first, and only about the
@@ -192,6 +227,24 @@ struct NextTripProvider: AppIntentTimelineProvider {
 }
 
 // MARK: Shared pieces
+
+/// The last live times per trip, kept in the app group so an offline widget can still show them.
+struct TripCache: Codable {
+    var updated: Date
+    var trips: [TripLine]
+
+    static func key(from: String, to: String) -> String { "nextTripCache.\(from).\(to)" }
+
+    static func save(_ trips: [TripLine], from: String, to: String, at: Date) {
+        guard !trips.isEmpty, let data = try? JSONEncoder().encode(TripCache(updated: at, trips: trips)) else { return }
+        AppIdentity.groupDefaults.set(data, forKey: key(from: from, to: to))
+    }
+
+    static func load(from: String, to: String) -> TripCache? {
+        guard let data = AppIdentity.groupDefaults.data(forKey: key(from: from, to: to)) else { return nil }
+        return try? JSONDecoder().decode(TripCache.self, from: data)
+    }
+}
 
 struct WidgetLineBadge: View {
     var line: String

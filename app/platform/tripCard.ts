@@ -12,8 +12,9 @@ export type TripCardState = {
 
 type TripLike = Pick<LiveTrip, 'legs' | 'to'>;
 
+/** "Kings Cross Station, Kings Cross" and "Kings Cross Station" both become "Kings Cross". */
 export const shortName = (n?: string | null) =>
-  String(n || '').replace(/ (Station|Light Rail|Wharf)$/i, '').replace(/,.*$/, '').trim();
+  String(n || '').replace(/,.*$/, '').trim().replace(/ (Station|Light Rail|Wharf)$/i, '').trim();
 const platText = (p?: string | null) => (p ? p.replace(/^Platform\s*/i, 'Platform ').replace(/^Stand\s*/i, 'Stand ') : null);
 const colorOf = (l: WatchLeg) => l.color || '#0A84FF';
 const hhmm = (t: number) => {

@@ -36,7 +36,16 @@ struct LiveTripActivityWidget: Widget {
                     LiveTripIslandBottom(state: s, stale: stale)
                 }
             } compactLeading: {
-                WidgetLineBadge(line: s.line, colorHex: s.lineColorHex, mode: s.mode)
+                // Before boarding the line ("T1" then the minutes); on board the next thing to do ("Off Redfern").
+                if s.phase == "ride" && !s.arrived(stale: stale) {
+                    Text(s.compactAction)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .frame(maxWidth: 84, alignment: .leading)
+                } else {
+                    WidgetLineBadge(line: s.line, colorHex: s.lineColorHex, mode: s.mode)
+                }
             } compactTrailing: {
                 MinutesUntil(date: s.countdownTarget, arrived: s.arrived(stale: stale))
                     .monospacedDigit()

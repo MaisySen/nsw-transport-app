@@ -2,7 +2,8 @@
 //
 // Widgets: the home screen and Lock Screen widgets load departures from the server themselves, for the
 // trips and stops saved on this install's profile. This writes what they need into the app group:
-// the profile id (apiProfile), starred stops (starredStops) and the fare type (tb_fare), then reloads them.
+// the profile id (apiProfile), starred stops (starredStops), the fare type (tb_fare), Home and Work with the
+// trips saved on this phone (homeWork) and the card of a trip in progress (liveCard), then reloads them.
 //
 // Live Activity: one Lock Screen card per trip. It starts when a trip starts, follows the live times the
 // trip screen already loads, says "You've arrived" at the end and goes away 2 minutes later.
@@ -17,6 +18,7 @@ import { computeLive } from '@/lib/liveCalc';
 import type { LiveTrip } from '@/lib/live';
 import type { ServiceResp, WatchLeg } from '@/lib/types';
 import { cardFor, shortName } from './tripCard';
+import { homeWorkFor, liveCardFor } from './widgetShare';
 
 const ARRIVED_KEEP_S = 120;
 const TICK_MS = 30000;
@@ -45,9 +47,10 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   async function refreshCard() {
     const g = trip;
     if (!g) return;
-    if (!iosNative.activitiesEnabled() && !activityId) return;
+    if (!iosNative.activitiesEnabled() && !activityId) { shareLive(g, cardFor(g, stateFor(g))); return; }
     const s = stateFor(g);
     const card = cardFor(g, s);
+    shareLive(g, card);
     const stale = card.phase === 'arrived' ? null : card.arrival + ARRIVED_KEEP_S * 1000;
     if (!activityId || activityTrip !== g.id) {
       if (starting || card.phase === 'arrived') return;
@@ -71,9 +74,23 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     if (!ok) { activityId = null; activityTrip = null; }
   }
 
+  // The Next trip widget follows a trip in progress. Reload it only when the words on it change.
+  let liveKey = '';
+  function shareLive(g: LiveTrip | null, card: TripCardState | null) {
+    if (!g || !card) {
+      if (liveKey) { liveKey = ''; iosNative.setJSON('liveCard', null); iosNative.reloadWidgets('NextTrip'); }
+      return;
+    }
+    const share = liveCardFor(g.title || `${shortName(g.origin?.name)} to ${shortName(g.to?.name)}`, card, ARRIVED_KEEP_S * 1000);
+    iosNative.setJSON('liveCard', share);
+    const k = [card.phase, card.line, card.getOffAt, card.departs, card.legArrives, card.platform].join('|');
+    if (k !== liveKey) { liveKey = k; iosNative.reloadWidgets('NextTrip'); }
+  }
+
   async function onTrip(g: LiveTrip | null) {
     const prev = trip;
     trip = g;
+    if (!g) shareLive(null, null);
     if (g) { refreshCard(); return; }
     // The trip ended: an arrived trip keeps its card for 2 minutes, a trip ended by hand goes at once.
     if (prev?.arrivedAt) {
@@ -95,8 +112,10 @@ if (Platform.OS === 'ios' && iosNative.available()) {
         const starred = Array.isArray(st?.starred) ? st.starred.filter((p: any) => p?.id).map((p: any) => ({ id: String(p.id), name: String(p.name || '') })) : [];
         iosNative.setJSON('starredStops', starred);
         if (st?.fareType) iosNative.setString('tb_fare', String(st.fareType));
+        iosNative.setJSON('homeWork', homeWorkFor(st));
       } else {
         iosNative.setJSON('starredStops', []);
+        iosNative.setJSON('homeWork', homeWorkFor(null));
       }
       iosNative.reloadWidgets();
     } catch {}
@@ -133,6 +152,7 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     const ids = iosNative.activityIds();
     if (trip && ids.length) { activityId = ids[0]; activityTrip = trip.id; }
     else if (!trip && ids.length) await iosNative.endTrip(null, null, 0);
+    if (!trip) iosNative.setJSON('liveCard', null);
     shareWidgetData();
     refreshCard();
   }

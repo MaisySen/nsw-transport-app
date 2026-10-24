@@ -82,6 +82,13 @@ extension LiveTripAttributes.ContentState {
     /// What the big number counts to: leaving while you wait, getting off while on board.
     public var countdownTarget: Date { phase == "wait" ? (departs ?? arrival) : (legArrives ?? arrival) }
 
+    /// The Dynamic Island on board: "Off Redfern", or "Change Redfern" when another leg follows.
+    public var compactAction: String {
+        let off = Naming.compact(Naming.short(getOffAt))
+        if let d = destination, Naming.compact(Naming.short(d)) != off { return "Change \(off)" }
+        return "Off \(off)"
+    }
+
     public var arriveLine: String { "Arrive \(destination ?? getOffAt) \(Clock.time(arrival))" }
 }
 #endif
