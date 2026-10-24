@@ -29,7 +29,13 @@ export type Journey = {
   risk?: string; riskText?: string; legs: Leg[];
   /** Multi leg trips: a warning when a change is tight or missed because of a delay. */
   warn?: string | null; segs?: number[];
+  /** Opal fare estimate for the fare type in Settings. */
+  fare?: Fare | null;
 };
+
+export type FareLeg = { line?: string; mode?: string; km?: number; peak?: boolean; fare?: number | null; transferOff?: number; airportFee?: number; amount: number | null; joined?: boolean };
+export type Fare = { type: string; typeName: string; total: number | null; peak: boolean; offPeak?: { from: string; save: number } | null; transfer?: number; airportFee?: number;
+  capped?: boolean; unknown?: boolean; legs: FareLeg[]; estimate?: boolean };
 
 export type TripResp = { kind: 'trip'; from: { id: string; name: string }; to: { id: string; name: string }; journeys: Journey[]; tomorrow?: boolean; now: number; error?: string; stops?: Place[]; fallback?: boolean[] };
 

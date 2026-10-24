@@ -8,9 +8,11 @@ export type Places = { home?: Place; work?: Place };
 export type MyTripLeg = { mode: string; from: Place; to: Place; conn?: number; any?: boolean; walk?: number };
 /** A trip saved on this phone from New Trip. Multi leg trips have legs; older two leg trips have via and conn. */
 export type MyTrip = { from: Place; to: Place; via?: Place; conn?: number; name: string; modes?: string[]; legs?: MyTripLeg[] };
+export type FareType = 'adult' | 'child' | 'concession' | 'gold';
 type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; watchedTrips: Record<string, string>; places: Places;
-  myTrips: MyTrip[]; tripOrder: string[]; allServices: Record<string, boolean> };
-let state: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {}, places: {}, myTrips: [], tripOrder: [], allServices: {} };
+  myTrips: MyTrip[]; tripOrder: string[]; allServices: Record<string, boolean>; fareType: FareType };
+const EMPTY: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {}, places: {}, myTrips: [], tripOrder: [], allServices: {}, fareType: 'adult' };
+let state: State = { ...EMPTY };
 
 /** One key per trip, used for order, the All services switch and duplicates. */
 export const tripKeyOf = (t: { from: Place; to: Place; via?: Place | null; legs?: { to: Place }[] }) =>
@@ -50,7 +52,17 @@ export const store = {
     state = { ...state, recents: [p, ...state.recents.filter((r) => r.id !== p.id)].slice(0, 8) };
     save();
   },
-  clearRecents() { state = { ...state, recents: [] }; save(); },
+  /** Empties Recent stops and returns what was there, for Undo. */
+  clearRecents() { const old = state.recents || []; state = { ...state, recents: [] }; save(); return old; },
+  restoreRecents(list: Place[]) { state = { ...state, recents: list }; save(); },
+  removeRecent(id: string) { state = { ...state, recents: (state.recents || []).filter((r) => r.id !== id) }; save(); },
+  /** Empties Recent trips and returns what was there, for Undo. */
+  clearRecentTrips() { const old = state.recentTrips || []; state = { ...state, recentTrips: [] }; save(); return old; },
+  restoreRecentTrips(list: RecentTrip[]) { state = { ...state, recentTrips: list }; save(); },
+  fareType: (): FareType => state.fareType || 'adult',
+  setFareType(f: FareType) { state = { ...state, fareType: f }; save(); },
+  /** Delete all my data: everything this store keeps goes back to empty (the fare type stays). */
+  resetAll() { state = { ...EMPTY, fareType: state.fareType || 'adult' }; save(); },
   /** Remembers an A to B trip the user opened, newest first. */
   addRecentTrip(from: Place, to: Place) {
     if (!from?.id || !to?.id || from.id === to.id) return;
@@ -77,6 +89,7 @@ export const store = {
     save();
   },
   removeMyTrip(key: string) { state = { ...state, myTrips: (state.myTrips || []).filter((x) => tripKeyOf(x) !== key) }; save(); },
+  getOrder: () => state.tripOrder || [],
   setTripOrder(keys: string[]) { state = { ...state, tripOrder: keys }; save(); },
   setAllServices(key: string, on: boolean) {
     const a = { ...(state.allServices || {}) };

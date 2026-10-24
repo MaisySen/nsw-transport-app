@@ -1,6 +1,6 @@
 import { api } from './api';
 import { bestTime, ms, shortName } from './format';
-import type { Journey, Leg, Place, TripResp } from './types';
+import type { Fare, Journey, Leg, Place, TripResp } from './types';
 
 /** One leg of a saved trip: mode, change time before it (legs after the first), all services, walk minutes. */
 export type TripLeg = { mode: string; from: Place; to: Place; conn?: number; any?: boolean; walk?: number };
@@ -92,9 +92,16 @@ export async function planTrip(t: PlanTrip, opts: { refresh?: boolean; count?: n
     const f2: any = legs2.find((l) => l.kind === 'transit');
     const gap = Math.round((b.dep - arr) / 60000);
     if (f2) f2.transfer = { minutes: gap, at: t.via.name, risk: gap < conn / 60000 ? 'tight' : '' };
-    journeys.push({ ...a, legs: [...a.legs, ...legs2], changes: ((a as any).changes || 0) + ((b.j as any).changes || 0) + 1, arrive: b.j.arrive } as Journey);
+    journeys.push({ ...a, legs: [...a.legs, ...legs2], changes: ((a as any).changes || 0) + ((b.j as any).changes || 0) + 1, arrive: b.j.arrive, fare: addFares(a.fare, b.j.fare) } as Journey);
   }
   return { ...d1, to: d2.to || { id: t.to.id, name: t.to.name }, journeys };
+}
+
+/** Two separately planned parts of a via trip: their fares added up (a little high when a transfer discount would apply). */
+function addFares(x?: Fare | null, y?: Fare | null): Fare | null {
+  if (!x || !y || x.total == null || y.total == null) return null;
+  return { ...x, total: Math.round((x.total + y.total) * 100) / 100, peak: x.peak || y.peak, offPeak: null, transfer: (x.transfer || 0) + (y.transfer || 0),
+    airportFee: (x.airportFee || 0) + (y.airportFee || 0), capped: x.capped || y.capped, unknown: x.unknown || y.unknown, legs: [...(x.legs || []), ...(y.legs || [])] };
 }
 
 // ---------- station lists for New Trip ----------

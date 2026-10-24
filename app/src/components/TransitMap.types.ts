@@ -5,6 +5,8 @@ export type TransitMapProps = {
   path?: [number, number][];
   stops?: MapStop[];
   vehicle?: { lat: number; lon: number; bearing?: number | null } | null;
+  /** Your own position, shown as a blue dot (live trip, only with location permission). */
+  me?: { lat: number; lon: number } | null;
   color: string;
   mode?: string;
   dark: boolean;

@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
@@ -8,6 +9,7 @@ import { modeColor, radius, usePalette } from '@/lib/theme';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
 import type { Departure, Journey, Leg, Place } from '@/lib/types';
 import { store, tripKeyOf } from '@/lib/store';
+import { fareOf, money } from '@/lib/fare';
 import { directFilter, isChain, planTrip, stName, tLegs, tripKey, viaText } from '@/lib/trips';
 import type { TripLeg } from '@/lib/trips';
 import { Icon, I, IconName } from './Icon';
@@ -118,12 +120,20 @@ const distText = (m?: number) => (m == null || !Number.isFinite(m) ? '' : m < 10
 
 // ---------- section header and simple rows ----------
 
-export function HomeSection({ title, children }: { title: string; children: React.ReactNode }) {
+export function HomeSection({ title, children, onClear, footer }: { title: string; children: React.ReactNode; onClear?: () => void; footer?: string }) {
   const c = usePalette();
   return (
     <View style={{ marginTop: 24 }}>
-      <Text accessibilityRole="header" maxFontSizeMultiplier={1.4} style={[font.title3, { fontWeight: '700', color: c.text, marginHorizontal: 20, marginBottom: 2 }]}>{title}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginBottom: 2 }}>
+        <Text accessibilityRole="header" maxFontSizeMultiplier={1.4} style={[font.title3, { fontWeight: '700', color: c.text, flex: 1 }]}>{title}</Text>
+        {onClear ? (
+          <Pressable onPress={onClear} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Clear ${title}`}>
+            <T kind="body" tone="tint">Clear</T>
+          </Pressable>
+        ) : null}
+      </View>
       {children}
+      {footer ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>{footer}</T> : null}
     </View>
   );
 }
@@ -204,7 +214,7 @@ function statusOf(j: Journey, now: number): Status {
   return { text: 'Scheduled', tone: 'grey' };
 }
 
-export type TripItem = { key: string; from: Place; to: Place; kind: 'commute' | 'saved' | 'recent' | 'place' | 'mine'; name?: string; tag?: string; via?: Place; conn?: number; okey?: string; legs?: TripLeg[]; modes?: string[] };
+export type TripItem = { key: string; from: Place; to: Place; kind: 'commute' | 'saved' | 'recent' | 'place' | 'mine'; id?: string; name?: string; tag?: string; via?: Place; conn?: number; okey?: string; legs?: TripLeg[]; modes?: string[] };
 
 /** Warning under a multi leg service: a tight change, or a change missed because of a delay. */
 export function WarnLine({ j }: { j: Journey }) {
@@ -217,6 +227,54 @@ export function WarnLine({ j }: { j: Journey }) {
       <T kind="foot" style={{ color: bad ? c.red : c.lateText, flex: 1, fontWeight: '500' }}>{j.warn}</T>
     </View>
   );
+}
+
+/** Tap and hold (or swipe) on a Home trip: the actions for that kind of trip. */
+export function tripMenu(trip: TripItem, route?: string) {
+  const { from, to, via } = trip;
+  const title = route || `${shortName(from.name)} to ${shortName(to.name)}`;
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  const key = tripKeyOf({ from, to, via, legs: trip.legs });
+  const editParams = { from: from.id, fromName: from.name, to: to.id, toName: to.name, ...(trip.legs && trip.legs.length > 1 ? { legs: JSON.stringify(trip.legs) } : {}), ...(trip.name ? { name: trip.name } : {}), edit: key };
+  if (trip.kind === 'mine') {
+    Alert.alert(trip.name || title, undefined, [
+      { text: 'Edit trip', onPress: () => router.push({ pathname: '/new-trip', params: editParams }) },
+      { text: 'Delete trip', style: 'destructive', onPress: () => deleteTrip(trip) },
+      { text: 'Cancel', style: 'cancel' },
+    ], { cancelable: true });
+  } else if (trip.kind === 'saved') {
+    Alert.alert(trip.name || title, 'Saved on your profile.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete trip', style: 'destructive', onPress: () => deleteTrip(trip) },
+    ], { cancelable: true });
+  } else if (trip.kind === 'commute') {
+    Alert.alert(trip.name || title, 'Your commute: a leave now alert on the days you set.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete commute', style: 'destructive', onPress: () => { if (trip.id) api.deleteCommute(trip.id).then(pullHome).catch((e) => Alert.alert("Couldn't delete it", e.message)); } },
+    ], { cancelable: true });
+  } else if (trip.kind === 'place') {
+    Alert.alert('Home and work', undefined, [
+      { text: 'Change home', onPress: () => router.push({ pathname: '/add-trip', params: { place: 'home' } }) },
+      { text: 'Change work', onPress: () => router.push({ pathname: '/add-trip', params: { place: 'work' } }) },
+      { text: 'Remove both', style: 'destructive', onPress: () => { store.setPlace('home', null); store.setPlace('work', null); } },
+    ], { cancelable: true });
+  } else {
+    Alert.alert(title, undefined, [
+      { text: 'Save trip', onPress: () => router.push({ pathname: '/new-trip', params: { from: from.id, fromName: from.name, to: to.id, toName: to.name } }) },
+      { text: 'Remove from Recent', style: 'destructive', onPress: () => store.removeRecentTrip(from.id, to.id) },
+      { text: 'Cancel', style: 'cancel' },
+    ], { cancelable: true });
+  }
+}
+
+/** Delete trip: off this phone, out of the Home order, and the server copy too. */
+export function deleteTrip(trip: TripItem) {
+  const key = tripKeyOf({ from: trip.from, to: trip.to, via: trip.via, legs: trip.legs });
+  if (trip.kind === 'mine') store.removeMyTrip(key);
+  const st = store.getOrder();
+  if (st.includes(key)) store.setTripOrder(st.filter((k) => k !== key));
+  if (trip.name) api.deleteSaved(trip.name).then(pullHome).catch(() => {});
+  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 }
 
 export function TripBoard({ trip, now, handle, allServices }: { trip: TripItem; now: number; handle?: React.ReactNode; allServices?: boolean }) {
@@ -248,14 +306,7 @@ export function TripBoard({ trip, now, handle, allServices }: { trip: TripItem; 
   const custom = trip.name && trip.name.toLowerCase() !== route.toLowerCase() ? trip.name.charAt(0).toUpperCase() + trip.name.slice(1) : '';
   const open = (pick?: number) => router.push({ pathname: '/trip', params: { from: from.id, fromName: from.name, to: to.id, toName: to.name, ...(chain ? { legs: JSON.stringify(tLegs(plan)) } : {}), ...(trip.name ? { name: trip.name } : {}), ...(pick != null ? { pick: String(pick) } : {}) } });
   const glyph = trip.kind === 'saved' || trip.kind === 'mine' ? I.star : trip.kind === 'commute' ? I.clock : trip.kind === 'place' ? (trip.tag === 'To work' ? I.briefcase : I.home) : undefined;
-  const removeRecent = trip.kind === 'recent' ? () => Alert.alert(route, 'Remove this trip from Home?', [
-    { text: 'Cancel', style: 'cancel' },
-    { text: 'Remove', style: 'destructive', onPress: () => store.removeRecentTrip(from.id, to.id) },
-  ]) : trip.kind === 'mine' ? () => Alert.alert(route, 'Remove this trip?', [
-    { text: 'Cancel', style: 'cancel' },
-    { text: 'Remove', style: 'destructive', onPress: () => store.removeMyTrip(tripKeyOf({ from, to, via, legs: trip.legs })) },
-  ]) : undefined;
-
+  const menu = () => tripMenu(trip, route);
   useEffect(() => {
     const list: { title: string; url?: string; open: () => void }[] = [];
     for (const j of (data?.journeys || []).slice(0, 3)) for (const l of j.legs) for (const a of (l.alerts || []) as any[]) {
@@ -273,7 +324,7 @@ export function TripBoard({ trip, now, handle, allServices }: { trip: TripItem; 
       <View style={{ flexDirection: 'row' }}>
         <View style={{ width: 4, backgroundColor: stripe }} />
         <View style={{ flex: 1 }}>
-          <CardHeader title={custom ? `${custom}: ${route}` : route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint} right={trip.tag} onPress={() => open()} onLongPress={removeRecent} trailing={handle}
+          <CardHeader title={custom ? `${custom}: ${route}` : route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint} right={trip.tag} onPress={() => open()} onLongPress={menu} trailing={handle}
             sub={alerts.size || viaLine ? (
               <View>
                 {viaLine ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{viaLine}</T> : null}
@@ -356,6 +407,11 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Crowd l={l} />
           <T kind="foot" tone="text2" numberOfLines={1} style={{ fontVariant: ['tabular-nums'] }}>{j.durationMin} min</T>
+          {fareOf(j) ? (
+            <View style={{ backgroundColor: c.fill, borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1, marginLeft: 5 }} accessibilityLabel={`Opal fare estimate ${money(j.fare!.total)}`}>
+              <Text allowFontScaling={false} numberOfLines={1} style={{ color: c.text2, fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] }}>{money(j.fare!.total)}</Text>
+            </View>
+          ) : null}
         </View>
       </View>
     </Pressable>
@@ -394,14 +450,14 @@ function groupDepartures(items: Departure[], now: number): Group[] {
   return out;
 }
 
-export function StopBoard({ stop, now, starred, distance }: { stop: Place; now: number; starred?: boolean; distance?: number }) {
+export function StopBoard({ stop, now, starred, distance, onLongPress }: { stop: Place; now: number; starred?: boolean; distance?: number; onLongPress?: () => void }) {
   const c = usePalette();
   const { data, error } = useHomeLive((r) => api.departures(stop.id, r), [stop.id]);
   const groups = groupDepartures(data?.items || [], now);
   const name = shortName(data?.stop?.name || stop.name);
   return (
     <Card>
-      <CardHeader title={name} glyph={starred ? I.star : undefined} glyphColor={c.yellow} right={distText(distance)}
+      <CardHeader title={name} glyph={starred ? I.star : undefined} glyphColor={c.yellow} right={distText(distance)} onLongPress={onLongPress}
         onPress={() => router.push({ pathname: '/stop/[id]', params: { id: stop.id, name: data?.stop?.name || stop.name } })} />
       {!data ? <T kind="foot" tone="text2" style={s.note}>{error ? 'Live times unavailable right now, trying again' : 'Loading live times'}</T> : null}
       {data && !groups.length ? <T kind="foot" tone="text2" style={s.note}>No more services right now</T> : null}

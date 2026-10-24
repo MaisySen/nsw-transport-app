@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState } from 'react';
-import { Alert, PanResponder, Pressable, RefreshControl, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, PanResponder, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import * as Haptics from 'expo-haptics';
 import { router, Stack } from 'expo-router';
 import { api } from '@/lib/api';
@@ -10,14 +11,11 @@ import { shortName } from '@/lib/format';
 import type { Place } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
 import { watchLine } from '@/components/Cards';
-import { ActionRow, AlertBanner, HomeSection, LiveTag, PlaceBar, pullHome, SearchField, StopBoard, TripBoard, TripItem, useNearby } from '@/components/Home';
+import { ActionRow, AlertBanner, deleteTrip, HomeSection, LiveTag, PlaceBar, pullHome, SearchField, StopBoard, TripBoard, TripItem, tripMenu, useNearby } from '@/components/Home';
+import { LineBadge } from '@/components/Transit';
+import { useLiveTrip } from '@/lib/live';
+import { modeColor, radius } from '@/lib/theme';
 import { Button, Empty, Row, Section, Screen, Sep, T } from '@/components/ui';
-
-const POPULAR: Place[] = [
-  { id: '200060', name: 'Central Station' },
-  { id: '200070', name: 'Town Hall Station' },
-  { id: '213510', name: 'Strathfield Station' },
-];
 
 /** Hour of the day in Sydney, 0 to 23. */
 function sydneyHour(t: number) {
@@ -74,29 +72,35 @@ export default function Home() {
     const morning = sydneyHour(now) < 12;
     (morning ? [toWork, toHome] : [toHome, toWork]).forEach(add);
   }
-  (d?.commutes.items || []).filter((x) => x.active).forEach((cm) => add({ key: '', from: cm.from, to: cm.to, kind: 'commute', name: cm.name }));
+  (d?.commutes.items || []).filter((x) => x.active).forEach((cm) => add({ key: '', from: cm.from, to: cm.to, kind: 'commute', name: cm.name, id: cm.id }));
   (st.myTrips || []).forEach((m) => add({ key: '', from: m.from, to: m.to, via: m.via, conn: m.conn, legs: m.legs, modes: m.modes, kind: 'mine', name: m.name }));
   (d?.saved.items || []).forEach((s) => add({ key: '', from: s.from, to: s.to, kind: 'saved', name: s.name }));
-  let recentCount = 0;
-  for (const r of st.recentTrips || []) {
-    if (recentCount >= 2) break;
-    const k = `${r.from.id}>${r.to.id}`;
-    if (seen.has(k)) continue;
-    add({ key: '', from: r.from, to: r.to, kind: 'recent' });
-    recentCount++;
-  }
+  // Recent trips: trips you looked at, not already saved. Their own group below, up to 3.
+  const recentTrips = (st.recentTrips || []).filter((r) => !seen.has(`${r.from.id}>${r.to.id}`)).slice(0, 3);
 
   // Your own order from dragging wins; home and work move together and keep their morning and evening order.
   const order = st.tripOrder || [];
   const sorted = trips.map((t, i) => ({ t, p: order.indexOf(t.okey!) < 0 ? 1000 + i : order.indexOf(t.okey!), i })).sort((x, y) => x.p - y.p || x.i - y.i).map((o) => o.t);
 
-  // Recent stops: starred first, then recently opened. Max 4.
-  const stops: (Place & { starred: boolean })[] = [];
-  for (const p of st.starred) if (stops.length < 4 && !stops.some((x) => x.id === p.id)) stops.push({ ...p, starred: true });
-  for (const p of st.recents) if (stops.length < 4 && !stops.some((x) => x.id === p.id)) stops.push({ ...p, starred: false });
-  const nearIds = new Set(near.stops.map((x) => x.id));
-
-  const firstLaunch = !!d && !trips.length && !stops.length;
+  // Starred stops, then Recent stops (opened lately, not starred, up to 3).
+  const starred = st.starred || [];
+  const recentStops = (st.recents || []).filter((p) => !starred.some((s) => s.id === p.id)).slice(0, 3);
+  const g = useLiveTrip();
+  const [snack, setSnack] = useState<{ text: string; undo: () => void; id: number } | null>(null);
+  useEffect(() => { if (!snack) return; const t = setTimeout(() => setSnack(null), 5000); return () => clearTimeout(t); }, [snack]);
+  const clearTrips = () => { const old = store.clearRecentTrips(); Haptics.selectionAsync(); setSnack({ text: 'Recent trips cleared', undo: () => store.restoreRecentTrips(old), id: Date.now() }); };
+  const clearStops = () => { const old = store.clearRecents(); Haptics.selectionAsync(); setSnack({ text: 'Recent stops cleared', undo: () => store.restoreRecents(old), id: Date.now() }); };
+  const stopMenu = (p: Place, isStarred: boolean) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert(shortName(p.name), undefined, isStarred ? [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Unstar stop', style: 'destructive', onPress: () => store.toggleStar(p) },
+    ] : [
+      { text: 'Star stop', onPress: () => store.toggleStar(p) },
+      { text: 'Remove from Recent', style: 'destructive', onPress: () => store.removeRecent(p.id) },
+      { text: 'Cancel', style: 'cancel' },
+    ], { cancelable: true });
+  };
 
   const acceptSuggestion = async () => {
     setBusy(true);
@@ -126,6 +130,7 @@ export default function Home() {
         ),
       }} />
       <Screen scrollEnabled={scrollOn} refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} enabled={scrollOn} />}>
+        {g ? <LiveBar title={g.title} line={g.legs[0]?.line} mode={g.legs[0]?.mode} color={g.legs[0]?.color} /> : null}
         <SearchField />
         <PlaceBar places={places} />
         <AlertBanner />
@@ -161,12 +166,50 @@ export default function Home() {
 
         <View style={{ marginTop: 6 }}>
           <DragTrips trips={sorted} now={now} all={st.allServices || {}} onScroll={setScrollOn} />
-          {d && !trips.length ? <ActionRow icon={I.plus} title="Add a trip" onPress={() => router.push('/new-trip')} /> : null}
+          {d && !trips.length ? (
+            <View>
+              <ActionRow icon={I.plus} title="Add a trip" onPress={() => router.push('/new-trip')} />
+              <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>Save the trips you take, like home to work. They show here with live times. Nothing is added for you.</T>
+            </View>
+          ) : null}
         </View>
 
-        {stops.length ? (
-          <HomeSection title="Recent stops">
-            {stops.map((p) => <StopBoard key={p.id} stop={p} starred={p.starred} now={now} />)}
+        {starred.length ? (
+          <HomeSection title="Starred stops">
+            {starred.map((p) => <StopBoard key={p.id} stop={p} starred now={now} onLongPress={() => stopMenu(p, true)} />)}
+          </HomeSection>
+        ) : null}
+
+        {recentTrips.length ? (
+          <HomeSection title="Recent trips" onClear={clearTrips} footer="Trips you looked at. Tap and hold, or swipe left, to remove one.">
+            <View style={{ backgroundColor: c.card, borderRadius: radius, marginHorizontal: 16, marginTop: 10, overflow: 'hidden' }}>
+              {recentTrips.map((r, i) => {
+                const item: TripItem = { key: `${r.from.id}>${r.to.id}`, from: r.from, to: r.to, kind: 'recent' };
+                const label = `${shortName(r.from.name).replace(/ Station$/, '')} to ${shortName(r.to.name).replace(/ Station$/, '')}`;
+                return (
+                  <View key={item.key}>
+                    {i ? <Sep inset={57} /> : null}
+                    <SwipeRemove label="Remove" onRemove={() => store.removeRecentTrip(r.from.id, r.to.id)}>
+                      <View style={{ backgroundColor: c.card }}>
+                        <Row icon={I.history} iconBg={c.text3} title={label}
+                          onPress={() => router.push({ pathname: '/trip', params: { from: r.from.id, fromName: r.from.name, to: r.to.id, toName: r.to.name } })}
+                          onLongPress={() => tripMenu(item, label)} />
+                      </View>
+                    </SwipeRemove>
+                  </View>
+                );
+              })}
+            </View>
+          </HomeSection>
+        ) : null}
+
+        {recentStops.length ? (
+          <HomeSection title="Recent stops" onClear={clearStops}>
+            {recentStops.map((p) => (
+              <SwipeRemove key={p.id} label="Remove" onRemove={() => store.removeRecent(p.id)}>
+                <StopBoard stop={p} now={now} onLongPress={() => stopMenu(p, false)} />
+              </SwipeRemove>
+            ))}
           </HomeSection>
         ) : null}
 
@@ -181,16 +224,53 @@ export default function Home() {
           </HomeSection>
         ) : null}
 
-        {firstLaunch ? (
-          <HomeSection title="Popular stations">
-            {POPULAR.filter((p) => !nearIds.has(p.id)).map((p) => <StopBoard key={p.id} stop={p} now={now} />)}
-          </HomeSection>
-        ) : null}
-
         {!d && !live.error ? <T kind="sub" tone="text2" style={{ textAlign: 'center', marginTop: 40 }}>Loading</T> : null}
         {!d && live.error ? <Empty icon={I.warn} title="Can't reach the live feed" body={live.error} action={<Button title="Try again" onPress={live.refresh} />} /> : null}
       </Screen>
+      {snack ? (
+        <View style={[hs.snack, { backgroundColor: c.dark ? '#E6E1E5' : '#313033' }]} accessibilityLiveRegion="polite">
+          <Text style={{ color: c.dark ? '#313033' : '#F4EFF4', fontSize: 14, flex: 1 }}>{snack.text}</Text>
+          <Pressable onPress={() => { snack.undo(); setSnack(null); Haptics.selectionAsync(); }} hitSlop={10} accessibilityRole="button">
+            <Text style={{ color: c.dark ? '#1F6FEB' : '#8AB4F8', fontSize: 14, fontWeight: '700' }}>Undo</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </>
+  );
+}
+
+/** "Trip in progress" bar at the top of Home while a live trip is running. */
+function LiveBar({ title, line, mode, color }: { title: string; line?: string; mode?: string; color?: string | null }) {
+  const c = usePalette();
+  return (
+    <Pressable onPress={() => router.push('/go')} accessibilityRole="button" accessibilityLabel={`Trip in progress, ${title}`} android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
+      style={({ pressed }) => [hs.live, { backgroundColor: c.green, opacity: pressed ? 0.85 : 1 }]}>
+      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff', marginRight: 10 }} />
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Trip in progress</Text>
+        <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13 }} numberOfLines={1}>{title}</Text>
+      </View>
+      {line ? <LineBadge small line={line} mode={mode} color={color || modeColor[mode || 'train']} /> : null}
+      <Icon name={I.chevron} size={14} color="#fff" style={{ marginLeft: 8 }} />
+    </Pressable>
+  );
+}
+
+/** Swipe left to show a red Remove or Delete action. */
+function SwipeRemove({ children, label, onRemove }: { children: React.ReactNode; label: string; onRemove: () => void }) {
+  const c = usePalette();
+  const sw = useRef<any>(null);
+  return (
+    <ReanimatedSwipeable ref={sw} friction={2} rightThreshold={40} overshootRight={false} onSwipeableWillOpen={() => Haptics.selectionAsync()}
+      renderRightActions={() => (
+        <Pressable onPress={() => { sw.current?.close(); onRemove(); }} accessibilityRole="button" accessibilityLabel={label}
+          style={{ backgroundColor: c.red, width: 88, alignItems: 'center', justifyContent: 'center', marginTop: 0 }}>
+          <Icon name={I.trash} size={20} color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600', marginTop: 3 }}>{label}</Text>
+        </Pressable>
+      )}>
+      {children}
+    </ReanimatedSwipeable>
   );
 }
 
@@ -231,7 +311,16 @@ function DragTrips({ trips, now, all, onScroll }: { trips: TripItem[]; now: numb
         return (
           <View key={t.key} onLayout={(e) => { lay.current[i] = { y: e.nativeEvent.layout.y, h: e.nativeEvent.layout.height }; }}
             style={{ transform: [{ translateY: ty }, { scale: lifted ? 1.02 : 1 }], zIndex: lifted ? 10 : 0, elevation: lifted ? 8 : 0, shadowColor: '#000', shadowOpacity: lifted ? 0.18 : 0, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } }}>
-            <TripBoard trip={t} now={now} allServices={!!all[t.key]} handle={trips.length > 1 ? <Grip onStart={() => start(i)} onMove={move} onEnd={end} /> : undefined} />
+            {t.kind === 'mine' || t.kind === 'saved' ? (
+              <SwipeRemove label="Delete" onRemove={() => Alert.alert(t.name || 'Delete trip', 'Delete this saved trip? It is removed from this phone and the server.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete trip', style: 'destructive', onPress: () => deleteTrip(t) },
+              ])}>
+                <TripBoard trip={t} now={now} allServices={!!all[t.key]} handle={trips.length > 1 ? <Grip onStart={() => start(i)} onMove={move} onEnd={end} /> : undefined} />
+              </SwipeRemove>
+            ) : (
+              <TripBoard trip={t} now={now} allServices={!!all[t.key]} handle={trips.length > 1 ? <Grip onStart={() => start(i)} onMove={move} onEnd={end} /> : undefined} />
+            )}
           </View>
         );
       })}
@@ -259,3 +348,8 @@ function Grip({ onStart, onMove, onEnd }: { onStart: () => void; onMove: (dy: nu
     </View>
   );
 }
+
+const hs = StyleSheet.create({
+  live: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 10, paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius },
+  snack: { position: 'absolute', left: 16, right: 16, bottom: 16, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderRadius: 8, elevation: 6, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+});

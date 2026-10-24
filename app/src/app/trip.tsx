@@ -7,11 +7,13 @@ import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius, modeColor } from '@/lib/theme';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
 import { store, tripKeyOf, useStore } from '@/lib/store';
+import { fareOf, fareWords, money, offPeakText } from '@/lib/fare';
+import { getLive, startLive } from '@/lib/live';
 import { directFilter, isChain, planTrip, stName, tLegs, tripKey, viaText } from '@/lib/trips';
 import type { TripLeg } from '@/lib/trips';
 import type { Journey, Leg, Place } from '@/lib/types';
 import { startWatch, stopWatch, tripSpec } from '@/lib/watch';
-import { Icon, I } from '@/components/Icon';
+import { Icon, I, modeIconName } from '@/components/Icon';
 import { openService } from '@/components/Cards';
 import { LineBadge, StatusLine } from '@/components/Transit';
 import { arrOf, ServiceRow, WarnLine } from '@/components/Home';
@@ -118,6 +120,49 @@ function Transfer({ a, b }: { a: Leg; b: Leg }) {
   );
 }
 
+/** Opal fare estimate for one journey: total, each leg, transfer discount, airport fee, daily cap, off peak nudge. */
+function FareCard({ j }: { j: Journey }) {
+  const c = usePalette();
+  const f = fareOf(j);
+  if (!f) return null;
+  const sub = (label: string, val: string, tone?: string) => (
+    <View style={{ flexDirection: 'row', paddingLeft: 34, paddingRight: 14, paddingVertical: 3 }}>
+      <T kind="foot" tone="text2" style={{ flex: 1 }}>{label}</T>
+      <T kind="foot" style={{ color: tone || c.text2, fontVariant: ['tabular-nums'] }}>{val}</T>
+    </View>
+  );
+  const op = offPeakText(f);
+  return (
+    <View style={{ marginHorizontal: 16, marginTop: 10, backgroundColor: c.card2, borderRadius: radius, paddingVertical: 10 }} accessibilityLabel={`Opal fare estimate ${money(f.total)}, ${fareWords(f)}`}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14 }}>
+        <Icon name={I.fare} size={16} color={c.text2} />
+        <T kind="headline" style={{ flex: 1, marginLeft: 8 }}>Opal fare estimate</T>
+        <T kind="foot" tone="text2" style={{ marginRight: 8 }}>{f.typeName}</T>
+        <T kind="headline" style={{ fontVariant: ['tabular-nums'] }}>{money(f.total)}</T>
+      </View>
+      <View style={{ marginTop: 6 }}>
+        {(f.legs || []).map((fl, k) => (
+          <View key={k}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 4 }}>
+              <View style={{ width: 20 }}><Icon name={modeIconName(fl.mode)} size={14} color={modeColor[fl.mode || 'train'] || c.text2} /></View>
+              <T kind="sub" style={{ flex: 1 }} numberOfLines={1}>{fl.line || 'Leg'}{fl.km != null ? `, ${Number(fl.km).toFixed(1)} km` : ''}{fl.amount == null ? '' : fl.peak ? ', Peak' : ', Off peak'}</T>
+              <T kind="sub" tone={fl.amount == null || fl.joined ? 'text2' : 'text'} style={{ fontVariant: ['tabular-nums'] }}>
+                {fl.amount == null ? 'Not an Opal fare' : fl.joined ? 'Same journey' : money(fl.fare ?? fl.amount)}
+              </T>
+            </View>
+            {fl.joined && fl.amount != null ? sub('Same journey, no extra fare', fl.amount ? `+${money(fl.amount)}` : '') : null}
+            {fl.transferOff ? sub('Transfer discount', `-${money(fl.transferOff)}`, c.liveText) : null}
+            {fl.airportFee ? sub('Airport station access fee', money(fl.airportFee)) : null}
+          </View>
+        ))}
+        {f.capped ? sub('Daily cap reached', '') : null}
+      </View>
+      {op ? <T kind="foot" style={{ color: c.liveText, fontWeight: '600', paddingHorizontal: 14, marginTop: 6 }}>{op}</T> : null}
+      <T kind="foot" tone="text2" style={{ paddingHorizontal: 14, marginTop: 6 }}>{f.peak ? 'Peak fare. ' : 'Off peak fare. '}An estimate from the Opal fare tables, not your card's charge. Change the fare type in Settings.</T>
+    </View>
+  );
+}
+
 function JourneyDetail({ j, now, from, to }: { j: Journey; now: number; from: Place; to: Place }) {
   const c = usePalette();
   const st2 = useStore();
@@ -139,9 +184,21 @@ function JourneyDetail({ j, now, from, to }: { j: Journey; now: number; from: Pl
           );
         })}
       </View>
+      <FareCard j={j} />
       <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginTop: 8 }}>
         <View style={{ flex: 1 }}>
-          <Button title={watchedId ? 'Stop watching' : 'Watch this trip'} icon={watchedId ? I.bellOff : I.bell} kind={watchedId ? 'tinted' : 'filled'} disabled={busy}
+          <Button title="Start trip" icon={I.nav} kind="filled" disabled={busy || !spec.legs.length}
+            onPress={async () => {
+              const go = async () => {
+                try { await startLive(spec, j.fare); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); router.push('/go'); } catch (e: any) { Alert.alert("Couldn't start it", e.message); }
+              };
+              const cur = getLive();
+              if (cur) Alert.alert('End your current trip?', `${cur.title} is in progress. Starting this one ends it.`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Start this trip', onPress: go }]);
+              else go();
+            }} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Button title={watchedId ? 'Stop watching' : 'Watch'} icon={watchedId ? I.bellOff : I.bell} kind="tinted" disabled={busy}
             onPress={async () => {
               setBusy(true);
               try {
@@ -264,6 +321,18 @@ export default function TripScreen() {
             )) : null}
           </View>
         ) : null}
+        {fareOf(js[0]) ? (() => {
+          const f = fareOf(js[0])!;
+          const op = offPeakText(f);
+          return (
+            <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>
+              {op ? (
+                <View style={{ backgroundColor: c.orange, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1, marginRight: 8 }}><T kind="foot" style={{ color: '#fff', fontWeight: '700' }}>Peak</T></View>
+              ) : <Icon name={I.fare} size={16} color={c.text2} style={{ marginRight: 8 }} />}
+              <T kind="sub" style={{ flex: 1, color: op ? c.liveText : c.text }} numberOfLines={2}>{op || `Opal fare estimate ${money(f.total)} ${f.typeName}, ${f.peak ? 'peak' : 'off peak'}`}</T>
+            </View>
+          );
+        })() : null}
         {chain ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 12 }}>{(() => { const L = tLegs(plan); return L.length === 2 && L[1].mode !== 'walk' ? `Via ${stName(shortName(L[0].to.name))}, ${L[1].conn ?? 5} min to change` : `${L.length} legs via ${viaText(plan)}`; })()}</T> : null}
         {jsAll.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>

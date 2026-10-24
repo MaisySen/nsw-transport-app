@@ -10,13 +10,15 @@ import { BASE } from '@/lib/api';
 import { getDevice, PROFILE } from '@/lib/device';
 import { usePalette } from '@/lib/theme';
 import { useNow } from '@/lib/hooks';
-import { useStore } from '@/lib/store';
+import { store, useStore } from '@/lib/store';
+import { fareOf, money, offPeakText } from '@/lib/fare';
+import type { Fare } from '@/lib/types';
 import { LineBadge } from '@/components/Transit';
 
 type Link = { kind?: string; label?: string; href?: string; id?: string; name?: string; from?: string; to?: string; fn?: string; tn?: string; [k: string]: any };
 type Dep = { line: string; color?: string; mode?: string; dest: string; platform?: string | null; planned: string; estimated?: string | null; realtime: boolean; delayMin: number; cancelled: boolean; link?: Link };
 type Leg = { kind: string; mode?: string; line?: string; color?: string; fromPlatform?: string | null; realtime: boolean; delayMin: number; cancelled: boolean; planned?: string; link?: Link | null };
-type Jny = { leave: string; arrive: string; durationMin: number; changes: number; legs: Leg[]; warn?: string | null };
+type Jny = { leave: string; arrive: string; durationMin: number; changes: number; legs: Leg[]; warn?: string | null; fare?: Fare | null };
 type Card = { type: 'departures' | 'trip' | 'alerts' | 'stops'; title?: string; titleOnly?: boolean; link?: Link | null; items?: any[]; journeys?: Jny[]; from?: { id: string; name: string }; to?: { id: string; name: string } };
 type Msg = { id: string; role: 'me' | 'bot'; text: string; cards?: Card[]; links?: Link[]; suggestions?: string[]; ask?: string | null; t: number };
 
@@ -72,7 +74,7 @@ export default function AskScreen() {
     setMsgs((m) => [...m, { id: 'u' + Date.now(), role: 'me', text: q, t: Date.now() }]);
     setText(''); setBusy(true);
     try {
-      const p: Record<string, string> = { q, profile: PROFILE, device: await getDevice(), ...extra };
+      const p: Record<string, string> = { q, profile: PROFILE, device: await getDevice(), fare: store.fareType(), ...extra };
       if (places?.home?.id) p.home = `${places.home.id}|${places.home.name || ''}`;
       if (places?.work?.id) p.work = `${places.work.id}|${places.work.name || ''}`;
       const qs = Object.entries(p).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
@@ -143,6 +145,8 @@ export default function AskScreen() {
               </View>
               {s ? <Text style={[st.t2, { color: (c as any)[s.tone], fontWeight: '600' }]}>{s.text}</Text> : null}
               {j.warn ? <Text style={[st.t2, { color: c.orange, fontWeight: '600' }]}>{j.warn}</Text> : null}
+              {fareOf(j as any) ? <Text style={[st.t2, { color: c.text2 }]}>Opal fare estimate {money(j.fare!.total)} {j.fare!.typeName}{j.fare!.peak ? ', peak' : ', off peak'}</Text> : null}
+              {offPeakText(j.fare) ? <Text style={[st.t2, { color: c.liveText, fontWeight: '600' }]}>{offPeakText(j.fare)}</Text> : null}
             </View>
             <Count t={j.leave} live={f?.realtime} />
           </Row>

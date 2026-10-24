@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Notifications from 'expo-notifications';
 import { pollNotes } from '@/lib/push';
+import { endLive, setupLiveNotifications } from '@/lib/live';
 import { initProfile } from '@/lib/device';
 import { usePalette } from '@/lib/theme';
 
@@ -23,8 +24,13 @@ export default function RootLayout() {
     if (!ready) return;
     const id = setInterval(() => { if (AppState.currentState === 'active') pollNotes(); }, 20000);
     pollNotes();
+    setupLiveNotifications();
     const sub = Notifications.addNotificationResponseReceivedListener((r) => {
       const d: any = r.notification.request.content.data || {};
+      // Buttons on the ongoing trip notification.
+      if (r.actionIdentifier === 'end') { endLive().finally(() => router.replace('/')); return; }
+      if (r.actionIdentifier === 'share') { router.push({ pathname: '/go', params: { share: '1' } }); return; }
+      if (d.go) { router.push('/go'); return; }
       if (d.watch) router.push({ pathname: '/watch/[id]', params: { id: String(d.watch) } });
     });
     return () => { clearInterval(id); sub.remove(); };
@@ -42,6 +48,7 @@ export default function RootLayout() {
           <Stack.Screen name="stop/[id]" options={{ title: '', headerLargeTitle: Platform.OS === 'ios', headerTransparent: Platform.OS === 'ios', headerBlurEffect: 'systemChromeMaterial', headerLargeTitleShadowVisible: false, headerShadowVisible: false }} />
           <Stack.Screen name="trip" options={{ title: 'Trips', headerLargeTitle: false }} />
           <Stack.Screen name="service" options={{ headerShown: false, presentation: 'card' }} />
+          <Stack.Screen name="go" options={{ headerShown: false, presentation: 'card' }} />
           <Stack.Screen name="new-trip" options={{ title: 'New trip', presentation: Platform.OS === 'ios' ? 'modal' : 'card' }} />
           <Stack.Screen name="add-trip" options={{ title: 'Add a trip', presentation: Platform.OS === 'ios' ? 'modal' : 'card' }} />
           <Stack.Screen name="watch/[id]" options={{ title: 'Watching', presentation: Platform.OS === 'ios' ? 'formSheet' : 'card', sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true }} />

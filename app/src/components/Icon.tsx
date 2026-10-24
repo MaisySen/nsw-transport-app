@@ -40,6 +40,12 @@ export const I = {
   grip: { ios: 'line.3.horizontal', android: 'drag_handle' },
   up: { ios: 'chevron.up', android: 'expand_less' },
   down: { ios: 'chevron.down', android: 'expand_more' },
+  share: { ios: 'square.and.arrow.up', android: 'share' },
+  stop: { ios: 'stop.circle', android: 'stop_circle' },
+  nav: { ios: 'location.north.line.fill', android: 'navigation' },
+  history: { ios: 'clock.arrow.circlepath', android: 'history' },
+  edit: { ios: 'pencil', android: 'edit' },
+  fare: { ios: 'creditcard', android: 'payments' },
 } satisfies Record<string, IconName>;
 
 export function modeIconName(mode?: string): IconName {

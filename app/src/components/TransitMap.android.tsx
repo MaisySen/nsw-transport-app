@@ -37,6 +37,11 @@ export default function TransitMap(p: TransitMapProps) {
           'circle-stroke-width': ['case', ['==', ['get', 'mine'], 1], 3.5, 2],
         }} />
       </GeoJSONSource>
+      {p.me ? (
+        <Marker id="me" lngLat={[p.me.lon, p.me.lat]} anchor="center">
+          <View accessibilityLabel="You" style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#0A84FF', borderWidth: 3, borderColor: '#fff', elevation: 3 }} />
+        </Marker>
+      ) : null}
       {p.vehicle ? (
         <Marker id="vehicle" lngLat={[p.vehicle.lon, p.vehicle.lat]} anchor="center">
           <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: p.color, borderWidth: 3, borderColor: '#fff', alignItems: 'center', justifyContent: 'center', elevation: 4 }}>

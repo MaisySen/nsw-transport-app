@@ -24,7 +24,7 @@ const ROW_H = 50, HEAD_H = 30;
 /** New trip: choose the mode, then where you get on and off, then confirm (name, legs, connection times). */
 export default function NewTrip() {
   const c = usePalette();
-  const pre = useLocalSearchParams<{ from?: string; fromName?: string; to?: string; toName?: string; mode?: string; legs?: string; name?: string }>();
+  const pre = useLocalSearchParams<{ from?: string; fromName?: string; to?: string; toName?: string; mode?: string; legs?: string; name?: string; edit?: string }>();
   const preLegs: Leg[] | null = (() => {
     try { const v = pre.legs ? JSON.parse(String(pre.legs)) : null; if (Array.isArray(v) && v.length) return v; } catch {}
     return pre.from && pre.to ? [{ mode: String(pre.mode || ''), from: { id: String(pre.from), name: String(pre.fromName || pre.from) }, to: { id: String(pre.to), name: String(pre.toName || pre.to) } }] : null;
@@ -90,6 +90,11 @@ export default function NewTrip() {
     const t: any = { name: n, from: a.from, to: last.to, modes: legs.map((l) => l.mode) };
     if (multi) t.legs = legs.map((l) => ({ mode: l.mode, from: l.from, to: l.to, ...(l.conn != null ? { conn: l.conn } : {}), ...(l.any ? { any: true } : {}), ...(l.walk != null ? { walk: l.walk } : {}) }));
     if (legs.length === 2 && legs[1].mode !== 'walk') { t.via = a.to; t.conn = legs[1].conn; }
+    // Edit trip: the new version replaces the old one, here and on the server.
+    if (pre.edit) {
+      store.removeMyTrip(String(pre.edit));
+      if (pre.name && String(pre.name) !== n) api.deleteSaved(String(pre.name)).catch(() => {});
+    }
     store.saveMyTrip(t);
     if (multi) api.saveTripLegs(n, wireLegs(t)).catch(() => {});
     else api.saveTrip(n, a.from, a.to).catch(() => {});
@@ -99,7 +104,7 @@ export default function NewTrip() {
     router.back();
   };
 
-  const title = step.kind === 'mode' ? (step.ext ? 'Add a leg' : 'New trip') : step.kind === 'walk' ? 'Walk to' : step.kind === 'pick' ? (step.which === 'from' ? 'From' : 'To') : 'Confirm trip';
+  const title = step.kind === 'mode' ? (step.ext ? 'Add a leg' : 'New trip') : step.kind === 'walk' ? 'Walk to' : step.kind === 'pick' ? (step.which === 'from' ? 'From' : 'To') : pre.edit ? 'Edit trip' : 'Confirm trip';
   const first = step.kind === 'mode' && !step.ext;
   const stepper = (val: number, lbl: string, set: (v: number) => void, min: number, max: number) => (
     <View style={[s.stepper, { backgroundColor: c.fill, borderRadius: Platform.OS === 'android' ? 20 : 9 }]}>

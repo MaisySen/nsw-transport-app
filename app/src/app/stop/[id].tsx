@@ -7,6 +7,7 @@ import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius } from '@/lib/theme';
 import { ms, rowAlert, shortName } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
+import { peakNow } from '@/lib/fare';
 import { svcSpec, toggleWatch, tripKey } from '@/lib/watch';
 import { Icon, I } from '@/components/Icon';
 import { openService } from '@/components/Cards';
@@ -51,6 +52,13 @@ export default function StopScreen() {
             <Chip label="All" on={!mode} onPress={() => setMode(null)} />
             {modes.map((m) => <Chip key={m} label={MODE_LABEL[m] || m} on={mode === m} onPress={() => setMode(m)} />)}
           </ScrollView>
+        ) : null}
+
+        {peakNow(now) && (data?.items || []).some((d) => d.mode !== 'ferry') ? (
+          <View style={{ marginHorizontal: 16, marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ backgroundColor: c.orange, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}><T kind="foot" style={{ color: '#fff', fontWeight: '700' }}>Peak</T></View>
+            <T kind="foot" tone="text2" style={{ flex: 1 }}>Off peak from {peakNow(now)}: 30 percent off train, metro, bus and light rail fares</T>
+          </View>
         ) : null}
 
         {data?.alerts?.length ? (

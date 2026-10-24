@@ -6,7 +6,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
+  // The ongoing trip notification updates quietly; every other alert shows as a banner with sound.
+  handleNotification: async (n) => ((n.request.content.data as any)?.ongoing
+    ? { shouldShowBanner: false, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false }
+    : { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
 });
 
 export type PushState = { status: 'on' | 'off' | 'denied' | 'local'; detail?: string };
