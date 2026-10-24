@@ -23,14 +23,76 @@ private func decoder() -> JSONDecoder {
   return d
 }
 
+private func hex(_ d: Data) -> String { d.map { String(format: "%02x", $0) }.joined() }
+
 private func date(_ ms: Double?) -> Date? {
   guard let ms, ms > 0 else { return nil }
   return Date(timeIntervalSince1970: ms / 1000)
 }
 
 public class TransportIOSModule: Module {
+  /// Activities whose push token is already being followed, so one card never gets two followers.
+  private var following = Set<String>()
+  private let followingLock = NSLock()
+
+  private func claim(_ id: String) -> Bool {
+    followingLock.lock(); defer { followingLock.unlock() }
+    return following.insert(id).inserted
+  }
+
+  private func release(_ id: String) {
+    followingLock.lock(); defer { followingLock.unlock() }
+    following.remove(id)
+  }
+
+  #if canImport(ActivityKit)
+  /// Sends each push token of a trip card to JavaScript as it arrives or changes. The server uses it to
+  /// update the card with live times while the phone is locked.
+  @available(iOS 16.2, *)
+  private func follow(_ a: Activity<LiveTripAttributes>) {
+    guard claim(a.id) else { return }
+    let id = a.id
+    Task { [weak self] in
+      for await data in a.pushTokenUpdates {
+        self?.sendEvent("onActivityPushToken", ["id": id, "token": hex(data)])
+      }
+      self?.release(id)
+    }
+  }
+  #endif
+
   public func definition() -> ModuleDefinition {
     Name("TransportIOS")
+
+    Events("onActivityPushToken")
+
+    OnCreate {
+      #if canImport(ActivityKit)
+      if #available(iOS 16.2, *) {
+        for a in Activity<LiveTripAttributes>.activities where a.activityState == .active { self.follow(a) }
+      }
+      #endif
+    }
+
+    /// True from the build whose trip card can be updated by push (build 205).
+    Function("supportsActivityPush") { () -> Bool in
+      #if canImport(ActivityKit)
+      if #available(iOS 16.2, *) { return true }
+      #endif
+      return false
+    }
+
+    /// The push token of a trip card, when the system has issued one.
+    Function("tripActivityPushToken") { (id: String) -> String? in
+      #if canImport(ActivityKit)
+      if #available(iOS 16.2, *) {
+        guard let a = Activity<LiveTripAttributes>.activities.first(where: { $0.id == id }) else { return nil }
+        self.follow(a)
+        return a.pushToken.map(hex)
+      }
+      #endif
+      return nil
+    }
 
     Function("hasAppGroup") { () -> Bool in
       FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) != nil
@@ -95,6 +157,11 @@ public class TransportIOSModule: Module {
         }
         let attrs = LiveTripAttributes(title: title, legsCount: legsCount)
         let content = ActivityContent(state: state, staleDate: date(staleMs))
+        // Push updates need the push entitlement; without it the card still starts and the app updates it.
+        if let a = try? Activity<LiveTripAttributes>.request(attributes: attrs, content: content, pushType: .token) {
+          self.follow(a)
+          return a.id
+        }
         let a = try Activity<LiveTripAttributes>.request(attributes: attrs, content: content, pushType: nil)
         return a.id
       }

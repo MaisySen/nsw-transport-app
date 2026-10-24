@@ -15,6 +15,10 @@ type Native = {
   endTripActivity(id: string | null, stateJSON: string | null, dismissAfterSeconds: number): Promise<void>;
   /** 2 from the build that draws a stale trip card as "Updated 8:21am" instead of "You've arrived". Absent before. */
   liveCardVersion?: () => number;
+  /** From build 205: the trip card asks for a push token so the server can update it while the phone is locked. */
+  supportsActivityPush?: () => boolean;
+  tripActivityPushToken?: (id: string) => string | null;
+  addListener?: (event: 'onActivityPushToken', cb: (e: { id: string; token: string }) => void) => { remove(): void };
 };
 
 const native: Native | null = Platform.OS === 'ios' ? requireOptionalNativeModule<Native>('TransportIOS') : null;
@@ -34,6 +38,15 @@ export const iosNative = {
   activitiesEnabled: () => { try { return !!native?.areActivitiesEnabled(); } catch { return false; } },
   /** 1 on builds up to 204 (a stale card reads "You've arrived"), 2 once the card shows "Updated" when stale. */
   cardVersion: (): number => { try { return typeof native?.liveCardVersion === 'function' ? Number(native.liveCardVersion()) || 1 : 1; } catch { return 1; } },
+  /** True on builds whose trip card can be updated by push (205 and later). */
+  activityPush: (): boolean => { try { return typeof native?.supportsActivityPush === 'function' && !!native.supportsActivityPush(); } catch { return false; } },
+  activityPushToken: (id: string): string | null => { try { return typeof native?.tripActivityPushToken === 'function' ? native.tripActivityPushToken(id) || null : null; } catch { return null; } },
+  onActivityPushToken(cb: (id: string, token: string) => void): () => void {
+    try {
+      const sub = native?.addListener?.('onActivityPushToken', (e) => { if (e?.id && e?.token) cb(String(e.id), String(e.token)); });
+      return () => { try { sub?.remove(); } catch {} };
+    } catch { return () => {}; }
+  },
   activityIds: (): string[] => { try { return native?.tripActivityIds() || []; } catch { return []; } },
   async startTrip(title: string, legsCount: number, s: TripCardState, staleMs?: number | null) {
     if (!native) return null;

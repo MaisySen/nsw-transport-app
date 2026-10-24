@@ -20,6 +20,7 @@ import type { ServiceResp, WatchLeg } from '@/lib/types';
 import { boardTime, missedConn, missedPlanLegs, pickNextOption, sydHHMM } from '@/lib/smart';
 import { cardFor, shortName, staleAt, type CardAlt, type CardOpts } from './tripCard';
 import { homeWorkFor, liveCardFor } from './widgetShare';
+import { endActivityToken, sendActivityToken, sendDeviceToken } from './livePush';
 
 const ARRIVED_KEEP_S = 120;
 const TICK_MS = 30000;
@@ -37,7 +38,7 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   };
 
   let lastSvcAt = 0;
-  // The card can only change while the app runs (no push updates yet). Builds whose card shows "Updated" when stale
+  // Up to build 204 the card can only change while the app runs; from 205 the server also updates it by push. Builds whose card shows "Updated" when stale
   // get a stale date 2 minutes after the live times; older builds get "Updated 8:21am" written on the card itself
   // when the app goes to the background.
   const honestStale = iosNative.cardVersion() >= 2;
@@ -68,6 +69,21 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   let activityTrip: string | null = null;
   let lastJSON = '';
   let starting = false;
+  // Build 205 and later: the card's push token, so the server can update it while the phone is locked.
+  const tokens = new Map<string, string>();
+  let activityToken: string | null = null;
+  const tokenFor = (id: string | null) => (id ? tokens.get(id) || iosNative.activityPushToken(id) : null);
+  function shareToken() {
+    if (!activityId || !trip || activityTrip !== trip.id) return;
+    activityToken = tokenFor(activityId);
+    if (activityToken) sendActivityToken(activityId, activityToken, trip);
+  }
+  function dropToken() {
+    const t = activityToken;
+    activityToken = null;
+    if (t) endActivityToken(t);
+  }
+  iosNative.onActivityPushToken((id, token) => { tokens.set(id, token); if (id === activityId) shareToken(); });
 
   const stateFor = (g: LiveTrip) =>
     computeLive(g.legs, g.legs.map((l) => svcByKey.get(legKey(l)) || null), Date.now(), { rode: g.rode, arrivedAt: g.arrivedAt });
@@ -90,18 +106,21 @@ if (Platform.OS === 'ios' && iosNative.available()) {
         activityTrip = activityId ? g.id : null;
         lastJSON = JSON.stringify(card);
       } finally { starting = false; }
+      shareToken();
       return;
     }
+    shareToken();
     const j = JSON.stringify({ ...card, progress: Math.round(card.progress * 20) / 20 });
     if (j === lastJSON) return;
     lastJSON = j;
     if (card.phase === 'arrived') {
       await iosNative.endTrip(activityId, card, ARRIVED_KEEP_S);
       activityId = null;
+      dropToken();
       return;
     }
     const ok = await iosNative.updateTrip(activityId, card, stale);
-    if (!ok) { activityId = null; activityTrip = null; }
+    if (!ok) { activityId = null; activityTrip = null; dropToken(); }
   }
 
   // The Next trip widget follows a trip in progress. Reload it only when the words on it change.
@@ -130,6 +149,7 @@ if (Platform.OS === 'ios' && iosNative.available()) {
       await iosNative.endTrip(null, null, 0);
     }
     activityId = null; activityTrip = null; lastJSON = '';
+    dropToken();
   }
 
   // Widget data.
@@ -185,10 +205,11 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     if (!trip) iosNative.setJSON('liveCard', null);
     shareWidgetData();
     refreshCard();
+    sendDeviceToken();
   }
 
   boot();
   setInterval(() => { if (trip && AppState.currentState === 'active') refreshCard(); }, TICK_MS);
   // Going to the background: the last chance to say on the card when its live times are from.
-  AppState.addEventListener('change', (s) => { if (s === 'active') { shareWidgetData(); refreshCard(); } else if (s === 'background') refreshCard(true); });
+  AppState.addEventListener('change', (s) => { if (s === 'active') { shareWidgetData(); refreshCard(); sendDeviceToken(); } else if (s === 'background') refreshCard(true); });
 }

@@ -55,7 +55,8 @@ export default function RootLayout() {
         <StatusBar style="auto" />
         <LiftAlertSync />
         <LiveTripEngine />
-        <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal', headerTintColor: c.tint, contentStyle: { backgroundColor: c.bg } }}>
+        {/* Every screen stays upright; only the departure board turns sideways (build 205 lets iPhone turn). */}
+        <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal', headerTintColor: c.tint, contentStyle: { backgroundColor: c.bg }, orientation: 'portrait_up' }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="stop/[id]" options={stopHeaderOptions(Platform.OS)} />
           <Stack.Screen name="trip" options={{ title: 'Trips', headerLargeTitle: false }} />
