@@ -3022,7 +3022,8 @@ const alertDigestMem = { at: 0, read: 0, items: null };
 async function alertDigest(env) {
   if (alertDigestMem.items && Date.now() - alertDigestMem.read < 60000) return alertDigestMem;
   let row = null;
-  try { await ensureSchema3(env); row = await db(env).prepare("SELECT v FROM meta WHERE k = 'alert_digest'").first(); } catch (e) { row = null; }
+  // A plain read: the meta table exists once the tick has run (no schema batch on this path).
+  try { row = await db(env).prepare("SELECT v FROM meta WHERE k = 'alert_digest'").first(); } catch (e) { row = null; }
   if (row && row.v) {
     const d = JSON.parse(row.v);
     alertDigestMem.at = d.at; alertDigestMem.items = d.items || []; alertDigestMem.read = Date.now();
