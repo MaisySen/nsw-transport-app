@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Car parks, bus delays and regional live times (over the air update for iPhone and Android, 25 Oct, 10:11 AM)
+* Park and Ride: each car park learns when it fills on weekday mornings and says "Usually full by 7:40am on weekdays". Until it has 5 weekday mornings it says how many it has. Shows once the app moves to the new server address.
+* Trip screen: bus and coach legs say how the bus is running right now, for example "Bus running 6 min late", when the bus sends live data.
+* NSW TrainLink trains and coaches, regional buses and Manly Fast Ferry now get live times, cancellations and positions from their own live feeds. Manly Fast Ferry's feed still lists July trips, so those stay scheduled until Transport for NSW fixes it.
+
 ### iPhone build 205: lock screen trip card stays live (TestFlight, 25 Oct, 10:04 AM)
 * The trip card on the Lock Screen and in the Dynamic Island now gets live times from the server every minute while the phone is locked, and ends on its own when you arrive. Before, it only changed while the app was open.
 * A card whose live times are more than 2 minutes old shows clock times with "Leaves about" or "Get off about" and "Updated 8:21am" instead of a countdown. A change at risk shows red.
