@@ -60,6 +60,10 @@ const rule = {
 };
 const rules = (rs && rs.rules) || [];
 if (!rules.some((r) => r.description === rule.description)) {
-  await cf("PUT", `/zones/${ZONE}/rulesets/phases/${phase}/entrypoint`, { rules: [...rules.map(({ id, version, last_updated, ref, ...r }) => r), rule] });
+  try {
+    await cf("PUT", `/zones/${ZONE}/rulesets/phases/${phase}/entrypoint`, { rules: [...rules.map(({ id, version, last_updated, ref, ...r }) => r), rule] });
+  } catch (e) {
+    console.log("  not added (" + e.message + "). The token needs Zone, Single Redirect, Edit. Until then www serves the same pages, which point search engines at the bare domain.");
+  }
 }
 console.log(DRY ? "Dry run done." : `Done. Check: curl -sI https://${APEX}/ and https://${WWW}/`);

@@ -42,8 +42,11 @@ fi
 echo "4. Schema"
 "${WR[@]}" d1 migrations apply DB --remote
 
+echo "5. Deploy"
+"${WR[@]}" deploy
+
 if [ "$SECRETS" = 1 ]; then
-  echo "5. Secrets"
+  echo "6. Secrets (each one makes a new deployment with the value)"
   for k in TFNSW_API_KEY VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY TICK_KEY ADMIN_KEY; do
     v="${!k:-}"
     if [ -z "$v" ] && [ -f .env ]; then v="$(grep -E "^$k=" .env | head -1 | cut -d= -f2-)"; fi
@@ -53,6 +56,4 @@ if [ "$SECRETS" = 1 ]; then
   done
 fi
 
-echo "6. Deploy"
-"${WR[@]}" deploy
 echo "Check: curl -s https://api.transportsydney.app/api/status"
