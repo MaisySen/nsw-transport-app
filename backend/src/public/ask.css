@@ -1,0 +1,69 @@
+/* Ask tab: iMessage style chat with live cards */
+body.ak-on main { padding-bottom: calc(var(--tabh) + var(--safe-b) + 84px); }
+.ak-list { padding: 4px 12px 8px; display: flex; flex-direction: column; gap: 4px; }
+.ak-stamp { text-align: center; font-size: 12px; font-weight: 500; color: var(--label2); margin: 14px 0 6px; letter-spacing: 0; }
+.ak-msg { display: flex; flex-direction: column; max-width: 100%; }
+.ak-msg.me { align-items: flex-end; margin-top: 6px; }
+.ak-msg.bot { align-items: flex-start; margin-top: 6px; }
+.ak-b { max-width: 78%; padding: 8px 13px 9px; border-radius: 19px; font-size: 17px; line-height: 22px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.me .ak-b { background: var(--tint); color: #fff; border-bottom-right-radius: 6px; }
+.bot .ak-b { background: #e9e9eb; color: #000; border-bottom-left-radius: 6px; }
+@media (prefers-color-scheme: dark) { .bot .ak-b { background: #26252a; color: #fff; } }
+.ak-typing { display: inline-flex; gap: 5px; padding: 13px 15px; }
+.ak-typing i { width: 8px; height: 8px; border-radius: 50%; background: var(--label3); animation: akdot 1.2s infinite ease-in-out; }
+.ak-typing i:nth-child(2) { animation-delay: .15s; } .ak-typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes akdot { 0%, 60%, 100% { opacity: .35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) { .ak-typing i { animation: none; } }
+
+.ak-card { width: min(100%, 360px); margin-top: 6px; background: var(--bg2); border-radius: 14px; overflow: hidden; box-shadow: 0 0 0 .5px var(--sep); }
+.ak-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px 8px; font-size: 13px; font-weight: 600; color: var(--label2); text-transform: uppercase; letter-spacing: .02em; }
+.ak-head span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ak-head svg { color: var(--label3); flex: none; }
+a.ak-head:active, .ak-row:active { background: var(--fill); }
+.ak-row { display: flex; align-items: center; gap: 10px; padding: 9px 14px; min-height: 52px; position: relative; }
+.ak-row + .ak-row::before, .ak-head + .ak-row::before { content: ""; position: absolute; top: 0; left: 14px; right: 0; border-top: .5px solid var(--sep); }
+.ak-head + .ak-row::before { left: 0; }
+.ak-row.dim { opacity: .45; }
+.ak-row.hi { background: rgba(0, 122, 255, .08); }
+.ak-mid { flex: 1; min-width: 0; }
+.ak-t1 { font-size: 16px; font-weight: 600; line-height: 21px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ak-t2 { font-size: 13px; line-height: 18px; color: var(--label2); margin-top: 1px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.ak-t3 { font-size: 14px; line-height: 19px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ak-lines { gap: 3px; }
+.ak-lines span:last-child { margin-left: 4px; }
+.ak-arrow { color: var(--label3); font-size: 15px; }
+.ak-cd { flex: none; min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; letter-spacing: -.02em; line-height: 1; }
+.ak-cd b { font-size: 22px; font-weight: 700; }
+.ak-cd small { display: block; font-size: 12px; font-weight: 500; color: var(--label2); margin-top: 2px; letter-spacing: 0; }
+.ak-cd.live b { color: var(--green); }
+.ak-cd.clock b { font-size: 16px; font-weight: 600; }
+.ak-st { font-size: 13px; font-weight: 600; }
+.ak-st.ok { color: var(--green); } .ak-st.late { color: var(--orange); } .ak-st.bad { color: var(--red); } .ak-st.sched { color: var(--label2); font-weight: 500; }
+.ak-alert { align-items: flex-start; }
+.ak-warn { color: #ff9f0a; padding-top: 1px; flex: none; }
+.ak-empty { padding: 14px; font-size: 15px; color: var(--label2); }
+.ak-links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.ak-link { height: 32px; padding: 0 14px; border-radius: 16px; background: var(--fill); color: var(--tint); font-size: 15px; font-weight: 500; display: inline-flex; align-items: center; }
+.ak-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.ak-chip { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 17px; background: var(--bg2); color: var(--tint); font-size: 15px; box-shadow: 0 0 0 .5px var(--sep); }
+.ak-chip.loc svg { width: 15px; height: 15px; }
+.ak-chip.big { height: 40px; border-radius: 20px; font-size: 16px; padding: 0 16px; }
+
+.ak-hello { text-align: center; padding: 22px 24px 8px; }
+.ak-av { width: 64px; height: 64px; border-radius: 16px; overflow: hidden; margin: 0 auto 10px; box-shadow: 0 0 0 .5px var(--sep); }
+.ak-av img { width: 100%; height: 100%; display: block; }
+.ak-hello b { font-size: 20px; font-weight: 700; display: block; }
+.ak-hello p { margin: 6px auto 0; max-width: 300px; font-size: 15px; line-height: 20px; color: var(--label2); }
+.ak-starters { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; padding: 18px 4px 0; }
+
+.ak-bar { position: fixed; z-index: 69; left: 0; right: 0; bottom: calc(var(--tabh) + var(--safe-b)); display: flex; align-items: flex-end; gap: 8px; padding: 8px 12px; max-width: 720px; margin: 0 auto;
+  background: var(--bar); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); box-shadow: 0 -.5px 0 var(--sep); }
+.ak-field { flex: 1; display: flex; align-items: center; min-height: 36px; border-radius: 18px; background: var(--bg2); box-shadow: inset 0 0 0 1px var(--sep); padding: 0 4px 0 14px; }
+.ak-field input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 17px; height: 36px; }
+.ak-field input::placeholder { color: var(--label3); }
+.ak-mic { width: 30px; height: 30px; display: grid; place-items: center; color: var(--label2); border-radius: 15px; }
+.ak-mic svg { width: 20px; height: 20px; }
+.ak-mic.on { color: #fff; background: var(--red); }
+.ak-send { width: 34px; height: 34px; border-radius: 17px; display: grid; place-items: center; background: var(--tint); color: #fff; flex: none; margin-bottom: 1px; }
+.ak-send svg { width: 20px; height: 20px; }
+.ak-send:disabled { background: var(--fill2); color: var(--label3); }

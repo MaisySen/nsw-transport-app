@@ -35,6 +35,9 @@ export const I = {
   briefcase: { ios: 'briefcase.fill', android: 'work' },
   person: { ios: 'person.fill', android: 'person' },
   dot: { ios: 'circle.fill', android: 'circle' },
+  minus: { ios: 'minus', android: 'remove' },
+  back: { ios: 'chevron.left', android: 'arrow_back' },
+  grip: { ios: 'line.3.horizontal', android: 'drag_handle' },
 } satisfies Record<string, IconName>;
 
 export function modeIconName(mode?: string): IconName {

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Transport Bot: live Sydney trains, buses and trips</title>
+<meta name="description" content="Live departures, live vehicle tracking, trip alerts and your commute for Sydney and NSW public transport.">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Transport">
+<meta name="application-name" content="Transport">
+<meta property="og:title" content="Transport Bot">
+<meta property="og:description" content="Live Sydney transport that comes to you: leave now alerts, delays, platform changes and missed connections.">
+<meta property="og:image" content="/og.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/vendor/leaflet.css">
+<link rel="stylesheet" href="/style.css?v=5">
+<link rel="stylesheet" href="/ask.css?v=1">
+</head>
+<body>
+<header class="nav" id="nav">
+  <div class="nav-row">
+    <div class="nav-left" id="navLeft"></div>
+    <div class="nav-title" id="navTitle"></div>
+    <div class="nav-right" id="navRight"><button class="live" id="live" type="button" aria-live="polite" title="Refresh now"><i></i><span id="liveText">Live</span></button></div>
+  </div>
+</header>
+<main id="view" tabindex="-1"></main>
+<nav class="tabbar" id="tabbar" aria-label="Sections">
+  <div class="tabbar-in">
+    <a href="#/" data-tab="home"><svg viewBox="0 0 28 28" fill="currentColor"><path d="M14 3.6c.4 0 .8.1 1.1.4l9.2 7.7c.4.3.4.9.1 1.3-.3.4-.9.4-1.3.1l-.6-.5v9.6c0 1.7-1.3 3-3 3H8.5c-1.7 0-3-1.3-3-3v-9.6l-.6.5c-.4.3-1 .3-1.3-.1-.3-.4-.3-1 .1-1.3L12.9 4c.3-.3.7-.4 1.1-.4Zm-2.2 18.8h4.4v-5.1c0-.6-.4-1-1-1h-2.4c-.6 0-1 .4-1 1v5.1Z"/></svg><span>Trips</span></a>
+    <a href="#/search" data-tab="search"><svg viewBox="0 0 28 28" fill="currentColor"><path d="M12.3 3.5a8.8 8.8 0 0 1 7 14.1l5.2 5.2a1.2 1.2 0 0 1-1.7 1.7l-5.2-5.2A8.8 8.8 0 1 1 12.3 3.5Zm0 2.3a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Z"/></svg><span>Search</span></a>
+    <a href="#/chat" data-tab="ask"><svg viewBox="0 0 28 28" fill="currentColor"><path d="M14 4.2c5.8 0 10.5 3.9 10.5 8.8s-4.7 8.8-10.5 8.8c-1.1 0-2.2-.1-3.2-.4-1.4 1.1-3.3 2-5.6 2.3-.5.1-.8-.5-.5-.9.8-.9 1.4-2 1.6-3.2-1.7-1.6-2.8-3.6-2.8-6.6 0-4.9 4.7-8.8 10.5-8.8Z"/></svg><span>Ask</span></a>
+    <a href="#/watching" data-tab="watching"><svg viewBox="0 0 28 28" fill="currentColor"><path d="M14 3.2c.7 0 1.2.5 1.2 1.2v.7a7.3 7.3 0 0 1 6 7.2v4.4l1.7 2.6c.5.8 0 1.9-1 1.9H6.1c-1 0-1.5-1.1-1-1.9l1.7-2.6v-4.4a7.3 7.3 0 0 1 6-7.2v-.7c0-.7.5-1.2 1.2-1.2Zm-3.1 19.6h6.2a3.1 3.1 0 0 1-6.2 0Z"/></svg><span>Watching</span><span class="count" id="watchCount" hidden>0</span></a>
+    <a href="#/settings" data-tab="settings"><svg viewBox="0 0 28 28" fill="currentColor"><path d="M12.2 3.5h3.6l.6 2.9c.7.3 1.4.7 2 1.1l2.8-.9 1.8 3.1-2.2 2c.1.8.1 1.6 0 2.4l2.2 2-1.8 3.1-2.8-.9c-.6.5-1.3.9-2 1.2l-.6 2.9h-3.6l-.6-2.9c-.7-.3-1.4-.7-2-1.2l-2.8.9-1.8-3.1 2.2-2a9 9 0 0 1 0-2.4l-2.2-2 1.8-3.1 2.8.9c.6-.4 1.3-.8 2-1.1l.6-2.9ZM14 10.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Z"/></svg><span>Settings</span></a>
+  </div>
+</nav>
+<div class="banner" id="banner" role="status" aria-live="assertive"><img src="/icon-192.png" alt=""><div><b id="bannerT"></b><span id="bannerB"></span></div><small>now</small></div>
+<div class="toast" id="toast" role="status"></div>
+<script src="/vendor/leaflet.js" defer></script>
+<script src="/ask.js?v=1" defer></script>
+<script src="/app.js?v=5" defer></script>
+</body>
+</html>

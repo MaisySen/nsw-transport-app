@@ -7,7 +7,8 @@ import { useLive } from '@/lib/hooks';
 import { modeColor, radius, usePalette } from '@/lib/theme';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
 import type { Departure, Journey, Leg, Place } from '@/lib/types';
-import { store } from '@/lib/store';
+import { store, tripKeyOf } from '@/lib/store';
+import { directFilter, planTrip, stName } from '@/lib/trips';
 import { Icon, I, IconName } from './Icon';
 import { openService } from './Cards';
 import { LineBadge } from './Transit';
@@ -147,7 +148,7 @@ export function ActionRow({ icon, title, onPress, busy }: { icon: IconName; titl
   );
 }
 
-function CardHeader({ title, glyph, glyphColor, right, sub, onPress, onLongPress }: { title: string; glyph?: IconName; glyphColor?: string; right?: string; sub?: React.ReactNode; onPress: () => void; onLongPress?: () => void }) {
+function CardHeader({ title, glyph, glyphColor, right, sub, onPress, onLongPress, trailing }: { title: string; glyph?: IconName; glyphColor?: string; right?: string; sub?: React.ReactNode; onPress: () => void; onLongPress?: () => void; trailing?: React.ReactNode }) {
   const c = usePalette();
   return (
     <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" android_ripple={{ color: c.fill }}
@@ -160,7 +161,7 @@ function CardHeader({ title, glyph, glyphColor, right, sub, onPress, onLongPress
         {sub}
       </View>
       {right ? <T kind="foot" tone="text2" style={{ marginLeft: 8, fontVariant: ['tabular-nums'] }}>{right}</T> : null}
-      <Icon name={I.chevron} size={13} color={c.text3} style={{ marginLeft: 6 }} />
+      {trailing || <Icon name={I.chevron} size={13} color={c.text3} style={{ marginLeft: 6 }} />}
     </Pressable>
   );
 }
@@ -202,12 +203,12 @@ function statusOf(j: Journey, now: number): Status {
   return { text: 'Scheduled', tone: 'grey' };
 }
 
-export type TripItem = { key: string; from: Place; to: Place; kind: 'commute' | 'saved' | 'recent' | 'place'; name?: string; tag?: string };
+export type TripItem = { key: string; from: Place; to: Place; kind: 'commute' | 'saved' | 'recent' | 'place' | 'mine'; name?: string; tag?: string; via?: Place; conn?: number; okey?: string };
 
-export function TripBoard({ trip, now }: { trip: TripItem; now: number }) {
+export function TripBoard({ trip, now, handle, allServices }: { trip: TripItem; now: number; handle?: React.ReactNode; allServices?: boolean }) {
   const c = usePalette();
-  const { from, to } = trip;
-  const { data, error } = useHomeLive((r) => api.trip(from, to, { refresh: r, count: 5 }), [from.id, to.id]);
+  const { from, to, via } = trip;
+  const { data, error } = useHomeLive((r) => planTrip({ from, to, via, conn: trip.conn }, { refresh: r, count: 6 }), [from.id, to.id, via?.id, trip.conn]);
 
   // Remember each live reading for the hold.
   useEffect(() => {
@@ -218,20 +219,23 @@ export function TripBoard({ trip, now }: { trip: TripItem; now: number }) {
     }
   }, [data]);
 
-  const js = (data?.journeys || []).filter((j) => depOf(j) > now - 30000).slice(0, 3);
+  const js = directFilter((data?.journeys || []).filter((j) => depOf(j) > now - 30000), { from, to, via }, !!allServices, (j) => j).list.slice(0, 3);
   const arrs = js.map(arrOf);
   const alerts = new Set<string>();
   js.forEach((j) => j.legs.forEach((l) => (l.alerts || []).forEach((a: any) => alerts.add(typeof a === 'string' ? a : a.title))));
   const highKey = (data?.journeys || []).slice(0, 3).map((j) => j.legs.map((l) => (l.alerts || []).map((a: any) => (typeof a === 'string' ? '' : `${a.priority}:${a.title}`)).join()).join()).join();
 
   const fromName = shortName(from.name).replace(/ Station$/, ''), toName = shortName(to.name).replace(/ Station$/, '');
-  const route = `${fromName} to ${toName}`;
+  const route = via ? `${fromName} to ${toName} via ${stName(shortName(via.name))}` : `${fromName} to ${toName}`;
   const custom = trip.name && trip.name.toLowerCase() !== route.toLowerCase() ? trip.name.charAt(0).toUpperCase() + trip.name.slice(1) : '';
-  const open = (pick?: number) => router.push({ pathname: '/trip', params: { from: from.id, fromName: from.name, to: to.id, toName: to.name, ...(pick != null ? { pick: String(pick) } : {}) } });
-  const glyph = trip.kind === 'saved' ? I.star : trip.kind === 'commute' ? I.clock : trip.kind === 'place' ? (trip.tag === 'To work' ? I.briefcase : I.home) : undefined;
+  const open = (pick?: number) => router.push({ pathname: '/trip', params: { from: from.id, fromName: from.name, to: to.id, toName: to.name, ...(via ? { via: via.id, viaName: via.name, conn: String(trip.conn ?? 5) } : {}), ...(trip.name ? { name: trip.name } : {}), ...(pick != null ? { pick: String(pick) } : {}) } });
+  const glyph = trip.kind === 'saved' || trip.kind === 'mine' ? I.star : trip.kind === 'commute' ? I.clock : trip.kind === 'place' ? (trip.tag === 'To work' ? I.briefcase : I.home) : undefined;
   const removeRecent = trip.kind === 'recent' ? () => Alert.alert(route, 'Remove this trip from Home?', [
     { text: 'Cancel', style: 'cancel' },
     { text: 'Remove', style: 'destructive', onPress: () => store.removeRecentTrip(from.id, to.id) },
+  ]) : trip.kind === 'mine' ? () => Alert.alert(route, 'Remove this trip?', [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Remove', style: 'destructive', onPress: () => store.removeMyTrip(tripKeyOf({ from, to, via })) },
   ]) : undefined;
 
   useEffect(() => {
@@ -251,7 +255,7 @@ export function TripBoard({ trip, now }: { trip: TripItem; now: number }) {
       <View style={{ flexDirection: 'row' }}>
         <View style={{ width: 4, backgroundColor: stripe }} />
         <View style={{ flex: 1 }}>
-          <CardHeader title={custom ? `${custom}: ${route}` : route} glyph={glyph} glyphColor={trip.kind === 'saved' ? c.yellow : c.tint} right={trip.tag} onPress={() => open()} onLongPress={removeRecent}
+          <CardHeader title={custom ? `${custom}: ${route}` : route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint} right={trip.tag} onPress={() => open()} onLongPress={removeRecent} trailing={handle}
             sub={alerts.size ? (
               <Pressable onPress={() => open()} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
                 <Icon name={I.warn} size={11} color={c.orange} />

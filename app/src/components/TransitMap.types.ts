@@ -10,6 +10,8 @@ export type TransitMapProps = {
   dark: boolean;
   bottomInset?: number;
   style?: StyleProp<ViewStyle>;
+  /** Called with the stop id when a stop is tapped (New Trip, By map). */
+  onStopPress?: (id: string) => void;
 };
 
 export function boundsOf(p: TransitMapProps): [number, number, number, number] | null {

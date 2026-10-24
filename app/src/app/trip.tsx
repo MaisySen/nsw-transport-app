@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, StyleSheet, useColorScheme, View } from 'react-native';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, StyleSheet, Switch, useColorScheme, View } from 'react-native';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius, modeColor } from '@/lib/theme';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
-import { store, useStore } from '@/lib/store';
+import { store, tripKeyOf, useStore } from '@/lib/store';
+import { directFilter, planTrip, stName } from '@/lib/trips';
 import type { Journey, Leg, Place } from '@/lib/types';
 import { startWatch, stopWatch, tripSpec } from '@/lib/watch';
 import { Icon, I } from '@/components/Icon';
@@ -143,13 +144,19 @@ function JourneyDetail({ j, now, from, to }: { j: Journey; now: number; from: Pl
 }
 
 export default function TripScreen() {
-  const p = useLocalSearchParams<{ from: string; fromName: string; to: string; toName: string; pick?: string }>();
+  const p = useLocalSearchParams<{ from: string; fromName: string; to: string; toName: string; pick?: string; via?: string; viaName?: string; conn?: string; name?: string }>();
   const from = { id: String(p.from), name: String(p.fromName || '') };
   const to = { id: String(p.to), name: String(p.toName || '') };
+  const via = p.via ? { id: String(p.via), name: String(p.viaName || p.via) } : null;
+  const conn = p.conn != null ? Number(p.conn) : 5;
+  const plan = { from, to, via, conn };
+  const tkey = tripKeyOf(plan);
+  const stAll = useStore().allServices || {};
+  const allOn = !!stAll[tkey];
   const c = usePalette();
   const now = useNow(1000);
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
-  const { data, error, updatedAt, refreshing, refresh } = useLive((r) => api.trip(from, to, { refresh: r, count: 6 }), 20000, [from.id, to.id]);
+  const { data, error, updatedAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6 }), 20000, [from.id, to.id, via?.id, conn]);
   const [extra, setExtra] = useState<Journey[]>([]);
   const [more, setMore] = useState<number>(0);
   const [showTravel, setShowTravel] = useState(false);
@@ -158,7 +165,7 @@ export default function TripScreen() {
   const jKey = (j: Journey) => { const l = firstT(j); return l ? l.tripId || `${l.line}|${l.planned}` : String(j.leave); };
   const depMs = (j: Journey) => { const l = firstT(j); return l ? bestTime(l.planned, l.realtime ? l.estimated : null) : ms(j.leave); };
   // Main results drop services gone over 2 min ago; ones loaded with Earlier services stay up to 30 min back.
-  const js = (() => {
+  const jsAll = (() => {
     const seen = new Set<string>();
     const out: Journey[] = [];
     for (const j of [...(data?.journeys || []).filter((x) => ms(x.leave) > now - 120000), ...extra.filter((x) => ms(x.leave) > now - 30 * 60000)]) {
@@ -169,13 +176,15 @@ export default function TripScreen() {
     }
     return out.sort((a, b) => depMs(a) - depMs(b));
   })();
+  const df = directFilter(jsAll, plan, allOn, (j) => j);
+  const js = df.list;
   const loadMore = async (dir: -1 | 1) => {
     if (!js.length || more) return;
     Haptics.selectionAsync();
     const t = dir < 0 ? Math.max(now - 25 * 60000, depMs(js[0]) - 40 * 60000) : depMs(js[js.length - 1]) + 60000;
     setMore(dir);
     try {
-      const r = await api.trip(from, to, { time: hhmm(t), count: 5, refresh: true });
+      const r = await planTrip(plan, { time: hhmm(t), count: 5, refresh: true });
       setExtra((e) => [...e, ...(r.journeys || [])]);
       if (dir < 0) setOpen(null);
     } catch (e: any) {
@@ -194,9 +203,11 @@ export default function TripScreen() {
   const fromName = data?.from?.name || from.name;
   const toName = data?.to?.name || to.name;
   // Remember opened A to B trips for Home's Your trips.
-  useEffect(() => { if (fromName && toName) store.addRecentTrip({ id: from.id, name: fromName }, { id: to.id, name: toName }); }, [from.id, to.id, fromName, toName]);
+  useEffect(() => { if (fromName && toName && !via) store.addRecentTrip({ id: from.id, name: fromName }, { id: to.id, name: toName }); }, [from.id, to.id, fromName, toName, via]);
 
   const save = () => {
+    // Saving goes through New trip's Confirm step: name, extend with a connection, change time.
+    if (!via) { router.push({ pathname: '/new-trip', params: { from: from.id, fromName, to: to.id, toName, mode: firstT(js[0] || ({ legs: [] } as any))?.mode || '' } }); return; }
     const doSave = async (name: string) => {
       try { await api.saveTrip(name, from, to); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); Alert.alert('Saved', `It's on your Home screen as "${name}". You can also text "${name}" to Tab.`); }
       catch (e: any) { Alert.alert("Couldn't save it", e.message); }
@@ -212,6 +223,7 @@ export default function TripScreen() {
     <>
       <Stack.Screen options={{
         title: `${shortName(fromName).replace(/ Station$/, '')} to ${shortName(toName).replace(/ Station$/, '')}`,
+        headerBackTitle: via ? `Via ${stName(shortName(via.name))}` : undefined,
         headerRight: () => <Pressable hitSlop={10} onPress={save}><Icon name={I.starOpen} size={22} color={c.tint} /></Pressable>,
       }} />
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
@@ -233,6 +245,16 @@ export default function TripScreen() {
                 </Pressable>
               </View>
             )) : null}
+          </View>
+        ) : null}
+        {via ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 12 }}>Via {stName(shortName(via.name))}, {conn} min to change</T> : null}
+        {jsAll.length ? (
+          <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>
+            <View style={{ flex: 1 }}>
+              <T kind="body">All services</T>
+              <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{allOn ? 'Trips with a change are shown too' : df.none ? 'None stop at both ends, so all are shown' : 'Only services that stop at both ends'}</T>
+            </View>
+            <Switch value={allOn} onValueChange={(v) => { Haptics.selectionAsync(); store.setAllServices(tkey, v); }} accessibilityLabel="All services" />
           </View>
         ) : null}
         {js.length ? (

@@ -1,10 +1,11 @@
-import { useState } from 'react';
-import { Alert, Pressable, RefreshControl, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { Alert, PanResponder, Pressable, RefreshControl, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { router, Stack } from 'expo-router';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { usePalette } from '@/lib/theme';
-import { useStore } from '@/lib/store';
+import { store, tripKeyOf, useStore } from '@/lib/store';
 import { shortName } from '@/lib/format';
 import type { Place } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
@@ -30,7 +31,7 @@ function sydneyHour(t: number) {
 function AddButton() {
   const c = usePalette();
   return (
-    <Pressable onPress={() => router.push('/add-trip')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add a trip"
+    <Pressable onPress={() => router.push('/new-trip')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add a trip"
       style={({ pressed }) => ({ width: 32, height: 32, borderRadius: 16, backgroundColor: c.fill, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
       <Icon name={I.plus} size={17} color={c.tint} />
     </Pressable>
@@ -44,6 +45,7 @@ export default function Home() {
   const near = useNearby();
   const [busy, setBusy] = useState(false);
   const [pulling, setPulling] = useState(false);
+  const [scrollOn, setScrollOn] = useState(true);
   const live = useLive(async () => {
     const [commutes, saved, watches] = await Promise.all([
       api.commutes().catch(() => ({ items: [], suggestion: null })),
@@ -61,10 +63,10 @@ export default function Home() {
   const places = st.places || {};
   const seen = new Set<string>();
   const add = (t: TripItem) => {
-    const k = `${t.from.id}>${t.to.id}`;
-    if (seen.has(k) || trips.length >= (places.home && places.work ? 5 : 4)) return;
+    const k = tripKeyOf(t);
+    if (seen.has(k) || trips.length >= 8) return;
     seen.add(k);
-    trips.push({ ...t, key: k });
+    trips.push({ ...t, key: k, okey: t.kind === 'place' ? 'places' : k });
   };
   if (places.home && places.work && places.home.id !== places.work.id) {
     const toWork: TripItem = { key: '', from: places.home, to: places.work, kind: 'place', tag: 'To work' };
@@ -73,6 +75,7 @@ export default function Home() {
     (morning ? [toWork, toHome] : [toHome, toWork]).forEach(add);
   }
   (d?.commutes.items || []).filter((x) => x.active).forEach((cm) => add({ key: '', from: cm.from, to: cm.to, kind: 'commute', name: cm.name }));
+  (st.myTrips || []).forEach((m) => add({ key: '', from: m.from, to: m.to, via: m.via, conn: m.conn, kind: 'mine', name: m.name }));
   (d?.saved.items || []).forEach((s) => add({ key: '', from: s.from, to: s.to, kind: 'saved', name: s.name }));
   let recentCount = 0;
   for (const r of st.recentTrips || []) {
@@ -82,6 +85,10 @@ export default function Home() {
     add({ key: '', from: r.from, to: r.to, kind: 'recent' });
     recentCount++;
   }
+
+  // Your own order from dragging wins; home and work move together and keep their morning and evening order.
+  const order = st.tripOrder || [];
+  const sorted = trips.map((t, i) => ({ t, p: order.indexOf(t.okey!) < 0 ? 1000 + i : order.indexOf(t.okey!), i })).sort((x, y) => x.p - y.p || x.i - y.i).map((o) => o.t);
 
   // Recent stops: starred first, then recently opened. Max 4.
   const stops: (Place & { starred: boolean })[] = [];
@@ -118,7 +125,7 @@ export default function Home() {
           </View>
         ),
       }} />
-      <Screen refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} />}>
+      <Screen scrollEnabled={scrollOn} refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} enabled={scrollOn} />}>
         <SearchField />
         <PlaceBar places={places} />
         <AlertBanner />
@@ -153,8 +160,8 @@ export default function Home() {
         ) : null}
 
         <View style={{ marginTop: 6 }}>
-          {trips.map((t) => <TripBoard key={t.key} trip={t} now={now} />)}
-          {d && !trips.length ? <ActionRow icon={I.plus} title="Add a trip" onPress={() => router.push('/add-trip')} /> : null}
+          <DragTrips trips={sorted} now={now} all={st.allServices || {}} onScroll={setScrollOn} />
+          {d && !trips.length ? <ActionRow icon={I.plus} title="Add a trip" onPress={() => router.push('/new-trip')} /> : null}
         </View>
 
         {stops.length ? (
@@ -184,5 +191,71 @@ export default function Home() {
         {!d && live.error ? <Empty icon={I.warn} title="Can't reach the live feed" body={live.error} action={<Button title="Try again" onPress={live.refresh} />} /> : null}
       </Screen>
     </>
+  );
+}
+
+/** Trip cards that reorder by dragging the handle on each card. */
+function DragTrips({ trips, now, all, onScroll }: { trips: TripItem[]; now: number; all: Record<string, boolean>; onScroll: (on: boolean) => void }) {
+  const lay = useRef<{ y: number; h: number }[]>([]);
+  const [drag, setDrag] = useState<{ i: number; dy: number; target: number } | null>(null);
+  const dragRef = useRef(drag);
+  dragRef.current = drag;
+  const start = (i: number) => { onScroll(false); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setDrag({ i, dy: 0, target: i }); };
+  const move = (dy: number) => {
+    const d = dragRef.current; const L = lay.current;
+    if (!d || !L[d.i]) return;
+    const mid = L[d.i].y + L[d.i].h / 2 + dy;
+    let target = d.i;
+    L.forEach((r, j) => { if (!r) return; if (j < d.i && mid < r.y + r.h / 2) target = Math.min(target, j); if (j > d.i && mid > r.y + r.h / 2) target = Math.max(target, j); });
+    if (target !== d.target) Haptics.selectionAsync();
+    setDrag({ ...d, dy, target });
+  };
+  const end = () => {
+    const d = dragRef.current;
+    onScroll(true); setDrag(null);
+    if (!d || d.target === d.i) return;
+    const arr = trips.slice(); const [m] = arr.splice(d.i, 1); arr.splice(d.target, 0, m);
+    store.setTripOrder([...new Set(arr.filter((t) => t === m || t.okey !== m.okey).map((t) => t.okey!))]);
+  };
+  return (
+    <View>
+      {trips.map((t, i) => {
+        let ty = 0;
+        if (drag) {
+          const sh = lay.current[drag.i]?.h || 0;
+          if (i === drag.i) ty = drag.dy;
+          else if (drag.i < drag.target && i > drag.i && i <= drag.target) ty = -sh;
+          else if (drag.i > drag.target && i < drag.i && i >= drag.target) ty = sh;
+        }
+        const lifted = drag?.i === i;
+        return (
+          <View key={t.key} onLayout={(e) => { lay.current[i] = { y: e.nativeEvent.layout.y, h: e.nativeEvent.layout.height }; }}
+            style={{ transform: [{ translateY: ty }, { scale: lifted ? 1.02 : 1 }], zIndex: lifted ? 10 : 0, elevation: lifted ? 8 : 0, shadowColor: '#000', shadowOpacity: lifted ? 0.18 : 0, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } }}>
+            <TripBoard trip={t} now={now} allServices={!!all[t.key]} handle={trips.length > 1 ? <Grip onStart={() => start(i)} onMove={move} onEnd={end} /> : undefined} />
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function Grip({ onStart, onMove, onEnd }: { onStart: () => void; onMove: (dy: number) => void; onEnd: () => void }) {
+  const c = usePalette();
+  const cb = useRef({ onStart, onMove, onEnd });
+  cb.current = { onStart, onMove, onEnd };
+  const pan = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderTerminationRequest: () => false,
+    onShouldBlockNativeResponder: () => true,
+    onPanResponderGrant: () => cb.current.onStart(),
+    onPanResponderMove: (_, g) => cb.current.onMove(g.dy),
+    onPanResponderRelease: () => cb.current.onEnd(),
+    onPanResponderTerminate: () => cb.current.onEnd(),
+  }), []);
+  return (
+    <View {...pan.panHandlers} hitSlop={10} accessibilityLabel="Drag to reorder" style={{ width: 36, height: 32, marginLeft: 4, marginRight: -8, alignItems: 'center', justifyContent: 'center' }}>
+      <Icon name={I.grip} size={20} color={c.text3} />
+    </View>
   );
 }

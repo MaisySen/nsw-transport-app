@@ -14,7 +14,7 @@ export default function TransitMap(p: TransitMapProps) {
   const stops = useMemo(() => ({
     type: 'FeatureCollection' as const,
     features: (p.stops || []).filter((s) => s.lat != null && s.lon != null).map((s) => ({
-      type: 'Feature' as const, id: s.id, properties: { passed: s.passed ? 1 : 0, mine: s.mine ? 1 : 0 },
+      type: 'Feature' as const, id: s.id, properties: { sid: s.id, passed: s.passed ? 1 : 0, mine: s.mine ? 1 : 0 },
       geometry: { type: 'Point' as const, coordinates: [s.lon!, s.lat!] },
     })),
   }), [p.stops]);
@@ -28,7 +28,8 @@ export default function TransitMap(p: TransitMapProps) {
           <Layer id="route-line" type="line" paint={{ 'line-color': p.color, 'line-width': 5 }} layout={{ 'line-cap': 'round', 'line-join': 'round' }} />
         </GeoJSONSource>
       ) : null}
-      <GeoJSONSource id="stops" data={stops}>
+      <GeoJSONSource id="stops" data={stops} hitbox={p.onStopPress ? { top: 12, right: 12, bottom: 12, left: 12 } : undefined}
+        onPress={p.onStopPress ? (e: any) => { const f = e?.nativeEvent?.features?.[0]; const id = f?.properties?.sid ?? f?.id; if (id != null) p.onStopPress!(String(id)); } : undefined}>
         <Layer id="stops-c" type="circle" paint={{
           'circle-radius': ['case', ['==', ['get', 'mine'], 1], 7, 4.5],
           'circle-color': ['case', ['==', ['get', 'passed'], 1], '#C7C7CC', '#ffffff'],

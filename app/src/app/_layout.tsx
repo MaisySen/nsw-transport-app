@@ -42,6 +42,7 @@ export default function RootLayout() {
           <Stack.Screen name="stop/[id]" options={{ title: '', headerLargeTitle: Platform.OS === 'ios', headerTransparent: Platform.OS === 'ios', headerBlurEffect: 'systemChromeMaterial', headerLargeTitleShadowVisible: false, headerShadowVisible: false }} />
           <Stack.Screen name="trip" options={{ title: 'Trips', headerLargeTitle: false }} />
           <Stack.Screen name="service" options={{ headerShown: false, presentation: 'card' }} />
+          <Stack.Screen name="new-trip" options={{ title: 'New trip', presentation: Platform.OS === 'ios' ? 'modal' : 'card' }} />
           <Stack.Screen name="add-trip" options={{ title: 'Add a trip', presentation: Platform.OS === 'ios' ? 'modal' : 'card' }} />
           <Stack.Screen name="watch/[id]" options={{ title: 'Watching', presentation: Platform.OS === 'ios' ? 'formSheet' : 'card', sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true }} />
         </Stack>

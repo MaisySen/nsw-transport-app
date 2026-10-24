@@ -4,8 +4,14 @@ import type { Place } from './types';
 
 export type RecentTrip = { from: Place; to: Place; at: number };
 export type Places = { home?: Place; work?: Place };
-type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; watchedTrips: Record<string, string>; places: Places };
-let state: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {}, places: {} };
+/** A trip saved on this phone from New Trip, optionally with a connection leg (via) and a change time in minutes. */
+export type MyTrip = { from: Place; to: Place; via?: Place; conn?: number; name: string; modes?: string[] };
+type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; watchedTrips: Record<string, string>; places: Places;
+  myTrips: MyTrip[]; tripOrder: string[]; allServices: Record<string, boolean> };
+let state: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {}, places: {}, myTrips: [], tripOrder: [], allServices: {} };
+
+/** One key per trip, used for order, the All services switch and duplicates. */
+export const tripKeyOf = (t: { from: Place; to: Place; via?: Place | null }) => `${t.from.id}>${t.via ? t.via.id + '>' : ''}${t.to.id}`;
 let loaded = false;
 const listeners = new Set<() => void>();
 
@@ -60,6 +66,19 @@ export const store = {
     const places = { ...(state.places || {}) };
     if (p) places[kind] = { id: p.id, name: p.name }; else delete places[kind];
     state = { ...state, places };
+    save();
+  },
+  saveMyTrip(t: MyTrip) {
+    const k = tripKeyOf(t);
+    state = { ...state, myTrips: [t, ...(state.myTrips || []).filter((x) => tripKeyOf(x) !== k && x.name !== t.name)].slice(0, 12) };
+    save();
+  },
+  removeMyTrip(key: string) { state = { ...state, myTrips: (state.myTrips || []).filter((x) => tripKeyOf(x) !== key) }; save(); },
+  setTripOrder(keys: string[]) { state = { ...state, tripOrder: keys }; save(); },
+  setAllServices(key: string, on: boolean) {
+    const a = { ...(state.allServices || {}) };
+    if (on) a[key] = true; else delete a[key];
+    state = { ...state, allServices: a };
     save();
   },
   markWatched(tripKey: string, watchId: string) { state = { ...state, watchedTrips: { ...state.watchedTrips, [tripKey]: watchId } }; save(); },
