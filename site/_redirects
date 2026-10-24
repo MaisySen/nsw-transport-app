@@ -9,3 +9,6 @@
 /plan       /open/  200
 /plan/*     /open/  200
 /open/*     /open/  200
+# TEMP until App Store release: short link to the public iPhone beta. Remove with the beta card (docs/RELEASES.md).
+/beta   https://testflight.apple.com/join/ZKZY7PKX  302
+/beta/  https://testflight.apple.com/join/ZKZY7PKX  302

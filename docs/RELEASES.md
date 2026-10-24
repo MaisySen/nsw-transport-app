@@ -130,6 +130,7 @@ Until the switch: published to the first address (each publish replaces the whol
 
 | Time (about) | Release | Commit |
 | --- | --- | --- |
+| 25 Oct, 8:50 AM | transportsydney.app only (Pages deployment cff75587): iPhone public beta card at the top of the home page ("Join the iPhone beta", TestFlight link), replacing the App Store "coming soon" badge; short link transportsydney.app/beta (302 to the TestFlight link); share image og.png (1200 x 630) for link previews | COMMIT |
 | 25 Oct, 2:00 AM | api.transportsydney.app only (Worker transport-api version f4ec8688-50f1-4317-a7ae-1610eb40907a): `/api/reliability`, `/api/last-home` and its minute tick, Ask `lastHome`, flags reliabilityPick and lastWayHome. The first address was not deployed and does not have them | 7edfd39 |
 | 24 Oct, 2:15 PM | Ask with several stops, Open trip as a multi leg trip | 2be460a |
 | 24 Oct, 1:55 PM | Multi leg trips and `/api/plan` | 1bed1c1, d7e5eb8 |
@@ -142,5 +143,15 @@ Until the switch: published to the first address (each publish replaces the whol
 | 24 Oct, 12:41 AM | Release 3: watches with Web Push, connection rescue, commute memory, predictions, PWA, iOS style redesign; cron-job.org scheduler | |
 | 24 Oct, about midnight | Release 2: auto refresh, Live and Scheduled badges, GTFS realtime, live vehicle map, saved trips | |
 | 23 Oct, 5:14 PM | First release: stop boards, trip planning, alerts, nearby, text answers | |
+
+
+**TEMP until App Store release: iPhone beta card.** Since 25 Oct 2026 the home page shows a TestFlight card (public link https://testflight.apple.com/join/ZKZY7PKX) instead of the App Store "coming soon" badge, and `/beta` redirects to the same link. Every piece is marked `TEMP until App Store release`. To remove it when the App Store listing is live:
+
+1. `site/index.html`: delete the block from `TEMP until App Store release: start` to `TEMP until App Store release: end`, delete the `beta.css` link in the head, and add the App Store link to `.stores` (`<a class="store" href="LISTING URL">`, markup in the end comment).
+2. Delete `site/beta.css`.
+3. `site/_redirects`: delete the `/beta` and `/beta/` lines (or point them at the App Store listing).
+4. Deploy: from `site/`, `npx wrangler@4 pages deploy . --project-name transportsydney --branch main`. Check: `grep -rn "TEMP until App Store" site/` prints nothing.
+
+`site/og.png` (the share image) is not part of the beta and stays.
 
 Before 24 Oct, 11:45 AM the backend source lived only on the build machine and in a separate private repo; it has been in `backend/` of this repo since commit 7ff789c.
