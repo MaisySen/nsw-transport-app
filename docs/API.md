@@ -42,6 +42,7 @@ Example: `/api/ask?q=campsie%20to%20newcastle%20via%20chatswood&format=text`
 | `/api/app/config` | GET | `platform` (`ios`, default) | Remote config for the phone apps, see below |
 | `/api/predict` | GET | `line`, `stop`, `planned` | `prediction`: usual delay from recorded history, or null when there are fewer than 5 trips |
 | `/api/reliability` | GET | `line`, `stop`, `planned`; or `s=LINE~STOP~PLANNED` repeated, up to 8 | `{reliability, enabled}`, or `{items, enabled}` in the same order. See Reliability pick below |
+| `/api/trackwork` | GET | `t=FROM~TO~LINES~HOUR` repeated, up to 6 (`LINES` dot separated, e.g. `T1.T4`) | `{enabled, weekend, at, trips}`. See Weekend trackwork below. api.transportsydney.app only |
 
 `/api/plan` leg fields: `f` from stop id, `fn` from name, `t` to stop id, `tn` to name, `m` mode (`train`, `metro`, `bus`, `ferry`, `lightrail`, `walk`), `c` connection minutes before this leg (0 to 60, default 5), `a` all services for this leg (1 or 0), `w` walk minutes (1 to 90). The first leg cannot be a walk.
 
@@ -304,6 +305,22 @@ Added to the answer with `acc=1`:
 
 `usualLateMin` is the median lateness of the late days, or null when none was late. Batch: `?s=T1~2134101~2026-10-26T07:52:00%2B11:00&s=...` (up to 8) answers `{items: [...], enabled}` in the same order, `null` where there is not enough history. Server flag `reliabilityPick` off: every answer is null and `enabled` is false.
 
+## Weekend trackwork
+
+`GET /api/trackwork?t=213510~201110~T1.T4~8` says which planned work this coming weekend (Friday 8pm to Monday 3am, Sydney time; on Saturday and Sunday the weekend under way) touches each trip. Only on api.transportsydney.app; the app hides the card when the server answers 404.
+
+* Source: Transport for NSW's GTFS realtime service alerts v2 (`/v2/gtfs/alerts/all`, every mode). The minute tick reads it every 10 minutes, keeps alerts with lines or stops whose effect is no service, reduced service, delays, detour, modified service or stop moved, and stores the cut down list (about 30 KB) as one row in `meta` (`alert_digest`). Requests read that row; no request decodes the feed.
+* Line names: alerts name GTFS route ids (`NSN_1a`). `src/public/data/routes.json` maps them to lines (`T1`), built from the per network timetables by `tools/build_routes.py`. Bus route ids carry the line after the `_`. NSW TrainLink trains and coaches named by number are left out of the table (the numbers clash with bus routes); their alerts match by stop only.
+* Planned: cause maintenance or construction, or a header saying buses replace trains, trackwork or a changed timetable.
+* A trip matches when the alert names one of its lines or its start or end stop. For matched trips the planner is asked twice at `HOUR`:00 (the weekend day and the same day a week later). Alerts not on the trip's path are dropped (alert stops not on it, or the places a header names, "between X and Y", not on it). `buses` is the first temporary bus leg on the weekend plan; `addedMin` is the weekend trip minus the week later trip, given when 5 min or more and the week later trip has no temporary buses. The answer per trip is cached for 3 hours.
+* Server flag `weekendTrackwork` off: `enabled: false` and no trips.
+
+```json
+{ "enabled": true, "weekend": { "sat": "20261031", "sun": "20261101", "from": 1793444400000, "to": 1793635200000 }, "at": 1793400000000,
+  "trips": [{ "f": "213510", "t": "201110", "affected": true, "day": "20261031", "addedMin": 25, "buses": { "from": "Central", "to": "Kings Cross" },
+    "items": [{ "id": "...", "title": "Buses replace trains between Central and Bondi Junction", "url": "https://transportnsw.info/alerts/details#/ems-80076", "lines": ["T4"], "sat": true, "sun": true, "days": "Sat and Sun" }] }] }
+```
+
 ## Last way home reminder
 
 From the Ask "Last train home" answer, or a trip that is the last one tonight, the app asks for ONE push 15 minutes before the last service home. The server finds that service itself (the same search as Ask), looks at live data again from 20 minutes before (every 5 minutes, and once more at the moment if the last look is over a minute old), follows it if it runs late or is replaced, then claims the send in D1 and notifies once. No login: keyed by `device`, one reminder per device (a new one replaces the old one). Push targets are the device's Expo tokens and Web Push sign ups, like the other alerts. Android builds without push (before versionCode 6) show it in the app instead.
@@ -349,4 +366,4 @@ The push: title "Last train to Burwood", body like "Leaves in 15 min: the 12:04a
 
 Change it without a build or a deploy: `POST /api/app/config?platform=ios` with the `x-admin-key` header and a JSON object holding only the parts to change. It is stored in D1 (`app_config`) and merged over the defaults. Send `{}` to go back to the defaults.
 
-Server side switches: the same POST with `platform=server` turns the server's part of a feature off for every app at once, within a minute and with no deploy. The server reads `flags` (or a `kill` entry) for `morningCheck` (no morning checks run), `platformAlerts` (no platform change alerts), `occupancy` (no occupancy in any answer), `liftAwareRouting` (`acc=1` is only step free, no lift outage ranking), `reliabilityPick` (every `/api/reliability` answer is null) and `lastWayHome` (no reminders sent, new ones refused with 503, Ask leaves out `lastHome`). For example `{"flags": {"morningCheck": false}}`. The stored body replaces the previous one for that platform, so send every switch you want off.
+Server side switches: the same POST with `platform=server` turns the server's part of a feature off for every app at once, within a minute and with no deploy. The server reads `flags` (or a `kill` entry) for `morningCheck` (no morning checks run), `platformAlerts` (no platform change alerts), `occupancy` (no occupancy in any answer), `liftAwareRouting` (`acc=1` is only step free, no lift outage ranking), `reliabilityPick` (every `/api/reliability` answer is null), `weekendTrackwork` (`/api/trackwork` answers `enabled: false`) and `lastWayHome` (no reminders sent, new ones refused with 503, Ask leaves out `lastHome`). For example `{"flags": {"morningCheck": false}}`. The stored body replaces the previous one for that platform, so send every switch you want off.

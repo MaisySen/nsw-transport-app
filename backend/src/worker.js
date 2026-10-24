@@ -2913,6 +2913,248 @@ async function predictions(env, items, max = 14) {
   }
 }
 
+// ---------- service alerts digest: planned trackwork and line status ----------
+// Transport for NSW's GTFS realtime service alerts (v2, every mode in one feed, about 500 KB of
+// protobuf) are read by the minute tick every ALERT_EVERY_MIN minutes, cut down to what the
+// trackwork card and line status use, and kept as one row in meta. Requests read only that row
+// (tens of KB of JSON, kept in memory for a minute), so no request decodes the feed.
+const ALERT_FEED = "/v2/gtfs/alerts/all";
+const ALERT_EVERY_MIN = 10;
+const ALERT_STALE_MS = 2 * 3600000; // an older digest is not used for line status
+// GTFS realtime Alert.Effect values kept, by name. Accessibility notes, "other" and unknown effects
+// (mostly station notices) are left out.
+const ALERT_EFFECTS = { 1: "none", 2: "reduced", 3: "delays", 4: "detour", 6: "modified", 9: "stopMoved" };
+const ALERT_PLANNED_CAUSES = new Set([9, 10]); // MAINTENANCE, CONSTRUCTION
+const PLANNED_WORDS = /buses replace|trackwork|changed timetable|track work|planned work/i;
+
+function readText(pb) { // TranslatedString: the first translation's text
+  let text = null;
+  while (pb.p < pb.e) {
+    const tag = pb.uint();
+    if (tag >>> 3 === 1 && (tag & 7) === 2 && text === null) {
+      const t = pb.sub();
+      while (t.p < t.e) { const g = t.uint(); if (g >>> 3 === 1 && (g & 7) === 2) { text = t.str(); break; } t.skip(g & 7); }
+    } else pb.skip(tag & 7);
+  }
+  return text;
+}
+// FeedMessage -> [{ id, cause, effect, periods: [[startMs, endMs or 0]], routes: [route ids], stops: [stop ids], header, url }]
+function decodeAlerts(buf) {
+  const out = [];
+  const pb = new PB(buf);
+  while (pb.p < pb.e) {
+    const tag = pb.uint();
+    if (tag >>> 3 !== 2 || (tag & 7) !== 2) { pb.skip(tag & 7); continue; }
+    const ent = pb.sub();
+    let id = "", al = null;
+    while (ent.p < ent.e) {
+      const t = ent.uint(), f = t >>> 3;
+      if (f === 1) id = ent.str();
+      else if (f === 5 && (t & 7) === 2) al = ent.sub();
+      else ent.skip(t & 7);
+    }
+    if (!al) continue;
+    const a = { id, cause: 1, effect: 8, periods: [], routes: [], stops: [], header: "", url: null };
+    while (al.p < al.e) {
+      const t = al.uint(), f = t >>> 3, wt = t & 7;
+      if (f === 1 && wt === 2) {
+        const r = al.sub(); let s = 0, e = 0;
+        while (r.p < r.e) { const g = r.uint(); if (g >>> 3 === 1) s = r.uint(); else if (g >>> 3 === 2) e = r.uint(); else r.skip(g & 7); }
+        a.periods.push([s * 1000, e * 1000]);
+      } else if (f === 5 && wt === 2) {
+        const r = al.sub();
+        while (r.p < r.e) {
+          const g = r.uint(), gf = g >>> 3;
+          if (gf === 2) { const v = r.str(); if (!a.routes.includes(v)) a.routes.push(v); }
+          else if (gf === 5) { const v = r.str(); if (!a.stops.includes(v)) a.stops.push(v); }
+          else r.skip(g & 7);
+        }
+      } else if (f === 6 && wt === 0) a.cause = al.uint();
+      else if (f === 7 && wt === 0) a.effect = al.uint();
+      else if (f === 8 && wt === 2) a.url = readText(al.sub());
+      else if (f === 10 && wt === 2) a.header = readText(al.sub()) || "";
+      else al.skip(wt);
+    }
+    out.push(a);
+  }
+  return out;
+}
+// The line a GTFS route id belongs to: from the table built from the timetables (tools/build_routes.py),
+// else the bus form "<operator>_<line>". Station ids lose their "G" group prefix.
+function lineOfRoute(id, table) {
+  if (!id) return null;
+  if (table && table[id]) return table[id];
+  const m = /^\d{3,5}_([A-Za-z0-9]{1,6})$/.exec(id);
+  return m ? m[1] : null;
+}
+function digestAlerts(raw, table, now) {
+  const items = [];
+  for (const a of raw) {
+    const effect = ALERT_EFFECTS[a.effect];
+    if (!effect || !a.header) continue;
+    const periods = a.periods.filter(([s, e]) => !e || e > now - 6 * 3600000).filter(([s]) => s < now + 10 * 86400000);
+    if (a.periods.length && !periods.length) continue;
+    const lines = [...new Set(a.routes.map((r) => lineOfRoute(r, table)).filter(Boolean))].slice(0, 12);
+    const stops = [...new Set(a.stops.map((s) => String(s).replace(/^G/, "")))].slice(0, 80);
+    if (!lines.length && !stops.length) continue;
+    const planned = ALERT_PLANNED_CAUSES.has(a.cause) || PLANNED_WORDS.test(a.header);
+    items.push({ id: a.id.slice(0, 64), h: a.header.replace(/\s+/g, " ").trim().slice(0, 240), u: httpsUrl(a.url), e: effect, pl: planned ? 1 : 0,
+      p: periods.map(([s, e]) => [s, e]).slice(0, 12), l: lines, s: stops });
+  }
+  return items;
+}
+async function refreshAlertDigest(env, now = Date.now()) {
+  const res = await fetch(API + ALERT_FEED, { headers: { Authorization: "apikey " + apiKey(env) }, signal: AbortSignal.timeout(15000) });
+  upstream.calls++;
+  if (!res.ok) throw new Error(`Alerts feed answered ${res.status}`);
+  const raw = decodeAlerts(new Uint8Array(await res.arrayBuffer()));
+  const table = ((await facData(env, "routes")) || {}).routes || {};
+  const items = digestAlerts(raw, table, now);
+  const v = JSON.stringify({ at: now, items });
+  await ensureSchema3(env);
+  await db(env).prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('alert_digest', ?1)").bind(v).run();
+  alertDigestMem.at = now; alertDigestMem.read = Date.now(); alertDigestMem.items = items;
+  return { alerts: raw.length, kept: items.length, bytes: v.length };
+}
+const alertDigestMem = { at: 0, read: 0, items: null };
+async function alertDigest(env) {
+  if (alertDigestMem.items && Date.now() - alertDigestMem.read < 60000) return alertDigestMem;
+  let row = null;
+  try { await ensureSchema3(env); row = await db(env).prepare("SELECT v FROM meta WHERE k = 'alert_digest'").first(); } catch (e) { row = null; }
+  if (row && row.v) {
+    const d = JSON.parse(row.v);
+    alertDigestMem.at = d.at; alertDigestMem.items = d.items || []; alertDigestMem.read = Date.now();
+    return alertDigestMem;
+  }
+  // First use on a new database, before the tick has made one.
+  await refreshAlertDigest(env);
+  return alertDigestMem;
+}
+
+// The coming weekend in Sydney time: Saturday and Sunday dates, and the window planned work is
+// matched against (Friday 8pm to Monday 3am, since weekend closures often start Friday night).
+// On Saturday and Sunday it is the weekend under way.
+function weekendWindow(now = Date.now()) {
+  const sn = sydneyNow(now);
+  const toSat = sn.dow === 7 ? -1 : 6 - sn.dow;
+  const dayAt = (k, tod) => { // epoch ms of Sydney day (today + k) at minute tod
+    const guess = now + k * 86400000 + (tod - sn.tod) * 60000;
+    return guess + (sydOffsetMin(now) - sydOffsetMin(guess)) * 60000;
+  };
+  const sat = dayAt(toSat, 0);
+  const sun = dayAt(toSat + 1, 0);
+  const mon = dayAt(toSat + 2, 0);
+  const from = dayAt(toSat - 1, 20 * 60), to = mon + 3 * 3600000;
+  return { sat: sydneyNow(sat).day, sun: sydneyNow(sun).day, from, satEnd: sun, to, satStart: sat };
+}
+function weekendDays(item, w) { // "sat", "sun" or both, for an alert's periods inside the window
+  const per = item.p && item.p.length ? item.p : [[0, 0]];
+  let sat = false, sun = false;
+  for (const [s, e0] of per) {
+    const e = e0 || Infinity;
+    if (s < w.satEnd && e > w.from) sat = true;
+    if (s < w.to && e > w.satEnd) sun = true;
+  }
+  return { sat, sun };
+}
+// Places named in an alert header ("Buses replace trains between Berowra and Hornsby").
+function alertPlaces(h) {
+  const m = /between ([A-Z][A-Za-z' .-]{1,40}?) and ([A-Z][A-Za-z' .-]{1,40}?)(?=$|[,.;:]| only| stations| platforms|\s\()/.exec(h || "");
+  return m ? [m[1].replace(/ or .*$/, "").trim(), m[2].trim()] : [];
+}
+const plainStop = (n) => String(n || "").split(",")[0].replace(/ (Station|Wharf|Light Rail|Metro Station)$/i, "").trim().toLowerCase();
+
+// Planned work this weekend on each trip's lines. trips: [{ f, t, lines: [..], h }].
+// Matched by line (the trip's lines in the alert) or by stop (the trip's start or end in it).
+function trackworkMatches(items, trips, w) {
+  return trips.map((tr) => {
+    const hits = [];
+    for (const it of items) {
+      if (!it.pl) continue;
+      const d = weekendDays(it, w);
+      if (!d.sat && !d.sun) continue;
+      const byLine = tr.lines.some((l) => it.l.includes(l));
+      const byStop = it.s.includes(tr.f) || it.s.includes(tr.t);
+      if (!byLine && !byStop) continue;
+      hits.push({ id: it.id, title: it.h, url: it.u, lines: it.l.filter((l) => tr.lines.includes(l)), sat: d.sat, sun: d.sun, s: it.s });
+    }
+    return hits;
+  });
+}
+function daysWord(sat, sun) { return sat && sun ? "Sat and Sun" : sat ? "Saturday" : "Sunday"; }
+
+// One trip planned for one day at one time: arrival minus departure of the first journey, the stops
+// it passes (parent ids and plain names), and the first leg on temporary buses (trackwork buses).
+async function planShape(env, f, t, day, hhmm) {
+  const data = await tp(env, "trip", { depArrMacro: "dep", itdDate: day, itdTime: hhmm, type_origin: "any", name_origin: f, type_destination: "any", name_destination: t, calcNumberOfTrips: "2", TfNSWTR: "true" });
+  const j = (data.journeys || [])[0];
+  if (!j || !j.legs || !j.legs.length) return null;
+  const legs = j.legs;
+  const dep = ms(legs[0].origin && legs[0].origin.departureTimePlanned), arr = ms(legs[legs.length - 1].destination && legs[legs.length - 1].destination.arrivalTimePlanned);
+  const stops = new Set(), names = new Set();
+  let bus = null;
+  for (const lg of legs) {
+    const tr = lg.transportation || {};
+    for (const s of lg.stopSequence || []) {
+      const pid = (s.parent && s.parent.id) || s.id;
+      if (pid) stops.add(String(pid));
+      names.add(plainStop((s.parent && s.parent.disassembledName) || s.name));
+    }
+    const ttb = tr.properties && tr.properties.isTTB;
+    if (!bus && (ttb || /temporary bus/i.test((tr.product && tr.product.name) || ""))) bus = { from: shortName((lg.origin || {}).name || "").replace(/ Station$/, ""), to: shortName((lg.destination || {}).name || "").replace(/ Station$/, "") };
+  }
+  return { min: dep && arr ? Math.round((arr - dep) / 60000) : null, stops: [...stops], names: [...names], bus };
+}
+function dayPlus(day, k) { const d = new Date(Date.UTC(+day.slice(0, 4), +day.slice(4, 6) - 1, +day.slice(6, 8) + k)); return `${d.getUTCFullYear()}${pad2(d.getUTCMonth() + 1)}${pad2(d.getUTCDate())}`; }
+// Whether an alert is on this trip's path: its stops on the path, or a place it names on the path,
+// or (no stops and no named places) the whole line.
+function onPath(hit, shape) {
+  if (!shape) return true;
+  if (hit.s && hit.s.length) return hit.s.some((s) => shape.stops.includes(s));
+  const places = alertPlaces(hit.title).map(plainStop);
+  if (!places.length) return true;
+  return places.some((p) => shape.names.includes(p));
+}
+
+async function trackworkRoute(env, p) {
+  const enabled = await serverOn(env, "weekendTrackwork");
+  const w = weekendWindow();
+  const head = { enabled, weekend: { sat: w.sat, sun: w.sun, from: w.from, to: w.to } };
+  if (!enabled) return json({ ...head, trips: [] });
+  const trips = p.getAll("t").slice(0, 6).map((s) => {
+    const [f, t, ls, h] = String(s).split("~");
+    return { f: cleanId(f, 20), t: cleanId(t, 20), lines: String(ls || "").split(".").map((x) => cleanId(x, 8)).filter(Boolean).slice(0, 8), h: /^\d{1,2}$/.test(h || "") && +h < 24 ? +h : 9 };
+  }).filter((x) => x.f && x.t);
+  const dg = await alertDigest(env);
+  const matches = trackworkMatches(dg.items || [], trips, w);
+  const out = await Promise.all(trips.map(async (tr, i) => {
+    const hits = matches[i];
+    const base = { f: tr.f, t: tr.t, affected: false, items: [], addedMin: null, buses: null };
+    if (!hits.length) return base;
+    const day = hits.some((x) => x.sat) ? w.sat : w.sun;
+    const hhmm = pad2(tr.h) + "00";
+    // Cached per trip, day, hour and the set of alerts, so a phone opening Home again costs a cache read.
+    const ck = new Request(`https://cache.local/trackwork/${tr.f}/${tr.t}/${day}/${hhmm}/${hits.map((x) => x.id).sort().join(",").slice(0, 600)}`);
+    const cache = edgeCache();
+    const hit = await cache.match(ck);
+    if (hit) return { ...base, ...(await hit.json()) };
+    let works = null, normal = null;
+    try { [works, normal] = await Promise.all([planShape(env, tr.f, tr.t, day, hhmm), planShape(env, tr.f, tr.t, dayPlus(day, 7), hhmm)]); } catch (e) { works = normal = null; }
+    const shape = normal || works;
+    const items = hits.filter((x) => onPath(x, shape)).slice(0, 3).map(({ s, ...x }) => ({ ...x, days: daysWord(x.sat, x.sun) }));
+    let addedMin = null;
+    if (works && normal && works.min != null && normal.min != null && !normal.bus) {
+      const d = works.min - normal.min;
+      if (d >= 5) addedMin = d;
+    }
+    const buses = works && works.bus && !(normal && normal.bus) ? works.bus : null;
+    const r = { affected: items.length > 0, items, addedMin: items.length ? addedMin : null, buses: items.length ? buses : null, day };
+    await cache.put(ck, new Response(JSON.stringify(r), { headers: { "content-type": "application/json", "cache-control": "max-age=10800" } }));
+    return { ...base, ...r };
+  }));
+  return json({ ...head, at: dg.at || null, trips: out });
+}
+
 // ---------- reliability pick: how often one scheduled service left on time ----------
 // "Left on time 9 of the last 10 weekdays" for one timetabled service at one stop, from the same recorded
 // live times /api/predict reads (obs). A sample is one day on which this service (same line, stop and
@@ -3135,7 +3377,7 @@ async function rescuePlan(env, spec, i, live, now) {
 const APP_CONFIG_DEFAULTS = {
   version: 1,
   flags: { ask: true, parkRide: true, opalMachines: true, liveTrip: true, shareTrip: true, weekdayReminder: true, nearby: true,
-    morningCheck: true, platformAlerts: true, occupancy: true, liftAwareRouting: true, reliabilityPick: true, lastWayHome: true },
+    morningCheck: true, platformAlerts: true, occupancy: true, liftAwareRouting: true, reliabilityPick: true, lastWayHome: true, weekendTrackwork: true, lineStatus: true },
   kill: {},
   copy: {},
   tabs: ["home", "plan", "watching", "more"],
@@ -4094,6 +4336,8 @@ async function runTick(env, opts = {}) {
   }
   // Lift outages on saved trip stations, car park nearly full watches
   if (!opts.device) out.facilities = await facTick(env, Date.now(), sn, opts).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+  // Service alerts digest for the trackwork card and line status, every ALERT_EVERY_MIN minutes
+  if (!opts.device && (sn.tod % ALERT_EVERY_MIN === 3 || opts.force)) out.alerts = await refreshAlertDigest(env, now).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   // Background sampling for predictions
   if (!opts.device && !opts.noSample) out.sample = await sampleStops(env, sn, use.calls < SAMPLE_BUDGET);
   // Housekeeping once an hour
@@ -4959,6 +5203,8 @@ async function handleRequest(request, env, exec) {
           return await lastHomeRoute(request, env, url);
         case "/api/reliability":
           return await reliabilityRoute(env, p);
+        case "/api/trackwork":
+          return await trackworkRoute(env, p);
         case "/api/push/key":
           return json({ publicKey: VAPID_PUBLIC });
         case "/api/push/subscribe": {

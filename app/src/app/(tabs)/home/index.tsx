@@ -23,6 +23,7 @@ import { modeColor, radius } from '@/lib/theme';
 import { Button, Empty, Row, Section, Screen, Sep, T } from '@/components/ui';
 import { LeaveLine, MorningLink, useMyPos } from '@/components/Smart';
 import { LastHomeCard } from '@/components/LastHome';
+import { TrackworkCard } from '@/components/Trackwork';
 import { commuteDir, halfDayKey } from '@/lib/smart';
 import { useLoaded } from '@/lib/store';
 
@@ -163,6 +164,7 @@ export default function Home() {
         ) : null}
 
         <LastHomeCard />
+        <TrackworkCard now={now} />
         {commute ? (
           <HomeSection title="Your commute">
             <TripBoard trip={commute} now={now} aside={<SwapButton to={commute.tag === 'To work' ? 'To home' : 'To work'} onPress={() => { store.setCommuteFlip(flipped ? null : half); haptic.select(); }} />}

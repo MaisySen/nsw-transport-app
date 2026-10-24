@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { reportTripLines, tripLinesOf } from '@/lib/myLines';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { haptic } from '@/lib/haptic';
 import { router } from 'expo-router';
@@ -334,6 +335,16 @@ export function TripBoard({ trip, now, handle, allServices, below, aside }: { tr
   }, [data]);
 
   const js = directFilter((data?.journeys || []).filter((j) => depOf(j) > now - 30000), plan, !!allServices, (j) => j).list.slice(0, 3);
+  // The lines this trip uses, for the weekend trackwork card and line status (Home and Work, commutes, saved trips).
+  const lineSig = js.map((j) => j.legs.map((l) => (l.kind === 'walk' ? '' : l.line || '')).join('.')).join('|');
+  useEffect(() => {
+    if (trip.kind === 'recent' || !lineSig) return;
+    const hour = trip.tag === 'To work' ? 8 : trip.tag === 'To home' ? 17 : 10;
+    const label = trip.name && trip.kind !== 'place' ? trip.name.charAt(0).toUpperCase() + trip.name.slice(1) : `${shortName(from.name).replace(/ Station$/, '')} to ${shortName(to.name).replace(/ Station$/, '')}`;
+    reportTripLines(pkey, tripLinesOf(pkey, from.id, to.id, label, js, hour));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pkey, lineSig]);
+  useEffect(() => () => reportTripLines(pkey, null), [pkey]);
   const arrs = js.map(arrOf);
   const alerts = new Set<string>();
   js.forEach((j) => j.legs.forEach((l) => (l.alerts || []).forEach((a: any) => alerts.add(typeof a === 'string' ? a : a.title))));
