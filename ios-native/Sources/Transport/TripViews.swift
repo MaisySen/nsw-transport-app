@@ -6,6 +6,9 @@ struct TripPlannerView: View {
     @Environment(AppStore.self) private var store
     @State var from: StopRef? = nil
     @State var to: StopRef? = nil
+    /// Set for an extended trip: the connection stop, and the minutes needed to change there.
+    var via: StopRef? = nil
+    var conn: Int = 5
     @State private var picking: PickTarget?
     @State private var data: TripResponse?
     @State private var updated: Date?
@@ -24,6 +27,20 @@ struct TripPlannerView: View {
                     .accessibilityIdentifier("fromField")
                 PlaceField(label: "To", place: to) { picking = .to }
                     .accessibilityIdentifier("toField")
+                if let via {
+                    HStack {
+                        Text("Via")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 48, alignment: .leading)
+                        Text(Naming.short(via.name))
+                        Spacer()
+                        Text("\(conn) min to change")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("viaRow")
+                }
             } footer: {
                 HStack {
                     Spacer()
@@ -43,7 +60,8 @@ struct TripPlannerView: View {
                     Section { ContentUnavailableView("No trips found", systemImage: "point.topleft.down.to.point.bottomright.curvepath", description: Text(error)) }
                 }
                 if data != nil {
-                    let journeys = merged
+                    let picked = TripPlan.directFilter(merged, extended: via != nil, all: showAll)
+                    let journeys = picked.list
                     let alerts = Self.uniqueAlerts(journeys)
                     if !alerts.isEmpty {
                         Section {
@@ -69,6 +87,16 @@ struct TripPlannerView: View {
                         .pickerStyle(.segmented)
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
+                    }
+                    Section {
+                        Toggle("All services", isOn: allServicesBinding)
+                            .accessibilityIdentifier("allServices")
+                    } footer: {
+                        Text(showAll
+                             ? "Every service, including ones with a change on the way."
+                             : picked.fellBack
+                                ? "Nothing runs direct right now, so every service is shown."
+                                : (via == nil ? "Only services that stop at both ends." : "Only services that stop at both ends of each leg."))
                     }
                     Section {
                         moreButton("Earlier services", direction: -1)
@@ -117,6 +145,20 @@ struct TripPlannerView: View {
         .appHaptics()
     }
 
+    private var tripKey: String? {
+        guard let from, let to else { return nil }
+        return TripKey.of(from: from, via: via, to: to)
+    }
+
+    private var showAll: Bool { tripKey.map { store.showsAllServices($0) } ?? false }
+
+    /// Saved per trip, like the web and Android apps.
+    private var allServicesBinding: Binding<Bool> {
+        Binding(get: { showAll }, set: { on in
+            if let k = tripKey { withAnimation(.snappy) { store.setAllServices(k, on) } }
+        })
+    }
+
     /// The loaded journeys plus any earlier or later ones, each once, in leave order.
     private var merged: [Journey] {
         var seen = Set<String>()
@@ -160,7 +202,7 @@ struct TripPlannerView: View {
         f.locale = Locale(identifier: "en_AU_POSIX")
         loadingMore = true
         defer { loadingMore = false }
-        if let r = try? await store.api.trip(from: from.id, to: to.id, count: 5, time: f.string(from: t)) {
+        if let r = try? await TripPlan.plan(api: store.api, from: from.id, via: via?.id, to: to.id, conn: conn, count: 5, time: f.string(from: t)) {
             withAnimation(.snappy) { extra += r.journeys }
         }
     }
@@ -180,10 +222,10 @@ struct TripPlannerView: View {
         loading = true
         defer { loading = false }
         do {
-            let r = try await store.api.trip(from: from.id, to: to.id, count: 5)
+            let r = try await TripPlan.plan(api: store.api, from: from.id, via: via?.id, to: to.id, conn: conn, count: 5)
             withAnimation(.snappy) { data = r }
             updated = Date()
-            if !r.journeys.isEmpty { store.rememberTrip(from: from, to: to) }
+            if !r.journeys.isEmpty && via == nil { store.rememberTrip(from: from, to: to) }
             // A trip opened from a link only knows stop numbers; name them from the first journey.
             if from.name.hasPrefix("Stop "), let n = r.journeys.first?.legs.first?.from {
                 self.from = StopRef(id: from.id, name: n)

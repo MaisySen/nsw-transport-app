@@ -286,7 +286,199 @@ final class FlowTests: XCTestCase {
         shot("ask-answer")
     }
 
+    /// New trip by mode: Train A to Z with the side index, By distance and By map, then
+    /// Confirm trip with an extended light rail leg, a second trip by stop search, the
+    /// direct services toggle on the trip screen, and moving a trip up on Trips.
+    func test10NewTripByModeConfirmAndReorder() {
+        app.launch()
+        tab("Trips")
+        openNewTrip()
+        XCTAssertTrue(element("mode-train").waitForExistence(timeout: 8), "mode picker")
+        pause(1)
+        shot("new-trip-modes")
+
+        element("mode-train").tap()
+        let indexB = element("index-B")
+        XCTAssertTrue(indexB.waitForExistence(timeout: 30), "A to Z side index")
+        indexB.tap()
+        pause(1)
+        let burwood = app.buttons["Burwood"].firstMatch
+        XCTAssertTrue(burwood.waitForExistence(timeout: 5), "Burwood after jumping to B")
+        shot("new-trip-train-a-to-z")
+
+        let byDistance = app.buttons["By distance"].firstMatch
+        if byDistance.exists {
+            byDistance.tap()
+            allowSystemAlert()
+            pause(3)
+            shot("new-trip-by-distance")
+        }
+        let byMap = app.buttons["By map"].firstMatch
+        if byMap.exists {
+            byMap.tap()
+            pause(4)
+            shot("new-trip-by-map")
+        }
+        app.buttons["A to Z"].firstMatch.tap()
+        pause(1)
+        if !burwood.isHittable { element("index-B").tap(); pause(1) }
+        burwood.tap()
+        pause(1)
+        XCTAssertTrue(app.navigationBars["To"].waitForExistence(timeout: 5), "To step after From")
+        element("index-C").tap()
+        pause(1)
+        let central = app.buttons["Central"].firstMatch
+        XCTAssertTrue(central.waitForExistence(timeout: 5), "Central after jumping to C")
+        central.tap()
+
+        XCTAssertTrue(element("tripName").waitForExistence(timeout: 8), "Confirm trip")
+        pause(1)
+        shot("confirm-trip")
+
+        // Extend trip: a light rail leg from Central.
+        element("extendTrip").tap()
+        XCTAssertTrue(element("mode-lightrail").waitForExistence(timeout: 8), "mode picker for the connection")
+        element("mode-lightrail").tap()
+        let filter = app.searchFields.firstMatch
+        XCTAssertTrue(filter.waitForExistence(timeout: 20), "station filter")
+        filter.tap()
+        filter.typeText("Circular")
+        let quay = app.buttons["Circular Quay"].firstMatch
+        XCTAssertTrue(quay.waitForExistence(timeout: 20), "Circular Quay light rail")
+        quay.tap()
+        XCTAssertTrue(element("leg2").waitForExistence(timeout: 8), "second leg on Confirm trip")
+        let stepper = app.steppers.firstMatch
+        if stepper.exists && stepper.buttons["Increment"].exists { stepper.buttons["Increment"].tap() }
+        pause(1)
+        shot("confirm-trip-extended")
+        element("saveTrip").tap()
+
+        let via = element("tripVia")
+        XCTAssertTrue(reveal(via), "extended trip on Trips")
+        pause(6)
+        shot("trips-new-trip")
+
+        // A second trip by stop search, so there is something to reorder.
+        openNewTrip()
+        XCTAssertTrue(element("mode-search").waitForExistence(timeout: 8))
+        element("mode-search").tap()
+        searchAndPick("Strathfield", expect: "Strathfield Station")
+        searchAndPick("Lidcombe", expect: "Lidcombe Station")
+        XCTAssertTrue(element("saveTrip").waitForExistence(timeout: 8), "Confirm trip for the search trip")
+        element("saveTrip").tap()
+        pause(3)
+
+        // The newest trip sits above the extended one; Move up swaps them.
+        let second = app.staticTexts["Strathfield to Lidcombe"].firstMatch
+        XCTAssertTrue(reveal(second), "search trip on Trips")
+        XCTAssertTrue(reveal(via))
+        if second.exists && via.exists {
+            XCTAssertLessThan(second.frame.minY, via.frame.minY, "newest trip first")
+            via.press(forDuration: 1.3)
+            let up = app.buttons["Move up"].firstMatch
+            XCTAssertTrue(up.waitForExistence(timeout: 5), "Move up in the trip menu")
+            up.tap()
+            pause(2)
+            _ = reveal(via)
+            XCTAssertLessThan(via.frame.minY, second.frame.minY, "extended trip moved up")
+            shot("trips-reordered")
+        }
+
+        // The trip screen: direct services by default, All services saved per trip.
+        via.tap()
+        let toggle = element("allServices")
+        XCTAssertTrue(toggle.waitForExistence(timeout: 40), "All services toggle on the trip screen")
+        XCTAssertTrue(element("viaRow").exists, "via row on the trip screen")
+        pause(2)
+        shot("trip-extended")
+        let sw = app.switches["allServices"].firstMatch
+        let inner = sw.switches.firstMatch
+        if inner.exists { inner.tap() } else { (sw.exists ? sw : toggle).tap() }
+        pause(2)
+        shot("trip-all-services")
+        let value = app.switches["allServices"].firstMatch.value as? String
+        XCTAssertEqual(value, "1", "All services on")
+    }
+
+    /// Bus: route number, direction, then a stop to get on and a later stop to get off.
+    func test11NewBusTrip() {
+        app.launch()
+        tab("Trips")
+        openNewTrip()
+        XCTAssertTrue(element("mode-bus").waitForExistence(timeout: 8))
+        element("mode-bus").tap()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 20), "route field")
+        field.tap()
+        field.typeText("461X")
+        let route = element("busRoute")
+        XCTAssertTrue(route.waitForExistence(timeout: 30), "461X in the route list")
+        pause(1)
+        shot("new-trip-bus-routes")
+        route.tap()
+        let stop = element("busStop")
+        XCTAssertTrue(stop.waitForExistence(timeout: 30), "stops of the route")
+        let dir = element("busDirection")
+        if dir.exists { dir.tap(); pause(1) }
+        pause(1)
+        shot("new-trip-bus-stops")
+        let stops = app.buttons.matching(identifier: "busStop")
+        XCTAssertGreaterThan(stops.count, 3, "stops listed")
+        stops.element(boundBy: 0).tap()
+        pause(1)
+        let after = app.buttons.matching(identifier: "busStop")
+        XCTAssertTrue(after.element(boundBy: 2).waitForExistence(timeout: 5), "stops after the boarding stop")
+        after.element(boundBy: 2).tap()
+        XCTAssertTrue(element("tripName").waitForExistence(timeout: 8), "Confirm trip for the bus")
+        pause(1)
+        shot("confirm-bus-trip")
+        element("saveTrip").tap()
+        pause(2)
+    }
+
     // MARK: Helpers
+
+    private func openNewTrip() {
+        let plus = app.navigationBars.buttons["Add a trip"].firstMatch
+        if plus.waitForExistence(timeout: 10) {
+            plus.tap()
+        } else {
+            element("addTrip").tap()
+        }
+        pause(1)
+    }
+
+    private func searchAndPick(_ query: String, expect: String) {
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 8), "stop search field")
+        search.tap()
+        search.typeText(query)
+        let result = element("pickResult")
+        XCTAssertTrue(result.waitForExistence(timeout: 20), "results for \(query)")
+        pause(1)
+        let exact = app.buttons.matching(identifier: "pickResult").containing(.staticText, identifier: expect).firstMatch
+        (exact.exists ? exact : result).tap()
+        pause(1)
+    }
+
+    /// Scrolls Trips until the element is on screen.
+    @discardableResult
+    private func reveal(_ e: XCUIElement) -> Bool {
+        if e.waitForExistence(timeout: 8) && e.isHittable { return true }
+        let list = app.collectionViews.firstMatch
+        for _ in 0..<6 {
+            if e.exists && e.isHittable { return true }
+            list.swipeUp(velocity: .slow)
+            pause(0.5)
+        }
+        for _ in 0..<8 {
+            if e.exists && e.isHittable { return true }
+            list.swipeDown(velocity: .slow)
+            pause(0.5)
+        }
+        return e.exists && e.isHittable
+    }
+
 
     private func element(_ id: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: id).firstMatch

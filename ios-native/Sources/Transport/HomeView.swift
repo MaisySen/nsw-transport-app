@@ -58,9 +58,10 @@ struct HomeView: View {
                 }
 
                 if !trips.isEmpty {
+                    let keys = orderKeys(trips)
                     ForEach(Array(trips.enumerated()), id: \.element.id) { i, t in
                         Section {
-                            tripCard(t)
+                            tripCard(t, keys: keys)
                         }
                     }
                 }
@@ -92,7 +93,7 @@ struct HomeView: View {
             .navigationDestination(for: PlanRoute.self) { _ in TripPlannerView() }
             .navigationDestination(for: StopRef.self) { s in StopView(stop: s) }
             .navigationDestination(for: ServiceKey.self) { k in ServiceView(key: k) }
-            .navigationDestination(for: TripPair.self) { p in TripPlannerView(from: p.from, to: p.to) }
+            .navigationDestination(for: TripPair.self) { p in TripPlannerView(from: p.from, to: p.to, via: p.via, conn: p.conn ?? 5) }
             .navigationDestination(for: JourneyLink.self) { l in JourneyDetailView(journey: l.journey, from: l.from, to: l.to) }
             .refreshable {
                 async let a: Void = store.loadSaved()
@@ -119,7 +120,9 @@ struct HomeView: View {
                 }
             }
             .sheet(isPresented: $addingTrip) {
-                AddTripSheet().environment(store)
+                NewTripSheet()
+                    .environment(store)
+                    .presentationDetents([.large])
             }
             .sheet(item: $pickingPlace) { kind in
                 StopPicker(title: kind == .home ? "Home" : "Work") { stop in
@@ -287,19 +290,43 @@ struct HomeView: View {
     // MARK: Trip card
 
     @ViewBuilder
-    private func tripCard(_ t: HomeTrip) -> some View {
+    private func tripCard(_ t: HomeTrip, keys: [String]) -> some View {
         let now = Date()
         let all = board.journeys[t.id] ?? []
-        let upcoming = all.filter { ($0.leave ?? .distantPast) > now.addingTimeInterval(-30) }
+        let live = all.filter { ($0.leave ?? .distantPast) > now.addingTimeInterval(-30) }
+        // Services that stop at both ends unless this trip shows all of them.
+        let upcoming = TripPlan.directFilter(live, extended: t.via != nil, all: store.showsAllServices(t.id)).list
         let shown = Array(upcoming.prefix(3))
+        let pos = keys.firstIndex(of: t.orderKey) ?? 0
         let alertCount = Set(shown.flatMap { $0.transitLegs.flatMap { $0.alerts ?? [] } }.map(\.id)).count
         let hex = shown.first?.firstTransit.map { $0.color ?? Mode(raw: $0.mode).fallbackHex }
 
-        NavigationLink(value: TripPair(from: t.from, to: t.to)) {
+        NavigationLink(value: TripPair(from: t.from, to: t.to, via: t.via, conn: t.via == nil ? nil : t.conn)) {
             TripHeader(trip: t, colorHex: hex, alertCount: alertCount)
         }
+        // Long press and drag a trip onto another to reorder; the menu does the same one step at a time.
+        .draggable(t.orderKey)
+        .dropDestination(for: String.self) { items, _ in
+            guard let k = items.first, k != t.orderKey else { return false }
+            moveTrip(k, to: t.orderKey, keys: keys)
+            return true
+        }
+        .contextMenu {
+            if keys.count > 1 {
+                Button { moveTrip(t.orderKey, by: -1, keys: keys) } label: { Label("Move up", systemImage: "arrow.up") }
+                    .disabled(pos == 0)
+                Button { moveTrip(t.orderKey, by: 1, keys: keys) } label: { Label("Move down", systemImage: "arrow.down") }
+                    .disabled(pos >= keys.count - 1)
+            }
+        }
+        .accessibilityAction(named: "Move up") { moveTrip(t.orderKey, by: -1, keys: keys) }
+        .accessibilityAction(named: "Move down") { moveTrip(t.orderKey, by: 1, keys: keys) }
         .swipeActions(edge: .trailing) {
             switch t.kind {
+            case .mine:
+                Button(role: .destructive) {
+                    store.removeMyTrip(t.id)
+                } label: { Label("Delete", systemImage: "trash") }
             case .saved:
                 Button(role: .destructive) {
                     Task { try? await store.api.deleteSaved(name: t.name ?? ""); await store.loadSaved() }
@@ -420,6 +447,9 @@ struct HomeView: View {
         for c in store.commutes where c.active != false {
             _ = add(HomeTrip(kind: .commute, name: c.name, from: c.from, to: c.to))
         }
+        for m in store.myTrips {
+            _ = add(HomeTrip(kind: .mine, name: m.name, from: m.from, to: m.to, via: m.via, conn: m.conn ?? 5))
+        }
         for s in store.saved {
             _ = add(HomeTrip(kind: .saved, name: s.name, from: s.from, to: s.to))
         }
@@ -427,7 +457,40 @@ struct HomeView: View {
         for r in store.recentTrips where recent < 2 {
             if add(HomeTrip(kind: .recent, name: nil, from: r.from, to: r.to)) { recent += 1 }
         }
-        return Array(out.prefix(5))
+        // Your own order from dragging wins. Home and Work share one key, so they move together
+        // and keep their morning and evening order.
+        let order = store.tripOrder
+        let sorted = out.enumerated().sorted { a, b in
+            let pa = order.firstIndex(of: a.element.orderKey) ?? 1000 + a.offset
+            let pb = order.firstIndex(of: b.element.orderKey) ?? 1000 + b.offset
+            return pa != pb ? pa < pb : a.offset < b.offset
+        }
+        return Array(sorted.map(\.element).prefix(8))
+    }
+
+    /// Each order key once, in the order shown.
+    private func orderKeys(_ trips: [HomeTrip]) -> [String] {
+        var keys: [String] = []
+        for t in trips where !keys.contains(t.orderKey) { keys.append(t.orderKey) }
+        return keys
+    }
+
+    /// Drop a trip on another: it takes that trip's place.
+    private func moveTrip(_ key: String, to target: String, keys: [String]) {
+        var k = keys
+        guard let a = k.firstIndex(of: key), let b = k.firstIndex(of: target), a != b else { return }
+        let moved = k.remove(at: a)
+        k.insert(moved, at: b)
+        withAnimation(.snappy) { store.tripOrder = k }
+        store.success()
+    }
+
+    private func moveTrip(_ key: String, by delta: Int, keys: [String]) {
+        var k = keys
+        guard let a = k.firstIndex(of: key), k.indices.contains(a + delta) else { return }
+        k.swapAt(a, a + delta)
+        withAnimation(.snappy) { store.tripOrder = k }
+        store.tap()
     }
 
     /// Starred stops first, then stops opened recently. At most 4.
@@ -475,6 +538,9 @@ struct HomeView: View {
 struct TripPair: Hashable, Codable {
     var from: StopRef
     var to: StopRef
+    /// Set for an extended trip: change here, with `conn` minutes to connect.
+    var via: StopRef? = nil
+    var conn: Int? = nil
 }
 
 struct JourneyLink: Hashable {
@@ -484,13 +550,17 @@ struct JourneyLink: Hashable {
 }
 
 struct HomeTrip: Identifiable, Hashable {
-    enum Kind: Hashable { case place, commute, saved, recent }
+    enum Kind: Hashable { case place, commute, saved, mine, recent }
     var kind: Kind
     var name: String?
     var from: StopRef
     var to: StopRef
+    var via: StopRef? = nil
+    var conn: Int = 5
 
-    var id: String { "\(from.id)>\(to.id)" }
+    var id: String { TripKey.of(from: from, via: via, to: to) }
+    /// The key for your order on Trips. Home and Work move together.
+    var orderKey: String { kind == .place ? "places" : id }
     var route: String { "\(Naming.compact(Naming.short(from.name))) to \(Naming.compact(Naming.short(to.name)))" }
 
     /// The saved or commute name, when it says more than the route itself.
@@ -537,14 +607,14 @@ final class HomeBoard {
     }
 
     private func load(api: TransportAPI, device: String, trips: [HomeTrip], stops: [String]) async {
-        let tripJobs = trips.map { ($0.id, $0.from.id, $0.to.id) }
+        let tripJobs = trips.map { (key: $0.id, from: $0.from.id, to: $0.to.id, via: $0.via?.id, conn: $0.conn) }
         let stopJobs = Array(Set(stops))
         let now = Date()
         await withTaskGroup(of: HomeFetch.self) { group in
-            for (key, from, to) in tripJobs {
+            for job in tripJobs {
                 group.addTask {
-                    let r = try? await api.trip(from: from, to: to, count: 5)
-                    return HomeFetch.trip(key, r)
+                    let r = try? await TripPlan.plan(api: api, from: job.from, via: job.via, to: job.to, conn: job.conn, count: 5)
+                    return HomeFetch.trip(job.key, r)
                 }
             }
             for id in stopJobs {
@@ -706,7 +776,7 @@ struct TripHeader: View {
                 .frame(maxHeight: .infinity)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
-                    if trip.kind == .saved {
+                    if trip.kind == .saved || trip.kind == .mine {
                         Image(systemName: "star.fill").font(.caption).foregroundStyle(.yellow)
                     } else if trip.kind == .place {
                         Image(systemName: trip.name == "To work" ? "briefcase.fill" : "house.fill").font(.caption).foregroundStyle(.blue)
@@ -721,6 +791,12 @@ struct TripHeader: View {
                     Text(label)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                }
+                if let via = trip.via {
+                    Label("Change at \(Naming.compact(Naming.short(via.name))), \(trip.conn) min", systemImage: "arrow.triangle.swap")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("tripVia")
                 }
                 if alertCount > 0 {
                     HStack(spacing: 4) {

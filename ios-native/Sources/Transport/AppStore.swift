@@ -19,6 +19,12 @@ final class AppStore {
     /// Home and work stops set with Add home and Add work. Siri reads home too.
     var homePlace: StopRef? { didSet { Persist.save(homePlace, "placeHome") } }
     var workPlace: StopRef? { didSet { Persist.save(workPlace, "placeWork") } }
+    /// Trips made with New trip, newest first. Kept on this device.
+    var myTrips: [MyTrip] = [] { didSet { Persist.save(myTrips, "myTrips") } }
+    /// Your order of the trips on Trips, as trip keys. Home and Work share the key "places".
+    var tripOrder: [String] = [] { didSet { Persist.save(tripOrder, "tripOrder") } }
+    /// Trip keys that show every service, not only the direct ones.
+    var allServices: [String] = [] { didSet { Persist.save(allServices, "allServices") } }
     /// Set by Home's search field so the Search tab opens with its field focused.
     var focusSearch = false
     var hapticsOn: Bool = true { didSet { UserDefaults.standard.set(hapticsOn, forKey: "haptics") } }
@@ -52,13 +58,16 @@ final class AppStore {
         }
         if d.bool(forKey: "uiTestReset") {
             // UI tests start from a clean device.
-            for k in ["starred", "recents", "recentTrips", "haptics", "refresh", "seenNotes", "placeHome", "placeWork", "ask.chat.v1"] { d.removeObject(forKey: k) }
+            for k in ["starred", "recents", "recentTrips", "haptics", "refresh", "seenNotes", "placeHome", "placeWork", "ask.chat.v1", "myTrips", "tripOrder", "allServices"] { d.removeObject(forKey: k) }
         }
         starred = Persist.load([StopRef].self, "starred") ?? []
         recents = Persist.load([StopRef].self, "recents") ?? []
         recentTrips = Persist.load([TripPair].self, "recentTrips") ?? []
         homePlace = Persist.load(StopRef.self, "placeHome")
         workPlace = Persist.load(StopRef.self, "placeWork")
+        myTrips = Persist.load([MyTrip].self, "myTrips") ?? []
+        tripOrder = Persist.load([String].self, "tripOrder") ?? []
+        allServices = Persist.load([String].self, "allServices") ?? []
         hapticsOn = d.object(forKey: "haptics") as? Bool ?? true
         let r = d.integer(forKey: "refresh")
         refreshSeconds = r == 0 ? 15 : r
@@ -168,6 +177,30 @@ final class AppStore {
 
     func forgetTrip(from: StopRef, to: StopRef) {
         recentTrips.removeAll { $0.from.id == from.id && $0.to.id == to.id }
+        tap()
+    }
+
+    // MARK: Trips made with New trip
+
+    func saveMyTrip(_ t: MyTrip) {
+        var list = myTrips.filter { $0.id != t.id && $0.name != t.name }
+        list.insert(t, at: 0)
+        myTrips = Array(list.prefix(12))
+        show(Banner(title: "Saved \(t.name)", detail: t.via == nil ? nil : "Change at \(Naming.compact(Naming.short(t.via!.name))), \(t.conn ?? 5) min to connect.", symbol: "bookmark.fill"))
+        success()
+    }
+
+    func removeMyTrip(_ key: String) {
+        myTrips.removeAll { $0.id == key }
+        tap()
+    }
+
+    func showsAllServices(_ key: String) -> Bool { allServices.contains(key) }
+
+    func setAllServices(_ key: String, _ on: Bool) {
+        var list = allServices.filter { $0 != key }
+        if on { list.append(key) }
+        allServices = list
         tap()
     }
 
