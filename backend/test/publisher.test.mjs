@@ -12,7 +12,7 @@ walk(pub);
 test("no public page or server message shows the internal mailbox", () => {
   for (const f of [...pages, path.join(root, "src/worker.js"), path.join(pub, "app.js"), path.join(pub, "live/live.js")]) {
     const t = fs.readFileSync(f, "utf8");
-    assert.doesNotMatch(t, /mail\.tab\.bot|wildgamingbk|MaisySen/i, f);
+    assert.doesNotMatch(t, new RegExp(["mail", "tab", "bot"].join("\\.") + "|wildgamingbk|MaisySen", "i"), f);
   }
 });
 

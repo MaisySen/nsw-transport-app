@@ -1,4 +1,4 @@
-// Transport Bot v2: a Cloudflare Worker that answers transport questions with live
+// Transport: Sydney Live server. A Cloudflare Worker that answers transport questions with live
 // Transport for NSW data. It merges the Trip Planner API with the GTFS realtime feeds
 // (trip updates and vehicle positions) so that every time shown is either truly live
 // or clearly marked as scheduled. The API key stays on the server side.
@@ -1394,7 +1394,7 @@ async function answer(env, raw, ctx = {}) {
 
 
 
-// ---- ask v2 start
+// ---- ask start
 // Ask tab: reads a natural question, answers it from live Transport for NSW data, and adds
 // a short reply, cards and deep links on top of the classic answer() result. Nothing here
 // is made up: every time, platform and status comes from departures(), trip() or alerts().
@@ -2128,7 +2128,7 @@ async function askText(env, d) {
   if (d.kind === "trip" && (d.modeNote || d.via)) return [d.via ? `Via ${askShort(askLabel(d.via))}` : "", d.modeNote || "", await asText(env, d)].filter(Boolean).join("\n");
   return asText(env, d);
 }
-// ---- ask v2 end
+// ---- ask end
 
 // ---------- plain text answers (WhatsApp, Telegram, SMS) ----------
 
@@ -2180,11 +2180,11 @@ async function vehicleWhere(env, rt, it) {
 async function asText(env, d, limit = 6) {
   switch (d.kind) {
     case "help":
-      return "Hi, I'm Transport Bot. Send a stop number from the sign (like 213516), a station (like Strathfield), or a trip like Burwood to Central. Save a trip with: save Burwood to Central as home. Then just send home.";
+      return "Hi, this is Transport: Sydney Live. Send a stop number from the sign (like 213516), a station (like Strathfield), or a trip like Burwood to Central. Save a trip with: save Burwood to Central as home. Then just send home.";
     case "text": case "error":
       return d.text;
     case "needLocation":
-      return "Send a station name or stop number instead (location only works in the web version).";
+      return "Send a station name or stop number instead (location only works in the app).";
     case "savedList":
       return d.items.length ? "Saved trips:\n" + d.items.map((s) => `${s.name}: ${s.from.name} to ${s.to.name}`).join("\n") : "No saved trips yet. Try: save Burwood to Central as home";
     case "departures": {
@@ -2245,22 +2245,34 @@ async function asText(env, d, limit = 6) {
 
 // ---------- HTTP ----------
 
-// ---------- proactive layer (v3): Web Push, watched trips, commutes, predictions ----------
+// ---------- proactive layer: Web Push, watched trips, commutes, predictions ----------
 // A minute scheduler (GET /api/tick?key=...) follows every watched trip and commute
 // through the shared feed cache and sends phone notifications with Web Push.
 
-const VAPID_PUBLIC = "__VAPID_PUBLIC_KEY__";
-const VAPID_PRIVATE = "__VAPID_PRIVATE_KEY__";
-const VAPID_SUBJECT = "__VAPID_SUBJECT__";
-const TICK_KEY = "__TICK_KEY__";
-const ADMIN_KEY = "__ADMIN_KEY__";
+// Secrets: build.mjs writes them in for a single file deploy; a wrangler deploy leaves the
+// placeholders and sets Worker secrets of the same names instead, read by applyEnv on each request.
+let VAPID_PUBLIC = "__VAPID_PUBLIC_KEY__";
+let VAPID_PRIVATE = "__VAPID_PRIVATE_KEY__";
+let VAPID_SUBJECT = "__VAPID_SUBJECT__";
+let TICK_KEY = "__TICK_KEY__";
+let ADMIN_KEY = "__ADMIN_KEY__";
+// A placeholder that was never filled is no secret at all, so it can never match a request.
+const unfilled = (v) => !v || /^__[A-Z0-9_]+__$/.test(String(v));
+function applyEnv(env) {
+  if (!env) return;
+  if (env.VAPID_PUBLIC_KEY) VAPID_PUBLIC = env.VAPID_PUBLIC_KEY;
+  if (env.VAPID_PRIVATE_KEY) VAPID_PRIVATE = env.VAPID_PRIVATE_KEY;
+  if (env.VAPID_SUBJECT) VAPID_SUBJECT = env.VAPID_SUBJECT;
+  if (env.TICK_KEY) TICK_KEY = env.TICK_KEY;
+  if (env.ADMIN_KEY) ADMIN_KEY = env.ADMIN_KEY;
+}
 
 // ---------- security helpers ----------
 // Admin and scheduler keys are compared in constant time. The key can come from the
 // x-admin-key header (preferred, kept out of logs and history) or the ?key= query (cron).
 function safeEq(a, b) {
   a = String(a || ""); b = String(b || "");
-  if (!a || !b) return false;
+  if (!a || !b || unfilled(b)) return false;
   let diff = a.length ^ b.length;
   for (let i = 0; i < Math.max(a.length, b.length); i++) diff |= (a.charCodeAt(i % a.length) || 0) ^ (b.charCodeAt(i % b.length) || 0);
   return diff === 0;
@@ -2934,6 +2946,31 @@ function mergeAppConfig(over) {
   return out;
 }
 
+// Database export for a move to another host (tools/export-d1.mjs). Admin only, read only.
+// Without a table it lists every table with its CREATE statement and row count, plus the
+// indexes. With table it returns up to limit rows after the given rowid, in rowid order.
+async function exportRoute(env, p) {
+  const d = env.DB;
+  if (!d) return json({ error: "no database" }, 503);
+  const list = await d1all(env, "SELECT type, name, tbl_name, sql FROM sqlite_master WHERE type IN ('table', 'index') AND sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%' ORDER BY type DESC, name");
+  const tables = list.filter((x) => x.type === "table" && /^[A-Za-z0-9_]+$/.test(x.name));
+  const t = p.get("table");
+  if (!t) {
+    const out = [];
+    for (const x of tables) {
+      const n = await d1all(env, `SELECT COUNT(*) AS n FROM "${x.name}"`).catch(() => [{ n: null }]);
+      out.push({ name: x.name, sql: x.sql, rows: n[0] ? n[0].n : null });
+    }
+    return json({ tables: out, indexes: list.filter((x) => x.type === "index").map((x) => ({ name: x.name, table: x.tbl_name, sql: x.sql })) });
+  }
+  if (!tables.some((x) => x.name === t)) return json({ error: "no such table" }, 404);
+  const after = Math.max(0, Math.floor(Number(p.get("after")) || 0));
+  const limit = Math.min(1000, Math.max(1, Math.floor(Number(p.get("limit")) || 500)));
+  const rows = await d1all(env, `SELECT rowid AS "__rowid", * FROM "${t}" WHERE rowid > ?1 ORDER BY rowid LIMIT ?2`, after, limit);
+  const last = rows.length ? rows[rows.length - 1].__rowid : null;
+  return json({ table: t, rows, next: rows.length === limit ? last : null });
+}
+
 async function appConfigRoute(request, env, p, adminOk) {
   const platform = (p.get("platform") || "ios").toLowerCase().replace(/[^a-z]/g, "").slice(0, 12) || "ios";
   const d = env.DB;
@@ -2948,6 +2985,12 @@ async function appConfigRoute(request, env, p, adminOk) {
         let body;
         try { body = JSON.parse(text); } catch (e) { return json({ error: "not JSON" }, 400); }
         if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "send an object" }, 400);
+        // copy.api_base moves the apps to another server address, so a typo would strand every
+        // install: only an https origin (no path) or an empty value is accepted.
+        const base = body.copy && typeof body.copy === "object" ? body.copy.api_base : undefined;
+        if (base != null && base !== "" && !(typeof base === "string" && /^https:\/\/[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\/?$/i.test(base))) {
+          return json({ error: "copy.api_base must be an https origin like https://api.example.com, with no path" }, 400);
+        }
         await d.prepare("INSERT INTO app_config (platform, body, at) VALUES (?1, ?2, ?3) ON CONFLICT(platform) DO UPDATE SET body = ?2, at = ?3").bind(platform, JSON.stringify(body), Date.now()).run();
         over = body;
         if (platform === "server") serverCfg.at = 0;
@@ -3877,7 +3920,7 @@ const FAC_LABEL = {
   phone: "Payphone", info: "Information point", display: "Next service display", charge: "Phone charging", luggage: "Luggage storage",
 };
 const PARK_WATCH_HOURS = 3;
-let facOrigin = "https://nsw-transport-bot.sites.tab.bot";
+let facOrigin = "https://assets.local";
 const facMem = {};
 async function facData(env, name) {
   const hit = facMem[name];
@@ -4307,10 +4350,39 @@ async function facRoutes(request, env, url) {
 }
 // ---- facilities end
 
+// Hosts. The API lives at api.transportsydney.app and the public site (store links, privacy,
+// support, terms) at transportsydney.app as static files. On the API host, or anywhere with
+// API_ONLY set (the Cloudflare deploy sets it), this worker serves only the API, the shared live
+// trip page and the Android APK: the site's paths redirect to the site and anything else is a
+// JSON 404. CORS stays open (*) on every host, so app builds on the old and new address both work.
+const API_HOST = "api.transportsydney.app";
+const SITE_URL = "https://transportsydney.app";
+function siteUrl(env) {
+  const s = env && env.SITE_URL;
+  return typeof s === "string" && /^https:\/\/[a-z0-9.-]+$/i.test(s) ? s.toLowerCase() : SITE_URL;
+}
+function apiOnly(env, url) {
+  if (env && (env.API_ONLY === "1" || env.API_ONLY === true)) return true;
+  return url.hostname.toLowerCase() === String((env && env.API_HOST) || API_HOST).toLowerCase();
+}
+const LIVE_PATHS = /^\/(live\/|live\/live\.js|style\.css|vendor\/leaflet\.(js|css)|favicon(-16|-32)?\.(png|ico)|apple-touch-icon\.png|icon-(192|512)\.png|badge-96\.png|og\.png)$/;
+const SITE_PATHS = /^\/(privacy|support|terms)(\/.*)?$/;
+function apiOnlyRoute(request, env, url) {
+  const p = url.pathname;
+  if (p.startsWith("/api/") || /^\/download\/[A-Za-z0-9._-]+\.apk$/.test(p) || LIVE_PATHS.test(p)) return null;
+  const go = (to) => new Response(null, { status: 301, headers: { location: to, "cache-control": "public, max-age=3600", ...API_SEC_HEADERS } });
+  if (p === "/" || p === "/index.html" || /^\/download(\/.*)?$/.test(p)) return go(siteUrl(env) + "/");
+  if (SITE_PATHS.test(p)) return go(siteUrl(env) + "/" + p.split("/")[1] + "/");
+  if (p === "/live") return go("/live/" + url.search);
+  if (p === "/robots.txt") return new Response("User-agent: *\nDisallow: /\n", { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=86400", ...API_SEC_HEADERS } });
+  return json({ error: "Not found. This address serves the Transport: Sydney Live API under /api/.", site: siteUrl(env) }, 404);
+}
+
 async function handleRequest(request, env, exec) {
     const url = new URL(request.url);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "content-type, x-profile", "access-control-max-age": "86400" } });
-    if (/^\/(worker\.m?js|_worker\.js|tab-site\.json)$/.test(url.pathname)) return new Response("Not found", { status: 404 });
+    if (apiOnly(env, url)) { const r = apiOnlyRoute(request, env, url); if (r) return r; }
+    if (/^\/(worker\.m?js|_worker\.js|[a-z]+-site\.json)$/.test(url.pathname)) return new Response("Not found", { status: 404 });
     if (/^\/download\/[A-Za-z0-9._-]+\.apk$/.test(url.pathname)) return serveFile(env, url.pathname.slice("/download/".length), request);
     if (!url.pathname.startsWith("/api/")) {
       if (url.pathname !== "/404.html") { const page = servePage(request, url); if (page) return page; }
@@ -4563,7 +4635,7 @@ async function handleRequest(request, env, exec) {
           // What the native app checks to offer an update.
           let apk = null;
           if (env.FILES) { const h = await env.FILES.head("transport.apk").catch(() => null); if (h) apk = { url: "https://" + url.host + "/download/transport.apk", size: h.size, version: (h.customMetadata || {}).version || null, uploaded: h.uploaded }; }
-          return json({ android: apk, expoGo: "exp://u.expo.dev/cf1f4c4c-5157-41bf-a254-4480223f6368?channel-name=expo-go&runtime-version=exposdk%3A58.0.0", page: "https://" + url.host + "/download/" });
+          return json({ android: apk, expoGo: "exp://u.expo.dev/cf1f4c4c-5157-41bf-a254-4480223f6368?channel-name=expo-go&runtime-version=exposdk%3A58.0.0", page: siteUrl(env) + "/" });
         }
         case "/api/push/unsubscribe": {
           await ensureSchema3(env);
@@ -4735,6 +4807,11 @@ async function handleRequest(request, env, exec) {
           if (p.get("reset") === "1") c.state = "{}";
           return json(await processCommute(env, c, Date.now(), sydneyNow(), { force: true, forceLeave: p.get("leave") === "1" }));
         }
+        case "/api/admin/export": {
+          if (!adminOk(request, p)) return json({ error: "forbidden" }, 403);
+          if (request.method !== "GET") return json({ error: "GET only" }, 405);
+          return await exportRoute(env, p);
+        }
         case "/api/admin/profile-copy": {
           // Copies everything stored under one profile to a new private profile id (admin only).
           // Device bound rows (push subscriptions, Expo tokens, watches, notes) stay with their
@@ -4864,7 +4941,14 @@ async function ipLimitOk(env, request, pathname) {
 }
 
 export default {
+  // Cloudflare Cron Trigger (wrangler.toml): the minute tick, the same work as GET /api/tick.
+  async scheduled(event, env, exec) {
+    applyEnv(env);
+    const run = runTick(env, {}).catch(() => null);
+    if (exec && exec.waitUntil) exec.waitUntil(run); else await run;
+  },
   async fetch(request, env, exec) {
+    applyEnv(env);
     const url = new URL(request.url);
     const cache = request.method === "GET" && EDGE_CACHE_RE.test(url.pathname) && !badInput(url.searchParams) ? edgeCache() : null;
     if (cache) {

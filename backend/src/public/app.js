@@ -1,4 +1,4 @@
-// Transport Bot web app (v3). Plain JavaScript, no framework.
+// Transport web app. Plain JavaScript, no framework.
 // Apple style layout: large titles, grouped lists, a tab bar, a live map in a pull up sheet.
 // Every view refreshes itself while open, countdowns tick every second, every time is
 // marked live or scheduled, and watched trips reach the phone as notifications.
@@ -1712,7 +1712,7 @@ window.TBApp = () => {
       const t0 = T();
       const legs = via ? [{ mode: lm(j0), from: t0.from, to: via }, { mode: "", from: via, to: t0.to }] : [{ mode: lm(j0), from: t0.from, to: t0.to }];
       return openConfirmTrip({ legs, conn: t0.conn, name: name || null, after: () => navNow() });
-      openModal({ title: "Save trip", right: "Save", body: `<div class="group-h">Name</div><div class="group"><div class="list"><div class="cell static"><input id="tripName" style="border:0;background:none;outline:none;width:100%;font-size:17px" value="${saved().length ? "work" : "home"}" maxlength="24" aria-label="Trip name"></div></div><p class="group-f">Then type the name in Search, or text it to Tab on WhatsApp, for the next live trips.</p></div>`,
+      openModal({ title: "Save trip", right: "Save", body: `<div class="group-h">Name</div><div class="group"><div class="list"><div class="cell static"><input id="tripName" style="border:0;background:none;outline:none;width:100%;font-size:17px" value="${saved().length ? "work" : "home"}" maxlength="24" aria-label="Trip name"></div></div><p class="group-f">Then type the name in Search for the next live trips.</p></div>`,
         onOpen: (m) => setTimeout(() => $("#tripName", m).select(), 350),
         onRight: () => {
           const n = ($("#tripName").value || "").trim().toLowerCase();

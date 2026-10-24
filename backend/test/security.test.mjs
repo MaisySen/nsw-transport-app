@@ -27,6 +27,7 @@ const stmt = (q) => ({
 });
 const env = {
   TFNSW_API_KEY: "test",
+  ADMIN_KEY: "test-admin-key-123",
   DB: { prepare: (q) => stmt(q), batch: async (l) => l.map(() => ({})) },
   ASSETS: { fetch: async () => new Response("<h1>page</h1>", { status: 404, headers: { "content-type": "text/html" } }) },
 };
@@ -41,11 +42,12 @@ test("admin endpoints refuse a wrong or missing key", async () => {
 });
 
 test("admin key works only from the x-admin-key header, never the address", async () => {
-  // In source the key is the build placeholder, so the test can use it.
-  assert.equal((await call("/api/stats", { headers: { "x-admin-key": "__ADMIN_KEY__" } })).status, 200);
-  assert.equal((await call("/api/stats?key=__ADMIN_KEY__")).status, 403);
+  // The key comes from the Worker secret (env.ADMIN_KEY); the unfilled build placeholder never works.
+  assert.equal((await call("/api/stats", { headers: { "x-admin-key": "test-admin-key-123" } })).status, 200);
+  assert.equal((await call("/api/stats?key=test-admin-key-123")).status, 403);
+  assert.equal((await call("/api/stats", { headers: { "x-admin-key": "__ADMIN_KEY__" } })).status, 403);
   assert.equal((await call("/api/health")).status, 403);
-  assert.equal((await call("/api/health", { headers: { "x-admin-key": "__ADMIN_KEY__" } })).status, 200);
+  assert.equal((await call("/api/health", { headers: { "x-admin-key": "test-admin-key-123" } })).status, 200);
   const u = await (await call("/api/usage")).json();
   assert.deepEqual(Object.keys(u), ["observations"], "public usage shows only the recorded count");
 });

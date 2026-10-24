@@ -3,4 +3,4 @@ Allow: /
 Disallow: /api/
 Disallow: /support/thanks/
 
-Sitemap: https://nsw-transport-bot.sites.tab.bot/sitemap.xml
+Sitemap: https://transportsydney.app/sitemap.xml

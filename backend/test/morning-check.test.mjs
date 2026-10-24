@@ -155,7 +155,7 @@ test("outside the window, on a day not chosen, or switched off: nothing", async 
   assert.equal((await notes(env2)).length, 0);
 });
 
-const todIn = (mins) => { const p = new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Sydney", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date(Date.now() + mins * MIN)); const g = (t) => Number(p.find((x) => x.type === t).value) % 24; return `${String(g("hour")).padStart(2, "0")}:${String(g("minute")).padStart(2, "0")}`; };
+const todIn = (mins) => { const p = new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Sydney", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date(Date.now() + mins * MIN)); const g = (t) => Number(p.find((x) => x.type === t).value); return `${String(g("hour") % 24).padStart(2, "0")}:${String(g("minute")).padStart(2, "0")}`; };
 
 test("the minute tick runs morning checks, and the server flag switches them off", async () => {
   const env = freshEnv(); resetLifts();

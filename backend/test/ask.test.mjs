@@ -1,4 +1,4 @@
-// Ask tab: checks the chat files, the tab bar entry, the route and the /api/ask v2 block.
+// Ask tab: checks the chat files, the tab bar entry, the route and the /api/ask block.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -14,7 +14,7 @@ test("Ask tab is wired into the web app", () => {
   for (const s of ["Next train Burwood to Central", "Is the T1 late", "Last train home", "/api/ask?"]) assert.ok(js.includes(s), s);
 });
 
-test("ask v2 answers with reply, cards and links", () => {
+test("ask answers with reply, cards and links", () => {
   const w = read("src/worker.js");
   for (const s of ["async function askV2", "d.reply = reply; d.cards = cards; d.links = links", "lineStatus", "routeAt", "lastService"]) assert.ok(w.includes(s), s);
 });
@@ -22,7 +22,7 @@ test("ask v2 answers with reply, cards and links", () => {
 test("no em or en dashes in the Ask files", () => {
   for (const p of ["src/public/ask.js", "src/public/ask.css", "test/ask.test.mjs", "tools/build_places.py"]) assert.ok(!/[\u2013\u2014]/.test(read(p)), p);
   const w = read("src/worker.js");
-  const block = w.slice(w.indexOf("// ---- ask v2 start"), w.indexOf("// ---- ask v2 end"));
+  const block = w.slice(w.indexOf("// ---- ask start"), w.indexOf("// ---- ask end"));
   assert.ok(block.length > 1000 && !/[\u2013\u2014]/.test(block));
 });
 

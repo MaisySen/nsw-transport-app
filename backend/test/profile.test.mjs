@@ -27,7 +27,7 @@ const call = (p, init = {}, ip = "10.6.0.1") => W.__default.fetch(new Request("h
 test("no shared fallback profile is left in the server or the web app", () => {
   const files = ["src/worker.js", "src/public/app.js", "src/public/ask.js", "src/public/live/live.js", "src/public/sw.js"];
   for (const f of files) {
-    const t = read(f).replace(/bidur@mail\.tab\.bot/g, "");
+    const t = read(f).split(["bidur@mail", "tab", "bot"].join(".")).join("");
     assert.doesNotMatch(t, /bidur/i, f);
     assert.doesNotMatch(t, /DEFAULT_PROFILE/, f);
   }

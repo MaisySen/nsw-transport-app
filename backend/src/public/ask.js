@@ -1,4 +1,4 @@
-// Ask tab: a chat with Transport Bot. Questions go to /api/ask, answers come back as a short
+// Ask tab: a chat with Transport. Questions go to /api/ask, answers come back as a short
 // reply plus live cards (departures, trips, alerts) that open the board, trip or live map.
 (function () {
   "use strict";
@@ -105,7 +105,7 @@
   }
   function msgHtml(m, i) {
     if (m.role === "me") return `<div class="ak-msg me"><div class="ak-b">${esc(m.text)}</div></div>`;
-    if (m.role === "typing") return `<div class="ak-msg bot"><div class="ak-b ak-typing" aria-label="Transport Bot is typing"><i></i><i></i><i></i></div></div>`;
+    if (m.role === "typing") return `<div class="ak-msg bot"><div class="ak-b ak-typing" aria-label="Transport is typing"><i></i><i></i><i></i></div></div>`;
     const d = m.data || {};
     const links = (d.links || []).filter((l) => l.href);
     const chips = [];
@@ -132,7 +132,7 @@
       html += msgHtml(m, i);
     });
     if (!msgs.length && !busy) {
-      html = `<div class="ak-hello"><div class="ak-av"><img src="/icon-192.png" alt=""></div><b>Ask Transport Bot</b><p>Live times for any train, bus, ferry or light rail in NSW. Type or say a question.</p></div>
+      html = `<div class="ak-hello"><div class="ak-av"><img src="/icon-192.png" alt=""></div><b>Ask Transport</b><p>Live times for any train, bus, ferry or light rail in NSW. Type or say a question.</p></div>
         <div class="ak-starters">${STARTERS.map((s) => `<button class="ak-chip big" data-q="${esc(s)}">${esc(s)}</button>`).join("")}</div>`;
     }
     list.innerHTML = html;

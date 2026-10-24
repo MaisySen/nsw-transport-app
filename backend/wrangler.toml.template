@@ -1,0 +1,39 @@
+# Cloudflare Worker for the Transport: Sydney Live API (api.transportsydney.app).
+# tools/deploy-cloudflare.sh renders this file to wrangler.toml with values from the environment
+# (CF_ACCOUNT_ID, D1_DATABASE_ID, R2_BLOCK). wrangler.toml is not committed. No secrets here:
+# they are Worker secrets (wrangler secret put), see docs/DEPLOY_CLOUDFLARE.md.
+name = "transport-api"
+main = "dist/worker.mjs"
+account_id = "${CF_ACCOUNT_ID}"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
+
+# The static files the API reads (stations, stops, facilities) and the shared live trip page.
+# The worker runs first so the API host never serves anything it does not route.
+[assets]
+directory = "dist/public"
+binding = "ASSETS"
+run_worker_first = true
+
+[vars]
+API_ONLY = "1"
+API_HOST = "api.transportsydney.app"
+SITE_URL = "https://transportsydney.app"
+VAPID_SUBJECT = "mailto:contact@fintex.au"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "transport"
+database_id = "${D1_DATABASE_ID}"
+migrations_dir = "migrations"
+
+[[routes]]
+pattern = "api.transportsydney.app"
+custom_domain = true
+
+# The minute tick (watches, commutes, morning checks, lift and car park alerts, clean up).
+[triggers]
+crons = ["* * * * *"]
+${R2_BLOCK}
