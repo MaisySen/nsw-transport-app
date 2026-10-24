@@ -24,6 +24,7 @@ import { LineBadge, OccupancyChip } from '@/components/Transit';
 import { arrOf, ServiceRow, tripCacheId, tripPkey, WarnLine } from '@/components/Home';
 import { cacheKey, offlineText } from '@/lib/offlineCore';
 import { planB, problemOf } from '@/lib/planBCore';
+import { busLegStatus } from '@/lib/busLiveCore';
 import { RemindLastButton } from '@/components/LastHome';
 import { canRemind, lastTonightIndex, modeOfLegs } from '@/lib/lastHomeCore';
 import { Button, Empty, Screen, Sep, T } from '@/components/ui';
@@ -57,6 +58,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
   const color = l.color || modeColor[l.mode || 'bus'];
   const dep = bestTime(l.planned, l.realtime ? l.estimated : null);
   const arr = bestTime(l.arrPlanned, l.realtime ? l.arrEstimated : null);
+  const bus = busLegStatus(l);
   return (
     <Pressable onPress={() => openService({ tripId: l.tripId, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId, color: l.color, dest: l.towards, realtime: l.realtime, estimated: l.estimated, delayMin: l.delayMin })}
       style={({ pressed }) => [st.leg, pressed ? { opacity: 0.7 } : null]}>
@@ -87,6 +89,12 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
             <Icon name={I.chevron} size={12} color={c.tint} />
           </View>
         </View>
+        {bus ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }} accessibilityLabel={bus.text}>
+            <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: bus.tone === 'ok' ? c.green : bus.tone === 'red' ? c.red : c.orange }} />
+            <T kind="foot" style={{ color: bus.tone === 'ok' ? c.liveText : bus.tone === 'red' ? c.redText : c.lateText, fontWeight: '600' }}>{bus.text}</T>
+          </View>
+        ) : null}
         {l.alerts?.length ? (
           <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
             <Icon name={I.warn} size={13} color={c.orange} />
