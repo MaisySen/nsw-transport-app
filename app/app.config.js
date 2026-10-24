@@ -7,8 +7,9 @@
 // Runtime: policy appVersion, so the runtime is the "version" field (1.0.0). Android versionCode 5 was built
 // with runtime 1.0.0, so it keeps getting updates. Change "version" only together with a new native build.
 //
-// iPhone app group: the widgets read the app's profile id through group.com.maisysen.nswtransport. Until the
-// group is registered on developer.apple.com (SUBMIT.md), builds leave it out (IOS_APP_GROUP=0 in eas.json).
+// iPhone app group: the widgets read the app's profile id through group.com.maisysen.nswtransport. The group is
+// registered and ticked on both App IDs since 25 Oct 2026; the production profile builds with it (IOS_APP_GROUP=1
+// in eas.json, from build 202). Build 201 has no group: the native module then falls back to its own defaults.
 //
 // Expo Go: the iPhone preview in Expo Go needs the SDK runtime and no channel header.
 const APP_GROUP = 'group.com.maisysen.nswtransport';

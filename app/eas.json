@@ -24,7 +24,7 @@
         "credentialsSource": "local"
       },
       "env": {
-        "IOS_APP_GROUP": "0"
+        "IOS_APP_GROUP": "1"
       }
     }
   },
