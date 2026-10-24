@@ -1,6 +1,6 @@
 # Test plan
 
-How Transport is tested, what runs where, and the current results. Updated 24 Oct 2026, 2:15 PM Sydney time.
+How Transport is tested, what runs where, and the current results. Updated 24 Oct 2026, 2:20 PM Sydney time.
 
 ## Levels
 
@@ -36,7 +36,7 @@ Runs offline with recorded stop search answers in `backend/test/fixtures/stopfin
 12. The single via trip opens and saves as a two leg trip
 13. Multi stop reply lists each leg, the changes, total time and arrival
 
-Tests 9 to 13 belong to the multi stop Ask work that is in progress today; the 8 before them are on `main`.
+Tests 9 to 13 came with the multi stop Ask (commit 2be460a).
 
 A separate live list of 55 real phrasings (including "I need to go to campsie to newcastle via chatswood", typos, landmarks and suburbs that sound like other words) was run against the live `/api/ask`: 55 of 55 sensible, 7 of 7 Did you mean choices resolve.
 

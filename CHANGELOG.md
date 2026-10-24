@@ -5,10 +5,10 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 ## 24 Oct 2026
 
 ### In progress
-* Ask handles several stops in one question ("campsie to hornsby via central and chatswood", "A then B then C") and opens or saves the answer as a multi leg trip.
 * iPhone build 8 fix run (CI run 21): the new trip UI test filters the list after the side index jump; bus stop rows use the primary text colour.
 
 ### Added
+* Ask handles several stops in one question (2:15 PM): "campsie to hornsby via central and chatswood", "via C via D", "changing at C and D", "stopping at C, D", "A then C then D then B", "A, C, D, B". The reply lists the chain, each leg's next service, change times, total time and arrival. Open trip and Save trip open or save it as a multi leg trip on web and Android; a single via answer opens as a two leg trip.
 * Multi leg trips on web and Android (1:50 PM): 1 to 6 legs, any mode including walk, add, remove and reorder legs, change time per stop, direct services per leg. Each first leg service is paired with the first connection you can catch. Warnings for tight changes and for connections missed because of delays. New endpoint `/api/plan`.
 * Ask understands places properly (1:37 PM): landmarks, every station and 5,087 NSW suburbs come before businesses; typos are fixed; unclear names get Did you mean choices; "via" is supported; every reply starts with the From, Via and To it understood.
 * Website launch checklist (1:07 PM): landing page for first time visitors, custom 404, title and description per page, favicon set, robots.txt, sitemap.xml, 1200 x 630 share image, terms page, contact form with thank you page, page counter with no cookies, sticky mobile buttons, compressed images.

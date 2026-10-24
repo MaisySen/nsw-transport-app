@@ -1,6 +1,6 @@
 # Releases
 
-Every shipped build and update. Times are Sydney time (AEDT). Updated 24 Oct 2026, 2:15 PM.
+Every shipped build and update. Times are Sydney time (AEDT). Updated 24 Oct 2026, 2:20 PM.
 
 ## iPhone (native SwiftUI)
 
@@ -38,6 +38,7 @@ Project `cf1f4c4c-5157-41bf-a254-4480223f6368`, owner `bidurtab`. `production` i
 
 | Time (about) | Update | production group | expo-go group |
 | --- | --- | --- | --- |
+| 24 Oct, 2:15 PM | Ask: several stops in one question, Open trip and Save trip open as a multi leg trip | 809a3a8e-74dd-4fb6-b082-2ace00c68948 (republished over 1e683ee4-ff26-4485-ade0-f1858ab1f73c) | edd8ad30-66d9-4347-b8de-1108c7dc2801 |
 | 24 Oct, 1:50 PM | Multi leg trips: add, remove and reorder legs, change time per connection, walk legs, tight and missed connection warnings | c0bd6116-bf5f-49b4-8c7f-ef849f15092d | db5cefd5-b7fe-478e-bf63-a6fb114d64dd |
 | 24 Oct, 11:45 AM | New trip by mode, confirm trip with extend and connection time, direct services with All services, drag to reorder | 6372d294-62c6-4557-a2e5-a683dc3b898b | 88b28c86-7280-4d9b-9ca2-d997d4ca0566 |
 | 24 Oct, 9:19 AM | Ask tab: chat with live answers, cards open the board, trip or live map | 48f77045-bb8d-4445-a29b-ea75943a5d3b | 69c9d3d5-9c12-4c93-9c5d-5d0438de9e6a |
@@ -54,6 +55,7 @@ Published to https://nsw-transport-bot.sites.tab.bot. Each publish replaces the 
 
 | Time (about) | Release | Commit |
 | --- | --- | --- |
+| 24 Oct, 2:15 PM | Ask with several stops, Open trip as a multi leg trip | 2be460a |
 | 24 Oct, 1:55 PM | Multi leg trips and `/api/plan` | 1bed1c1, d7e5eb8 |
 | 24 Oct, 1:37 PM | Ask: stations and suburbs before businesses, typo fixes, Did you mean, via | 9ac2c5a, bb563d7 |
 | 24 Oct, 1:07 PM | Website launch checklist: landing page, 404, meta tags, favicon set, robots and sitemap, share image, terms, contact form with thank you page, page counter without cookies, per visitor profile on the web | bd8ed89 |

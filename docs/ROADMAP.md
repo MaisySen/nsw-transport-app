@@ -1,12 +1,11 @@
 # Roadmap
 
-Open items, in the order they are planned. Updated 24 Oct 2026, 2:15 PM.
+Open items, in the order they are planned. Updated 24 Oct 2026, 2:20 PM.
 
 ## Now
 
 | Item | Detail | Status |
 | --- | --- | --- |
-| Ask with several stops | "campsie to hornsby via central and chatswood", "A then B then C", "changing at X and Y". Plans with `/api/plan` and opens or saves as a multi leg trip on web and Android | In progress |
 | iPhone build 8 fix run | CI run 21: test script fix for the side index jump, bus stop row colour | In progress |
 | Security review | Secret scan, dependency audit, endpoint input checks, headers, mobile config | In progress |
 
@@ -14,7 +13,7 @@ Open items, in the order they are planned. Updated 24 Oct 2026, 2:15 PM.
 
 | Item | Detail |
 | --- | --- |
-| Multi leg trips on iPhone | Port from web and Expo using `/api/plan`, plus Ask "Open trip" for multi leg answers |
+| Multi leg trips on iPhone | Port from web and Expo using `/api/plan`, plus Ask "Open trip" and "Save trip" for multi stop answers |
 | Android native build (versionCode 5) | Widget shows multi leg trips, long press app shortcuts, large stop board widget; new APK on the download page and a new AAB |
 | Store submission | As soon as Bidur's keys arrive (see [Store](STORE.md)): TestFlight, Play internal testing, closed test, review |
 | Android push when the app is closed | Needs a Firebase project (google-services.json, FCM key uploaded to Expo) |

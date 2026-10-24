@@ -1,6 +1,6 @@
 # Requirements
 
-What Transport does, by version, and where each feature stands on each platform. Updated 24 Oct 2026, 2:15 PM Sydney time.
+What Transport does, by version, and where each feature stands on each platform. Updated 24 Oct 2026, 2:20 PM Sydney time.
 
 Status words: **Done** (live for users), **In progress** (being built now), **Planned** (agreed, not started), **Blocked** (waiting on something outside the code).
 
@@ -86,7 +86,7 @@ Platforms: **Web** is the web app at https://nsw-transport-bot.sites.tab.bot. **
 | Ask resolves places properly: stations and 5,087 suburbs before businesses, typo fixes, "Did you mean" | Done (backend) | Done | Done |
 | Ask supports "via" | Done (backend) | Done | Done |
 | Multi leg trips: 1 to 6 legs, any mode including walk, change time per stop, tight and missed connection warnings | Done | Done | Planned |
-| Ask with several stops ("via Central and Chatswood", "A then B then C") | In progress | In progress | Planned |
+| Ask with several stops ("via Central and Chatswood", "A then B then C"), opens or saves as a multi leg trip | Done | Done | Planned |
 | Android widget for multi leg trips, long press shortcuts, large stop board widget | n/a | Planned (new APK) | n/a |
 | App Store and Google Play submission | n/a | Blocked on Bidur (see [Store](STORE.md)) | Blocked on Bidur |
 | Move the whole project to Bidur's Windows PC | Planned, last | | |
