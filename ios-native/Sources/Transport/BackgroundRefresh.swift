@@ -22,6 +22,7 @@ enum BackgroundRefresh {
             var seen = Set(d.stringArray(forKey: "seenNotes") ?? [])
             for n in (r.notes ?? []) where !seen.contains(n.id.value) {
                 seen.insert(n.id.value)
+                if PhoneTripWatches.owns(n.watch_id?.value) { continue }
                 Notifier.post(title: n.title ?? "Trip update", body: n.body ?? "", id: n.id.value)
             }
             d.set(Array(seen.suffix(200)), forKey: "seenNotes")

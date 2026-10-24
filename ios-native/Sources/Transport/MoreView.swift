@@ -94,9 +94,9 @@ struct AboutView: View {
                 LabeledContent("Publisher", value: "Fintex Australia Pty Ltd")
             }
             Section {
-                Link("Help and support", destination: URL(string: "https://nsw-transport-bot.sites.tab.bot/support/")!)
-                Link("Privacy policy", destination: URL(string: "https://nsw-transport-bot.sites.tab.bot/privacy/")!)
-                Link("Terms of use", destination: URL(string: "https://nsw-transport-bot.sites.tab.bot/terms/")!)
+                Link("Help and support", destination: APIBase.page("support/"))
+                Link("Privacy policy", destination: APIBase.page("privacy/"))
+                Link("Terms of use", destination: APIBase.page("terms/"))
                 Link("Open the web version", destination: TransportAPI.defaultBase)
             } footer: {
                 Text("Transport: Sydney Live is provided by Fintex Australia Pty Ltd (ABN 60 688 406 108), New South Wales, Australia. Contact: contact@fintex.au. \u{00A9} 2026 Fintex Australia Pty Ltd.\n\nContains transport data from Transport for NSW, licensed under Creative Commons Attribution 4.0. This is an independent app and is not made or endorsed by Transport for NSW. Install ID \(store.device).")

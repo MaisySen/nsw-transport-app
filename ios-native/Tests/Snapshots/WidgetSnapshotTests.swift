@@ -41,6 +41,39 @@ final class WidgetSnapshotTests: XCTestCase {
         save(islandMinimal(attrs: attrs, state: state), "island-3-minimal", .dark)
     }
 
+    /// The same views with fixed data that has everything at once (a wait of 12 min 56 s, a long
+    /// alert, a change, a walk, no live data on one service), every size, light and dark.
+    func testRenderWidgetFixtureAllSizes() {
+        let now = Date()
+        func t(_ s: Double, _ line: String, _ hex: String, live: Bool, status: String, plat: String?, changes: Int = 0) -> TripLine {
+            TripLine(line: line, colorHex: hex, mode: "train", leave: now.addingTimeInterval(s), arrive: now.addingTimeInterval(s + 900),
+                     isLive: live, status: status, platform: plat, changes: changes)
+        }
+        let trips = [t(776, "T1", "#F99D1C", live: true, status: "On time", plat: "Platform 1"),
+                     t(1500, "T1", "#F99D1C", live: true, status: "2 min late", plat: "Platform 1"),
+                     t(2160, "T9", "#D11F2F", live: false, status: "Scheduled", plat: "Platform 4", changes: 1),
+                     t(2700, "T1", "#F99D1C", live: true, status: "On time", plat: "Platform 1"),
+                     t(4560, "T1", "#F99D1C", live: false, status: "Scheduled", plat: "Platform 1")]
+        var e = NextTripEntry(date: now, title: "", from: "Strathfield", to: "Kings Cross", trips: trips, message: nil,
+                              fromID: "213510", toID: "201110", updated: now)
+        let plain = e
+        e.notice = WidgetNotice(text: "T1 Western Line: Trains run to a changed timetable between Penrith and Emu Plains", level: .warning)
+        var named = plain
+        named.title = "Work"
+        for scheme in [ColorScheme.light, .dark] {
+            let tag = scheme == .dark ? "dark" : "light"
+            save(widget(plain, .systemSmall, size: CGSize(width: 158, height: 158)), "fx-\(tag)-1-small", scheme)
+            save(widget(e, .systemMedium, size: CGSize(width: 338, height: 158)), "fx-\(tag)-2-medium-alert", scheme)
+            save(widget(named, .systemMedium, size: CGSize(width: 338, height: 158)), "fx-\(tag)-3-medium-named", scheme)
+            save(widget(e, .systemLarge, size: CGSize(width: 338, height: 354)), "fx-\(tag)-4-large", scheme)
+            save(lockAccessories(entry: plain, board: nil), "fx-\(tag)-5-lock-screen", scheme)
+        }
+        // A departed service is never shown: at each entry date every trip is still to come.
+        for x in NextTripProvider.entries(from: plain) {
+            XCTAssertTrue(x.trips.allSatisfy { $0.leave > x.date }, "a departed service is on the widget at \(x.date)")
+        }
+    }
+
     // MARK: Data
 
     private func liveActivityData() async throws -> (TripActivityAttributes, TripActivityAttributes.ContentState) {
@@ -185,7 +218,7 @@ final class WidgetSnapshotTests: XCTestCase {
     }
 
     /// The Lock Screen widget row: the ring, the trip and the stop board, white on the wallpaper.
-    private func lockAccessories(entry: NextTripEntry, board: StopBoardEntry) -> some View {
+    private func lockAccessories(entry: NextTripEntry, board: StopBoardEntry?) -> some View {
         VStack(spacing: 14) {
             NextTripView(entry: entry, familyOverride: .accessoryInline)
                 .font(.headline)
@@ -195,8 +228,10 @@ final class WidgetSnapshotTests: XCTestCase {
                 NextTripView(entry: entry, familyOverride: .accessoryRectangular)
                     .frame(width: 170, height: 72, alignment: .leading)
             }
-            StopBoardView(entry: board, familyOverride: .accessoryRectangular)
-                .frame(width: 170, height: 72, alignment: .leading)
+            if let board {
+                StopBoardView(entry: board, familyOverride: .accessoryRectangular)
+                    .frame(width: 170, height: 72, alignment: .leading)
+            }
         }
         .foregroundStyle(.white)
         .padding(30)

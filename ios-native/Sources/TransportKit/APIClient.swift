@@ -70,13 +70,14 @@ public enum AppIdentity {
 
 /// Talks to the live Transport Bot backend. No keys live in the app: the server holds them.
 public struct TransportAPI: Sendable {
-    public static let defaultBase: URL = {
+    /// Read each time, so a new address from remote config applies at once (see APIBase).
+    public static var defaultBase: URL {
         #if DEBUG
         // UI tests point the app at an address that does not answer, to prove it starts without a network.
         if let s = UserDefaults.standard.string(forKey: "apiBase"), let u = URL(string: s) { return u }
         #endif
-        return URL(string: "https://nsw-transport-bot.sites.tab.bot")!
-    }()
+        return APIBase.current()
+    }
     public static var shared: TransportAPI { TransportAPI(profile: AppIdentity.profile) }
 
     public var base: URL

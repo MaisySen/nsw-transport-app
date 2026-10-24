@@ -40,4 +40,4 @@ Every 7 days the app stops opening until it is signed again: plug in and press S
 
 ## App Store (last step)
 
-Everything for the listing is ready in `AppStore/` (name, subtitle, description, keywords, privacy answers). It needs screenshots from the CI run, a support URL, and App Review.
+Everything for the listing is ready in `store/apple/` at the top of the repo: `listing.md` (name, subtitle, description, keywords), `app-privacy.md` (privacy answers), `age-rating.md` and `review-notes.md`. It needs screenshots from the CI run, a support URL, and App Review.

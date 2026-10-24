@@ -17,6 +17,14 @@ public struct RemoteConfig: Codable, Equatable, Sendable {
     public var tabs: [String]
     /// Timing name to a number (seconds or minutes, as the name says).
     public var timing: [String: Double]
+    /// "api_base": moves the app to another server address without a build. Taken only when it
+    /// passes APIBase.accept (https, and a host under fintex.au or the current host).
+    public var apiBase: String?
+
+    enum CodingKeys: String, CodingKey {
+        case version, flags, kill, copy, tabs, timing
+        case apiBase = "api_base"
+    }
 
     public static let knownTabs = ["home", "plan", "watching", "more"]
 
@@ -41,6 +49,8 @@ public struct RemoteConfig: Codable, Equatable, Sendable {
         copy = ((try? c.decodeIfPresent([String: String].self, forKey: .copy)) ?? nil) ?? [:]
         tabs = ((try? c.decodeIfPresent([String].self, forKey: .tabs)) ?? nil) ?? d.tabs
         timing = d.timing.merging(((try? c.decodeIfPresent([String: Double].self, forKey: .timing)) ?? nil) ?? [:]) { _, new in new }
+        // Top level "api_base", or "copy.api_base" (the server passes the copy section through as is).
+        apiBase = ((try? c.decodeIfPresent(String.self, forKey: .apiBase)) ?? nil) ?? copy["api_base"]
     }
 
     /// Shown unless hidden by a flag or switched off by the kill switch.

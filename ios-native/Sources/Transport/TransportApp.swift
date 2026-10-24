@@ -14,7 +14,11 @@ struct TransportApp: App {
                 .task { store.applyConfig(); await store.refreshConfig(force: true) }
                 .onChange(of: scenePhase) { _, phase in
                     store.isActive = (phase == .active)
-                    if phase == .active { Task { await store.refreshConfig() } }
+                    if phase == .active {
+                        Task { await store.refreshConfig() }
+                        // No stale travel updates left on screen once a trip is over.
+                        if store.liveTrip == nil { Task { await Notifier.clearTravel(started: nil, keepArrived: false) } }
+                    }
                     if phase == .background { BackgroundRefresh.schedule() }
                 }
         }

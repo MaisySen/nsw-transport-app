@@ -18,6 +18,7 @@ extension AppStore {
         liveServices = Array(repeating: nil, count: req.legs.count)
         liveState = LiveTripLogic.compute(legs: req.legs, services: liveServices)
         liveAlerted = []
+        travelLedger = TravelUpdateLedger()
         // Present again even if an earlier live trip screen left the flag set.
         if openLiveTrip {
             openLiveTrip = false
@@ -37,6 +38,7 @@ extension AppStore {
             if let created = try? await api.trackWatch(req), let id = created.watch?.id?.value {
                 record.watchID = id
                 if liveTrip?.started == record.started { liveTrip?.watchID = id }
+                PhoneTripWatches.add(id)
             }
         }
     }
@@ -80,6 +82,7 @@ extension AppStore {
             ReplayLog.shared.state(words)
             replay.lockScreen(st.done ? "Arrived at \(Naming.short(trip.to.name))" : "\(st.nextStop.map { "Next stop: \($0)" } ?? "Leg \(st.current + 1)"), arrive \(Clock.time(st.eta))")
         }
+        travelUpdates(trip: trip, state: st, services: services, now: replay?.now ?? Date(), replay: replay != nil)
         liveAlerts(trip: trip, state: st)
         LiveTripActivities.update(record: trip, state: st, services: services)
         if let share = trip.share {
@@ -97,10 +100,7 @@ extension AppStore {
         guard liveTrip?.started == trip.started else { return }
         let place = Naming.short(trip.to.name)
         if liveAlerted.insert("arrived").inserted {
-            // The server watch says it with the app closed; the app says it only when there is none.
-            if trip.watchID == nil {
-                Notifier.post(title: "You've arrived at \(place)", body: trip.title, id: "live-arrived-\(trip.started.timeIntervalSince1970)")
-            }
+            // The alert itself is the travel update "arrived" (said once, see travelUpdates).
             show(Banner(title: "You've arrived at \(place)", symbol: "checkmark.circle.fill"))
             success()
         }
@@ -108,28 +108,40 @@ extension AppStore {
         await endLiveTrip(silent: true, keepServerWatch: trip.watchID != nil, cardFinished: true)
     }
 
-    /// Get off and connection alerts, once per leg. When the server follows the trip it sends
-    /// these as notifications, so the app shows them in app only.
-    private func liveAlerts(trip: LiveTripRecord, state st: LiveTripState) {
-        let last = trip.legs.count - 1
-        let notify = trip.watchID == nil
-        if !st.done, st.phase == "ride", let n = st.stopsLeft, n == 1, let next = st.nextStop {
-            let key = "off\(st.current)"
-            if liveAlerted.insert(key).inserted {
-                let title = st.current < last ? "Next stop: \(next), change here" : "Next stop: \(next) (get off)"
-                if notify { Notifier.post(title: title, body: trip.title, id: "live-\(key)-\(trip.started.timeIntervalSince1970)") }
-                show(Banner(title: title, symbol: "bell.fill"))
+    /// Travel updates: Leave now, Board, Next stop (get off or change here), Change and Arrived,
+    /// each once. Steps still to come are scheduled with the system so they arrive on time with
+    /// the app closed; each refresh moves them to the latest live time under the same identifier.
+    /// The iPhone has no push from the server, so the phone is the one source of these alerts
+    /// and the server watch's own notes for this trip are never shown (see loadWatches).
+    func travelUpdates(trip: LiveTripRecord, state st: LiveTripState, services: [ServiceResponse?], now: Date, replay: Bool) {
+        let steps = TravelUpdates.steps(record: trip, state: st, services: services, now: now)
+        var ledger = travelLedger
+        let a = ledger.update(steps, now: now, canSchedule: !replay)
+        travelLedger = ledger
+        let id = { (k: String) in TravelUpdateLedger.identifier(started: trip.started, key: k) }
+        Notifier.cancelTravel(ids: a.cancel.map(id))
+        for k in a.skipped { ReplayLog.shared.add("step passed while away, not said late: " + k) }
+        for s in a.schedule { Notifier.travel(s, id: id(s.key), at: s.at, now: now) }
+        for s in a.post { Notifier.travel(s, id: id(s.key), at: nil, now: now) }
+        // With the app in front the system shows nothing, so show the step here too.
+        if isActive {
+            for s in a.shown + a.post where s.kind != .arrived {
+                show(Banner(title: s.title, detail: s.body, symbol: s.kind == .change ? "arrow.triangle.swap" : "bell.fill"))
                 success()
             }
         }
+    }
+
+    /// Connection warnings, once per change: in app, and as an alert.
+    private func liveAlerts(trip: LiveTripRecord, state st: LiveTripState) {
         for c in st.connections {
             if c.risk == "miss", liveAlerted.insert("miss\(c.index)").inserted {
                 let body = "Live times leave \(abs(c.spare)) min too little to catch the \(c.nextLine) at \(Naming.short(c.at))."
-                if notify { Notifier.post(title: "Connection at risk", body: body, id: "live-miss\(c.index)-\(trip.started.timeIntervalSince1970)") }
+                Notifier.post(title: "Connection at risk", body: body, id: "live-miss\(c.index)-\(trip.started.timeIntervalSince1970)")
                 show(Banner(title: "Connection at risk", detail: body, symbol: "exclamationmark.triangle.fill"))
             } else if c.risk == "tight", liveAlerted.insert("tight\(c.index)").inserted {
                 let body = "\(max(0, c.spare)) min to catch the \(c.nextLine)."
-                if notify { Notifier.post(title: "Tight change at \(Naming.short(c.at))", body: body, id: "live-tight\(c.index)-\(trip.started.timeIntervalSince1970)") }
+                Notifier.post(title: "Tight change at \(Naming.short(c.at))", body: body, id: "live-tight\(c.index)-\(trip.started.timeIntervalSince1970)")
             }
         }
     }
@@ -169,6 +181,12 @@ extension AppStore {
         liveServices = []
         if let s = trip.share { try? await api.endShare(s) }
         if !keepServerWatch, let id = trip.watchID { try? await api.unwatch(id: FlexID(id), device: device) }
+        // Nothing more is said for this trip: take back what is scheduled and clear the old
+        // steps off the Lock Screen (You've arrived stays when the trip ended by arriving).
+        var ledger = travelLedger
+        Notifier.cancelTravel(ids: ledger.end().map { TravelUpdateLedger.identifier(started: trip.started, key: $0) })
+        travelLedger = ledger
+        await Notifier.clearTravel(started: trip.started, keepArrived: cardFinished)
         ReplayLog.shared.add(cardFinished ? "trip ended, Lock Screen card says You've arrived and leaves in 2 min" : "trip ended, Lock Screen card ended")
         if !cardFinished { await LiveTripActivities.endAll() }
         if !silent {

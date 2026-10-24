@@ -76,7 +76,11 @@ struct HomeView: View {
             .navigationDestination(for: PlanRoute.self) { _ in TripPlannerView() }
             .navigationDestination(for: StopRef.self) { s in StopView(stop: s) }
             .navigationDestination(for: ServiceKey.self) { k in ServiceView(key: k) }
-            .navigationDestination(for: TripPair.self) { p in TripPlannerView(from: p.from, to: p.to, via: p.via, conn: p.conn ?? 5, legs: p.legs) }
+            .navigationDestination(for: TripPair.self) { p in
+                TripPlannerView(from: p.from, to: p.to, via: p.via, conn: p.conn ?? 5, legs: p.legs,
+                                openAt: p.at.map { Date(timeIntervalSince1970: $0) })
+            }
+            .navigationDestination(for: TripAlertsKey.self) { k in TripAlertsView(from: k.from, to: k.to) }
             .navigationDestination(for: JourneyLink.self) { l in JourneyDetailView(journey: l.journey, from: l.from, to: l.to, legs: l.legs) }
             .refreshable {
                 async let a: Void = store.loadSaved()
@@ -583,8 +587,10 @@ struct HomeView: View {
         switch route {
         case .stop(let s):
             path.append(s)
-        case .trip(let from, let to):
-            path.append(TripPair(from: from, to: to))
+        case .trip(let from, let to, let at):
+            path.append(TripPair(from: from, to: to, at: at?.timeIntervalSince1970))
+        case .alerts(let from, let to):
+            path.append(TripAlertsKey(from: from, to: to))
         case .legs(let legs):
             if let first = legs.first, let last = legs.last {
                 path.append(TripPair(from: first.from, to: last.to, via: legs.count == 2 ? first.to : nil,
@@ -609,6 +615,14 @@ struct TripPair: Hashable, Codable {
     var conn: Int? = nil
     /// Set for a trip of 3 or more legs.
     var legs: [TripLeg]? = nil
+    /// Set by a widget row: open the service leaving at this time (seconds since 1970).
+    var at: Double? = nil
+}
+
+/// The alerts for a trip, opened from the alert line on a widget.
+struct TripAlertsKey: Hashable {
+    var from: StopRef
+    var to: StopRef
 }
 
 struct JourneyLink: Hashable {

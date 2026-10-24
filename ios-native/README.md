@@ -1,6 +1,6 @@
 # Transport for iPhone (native SwiftUI)
 
-A native iPhone app for live Sydney and NSW public transport, written in SwiftUI. It uses the same live backend as the web app (https://nsw-transport-bot.sites.tab.bot), so the Transport for NSW key stays on the server and nothing secret lives in the app.
+A native iPhone app for live Sydney and NSW public transport, written in SwiftUI. It uses the same live backend as the web app (the address is set in one place, `Sources/TransportKit/APIBase.swift`, and remote config can move it with `api_base` to a domain on the allowed list there), so the Transport for NSW key stays on the server and nothing secret lives in the app.
 
 ## What is in it
 

@@ -55,6 +55,11 @@ final class AppStore {
     /// Set to open the live trip screen from anywhere.
     var openLiveTrip = false
     @ObservationIgnored var liveAlerted: Set<String> = []
+    /// What the live trip has said and scheduled (Leave now, Board, Next stop, Change, Arrived).
+    /// Saved, so a relaunch mid trip never says a step twice.
+    @ObservationIgnored var travelLedger: TravelUpdateLedger = Persist.load(TravelUpdateLedger.self, "travelLedger") ?? TravelUpdateLedger() {
+        didSet { Persist.save(travelLedger, "travelLedger") }
+    }
     @ObservationIgnored var liveTask: Task<Void, Never>?
 
     /// A profile from a nswtransport://profile/<id> link, waiting for you to confirm.
@@ -90,7 +95,7 @@ final class AppStore {
         }
         if d.bool(forKey: "uiTestReset") {
             // UI tests start from a clean device.
-            for k in ["starred", "recents", "recentTrips", "haptics", "refresh", "seenNotes", "placeHome", "placeWork", "ask.chat.v1", "myTrips", "tripOrder", "allServices", "liveTrip", "tb_liftAlerts", "recentSearches"] { d.removeObject(forKey: k) }
+            for k in ["starred", "recents", "recentTrips", "haptics", "refresh", "seenNotes", "placeHome", "placeWork", "ask.chat.v1", "myTrips", "tripOrder", "allServices", "liveTrip", "tb_liftAlerts", "recentSearches", "travelLedger", "phoneTripWatches"] { d.removeObject(forKey: k) }
             TripPrefs.fare = "adult"
             TripPrefs.accessible = false
         }
@@ -159,8 +164,14 @@ final class AppStore {
             let stopID = parts[1], line = parts.count > 2 ? parts[2] : nil
             Task { await followNext(stopID: stopID, line: line) }
         case "trip" where parts.count > 2:
+            // A widget row adds ?at=<seconds since 1970> to open the service leaving then.
             tab = .home
-            pendingRoute = .trip(from: StopRef(id: parts[1], name: "Stop \(parts[1])"), to: StopRef(id: parts[2], name: "Stop \(parts[2])"))
+            let at = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+                .first(where: { $0.name == "at" })?.value.flatMap { Double($0) }.map { Date(timeIntervalSince1970: $0) }
+            pendingRoute = .trip(from: StopRef(id: parts[1], name: "Stop \(parts[1])"), to: StopRef(id: parts[2], name: "Stop \(parts[2])"), at: at)
+        case "alerts" where parts.count > 2:
+            tab = .home
+            pendingRoute = .alerts(from: StopRef(id: parts[1], name: "Stop \(parts[1])"), to: StopRef(id: parts[2], name: "Stop \(parts[2])"))
         case "profile" where parts.count > 1:
             // nswtransport://profile/<id> moves this install to a private profile, after you confirm.
             let p = parts[1].lowercased()
@@ -262,7 +273,8 @@ final class AppStore {
         guard let r = try? await api.watches(device: device) else { return }
         watches = r.items
         notes = r.notes ?? []
-        let fresh = notes.filter { !seenNoteIDs.contains($0.id.value) }
+        // Notes from a live trip's server watch: the phone already said those steps itself.
+        let fresh = notes.filter { !seenNoteIDs.contains($0.id.value) && !PhoneTripWatches.owns($0.watch_id?.value) }
         for n in fresh { seenNoteIDs.insert(n.id.value) }
         UserDefaults.standard.set(Array(seenNoteIDs.suffix(200)), forKey: "seenNotes")
         guard notify, let newest = fresh.first else { return }
@@ -333,7 +345,9 @@ final class AppStore {
 enum DeepRoute: Hashable {
     case stop(StopRef)
     case track(stopID: String)
-    case trip(from: StopRef, to: StopRef)
+    case trip(from: StopRef, to: StopRef, at: Date? = nil)
+    /// The alerts for a trip, from the alert line on a widget.
+    case alerts(from: StopRef, to: StopRef)
     case legs([TripLeg])
 }
 
@@ -389,6 +403,54 @@ enum Notifier {
         let req = UNNotificationRequest(identifier: "note-\(id)", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req)
     }
+
+    // MARK: Travel updates
+
+    /// A travel update at `at` (now if it is due). The same identifier replaces a step already
+    /// scheduled, so a moved time never makes a second notification.
+    static func travel(_ s: TravelStep, id: String, at: Date?, now: Date = Date()) {
+        Task { @MainActor in ReplayLog.shared.add((at == nil ? "alert: " : "scheduled \(Clock.time(at!)): ") + s.title + " | " + s.body) }
+        let content = UNMutableNotificationContent()
+        content.title = s.title
+        content.body = s.body
+        content.sound = .default
+        content.interruptionLevel = .active
+        content.threadIdentifier = "trip"
+        var trigger: UNNotificationTrigger?
+        if let at, at.timeIntervalSince(now) >= 1 {
+            trigger = UNTimeIntervalNotificationTrigger(timeInterval: at.timeIntervalSince(now), repeats: false)
+        }
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+    }
+
+    static func cancelTravel(ids: [String]) {
+        guard !ids.isEmpty else { return }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+    }
+
+    /// Clears travel updates from the Lock Screen and Notification Center: every one of the trip
+    /// that started at `started` except "You've arrived" (when `keepArrived`), and any trip
+    /// update older than 10 minutes once no trip is live.
+    static func clearTravel(started: Date?, keepArrived: Bool) async {
+        let c = UNUserNotificationCenter.current()
+        let delivered = await c.deliveredNotifications()
+        let prefix = started.map { "trip-\(Int($0.timeIntervalSince1970))-" }
+        var ids: [String] = []
+        for n in delivered where n.request.identifier.hasPrefix("trip-") {
+            let id = n.request.identifier
+            if let prefix, id.hasPrefix(prefix) {
+                if keepArrived && id.hasSuffix("-arrived") { continue }
+                ids.append(id)
+            } else if Date().timeIntervalSince(n.date) > 600 {
+                ids.append(id)
+            }
+        }
+        c.removeDeliveredNotifications(withIdentifiers: ids)
+        if let prefix {
+            let pending = await c.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(prefix) }
+            c.removePendingNotificationRequests(withIdentifiers: pending)
+        }
+    }
 }
 
 // MARK: Remote config
@@ -409,10 +471,26 @@ extension AppStore {
 
     /// Pushes timings into the parts of the app that read them.
     func applyConfig() {
+        APIBase.apply(remote: config.apiBase)
         Notifier.repeatWindow = config.number("alertRepeatWindowMin", 15, min: 1, max: 120) * 60
         LiveTripLogic.sameRunTolerance = config.number("sameRunToleranceSec", 120, min: 30, max: 600)
     }
 
     /// Seconds between live trip refreshes (5 to 120).
     var liveRefreshSeconds: Double { config.number("liveRefreshSec", 15, min: 5, max: 120) }
+}
+
+/// Server watches made by Start trip. The iPhone gets no push from the server, so the phone says
+/// each travel update itself; notes from these watches are never shown again as alerts.
+enum PhoneTripWatches {
+    static let key = "phoneTripWatches"
+    static func add(_ id: String) {
+        var ids = UserDefaults.standard.stringArray(forKey: key) ?? []
+        if !ids.contains(id) { ids.append(id) }
+        UserDefaults.standard.set(Array(ids.suffix(50)), forKey: key)
+    }
+    static func owns(_ id: String?) -> Bool {
+        guard let id, !id.isEmpty else { return false }
+        return (UserDefaults.standard.stringArray(forKey: key) ?? []).contains(id)
+    }
 }

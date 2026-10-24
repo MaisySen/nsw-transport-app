@@ -89,10 +89,7 @@ struct NextTripEntry: TimelineEntry {
                          arrive: .now.addingTimeInterval(2100), isLive: false, status: "Scheduled", platform: "Platform 2")],
         message: nil, fromID: "213410", toID: "200060")
 
-    var url: URL? {
-        guard !fromID.isEmpty, !toID.isEmpty else { return URL(string: "nswtransport://tab/home") }
-        return URL(string: "nswtransport://trip/\(fromID)/\(toID)")
-    }
+    var url: URL? { WidgetText.tripURL(from: fromID, to: toID, leave: nil) }
 }
 
 struct NextTripProvider: AppIntentTimelineProvider {
@@ -105,29 +102,30 @@ struct NextTripProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: NextTripIntent, in context: Context) async -> Timeline<NextTripEntry> {
         let e = await Self.load(configuration)
-        // One entry a minute so departed services drop off and the ring moves; the seconds tick on their own.
-        let entries = (0..<20).map { i -> NextTripEntry in
+        return Timeline(entries: Self.entries(from: e), policy: .after(WidgetText.reloadDate(updated: e.updated, departures: e.trips.map(\.leave))))
+    }
+
+    /// One entry a minute and one at each departure, so the minutes stay right and a service
+    /// that has left is never shown. Also used by the tests.
+    static func entries(from e: NextTripEntry) -> [NextTripEntry] {
+        WidgetText.entryDates(updated: e.updated, departures: e.trips.map(\.leave)).map { d in
             var x = e
-            x.date = e.updated.addingTimeInterval(Double(i) * 60)
-            x.trips = e.trips.filter { $0.leave > x.date.addingTimeInterval(-20) }
+            x.date = d
+            x.trips = WidgetText.upcoming(e.trips, at: d) { $0.leave }
             if x.trips.isEmpty, x.message == nil { x.message = "Checking for the next one" }
             return x
         }
-        // Fresh live data every five minutes, sooner when the next service is about to go.
-        let soon = e.trips.first.map { $0.leave.addingTimeInterval(30) } ?? e.updated.addingTimeInterval(300)
-        let next = min(e.updated.addingTimeInterval(300), max(soon, e.updated.addingTimeInterval(90)))
-        return Timeline(entries: entries, policy: .after(next))
     }
 
     static func load(_ c: NextTripIntent) async -> NextTripEntry {
         if let f = c.from, let t = c.to {
-            return await entry(title: Naming.compact(t.name), from: f.ref, to: t.ref)
+            return await entry(title: "", from: f.ref, to: t.ref)
         }
         if let t = c.trip, !t.isSmart {
             return await entry(title: t.name, from: t.from, to: t.to)
         }
         guard let pick = await SmartTrip.pick() else {
-            return NextTripEntry(date: .now, title: "Transport", from: "", to: "", trips: [],
+            return NextTripEntry(date: .now, title: "Next trip", from: "", to: "", trips: [],
                                  message: "Touch and hold, then Edit Widget to pick a trip.")
         }
         var e = await entry(title: pick.title, from: pick.from, to: pick.to)
@@ -144,7 +142,7 @@ struct NextTripProvider: AppIntentTimelineProvider {
                                  trips: [], message: "Live times will be back shortly.", fromID: from.id, toID: to.id)
         }
         let now = Date()
-        let ok = r.journeys.filter { ($0.leave ?? .distantPast) > now.addingTimeInterval(-30) && $0.firstTransit != nil }
+        let ok = r.journeys.filter { ($0.leave ?? .distantPast) > now && $0.firstTransit != nil }
         let trips: [TripLine] = ok.compactMap { j in
             guard let leave = j.leave, let f = j.firstTransit else { return nil }
             return TripLine(line: f.line ?? "", colorHex: f.color ?? Mode(raw: f.mode).fallbackHex, mode: f.mode ?? "bus",
@@ -158,24 +156,26 @@ struct NextTripProvider: AppIntentTimelineProvider {
                              from: (rName?.allSatisfy(\.isNumber) == false ? rName : nil) ?? fromName,
                              to: (toResolved?.allSatisfy(\.isNumber) == false ? toResolved : nil) ?? toName,
                              trips: Array(trips.prefix(6)), message: trips.isEmpty ? "No trips soon." : nil,
-                             fromID: from.id, toID: to.id, notice: notice(for: ok.first), updated: now)
+                             fromID: from.id, toID: to.id, notice: notice(for: Array(ok.prefix(3))), updated: now)
     }
 
-    /// The one thing worth knowing before you leave, most serious first.
-    static func notice(for j: Journey?) -> WidgetNotice? {
-        guard let j else { return nil }
-        let legs = j.transitLegs
-        if j.anyCancelled == true { return WidgetNotice(text: "Cancelled. Take the next one.", level: .severe) }
-        if let l = legs.first(where: { $0.platformChangedFrom != nil }), let p = l.fromPlatform {
-            return WidgetNotice(text: "Now \(p), was \(l.platformChangedFrom ?? "")", level: .warning)
+    /// The one thing worth knowing before you leave, most serious first, and only about the
+    /// services the widget shows.
+    static func notice(for js: [Journey]) -> WidgetNotice? {
+        guard let first = js.first else { return nil }
+        if first.anyCancelled == true { return WidgetNotice(text: "Cancelled. Take the next one.", level: .severe) }
+        if let l = first.transitLegs.first(where: { $0.platformChangedFrom != nil }), let p = l.fromPlatform {
+            let now = WidgetText.plat(p) ?? p, was = WidgetText.plat(l.platformChangedFrom) ?? ""
+            return WidgetNotice(text: "Now \(now), was \(was)", level: .warning)
         }
-        let alerts = legs.flatMap { $0.alerts ?? [] }
+        var seen = Set<String>()
+        let alerts = js.flatMap { $0.transitLegs.flatMap { $0.alerts ?? [] } }.filter { seen.insert($0.id).inserted }
         if let a = alerts.first(where: { $0.isSerious }), let t = a.title { return WidgetNotice(text: t, level: .severe) }
         let words = ["buses replace", "trackwork", "not running", "changed timetable", "delays"]
         if let a = alerts.first(where: { a in words.contains { (a.title ?? "").lowercased().contains($0) } }), let t = a.title {
             return WidgetNotice(text: t, level: .warning)
         }
-        if let l = legs.first, let d = l.delayMin, d >= 5 { return WidgetNotice(text: "Running \(d) min late", level: .warning) }
+        if let l = first.transitLegs.first, let d = l.delayMin, d >= 5 { return WidgetNotice(text: "Running \(d) min late", level: .warning) }
         return nil
     }
 }
@@ -200,71 +200,47 @@ struct WidgetLineBadge: View {
         .padding(.vertical, large ? 3 : 2)
         .background(Color(red: c?.r ?? 0, green: c?.g ?? 0.6, blue: c?.b ?? 0.9), in: RoundedRectangle(cornerRadius: large ? 6 : 5))
         .widgetAccentable()
+        .accessibilityLabel("\(Mode(raw: mode).title) \(line)")
     }
 }
 
-/// Minutes and seconds that tick on the widget itself, stopping at 0:00.
-struct TickingCountdown: View {
+/// The wait in whole minutes ("4 min", "Now"), or the clock time an hour or more out.
+/// Never a seconds timer: a widget that ticks 12:56 reads like a clock.
+struct WaitText: View {
     var leave: Date
     var now: Date
 
     var body: some View {
-        if leave.timeIntervalSince(now) >= 3600 {
-            Text(Clock.time(leave))
-        } else {
-            Text(timerInterval: min(now, leave)...leave, countsDown: true)
-        }
+        Text(WidgetText.wait(leave, from: now))
+            .accessibilityLabel(WidgetText.spokenWait(leave, from: now))
     }
 }
 
-struct UpdatedFooter: View {
-    var updated: Date
-    var compact = false
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Text(compact ? Clock.time(updated) : "Updated \(Clock.time(updated))")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-            Spacer(minLength: 0)
-            RefreshButton()
-        }
-    }
-}
-
-struct RefreshButton: View {
-    var body: some View {
-        Button(intent: RefreshDeparturesIntent()) {
-            Image(systemName: "arrow.clockwise")
-                .font(.system(size: 11, weight: .semibold))
-                .frame(width: 24, height: 24)
-                .background(.quaternary, in: Circle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .accessibilityLabel("Refresh")
-    }
-}
-
+/// One compact alert line with a warning icon. The words end at a whole word.
 struct NoticeLine: View {
     var notice: WidgetNotice
+    var maxChars = 40
 
     var body: some View {
         let color: Color = notice.level == .severe ? .red : (notice.level == .warning ? .orange : .secondary)
         HStack(alignment: .firstTextBaseline, spacing: 4) {
             Image(systemName: notice.level == .info ? "info.circle.fill" : "exclamationmark.triangle.fill")
-            Text(notice.text).lineLimit(1)
+                .accessibilityHidden(true)
+            Text(WidgetText.compactAlert(notice.text, maxChars: maxChars))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
         .font(.caption2.weight(.semibold))
         .foregroundStyle(color)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Alert: \(notice.text)")
     }
 }
 
 enum WidgetStyle {
     static func statusColor(isLive: Bool, status: String) -> Color {
         if status == "Cancelled" { return .red }
-        if !isLive { return .secondary }
+        if !isLive || status == "Scheduled" { return .secondary }
         return status.contains("late") ? .orange : .green
     }
 }
@@ -283,38 +259,26 @@ struct NextTripView: View {
     private var family: WidgetFamily { familyOverride ?? hostFamily }
     private var standBy: Bool { standByOverride ?? !showsBackground }
 
-    /// "Now", "4 min", "1 hr 5 min", the way Maps shows a wait.
-    static func wait(_ leave: Date, from now: Date, inline: Bool = false) -> String {
-        let m = Int((leave.timeIntervalSince(now) / 60).rounded(.down))
-        if m <= 0 { return "Now" }
-        let text = m < 60 ? "\(m) min" : (m % 60 == 0 ? "\(m / 60) hr" : "\(m / 60) hr \(m % 60) min")
-        return inline ? "in \(text)" : text
-    }
+    /// "Now", "4 min", or the clock time an hour or more out.
+    static func wait(_ leave: Date, from now: Date) -> String { WidgetText.wait(leave, from: now) }
 
     static func statusColor(_ t: TripLine) -> Color { WidgetStyle.statusColor(isLive: t.isLive, status: t.status) }
 
-    private func statusText(_ t: TripLine) -> String {
-        let s = t.isLive ? t.status : "Scheduled"
-        return t.walkMinutes > 0 ? "\(t.walkMinutes) min walk first. \(s)" : s
+    private var title: String { WidgetText.title(name: entry.title, from: entry.from, to: entry.to) }
+    /// "Burwood to Central" under a saved trip's name; nothing when the title already says it.
+    private var subtitle: String? {
+        guard !entry.from.isEmpty, !entry.to.isEmpty else { return nil }
+        let s = "\(entry.from) to \(entry.to)"
+        return s == title ? nil : s
     }
 
-    /// The pill on the first row that starts the Lock Screen countdown for that service.
-    @ViewBuilder private func trackButton(_ t: TripLine) -> some View {
-        if let u = t.followURL {
-            Link(destination: u) {
-                Label("Track", systemImage: "location.fill")
-                    .font(.caption2.weight(.semibold))
-                    .labelStyle(.titleAndIcon)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(.tint.opacity(0.15), in: Capsule())
-                    .foregroundStyle(.tint)
-            }
-        }
-    }
+    private func status(_ t: TripLine) -> String { WidgetText.status(isLive: t.isLive, status: t.status) }
+
+    private func link(_ t: TripLine) -> URL? { WidgetText.tripURL(from: entry.fromID, to: entry.toID, leave: t.leave) }
+    private var alertsLink: URL? { WidgetText.alertsURL(from: entry.fromID, to: entry.toID) }
 
     var body: some View {
-        content.widgetURL(entry.url)
+        content.widgetURL(entry.trips.first.flatMap { link($0) } ?? entry.url)
     }
 
     @ViewBuilder private var content: some View {
@@ -330,12 +294,13 @@ struct NextTripView: View {
 
     // Lock Screen
 
+    /// "T1 4 min, Plat 2"
     private var inline: some View {
         Group {
             if let t = entry.trips.first {
-                Text("\(Image(systemName: Mode(raw: t.mode).symbol)) \(t.line) \(Self.wait(t.leave, from: entry.date, inline: true))")
+                Text(WidgetText.inline(line: t.line, leave: t.leave, platform: t.platform, now: entry.date))
             } else {
-                Text(entry.message ?? "No trips")
+                Text(entry.message ?? "No trips soon")
             }
         }
     }
@@ -347,39 +312,45 @@ struct NextTripView: View {
                 Gauge(value: min(mins, 20), in: 0...20) {
                     Text(t.line)
                 } currentValueLabel: {
-                    Text(mins < 1 ? "Now" : "\(Int(mins))")
+                    Text(mins < 1 ? "Now" : (mins >= 60 ? Clock.time(t.leave).replacingOccurrences(of: "am", with: "").replacingOccurrences(of: "pm", with: "") : "\(Int(mins))"))
                         .font(.system(.title3, design: .rounded).weight(.bold))
                         .monospacedDigit()
+                        .minimumScaleFactor(0.6)
                 }
                 .gaugeStyle(.accessoryCircular)
                 .widgetAccentable()
+                .accessibilityLabel("\(t.line) \(WidgetText.spokenWait(t.leave, from: entry.date))")
             } else {
                 ZStack {
                     AccessoryWidgetBackground()
                     Image(systemName: "tram.fill").font(.title3)
                 }
+                .accessibilityLabel(entry.message ?? "No trips soon")
             }
         }
     }
 
+    /// The next commute departure: the trip, the line with its wait and platform, then the status.
     private var rectangular: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text("\(entry.title): \(entry.to)").font(.headline).lineLimit(1).widgetAccentable()
+            Text(title).font(.headline).lineLimit(1).minimumScaleFactor(0.8).widgetAccentable()
             if let t = entry.trips.first {
                 HStack(spacing: 4) {
-                    Image(systemName: Mode(raw: t.mode).symbol)
+                    Image(systemName: Mode(raw: t.mode).symbol).accessibilityHidden(true)
                     Text(t.line).fontWeight(.bold)
-                    TickingCountdown(leave: t.leave, now: entry.date).monospacedDigit()
+                    WaitText(leave: t.leave, now: entry.date).fontWeight(.semibold)
+                    if let p = WidgetText.plat(t.platform) { Text(p) }
                 }
+                .lineLimit(1)
                 if let n = entry.notice {
-                    Text(n.text).font(.caption).lineLimit(1)
+                    NoticeLine(notice: n, maxChars: 24)
                 } else {
-                    let then = entry.trips.dropFirst().prefix(2).map { Clock.time($0.leave) }
-                    Text(then.isEmpty ? statusText(t) : "\(statusText(t)). Then \(then.joined(separator: ", "))")
+                    let then = entry.trips.dropFirst().prefix(2).map { WidgetText.wait($0.leave, from: entry.date) }
+                    Text(then.isEmpty ? status(t) : "\(status(t)). Then \(then.joined(separator: ", "))")
                         .font(.caption).lineLimit(1)
                 }
             } else {
-                Text(entry.message ?? "No trips").font(.caption)
+                Text(entry.message ?? "No trips soon").font(.caption)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -388,61 +359,53 @@ struct NextTripView: View {
     // Home Screen
 
     private var small: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(entry.title).font(.headline).lineLimit(1)
-                    Text("to \(entry.to)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer(minLength: 2)
-                RefreshButton()
-            }
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.headline).lineLimit(1).minimumScaleFactor(0.8)
+            if let s = subtitle { Text(s).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
             Spacer(minLength: 0)
             if let t = entry.trips.first {
                 HStack(spacing: 4) {
                     WidgetLineBadge(line: t.line, colorHex: t.colorHex, mode: t.mode)
-                    if let p = t.platform { Text(p.replacingOccurrences(of: "Platform", with: "Plat")).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+                    if let p = WidgetText.plat(t.platform) { Text(p).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
                 }
-                TickingCountdown(leave: t.leave, now: entry.date)
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .monospacedDigit()
+                WaitText(leave: t.leave, now: entry.date)
+                    .font(.system(.title, design: .rounded).weight(.bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                    .multilineTextAlignment(.leading)
                 if let n = entry.notice {
-                    NoticeLine(notice: n)
+                    NoticeLine(notice: n, maxChars: 20)
                 } else {
-                    Text(statusText(t))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Self.statusColor(t))
-                        .lineLimit(1)
+                    statusLine(t, font: .caption)
                 }
             } else {
-                Text(entry.message ?? "No trips").font(.caption).foregroundStyle(.secondary)
+                Text(entry.message ?? "No trips soon").font(.caption).foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// StandBy on a charger: one huge countdown you can read from across the room.
+    /// StandBy on a charger: big minutes you can read from across the room.
     private var standByView: some View {
         VStack(alignment: .leading, spacing: 2) {
             if let t = entry.trips.first {
                 HStack(spacing: 6) {
                     WidgetLineBadge(line: t.line, colorHex: t.colorHex, mode: t.mode, large: true)
-                    Text("to \(entry.to)").font(.headline).lineLimit(1)
+                    Text(title).font(.headline).lineLimit(1)
                 }
-                TickingCountdown(leave: t.leave, now: entry.date)
-                    .font(.system(size: 64, weight: .bold, design: .rounded))
-                    .monospacedDigit()
+                WaitText(leave: t.leave, now: entry.date)
+                    .font(.system(size: 56, weight: .bold, design: .rounded))
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
-                Text(entry.notice?.text ?? "\(statusText(t))\(t.platform.map { ". \($0)" } ?? "")")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(entry.notice == nil ? Self.statusColor(t) : .orange)
-                    .lineLimit(1)
+                if let n = entry.notice {
+                    NoticeLine(notice: n, maxChars: 26)
+                } else {
+                    Text([WidgetText.plat(t.platform), status(t)].compactMap { $0 }.joined(separator: ", "))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Self.statusColor(t))
+                        .lineLimit(1)
+                }
             } else {
-                Text(entry.message ?? "No trips").font(.headline)
+                Text(entry.message ?? "No trips soon").font(.headline)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -450,98 +413,84 @@ struct NextTripView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(entry.title).font(.headline).lineLimit(1)
-            Text("\(entry.from) to \(entry.to)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Text(title).font(.headline).lineLimit(1).layoutPriority(1)
+            if let s = subtitle { Text(s).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
             Spacer(minLength: 0)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 
-    private func row(_ t: TripLine, first: Bool) -> some View {
-        HStack(spacing: 8) {
-            WidgetLineBadge(line: t.line, colorHex: t.colorHex, mode: t.mode)
+    /// "On time" in its colour, then a small "1 change" and "6 min walk" when they apply.
+    private func statusLine(_ t: TripLine, font: Font = .caption2) -> some View {
+        HStack(spacing: 4) {
+            Text(status(t)).foregroundStyle(Self.statusColor(t)).fontWeight(.semibold)
+            if let c = WidgetText.changes(t.changes) { Text(c).foregroundStyle(.secondary) }
+            if t.walkMinutes > 0 { Text("\(t.walkMinutes) min walk").foregroundStyle(.secondary) }
+        }
+        .font(font)
+        .lineLimit(1)
+    }
+
+    /// Every row has the same layout; the first is larger. Tapping a row opens that trip.
+    @ViewBuilder private func row(_ t: TripLine, first: Bool) -> some View {
+        let r = HStack(spacing: 8) {
+            WidgetLineBadge(line: t.line, colorHex: t.colorHex, mode: t.mode, large: first)
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 4) {
-                    Text(Clock.time(t.leave)).font(.subheadline.weight(.semibold)).monospacedDigit()
-                    if let p = t.platform {
-                        Text(p.replacingOccurrences(of: "Platform", with: "Plat")).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                    }
+                    Text(Clock.time(t.leave)).font((first ? Font.subheadline : .footnote).weight(.semibold)).monospacedDigit()
+                    if let p = WidgetText.plat(t.platform) { Text(p).font(.caption2).foregroundStyle(.secondary) }
                 }
-                Text(t.changes > 0 ? "\(statusText(t)). \(t.changes) change\(t.changes == 1 ? "" : "s")" : statusText(t))
-                    .font(.caption2)
-                    .foregroundStyle(Self.statusColor(t))
-                    .lineLimit(1)
+                .lineLimit(1)
+                statusLine(t)
             }
             Spacer(minLength: 4)
-            if first {
-                TickingCountdown(leave: t.leave, now: entry.date)
-                    .font(.title3.weight(.bold))
-                    .monospacedDigit()
-                    .multilineTextAlignment(.trailing)
-                    .frame(maxWidth: 80, alignment: .trailing)
-            } else {
-                Text(Self.wait(t.leave, from: entry.date))
-                    .font(.subheadline.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+            WaitText(leave: t.leave, now: entry.date)
+                .font(first ? .title3.weight(.bold) : .subheadline.weight(.semibold))
+                .foregroundStyle(first ? Color.primary : Color.secondary)
+                .monospacedDigit()
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+        if let u = link(t) { Link(destination: u) { r } } else { r }
+    }
+
+    @ViewBuilder private var noticeOrUpdated: some View {
+        if let n = entry.notice {
+            if let u = alertsLink { Link(destination: u) { NoticeLine(notice: n, maxChars: 44) } }
+            else { NoticeLine(notice: n, maxChars: 44) }
+        } else {
+            Text("Updated \(Clock.time(entry.updated))").font(.caption2).foregroundStyle(.secondary).monospacedDigit()
         }
     }
 
     private var medium: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 5) {
             header
             if entry.trips.isEmpty {
                 Spacer(minLength: 0)
-                Text(entry.message ?? "No trips").font(.subheadline).foregroundStyle(.secondary)
+                Text(entry.message ?? "No trips soon").font(.subheadline).foregroundStyle(.secondary)
             }
-            ForEach(Array(entry.trips.prefix(entry.notice == nil ? 3 : 2).enumerated()), id: \.offset) { i, t in
+            ForEach(Array(entry.trips.prefix(2).enumerated()), id: \.offset) { i, t in
                 row(t, first: i == 0)
             }
             Spacer(minLength: 0)
-            HStack(spacing: 6) {
-                if let n = entry.notice { NoticeLine(notice: n) }
-                else { Text("Updated \(Clock.time(entry.updated))").font(.caption2).foregroundStyle(.secondary).monospacedDigit() }
-                Spacer(minLength: 0)
-                if let t = entry.trips.first { trackButton(t) }
-                RefreshButton()
-            }
+            noticeOrUpdated
         }
     }
 
     private var large: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             header
-            if let t = entry.trips.first {
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        WidgetLineBadge(line: t.line, colorHex: t.colorHex, mode: t.mode, large: true)
-                        Text(t.platform ?? statusText(t)).font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 0) {
-                        TickingCountdown(leave: t.leave, now: entry.date)
-                            .font(.system(size: 40, weight: .bold, design: .rounded))
-                            .monospacedDigit()
-                            .multilineTextAlignment(.trailing)
-                        Text(statusText(t)).font(.caption.weight(.semibold)).foregroundStyle(Self.statusColor(t))
-                    }
-                }
-                if let n = entry.notice { NoticeLine(notice: n) }
-                Divider()
-            } else {
-                Text(entry.message ?? "No trips").font(.subheadline).foregroundStyle(.secondary)
+            if entry.trips.isEmpty {
+                Text(entry.message ?? "No trips soon").font(.subheadline).foregroundStyle(.secondary)
             }
-            ForEach(Array(entry.trips.dropFirst().prefix(5).enumerated()), id: \.offset) { _, t in
-                row(t, first: false)
+            ForEach(Array(entry.trips.prefix(entry.notice == nil ? 5 : 4).enumerated()), id: \.offset) { i, t in
+                row(t, first: i == 0)
+                if i == 0 && entry.trips.count > 1 { Divider() }
             }
             Spacer(minLength: 0)
-            HStack(spacing: 6) {
-                Text("Updated \(Clock.time(entry.updated))").font(.caption2).foregroundStyle(.secondary).monospacedDigit()
-                Spacer(minLength: 0)
-                if let t = entry.trips.first { trackButton(t) }
-                RefreshButton()
-            }
+            noticeOrUpdated
         }
     }
 }
@@ -602,10 +551,10 @@ struct StopBoardProvider: AppIntentTimelineProvider {
         let entries = (0..<15).map { i -> StopBoardEntry in
             var x = e
             x.date = e.updated.addingTimeInterval(Double(i) * 60)
-            x.rows = e.rows.filter { $0.time > x.date.addingTimeInterval(-20) }
+            x.rows = WidgetText.upcoming(e.rows, at: x.date) { $0.time }
             return x
         }
-        return Timeline(entries: entries, policy: .after(e.updated.addingTimeInterval(300)))
+        return Timeline(entries: entries, policy: .after(WidgetText.reloadDate(updated: e.updated, departures: e.rows.map(\.time))))
     }
 
     static func load(_ c: StopBoardIntent) async -> StopBoardEntry {
@@ -627,7 +576,7 @@ struct StopBoardProvider: AppIntentTimelineProvider {
         }
         let now = Date()
         let rows: [BoardRow] = r.items.compactMap { d in
-            guard let t = d.bestTime, t > now.addingTimeInterval(-30) else { return nil }
+            guard let t = d.bestTime, t > now else { return nil }
             if !wanted.isEmpty && !wanted.contains(d.line.uppercased()) { return nil }
             return BoardRow(line: d.line, colorHex: d.color ?? Mode(raw: d.mode).fallbackHex, mode: d.mode ?? "bus",
                             dest: Naming.short(d.dest ?? ""), time: t, isLive: d.isLive,
@@ -665,7 +614,7 @@ struct StopBoardView: View {
                         Text(r.line).fontWeight(.bold)
                         Text(r.dest).lineLimit(1)
                         Spacer(minLength: 2)
-                        Text(NextTripView.wait(r.time, from: entry.date)).monospacedDigit()
+                        WaitText(leave: r.time, now: entry.date).monospacedDigit()
                     }
                     .font(.caption)
                 }
@@ -685,7 +634,6 @@ struct StopBoardView: View {
                 Text(entry.stopName).font(.headline).lineLimit(1)
                 if let f = entry.filter, !compact { Text(f).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 Spacer(minLength: 0)
-                if compact { RefreshButton() }
             }
             if entry.rows.isEmpty {
                 Spacer(minLength: 0)
@@ -697,35 +645,26 @@ struct StopBoardView: View {
                     if !compact {
                         VStack(alignment: .leading, spacing: 0) {
                             Text(r.dest).font(.subheadline.weight(.medium)).lineLimit(1)
-                            Text([r.platform, r.isLive ? r.status : "Scheduled"].compactMap { $0 }.joined(separator: ". "))
+                            Text([WidgetText.plat(r.platform), WidgetText.status(isLive: r.isLive, status: r.status)].compactMap { $0 }.joined(separator: ", "))
                                 .font(.caption2)
                                 .foregroundStyle(WidgetStyle.statusColor(isLive: r.isLive, status: r.status))
                                 .lineLimit(1)
                         }
                     }
                     Spacer(minLength: 2)
-                    if i == 0 {
-                        TickingCountdown(leave: r.time, now: entry.date)
-                            .font((compact ? Font.subheadline : .headline).weight(.bold))
-                            .monospacedDigit()
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: 70, alignment: .trailing)
-                    } else {
-                        Text(NextTripView.wait(r.time, from: entry.date))
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(r.isLive ? Color.primary : Color.secondary)
-                            .monospacedDigit()
-                            .lineLimit(1)
-                    }
+                    WaitText(leave: r.time, now: entry.date)
+                        .font(i == 0 ? (compact ? Font.subheadline : .headline).weight(.bold) : .subheadline.weight(.semibold))
+                        .foregroundStyle(i == 0 || r.isLive ? Color.primary : Color.secondary)
+                        .monospacedDigit()
+                        .lineLimit(1)
                 }
             }
             Spacer(minLength: 0)
             if !compact {
                 HStack(spacing: 6) {
-                    if let n = entry.notice { NoticeLine(notice: n) }
+                    if let n = entry.notice { NoticeLine(notice: n, maxChars: 44) }
                     else { Text("Updated \(Clock.time(entry.updated))").font(.caption2).foregroundStyle(.secondary).monospacedDigit() }
                     Spacer(minLength: 0)
-                    RefreshButton()
                 }
             }
         }

@@ -11,7 +11,11 @@ struct TripPlannerView: View {
     var conn: Int = 5
     /// Set for a trip of 3 or more legs, from Ask or a saved trip.
     var legs: [TripLeg]? = nil
+    /// From a widget row: open the service that leaves at this time once the trips load.
+    var openAt: Date? = nil
     @State private var picking: PickTarget?
+    @State private var autoOpen: JourneyLink?
+    @State private var autoOpened = false
     @State private var data: TripResponse?
     @State private var updated: Date?
     @State private var loading = false
@@ -175,6 +179,7 @@ struct TripPlannerView: View {
             .environment(store)
         }
         .refreshable { await load() }
+        .navigationDestination(item: $autoOpen) { l in JourneyDetailView(journey: l.journey, from: l.from, to: l.to, legs: l.legs) }
         .autoRefresh(every: max(store.refreshSeconds, 20), active: store.isActive && from != nil && to != nil) { await load() }
         .onChange(of: from) { _, _ in data = nil; extra = []; Task { await load() } }
         .onChange(of: to) { _, _ in data = nil; extra = []; Task { await load() } }
@@ -281,6 +286,11 @@ struct TripPlannerView: View {
                 self.to = StopRef(id: to.id, name: n)
             }
             error = r.journeys.isEmpty ? "Nothing runs between these two right now." : nil
+            if let openAt, !autoOpened, let f = self.from, let t = self.to,
+               let j = WidgetText.closest(r.journeys, to: openAt) {
+                autoOpened = true
+                autoOpen = JourneyLink(journey: j, from: f, to: t, legs: legs)
+            }
         } catch {
             self.error = error.localizedDescription
         }
@@ -615,4 +625,31 @@ struct LegCard: View {
 
 extension String {
     var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
+}
+
+/// The alerts for one trip, opened from the alert line on a widget.
+struct TripAlertsView: View {
+    @Environment(AppStore.self) private var store
+    var from: StopRef
+    var to: StopRef
+    @State private var alerts: [ServiceAlert]?
+
+    var body: some View {
+        Group {
+            if let alerts {
+                if alerts.isEmpty {
+                    ContentUnavailableView("No alerts", systemImage: "checkmark.circle", description: Text("Nothing affects this trip right now."))
+                } else {
+                    AlertsList(alerts: alerts)
+                }
+            } else {
+                ProgressView().accessibilityLabel("Loading alerts")
+            }
+        }
+        .navigationTitle("Alerts")
+        .task {
+            let r = try? await TripPlan.plan(api: store.api, from: from.id, via: nil, to: to.id, conn: 5, count: 5, legs: nil, all: false)
+            alerts = TripPlannerView.uniqueAlerts(r?.journeys ?? [])
+        }
+    }
 }

@@ -113,6 +113,21 @@ jobs:
             -destination "id=$(cat ../sim-id.txt)" -derivedDataPath dd-test \
             CODE_SIGNING_ALLOWED=NO > ../xcode-test-build.log 2>&1 || { grep -E "error:" ../xcode-test-build.log | sort -u | head -80; exit 1; }
 
+      - name: Unit and snapshot tests
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          ONLY: ${{ inputs.only }}
+        run: |
+          DEV=$(cat ../sim-id.txt)
+          SEL="-only-testing:TransportSnapshotTests"; if [ -n "$ONLY" ]; then SEL=""; for t in $(echo "$ONLY" | tr "," " "); do case "$t" in TransportSnapshotTests*) SEL="$SEL -only-testing:$t";; esac; done; fi
+          if [ -z "$SEL" ]; then echo "no unit tests picked"; exit 0; fi
+          mkdir -p ../out/widgets
+          TEST_RUNNER_SNAPSHOT_DIR="$GITHUB_WORKSPACE/out/widgets" \
+          xcodebuild test-without-building -project Transport.xcodeproj -scheme Transport -configuration Debug \
+            -destination "id=$DEV" -derivedDataPath dd-test -resultBundlePath ../out/unit.xcresult \
+            $SEL CODE_SIGNING_ALLOWED=NO > ../test-unit.log 2>&1
+
       - name: Tap through every flow, light
         continue-on-error: true
         timeout-minutes: 45
@@ -120,7 +135,8 @@ jobs:
           ONLY: ${{ inputs.only }}
         run: |
           DEV=$(cat ../sim-id.txt)
-          SEL=""; for t in $(echo "$ONLY" | tr "," " "); do SEL="$SEL -only-testing:$t"; done
+          SEL="-only-testing:TransportUITests"; if [ -n "$ONLY" ]; then SEL=""; for t in $(echo "$ONLY" | tr "," " "); do case "$t" in TransportUITests*) SEL="$SEL -only-testing:$t";; esac; done; fi
+          if [ -z "$SEL" ]; then echo "no UI tests picked"; exit 0; fi
           xcrun simctl ui "$DEV" appearance light
           mkdir -p ../out/shots ../out/widgets
           TEST_RUNNER_SHOTS_DIR="$GITHUB_WORKSPACE/out/shots" TEST_RUNNER_SHOT_PREFIX=light TEST_RUNNER_SNAPSHOT_DIR="$GITHUB_WORKSPACE/out/widgets" \
@@ -230,7 +246,7 @@ jobs:
           R=report.txt
           echo "run ${{ github.run_number }} sha ${{ github.sha }}" > $R
           cat out/xcode-version.txt >> $R 2>/dev/null || true
-          for L in test-light.log test-dark.log; do
+          for L in test-unit.log test-light.log test-dark.log; do
             if [ -f $L ]; then
               echo "== $L: $(grep -cE "Test Case .* passed" $L) passed, $(grep -cE "Test Case .* failed" $L) failed; $(grep -E '\*\* TEST' $L | tail -1)" >> $R
               grep -E "Test Case .* (passed|failed)|error: -\[|XCTAssert|failed -" $L | sed -E "s#.*/ios-native/##" | sort -u | head -60 >> $R
@@ -255,14 +271,19 @@ jobs:
             [ -f "$f" ] || continue
             sips -s format jpeg -s formatOptions 55 -Z 1000 "$f" --out "shots/$(basename "${f%.png}").jpg" > /dev/null 2>&1 || true
           done
+          for f in out/widgets/*.png; do
+            [ -f "$f" ] || continue
+            sips -s format jpeg -s formatOptions 80 -Z 1000 "$f" --out "shots/w-$(basename "${f%.png}").jpg" > /dev/null 2>&1 || true
+          done
           cp out/shots/*.txt shots/ 2>/dev/null || true
-          { grep -E "^bundle: " $R; head -c 7000 $R; } > r2.txt
+          { grep -E "^bundle: " $R; grep -E "^== test-" $R; head -c 12000 $R; } > r2.txt
+          cp $R report-full.txt
           git config user.name "ci"
           git config user.email "ci@users.noreply.github.com"
           git fetch -q origin ci-out || true
           git checkout -q -B ci-out
           git rm -rq --cached . > /dev/null
-          git add -f r2.txt shots
+          git add -f r2.txt report-full.txt shots
           git commit -qm "Build report ${{ github.run_number }}"
           git push -qf origin ci-out
 
