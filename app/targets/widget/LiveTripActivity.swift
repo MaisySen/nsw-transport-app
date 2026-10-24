@@ -33,15 +33,18 @@ public struct LiveTripAttributes: ActivityAttributes {
         public var legArrives: Date?
         /// "Kings Cross": the end of the whole trip.
         public var destination: String?
+        /// When the app loaded the live times on this card. Cards from older app code have none.
+        public var updated: Date?
 
         public init(line: String, lineColorHex: String, mode: String, nextStop: String?, stopsLeft: Int?, getOffAt: String,
                     arrival: Date, phase: String, warning: String?, progress: Double, fareLine: String? = nil,
-                    towards: String? = nil, platform: String? = nil, departs: Date? = nil, legArrives: Date? = nil, destination: String? = nil) {
+                    towards: String? = nil, platform: String? = nil, departs: Date? = nil, legArrives: Date? = nil, destination: String? = nil, updated: Date? = nil) {
             self.line = line; self.lineColorHex = lineColorHex; self.mode = mode; self.nextStop = nextStop
             self.stopsLeft = stopsLeft; self.getOffAt = getOffAt; self.arrival = arrival; self.phase = phase
             self.warning = warning; self.progress = progress; self.fareLine = fareLine
             self.towards = towards; self.platform = platform; self.departs = departs; self.legArrives = legArrives
             self.destination = destination
+            self.updated = updated
         }
     }
 
@@ -54,10 +57,28 @@ public struct LiveTripAttributes: ActivityAttributes {
     }
 }
 
-/// The words on the trip card. `stale` is true once the system marks the card out of date, which
-/// happens at the arrival time, so the card says it has arrived even if the app was not running.
+/// The words on the trip card. `stale` is true once the system marks the card out of date.
+/// A card with `updated` (app code from 25 Oct 2026) goes stale 2 minutes after its live times, when the app can no
+/// longer refresh it; it then says "Updated 8:21am" and shows clock times instead of a countdown, so it never claims
+/// "now" from old data. A card without `updated` goes stale at its arrival time and says it has arrived, as before.
 extension LiveTripAttributes.ContentState {
-    public func arrived(stale: Bool) -> Bool { phase == "arrived" || stale }
+    public func arrived(stale: Bool) -> Bool { phase == "arrived" || (stale && updated == nil) }
+
+    /// True when the live times on the card are old: show them as clock times with when they are from.
+    public func outdated(stale: Bool) -> Bool { stale && updated != nil && phase != "arrived" }
+
+    /// "Updated 8:21am".
+    public var updatedLine: String { updated.map { "Updated \(Clock.time($0))" } ?? "" }
+
+    /// The label over the big number: "Leaves", "Get off", "Arrived"; with old times "Leaves about" or "Get off about".
+    public func countdownLabel(stale: Bool) -> String {
+        if arrived(stale: stale) { return "Arrived" }
+        let base = phase == "wait" ? "Leaves" : "Get off"
+        return outdated(stale: stale) ? "\(base) about" : base
+    }
+
+    /// A missed or at risk change shows red, a tight one orange.
+    public var warningIsRed: Bool { (warning ?? "").contains("miss") || (warning ?? "").contains("risk") }
 
     /// Waiting: "To Central". On board: "Get off at Redfern". At the end: "You've arrived at Strathfield".
     public func headline(stale: Bool = false) -> String {

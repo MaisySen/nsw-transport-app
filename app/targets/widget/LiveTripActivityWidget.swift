@@ -21,7 +21,7 @@ struct LiveTripActivityWidget: Widget {
                         .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    MinutesUntil(date: s.countdownTarget, arrived: s.arrived(stale: stale))
+                    MinutesUntil(date: s.countdownTarget, arrived: s.arrived(stale: stale), outdated: s.outdated(stale: stale))
                         .font(.title3.weight(.semibold))
                         .monospacedDigit()
                         .lineLimit(1)
@@ -47,7 +47,7 @@ struct LiveTripActivityWidget: Widget {
                     WidgetLineBadge(line: s.line, colorHex: s.lineColorHex, mode: s.mode)
                 }
             } compactTrailing: {
-                MinutesUntil(date: s.countdownTarget, arrived: s.arrived(stale: stale))
+                MinutesUntil(date: s.countdownTarget, arrived: s.arrived(stale: stale), outdated: s.outdated(stale: stale))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
@@ -65,9 +65,13 @@ struct LiveTripActivityWidget: Widget {
 struct MinutesUntil: View {
     var date: Date
     var arrived = false
+    /// Old live times: the clock time, never a countdown that could reach "now" on stale data.
+    var outdated = false
     var body: some View {
         if arrived {
             Image(systemName: "checkmark.circle.fill").accessibilityLabel("Arrived")
+        } else if outdated {
+            Text(Clock.time(date))
         } else if #available(iOS 18.0, *) {
             Text(.currentDate, format: .reference(to: date, allowedFields: [.hour, .minute]))
         } else {
@@ -85,12 +89,12 @@ struct LiveTripIslandBottom: View {
                 Text(state.detail(stale: stale)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 if !state.arrived(stale: stale) {
-                    Text(state.arriveLine).monospacedDigit().lineLimit(1)
+                    Text(state.outdated(stale: stale) ? state.updatedLine : state.arriveLine).monospacedDigit().lineLimit(1)
                 }
             }
             if let w = state.warning, !state.arrived(stale: stale) {
                 Label(w, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(w.contains("miss") ? Color.red : Color.orange)
+                    .foregroundStyle(state.warningIsRed ? Color.red : Color.orange)
                     .lineLimit(1)
             }
         }
@@ -119,14 +123,14 @@ struct LiveTripLockCard: View {
                     if let w = state.warning, !state.arrived(stale: stale) {
                         Text(w)
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(w.contains("miss") ? Color.red : Color.orange)
+                            .foregroundStyle(state.warningIsRed ? Color.red : Color.orange)
                             .lineLimit(1)
                     }
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 0) {
-                    Text(state.arrived(stale: stale) ? "Arrived" : (state.phase == "wait" ? "Leaves" : "Get off")).font(.caption2).foregroundStyle(.secondary)
-                    MinutesUntil(date: state.countdownTarget, arrived: state.arrived(stale: stale))
+                    Text(state.countdownLabel(stale: stale)).font(.caption2).foregroundStyle(.secondary)
+                    MinutesUntil(date: state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
                         .font(.title2.weight(.bold))
                         .monospacedDigit()
                         .lineLimit(1)
@@ -137,7 +141,8 @@ struct LiveTripLockCard: View {
             ProgressView(value: state.arrived(stale: stale) ? 1 : min(max(state.progress, 0), 1))
                 .tint(RGB(hex: state.lineColorHex).map { Color(red: $0.r, green: $0.g, blue: $0.b) } ?? Color.blue)
             if !state.arrived(stale: stale) {
-                Text(state.arriveLine).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(state.outdated(stale: stale) ? "\(state.arriveLine). \(state.updatedLine)" : state.arriveLine)
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
             }
         }
     }
