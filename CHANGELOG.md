@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### iPhone build 205: lock screen trip card stays live (TestFlight, 25 Oct, 10:04 AM)
+* The trip card on the Lock Screen and in the Dynamic Island now gets live times from the server every minute while the phone is locked, and ends on its own when you arrive. Before, it only changed while the app was open.
+* A card whose live times are more than 2 minutes old shows clock times with "Leaves about" or "Get off about" and "Updated 8:21am" instead of a countdown. A change at risk shows red.
+* The departure board turns sideways on iPhone; every other screen stays upright.
+* The phone's push token is saved on the server so alerts can come later. No alerts are sent yet.
+
 ### Shared trip links open in a browser again (server, 25 Oct, 10:03 AM)
 * A trip shared from the app and opened by someone without the app showed "This trip has ended" straight away, because the link's page asked the new server, which did not have the share. It now finds the share and shows the live trip. No update needed.
 
