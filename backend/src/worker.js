@@ -1802,27 +1802,27 @@ function askChainDecorate(d, now, cards, links) {
   return { reply: lines.join("\n").replace(/\.\./g, "."), sugg: [askChainQ([U.to, ...[...U.stops].reverse().map(askShort), U.from])] };
 }
 
-async function askLast(env, fromQ, toQ, ctx, mode) {
-  const [a, b] = await Promise.all([typeof fromQ === "object" ? fromQ : askResolve(env, fromQ, ctx), typeof toQ === "object" ? toQ : askResolve(env, toQ, ctx)]);
-  const lastP = { prefix: `last ${mode === "lightrail" ? "light rail" : mode || "train"} ` };
-  if (a && a.ambiguous) return askDidYouMean("from", a, { from: null, to: typeof toQ === "string" ? toQ : b && b.name }, lastP);
-  if (b && b.ambiguous) return askDidYouMean("to", b, { from: typeof fromQ === "string" ? fromQ : a && (a.label || a.name), to: null }, lastP);
-  if (!a || a.needLocation) return { kind: "needOrigin", to: b && !b.needLocation ? b : null, last: true, mode };
-  if (!b || b.needLocation) return { kind: "text", text: `I couldn't find a station, suburb or stop called "${toQ}".` };
+// The last service tonight from a to b (any transit, or only `mode`): {last, prev, next, sure} or null.
+// opts.time ("HHMM", Sydney) asks from that time; without it from 11pm (or now, when it is already late).
+async function lastFind(env, a, b, mode, opts = {}) {
   const sn = sydneyNow();
-  const base = { fromType: a.coord ? "coord" : undefined, count: 8, accessible: !!ctx.accessible };
+  const base = { fromType: a.coord ? "coord" : undefined, count: 8, accessible: !!opts.accessible };
   const late = sn.tod >= 23 * 60 || sn.tod < 3 * 60;
   if (b.coord) base.toType = "coord";
-  const first = await trip(env, a.id, b.id, late ? base : { ...base, time: "2300" });
+  const first = await trip(env, a.id, b.id, opts.time ? { ...base, time: opts.time } : late ? base : { ...base, time: "2300" });
   const okMode = (j) => askTransit(j).length && (!mode || askTransit(j).every((l) => l.mode === mode || (mode === "train" && l.mode === "metro")));
   let all = (first.journeys || []).slice();
   const pickLast = (list) => {
     const s = list.filter(okMode).sort((x, y) => ms(x.leave) - ms(y.leave));
-    const last = s[s.length - 1];
+    // A gap of 3 hours or more is the night: the service before it is the last one tonight, not
+    // the first one tomorrow morning that the planner may also list.
+    const gap = s.findIndex((j, i) => i + 1 < s.length && ms(s[i + 1].leave) - ms(j.leave) >= 3 * 3600000);
+    const li = gap >= 0 ? gap : s.length - 1;
+    const last = s[li];
     if (!last) return null;
     const later = list.filter((j) => ms(j.leave) > ms(last.leave) && !okMode(j)).sort((x, y) => ms(x.leave) - ms(y.leave));
-    const sure = list.some((j) => ms(j.leave) > ms(last.leave) + 60 * 60000);
-    return { last, prev: s[s.length - 2] || null, next: later[0] || null, sure };
+    const sure = gap >= 0 || list.some((j) => ms(j.leave) > ms(last.leave) + 60 * 60000);
+    return { last, prev: s[li - 1] || null, next: later[0] || null, sure };
   };
   let found = pickLast(all);
   if ((!found || !found.sure) && all.length) {
@@ -1832,6 +1832,17 @@ async function askLast(env, fromQ, toQ, ctx, mode) {
     all = all.concat(more.journeys || []).filter((j, i, arr) => arr.findIndex((x) => x.leave === j.leave && x.arrive === j.arrive) === i);
     found = pickLast(all);
   }
+  return found || null;
+}
+
+async function askLast(env, fromQ, toQ, ctx, mode) {
+  const [a, b] = await Promise.all([typeof fromQ === "object" ? fromQ : askResolve(env, fromQ, ctx), typeof toQ === "object" ? toQ : askResolve(env, toQ, ctx)]);
+  const lastP = { prefix: `last ${mode === "lightrail" ? "light rail" : mode || "train"} ` };
+  if (a && a.ambiguous) return askDidYouMean("from", a, { from: null, to: typeof toQ === "string" ? toQ : b && b.name }, lastP);
+  if (b && b.ambiguous) return askDidYouMean("to", b, { from: typeof fromQ === "string" ? fromQ : a && (a.label || a.name), to: null }, lastP);
+  if (!a || a.needLocation) return { kind: "needOrigin", to: b && !b.needLocation ? b : null, last: true, mode };
+  if (!b || b.needLocation) return { kind: "text", text: `I couldn't find a station, suburb or stop called "${toQ}".` };
+  const found = await lastFind(env, a, b, mode, { accessible: !!ctx.accessible });
   return {
     kind: "lastService", mode: mode || null, from: { id: a.id, name: a.name }, to: { id: b.id, name: b.name },
     last: found ? found.last : null, before: found ? found.prev : null, after: found ? found.next : null, sure: !!(found && found.sure), now: Date.now(),
@@ -2093,6 +2104,10 @@ function askDecorate(d, ctx) {
       const js = [d.before, d.last, d.after].filter(Boolean);
       if (js.length) cards.push({ type: "trip", title: `Last ${noun}`, from: d.from, to: d.to, highlight: d.before ? 1 : 0, journeys: js.map(askJourneyOut), link: /EPSG/.test(String(d.from.id)) ? null : askTripLink(d.from, d.to) });
       if (!/EPSG/.test(String(d.from.id))) links.push({ label: "Open trip", ...askTripLink(d.from, d.to) });
+      // Last way home: the app offers "Remind me 15 min before" only when this is here (POST /api/last-home).
+      if (l && ms(l.leave) - now > (LAST_HOME_LEAD + 1) * 60000 && ms(l.leave) - now < LAST_HOME_MAX_AHEAD) {
+        d.lastHome = { from: d.from, to: d.to, mode: d.mode || null, leave: l.leave, lead: LAST_HOME_LEAD };
+      }
       break;
     }
     case "alerts":
@@ -2791,6 +2806,92 @@ async function predictions(env, items, max = 14) {
   }
 }
 
+// ---------- reliability pick: how often one scheduled service left on time ----------
+// "Left on time 9 of the last 10 weekdays" for one timetabled service at one stop, from the same recorded
+// live times /api/predict reads (obs). A sample is one day on which this service (same line, stop and
+// timetable time, within REL_TOD_MIN) was seen close to its departure. On time: no more than REL_EARLY_S
+// early and less than REL_LATE_S late. Fewer than REL_MIN samples: null. Nothing is filled in.
+const REL_LATE_S = 180;
+const REL_EARLY_S = 60;
+const REL_TOD_MIN = 2;
+const REL_MIN = 5;
+const REL_MAX = 10;
+const REL_DAYS = 42;
+const REL_BATCH = 8;
+const relMem = new Map();
+function relDayType(t) { return sydneyNow(new Date(t)).dow >= 6 ? "weekend" : "weekday"; }
+/** Pure: the summary from obs rows for one service, or null. rows: {day, planned, delay_s, last_seen}. */
+function reliabilityOf(rows, plannedMs) {
+  const want = todOfMs(plannedMs).tod;
+  const type = relDayType(plannedMs);
+  const byDay = new Map();
+  for (const r of rows || []) {
+    if (r == null || r.delay_s == null || !r.planned) continue;
+    const tod = todOfMs(r.planned).tod;
+    const dt = Math.min(Math.abs(tod - want), 1440 - Math.abs(tod - want));
+    if (dt > REL_TOD_MIN || relDayType(r.planned) !== type) continue;
+    const prev = byDay.get(r.day);
+    if (!prev || (r.last_seen || 0) > (prev.last_seen || 0)) byDay.set(r.day, r);
+  }
+  const days = [...byDay.values()].sort((a, b) => b.planned - a.planned).slice(0, REL_MAX);
+  if (days.length < REL_MIN) return null;
+  const onTime = days.filter((r) => r.delay_s < REL_LATE_S && r.delay_s >= -REL_EARLY_S).length;
+  const late = days.filter((r) => r.delay_s >= REL_LATE_S).map((r) => r.delay_s / 60).sort((a, b) => a - b);
+  const n = days.length;
+  const span = type === "weekend" ? "weekend days" : "weekdays";
+  return {
+    onTime, n, dayType: type, lateMin: REL_LATE_S / 60,
+    usualLateMin: late.length ? Math.round(late[Math.floor(late.length / 2)]) : null,
+    text: `Left on time ${onTime} of the last ${n} ${span}`,
+    short: `${onTime} of ${n} on time`,
+    basis: `on time means under ${REL_LATE_S / 60} min late, from recorded live times`,
+    kind: "reliability",
+  };
+}
+async function reliability(env, items) {
+  const d = db(env);
+  const out = items.map(() => null);
+  if (!d || !items.length) return out;
+  if (!(await ensureSchema(env).catch(() => false))) return out;
+  const since = Date.now() - REL_DAYS * 86400000;
+  const want = [];
+  items.forEach((it, i) => {
+    const pm = ms(it.planned);
+    if (!it.line || !it.stopId || !Number.isFinite(pm)) return;
+    const key = `${it.line}|${it.stopId}|${todOfMs(pm).tod}|${relDayType(pm)}`;
+    const hit = relMem.get(key);
+    if (hit && Date.now() - hit.at < 15 * 60000) { out[i] = hit.r; return; }
+    want.push({ i, it, pm, key });
+  });
+  if (!want.length) return out;
+  const pairs = [...new Map(want.map((w) => [w.it.line + "|" + w.it.stopId, w.it])).values()];
+  let res;
+  try {
+    res = await d.batch(pairs.map((it) => d.prepare(
+      "SELECT day, planned, delay_s, last_seen FROM obs WHERE route = ?1 AND stop_id = ?2 AND planned > ?3 AND planned < ?4 AND last_seen >= est - 600000 ORDER BY planned DESC LIMIT 900"
+    ).bind(it.line, it.stopId, since, Date.now() - 60000)));
+  } catch (e) { return out; }
+  const rowsBy = new Map();
+  pairs.forEach((it, i) => rowsBy.set(it.line + "|" + it.stopId, (res[i] && res[i].results) || []));
+  for (const w of want) {
+    const r = reliabilityOf(rowsBy.get(w.it.line + "|" + w.it.stopId) || [], w.pm);
+    relMem.set(w.key, { at: Date.now(), r });
+    out[w.i] = r;
+  }
+  if (relMem.size > 3000) relMem.clear();
+  return out;
+}
+// GET /api/reliability?line=&stop=&planned= gives {reliability}; with s=LINE~STOP~PLANNED repeated (up to 8)
+// it gives {items} in the same order. Server flag reliabilityPick off: every answer is null, enabled false.
+async function reliabilityRoute(env, p) {
+  const enabled = await serverOn(env, "reliabilityPick");
+  const list = p.getAll("s").slice(0, REL_BATCH).map((s) => { const [line, stopId, planned] = String(s).split("~"); return { line, stopId, planned }; });
+  const single = !list.length;
+  const items = single ? [{ line: p.get("line"), stopId: p.get("stop"), planned: p.get("planned") }] : list;
+  const r = enabled ? await reliability(env, items) : items.map(() => null);
+  return single ? json({ reliability: r[0], enabled }) : json({ items: r, enabled });
+}
+
 // ---------- watched trips ----------
 // A watch is a list of transit legs. A single service is a one leg watch.
 // spec: { legs: [{ mode, line, tripId, stopId, toStopId, from, to, planned, arrPlanned, fromPlatform, toPlatform, color, towards, destId, walkBefore }],
@@ -2927,7 +3028,7 @@ async function rescuePlan(env, spec, i, live, now) {
 const APP_CONFIG_DEFAULTS = {
   version: 1,
   flags: { ask: true, parkRide: true, opalMachines: true, liveTrip: true, shareTrip: true, weekdayReminder: true, nearby: true,
-    morningCheck: true, platformAlerts: true, occupancy: true, liftAwareRouting: true },
+    morningCheck: true, platformAlerts: true, occupancy: true, liftAwareRouting: true, reliabilityPick: true, lastWayHome: true },
   kill: {},
   copy: {},
   tabs: ["home", "plan", "watching", "more"],
@@ -3612,6 +3713,160 @@ async function morningPreview(env, url) {
 // boards, changes or gets off at a station with a lift out of service right now is dropped
 // when another option avoids it, and trips that are step free at every station come first.
 const LIFT_MODES = new Set(["train", "metro"]);
+// ---------- last way home reminder ----------
+// From the Ask "Last train home" answer (or a trip that is the last one tonight) a device asks for ONE push
+// LAST_HOME_LEAD min before the last service home. The server finds that service itself, looks again at live
+// data as the time comes near (every 5 min from 20 min before, and once more at the moment), follows it if it
+// moves or is replaced, and claims the send in D1 before notifying, so it is sent once. One reminder per device;
+// a new one replaces it. DELETE cancels it, and Delete all data removes it. Server flag: lastWayHome.
+const LAST_HOME_LEAD = 15;
+const LAST_HOME_MAX_AHEAD = 8 * 3600000;
+let lastHomeSchemaReady = null;
+async function lastHomeSchema(env) {
+  const d = db(env);
+  if (!d) return false;
+  if (!lastHomeSchemaReady) {
+    lastHomeSchemaReady = d.batch([
+      d.prepare(`CREATE TABLE IF NOT EXISTS last_home (id TEXT PRIMARY KEY, device TEXT NOT NULL, from_id TEXT, from_name TEXT, to_id TEXT, to_name TEXT,
+        mode TEXT, svc_mode TEXT, lead INTEGER DEFAULT 15, leave INTEGER, first_leave INTEGER, board INTEGER, line TEXT, stop TEXT, platform TEXT, status TEXT,
+        created INTEGER, checked INTEGER, sent INTEGER, sent_text TEXT)`),
+      d.prepare(`CREATE INDEX IF NOT EXISTS last_home_dev ON last_home (device)`),
+      d.prepare(`CREATE INDEX IF NOT EXISTS last_home_due ON last_home (status, leave)`),
+    ]).then(() => true).catch((e) => { lastHomeSchemaReady = null; throw e; });
+  }
+  return lastHomeSchemaReady;
+}
+const LAST_HOME_NOUN = { train: "train", metro: "metro", bus: "bus", ferry: "ferry", lightrail: "light rail", coach: "coach" };
+/** The parts of a journey the reminder keeps: when to leave, the first service, its stop and platform. */
+function lastHomeService(j) {
+  const t = askTransit(j)[0];
+  if (!t) return null;
+  const board = ms(t.realtime && t.estimated ? t.estimated : t.planned);
+  const walkFirst = j.legs && j.legs[0] && j.legs[0].kind !== "transit";
+  return { leave: walkFirst ? ms(j.leave) : board, board, line: t.line || null, mode: t.mode || null, stop: t.from ? shortName(t.from).replace(/ Station$/, "") : null, platform: t.fromPlatform || null };
+}
+function lastHomeOut(r, now = Date.now()) {
+  return {
+    id: r.id, from: { id: r.from_id, name: r.from_name }, to: { id: r.to_id, name: r.to_name }, mode: r.mode || null, serviceMode: r.svc_mode || null, lead: r.lead,
+    leave: r.leave ? new Date(r.leave).toISOString() : null, board: r.board ? new Date(r.board).toISOString() : null,
+    remindAt: r.leave ? new Date(r.leave - r.lead * 60000).toISOString() : null,
+    line: r.line || null, stop: r.stop || null, platform: r.platform || null,
+    changedFrom: r.first_leave && r.leave && Math.abs(r.leave - r.first_leave) >= 2 * 60000 ? new Date(r.first_leave).toISOString() : null,
+    status: r.status, checked: r.checked ? new Date(r.checked).toISOString() : null, sent: r.sent ? new Date(r.sent).toISOString() : null, text: r.sent_text || null,
+    leaveText: r.leave ? hm(r.leave) : null, remindText: r.leave ? hm(r.leave - r.lead * 60000) : null,
+  };
+}
+/** The push words. "Leave by 11:52pm for the last train home: the 12:04am T1 from Central, Platform 3." */
+function lastHomeMessage(r, now) {
+  const noun = LAST_HOME_NOUN[r.svc_mode || r.mode] || "service";
+  const to = shortName(r.to_name || "").replace(/ Station$/, "");
+  const mins = Math.max(0, Math.round((r.leave - now) / 60000));
+  const what = [hm(r.board || r.leave), r.line].filter(Boolean).join(" ");
+  const plat = r.platform ? `, ${r.platform}` : "";
+  const from = r.stop ? ` from ${r.stop}` : "";
+  const changed = r.first_leave && Math.abs(r.leave - r.first_leave) >= 2 * 60000 ? ` It changed from ${hm(r.first_leave)}.` : "";
+  const lead = r.leave < (r.board || r.leave) ? `Leave by ${hm(r.leave)}` : mins >= 1 ? `Leaves in ${mins} min` : "Leaving now";
+  return { title: `Last ${noun} to ${to}`, body: `${lead}: the ${what}${from}${plat}.${changed}`.slice(0, 300) };
+}
+async function lastHomePush(env, device) {
+  const w = await d1all(env, "SELECT COUNT(*) AS n FROM push_subs WHERE device = ?1", device).catch(() => []);
+  const e = await d1all(env, "SELECT COUNT(*) AS n FROM expo_tokens WHERE device = ?1", device).catch(() => []);
+  return { web: (w[0] && w[0].n) || 0, expo: (e[0] && e[0].n) || 0 };
+}
+const lastHomePlace = (p) => { const id = cleanId(p && p.id, 80); return id ? { id, name: String((p && p.name) || id).replace(/[\u0000-\u001f]/g, "").trim().slice(0, 80), coord: /EPSG/.test(id) } : null; };
+
+async function lastHomeRoute(request, env, url, opts = {}) {
+  await ensureSchema3(env);
+  await lastHomeSchema(env);
+  const d = db(env);
+  const p = url.searchParams;
+  const enabled = await serverOn(env, "lastWayHome");
+  if (request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    const device = cleanId(b.device);
+    if (device.length < 6) return json({ error: "device needed" }, 400);
+    const from = lastHomePlace(b.from), to = lastHomePlace(b.to);
+    if (!from || !to) return json({ error: "from.id and to.id needed" }, 400);
+    if (from.id === to.id) return json({ error: "from and to are the same" }, 400);
+    if (to.coord) return json({ error: "to must be a stop or place" }, 400);
+    const mode = b.mode == null || b.mode === "" ? null : String(b.mode).toLowerCase();
+    if (mode && !MORNING_MODES.has(mode)) return json({ error: "mode must be train, metro, bus, coach, ferry or lightrail" }, 400);
+    if (!enabled) return json({ error: "Last way home reminders are off for now.", enabled: false }, 503);
+    const now = Date.now();
+    let found;
+    try { found = await (opts.find || lastFind)(env, from, to, mode, { accessible: !!b.acc }); }
+    catch (e) { return json({ error: "Live times did not answer. Try again in a moment." }, 502); }
+    const svc = found && found.last ? lastHomeService(found.last) : null;
+    if (!svc) return json({ error: "No service home found for the rest of tonight.", reason: "none" }, 409);
+    if (svc.leave - now > LAST_HOME_MAX_AHEAD) return json({ error: "The last service is more than 8 hours away. Set it closer to the time.", reason: "far" }, 409);
+    if (svc.leave - now < (LAST_HOME_LEAD + 1) * 60000) {
+      return json({ error: svc.leave > now ? `It leaves in ${Math.max(1, Math.round((svc.leave - now) / 60000))} min, too soon for a reminder.` : "The last service has gone.", reason: "soon", leave: new Date(svc.leave).toISOString() }, 409);
+    }
+    await d.prepare("DELETE FROM last_home WHERE device = ?1").bind(device).run();
+    const id = rid(9);
+    await d.prepare(`INSERT INTO last_home (id, device, from_id, from_name, to_id, to_name, mode, svc_mode, lead, leave, first_leave, board, line, stop, platform, status, created, checked, sent, sent_text)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?15, ?8, ?9, ?9, ?10, ?11, ?12, ?13, 'waiting', ?14, ?14, NULL, NULL)`)
+      .bind(id, device, from.id, from.name, to.id, to.name, mode, LAST_HOME_LEAD, svc.leave, svc.board, svc.line, svc.stop, svc.platform, now, svc.mode).run();
+    const row = await d.prepare("SELECT * FROM last_home WHERE id = ?1").bind(id).first();
+    return json({ ok: true, item: lastHomeOut(row, now), push: await lastHomePush(env, device), enabled });
+  }
+  const device = cleanId(p.get("device"));
+  if (device.length < 6) return json({ error: "device needed" }, 400);
+  if (request.method === "DELETE") {
+    const id = cleanId(p.get("id"), 24);
+    const r = id ? await d.prepare("DELETE FROM last_home WHERE id = ?1 AND device = ?2").bind(id, device).run()
+      : await d.prepare("DELETE FROM last_home WHERE device = ?1").bind(device).run();
+    return json({ ok: true, deleted: (r && r.meta && r.meta.changes) || 0 });
+  }
+  if (request.method !== "GET") return json({ error: "method" }, 405);
+  const now = Date.now();
+  // Shown until 30 min after the service left; older ones are gone from the answer and cleared hourly.
+  const row = await d.prepare("SELECT * FROM last_home WHERE device = ?1 AND leave > ?2 ORDER BY created DESC LIMIT 1").bind(device, now - 30 * 60000).first();
+  return json({ item: row ? lastHomeOut(row, now) : null, push: await lastHomePush(env, device), enabled, lead: LAST_HOME_LEAD });
+}
+
+// Minute tick: reminders whose time is within 20 min. Looks at live data again (every 5 min, and at the moment
+// if the last look is over a minute old), follows the last service if it moved, then claims and sends once.
+async function processLastHome(env, now, opts = {}) {
+  await lastHomeSchema(env);
+  const d = db(env);
+  const out = [];
+  const due = await d1all(env, "SELECT * FROM last_home WHERE status = 'waiting' AND sent IS NULL AND leave - lead * 60000 - 20 * 60000 <= ?1 ORDER BY leave LIMIT 20", now);
+  for (const r of due) {
+    if (now > r.leave + 2 * 60000) {
+      await d.prepare("UPDATE last_home SET status = 'gone' WHERE id = ?1 AND sent IS NULL").bind(r.id).run();
+      out.push({ id: r.id, result: "gone" });
+      continue;
+    }
+    const at = r.leave - r.lead * 60000;
+    const stale = !r.checked || now - r.checked >= 5 * 60000 || (now >= at && now - r.checked >= 60000);
+    let none = false;
+    if (stale) {
+      let found = null;
+      try { found = await (opts.find || lastFind)(env, { id: r.from_id, name: r.from_name, coord: /EPSG/.test(String(r.from_id)) }, { id: r.to_id, name: r.to_name }, r.mode || null, { time: sydneyParts(new Date(now)).time }); }
+      catch (e) { out.push({ id: r.id, error: String(e && e.message || e).slice(0, 120) }); continue; }
+      const svc = found && found.last ? lastHomeService(found.last) : null;
+      if (svc && svc.leave > now - 60000) {
+        r.leave = svc.leave; r.board = svc.board; r.line = svc.line || r.line; r.stop = svc.stop || r.stop; r.platform = svc.platform; r.svc_mode = svc.mode || r.svc_mode;
+        await d.prepare("UPDATE last_home SET leave = ?2, board = ?3, line = ?4, stop = ?5, platform = ?6, checked = ?7, svc_mode = ?8 WHERE id = ?1")
+          .bind(r.id, r.leave, r.board, r.line, r.stop, r.platform, now, r.svc_mode).run();
+      } else {
+        none = true;
+        await d.prepare("UPDATE last_home SET checked = ?2 WHERE id = ?1").bind(r.id, now).run();
+      }
+    }
+    if (now < r.leave - r.lead * 60000) { out.push({ id: r.id, result: "waiting", leave: r.leave }); continue; }
+    const msg = none
+      ? { title: "Last way home", body: `No service from ${shortName(r.from_name || "").replace(/ Station$/, "")} to ${shortName(r.to_name || "").replace(/ Station$/, "")} shows for the rest of tonight. Open Plan for other ways home.` }
+      : lastHomeMessage(r, now);
+    const claim = await d.prepare("UPDATE last_home SET sent = ?2, status = ?3, sent_text = ?4 WHERE id = ?1 AND sent IS NULL").bind(r.id, now, none ? "none" : "sent", msg.body).run();
+    if (!claim || !claim.meta || claim.meta.changes !== 1) continue;
+    const n = await notify(env, { device: r.device }, { title: msg.title, body: msg.body, url: "/", tag: "h" + r.id, ttl: 1200 });
+    out.push({ id: r.id, result: none ? "none" : "sent", note: n.noteId || null });
+  }
+  return out;
+}
+
 function liftAwareRank(d, count) {
   const js = d && d.journeys;
   if (!Array.isArray(js) || !js.length) return d;
@@ -3726,6 +3981,10 @@ async function runTick(env, opts = {}) {
   if (!opts.device && use.calls < WATCH_BUDGET && (await serverOn(env, "morningCheck"))) {
     out.morning = await processMorningChecks(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   }
+  // Last way home: one push before the last service home, looked at again live as the time comes near
+  if (!opts.device && use.calls < WATCH_BUDGET && (await serverOn(env, "lastWayHome"))) {
+    out.lastHome = await processLastHome(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+  }
   // Lift outages on saved trip stations, car park nearly full watches
   if (!opts.device) out.facilities = await facTick(env, Date.now(), sn, opts).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   // Background sampling for predictions
@@ -3737,6 +3996,7 @@ async function runTick(env, opts = {}) {
     // Retention promised in the privacy policy: trip searches 90 days, finished watches 30 days.
     await db(env).prepare("DELETE FROM searches WHERE at < ?1").bind(now - 90 * 86400000).run().catch(() => null);
     await db(env).prepare("DELETE FROM morning_sent WHERE at < ?1").bind(now - 7 * 86400000).run().catch(() => null);
+    await db(env).prepare("DELETE FROM last_home WHERE leave < ?1").bind(now - 12 * 3600000).run().catch(() => null);
     await db(env).prepare("DELETE FROM ip_rate WHERE win < ?1").bind(Math.floor(now / 60000) - 5).run().catch(() => null);
     await db(env).prepare("DELETE FROM watches WHERE active = 0 AND updated < ?1").bind(now - 30 * 86400000).run().catch(() => null);
     // Shared live trips: deleted, positions included, once the trip is over.
@@ -4412,6 +4672,7 @@ async function handleRequest(request, env, exec) {
         case "/api/ask": {
           const actx = { ...ctx, origin: url.origin, home: askPlaceArg(p.get("home")), work: askPlaceArg(p.get("work")), accessible: p.get("acc") === "1" };
           const d = await askV2(env, p.get("q") || "", actx);
+          if (d.lastHome && !(await serverOn(env, "lastWayHome"))) delete d.lastHome;
           if (d.kind === "trip") {
             await addAccess(env, d, { accessible: actx.accessible || d.accessible }).catch(() => null);
             // Card legs are copies made for the reply: give them the same access notes.
@@ -4581,6 +4842,10 @@ async function handleRequest(request, env, exec) {
           return await morningRoute(request, env, url);
         case "/api/morning-check/preview":
           return await morningPreview(env, url);
+        case "/api/last-home":
+          return await lastHomeRoute(request, env, url);
+        case "/api/reliability":
+          return await reliabilityRoute(env, p);
         case "/api/push/key":
           return json({ publicKey: VAPID_PUBLIC });
         case "/api/push/subscribe": {
@@ -4758,6 +5023,7 @@ async function handleRequest(request, env, exec) {
               await del("shares", "DELETE FROM shares WHERE device = ?1", dev);
               await del("morningCheckLog", "DELETE FROM morning_sent WHERE check_id IN (SELECT id FROM morning_checks WHERE device = ?1)", dev);
               await del("morningChecks", "DELETE FROM morning_checks WHERE device = ?1", dev);
+              if (await lastHomeSchema(env).catch(() => false)) await del("lastHome", "DELETE FROM last_home WHERE device = ?1", dev);
               if (await facSchema(env).catch(() => false)) {
                 await del("alerts", "DELETE FROM lift_alerts WHERE device = ?1", dev);
                 await del("watches", "DELETE FROM park_watches WHERE device = ?1", dev);

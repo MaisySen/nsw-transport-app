@@ -43,7 +43,10 @@ test("app link files are valid JSON for the right app and served as JSON", () =>
   assert.match(h, /\/\.well-known\/apple-app-site-association\n\s+Content-Type: application\/json/);
   assert.match(h, /Content-Security-Policy: default-src 'none'/);
   const r = read("_redirects");
-  for (const p of ["/trip/*", "/stop/*", "/plan"]) assert.match(r, new RegExp(p.replace(/[*/]/g, "\\$&") + "\\s+/open/\\s+200"));
+  for (const p of ["/stop/*", "/plan"]) assert.match(r, new RegExp(p.replace(/[*/]/g, "\\$&") + "\\s+/open/\\s+200"));
+  // A shared trip in a browser goes to the live trip page through the Pages function, not a rule.
+  assert.doesNotMatch(r, /^\/trip\/\*\s/m);
+  assert.match(read("functions/trip/[id].js"), /302/);
   assert.equal(read("CNAME").trim(), "transportsydney.app");
 });
 

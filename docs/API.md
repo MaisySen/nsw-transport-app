@@ -41,6 +41,7 @@ Example: `/api/ask?q=campsie%20to%20newcastle%20via%20chatswood&format=text`
 | `/api/alerts` | GET | `q` (for example `T1`, `buses`) | `kind: "alerts"` |
 | `/api/app/config` | GET | `platform` (`ios`, default) | Remote config for the phone apps, see below |
 | `/api/predict` | GET | `line`, `stop`, `planned` | `prediction`: usual delay from recorded history, or null when there are fewer than 5 trips |
+| `/api/reliability` | GET | `line`, `stop`, `planned`; or `s=LINE~STOP~PLANNED` repeated, up to 8 | `{reliability, enabled}`, or `{items, enabled}` in the same order. See Reliability pick below |
 
 `/api/plan` leg fields: `f` from stop id, `fn` from name, `t` to stop id, `tn` to name, `m` mode (`train`, `metro`, `bus`, `ferry`, `lightrail`, `walk`), `c` connection minutes before this leg (0 to 60, default 5), `a` all services for this leg (1 or 0), `w` walk minutes (1 to 90). The first leg cannot be a walk.
 
@@ -58,7 +59,7 @@ Example (Central to Chatswood by metro): `/api/plan?legs=[{"f":"200060","fn":"Ce
 | `/api/commutes` | POST | `{from, to, tod, days, name}` to create, or `{id, name, tod, days, active}` to edit | `item` |
 | `/api/commutes` | DELETE | `profile`, `id` | `ok` |
 | `/api/commutes/dismiss` | POST | `{key}` | `ok` |
-| `/api/history/delete` | POST | `{profile, device, scope}`. `scope` is `history` (trip searches and dismissed commute suggestions; suggestions are worked out from searches, so they go too) or `all` (also saved trips, commutes, watches, alerts, and for this `device` its push sign ups, Expo tokens, live trip shares and morning checks). A valid `profile` is required; searches this `device` made under any older profile id are deleted too. Rate limited to 10 a client address per 10 minutes | `{ok, scope, deleted: {searches, dismissed, saved, commutes, watches, alerts, push, shares, morningChecks, morningCheckLog}}` (row counts) |
+| `/api/history/delete` | POST | `{profile, device, scope}`. `scope` is `history` (trip searches and dismissed commute suggestions; suggestions are worked out from searches, so they go too) or `all` (also saved trips, commutes, watches, alerts, and for this `device` its push sign ups, Expo tokens, live trip shares, morning checks and last way home reminder). A valid `profile` is required; searches this `device` made under any older profile id are deleted too. Rate limited to 10 a client address per 10 minutes | `{ok, scope, deleted: {searches, dismissed, saved, commutes, watches, alerts, push, shares, morningChecks, morningCheckLog, lastHome}}` (row counts) |
 
 `tod` is minutes after midnight (0 to 1439). `days` is a string of weekday numbers, 1 is Monday (default `12345`).
 
@@ -287,6 +288,38 @@ Added to the answer with `acc=1`:
 * `journeys[].liftOutages`: `[{id, name, title}]` for stations on that trip with a lift out.
 * Each station in `legs[].access` gets `liftOut: true` when the outage is a lift.
 
+## Reliability pick
+
+`GET /api/reliability?line=T1&stop=2134101&planned=2026-10-26T07:52:00%2B11:00` says how often that timetabled service left that stop on time lately, from the live times the server recorded (the `obs` table, the same data `/api/predict` reads). Nothing else goes in: no timetable guess, no average for the line.
+
+* A sample is one day on which the same line left the same stop within 2 minutes of the same timetable time, on the same kind of day (weekday or weekend), seen by the server close to departure (within 10 minutes of it). One sample per day, the most recent 10 days over the last 42.
+* On time: no more than 1 minute early and less than 3 minutes late.
+* Fewer than 5 samples: `null`. The app then shows nothing.
+
+```json
+{ "reliability": { "onTime": 9, "n": 10, "dayType": "weekday", "lateMin": 3, "usualLateMin": 6,
+    "text": "Left on time 9 of the last 10 weekdays", "short": "9 of 10 on time",
+    "basis": "on time means under 3 min late, from recorded live times", "kind": "reliability" }, "enabled": true }
+```
+
+`usualLateMin` is the median lateness of the late days, or null when none was late. Batch: `?s=T1~2134101~2026-10-26T07:52:00%2B11:00&s=...` (up to 8) answers `{items: [...], enabled}` in the same order, `null` where there is not enough history. Server flag `reliabilityPick` off: every answer is null and `enabled` is false.
+
+## Last way home reminder
+
+From the Ask "Last train home" answer, or a trip that is the last one tonight, the app asks for ONE push 15 minutes before the last service home. The server finds that service itself (the same search as Ask), looks at live data again from 20 minutes before (every 5 minutes, and once more at the moment if the last look is over a minute old), follows it if it runs late or is replaced, then claims the send in D1 and notifies once. No login: keyed by `device`, one reminder per device (a new one replaces the old one). Push targets are the device's Expo tokens and Web Push sign ups, like the other alerts. Android builds without push (before versionCode 6) show it in the app instead.
+
+| Path | Method | Input | Output |
+| --- | --- | --- | --- |
+| `/api/last-home` | POST | `{device, from: {id, name}, to: {id, name}, mode, acc}`. `mode` optional (train, metro, bus, coach, ferry, lightrail; empty is any service) | `{ok, item, push, enabled}`. 409 with `reason`: `none` (no service home for the rest of tonight), `soon` (it leaves in 16 minutes or less), `far` (more than 8 hours away). 503 when the server flag is off |
+| `/api/last-home` | GET | `device` | `{item, push, enabled, lead}`. `item` is null when there is none, or once the service left over 30 minutes ago |
+| `/api/last-home` | DELETE | `device`, `id` optional | `{ok, deleted}` |
+
+`item`: `{id, from, to, mode, serviceMode, lead, leave, board, remindAt, line, stop, platform, changedFrom, status, checked, sent, text, leaveText, remindText}`. `leave` is when to set off (the first service, or earlier when the trip starts with a walk), `board` the first service's time, `remindAt` = `leave` minus `lead`. `status`: `waiting`, `sent`, `none` (no service showed any more; that was said once instead), `gone` (it left before a push could go). `changedFrom` is the first time found when the service has since moved by 2 minutes or more. `text` is the push body as sent.
+
+The push: title "Last train to Burwood", body like "Leaves in 15 min: the 12:04am T1 from Central, Platform 16." or "Leave by 11:52pm: the 12:04am T1 from Central, Platform 16." plus "It changed from 11:58pm." when it moved. Push `data.tag` is `h<id>`, `data.url` is `/`.
+
+`/api/ask` adds `lastHome: {from, to, mode, leave, lead}` to a `lastService` answer when the service is between 16 minutes and 8 hours away and the flag is on; the app shows "Remind me 15 min before" only then. Delete all data (`/api/history/delete`, `scope: "all"` with the `device`) removes the reminder. Server flag: `lastWayHome`.
+
 ## Remote config for the phone apps
 
 `GET /api/app/config?platform=ios` returns the settings the iPhone app reads at launch and each time it comes to the front (cached for 5 minutes at the edge; the app keeps its last good copy and has the same defaults built in, so it works offline). Native code cannot be changed over the air, so this only switches what the app already has.
@@ -304,7 +337,7 @@ Added to the answer with `acc=1`:
 }
 ```
 
-* `flags`: `false` hides a feature (Ask, Park and Ride, Opal machines on More; Start trip; Share trip on the live trip; Remind me every weekday; Nearby on Home; `morningCheck` the Morning check screen; `platformAlerts` the platform change alert option; `occupancy` crowding labels; `liftAwareRouting` the lift aware note on Accessible trips).
+* `flags`: `false` hides a feature (Ask, Park and Ride, Opal machines on More; Start trip; Share trip on the live trip; Remind me every weekday; Nearby on Home; `morningCheck` the Morning check screen; `platformAlerts` the platform change alert option; `occupancy` crowding labels; `liftAwareRouting` the lift aware note on Accessible trips; `reliabilityPick` the on time line on service rows; `lastWayHome` Remind me on the last service home).
 * `kill`: feature name to the words shown in its place, for example `{"liveTrip": "Live trips are paused for a moment."}`. A killed feature is hidden even if its flag is true.
 * `copy`: `welcomeTitle` (Home welcome) and `startTripFooter` (under Start trip). Empty or missing uses the text in the app.
 * `tabs`: tab order. Unknown keys are ignored and a missing tab is added at the end, so no tab can disappear.
@@ -316,4 +349,4 @@ Added to the answer with `acc=1`:
 
 Change it without a build or a deploy: `POST /api/app/config?platform=ios` with the `x-admin-key` header and a JSON object holding only the parts to change. It is stored in D1 (`app_config`) and merged over the defaults. Send `{}` to go back to the defaults.
 
-Server side switches: the same POST with `platform=server` turns the server's part of a feature off for every app at once, within a minute and with no deploy. The server reads `flags` (or a `kill` entry) for `morningCheck` (no morning checks run), `platformAlerts` (no platform change alerts), `occupancy` (no occupancy in any answer) and `liftAwareRouting` (`acc=1` is only step free, no lift outage ranking). For example `{"flags": {"morningCheck": false}}`. The stored body replaces the previous one for that platform, so send every switch you want off.
+Server side switches: the same POST with `platform=server` turns the server's part of a feature off for every app at once, within a minute and with no deploy. The server reads `flags` (or a `kill` entry) for `morningCheck` (no morning checks run), `platformAlerts` (no platform change alerts), `occupancy` (no occupancy in any answer), `liftAwareRouting` (`acc=1` is only step free, no lift outage ranking), `reliabilityPick` (every `/api/reliability` answer is null) and `lastWayHome` (no reminders sent, new ones refused with 503, Ask leaves out `lastHome`). For example `{"flags": {"morningCheck": false}}`. The stored body replaces the previous one for that platform, so send every switch you want off.

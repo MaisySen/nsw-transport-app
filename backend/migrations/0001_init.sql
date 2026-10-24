@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS usage (day TEXT PRIMARY KEY, calls INTEGER DEFAULT 0,
 CREATE TABLE IF NOT EXISTS app_config (platform TEXT PRIMARY KEY, body TEXT NOT NULL, at INTEGER);
 CREATE TABLE IF NOT EXISTS morning_checks (id TEXT PRIMARY KEY, device TEXT NOT NULL, name TEXT, from_id TEXT, from_name TEXT, to_id TEXT, to_name TEXT, tod INTEGER, days TEXT, lead INTEGER DEFAULT 15, active INTEGER DEFAULT 1, created INTEGER, last TEXT);
 CREATE TABLE IF NOT EXISTS morning_sent (check_id TEXT NOT NULL, day TEXT NOT NULL, at INTEGER, result TEXT, PRIMARY KEY (check_id, day));
+CREATE TABLE IF NOT EXISTS last_home (id TEXT PRIMARY KEY, device TEXT NOT NULL, from_id TEXT, from_name TEXT, to_id TEXT, to_name TEXT, mode TEXT, svc_mode TEXT, lead INTEGER DEFAULT 15, leave INTEGER, first_leave INTEGER, board INTEGER, line TEXT, stop TEXT, platform TEXT, status TEXT, created INTEGER, checked INTEGER, sent INTEGER, sent_text TEXT);
 CREATE TABLE IF NOT EXISTS shares (id TEXT PRIMARY KEY, okey TEXT, device TEXT, spec TEXT, state TEXT, created INTEGER, updated INTEGER, expires INTEGER);
 CREATE TABLE IF NOT EXISTS lift_alerts (device TEXT PRIMARY KEY, profile TEXT, stations TEXT, seen TEXT, created INTEGER, updated INTEGER);
 CREATE TABLE IF NOT EXISTS park_watches (id TEXT PRIMARY KEY, device TEXT, profile TEXT, facility TEXT, name TEXT, station TEXT, created INTEGER, expires INTEGER, done INTEGER DEFAULT 0);
@@ -30,3 +31,5 @@ CREATE INDEX IF NOT EXISTS notes_dev ON notes (device, id);
 CREATE INDEX IF NOT EXISTS searches_prof ON searches (profile, at);
 CREATE INDEX IF NOT EXISTS expo_tokens_dev ON expo_tokens (device);
 CREATE INDEX IF NOT EXISTS morning_checks_dev ON morning_checks (device);
+CREATE INDEX IF NOT EXISTS last_home_dev ON last_home (device);
+CREATE INDEX IF NOT EXISTS last_home_due ON last_home (status, leave);

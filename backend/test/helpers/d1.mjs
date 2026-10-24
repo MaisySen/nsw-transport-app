@@ -7,6 +7,7 @@ export function makeD1() {
   const db = new DatabaseSync(":memory:");
   const norm = (v) => (v === undefined ? null : typeof v === "boolean" ? (v ? 1 : 0) : v);
   const stmt = (q, args = []) => ({
+    q,
     bind: (...a) => stmt(q, a.map(norm)),
     run: async () => {
       const r = db.prepare(q).run(...args);
@@ -18,6 +19,7 @@ export function makeD1() {
   return {
     sql: db,
     prepare: (q) => stmt(q),
-    batch: async (list) => { const out = []; for (const s of list) out.push(await s.run()); return out; },
+    // Like D1, a statement in a batch that reads rows answers with its results.
+    batch: async (list) => { const out = []; for (const s of list) out.push(/^\s*(SELECT|WITH)\b/i.test(s.q) ? { success: true, ...(await s.all()) } : await s.run()); return out; },
   };
 }
