@@ -7,7 +7,7 @@ import { makeD1 } from "./helpers/d1.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
 const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {")
-  + "\nexport { __default, decodeAlerts, digestAlerts, lineOfRoute, weekendWindow, weekendDays, trackworkMatches, alertPlaces, onPath, alertDigestMem, refreshAlertDigest, sydneyNow, serverCfg };\n";
+  + "\nexport { __default, decodeAlerts, digestAlerts, lineOfRoute, weekendWindow, weekendDays, trackworkMatches, alertPlaces, onPath, lineStatusOf, alertDigestMem, refreshAlertDigest, sydneyNow, serverCfg };\n";
 const tmp = `/tmp/trackwork-test-${process.pid}-${Date.now()}.mjs`;
 fs.writeFileSync(tmp, src);
 const W = await import(tmp); fs.unlinkSync(tmp);
@@ -78,8 +78,9 @@ test("weekend window: from a weekday it is the coming Saturday and Sunday, on Su
   assert.equal(w.sat, "20261031"); assert.equal(w.sun, "20261101");
   assert.equal(W.sydneyNow(w.from).dow, 5); assert.equal(W.sydneyNow(w.from).tod, 20 * 60);
   assert.equal(W.sydneyNow(w.to).dow, 1); assert.equal(W.sydneyNow(w.to).tod, 3 * 60);
-  const sun = W.weekendWindow(Date.UTC(2026, 10, 1, 3, 0)); // Sunday 1 Nov 2pm
+  const sun = W.weekendWindow(Date.UTC(2026, 10, 1, 3, 0, 17, 5)); // Sunday 1 Nov 2pm
   assert.equal(sun.sat, "20261031"); assert.equal(sun.sun, "20261101");
+  assert.equal(sun.from % 60000, 0); assert.equal(sun.to % 60000, 0);
   const thu = W.weekendWindow(Date.UTC(2026, 9, 29, 8, 0)); // Thursday 7pm
   assert.equal(thu.sat, "20261031");
   // Daylight saving ends on Sunday 5 April 2026: the window still lands on local midnight.
@@ -162,5 +163,41 @@ test("GET /api/trackwork: the affected trip gets the alert, buses and the time a
     assert.equal(calls.length, n);
     const row = await env.DB.prepare("SELECT v FROM meta WHERE k = 'alert_digest'").first();
     assert.ok(JSON.parse(row.v).items.length === 1);
+  } finally { Date.now = realNow; }
+});
+
+test("line status: suspended over delays over trackwork, only what is active now, Changes for buses", () => {
+  const now = WED;
+  const items = [
+    { id: "w", h: "Buses replace trains between Central and Bondi Junction", e: "modified", pl: 1, p: [[now - H, now + H]], l: ["T4"], u: "https://x/w" },
+    { id: "d", h: "Allow extra travel time, signal repairs at Redfern", e: "delays", pl: 0, p: [], l: ["T4", "T8"], u: "https://x/d" },
+    { id: "s", h: "Metro North West Line: Services are suspended", e: "none", pl: 0, p: [[now - H, 0]], l: ["M1"], u: null },
+    { id: "f", h: "Weekend trackwork", e: "modified", pl: 1, p: [[now + D, now + 2 * D]], l: ["T1"], u: null },
+    { id: "b", h: "Route 540 diversion", e: "detour", pl: 1, p: [], l: ["540"], u: null },
+  ];
+  const t4 = W.lineStatusOf(items, "T4", now);
+  assert.equal(t4.status, "delays"); assert.equal(t4.label, "Delays"); assert.equal(t4.more, 1); assert.equal(t4.url, "https://x/d");
+  assert.equal(W.lineStatusOf(items, "M1", now).label, "Suspended");
+  assert.equal(W.lineStatusOf(items, "T1", now).label, "Good service");
+  assert.equal(W.lineStatusOf(items, "540", now).label, "Changes");
+  assert.equal(W.lineStatusOf(items.slice(0, 1), "T4", now).label, "Trackwork");
+});
+
+test("GET /api/lines reads the digest row; a stale digest answers no items", async () => {
+  const env = { TFNSW_API_KEY: "t", DB: makeD1(), ASSETS: { fetch: async () => new Response("", { status: 404 }) } };
+  const realNow = Date.now;
+  Date.now = () => WED;
+  try {
+    W.alertDigestMem.items = null; W.alertDigestMem.read = 0;
+    await env.DB.prepare("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)").run();
+    await env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('alert_digest', ?1)").bind(JSON.stringify({ at: WED - 5 * 60000, items: [{ id: "d", h: "Allow extra travel time", e: "delays", pl: 0, p: [], l: ["T4"], s: [], u: null }] })).run();
+    const r = await W.__default.fetch(new Request("https://t.example/api/lines?l=T4,T1,T4", { headers: { "cf-connecting-ip": "10.9.1.1" } }), env, { waitUntil() {} });
+    const b = await r.json();
+    assert.deepEqual(b.items.map((i) => [i.line, i.label]), [["T4", "Delays"], ["T1", "Good service"]]);
+    Date.now = () => WED + 3 * H;
+    W.alertDigestMem.read = 0;
+    const r2 = await W.__default.fetch(new Request("https://t.example/api/lines?l=T4", { headers: { "cf-connecting-ip": "10.9.1.2" } }), env, { waitUntil() {} });
+    const b2 = await r2.json();
+    assert.equal(b2.stale, true); assert.deepEqual(b2.items, []);
   } finally { Date.now = realNow; }
 });

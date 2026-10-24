@@ -3035,6 +3035,7 @@ async function alertDigest(env) {
 // matched against (Friday 8pm to Monday 3am, since weekend closures often start Friday night).
 // On Saturday and Sunday it is the weekend under way.
 function weekendWindow(now = Date.now()) {
+  now -= now % 60000;
   const sn = sydneyNow(now);
   const toSat = sn.dow === 7 ? -1 : 6 - sn.dow;
   const dayAt = (k, tod) => { // epoch ms of Sydney day (today + k) at minute tod
@@ -3131,7 +3132,8 @@ async function trackworkRoute(env, p) {
     const hits = matches[i];
     const base = { f: tr.f, t: tr.t, affected: false, items: [], addedMin: null, buses: null };
     if (!hits.length) return base;
-    const day = hits.some((x) => x.sat) ? w.sat : w.sun;
+    // Saturday when the work touches it and it is not over yet, else Sunday.
+    const day = hits.some((x) => x.sat) && Date.now() < w.satEnd ? w.sat : w.sun;
     const hhmm = pad2(tr.h) + "00";
     // Cached per trip, day, hour and the set of alerts, so a phone opening Home again costs a cache read.
     const ck = new Request(`https://cache.local/trackwork/${tr.f}/${tr.t}/${day}/${hhmm}/${hits.map((x) => x.id).sort().join(",").slice(0, 600)}`);
@@ -3153,6 +3155,39 @@ async function trackworkRoute(env, p) {
     return { ...base, ...r };
   }));
   return json({ ...head, at: dg.at || null, trips: out });
+}
+
+// Status of my lines: one word per line now, from the same digest. Suspended (no service, not planned),
+// Delays (delays, or reduced or changed service that was not planned), Trackwork (planned work under
+// way; "Changes" for buses and ferries), else Good service.
+const RAIL_LINE = /^(T\d|M\d|L\d|CCN|BMT|SCO|SHL|HUN|NLR)/;
+const LINE_RANK = { suspended: 3, delays: 2, trackwork: 1, good: 0 };
+function activeNow(it, now) { return !it.p || !it.p.length || it.p.some(([s, e]) => s <= now && (!e || e > now)); }
+function lineStatusOf(items, line, now) {
+  let best = null, n = 0;
+  for (const it of items) {
+    if (!it.l.includes(line) || !activeNow(it, now)) continue;
+    const st = !it.pl && (it.e === "none" || /\bsuspended\b|not running/i.test(it.h)) ? "suspended"
+      : it.e === "delays" || (!it.pl && /^(reduced|modified|detour)$/.test(it.e)) ? "delays"
+      : it.pl || it.e === "detour" || it.e === "stopMoved" ? "trackwork" : null;
+    if (!st) continue;
+    n++;
+    if (!best || LINE_RANK[st] > LINE_RANK[best.status]) best = { status: st, title: it.h, url: it.u };
+  }
+  const rail = RAIL_LINE.test(line);
+  if (!best) return { line, status: "good", label: "Good service", title: null, url: null, more: 0 };
+  const label = { suspended: "Suspended", delays: "Delays", trackwork: rail ? "Trackwork" : "Changes" }[best.status];
+  return { line, status: best.status, label, title: best.title, url: best.url, more: n - 1 };
+}
+async function linesRoute(env, p) {
+  const enabled = await serverOn(env, "lineStatus");
+  const lines = [...new Set(String(p.get("l") || "").split(",").map((x) => cleanId(x, 8)).filter(Boolean))].slice(0, 16);
+  if (!enabled || !lines.length) return json({ enabled, at: null, items: [] });
+  const dg = await alertDigest(env);
+  const now = Date.now();
+  // A digest older than two hours (the tick stopped) says nothing rather than "Good service".
+  if (!dg.at || now - dg.at > ALERT_STALE_MS) return json({ enabled, at: dg.at || null, items: [], stale: true });
+  return json({ enabled, at: dg.at, items: lines.map((l) => lineStatusOf(dg.items || [], l, now)) });
 }
 
 // ---------- reliability pick: how often one scheduled service left on time ----------
@@ -5205,6 +5240,8 @@ async function handleRequest(request, env, exec) {
           return await reliabilityRoute(env, p);
         case "/api/trackwork":
           return await trackworkRoute(env, p);
+        case "/api/lines":
+          return await linesRoute(env, p);
         case "/api/push/key":
           return json({ publicKey: VAPID_PUBLIC });
         case "/api/push/subscribe": {

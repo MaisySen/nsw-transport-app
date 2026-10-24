@@ -15,6 +15,7 @@ import { endLive } from '@/lib/live';
 import { Icon, I } from '@/components/Icon';
 import { Row, Screen, Section, Sep, T } from '@/components/ui';
 import { ActionSheet, type SheetAction } from '@/components/Sheet';
+import { LineStatusSection } from '@/components/LineStatus';
 import { syncLiftAlerts } from '@/lib/liftAlerts';
 import type { Commute } from '@/lib/types';
 import { COMPANY } from '@/lib/company';
@@ -165,6 +166,8 @@ export default function Settings() {
           <Sep inset={57} />
           <Row icon={I.fare} iconBg={c.indigo} title="Opal top up machines" onPress={() => router.push('/topup')} />
         </Section>
+
+        <LineStatusSection />
 
         {data?.commutes.length ? (
           <Section title="Commutes">

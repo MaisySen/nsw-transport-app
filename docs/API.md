@@ -42,6 +42,7 @@ Example: `/api/ask?q=campsie%20to%20newcastle%20via%20chatswood&format=text`
 | `/api/app/config` | GET | `platform` (`ios`, default) | Remote config for the phone apps, see below |
 | `/api/predict` | GET | `line`, `stop`, `planned` | `prediction`: usual delay from recorded history, or null when there are fewer than 5 trips |
 | `/api/reliability` | GET | `line`, `stop`, `planned`; or `s=LINE~STOP~PLANNED` repeated, up to 8 | `{reliability, enabled}`, or `{items, enabled}` in the same order. See Reliability pick below |
+| `/api/lines` | GET | `l=T1,T4,M1` (up to 16 lines) | `{enabled, at, items}`, one per line in the order asked. See Status of my lines below. api.transportsydney.app only |
 | `/api/trackwork` | GET | `t=FROM~TO~LINES~HOUR` repeated, up to 6 (`LINES` dot separated, e.g. `T1.T4`) | `{enabled, weekend, at, trips}`. See Weekend trackwork below. api.transportsydney.app only |
 
 `/api/plan` leg fields: `f` from stop id, `fn` from name, `t` to stop id, `tn` to name, `m` mode (`train`, `metro`, `bus`, `ferry`, `lightrail`, `walk`), `c` connection minutes before this leg (0 to 60, default 5), `a` all services for this leg (1 or 0), `w` walk minutes (1 to 90). The first leg cannot be a walk.
@@ -321,6 +322,23 @@ Added to the answer with `acc=1`:
     "items": [{ "id": "...", "title": "Buses replace trains between Central and Bondi Junction", "url": "https://transportnsw.info/alerts/details#/ems-80076", "lines": ["T4"], "sat": true, "sun": true, "days": "Sat and Sun" }] }] }
 ```
 
+## Status of my lines
+
+`GET /api/lines?l=T1,T4,M1` gives one status per line now, from the same service alerts digest as Weekend trackwork (alerts active now: no active period, or one that covers now). Only on api.transportsydney.app; the app hides the section when the server answers 404.
+
+* `suspended` ("Suspended"): an alert with effect no service, or a header saying suspended or not running, that is not planned work.
+* `delays` ("Delays"): effect significant delays, or reduced, modified or detoured service that is not planned work.
+* `trackwork` ("Trackwork" for trains, metro and light rail; "Changes" for buses and ferries): planned work under way, or a detour or moved stop.
+* `good` ("Good service"): none of these.
+* The worst one wins; `title` and `url` are its header and Transport for NSW link, `more` counts the other alerts.
+* A digest older than 2 hours (the tick stopped) answers `stale: true` and no items, so the app shows nothing rather than a wrong "Good service". Server flag `lineStatus` off: `enabled: false`.
+
+```json
+{ "enabled": true, "at": 1792881795600, "items": [
+  { "line": "T4", "status": "trackwork", "label": "Trackwork", "title": "Trains run to a changed timetable and stopping pattern. City Circle trackwork may also affect how you travel", "url": "https://transportnsw.info/alerts/details#/ems-79751", "more": 0 },
+  { "line": "M1", "status": "good", "label": "Good service", "title": null, "url": null, "more": 0 }] }
+```
+
 ## Last way home reminder
 
 From the Ask "Last train home" answer, or a trip that is the last one tonight, the app asks for ONE push 15 minutes before the last service home. The server finds that service itself (the same search as Ask), looks at live data again from 20 minutes before (every 5 minutes, and once more at the moment if the last look is over a minute old), follows it if it runs late or is replaced, then claims the send in D1 and notifies once. No login: keyed by `device`, one reminder per device (a new one replaces the old one). Push targets are the device's Expo tokens and Web Push sign ups, like the other alerts. Android builds without push (before versionCode 6) show it in the app instead.
@@ -366,4 +384,4 @@ The push: title "Last train to Burwood", body like "Leaves in 15 min: the 12:04a
 
 Change it without a build or a deploy: `POST /api/app/config?platform=ios` with the `x-admin-key` header and a JSON object holding only the parts to change. It is stored in D1 (`app_config`) and merged over the defaults. Send `{}` to go back to the defaults.
 
-Server side switches: the same POST with `platform=server` turns the server's part of a feature off for every app at once, within a minute and with no deploy. The server reads `flags` (or a `kill` entry) for `morningCheck` (no morning checks run), `platformAlerts` (no platform change alerts), `occupancy` (no occupancy in any answer), `liftAwareRouting` (`acc=1` is only step free, no lift outage ranking), `reliabilityPick` (every `/api/reliability` answer is null), `weekendTrackwork` (`/api/trackwork` answers `enabled: false`) and `lastWayHome` (no reminders sent, new ones refused with 503, Ask leaves out `lastHome`). For example `{"flags": {"morningCheck": false}}`. The stored body replaces the previous one for that platform, so send every switch you want off.
+Server side switches: the same POST with `platform=server` turns the server's part of a feature off for every app at once, within a minute and with no deploy. The server reads `flags` (or a `kill` entry) for `morningCheck` (no morning checks run), `platformAlerts` (no platform change alerts), `occupancy` (no occupancy in any answer), `liftAwareRouting` (`acc=1` is only step free, no lift outage ranking), `reliabilityPick` (every `/api/reliability` answer is null), `weekendTrackwork` (`/api/trackwork` answers `enabled: false`), `lineStatus` (`/api/lines` answers `enabled: false`) and `lastWayHome` (no reminders sent, new ones refused with 503, Ask leaves out `lastHome`). For example `{"flags": {"morningCheck": false}}`. The stored body replaces the previous one for that platform, so send every switch you want off.

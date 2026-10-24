@@ -1,7 +1,9 @@
 // Weekend trackwork card: when it shows, what it asks the server, and the words on it. No React here,
 // so the rules are unit tested (test/trackwork.test.mjs).
 
-export type TripLines = { key: string; f: string; t: string; lines: string[]; name: string; h: number };
+export type TripLines = { key: string; f: string; t: string; lines: string[]; name: string; h: number;
+  /** Mode and colour per line, for the line badges in line status. */
+  marks?: Record<string, { mode?: string; color?: string }> };
 export type TwItem = { id: string; title: string; url?: string | null; lines: string[]; days: string };
 export type TwTrip = { f: string; t: string; affected: boolean; items: TwItem[]; addedMin: number | null; buses: { from: string; to: string } | null };
 export type TwResp = { enabled?: boolean; weekend?: { sat: string; sun: string }; trips?: TwTrip[] };
@@ -27,13 +29,14 @@ export function inWindow(t: number): boolean {
 }
 
 /** A trip card's report: the lines of the services it shows (no walking legs), up to 8. */
-export function tripLinesOf(key: string, f: string, t: string, name: string, journeys: { legs: { kind?: string; line?: string }[] }[], h: number): TripLines {
+export function tripLinesOf(key: string, f: string, t: string, name: string, journeys: { legs: { kind?: string; line?: string; mode?: string; color?: string }[] }[], h: number): TripLines {
   const lines: string[] = [];
+  const marks: Record<string, { mode?: string; color?: string }> = {};
   for (const j of journeys.slice(0, 3)) for (const l of j.legs || []) {
     if (l.kind === 'walk' || !l.line) continue;
-    if (!lines.includes(l.line) && lines.length < 8) lines.push(l.line);
+    if (!lines.includes(l.line) && lines.length < 8) { lines.push(l.line); marks[l.line] = { mode: l.mode, color: l.color }; }
   }
-  return { key, f, t, lines, name, h };
+  return { key, f, t, lines, name, h, marks };
 }
 
 /** Query string for GET /api/trackwork: t=FROM~TO~LINE.LINE~HOUR, one per trip, at most 6, each trip once. */
