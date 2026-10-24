@@ -11,6 +11,16 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * When the app goes to the background the card says when its times are from: "Updated 8:21am. Open the app for live times" (or after a tight change warning). Without push updates the card cannot refresh while the app is closed, and now it says so.
 * No new build needed for the above. The next iPhone build (branch live-card-v2) adds the native part: a card left without fresh times shows "Get off about 8:26am" and "Updated 8:21am" two minutes after its last refresh, instead of a countdown or "You've arrived".
 
+### iPhone build 204: the Next trip widget shows your commute (TestFlight, 25 Oct, 8:38 AM)
+* With Home and Work set, the Next trip widget showed "Touch and hold, then Edit Widget to pick a trip". Home and Work were kept only inside the app, and the widget looked for commutes and saved trips on the server instead.
+* The app now shares Home and Work and the trips saved on your phone with the widgets. Home and Work (auto) shows Home to Work before 12pm and Work to Home after, the same as the commute card on Home, with no setup. Show starts on Home and Work (auto).
+* While a trip is running, the Next trip widget follows it: the line, the minutes to leaving or to your stop, and "Get off at Redfern" or "Change at Redfern".
+* Saved trip lists the trips saved on your phone; the stop pickers suggest Home and Work.
+* When live times cannot be loaded, the widget keeps the last times that have not left and says "Offline, times from 8:14am" instead of going blank. With nothing to show it says what to do: "Set Home and Work in the app" or "Open the app once to share Home and Work".
+* Dynamic Island on the train: "Off Redfern" or "Change Redfern" next to the minutes, and the line badge only before you board.
+* Lock Screen trip card and Dynamic Island: stop names drop "Station" even when the feed adds a suburb ("Arrive Kings Cross 8:36am"). This part came over the air at 8:29 AM for builds 201 to 203 as well.
+* Widgets need build 204; open the app once after installing it.
+
 ### Home opens at the top with its header (over the air update for iPhone and Android, 25 Oct, 8:22 AM)
 * On iPhone, Home opened with an empty dark band at the top (only the Live pill showing) and the content starting lower down; a scroll up was needed to see the normal Home header. The large "Home" title was being drawn behind the header's blur.
 * Home, Plan, Ask, More and the stop screen now use the normal header title, the same one you saw after scrolling, so every launch and every return to the app looks the same. Pull to refresh and the tab bar are unchanged.
