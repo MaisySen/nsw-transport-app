@@ -130,7 +130,7 @@ Until the switch: published to the first address (each publish replaces the whol
 
 | Time (about) | Release | Commit |
 | --- | --- | --- |
-| 25 Oct, 8:50 AM | transportsydney.app only (Pages deployment cff75587): iPhone public beta card at the top of the home page ("Join the iPhone beta", TestFlight link), replacing the App Store "coming soon" badge; short link transportsydney.app/beta (302 to the TestFlight link); share image og.png (1200 x 630) for link previews | COMMIT |
+| 25 Oct, 8:50 AM | transportsydney.app only (Pages deployment cff75587): iPhone public beta card at the top of the home page ("Join the iPhone beta", TestFlight link), replacing the App Store "coming soon" badge; short link transportsydney.app/beta (302 to the TestFlight link); share image og.png (1200 x 630) for link previews | 3afc3c3 |
 | 25 Oct, 2:00 AM | api.transportsydney.app only (Worker transport-api version f4ec8688-50f1-4317-a7ae-1610eb40907a): `/api/reliability`, `/api/last-home` and its minute tick, Ask `lastHome`, flags reliabilityPick and lastWayHome. The first address was not deployed and does not have them | 7edfd39 |
 | 24 Oct, 2:15 PM | Ask with several stops, Open trip as a multi leg trip | 2be460a |
 | 24 Oct, 1:55 PM | Multi leg trips and `/api/plan` | 1bed1c1, d7e5eb8 |
