@@ -68,7 +68,7 @@ public enum AppIdentity {
     }
 }
 
-/// Talks to the live Transport Bot backend. No keys live in the app: the server holds them.
+/// Talks to the live backend. No keys live in the app: the server holds them.
 public struct TransportAPI: Sendable {
     /// Read each time, so a new address from remote config applies at once (see APIBase).
     public static var defaultBase: URL {

@@ -18,7 +18,7 @@ public struct RemoteConfig: Codable, Equatable, Sendable {
     /// Timing name to a number (seconds or minutes, as the name says).
     public var timing: [String: Double]
     /// "api_base": moves the app to another server address without a build. Taken only when it
-    /// passes APIBase.accept (https, and a host under fintex.au or the current host).
+    /// passes APIBase.accept (https, and a host on APIBase.allowedDomains or the current host).
     public var apiBase: String?
 
     enum CodingKeys: String, CodingKey {

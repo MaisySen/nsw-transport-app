@@ -1,7 +1,7 @@
 import SwiftUI
 import TransportKit
 
-// Ask tab: chat with Transport Bot. Questions go to /api/ask on the server, answers come back
+// Ask tab: chat about trips. Questions go to /api/ask on the server, answers come back
 // as a short reply plus live cards. Tapping a card opens the stop board or trip through the
 // app's own deep links (nswtransport://stop/ID, nswtransport://trip/FROM/TO).
 
@@ -200,7 +200,7 @@ struct AskView: View {
     private var hello: some View {
         VStack(spacing: 8) {
             Image(systemName: "bubble.left.and.text.bubble.right.fill").font(.system(size: 40)).foregroundStyle(.tint).padding(.top, 24)
-            Text("Ask Transport Bot").font(.title3.bold())
+            Text("Ask about your trips").font(.title3.bold())
             Text("Live times for any train, bus, ferry or light rail in NSW.").font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
             VStack(alignment: .trailing, spacing: 8) {
                 ForEach(AskModel.starters, id: \.self) { s in chip(s) { send(s) }.accessibilityIdentifier("askStarter") }
@@ -215,7 +215,7 @@ struct AskView: View {
         HStack(spacing: 4) { ForEach(0..<3) { _ in Circle().frame(width: 7, height: 7).foregroundStyle(.secondary) } }
             .padding(.horizontal, 14).padding(.vertical, 12)
             .background(botFill, in: .rect(cornerRadius: 18))
-            .accessibilityLabel("Transport Bot is typing")
+            .accessibilityLabel("Answer on the way")
     }
 
     private var botFill: Color { scheme == .dark ? Color(white: 0.15) : Color(white: 0.91) }

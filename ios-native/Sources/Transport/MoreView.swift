@@ -94,12 +94,13 @@ struct AboutView: View {
                 LabeledContent("Publisher", value: "Fintex Australia Pty Ltd")
             }
             Section {
-                Link("Help and support", destination: APIBase.page("support/"))
-                Link("Privacy policy", destination: APIBase.page("privacy/"))
-                Link("Terms of use", destination: APIBase.page("terms/"))
+                Link("Help and support", destination: APIBase.page("support"))
+                Link("Contact us", destination: URL(string: "mailto:\(APIBase.contactEmail)")!)
+                Link("Privacy policy", destination: APIBase.page("privacy"))
+                Link("Terms of use", destination: APIBase.page("terms"))
                 Link("Open the web version", destination: TransportAPI.defaultBase)
             } footer: {
-                Text("Transport: Sydney Live is provided by Fintex Australia Pty Ltd (ABN 60 688 406 108), New South Wales, Australia. Contact: contact@fintex.au. \u{00A9} 2026 Fintex Australia Pty Ltd.\n\nContains transport data from Transport for NSW, licensed under Creative Commons Attribution 4.0. This is an independent app and is not made or endorsed by Transport for NSW. Install ID \(store.device).")
+                Text("Transport: Sydney Live is provided by Fintex Australia Pty Ltd (ABN 60 688 406 108), New South Wales, Australia. Contact: \(APIBase.contactEmail). \u{00A9} 2026 Fintex Australia Pty Ltd.\n\nContains transport data from Transport for NSW, licensed under Creative Commons Attribution 4.0. This is an independent app and is not made or endorsed by Transport for NSW. Install ID \(store.device).")
             }
         }
         .navigationTitle("About")

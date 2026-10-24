@@ -13,7 +13,7 @@ final class APIBaseTests: XCTestCase {
     }
 
     let host = APIBase.builtIn.host ?? ""
-    /// The list once the new domain is filled in.
+    /// A list like the shipped one, to test the rules.
     let domains = ["sydneylive.com.au"]
 
     func testAllowlist() {
@@ -34,9 +34,14 @@ final class APIBaseTests: XCTestCase {
         XCTAssertNil(APIBase.accept(nil, currentHost: host, domains: domains))
     }
 
-    func testTheShippedListAllowsOnlyTheCurrentHostUntilTheDomainIsChosen() {
+    func testTheShippedListAllowsTheNewServerAndTheCurrentHost() {
         XCTAssertNotNil(APIBase.accept("https://\(host)", currentHost: host))
+        XCTAssertEqual(APIBase.accept("https://api.transportsydney.app", currentHost: host)?.absoluteString, "https://api.transportsydney.app")
+        XCTAssertNil(APIBase.accept("https://transportsydney.app.evil.com", currentHost: host))
+        XCTAssertNil(APIBase.accept("https://evil-transportsydney.app", currentHost: host))
         XCTAssertNil(APIBase.accept("https://api.sydneylive.com.au", currentHost: host))
+        XCTAssertEqual(APIBase.page("privacy").absoluteString, "https://transportsydney.app/privacy")
+        XCTAssertEqual(APIBase.page("support").absoluteString, "https://transportsydney.app/support")
         XCTAssertTrue(APIBase.allowedDomains.allSatisfy { !$0.isEmpty && !$0.hasPrefix(".") })
     }
 

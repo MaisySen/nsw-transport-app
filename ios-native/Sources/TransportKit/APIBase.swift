@@ -8,10 +8,14 @@ public enum APIBase {
     /// The address the app ships with.
     public static let builtIn = URL(string: "https://nsw-transport-bot.sites.tab.bot")!
 
-    /// Domains remote config may move the app to (the domain itself and any host under it).
-    /// The new domain is not chosen yet: replace the placeholder with it (for example
-    /// "sydneylive.com.au"). A .invalid name can never resolve, so the placeholder allows nothing.
-    public static let allowedDomains: [String] = ["new-domain.invalid"]
+    /// Hosts remote config may move the app to (the host itself and any host under it), besides
+    /// the host in use now. Adding a server is a one line change here.
+    public static let allowedDomains: [String] = ["api.transportsydney.app"]
+
+    /// The public site with the help, privacy and terms pages. Separate from the API address.
+    public static let site = URL(string: "https://transportsydney.app")!
+    /// Where people write to the publisher.
+    public static let contactEmail = "contact@fintex.au"
     static let key = "apiBase.v1"
 
     /// The address to use now: the last accepted remote value, else the built in one.
@@ -51,8 +55,8 @@ public enum APIBase {
         return current(d)
     }
 
-    /// A page on the server's site, like "privacy/".
+    /// A page on the public site, like "privacy" or "support".
     public static func page(_ path: String) -> URL {
-        current().appendingPathComponent(path)
+        site.appendingPathComponent(path)
     }
 }

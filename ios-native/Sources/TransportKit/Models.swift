@@ -1,6 +1,6 @@
 import Foundation
 
-// Shapes of the JSON served by the Transport Bot backend.
+// Shapes of the JSON served by the backend.
 // Every field the server may leave out is optional so a missing value never breaks decoding.
 
 public struct StopRef: Codable, Hashable, Sendable, Identifiable {
