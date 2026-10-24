@@ -318,8 +318,12 @@ final class FlowTests: XCTestCase {
             pause(4)
             shot("new-trip-by-map")
         }
-        app.buttons["A to Z"].firstMatch.tap()
+        // Back to A to Z; the map's own station buttons share the names.
+        let az = app.buttons["A to Z"].firstMatch
+        az.tap()
         pause(1)
+        if !element("index-A").waitForExistence(timeout: 3) { az.tap(); pause(1) }
+        XCTAssertTrue(element("index-A").waitForExistence(timeout: 5), "A to Z list again")
         filterStations("Burwood")
         tapStation("Burwood", thenExpect: element("changeFrom"))
         XCTAssertTrue(element("changeFrom").exists, "To step after From")
@@ -464,6 +468,8 @@ final class FlowTests: XCTestCase {
         let row = app.buttons[name].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 8), "\(name) in the list")
         row.tap()
+        let choose = element("mapChoose")
+        if !next.waitForExistence(timeout: 2) && choose.exists { choose.tap() }
         if !next.waitForExistence(timeout: 4) && row.exists && row.isHittable {
             row.tap()
             _ = next.waitForExistence(timeout: 4)
