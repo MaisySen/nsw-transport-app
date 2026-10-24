@@ -643,6 +643,8 @@ async function trip(env, fromId, toId, opts = {}) {
     type_destination: opts.toType || "any", name_destination: toId,
     calcNumberOfTrips: String(opts.count || 5), TfNSWTR: "true",
     ...(opts.via ? { type_via: opts.viaType || "any", name_via: opts.via } : {}),
+    // Step free trips only (Settings > Accessible trips): the Trip Planner's wheelchair option.
+    ...(opts.accessible ? { wheelchair: "on" } : {}),
   });
   const journeys = [];
   for (const j of data.journeys || []) {
@@ -897,7 +899,7 @@ async function chainLegJourneys(env, leg, fromMs, untilMs) {
   const seen = new Set(), out = [];
   let t = fromMs;
   for (let page = 0; page < 3; page++) {
-    const r = await trip(env, leg.f, leg.t, { time: sydneyParts(new Date(t)).time, count: 8 });
+    const r = await trip(env, leg.f, leg.t, { time: sydneyParts(new Date(t)).time, count: 8, accessible: !!leg.acc });
     const js = r.journeys || [];
     for (const j of js) {
       const k = j.legs.map((l) => `${l.tripId || l.line}@${l.planned}`).join("|");
@@ -912,8 +914,9 @@ async function chainLegJourneys(env, leg, fromMs, untilMs) {
 }
 async function planChain(env, legs, opts = {}) {
   const all = !!opts.all;
+  if (opts.accessible) legs = legs.map((l) => ({ ...l, acc: true }));
   const L0 = legs[0];
-  const r0 = await trip(env, L0.f, L0.t, { time: opts.time || null, count: opts.count || 5 });
+  const r0 = await trip(env, L0.f, L0.t, { time: opts.time || null, count: opts.count || 5, accessible: !!opts.accessible });
   const f0 = chainFilter(r0.journeys || [], L0, all);
   const fallback = [f0.fallback];
   let chains = f0.list.map((j) => ({ legs: j.legs.map((l) => ({ ...l, seg: 0 })), t: chainTimes(j), lens: [Math.max(1, j.legs.filter((l) => l.kind === "transit").length)] }));
@@ -1296,7 +1299,7 @@ async function planTrip(env, text, ctx) {
   const [a, b] = await Promise.all([fromP ? { place: fromP } : bestPlace(env, fromQ), bestPlace(env, toQ)]);
   if (!a.place) return { kind: "text", text: `I couldn't find a stop or place called "${fromQ}". Try the station name or a stop number.` };
   if (!b.place) return { kind: "text", text: `I couldn't find a stop or place called "${toQ}". Try the station name or a stop number.` };
-  const r = await trip(env, a.place.id, b.place.id, { ...opt, time: t.time, arriveBy: t.arriveBy });
+  const r = await trip(env, a.place.id, b.place.id, { ...opt, time: t.time, arriveBy: t.arriveBy, accessible: !!ctx.accessible });
   return {
     kind: "trip",
     from: { id: a.place.id, name: shortName(a.place.name) }, to: { id: b.place.id, name: shortName(b.place.name) },
@@ -1305,12 +1308,12 @@ async function planTrip(env, text, ctx) {
   };
 }
 
-async function savedTrip(env, s, count = 5) {
+async function savedTrip(env, s, count = 5, accessible = false) {
   if (s.legs && s.legs.length > 1) {
-    const r = await planChain(env, s.legs, { count });
+    const r = await planChain(env, s.legs, { count, accessible });
     return { kind: "trip", saved: s.name, from: s.from, to: s.to, stops: s.legs.slice(0, -1).map((l) => ({ id: l.t, name: l.tn })), ...r, when: null };
   }
-  const r = await trip(env, s.from.id, s.to.id, { count });
+  const r = await trip(env, s.from.id, s.to.id, { count, accessible });
   return { kind: "trip", saved: s.name, from: s.from, to: s.to, ...r, when: null };
 }
 
@@ -1698,7 +1701,7 @@ async function askTrip(env, fromQ, toQ, ctx, o = {}) {
   if (!b || b.needLocation) return { kind: "text", text: `I couldn't find a station, suburb or stop called "${toQ}". Try the station name or a stop number.` };
   if (o.via && (!v || v.needLocation)) return { kind: "text", text: `I couldn't find a station, suburb or stop called "${o.via}" for the via. Try the station name.` };
   if (a.id === b.id) return { kind: "text", text: (askLabel(a) === askLabel(b) ? `${askLabel(a)} is both the start and the destination` : `${askLabel(a)} and ${askLabel(b)} are the same stop`) + ", so there is no trip to plan. Ask with another start or destination." };
-  const opt = { time: o.time, arriveBy: o.arriveBy, count: o.count || 6 };
+  const opt = { time: o.time, arriveBy: o.arriveBy, count: o.count || 6, accessible: !!ctx.accessible };
   if (a.coord) opt.fromType = "coord";
   if (b.coord) opt.toType = "coord";
   if (v) { opt.via = v.id; if (v.coord) opt.viaType = "coord"; }
@@ -1737,7 +1740,7 @@ async function askChain(env, qs, ctx, o = {}) {
     if (i && p.id === P[i - 1].id) return { kind: "text", text: `${askLabel(p)} is listed twice in a row, so there is no leg to plan between them. Ask again without the repeat.` };
   }
   const legs = chainLegs(P.slice(1).map((b, i) => ({ f: P[i].id, fn: P[i].name, t: b.id, tn: b.name, m: o.mode || "", c: 5 })));
-  const r = await planChain(env, legs, { time: o.time || null, count: o.count || 6 });
+  const r = await planChain(env, legs, { time: o.time || null, count: o.count || 6, accessible: !!ctx.accessible });
   const z = P[P.length - 1];
   return {
     kind: "trip", chain: true, from: askPlaceOut(P[0]), to: askPlaceOut(z), stops: P.slice(1, -1).map(askPlaceOut), plan: legs, ...r,
@@ -1797,7 +1800,7 @@ async function askLast(env, fromQ, toQ, ctx, mode) {
   if (!a || a.needLocation) return { kind: "needOrigin", to: b && !b.needLocation ? b : null, last: true, mode };
   if (!b || b.needLocation) return { kind: "text", text: `I couldn't find a station, suburb or stop called "${toQ}".` };
   const sn = sydneyNow();
-  const base = { fromType: a.coord ? "coord" : undefined, count: 8 };
+  const base = { fromType: a.coord ? "coord" : undefined, count: 8, accessible: !!ctx.accessible };
   const late = sn.tod >= 23 * 60 || sn.tod < 3 * 60;
   if (b.coord) base.toType = "coord";
   const first = await trip(env, a.id, b.id, late ? base : { ...base, time: "2300" });
@@ -1884,6 +1887,10 @@ async function askRoute(env, raw, ctx) {
   if (!text) return { kind: "help" };
   if (/^(thanks|thank you|cheers|ta|thx)$/i.test(lower)) return { kind: "text", text: "No worries." };
 
+  // Parking, lifts and step free access, top up machines (facilities block below).
+  const fx = await askFacilities(env, text, ctx);
+  if (fx) return fx;
+
   // "last train home", "last bus to Central", "when's the last train from Central to Burwood"
   const lm = lower.match(/^(?:when(?:'s| is)\s+|what time is\s+)?(?:the\s+)?last\s+(train|bus|metro|ferry|light rail|service|one)?\s*(.*)$/i);
   if (lm) {
@@ -1959,6 +1966,12 @@ function askDecorate(d, ctx) {
       break;
     case "text": case "error":
       reply = d.text; break;
+    case "facility":
+      reply = d.text;
+      for (const c of d.cards || []) cards.push(c);
+      for (const l of d.links || []) links.push(l);
+      sugg = d.suggestions || [];
+      break;
     case "needLocation":
       reply = "I need your location for that. Allow location, or name a station."; d.ask = "location"; break;
     case "needOrigin":
@@ -2259,7 +2272,8 @@ const RATE_RULES = [
   [/^\/api\/share$/, "share", 20, 600000, "POST"],
   [/^\/api\/share\/update$/, "shareup", 240, 600000],
   [/^\/api\/share$/, "read", 600, 60000],
-  [/^\/api\/(ask|trip|plan|departures|service|status|next|search|nearby|alerts|predict|obs|stations)$/, "read", 600, 60000],
+  [/^\/api\/(lifts\/alerts|parking\/watch)$/, "write", 60, 600000, "POST"],
+  [/^\/api\/(ask|trip|plan|departures|service|status|next|search|nearby|alerts|predict|obs|stations|station|parking|topup|lifts)$/, "read", 600, 60000],
 ];
 function rateOk(request, pathname) {
   const rule = RATE_RULES.find((r) => r[0].test(pathname) && (!r[4] || request.method === r[4]));
@@ -2531,7 +2545,7 @@ function httpsUrl(u) { const s = String(u || "").trim(); return /^https:\/\/[^\s
 // /api/ask replies carry only what the web, Android and iPhone Ask screens read. The full
 // planner output (every leg's path, top level journeys, items and alerts) was 180 to 490 KB.
 const ASK_DEP_KEYS = ["line", "color", "mode", "dest", "platform", "planned", "estimated", "realtime", "delayMin", "cancelled", "link"];
-const ASK_LEG_KEYS = ["kind", "mode", "line", "color", "from", "to", "fromPlatform", "planned", "estimated", "realtime", "delayMin", "cancelled", "durationMin", "link"];
+const ASK_LEG_KEYS = ["kind", "mode", "line", "color", "from", "to", "fromPlatform", "planned", "estimated", "realtime", "delayMin", "cancelled", "durationMin", "link", "access"];
 const ASK_DROP = new Set(["journeys", "items", "alerts", "detail", "path"]);
 function pickKeys(o, keys) { const r = {}; for (const k of keys) if (o[k] !== undefined) r[k] = o[k]; return r; }
 function askSlimCard(c) {
@@ -3220,6 +3234,8 @@ async function runTick(env, opts = {}) {
       catch (e) { out.commutes.push({ id: c.id, error: String(e && e.message || e).slice(0, 160) }); }
     }
   }
+  // Lift outages on saved trip stations, car park nearly full watches
+  if (!opts.device) out.facilities = await facTick(env, Date.now(), sn, opts).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   // Background sampling for predictions
   if (!opts.device && !opts.noSample) out.sample = await sampleStops(env, sn, use.calls < SAMPLE_BUDGET);
   // Housekeeping once an hour
@@ -3380,6 +3396,465 @@ async function oneStopCheck(env, l) {
 }
 // ---- live trip end
 
+// ---- facilities start
+// Station access (lifts, step free), Opal ticket machines and Park and Ride live spaces.
+// Static data: /data/facilities.json and /data/carparks.json, built by tools/build_facilities.py
+// from Transport for NSW open data. Live data: the Car Park API, and lift and escalator outages
+// from the Trip Planner service alerts. Every answer names its source.
+const FAC_SRC = {
+  facilities: "Transport for NSW open data: Public Transport Location Facilities and Operators",
+  parking: "Transport for NSW open data: Car Park API (live)",
+  lifts: "Transport for NSW service alerts (live)",
+};
+const ACCESS_LEVEL = { I: "independent", A: "assisted", N: "none" };
+const ACCESS_LABEL = { I: "Step free access", A: "Assisted access", N: "No step free access" };
+const ACCESS_NOTE = {
+  I: "You can get to the platform without steps.",
+  A: "Staff can help with a ramp or the way in. Some steps or gaps may need help.",
+  N: "There is no step free way to the platform.",
+};
+const TICKET_LABEL = {
+  cash: "Opal top up and ticket machine, cash or card",
+  card: "Opal top up and ticket machine, card only",
+  topup: "Opal top up machine, card only",
+  none: "No Opal top up or ticket sales",
+};
+const FAC_LABEL = {
+  toilet: "Toilets", atoilet: "Accessible toilet", mlak: "Accessible toilet (MLAK key)", baby: "Baby change",
+  carpark: "Commuter car park", parkride: "Park and Ride", accpark: "Accessible parking", bikerack: "Bike racks",
+  bikelocker: "Bike lockers", bikeshed: "Bike shed", kiss: "Kiss and ride", taxi: "Taxi rank", help: "Help point",
+  phone: "Payphone", info: "Information point", display: "Next service display", charge: "Phone charging", luggage: "Luggage storage",
+};
+const PARK_WATCH_HOURS = 3;
+let facOrigin = "https://nsw-transport-bot.sites.tab.bot";
+const facMem = {};
+async function facData(env, name) {
+  const hit = facMem[name];
+  if (hit && Date.now() - hit.at < 6 * 3600000) return hit.v;
+  try {
+    const r = await env.ASSETS.fetch(new Request(new URL("/data/" + name + ".json", facOrigin)));
+    if (!r.ok) throw new Error("no " + name);
+    const v = await r.json();
+    facMem[name] = { at: Date.now(), v };
+    return v;
+  } catch (e) { return hit ? hit.v : null; }
+}
+function facStrip(h) { return String(h || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim(); }
+function facDist(aLat, aLon, bLat, bLon) {
+  const r = Math.PI / 180, x = (bLon - aLon) * r * Math.cos(((aLat + bLat) / 2) * r), y = (bLat - aLat) * r;
+  return Math.round(Math.sqrt(x * x + y * y) * 6371000);
+}
+function sydneyLocalMs(s) {
+  // "2026-10-24T15:39:23" in Sydney time to epoch ms.
+  const asUtc = Date.parse(String(s || "") + "Z");
+  if (!Number.isFinite(asUtc)) return null;
+  const d = new Date(asUtc);
+  const syd = new Date(d.toLocaleString("en-US", { timeZone: TZ })), utc = new Date(d.toLocaleString("en-US", { timeZone: "UTC" }));
+  return asUtc - (syd - utc);
+}
+
+// Lift and escalator outages, all stations, cached 5 minutes.
+const liftMem = { at: 0, list: null, p: null };
+async function liftOutages(env) {
+  if (liftMem.list && Date.now() - liftMem.at < 300000) return liftMem.list;
+  if (!liftMem.p) {
+    liftMem.p = (async () => {
+      const now = sydneyParts(new Date());
+      const [y, m, dd] = String(now.date).replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3").split("-");
+      const data = await tp(env, "add_info", { filterDateValid: `${dd}-${m}-${y}`, filterPublicationStatus: "current" });
+      const out = [], seen = new Set();
+      for (const i of (data.infos && data.infos.current) || []) {
+        const inf = (i.affected && i.affected.Infrastructures) || [];
+        const at = (i.properties || {}).announcementType;
+        if (at !== "liftsEscalators" && !inf.some((x) => /ELEVATOR|ESCALATOR/.test(String(x.type || "")))) continue;
+        const title = facStrip(i.subtitle || i.urlText || i.content).slice(0, 200);
+        const stops = [...new Set(((i.affected && i.affected.stops) || []).map((s) => String(s.id || "")).filter((s) => /^\d{5,8}$/.test(s)))];
+        const k = stops.join(",") + "|" + title.toLowerCase();
+        if (!title || !stops.length || seen.has(k)) continue;
+        seen.add(k);
+        const esc = inf.some((x) => x.type === "ESCALATOR") && !inf.some((x) => x.type === "ELEVATOR");
+        out.push({ id: String(i.id || k).slice(0, 80), stops, kind: esc || /escalator/i.test(title) && !/\blift\b/i.test(title) ? "escalator" : "lift", title,
+          detail: facStrip(i.content).slice(0, 300), url: httpsUrl(i.url), updated: (i.timestamps && i.timestamps.lastModification) || null });
+      }
+      liftMem.list = out; liftMem.at = Date.now();
+      return out;
+    })().finally(() => { liftMem.p = null; });
+  }
+  try { return await liftMem.p; } catch (e) { return liftMem.list || []; }
+}
+
+// One car park, live, cached 90 seconds.
+const parkMem = new Map();
+function parkStatus(free, spots) {
+  if (!spots || free == null) return "unknown";
+  if (free <= 0) return "full";
+  if (free <= Math.max(10, Math.round(spots * 0.1))) return "nearly";
+  return "ok";
+}
+const PARK_LABEL = { ok: "Spaces free", nearly: "Nearly full", full: "Full", unknown: "No live count" };
+function parkOut(c, live) {
+  const o = { id: c.id, name: c.name, station: c.tsn, spots: c.spots, lat: c.lat, lon: c.lon, address: c.address || null, free: null, occupied: null, status: "unknown", label: PARK_LABEL.unknown, updated: null, stale: false };
+  if (live) {
+    const spots = Number(live.spots) || c.spots || 0;
+    const used = Number((live.occupancy || {}).total);
+    if (Number.isFinite(used)) {
+      o.spots = spots; o.occupied = Math.min(used, spots); o.free = Math.max(0, spots - used);
+      const at = sydneyLocalMs(live.MessageDate);
+      o.updated = at ? new Date(at).toISOString() : null;
+      o.stale = !!(at && Date.now() - at > 30 * 60000);
+      o.status = o.stale ? "unknown" : parkStatus(o.free, spots);
+      o.label = PARK_LABEL[o.status];
+    }
+  }
+  return o;
+}
+async function carparkLive(env, c) {
+  const hit = parkMem.get(c.id);
+  if (hit && Date.now() - hit.at < 90000) return hit.v;
+  let v = null;
+  // The open data API allows a few calls a second; one retry covers a busy moment.
+  for (let tryN = 0; tryN < 2 && !v; tryN++) {
+    if (tryN) await new Promise((r) => setTimeout(r, 450));
+    upstream.calls++;
+    try {
+      const res = await fetch(API + "/v1/carpark?facility=" + encodeURIComponent(c.id), { headers: { Authorization: "apikey " + apiKey(env) }, signal: AbortSignal.timeout(8000) });
+      if (res.ok) v = parkOut(c, await res.json());
+    } catch (e) { /* retry once */ }
+  }
+  if (!v) { v = parkOut(c, null); parkMem.set(c.id, { at: Date.now() - 75000, v }); return v; }
+  parkMem.set(c.id, { at: Date.now(), v });
+  if (parkMem.size > 200) parkMem.delete(parkMem.keys().next().value);
+  return v;
+}
+async function carparkList(env) { const d = await facData(env, "carparks"); return (d && d.carparks) || []; }
+async function parkingFor(env, tsn) {
+  const list = (await carparkList(env)).filter((c) => c.tsn === String(tsn));
+  return Promise.all(list.map((c) => carparkLive(env, c)));
+}
+const parkAllMem = { at: 0, v: null };
+async function parkingAll(env) {
+  if (parkAllMem.v && Date.now() - parkAllMem.at < 600000) return parkAllMem.v;
+  const list = await carparkList(env);
+  // Four at a time, under a second apart: the open data API allows about 5 calls a second.
+  const v = [];
+  for (let i = 0; i < list.length; i += 4) {
+    const fresh = list.slice(i, i + 4).some((c) => { const h = parkMem.get(c.id); return !h || Date.now() - h.at >= 90000; });
+    if (i && fresh) await new Promise((r) => setTimeout(r, 900));
+    v.push(...(await Promise.all(list.slice(i, i + 4).map((c) => carparkLive(env, c)))));
+  }
+  if (v.some((p) => p.free != null)) { parkAllMem.v = v; parkAllMem.at = Date.now() - (v.some((p) => p.free == null) ? 420000 : 0); }
+  return v;
+}
+function parkSentence(p) {
+  if (p.status === "unknown" || p.free == null) return `${p.name}: no live count right now (${p.spots} spaces).`;
+  if (p.status === "full") return `${p.name}: full (${p.spots} spaces).`;
+  return `${p.name}: ${p.free} of ${p.spots} spaces free${p.status === "nearly" ? ", nearly full" : ""}.`;
+}
+
+async function stationInfo(env, id, live = true) {
+  const fac = await facData(env, "facilities");
+  const s = fac && fac.stations ? fac.stations[String(id)] : null;
+  if (!s) return null;
+  const x = s.x || [], f = s.f || [];
+  const out = {
+    id: String(id), name: s.n, lat: s.lat, lon: s.lon, modes: s.m ? s.m.split(/,\s*/) : [],
+    access: { level: ACCESS_LEVEL[s.a] || "unknown", label: ACCESS_LABEL[s.a] || "Access not listed", note: ACCESS_NOTE[s.a] || null,
+      lift: x.includes("lift"), escalator: x.includes("esc"), stairs: x.includes("stairs"), ramp: x.includes("ramp"),
+      hearingLoop: x.includes("loop"), tactile: x.includes("tactile"), stairLift: x.includes("stairlift") },
+    ticket: { kind: s.t || "unknown", label: TICKET_LABEL[s.t] || "Ticket machines not listed", topUp: !!s.t && s.t !== "none", cash: s.t === "cash", extraTopUp: !!s.tu },
+    facilities: f.map((k) => FAC_LABEL[k]).filter(Boolean),
+    parkRide: f.includes("parkride"),
+    peak: s.pk || s.pp ? { morning: s.pk || null, afternoon: s.pp || null } : null,
+    shortPlatform: !!s.sp, address: s.ad || null, phone: s.ph || null,
+    source: FAC_SRC.facilities, read: fac.read || null,
+  };
+  if (live) {
+    const [outs, park] = await Promise.all([liftOutages(env).catch(() => []), parkingFor(env, id).catch(() => [])]);
+    out.outages = outs.filter((o) => o.stops.includes(String(id))).map(({ stops, ...o }) => o);
+    out.parking = park;
+    out.sources = [FAC_SRC.facilities, FAC_SRC.lifts].concat(park.length ? [FAC_SRC.parking] : []);
+  }
+  return out;
+}
+async function topupNear(env, lat, lon, limit = 12) {
+  const fac = await facData(env, "facilities");
+  if (!fac) return [];
+  const all = Object.entries(fac.stations).filter(([, s]) => s.t && s.t !== "none");
+  const la = Number(lat), lo = Number(lon), has = Number.isFinite(la) && Number.isFinite(lo) && la && lo;
+  const rows = all.map(([id, s]) => ({ id, name: s.n, lat: s.lat, lon: s.lon, kind: s.t, label: TICKET_LABEL[s.t], cash: s.t === "cash", ...(has ? { distance: facDist(la, lo, s.lat, s.lon) } : {}) }));
+  if (has) rows.sort((a, b) => a.distance - b.distance);
+  return has ? rows.slice(0, limit) : rows;
+}
+
+// Trip results: access at each transit leg's stations, and Park and Ride spaces at the start.
+async function addAccess(env, d, opts = {}) {
+  const js = d && d.journeys;
+  if (opts.accessible && d) d.accessible = true;
+  if (!Array.isArray(js) || !js.length) return d;
+  const fac = await facData(env, "facilities");
+  if (!fac || !fac.stations) return d;
+  const outs = await liftOutages(env).catch(() => []);
+  const brief = (id) => {
+    const s = fac.stations[String(id || "")];
+    if (!s) return null;
+    const b = { id: String(id), level: ACCESS_LEVEL[s.a] || "unknown", lift: (s.x || []).includes("lift") };
+    const o = outs.filter((x) => x.stops.includes(String(id)));
+    if (o.length) { b.outage = o[0].title; b.outages = o.length; }
+    return b;
+  };
+  const mem = new Map();
+  const get = (id) => { if (!mem.has(id)) mem.set(id, brief(id)); return mem.get(id); };
+  for (const j of js) {
+    for (const l of j.legs || []) {
+      if (l.kind === "walk" || !(l.fromParent || l.toParent)) continue;
+      const a = get(l.fromParent), b = get(l.toParent);
+      if (a || b) l.access = { from: a, to: b };
+    }
+  }
+  if (opts.parking === false) return d;
+  const first = (js[0].legs || []).find((l) => l.kind !== "walk" && l.fromParent);
+  if (first) {
+    const pk = await parkingFor(env, first.fromParent).catch(() => []);
+    if (pk.length) d.parking = { station: { id: String(first.fromParent), name: (fac.stations[first.fromParent] || {}).n || first.from }, carparks: pk, source: FAC_SRC.parking };
+  }
+  return d;
+}
+
+// Ask: "parking at Tallawong", "lifts at Central", "top up near me", "accessible trip Burwood to Central".
+const ASK_PARK_RE = /\b(parking|park\s*(?:and|&|n)\s*ride|car\s*parks?|carparks?|spaces?\s+(?:left|free|available)|free\s+spaces?)\b/i;
+const ASK_LIFT_RE = /\b(lifts?|elevators?|escalators?|wheelchair|accessible|accessibility|step[\s-]?free|pram)\b/i;
+const ASK_TOPUP_RE = /\b(top[\s-]?ups?|topup|recharge|ticket\s+machines?|opal\s+machines?|buy\s+(?:an?\s+)?(?:opal\s+)?(?:card|ticket)|single\s+trip\s+tickets?|add\s+(?:money|value))\b/i;
+const ASK_FAC_FILLER = /\b(is|are|the|a|an|at|in|near|nearby|around|for|of|on|any|there|how|many|much|what|whats|what's|where|can|i|me|my|do|does|to|free|left|available|spaces?|space|full|now|right|today|status|working|work|out|broken|station|stn|info|information|tell|show|check|please|parking|and|ride|car\s*parks?|carparks?|lifts?|elevators?|escalators?|wheelchair|accessible|accessibility|step[\s-]?free|access|pram|top[\s-]?ups?|topup|recharge|ticket|tickets|machines?|opal|buy|card|single|trip|add|money|value|get|find|closest|nearest|here|with|by|it|has|have|got|still|currently|of\s+service)\b/gi;
+function askFacPlace(text) {
+  return text.replace(/\bpark\s*(?:and|&|n)\s*ride\b/gi, " ").replace(/[?!.,]/g, " ").replace(ASK_FAC_FILLER, " ").replace(/\s+/g, " ").trim();
+}
+async function askFacStation(env, q) {
+  const fac = await facData(env, "facilities");
+  if (!fac || !q) return null;
+  const want = q.toLowerCase().replace(/\s+(station|wharf|light rail)$/, "").trim();
+  const ent = Object.entries(fac.stations);
+  const exact = ent.find(([, s]) => s.n.toLowerCase().replace(/\s+(station|wharf|light rail|b-line)$/, "") === want);
+  if (exact) return exact[0];
+  try {
+    const { stops } = await findStops(env, q);
+    for (const s of (stops || []).slice(0, 4)) if (fac.stations[String(s.id)]) return String(s.id);
+  } catch (e) { /* fall through to a name match */ }
+  const part = ent.find(([, s]) => s.n.toLowerCase().startsWith(want));
+  return part ? part[0] : null;
+}
+async function askFacilities(env, text, ctx) {
+  const park = ASK_PARK_RE.test(text);
+  const lift = ASK_LIFT_RE.test(text);
+  const topup = ASK_TOPUP_RE.test(text);
+  if (!park && !lift && !topup) return null;
+  // "accessible trip from Burwood to Central": plan it with step free trips only.
+  if (lift && /\b(to|via)\b/i.test(text) && /\b(accessible|step[\s-]?free|wheelchair|pram)\b/i.test(text) && !topup && !park) {
+    const rest = text.replace(/\b(an?\s+)?(accessible|step[\s-]?free|wheelchair(?:\s+friendly)?|pram(?:\s+friendly)?)\b\s*(trips?|routes?|ways?|journeys?)?\s*/gi, " ").replace(/\b(only|please)\b/gi, " ").replace(/\s+/g, " ").trim();
+    if (rest && rest !== text) { const r = await askRoute(env, rest, { ...ctx, accessible: true }); if (r && typeof r === "object") r.accessible = true; return r; }
+  }
+  const placeQ = askFacPlace(text);
+  const nearMe = !placeQ || /\b(near me|nearby|closest|nearest|around here|here)\b/i.test(text);
+  if (park) {
+    const all = await carparkList(env);
+    if (!placeQ || nearMe && !placeQ) {
+      if (ctx.lat && ctx.lon) {
+        const la = Number(ctx.lat), lo = Number(ctx.lon);
+        const near = all.map((c) => ({ c, d: facDist(la, lo, c.lat, c.lon) })).sort((a, b) => a.d - b.d).slice(0, 3);
+        const live = await Promise.all(near.map((n) => carparkLive(env, n.c)));
+        return askFacReply(live.map(parkSentence).join(" "), [{ type: "parking", title: "Park and Ride near you", items: live, source: FAC_SRC.parking }], live[0] ? [{ label: `Open ${live[0].name}`, ...askStopLink(live[0].station, live[0].name) }] : []);
+      }
+      return { kind: "facility", text: "Which station? Ask like \"parking at Tallawong\", or allow location for the closest Park and Ride.", ask: "location", suggestions: ["Parking at Tallawong", "Parking at Kellyville"] };
+    }
+    const lowerQ = placeQ.toLowerCase();
+    let hits = all.filter((c) => c.name.toLowerCase().startsWith(lowerQ) || c.name.toLowerCase().split(/[\s(]+/)[0] === lowerQ.split(" ")[0] && lowerQ.length > 3);
+    let tsn = hits.length ? hits[0].tsn : await askFacStation(env, placeQ);
+    if (!hits.length && tsn) hits = all.filter((c) => c.tsn === tsn);
+    if (!hits.length) {
+      const st = tsn ? await stationInfo(env, tsn, false) : null;
+      const nm = st ? st.name : placeQ.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+      return { kind: "facility", text: `${nm} has no Park and Ride car park with live spaces.${st && st.facilities.includes("Commuter car park") ? " It does have a commuter car park." : ""} Live counts cover ${all.length} Park and Ride car parks, like Tallawong, Kellyville and Gosford.`, suggestions: ["Parking at Tallawong", "Parking at Gosford"] };
+    }
+    hits = hits.filter((c) => c.tsn === hits[0].tsn);
+    const live = await Promise.all(hits.map((c) => carparkLive(env, c)));
+    const free = live.reduce((n, p) => n + (p.free || 0), 0), spots = live.reduce((n, p) => n + p.spots, 0);
+    const stName = (await stationInfo(env, hits[0].tsn, false) || {}).name || hits[0].name;
+    const lead = live.length > 1 && live.every((p) => p.free != null) ? `${stName}: ${free} of ${spots} spaces free across ${live.length} car parks. ` : "";
+    const body = live.length === 1 ? parkSentence({ ...live[0], name: `${stName} Park and Ride` }) : live.map(parkSentence).join(" ");
+    return askFacReply(lead + body, [{ type: "parking", title: `${stName} Park and Ride`, items: live, source: FAC_SRC.parking }],
+      [{ label: `Open ${stName}`, ...askStopLink(hits[0].tsn, stName) }]);
+  }
+  if (topup) {
+    if (placeQ && !nearMe) {
+      const tsn = await askFacStation(env, placeQ);
+      const st = tsn ? await stationInfo(env, tsn, false) : null;
+      if (!st) return { kind: "facility", text: `I couldn't find a station called "${placeQ}". Opal top up machines are listed for train, metro and light rail stations and some wharves.` };
+      const line = st.ticket.kind === "none" ? `${st.name} has no Opal top up or ticket machine.` : st.ticket.kind === "unknown" ? `${st.name} has no ticket machine listed.` : `${st.name}: ${st.ticket.label}.`;
+      const near = st.ticket.topUp ? [] : (await topupNear(env, st.lat, st.lon, 3)).filter((r) => r.id !== st.id);
+      return askFacReply(line + (near.length ? ` Closest with a machine: ${near.map((r) => `${r.name} (${askKm(r.distance)})`).join(", ")}.` : "") + " You can also top up in the Opal Travel app or at Opal retailers.",
+        [{ type: "station", station: askStationCard(st) }], [{ label: `Open ${st.name}`, ...askStopLink(st.id, st.name) }]);
+    }
+    if (ctx.lat && ctx.lon) {
+      const near = await topupNear(env, ctx.lat, ctx.lon, 3);
+      if (!near.length) return { kind: "facility", text: "I couldn't find an Opal machine near you." };
+      return askFacReply(`Closest Opal machines: ${near.map((r) => `${r.name}, ${askKm(r.distance)} (${r.cash ? "cash or card" : "card only"})`).join("; ")}. You can also top up in the Opal Travel app.`,
+        [{ type: "stops", items: near.map((r) => ({ id: r.id, name: r.name, distance: r.distance, link: askStopLink(r.id, r.name) })) }], [{ label: "Open the map", kind: "map", href: "#/topup" }]);
+    }
+    return { kind: "facility", text: "Where? Ask like \"top up at Campsie\", or allow location for the closest Opal machine.", ask: "location", suggestions: ["Top up at Campsie"] };
+  }
+  // Lifts and access
+  let tsn = placeQ ? await askFacStation(env, placeQ) : null;
+  if (!tsn && ctx.lat && ctx.lon) { const n = await topupNear(env, ctx.lat, ctx.lon, 1).catch(() => []); tsn = n[0] ? n[0].id : null; }
+  if (!tsn) return { kind: "facility", text: placeQ ? `I couldn't find a station called "${placeQ}".` : "Which station? Ask like \"lifts at Central\".", suggestions: ["Lifts at Central", "Is Redfern step free"] };
+  const st = await stationInfo(env, tsn, true);
+  if (!st) return { kind: "facility", text: "I don't have access details for that stop." };
+  const has = [st.access.lift && "lifts", st.access.escalator && "escalators", st.access.ramp && "boarding ramp help"].filter(Boolean);
+  let line = st.access.level === "none" && has.length ? `${st.name} is not listed as step free, so some platforms or exits need stairs. It has ${askList(has)}.`
+    : `${st.name}: ${st.access.label.toLowerCase()}.${has.length ? " It has " + askList(has) + "." : ""}`;
+  if (st.outages.length) line += ` ${st.outages.length === 1 ? "1 lift or escalator is" : st.outages.length + " lifts or escalators are"} out of service now: ${st.outages.map((o) => o.title.replace(new RegExp("^" + st.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*", "i"), "")).join("; ")}.`;
+  else if (st.access.lift) line += " No lift outages reported right now.";
+  return askFacReply(line, [{ type: "station", station: askStationCard(st) }], [{ label: `Open ${st.name}`, ...askStopLink(st.id, st.name) }]);
+}
+function askKm(m) { return m == null ? "" : m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`; }
+function askList(a) { return a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]; }
+function askStationCard(st) {
+  return { id: st.id, name: st.name, access: { level: st.access.level, label: st.access.label, lift: st.access.lift, escalator: st.access.escalator },
+    ticket: { kind: st.ticket.kind, label: st.ticket.label }, outages: (st.outages || []).map((o) => ({ title: o.title, url: o.url })), parking: st.parking || [],
+    source: (st.sources || [st.source]).join("; ") };
+}
+function askFacReply(text, cards, links) { return { kind: "facility", text, cards: cards || [], links: links || [] }; }
+
+// Lift outage alerts for saved trip stations, and car park nearly full watches.
+let facSchemaReady = null;
+async function facSchema(env) {
+  const d = db(env);
+  if (!d) return false;
+  if (!facSchemaReady) {
+    facSchemaReady = d.batch([
+      d.prepare(`CREATE TABLE IF NOT EXISTS lift_alerts (device TEXT PRIMARY KEY, profile TEXT, stations TEXT, seen TEXT, created INTEGER, updated INTEGER)`),
+      d.prepare(`CREATE TABLE IF NOT EXISTS park_watches (id TEXT PRIMARY KEY, device TEXT, profile TEXT, facility TEXT, name TEXT, station TEXT,
+        created INTEGER, expires INTEGER, done INTEGER DEFAULT 0)`),
+    ]).then(() => true).catch((e) => { facSchemaReady = null; throw e; });
+  }
+  return facSchemaReady;
+}
+async function facTick(env, now, sn, opts = {}) {
+  if (!(await facSchema(env).catch(() => false))) return { skipped: "no storage" };
+  const out = { park: [], lifts: [] };
+  const cps = await carparkList(env);
+  for (const w of await d1all(env, "SELECT * FROM park_watches WHERE done = 0 AND expires > ?1 ORDER BY created LIMIT 20", now)) {
+    const c = cps.find((x) => x.id === w.facility);
+    if (!c) continue;
+    const p = await carparkLive(env, c);
+    if (p.status !== "nearly" && p.status !== "full") continue;
+    await notify(env, { device: w.device }, { title: `${p.name} car park ${p.status === "full" ? "is full" : "nearly full"}`, body: p.status === "full" ? `No spaces left of ${p.spots}. Live count from Transport for NSW.` : `${p.free} of ${p.spots} spaces left. Live count from Transport for NSW.`, url: `/#/stop/${encodeURIComponent(p.station)}?name=${encodeURIComponent(p.name)}`, tag: "pk" + w.id, ttl: 1800 });
+    await db(env).prepare("UPDATE park_watches SET done = 1 WHERE id = ?1").bind(w.id).run();
+    out.park.push({ id: w.id, status: p.status });
+  }
+  if (opts.force || sn.tod % 10 === 4) {
+    const rows = await d1all(env, "SELECT * FROM lift_alerts LIMIT 500");
+    if (rows.length) {
+      const outs = await liftOutages(env);
+      const fac = await facData(env, "facilities");
+      for (const r of rows) {
+        let stations = [], seen = [];
+        try { stations = JSON.parse(r.stations || "[]"); seen = JSON.parse(r.seen || "[]"); } catch (e) { continue; }
+        const match = outs.filter((o) => o.stops.some((s) => stations.includes(s)));
+        const fresh = match.filter((o) => !seen.includes(o.id)).slice(0, 3);
+        for (const o of fresh) {
+          const sid = o.stops.find((s) => stations.includes(s));
+          const nm = (fac && fac.stations[sid] && fac.stations[sid].n) || "a station on your trips";
+          await notify(env, { device: r.device }, { title: `${o.kind === "escalator" ? "Escalator" : "Lift"} out at ${nm}`, body: o.title + ". This station is on one of your saved trips.", url: `/#/stop/${encodeURIComponent(sid)}?name=${encodeURIComponent(nm)}`, tag: "lift" + o.id, ttl: 3600 });
+          out.lifts.push({ device: r.device.slice(0, 6), outage: o.id });
+        }
+        const ids = JSON.stringify(match.map((o) => o.id));
+        if (ids !== (r.seen || "[]")) await db(env).prepare("UPDATE lift_alerts SET seen = ?2, updated = ?3 WHERE device = ?1").bind(r.device, ids, now).run();
+      }
+    }
+  }
+  if (sn.tod % 60 === 8) await db(env).prepare("DELETE FROM park_watches WHERE expires < ?1").bind(now - 86400000).run().catch(() => null);
+  return out;
+}
+
+async function facRoutes(request, env, url) {
+  const p = url.searchParams;
+  facOrigin = url.origin;
+  const path = url.pathname;
+  const cache = (o, s = 60) => new Response(JSON.stringify(o), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": `public, max-age=${s}`, "access-control-allow-origin": "*", ...API_SEC_HEADERS } });
+  if (path === "/api/station") {
+    const id = cleanId(p.get("id"), 12);
+    if (!/^\d{5,8}$/.test(id)) return json({ error: "id must be a station number, for example 200060" }, 400);
+    const st = await stationInfo(env, id, p.get("live") !== "0");
+    if (!st) return json({ error: "no facility data for this stop", id }, 404);
+    return cache(st, 60);
+  }
+  if (path === "/api/parking") {
+    if (p.get("id")) {
+      const c = (await carparkList(env)).find((x) => x.id === cleanId(p.get("id"), 8));
+      if (!c) return json({ error: "no such car park" }, 404);
+      return cache({ carpark: await carparkLive(env, c), source: FAC_SRC.parking }, 60);
+    }
+    if (p.get("stop")) {
+      const id = cleanId(p.get("stop"), 12);
+      return cache({ station: id, carparks: await parkingFor(env, id), source: FAC_SRC.parking }, 60);
+    }
+    const items = p.get("live") === "0" ? (await carparkList(env)).map((c) => parkOut(c, null)) : await parkingAll(env);
+    return cache({ carparks: items, source: FAC_SRC.parking }, p.get("live") === "0" ? 86400 : 120);
+  }
+  if (path === "/api/topup") {
+    const lim = Math.max(1, Math.min(40, Math.floor(Number(p.get("limit") || 12)) || 12));
+    return cache({ items: await topupNear(env, p.get("lat"), p.get("lon"), lim), source: FAC_SRC.facilities, note: "Opal top up and ticket machines at stations. Opal retailers are not in the open data." }, p.get("lat") ? 300 : 86400);
+  }
+  if (path === "/api/lifts") {
+    return cache({ items: (await liftOutages(env)).map((o) => ({ ...o })), source: FAC_SRC.lifts }, 120);
+  }
+  if (!(await facSchema(env).catch(() => false))) return json({ error: "storage not available" }, 503);
+  if (path === "/api/lifts/alerts") {
+    if (request.method === "GET") {
+      const r = await db(env).prepare("SELECT stations FROM lift_alerts WHERE device = ?1").bind(cleanId(p.get("device"))).first();
+      return json({ on: !!r, stations: r ? JSON.parse(r.stations || "[]") : [] });
+    }
+    if (request.method !== "POST") return json({ error: "method" }, 405);
+    const b = await request.json().catch(() => ({}));
+    const dev = cleanId(b.device);
+    if (dev.length < 8) return json({ error: "device needed" }, 400);
+    if (b.on === false) { await db(env).prepare("DELETE FROM lift_alerts WHERE device = ?1").bind(dev).run(); return json({ ok: true, on: false }); }
+    const stations = [...new Set((Array.isArray(b.stations) ? b.stations : []).map((s) => String(s)).filter((s) => /^\d{5,8}$/.test(s)))].slice(0, 40);
+    const prof = String(b.profile || "").toLowerCase().replace(/[^a-z0-9_.:-]/g, "").slice(0, 40);
+    const outs = await liftOutages(env).catch(() => []);
+    const now = Date.now();
+    const match = outs.filter((o) => o.stops.some((s) => stations.includes(s)));
+    // Outages already showing when you turn this on are listed here, not pushed.
+    await db(env).prepare(`INSERT INTO lift_alerts (device, profile, stations, seen, created, updated) VALUES (?1, ?2, ?3, ?4, ?5, ?5)
+      ON CONFLICT (device) DO UPDATE SET profile = ?2, stations = ?3, updated = ?5`).bind(dev, prof, JSON.stringify(stations), JSON.stringify(match.map((o) => o.id)), now).run();
+    return json({ ok: true, on: true, stations: stations.length, now: match.map(({ stops, ...o }) => ({ ...o, station: stops.find((s) => stations.includes(s)) })) });
+  }
+  if (path === "/api/parking/watch") {
+    if (request.method === "DELETE") {
+      await db(env).prepare("UPDATE park_watches SET done = 1 WHERE id = ?1 AND device = ?2").bind(cleanId(p.get("id"), 24), cleanId(p.get("device"))).run();
+      return json({ ok: true });
+    }
+    if (request.method === "GET") {
+      const rows = await d1all(env, "SELECT id, facility, name, station, expires FROM park_watches WHERE device = ?1 AND done = 0 AND expires > ?2", cleanId(p.get("device")), Date.now());
+      return json({ items: rows });
+    }
+    if (request.method !== "POST") return json({ error: "method" }, 405);
+    const b = await request.json().catch(() => ({}));
+    const dev = cleanId(b.device);
+    if (dev.length < 8) return json({ error: "device needed" }, 400);
+    const c = (await carparkList(env)).find((x) => x.id === cleanId(b.facility, 8));
+    if (!c) return json({ error: "no such car park" }, 400);
+    const open = await d1all(env, "SELECT id FROM park_watches WHERE device = ?1 AND done = 0 AND expires > ?2", dev, Date.now());
+    if (open.length >= 5) return json({ error: "You can watch up to 5 car parks at a time." }, 400);
+    const id = "p" + rid(9);
+    const now = Date.now();
+    await db(env).prepare("INSERT INTO park_watches (id, device, profile, facility, name, station, created, expires, done) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0)")
+      .bind(id, dev, String(b.profile || "").toLowerCase().replace(/[^a-z0-9_.:-]/g, "").slice(0, 40), c.id, c.name, c.tsn, now, now + PARK_WATCH_HOURS * 3600000).run();
+    return json({ ok: true, watch: { id, facility: c.id, name: c.name, expires: now + PARK_WATCH_HOURS * 3600000 }, now: await carparkLive(env, c) });
+  }
+  return json({ error: "not found" }, 404);
+}
+// ---- facilities end
+
 export default {
   async fetch(request, env, exec) {
     const url = new URL(request.url);
@@ -3404,8 +3879,22 @@ export default {
       const ctx = { lat: p.get("lat"), lon: p.get("lon"), profile, exec };
       switch (url.pathname) {
         case "/api/ask": {
-          const actx = { ...ctx, origin: url.origin, home: askPlaceArg(p.get("home")), work: askPlaceArg(p.get("work")) };
+          const actx = { ...ctx, origin: url.origin, home: askPlaceArg(p.get("home")), work: askPlaceArg(p.get("work")), accessible: p.get("acc") === "1" };
           const d = await askV2(env, p.get("q") || "", actx);
+          if (d.kind === "trip") {
+            await addAccess(env, d, { accessible: actx.accessible || d.accessible }).catch(() => null);
+            // Card legs are copies made for the reply: give them the same access notes.
+            const accBy = new Map();
+            for (const j of d.journeys || []) for (const l of j.legs || []) if (l.access) accBy.set(`${l.line}|${l.planned}`, l.access);
+            for (const c of d.cards || []) for (const j of c.journeys || []) for (const l of j.legs || []) { const a = accBy.get(`${l.line}|${l.planned}`); if (a) l.access = a; }
+            const lines = [];
+            if (d.accessible) lines.push((d.journeys || []).length ? "Step free trips only." : "No step free trips found for that. Turn off Accessible trips in Settings to see all trips.");
+            const j0 = (d.journeys || []).find((j) => ms(j.board || j.leave) >= Date.now() - 60000) || (d.journeys || [])[0];
+            const out = j0 ? [...new Set((j0.legs || []).flatMap((l) => l.access ? [l.access.from, l.access.to] : []).filter((a) => a && a.outage).map((a) => a.outage))] : [];
+            if (out.length) lines.push("Lift outage on this trip: " + out.slice(0, 2).join("; ") + ".");
+            if (d.parking && d.parking.carparks.length) { const pk = d.parking.carparks, fr = pk.reduce((n, c) => n + (c.free || 0), 0), sp = pk.reduce((n, c) => n + c.spots, 0); const nf = pk.filter((c) => c.status === "nearly" || c.status === "full").map((c) => c.name.replace(d.parking.station.name.replace(/ Station$/, "") + " ", "")); lines.push(pk.every((c) => c.free == null) ? `${d.parking.station.name} Park and Ride: no live count right now.` : `${d.parking.station.name} Park and Ride: ${fr} of ${sp} spaces free${nf.length ? `, ${askList(nf)} nearly full` : ""}.`); }
+            if (lines.length && d.reply) d.reply += "\n" + lines.join("\n");
+          }
           await afterAnswer(env, d, { profile, device: p.get("device"), exec });
           pickFares(d, fareType(p));
           const fj = (d.journeys || []).find((j) => j.fare && ms(j.board || j.leave) >= Date.now() - 60000) || (d.journeys || [])[0];
@@ -3430,9 +3919,11 @@ export default {
           return asTxt ? textRes(await asText(env, d)) : json(d);
         }
         case "/api/trip": {
-          const r = await trip(env, p.get("from"), p.get("to"), { time: p.get("time") || null, arriveBy: p.get("arriveBy") === "1", count: Number(p.get("count") || 5) });
+          const acc = p.get("acc") === "1";
+          const r = await trip(env, p.get("from"), p.get("to"), { time: p.get("time") || null, arriveBy: p.get("arriveBy") === "1", count: Number(p.get("count") || 5), accessible: acc });
           const d = { kind: "trip", from: { id: p.get("from"), name: p.get("fromName") || p.get("from") }, to: { id: p.get("to"), name: p.get("toName") || p.get("to") }, ...r };
           pickFares(d, fareType(p));
+          await addAccess(env, d, { accessible: acc }).catch(() => null);
           await afterAnswer(env, d, { profile, device: p.get("device"), exec, log: p.get("refresh") !== "1" });
           return asTxt ? textRes(await asText(env, d)) : json(d);
         }
@@ -3442,9 +3933,11 @@ export default {
           try { raw = JSON.parse(p.get("legs") || "null"); } catch (e) { raw = null; }
           const legs = chainLegs(raw);
           if (!legs) return json({ error: "legs must be a list of 1 to 6 legs, each with f and t, and the first leg not a walk" }, 400);
-          const r = await planChain(env, legs, { time: p.get("time") || null, count: Math.max(1, Math.min(8, Number(p.get("count") || 5))), all: p.get("all") === "1" });
+          const acc = p.get("acc") === "1";
+          const r = await planChain(env, legs, { time: p.get("time") || null, count: Math.max(1, Math.min(8, Number(p.get("count") || 5))), all: p.get("all") === "1", accessible: acc });
           const z = legs[legs.length - 1];
           pickFares(r, fareType(p));
+          await addAccess(env, r, { accessible: acc }).catch(() => null);
           return json({ kind: "trip", from: { id: legs[0].f, name: legs[0].fn }, to: { id: z.t, name: z.tn }, stops: legs.slice(0, -1).map((l) => ({ id: l.t, name: l.tn })), ...r });
         }
         case "/api/service":
@@ -3465,8 +3958,9 @@ export default {
         case "/api/next": {
           const s = await savedGet(env, profile, p.get("name") || "");
           if (!s) return asTxt ? textRes(`No saved trip called ${p.get("name") || ""}.`) : json({ error: "not saved", name: p.get("name") }, 404);
-          const d = await savedTrip(env, s, Math.min(5, Number(p.get("count") || 5)));
+          const d = await savedTrip(env, s, Math.min(5, Number(p.get("count") || 5)), p.get("acc") === "1");
           pickFares(d, fareType(p));
+          await addAccess(env, d, { accessible: p.get("acc") === "1" }).catch(() => null);
           await afterAnswer(env, d, { profile, device: p.get("device"), exec });
           return asTxt ? textRes(await asText(env, d)) : json(d);
         }
@@ -3714,10 +4208,21 @@ export default {
               await del("push", "DELETE FROM push_subs WHERE device = ?1", dev);
               await del("push", "DELETE FROM expo_tokens WHERE device = ?1", dev);
               await del("shares", "DELETE FROM shares WHERE device = ?1", dev);
+              if (await facSchema(env).catch(() => false)) {
+                await del("alerts", "DELETE FROM lift_alerts WHERE device = ?1", dev);
+                await del("watches", "DELETE FROM park_watches WHERE device = ?1", dev);
+              }
             }
           }
           return json({ ok: true, scope, deleted: n });
         }
+        case "/api/station":
+        case "/api/parking":
+        case "/api/parking/watch":
+        case "/api/topup":
+        case "/api/lifts":
+        case "/api/lifts/alerts":
+          return await facRoutes(request, env, url);
         case "/api/predict": {
           const it = { line: p.get("line"), stopId: p.get("stop"), planned: p.get("planned") || new Date().toISOString() };
           await predictions(env, [it]);

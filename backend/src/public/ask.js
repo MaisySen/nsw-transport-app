@@ -82,6 +82,22 @@
     if (c.type === "alerts") {
       return `<div class="ak-card">${c.items.map((a) => `<a class="ak-row ak-alert" ${a.url && /^https:\/\//i.test(a.url) ? `href="${esc(a.url)}" target="_blank" rel="noopener"` : ""}><span class="ak-warn">${ICON.warn}</span><div class="ak-mid"><div class="ak-t3">${esc(a.title)}</div>${a.lines && a.lines.length ? `<div class="ak-t2">${esc(a.lines.join(", "))}</div>` : ""}</div></a>`).join("")}</div>`;
     }
+    if (c.type === "parking") {
+      return `<div class="ak-card"><div class="ak-head"><span>${esc(c.title || "Park and Ride")}</span></div>${(c.items || []).map((p) => {
+        const pct = p.spots && p.free != null ? Math.max(0, Math.min(100, Math.round((p.occupied / p.spots) * 100))) : 0;
+        const st = p.status === "full" ? '<span class="ak-st late">Full</span>' : p.status === "nearly" ? '<span class="ak-st late">Nearly full</span>' : p.status === "ok" ? '<span class="ak-st ok">Spaces free</span>' : '<span class="ak-st">No live count</span>';
+        return `<a class="ak-row" href="#/stop/${encodeURIComponent(p.station)}?name=${encodeURIComponent(p.name)}"><div class="ak-mid"><div class="ak-t1">${esc(p.name)} ${st}</div><div class="ak-t2 num">${p.free == null ? esc(p.spots) + " spaces" : `<b>${esc(p.free)}</b> of ${esc(p.spots)} free`}</div><div class="ak-pk${p.status === "nearly" ? " nearly" : p.status === "full" ? " full" : ""}"><i style="width:${pct}%"></i></div></div>${ICON.chev}</a>`;
+      }).join("")}<div class="ak-src">Live from the Transport for NSW Car Park API</div></div>`;
+    }
+    if (c.type === "station" && c.station) {
+      const s = c.station, a = s.access || {};
+      const lvl = a.level === "independent" ? "ok" : a.level === "assisted" ? "late" : "";
+      return `<div class="ak-card"><a class="ak-head" href="#/stop/${encodeURIComponent(s.id)}?name=${encodeURIComponent(s.name)}"><span>${esc(s.name)}</span>${ICON.chev}</a>
+        <div class="ak-row"><div class="ak-mid"><div class="ak-t1"><span class="ak-st ${lvl}">${esc(a.label || "Access not listed")}</span></div><div class="ak-t2">${esc([a.lift && "Lifts", a.escalator && "Escalators"].filter(Boolean).join(", ") || "No lifts listed")}</div></div></div>
+        ${(s.outages || []).map((o) => `<a class="ak-row ak-alert" ${o.url && /^https:\/\//i.test(o.url) ? `href="${esc(o.url)}" target="_blank" rel="noopener"` : ""}><span class="ak-warn">${ICON.warn}</span><div class="ak-mid"><div class="ak-t3">${esc(o.title)}</div></div></a>`).join("")}
+        <div class="ak-row"><div class="ak-mid"><div class="ak-t2">${esc((s.ticket && s.ticket.label) || "")}</div></div></div>
+        <div class="ak-src">${esc(s.source || "Transport for NSW open data")}</div></div>`;
+    }
     if (c.type === "stops") {
       return `<div class="ak-card">${c.items.map((s) => `<a class="ak-row" href="${esc(s.link.href)}"><div class="ak-mid"><div class="ak-t1">${esc(s.name)}</div><div class="ak-t2">${s.distance != null ? s.distance + " m" : ""}</div></div>${ICON.chev}</a>`).join("")}</div>`;
     }

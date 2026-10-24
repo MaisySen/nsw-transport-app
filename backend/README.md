@@ -129,3 +129,12 @@ The Ask tab (`#/chat`, files `src/public/ask.js` and `ask.css`) is a chat with T
 `/api/ask?q=...` understands questions like "next train Burwood to Central", "when's the 461 from Burwood", "is the T1 late", "departures Strathfield", "how do I get to Bondi Beach" (needs `lat`/`lon`, otherwise it asks where from), "last train home" (uses `home` and `work`, each `stopId|Name`, or `lat`/`lon`) and stop numbers. The JSON keeps every earlier field and adds `reply` (short text), `cards` (departures, trip, alerts, stops), `links` (stop board, trip, live map, each with `kind`, ids and a web `href`) and `suggestions`. `format=text` still returns plain text.
 
 `/api/departures` answers are shared for 12 s per stop, slow realtime feeds are waited on for at most 2.5 s (they keep loading for the next request) and planner calls time out after 12 s.
+
+## Station access, Park and Ride and Opal machines
+
+Station screens, trip legs, the Opal machine finder and Ask read two data files built from Transport for NSW open data:
+
+* `src/public/data/facilities.json`: access level, lifts, escalators, Opal machines, facilities and peak times for 797 stations, wharves and stops (Public Transport Location Facilities and Operators).
+* `src/public/data/carparks.json`: the 41 Park and Ride car parks with a live count, their station and capacity (Car Park API).
+
+Rebuild both with `python3 tools/build_facilities.py` (reads `TFNSW_API_KEY` from the environment or `.env`). Live spaces and lift outages are read at request time. Endpoints are listed in `docs/API.md`.

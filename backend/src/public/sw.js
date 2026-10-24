@@ -1,6 +1,6 @@
 // Service worker: offline app shell, and Web Push notifications for watched trips.
 const VERSION = "tb-__BUILD__";
-const SHELL = ["/", "/app.js?v=7", "/ask.js?v=1", "/hit.js?v=2", "/style.css?v=5", "/ask.css?v=1", "/site.css?v=4", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png", "/badge-96.png", "/vendor/leaflet.js", "/vendor/leaflet.css"];
+const SHELL = ["/", "/app.js?v=8", "/ask.js?v=2", "/hit.js?v=2", "/style.css?v=6", "/ask.css?v=2", "/site.css?v=4", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png", "/badge-96.png", "/vendor/leaflet.js", "/vendor/leaflet.css"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL).catch(() => null)).then(() => self.skipWaiting()));

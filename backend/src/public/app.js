@@ -58,6 +58,80 @@ window.TBApp = () => {
   const FARE_NAMES = { adult: "Adult", child: "Child or Youth", concession: "Concession", gold: "Gold Senior or Pensioner" };
   const fareT = () => { const t = LS.get("tb_fare", "adult"); return FARE_NAMES[t] ? t : "adult"; };
   const money = (x) => "$" + Number(x).toFixed(2);
+  // Accessibility: step free trips only (Settings), station access, lifts, Park and Ride and Opal machines.
+  const accOn = () => !!LS.get("tb_acc", false);
+  const ACC_LBL = { independent: "Step free", assisted: "Assisted access", none: "Not step free", unknown: "Access not listed" };
+  const SRC = { fac: "Transport for NSW open data (station facilities)", park: "Transport for NSW Car Park API, live", lift: "Transport for NSW service alerts, live" };
+  const stShort = (n) => String(n || "").replace(/ (Station|Light Rail|Wharf)$/, "");
+  const liftStations = () => [...new Set(saved().flatMap((t) => [t.from && t.from.id, t.to && t.to.id, ...tLegs(t).flatMap((l) => [l.from && l.from.id, l.to && l.to.id])]).map(String).filter((x) => /^\d{5,8}$/.test(x)))].slice(0, 40);
+  // Keep the server's lift alert list in step with saved trips (once per app open).
+  setTimeout(() => { if (LS.get("tb_liftalerts", false)) post("/api/lifts/alerts", { device: DEVICE, profile: PROFILE, on: true, stations: liftStations() }).catch(() => null); }, 4000);
+  function accChip(a, name) {
+    if (!a) return "";
+    const cls = a.outage ? "acc-out" : a.level === "independent" ? "acc-ok" : a.level === "assisted" ? "acc-mid" : "acc-no";
+    return `<span class="accchip ${cls}" title="${esc(a.outage || ACC_LBL[a.level] || "")}">${I.access}${esc(stShort(name))}: ${a.outage ? "lift out" : esc(ACC_LBL[a.level] || "")}</span>`;
+  }
+  function legAccHtml(l) {
+    const a = l.access;
+    if (!a || !(a.from || a.to)) return "";
+    const outs = [a.from, a.to].filter((x) => x && x.outage);
+    return `<div class="ls accrow">${accChip(a.from, l.from)}${accChip(a.to, l.to)}</div>${outs.map((x) => `<div class="ls acc-note">${I.alert}${esc(x.outage)}</div>`).join("")}`;
+  }
+  function journeyOutages(j) {
+    const s = new Set();
+    for (const l of j.legs || []) for (const x of l.access ? [l.access.from, l.access.to] : []) if (x && x.outage) s.add(x.outage);
+    return [...s];
+  }
+  function parkBar(p) {
+    const pct = p.spots && p.free != null ? Math.max(0, Math.min(100, Math.round((p.occupied / p.spots) * 100))) : null;
+    return `<div class="pk-bar${p.status === "nearly" ? " nearly" : p.status === "full" ? " full" : ""}"><i style="width:${pct == null ? 0 : pct}%"></i></div>`;
+  }
+  function parkBadge(p) { return p.status === "full" ? `<span class="badge bad">Full</span>` : p.status === "nearly" ? `<span class="badge late">Nearly full</span>` : p.status === "ok" ? `<span class="badge live">Spaces free</span>` : `<span class="badge sched">No live count</span>`; }
+  // "Tallawong P1" on the Tallawong screen reads "Car park P1"; "Kellyville (north)" reads "North car park".
+  function parkName(p, station) {
+    const base = stShort(station || "");
+    let n = base && p.name.toLowerCase().startsWith(base.toLowerCase() + " ") ? p.name.slice(base.length + 1) : p.name;
+    if (/^P\d+$/i.test(n)) n = "Car park " + n.toUpperCase();
+    else if (/^\((north|south|east|west)\)$/i.test(n)) n = n.slice(1, -1).replace(/^./, (c) => c.toUpperCase()) + " car park";
+    return n;
+  }
+  function parkCell(p, watch, station) {
+    return `<div class="cell static pkcell"><span class="sym" style="background:#0a84ff">${I.car}</span><div class="grow"><div class="t1">${esc(parkName(p, station))}</div>
+      <div class="t2 num pk-t2">${parkBadge(p)}<span>${p.free == null ? `${p.spots} spaces` : `<b class="pk-free">${p.free}</b> of ${p.spots} free`}${p.updated ? ` \u00b7 ${fmtClock(Date.parse(p.updated))}` : ""}</span></div>${parkBar(p)}</div>
+      ${watch ? `<button class="pk-watch" data-pkw="${esc(p.id)}" aria-label="Alert me when ${esc(p.name)} is nearly full" title="Alert me when nearly full">${I.bellPlus || I.bell}</button>` : ""}</div>`;
+  }
+  function parkGroup(pk, title, watch, station) {
+    if (!pk || !pk.length) return "";
+    const fr = pk.reduce((n, p) => n + (p.free || 0), 0), sp = pk.reduce((n, p) => n + p.spots, 0);
+    return `<div class="group pkgroup"><div class="group-h">${esc(title)}${pk.length > 1 && pk.every((p) => p.free != null) ? `<span class="gh-r num">${fr} of ${sp} free</span>` : ""}</div><div class="list" style="--inset:57px">${pk.map((p) => parkCell(p, watch, station)).join("")}</div>
+      <p class="group-f src">Live spaces from the ${SRC.park}. Nearly full means 10 percent or fewer spaces left.${watch ? " Tap the bell to get a notification if it gets nearly full in the next 3 hours." : ""}</p></div>`;
+  }
+  function wirePark() {
+    $$("[data-pkw]").forEach((b) => (b.onclick = async (e) => {
+      e.stopPropagation();
+      if (pushState() !== "on") { const r = await enablePush(false).catch(() => ({ ok: false })); if (!r.ok) { toast(pushWhyText(r.why) || "Turn on alerts first, in Settings."); return; } }
+      try { const r = await post("/api/parking/watch", { device: DEVICE, profile: PROFILE, facility: b.dataset.pkw }); b.classList.add("on"); b.innerHTML = I.bell; b.setAttribute("aria-pressed", "true"); toast(r.now && (r.now.status === "nearly" || r.now.status === "full") ? `${r.watch.name} is already ${r.now.status === "full" ? "full" : "nearly full"}. I'll still tell you.` : `I'll tell you if ${r.watch.name} gets nearly full in the next 3 hours.`); }
+      catch (err) { toast(err.message); }
+    }));
+  }
+  function stationHtml(st) {
+    if (!st) return "";
+    const a = st.access;
+    const accCol = a.level === "independent" ? "#34c759" : a.level === "assisted" ? "#ff9500" : "#8e8e93";
+    const kit = [a.lift && "Lifts", a.escalator && "Escalators", a.ramp && "Boarding ramp", a.hearingLoop && "Hearing loop", a.tactile && "Tactile edges"].filter(Boolean).join(", ");
+    const outs = (st.outages || []).map((o) => `<a class="cell" ${o.url ? `href="${esc(o.url)}" target="_blank" rel="noopener"` : ""}><span class="sym" style="background:#ff3b30">${I.access}</span><div class="grow"><div class="t1 danger-t">${o.kind === "escalator" ? "Escalator" : "Lift"} out of service</div><div class="t2 wrap">${esc(o.title.replace(new RegExp("^" + st.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*", "i"), ""))}</div></div>${o.url ? I.chev : ""}</a>`).join("");
+    const tk = st.ticket;
+    const tkCol = tk.kind === "cash" || tk.kind === "card" || tk.kind === "topup" ? "#5856d6" : "#8e8e93";
+    return `${parkGroup(st.parking, "Park and Ride", true, st.name)}
+      <div class="group stgroup" id="stationInfo"><div class="group-h">Access and facilities</div><div class="list" style="--inset:57px">
+        <div class="cell static"><span class="sym" style="background:${accCol}">${I.access}</span><div class="grow"><div class="t1">${esc(a.label)}</div><div class="t2 wrap">${esc(kit || a.note || "")}</div></div></div>
+        ${outs || (a.lift ? `<div class="cell static"><span class="sym" style="background:#34c759">${I.check}</span><div class="grow"><div class="t1">Lifts working</div><div class="t2">No lift outages reported right now</div></div></div>` : "")}
+        <div class="cell static"><span class="sym" style="background:${tkCol}">${I.card}</span><div class="grow"><div class="t1">${tk.kind === "none" ? "No Opal machine" : tk.kind === "unknown" ? "Opal machine not listed" : tk.kind === "topup" ? "Opal top up machine" : "Opal top up and tickets"}</div><div class="t2 wrap">${esc(tk.kind === "cash" ? "Cash or card" : tk.kind === "card" || tk.kind === "topup" ? "Card only" : "Top up in the Opal Travel app or at a retailer")}${tk.extraTopUp ? ", plus a card only top up machine" : ""}</div></div></div>
+        ${st.shortPlatform ? `<div class="cell static"><span class="sym" style="background:#ff9500">${I.alert}</span><div class="grow"><div class="t1">Short platform</div><div class="t2 wrap">Some long trains stop with doors past the platform. Listen for which cars to use.</div></div></div>` : ""}
+      </div>
+      ${st.facilities && st.facilities.length ? `<div class="chips stchips">${st.facilities.map((f) => `<span class="chip static">${esc(f)}</span>`).join("")}</div>` : ""}
+      <p class="group-f src">${st.peak && st.peak.morning ? `Peak here: ${esc(st.peak.morning)} and ${esc(st.peak.afternoon || "3pm-7pm")} weekdays. ` : ""}Facilities from ${SRC.fac}${st.read ? `, read ${esc(st.read)}` : ""}. Lift status from ${SRC.lift}.</p></div>`;
+  }
   // Peak: Monday to Thursday, 6:30am to 10am and 3pm to 7pm Sydney time (public holidays are off peak; the server knows them).
   function peakNow() {
     const p = Object.fromEntries(new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Sydney", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date()).map((x) => [x.type, x.value]));
@@ -106,6 +180,10 @@ window.TBApp = () => {
   // ---------- icons ----------
   const P = (d, vb = "0 0 24 24") => `<svg viewBox="${vb}" fill="currentColor" aria-hidden="true">${d}</svg>`;
   const I = {
+    access: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="4.2" r="2.1"/><path d="M11.1 7.6h1.8c.6 0 1.1.5 1.1 1.1v3.4h3.2a1 1 0 0 1 0 2h-4.2a1 1 0 0 1-1-1v-1.6H9.2a1 1 0 0 1 0-2H11V8.7c0-.6.1-1.1.1-1.1Z"/><path d="M8.3 11.6a.9.9 0 0 1 .5 1.2 4.2 4.2 0 1 0 7.6 3.5.9.9 0 1 1 1.7.6 6 6 0 1 1-11-5 .9.9 0 0 1 1.2-.3Z"/></svg>',
+    car: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.4 4.5h9.2c.9 0 1.7.6 2 1.4l1.5 4.2c.9.4 1.4 1.2 1.4 2.2v5.2c0 .6-.5 1-1 1h-1.3a1 1 0 0 1-1-1v-1.1H5.8v1.1a1 1 0 0 1-1 1H3.5c-.5 0-1-.4-1-1v-5.2c0-1 .6-1.8 1.4-2.2l1.5-4.2c.3-.8 1.1-1.4 2-1.4Zm.2 2-1.2 3.6h11.2l-1.2-3.6H7.6ZM6.3 12.6a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6Zm11.4 0a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6Z"/></svg>',
+    card: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4.5 5h15A2.5 2.5 0 0 1 22 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 16.5v-9A2.5 2.5 0 0 1 4.5 5ZM4 9v7.5c0 .3.2.5.5.5h15c.3 0 .5-.2.5-.5V9H4Zm2 4.5c0-.6.4-1 1-1h3a1 1 0 0 1 0 2H7a1 1 0 0 1-1-1Z"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
     bus: P('<path d="M6 15.5V7a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v8.5a2.5 2.5 0 0 1-2 2.45V20h-2v-2h-4v2H8v-2.05a2.5 2.5 0 0 1-2-2.45ZM8 7v4h8V7H8Zm1 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm6 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"/>'),
     train: P('<path d="M7 3h10a3 3 0 0 1 3 3v9a3 3 0 0 1-2.4 2.94L19 20h-2.3l-1.2-2h-7l-1.2 2H5l1.4-2.06A3 3 0 0 1 4 15V6a3 3 0 0 1 3-3Zm-1 3v4h12V6H6Zm2 9.5a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Zm8 0a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Z"/>'),
     ferry: P('<path d="M9 3h6v3h3l1 6-7-2.5L5 12l1-6h3V3Zm-6 15c1.5 0 2.5-1 4-1s2.5 1 4 1 2.5-1 4-1 2.5 1 4 1v2c-1.5 0-2.5-1-4-1s-2.5 1-4 1-2.5-1-4-1-2.5 1-4 1v-2Zm2.3-2.5L12 13l6.7 2.5-1 1.6c-.6-.3-1.2-.6-2-.6-1.5 0-2.5 1-4 1s-2.5-1-4-1c-.7 0-1.3.3-1.9.6l-.5-1.6Z"/>'),
@@ -851,8 +929,8 @@ window.TBApp = () => {
   }
   async function planTrip(t, opt = {}) {
     const count = opt.count || 5;
-    if (isChain(t)) return api("/api/plan?" + qs({ legs: JSON.stringify(wireLegs(t)), count, time: opt.time, all: allSvc()[tripKey(t)] ? 1 : null, fare: fareT() }));
-    if (!t.via) return api("/api/trip?" + qs({ from: t.from.id, to: t.to.id, fromName: t.from.name, toName: t.to.name, count, fare: fareT(), time: opt.time, device: opt.device, profile: opt.profile, refresh: opt.refresh == null ? 1 : opt.refresh }));
+    if (isChain(t)) return api("/api/plan?" + qs({ legs: JSON.stringify(wireLegs(t)), count, time: opt.time, all: allSvc()[tripKey(t)] ? 1 : null, fare: fareT(), acc: accOn() ? 1 : null }));
+    if (!t.via) return api("/api/trip?" + qs({ from: t.from.id, to: t.to.id, fromName: t.from.name, toName: t.to.name, count, fare: fareT(), acc: accOn() ? 1 : null, time: opt.time, device: opt.device, profile: opt.profile, refresh: opt.refresh == null ? 1 : opt.refresh }));
     const conn = Math.max(0, Number(t.conn == null ? 5 : t.conn)) * 60000;
     const d1 = await api("/api/trip?" + qs({ from: t.from.id, to: t.via.id, fromName: t.from.name, toName: t.via.name, count, time: opt.time, refresh: 1 }));
     const j1 = (d1.journeys || []).filter((j) => isDirect(j)).map((j) => ({ j, x: journeyTimes(j) }));
@@ -1383,6 +1461,8 @@ window.TBApp = () => {
     const idle = () => {
       res.innerHTML = `<div class="group"><div class="list">
           <a class="cell" href="#/near"><span class="s-ico tintbg">${I.loc}</span><div class="grow"><div class="t1">Stops near me</div></div>${I.chev}</a>
+          <a class="cell" href="#/topup"><span class="s-ico purple">${I.card}</span><div class="grow"><div class="t1">Opal top up machines</div></div>${I.chev}</a>
+          <a class="cell" href="#/parking"><span class="s-ico tintbg">${I.car}</span><div class="grow"><div class="t1">Park and Ride spaces</div></div>${I.chev}</a>
           <a class="cell" href="#/alerts"><span class="s-ico orange">${I.alert}</span><div class="grow"><div class="t1">Service alerts</div></div>${I.chev}</a></div></div>
         ${sv.length ? `<div class="group"><div class="group-h">Saved trips</div><div class="list">${sv.map((s) => `<a class="cell" href="#/trip?${qs({ from: s.from.id, to: s.to.id, fn: s.from.name, tn: s.to.name, name: s.name })}"><span class="s-ico">${I.starOn}</span><div class="grow"><div class="t1">${esc(cap(s.name))}</div><div class="t2">${esc(short(s.from.name))} to ${esc(short(s.to.name))}</div></div>${I.chev}</a>`).join("")}</div></div>` : ""}
         ${rc.length ? `<div class="group"><div class="group-h">Recent<button id="clrRecent">Clear</button></div><div class="list">${rc.map((x) => `<a class="cell" href="#/ask?${qs({ q: x })}"><span class="s-ico">${I.clock}</span><div class="grow"><div class="t1">${esc(x)}</div></div>${I.chev}</a>`).join("")}</div></div>` : ""}
@@ -1426,8 +1506,14 @@ window.TBApp = () => {
   const MODE_TABS = [["", "All"], ["train", "Trains"], ["metro", "Metro"], ["bus", "Buses"], ["lightrail", "Light rail"], ["ferry", "Ferries"]];
   function stopView(id, params, pre) {
     setTab("search");
-    let mode = params.get("mode") || "", showAll = false, data = null;
+    let mode = params.get("mode") || "", showAll = false, data = null, fac = null, facAt = 0;
     const nm = params.get("name") || "Stop " + id;
+    // Station access, lifts, Opal machines and Park and Ride: once, then every 2 minutes with the board.
+    const loadFac = (sid) => {
+      if (!/^\d{5,8}$/.test(String(sid)) || Date.now() - facAt < 110000) return;
+      facAt = Date.now();
+      fetch("/api/station?" + qs({ id: sid })).then((r) => (r.ok ? r.json() : null)).then((st) => { if (st && st.access) { fac = st; if (data && location.hash.startsWith("#/stop/")) paint(); } }).catch(() => null);
+    };
     const navFor = (title) => {
       const starred = stars().some((s) => s.id === id);
       setNav({ title, back: true, actions: `<button class="icon-btn act${starred ? " on" : ""}" id="starBtn" aria-pressed="${starred}" aria-label="${starred ? "Unstar" : "Star"} this stop">${starred ? I.starOn : I.star}</button>` });
@@ -1456,12 +1542,13 @@ window.TBApp = () => {
         ${(() => { const pk = peakNow(); return pk && items.some((i) => i.mode !== "ferry") ? `<div class="farebar"><span class="fb-peak">Peak</span><span>Off peak from ${pk}: 30 percent off train, metro, bus and light rail fares</span></div>` : ""; })()}
         <div class="group"><div class="list">${shown.map((it) => depRow(it)).join("") || `<div class="empty">No upcoming services found right now.</div>`}
         ${items.length > shown.length ? `<button class="more" id="moreBtn">Show ${items.length - shown.length} more</button>` : ""}</div>
-        <p class="group-f">Swipe left on a service to watch it. ${items.some((i) => i.pred) ? "* Usual delay, a prediction from recorded times, not live." : ""}</p></div>${foot()}`;
+        <p class="group-f">Swipe left on a service to watch it. ${items.some((i) => i.pred) ? "* Usual delay, a prediction from recorded times, not live." : ""}</p></div>${stationHtml(fac)}${foot()}`;
+      wirePark();
       $$(".seg button").forEach((b) => (b.onclick = () => { mode = b.dataset.mode; history.replaceState(null, "", `#/stop/${encodeURIComponent(id)}?${qs({ name: params.get("name"), mode })}`); paint(); }));
       const mb = $("#moreBtn"); if (mb) mb.onclick = () => { showAll = true; paint(); };
     };
-    const load = () => api("/api/departures?" + qs({ stop: id, device: DEVICE, profile: PROFILE })).then((d) => { if (!data && d.stop) addRecentStop(String(d.stop.id || id), d.byNumber && d.stop.exactName ? d.stop.exactName : d.stop.name); data = { ...d, byNumber: /^\d{5,8}$/.test(id) && pre && pre.byNumber, alternatives: (pre && pre.alternatives) || [] }; paint(); }).catch((e) => { if (!data) view.innerHTML = `<h1 class="large">${esc(short(nm))}</h1><div class="empty">${esc(e.message)}</div>`; });
-    if (pre && pre.items) { data = pre; if (pre.stop) addRecentStop(String(pre.stop.id || id), pre.stop.name); paint(); } else load();
+    const load = () => api("/api/departures?" + qs({ stop: id, device: DEVICE, profile: PROFILE })).then((d) => { if (!data && d.stop) addRecentStop(String(d.stop.id || id), d.byNumber && d.stop.exactName ? d.stop.exactName : d.stop.name); data = { ...d, byNumber: /^\d{5,8}$/.test(id) && pre && pre.byNumber, alternatives: (pre && pre.alternatives) || [] }; paint(); loadFac(d.stop && d.stop.id || id); }).catch((e) => { if (!data) view.innerHTML = `<h1 class="large">${esc(short(nm))}</h1><div class="empty">${esc(e.message)}</div>`; });
+    if (pre && pre.items) { data = pre; if (pre.stop) addRecentStop(String(pre.stop.id || id), pre.stop.name); paint(); loadFac(pre.stop && pre.stop.id || id); } else load();
     every(15000, load);
   }
 
@@ -1527,6 +1614,8 @@ window.TBApp = () => {
         const beaten = js.slice(i + 1).some((p) => p.x.arr < o.x.arr - 30000);
         const first = o.x.first, watched = first && isWatched(first);
         let r = svcRow(o.j, o.x, beaten, false, fn);
+        const jo = journeyOutages(o.j);
+        if (jo.length) r += `<div class="jacc">${I.access}<span>Lift out: ${esc(jo[0])}</span></div>`;
         if (!showDep) r = r.replace(/<div class="cdb [^"]*"><span class="cdb-n"[^>]*>[^<]*<\/span><span class="cdb-u"[^>]*>min<\/span><\/div>/, `<div class="cdb cd-x durb"><span class="cdb-n">${o.x.dur}</span><span class="cdb-u">min</span></div>`);
         const past = o.x.leave < now() - 30000;
         return `<div class="jrow${past ? " past" : ""}" data-key="${esc(key)}" data-i="${i}" role="button" tabindex="0" aria-expanded="${open === key}">${r}
@@ -1534,11 +1623,14 @@ window.TBApp = () => {
       }).join("");
       view.innerHTML = head() + `${alerts.length ? `<a class="abanner" href="#/alerts">${I.alert}<span><b>Service information</b><br>${alerts.length} alert${alerts.length > 1 ? "s" : ""}. ${esc(alerts[0].title)}</span></a>` : ""}
         ${(() => { const fj = js.find((o) => o.j.fare && o.x.leave > now() - 30000); const f = fj && fj.j.fare; return f ? `<div class="farebar">${f.offPeak ? `<span class="fb-peak">Peak</span><span>Off peak from ${esc(f.offPeak.from)}, save ${money(f.offPeak.save)}</span>` : `<span class="fb-t">Opal fare estimate</span><span>${money(f.total)} ${esc(f.typeName)}${f.peak ? ", peak" : ", off peak"}</span>`}</div>` : ""; })()}
+        ${d.accessible ? `<div class="farebar accbar"><span class="fb-acc">${I.access}</span><span>Step free trips only. ${js.length ? "" : "None found for this trip. "}<a href="#/settings">Change in Settings</a></span></div>` : ""}
+        ${d.parking && d.parking.carparks ? parkGroup(d.parking.carparks, `Park and Ride at ${stShort(d.parking.station.name)}`, true, d.parking.station.name) : ""}
         <div class="seg tt" role="tablist"><button class="${showDep ? "on" : ""}" data-mode="dep">Departs in</button><button class="${showDep ? "" : "on"}" data-mode="dur">Travel time</button></div>
         <div class="group"><div class="list"><div class="cell static"><div class="grow"><div class="t1">All services</div><div class="t2">${df.all ? "Trips with a change are shown too" : df.chain ? ((d.fallback || []).some(Boolean) ? "Some legs have no direct service" : "Direct services on each leg") : df.none ? "None stop at both ends, so all are shown" : "Only services that stop at both ends"}</div></div><label class="switch"><input type="checkbox" data-all ${df.all ? "checked" : ""} aria-label="All services"><span></span></label></div></div></div>
         <div class="group"><div class="tcard"><button class="morebtn" data-more="-1">Earlier services</button>${rows || `<div class="svc-empty">No trips found right now</div>`}<button class="morebtn" data-more="1">Later services</button></div>
         <p class="group-f">${S.lastOk ? `Live data updated ${fmtSecs(S.lastOk)}. ` : ""}Tap a service for its stops, or to watch it. Greyed out: a later one gets you there sooner.</p></div>${foot()}`;
       $$("[data-mode]").forEach((b) => (b.onclick = () => { showDep = b.dataset.mode === "dep"; paint(); }));
+      wirePark();
       const sw = $("[data-all]"); if (sw) sw.onchange = () => { const a = allSvc(); if (sw.checked) a[tripKey(T())] = 1; else delete a[tripKey(T())]; LS.set("tb_allsvc", a); open = null; if (chain) { extra = []; load(); } paint(); };
       $$("[data-more]").forEach((b) => (b.onclick = () => more(Number(b.dataset.more))));
       $$(".jrow").forEach((b) => (b.onclick = (e) => {
@@ -1575,7 +1667,7 @@ window.TBApp = () => {
         } });
     }
     if (data) paint(); else view.innerHTML = head() + `<div class="group">${skel(3)}</div>`;
-    const load = () => (chain ? planTrip(T(), { count: 6, time: params.get("time") }) : api("/api/trip?" + qs({ from, to, fromName: fn, toName: tn, count: 6, time: params.get("time"), arriveBy: params.get("arr"), device: DEVICE, profile: PROFILE, refresh: data ? 1 : "", fare: fareT() }))).then((d) => { data = { ...d, when: pre && pre.when }; paint(); }).catch((e) => { if (!data) view.innerHTML = head() + `<div class="empty">${esc(e.message)}</div>`; });
+    const load = () => (chain ? planTrip(T(), { count: 6, time: params.get("time") }) : api("/api/trip?" + qs({ from, to, fromName: fn, toName: tn, count: 6, time: params.get("time"), arriveBy: params.get("arr"), device: DEVICE, profile: PROFILE, refresh: data ? 1 : "", fare: fareT(), acc: accOn() ? 1 : null }))).then((d) => { data = { ...d, when: pre && pre.when }; paint(); }).catch((e) => { if (!data) view.innerHTML = head() + `<div class="empty">${esc(e.message)}</div>`; });
     if (!pre) load();
     every(20000, load);
   }
@@ -1594,6 +1686,7 @@ window.TBApp = () => {
       <div class="meta">${fmtClock(j.leave)} to ${fmtClock(j.arrive)} \u00b7 ${j.durationMin} min \u00b7 ${j.changes ? j.changes + " change" + (j.changes > 1 ? "s" : "") : "direct"}</div>
       <div class="meta">${word}${first && first.fromPlatform ? " \u00b7 " + esc(first.fromPlatform) : ""}${first && first.vehicle && first.stopsAway != null && first.realtime ? ` \u00b7 ${first.stopsAway === 0 ? "arriving" : first.stopsAway + (first.stopsAway === 1 ? " stop away" : " stops away")}` : ""}</div>
       ${chainHtml(j)}
+      ${journeyOutages(j).length ? `<div class="meta acc-warn">${I.access}${esc(journeyOutages(j)[0])}</div>` : ""}
       <div class="card-actions"><button class="pillbtn${watched ? " on" : ""}" data-watch>${I.bell}${watched ? "Watching" : "Watch"}</button><button class="pillbtn" data-commute>${I.clock}Commute</button></div>`;
     if (open === key) h += `<div class="legs" style="margin-top:14px">${legsDetail(j)}</div>`;
     return h + `</div>`;
@@ -1610,6 +1703,7 @@ window.TBApp = () => {
         <div class="ls"><b>${moved ? `<s>${fmtClock(l.planned)}</s> ` : ""}${fmtClock(dep)}</b> ${esc(l.from)}${l.fromPlatform ? ", " + esc(l.fromPlatform) : ""}</div>
         <div class="ls">${statusLine(l, { noPlatform: true })}</div>
         <div class="ls"><b>${fmtClock(arr)}</b> ${esc(l.to)}${l.toPlatform ? ", " + esc(l.toPlatform) : ""} \u00b7 ${l.durationMin} min${l.stops ? `, ${l.stops} stops` : ""}</div>
+        ${legAccHtml(l)}
         <div class="ls"><a href="${svcLink(l, { to: l.toStopId })}" style="color:var(--tint)">Track on map</a></div></div>`;
     }).join("");
   }
@@ -1863,6 +1957,11 @@ window.TBApp = () => {
         <div class="group"><div class="group-h">Notifications</div><div class="list" style="--inset:57px">${pushRow}</div>
         <p class="group-f">Alerts come from trips you watch and from your commutes. Each watched trip ends on its own when you arrive.</p></div>
         <div class="group"><div class="group-h">Commutes</div><div class="list">${cm.length ? cm.map((c, i) => `<button class="cell" data-c="${i}"><span class="sym" style="background:${c.active ? "#5856d6" : "var(--label3)"}">${I.clock}</span><div class="grow"><div class="t1">${esc(c.name)}</div><div class="t2">${esc(short(c.from.name))} to ${esc(short(c.to.name))} \u00b7 ${esc(c.todText)} \u00b7 ${c.active ? esc(daysText(c.days)) : "Off"}</div></div>${I.chev}</button>`).join("") : `<div class="cell static"><div class="grow t2" style="white-space:normal">No commute yet. Open any trip and tap Commute, or search the same trip on two days and I'll offer it.</div></div>`}</div></div>
+        <div class="group" id="accSet"><div class="group-h">Accessibility</div><div class="list" style="--inset:57px">
+          <div class="cell static"><span class="sym" style="background:#0a84ff">${I.access}</span><div class="grow"><div class="t1">Accessible trips</div><div class="t2 wrap">Step free trips only, from the Trip Planner</div></div><label class="switch"><input type="checkbox" id="accToggle" aria-label="Accessible trips"${accOn() ? " checked" : ""}><span></span></label></div>
+          <div class="cell static"><span class="sym" style="background:#ff3b30">${I.bell}</span><div class="grow"><div class="t1">Lift outage alerts</div><div class="t2 wrap">For stations on your saved trips</div></div><label class="switch"><input type="checkbox" id="liftToggle" aria-label="Lift outage alerts"${LS.get("tb_liftalerts", false) ? " checked" : ""}><span></span></label></div>
+          <a class="cell" href="#/topup"><span class="sym" style="background:#5856d6">${I.card}</span><div class="grow">Opal top up machines near me</div>${I.chev}</a>
+        </div><p class="group-f">Station screens show step free access, lifts and live lift outages from Transport for NSW. Trip details mark each station, and a lift outage on your trip shows on the trip.</p></div>
         <div class="group" id="fareSet"><div class="group-h">Opal fare estimates</div><div class="list">${Object.entries(FARE_NAMES).map(([k, n]) => `<button class="cell" data-fare="${k}" role="radio" aria-checked="${fareT() === k}"><div class="grow">${esc(n)}</div>${fareT() === k ? `<span class="check"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>` : ""}</button>`).join("")}</div>
           <p class="group-f">Trips show an Opal fare estimate for this fare type, worked out from the Opal fare tables: peak or off peak, transfer discount, airport station fee and daily cap. It is not your card's charge.</p></div>
         <div class="group" id="clearHist"><div class="group-h">Clear history</div><div class="list">
@@ -1879,6 +1978,16 @@ window.TBApp = () => {
       const po = $("#pushOn2"); if (po) po.onclick = async () => { const r = await enablePush(true).catch(() => ({ ok: false })); toast(r.ok ? "Alerts are on. A test one is on its way." : pushWhyText(r.why)); paint(cm, usage); };
       const tp = $("#testPush"); if (tp) tp.onclick = async () => { try { await syncPush(); const r = await post("/api/push/test", { device: DEVICE }); toast(r.pushed && r.pushed.some((x) => x === 201 || x === 200) ? "Sent. Check your notifications." : "Sent, but the phone's push service didn't accept it. Try turning alerts off and on."); } catch (e) { toast(e.message); } };
       const ib = $("#installBtn"); if (ib) ib.onclick = async () => { S.installEvt.prompt(); S.installEvt = null; };
+      $("#accToggle").onchange = (e) => { LS.set("tb_acc", e.target.checked); toast(e.target.checked ? "Trips now show step free options only" : "Showing all trips"); };
+      $("#liftToggle").onchange = async (e) => {
+        const on = e.target.checked;
+        if (on && pushState() !== "on") { const r = await enablePush(false).catch(() => ({ ok: false })); if (!r.ok) { e.target.checked = false; toast(pushWhyText(r.why) || "Turn on alerts first."); return; } }
+        try {
+          const r = await post("/api/lifts/alerts", on ? { device: DEVICE, profile: PROFILE, on: true, stations: liftStations() } : { device: DEVICE, on: false });
+          LS.set("tb_liftalerts", on);
+          toast(!on ? "Lift outage alerts off" : r.now && r.now.length ? `On. Right now: ${r.now[0].title}` : `On for ${r.stations} station${r.stations === 1 ? "" : "s"}. No lift outages there right now.`);
+        } catch (err) { e.target.checked = !on; toast(err.message); }
+      };
       $$("[data-fare]").forEach((b) => (b.onclick = () => { LS.set("tb_fare", b.dataset.fare); toast(`Fares shown for ${FARE_NAMES[b.dataset.fare]}`); paint(cm, usage); }));
       $$("[data-clr]").forEach((b) => (b.onclick = () => { LS.set(b.dataset.clr, []); toast("Cleared"); paint(cm, usage); }));
       $("#delServer").onclick = () => confirmDelete("history", () => paint(cm, usage));
@@ -1890,6 +1999,62 @@ window.TBApp = () => {
     });
   }
   window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); S.installEvt = e; });
+
+
+  // ---------- Opal top up and ticket machine finder ----------
+  const TK = { cash: ["Top up and tickets", "Cash or card", "#5856d6"], card: ["Top up and tickets", "Card only", "#af52de"], topup: ["Top up only", "Card only", "#ff9500"] };
+  function topupView(params) {
+    setTab("search"); setNav({ title: "Opal machines", back: true });
+    let items = null, coords = null, map = null, filter = params.get("cash") === "1" ? "cash" : "";
+    view.innerHTML = `<h1 class="large">Opal machines<small>Finding your location</small></h1><div class="group">${skel(5)}</div>`;
+    const paint = () => {
+      const list = (items || []).filter((r) => !filter || r.kind === "cash");
+      const near = coords ? list.slice(0, 25) : list.slice(0, 40);
+      if (map) { map.remove(); map = null; }
+      view.innerHTML = `<h1 class="large">Opal machines<small>${coords ? "Closest stations with a top up or ticket machine" : "Stations with a top up or ticket machine"}</small></h1>
+        <div class="seg" role="tablist"><button class="${filter ? "" : "on"}" data-f="" role="tab" aria-selected="${!filter}">All machines</button><button class="${filter ? "on" : ""}" data-f="cash" role="tab" aria-selected="${!!filter}">Takes cash</button></div>
+        <div class="group"><div id="tu_map" class="st-map tu-map" role="img" aria-label="Map of stations with Opal machines"></div></div>
+        <div class="group"><div class="list" style="--inset:57px">${near.map((r) => { const k = TK[r.kind] || TK.card; return `<a class="cell" href="#/stop/${encodeURIComponent(r.id)}?${qs({ name: r.name })}"><span class="sym" style="background:${k[2]}">${I.card}</span><div class="grow"><div class="t1">${esc(stShort(r.name))}</div><div class="t2">${esc(k[1])}${r.kind === "topup" ? " \u00b7 top up only" : ""}</div></div>${r.distance != null ? `<span class="val num">${r.distance < 1000 ? Math.round(r.distance / 10) * 10 + " m" : (r.distance / 1000).toFixed(1) + " km"}</span>` : ""}${I.chev}</a>`; }).join("") || '<div class="empty">No machines found.</div>'}</div>
+        <p class="group-f src">Machines at stations, wharves and light rail stops, from ${SRC.fac}. Opal retailers are not in the open data. You can also top up in the Opal Travel app.</p></div>${foot()}`;
+      $$("[data-f]").forEach((b) => (b.onclick = () => { filter = b.dataset.f; paint(); }));
+      if (window.L) {
+        map = L.map("tu_map", { zoomControl: false, attributionControl: true });
+        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, className: matchMedia("(prefers-color-scheme: dark)").matches ? "dk-tiles" : "", attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+        const pts = (coords ? list.slice(0, 60) : list);
+        pts.forEach((r) => {
+          const k = TK[r.kind] || TK.card;
+          const mk = L.circleMarker([r.lat, r.lon], { radius: 7, weight: 2, color: "#fff", fillColor: k[2], fillOpacity: 1 }).addTo(map);
+          mk.bindPopup(`<div class="mpop"><b>${esc(stShort(r.name))}</b><span>${esc(k[0])}, ${esc(k[1].toLowerCase())}</span><a class="pillbtn solid" href="#/stop/${encodeURIComponent(r.id)}?${qs({ name: r.name })}">Open</a></div>`, { closeButton: false });
+        });
+        if (coords) {
+          L.circleMarker([coords.latitude, coords.longitude], { radius: 8, weight: 3, color: "#fff", fillColor: "#0a84ff", fillOpacity: 1 }).addTo(map);
+          map.fitBounds([[coords.latitude, coords.longitude], ...near.slice(0, 5).map((r) => [r.lat, r.lon])], { padding: [28, 28], maxZoom: 15 });
+        } else map.setView([-33.8688, 151.2093], 11);
+        setTimeout(() => map && map.invalidateSize(), 300);
+      }
+    };
+    const load = (c) => fetch("/api/topup?" + qs(c ? { lat: c.latitude.toFixed(5), lon: c.longitude.toFixed(5), limit: 40 } : {})).then((r) => r.json()).then((d) => { items = d.items || []; paint(); })
+      .catch(() => { view.innerHTML = `<h1 class="large">Opal machines</h1><div class="empty">No connection right now.</div>`; });
+    locate().then((c) => { coords = c; load(c); }).catch(() => load(null));
+  }
+
+  // ---------- Park and Ride live spaces ----------
+  function parkingView() {
+    setTab("search"); setNav({ title: "Park and Ride", back: true });
+    view.innerHTML = `<h1 class="large">Park and Ride<small>Live spaces</small></h1><div class="group">${skel(6)}</div>`;
+    let coords = null;
+    const paint = (d) => {
+      let list = d.carparks || [];
+      if (coords) list = list.map((p) => ({ ...p, dist: Math.hypot((p.lat - coords.latitude) * 111, (p.lon - coords.longitude) * 92) })).sort((a, b) => a.dist - b.dist);
+      else list = list.slice().sort((a, b) => a.name.localeCompare(b.name));
+      view.innerHTML = `<h1 class="large">Park and Ride<small>${coords ? "Closest first" : "A to Z"} \u00b7 ${list.length} car parks</small></h1>
+        <div class="group"><div class="list" style="--inset:57px">${list.map((p) => `<a class="pklink" href="#/stop/${encodeURIComponent(p.station)}?${qs({ name: p.name })}">${parkCell(p, false)}</a>`).join("")}</div>
+        <p class="group-f src">Live spaces from the ${SRC.park}. Check the free parking rules for Opal travellers on transportnsw.info. Open a station to set a nearly full alert.</p></div>${foot()}`;
+    };
+    const load = () => api("/api/parking").then(paint).catch((e) => { view.innerHTML = `<h1 class="large">Park and Ride</h1><div class="empty">${esc(e.message)}</div>`; });
+    locate().then((c) => { coords = c; }).catch(() => null).finally(load);
+    every(120000, load);
+  }
 
   // ---------- alerts, nearby, ask ----------
   function alertsView() {
@@ -1912,7 +2077,7 @@ window.TBApp = () => {
     try {
       const c = await locate();
       const d = await api("/api/nearby?" + qs({ lat: c.latitude.toFixed(5), lon: c.longitude.toFixed(5) }));
-      view.innerHTML = `<h1 class="large">Near me</h1><div class="group"><div class="list">${d.stops.map((s) => `<a class="cell" href="#/stop/${encodeURIComponent(s.id)}?${qs({ name: s.name })}"><span class="s-ico">${I.loc}</span><div class="grow"><div class="t1">${esc(s.name)}</div><div class="t2">${s.distance != null ? s.distance + " m" : ""}${s.modes && s.modes.length ? " \u00b7 " + esc(s.modes.join(", ")) : ""}</div></div>${I.chev}</a>`).join("") || '<div class="empty">No stops found nearby.</div>'}</div></div>${foot()}`;
+      view.innerHTML = `<h1 class="large">Near me</h1><div class="group"><div class="list"><a class="cell" href="#/topup"><span class="s-ico purple">${I.card}</span><div class="grow"><div class="t1">Opal top up machines near me</div></div>${I.chev}</a></div></div><div class="group"><div class="list">${d.stops.map((s) => `<a class="cell" href="#/stop/${encodeURIComponent(s.id)}?${qs({ name: s.name })}"><span class="s-ico">${I.loc}</span><div class="grow"><div class="t1">${esc(s.name)}</div><div class="t2">${s.distance != null ? s.distance + " m" : ""}${s.modes && s.modes.length ? " \u00b7 " + esc(s.modes.join(", ")) : ""}</div></div>${I.chev}</a>`).join("") || '<div class="empty">No stops found nearby.</div>'}</div></div>${foot()}`;
     } catch (e) { view.innerHTML = `<h1 class="large">Near me</h1><div class="empty">${esc(e.message)}</div>`; }
   }
   async function askView(q, coords) {
@@ -1922,7 +2087,7 @@ window.TBApp = () => {
     try {
       const local = saved().find((s) => s.name === q.trim().toLowerCase());
       if (local) { location.replace("#/trip?" + qs({ from: local.from.id, to: local.to.id, fn: local.from.name, tn: local.to.name, name: local.name })); return; }
-      const d = await api("/api/ask?" + qs({ q, profile: PROFILE, device: DEVICE, fare: fareT(), lat: coords && coords.latitude.toFixed(5), lon: coords && coords.longitude.toFixed(5) }));
+      const d = await api("/api/ask?" + qs({ q, profile: PROFILE, device: DEVICE, fare: fareT(), acc: accOn() ? 1 : null, lat: coords && coords.latitude.toFixed(5), lon: coords && coords.longitude.toFixed(5) }));
       if (d.kind === "departures") { S.pre = d; location.replace(`#/stop/${encodeURIComponent(d.stop.id)}?${qs({ name: d.stop.name, mode: d.mode || "" })}`); }
       else if (d.kind === "trip" && (d.chain || d.via) && (d.links || []).some((l) => l.kind === "trip" && l.legs)) location.replace(d.links.find((l) => l.kind === "trip" && l.legs).href);
       else if (d.kind === "trip") { S.pre = d; location.replace("#/trip?" + qs({ from: d.from.id, to: d.to.id, fn: d.from.name, tn: d.to.name, name: d.saved || "", time: d.when && d.when.time, arr: d.when && d.when.arriveBy ? "1" : "" })); }
@@ -2285,6 +2450,8 @@ window.TBApp = () => {
     else if (path === "/ask") askView(params.get("q") || "");
     else if (path === "/alerts") alertsView();
     else if (path === "/near") nearView();
+    else if (path === "/topup") topupView(params);
+    else if (path === "/parking") parkingView();
     else homeView();
   }
   window.addEventListener("hashchange", () => {

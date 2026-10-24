@@ -4,6 +4,16 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 24 Oct 2026
 
+### Park and Ride, lifts and station access, Opal machines (web and server, 4:15 PM)
+* Station screens show Park and Ride car parks with live spaces free, a fill bar and a Nearly full or Full badge. Tap the bell on a car park for a notification if it gets nearly full in the next 3 hours.
+* Trips that start at a Park and Ride station show its live spaces above the trip list. Search has a Park and Ride list with every car park, closest first.
+* Station screens show access (step free, assisted or not step free), lifts, escalators, live lift outages, the Opal machine (cash or card, card only, top up only, none), facilities, short platform and peak times.
+* Trip details mark each station as step free or not, and a lift outage shows in red on the trip and in the leg.
+* Settings > Accessibility: Accessible trips (step free trips only, from the Trip Planner), Lift outage alerts for stations on saved trips, and the Opal machine finder.
+* Opal top up and ticket machine finder: a map and a list, closest first, with a Takes cash filter. Opal retailers are not in the open data, so they are not listed.
+* Ask answers "parking at Tallawong", "is Kellyville car park full", "lifts at Central", "is Redfern step free", "top up at Campsie", "top up near me" and "accessible trip from Burwood to Central".
+* All from Transport for NSW open data (Location Facilities, Car Park API, service alerts), named on each screen. New endpoints: `/api/station`, `/api/parking`, `/api/topup`, `/api/lifts`, `/api/lifts/alerts`, `/api/parking/watch`; `acc=1` on trip requests.
+
 ### Android app: live trip, fares and Clear history (over the air update, 3:55 PM)
 * Start trip on any trip opens a full screen live map: your train or bus, your position (only after you allow location), the arrival time with a countdown, the next stop, stops left, change times with spare minutes, and tight or missed connection warnings with a link to find the next connection. Refreshes every 15 seconds.
 * Get off alerts one stop before your stop and at each change, plus tight change and connection at risk alerts. With notifications on, the server sends the same alerts while the app is closed.

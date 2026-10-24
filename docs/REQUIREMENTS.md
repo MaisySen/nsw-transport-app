@@ -130,3 +130,21 @@ Our Trip Planner API key returns no fare tickets (`journeys[].fare.tickets` is e
 | Labelled as an estimate, never the card charge | Done | Planned | Planned |
 | Opal card balance, top up, tap history | Skipped: needs an Opal login (Bidur's call) | | |
 
+
+## Phase 8: Park and Ride, lifts and station access, Opal machines (24 Oct 2026, web and server)
+
+Data: Transport for NSW open data. Station facilities and access come from the Public Transport Location Facilities and Operators dataset (797 locations, built into `/data/facilities.json` by `backend/tools/build_facilities.py`). Live car park spaces come from the Car Park API (41 Park and Ride car parks, list built into `/data/carparks.json`). Live lift and escalator outages come from the Trip Planner service alerts (`announcementType: liftsEscalators`, matched to stations by stop number). Every screen names its source.
+
+| Feature | Web | Android | iPhone |
+| --- | --- | --- | --- |
+| Station screen: Park and Ride car parks with live spaces free, a fill bar and a Nearly full or Full badge | Done | Planned | Planned |
+| Car park alert: a notification if a car park gets nearly full in the next 3 hours (bell on each car park) | Done | Planned | Planned |
+| Trips starting at a Park and Ride station show its live spaces above the trip list; Ask trip replies add a line | Done | Ask: Done (server text). Card: Planned | Ask: Done (server text). Card: Planned |
+| Park and Ride list, closest first, live spaces (`#/parking`) | Done | Planned | Planned |
+| Station screen: access level (step free, assisted, not step free), lifts, escalators, boarding ramp, live lift outages, ticket machine, facilities, short platform, peak times | Done | Planned | Planned |
+| Trip legs: access at each station (step free or not) and a red note when a lift is out; a lift outage shows on the trip row | Done | Planned | Planned |
+| Settings > Accessibility > Accessible trips: step free trips only, using the Trip Planner wheelchair option (`acc=1`) | Done | Planned | Planned |
+| Settings > Accessibility > Lift outage alerts for stations on saved trips (checked every 10 minutes, each outage sent once) | Done | Planned | Planned |
+| Opal top up and ticket machine finder: map and list, closest first, cash or card filter (`#/topup`), also from Search and Near me | Done | Planned | Planned |
+| Ask: "parking at Tallawong", "is Kellyville car park full", "lifts at Central", "is Redfern step free", "top up at Campsie", "top up near me", "accessible trip from Burwood to Central" | Done | Done (server text). Cards: Planned | Done (server text). Cards: Planned |
+| Opal retailers (shops that top up) | Not possible: not in the open data | | |

@@ -140,3 +140,22 @@ Every journey from `/api/trip`, `/api/plan` and `/api/next`, and every journey i
 
 Distances: train, metro and ferry along the route; bus and light rail in a straight line between where you board and get off. Child or Youth and Gold pay the concession per trip fares. Fares come from transportnsw.info and the Opal Fares open data (fare values from 29 June 2026), read 24 Oct 2026.
 
+
+## Station access, Park and Ride and Opal machines
+
+| Endpoint | Method | Parameters | Returns |
+| --- | --- | --- | --- |
+| `/api/station` | GET | `id` (station number, for example `200060`), `live=0` to skip live parts | `name`, `access` (`level`: `independent`, `assisted`, `none` or `unknown`; `label`; `lift`, `escalator`, `stairs`, `ramp`, `hearingLoop`, `tactile`), `ticket` (`kind`: `cash`, `card`, `topup`, `none` or `unknown`; `label`; `extraTopUp`), `facilities` (names), `parkRide`, `peak` (`morning`, `afternoon`), `shortPlatform`, `address`, `phone`, `outages` (live lift or escalator outages: `id`, `kind`, `title`, `detail`, `url`, `updated`), `parking` (car parks at this station, see below), `sources`, `read` (date the facility data was read). 404 when there is no facility data |
+| `/api/parking` | GET | `id` (car park), or `stop` (station number), or nothing for every car park; `live=0` for the list without live counts | `carpark` or `carparks`: `id`, `name`, `station`, `spots`, `free`, `occupied`, `status` (`ok`, `nearly`, `full`, `unknown`), `label`, `updated` (ISO time of the reading), `stale` (older than 30 minutes, shown as no live count), `lat`, `lon`, `address`; plus `source` |
+| `/api/topup` | GET | `lat`, `lon` (optional), `limit` (1 to 40, default 12) | `items`: stations with an Opal machine (`id`, `name`, `lat`, `lon`, `kind`, `label`, `cash`, `distance` in metres when `lat` and `lon` are given, closest first). Without a position, every such station (about 250) |
+| `/api/lifts` | GET | none | `items`: every current lift and escalator outage with `stops` (station numbers) |
+| `/api/lifts/alerts` | POST | `{device, profile, stations: [station numbers, up to 40], on}`; `on: false` turns it off and deletes the list | `on`, `stations` (count), `now` (outages already showing at those stations; listed, not pushed) |
+| `/api/lifts/alerts` | GET | `device` | `on`, `stations` |
+| `/api/parking/watch` | POST | `{device, profile, facility}` | `watch` (`id`, `name`, `expires`, 3 hours) and `now` (the live reading). Up to 5 open per device |
+| `/api/parking/watch` | GET, DELETE | `device` (GET), `id` and `device` (DELETE) | Open watches, or stop one |
+
+Nearly full means 10 percent or fewer spaces left, or 10 or fewer on a small car park. Car park readings are cached for 90 seconds, the full list for 10 minutes, lift outages for 5 minutes.
+
+Trip results: `/api/trip`, `/api/plan`, `/api/next` and `/api/ask` take `acc=1` for step free trips only (the Trip Planner `wheelchair=on` option; the answer then has `accessible: true`). Every transit leg gets `access: {from, to}`, each `{id, level, lift, outage, outages}` for the station where you board and get off. When the first leg starts at a Park and Ride station the answer has `parking: {station, carparks, source}`. Ask trip replies add lines for step free only, a lift outage on the trip, and the Park and Ride spaces.
+
+Ask: parking, lift and top up questions answer with `kind: "facility"`, a `reply`, and cards of type `parking` (`title`, `items` as above, `source`) or `station` (`station`: `id`, `name`, `access`, `ticket`, `outages`, `parking`, `source`). Clients that do not know these card types can show the reply text alone.

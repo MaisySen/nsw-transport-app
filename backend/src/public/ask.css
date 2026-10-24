@@ -68,3 +68,10 @@ a.ak-head:active, .ak-row:active { background: var(--fill); }
 .ak-send svg { width: 20px; height: 20px; }
 .ak-send:disabled { background: var(--fill2); color: var(--label3); }
 .ak-fare { color: var(--label2); }
+
+/* Park and Ride and station cards */
+.ak-pk { height: 5px; border-radius: 3px; background: var(--fill, rgba(120,120,128,.16)); margin-top: 6px; overflow: hidden; }
+.ak-pk i { display: block; height: 100%; background: #34c759; border-radius: 3px; }
+.ak-pk.nearly i { background: #ff9500; }
+.ak-pk.full i { background: #ff3b30; }
+.ak-src { padding: 6px 14px 10px; font-size: 11px; line-height: 15px; color: var(--label3, rgba(60,60,67,.4)); }
