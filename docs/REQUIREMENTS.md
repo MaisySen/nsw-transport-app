@@ -104,3 +104,15 @@ Platforms: **Web** is the web app at https://nsw-transport-bot.sites.tab.bot. **
 | Multi leg trips (from /api/plan and saved multi leg trips) | Done, web |
 | Privacy: location stays on the phone unless sharing with Include my location on; shared rows deleted at the end | Done, privacy page updated |
 | Android ongoing notification, iPhone Live Activity and Dynamic Island | Not started, see port notes |
+
+## Phase 6: your history, your control (24 Oct 2026, web)
+
+| Feature | Web | Android | iPhone |
+| --- | --- | --- | --- |
+| No hard coded stations: the Popular stations list is gone; an empty Trips screen shows Add a trip and Nearby (when location is allowed) | Done | Planned (next update) | Planned (build 9) |
+| Saved trips are only the ones you make, nothing is seeded; Edit at the top of Trips, swipe left or tap and hold for Edit trip and Delete trip | Done | Planned | Has swipe delete and Edit; check |
+| Recent trips and Recent stops shown below saved trips, labelled Recent, each with Clear and per item Remove (swipe left or tap and hold), Clear has Undo | Done | Planned | Planned |
+| Settings, Clear history: clear recent searches, recent stops, recent trips | Done | Planned | Planned |
+| Delete my trip history on server (`POST /api/history/delete`, scope history), with a confirm sheet | Done | Planned | Planned |
+| Delete all my data (scope all: saved trips, commutes, watches, alerts, push sign up, shares, plus the app's storage), with a confirm sheet | Done | Planned | Planned |
+

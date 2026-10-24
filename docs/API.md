@@ -54,6 +54,7 @@ Example (Central to Chatswood by metro): `/api/plan?legs=[{"f":"200060","fn":"Ce
 | `/api/commutes` | POST | `{from, to, tod, days, name}` to create, or `{id, name, tod, days, active}` to edit | `item` |
 | `/api/commutes` | DELETE | `profile`, `id` | `ok` |
 | `/api/commutes/dismiss` | POST | `{key}` | `ok` |
+| `/api/history/delete` | POST | `{profile, device, scope}`. `scope` is `history` (trip searches and dismissed commute suggestions; suggestions are worked out from searches, so they go too) or `all` (also saved trips, commutes, watches, alerts, and for this `device` its push sign ups, Expo tokens and live trip shares). `profile` is required (5 or more characters); on the shared legacy profile `device` is required and only that device's searches are deleted. Rate limited to 10 a client address per 10 minutes | `{ok, scope, deleted: {searches, dismissed, saved, commutes, watches, alerts, push, shares}}` (row counts) |
 
 `tod` is minutes after midnight (0 to 1439). `days` is a string of weekday numbers, 1 is Monday (default `12345`).
 

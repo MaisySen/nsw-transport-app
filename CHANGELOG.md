@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 24 Oct 2026
 
+### Clear history and no hard coded stations (web, 3:40 PM)
+* The Popular stations list (Central, Town Hall, Strathfield) is gone from the Trips screen and from the stop list. Nothing is hard coded or seeded: an empty Trips screen shows Add a trip and Nearby when location is allowed.
+* Recent trips and Recent stops are their own groups below saved trips, labelled Recent, each with Clear (with Undo). Remove one by swiping left or tapping and holding. Starred stops have their own group.
+* Saved trips: Edit at the top of Trips shows a remove button on each item; swipe left or tap and hold a trip for Edit trip and Delete trip. Deleting also removes it on the server. Editing replaces the trip, also when its name changes.
+* Settings has Clear history: clear recent searches, recent stops and recent trips; Delete my trip history on server; Delete all my data. Both deletes ask first.
+* New `POST /api/history/delete` (profile scoped, rate limited). Privacy and support pages explain how to delete your data.
+
 ### Android versionCode 5 (3:10 PM)
 * The APK on the download page is now versionCode 5. A signed AAB of the same build is kept for Google Play.
 * Next trip widget shows multi leg trips: the first leg's line badge followed by the next lines (for example T1 › M1, or +2 when there are more), "Arrive 3:42 PM, 48 min" for the whole chain, then rows for later options with their lines, arrival time and Tight or Missed when a change is too short or a delay breaks it. Trips come from `/api/plan`, the same planner as the app. Tapping opens the multi leg trip.

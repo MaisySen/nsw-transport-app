@@ -2125,6 +2125,7 @@ const RATE_RULES = [
   [/^\/api\/push\/test$/, "pushtest", 5, 600000],
   [/^\/api\/watch$/, "watch", 30, 600000, "POST"],
   [/^\/api\/(saved|commutes|commutes\/dismiss|push\/subscribe|push\/expo|push\/expo\/unregister|push\/unsubscribe)$/, "write", 60, 600000, "POST"],
+  [/^\/api\/history\/delete$/, "delete", 10, 600000],
   [/^\/api\/hit$/, "hit", 120, 600000],
   [/^\/api\/share$/, "share", 20, 600000, "POST"],
   [/^\/api\/share\/update$/, "shareup", 240, 600000],
@@ -3536,6 +3537,48 @@ export default {
           const b = await request.json().catch(() => ({}));
           if (b.key) await db(env).prepare("INSERT OR REPLACE INTO dismissed (profile, k, at) VALUES (?1, ?2, ?3)").bind(profile, String(b.key).slice(0, 200), Date.now()).run();
           return json({ ok: true });
+        }
+        case "/api/history/delete": {
+          // Deletes what the server stored for one profile. scope "history": trip searches and
+          // dismissed commute suggestions (suggestions are worked out from the searches, so they go
+          // too). scope "all": also saved trips, commutes, watches, alerts, push sign ups and live
+          // trip shares for this device. The profile id is required. On the shared fallback
+          // profile only this device's own rows are deleted.
+          if (request.method !== "POST") return json({ error: "method" }, 405);
+          await ensureSchema3(env);
+          const b = await request.json().catch(() => ({}));
+          const prof = String(b.profile || "").toLowerCase().replace(/[^a-z0-9_.:-]/g, "").slice(0, 40);
+          const dev = cleanId(b.device, 64);
+          const scope = b.scope === "all" ? "all" : b.scope === "history" ? "history" : null;
+          if (!prof || prof.length < 5) return json({ error: "profile needed" }, 400);
+          if (!scope) return json({ error: "scope must be history or all" }, 400);
+          const shared = prof === DEFAULT_PROFILE;
+          if (shared && !dev) return json({ error: "device needed for this profile" }, 400);
+          const d = db(env);
+          const n = {};
+          const del = async (k, q, ...a) => { try { const r = await d.prepare(q).bind(...a).run(); n[k] = (n[k] || 0) + ((r && r.meta && r.meta.changes) || 0); } catch (e) { n[k] = n[k] || 0; } };
+          if (shared) await del("searches", "DELETE FROM searches WHERE profile = ?1 AND device = ?2", prof, dev);
+          else {
+            await del("searches", "DELETE FROM searches WHERE profile = ?1", prof);
+            await del("dismissed", "DELETE FROM dismissed WHERE profile = ?1", prof);
+          }
+          if (scope === "all") {
+            if (!shared) {
+              await del("saved", "DELETE FROM saved WHERE profile = ?1", prof);
+              await del("saved", "DELETE FROM saved_legs WHERE profile = ?1", prof);
+              await del("commutes", "DELETE FROM commutes WHERE profile = ?1", prof);
+              await del("watches", "DELETE FROM watches WHERE profile = ?1", prof);
+              await del("alerts", "DELETE FROM notes WHERE profile = ?1", prof);
+            }
+            if (dev) {
+              await del("watches", "DELETE FROM watches WHERE device = ?1", dev);
+              await del("alerts", "DELETE FROM notes WHERE device = ?1", dev);
+              await del("push", "DELETE FROM push_subs WHERE device = ?1", dev);
+              await del("push", "DELETE FROM expo_tokens WHERE device = ?1", dev);
+              await del("shares", "DELETE FROM shares WHERE device = ?1", dev);
+            }
+          }
+          return json({ ok: true, scope, deleted: n });
         }
         case "/api/predict": {
           const it = { line: p.get("line"), stopId: p.get("stop"), planned: p.get("planned") || new Date().toISOString() };

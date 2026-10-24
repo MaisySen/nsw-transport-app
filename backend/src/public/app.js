@@ -185,8 +185,16 @@ window.TBApp = () => {
   }
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { if (S.refresh) S.refresh(); pollWatches(); } });
   function toast(msg) {
-    const t = $("#toast"); t.textContent = msg; t.classList.add("on");
+    const t = $("#toast"); t.textContent = msg; t.classList.remove("has-act"); t.classList.add("on");
     clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("on"), 2800);
+  }
+  // A toast with Undo, for clearing history.
+  function toastUndo(msg, undo) {
+    const t = $("#toast");
+    t.innerHTML = `<span>${esc(msg)}</span><button type="button">Undo</button>`;
+    t.classList.add("on", "has-act");
+    $("button", t).onclick = () => { t.classList.remove("on", "has-act"); undo(); };
+    clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("on", "has-act"), 5000);
   }
   const skel = (n = 4) => `<div class="list">${"<div class=\"skel\"></div>".repeat(n)}</div>`;
   const foot = () => `<p class="foot">Live data from Transport for NSW Open Data. Not affiliated with Transport for NSW. Predictions come from times this app has recorded and are never shown as live.</p>`;
@@ -298,6 +306,53 @@ window.TBApp = () => {
         else starStop(it.stopId, short(it.stopName || it.from || "Stop " + it.stopId));
       } else if (!e.target.closest(".swipe")) closeAll();
     }, true);
+  })();
+  // Home items (saved trips, recents, starred stops): tap and hold, right click, or swipe left
+  // to open their actions (Edit, Delete, Remove from Recent).
+  (function itemGestures() {
+    let st = null, timer = 0;
+    const cancel = () => { clearTimeout(timer); timer = 0; };
+    const fired = (el) => { el.dataset.fired = "1"; setTimeout(() => { delete el.dataset.fired; }, 450); };
+    view.addEventListener("pointerdown", (e) => {
+      const el = e.target.closest("[data-item]");
+      if (!el || !S.itemActions || e.target.closest(".grip, .rm-btn, .gclear") || (e.pointerType === "mouse" && e.button !== 0)) return;
+      const mv = el.querySelector(".tcard, .rrow, .sblock") || el;
+      st = { el, mv, x: e.clientX, y: e.clientY, dx: 0, active: false, id: e.pointerId };
+      timer = setTimeout(() => {
+        if (!st || st.active) return;
+        const k = st.el.dataset.item; fired(st.el); st = null;
+        if (navigator.vibrate) try { navigator.vibrate(12); } catch (err) { /* ignore */ }
+        S.itemActions(k);
+      }, 550);
+    });
+    view.addEventListener("pointermove", (e) => {
+      if (!st || e.pointerId !== st.id) return;
+      const dx = e.clientX - st.x, dy = e.clientY - st.y;
+      if (!st.active) {
+        if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { cancel(); st = null; return; }
+        if (Math.abs(dx) <= 10) return;
+        cancel();
+        if (dx > 0) { st = null; return; }
+        st.active = true; st.mv.classList.add("swiping");
+      }
+      st.dx = Math.min(0, dx);
+      st.mv.style.transform = `translateX(${Math.max(-150, st.dx)}px)`;
+      st.el.classList.toggle("sw-armed", st.dx < -72);
+    });
+    const end = () => {
+      cancel();
+      if (!st) return;
+      const s = st; st = null;
+      if (!s.active) return;
+      s.mv.classList.remove("swiping"); s.mv.style.transform = ""; s.el.classList.remove("sw-armed");
+      fired(s.el);
+      if (s.dx < -72) S.itemActions(s.el.dataset.item);
+    };
+    view.addEventListener("pointerup", end);
+    view.addEventListener("pointercancel", end);
+    view.addEventListener("click", (e) => { const el = e.target.closest("[data-item]"); if (el && el.dataset.fired && !e.target.closest(".rm-btn")) { e.preventDefault(); e.stopPropagation(); } }, true);
+    view.addEventListener("dragstart", (e) => { if (e.target.closest && e.target.closest("[data-item]")) e.preventDefault(); });
+    view.addEventListener("contextmenu", (e) => { const el = e.target.closest("[data-item]"); if (el && S.itemActions) { e.preventDefault(); cancel(); st = null; S.itemActions(el.dataset.item); } });
   })();
   function starStop(id, name) {
     let s = stars();
@@ -515,11 +570,25 @@ window.TBApp = () => {
   // ---------- home ----------
   // Home is a live board: your trips with their next services, your stops with their
   // next departures, stops near you. It refreshes every 15 s and every countdown ticks.
-  const POPULAR = [{ id: "200060", name: "Central Station" }, { id: "200070", name: "Town Hall Station" }, { id: "213510", name: "Strathfield Station" }];
   const recentStops = () => LS.get("tb_rstops", []);
   function addRecentStop(id, name) { if (!id) return; const r = recentStops().filter((x) => x.id !== id); r.unshift({ id, name }); LS.set("tb_rstops", r.slice(0, 8)); }
   const places = () => LS.get("tb_places", {});
   const recentTrips = () => LS.get("tb_rtrips", []);
+  const rtKey = (r) => r.from.id + ">" + r.to.id;
+  function removeRecentTrip(key) { LS.set("tb_rtrips", recentTrips().filter((r) => rtKey(r) !== key)); }
+  function removeRecentStop(id) { LS.set("tb_rstops", recentStops().filter((s) => s.id !== id)); }
+  // A saved trip is deleted on this phone and on the server.
+  function deleteSaved(t) {
+    const k = tripKey(t);
+    LS.set("tb_saved", saved().filter((s) => tripKey(s) !== k));
+    LS.set("tb_order", LS.get("tb_order", []).filter((x) => x !== k));
+    if (t.name) fetch("/api/saved?" + qs({ profile: PROFILE, name: t.name }), { method: "DELETE" }).catch(() => {});
+  }
+  // A small iOS style action sheet: a title, actions, and Cancel.
+  function actionSheet(title, acts) {
+    const m = openModal({ title, body: `<div class="group"><div class="list">${acts.map((x, i) => `<button class="cell sheet-act${x.danger ? " danger-t" : ""}" data-sa="${i}"><div class="grow">${esc(x.label)}</div></button>`).join("")}</div>${acts.note ? `<p class="group-f">${esc(acts.note)}</p>` : ""}</div>` });
+    $$("[data-sa]", m).forEach((b) => (b.onclick = () => { closeModal(); acts[Number(b.dataset.sa)].run(); }));
+  }
   function addRecentTrip(from, to) { if (!from.id || !to.id) return; const r = recentTrips().filter((x) => !(x.from.id === from.id && x.to.id === to.id)); r.unshift({ from, to }); LS.set("tb_rtrips", r.slice(0, 6)); }
   const SEARCH_ICO = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10.5 3a7.5 7.5 0 0 1 5.96 12.06l4.24 4.24-1.4 1.4-4.24-4.24A7.5 7.5 0 1 1 10.5 3Zm0 2a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z"/></svg>';
   const PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/></svg>';
@@ -1000,7 +1069,7 @@ window.TBApp = () => {
     let nameTouched = st.name != null;
     const full = () => legs.map((l, i) => ({ ...l, from: i ? legs[i - 1].to : start, conn: i && l.mode !== "walk" ? l.conn : undefined, walk: l.mode === "walk" ? l.walk : undefined, any: l.any ? 1 : undefined }));
     const defName = () => `${stName(short(start.name))} to ${stName(short(legs[legs.length - 1].to.name))}`;
-    const m = openModal({ title: "Confirm trip", right: "Save", body: `<div id="ct_body"></div>` });
+    const m = openModal({ title: st.replace ? "Edit trip" : "Confirm trip", right: "Save", body: `<div id="ct_body"></div>` });
     let nameVal = st.name != null ? st.name : defName();
     const step = (k, val, lbl) => `<div class="stepper"><button data-s="${k}" data-d="-1" aria-label="Less ${lbl}">${MI.minus}</button><span>${val} min</span><button data-s="${k}" data-d="1" aria-label="More ${lbl}">${PLUS}</button></div>`;
     const paint = () => {
@@ -1044,7 +1113,7 @@ window.TBApp = () => {
       }));
       $("[data-add]", m).onclick = () => {
         const from = full()[legs.length - 1].to;
-        const reopen = (more) => { keepName(); openConfirmTrip({ legs: [...full(), ...more], name: nameTouched ? nameVal : null, after: st.after }); };
+        const reopen = (more) => { keepName(); openConfirmTrip({ legs: [...full(), ...more], name: nameTouched ? nameVal : null, after: st.after, replace: st.replace }); };
         openNewTrip({ from, walk: true, cancel: () => reopen([]), done: (leg) => reopen([{ mode: leg.mode, from, to: leg.to, conn: leg.mode === "walk" ? undefined : legs[legs.length - 1].mode === "walk" ? 2 : 5, walk: leg.walk || 5 }]) });
       };
     };
@@ -1057,7 +1126,10 @@ window.TBApp = () => {
       if (F.length > 1) t.legs = F;
       if (F.length === 2 && F[1].mode !== "walk") { t.via = F[0].to; t.conn = F[1].conn; }
       const k = tripKey(t);
-      const s = saved().filter((x) => tripKey(x) !== k && x.name !== name);
+      // Editing a saved trip replaces it, also when its name or stops changed.
+      const old = st.replace;
+      if (old && old.name && old.name !== name) fetch("/api/saved?" + qs({ profile: PROFILE, name: old.name }), { method: "DELETE" }).catch(() => {});
+      const s = saved().filter((x) => tripKey(x) !== k && x.name !== name && !(old && tripKey(x) === tripKey(old)));
       s.unshift(t);
       LS.set("tb_saved", s.slice(0, 12));
       post("/api/saved", F.length > 1 ? { profile: PROFILE, name, legs: wireLegs(t) } : { profile: PROFILE, name, from: t.from, to: t.to }).catch(() => {});
@@ -1071,6 +1143,9 @@ window.TBApp = () => {
   function homeView() {
     setTab("home"); setNav({ title: "Trips", actions: `<button class="icon-btn act plus-btn" id="addTripBtn" aria-label="Add a trip">${PLUS}</button>` });
     $("#addTripBtn").onclick = () => openNewTrip();
+    let editing = false;
+    const tok = S.homeTok = {};
+    S.itemActions = (k) => itemActions(k);
     let commutes = LS.get("tb_commutes", []), suggestion = null, near = null, nearState = "unknown", coords = null, coordsAt = 0;
     const data = {};
     const showInstall = !standalone && !LS.get("tb_install_seen", 0) && !S.installShown;
@@ -1086,7 +1161,6 @@ window.TBApp = () => {
       }
       commutes.forEach((c) => { if (!has(c.from.id, c.to.id)) list.push({ kind: "commute", from: c.from, to: c.to, name: c.name, todText: c.todText }); });
       saved().forEach((s) => { if (!list.some((x) => tripKey(x) === tripKey(s))) list.push({ ...s, kind: "saved", grip: false }); });
-      recentTrips().slice(0, 2).forEach((r) => { if (!has(r.from.id, r.to.id)) list.push({ kind: "recent", from: r.from, to: r.to }); });
       // Your own order from dragging wins; home and work move together and keep their morning and evening order.
       const order = LS.get("tb_order", []);
       const pos = (t, i) => { const k = order.indexOf(t.okey || tripKey(t)); return k < 0 ? 1000 + i : k; };
@@ -1094,19 +1168,67 @@ window.TBApp = () => {
       if (out.length > 1) out.forEach((t) => (t.grip = true));
       return out;
     };
+    // Starred stops are saved by you. Recent trips and stops are only history: shown below,
+    // labelled Recent, and each can be removed or cleared.
     const stopsList = () => {
       const out = [];
       stars().forEach((s) => { if (!out.some((x) => x.id === s.id)) out.push({ ...s, star: true }); });
-      recentStops().forEach((s) => { if (!out.some((x) => x.id === s.id)) out.push(s); });
-      return out.slice(0, 4);
+      return out.slice(0, 6);
     };
+    const recentStopList = () => recentStops().filter((s) => !stars().some((x) => x.id === s.id)).slice(0, 3);
+    const recentTripList = () => { const tl = trips(); return recentTrips().filter((r) => !tl.some((t) => t.from.id === r.from.id && t.to.id === r.to.id && !isChain(t))).slice(0, 3); };
+    const itemOf = (key) => {
+      const [kind, ...rest] = key.split("|"), id = rest.join("|");
+      if (kind === "saved") { const t = saved().find((s) => tripKey(s) === id); return t && { kind, t }; }
+      if (kind === "place") return { kind };
+      if (kind === "commute") { const c = commutes.find((x) => x.id === id); return c && { kind, c }; }
+      if (kind === "rtrip") { const r = recentTrips().find((x) => rtKey(x) === id); return r && { kind, r }; }
+      if (kind === "rstop") { const s = recentStops().find((x) => x.id === id); return s && { kind, s }; }
+      if (kind === "star") { const s = stars().find((x) => x.id === id); return s && { kind, s }; }
+      return null;
+    };
+    const after = () => { paint(); loadAll(); };
+    const itemActions = (key) => {
+      const it = itemOf(key);
+      if (!it) return;
+      if (it.kind === "saved") return actionSheet(cap(it.t.name || short(it.t.from.name) + " to " + short(it.t.to.name)), [
+        { label: "Edit trip", run: () => openConfirmTrip({ legs: tLegs(it.t), conn: it.t.conn, name: it.t.name || null, replace: it.t, after }) },
+        { label: "Delete trip", danger: true, run: () => { deleteSaved(it.t); toast("Trip deleted"); after(); } },
+      ]);
+      if (it.kind === "place") return actionSheet("Home and Work", [
+        { label: "Change home", run: () => openPlacePick("home", after) },
+        { label: "Change work", run: () => openPlacePick("work", after) },
+        { label: "Remove home and work", danger: true, run: () => { LS.set("tb_places", {}); LS.set("tb_order", LS.get("tb_order", []).filter((x) => x !== "places")); toast("Home and work removed"); after(); } },
+      ]);
+      if (it.kind === "commute") return actionSheet(it.c.name || "Commute", [
+        { label: "Edit commute", run: () => openCommuteSheet(it.c) },
+        { label: "Delete commute", danger: true, run: () => { fetch("/api/commutes?" + qs({ profile: PROFILE, id: it.c.id }), { method: "DELETE" }).catch(() => {}); commutes = commutes.filter((x) => x.id !== it.c.id); LS.set("tb_commutes", commutes); toast("Commute deleted"); after(); } },
+      ]);
+      if (it.kind === "rtrip") return actionSheet(short(it.r.from.name) + " to " + short(it.r.to.name), [
+        { label: "Save trip", run: () => openConfirmTrip({ legs: [{ mode: "", from: it.r.from, to: it.r.to }], name: null, after }) },
+        { label: "Remove from Recent", danger: true, run: () => { removeRecentTrip(rtKey(it.r)); after(); } },
+      ]);
+      if (it.kind === "rstop") return actionSheet(short(it.s.name), [
+        { label: "Star stop", run: () => { starStop(it.s.id, short(it.s.name)); after(); } },
+        { label: "Remove from Recent", danger: true, run: () => { removeRecentStop(it.s.id); after(); } },
+      ]);
+      if (it.kind === "star") return actionSheet(short(it.s.name), [
+        { label: "Unstar stop", danger: true, run: () => { LS.set("tb_stars", stars().filter((x) => x.id !== it.s.id)); after(); } },
+      ]);
+    };
+    const itemKey = (t) => t.kind === "saved" ? "saved|" + tripKey(t) : t.kind === "place" ? "place|" : t.kind === "commute" ? "commute|" + (commutes.find((c) => c.from.id === t.from.id && c.to.id === t.to.id) || {}).id : "";
+    const rmBtn = (key, label) => `<button class="rm-btn" data-rm="${esc(key)}" aria-label="${esc(label)}"><span></span></button>`;
     const tk = (t) => "t:" + tripKey(t);
     let dirty = false;
     const paint = () => {
+      if (S.homeTok !== tok) return;
       if (S.dragging) { dirty = true; return; }
       const active = S.watches.filter((w) => w.active);
-      const tl = trips(), sl = stopsList();
-      const fresh = !tl.length && !sl.length;
+      const tl = trips(), sl = stopsList(), rt = recentTripList(), rs = recentStopList();
+      const canEdit = tl.length || sl.length || rt.length || rs.length;
+      if (!canEdit) editing = false;
+      navLeft.innerHTML = canEdit ? `<button class="back navedit" id="editBtn" aria-pressed="${editing}"><span>${editing ? "Done" : "Edit"}</span></button>` : "";
+      if (canEdit) $("#editBtn").onclick = () => { editing = !editing; paint(); };
       let h = `<h1 class="large">Trips</h1>
         <a class="sfield homesearch" href="#/search?focus=1" aria-label="Search stops, stations and trips">${SEARCH_ICO}<span>Where to?</span></a>`;
       const pl = places();
@@ -1122,14 +1244,17 @@ window.TBApp = () => {
           <div class="card-actions"><button class="pillbtn solid" data-accept>Yes, every weekday</button><button class="pillbtn" data-dismiss>Not now</button></div></div></div></div></div>`;
       }
       const addRow = `<button class="addtrip" data-addtrip><span class="addico">${PLUS}</span><span>Add a trip</span></button>`;
-      h += `<div class="group trips">${tl.map((t) => tripCard(t, data[tk(t)])).join("")}${tl.length ? "" : addRow}</div>`;
-      if (sl.length) h += `<div class="group"><div class="group-h big">Recent stops</div>${sl.map((s) => stopBlock(s, data["s:" + s.id])).join("")}</div>`;
+      const wrapItem = (key, label, html) => key ? `<div class="itemw${editing ? " editing" : ""}" data-item="${esc(key)}">${editing ? rmBtn(key, label) : ""}${html}</div>` : html;
+      h += `<div class="group trips${editing ? " is-editing" : ""}">${tl.map((t) => wrapItem(itemKey(t), "Remove " + short(t.from.name) + " to " + short(t.to.name), tripCard(t, data[tk(t)]))).join("")}${tl.length ? "" : addRow}</div>`;
+      if (!tl.length && !rt.length && !sl.length) h += `<p class="group-f empty-hint">Save the trips you take, like home to work. They show here with live times. Nothing is added for you.</p>`;
+      if (sl.length) h += `<div class="group"><div class="group-h big">Starred stops</div>${sl.map((s) => wrapItem("star|" + s.id, "Unstar " + short(s.name), stopBlock(s, data["s:" + s.id]))).join("")}</div>`;
+      if (rt.length) h += `<div class="group recent"><div class="group-h big">Recent trips<button class="gclear" data-clear="tb_rtrips">Clear</button></div><div class="list">${rt.map((r) => `<div class="swrow" data-item="${esc("rtrip|" + rtKey(r))}">${editing ? rmBtn("rtrip|" + rtKey(r), "Remove from Recent") : ""}<a class="cell rrow" href="${tripHref({ from: r.from, to: r.to })}"><span class="s-ico">${I.clock}</span><div class="grow"><div class="t1">${esc(stName(short(r.from.name)))} to ${esc(stName(short(r.to.name)))}</div></div>${I.chev}</a></div>`).join("")}</div><p class="group-f">Trips you looked at. Tap and hold, or swipe left, to remove one.</p></div>`;
+      if (rs.length) h += `<div class="group recent"><div class="group-h big">Recent stops<button class="gclear" data-clear="tb_rstops">Clear</button></div>${rs.map((s) => wrapItem("rstop|" + s.id, "Remove from Recent", stopBlock(s, data["s:" + s.id]))).join("")}</div>`;
       let nh = "";
       if (nearState === "granted" && near) nh = near.length ? near.map((s) => stopBlock(s, data["s:" + s.id], distText(s.distance))).join("") : `<div class="list"><div class="cell static"><div class="grow"><div class="t2">No stops within 800 m</div></div></div></div>`;
       else if (nearState === "granted" || nearState === "asking") nh = `<div class="list"><div class="cell static"><span class="s-ico tintbg">${I.loc}</span><div class="grow"><div class="t1">Finding stops near you</div></div></div></div>`;
       else if (nearState !== "denied") nh = `<div class="list"><button class="cell" data-near><span class="s-ico tintbg">${I.loc}</span><div class="grow"><div class="t1 tint-t">Show stops near me</div></div>${I.chev}</button></div>`;
       if (nh) h += `<div class="group"><div class="group-h big">Nearby</div>${nh}</div>`;
-      if (fresh) h += `<div class="group"><div class="group-h big">Popular stations</div>${POPULAR.map((s) => stopBlock(s, data["s:" + s.id])).join("")}</div>`;
       if (showInstall && !LS.get("tb_install_x", 0)) h += `<div class="slim"><span>Add Transport to your Home Screen</span><a href="#/settings">How</a><button data-x-install aria-label="Dismiss">${I.x}</button></div>`;
       h += foot();
       view.innerHTML = h;
@@ -1138,8 +1263,8 @@ window.TBApp = () => {
     // Drag a trip by its handle to reorder.
     const wireDrag = () => $$(".trips .grip").forEach((g) => g.addEventListener("pointerdown", (e) => {
       e.preventDefault();
-      const card = g.closest(".tcard"), box = card.parentElement;
-      const cards = $$(".tcard", box), rects = cards.map((c) => c.getBoundingClientRect());
+      const tcard = g.closest(".tcard"), card = tcard.closest(".itemw") || tcard, box = card.parentElement;
+      const cards = Array.from(box.children).filter((c) => c.matches(".tcard, .itemw")), rects = cards.map((c) => c.getBoundingClientRect());
       const idx = cards.indexOf(card), startY = e.clientY, startScroll = window.scrollY, shift = rects[idx].height + 12;
       let target = idx, lastY = e.clientY, raf = 0;
       const edge = () => { const vh = window.innerHeight; const v = lastY < 120 ? -8 : lastY > vh - 140 ? 8 : 0; if (v) { window.scrollBy(0, v); move({ clientY: lastY }); } raf = requestAnimationFrame(edge); };
@@ -1163,8 +1288,9 @@ window.TBApp = () => {
         cards.forEach((c) => { c.style.transform = ""; c.classList.remove("dragging"); });
         if (target !== idx) {
           const arr = cards.slice(); arr.splice(idx, 1); arr.splice(target, 0, card);
-          const k = card.dataset.tk;
-          const keys = [...new Set(arr.filter((c) => c === card || c.dataset.tk !== k).map((c) => c.dataset.tk))];
+          const tkOf = (c) => (c.matches(".tcard") ? c : $(".tcard", c)).dataset.tk;
+          const k = tkOf(card);
+          const keys = [...new Set(arr.filter((c) => c === card || tkOf(c) !== k).map(tkOf))];
           LS.set("tb_order", keys); if (navigator.vibrate) navigator.vibrate(6);
         }
         dirty = false; paint();
@@ -1173,6 +1299,9 @@ window.TBApp = () => {
     }));
     const wire = () => {
       wireDrag();
+      $$("[data-clear]").forEach((b) => (b.onclick = (e) => { e.preventDefault(); const k = b.dataset.clear; const was = LS.get(k, []); LS.set(k, []); paint(); toastUndo(k === "tb_rtrips" ? "Recent trips cleared" : "Recent stops cleared", () => { LS.set(k, was); after(); }); }));
+      $$("[data-rm]").forEach((b) => (b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); itemActions(b.dataset.rm); }));
+      if (editing) $$("[data-item] a").forEach((x) => x.addEventListener("click", (e) => { if (!e.target.closest(".grip")) { e.preventDefault(); itemActions(x.closest("[data-item]").dataset.item); } }));
       const xi = $("[data-x-install]"); if (xi) xi.onclick = () => { LS.set("tb_install_x", 1); paint(); };
       $$("[data-place]").forEach((b) => (b.onclick = () => openPlacePick(b.dataset.place, () => { paint(); loadAll(); })));
       $$("[data-addtrip]").forEach((b) => (b.onclick = (e) => { e.preventDefault(); openNewTrip(); }));
@@ -1192,7 +1321,7 @@ window.TBApp = () => {
       trips().forEach((t) => { pending++; planTrip(t, { count: 6 }).then((d) => { data[tk(t)] = d; }).catch(() => {}).finally(done); });
       const ids = new Set();
       const sl = stopsList();
-      const all = [...sl, ...(near || []), ...(!trips().length && !sl.length ? POPULAR : [])];
+      const all = [...sl, ...recentStopList(), ...(near || [])];
       all.forEach((s) => { if (!ids.has(s.id)) { ids.add(s.id); loadStop(s); } });
     };
     const findNear = async (ask) => {
@@ -1401,7 +1530,7 @@ window.TBApp = () => {
     };
     function saveTrip() {
       if (isSavedT()) {
-        LS.set("tb_saved", saved().filter((s) => tripKey(s) !== tripKey(T()))); toast("Removed from saved trips"); navNow(); return;
+        deleteSaved(saved().find((s) => tripKey(s) === tripKey(T())) || T()); toast("Removed from saved trips"); navNow(); return;
       }
       const lm = (j) => { const l = j && (j.legs || []).find((x) => x.kind === "transit"); return l && modeOf(l.mode).k ? l.mode : ""; };
       if (legsP) return openConfirmTrip({ legs: tLegs(T()), name: name || null, after: () => navNow() });
@@ -1672,6 +1801,31 @@ window.TBApp = () => {
         } catch (e) { toast(e.message); }
       } });
   }
+  // Confirm sheet, then delete server data for this profile. scope "history": trip searches
+  // and commute suggestions. scope "all": also saved trips, commutes, watches and alerts on the
+  // server, then everything this app keeps on the phone except its private id.
+  function confirmDelete(scope, done) {
+    const all = scope === "all";
+    const m = openModal({ title: all ? "Delete all my data" : "Delete trip history", body: `<div class="delsheet"><span class="sym big-sym" style="background:var(--red)">${I.x}</span>
+      <h3>${all ? "Delete all your data?" : "Delete your trip history?"}</h3>
+      <p>${all ? "This deletes your saved trips, starred stops, commutes, watched trips, alerts and trip history, on this phone and on the server. Alerts on this phone turn off. This cannot be undone." : "This deletes the trips you searched for that the server keeps, and the commute suggestions made from them. Saved trips, commutes and watches stay. This cannot be undone."}</p>
+      <button class="pillbtn solid dangerbtn" id="delGo">${all ? "Delete all my data" : "Delete trip history"}</button></div>` });
+    $("#delGo", m).onclick = async () => {
+      const btn = $("#delGo", m); btn.disabled = true; btn.textContent = "Deleting";
+      try {
+        const r = await post("/api/history/delete", { profile: PROFILE, device: DEVICE, scope });
+        if (all) {
+          try { const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); const sub = reg && reg.pushManager && await reg.pushManager.getSubscription(); if (sub) await sub.unsubscribe(); } catch (e) { /* no push */ }
+          const keep = new Set(["tb_profile", "tb_device", "tb_install_seen", "tb_install_x"]);
+          Object.keys(localStorage).filter((k) => k.startsWith("tb_") && !keep.has(k)).forEach((k) => localStorage.removeItem(k));
+          S.watches = [];
+        }
+        const n = (r && r.deleted && r.deleted.searches) || 0;
+        closeModal(); toast(all ? "All your data is deleted" : n ? `Deleted ${n} trip search${n === 1 ? "" : "es"}` : "Trip history deleted");
+        if (done) done();
+      } catch (e) { btn.disabled = false; btn.textContent = all ? "Delete all my data" : "Delete trip history"; toast(e.message || "Could not delete right now. Try again."); }
+    };
+  }
   function settingsView() {
     setTab("settings"); setNav({ title: "Settings" });
     const paint = (cm, usage) => {
@@ -1685,6 +1839,11 @@ window.TBApp = () => {
         <div class="group"><div class="group-h">Notifications</div><div class="list" style="--inset:57px">${pushRow}</div>
         <p class="group-f">Alerts come from trips you watch and from your commutes. Each watched trip ends on its own when you arrive.</p></div>
         <div class="group"><div class="group-h">Commutes</div><div class="list">${cm.length ? cm.map((c, i) => `<button class="cell" data-c="${i}"><span class="sym" style="background:${c.active ? "#5856d6" : "var(--label3)"}">${I.clock}</span><div class="grow"><div class="t1">${esc(c.name)}</div><div class="t2">${esc(short(c.from.name))} to ${esc(short(c.to.name))} \u00b7 ${esc(c.todText)} \u00b7 ${c.active ? esc(daysText(c.days)) : "Off"}</div></div>${I.chev}</button>`).join("") : `<div class="cell static"><div class="grow t2" style="white-space:normal">No commute yet. Open any trip and tap Commute, or search the same trip on two days and I'll offer it.</div></div>`}</div></div>
+        <div class="group" id="clearHist"><div class="group-h">Clear history</div><div class="list">
+          ${[["tb_recent", "Clear recent searches", recents().length], ["tb_rstops", "Clear recent stops", recentStops().length], ["tb_rtrips", "Clear recent trips", recentTrips().length]].map(([k, t, n]) => `<button class="cell" data-clr="${k}"${n ? "" : " disabled"}><div class="grow${n ? " tint-t" : " t2"}">${t}</div><span class="val">${n || "None"}</span></button>`).join("")}
+          <button class="cell" id="delServer"><div class="grow danger-t">Delete my trip history on server</div></button>
+          <button class="cell" id="delAll"><div class="grow danger-t">Delete all my data</div></button>
+        </div><p class="group-f">Recent searches, stops and trips are kept only on this phone. The server keeps the trips you search for 90 days, under this app's private id, to suggest commutes. Delete them here at any time.</p></div>
         <div class="group"><div class="group-h">Install</div><div class="card"><div class="prompt"><span class="sym" style="background:var(--tint)">${I.plusSq}</span><div><h3>${standalone ? "Installed" : "Add to Home Screen"}</h3>
           ${standalone ? `<p>You're using the installed app.</p>` : isIOS ? `<ol class="steps"><li>Tap ${I.share} Share in Safari</li><li>Tap Add to Home Screen</li><li>Open Transport from your Home Screen, then turn on alerts here</li></ol>` : `<p>In Chrome, tap the menu, then Install app or Add to Home screen.</p>${S.installEvt ? `<div class="card-actions"><button class="pillbtn solid" id="installBtn">Install</button></div>` : ""}`}</div></div></div></div>
         <div class="group"><div class="group-h">Predictions</div><div class="list"><div class="cell static"><span class="sym" style="background:#34c759">${I.chart}</span><div class="grow"><div class="t1">Delay history</div><div class="t2">${usage && usage.observations ? `${usage.observations.n.toLocaleString()} live times recorded` : "Recording"}</div></div></div></div>
@@ -1694,6 +1853,9 @@ window.TBApp = () => {
       const po = $("#pushOn2"); if (po) po.onclick = async () => { const r = await enablePush(true).catch(() => ({ ok: false })); toast(r.ok ? "Alerts are on. A test one is on its way." : pushWhyText(r.why)); paint(cm, usage); };
       const tp = $("#testPush"); if (tp) tp.onclick = async () => { try { await syncPush(); const r = await post("/api/push/test", { device: DEVICE }); toast(r.pushed && r.pushed.some((x) => x === 201 || x === 200) ? "Sent. Check your notifications." : "Sent, but the phone's push service didn't accept it. Try turning alerts off and on."); } catch (e) { toast(e.message); } };
       const ib = $("#installBtn"); if (ib) ib.onclick = async () => { S.installEvt.prompt(); S.installEvt = null; };
+      $$("[data-clr]").forEach((b) => (b.onclick = () => { LS.set(b.dataset.clr, []); toast("Cleared"); paint(cm, usage); }));
+      $("#delServer").onclick = () => confirmDelete("history", () => paint(cm, usage));
+      $("#delAll").onclick = () => confirmDelete("all", () => { cm = []; paint([], usage); });
     };
     paint(LS.get("tb_commutes", []), null);
     Promise.all([api("/api/commutes?" + qs({ profile: PROFILE })).catch(() => null), fetch("/api/usage").then((r) => r.json()).catch(() => null)]).then(([c, u]) => {
@@ -2075,6 +2237,7 @@ window.TBApp = () => {
   let lastHash = location.hash;
   function route() {
     clearView();
+    S.homeTok = null;
     rowData.clear();
     const h = location.hash.slice(1) || "/";
     const [path, query] = h.split("?");
