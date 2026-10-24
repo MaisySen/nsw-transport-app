@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Plan B on the trip screen (over the air update for iPhone and Android, 25 Oct, 9:12 AM)
+* When the trip you picked has a cancelled service, a line Transport for NSW says is suspended, or a change the live times say you will miss, a Plan B card at the top of the trip screen says what is wrong ("The 8:04am T1 is cancelled") and offers the best other way: the earliest arrival that avoids the cancelled service or the suspended line, with lines, leave and arrive times. Show this trip opens it.
+* If none of the trips on screen avoids it, the app asks the planner once for the services leaving from now. A way with a change is offered as Show trips with a change.
+* No new build needed.
+
 ### Offline, departure board and station maps (over the air update for iPhone and Android, 25 Oct, 9:05 AM)
 * Offline from a fresh start: the app keeps the last times for Home and Work, your saved trips and starred stops on the phone. With no signal, even right after opening the app, Home, the trip screen and stop screens show those times with "Offline, times from 8:05am", leave out services that have already gone, and the Home header says Offline. Live times take over as soon as the signal is back.
 * Departure board: tap Board on a stop screen for a full screen board with large rows: line, destination, platform, minutes and a Live or Timetable mark. The screen stays on while it is open and the board fills as many rows as fit. It turns sideways on Android; on iPhone it stays upright until a build allows landscape.
