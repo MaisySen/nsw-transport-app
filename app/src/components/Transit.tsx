@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { offlineText } from '@/lib/offlineCore';
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
@@ -7,7 +7,7 @@ import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeabl
 import { Pressable as GHPressable } from 'react-native-gesture-handler';
 import { haptic } from '@/lib/haptic';
 import { modeColor, onColor, usePalette } from '@/lib/theme';
-import { bestTime, clock, countdown, delayWords, ms, shortName } from '@/lib/format';
+import { bestTime, clock, countdown, countdownKey, delayWords, ms, shortName } from '@/lib/format';
 import type { Departure, Journey, Leg } from '@/lib/types';
 import { Icon, I, modeIconName } from './Icon';
 import { font, T } from './ui';
@@ -113,7 +113,20 @@ export function Countdown({ planned, estimated, realtime, cancelled, now, align 
   );
 }
 
-export function DepartureRow({ d, now, onPress, onWatch, watched, showStop, alertText }: { d: Departure; now: number; onPress: () => void; onWatch?: () => void; watched?: boolean; showStop?: boolean; alertText?: string | null }) {
+export const DepartureRow = memo(DepartureRowView, sameDepartureRow);
+
+type DepartureRowProps = { d: Departure; now: number; onPress: () => void; onWatch?: () => void; watched?: boolean; showStop?: boolean; alertText?: string | null };
+
+/**
+ * A row redraws when its departure, watch state, note or the countdown it shows changes; not on every clock tick.
+ * Callers pass fresh arrow functions each render that only close over `d` and `watched`, which are compared here.
+ */
+function sameDepartureRow(a: DepartureRowProps, b: DepartureRowProps) {
+  return a.d === b.d && a.watched === b.watched && a.showStop === b.showStop && a.alertText === b.alertText && !!a.onWatch === !!b.onWatch
+    && countdownKey(a.d.planned, a.d.estimated, a.d.realtime, a.now) === countdownKey(b.d.planned, b.d.estimated, b.d.realtime, b.now);
+}
+
+function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertText }: { d: Departure; now: number; onPress: () => void; onWatch?: () => void; watched?: boolean; showStop?: boolean; alertText?: string | null }) {
   const c = usePalette();
   const sw = useRef<any>(null);
   const extra: string[] = [];
@@ -126,7 +139,7 @@ export function DepartureRow({ d, now, onPress, onWatch, watched, showStop, aler
     </GHPressable>
   );
   const body = (
-    <Pressable onPress={onPress} onLongPress={onWatch ? () => { haptic.tap(); onWatch(); } : undefined}
+    <Pressable accessibilityRole="button" onPress={onPress} onLongPress={onWatch ? () => { haptic.tap(); onWatch(); } : undefined}
       android_ripple={{ color: c.fill }} style={({ pressed }) => [st.depRow, { backgroundColor: pressed && Platform.OS === 'ios' ? c.card2 : c.card }]}>
       <View style={{ width: 66, alignItems: 'flex-start' }}><LineBadge line={d.line} mode={d.mode} color={d.color} /></View>
       <View style={{ flex: 1, marginRight: 8 }}>
@@ -172,7 +185,7 @@ export function JourneyCard({ j, now, onPress, best }: { j: Journey; now: number
   const first = j.legs.find((l) => l.kind === 'transit');
   const leaveText = mins <= 0 ? 'Leave now' : mins < 60 ? `Leave in ${mins} min` : `Leave ${clock(leave)}`;
   return (
-    <Pressable onPress={onPress} android_ripple={{ color: c.fill }} style={({ pressed }) => [st.jRow, pressed && Platform.OS === 'ios' ? { backgroundColor: c.card2 } : null]}>
+    <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }} style={({ pressed }) => [st.jRow, pressed && Platform.OS === 'ios' ? { backgroundColor: c.card2 } : null]}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

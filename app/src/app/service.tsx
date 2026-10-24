@@ -1,4 +1,5 @@
 import { useMemo, useRef } from 'react';
+import { goBack } from '@/lib/nav';
 import { Alert, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,7 +18,7 @@ import { Button, T } from '@/components/ui';
 export default function ServiceScreen() {
   const p = useLocalSearchParams<{ trip: string; feed: string; line: string; stop: string; planned: string; mode: string; destId: string; color: string; dest: string; rt: string; est: string; delay: string }>();
   const c = usePalette();
-  const now = useNow(1000);
+  const now = useNow();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const st = useStore();
@@ -45,7 +46,7 @@ export default function ServiceScreen() {
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <Stack.Screen options={{ headerShown: false }} />
       <TransitMap path={data?.path} stops={stops} vehicle={data?.vehicle || null} color={color} mode={p.mode || data?.mode} dark={c.dark} bottomInset={height * 0.38} />
-      <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} style={[sx.back, { top: insets.top + 8, backgroundColor: c.card }]} hitSlop={8}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => goBack()} style={[sx.back, { top: insets.top + 8, backgroundColor: c.card }]} hitSlop={8}>
         <Icon name={Platform.OS === 'ios' ? { ios: 'chevron.left', android: 'arrow_back' } : { ios: 'chevron.left', android: 'arrow_back' }} size={20} color={c.text} />
       </Pressable>
       <BottomSheet ref={sheet} index={0} snapPoints={snaps} enableDynamicSizing={false}

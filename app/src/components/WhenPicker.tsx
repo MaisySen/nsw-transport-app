@@ -38,7 +38,7 @@ function Wheel({ values, value, onChange, text, label, width }: { values: number
         onLayout={() => scrollTo(idx, false)}
         onScroll={(e) => { const y = e.nativeEvent.contentOffset.y; if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(() => settle(y), 140); }}>
         {values.map((v) => (
-          <Pressable key={v} onPress={() => { if (v !== value) { haptic.select(); onChange(v); } }} style={{ height: ITEM, alignItems: 'center', justifyContent: 'center' }} importantForAccessibility="no">
+          <Pressable accessibilityRole="button" key={v} onPress={() => { if (v !== value) { haptic.select(); onChange(v); } }} style={{ height: ITEM, alignItems: 'center', justifyContent: 'center' }} importantForAccessibility="no">
             <T kind="title3" style={{ fontSize: 22, fontVariant: ['tabular-nums'], color: v === value ? c.text : c.text3, fontWeight: v === value ? '600' : '400' }}>{text(v)}</T>
           </Pressable>
         ))}
@@ -91,7 +91,7 @@ export function WhenPicker({ visible, value, now, onDone, onClose }: { visible: 
   return (
     <Modal visible={visible} transparent animationType={ios ? 'slide' : 'fade'} onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
       <View style={[s.wrap, !ios && { justifyContent: 'center' }]}>
-        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.32)' }]} onPress={onClose} accessibilityLabel="Close" />
+        <Pressable accessibilityRole="button" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.32)' }]} onPress={onClose} accessibilityLabel="Close" />
         {ios ? (
           <View style={[s.sheet, { backgroundColor: c.card, paddingBottom: Math.max(ins.bottom, 16) }]}>
             <View style={s.bar}>

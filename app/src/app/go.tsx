@@ -2,14 +2,15 @@
 // stops left, change warnings, Share trip and End trip. Refreshes every 15 seconds from /api/service.
 import { plural } from '@/lib/homeCore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Linking, Platform, Pressable, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { Alert, AppState, Linking, Platform, Pressable, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { haptic } from '@/lib/haptic';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
 import { useNow } from '@/lib/hooks';
+import { appActive } from '@/lib/activity';
 import { onColor, radius, usePalette } from '@/lib/theme';
 import { clock } from '@/lib/format';
 import { endLive, getLive, liveWatch, setLive, useLiveTrip } from '@/lib/live';
@@ -30,7 +31,7 @@ export default function LiveTripScreen() {
   const c = usePalette();
   const g = useLiveTrip();
   const params = useLocalSearchParams<{ share?: string }>();
-  const now = useNow(1000);
+  const now = useNow();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const eng = useLiveEngineState();
@@ -62,22 +63,33 @@ export default function LiveTripScreen() {
       const cur = getLive();
       if (cur && !cur.loc) setLive({ ...cur, loc: true });
       geo.current?.remove();
-      geo.current = await Location.watchPositionAsync({ accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 10 },
+      // The map dot and a shared position need about 100 m, not GPS precision: Balanced lets the phone use wifi and
+      // cell towers, and a fix only every 10 s or 30 m. The watch runs only while this screen is on view with the
+      // app in front (below); in the background nothing reads location.
+      const sub = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, timeInterval: 10000, distanceInterval: 30 },
         (l) => setMe({ lat: l.coords.latitude, lon: l.coords.longitude, acc: l.coords.accuracy ?? undefined }));
+      if (!geoWanted.current) { sub.remove(); return; }
+      geo.current?.remove();
+      geo.current = sub;
     } catch {}
   }, []);
-  useEffect(() => {
-    if (g?.loc) startGeo(false);
-    return () => { geo.current?.remove(); geo.current = null; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [g?.id]);
+  const stopGeo = useCallback(() => { geo.current?.remove(); geo.current = null; }, []);
+  const geoWanted = useRef(false);
+  const locOn = !!g?.loc;
+  useFocusEffect(useCallback(() => {
+    if (!locOn) return;
+    geoWanted.current = true;
+    if (appActive()) startGeo(false);
+    const sub = AppState.addEventListener('change', (s) => { if (appActive(s)) startGeo(false); else stopGeo(); });
+    return () => { geoWanted.current = false; sub.remove(); stopGeo(); };
+  }, [locOn, startGeo, stopGeo]));
 
   // Opening the screen refreshes at once; the engine keeps refreshing every 15 seconds on any screen.
   useEffect(() => { tickLive(); }, [g?.id]);
 
   const askLocation = () => Alert.alert('Show where you are?', "Your location stays on this phone. It's only sent if you share your trip with your location on.", [
     { text: 'Not now', style: 'cancel' },
-    { text: 'Continue', onPress: () => startGeo(true) },
+    { text: 'Continue', onPress: () => { geoWanted.current = true; startGeo(true); } },
   ]);
 
   const share = useCallback(async () => {
@@ -143,11 +155,11 @@ export default function LiveTripScreen() {
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <Stack.Screen options={{ headerShown: false }} />
       <TransitMap key={g.id + ':' + ci} path={path} stops={mapStops} vehicle={d?.vehicle || null} me={me} color={legColor(L)} mode={L.mode} dark={c.dark} bottomInset={height * 0.34} />
-      <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} style={[sx.fab, { top: insets.top + 8, left: 12, backgroundColor: c.card }]} hitSlop={8} accessibilityLabel="Back">
+      <Pressable accessibilityRole="button" onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} style={[sx.fab, { top: insets.top + 8, left: 12, backgroundColor: c.card }]} hitSlop={8} accessibilityLabel="Back">
         <Icon name={I.back} size={20} color={c.text} />
       </Pressable>
       {!me ? (
-        <Pressable onPress={askLocation} style={[sx.fab, { top: insets.top + 8, right: 12, backgroundColor: c.card }]} hitSlop={8} accessibilityLabel="Show where I am">
+        <Pressable accessibilityRole="button" onPress={askLocation} style={[sx.fab, { top: insets.top + 8, right: 12, backgroundColor: c.card }]} hitSlop={8} accessibilityLabel="Show where I am">
           <Icon name={I.location} size={19} color={c.tint} />
         </Pressable>
       ) : null}

@@ -58,7 +58,7 @@ export function ParkCell({ p, station, watch, onPress, dist }: { p: CarPark; sta
   const usual = usualLine(p);
   const barCol = p.status === 'full' ? c.red : p.status === 'nearly' ? c.orange : c.green;
   return (
-    <Pressable onPress={onPress} disabled={!onPress} android_ripple={onPress ? { color: c.fill } : undefined} style={({ pressed }) => [s.row, pressed && Platform.OS === 'ios' && onPress ? { backgroundColor: c.fill } : null]}>
+    <Pressable accessibilityRole="button" onPress={onPress} disabled={!onPress} android_ripple={onPress ? { color: c.fill } : undefined} style={({ pressed }) => [s.row, pressed && Platform.OS === 'ios' && onPress ? { backgroundColor: c.fill } : null]}>
       <Sym icon={I.car} bg="#0A84FF" />
       <View style={{ flex: 1 }}>
         <T kind="body" numberOfLines={1}>{parkName(p, station)}</T>
@@ -133,7 +133,7 @@ export function StationInfo({ st }: { st?: Station | null }) {
             return (
               <View key={i}>
                 <Sep inset={61} />
-                <Pressable disabled={!u} onPress={() => u && Linking.openURL(u)} android_ripple={{ color: c.fill }} style={s.row}>
+                <Pressable accessibilityRole="link" disabled={!u} onPress={() => u && Linking.openURL(u)} android_ripple={{ color: c.fill }} style={s.row}>
                   <Sym icon={I.access} bg={c.red} />
                   <View style={{ flex: 1 }}>
                     <T kind="body" style={{ color: c.redText }}>{o.kind === 'escalator' ? 'Escalator' : 'Lift'} out of service</T>

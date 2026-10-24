@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { goBack } from '@/lib/nav';
 import { ActivityIndicator, Alert, FlatList, PanResponder, Platform, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
@@ -66,7 +67,7 @@ export default function NewTrip() {
       else setStep({ kind: 'mode' });
     } else if (step.kind === 'walk') setStep({ kind: 'mode', ext: true });
     else if (step.kind === 'mode' && step.ext) setStep({ kind: 'confirm' });
-    else router.back();
+    else goBack();
   };
   const move = (i: number, d: -1 | 1) => {
     haptic.select();
@@ -101,16 +102,16 @@ export default function NewTrip() {
     haptic.success();
     pullHome();
     setSaving(false);
-    router.back();
+    goBack();
   };
 
   const title = step.kind === 'mode' ? (step.ext ? 'Add a leg' : 'New trip') : step.kind === 'walk' ? 'Walk to' : step.kind === 'pick' ? (step.which === 'from' ? 'From' : 'To') : pre.edit ? 'Edit trip' : 'Confirm trip';
   const first = step.kind === 'mode' && !step.ext;
   const stepper = (val: number, lbl: string, set: (v: number) => void, min: number, max: number) => (
     <View style={[s.stepper, { backgroundColor: c.fill, borderRadius: Platform.OS === 'android' ? 20 : 9 }]}>
-      <Pressable onPress={() => { haptic.select(); set(Math.max(min, val - 1)); }} style={s.stepBtn} accessibilityLabel={`Less ${lbl}`} hitSlop={8}><Icon name={I.minus} size={16} color={c.text} /></Pressable>
+      <Pressable accessibilityRole="button" onPress={() => { haptic.select(); set(Math.max(min, val - 1)); }} style={s.stepBtn} accessibilityLabel={`Less ${lbl}`} hitSlop={8}><Icon name={I.minus} size={16} color={c.text} /></Pressable>
       <T kind="headline" style={[s.stepVal, { borderColor: c.sep }]}>{val} min</T>
-      <Pressable onPress={() => { haptic.select(); set(Math.min(max, val + 1)); }} style={s.stepBtn} accessibilityLabel={`More ${lbl}`} hitSlop={8}><Icon name={I.plus} size={16} color={c.text} /></Pressable>
+      <Pressable accessibilityRole="button" onPress={() => { haptic.select(); set(Math.min(max, val + 1)); }} style={s.stepBtn} accessibilityLabel={`More ${lbl}`} hitSlop={8}><Icon name={I.plus} size={16} color={c.text} /></Pressable>
     </View>
   );
   const n = legs.length;
@@ -447,7 +448,7 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
       <FlatList data={st} keyExtractor={(x, i) => x[0] + i} contentContainerStyle={{ paddingBottom: 40 }}
         ListHeaderComponent={<T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginBottom: 7, textTransform: Platform.OS === 'ios' ? 'uppercase' : 'none' }}>{dir.start >= 0 ? `Stops after ${shortName(from?.name)} on route ${dir.r}` : `Route ${dir.r} to ${shortName(dir.d.to)}`}</T>}
         renderItem={({ item, index }) => (
-          <Pressable onPress={() => onPick({ id: item[0], name: item[1], ctx: { route: dir.r, dir: dir.d, at: dir.start + 1 + index } })} android_ripple={{ color: c.fill }}
+          <Pressable accessibilityRole="button" onPress={() => onPick({ id: item[0], name: item[1], ctx: { route: dir.r, dir: dir.d, at: dir.start + 1 + index } })} android_ripple={{ color: c.fill }}
             style={({ pressed }) => [s.lineRow, { backgroundColor: pressed && Platform.OS === 'ios' ? c.fill : c.card, borderTopLeftRadius: index === 0 ? radius : 0, borderTopRightRadius: index === 0 ? radius : 0, borderBottomLeftRadius: index === st.length - 1 ? radius : 0, borderBottomRightRadius: index === st.length - 1 ? radius : 0 }]}>
             <View style={{ width: 24, alignItems: 'center', alignSelf: 'stretch' }}>
               <View style={{ position: 'absolute', top: index === 0 ? '50%' : 0, bottom: index === st.length - 1 ? '50%' : 0, width: 4, backgroundColor: color }} />
@@ -465,7 +466,7 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
           {route.dirs.map((d, i) => (
             <View key={i}>
               {i ? <Sep inset={16} /> : null}
-              <Pressable onPress={() => { haptic.select(); setDir({ r: route.r, d, start: -1 }); }} android_ripple={{ color: c.fill }} style={s.routeRow}>
+              <Pressable accessibilityRole="button" onPress={() => { haptic.select(); setDir({ r: route.r, d, start: -1 }); }} android_ripple={{ color: c.fill }} style={s.routeRow}>
                 {badge(route.r)}
                 <View style={{ flex: 1 }}>
                   <T kind="body" numberOfLines={1}>To {shortName(d.to)}</T>
@@ -495,10 +496,10 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
       renderItem={({ item }) => item.t === 'h'
         ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 14, marginBottom: 7, textTransform: Platform.OS === 'ios' ? 'uppercase' : 'none' }}>{item.k}</T>
         : item.t === 'r'
-          ? <Pressable onPress={() => openRoute(item.r)} android_ripple={{ color: c.fill }} style={[s.routeRow, { backgroundColor: c.card, marginHorizontal: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.sep }]}>
+          ? <Pressable accessibilityRole="button" onPress={() => openRoute(item.r)} android_ripple={{ color: c.fill }} style={[s.routeRow, { backgroundColor: c.card, marginHorizontal: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.sep }]}>
               {badge(item.r)}<T kind="sub" numberOfLines={1} style={{ flex: 1 }}>{routes[item.r]}</T><Icon name={I.chevron} size={14} color={c.text3} />
             </Pressable>
-          : <Pressable onPress={() => onPick({ id: item.s.id, name: item.s.name })} android_ripple={{ color: c.fill }} style={[s.routeRow, { backgroundColor: c.card, marginHorizontal: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.sep }]}>
+          : <Pressable accessibilityRole="button" onPress={() => onPick({ id: item.s.id, name: item.s.name })} android_ripple={{ color: c.fill }} style={[s.routeRow, { backgroundColor: c.card, marginHorizontal: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.sep }]}>
               <Icon name={I.pin} size={20} color={c.tint} /><T kind="body" numberOfLines={1} style={{ flex: 1 }}>{shortName(item.s.name)}</T>
             </Pressable>} />
   );

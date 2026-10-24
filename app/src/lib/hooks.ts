@@ -1,17 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState } from 'react-native';
-import { useFocusEffect } from 'expo-router';
 import { keepOffline, readOffline } from './offline';
+import { useNow, useScreenPoll } from './activity';
 
-/** Ticks every `ms` so countdowns move on their own. */
-export function useNow(ms = 1000) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), ms);
-    return () => clearInterval(id);
-  }, [ms]);
-  return now;
-}
+/** Ticks so countdowns move on their own, only while the screen is on view and the app is in front. */
+export { useNow };
 
 /**
  * Loads data and keeps it fresh while the screen is focused and the app is in front.
@@ -33,13 +25,13 @@ export function useLive<T>(load: (refresh: boolean) => Promise<T>, intervalMs = 
   const busy = useRef(false);
   const shown = useRef<{ live: boolean; at: number | null }>({ live: false, at: null });
 
-  const run = useCallback(async (refresh: boolean) => {
-    if (busy.current) return;
+  const run = useCallback(async (refresh: boolean): Promise<boolean> => {
+    if (busy.current) return true;
     busy.current = true;
     const key = keyRef.current;
     try {
       const d = await loadRef.current(refresh);
-      if (key !== keyRef.current) return;
+      if (key !== keyRef.current) return true;
       const at = Date.now();
       setData(d);
       setError(null);
@@ -47,8 +39,9 @@ export function useLive<T>(load: (refresh: boolean) => Promise<T>, intervalMs = 
       setOfflineAt(null);
       shown.current = { live: true, at };
       if (key) keepOffline(key, d);
+      return true;
     } catch (e: any) {
-      if (key !== keyRef.current) return;
+      if (key !== keyRef.current) return true;
       setError(String(e?.message || e));
       if (e?.offline) {
         if (shown.current.live) setOfflineAt(shown.current.at);
@@ -61,6 +54,7 @@ export function useLive<T>(load: (refresh: boolean) => Promise<T>, intervalMs = 
           }
         }
       }
+      return false;
     } finally {
       busy.current = false;
     }
@@ -75,27 +69,14 @@ export function useLive<T>(load: (refresh: boolean) => Promise<T>, intervalMs = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
-  useFocusEffect(
-    useCallback(() => {
-      let id: ReturnType<typeof setInterval> | null = setInterval(() => {
-        if (AppState.currentState === 'active') run(true);
-      }, intervalMs);
-      const sub = AppState.addEventListener('change', (s) => {
-        if (s === 'active') run(true);
-      });
-      return () => {
-        if (id) clearInterval(id);
-        id = null;
-        sub.remove();
-      };
-    }, [intervalMs, run]),
-  );
+  // Refreshes every intervalMs only while this screen is on view and the app is in front (activity.ts); after a
+  // failure the wait doubles, so a dead connection is not hammered. Back on view, stale data refreshes at once.
+  const runNow = useScreenPoll(() => run(true), intervalMs);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
-    await run(true);
-    setRefreshing(false);
-  }, [run]);
+    try { await runNow(); } finally { setRefreshing(false); }
+  }, [runNow]);
 
   return { data, error, updatedAt, offlineAt, refreshing, refresh, setData };
 }

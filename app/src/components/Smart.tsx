@@ -20,6 +20,7 @@ import { LineBadge } from './Transit';
 import { T } from './ui';
 import { useFlag } from '@/lib/config';
 import { checkSubtitle } from '@/lib/morning';
+import { useScreenPoll } from '@/lib/activity';
 import type { Place } from '@/lib/types';
 
 const short = (n?: string | null) => shortName(n || '').replace(/ Station$/, '');
@@ -36,10 +37,12 @@ export function useMyPos(): Pos {
   const [pos, setPos] = useState<LatLon | null>(null);
   const read = useCallback(async () => {
     try {
-      let p = await Location.getLastKnownPositionAsync({ maxAge: 60000 }).catch(() => null);
+      // A fix up to 2 minutes old is good enough for walking minutes, and costs no GPS at all.
+      let p = await Location.getLastKnownPositionAsync({ maxAge: 120000 }).catch(() => null);
       if (!p) p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       if (p) setPos({ lat: p.coords.latitude, lon: p.coords.longitude });
     } catch {}
+    return true;
   }, []);
   const check = useCallback(async (ask: boolean) => {
     try {
@@ -48,12 +51,12 @@ export function useMyPos(): Pos {
       if (p.granted) { setPhase('on'); read(); }
       else setPhase(p.canAskAgain && p.status !== 'denied' ? 'ask' : 'off');
     } catch { setPhase('off'); }
+    return true;
   }, [read]);
-  useEffect(() => {
-    check(false);
-    const t = setInterval(() => { if (AppState.currentState === 'active') check(false); }, 60000);
-    return () => clearInterval(t);
-  }, [check]);
+  useEffect(() => { check(false); }, [check]);
+  // Permission and position are read again every 2 minutes, and only while this screen is on view and the app is
+  // in front (coming back from Settings after allowing location counts as stale, so it reads at once).
+  useScreenPoll(() => check(false), 120000, { staleMs: 5000 });
   return { phase, pos, ask: () => check(true) };
 }
 
@@ -182,6 +185,9 @@ export function NextOption({ g, st }: { g: LiveTrip; st: LiveState | null }) {
   const [opt, setOpt] = useState<Opt | null>(null);
   const mRef = useRef<Missed | null>(m);
   mRef.current = m;
+  const keyRef = useRef(key);
+  keyRef.current = key;
+  const retry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const load = useCallback(async (k: string) => {
     const mm = mRef.current;
     if (!mm) return;
@@ -193,16 +199,14 @@ export function NextOption({ g, st }: { g: LiveTrip; st: LiveState | null }) {
     } catch {
       // A failed or slow answer is tried again in 15 seconds rather than waiting for the minute refresh.
       setOpt((o) => (o && o.key === k && o.j ? { ...o, loading: false } : { key: k, loading: false, j: null, err: "Couldn't reach the trip planner. Trying again.", at: Date.now() }));
-      setTimeout(() => { const now = mRef.current; if (now && `${now.i}` === k.split(':')[1]) load(k); }, 15000);
+      if (retry.current) clearTimeout(retry.current);
+      retry.current = setTimeout(() => { retry.current = null; const now = mRef.current; if (now && `${now.i}` === k.split(':')[1] && AppState.currentState === 'active') load(k); }, 15000);
     }
   }, []);
+  useEffect(() => () => { if (retry.current) clearTimeout(retry.current); }, []);
   // Found the moment the miss shows, then refreshed every minute while it stays missed.
   useEffect(() => { if (key && (!opt || opt.key !== key)) load(key); }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!key) return;
-    const t = setInterval(() => load(key), 60000);
-    return () => clearInterval(t);
-  }, [key, load]);
+  useScreenPoll(() => { if (keyRef.current) load(keyRef.current); }, 60000, { enabled: !!key });
   if (!m) return null;
   const o = opt && opt.key === key ? opt : null;
   const j = o?.j || null;

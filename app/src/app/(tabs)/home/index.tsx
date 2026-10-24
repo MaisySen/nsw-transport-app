@@ -32,7 +32,7 @@ import { useLoaded } from '@/lib/store';
 
 export default function Home() {
   const c = usePalette();
-  const now = useNow(1000);
+  const now = useNow();
   const st = useStore();
   const near = useNearby();
   const [busy, setBusy] = useState(false);
@@ -170,7 +170,7 @@ export default function Home() {
               </T>
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
                 <View style={{ flex: 1 }}><Button title="Make it my commute" onPress={acceptSuggestion} disabled={busy} /></View>
-                <Button title="Not now" kind="tinted" onPress={() => api.dismissSuggestion(sugg.key).then(live.refresh)} />
+                <Button title="Not now" kind="tinted" disabled={busy} onPress={() => api.dismissSuggestion(sugg.key).then(live.refresh, (e: any) => Alert.alert("Couldn't hide it", String(e?.message || e)))} />
               </View>
             </View>
           </Section>

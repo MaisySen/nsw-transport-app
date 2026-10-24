@@ -1,4 +1,5 @@
-import { View } from 'react-native';
+import { Alert, View } from 'react-native';
+import { goBack } from '@/lib/nav';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
@@ -12,7 +13,7 @@ import { Button, Row, Screen, Section, Sep, T } from '@/components/ui';
 export default function WatchDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const c = usePalette();
-  const now = useNow(1000);
+  const now = useNow();
   const { data, error, updatedAt } = useLive(() => api.watchDetail(String(id)), 15000, [id]);
   const w = data?.watch;
   return (
@@ -52,7 +53,7 @@ export default function WatchDetail() {
                 ))}
               </Section>
             ) : null}
-            {w.active ? <View style={{ margin: 16, marginTop: 24 }}><Button title="Stop watching" kind="tinted" onPress={() => stopWatch(w.id).then(() => router.back())} /></View> : null}
+            {w.active ? <View style={{ margin: 16, marginTop: 24 }}><Button title="Stop watching" kind="tinted" onPress={() => stopWatch(w.id).then(() => goBack('/watching'), (e: any) => Alert.alert("Couldn't stop watching", String(e?.message || e)))} /></View> : null}
           </>
         ) : null}
       </Screen>

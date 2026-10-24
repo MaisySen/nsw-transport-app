@@ -53,6 +53,8 @@ export function useStore() {
 }
 
 export const store = {
+  /** The watch on a trip right now (read at tap time, so a memoised row never acts on an old value). */
+  watchedId: (key: string) => state.watchedTrips[key],
   isStarred: (id: string) => state.starred.some((s) => s.id === id),
   toggleStar(p: Place) {
     const has = state.starred.some((s) => s.id === p.id);

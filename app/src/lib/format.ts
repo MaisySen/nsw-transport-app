@@ -40,6 +40,15 @@ export function countdown(t: number, now: number): { big: string; unit: string; 
   return { big: clock(t), unit: '', soon: false, past: false };
 }
 
+/**
+ * What a departure row's countdown shows at `now`, as one string. Rows redraw only when this changes (or their
+ * data does), so a 5 second tick redraws a row about once a minute instead of every tick.
+ */
+export function countdownKey(planned: string | undefined, estimated: string | null | undefined, realtime: boolean | undefined, now: number): string {
+  const cd = countdown(bestTime(planned, realtime ? estimated : null), now);
+  return `${cd.big}|${cd.unit}|${cd.soon ? 1 : 0}|${cd.past ? 1 : 0}`;
+}
+
 export function minsText(t: number, now: number) {
   const m = Math.round((t - now) / 60000);
   if (m <= 0) return 'now';

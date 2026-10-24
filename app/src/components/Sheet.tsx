@@ -30,7 +30,7 @@ export function ActionSheet({ visible, title, message, actions, onClose }: { vis
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} onDismiss={() => pending.current?.()} statusBarTranslucent navigationBarTranslucent>
       <View style={s.wrap}>
-        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.32)' }]} onPress={onClose} accessibilityLabel="Close" />
+        <Pressable accessibilityRole="button" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.32)' }]} onPress={onClose} accessibilityLabel="Close" />
         <View style={[s.sheet, { backgroundColor: ios ? 'transparent' : c.dark ? '#22262E' : '#F3F5FA', paddingBottom: Math.max(ins.bottom, 12) }]}>
           {!ios ? <View style={[s.grab, { backgroundColor: c.text3 }]} /> : null}
           <View style={ios ? [s.group, { backgroundColor: c.card }] : null}>

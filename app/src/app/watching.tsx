@@ -12,7 +12,7 @@ import { Button, Empty, Row, Screen, Section, Sep, T } from '@/components/ui';
 
 export default function Watching() {
   const c = usePalette();
-  const now = useNow(1000);
+  const now = useNow();
   const { data, error, updatedAt, refreshing, refresh } = useLive(() => api.watches(), 15000);
   const active = (data?.items || []).filter((w) => w.active);
   const done = (data?.items || []).filter((w) => !w.active);

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { goBack } from '@/lib/nav';
 import { ActivityIndicator, Alert, Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
@@ -61,7 +62,7 @@ export default function AddTrip() {
     if (placeKind) {
       store.setPlace(placeKind, { id: p.id, name: p.name });
       Keyboard.dismiss();
-      router.back();
+      goBack();
       return;
     }
     if (field === 'from') {
@@ -81,7 +82,7 @@ export default function AddTrip() {
       await api.saveTrip(n, from, to);
       haptic.success();
       pullHome();
-      router.back();
+      goBack();
     } catch (e: any) {
       Alert.alert("Couldn't save it", String(e?.message || e));
     } finally {
@@ -106,7 +107,7 @@ export default function AddTrip() {
     <>
       <Stack.Screen options={{
         title: placeKind === 'home' ? 'Add home' : placeKind === 'work' ? 'Add work' : 'Add a trip',
-        headerLeft: Platform.OS === 'ios' ? () => <Pressable hitSlop={13} accessibilityRole="button" onPress={() => router.back()}><T kind="body" tone="tint">Cancel</T></Pressable> : undefined,
+        headerLeft: Platform.OS === 'ios' ? () => <Pressable hitSlop={13} accessibilityRole="button" onPress={() => goBack()}><T kind="body" tone="tint">Cancel</T></Pressable> : undefined,
         headerRight: placeKind ? () => null : () => (
           <Pressable hitSlop={13} accessibilityRole="button" disabled={!ready || saving} onPress={save} accessibilityLabel="Save trip">
             {saving ? <ActivityIndicator color={c.tint} /> : <T kind="headline" style={{ color: ready ? c.tint : c.text3 }}>Save</T>}
@@ -130,7 +131,7 @@ export default function AddTrip() {
                 onChangeText={(t) => { setToText(t); setTo(null); }} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing"
                 style={[font.body, s.input, noOutline, { color: c.text, fontWeight: field === 'to' ? '600' : '400' }]} />}
             </View>
-            {placeKind ? null : <Pressable hitSlop={8} accessibilityLabel="Swap from and to" onPress={() => { setFrom(to); setTo(from); setFromText(toText); setToText(fromText); }} style={{ paddingLeft: 10 }}>
+            {placeKind ? null : <Pressable accessibilityRole="button" hitSlop={13} accessibilityLabel="Swap from and to" onPress={() => { setFrom(to); setTo(from); setFromText(toText); setToText(fromText); }} style={{ paddingLeft: 10 }}>
               <Icon name={I.swap} size={18} color={c.tint} />
             </Pressable>}
           </View>

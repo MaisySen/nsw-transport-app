@@ -1,15 +1,20 @@
+import { Platform } from 'react-native';
 import { NativeTabs } from 'expo-router/native-tabs';
 import { usePalette } from '@/lib/theme';
+
+// iPhone: no background or label colours of our own, so iOS 26 draws the Liquid Glass tab bar (and earlier iOS the
+// standard translucent bar) with system label colours, which adapt to light, dark and Increase Contrast.
+const ios = Platform.OS === 'ios';
 
 // Four tabs, one job each: Home (your trips and stops, live), Plan (the one place to search a stop or plan a
 // trip), Ask (the chat), More (watching, commutes, tools and settings).
 export default function TabsLayout() {
   const c = usePalette();
   return (
-    <NativeTabs tintColor={c.tint} labelVisibilityMode="labeled" backgroundColor={c.card}
+    <NativeTabs tintColor={c.tint} labelVisibilityMode="labeled" backgroundColor={ios ? undefined : c.card}
       // Explicit colours so labels pass 4.5:1 in light and dark (Android and the web preview).
-      labelStyle={{ default: { color: c.text2 }, selected: { color: c.tint } }}
-      iconColor={{ default: c.text2, selected: c.tint }}
+      labelStyle={ios ? undefined : { default: { color: c.text2 }, selected: { color: c.tint } }}
+      iconColor={ios ? undefined : { default: c.text2, selected: c.tint }}
       indicatorColor={c.dark ? '#2A3B57' : '#DCE6F8'} rippleColor={c.fill}>
       <NativeTabs.Trigger labelVisibilityMode="labeled" name="home">
         <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>

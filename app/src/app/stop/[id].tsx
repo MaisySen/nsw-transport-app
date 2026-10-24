@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
+import { useScreenPoll } from '@/lib/activity';
 import { cacheKey } from '@/lib/offlineCore';
 import { usePalette, radius } from '@/lib/theme';
 import { ms, shortName } from '@/lib/format';
@@ -24,7 +25,7 @@ const MODE_LABEL: Record<string, string> = { train: 'Trains', metro: 'Metro', bu
 export default function StopScreen() {
   const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
   const c = usePalette();
-  const now = useNow(1000);
+  const now = useNow();
   const st = useStore();
   const [mode, setMode] = useState<string | null>(null);
   const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => api.departures(String(id), r), 15000, [id], { cacheKey: cacheKey('dep', String(id)) });
@@ -37,14 +38,20 @@ export default function StopScreen() {
   // Station access, lifts and Park and Ride: once, then every 2 minutes. No data (404) shows nothing.
   const map = useStationMap(id ? String(id) : undefined);
   const [station, setStation] = useState<Station | null>(null);
-  useEffect(() => {
-    let live = true;
-    const load = () => api.station(String(id)).then((r) => { if (live) setStation(r && (r as any).access ? r : null); }).catch((e: any) => { if (live && e?.http === 404) setStation(null); });
-    setStation(null);
-    load();
-    const t = setInterval(load, 120000);
-    return () => { live = false; clearInterval(t); };
+  const stationFor = useRef<string | undefined>(undefined);
+  const loadStation = useCallback(() => {
+    const sid = String(id);
+    return api.station(sid).then((r) => { if (stationFor.current === sid) setStation(r && (r as any).access ? r : null); return true; })
+      .catch((e: any) => { if (stationFor.current === sid && e?.http === 404) setStation(null); return e?.http === 404; });
   }, [id]);
+  useEffect(() => {
+    stationFor.current = String(id);
+    setStation(null);
+    loadStation();
+    return () => { stationFor.current = undefined; };
+  }, [id, loadStation]);
+  // Every 2 minutes only while this screen is on view and the app is in front.
+  useScreenPoll(loadStation, 120000);
   // The stop's alerts show once at the top: the two that touch the most services here. A row adds an alert
   // only when the top does not already show it.
   const top = useMemo(() => topAlerts(data?.alerts, mode ? (data?.items || []).filter((d) => d.mode === mode) : data?.items, 2, !!mode), [data, mode]);
@@ -95,7 +102,7 @@ export default function StopScreen() {
               return (
                 <View key={key + i}>
                   {i ? <Sep inset={82} /> : null}
-                  <DepartureRow d={d} now={now} alertText={noteFor(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), st.watchedTrips[key])} />
+                  <DepartureRow d={d} now={now} alertText={noteFor(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />
                 </View>
               );
             })}

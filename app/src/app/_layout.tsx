@@ -4,7 +4,8 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider, router } from 'expo-rout
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Notifications from 'expo-notifications';
-import { pollNotes } from '@/lib/push';
+import { pollNotes, pollNotesTick } from '@/lib/push';
+import { startAppPoll } from '@/lib/activity';
 import { endLive, setupLiveNotifications } from '@/lib/live';
 import { finishProfileMove, initProfile } from '@/lib/device';
 import { loadCachedConfig, refreshConfig } from '@/lib/config';
@@ -30,7 +31,8 @@ export default function RootLayout() {
   // Keep alerts coming while the app is open, and open the right screen when an alert is tapped.
   useEffect(() => {
     if (!ready) return;
-    const id = setInterval(() => { if (AppState.currentState === 'active') pollNotes(); }, 20000);
+    // Only while the app is in front (activity.ts); with a push token the server is asked once a minute (push.ts).
+    const poll = startAppPoll(pollNotesTick, 20000, { runAtStart: false });
     pollNotes();
     setupLiveNotifications();
     const sub = Notifications.addNotificationResponseReceivedListener((r) => {
@@ -43,7 +45,7 @@ export default function RootLayout() {
       if (typeof d.tag === 'string' && /^m[A-Za-z0-9]/.test(d.tag)) { router.push('/morning'); return; }
       if (d.watch) router.push({ pathname: '/watch/[id]', params: { id: String(d.watch) } });
     });
-    return () => { clearInterval(id); sub.remove(); };
+    return () => { poll.remove(); sub.remove(); };
   }, [ready]);
 
   const base = scheme === 'dark' ? DarkTheme : DefaultTheme;

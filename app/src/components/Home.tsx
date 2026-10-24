@@ -387,7 +387,7 @@ export function TripBoard({ trip, now, handle, allServices, below, aside }: { tr
               <View>
                 {viaLine ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{viaLine}</T> : null}
                 {alerts.size ? (
-                  <Pressable onPress={() => open()} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
+                  <Pressable accessibilityRole="button" onPress={() => open()} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
                     <Icon name={I.warn} size={11} color={c.orange} />
                     <T kind="foot" style={{ color: c.lateText, marginLeft: 4 }}>{alerts.size} {alerts.size === 1 ? 'alert' : 'alerts'}</T>
                   </Pressable>
@@ -432,7 +432,7 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
   const boardAt = plat(l?.fromPlatform);
   const bigSize = t.unit ? 22 : t.big === 'Now' ? 16 : 13;
   return (
-    <Pressable onPress={onPress} android_ripple={{ color: c.fill }} accessibilityLabel={`Leaves ${hm(dep)}${boardAt ? ` from ${boardAt}` : ''}, ${t.big} ${t.unit}, arrives ${hm(arrive)}, ${stt.text}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}${rel ? `. ${rel}` : ''}`}
+    <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }} accessibilityLabel={`Leaves ${hm(dep)}${boardAt ? ` from ${boardAt}` : ''}, ${t.big} ${t.unit}, arrives ${hm(arrive)}, ${stt.text}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}${rel ? `. ${rel}` : ''}`}
       style={({ pressed }) => [s.svc, (beaten || dep < now - 30000) && { opacity: 0.45 }, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
       <View style={[s.block, { backgroundColor: chip + (c.dark ? '33' : '1F') }]}>
         <Text maxFontSizeMultiplier={1.3} style={{ color: cdText(chip, c), fontSize: bigSize, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }} numberOfLines={1} adjustsFontSizeToFit>{t.big}</Text>
@@ -507,7 +507,7 @@ export function StopBoard({ stop, now, starred, distance, onLongPress }: { stop:
         return (
           <View key={`${d.line}|${d.dest}|${i}`}>
             <Sep inset={16} />
-            <Pressable onPress={() => openService(d)} android_ripple={{ color: c.fill }} accessibilityLabel={`${d.line} to ${d.dest}, ${t.big} ${t.unit}${d.realtime ? ', live' : ', scheduled'}`}
+            <Pressable accessibilityRole="button" onPress={() => openService(d)} android_ripple={{ color: c.fill }} accessibilityLabel={`${d.line} to ${d.dest}, ${t.big} ${t.unit}${d.realtime ? ', live' : ', scheduled'}`}
               style={({ pressed }) => [s.dep, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
               <LineBadge small line={d.line} mode={d.mode} color={d.color} />
               <T kind="body" numberOfLines={1} style={{ flex: 1, marginLeft: 10 }}>{shortName(d.dest)}</T>

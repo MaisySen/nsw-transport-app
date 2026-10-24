@@ -104,7 +104,8 @@ export default function AskScreen() {
       const Location = require('expo-location');
       const perm = await Location.requestForegroundPermissionsAsync();
       if (perm.status !== 'granted') return;
-      const pos = await Location.getCurrentPositionAsync({});
+      // A recent fix costs no GPS; otherwise about 100 m is plenty to find the nearest stop.
+      const pos = (await Location.getLastKnownPositionAsync({ maxAge: 120000 }).catch(() => null)) || (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
       ask(last.text, { lat: pos.coords.latitude.toFixed(5), lon: pos.coords.longitude.toFixed(5) });
     } catch { /* expo-location not in this build */ }
   }, [msgs, ask]);

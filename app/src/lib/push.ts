@@ -51,6 +51,7 @@ export async function enablePush(welcome = true): Promise<PushState> {
     const { data } = tok;
     await api.registerExpo(data, Platform.OS, welcome);
     await AsyncStorage.setItem('expoPushToken', data);
+    tokenKnown = true;
     return { status: 'on' };
   } catch (e: any) {
     return { status: 'local', detail: String(e?.message || e) };
@@ -66,6 +67,22 @@ export async function disablePush() {
   const tok = await AsyncStorage.getItem('expoPushToken');
   if (tok) await api.unregisterExpo(tok).catch(() => {});
   await AsyncStorage.removeItem('expoPushToken');
+  tokenKnown = false;
+}
+
+let tokenKnown: boolean | null = null;
+let lastPollAt = 0;
+/**
+ * The app-wide alerts timer (every 20 seconds while the app is in front, never in the background). With a push
+ * token, push brings each alert, so the server is asked only once a minute to catch a missed one; without one
+ * (alerts only arrive this way) every tick asks.
+ */
+export async function pollNotesTick(): Promise<boolean> {
+  if (tokenKnown == null) { try { tokenKnown = !!(await AsyncStorage.getItem('expoPushToken')); } catch { tokenKnown = false; } }
+  if (tokenKnown && Date.now() - lastPollAt < 55000) return true;
+  lastPollAt = Date.now();
+  await pollNotes();
+  return true;
 }
 
 /** Watches ended on this phone (a live trip that arrived): their late alerts are never shown. */

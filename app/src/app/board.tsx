@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
+import { goBack } from '@/lib/nav';
 import { Pressable, StatusBar, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
@@ -15,21 +16,24 @@ const TAG = 'departure-board';
 
 /** Keeps the screen on while the board is open. Builds without the keep awake module just skip it. */
 function useStayAwake() {
-  useEffect(() => {
+  // On focus only: covered by another screen or left, the screen may sleep again. The release waits for the lock
+  // to be taken, so leaving at once never throws ("has not activated yet").
+  useFocusEffect(useCallback(() => {
     let mod: any = null;
+    let taken: Promise<unknown> = Promise.resolve();
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       mod = require('expo-keep-awake');
-      mod.activateKeepAwakeAsync(TAG).catch(() => {});
+      taken = Promise.resolve(mod.activateKeepAwakeAsync(TAG));
     } catch { mod = null; }
-    return () => { try { mod?.deactivateKeepAwake(TAG); } catch {} };
-  }, []);
+    return () => { if (mod) taken.then(() => mod.deactivateKeepAwake(TAG)).catch(() => {}); };
+  }, []));
 }
 
 export default function Board() {
   const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
   const c = usePalette();
-  const now = useNow(1000);
+  const now = useNow();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const wide = width > height;
@@ -39,7 +43,7 @@ export default function Board() {
   const rowH = big * 1.6;
   const rows = boardRows(data?.items || [], now, rowsThatFit(height - insets.top - insets.bottom, rowH, 100));
   const title = shortName(data?.stop?.name || (name ? String(name) : 'Departures')).replace(/ Station$/, '');
-  const close = () => { haptic.tap(); router.back(); };
+  const close = () => { haptic.tap(); goBack({ pathname: '/stop/[id]', params: { id: String(id), name: name ? String(name) : '' } } as any); };
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg, paddingTop: insets.top + 8, paddingBottom: insets.bottom + 8, paddingLeft: insets.left + 20, paddingRight: insets.right + 20 }}>

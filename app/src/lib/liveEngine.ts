@@ -3,7 +3,8 @@
 // carries out what stepLive returns: the ongoing notification, each trip alert once, the share link, and the end
 // of all trip alerts the moment you arrive. The live trip screen only reads its state.
 import { useEffect, useSyncExternalStore } from 'react';
-import { AppState, Platform } from 'react-native';
+import { Platform } from 'react-native';
+import { startAppPoll } from './activity';
 import * as Haptics from 'expo-haptics';
 import { api } from './api';
 import { clock, shortName } from './format';
@@ -102,9 +103,10 @@ export function LiveTripEngine() {
   useEffect(() => {
     tickLive();
     if (!g?.id) return;
-    const t = setInterval(() => { if (AppState.currentState === 'active') tickLive(); }, 15000);
-    const sub = AppState.addEventListener('change', (a) => { if (a === 'active') tickLive(); });
-    return () => { clearInterval(t); sub.remove(); };
+    // Every 15 seconds while the app is in front; nothing in the background (push moves the lock screen card).
+    // Back in front after 5 seconds or more it refreshes at once.
+    const p = startAppPoll(async () => { await tickLive(); return true; }, 15000, { runAtStart: false, staleMs: 5000 });
+    return () => p.remove();
   }, [g?.id]);
   return null;
 }

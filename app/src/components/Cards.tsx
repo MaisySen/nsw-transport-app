@@ -6,7 +6,7 @@ import { usePalette, radius } from '@/lib/theme';
 import { clock, ms, rowAlert, shortName } from '@/lib/format';
 import type { Place } from '@/lib/types';
 import { svcSpec, toggleWatch, tripKey } from '@/lib/watch';
-import { useStore } from '@/lib/store';
+import { store, useStore } from '@/lib/store';
 import { Icon, I } from './Icon';
 import { DepartureRow, JourneyCard, LiveDot } from './Transit';
 import { Sep, T } from './ui';
@@ -19,7 +19,7 @@ export function openService(d: { tripId?: string; feed?: string; line?: string; 
 function CardHead({ title, subtitle, onPress, live, beat, icon }: { title: string; subtitle?: string; onPress?: () => void; live?: boolean; beat?: any; icon?: any }) {
   const c = usePalette();
   return (
-    <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 13, paddingBottom: 9 }}>
+    <Pressable accessibilityRole="button" onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 13, paddingBottom: 9 }}>
       {icon ? <Icon name={icon} size={15} color={c.tint} style={{ marginRight: 7 }} /> : null}
       <View style={{ flex: 1 }}>
         <T kind="headline" numberOfLines={1}>{title}</T>
@@ -33,7 +33,7 @@ function CardHead({ title, subtitle, onPress, live, beat, icon }: { title: strin
 
 export function StopCard({ stop }: { stop: Place }) {
   const c = usePalette();
-  const now = useNow(1000);
+  const now = useNow();
   const st = useStore();
   const { data, updatedAt, error } = useLive((r) => api.departures(stop.id, r), 20000, [stop.id]);
   const items = (data?.items || []).filter((d) => ms(d.estimated || d.planned) > now - 60000).slice(0, 3);
@@ -48,7 +48,7 @@ export function StopCard({ stop }: { stop: Place }) {
         return (
           <View key={key + i}>
             <Sep inset={16} />
-            <DepartureRow d={d} now={now} alertText={rowAlert(d.alerts, data?.alerts)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), st.watchedTrips[key])} />
+            <DepartureRow d={d} now={now} alertText={rowAlert(d.alerts, data?.alerts)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />
           </View>
         );
       })}
@@ -58,7 +58,7 @@ export function StopCard({ stop }: { stop: Place }) {
 
 export function TripCard({ from, to, title, subtitle, icon }: { from: Place; to: Place; title?: string; subtitle?: string; icon?: any }) {
   const c = usePalette();
-  const now = useNow(1000);
+  const now = useNow();
   const { data, updatedAt, error } = useLive((r) => api.trip(from, to, { refresh: r, count: 3 }), 20000, [from.id, to.id]);
   const js = (data?.journeys || []).filter((j) => ms(j.leave) > now - 120000).slice(0, 2);
   const open = () => router.push({ pathname: '/trip', params: { from: from.id, fromName: from.name, to: to.id, toName: to.name } });

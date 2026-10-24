@@ -21,6 +21,7 @@ import { boardTime, missedConn, missedPlanLegs, pickNextOption, sydHHMM } from '
 import { cardFor, shortName, staleAt, type CardAlt, type CardOpts } from './tripCard';
 import { homeWorkFor, liveCardFor } from './widgetShare';
 import { endActivityToken, sendActivityToken, sendDeviceToken } from './livePush';
+import { startAppPoll } from '@/lib/activity';
 
 const ARRIVED_KEEP_S = 120;
 const TICK_MS = 30000;
@@ -139,6 +140,7 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   async function onTrip(g: LiveTrip | null) {
     const prev = trip;
     trip = g;
+    cardPoll.setEnabled(!!g);
     if (!g) shareLive(null, null);
     if (g) { refreshCard(); return; }
     // The trip ended: an arrived trip keeps its card for 2 minutes, a trip ended by hand goes at once.
@@ -193,6 +195,9 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   if (multiRemove) S.multiRemove = async (ks: string[], cb?: any) => { const r = await multiRemove(ks, cb); ks.filter((k) => WATCH.has(k)).forEach((k) => onWrite(k, null)); return r; };
   if (clear) S.clear = async (cb?: any) => { const r = await clear(cb); ['liveTrip', 'store'].forEach((k) => onWrite(k, null)); return r; };
 
+  const cardPoll = startAppPoll(() => { if (trip) refreshCard(); return true; }, TICK_MS, { runAtStart: false });
+  cardPoll.setEnabled(false);
+
   async function boot() {
     try {
       const raw = await AsyncStorage.getItem('liveTrip');
@@ -209,7 +214,8 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   }
 
   boot();
-  setInterval(() => { if (trip && AppState.currentState === 'active') refreshCard(); }, TICK_MS);
+  // The card refresh runs only while a trip is on and the app is in front; in the background push moves the card.
+  cardPoll.setEnabled(!!trip);
   // Going to the background: the last chance to say on the card when its live times are from.
   AppState.addEventListener('change', (s) => { if (s === 'active') { shareWidgetData(); refreshCard(); sendDeviceToken(); } else if (s === 'background') refreshCard(true); });
 }

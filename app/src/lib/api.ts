@@ -4,6 +4,7 @@ import { store } from './store';
 import type { CarPark, Station, TopupItem } from './access';
 import { apiBase, NEW_API_BASE } from './server';
 import { placesGone, stopsAsPlaces, type PlaceItem } from './planCore';
+import { createReadCache } from './pollCore';
 
 function qs(o: Record<string, any>) {
   return Object.entries(o)
@@ -32,8 +33,19 @@ function isNetErr(e: any) {
   return !e?.http && (e?.name === 'AbortError' || /cancel|network request failed|timed? ?out|fetch failed|failed to fetch/i.test(m));
 }
 
-async function req<T>(path: string, init?: RequestInit, timeoutMs = 20000): Promise<T> {
+// Reads are shared (pollCore.ts): two screens or timers asking for the same thing while a request is out get that
+// one request, and a good answer is reused for 4 seconds. refresh=1 asks always go out, still shared while out.
+// Any write empties the cache, so a read after a save never shows the old list.
+const reads = createReadCache(4000);
+
+function req<T>(path: string, init?: RequestInit, timeoutMs = 20000): Promise<T> {
   const read = !init?.method || init.method === 'GET';
+  if (!read) { reads.clear(); return send<T>(path, init, timeoutMs, false).finally(() => reads.clear()); }
+  const key = `${apiBase()}${path}|${init?.headers ? JSON.stringify(init.headers) : ''}`;
+  return reads.get<T>(key, () => send<T>(path, init, timeoutMs, true), { fresh: /[?&]refresh=1(&|$)/.test(path) });
+}
+
+async function send<T>(path: string, init: RequestInit | undefined, timeoutMs: number, read: boolean): Promise<T> {
   try {
     return await once<T>(path, init, timeoutMs);
   } catch (e: any) {

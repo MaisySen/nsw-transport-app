@@ -59,7 +59,7 @@ export function TripAnswer({ s }: { s: TripSummary }) {
         {s.leaveAt ? <Text style={[st.small, { color: c.text2 }]}>Leave {s.leaveAt} to walk to the stop</Text> : null}
       </View>
       {hasWarn ? (
-        <Pressable
+        <Pressable accessibilityRole="button"
           accessible={false}
           focusable={false}
           importantForAccessibility="no"

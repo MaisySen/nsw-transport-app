@@ -62,7 +62,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
   const arr = bestTime(l.arrPlanned, l.realtime ? l.arrEstimated : null);
   const bus = busLegStatus(l);
   return (
-    <Pressable onPress={() => openService({ tripId: l.tripId, feed: l.feed, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId, color: l.color, dest: l.towards, realtime: l.realtime, estimated: l.estimated, delayMin: l.delayMin })}
+    <Pressable accessibilityRole="button" onPress={() => openService({ tripId: l.tripId, feed: l.feed, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId, color: l.color, dest: l.towards, realtime: l.realtime, estimated: l.estimated, delayMin: l.delayMin })}
       style={({ pressed }) => [st.leg, pressed ? { opacity: 0.7 } : null]}>
       <View style={{ width: 36, alignItems: 'center' }}>
         <View style={[st.dotBig, { borderColor: color, backgroundColor: c.card }]} />
@@ -243,7 +243,7 @@ export default function TripScreen() {
   const liftOn = useFlag('liftAwareRouting');
   const allOn = !!stAll[tkey];
   const c = usePalette();
-  const now = useNow(1000);
+  const now = useNow();
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
   const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...whenQ }), 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey],
     { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '')) });
@@ -341,7 +341,7 @@ export default function TripScreen() {
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
         {alertList.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
-            <Pressable onPress={() => setShowAlerts(!showAlerts)} android_ripple={{ color: c.fill }} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 }}>
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded: showAlerts }} onPress={() => setShowAlerts(!showAlerts)} android_ripple={{ color: c.fill }} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 }}>
               <Icon name={I.warn} size={16} color={c.orange} />
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <T kind="headline">Service information</T>
@@ -352,7 +352,7 @@ export default function TripScreen() {
             {showAlerts ? alertList.map((a, k) => (
               <View key={k}>
                 <Sep inset={16} />
-                <Pressable disabled={!safeUrl(a.url)} onPress={() => { const u = safeUrl(a.url); if (u) Linking.openURL(u); }} style={{ paddingHorizontal: 16, paddingVertical: 10 }}>
+                <Pressable accessibilityRole="link" disabled={!safeUrl(a.url)} onPress={() => { const u = safeUrl(a.url); if (u) Linking.openURL(u); }} style={{ paddingHorizontal: 16, paddingVertical: 10 }}>
                   <T kind="sub" style={{ color: a.url ? c.tint : c.text }}>{a.title}</T>
                 </Pressable>
               </View>
