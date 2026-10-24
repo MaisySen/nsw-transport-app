@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Offline, departure board and station maps (over the air update for iPhone and Android, 25 Oct, 9:05 AM)
+* Offline from a fresh start: the app keeps the last times for Home and Work, your saved trips and starred stops on the phone. With no signal, even right after opening the app, Home, the trip screen and stop screens show those times with "Offline, times from 8:05am", leave out services that have already gone, and the Home header says Offline. Live times take over as soon as the signal is back.
+* Departure board: tap Board on a stop screen for a full screen board with large rows: line, destination, platform, minutes and a Live or Timetable mark. The screen stays on while it is open and the board fills as many rows as fit. It turns sideways on Android; on iPhone it stays upright until a build allows landscape.
+* Station map: stop screens show a Station map row where Transport for NSW lists one on the stop's page (for example Redfern, Town Hall, Parramatta, Central). It opens their map of entrances, lifts and platforms. Stops without a published map show no row.
+* No new build needed.
+
 ### Trip mode follows the live times (over the air update for iPhone and Android, 25 Oct, 8:39 AM)
 * On 25 Oct the T1 from Strathfield ran 4 minutes late. The Lock Screen card said "Get off now" at 8:22 and switched to "T4 leaves 8:26am" at 8:24 while the T1 had not reached Redfern. The card is only changed by the app while it is open, so it counted down to the last time it was given; and a leg ended when the stop list moved past your stop, which follows the timetable clock when a feed has no live times for that stop.
 * A train's live position short of your stop now keeps you on that leg. Once the estimate is 30 seconds old and the live feed still shows the train before your stop, the countdown stays at about a minute instead of "now".
