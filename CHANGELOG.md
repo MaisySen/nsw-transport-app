@@ -4,6 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Ask answers easy to scan (over the air update for iPhone and Android, 25 Oct, 7:37 AM)
+* A trip answer in Ask is now a short card instead of one long paragraph: the departure time large with minutes to go, the line chips and platform, then "Arrives Kings Cross 7:55 am · 1 change".
+* Status as a chip in the same words and colours as the rows below: On time in green, N min late in orange, Cancelled in red.
+* Lift outages on the trip are one warning row ("Lift 1 at Kings Cross not working"); a tap shows the full messages.
+* The fare is a small line: "Fare about $3.76 · Adult off peak".
+* The From to To line no longer repeats in the bubble, and compact places (the trip card header, suggestion chips) drop the word Station.
+* Other answers stay as chat bubbles, split into short paragraphs of at most two sentences.
+* VoiceOver and TalkBack read the trip card as one sentence and can open the lift details. Text follows the phone's text size.
+
 ### Reliability pick and last way home reminder (over the air update for iPhone and Android, 25 Oct, 2:08 AM)
 * Service rows on the commute card, Home trips and trip results can show one quiet line: "Left on time 9 of the last 10 weekdays". It counts days the server actually saw that service leave that stop (under 3 min late counts as on time) and shows nothing under 5 days.
 * Ask "Last train home" and the last service tonight in trip results get Remind me 15 min before. The server finds the last service itself, looks at live times again as the time comes near, follows it if it is late or replaced, and sends one notification. Cancel from the button or the Home card; Delete all data removes it.
