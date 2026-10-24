@@ -90,3 +90,17 @@ Platforms: **Web** is the web app at https://nsw-transport-bot.sites.tab.bot. **
 | Android widget for multi leg trips, long press shortcuts, large stop board widget | n/a | Planned (new APK) | n/a |
 | App Store and Google Play submission | n/a | Blocked on Bidur (see [Store](STORE.md)) | Blocked on Bidur |
 | Move the whole project to Bidur's Windows PC | Planned, last | | |
+
+## Phase 5: live trip tracking (24 Oct 2026, web)
+
+| Feature | Status |
+| --- | --- |
+| Start trip from any trip result or saved trip (Start trip on the expanded service row) | Done, web |
+| Live trip screen: map with every leg's route, the live vehicle, your own position (optional), stops left, next stop, live arrival at your stop and at the destination | Done, web |
+| Current step card: board, leaves in, stops away; on board, next stop, stops to your stop, change or arrive time | Done, web |
+| Tight and missed connection warnings from live times, with a link to the next connection | Done, web |
+| Get off alerts: one stop before your stop and at each change (from the vehicle's real position), connection at risk; on the phone while open, and through the server watch when notifications are on | Done, web |
+| Share live trip: a link anyone can open (/live/?t=...), no account, optional location, deleted when the trip ends | Done, web |
+| Multi leg trips (from /api/plan and saved multi leg trips) | Done, web |
+| Privacy: location stays on the phone unless sharing with Include my location on; shared rows deleted at the end | Done, privacy page updated |
+| Android ongoing notification, iPhone Live Activity and Dynamic Island | Not started, see port notes |

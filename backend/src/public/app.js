@@ -1110,6 +1110,7 @@ window.TBApp = () => {
       let h = `<h1 class="large">Trips</h1>
         <a class="sfield homesearch" href="#/search?focus=1" aria-label="Search stops, stations and trips">${SEARCH_ICO}<span>Where to?</span></a>`;
       const pl = places();
+      const goT = goGet(); if (goT) h += goBanner(goT);
       if (!pl.home || !pl.work) h += `<div class="placebar">${["home", "work"].map((k) => `<button class="place${pl[k] ? " set" : ""}" data-place="${k}"><span class="pico">${k === "home" ? I.house : I.route}</span><span class="pl-t">${pl[k] ? esc(short(pl[k].name)) : k === "home" ? "Add home" : "Add work"}</span></button>`).join("")}</div>`;
       const big = [];
       tl.forEach((t) => { const d = data[tk(t)]; ((d && d.journeys) || []).slice(0, 3).forEach((j) => (j.legs || []).forEach((l) => (l.alerts || []).forEach((a) => { if (/high/i.test(a.priority || "") && !big.some((b) => b.title === a.title)) big.push(a); }))); });
@@ -1377,7 +1378,7 @@ window.TBApp = () => {
         if (!showDep) r = r.replace(/<div class="cdb [^"]*"><span class="cdb-n"[^>]*>[^<]*<\/span><span class="cdb-u"[^>]*>min<\/span><\/div>/, `<div class="cdb cd-x durb"><span class="cdb-n">${o.x.dur}</span><span class="cdb-u">min</span></div>`);
         const past = o.x.leave < now() - 30000;
         return `<div class="jrow${past ? " past" : ""}" data-key="${esc(key)}" data-i="${i}" role="button" tabindex="0" aria-expanded="${open === key}">${r}
-          ${open === key ? `<div class="jdetail"><div class="legs">${legsDetail(o.j)}</div><div class="card-actions"><button class="pillbtn${watched ? " on" : ""}" data-watch>${I.bell}${watched ? "Watching" : "Watch"}</button>${chain ? "" : `<button class="pillbtn" data-commute>${I.clock}Commute</button>`}</div></div>` : ""}</div>`;
+          ${open === key ? `<div class="jdetail"><div class="legs">${legsDetail(o.j)}</div><div class="card-actions"><button class="pillbtn solid" data-go>${I.loc}Start trip</button><button class="pillbtn${watched ? " on" : ""}" data-watch>${I.bell}${watched ? "Watching" : "Watch"}</button>${chain ? "" : `<button class="pillbtn" data-commute>${I.clock}Commute</button>`}</div></div>` : ""}</div>`;
       }).join("");
       view.innerHTML = head() + `${alerts.length ? `<a class="abanner" href="#/alerts">${I.alert}<span><b>Service information</b><br>${alerts.length} alert${alerts.length > 1 ? "s" : ""}. ${esc(alerts[0].title)}</span></a>` : ""}
         <div class="seg tt" role="tablist"><button class="${showDep ? "on" : ""}" data-mode="dep">Departs in</button><button class="${showDep ? "" : "on"}" data-mode="dur">Travel time</button></div>
@@ -1391,6 +1392,7 @@ window.TBApp = () => {
         if (e.target.closest("a")) return;
         const wb = e.target.closest("[data-watch]"); const cb = e.target.closest("[data-commute]");
         const j = js[Number(b.dataset.i)].j;
+        if (e.target.closest("[data-go]")) { e.preventDefault(); startTrip(tripSpec(j, { id: from, name: fn }, { id: to, name: tn })); return; }
         if (wb) { e.preventDefault(); openWatchSheet(tripSpec(j, { id: from, name: fn }, { id: to, name: tn })); return; }
         if (cb) { e.preventDefault(); openCommuteSheet({ from: { id: from, name: fn }, to: { id: to, name: tn }, tod: todOf(tms(j.leave)) }); return; }
         if (e.target.closest(".jdetail")) return;
@@ -1743,6 +1745,331 @@ window.TBApp = () => {
     } catch (e) { view.innerHTML = `<h1 class="large">${esc(q)}</h1><div class="empty">${esc(e.message)}</div>`; }
   }
 
+  // ---------- live trip ----------
+  // Start trip: follow a trip leg by leg on a map with your own position, the live vehicle,
+  // stops left, live arrival times, get off alerts and an optional share link. Your location
+  // stays on this phone; it is only sent while you share the trip, and only if you choose to.
+  const goGet = () => LS.get("tb_go", null);
+  const goSet = (g) => LS.set("tb_go", g);
+  function goLegs(spec) { return (spec.legs || []).filter((l) => l.stopId && l.planned).slice(0, 6); }
+  function startTrip(spec) {
+    const legs = goLegs(spec);
+    if (!legs.length) { toast("This trip can't be tracked."); return; }
+    const old = goGet();
+    if (old) goStop(old, true);
+    goSet({ id: randId("g"), title: spec.title, origin: spec.origin || null, to: spec.to || null, legs, started: Date.now(), alerted: {}, share: null, watchId: null });
+    if (pushState() === "on") goWatch();
+    location.hash = "#/go";
+  }
+  async function goWatch() {
+    const g = goGet(); if (!g || g.watchId) return;
+    try {
+      const r = await post("/api/watch", { device: DEVICE, profile: PROFILE, kind: "trip", title: g.title, legs: g.legs, origin: g.origin, to: g.to, lead: 0, track: true, silentStart: true });
+      const g2 = goGet(); if (g2 && g2.id === g.id && r.watch) { g2.watchId = r.watch.id; goSet(g2); pollWatches(); }
+    } catch (e) { /* alerts still show while the app is open */ }
+  }
+  function goStop(g, quiet) {
+    if (g.share) api("/api/share?" + qs({ id: g.share.id }), { method: "DELETE", headers: { "x-share-key": g.share.key } }).catch(() => {});
+    if (g.watchId) stopWatch(g.watchId).catch(() => {});
+    if (S.goGeo != null && navigator.geolocation) { navigator.geolocation.clearWatch(S.goGeo); S.goGeo = null; }
+    LS.set("tb_go", null);
+    if (!quiet) toast(g.share ? "Trip ended. Your share link has stopped working." : "Trip ended");
+  }
+  function goBanner(g) {
+    const L0 = g.legs[0];
+    return `<a class="gobar" href="#/go"><span class="gobar-dot"></span><span class="gobar-t"><b>Trip in progress</b><small>${esc(g.title)}</small></span>${lb(L0.line, L0.color)}${I.chev}</a>`;
+  }
+  function goNotify(title, body) {
+    try { if (navigator.vibrate) navigator.vibrate([180, 80, 180]); } catch (e) { /* no vibration */ }
+    const show = () => { toast(title); };
+    try {
+      if (window.Notification && Notification.permission === "granted" && swReg) swReg.showNotification(title, { body, tag: "go", renotify: true, icon: "/icon-192.png", badge: "/badge-96.png", data: { url: "/#/go" } }).catch(show);
+      else show();
+    } catch (e) { show(); }
+  }
+  function goView() {
+    const g = goGet();
+    if (!g) { location.replace("#/"); return; }
+    setTab("full"); setNav({ title: "" });
+    nav.style.display = "none";
+    S.cleanup.push(() => { nav.style.display = ""; });
+    const legs = g.legs, last = legs.length - 1;
+    const svc = legs.map(() => null);
+    let alive = true;
+    S.cleanup.push(() => { alive = false; });
+    let map = null, layers = { legs: [], stops: null }, vMarker = null, meMarker = null, meCircle = null, follow = true, fitted = false, me = null, st = null;
+    view.innerHTML = `<div class="mapwrap"><div id="map"></div></div>
+      <button class="map-btn left" id="gBack" aria-label="Back">${I.back.replace("<svg", '<svg style="width:12px;height:18px"')}</button>
+      <button class="map-btn right" id="gFollow" aria-label="Show my trip">${I.loc}</button>
+      <section class="sheet go-sheet" id="sheet"><div class="grab" id="grab"></div><div class="sheet-body" id="sbody"><div class="go-pad"><div class="skel" style="border-radius:14px;height:120px"></div></div></div></section>`;
+    $("#gBack").onclick = () => { location.hash = "#/"; };
+    $("#gFollow").onclick = () => { follow = true; fitted = false; paintMap(); };
+    const sheet = $("#sheet"), sbody = $("#sbody");
+    const H = () => sheet.getBoundingClientRect().height;
+    const snaps = () => [H() - 236, H() * 0.4, 0];
+    let y = snaps()[1];
+    const setY = (v) => { y = v; sheet.style.setProperty("--y", v + "px"); };
+    setY(y);
+    let drag = null;
+    const startDrag = (e) => { if (e.target.closest("button, a, input, label")) return; drag = { y0: e.clientY, base: y, t: Date.now() }; sheet.classList.add("drag"); };
+    const onMove = (e) => { if (drag) setY(Math.max(0, Math.min(snaps()[0] + 40, drag.base + e.clientY - drag.y0))); };
+    const onUp = (e) => {
+      if (!drag) return;
+      const v = (e.clientY - drag.y0) / Math.max(1, Date.now() - drag.t);
+      sheet.classList.remove("drag");
+      const sp = snaps();
+      let target = sp.reduce((a, b) => (Math.abs(b - y) < Math.abs(a - y) ? b : a));
+      if (v > 0.6) target = sp.filter((s) => s > drag.base).sort((a, b) => a - b)[0] ?? sp[0];
+      if (v < -0.6) target = sp.filter((s) => s < drag.base).sort((a, b) => b - a)[0] ?? 0;
+      drag = null; setY(target);
+    };
+    $("#grab").addEventListener("pointerdown", startDrag);
+    sheet.addEventListener("pointerdown", (e) => { if (e.target.closest(".go-head")) startDrag(e); });
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    S.cleanup.push(() => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); });
+
+    // Where you are: only on this phone, never sent unless you share and include it.
+    const startGeo = () => {
+      if (!navigator.geolocation || S.goGeo != null) return;
+      S.goGeo = navigator.geolocation.watchPosition((p) => {
+        me = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, at: Date.now() };
+        LS.set("tb_go_loc", "on");
+        paintMap(); if (st) paint();
+      }, (err) => { if (err.code === 1) { LS.set("tb_go_loc", "denied"); if (st) paint(); } }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
+    };
+    if (LS.get("tb_go_loc", null) === "on") startGeo();
+    S.cleanup.push(() => { if (S.goGeo != null && navigator.geolocation) { navigator.geolocation.clearWatch(S.goGeo); S.goGeo = null; } });
+
+    const makeMap = () => {
+      if (map || !window.L) return;
+      map = L.map("map", { zoomControl: false, attributionControl: true }).setView([-33.8688, 151.2093], 13);
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+      if (matchMedia("(prefers-color-scheme: dark)").matches) map.getContainer().classList.add("dark-tiles");
+      map.on("dragstart", () => { follow = false; });
+      S.cleanup.push(() => { if (map) map.remove(); map = null; });
+    };
+    const legColor = (l) => l.color || "#00B5EF";
+    function paintMap() {
+      if (!alive) return;
+      makeMap(); if (!map) return;
+      legs.forEach((l, i) => {
+        const d = svc[i];
+        if (layers.legs[i] || !d || !d.path || d.path.length < 2) return;
+        let path = d.path;
+        const a = d.mineIndex >= 0 ? d.stops[d.mineIndex] : null, b = d.alightIndex >= 0 ? d.stops[d.alightIndex] : null;
+        if (a && b) {
+          const near = (p) => path.reduce((bi, q, k) => ((q[0] - p.lat) ** 2 + (q[1] - p.lon) ** 2 < (path[bi][0] - p.lat) ** 2 + (path[bi][1] - p.lon) ** 2 ? k : bi), 0);
+          const ia = near(a), ib = near(b);
+          if (ib > ia) path = path.slice(ia, ib + 1);
+        }
+        layers.legs[i] = L.polyline(path, { color: legColor(l), weight: 6, opacity: i < (st ? st.cur : 0) ? 0.35 : 0.92, lineJoin: "round" }).addTo(map);
+      });
+      if (!layers.stops) layers.stops = L.layerGroup().addTo(map);
+      layers.stops.clearLayers();
+      legs.forEach((l, i) => {
+        const d = svc[i]; if (!d) return;
+        const from = d.mineIndex >= 0 ? d.mineIndex : 0, to = d.alightIndex >= 0 ? d.alightIndex : d.stops.length - 1;
+        d.stops.slice(from, to + 1).forEach((s, k) => {
+          const end = k === 0 || from + k === to;
+          L.marker([s.lat, s.lon], { icon: L.divIcon({ className: "", iconSize: end ? [18, 18] : [11, 11], html: `<div class="sm-dot${end ? " mine" : ""}" style="--c:${esc(legColor(l))};${s.passed && st && i <= st.cur ? "opacity:.4" : ""}"></div>` }), keyboard: false, title: s.name }).addTo(layers.stops);
+        });
+      });
+      const cur = st ? st.cur : 0, d = svc[cur];
+      if (d && d.vehicle) {
+        const pos = [d.vehicle.lat, d.vehicle.lon];
+        const html = `<div class="vm" style="--c:${esc(legColor(legs[cur]))}"><span class="ring"></span>${d.vehicle.bearing != null ? `<div style="position:absolute;inset:0;transform:rotate(${d.vehicle.bearing}deg)"><span class="h"></span></div>` : ""}<span class="b go-vl">${esc(legs[cur].line)}</span></div>`;
+        const ic = L.divIcon({ className: "", iconSize: [36, 36], iconAnchor: [18, 18], html });
+        if (!vMarker) vMarker = L.marker(pos, { icon: ic, zIndexOffset: 1000, keyboard: false }).addTo(map);
+        else { vMarker.setIcon(ic); vMarker.setLatLng(pos); }
+      } else if (vMarker) { vMarker.remove(); vMarker = null; }
+      if (me) {
+        const ll = [me.lat, me.lon];
+        if (!meMarker) {
+          meCircle = L.circle(ll, { radius: Math.min(me.acc || 30, 300), color: "#0a84ff", weight: 0, fillOpacity: 0.12 }).addTo(map);
+          meMarker = L.marker(ll, { icon: L.divIcon({ className: "", iconSize: [22, 22], iconAnchor: [11, 11], html: '<div class="me-dot"></div>' }), zIndexOffset: 1200, keyboard: false, title: "You" }).addTo(map);
+        } else { meMarker.setLatLng(ll); meCircle.setLatLng(ll); meCircle.setRadius(Math.min(me.acc || 30, 300)); }
+      }
+      const pad = { paddingTopLeft: [30, 70], paddingBottomRight: [30, Math.min(window.innerHeight * 0.55, H() - y) + 20] };
+      if (follow) {
+        const pts = [];
+        if (d && d.vehicle) pts.push([d.vehicle.lat, d.vehicle.lon]);
+        if (me) pts.push([me.lat, me.lon]);
+        if (d && st) { const t = st.phase === "wait" ? d.stops[d.mineIndex] : d.stops[st.nextIdx]; if (t) pts.push([t.lat, t.lon]); const z = d.stops[d.alightIndex]; if (z && st.stopsLeft != null && st.stopsLeft <= 3) pts.push([z.lat, z.lon]); }
+        if (!fitted && pts.length < 2) layers.legs.forEach((p) => p && p.getLatLngs().forEach((q) => pts.push([q.lat, q.lng])));
+        if (pts.length > 1) { map.fitBounds(pts, { ...pad, maxZoom: 16, animate: fitted }); fitted = true; }
+        else if (pts.length) { map.setView(pts[0], 15, { animate: fitted }); fitted = true; }
+      }
+    }
+    const tOf = (s) => (s ? tms(s.estimated || s.planned) : null);
+    function compute() {
+      const t = now();
+      const L2 = legs.map((l, i) => {
+        const d = svc[i];
+        const mineS = d && d.mineIndex >= 0 ? d.stops[d.mineIndex] : null, offS = d && d.alightIndex >= 0 ? d.stops[d.alightIndex] : null;
+        const delay = mineS && mineS.estimated ? tms(mineS.estimated) - tms(mineS.planned) : (l.estimated ? tms(l.estimated) - tms(l.planned) : 0);
+        const dep = mineS ? tOf(mineS) : tms(l.estimated || l.planned);
+        const arr = offS ? tOf(offS) : (l.arrPlanned ? tms(l.arrPlanned) + delay : dep + 10 * 60000);
+        // The vehicle is already past your stop: this leg is over whatever the clock says.
+        const past = d && d.alightIndex >= 0 && d.nextIndex > d.alightIndex;
+        return { dep, arr: past ? Math.min(arr, t - 60000) : arr, delay, live: !!(d && d.live), d, mineS, offS };
+      });
+      // A late leg pushes later legs only when you would miss their planned connection.
+      let cur = L2.findIndex((x) => t < x.arr + 45000);
+      if (cur < 0) return { done: true, L2, eta: L2[last].arr };
+      const x = L2[cur], d = x.d;
+      let phase = "wait";
+      if (d && d.mineIndex >= 0 && d.nextIndex > d.mineIndex) phase = "ride";
+      else if (!d || d.mineIndex < 0) phase = t >= x.dep ? "ride" : "wait";
+      // Stops it runs through without stopping have no time; they are not counted or named.
+      const timed = (s) => s && (s.planned || s.estimated) && !s.skipped;
+      let nextIdx = d ? d.nextIndex : -1;
+      if (d && nextIdx >= 0) { while (nextIdx < d.stops.length - 1 && nextIdx !== d.alightIndex && !timed(d.stops[nextIdx])) nextIdx++; }
+      const stopsLeft = d && d.alightIndex >= 0 && phase === "ride" ? d.stops.slice(Math.max(nextIdx, d.mineIndex + 1), d.alightIndex + 1).filter(timed).length : null;
+      const conns = [];
+      for (let i = cur; i < last; i++) {
+        const a = L2[i], b = L2[i + 1];
+        const spare = Math.round((b.dep - a.arr) / 60000 - (legs[i + 1].walkBefore || 0));
+        conns.push({ i, at: legs[i].to, spare, risk: spare < 0 ? "miss" : spare < 2 ? "tight" : "ok", next: legs[i + 1], nextDep: b.dep });
+      }
+      return { done: false, cur, phase, nextIdx, stopsLeft, L2, conns, eta: L2[last].arr, live: x.live };
+    }
+    function stopsHtml(d, i) {
+      if (!d || d.alightIndex < 0) return "";
+      const from = Math.max(d.mineIndex, Math.min(st.nextIdx, d.alightIndex)), list = d.stops.slice(from, d.alightIndex + 1).filter((s) => (s.planned || s.estimated) && !s.skipped);
+      if (!list.length) return "";
+      const show = list.length > 7 ? [...list.slice(0, 5), null, list[list.length - 1]] : list;
+      return `<div class="go-stops" style="--c:${esc(legColor(legs[i]))}">${show.map((s) => s ? `<div class="go-stop${s.alight ? " off" : ""}${s.mine ? " on" : ""}"><i></i><span class="n">${esc(short(s.name))}</span><span class="t">${fmtClock(tOf(s))}</span></div>` : `<div class="go-stop more"><i></i><span class="n">${list.length - 6} more stops</span></div>`).join("")}</div>`;
+    }
+    function paint() {
+      if (!st || !alive) return;
+      if (st.done) {
+        sbody.innerHTML = `<div class="go-pad"><div class="go-head"><div class="go-k">You've arrived</div><div class="go-big">${esc(short(legs[last].to))}</div><div class="go-sub">${fmtClock(st.eta)} \u00b7 trip ended</div></div>
+          <button class="btn" id="gDone">Done</button></div>`;
+        $("#gDone").onclick = () => { goStop(goGet() || g); location.hash = "#/"; };
+        return;
+      }
+      const l = legs[st.cur], x = st.L2[st.cur], d = x.d;
+      const m = Math.max(0, mins(st.eta));
+      const late = Math.round(x.delay / 60000);
+      const badge = x.live ? (late >= 2 ? `<span class="badge late">${late} min late</span>` : `<span class="badge live">${I.rt.replace('class="rt"', 'class="rt" style="width:11px;height:11px"')}Live</span>`) : `<span class="badge sched">Scheduled</span>`;
+      let now1 = "", now2 = "";
+      if (st.phase === "wait") {
+        const dm = mins(x.dep);
+        now1 = `${st.cur > 0 ? "Change to" : "Board"} the ${esc(l.line)} to ${esc(short(l.towards || l.to))}`;
+        now2 = `${dm <= 0 ? "Due now" : `Leaves in ${dm} min, ${fmtClock(x.dep)}`}${l.fromPlatform ? " \u00b7 " + esc(platShort(l.fromPlatform)) : ""}${d && d.stopsAway != null && d.vehicle ? ` \u00b7 ${d.stopsAway === 0 ? "arriving" : d.stopsAway + " stop" + (d.stopsAway > 1 ? "s" : "") + " away"}` : ""}`;
+      } else {
+        const ns = d && st.nextIdx >= 0 ? d.stops[st.nextIdx] : null;
+        const yours = d && st.nextIdx === d.alightIndex;
+        now1 = yours ? `Get off at the next stop` : ns ? `Next stop: ${esc(short(ns.name))}` : `On the ${esc(l.line)} to ${esc(short(l.towards || l.to))}`;
+        now2 = `${st.stopsLeft != null ? `${st.stopsLeft} stop${st.stopsLeft === 1 ? "" : "s"} to ${esc(short(l.to))}` : `To ${esc(short(l.to))}`} \u00b7 ${st.cur < last ? "change" : "arrive"} ${fmtClock(x.arr)}`;
+      }
+      const warn = (st.conns || []).filter((c) => c.risk !== "ok").map((c) => c.risk === "miss"
+        ? `<div class="go-warn bad">${I.alert}<div><b>You'll likely miss the ${fmtClock(tms(c.next.planned))} ${esc(c.next.line)} at ${esc(short(c.at))}</b><span>Live times leave ${Math.abs(c.spare)} min too little. <a href="#/trip?${qs({ from: legs[c.i].toStopId, to: (g.to && g.to.id) || legs[last].toStopId, fn: legs[c.i].to, tn: (g.to && g.to.name) || legs[last].to })}">Find the next connection</a></span></div></div>`
+        : `<div class="go-warn">${I.alert}<div><b>Tight change at ${esc(short(c.at))}</b><span>${Math.max(0, c.spare)} min to catch the ${esc(c.next.line)}${c.next.fromPlatform ? " from " + esc(platShort(c.next.fromPlatform)) : ""}.</span></div></div>`).join("");
+      const legRows = legs.map((ll, i) => {
+        const y2 = st.L2[i], state = i < st.cur ? "done" : i === st.cur ? "now" : "next";
+        const c = (st.conns || []).find((k) => k.i === i - 1);
+        return `${i > 0 ? `<div class="go-chg">${ll.walkBefore ? `${I.walk}${ll.walkBefore} min walk, ` : ""}change at ${esc(short(legs[i - 1].to))}${c ? ` \u00b7 <span class="${c.risk === "ok" ? "" : c.risk === "tight" ? "late-t" : "bad-t"}">${Math.max(0, c.spare)} min spare</span>` : ""}</div>` : ""}
+          <div class="go-leg ${state}" style="--c:${esc(legColor(ll))}">${lb(ll.line, ll.color)}<div class="grow"><div class="t1">${esc(short(ll.from))} to ${esc(short(ll.to))}</div><div class="t2">${fmtClock(y2.dep)} to ${fmtClock(y2.arr)}${state === "done" ? " \u00b7 done" : ""}</div></div>${state === "now" ? '<span class="go-now-dot"></span>' : ""}</div>`;
+      }).join("");
+      const locState = LS.get("tb_go_loc", null), ps = pushState();
+      const setup = [];
+      if (locState !== "on") setup.push(`<div class="cell static"><span class="s-ico tintbg">${I.loc}</span><div class="grow"><div class="t1">Show where I am</div><div class="t2">${locState === "denied" ? "Location is off for this site. Turn it on in your phone's settings." : "Your location stays on this phone."}</div></div>${locState === "denied" ? "" : `<button class="pillbtn solid" id="gLoc">Allow</button>`}</div>`);
+      if (ps !== "on") setup.push(`<div class="cell static"><span class="s-ico orange">${I.bell}</span><div class="grow"><div class="t1">Get off alerts</div><div class="t2">${ps === "install" ? "On iPhone, add this app to your Home Screen first. Alerts still show here while it's open." : ps === "denied" ? "Notifications are blocked. Alerts show here while the app is open." : ps === "unsupported" ? "Alerts show here while the app is open." : "One stop before your stop, at each change, and if a connection is at risk."}</div></div>${ps === "off" ? `<button class="pillbtn solid" id="gPush">Turn on</button>` : ""}</div>`);
+      sbody.innerHTML = `<div class="go-pad">
+        <div class="go-head"><div class="go-k">Arrive at ${esc(short((g.to && g.to.name) || legs[last].to))}</div><div class="go-row"><div class="go-big">${fmtClock(st.eta)}</div><div class="go-in">${m === 0 ? "<b>Now</b>" : m < 60 ? `<b>${m}</b><span>min</span>` : `<b>${Math.floor(m / 60)}</b><span>h</span><b>${m % 60}</b><span>min</span>`}</div></div><div class="go-badges">${badge}${g.share ? '<span class="badge live">Sharing</span>' : ""}</div></div>
+        <div class="go-card" style="--c:${esc(legColor(l))}"><div class="go-card-l">${lb(l.line, l.color)}</div><div class="grow"><div class="go-now1">${now1}</div><div class="go-now2">${now2}</div></div></div>
+        ${warn}
+        ${st.phase === "ride" ? stopsHtml(d, st.cur) : ""}
+        ${setup.length ? `<div class="group"><div class="list">${setup.join("")}</div></div>` : ""}
+        <div class="go-actions"><button class="btn go-share" id="gShare">${I.share}${g.share ? "Sharing" : "Share trip"}</button><button class="btn go-end" id="gEnd">End trip</button></div>
+        <div class="group-h">Your trip</div><div class="group"><div class="go-legs">${legRows}</div></div>
+        <p class="group-f">Live positions and times from Transport for NSW. Your location is used on this phone only${g.share && g.share.pos ? ", and sent to your share link while sharing" : ""}. Share links stop working when the trip ends.</p></div>`;
+      const gl = $("#gLoc"); if (gl) gl.onclick = () => { LS.set("tb_go_loc", "asked"); startGeo(); };
+      const gp = $("#gPush"); if (gp) gp.onclick = async () => { const r = await enablePush(false).catch(() => ({ ok: false })); if (r.ok) { toast("Get off alerts on"); goWatch(); } else toast(pushWhyText(r.why)); paint(); };
+      $("#gEnd").onclick = () => { goStop(goGet() || g); location.hash = "#/"; };
+      $("#gShare").onclick = () => openShare();
+    }
+    function openShare() {
+      const cur = goGet(); if (!cur) return;
+      if (cur.share) return shareLink(cur.share.url, true);
+      const canLoc = LS.get("tb_go_loc", null) === "on";
+      openModal({ title: "Share live trip", body: `<div class="group"><div class="list"><div class="cell static"><div class="grow"><div class="t1">Anyone with the link can see</div><div class="t2" style="white-space:normal">Your trip, the live position of your ${esc(noun(legs[0].mode))}, the next stop and your arrival time. No account needed.</div></div></div>
+        <label class="cell static"><div class="grow"><div class="t1">Include my location</div><div class="t2" style="white-space:normal">${canLoc ? "Sent only while sharing." : "Turn on Show where I am first."}</div></div><span class="switch"><input type="checkbox" id="shLoc" ${canLoc ? "checked" : "disabled"} aria-label="Include my location"><span></span></span></label></div>
+        <p class="group-f">The link stops working when the trip ends or when you end it, and everything it showed is deleted.</p></div>
+        <div class="group"><button class="btn" id="shGo">${I.share}Create link</button></div>`, onOpen: (mm) => {
+        $("#shGo", mm).onclick = async (e) => {
+          const btn = e.currentTarget; btn.disabled = true; btn.textContent = "Creating...";
+          const pos = $("#shLoc", mm).checked && me ? me : null;
+          try {
+            const r = await post("/api/share", { device: DEVICE, title: g.title, from: g.origin, to: g.to, legs, pos, prog: progOf() });
+            const c2 = goGet(); if (!c2) return;
+            c2.share = { id: r.id, key: r.key, url: r.url, pos: !!$("#shLoc", mm).checked }; goSet(c2); g.share = c2.share;
+            closeModal(); paint(); shareLink(r.url, false);
+          } catch (err) { btn.disabled = false; btn.textContent = "Create link"; toast(err.message); }
+        };
+      } });
+    }
+    async function shareLink(url, again) {
+      const text = `Follow my trip live: ${g.title}`;
+      if (navigator.share) { try { await navigator.share({ title: "Live trip", text, url }); return; } catch (e) { if (e && e.name === "AbortError") return; } }
+      try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch (e) { /* show it instead */ }
+      openModal({ title: "Live trip link", body: `<div class="group"><div class="list"><div class="cell static"><input class="go-link" readonly value="${esc(url)}" aria-label="Live trip link"></div></div><p class="group-f">Send this to anyone. It works until the trip ends.</p></div>
+        <div class="group"><button class="btn go-end" id="shStop">Stop sharing</button></div>`, onOpen: (mm) => {
+        const inp = $(".go-link", mm); setTimeout(() => inp.select(), 300);
+        $("#shStop", mm).onclick = () => { const c2 = goGet(); if (c2 && c2.share) { api("/api/share?" + qs({ id: c2.share.id }), { method: "DELETE", headers: { "x-share-key": c2.share.key } }).catch(() => {}); c2.share = null; goSet(c2); g.share = null; } closeModal(); toast("Sharing stopped"); paint(); };
+      } });
+    }
+    function progOf() {
+      if (!st || st.done) return { phase: "done" };
+      const d = st.L2[st.cur].d, ns = d && st.nextIdx >= 0 ? d.stops[st.nextIdx] : null;
+      return { leg: st.cur, phase: st.phase, next: ns ? short(ns.name) : null, stopsLeft: st.stopsLeft, eta: st.eta };
+    }
+    function alerts() {
+      const cur = goGet(); if (!cur || !st) return;
+      const a = cur.alerted || (cur.alerted = {});
+      let changed = false;
+      if (!st.done && st.phase === "ride") {
+        const d = st.L2[st.cur].d, l = legs[st.cur];
+        if (d && d.alightIndex > 0 && st.nextIdx === d.alightIndex && !a["off" + st.cur]) {
+          a["off" + st.cur] = 1; changed = true;
+          if (st.cur === last) goNotify(`Next stop: ${short(l.to)}`, `Get ready to get off. You arrive at ${fmtClock(st.eta)}.`);
+          else { const n = legs[st.cur + 1]; goNotify(`Next stop: ${short(l.to)}, change here`, `Then the ${fmtClock(st.L2[st.cur + 1].dep)} ${n.line}${n.fromPlatform ? " from " + platShort(n.fromPlatform) : ""}.`); }
+        }
+      }
+      (st.conns || []).forEach((c) => {
+        if (c.risk === "miss" && !a["miss" + c.i]) { a["miss" + c.i] = 1; changed = true; goNotify("Connection at risk", `With live times you'll likely miss the ${fmtClock(tms(c.next.planned))} ${c.next.line} at ${short(c.at)}.`); }
+        else if (c.risk === "tight" && !a["tight" + c.i]) { a["tight" + c.i] = 1; changed = true; goNotify(`Tight change at ${short(c.at)}`, `${Math.max(0, c.spare)} min to catch the ${c.next.line}.`); }
+      });
+      if (changed) goSet(cur);
+    }
+    let lastFull = 0, busy = false;
+    async function load() {
+      if (busy) return; busy = true;
+      try {
+        const full = Date.now() - lastFull > 60000;
+        const cur = st && !st.done ? st.cur : 0;
+        const want = legs.map((l, i) => full || i === cur || i === cur + 1);
+        await Promise.all(legs.map(async (l, i) => {
+          if (!want[i]) return;
+          try { svc[i] = await api("/api/service?" + qs({ trip: l.tripId, mode: l.mode, line: l.line, stop: l.stopId, destId: l.destId, planned: l.planned, to: l.toStopId, dest: l.towards, stopName: l.from, color: l.color })); } catch (e) { /* keep the last answer */ }
+        }));
+        if (full) lastFull = Date.now();
+        if (!alive) return;
+        st = compute();
+        paint(); paintMap(); alerts();
+        const c2 = goGet();
+        if (c2 && c2.share) {
+          post("/api/share/update", { id: c2.share.id, key: c2.share.key, pos: c2.share.pos && me ? me : null, prog: progOf() }).catch((e) => { if (/not found/i.test(e.message)) { c2.share = null; goSet(c2); } });
+        }
+        if (st.done && now() > st.eta + 10 * 60000) { goStop(goGet() || g, true); }
+      } finally { busy = false; }
+    }
+    load();
+    every(15000, load);
+  }
+
   // ---------- router ----------
   S.navDepth = 0;
   let lastHash = location.hash;
@@ -1763,6 +2090,7 @@ window.TBApp = () => {
     else if (path.startsWith("/stop/")) stopView(decodeURIComponent(path.slice(6)), params, pre && pre.kind === "departures" ? pre : null);
     else if (path === "/trip") tripView(params, pre && pre.kind === "trip" ? pre : null);
     else if (path === "/svc") serviceView(params);
+    else if (path === "/go") goView();
     else if (path === "/chat" && window.AskTab) window.AskTab.render({ view: $("#view"), setNav, setTab, params, S });
     else if (path === "/ask") askView(params.get("q") || "");
     else if (path === "/alerts") alertsView();

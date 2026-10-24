@@ -72,6 +72,21 @@ Example (Central to Chatswood by metro): `/api/plan?legs=[{"f":"200060","fn":"Ce
 | `/api/push/expo/unregister` | POST | `{device, token}` | `ok` |
 | `/api/push/test` | POST or GET | `device` | Sends a test alert |
 
+## Live trips (shared)
+
+A shared live trip is a link someone else can open to follow a trip. No account. Rows are deleted when the owner ends the trip or stops sharing, otherwise 30 minutes after the live arrival, and never kept longer than 6 hours.
+
+| Endpoint | What it does |
+| --- | --- |
+| `POST /api/share` | Body `{device, title, from:{id,name}, to:{id,name}, legs:[watch legs], pos?:{lat,lon,acc}, prog?}`. Returns `{id, key, url, expires}`. `key` is the owner's secret; keep it on the device. Rate limit 20 per 10 min per address. |
+| `POST /api/share/update` | Body `{id, key, pos?: {lat,lon,acc} or null, prog?: {leg, phase, next, stopsLeft, eta}, legs?, end?}`. `pos: null` removes the position. `end: true` deletes the share. Rate limit 240 per 10 min. |
+| `GET /api/share?id=` | For viewers: `{title, from, to, legs, pos (only if under 5 min old), prog, started, updated, expires, now}`. Never returns the key or the device id. 404 `{ended: true}` once the trip has ended. |
+| `DELETE /api/share?id=` | Header `x-share-key` (or `key=`). Deletes the share and every position in it. |
+
+Positions are rounded to 5 decimal places. Viewers get the vehicle from `/api/service` for the current leg.
+
+Watches: `POST /api/watch` takes `track: true` (sent by Start trip). A tracked watch also sends "Next stop: X" one stop before you get off or change, from where the vehicle really is, instead of the 2 minute arrival alert.
+
 ## App and site
 
 | Endpoint | Method | Parameters | Returns |
