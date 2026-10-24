@@ -12,6 +12,11 @@ settings:
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "8"
     TARGETED_DEVICE_FAMILY: "1"
+  configs:
+    Release:
+      # Whole module optimization hung the Release build for over 20 minutes on build 8 (CI run 17);
+      # one file at a time builds in about a minute. Used by the device ipa and the TestFlight archive.
+      SWIFT_COMPILATION_MODE: singlefile
 targets:
   TransportKit:
     type: library.static
