@@ -2,6 +2,18 @@
 
 What changed in Transport, newest first. Times are Sydney time. Build numbers, update ids and links are in [docs/RELEASES.md](docs/RELEASES.md).
 
+## 25 Oct 2026
+
+### Android app: it just knows (over the air update, 25 Oct, 12:18 AM)
+* Two question setup: on first launch the app asks for your home station, then your work station (search, or Skip). Kept on this phone only. Change or clear them any time in More, Home and work. Delete everything in Privacy and data clears them and the setup shows again.
+* Your commute: one card on top of Home. Before 12pm it goes Home to Work, after 12pm Work to Home, with live times. The swap button beside its title shows the other way until the next 12. It sits outside the card's tap area, so a tap on it never also opens the trip.
+* Leave in N min: with location allowed, the commute card says when to leave for the first service you can still make, walking at 5 km/h in a straight line to where it leaves, plus a minute for the platform. Hidden when location is refused, when you are more than a 25 minute walk away, or when nothing can be reached. Location is never asked for on its own: a "Show when to leave" button asks. Remind me sets one alert on this phone at the leave time (tap again to cancel).
+* Wake me before my stop: a switch on the live trip. It sets an alarm on the phone for when the service leaves the stop before yours (for a one stop ride, when it leaves your boarding stop), from the live stop times the trip already reads, and moves it when the times move. It rings once with a long strong buzz on its own notification channel, even with the app closed, and replaces the plain "Next stop" alert so nothing doubles. Turning it off or ending the trip cancels it.
+* Missed connection: when the live times say you will miss a change, the live trip shows the next option at once, planned with /api/plan from the change station to your destination (never the train you are missing, never one that leaves before you reach the platform), with Switch to this. Switching keeps the leg you are on and replaces the rest; its alerts and alarms start fresh. If nothing is found it says so and links to all trips from the change stop.
+* Needs a new native build, not done: exact alarm timing while the phone is asleep. The installed build has no exact alarm permission, so Android may run the Wake me and Remind me alarms a little late in deep sleep (they are on time while the app is open). Adding SCHEDULE_EXACT_ALARM (or USE_EXACT_ALARM) to the manifest needs versionCode 6.
+* Shipped over the air to Android: preview update 01a16e0f-4afc-7cf3-8031-bfd6c7adf62d (manifest checked: runtime 1.0.0, bundle hash matches the local export), then production update 01a16e0f-c2fa-7298-ae3e-5cfd32af7fa8. Commit dab02b2.
+* Tests: 21 new unit tests in test/smart.test.mjs (commute direction and swap, walk and leave times, wake alarm replays for Burwood to Strathfield and a 3 stop Ashfield to Strathfield trip on time, late, early, delayed mid ride and with the app asleep, missed change, next option and switch). Browser: setup, commute card, swap, Leave in, Remind me, Wake me, More Home and work in test/e2e/buttons.mjs; Wake me in the Burwood to Strathfield replay (WAKE=1); new test/e2e/missed.mjs for the next option card against the real planner. Unit tests 81 of 81 (79 and 2 skipped offline), browser taps 39 of 39, full walk light and dark with no errors, axe clean on 11 screens light and dark (Home and work setup included).
+
 ## 24 Oct 2026
 
 ### iPhone app build 108: widgets, Lock Screen widgets, travel updates, server address in one place

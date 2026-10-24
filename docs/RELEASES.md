@@ -1,6 +1,6 @@
 # Releases
 
-Every shipped build and update. Times are Sydney time (AEDT). Updated 24 Oct 2026, 11:20 PM.
+Every shipped build and update. Times are Sydney time (AEDT). Updated 25 Oct 2026, 12:20 AM.
 
 ## iPhone (native SwiftUI)
 
@@ -66,6 +66,7 @@ Newest first.
 
 | Time (about) | Update | production group | expo-go group |
 | --- | --- | --- | --- |
+| 25 Oct, 12:18 AM | It just knows: home and work setup on first launch (More, Home and work to change), commute card on top that flips at 12pm with a swap, Leave in N min from your location with Remind me, Wake me before my stop on the live trip, next option card after a missed change with Switch to this (commit dab02b2). Preview first (update 01a16e0f-4afc-7cf3-8031-bfd6c7adf62d, group a7ee6f12-6c1b-4166-829c-f002bbd5e178), manifest checked on the preview channel (runtime 1.0.0, launch asset hash UF3Abmx-3xMtI-Oy9Wnq7-ZJy-8j-DdXBue1gt53vlY matches the local export), then republished to production; the production manifest serves the same hash | 01a16e0f-c2fa-7298-ae3e-5cfd32af7fa8 (group b1421447-bfdf-43e6-a385-6068c7fcb112) | none |
 | 24 Oct, 11:16 PM | About: Made by Fintex Australia Pty Ltd, Contact us, Fintex website. Opal machines map no longer fights the page scroll. Fixed taps that buzzed and did nothing (trip card reorder handle, menu sheet choices, Start trip waiting on the notification prompt, swipe buttons). Contrast 4.5:1 light and dark, 48 dp targets, TalkBack labels (commit 0b1c859). Preview first (update 01a16dd6-5392-7282-a2bb-b81a7bf27d18, group fa4df9ea-3aa6-474d-b0d3-039437e1392b), manifest checked on the preview channel (runtime 1.0.0, bundle hash matches the local export), then republished to production | 01a16dd6-dde0-7b47-a960-78a487c67041 (group bd278cae-d1ec-4146-97e1-66071d13c012) | none |
 | 24 Oct, 10:37 PM | With notifications on, the server follows the trip and sends every alert and the one You've arrived, and the phone posts none of its own (the server now ends its watch at your stop, commit 2a3225b), so nothing doubles. Same screens as 10:33 PM. Preview first (update 01a16db2-ea28-7dc3-94ba-8540e6a92427, group d7c796ae-674b-497c-8c0b-f05b09b97947), manifest checked, then republished to production. Commit 93f13d9. Update id: production 01a16db3-1586-7aef-a02a-29c69f9633f8 | fbb8d29e-117d-407c-bee3-a27d9bc389c1 | not published (iPhone uses the native app) |
 | 24 Oct, 10:33 PM | Live trip ends at your stop with one You've arrived and never rolls on to the next train; each alert once with stable ids; no Lock screen button. Cleaner screens: Home, Plan, Ask and More tabs, one Plan screen, one Start trip button, fare shown once, stop alerts once, live trip without setup rows. Published to `preview` first (update 01a16daf-d2b9-7517-be3c-4873190ec543, group f2d49e91-7387-478a-9706-395b6b73a809), manifest checked (runtime 1.0.0, bundle hash matches the export), then republished to `production`. Commits 7e7397d and 93f13d9. Update id: production 01a16db0-5216-747a-a562-83f4e3bcb408 | 716bb629-4ac9-47a8-a632-c6056f7b2c4a | not published (iPhone uses the native app) |
