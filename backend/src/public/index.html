@@ -1,28 +1,120 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-AU" class="landing">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Transport Bot: live Sydney trains, buses and trips</title>
-<meta name="description" content="Live departures, live vehicle tracking, trip alerts and your commute for Sydney and NSW public transport.">
+<title>Transport: live Sydney trains, buses and trip alerts</title>
+<meta name="description" content="Live departures, countdowns and leave now alerts for Sydney and NSW trains, metro, buses, light rail and ferries. Free web app and Android app, no account needed.">
+<link rel="canonical" href="https://nsw-transport-bot.sites.tab.bot/">
 <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Transport">
+<meta property="og:title" content="Transport: live Sydney trains, buses and trip alerts">
+<meta property="og:description" content="Live departures, countdowns and leave now alerts for Sydney and NSW trains, metro, buses, light rail and ferries. Free web app and Android app, no account needed.">
+<meta property="og:url" content="https://nsw-transport-bot.sites.tab.bot/">
+<meta property="og:image" content="https://nsw-transport-bot.sites.tab.bot/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Transport app icon and the Trips screen showing live departures">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Transport: live Sydney trains, buses and trip alerts">
+<meta name="twitter:description" content="Live departures, countdowns and leave now alerts for Sydney and NSW trains, metro, buses, light rail and ferries. Free web app and Android app, no account needed.">
+<meta name="twitter:image" content="https://nsw-transport-bot.sites.tab.bot/og.png">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Transport">
 <meta name="application-name" content="Transport">
-<meta property="og:title" content="Transport Bot">
-<meta property="og:description" content="Live Sydney transport that comes to you: leave now alerts, delays, platform changes and missed connections.">
-<meta property="og:image" content="/og.png">
-<link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" href="/icon-192.png">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" as="image" href="/img/trips-light.webp" media="(prefers-color-scheme: light)">
+<link rel="preload" as="image" href="/img/trips-dark.webp" media="(prefers-color-scheme: dark)">
+<script>
+// Landing for first time browser visitors; the app for everyone else (installed app, deep links, returning users).
+(function () {
+  var d = document.documentElement, s = location.search, app = location.hash.length > 1 || /[?&](source|me)=/.test(s);
+  try { if (matchMedia("(display-mode: standalone)").matches || navigator.standalone) app = true; } catch (e) {}
+  try { if (localStorage.getItem("tb_device")) app = true; } catch (e) {}
+  if (/[?&]about\b/.test(s)) app = false;
+  d.className = app ? "app" : "landing";
+})();
+</script>
 <link rel="stylesheet" href="/vendor/leaflet.css">
 <link rel="stylesheet" href="/style.css?v=5">
 <link rel="stylesheet" href="/ask.css?v=1">
+<link rel="stylesheet" href="/site.css?v=4">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"Transport","url":"https://nsw-transport-bot.sites.tab.bot/","applicationCategory":"TravelApplication","operatingSystem":"Web, Android, iOS","description":"Live departures, countdowns and leave now alerts for Sydney and NSW trains, metro, buses, light rail and ferries. Free web app and Android app, no account needed.","offers":{"@type":"Offer","price":"0","priceCurrency":"AUD"},"image":"https://nsw-transport-bot.sites.tab.bot/icon-512.png"}</script>
 </head>
 <body>
+<div id="landing" class="lp">
+<a class="skip" href="#lp-main">Skip to content</a>
+<header class="bar"><div class="bar-in">
+  <a class="brand" href="/?about" aria-label="Transport home"><img src="/icon-192.png" alt="" width="28" height="28">Transport</a>
+  <nav aria-label="Site"><a href="/?about#features">Features</a><a href="/download/">Download</a><a href="/support/">Support</a></nav>
+  <a class="btn" href="/#/" data-open>Open app</a>
+</div></header>
+<main id="lp-main">
+<div class="wrap">
+  <section class="hero" aria-labelledby="lp-title">
+    <div>
+      <p class="eyebrow"><i></i>Live for Sydney and NSW</p>
+      <h1 id="lp-title">Know exactly when to leave.</h1>
+      <p class="lead">Live trains, metro, buses, light rail and ferries in one calm app. Save your trips, watch one, and Transport tells you when to go, when it is late and when the platform changes.</p>
+      <div class="ctas">
+        <a class="btn" href="/#/" data-open><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="6" y="2.8" width="12" height="18.4" rx="3"/><path d="M10.5 17.6h3"/></svg>Open the web app</a>
+        <a class="btn alt" href="/download/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>Get it on Android</a>
+      </div>
+      <p class="soon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>iPhone app coming soon to the App Store. Free, no account needed.</p>
+    </div>
+    <div class="phone"><picture><source srcset="/img/trips-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/trips-light.webp" alt="Transport Trips screen with Home to Work and live countdown chips for the next trains" width="640" height="1391" fetchpriority="high"></picture></div>
+  </section>
+  <div class="facts" role="list">
+    <div role="listitem"><b>5 modes</b><span>Train, metro, bus, light rail, ferry</span></div>
+    <div role="listitem"><b>Live</b><span>Every time marked live or timetable</span></div>
+    <div role="listitem"><b>No sign up</b><span>Open it and go</span></div>
+    <div role="listitem"><b>Free</b><span>No ads, no tracking</span></div>
+  </div>
+
+  <section class="block" id="features" aria-labelledby="f-title">
+    <h2 id="f-title">Your commute, at a glance.</h2>
+    <p class="sub">Built around the trips you take every day, with live data from Transport for NSW.</p>
+    <div class="feats">
+      <article class="feat"><h3>Live countdowns</h3><p>Every service from your stop to theirs, colour coded by how long you have, with delays and crowding.</p><div class="shot"><picture><source srcset="/img/trip-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/trip-light.webp" alt="Trip screen listing the next services with departure countdowns and travel times" width="560" height="1114" loading="lazy" decoding="async"></picture></div></article>
+      <article class="feat"><h3>Departure boards</h3><p>Any station, stop or wharf by name or stop number. Platforms, live positions and alerts included.</p><div class="shot"><picture><source srcset="/img/board-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/board-light.webp" alt="Departure board for a station showing lines, platforms and minutes to departure" width="560" height="1114" loading="lazy" decoding="async"></picture></div></article>
+      <article class="feat"><h3>Ask in plain words</h3><p>Type "next train home" or "is the T1 late" and get a straight answer with live cards.</p><div class="shot"><picture><source srcset="/img/ask-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/ask-light.webp" alt="Ask screen answering a question about the next train with a live trip card" width="560" height="1114" loading="lazy" decoding="async"></picture></div></article>
+    </div>
+    <div class="list3">
+      <div class="mini"><div class="ic c-orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 10a6 6 0 1 1 12 0v4l1.6 2.4a.8.8 0 0 1-.7 1.3H5.1a.8.8 0 0 1-.7-1.3L6 14Z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg></div><h3>Leave now alerts</h3><p>Watch a trip and get a nudge when it is time to walk out the door.</p></div>
+      <div class="mini"><div class="ic c-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2.5 19.5h19Z"/><path d="M12 10v4M12 17h.01"/></svg></div><h3>Delays and changes</h3><p>Told about delays, cancellations, platform changes and missed connections as they happen.</p></div>
+      <div class="mini"><div class="ic c-purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="17" height="7" rx="2"/></svg></div><h3>Widgets and Siri</h3><p>Next trip on your Home Screen, and "Next train home in Transport" on iPhone.</p></div>
+    </div>
+  </section>
+
+  <section class="block" id="get" aria-labelledby="g-title">
+    <h2 id="g-title">Get Transport.</h2>
+    <p class="sub">Start in your browser today. Your saved trips stay on this device.</p>
+    <div class="get">
+      <div class="plat"><h3>Web app<span class="pill ok">Live now</span></h3><p>Works in any phone or desktop browser. Add it to your Home Screen for alerts.</p><a class="btn" href="/#/" data-open>Open the web app</a></div>
+      <div class="plat"><h3>Android<span class="pill ok">Available</span></h3><p>The full app with widgets and notifications. Updates itself when it opens.</p><a class="btn alt" href="/download/">Get it on Android</a></div>
+      <div class="plat"><h3>iPhone<span class="pill">Coming soon</span></h3><p>Native iPhone app with Siri, Lock Screen widgets and StandBy, heading to the App Store.</p><a class="btn alt" href="/download/#iphone">See iPhone details</a></div>
+    </div>
+  </section>
+</div>
+</main>
+<footer class="foot"><div class="foot-in">
+  <div><a class="brand" href="/?about"><img src="/icon-192.png" alt="" width="28" height="28" loading="lazy">Transport</a>
+    <p>Live Sydney and NSW departures, trip alerts and answers in plain words.</p>
+    <p>Questions or problems: <a href="mailto:bidur@mail.tab.bot?subject=Transport%20app">bidur@mail.tab.bot</a></p></div>
+  <div><h2>App</h2><ul><li><a href="/#/" data-open>Open the web app</a></li><li><a href="/download/">Get it on Android</a></li><li><a href="/download/#iphone">iPhone</a></li><li><a href="/support/">Help and support</a></li></ul></div>
+  <div><h2>Legal</h2><ul><li><a href="/privacy/">Privacy policy</a></li><li><a href="/terms/">Terms of use</a></li><li><a href="/support/#contact">Contact us</a></li><li><a href="/support/#delete">Delete your data</a></li></ul></div>
+  <p class="legal">Contains transport information from Transport for NSW Open Data, licensed under CC BY 4.0. Map data &copy; OpenStreetMap contributors. Transport is an independent app. It is not made, endorsed or supported by Transport for NSW. Times can change, so check signs and announcements at your stop. &copy; 2026 Transport. No tracking cookies.</p>
+</div></footer>
+<div class="sticky" id="lpSticky" aria-hidden="true"><a class="btn" href="/#/" data-open tabindex="-1">Open web app</a><a class="btn alt" href="/download/" tabindex="-1">Android</a></div>
+</div>
 <header class="nav" id="nav">
   <div class="nav-row">
     <div class="nav-left" id="navLeft"></div>
@@ -30,7 +122,7 @@
     <div class="nav-right" id="navRight"><button class="live" id="live" type="button" aria-live="polite" title="Refresh now"><i></i><span id="liveText">Live</span></button></div>
   </div>
 </header>
-<main id="view" tabindex="-1"></main>
+<main id="view" tabindex="-1"><h1 class="large" aria-busy="true">Trips</h1><div class="group"><div class="list"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div></div></main>
 <nav class="tabbar" id="tabbar" aria-label="Sections">
   <div class="tabbar-in">
     <a href="#/" data-tab="home"><svg viewBox="0 0 28 28" fill="currentColor"><path d="M14 3.6c.4 0 .8.1 1.1.4l9.2 7.7c.4.3.4.9.1 1.3-.3.4-.9.4-1.3.1l-.6-.5v9.6c0 1.7-1.3 3-3 3H8.5c-1.7 0-3-1.3-3-3v-9.6l-.6.5c-.4.3-1 .3-1.3-.1-.3-.4-.3-1 .1-1.3L12.9 4c.3-.3.7-.4 1.1-.4Zm-2.2 18.8h4.4v-5.1c0-.6-.4-1-1-1h-2.4c-.6 0-1 .4-1 1v5.1Z"/></svg><span>Trips</span></a>
@@ -42,8 +134,33 @@
 </nav>
 <div class="banner" id="banner" role="status" aria-live="assertive"><img src="/icon-192.png" alt=""><div><b id="bannerT"></b><span id="bannerB"></span></div><small>now</small></div>
 <div class="toast" id="toast" role="status"></div>
+<script src="/hit.js?v=2" defer></script>
 <script src="/vendor/leaflet.js" defer></script>
 <script src="/ask.js?v=1" defer></script>
-<script src="/app.js?v=5" defer></script>
+<script src="/app.js?v=7" defer></script>
+<script>
+(function () {
+  var d = document.documentElement;
+  function openApp(e) {
+    if (!d.classList.contains("landing")) return;
+    e.preventDefault();
+    d.className = "app";
+    history.pushState(null, "", "/#/");
+    window.scrollTo(0, 0);
+    if (window.TBApp) window.TBApp(); else document.addEventListener("DOMContentLoaded", function () { window.TBApp && window.TBApp(); });
+  }
+  [].forEach.call(document.querySelectorAll("#landing [data-open]"), function (a) { a.addEventListener("click", openApp); });
+  if (!d.classList.contains("landing")) return;
+  document.addEventListener("DOMContentLoaded", function () { if (window.TBHit) window.TBHit(""); });
+  var st = document.getElementById("lpSticky"), ctas = document.querySelector("#landing .ctas");
+  if (st && ctas && "IntersectionObserver" in window) {
+    new IntersectionObserver(function (es) {
+      var show = !es[0].isIntersecting && es[0].boundingClientRect.top < 0;
+      st.classList.toggle("show", show); st.setAttribute("aria-hidden", show ? "false" : "true");
+      [].forEach.call(st.querySelectorAll("a"), function (a) { a.tabIndex = show ? 0 : -1; });
+    }).observe(ctas);
+  }
+})();
+</script>
 </body>
 </html>

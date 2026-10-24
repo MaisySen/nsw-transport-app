@@ -1,8 +1,8 @@
 {
  "id": "/",
- "name": "Transport Bot",
+ "name": "Transport",
  "short_name": "Transport",
- "description": "Live Sydney transport that comes to you: leave now alerts, delays, platform changes and missed connections.",
+ "description": "Live Sydney and NSW trains, metro, buses, light rail and ferries, with leave now alerts, delays and platform changes.",
  "start_url": "/?source=homescreen",
  "scope": "/",
  "display": "standalone",
@@ -40,6 +40,16 @@
   {
    "name": "Watching",
    "url": "/#/watching",
+   "icons": [
+    {
+     "src": "/icon-192.png",
+     "sizes": "192x192"
+    }
+   ]
+  },
+  {
+   "name": "Ask",
+   "url": "/#/chat",
    "icons": [
     {
      "src": "/icon-192.png",

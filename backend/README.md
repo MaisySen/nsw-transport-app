@@ -90,6 +90,14 @@ All endpoints return JSON. Add `format=text` for a short plain text answer.
 | `GET /api/alerts?q=T1` | Current alerts |
 | `GET /api/obs?route=415&stop=213516` | Recorded realtime observations (for delay prediction) |
 | `GET /api/health` | Feed cache state |
+| `POST /api/hit` `{p, r}` | Website page view counter: one daily total per page and referring site, no cookies, no IP or IDs stored |
+| `GET /api/stats?key=ADMIN_KEY&days=30` | Page view totals by day, page and referrer |
+| `POST /api/feedback` | Contact form (form post redirects to /support/thanks/, JSON gets `{ok}` or field `errors`) |
+| `GET /api/feedback?key=ADMIN_KEY` | Read contact form messages (`DELETE ?key=&id=` removes one) |
+
+## Website
+
+`/` shows a landing page to first time browser visitors and the web app to everyone else (installed app, `/#/...` links, returning users, `?source=` or `?me=`). `/?about` always shows the landing page. Other pages: `/download/`, `/support/` (help and contact form), `/support/thanks/`, `/privacy/`, `/terms/`, `404.html`, `robots.txt`, `sitemap.xml`. Shared styles are in `site.css`, the page counter in `hit.js`.
 
 ## How it works
 

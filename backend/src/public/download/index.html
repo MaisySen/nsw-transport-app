@@ -1,16 +1,32 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-AU" data-page="download/">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Get the Transport app</title>
-<meta property="og:title" content="Get the Transport app">
-<meta property="og:description" content="Live Sydney trains, buses, metro, light rail and ferries. Android app and iPhone preview.">
-<meta property="og:image" content="https://nsw-transport-bot.sites.tab.bot/icon-1024.png">
-<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+<title>Download Transport for Android and iPhone</title>
+<meta name="description" content="Get the free Transport app for Android with widgets and alerts, try the iPhone preview, or open the web app. Live Sydney and NSW transport, no account.">
+<link rel="canonical" href="https://nsw-transport-bot.sites.tab.bot/download/">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
-<link rel="icon" href="/icon-192.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Transport">
+<meta property="og:title" content="Download Transport for Android and iPhone">
+<meta property="og:description" content="Get the free Transport app for Android with widgets and alerts, try the iPhone preview, or open the web app. Live Sydney and NSW transport, no account.">
+<meta property="og:url" content="https://nsw-transport-bot.sites.tab.bot/download/">
+<meta property="og:image" content="https://nsw-transport-bot.sites.tab.bot/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Transport app icon and the Trips screen showing live departures">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Download Transport for Android and iPhone">
+<meta name="twitter:description" content="Get the free Transport app for Android with widgets and alerts, try the iPhone preview, or open the web app. Live Sydney and NSW transport, no account.">
+<meta name="twitter:image" content="https://nsw-transport-bot.sites.tab.bot/og.png">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<script src="/hit.js?v=2" defer></script>
 <style>
 :root{--bg:#F2F2F7;--card:#fff;--text:#000;--text2:rgba(60,60,67,.6);--sep:rgba(60,60,67,.18);--tint:#007AFF;--green:#34C759;--fill:rgba(120,120,128,.12)}
 @media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1C1C1E;--text:#fff;--text2:rgba(235,235,245,.6);--sep:rgba(84,84,88,.6);--tint:#0A84FF;--green:#30D158;--fill:rgba(120,120,128,.24)}}
@@ -43,7 +59,7 @@ footer{text-align:center;color:var(--text2);font-size:13px;margin-top:28px}
 <body>
 <div class="wrap">
   <div class="hero">
-    <img src="/icon-1024.png" alt="Transport app icon">
+    <img src="/icon-192.png" srcset="/icon-192.png 1x, /icon-512.png 3x" alt="Transport app icon" width="96" height="96">
     <h1>Transport</h1>
     <p class="sub">Live Sydney trains, buses, metro, light rail and ferries. Watch a trip and it tells you when to leave.</p>
   </div>
@@ -58,7 +74,7 @@ footer{text-align:center;color:var(--text2);font-size:13px;margin-top:28px}
       <li><span>Open <b>Transport</b> and tap <b>Turn on alerts</b> in Settings.</span></li>
     </ol>
     <p class="note">Play Protect may say it does not know this developer. Tap <b>More details</b>, then <b>Install anyway</b>. The app updates itself when it opens.</p>
-    <div class="qr"><img src="/download/qr-android.png" alt="QR code for the Android download"><p>On a computer? Scan this with your Android phone camera.</p></div>
+    <div class="qr"><img src="/download/qr-android.png" width="112" height="112" loading="lazy" alt="QR code for the Android download"><p>On a computer? Scan this with your Android phone camera.</p></div>
   </div>
 
   <div class="card" id="iphone">
@@ -71,11 +87,11 @@ footer{text-align:center;color:var(--text2);font-size:13px;margin-top:28px}
       <li><span>Next time, open Expo Go and tap <b>Transport</b> under Recently opened.</span></li>
     </ol>
     <p class="note">Expo Go is a preview: alerts work while it is open, and it opens inside Expo Go rather than from its own icon. The full iPhone app with its own icon, lock screen alerts and widgets comes through TestFlight.</p>
-    <div class="qr"><img src="/download/qr-expo-go.png" alt="QR code to open the app in Expo Go"><p>On a computer? Scan this with your iPhone camera, then tap the Expo Go banner.</p></div>
+    <div class="qr"><img src="/download/qr-expo-go.png" width="112" height="112" loading="lazy" alt="QR code to open the app in Expo Go"><p>On a computer? Scan this with your iPhone camera, then tap the Expo Go banner.</p></div>
   </div>
 
-  <p class="meta" style="margin-top:22px">Prefer the web? <a href="/">Open the web app</a></p>
-  <footer>Live data from Transport for NSW open data.</footer>
+  <p class="meta" style="margin-top:22px">Prefer the web? <a href="/#/">Open the web app</a></p>
+  <footer><p><a href="/?about">Transport home</a> &nbsp; <a href="/support/">Support</a> &nbsp; <a href="/privacy/">Privacy</a> &nbsp; <a href="/terms/">Terms</a></p><p>Questions: <a href="mailto:bidur@mail.tab.bot?subject=Transport%20app">bidur@mail.tab.bot</a></p><p>Contains transport information from Transport for NSW Open Data, licensed under CC BY 4.0. Transport is an independent app, not made or endorsed by Transport for NSW.</p></footer>
 </div>
 <script>
 fetch('/api/app').then(function(r){return r.json()}).then(function(d){

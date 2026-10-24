@@ -10,10 +10,12 @@ const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
 
 test("page has title, viewport and local assets", () => {
   const html = read("src/public/index.html");
-  assert.match(html, /<title>Transport Bot/);
+  assert.match(html, /<title>Transport/);
   assert.match(html, /name="viewport" content="width=device-width/);
   for (const ref of html.matchAll(/(?:src|href)="(\/[^"]+)"/g)) {
-    assert.ok(fs.existsSync(path.join(pub, ref[1].split("?")[0])), "missing asset " + ref[1]);
+    const f = ref[1].split(/[?#]/)[0];
+    if (f === "/" || f.endsWith("/")) continue;
+    assert.ok(fs.existsSync(path.join(pub, f)), "missing asset " + ref[1]);
   }
 });
 

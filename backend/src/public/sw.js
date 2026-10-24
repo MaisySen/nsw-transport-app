@@ -1,6 +1,6 @@
 // Service worker: offline app shell, and Web Push notifications for watched trips.
 const VERSION = "tb-__BUILD__";
-const SHELL = ["/", "/index.html", "/app.js?v=3", "/style.css?v=3", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png", "/badge-96.png", "/vendor/leaflet.js", "/vendor/leaflet.css"];
+const SHELL = ["/", "/app.js?v=7", "/ask.js?v=1", "/hit.js?v=2", "/style.css?v=5", "/ask.css?v=1", "/site.css?v=4", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png", "/badge-96.png", "/vendor/leaflet.js", "/vendor/leaflet.css"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL).catch(() => null)).then(() => self.skipWaiting()));
@@ -23,7 +23,10 @@ self.addEventListener("fetch", (e) => {
     return;
   }
   if (req.mode === "navigate") {
-    e.respondWith(fetch(req).then((res) => { const copy = res.clone(); caches.open(VERSION).then((c) => c.put("/", copy)); return res; }).catch(() => caches.match("/")));
+    // Only the app shell at / is cached for offline use; other pages (privacy, 404 and so on) are never stored as /.
+    const isShell = url.pathname === "/";
+    e.respondWith(fetch(req).then((res) => { if (isShell && res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put("/", copy)); } return res; })
+      .catch(() => caches.match(isShell ? "/" : req).then((m) => m || caches.match("/"))));
     return;
   }
   e.respondWith(caches.match(req).then((hit) => {

@@ -1731,6 +1731,94 @@ async function sendPush(sub, msg, opts = {}) {
 
 // ---------- storage for the proactive layer ----------
 
+// ---------- site analytics and feedback ----------
+// Analytics are first party and aggregated: one counter per day, page and referring site.
+// No cookies, no IP address, no user agent and no install ID are stored.
+let siteSchemaReady = null;
+async function ensureSiteSchema(env) {
+  const d = db(env);
+  if (!d) return false;
+  if (!siteSchemaReady) {
+    siteSchemaReady = d.batch([
+      d.prepare(`CREATE TABLE IF NOT EXISTS hits (day TEXT, path TEXT, ref TEXT, n INTEGER DEFAULT 0, PRIMARY KEY (day, path, ref))`),
+      d.prepare(`CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, topic TEXT, email TEXT, message TEXT, install TEXT, page TEXT, done INTEGER DEFAULT 0)`),
+    ]).then(() => true).catch((e) => { siteSchemaReady = null; throw e; });
+  }
+  return siteSchemaReady;
+}
+const HIT_PATHS = /^(|download\/|privacy\/|terms\/|support\/|support\/thanks\/|404|app\/(home|search|chat|watching|settings|trip|stop|svc|ask|alerts|near|watch))$/;
+function cleanRef(ref, host) {
+  try {
+    const h = new URL(ref).hostname.replace(/^www\./, "").toLowerCase().slice(0, 60);
+    return !h || h === host ? "" : h;
+  } catch (e) { return ""; }
+}
+async function siteRoutes(request, env, url, exec) {
+  const p = url.searchParams;
+  if (url.pathname === "/api/hit") {
+    if (request.method !== "POST") return json({ error: "method" }, 405);
+    const b = await request.json().catch(() => ({}));
+    const path = String(b.p || "").slice(0, 40);
+    if (!HIT_PATHS.test(path)) return new Response(null, { status: 204 });
+    const day = new Date(Date.now() + 11 * 3600e3).toISOString().slice(0, 10);
+    const ref = cleanRef(String(b.r || ""), url.hostname);
+    const job = ensureSiteSchema(env).then(() => db(env).prepare(`INSERT INTO hits (day, path, ref, n) VALUES (?1, ?2, ?3, 1)
+      ON CONFLICT (day, path, ref) DO UPDATE SET n = n + 1`).bind(day, path, ref).run()).catch(() => null);
+    if (exec && exec.waitUntil) exec.waitUntil(job); else await job;
+    return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+  }
+  if (url.pathname === "/api/stats") {
+    if (p.get("key") !== ADMIN_KEY) return json({ error: "forbidden" }, 403);
+    await ensureSiteSchema(env);
+    if (request.method === "DELETE") {
+      await db(env).prepare(`DELETE FROM hits WHERE day = ?1`).bind(String(p.get("day") || "")).run();
+      return json({ ok: true });
+    }
+    const days = Math.min(90, Math.max(1, Number(p.get("days") || 30)));
+    const since = new Date(Date.now() + 11 * 3600e3 - days * 864e5).toISOString().slice(0, 10);
+    const q = (sql) => db(env).prepare(sql).bind(since).all().then((r) => r.results || []);
+    const [byDay, byPath, byRef] = await Promise.all([
+      q(`SELECT day, SUM(n) AS views FROM hits WHERE day >= ?1 GROUP BY day ORDER BY day`),
+      q(`SELECT path, SUM(n) AS views FROM hits WHERE day >= ?1 GROUP BY path ORDER BY views DESC`),
+      q(`SELECT ref, SUM(n) AS views FROM hits WHERE day >= ?1 AND ref != '' GROUP BY ref ORDER BY views DESC LIMIT 30`),
+    ]);
+    return json({ since, byDay, byPath, byRef });
+  }
+  if (url.pathname === "/api/feedback") {
+    if (request.method === "GET") {
+      if (p.get("key") !== ADMIN_KEY) return json({ error: "forbidden" }, 403);
+      await ensureSiteSchema(env);
+      const r = await db(env).prepare(`SELECT * FROM feedback ORDER BY id DESC LIMIT 200`).all();
+      return json({ items: r.results || [] });
+    }
+    if (request.method === "DELETE") {
+      if (p.get("key") !== ADMIN_KEY) return json({ error: "forbidden" }, 403);
+      await ensureSiteSchema(env);
+      await db(env).prepare(`DELETE FROM feedback WHERE id = ?1`).bind(Number(p.get("id") || 0)).run();
+      return json({ ok: true });
+    }
+    if (request.method !== "POST") return json({ error: "method" }, 405);
+    const ct = request.headers.get("content-type") || "";
+    const isForm = !ct.includes("application/json");
+    let b = {};
+    if (isForm) { const f = await request.formData().catch(() => null); if (f) for (const [k, v] of f.entries()) b[k] = String(v); }
+    else b = await request.json().catch(() => ({}));
+    const back = (q) => Response.redirect(new URL("/support/" + q, url.origin).toString(), 303);
+    if (b.website) return isForm ? Response.redirect(new URL("/support/thanks/", url.origin).toString(), 303) : json({ ok: true });
+    const message = String(b.message || "").trim().slice(0, 4000);
+    const email = String(b.email || "").trim().slice(0, 200);
+    const topic = ["question", "problem", "idea", "data"].includes(b.topic) ? b.topic : "question";
+    const errors = {};
+    if (message.length < 10) errors.message = "Write a few words so we know what to fix or answer.";
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) errors.email = "That email address does not look right.";
+    if (Object.keys(errors).length) return isForm ? back("?error=" + Object.keys(errors).join(",") + "#contact") : json({ ok: false, errors }, 400);
+    if (!(await ensureSiteSchema(env).catch(() => false))) return isForm ? back("?error=server#contact") : json({ ok: false, errors: { form: "We could not save that right now. Please email bidur@mail.tab.bot instead." } }, 503);
+    await db(env).prepare(`INSERT INTO feedback (at, topic, email, message, install, page) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
+      .bind(Date.now(), topic, email, message, String(b.install || "").slice(0, 40), String(b.page || "").slice(0, 80)).run();
+    return isForm ? Response.redirect(new URL("/support/thanks/", url.origin).toString(), 303) : json({ ok: true });
+  }
+  return null;
+}
 let schema3Ready = null;
 async function ensureSchema3(env) {
   const d = db(env);
@@ -2489,6 +2577,10 @@ export default {
     if (/^\/(worker\.m?js|_worker\.js|tab-site\.json)$/.test(url.pathname)) return new Response("Not found", { status: 404 });
     if (/^\/download\/[A-Za-z0-9._-]+\.apk$/.test(url.pathname)) return serveFile(env, url.pathname.slice("/download/".length), request);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
+    if (/^\/api\/(hit|stats|feedback)$/.test(url.pathname)) {
+      try { const s = await siteRoutes(request, env, url, exec); if (s) return s; }
+      catch (e) { return json({ ok: false, error: "server", errors: { form: "We could not save that right now. Please email bidur@mail.tab.bot instead." } }, 500); }
+    }
     feedStats.requests++;
     const p = url.searchParams;
     const asTxt = p.get("format") === "text";

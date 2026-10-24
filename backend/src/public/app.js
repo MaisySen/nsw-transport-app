@@ -2,8 +2,11 @@
 // Apple style layout: large titles, grouped lists, a tab bar, a live map in a pull up sheet.
 // Every view refreshes itself while open, countdowns tick every second, every time is
 // marked live or scheduled, and watched trips reach the phone as notifications.
-(() => {
+// index.html shows the landing page to first time browser visitors; the app boots when they open it.
+window.TBApp = () => {
   "use strict";
+  if (window.TBApp.started) return;
+  window.TBApp.started = true;
   const TZ = "Australia/Sydney";
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -21,7 +24,14 @@
   const PROFILE = (() => {
     const me = new URLSearchParams(location.search).get("me");
     if (me) LS.set("tb_profile", me.toLowerCase());
-    return LS.get("tb_profile", "bidur");
+    let p = LS.get("tb_profile", null);
+    if (!p) {
+      // Browsers that used the app before per install profiles keep the original profile.
+      // Everyone else gets a random profile of their own, so saved trips are never shared.
+      p = LS.get("tb_device", null) ? "bidur" : "w" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      LS.set("tb_profile", p);
+    }
+    return p;
   })();
   const DEVICE = (() => {
     let d = LS.get("tb_device", null);
@@ -984,7 +994,7 @@
       const tl = trips(), sl = stopsList();
       const fresh = !tl.length && !sl.length;
       let h = `<h1 class="large">Trips</h1>
-        <a class="sfield homesearch" href="#/search?focus=1" role="search">${SEARCH_ICO}<span>Where to?</span></a>`;
+        <a class="sfield homesearch" href="#/search?focus=1" aria-label="Search stops, stations and trips">${SEARCH_ICO}<span>Where to?</span></a>`;
       const pl = places();
       if (!pl.home || !pl.work) h += `<div class="placebar">${["home", "work"].map((k) => `<button class="place${pl[k] ? " set" : ""}" data-place="${k}"><span class="pico">${k === "home" ? I.house : I.route}</span><span class="pl-t">${pl[k] ? esc(short(pl[k].name)) : k === "home" ? "Add home" : "Add work"}</span></button>`).join("")}</div>`;
       const big = [];
@@ -1613,6 +1623,7 @@
     const params = new URLSearchParams(query || "");
     const pre = S.pre; S.pre = null;
     window.scrollTo(0, 0);
+    if (window.TBHit) { const sec = (path.split("/")[1] || "home").replace(/[^a-z]/g, ""); window.TBHit("app/" + sec); }
     if (path === "/" || path === "") homeView();
     else if (path === "/search") searchView(params);
     else if (path === "/watching") watchingView();
@@ -1636,4 +1647,5 @@
   paintWatchCount();
   route();
   pollWatches();
-})();
+};
+if (document.documentElement.classList.contains("app")) window.TBApp();
