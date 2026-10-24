@@ -4,6 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 24 Oct 2026
 
+### Android versionCode 5 (3:10 PM)
+* The APK on the download page is now versionCode 5. A signed AAB of the same build is kept for Google Play.
+* Next trip widget shows multi leg trips: the first leg's line badge followed by the next lines (for example T1 › M1, or +2 when there are more), "Arrive 3:42 PM, 48 min" for the whole chain, then rows for later options with their lines, arrival time and Tight or Missed when a change is too short or a delay breaks it. Trips come from `/api/plan`, the same planner as the app. Tapping opens the multi leg trip.
+* New Departure board widget (4 x 3, resizable): pick one of your stops or search, then a mode when the stop has more than one. Shows the next 4 to 6 services by widget height with line badge, destination, platform or stand, and the live countdown or delay. Refreshes about every minute while the screen is on. Tapping opens the stop.
+* Long press shortcuts on the app icon: Home, Work, Ask, and your top 2 other trips in Home screen order. Home and Work come from your saved places, or a trip named Home or Work. They update when you open or leave the app.
+* Widgets read trips saved on this phone as well as server saved trips, so new multi leg trips appear in the widget picker.
+* App backup is off (`allowBackup=false`), so the install id and stored data are not copied to a new phone by Android backup. Launcher badge and foreground service permissions are removed; the app asks only for location while in use and notifications.
+* Over the air update to production and expo-go with the same JavaScript (ids in [docs/RELEASES.md](docs/RELEASES.md)).
+
 ### Backend follow ups from the security review (2:50 PM)
 * `/api/ask` replies are now 5 to 21 KB instead of 180 to 490 KB (about 1 to 2.5 KB gzipped). They carry only what the web, Android and iPhone Ask screens read; the full planner output and the internal error text are gone.
 * TfNSW alert links are links only when they start with `https://`.

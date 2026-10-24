@@ -1,6 +1,6 @@
 # Releases
 
-Every shipped build and update. Times are Sydney time (AEDT). Updated 24 Oct 2026, 2:20 PM.
+Every shipped build and update. Times are Sydney time (AEDT). Updated 24 Oct 2026, 3:12 PM.
 
 ## iPhone (native SwiftUI)
 
@@ -25,12 +25,13 @@ Package `com.maisysen.nswtransport`, versionName 1.0.0, signed with one upload k
 
 | versionCode | Built | Commit | Form | What changed |
 | --- | --- | --- | --- | --- |
+| 5 | 24 Oct, 3:07 PM | 1302300 | APK, on the download page since 3:10 PM, and signed AAB for Google Play (`transport-1.0.0-vc5.aab`, kept on the build box) | Multi leg trips on the Next trip widget (each leg's line, total time, arrival, tight and missed change warnings); new Departure board widget (next 4 to 6 services with line badge, platform and live or delay, refreshes about every minute); long press shortcuts Home, Work, Ask and your top 2 trips; app backup off, launcher badge and foreground service permissions removed; random install ids |
 | 4 | 24 Oct, 11:01 AM | e8f387f | Signed AAB for Google Play (`transport-1.0.0-vc4.aab`, kept on the build box) | Target API 36, per install profile, widget reads the install profile, fewer permissions, attribution and links in Settings |
 | 3 | 24 Oct, 8:48 AM | 19bcfff | APK, on the download page since 8:47 AM | Next trip home screen widget (small and medium) |
 | 2 | 24 Oct, 7:40 AM | 2706fc4 | APK | Live flag on the service sheet, all tab labels, one retry on dropped requests, x86_64 build |
 | 1 | 24 Oct, 1:32 AM | 06185d9 | APK | First Android app |
 
-The download page serves versionCode 3. Every JavaScript change since then has reached installed apps as an over the air update.
+The download page serves versionCode 5. Every JavaScript change since then reaches installed apps as an over the air update. Widgets and shortcuts are native, so they need the versionCode 5 APK.
 
 ## Over the air updates (EAS Update)
 
@@ -38,6 +39,7 @@ Project `cf1f4c4c-5157-41bf-a254-4480223f6368`, owner `bidurtab`. `production` i
 
 | Time (about) | Update | production group | expo-go group |
 | --- | --- | --- | --- |
+| 24 Oct, 2:55 PM | Published with Android versionCode 5: the current JavaScript, including random install ids and the private profile page | ae1ab30a-fffe-413a-b3eb-054dc99ed2da | c2641a5f-66e8-4ad2-9fb0-a93797177115 |
 | 24 Oct, 2:15 PM | Ask: several stops in one question, Open trip and Save trip open as a multi leg trip | 809a3a8e-74dd-4fb6-b082-2ace00c68948 (republished over 1e683ee4-ff26-4485-ade0-f1858ab1f73c) | edd8ad30-66d9-4347-b8de-1108c7dc2801 |
 | 24 Oct, 1:50 PM | Multi leg trips: add, remove and reorder legs, change time per connection, walk legs, tight and missed connection warnings | c0bd6116-bf5f-49b4-8c7f-ef849f15092d | db5cefd5-b7fe-478e-bf63-a6fb114d64dd |
 | 24 Oct, 11:45 AM | New trip by mode, confirm trip with extend and connection time, direct services with All services, drag to reorder | 6372d294-62c6-4557-a2e5-a683dc3b898b | 88b28c86-7280-4d9b-9ca2-d997d4ca0566 |
