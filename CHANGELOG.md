@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 24 Oct 2026
 
+### Server: trip alerts once, and a trip ends at your stop (10:15 PM)
+* Fixed: two checks of the same watch running together (the minute tick and an open app) could both send "Arriving at Kings Cross in 2 min". Each alert is now claimed in D1 (new table `watch_sent`) before it is sent, so it goes out once.
+* A leg gets one get ready alert: "Next stop" (from where the train really is) or "Arriving in N min", never both.
+* A trip started with Start trip ends at your stop: one "You've arrived at Kings Cross" with the time the train got in, then the watch ends. Nothing follows it.
+* "You'll miss the" alerts name the live departure time, the same time the change alert uses.
+* New test `journey-replay.test.mjs` replays a whole trip (Strathfield to Redfern on a late T1, change to an early T4, off at Kings Cross) on a fake clock, with two checks racing at each arrival, and checks every alert. 83 backend tests pass. Deployed.
+
 ### iPhone app: live trip ends at your stop, each alert once (10:10 PM)
 * Fixed: a live trip could roll on to the next train after you arrived. Once a run has finished the server can answer with the next service on the line; the app now only accepts an answer for the same run (the stop you board at planned within 2 minutes of your leg), so arrival stays arrival.
 * The live trip now ends when you arrive: one "You've arrived" alert, then the Lock Screen card and the share link stop. Before, it kept running for 10 more minutes.

@@ -2553,6 +2553,7 @@ async function ensureSchema3(env) {
       d.prepare(`CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, device TEXT, profile TEXT, watch_id TEXT,
         at INTEGER, title TEXT, body TEXT, url TEXT, tag TEXT, pushed INTEGER DEFAULT 0, push_status TEXT)`),
       d.prepare(`CREATE INDEX IF NOT EXISTS notes_dev ON notes (device, id)`),
+      d.prepare(`CREATE TABLE IF NOT EXISTS watch_sent (watch_id TEXT NOT NULL, k TEXT NOT NULL, at INTEGER, PRIMARY KEY (watch_id, k))`),
       d.prepare(`CREATE TABLE IF NOT EXISTS searches (profile TEXT, device TEXT, day TEXT, dow INTEGER, tod INTEGER,
         from_id TEXT, from_name TEXT, to_id TEXT, to_name TEXT, src TEXT, at INTEGER)`),
       d.prepare(`CREATE INDEX IF NOT EXISTS searches_prof ON searches (profile, at)`),
@@ -2903,16 +2904,32 @@ async function rescuePlan(env, spec, i, live, now) {
   return { legs, arrive: ms(j.arrive), journey: j };
 }
 
+// Claims one alert of one watch before it is sent, so two checks that run at the same time
+// (the minute tick and an open app) send it once. True when this check may send it.
+async function claimOnce(env, watchId, key) {
+  try {
+    const r = await db(env).prepare("INSERT OR IGNORE INTO watch_sent (watch_id, k, at) VALUES (?1, ?2, ?3)").bind(watchId, key, Date.now()).run();
+    return !(r && r.meta && r.meta.changes === 0);
+  } catch (e) {
+    return true;
+  }
+}
+
+const stationWord = (s) => String(s || "your stop").replace(/ Station$/, "");
+
 async function processWatch(env, w, now, opts = {}) {
   const spec = JSON.parse(w.spec);
   const st = w.state ? JSON.parse(w.state) : {};
   const sent = [];
   const target = { device: w.device };
   const url = `/#/watch/${w.id}`;
+  // extra.once names the alert (for example "arr:1"): it is sent once per watch, ever.
   const push = async (title, body, extra = {}) => {
+    if (extra.once && !(await claimOnce(env, w.id, extra.once))) return false;
     const r = await notify(env, target, { title, body, url, tag: "w" + w.id + (extra.tagSuffix || ""), watchId: w.id });
     sent.push({ title, body, pushed: r.pushed });
     st.count = (st.count || 0) + 1;
+    return true;
   };
   const live = await liveLegs(env, spec, now);
   const legs = spec.legs;
@@ -2941,7 +2958,7 @@ async function processWatch(env, w, now, opts = {}) {
       body = lastLeg.toStopId ? `On board. I'll tell you 2 minutes before ${lastLeg.to || "your stop"}${last > 0 ? ", and about your connections" : ""}.` : "It has already left this stop.";
       st.leaveSent = true;
     }
-    if (!opts.silentStart && !(live[last].arr ? now > live[last].arr + 120000 : now > live[last].dep + 120000)) await push(`Watching the ${lineTxt}`, body);
+    if (!opts.silentStart && !(live[last].arr ? now > live[last].arr + 120000 : now > live[last].dep + 120000)) await push(`Watching the ${lineTxt}`, body, { once: "start" });
     else if (opts.leaveSent) st.leaveSent = true;
   }
 
@@ -2949,15 +2966,15 @@ async function processWatch(env, w, now, opts = {}) {
     // Leave now
     if (!st.leaveSent && O0.dep - leadMs - now <= 60000) {
       const away = minsFrom(O0.dep, now);
-      await push("Leave now", `${cap(legLabel(L0))} is ${away} min away, ${O0.depLive ? lateWords(O0.delay) : "on the timetable (no live data)"}${where ? "." + where.replace(" from", " From") : ""}.`.replace("..", "."));
+      await push("Leave now", `${cap(legLabel(L0))} is ${away} min away, ${O0.depLive ? lateWords(O0.delay) : "on the timetable (no live data)"}${where ? "." + where.replace(" from", " From") : ""}.`.replace("..", "."), { once: "leave" });
       st.leaveSent = true;
     }
     // Delay changes
     if (O0.depLive && O0.delay != null) {
       const prev = st.lastDelay == null ? 0 : st.lastDelay;
       if (Math.abs(O0.delay - prev) >= 3 && (O0.delay >= 3 || prev >= 3)) {
-        if (O0.delay >= 1) await push(`Now ${O0.delay} min late`, `${cap(legLabel(L0))} to ${L0.towards || L0.to} now leaves${where} at ${clock(O0.dep)}.`);
-        else await push("Back on time", `${cap(legLabel(L0))} to ${L0.towards || L0.to} leaves${where} at ${clock(O0.dep)}.`);
+        if (O0.delay >= 1) await push(`Now ${O0.delay} min late`, `${cap(legLabel(L0))} to ${L0.towards || L0.to} now leaves${where} at ${clock(O0.dep)}.`, { once: `delay:${O0.delay}` });
+        else await push("Back on time", `${cap(legLabel(L0))} to ${L0.towards || L0.to} leaves${where} at ${clock(O0.dep)}.`, { once: `ontime:${prev}` });
         st.lastDelay = O0.delay;
       }
     }
@@ -2968,7 +2985,7 @@ async function processWatch(env, w, now, opts = {}) {
     const key = `${bi}:${o.platform}`;
     if (o.platform && (o.platformFrom || (st.lastPlatform && st.lastPlatformLeg === bi && st.lastPlatform !== o.platform)) && st.platformKey !== key) {
       const was = o.platformFrom || st.lastPlatform;
-      await push(`Platform changed to ${o.platform.replace(/^Platform /, "")}`, `The ${clock(o.dep)} ${l.line} to ${l.towards || l.to} now leaves from ${o.platform}${was ? `, not ${was}` : ""}.`);
+      await push(`Platform changed to ${o.platform.replace(/^Platform /, "")}`, `The ${clock(o.dep)} ${l.line} to ${l.towards || l.to} now leaves from ${o.platform}${was ? `, not ${was}` : ""}.`, { once: `plat:${key}` });
       st.platformKey = key;
     }
     st.lastPlatform = o.platform; st.lastPlatformLeg = bi;
@@ -2997,7 +3014,7 @@ async function processWatch(env, w, now, opts = {}) {
     const missed = legs[i + 1];
     let plan = null;
     try { plan = await rescuePlan(env, spec, i, live, now); } catch (e) { plan = null; }
-    const missTxt = `you'll miss the ${clock(ms(missed.planned))} ${lineNoun(missed) === "bus" ? "bus" : missed.line}`;
+    const missTxt = `you'll miss the ${clock(b.dep)} ${lineNoun(missed) === "bus" ? "bus" : missed.line}`;
     if (plan && plan.legs.length) {
       const n0 = plan.legs[0];
       const nd = n0.estimated ? ms(n0.estimated) : ms(n0.planned);
@@ -3014,36 +3031,47 @@ async function processWatch(env, w, now, opts = {}) {
     }
     break;
   }
-  // Arrival at a change or at your stop
+  // Arrival at a change or at your stop: one alert per leg, either "Next stop" (Start trip, from
+  // where the vehicle really is) or "Arriving in N min", never both, and claimed so a second
+  // check running at the same moment cannot send it again.
   for (let i = 0; i <= last; i++) {
     const o = live[i], l = legs[i];
     if (!l.toStopId || !o.arr) continue;
     if (o.dep > now) continue;
+    if ((st.arrived || {})[i]) continue;
     const left = o.arr - now;
-    // Started from "Start trip": one stop before you get off, from where the vehicle really is.
     if (spec.track && l.tripId && left > 0 && left <= 15 * 60000 && !(st.oneStop || {})[i]) {
       const c = await oneStopCheck(env, l).catch(() => null);
       if (c && c.nextIsYours) {
         st.oneStop = st.oneStop || {}; st.oneStop[i] = 1;
         st.arrived = st.arrived || {}; st.arrived[i] = 1;
         const at = c.eta ? ` at ${clock(c.eta)}` : "";
-        if (i === last) await push(`Next stop: ${l.to}`, `Get ready to get off. Your ${l.line} gets in${at}.`, { tagSuffix: "a" });
+        if (i === last) await push(`Next stop: ${l.to}`, `Get ready to get off. Your ${l.line} gets in${at}.`, { tagSuffix: "a", once: `arr:${i}` });
         else {
           const n = legs[i + 1], no = live[i + 1];
-          await push(`Next stop: ${l.to}, change here`, `Get off${at} for the ${clock(no.dep)} ${n.line}${no.platform ? " from " + no.platform : ""}, ${no.depLive ? lateWords(no.delay) : "scheduled"}.`, { tagSuffix: "a" });
+          await push(`Next stop: ${l.to}, change here`, `Get off${at} for the ${clock(no.dep)} ${n.line}${no.platform ? " from " + no.platform : ""}, ${no.depLive ? lateWords(no.delay) : "scheduled"}.`, { tagSuffix: "a", once: `arr:${i}` });
         }
         continue;
       }
     }
-    if (left <= 150000 && left > -60000 && !(st.arrived || {})[i]) {
+    if (left <= 150000 && left > -60000) {
       st.arrived = st.arrived || {}; st.arrived[i] = 1;
       const mins = Math.max(1, Math.round(left / 60000));
-      if (i === last) await push(`Arriving at ${l.to} in ${mins} min`, `Get ready to get off. Your ${l.line} gets in at ${clock(o.arr)}.`, { tagSuffix: "a" });
+      if (i === last) await push(`Arriving at ${l.to} in ${mins} min`, `Get ready to get off. Your ${l.line} gets in at ${clock(o.arr)}.`, { tagSuffix: "a", once: `arr:${i}` });
       else {
         const n = legs[i + 1], no = live[i + 1];
-        await push(`Change at ${l.to} in ${mins} min`, `Next: the ${clock(no.dep)} ${n.line}${no.platform ? " from " + no.platform : ""}, ${no.depLive ? lateWords(no.delay) : "scheduled"}.`, { tagSuffix: "a" });
+        await push(`Change at ${l.to} in ${mins} min`, `Next: the ${clock(no.dep)} ${n.line}${no.platform ? " from " + no.platform : ""}, ${no.depLive ? lateWords(no.delay) : "scheduled"}.`, { tagSuffix: "a", once: `arr:${i}` });
       }
     }
+  }
+  // A trip started with Start trip ends at your stop: one "arrived", then nothing more. It never
+  // moves on to a later service.
+  const fin = live[last];
+  if (spec.track && legs[last].toStopId && fin.arr && fin.dep <= now && now >= fin.arr) {
+    if (now <= fin.arr + 10 * 60000) {
+      await push(`You've arrived at ${stationWord(legs[last].to)}`, `Your ${legs[last].line} got in at ${clock(fin.arr)}. The trip has ended.`, { tagSuffix: "a", once: "done" });
+    }
+    phase = "done";
   }
   const ended = phase === "done" || now > w.expires;
   st.snap = snapshotOf(spec, live, now, ended ? "done" : phase);
