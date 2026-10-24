@@ -168,7 +168,12 @@ jobs:
             -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
             -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            > ../export.log 2>&1 || { grep -E "error|Error" ../export.log | sort -u | head -60; tail -30 ../export.log; exit 1; }
+            > ../export.log 2>&1 || {
+              grep -E "error|Error" ../export.log | sort -u | head -60; tail -30 ../export.log
+              if grep -q "Error Downloading App Information" ../export.log; then
+                echo "::error::App Store Connect has no app record for com.maisysen.nswtransport yet. Create it once (SUBMIT.md, iPhone step 1), then run this workflow again."
+              fi
+              exit 1; }
           grep -E "Upload succeeded|EXPORT SUCCEEDED|Uploaded" ../export.log || tail -20 ../export.log
 
       - name: Clean up the key

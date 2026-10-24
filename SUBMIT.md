@@ -4,7 +4,8 @@ Everything that does not need a developer account login is done: code, privacy m
 store copy, screenshots and the support and privacy pages. What remains is below, in order. Each step is one action.
 
 Identifiers: iPhone `com.maisysen.nswtransport` (widget `com.maisysen.nswtransport.widget`, app group
-`group.com.maisysen.nswtransport`); Android `com.maisysen.nswtransport`. Nothing has been registered yet.
+`group.com.maisysen.nswtransport`); Android `com.maisysen.nswtransport`. The two iPhone App IDs were registered by the
+first TestFlight run on 24 Oct 2026 (App Groups capability on). The app group itself is not registered yet (item 5 below).
 
 ## What only Bidur can provide
 
@@ -13,22 +14,33 @@ Identifiers: iPhone `com.maisysen.nswtransport` (widget `com.maisysen.nswtranspo
 3. The seller or legal name for the copyright line, and a phone number for App Review contact.
 4. Google Play Console invite to bidur@mail.tab.bot with Admin permission. Play invites need a Google account on that
    address; Tab creates one at accounts.google.com ("Use my current email address instead") and reads the code from that mailbox.
-5. Play Console for a personal account: Google asks new personal developer accounts to run a closed test with at
+5. Register the app group (one time, about 2 minutes, developer.apple.com; an API key cannot do this):
+   Certificates, Identifiers & Profiles, Identifiers, the plus button, App Groups, Continue.
+   Description "Transport", Identifier `group.com.maisysen.nswtransport`, Continue, Register.
+   Then back in Identifiers, open App ID `com.maisysen.nswtransport` (listed as "XC com maisysen nswtransport"),
+   App Groups is already ticked, press Configure (or Edit) next to it, tick `group.com.maisysen.nswtransport`, Continue, Save, Confirm.
+   Do the same for `com.maisysen.nswtransport.widget`. After that the next TestFlight run signs with the app group by itself.
+   Until then TestFlight builds are signed without it: the app and Live Activities work as normal, but the home screen
+   widgets cannot read the app's starred stops or saved trips (a stop can still be picked in the widget's own settings).
+6. Play Console for a personal account: Google asks new personal developer accounts to run a closed test with at
    least 12 testers for 14 days before production access. Plan for that (friends with Android phones, opted in by email).
 
 ## iPhone: App Store
 
 1. Create the app record (one time, web page; the API cannot create apps):
    App Store Connect, Apps, plus, New App. Platform iOS, name "Transport: Sydney Live" (fallback in store/apple/listing.md),
-   language English (Australia), bundle ID com.maisysen.nswtransport (it appears in the list after step 2 runs once;
-   if it is not there yet, run step 2 first, it registers the IDs), SKU nswtransport-ios-1, full access.
+   language English (Australia), bundle ID com.maisysen.nswtransport (registered 24 Oct 2026, it is in the list),
+   SKU nswtransport-ios-1, full access. Until this exists the upload stops with
+   "exportArchive Error Downloading App Information" (TestFlight run 4, 24 Oct 2026: signing and the archive passed).
 2. Add four repository secrets (GitHub, MaisySen/nsw-transport-app, Settings, Secrets and variables, Actions):
    `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` (the whole .p8 text), `APPLE_TEAM_ID`.
    From this box: `gh secret set ASC_KEY_P8 < AuthKey_XXXX.p8` and so on, or the GitHub API with the repo's public key.
 3. Sign and upload to TestFlight: one CI run.
    Actions, "iOS TestFlight upload", Run workflow (or `gh workflow run ios-testflight.yml`).
-   It archives with automatic signing through the API key (which creates the App IDs, the app group and the distribution
-   certificate on first run), then uploads. Build numbers start at 101.
+   It archives with automatic signing through the API key (which creates the App IDs and the distribution
+   certificate on first run), then uploads. Build numbers start at 101. Input `app_groups`: `auto` (default) signs
+   with the app group when the team has it and otherwise signs without it and prints a warning; `on` fails instead;
+   `off` always signs without it. The API key cannot register the app group, see item 5 of "What only Bidur can provide".
 4. TestFlight: the build appears after processing (about 10 to 30 minutes). Add Bidur as an internal tester; the
    export compliance question is already answered in the app (ITSAppUsesNonExemptEncryption false).
 5. Fill the version page from store/apple/: listing.md (name, subtitle, promo text, description, keywords, URLs,

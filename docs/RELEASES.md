@@ -1,6 +1,6 @@
 # Releases
 
-Every shipped build and update. Times are Sydney time (AEDT). Updated 24 Oct 2026, 4:30 PM.
+Every shipped build and update. Times are Sydney time (AEDT). Updated 24 Oct 2026, 8:30 PM.
 
 ## iPhone (native SwiftUI)
 
@@ -17,7 +17,16 @@ Unsigned builds from CI, attached to GitHub releases. Install with Sideloadly or
 | [2](https://github.com/MaisySen/nsw-transport-app/releases/tag/ios-native-build-2) | 24 Oct, 2:05 AM | 2 | 1f97343 | Screenshot script opens screens by launch argument |
 | [1](https://github.com/MaisySen/nsw-transport-app/releases/tag/ios-native-build-1) | 24 Oct, 1:43 AM | 1 | 3bf98e4 | First native iPhone app |
 
-No TestFlight or App Store build yet: that needs Bidur's App Store Connect API key (see [Store](STORE.md)).
+No TestFlight or App Store build yet. TestFlight signing works since 24 Oct 2026 (workflow "iOS TestFlight upload"):
+
+| Run | Time (AEDT) | Commit | Result |
+| --- | --- | --- | --- |
+| 1 and 2 | 24 Oct, 7:13 PM and 7:26 PM | 6ae178d | Failed: App IDs and team profiles created, but the app group `group.com.maisysen.nswtransport` is not registered (an API key cannot register it) |
+| 3 | 24 Oct, 7:42 PM | 96f12f9 | Fell back to signing without the app group, then codesign hung on a keychain prompt until the job limit |
+| 4 (build 104) | 24 Oct, 8:23 PM | 241d63c | Archive signed (throwaway unlocked keychain). Upload stopped at "exportArchive Error Downloading App Information": no App Store Connect app record yet |
+
+Next: Bidur creates the app record ([SUBMIT.md](../SUBMIT.md), iPhone step 1), then run the workflow again. Builds stay without the
+app group (widgets cannot read the app's starred stops and saved trips) until Bidur registers it (SUBMIT.md, item 5).
 
 ## Android (Expo)
 
