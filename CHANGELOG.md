@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Reliability pick and last way home reminder (over the air update for iPhone and Android, 25 Oct, 2:08 AM)
+* Service rows on the commute card, Home trips and trip results can show one quiet line: "Left on time 9 of the last 10 weekdays". It counts days the server actually saw that service leave that stop (under 3 min late counts as on time) and shows nothing under 5 days.
+* Ask "Last train home" and the last service tonight in trip results get Remind me 15 min before. The server finds the last service itself, looks at live times again as the time comes near, follows it if it is late or replaced, and sends one notification. Cancel from the button or the Home card; Delete all data removes it.
+* iPhone gets the notification. Android shows the reminder on Home and says so, because this Android version has no server push until versionCode 6.
+* Both need the new server: they stay hidden while the app talks to the first address, and appear once api_base moves to api.transportsydney.app. Server flags reliabilityPick and lastWayHome turn them off without an update.
+
 ### iPhone app: round 4 and transportsydney.app links (over the air update, 25 Oct, 1:30 AM)
 * iPhone now has everything Android got at 1:18 AM: Check my trip before I go, crowding chips, Step free trips, one server address, transportsydney.app links and emails.
 * Links into the app: transportsydney.app/trip/<id> opens a Shared trip screen that shows the live trip, /stop/<id> opens that stop, and /plan?from=..&to=.. opens the trip. On iPhone they open the app where the build carries the transportsydney.app link permission; Android needs versionCode 6 (App Links) first.
