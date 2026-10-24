@@ -1498,20 +1498,39 @@ function askPlaceQ(s) {
   return String(s || "").replace(/[?.!,]+$/, "").replace(/\s+(?:by|on|using|with|taking)\s+(?:the\s+)?(?:trains?|bus(?:es)?|metro|ferr(?:y|ies)|light rail|tram|public transport)$/i, "")
     .replace(/\s+(?:please|pls|now|today|tonight|asap)$/i, "").replace(/^(?:the\s+)?(?:next\s+)?(?:trains?|bus(?:es)?|metro|ferry|light rail|tram)\s+(?:from\s+)?/i, "").trim();
 }
+// Several stops: "A to B via C and D", "via C via D", "changing at C and D", "stopping at C, D",
+// "A then C then D then B", "A, C, D, B", "A to C to D to B". One stop keeps the single via path.
+const ASK_VIA_WORDS = "via|through|thru|by way of|going through|stopping at|stop at|changing at|change at";
+const ASK_VIA_RE = new RegExp(`\\s+(?:${ASK_VIA_WORDS})\\s+(.+?)(?=\\s+(?:to|from|${ASK_VIA_WORDS})\\s+|\\s*(?:->|>|\\u2192)\\s*|$)`, "i");
+const ASK_LIST_SPLIT = /\s*,\s*(?:and\s+)?(?:then\s+)?|\s+(?:and\s+then|and|then|&|\+)\s+/i;
 function askParseTrip(s, travel) {
-  let rest = String(s || "").trim(), via = null;
-  const vm = rest.match(/\s+(?:via|through|thru|by way of|going through|stopping at|changing at)\s+(.+?)(?=\s+(?:to|from|>|->|\u2192)\s+|$)/i);
-  if (vm) { via = askPlaceQ(vm[1]); rest = (rest.slice(0, vm.index) + " " + rest.slice(vm.index + vm[0].length)).replace(/\s+/g, " ").trim(); }
+  let rest = String(s || "").trim(), vm;
+  const stops = [];
+  while ((vm = rest.match(ASK_VIA_RE))) {
+    for (const x of vm[1].split(ASK_LIST_SPLIT)) { const q = askPlaceQ(x); if (q) stops.push(q); }
+    rest = (rest.slice(0, vm.index) + " " + rest.slice(vm.index + vm[0].length)).replace(/\s+/g, " ").trim();
+  }
+  const via = stops.length === 1 ? stops[0] : null;
   const TO = "(?:to|>|->|\u2192)";
   let m;
-  const out = (from, to) => ({ from: from == null ? null : askPlaceQ(from), to: to == null ? null : askPlaceQ(to), via });
+  const out = (from, to, mid = []) => {
+    const st = [...mid, ...stops];
+    return { from: from == null ? null : askPlaceQ(from), to: to == null ? null : askPlaceQ(to), via: st.length === 1 ? st[0] : null, stops: st };
+  };
+  // A chain of stops in travel order. "to B from A" and plain "A to B" fall through to the patterns below.
+  const body = rest.replace(/^(?:from|to)\s+/i, "");
+  if (!/\s+from\s+/i.test(body)) {
+    const arrows = /\s+(?:to|then)\s+|\s*(?:->|>|\u2192)\s*/i.test(body);
+    const seq = body.split(arrows ? /\s*,?\s+(?:and\s+)?then\s+|\s+to\s+|\s*(?:->|>|\u2192)\s*/i : /\s*,\s*(?:and\s+)?(?:then\s+)?/).map(askPlaceQ).filter(Boolean);
+    if (seq.length >= 3 || (seq.length === 2 && /\s+then\s+/i.test(body))) return out(seq[0], seq[seq.length - 1], seq.slice(1, -1));
+  }
   if ((m = rest.match(new RegExp(`^from\\s+(.+?)\\s+${TO}\\s+(.+)$`, "i")))) return out(m[1], m[2]);
   if ((m = rest.match(/^to\s+(.+?)\s+from\s+(.+)$/i))) return out(m[2], m[1]);
   if ((m = rest.match(new RegExp(`^to\\s+(.+?)\\s+${TO}\\s+(.+)$`, "i")))) return out(m[1], m[2]);
   if ((m = rest.match(new RegExp(`^(.+?)\\s+${TO}\\s+(.+)$`, "i")))) return out(m[1], m[2]);
   if ((m = rest.match(/^to\s+(.+)$/i))) return out(null, m[1]);
   if ((m = rest.match(/^(.+?)\s+from\s+(.+)$/i)) && (travel || !/\b(departures?|next|bus(es)?|trains?|services?|times?|board|line|route|stop|platform|late|status|delays?|alerts?|last|first)\b/i.test(m[1]))) return out(m[2], m[1]);
-  if (via) return out(null, rest.replace(/^to\s+/i, "") || null);
+  if (stops.length) return out(null, rest.replace(/^to\s+/i, "") || null);
   return null;
 }
 
@@ -1567,6 +1586,78 @@ async function askTrip(env, fromQ, toQ, ctx, o = {}) {
     understood: { from: askLabel(a), to: askLabel(b), via: v ? askLabel(v) : null },
     when: o.time ? { time: o.time, arriveBy: !!o.arriveBy, tomorrow: !!r.tomorrow } : null,
   };
+}
+
+// A trip with stops on the way, planned leg by leg with planChain (the same planner as /api/plan):
+// for each first leg service, the first connection you can catch at every stop after the change time.
+function askJoin(a) { return a.length > 1 ? a.slice(0, -1).join(", ") + " and " + a[a.length - 1] : a[0] || ""; }
+function askChainQ(names) { return `${names[0]} to ${names[names.length - 1]} via ${askJoin(names.slice(1, -1))}`; }
+async function askChain(env, qs, ctx, o = {}) {
+  if (qs.length - 1 > CHAIN_MAX_LEGS) return { kind: "text", text: `That is ${qs.length - 1} legs. I can plan up to ${CHAIN_MAX_LEGS} legs (${CHAIN_MAX_LEGS - 1} stops on the way) in one trip.` };
+  const P = await Promise.all(qs.map((q) => askResolve(env, q, ctx)));
+  const names = P.map((p, i) => (p && !p.ambiguous && !p.needLocation ? askLabel(p) : qs[i]));
+  const when = o.time ? `${o.arriveBy ? " by " : " at "}${Number(o.time.slice(0, 2))}:${o.time.slice(2)}` : "";
+  for (let i = 0; i < P.length; i++) {
+    const p = P[i];
+    if (p && p.ambiguous) return { kind: "didYouMean", role: i === 0 ? "from" : i === P.length - 1 ? "to" : "via", q: p.q, options: p.options, suggestions: p.options.map((x) => askChainQ(names.map((n, k) => (k === i ? x.name : n))) + when) };
+  }
+  for (let i = 0; i < P.length; i++) {
+    const p = P[i];
+    if (!p) return { kind: "text", text: `I couldn't find a station, suburb or stop called "${qs[i]}". Try the station name or a stop number.` };
+    if (p.needLocation || p.coord) return { kind: "text", text: `For a trip with stops, name each stop, like "${askChainQ(["Burwood", ...names.slice(1).map((n) => (n === "your location" ? "Central" : askShort(n)))])}".` };
+    if (i && p.id === P[i - 1].id) return { kind: "text", text: `${askLabel(p)} is listed twice in a row, so there is no leg to plan between them. Ask again without the repeat.` };
+  }
+  const legs = chainLegs(P.slice(1).map((b, i) => ({ f: P[i].id, fn: P[i].name, t: b.id, tn: b.name, m: o.mode || "", c: 5 })));
+  const r = await planChain(env, legs, { time: o.time || null, count: o.count || 6 });
+  const z = P[P.length - 1];
+  return {
+    kind: "trip", chain: true, from: askPlaceOut(P[0]), to: askPlaceOut(z), stops: P.slice(1, -1).map(askPlaceOut), plan: legs, ...r,
+    modeNote: o.arriveBy ? `Arrive by times don't work for trips with stops yet, so these leave from ${Number(o.time.slice(0, 2)) % 12 || 12}:${o.time.slice(2)}${Number(o.time.slice(0, 2)) < 12 ? "am" : "pm"}.` : null,
+    understood: { from: askLabel(P[0]), to: askLabel(z), via: null, stops: P.slice(1, -1).map(askLabel) },
+    when: o.time ? { time: o.time, arriveBy: !!o.arriveBy, tomorrow: !!r.tomorrow } : null,
+  };
+}
+// Trip screen legs as the web and Expo apps read them: [{ mode, from, to, conn }].
+function askLegsJson(places, mode) {
+  return JSON.stringify(places.slice(1).map((b, i) => ({ mode: mode || "", from: { id: places[i].id, name: places[i].name }, to: { id: b.id, name: b.name }, ...(i ? { conn: 5 } : {}) })));
+}
+function askTripLinks(places, mode) {
+  const a = places[0], z = places[places.length - 1], legs = askLegsJson(places, mode);
+  const base = { from: a.id, to: z.id, fn: a.name, tn: z.name, legs };
+  return {
+    open: { kind: "trip", ...base, ...(places.length === 3 ? { via: places[1].id, vn: places[1].name } : {}), href: askHref("#/trip", { ...base, ...(places.length === 3 ? { via: places[1].id, vn: places[1].name } : {}) }) },
+    save: { kind: "saveTrip", ...base, href: askHref("#/trip", { ...base, save: 1 }) },
+  };
+}
+function askChainDecorate(d, now, cards, links) {
+  const js = askNotPast((d.journeys || []).map((j) => ({ ...j, planned: j.leave })), now - 60000);
+  // Lead with the first trip that no later departure beats on arrival.
+  const j = js.find((x) => !x.beaten) || js[0];
+  const U = d.understood;
+  const all = [U.from, ...U.stops, U.to].map(askShort);
+  const lines = [`${U.from} to ${U.to} via ${askJoin(U.stops.map(askShort))}.${d.modeNote ? " " + d.modeNote : ""}`, all.join(" > ")];
+  if (!j) lines.push("No connecting trips found right now. Try a later time.");
+  else {
+    d.plan.forEach((L, k) => {
+      const seg = j.legs.filter((l) => l.seg === k);
+      const tl = seg.filter((l) => l.kind === "transit");
+      const f = tl[0], z = tl[tl.length - 1];
+      if (k && f && f.transfer) lines.push(`Change at ${askShort(L.fn)}: ${Math.max(0, f.transfer.minutes)} min${f.transfer.risk === "tight" ? ", tight" : f.transfer.risk === "miss" ? ", at risk" : ""}`);
+      if (!f) { lines.push(`${k + 1}. Walk ${seg[0] ? seg[0].durationMin : L.w} min to ${askShort(L.tn)}`); return; }
+      const svc = tl.map((l) => l.line || (l.modeName || l.mode || "service")).join(" then ");
+      const st = askStatusWords(f);
+      const stS = k === 0 ? ` ${cap(st)}.` : /late|early|cancel/.test(st) ? ` ${cap(st)}.` : "";
+      lines.push(`${k + 1}. ${svc} from ${f.from || askShort(L.fn)}${askPlat(f.fromPlatform)} at ${hm(f.estimated || f.planned)}${k === 0 ? ` (${askWhen(f.estimated || f.planned)})` : ""}, arrive ${askShort(L.tn)} ${hm(z.arrEstimated || z.arrPlanned)}.${stS}${d.fallback && d.fallback[k] ? " No direct service on this leg, so it has a change." : ""}`);
+    });
+    lines.push(`Total ${j.durationMin} min, arriving ${askShort(U.to)} ${hm(j.arrive)}.`);
+    if (j.warn && !/^Tight change/.test(j.warn)) lines.push(j.warn.replace(/\.$/, "") + ".");
+  }
+  const places = [d.from, ...d.stops, d.to];
+  const geo = places.some((p) => /EPSG/.test(String(p && p.id)));
+  const tl = geo ? null : askTripLinks(places, d.plan[0] && d.plan[0].m);
+  cards.push({ type: "trip", title: all.join(" > "), titleOnly: true, from: d.from, to: d.to, stops: d.stops, chain: true, journeys: js.slice(0, 4).map((x) => ({ ...askJourneyOut(x), warn: x.warn || null, segs: x.segs || null })), link: tl ? tl.open : null });
+  if (tl) { links.push({ label: "Open trip", ...tl.open }); links.push({ label: "Save trip", ...tl.save }); }
+  return { reply: lines.join("\n").replace(/\.\./g, "."), sugg: [askChainQ([U.to, ...[...U.stops].reverse().map(askShort), U.from])] };
 }
 
 async function askLast(env, fromQ, toQ, ctx, mode) {
@@ -1695,13 +1786,15 @@ async function askRoute(env, raw, ctx) {
   const pt = /^(save|alerts?)\b/i.test(lower) || lineQ ? null : askParseTrip(t.rest, travel);
   const lineTok = (s) => /^(T\d|M1|L\d|F\d+|\d{3}[A-Z]?)$/i.test(String(s || ""));
   const topt = { mode, time: t.time, arriveBy: t.arriveBy, via: pt && pt.via };
+  if (pt && pt.from && pt.to && pt.stops.length > 1 && !lineTok(pt.from)) return askChain(env, [pt.from, ...pt.stops, pt.to], ctx, topt);
   if (pt && pt.from && pt.to && !lineTok(pt.from)) return askTrip(env, pt.from, pt.to, ctx, topt);
-  if (pt && !pt.from && pt.to && (travel || tripText !== text || /^to\s/i.test(t.rest) || pt.via)) {
-    if (ctx.lat && ctx.lon) return askTrip(env, "here", pt.to, ctx, topt);
+  if (pt && !pt.from && pt.to && (travel || tripText !== text || /^to\s/i.test(t.rest) || pt.stops.length)) {
+    if (ctx.lat && ctx.lon && pt.stops.length < 2) return askTrip(env, "here", pt.to, ctx, topt);
     const b = await askResolve(env, pt.to, ctx);
     if (b && b.ambiguous) return askDidYouMean("to", b, { from: null, to: null, via: pt.via }, topt);
     if (!b) return { kind: "text", text: `I couldn't find a station, suburb or stop called "${pt.to}".` };
-    return { kind: "needOrigin", to: askPlaceOut(b), via: pt.via ? pt.via.replace(/\b[a-z]/g, (c) => c.toUpperCase()) : null };
+    const vt = pt.stops.length ? askJoin(pt.stops) : null;
+    return { kind: "needOrigin", to: askPlaceOut(b), via: vt ? vt.replace(/\b[a-z]/g, (c) => c.toUpperCase()).replace(/ And /g, " and ") : null };
   }
   const fo = text.match(/^(?:i'?m\s+|i am\s+)?(?:leaving\s+|going\s+)?from\s+(.+)$/i);
   if (fo && !/\s(to|via)\s/i.test(fo[1]) && !lineTok(fo[1])) {
@@ -1796,6 +1889,7 @@ function askDecorate(d, ctx) {
       break;
     }
     case "trip": {
+      if (d.chain && d.understood && d.plan) { ({ reply, sugg } = askChainDecorate(d, now, cards, links)); break; }
       const js = askNotPast((d.journeys || []).map((j) => ({ ...j, planned: j.leave })), now - 60000);
       const j = js[0];
       const U = d.understood || { from: askLabel(d.from), to: askLabel(d.to), via: d.via ? askLabel(d.via) : null };
@@ -1811,9 +1905,12 @@ function askDecorate(d, ctx) {
           : `Leave ${askWhen(j.leave)} (${hm(j.leave)}), arrive ${hm(j.arrive)}.`);
       }
       const tlink = geo(d.from) || geo(d.to) ? null : askTripLink(d.from, d.to);
-      if (tlink && d.via && !geo(d.via)) { tlink.via = d.via.id; tlink.vn = d.via.name; tlink.href += "&via=" + encodeURIComponent(d.via.id) + "&vn=" + encodeURIComponent(d.via.name); }
+      // A via trip opens and saves as a two leg trip.
+      const vlinks = tlink && d.via && !geo(d.via) ? askTripLinks([d.from, d.via, d.to]) : null;
+      if (vlinks) Object.assign(tlink, vlinks.open);
       cards.push({ type: "trip", ...(viaS ? { title: viaS.trim().replace(/^v/, "V") } : {}), from: d.from, to: d.to, via: d.via || null, journeys: js.slice(0, 4).map(askJourneyOut), link: tlink });
       if (tlink) links.push({ label: "Open trip", ...tlink });
+      if (vlinks) links.push({ label: "Save trip", ...vlinks.save });
       if (j && askTransit(j)[0] && askTransit(j)[0].tripId) links.push({ label: "Live map", ...askSvc(askTransit(j)[0]) });
       if (!askIsHere(d.from)) sugg = [`${U.to} to ${U.from}${viaS}`];
       break;
@@ -1875,6 +1972,7 @@ async function askText(env, d) {
     return [d.reply, ...extra].join("\n");
   }
   if (d.kind === "didYouMean" || d.kind === "needDest") return [d.reply, ...(d.suggestions || [])].join("\n");
+  if (d.kind === "trip" && d.chain && d.reply) return d.reply;
   if (d.kind === "trip" && (d.modeNote || d.via)) return [d.via ? `Via ${askShort(askLabel(d.via))}` : "", d.modeNote || "", await asText(env, d)].filter(Boolean).join("\n");
   return asText(env, d);
 }
@@ -2004,6 +2102,58 @@ const VAPID_PRIVATE = "__VAPID_PRIVATE_KEY__";
 const VAPID_SUBJECT = "__VAPID_SUBJECT__";
 const TICK_KEY = "__TICK_KEY__";
 const ADMIN_KEY = "__ADMIN_KEY__";
+
+// ---------- security helpers ----------
+// Admin and scheduler keys are compared in constant time. The key can come from the
+// x-admin-key header (preferred, kept out of logs and history) or the ?key= query (cron).
+function safeEq(a, b) {
+  a = String(a || ""); b = String(b || "");
+  if (!a || !b) return false;
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) diff |= (a.charCodeAt(i % a.length) || 0) ^ (b.charCodeAt(i % b.length) || 0);
+  return diff === 0;
+}
+function keyOk(request, p, secret) {
+  return safeEq((request && request.headers.get("x-admin-key")) || p.get("key"), secret);
+}
+function adminOk(request, p) { return keyOk(request, p, ADMIN_KEY); }
+// Per isolate request limits: a cheap brake on scripted abuse of the shared Transport for NSW
+// quota, the contact form and test pushes. Keyed by client IP, never stored.
+const rateMem = new Map();
+const RATE_RULES = [
+  [/^\/api\/feedback$/, "feedback", 5, 600000, "POST"],
+  [/^\/api\/push\/test$/, "pushtest", 5, 600000],
+  [/^\/api\/watch$/, "watch", 30, 600000, "POST"],
+  [/^\/api\/(saved|commutes|commutes\/dismiss|push\/subscribe|push\/expo|push\/expo\/unregister|push\/unsubscribe)$/, "write", 60, 600000, "POST"],
+  [/^\/api\/hit$/, "hit", 120, 600000],
+  [/^\/api\/(ask|trip|plan|departures|service|status|next|search|nearby|alerts|predict|obs|stations)$/, "read", 600, 60000],
+];
+function rateOk(request, pathname) {
+  const rule = RATE_RULES.find((r) => r[0].test(pathname) && (!r[4] || request.method === r[4]));
+  if (!rule) return true;
+  const ip = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "?";
+  const k = rule[1] + "|" + ip, now = Date.now();
+  let e = rateMem.get(k);
+  if (!e || now - e.at > rule[3]) { e = { at: now, n: 0 }; rateMem.set(k, e); }
+  e.n++;
+  if (rateMem.size > 5000) { for (const [kk, v] of rateMem) { if (now - v.at > 600000) rateMem.delete(kk); } if (rateMem.size > 5000) rateMem.clear(); }
+  return e.n <= rule[2];
+}
+const API_SEC_HEADERS = {
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "strict-origin-when-cross-origin",
+  "strict-transport-security": "max-age=31536000",
+  "x-frame-options": "DENY",
+  "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+};
+function withSec(res, api) {
+  const r = new Response(res.body, res);
+  for (const [k, v] of Object.entries(API_SEC_HEADERS)) {
+    if (!api && k === "content-security-policy") continue;
+    if (!r.headers.has(k)) r.headers.set(k, v);
+  }
+  return r;
+}
 const DAILY_BUDGET = 60000;           // Transport for NSW Bronze plan, calls per day
 const SAMPLE_BUDGET = 40000;          // background sampling stops above this many calls
 const WATCH_BUDGET = 56000;           // watches stop polling above this many calls
@@ -2143,7 +2293,7 @@ async function siteRoutes(request, env, url, exec) {
     return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
   }
   if (url.pathname === "/api/stats") {
-    if (p.get("key") !== ADMIN_KEY) return json({ error: "forbidden" }, 403);
+    if (!adminOk(request, p)) return json({ error: "forbidden" }, 403);
     await ensureSiteSchema(env);
     if (request.method === "DELETE") {
       await db(env).prepare(`DELETE FROM hits WHERE day = ?1`).bind(String(p.get("day") || "")).run();
@@ -2161,13 +2311,13 @@ async function siteRoutes(request, env, url, exec) {
   }
   if (url.pathname === "/api/feedback") {
     if (request.method === "GET") {
-      if (p.get("key") !== ADMIN_KEY) return json({ error: "forbidden" }, 403);
+      if (!adminOk(request, p)) return json({ error: "forbidden" }, 403);
       await ensureSiteSchema(env);
       const r = await db(env).prepare(`SELECT * FROM feedback ORDER BY id DESC LIMIT 200`).all();
       return json({ items: r.results || [] });
     }
     if (request.method === "DELETE") {
-      if (p.get("key") !== ADMIN_KEY) return json({ error: "forbidden" }, 403);
+      if (!adminOk(request, p)) return json({ error: "forbidden" }, 403);
       await ensureSiteSchema(env);
       await db(env).prepare(`DELETE FROM feedback WHERE id = ?1`).bind(Number(p.get("id") || 0)).run();
       return json({ ok: true });
@@ -2898,6 +3048,8 @@ async function runTick(env, opts = {}) {
     // Retention promised in the privacy policy: trip searches 90 days, finished watches 30 days.
     await db(env).prepare("DELETE FROM searches WHERE at < ?1").bind(now - 90 * 86400000).run().catch(() => null);
     await db(env).prepare("DELETE FROM watches WHERE active = 0 AND updated < ?1").bind(now - 30 * 86400000).run().catch(() => null);
+    // Contact form messages: deleted within 12 months, as the privacy policy says.
+    await db(env).prepare("DELETE FROM feedback WHERE at < ?1").bind(now - 365 * 86400000).run().catch(() => null);
   }
   if (!opts.device) await db(env).prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('last_tick', ?1)").bind(String(now)).run().catch(() => null);
   const calls = upstream.calls - c0;
@@ -2922,7 +3074,7 @@ async function afterAnswer(env, d, o) {
     if (d.kind === "trip" && d.journeys) {
       const legs = d.journeys.flatMap((j) => j.legs.filter((l) => l.kind === "transit"));
       await predictions(env, legs, 16);
-      if (o.log !== false && d.from && d.to && d.from.id && !/EPSG/.test(String(d.from.id)) && !/EPSG/.test(String(d.to.id)) && !d.via && !d.when) {
+      if (o.log !== false && d.from && d.to && d.from.id && !/EPSG/.test(String(d.from.id)) && !/EPSG/.test(String(d.to.id)) && !d.via && !d.chain && !d.when) {
         const s = { profile: o.profile, device: o.device ? cleanId(o.device) : null, from: d.from, to: d.to, src: d.saved ? "saved" : "search" };
         if (o.exec) o.exec.waitUntil(logSearch(env, s)); else await logSearch(env, s);
       }
@@ -2936,9 +3088,9 @@ async function afterAnswer(env, d, o) {
 }
 
 function json(obj, status = 200) {
-  return new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "*" } });
+  return new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "*", ...API_SEC_HEADERS } });
 }
-function textRes(s) { return new Response(s, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "*" } }); }
+function textRes(s) { return new Response(s, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "*", ...API_SEC_HEADERS } }); }
 function serviceQuery(p) {
   const q = {};
   for (const k of ["trip", "mode", "line", "stop", "destId", "planned", "to", "stopName", "dest", "color"]) if (p.get(k)) q[k] = p.get(k);
@@ -2951,7 +3103,8 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "content-type", "access-control-max-age": "86400" } });
     if (/^\/(worker\.m?js|_worker\.js|tab-site\.json)$/.test(url.pathname)) return new Response("Not found", { status: 404 });
     if (/^\/download\/[A-Za-z0-9._-]+\.apk$/.test(url.pathname)) return serveFile(env, url.pathname.slice("/download/".length), request);
-    if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
+    if (!url.pathname.startsWith("/api/")) return withSec(await env.ASSETS.fetch(request), false);
+    if (!rateOk(request, url.pathname)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
     if (/^\/api\/(hit|stats|feedback)$/.test(url.pathname)) {
       try { const s = await siteRoutes(request, env, url, exec); if (s) return s; }
       catch (e) { return json({ ok: false, error: "server", errors: { form: "We could not save that right now. Please email bidur@mail.tab.bot instead." } }, 500); }
@@ -3027,7 +3180,7 @@ export default {
           if (request.method === "DELETE") { await savedDelete(env, profile, p.get("name") || ""); return json({ ok: true }); }
           if (request.method === "POST") {
             const b = await request.json().catch(() => ({}));
-            const prof = (b.profile || profile).toLowerCase().slice(0, 40);
+            const prof = String(b.profile || profile).toLowerCase().slice(0, 40);
             const name = String(b.name || "").trim().slice(0, 24);
             if (!name) return json({ error: "name needed" }, 400);
             const legs = b.legs ? chainLegs(b.legs) : null;
@@ -3077,14 +3230,14 @@ export default {
           if (p.get("route")) { where.push(`route = ?${args.length + 1}`); args.push(p.get("route")); }
           if (p.get("stop")) { where.push(`stop_id = ?${args.length + 1}`); args.push(p.get("stop")); }
           if (p.get("day")) { where.push(`day = ?${args.length + 1}`); args.push(p.get("day")); }
-          const lim = Math.min(1000, Number(p.get("limit") || 200));
+          const lim = Math.max(1, Math.min(1000, Math.floor(Number(p.get("limit") || 200)) || 200));
           const r = await db(env).prepare(`SELECT * FROM obs ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY last_seen DESC LIMIT ${lim}`).bind(...args).all();
           const c = await db(env).prepare("SELECT COUNT(*) AS n, COUNT(DISTINCT trip_id) AS trips, MIN(first_seen) AS since FROM obs").first();
           return json({ total: c, items: r.results || [] });
         }
         case "/api/tick": {
-          if (p.get("key") !== TICK_KEY && p.get("key") !== ADMIN_KEY) return json({ error: "forbidden" }, 403);
-          const r = await runTick(env, { force: p.get("force") === "1" && p.get("key") === ADMIN_KEY, noSample: p.get("nosample") === "1" });
+          if (!keyOk(request, p, TICK_KEY) && !adminOk(request, p)) return json({ error: "forbidden" }, 403);
+          const r = await runTick(env, { force: p.get("force") === "1" && adminOk(request, p), noSample: p.get("nosample") === "1" });
           return json(r);
         }
         case "/api/push/key":
@@ -3126,7 +3279,7 @@ export default {
         }
         case "/api/admin/file": {
           // Upload a release file (the Android APK) into R2. Admin key only.
-          if (p.get("key") !== ADMIN_KEY) return json({ error: "forbidden" }, 403);
+          if (!adminOk(request, p)) return json({ error: "forbidden" }, 403);
           if (!env.FILES) return json({ error: "no file store bound" }, 500);
           const name = String(p.get("name") || "");
           if (!/^[A-Za-z0-9._-]+\.apk$/.test(name)) return json({ error: "bad name" }, 400);
@@ -3241,7 +3394,7 @@ export default {
           return json({ today: u, budget: DAILY_BUDGET, observations: c, lastTick: lt ? new Date(Number(lt.v)).toISOString() : null });
         }
         case "/api/admin/sim": {
-          if (p.get("key") !== ADMIN_KEY) return json({ error: "forbidden" }, 403);
+          if (!adminOk(request, p)) return json({ error: "forbidden" }, 403);
           await ensureSchema3(env);
           const w = await db(env).prepare("SELECT * FROM watches WHERE id = ?1").bind(cleanId(p.get("id"))).first();
           if (!w) return json({ error: "not found" }, 404);
@@ -3253,7 +3406,7 @@ export default {
           return json({ ok: true, result: r, watch: watchOut(await db(env).prepare("SELECT * FROM watches WHERE id = ?1").bind(w.id).first()) });
         }
         case "/api/admin/commute": {
-          if (p.get("key") !== ADMIN_KEY) return json({ error: "forbidden" }, 403);
+          if (!adminOk(request, p)) return json({ error: "forbidden" }, 403);
           await ensureSchema3(env);
           const c = await db(env).prepare("SELECT * FROM commutes WHERE id = ?1").bind(cleanId(p.get("id"))).first();
           if (!c) return json({ error: "not found" }, 404);
@@ -3261,7 +3414,7 @@ export default {
           return json(await processCommute(env, c, Date.now(), sydneyNow(), { force: true, forceLeave: p.get("leave") === "1" }));
         }
         case "/api/admin/searches": {
-          if (p.get("key") !== ADMIN_KEY) return json({ error: "forbidden" }, 403);
+          if (!adminOk(request, p)) return json({ error: "forbidden" }, 403);
           await ensureSchema3(env);
           if (request.method === "POST") {
             const b = await request.json().catch(() => ({}));
@@ -3281,7 +3434,8 @@ export default {
       }
     } catch (e) {
       const msg = "Live data didn't answer just now. Try again in a moment.";
-      return asTxt ? textRes(msg) : json({ kind: "error", text: msg, detail: String((e && e.message) || e).slice(0, 300) }, 502);
+      console.error("api error", url.pathname, String((e && e.message) || e).slice(0, 300));
+      return asTxt ? textRes(msg) : json({ kind: "error", text: msg }, 502);
     }
   },
 };

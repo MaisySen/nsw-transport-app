@@ -16,8 +16,8 @@ import { LineBadge } from '@/components/Transit';
 type Link = { kind?: string; label?: string; href?: string; id?: string; name?: string; from?: string; to?: string; fn?: string; tn?: string; [k: string]: any };
 type Dep = { line: string; color?: string; mode?: string; dest: string; platform?: string | null; planned: string; estimated?: string | null; realtime: boolean; delayMin: number; cancelled: boolean; link?: Link };
 type Leg = { kind: string; mode?: string; line?: string; color?: string; fromPlatform?: string | null; realtime: boolean; delayMin: number; cancelled: boolean; planned?: string; link?: Link | null };
-type Jny = { leave: string; arrive: string; durationMin: number; changes: number; legs: Leg[] };
-type Card = { type: 'departures' | 'trip' | 'alerts' | 'stops'; title?: string; link?: Link | null; items?: any[]; journeys?: Jny[]; from?: { id: string; name: string }; to?: { id: string; name: string } };
+type Jny = { leave: string; arrive: string; durationMin: number; changes: number; legs: Leg[]; warn?: string | null };
+type Card = { type: 'departures' | 'trip' | 'alerts' | 'stops'; title?: string; titleOnly?: boolean; link?: Link | null; items?: any[]; journeys?: Jny[]; from?: { id: string; name: string }; to?: { id: string; name: string } };
 type Msg = { id: string; role: 'me' | 'bot'; text: string; cards?: Card[]; links?: Link[]; suggestions?: string[]; ask?: string | null; t: number };
 
 const KEY = 'ask_chat_v1';
@@ -46,7 +46,9 @@ function open(l?: Link | null) {
   if (!l) return;
   Haptics.selectionAsync().catch(() => {});
   if (l.kind === 'stop' && l.id) return router.push({ pathname: '/stop/[id]', params: { id: l.id, name: l.name || '' } });
-  if (l.kind === 'trip' && l.from && l.to) return router.push({ pathname: '/trip', params: { from: l.from, fromName: l.fn || '', to: l.to, toName: l.tn || '' } });
+  // A trip with stops (or a via) carries its legs and opens as a multi leg trip.
+  if (l.kind === 'trip' && l.from && l.to) return router.push({ pathname: '/trip', params: { from: l.from, fromName: l.fn || '', to: l.to, toName: l.tn || '', ...(l.legs ? { legs: String(l.legs) } : {}) } });
+  if (l.kind === 'saveTrip' && l.legs) return router.push({ pathname: '/new-trip', params: { legs: String(l.legs) } });
   if (l.kind === 'service') return router.push({ pathname: '/service', params: { trip: l.trip || '', line: l.line || '', stop: l.stop || '', planned: l.planned || '', mode: l.mode || '', destId: l.destId || '', color: l.color || '', dest: l.dest || '' } });
   if (l.href && /^https?:/.test(l.href)) Linking.openURL(l.href);
 }
@@ -112,7 +114,7 @@ export default function AskScreen() {
     <View style={[st.card, { backgroundColor: c.card, borderColor: c.sep }]}>
       {card.type !== 'alerts' && card.type !== 'stops' ? (
         <Pressable onPress={() => open(card.link)} style={st.head}>
-          <Text numberOfLines={1} style={[st.headText, { color: c.text2 }]}>{card.type === 'trip' ? `${card.title ? card.title + ': ' : ''}${card.from?.name} to ${card.to?.name}` : card.title}</Text>
+          <Text numberOfLines={1} style={[st.headText, { color: c.text2 }]}>{card.type === 'trip' ? (card.titleOnly && card.title ? card.title : `${card.title ? card.title + ': ' : ''}${card.from?.name} to ${card.to?.name}`) : card.title}</Text>
           {card.link ? <Text style={{ color: c.text3, fontSize: 17 }}>{'\u203a'}</Text> : null}
         </Pressable>
       ) : null}
@@ -140,6 +142,7 @@ export default function AskScreen() {
                 <Text style={[st.t2, { color: c.text2 }]}>{j.durationMin} min {'\u00b7'} {j.changes ? `${j.changes} change${j.changes > 1 ? 's' : ''}` : 'Direct'}</Text>
               </View>
               {s ? <Text style={[st.t2, { color: (c as any)[s.tone], fontWeight: '600' }]}>{s.text}</Text> : null}
+              {j.warn ? <Text style={[st.t2, { color: c.orange, fontWeight: '600' }]}>{j.warn}</Text> : null}
             </View>
             <Count t={j.leave} live={f?.realtime} />
           </Row>

@@ -1309,6 +1309,8 @@ window.TBApp = () => {
     let legsP = null;
     try { legsP = params.get("legs") ? JSON.parse(params.get("legs")) : null; } catch (e) { legsP = null; }
     if (!Array.isArray(legsP) || legsP.length < 2) legsP = null;
+    // A via link (from Ask or an older share) opens as a two leg trip.
+    if (!legsP && via) legsP = [{ mode: "", from: { id: from, name: fn }, to: via }, { mode: "", from: via, to: { id: to, name: tn }, conn: params.get("conn") == null ? 5 : Number(params.get("conn")) }];
     const T = () => legsP ? { from: { id: from, name: fn }, to: { id: to, name: tn }, legs: legsP }
       : { from: { id: from, name: fn }, to: { id: to, name: tn }, via, conn: params.get("conn") == null ? 5 : Number(params.get("conn")) };
     const chain = isChain(T());
@@ -1322,6 +1324,11 @@ window.TBApp = () => {
       $("#saveBtn").onclick = saveTrip;
     };
     navNow();
+    // "Save trip" from Ask: open the Confirm trip sheet once, then drop the flag so Back does not reopen it.
+    if (params.get("save") === "1") {
+      history.replaceState(null, "", location.hash.replace(/([?&])save=1(&|$)/, "$1").replace(/[?&]$/, ""));
+      setTimeout(() => { if (isSavedT()) toast("This trip is already saved"); else saveTrip(); }, 60);
+    }
     const chainSub = () => { const L = tLegs(T()); return L.length === 2 && L[1].mode !== "walk" ? `Via ${stName(short(L[0].to.name))}, ${L[1].conn == null ? 5 : L[1].conn} min to change` : `${L.length} legs via ${viaText(T())}`; };
     const sub = [name ? cap(name) : "", chain ? chainSub() : ""].filter(Boolean).join(". ");
     const head = () => `<h1 class="large">${esc(short(fn))} <span style="color:var(--label3)">to</span> ${esc(short(tn))}${sub ? `<small>${esc(sub)}</small>` : ""}</h1>`;
@@ -1713,6 +1720,7 @@ window.TBApp = () => {
       if (local) { location.replace("#/trip?" + qs({ from: local.from.id, to: local.to.id, fn: local.from.name, tn: local.to.name, name: local.name })); return; }
       const d = await api("/api/ask?" + qs({ q, profile: PROFILE, device: DEVICE, lat: coords && coords.latitude.toFixed(5), lon: coords && coords.longitude.toFixed(5) }));
       if (d.kind === "departures") { S.pre = d; location.replace(`#/stop/${encodeURIComponent(d.stop.id)}?${qs({ name: d.stop.name, mode: d.mode || "" })}`); }
+      else if (d.kind === "trip" && (d.chain || d.via) && (d.links || []).some((l) => l.kind === "trip" && l.legs)) location.replace(d.links.find((l) => l.kind === "trip" && l.legs).href);
       else if (d.kind === "trip") { S.pre = d; location.replace("#/trip?" + qs({ from: d.from.id, to: d.to.id, fn: d.from.name, tn: d.to.name, name: d.saved || "", time: d.when && d.when.time, arr: d.when && d.when.arriveBy ? "1" : "" })); }
       else if (d.kind === "needLocation") { const c = await locate(); askView(q, c); }
       else if (d.kind === "alerts") location.replace("#/alerts");

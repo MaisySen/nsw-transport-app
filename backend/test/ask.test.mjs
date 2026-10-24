@@ -32,7 +32,7 @@ test("no em or en dashes in the Ask files", () => {
 // requests are captured so the test can check the origin, destination and via sent upstream.
 async function loadAsk() {
   let src = read("src/worker.js").replace(/export default\s*\{/, "const __default = {");
-  src += "\nexport { askV2, askPlace, askParseTrip };\n";
+  src += "\nexport { askV2, askPlace, askParseTrip, askDecorate };\n";
   const tmp = `/tmp/ask-test-${process.pid}-${Date.now()}.mjs`;
   fs.writeFileSync(tmp, src);
   try { return await import(tmp); } finally { fs.unlinkSync(tmp); }
@@ -163,4 +163,111 @@ test("unclear places get Did you mean choices instead of a guess", async () => {
   const z = await ask.askV2(env, "campsie to zzqqx", { origin: "https://local" });
   assert.equal(z.kind, "text");
   assert.ok(z.reply.includes("couldn't find"));
+});
+
+// ---- several stops in one question ----
+const MULTI = [
+  "campsie to hornsby via central and chatswood",
+  "campsie to hornsby via central via chatswood",
+  "campsie to hornsby via central, chatswood",
+  "campsie to hornsby changing at central and chatswood",
+  "campsie to hornsby stopping at central and chatswood",
+  "campsie via central and chatswood to hornsby",
+  "campsie then central then chatswood then hornsby",
+  "campsie, central, chatswood, hornsby",
+  "campsie to central to chatswood to hornsby",
+  "campsie > central > chatswood > hornsby",
+  "campsie to central then chatswood then hornsby",
+  "from campsie to hornsby via central and then chatswood",
+];
+test("multi stop phrasings split into from, stops and to", () => {
+  for (const s of MULTI) {
+    const p = ask.askParseTrip(s, false);
+    assert.ok(p, s);
+    assert.deepEqual([p.from, p.stops, p.to, p.via], ["campsie", ["central", "chatswood"], "hornsby", null], s);
+  }
+  // One stop keeps the single via path.
+  for (const s of ["campsie to newcastle via chatswood", "to campsie to newcastle via chatswood", "campsie then chatswood then newcastle"]) {
+    const p = ask.askParseTrip(s, false);
+    assert.deepEqual([p.from, p.via, p.to], ["campsie", "chatswood", "newcastle"], s);
+  }
+  assert.deepEqual(ask.askParseTrip("campsie then hornsby", false).stops, []);
+  assert.deepEqual(ask.askParseTrip("newcastle via central and chatswood", false).stops, ["central", "chatswood"]);
+  assert.deepEqual(ask.askParseTrip("campsie to hornsby via central, chatswood and epping", false).stops, ["central", "chatswood", "epping"]);
+});
+
+test("a multi stop question plans every leg, never one merged name", async () => {
+  for (const q of ["campsie to hornsby via central and chatswood", "campsie then central then chatswood then hornsby", "Campsie, Central, Chatswood, Hornsby"]) {
+    tripCalls.length = 0;
+    const d = await ask.askV2(env, q, { origin: "https://local" });
+    assert.equal(d.kind, "trip", q);
+    assert.ok(d.chain, q);
+    assert.deepEqual(d.plan.map((l) => [l.f, l.t]), [["219410", "200060"], ["200060", "206710"], ["206710", d.to.id]], q);
+    assert.equal(d.to.name, "Hornsby Station", q);
+    assert.deepEqual(d.understood.stops, ["Central Station", "Chatswood Station"], q);
+    assert.equal(tripCalls[0].name_origin, "219410", q);
+    assert.equal(tripCalls[0].name_destination, "200060", q);
+    assert.ok(!tripCalls.some((c) => c.name_via), "no single via sent upstream");
+    assert.ok(d.reply.startsWith("Campsie Station to Hornsby Station via Central and Chatswood."), d.reply);
+    assert.ok(d.reply.includes("Campsie > Central > Chatswood > Hornsby"), d.reply);
+    assert.ok(!/Chatswood Central|didYouMean/.test(JSON.stringify(d)), q);
+    const open = d.links.find((l) => l.label === "Open trip"), save = d.links.find((l) => l.label === "Save trip");
+    assert.ok(open && save, "Open trip and Save trip");
+    const legs = JSON.parse(open.legs);
+    assert.deepEqual(legs.map((l) => l.to.name), ["Central Station", "Chatswood Station", "Hornsby Station"]);
+    assert.ok(open.href.startsWith("#/trip?") && open.href.includes("legs="));
+    assert.equal(save.kind, "saveTrip");
+    assert.ok(save.href.includes("save=1"));
+    assert.deepEqual(d.suggestions, ["Hornsby Station to Campsie Station via Chatswood and Central"]);
+  }
+});
+
+test("multi stop: unclear stop asks, missing start asks, too many legs says so", async () => {
+  const a = await ask.askV2(env, "airport to hornsby via central and chatswood", { origin: "https://local" });
+  assert.equal(a.kind, "didYouMean");
+  assert.ok(a.suggestions.includes("International Airport to Hornsby Station via Central Station and Chatswood Station"), a.suggestions.join(" | "));
+  const n = await ask.askV2(env, "newcastle via central and chatswood", { origin: "https://local" });
+  assert.equal(n.kind, "needOrigin");
+  assert.ok(n.reply.includes("via Central and Chatswood"), n.reply);
+  const r = await ask.askV2(env, "campsie to central to central to hornsby", { origin: "https://local" });
+  assert.equal(r.kind, "text");
+  assert.ok(r.reply.includes("twice in a row"), r.reply);
+  const many = await ask.askV2(env, "campsie, central, chatswood, epping, hornsby, gosford, newcastle, maitland", { origin: "https://local" });
+  assert.equal(many.kind, "text");
+  assert.ok(many.reply.includes("up to 6 legs"), many.reply);
+});
+
+test("the single via trip opens and saves as a two leg trip", async () => {
+  const d = await ask.askV2(env, "I need to go to campsie to newcastle via chatswood", { origin: "https://local" });
+  assert.ok(!d.chain);
+  const open = d.links.find((l) => l.label === "Open trip");
+  assert.equal(open.via, "206710");
+  assert.deepEqual(JSON.parse(open.legs).map((l) => [l.from.id, l.to.id]), [["219410", "206710"], ["206710", "229310"]]);
+  assert.ok(d.links.some((l) => l.kind === "saveTrip"));
+});
+
+test("multi stop reply lists each leg, the changes, total time and arrival", () => {
+  const at = (m) => new Date(Date.now() + m * 60000).toISOString();
+  const leg = (seg, line, from, dep, arr, transfer) => ({ kind: "transit", seg, line, mode: "train", from, fromPlatform: "Platform 1", to: "x", planned: at(dep), estimated: at(dep), arrPlanned: at(arr), arrEstimated: at(arr), realtime: true, delayMin: 0, cancelled: false, ...(transfer ? { transfer } : {}) });
+  const P = (id, name) => ({ id, name, station: true });
+  const d = {
+    kind: "trip", chain: true, from: P("219410", "Campsie Station"), to: P("207720", "Hornsby Station"), stops: [P("200060", "Central Station"), P("206710", "Chatswood Station")],
+    plan: [{ f: "219410", fn: "Campsie Station", t: "200060", tn: "Central Station", m: "", c: 5 }, { f: "200060", fn: "Central Station", t: "206710", tn: "Chatswood Station", m: "", c: 5 }, { f: "206710", fn: "Chatswood Station", t: "207720", tn: "Hornsby Station", m: "", c: 5 }],
+    understood: { from: "Campsie Station", to: "Hornsby Station", via: null, stops: ["Central Station", "Chatswood Station"] }, fallback: [false, false, false],
+    journeys: [{ leave: at(5), arrive: at(62), durationMin: 57, changes: 2, legs: [
+      leg(0, "T3", "Campsie Station", 5, 22),
+      leg(1, "T1", "Central Station", 28, 45, { minutes: 6, conn: 5, at: "Central", risk: "ok", chain: true }),
+      leg(2, "T9", "Chatswood Station", 47, 62, { minutes: 2, conn: 5, at: "Chatswood", risk: "tight", chain: true }),
+    ], warn: "Tight change at Chatswood: 2 min" }],
+  };
+  const r = ask.askDecorate(d, {});
+  const lines = r.reply.split("\n");
+  assert.equal(lines[1], "Campsie > Central > Chatswood > Hornsby");
+  assert.ok(lines[2].startsWith("1. T3 from Campsie Station, Plat 1 at "), lines[2]);
+  assert.ok(lines.includes("Change at Central: 6 min"), r.reply);
+  assert.ok(lines.includes("Change at Chatswood: 2 min, tight"), r.reply);
+  assert.ok(lines.some((l) => l.startsWith("3. T9 from Chatswood Station")), r.reply);
+  assert.ok(/^Total 57 min, arriving Hornsby /.test(lines[lines.length - 1]), r.reply);
+  assert.equal(r.cards[0].journeys[0].warn, "Tight change at Chatswood: 2 min");
+  assert.ok(!/[\u2013\u2014]/.test(r.reply));
 });

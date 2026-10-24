@@ -64,7 +64,8 @@
     return `<a class="ak-row${hi ? " hi" : ""}${c.past ? " dim" : ""}" href="${esc(link ? link.href : first.link ? first.link.href : "#")}" data-akt="${esc(j.leave)}" data-aklive="${first.realtime ? 1 : 0}">
       <div class="ak-mid"><div class="ak-t1 num">${clock(j.leave)} to ${clock(j.arrive)}</div>
       <div class="ak-t2 ak-lines">${lines || "Walk"} <span>${j.durationMin} min \u00b7 ${ch}${first.fromPlatform ? " \u00b7 " + plat(first.fromPlatform) : ""}</span></div>
-      ${first.line ? `<div class="ak-t2">${statusChip(first)}</div>` : ""}</div>
+      ${first.line ? `<div class="ak-t2">${statusChip(first)}</div>` : ""}
+      ${j.warn ? `<div class="ak-t2"><span class="ak-st late">${esc(j.warn)}</span></div>` : ""}</div>
       <div class="ak-cd${first.realtime ? " live" : ""}${c.unit || c.big === "Now" ? "" : " clock"}"><b>${esc(c.big)}</b>${c.unit ? `<small>${c.unit}</small>` : ""}</div></a>`;
   }
   function cardHtml(c) {
@@ -73,7 +74,7 @@
         ${c.items.map(depRow).join("") || '<div class="ak-empty">No departures right now.</div>'}</div>`;
     }
     if (c.type === "trip") {
-      const title = (c.title ? c.title + ": " : "") + `${c.from.name} to ${c.to.name}`;
+      const title = c.titleOnly && c.title ? c.title : (c.title ? c.title + ": " : "") + `${c.from.name} to ${c.to.name}`;
       return `<div class="ak-card">${c.link ? `<a class="ak-head" href="${esc(c.link.href)}"><span>${esc(title)}</span>${ICON.chev}</a>` : `<div class="ak-head"><span>${esc(title)}</span></div>`}
         ${c.journeys.map((j, i) => journeyRow(j, null, c.highlight != null && i === c.highlight && c.journeys.length > 1)).join("") || '<div class="ak-empty">No trips found.</div>'}</div>`;
     }
