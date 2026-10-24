@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Trip mode follows the live times (over the air update for iPhone and Android, 25 Oct, 8:39 AM)
+* On 25 Oct the T1 from Strathfield ran 4 minutes late. The Lock Screen card said "Get off now" at 8:22 and switched to "T4 leaves 8:26am" at 8:24 while the T1 had not reached Redfern. The card is only changed by the app while it is open, so it counted down to the last time it was given; and a leg ended when the stop list moved past your stop, which follows the timetable clock when a feed has no live times for that stop.
+* A train's live position short of your stop now keeps you on that leg. Once the estimate is 30 seconds old and the live feed still shows the train before your stop, the countdown stays at about a minute instead of "now".
+* A change the live times say you will miss moves the arrival later ("Arrive at Kings Cross, about 8:40"). Once you have missed it, the trip screen says "Change at risk: the 8:26am T4 has likely left" with the next way on below it, the card names the next service ("Change at risk. Next T4 8:31am") and counts to it, and the trip no longer ends when the train you missed gets to your stop.
+* When the app goes to the background the card says when its times are from: "Updated 8:21am. Open the app for live times" (or after a tight change warning). Without push updates the card cannot refresh while the app is closed, and now it says so.
+* No new build needed for the above. The next iPhone build (branch live-card-v2) adds the native part: a card left without fresh times shows "Get off about 8:26am" and "Updated 8:21am" two minutes after its last refresh, instead of a countdown or "You've arrived".
+
 ### Home opens at the top with its header (over the air update for iPhone and Android, 25 Oct, 8:22 AM)
 * On iPhone, Home opened with an empty dark band at the top (only the Live pill showing) and the content starting lower down; a scroll up was needed to see the normal Home header. The large "Home" title was being drawn behind the header's blur.
 * Home, Plan, Ask, More and the stop screen now use the normal header title, the same one you saw after scrolling, so every launch and every return to the app looks the same. Pull to refresh and the tab bar are unchanged.
