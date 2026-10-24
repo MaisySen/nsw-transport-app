@@ -32,6 +32,9 @@ test("feed per service from operator and network, never from the line name", () 
   assert.equal(W.feedHint(5, ORANGE), "rb_centralwestandorana");
   assert.equal(W.feedHint(5, NOWRA), "rb_sydneysurrounds");
   assert.equal(W.feedHint(5, SYD575), null);
+  // Hunter Valley Buses trips are in the Sydney buses feed; Busways Newcastle and Hunter ones are not.
+  assert.equal(W.feedHint(5, { operator: { name: "Hunter Valley Buses" }, product: { class: 5, name: "Hunter Buses Network" } }), null);
+  assert.equal(W.feedHint(5, { operator: { name: "Busways" }, product: { class: 5, name: "Newcastle and Hunter Network" } }), "rb_newcastlehunter");
   assert.equal(W.feedHint(5, null), null);
   assert.deepEqual(W.feedKeys("bus", "366", "rb_northcoast"), ["rb_northcoast", "rb_northcoast2", "rb_northcoast3"]);
   assert.deepEqual(W.feedKeys("bus", "575", null), ["bus"]);

@@ -51,7 +51,8 @@ const REGION_FEEDS = [
   [/riverina|murray/i, ["riverinamurray", "riverinamurray2"]],
   [/south east|tablelands/i, ["southeasttablelands", "southeasttablelands2"]],
   [/new england|north west/i, ["newenglandnorthwest"]],
-  [/newcastle|hunter/i, ["newcastlehunter"]],
+  // Only "Newcastle and Hunter Network": "Hunter Buses Network" services are in the Sydney buses feed.
+  [/^newcastle and hunter/i, ["newcastlehunter"]],
   [/far west/i, ["farwest"]],
   [/sydney and surrounds/i, ["sydneysurrounds"]],
 ];
