@@ -66,6 +66,17 @@ final class FullJourneyTests: XCTestCase {
         let cancel = app.buttons["Cancel"].firstMatch
         if cancel.exists && cancel.isHittable { cancel.tap(); pause(1) }
         let plan = element("planTrip")
+        // The search still holds "Central": clear it so the Plan a trip row shows again.
+        if !plan.waitForExistence(timeout: 3) {
+            let f = app.searchFields.firstMatch
+            if f.exists {
+                f.tap()
+                if f.buttons.firstMatch.exists { f.buttons.firstMatch.tap() }
+                let c = app.buttons["Cancel"].firstMatch
+                if c.exists && c.isHittable { c.tap() }
+                pause(1)
+            }
+        }
         XCTAssertTrue(plan.waitForExistence(timeout: 10), "Plan a trip row")
         plan.tap()
         pause(1)

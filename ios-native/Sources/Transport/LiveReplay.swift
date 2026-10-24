@@ -118,6 +118,8 @@ final class ReplayLog {
     static let shared = ReplayLog()
     var lines: [String] = []
     var done = false
+    /// Observed by the overlay: the replay itself lives in a static, which SwiftUI cannot see.
+    var running = false
     @ObservationIgnored private var lastState = ""
 
     func add(_ text: String) {
@@ -163,6 +165,7 @@ extension AppStore {
         LiveReplay.current = r
         ReplayLog.shared.lines = []
         ReplayLog.shared.done = false
+        ReplayLog.shared.running = true
         ReplayLog.shared.add("start: " + title)
         liveTask?.cancel()
         liveTask = nil
@@ -191,7 +194,7 @@ struct ReplayOverlay: View {
     private var log: ReplayLog { ReplayLog.shared }
 
     var body: some View {
-        if LiveReplay.current != nil {
+        if log.running || LiveReplay.current != nil {
             VStack(alignment: .leading, spacing: 2) {
                 Text(log.done ? "Replay finished" : "Replay, fake time \(LiveReplay.current.map { Clock.time($0.now) } ?? "")")
                     .font(.caption.weight(.bold))

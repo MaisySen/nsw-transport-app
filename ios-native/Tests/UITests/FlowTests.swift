@@ -852,6 +852,7 @@ final class FlowTests: XCTestCase {
         if inBar.waitForExistence(timeout: 8) { inBar.tap() } else { app.buttons[barName].firstMatch.tap() }
         pause(1)
         allowSystemAlert()
+        if barName == "Plan" { planRoot(inBar) }
         if let row {
             let cell = element(row)
             if !cell.waitForExistence(timeout: 3) {
@@ -861,6 +862,29 @@ final class FlowTests: XCTestCase {
             }
             if cell.waitForExistence(timeout: 8) { cell.tap() }
             pause(1)
+        }
+    }
+
+    /// The Plan tab keeps the screen you left it on, and a stop search keeps its words. Back to
+    /// its first screen: tap the tab again, go back, and clear the search.
+    private func planRoot(_ inBar: XCUIElement) {
+        let plan = element("planTrip")
+        if plan.waitForExistence(timeout: 3) { return }
+        if inBar.exists { inBar.tap(); pause(1) }
+        for _ in 0..<4 where !plan.exists {
+            let back = app.navigationBars.buttons.firstMatch
+            if back.exists && back.isHittable && back.identifier != "Star stop" { back.tap(); pause(0.8) } else { break }
+        }
+        if !plan.exists {
+            let field = app.searchFields.firstMatch
+            if field.exists {
+                field.tap()
+                let clear = field.buttons.firstMatch
+                if clear.exists { clear.tap() }
+                let cancel = app.buttons["Cancel"].firstMatch
+                if cancel.exists && cancel.isHittable { cancel.tap() }
+                pause(1)
+            }
         }
     }
 
