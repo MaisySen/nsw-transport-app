@@ -1,0 +1,13 @@
+1:12am start: Burwood Station to Strathfield Station: 2 min late
+1:12am state: leg 1 waiting, next Burwood Station, arrive 1:24am
+1:12am lock screen: Next stop: Burwood Station, arrive 1:24am
+1:13am alert: Leave now | The 47T2 leaves Burwood at 1:18am, Stand C.
+1:17am alert: Board the 47T2 to Strathfield (Nth Side) | Burwood, Stand C, leaves 1:18am. Get off at the next stop, Strathfield.
+1:18am state: leg 1 on board, next Strathfield Station, 1 stops left, arrive 1:24am
+1:18am lock screen: Next stop: Strathfield Station, arrive 1:24am
+1:18am alert: Next stop: Strathfield, get off | Arrive 1:24am.
+1:24am state: arrived, arrive 1:23am
+1:24am lock screen: Arrived at Strathfield Station
+1:24am alert: You've arrived at Strathfield | Got in at 1:23am.
+1:24am trip ended, Lock Screen card says You've arrived and leaves in 2 min
+1:39am 15 min after arrival: no trip running, nothing more sent

@@ -1,0 +1,124 @@
+bundle: GitHub Actions artifact ios-ci-38 on run 40099060418; screenshots in ci-out/shots
+== test-unit.log: 38 passed, 0 failed; ** TEST EXECUTE SUCCEEDED **
+== test-light.log: 13 passed, 6 failed; ** TEST EXECUTE FAILED **
+== test-dark.log: 16 passed, 3 failed; ** TEST EXECUTE FAILED **
+run 38 sha a177e4ce927e83579ffe924ebb57942db91ed377
+Xcode 26.3
+Build version 17C529
+== test-unit.log: 38 passed, 0 failed; ** TEST EXECUTE SUCCEEDED **
+Test Case '-[TransportSnapshotTests.APIBaseTests testAllowlist]' passed (0.012 seconds).
+Test Case '-[TransportSnapshotTests.APIBaseTests testKeepsTheLastGoodValue]' passed (0.006 seconds).
+Test Case '-[TransportSnapshotTests.APIBaseTests testRemoteConfigReadsApiBase]' passed (0.023 seconds).
+Test Case '-[TransportSnapshotTests.APIBaseTests testTheShippedListAllowsTheNewServerAndTheCurrentHost]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testAlertsOncePerMoment]' passed (0.003 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testCardSaysArrivedAtTheEnd]' passed (0.008 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testEndsAtArrival]' passed (0.005 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testMapFramesOnlyTheRiddenStop]' passed (0.003 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testMinutesNotSeconds]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testNoRolloverToTheNextTrain]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testRidingBeforeArrival]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testSameRunMatches]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testStartEndsCardsLeftFromEarlierTrips]' passed (0.002 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testStartingTwiceLeavesOneCard]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testTrimLeavesOne]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.RemoteConfigTests testBadPartsAreIgnored]' passed (0.002 seconds).
+Test Case '-[TransportSnapshotTests.RemoteConfigTests testEmptyIsDefaults]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.RemoteConfigTests testFlagsKillCopyAndTabs]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.RemoteConfigTests testTimingsStayInBounds]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.TravelUpdatesTests testAppAsleepTheSystemSaysEachStepAndNothingRepeatsOnWake]' passed (0.002 seconds).
+Test Case '-[TransportSnapshotTests.TravelUpdatesTests testBurwoodToStrathfieldEachStepOnce]' passed (0.039 seconds).
+Test Case '-[TransportSnapshotTests.TravelUpdatesTests testBurwoodToStrathfieldLateAndEarly]' passed (0.077 seconds).
+Test Case '-[TransportSnapshotTests.TravelUpdatesTests testEndTripTakesBackEverythingScheduled]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.TravelUpdatesTests testMovedTimesKeepOneIdentifierPerStep]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.TravelUpdatesTests testStartedLateSaysOnlyTheNewestStep]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.TravelUpdatesTests testTripWithAChange]' passed (0.070 seconds).
+Test Case '-[TransportSnapshotTests.TravelUpdatesTests testWalkFirstLeaveNowCountsTheWalk]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.WidgetSnapshotTests testRenderWidgetFixtureAllSizes]' passed (103.419 seconds).
+Test Case '-[TransportSnapshotTests.WidgetSnapshotTests testRenderWidgetsAndLiveActivity]' passed (8.730 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testAlertIsOneShortLineCutAtAWord]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testInlineLockScreenLine]' passed (0.000 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testPastAnHourShowsTheClockTime]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testPlatformAndStatusWords]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testReloadsAtTheNextDepartureOrEveryFiveMinutes]' passed (0.000 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testRowLinksOpenThatTrip]' passed (0.000 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testTimelineHasAnEntryAtEachDepartureAndDropsDepartedServices]' passed (0.000 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testTitleIsTheSavedNameElseFromTo]' passed (0.000 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testWaitIsMinutesNeverASecondsTimer]' passed (0.015 seconds).
+== test-light.log: 13 passed, 6 failed; ** TEST EXECUTE FAILED **
+Test Case '-[TransportUITests.FlowTests test01SearchStarAndBoard]' passed (65.658 seconds).
+Test Case '-[TransportUITests.FlowTests test02LiveMapAndSheet]' passed (32.714 seconds).
+Test Case '-[TransportUITests.FlowTests test03PlanWatchAndSaveTrip]' passed (62.233 seconds).
+Test Case '-[TransportUITests.FlowTests test04HomeWithSavedItems]' passed (57.614 seconds).
+Test Case '-[TransportUITests.FlowTests test05Watching]' passed (21.836 seconds).
+Test Case '-[TransportUITests.FlowTests test06SettingsToggles]' failed (60.986 seconds).
+Test Case '-[TransportUITests.FlowTests test07DynamicIslandAndLockScreen]' passed (44.051 seconds).
+Test Case '-[TransportUITests.FlowTests test08SwipeToDeleteAndStop]' passed (63.008 seconds).
+Test Case '-[TransportUITests.FlowTests test09Ask]' passed (51.640 seconds).
+Test Case '-[TransportUITests.FlowTests test10NewTripByModeConfirmAndReorder]' failed (348.101 seconds).
+Test Case '-[TransportUITests.FlowTests test11NewBusTrip]' passed (44.673 seconds).
+Test Case '-[TransportUITests.FlowTests test12FaresAndLiveTrip]' failed (218.062 seconds).
+Test Case '-[TransportUITests.FlowTests test13StationAccessParkingAndOpalMachines]' passed (68.291 seconds).
+Test Case '-[TransportUITests.FlowTests test14SettingsHistoryAndProfileLink]' passed (56.294 seconds).
+Test Case '-[TransportUITests.FlowTests test15TripScreenButtonsAct]' failed (129.532 seconds).
+Test Case '-[TransportUITests.FlowTests test16ReplayBurwoodToStrathfield]' passed (99.848 seconds).
+Test Case '-[TransportUITests.FlowTests test17ReplayWithChange]' failed (69.937 seconds).
+Test Case '-[TransportUITests.FullJourneyTests testFullJourney]' failed (238.186 seconds).
+Test Case '-[TransportUITests.OfflineLaunchTests testStartsWithoutNetwork]' passed (35.782 seconds).
+Tests/UITests/FlowTests.swift:173: error: -[TransportUITests.FlowTests test06SettingsToggles] : XCTAssertTrue failed - haptics switch
+Tests/UITests/FlowTests.swift:175: error: -[TransportUITests.FlowTests test06SettingsToggles] : Failed to get matching snapshot: No matches found for first query match sequence: `Descendants matching type Switch` -> `Elements matching predicate '"Haptics" IN identifiers'`, given input App element pid: 37818
+Tests/UITests/FlowTests.swift:398: error: -[TransportUITests.FlowTests test10NewTripByModeConfirmAndReorder] : XCTAssertTrue failed - All services toggle on the trip screen
+Tests/UITests/FlowTests.swift:404: error: -[TransportUITests.FlowTests test10NewTripByModeConfirmAndReorder] : Failed to tap "allServices" Any: No matches found for first query match sequence: `Descendants matching type Any` -> `Elements matching predicate '"allServices" IN identifiers'`, given input App element pid: 47194
+Tests/UITests/FlowTests.swift:510: error: -[TransportUITests.FlowTests test12FaresAndLiveTrip] : XCTAssertTrue failed - journeys from Strathfield to Central
+Tests/UITests/FlowTests.swift:512: error: -[TransportUITests.FlowTests test12FaresAndLiveTrip] : XCTAssertTrue failed - fare bar on the trip screen
+Tests/UITests/FlowTests.swift:519: error: -[TransportUITests.FlowTests test12FaresAndLiveTrip] : Failed to tap "journey" Any: No matches found for first query match sequence: `Descendants matching type Any` -> `Elements matching predicate '"journey" IN identifiers'`, given input App element pid: 69748
+Tests/UITests/FlowTests.swift:758: error: -[TransportUITests.FlowTests test17ReplayWithChange] : XCTAssertTrue failed - an alert for the change at Redfern
+Tests/UITests/FlowTests.swift:772: error: -[TransportUITests.FlowTests test15TripScreenButtonsAct] : XCTAssertTrue failed - live journeys from Burwood Station to Strathfield Station
+Tests/UITests/FlowTests.swift:774: error: -[TransportUITests.FlowTests test15TripScreenButtonsAct] : Failed to tap "journey" Any: No matches found for first query match sequence: `Descendants matching type Any` -> `Elements matching predicate '"journey" IN identifiers'`, given input App element pid: 91630
+Tests/UITests/FlowTests.swift:819: error: -[TransportUITests.FlowTests test17ReplayWithChange] : XCTAssertEqual failed: ("0") is not equal to ("1") - one You've arrived:
+Tests/UITests/FullJourneyTests.swift:193: error: -[TransportUITests.FullJourneyTests testFullJourney] : XCTAssertTrue failed - About shows the publisher
+== test-dark.log: 16 passed, 3 failed; ** TEST EXECUTE FAILED **
+Test Case '-[TransportUITests.FlowTests test01SearchStarAndBoard]' passed (47.118 seconds).
+Test Case '-[TransportUITests.FlowTests test02LiveMapAndSheet]' passed (28.041 seconds).
+Test Case '-[TransportUITests.FlowTests test03PlanWatchAndSaveTrip]' passed (64.054 seconds).
+Test Case '-[TransportUITests.FlowTests test04HomeWithSavedItems]' passed (57.843 seconds).
+Test Case '-[TransportUITests.FlowTests test05Watching]' passed (19.183 seconds).
+Test Case '-[TransportUITests.FlowTests test06SettingsToggles]' passed (34.561 seconds).
+Test Case '-[TransportUITests.FlowTests test07DynamicIslandAndLockScreen]' passed (33.990 seconds).
+Test Case '-[TransportUITests.FlowTests test08SwipeToDeleteAndStop]' passed (56.363 seconds).
+Test Case '-[TransportUITests.FlowTests test09Ask]' passed (25.064 seconds).
+Test Case '-[TransportUITests.FlowTests test10NewTripByModeConfirmAndReorder]' failed (345.492 seconds).
+Test Case '-[TransportUITests.FlowTests test11NewBusTrip]' passed (48.183 seconds).
+Test Case '-[TransportUITests.FlowTests test12FaresAndLiveTrip]' passed (101.476 seconds).
+Test Case '-[TransportUITests.FlowTests test13StationAccessParkingAndOpalMachines]' passed (72.943 seconds).
+Test Case '-[TransportUITests.FlowTests test14SettingsHistoryAndProfileLink]' passed (72.402 seconds).
+Test Case '-[TransportUITests.FlowTests test15TripScreenButtonsAct]' passed (131.063 seconds).
+Test Case '-[TransportUITests.FlowTests test16ReplayBurwoodToStrathfield]' passed (99.488 seconds).
+Test Case '-[TransportUITests.FlowTests test17ReplayWithChange]' failed (70.272 seconds).
+Test Case '-[TransportUITests.FullJourneyTests testFullJourney]' failed (249.298 seconds).
+Test Case '-[TransportUITests.OfflineLaunchTests testStartsWithoutNetwork]' passed (35.217 seconds).
+Tests/UITests/FlowTests.swift:398: error: -[TransportUITests.FlowTests test10NewTripByModeConfirmAndReorder] : XCTAssertTrue failed - All services toggle on the trip screen
+Tests/UITests/FlowTests.swift:404: error: -[TransportUITests.FlowTests test10NewTripByModeConfirmAndReorder] : Failed to tap "allServices" Any: No matches found for first query match sequence: `Descendants matching type Any` -> `Elements matching predicate '"allServices" IN identifiers'`, given input App element pid: 44216
+Tests/UITests/FlowTests.swift:758: error: -[TransportUITests.FlowTests test17ReplayWithChange] : XCTAssertTrue failed - an alert for the change at Redfern
+Tests/UITests/FlowTests.swift:819: error: -[TransportUITests.FlowTests test17ReplayWithChange] : XCTAssertEqual failed: ("0") is not equal to ("1") - one You've arrived:
+Tests/UITests/FullJourneyTests.swift:193: error: -[TransportUITests.FullJourneyTests testFullJourney] : XCTAssertTrue failed - About shows the publisher
+== device build watch
+== still compiling after 4 min
+== warnings
+== xcode-sim.log: 0 error lines; ** BUILD SUCCEEDED **
+== xcode-device.log: 0 error lines; ** BUILD SUCCEEDED **
+out:
+info-plist.txt
+shots
+store
+Transport-unsigned.ipa
+unit.xcresult
+widgets
+xcode-version.txt
+
+out/shots:
+dark-01-home-first-launch.png
+dark-02-search-central.png
+dark-03-search-swipe-star.png
+dark-04-search-starred-banner.png
+dark-05-stop-central-board.png
+dark-06-stop-swi

@@ -1,0 +1,353 @@
+run 38 sha a177e4ce927e83579ffe924ebb57942db91ed377
+Xcode 26.3
+Build version 17C529
+== test-unit.log: 38 passed, 0 failed; ** TEST EXECUTE SUCCEEDED **
+Test Case '-[TransportSnapshotTests.APIBaseTests testAllowlist]' passed (0.012 seconds).
+Test Case '-[TransportSnapshotTests.APIBaseTests testKeepsTheLastGoodValue]' passed (0.006 seconds).
+Test Case '-[TransportSnapshotTests.APIBaseTests testRemoteConfigReadsApiBase]' passed (0.023 seconds).
+Test Case '-[TransportSnapshotTests.APIBaseTests testTheShippedListAllowsTheNewServerAndTheCurrentHost]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testAlertsOncePerMoment]' passed (0.003 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testCardSaysArrivedAtTheEnd]' passed (0.008 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testEndsAtArrival]' passed (0.005 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testMapFramesOnlyTheRiddenStop]' passed (0.003 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testMinutesNotSeconds]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testNoRolloverToTheNextTrain]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testRidingBeforeArrival]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testSameRunMatches]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testStartEndsCardsLeftFromEarlierTrips]' passed (0.002 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testStartingTwiceLeavesOneCard]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.LiveTripLogicTests testTrimLeavesOne]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.RemoteConfigTests testBadPartsAreIgnored]' passed (0.002 seconds).
+Test Case '-[TransportSnapshotTests.RemoteConfigTests testEmptyIsDefaults]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.RemoteConfigTests testFlagsKillCopyAndTabs]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.RemoteConfigTests testTimingsStayInBounds]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.TravelUpdatesTests testAppAsleepTheSystemSaysEachStepAndNothingRepeatsOnWake]' passed (0.002 seconds).
+Test Case '-[TransportSnapshotTests.TravelUpdatesTests testBurwoodToStrathfieldEachStepOnce]' passed (0.039 seconds).
+Test Case '-[TransportSnapshotTests.TravelUpdatesTests testBurwoodToStrathfieldLateAndEarly]' passed (0.077 seconds).
+Test Case '-[TransportSnapshotTests.TravelUpdatesTests testEndTripTakesBackEverythingScheduled]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.TravelUpdatesTests testMovedTimesKeepOneIdentifierPerStep]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.TravelUpdatesTests testStartedLateSaysOnlyTheNewestStep]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.TravelUpdatesTests testTripWithAChange]' passed (0.070 seconds).
+Test Case '-[TransportSnapshotTests.TravelUpdatesTests testWalkFirstLeaveNowCountsTheWalk]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.WidgetSnapshotTests testRenderWidgetFixtureAllSizes]' passed (103.419 seconds).
+Test Case '-[TransportSnapshotTests.WidgetSnapshotTests testRenderWidgetsAndLiveActivity]' passed (8.730 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testAlertIsOneShortLineCutAtAWord]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testInlineLockScreenLine]' passed (0.000 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testPastAnHourShowsTheClockTime]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testPlatformAndStatusWords]' passed (0.001 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testReloadsAtTheNextDepartureOrEveryFiveMinutes]' passed (0.000 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testRowLinksOpenThatTrip]' passed (0.000 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testTimelineHasAnEntryAtEachDepartureAndDropsDepartedServices]' passed (0.000 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testTitleIsTheSavedNameElseFromTo]' passed (0.000 seconds).
+Test Case '-[TransportSnapshotTests.WidgetTextTests testWaitIsMinutesNeverASecondsTimer]' passed (0.015 seconds).
+== test-light.log: 13 passed, 6 failed; ** TEST EXECUTE FAILED **
+Test Case '-[TransportUITests.FlowTests test01SearchStarAndBoard]' passed (65.658 seconds).
+Test Case '-[TransportUITests.FlowTests test02LiveMapAndSheet]' passed (32.714 seconds).
+Test Case '-[TransportUITests.FlowTests test03PlanWatchAndSaveTrip]' passed (62.233 seconds).
+Test Case '-[TransportUITests.FlowTests test04HomeWithSavedItems]' passed (57.614 seconds).
+Test Case '-[TransportUITests.FlowTests test05Watching]' passed (21.836 seconds).
+Test Case '-[TransportUITests.FlowTests test06SettingsToggles]' failed (60.986 seconds).
+Test Case '-[TransportUITests.FlowTests test07DynamicIslandAndLockScreen]' passed (44.051 seconds).
+Test Case '-[TransportUITests.FlowTests test08SwipeToDeleteAndStop]' passed (63.008 seconds).
+Test Case '-[TransportUITests.FlowTests test09Ask]' passed (51.640 seconds).
+Test Case '-[TransportUITests.FlowTests test10NewTripByModeConfirmAndReorder]' failed (348.101 seconds).
+Test Case '-[TransportUITests.FlowTests test11NewBusTrip]' passed (44.673 seconds).
+Test Case '-[TransportUITests.FlowTests test12FaresAndLiveTrip]' failed (218.062 seconds).
+Test Case '-[TransportUITests.FlowTests test13StationAccessParkingAndOpalMachines]' passed (68.291 seconds).
+Test Case '-[TransportUITests.FlowTests test14SettingsHistoryAndProfileLink]' passed (56.294 seconds).
+Test Case '-[TransportUITests.FlowTests test15TripScreenButtonsAct]' failed (129.532 seconds).
+Test Case '-[TransportUITests.FlowTests test16ReplayBurwoodToStrathfield]' passed (99.848 seconds).
+Test Case '-[TransportUITests.FlowTests test17ReplayWithChange]' failed (69.937 seconds).
+Test Case '-[TransportUITests.FullJourneyTests testFullJourney]' failed (238.186 seconds).
+Test Case '-[TransportUITests.OfflineLaunchTests testStartsWithoutNetwork]' passed (35.782 seconds).
+Tests/UITests/FlowTests.swift:173: error: -[TransportUITests.FlowTests test06SettingsToggles] : XCTAssertTrue failed - haptics switch
+Tests/UITests/FlowTests.swift:175: error: -[TransportUITests.FlowTests test06SettingsToggles] : Failed to get matching snapshot: No matches found for first query match sequence: `Descendants matching type Switch` -> `Elements matching predicate '"Haptics" IN identifiers'`, given input App element pid: 37818
+Tests/UITests/FlowTests.swift:398: error: -[TransportUITests.FlowTests test10NewTripByModeConfirmAndReorder] : XCTAssertTrue failed - All services toggle on the trip screen
+Tests/UITests/FlowTests.swift:404: error: -[TransportUITests.FlowTests test10NewTripByModeConfirmAndReorder] : Failed to tap "allServices" Any: No matches found for first query match sequence: `Descendants matching type Any` -> `Elements matching predicate '"allServices" IN identifiers'`, given input App element pid: 47194
+Tests/UITests/FlowTests.swift:510: error: -[TransportUITests.FlowTests test12FaresAndLiveTrip] : XCTAssertTrue failed - journeys from Strathfield to Central
+Tests/UITests/FlowTests.swift:512: error: -[TransportUITests.FlowTests test12FaresAndLiveTrip] : XCTAssertTrue failed - fare bar on the trip screen
+Tests/UITests/FlowTests.swift:519: error: -[TransportUITests.FlowTests test12FaresAndLiveTrip] : Failed to tap "journey" Any: No matches found for first query match sequence: `Descendants matching type Any` -> `Elements matching predicate '"journey" IN identifiers'`, given input App element pid: 69748
+Tests/UITests/FlowTests.swift:758: error: -[TransportUITests.FlowTests test17ReplayWithChange] : XCTAssertTrue failed - an alert for the change at Redfern
+Tests/UITests/FlowTests.swift:772: error: -[TransportUITests.FlowTests test15TripScreenButtonsAct] : XCTAssertTrue failed - live journeys from Burwood Station to Strathfield Station
+Tests/UITests/FlowTests.swift:774: error: -[TransportUITests.FlowTests test15TripScreenButtonsAct] : Failed to tap "journey" Any: No matches found for first query match sequence: `Descendants matching type Any` -> `Elements matching predicate '"journey" IN identifiers'`, given input App element pid: 91630
+Tests/UITests/FlowTests.swift:819: error: -[TransportUITests.FlowTests test17ReplayWithChange] : XCTAssertEqual failed: ("0") is not equal to ("1") - one You've arrived:
+Tests/UITests/FullJourneyTests.swift:193: error: -[TransportUITests.FullJourneyTests testFullJourney] : XCTAssertTrue failed - About shows the publisher
+== test-dark.log: 16 passed, 3 failed; ** TEST EXECUTE FAILED **
+Test Case '-[TransportUITests.FlowTests test01SearchStarAndBoard]' passed (47.118 seconds).
+Test Case '-[TransportUITests.FlowTests test02LiveMapAndSheet]' passed (28.041 seconds).
+Test Case '-[TransportUITests.FlowTests test03PlanWatchAndSaveTrip]' passed (64.054 seconds).
+Test Case '-[TransportUITests.FlowTests test04HomeWithSavedItems]' passed (57.843 seconds).
+Test Case '-[TransportUITests.FlowTests test05Watching]' passed (19.183 seconds).
+Test Case '-[TransportUITests.FlowTests test06SettingsToggles]' passed (34.561 seconds).
+Test Case '-[TransportUITests.FlowTests test07DynamicIslandAndLockScreen]' passed (33.990 seconds).
+Test Case '-[TransportUITests.FlowTests test08SwipeToDeleteAndStop]' passed (56.363 seconds).
+Test Case '-[TransportUITests.FlowTests test09Ask]' passed (25.064 seconds).
+Test Case '-[TransportUITests.FlowTests test10NewTripByModeConfirmAndReorder]' failed (345.492 seconds).
+Test Case '-[TransportUITests.FlowTests test11NewBusTrip]' passed (48.183 seconds).
+Test Case '-[TransportUITests.FlowTests test12FaresAndLiveTrip]' passed (101.476 seconds).
+Test Case '-[TransportUITests.FlowTests test13StationAccessParkingAndOpalMachines]' passed (72.943 seconds).
+Test Case '-[TransportUITests.FlowTests test14SettingsHistoryAndProfileLink]' passed (72.402 seconds).
+Test Case '-[TransportUITests.FlowTests test15TripScreenButtonsAct]' passed (131.063 seconds).
+Test Case '-[TransportUITests.FlowTests test16ReplayBurwoodToStrathfield]' passed (99.488 seconds).
+Test Case '-[TransportUITests.FlowTests test17ReplayWithChange]' failed (70.272 seconds).
+Test Case '-[TransportUITests.FullJourneyTests testFullJourney]' failed (249.298 seconds).
+Test Case '-[TransportUITests.OfflineLaunchTests testStartsWithoutNetwork]' passed (35.217 seconds).
+Tests/UITests/FlowTests.swift:398: error: -[TransportUITests.FlowTests test10NewTripByModeConfirmAndReorder] : XCTAssertTrue failed - All services toggle on the trip screen
+Tests/UITests/FlowTests.swift:404: error: -[TransportUITests.FlowTests test10NewTripByModeConfirmAndReorder] : Failed to tap "allServices" Any: No matches found for first query match sequence: `Descendants matching type Any` -> `Elements matching predicate '"allServices" IN identifiers'`, given input App element pid: 44216
+Tests/UITests/FlowTests.swift:758: error: -[TransportUITests.FlowTests test17ReplayWithChange] : XCTAssertTrue failed - an alert for the change at Redfern
+Tests/UITests/FlowTests.swift:819: error: -[TransportUITests.FlowTests test17ReplayWithChange] : XCTAssertEqual failed: ("0") is not equal to ("1") - one You've arrived:
+Tests/UITests/FullJourneyTests.swift:193: error: -[TransportUITests.FullJourneyTests testFullJourney] : XCTAssertTrue failed - About shows the publisher
+== device build watch
+== still compiling after 4 min
+== warnings
+== xcode-sim.log: 0 error lines; ** BUILD SUCCEEDED **
+== xcode-device.log: 0 error lines; ** BUILD SUCCEEDED **
+out:
+info-plist.txt
+shots
+store
+Transport-unsigned.ipa
+unit.xcresult
+widgets
+xcode-version.txt
+
+out/shots:
+dark-01-home-first-launch.png
+dark-02-search-central.png
+dark-03-search-swipe-star.png
+dark-04-search-starred-banner.png
+dark-05-stop-central-board.png
+dark-06-stop-swipe-watch.png
+dark-07-stop-watched-banner.png
+dark-08-live-map.png
+dark-09-live-map-sheet-up.png
+dark-10-plan-empty.png
+dark-11-plan-burwood-central.png
+dark-12-trip-detail.png
+dark-13-trip-detail-bottom.png
+dark-14-trip-name-alert.png
+dark-15-home-filled.png
+dark-16-home-filled-scrolled.png
+dark-17-home-places.png
+dark-18-trip-screen.png
+dark-19-watching.png
+dark-20-watching-scrolled.png
+dark-21-settings.png
+dark-22-settings-haptics-off.png
+dark-23-settings-refresh-menu.png
+dark-24-settings-refresh-30.png
+dark-25-settings-bottom.png
+dark-26-stop-context-menu.png
+dark-27-dynamic-island-home-screen.png
+dark-28-lock-screen-live-activity.png
+dark-29-home-swipe-delete.png
+dark-30-ask-start.png
+dark-31-ask-answer.png
+dark-32-new-trip-modes.png
+dark-33-new-trip-train-a-to-z.png
+dark-34-new-trip-by-distance.png
+dark-35-new-trip-by-map.png
+dark-36-new-trip-train-to.png
+dark-37-confirm-trip.png
+dark-38-confirm-trip-extended.png
+dark-39-trips-new-trip.png
+dark-40-trips-reordered.png
+dark-41-trip-extended.png
+dark-42-new-trip-bus-routes.png
+dark-43-new-trip-bus-stops.png
+dark-44-confirm-bus-trip.png
+dark-45-trip-fares.png
+dark-46-trip-fare-card.png
+dark-47-live-trip.png
+dark-48-live-trip-share.png
+dark-49-live-trip-ended.png
+dark-50-station-parkride.png
+dark-51-station-access.png
+dark-52-opal-machines.png
+dark-53-parkride-list.png
+dark-54-settings-fares.png
+dark-55-settings-accessibility.png
+dark-56-settings-delete-history-confirm.png
+dark-57-settings-history-deleted.png
+dark-58-home-recent.png
+dark-59-home-recent-cleared-undo.png
+dark-60-profile-link-prompt.png
+dark-61-replay-plan-burwood.png
+dark-62-trip-screen.png
+dark-63-trip-screen-map.png
+dark-64-trip-screen-started.png
+dark-65-tabs-after-trip.png
+dark-66-replay-plan-burwood.png
+dark-67-replay-short-trip-screen.png
+dark-68-replay-short-waiting.png
+dark-69-replay-short-on-board.png
+dark-70-replay-short-get-off.png
+dark-71-replay-short-arrived.png
+dark-72-replay-short-15-min-after.png
+dark-73-replay-change-start.png
+dark-74-replay-change-leg1.png
+dark-75-replay-change-change.png
+dark-76-replay-change-leg2.png
+dark-77-replay-change-get-off.png
+dark-78-replay-change-arrived.png
+dark-79-replay-change-15-min-after.png
+dark-90-offline-start.png
+dark-j01-first-launch.png
+dark-j02-plan-tab.png
+dark-j03-search-central.png
+dark-j04-stop-departures.png
+dark-j05-stop-starred.png
+dark-j06-stop-alerts-and-lifts.png
+dark-j07-planner-empty.png
+dark-j08-planner-results.png
+dark-j09-trip-details.png
+dark-j10-trip-details-bottom.png
+dark-j11-live-trip.png
+dark-j12-share-trip.png
+dark-j13-end-trip-confirm.png
+dark-j14-trip-ended.png
+dark-j15-save-trip-name.png
+dark-j16-home-saved.png
+dark-j17-home-saved-scrolled.png
+dark-j18-watching.png
+dark-j19-more.png
+dark-j20-ask-start.png
+dark-j21-ask-answer.png
+dark-j22-settings.png
+dark-j23-settings-bottom.png
+dark-j24-about.png
+dark-replay-change-timeline.txt
+dark-replay-short-timeline.txt
+light-01-home-first-launch.png
+light-02-search-central.png
+light-03-search-swipe-star.png
+light-04-search-starred-banner.png
+light-05-stop-central-board.png
+light-06-stop-swipe-watch.png
+light-07-stop-watched-banner.png
+light-08-live-map.png
+light-09-live-map-sheet-up.png
+light-10-plan-empty.png
+light-11-plan-burwood-central.png
+light-12-trip-detail.png
+light-13-trip-detail-bottom.png
+light-14-trip-name-alert.png
+light-15-home-filled.png
+light-16-home-filled-scrolled.png
+light-17-home-places.png
+light-18-trip-screen.png
+light-19-watching.png
+light-20-watching-scrolled.png
+light-21-settings.png
+light-22-stop-context-menu.png
+light-23-dynamic-island-home-screen.png
+light-24-lock-screen-live-activity.png
+light-25-lock-screen-live-activity-allowed.png
+light-26-home-swipe-delete.png
+light-27-ask-start.png
+light-28-ask-answer.png
+light-29-new-trip-modes.png
+light-30-new-trip-train-a-to-z.png
+light-31-new-trip-by-distance.png
+light-32-new-trip-by-map.png
+light-33-new-trip-train-to.png
+light-34-confirm-trip.png
+light-35-confirm-trip-extended.png
+light-36-trips-new-trip.png
+light-37-trips-reordered.png
+light-38-trip-extended.png
+light-39-new-trip-bus-routes.png
+light-40-new-trip-bus-stops.png
+light-41-confirm-bus-trip.png
+light-42-trip-fares.png
+light-43-station-parkride.png
+light-44-station-access.png
+light-45-opal-machines.png
+light-46-parkride-list.png
+light-47-settings-fares.png
+light-48-settings-accessibility.png
+light-49-settings-delete-history-confirm.png
+light-50-settings-history-deleted.png
+light-51-home-recent.png
+light-52-home-recent-cleared-undo.png
+light-53-profile-link-prompt.png
+light-54-replay-plan-burwood.png
+light-55-replay-plan-burwood.png
+light-56-replay-short-trip-screen.png
+light-57-replay-short-waiting.png
+light-58-replay-short-on-board.png
+light-59-replay-short-get-off.png
+light-60-replay-short-arrived.png
+light-61-replay-short-15-min-after.png
+light-62-replay-change-start.png
+light-63-replay-change-leg1.png
+light-64-replay-change-change.png
+light-65-replay-change-leg2.png
+light-66-replay-change-get-off.png
+light-67-replay-change-arrived.png
+light-68-replay-change-15-min-after.png
+light-90-offline-start.png
+light-j01-first-launch.png
+light-j02-plan-tab.png
+light-j03-search-central.png
+light-j04-stop-departures.png
+light-j05-stop-starred.png
+light-j06-stop-alerts-and-lifts.png
+light-j07-planner-empty.png
+light-j08-planner-results.png
+light-j09-trip-details.png
+light-j10-trip-details-bottom.png
+light-j11-live-trip.png
+light-j12-share-trip.png
+light-j13-end-trip-confirm.png
+light-j14-trip-ended.png
+light-j15-save-trip-name.png
+light-j16-home-saved.png
+light-j17-home-saved-scrolled.png
+light-j18-watching.png
+light-j19-more.png
+light-j20-ask-start.png
+light-j21-ask-answer.png
+light-j22-settings.png
+light-j23-settings-bottom.png
+light-j24-about.png
+light-replay-change-timeline.txt
+light-replay-short-timeline.txt
+
+out/widgets:
+dark-b1-board-small.png
+dark-b2-board-medium.png
+dark-b3-board-large.png
+dark-b4-board-filtered.png
+dark-w1-home-screen-widgets.png
+dark-w2-widget-small.png
+dark-w3-widget-medium.png
+dark-w4-lock-screen.png
+dark-w5-live-activity.png
+dark-w6-widget-large.png
+fx-dark-1-small.png
+fx-dark-2-medium-alert.png
+fx-dark-3-medium-named.png
+fx-dark-4-large.png
+fx-dark-5-lock-screen.png
+fx-light-1-small.png
+fx-light-2-medium-alert.png
+fx-light-3-medium-named.png
+fx-light-4-large.png
+fx-light-5-lock-screen.png
+island-1-compact.png
+island-2-expanded.png
+island-3-minimal.png
+light-b1-board-small.png
+light-b2-board-medium.png
+light-b3-board-large.png
+light-b4-board-filtered.png
+light-w1-home-screen-widgets.png
+light-w2-widget-small.png
+light-w3-widget-medium.png
+light-w4-lock-screen.png
+light-w5-live-activity.png
+light-w6-widget-large.png
+lock-accessories.png
+standby-1-next-trip.png
+bundle: GitHub Actions artifact ios-ci-38 on run 40099060418; screenshots in ci-out/shots

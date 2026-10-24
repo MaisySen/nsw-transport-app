@@ -1,6 +1,0 @@
-User-agent: *
-Allow: /
-Disallow: /api/
-Disallow: /support/thanks/
-
-Sitemap: https://nsw-transport-bot.sites.tab.bot/sitemap.xml

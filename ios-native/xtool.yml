@@ -1,9 +1,0 @@
-version: 1
-bundleID: com.maisysen.nswtransport
-product: Transport
-infoPath: Support/Transport-Info.plist
-iconPath: Support/AppIcon.png
-extensions:
-  - product: TransportWidget
-    bundleID: com.maisysen.nswtransport.widget
-    infoPath: Support/TransportWidget-Info.plist
