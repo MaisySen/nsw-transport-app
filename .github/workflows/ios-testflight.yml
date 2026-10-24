@@ -69,7 +69,21 @@ jobs:
           printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8"
           chmod 600 "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8"
 
+      - name: Signing keychain
+        run: |
+          # A throwaway keychain, unlocked for the whole job, so codesign never waits on a password prompt
+          # for the certificate Xcode creates through the API key.
+          KC="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p "" "$KC"
+          security set-keychain-settings -t 3600 "$KC"
+          security unlock-keychain -p "" "$KC"
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$KC"
+          echo "SIGNING_KEYCHAIN=$KC" >> "$GITHUB_ENV"
+          security list-keychains -d user
+
       - name: Archive (signed)
+        timeout-minutes: 20
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -80,6 +94,16 @@ jobs:
           BUILD="${{ inputs.build }}"
           if [ -z "$BUILD" ]; then BUILD=$((100 + ${{ github.run_number }})); fi
           echo "Build number $BUILD"
+          # Keys Xcode adds to the keychain while it runs are opened to codesign straight away.
+          keep_open() {
+            while true; do
+              security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$SIGNING_KEYCHAIN" > /dev/null 2>&1 || true
+              sleep 5
+            done
+          }
+          keep_open > /dev/null 2>&1 &
+          OPENER=$!
+          trap 'kill $OPENER 2>/dev/null || true' EXIT
           archive() {
             rm -rf "$RUNNER_TEMP/Transport.xcarchive"
             xcodebuild archive -project Transport.xcodeproj -scheme Transport -configuration Release \
@@ -107,14 +131,15 @@ jobs:
             grep -E "error:" ../archive.log | sort -u | head -20
             echo "::warning::The app group is not registered for this team yet, archiving without it. Widgets will not see the app's starred stops. See SUBMIT.md."
             without_groups
-            archive ../archive.log || { grep -E "error:" ../archive.log | sort -u | head -60; exit 1; }
+            archive ../archive.log || { grep -E "error:" ../archive.log | sort -u | head -60; tail -30 ../archive.log; exit 1; }
             echo "Archived without the app group"
           else
-            grep -E "error:" ../archive.log | sort -u | head -60; exit 1
+            grep -E "error:" ../archive.log | sort -u | head -60; tail -30 ../archive.log; exit 1
           fi
           /usr/bin/codesign -d --entitlements :- "$RUNNER_TEMP/Transport.xcarchive/Products/Applications/Transport.app" 2>/dev/null | grep -A3 application-groups || echo "Signed app has no app group entitlement"
 
       - name: Upload to TestFlight
+        timeout-minutes: 20
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -135,14 +160,19 @@ jobs:
           </dict>
           </plist>
           EOF
+          ( while true; do security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$SIGNING_KEYCHAIN" > /dev/null 2>&1 || true; sleep 5; done ) > /dev/null 2>&1 &
+          OPENER=$!
+          trap 'kill $OPENER 2>/dev/null || true' EXIT
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Transport.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
             -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            > ../export.log 2>&1 || { grep -E "error|Error" ../export.log | sort -u | head -60; exit 1; }
+            > ../export.log 2>&1 || { grep -E "error|Error" ../export.log | sort -u | head -60; tail -30 ../export.log; exit 1; }
           grep -E "Upload succeeded|EXPORT SUCCEEDED|Uploaded" ../export.log || tail -20 ../export.log
 
       - name: Clean up the key
         if: always()
-        run: rm -rf "$RUNNER_TEMP/keys"
+        run: |
+          rm -rf "$RUNNER_TEMP/keys"
+          if [ -n "$SIGNING_KEYCHAIN" ]; then security delete-keychain "$SIGNING_KEYCHAIN" || true; fi
