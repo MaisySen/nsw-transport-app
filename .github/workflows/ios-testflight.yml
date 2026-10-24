@@ -6,8 +6,8 @@ name: iOS TestFlight upload
 #   ASC_ISSUER_ID    Issuer ID shown on the same page
 #   ASC_KEY_P8       The full text of the AuthKey_XXXX.p8 file
 #   APPLE_TEAM_ID    The 10 character Team ID (developer.apple.com, Membership details)
-# Automatic signing with the key creates the App IDs, the app group and the distribution
-# certificate on the developer account the first time it runs.
+# Automatic signing with the key creates the App IDs and the distribution certificate on the
+# developer account the first time it runs. It cannot create the app group; see SUBMIT.md.
 
 on:
   workflow_dispatch:
@@ -16,6 +16,10 @@ on:
         description: "Build number (leave empty to use 100 plus the run number)"
         required: false
         default: ""
+      app_groups:
+        description: "App group entitlement: auto (use it when the team has the group, else sign without it), on, off"
+        required: false
+        default: "auto"
 
 permissions:
   contents: read
@@ -70,18 +74,45 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_GROUPS: ${{ inputs.app_groups }}
         run: |
           set -o pipefail
           BUILD="${{ inputs.build }}"
           if [ -z "$BUILD" ]; then BUILD=$((100 + ${{ github.run_number }})); fi
           echo "Build number $BUILD"
-          xcodebuild archive -project Transport.xcodeproj -scheme Transport -configuration Release \
-            -destination "generic/platform=iOS" -archivePath "$RUNNER_TEMP/Transport.xcarchive" \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic CURRENT_PROJECT_VERSION="$BUILD" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
-            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            > ../archive.log 2>&1 || { grep -E "error:" ../archive.log | sort -u | head -60; exit 1; }
+          archive() {
+            rm -rf "$RUNNER_TEMP/Transport.xcarchive"
+            xcodebuild archive -project Transport.xcodeproj -scheme Transport -configuration Release \
+              -destination "generic/platform=iOS" -archivePath "$RUNNER_TEMP/Transport.xcarchive" \
+              DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic CURRENT_PROJECT_VERSION="$BUILD" \
+              -allowProvisioningUpdates \
+              -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
+              -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+              > "$1" 2>&1
+          }
+          # Signing with an API key cannot register the app group group.com.maisysen.nswtransport.
+          # Until it is registered on developer.apple.com and ticked on both App IDs (see SUBMIT.md),
+          # the archive is signed without the app group: the app and its Live Activities work as normal,
+          # the home screen widgets cannot read the starred stops and profile the app saves.
+          without_groups() {
+            for f in Support/Transport.entitlements Support/TransportWidget.entitlements; do
+              /usr/libexec/PlistBuddy -c "Delete :com.apple.security.application-groups" "$f" || true
+              echo "$f:"; cat "$f"
+            done
+          }
+          if [ "$APP_GROUPS" = "off" ]; then without_groups; fi
+          if archive ../archive.log; then
+            echo "Archived with entitlements as in project.yml (app groups: ${APP_GROUPS:-auto})"
+          elif [ "$APP_GROUPS" != "on" ] && [ "$APP_GROUPS" != "off" ] && grep -q "application-groups entitlement" ../archive.log; then
+            grep -E "error:" ../archive.log | sort -u | head -20
+            echo "::warning::The app group is not registered for this team yet, archiving without it. Widgets will not see the app's starred stops. See SUBMIT.md."
+            without_groups
+            archive ../archive.log || { grep -E "error:" ../archive.log | sort -u | head -60; exit 1; }
+            echo "Archived without the app group"
+          else
+            grep -E "error:" ../archive.log | sort -u | head -60; exit 1
+          fi
+          /usr/bin/codesign -d --entitlements :- "$RUNNER_TEMP/Transport.xcarchive/Products/Applications/Transport.app" 2>/dev/null | grep -A3 application-groups || echo "Signed app has no app group entitlement"
 
       - name: Upload to TestFlight
         env:
