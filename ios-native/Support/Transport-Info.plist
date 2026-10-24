@@ -7,13 +7,13 @@
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
     <key>CFBundleVersion</key>
-    <string>7</string>
+    <string>9</string>
     <key>NSSupportsLiveActivities</key>
     <true/>
     <key>NSSupportsLiveActivitiesFrequentUpdates</key>
     <true/>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Transport uses your location to show the stops and stations closest to you and to plan trips from where you are.</string>
+    <string>Transport uses your location to show the stops, stations, car parks and Opal machines closest to you, and where you are on the map during a live trip. Your location stays on this iPhone.</string>
     <key>UILaunchScreen</key>
     <dict/>
     <key>UIRequiresFullScreen</key>

@@ -489,6 +489,166 @@ final class FlowTests: XCTestCase {
         pause(1)
     }
 
+    /// Build 9: a trip shows the Opal fare estimate, Start trip opens the live trip with its
+    /// sheet, the share button and End trip, and Home shows Trip in progress while it runs.
+    func test12FaresAndLiveTrip() {
+        app.launch()
+        tab("Trips")
+        let plan = app.navigationBars.buttons["Plan a trip"].firstMatch
+        XCTAssertTrue(plan.waitForExistence(timeout: 10), "plan button on Home")
+        plan.tap()
+        pick("fromField", "Strathfield", expect: "Strathfield Station")
+        pick("toField", "Central", expect: "Central Station")
+        let journey = element("journey")
+        XCTAssertTrue(journey.waitForExistence(timeout: 30), "journeys from Strathfield to Central")
+        XCTAssertTrue(element("fareBar").waitForExistence(timeout: 10), "fare bar on the trip screen")
+        pause(1)
+        shot("trip-fares")
+        journey.tap()
+        let start = element("startTrip")
+        XCTAssertTrue(start.waitForExistence(timeout: 10), "Start trip on the journey")
+        let fareTotal = element("fareTotal")
+        for _ in 0..<4 where !(fareTotal.exists && fareTotal.isHittable) {
+            app.swipeUp()
+            pause(1)
+        }
+        XCTAssertTrue(fareTotal.waitForExistence(timeout: 8), "Opal fare estimate card")
+        shot("trip-fare-card")
+        for _ in 0..<4 where !(start.exists && start.isHittable) {
+            app.swipeDown()
+            pause(1)
+        }
+        start.tap()
+        allowSystemAlert()
+        let end = element("endTrip")
+        XCTAssertTrue(end.waitForExistence(timeout: 20), "live trip sheet with End trip")
+        XCTAssertTrue(element("liveArrival").waitForExistence(timeout: 20), "arrival time on the live trip")
+        pause(4)
+        shot("live-trip")
+        let share = element("shareTrip")
+        XCTAssertTrue(share.exists, "Share trip button")
+        share.tap()
+        pause(3)
+        shot("live-trip-share")
+        let close = app.buttons["Close"].firstMatch
+        if close.waitForExistence(timeout: 3) { close.tap() } else { app.swipeDown() }
+        pause(1)
+        if !end.isHittable {
+            let sheet = app.collectionViews.firstMatch
+            sheet.swipeUp()
+            pause(1)
+        }
+        end.tap()
+        let confirm = app.buttons["End trip"].firstMatch
+        if confirm.waitForExistence(timeout: 5) { confirm.tap() }
+        pause(2)
+        XCTAssertFalse(element("endTrip").exists, "live trip closed after End trip")
+        shot("live-trip-ended")
+    }
+
+    /// Build 9: station screens show access, lifts and Park and Ride; the Opal machine finder lists machines.
+    func test13StationAccessParkingAndOpalMachines() {
+        app.launchArguments += ["-screen", "stop/2155384"]
+        app.launch()
+        XCTAssertTrue(element("departure").waitForExistence(timeout: 25), "departures at Tallawong")
+        let parkHeader = app.staticTexts["Park and Ride"].firstMatch
+        let list = app.collectionViews.firstMatch
+        for _ in 0..<8 where !parkHeader.exists {
+            list.swipeUp()
+            pause(0.8)
+        }
+        XCTAssertTrue(parkHeader.waitForExistence(timeout: 10), "Park and Ride on the Tallawong screen")
+        shot("station-parkride")
+        let access = app.staticTexts["Access and facilities"].firstMatch
+        for _ in 0..<6 where !access.exists {
+            list.swipeUp()
+            pause(0.8)
+        }
+        XCTAssertTrue(access.waitForExistence(timeout: 10), "Access and facilities on the Tallawong screen")
+        shot("station-access")
+
+        tab("Search")
+        let machines = element("opalMachines")
+        XCTAssertTrue(machines.waitForExistence(timeout: 10), "Opal machines row in Search")
+        machines.tap()
+        allowSystemAlert()
+        XCTAssertTrue(element("opalMachine").waitForExistence(timeout: 30), "at least one Opal machine")
+        pause(2)
+        shot("opal-machines")
+        app.navigationBars.buttons.firstMatch.tap()
+        pause(1)
+        let parks = element("parkRideList")
+        if parks.waitForExistence(timeout: 5) {
+            parks.tap()
+            XCTAssertTrue(element("carPark").waitForExistence(timeout: 40), "Park and Ride list")
+            pause(1)
+            shot("parkride-list")
+        }
+    }
+
+    /// Build 9: Settings has the fare type, Accessibility and Clear history; Recent trips on Home
+    /// clears with Undo; a profile link asks first.
+    func test14SettingsHistoryAndProfileLink() {
+        app.launch()
+        tab("Settings")
+        let list = app.collectionViews.firstMatch
+        let concession = app.buttons["Concession"].firstMatch
+        for _ in 0..<6 where !concession.exists {
+            list.swipeUp()
+            pause(0.6)
+        }
+        XCTAssertTrue(concession.waitForExistence(timeout: 8), "Concession fare type")
+        concession.tap()
+        pause(0.8)
+        shot("settings-fares")
+        let acc = app.switches["accessibleTrips"].firstMatch
+        for _ in 0..<4 where !acc.exists {
+            list.swipeUp()
+            pause(0.6)
+        }
+        XCTAssertTrue(acc.exists || element("accessibleTrips").exists, "Accessible trips switch")
+        shot("settings-accessibility")
+        let history = element("deleteServerHistory")
+        for _ in 0..<4 where !history.exists {
+            list.swipeUp()
+            pause(0.6)
+        }
+        XCTAssertTrue(history.waitForExistence(timeout: 8), "Delete my trip history on server")
+        history.tap()
+        let deleteButton = app.buttons["Delete trip history"].firstMatch
+        XCTAssertTrue(deleteButton.waitForExistence(timeout: 5), "confirm sheet for trip history")
+        shot("settings-delete-history-confirm")
+        deleteButton.tap()
+        pause(2)
+        shot("settings-history-deleted")
+        let adult = app.buttons["Adult"].firstMatch
+        for _ in 0..<6 where !adult.exists {
+            list.swipeDown()
+            pause(0.6)
+        }
+        if adult.exists { adult.tap() }
+
+        tab("Trips")
+        let clear = element("clearRecentTrips")
+        if reveal(clear) {
+            shot("home-recent")
+            clear.tap()
+            XCTAssertTrue(element("undoClear").waitForExistence(timeout: 3), "Undo after Clear")
+            shot("home-recent-cleared-undo")
+            element("undoClear").tap()
+            pause(1)
+            XCTAssertTrue(element("recentTrip").waitForExistence(timeout: 5), "recent trips back after Undo")
+        }
+
+        app.terminate()
+        app.launchArguments += ["-screen", "profile/uitestprofile"]
+        app.launch()
+        let switchButton = app.buttons["Switch profile"].firstMatch
+        XCTAssertTrue(switchButton.waitForExistence(timeout: 10), "profile link asks first")
+        shot("profile-link-prompt")
+        app.buttons["Cancel"].firstMatch.tap()
+    }
+
     /// Scrolls Trips until the element is on screen.
     @discardableResult
     private func reveal(_ e: XCUIElement) -> Bool {

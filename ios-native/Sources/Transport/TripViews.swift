@@ -9,6 +9,8 @@ struct TripPlannerView: View {
     /// Set for an extended trip: the connection stop, and the minutes needed to change there.
     var via: StopRef? = nil
     var conn: Int = 5
+    /// Set for a trip of 3 or more legs, from Ask or a saved trip.
+    var legs: [TripLeg]? = nil
     @State private var picking: PickTarget?
     @State private var data: TripResponse?
     @State private var updated: Date?
@@ -27,7 +29,20 @@ struct TripPlannerView: View {
                     .accessibilityIdentifier("fromField")
                 PlaceField(label: "To", place: to) { picking = .to }
                     .accessibilityIdentifier("toField")
-                if let via {
+                if let legs, legs.count > 2 {
+                    HStack {
+                        Text("Via")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 48, alignment: .leading)
+                        Text(legs.dropLast().map { Naming.compact(Naming.short($0.to.name)) }.joined(separator: ", "))
+                        Spacer()
+                        Text("\(legs.count) legs")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("viaRow")
+                } else if let via {
                     HStack {
                         Text("Via")
                             .foregroundStyle(.secondary)
@@ -60,7 +75,7 @@ struct TripPlannerView: View {
                     Section { ContentUnavailableView("No trips found", systemImage: "point.topleft.down.to.point.bottomright.curvepath", description: Text(error)) }
                 }
                 if data != nil {
-                    let picked = TripPlan.directFilter(merged, extended: via != nil, all: showAll)
+                    let picked = TripPlan.directFilter(merged, extended: via != nil, all: showAll || (legs?.count ?? 0) > 2)
                     let journeys = picked.list
                     let alerts = Self.uniqueAlerts(journeys)
                     if !alerts.isEmpty {
@@ -77,6 +92,25 @@ struct TripPlannerView: View {
                                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                                 }
                             }
+                        }
+                    }
+                    if let f = journeys.first?.fare {
+                        Section { FareBar(fare: f) }
+                    }
+                    if let p = data?.parking, let parks = p.carparks, !parks.isEmpty {
+                        Section {
+                            ForEach(parks) { c in CarParkRow(park: c, station: p.station?.name) }
+                        } header: {
+                            Text("Park and Ride at \(Naming.compact(Naming.short(p.station?.name ?? from?.name ?? "")))")
+                        } footer: {
+                            Text("Live spaces from the Transport for NSW Car Park API, live.")
+                        }
+                    }
+                    if store.accessibleTrips {
+                        Section {
+                            Label(journeys.isEmpty ? "Step free trips only. None found for this trip." : "Step free trips only.", systemImage: "figure.roll")
+                                .font(.subheadline)
+                                .accessibilityIdentifier("accessibleNotice")
                         }
                     }
                     Section {
@@ -102,7 +136,7 @@ struct TripPlannerView: View {
                         moreButton("Earlier services", direction: -1)
                         ForEach(journeys) { j in
                             NavigationLink {
-                                JourneyDetailView(journey: j, from: from!, to: to!)
+                                JourneyDetailView(journey: j, from: from!, to: to!, legs: legs)
                             } label: {
                                 ServiceRow(journey: j, status: ServiceStatus.of(j), dimmed: HomeBoard.isBeaten(j, among: journeys), showDuration: showDuration)
                             }
@@ -142,11 +176,15 @@ struct TripPlannerView: View {
         .autoRefresh(every: max(store.refreshSeconds, 20), active: store.isActive && from != nil && to != nil) { await load() }
         .onChange(of: from) { _, _ in data = nil; extra = []; Task { await load() } }
         .onChange(of: to) { _, _ in data = nil; extra = []; Task { await load() } }
+        .onChange(of: showAll) { _, _ in if via != nil || legs != nil { extra = []; Task { await load() } } }
+        .onChange(of: store.fareType) { _, _ in Task { await load() } }
+        .onChange(of: store.accessibleTrips) { _, _ in data = nil; extra = []; Task { await load() } }
         .appHaptics()
     }
 
     private var tripKey: String? {
         guard let from, let to else { return nil }
+        if let legs, legs.count > 2 { return TripLeg.key(legs) }
         return TripKey.of(from: from, via: via, to: to)
     }
 
@@ -202,9 +240,15 @@ struct TripPlannerView: View {
         f.locale = Locale(identifier: "en_AU_POSIX")
         loadingMore = true
         defer { loadingMore = false }
-        if let r = try? await TripPlan.plan(api: store.api, from: from.id, via: via?.id, to: to.id, conn: conn, count: 5, time: f.string(from: t)) {
+        if let r = try? await TripPlan.plan(api: store.api, from: from.id, via: via?.id, to: to.id, conn: conn, count: 5, time: f.string(from: t),
+                                            legs: planLegs(from: from, to: to), all: showAll) {
             withAnimation(.snappy) { extra += r.journeys }
         }
+    }
+
+    /// The legs for /api/plan, or nil for a plain A to B trip.
+    private func planLegs(from: StopRef, to: StopRef) -> [TripLeg]? {
+        TripPlan.legs(from: from, via: via, to: to, conn: conn, legs: legs)
     }
 
     /// Alerts across all journeys, each once.
@@ -222,10 +266,11 @@ struct TripPlannerView: View {
         loading = true
         defer { loading = false }
         do {
-            let r = try await TripPlan.plan(api: store.api, from: from.id, via: via?.id, to: to.id, conn: conn, count: 5)
+            let r = try await TripPlan.plan(api: store.api, from: from.id, via: via?.id, to: to.id, conn: conn, count: 5,
+                                            legs: planLegs(from: from, to: to), all: showAll)
             withAnimation(.snappy) { data = r }
             updated = Date()
-            if !r.journeys.isEmpty && via == nil { store.rememberTrip(from: from, to: to) }
+            if !r.journeys.isEmpty && via == nil && legs == nil { store.rememberTrip(from: from, to: to) }
             // A trip opened from a link only knows stop numbers; name them from the first journey.
             if from.name.hasPrefix("Stop "), let n = r.journeys.first?.legs.first?.from {
                 self.from = StopRef(id: from.id, name: n)
@@ -373,6 +418,7 @@ struct JourneyDetailView: View {
     var journey: Journey
     var from: StopRef
     var to: StopRef
+    var legs: [TripLeg]? = nil
     @Environment(AppStore.self) private var store
     @State private var selected: ServiceKey?
     @State private var naming = false
@@ -407,6 +453,23 @@ struct JourneyDetailView: View {
             }
 
             Section {
+                Button {
+                    Task { await store.startLiveTrip(journey, from: from, to: to) }
+                } label: {
+                    Label("Start trip", systemImage: "location.north.line.fill")
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .controlSize(.large)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+                .accessibilityIdentifier("startTrip")
+                .accessibilityHint("Live map, next stop, get off alerts and a Lock Screen countdown")
+            }
+
+            Section {
                 HStack(spacing: 10) {
                     Button {
                         Task { await store.watch(journey.watchRequest(device: store.device, profile: store.api.profile, from: from, to: to)) }
@@ -434,9 +497,18 @@ struct JourneyDetailView: View {
                             LegCard(leg: leg, changeMinutes: changeMinutes(before: i))
                         }
                         .buttonStyle(.plain)
+                        if leg.access != nil {
+                            LegAccessChips(leg: leg)
+                        }
                     }
                 }
+                if let w = journey.warn, !w.isEmpty {
+                    Label(w, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(journey.risk == "tight" ? Color.orange : Color.red)
+                }
             }
+
 
             Section {
                 Button { naming = true } label: { Label("Save as a named trip", systemImage: "bookmark") }
@@ -446,6 +518,10 @@ struct JourneyDetailView: View {
                 } label: { Label("Make this my commute", systemImage: "clock.arrow.circlepath") }
             } footer: {
                 Text("A named trip like home works here and in WhatsApp. A commute gets a leave now alert every weekday.")
+            }
+
+            if let f = journey.fare {
+                FareCard(fare: f)
             }
         }
         .listStyle(.insetGrouped)

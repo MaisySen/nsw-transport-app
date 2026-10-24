@@ -46,9 +46,28 @@ struct RootView: View {
                 .tag(AppTab.settings)
         }
         .overlay(alignment: .top) { BannerOverlay() }
+        .fullScreenCover(isPresented: $store.openLiveTrip) {
+            LiveTripView()
+                .environment(store)
+                .overlay(alignment: .top) { BannerOverlay().environment(store) }
+        }
         .onOpenURL { url in store.open(url) }
+        .confirmationDialog("Switch to this profile?", isPresented: profilePrompt, titleVisibility: .visible) {
+            let p = store.pendingProfile
+            Button("Switch profile") { Task { await store.adoptProfile(p) } }
+                .accessibilityIdentifier("switchProfile")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Transport will load the saved trips, commutes and alerts kept under this private profile. Only open profile links you made yourself.")
+        }
         .task { store.openLaunchScreen() }
         .sensoryFeedback(.selection, trigger: store.tab)
+    }
+}
+
+extension RootView {
+    private var profilePrompt: Binding<Bool> {
+        Binding(get: { store.pendingProfile != nil }, set: { shown in if !shown { store.pendingProfile = nil } })
     }
 }
 

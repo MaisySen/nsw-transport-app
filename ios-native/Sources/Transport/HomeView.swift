@@ -11,20 +11,22 @@ struct HomeView: View {
     @State private var location = LocationFinder()
     @State private var addingTrip = false
     @State private var pickingPlace: PlaceKind?
+    @State private var editingTrip: EditTarget?
+    @State private var editingCommute: Commute?
 
     enum PlaceKind: String, Identifiable { case home, work; var id: String { rawValue } }
     struct PlanRoute: Hashable {}
-
-    static let popular = [
-        StopRef(id: "200060", name: "Central Station", modes: [1]),
-        StopRef(id: "200070", name: "Town Hall Station", modes: [1]),
-        StopRef(id: "213510", name: "Strathfield Station", modes: [1]),
-    ]
 
     var body: some View {
         NavigationStack(path: $path) {
             List {
                 searchSection
+
+                if let live = store.liveTrip {
+                    Section {
+                        LiveTripBar(record: live, state: store.liveState) { store.openLiveTrip = true }
+                    }
+                }
 
                 if store.homePlace == nil || store.workPlace == nil {
                     placesSection
@@ -36,7 +38,11 @@ struct HomeView: View {
                     Section { alertsBanner(serious) }
                 }
                 if trips.isEmpty {
-                    Section { addTripRow }
+                    Section {
+                        addTripRow
+                    } footer: {
+                        Text("Save the trips you take, like home to work. They show here with live times. Nothing is added for you.")
+                    }
                 }
 
                 let active = store.watches.filter { $0.active == true }
@@ -59,33 +65,45 @@ struct HomeView: View {
 
                 if !trips.isEmpty {
                     let keys = orderKeys(trips)
-                    ForEach(Array(trips.enumerated()), id: \.element.id) { i, t in
+                    ForEach(trips) { t in
                         Section {
                             tripCard(t, keys: keys)
                         }
                     }
                 }
 
-                let stops = homeStops
-                ForEach(Array(stops.enumerated()), id: \.element.id) { i, s in
+                let starredStops = Array(store.starred.prefix(4))
+                ForEach(Array(starredStops.enumerated()), id: \.element.id) { i, s in
                     Section {
-                        stopCard(s, distance: nil)
+                        stopCard(s, distance: nil, kind: .starred)
                     } header: {
-                        if i == 0 { Text("Recent stops") }
+                        if i == 0 { Text("Starred stops") }
+                    }
+                }
+
+                let recentList = recentTripRows
+                if !recentList.isEmpty {
+                    Section {
+                        ForEach(recentList, id: \.self) { r in recentTripRow(r) }
+                    } header: {
+                        groupHeader("Recent trips", id: "clearRecentTrips") { store.clearRecentTrips() }
+                    } footer: {
+                        Text("Trips you looked at. Tap and hold, or swipe left, to remove one.")
+                    }
+                }
+
+                let recentStopList = recentStops
+                ForEach(Array(recentStopList.enumerated()), id: \.element.id) { i, s in
+                    Section {
+                        stopCard(s, distance: nil, kind: .recent)
+                    } header: {
+                        if i == 0 {
+                            groupHeader("Recent stops", id: "clearRecentStops") { store.clearRecentStops() }
+                        }
                     }
                 }
 
                 nearbySection
-
-                if trips.isEmpty && stops.isEmpty {
-                    ForEach(Array(Self.popular.enumerated()), id: \.element.id) { i, s in
-                        Section {
-                            stopCard(s, distance: nil)
-                        } header: {
-                            if i == 0 { Text("Popular stations") }
-                        }
-                    }
-                }
             }
             .listStyle(.insetGrouped)
             .listSectionSpacing(.compact)
@@ -93,7 +111,7 @@ struct HomeView: View {
             .navigationDestination(for: PlanRoute.self) { _ in TripPlannerView() }
             .navigationDestination(for: StopRef.self) { s in StopView(stop: s) }
             .navigationDestination(for: ServiceKey.self) { k in ServiceView(key: k) }
-            .navigationDestination(for: TripPair.self) { p in TripPlannerView(from: p.from, to: p.to, via: p.via, conn: p.conn ?? 5) }
+            .navigationDestination(for: TripPair.self) { p in TripPlannerView(from: p.from, to: p.to, via: p.via, conn: p.conn ?? 5, legs: p.legs) }
             .navigationDestination(for: JourneyLink.self) { l in JourneyDetailView(journey: l.journey, from: l.from, to: l.to) }
             .refreshable {
                 async let a: Void = store.loadSaved()
@@ -124,6 +142,14 @@ struct HomeView: View {
                     .environment(store)
                     .presentationDetents([.large])
             }
+            .sheet(item: $editingTrip) { target in
+                EditTripSheet(target: target)
+                    .environment(store)
+            }
+            .sheet(item: $editingCommute) { c in
+                CommuteEditor(commute: c).environment(store)
+            }
+            .overlay(alignment: .bottom) { UndoToast() }
             .sheet(item: $pickingPlace) { kind in
                 StopPicker(title: kind == .home ? "Home" : "Work") { stop in
                     if kind == .home { store.homePlace = stop } else { store.workPlace = stop }
@@ -295,14 +321,14 @@ struct HomeView: View {
         let all = board.journeys[t.id] ?? []
         let live = all.filter { ($0.leave ?? .distantPast) > now.addingTimeInterval(-30) }
         // Services that stop at both ends unless this trip shows all of them.
-        let upcoming = TripPlan.directFilter(live, extended: t.via != nil, all: store.showsAllServices(t.id)).list
+        let upcoming = TripPlan.directFilter(live, extended: t.via != nil, all: store.showsAllServices(t.id) || (t.legs?.count ?? 0) > 2).list
         let shown = Array(upcoming.prefix(3))
         let pos = keys.firstIndex(of: t.orderKey) ?? 0
         let alertCount = Set(shown.flatMap { $0.transitLegs.flatMap { $0.alerts ?? [] } }.map(\.id)).count
         let hex = shown.first?.firstTransit.map { $0.color ?? Mode(raw: $0.mode).fallbackHex }
 
-        NavigationLink(value: TripPair(from: t.from, to: t.to, via: t.via, conn: t.via == nil ? nil : t.conn)) {
-            TripHeader(trip: t, colorHex: hex, alertCount: alertCount)
+        NavigationLink(value: TripPair(from: t.from, to: t.to, via: t.via, conn: t.via == nil ? nil : t.conn, legs: t.legs)) {
+            TripHeader(trip: t, colorHex: hex, alertCount: alertCount, fare: shown.first?.fare)
         }
         // Long press and drag a trip onto another to reorder; the menu does the same one step at a time.
         .draggable(t.orderKey)
@@ -312,6 +338,7 @@ struct HomeView: View {
             return true
         }
         .contextMenu {
+            tripMenu(t)
             if keys.count > 1 {
                 Button { moveTrip(t.orderKey, by: -1, keys: keys) } label: { Label("Move up", systemImage: "arrow.up") }
                     .disabled(pos == 0)
@@ -327,10 +354,14 @@ struct HomeView: View {
                 Button(role: .destructive) {
                     store.removeMyTrip(t.id)
                 } label: { Label("Delete", systemImage: "trash") }
+                Button { editTrip(t) } label: { Label("Edit", systemImage: "pencil") }
+                    .tint(.gray)
             case .saved:
                 Button(role: .destructive) {
-                    Task { try? await store.api.deleteSaved(name: t.name ?? ""); await store.loadSaved() }
+                    Task { await store.deleteSavedTrip(name: t.name ?? "") }
                 } label: { Label("Delete", systemImage: "trash") }
+                Button { editTrip(t) } label: { Label("Edit", systemImage: "pencil") }
+                    .tint(.gray)
             case .recent:
                 Button(role: .destructive) {
                     store.forgetTrip(from: t.from, to: t.to)
@@ -339,9 +370,11 @@ struct HomeView: View {
                 Button(role: .destructive) {
                     store.homePlace = nil
                     store.workPlace = nil
-                } label: { Label("Clear", systemImage: "minus.circle") }
+                } label: { Label("Remove", systemImage: "minus.circle") }
             case .commute:
-                EmptyView()
+                Button(role: .destructive) {
+                    if let c = commute(for: t) { Task { await store.deleteCommute(c) } }
+                } label: { Label("Delete", systemImage: "trash") }
             }
         }
 
@@ -377,8 +410,10 @@ struct HomeView: View {
 
     // MARK: Stop card
 
+    enum StopKind { case starred, recent, nearby }
+
     @ViewBuilder
-    private func stopCard(_ s: StopRef, distance: Double?) -> some View {
+    private func stopCard(_ s: StopRef, distance: Double?, kind: StopKind = .nearby) -> some View {
         NavigationLink(value: StopRef(id: s.id, name: s.name)) {
             HStack(spacing: 6) {
                 if store.isStarred(s.id) {
@@ -399,6 +434,30 @@ struct HomeView: View {
             }
         }
         .accessibilityIdentifier("homeStop")
+        .contextMenu {
+            switch kind {
+            case .starred:
+                Button { store.toggleStar(s) } label: { Label("Unstar stop", systemImage: "star.slash") }
+            case .recent:
+                Button { store.toggleStar(s) } label: { Label("Star stop", systemImage: "star") }
+                Button(role: .destructive) { store.forgetStop(s.id) } label: { Label("Remove from Recent", systemImage: "minus.circle") }
+            case .nearby:
+                Button { store.toggleStar(s) } label: {
+                    Label(store.isStarred(s.id) ? "Unstar stop" : "Star stop", systemImage: store.isStarred(s.id) ? "star.slash" : "star")
+                }
+            }
+        }
+        .swipeActions(edge: .trailing) {
+            switch kind {
+            case .starred:
+                Button { store.toggleStar(s) } label: { Label("Unstar", systemImage: "star.slash") }
+                    .tint(.yellow)
+            case .recent:
+                Button(role: .destructive) { store.forgetStop(s.id) } label: { Label("Remove", systemImage: "minus.circle") }
+            case .nearby:
+                EmptyView()
+            }
+        }
 
         let groups = HomeBoard.lineGroups(board.departures[s.id] ?? [], now: Date())
         if groups.isEmpty {
@@ -448,14 +507,12 @@ struct HomeView: View {
             _ = add(HomeTrip(kind: .commute, name: c.name, from: c.from, to: c.to))
         }
         for m in store.myTrips {
-            _ = add(HomeTrip(kind: .mine, name: m.name, from: m.from, to: m.to, via: m.via, conn: m.conn ?? 5))
+            _ = add(HomeTrip(kind: .mine, name: m.name, from: m.from, to: m.to, via: m.via, conn: m.conn ?? 5, legs: m.legs, modes: m.modes))
         }
-        for s in store.saved {
+        // A trip saved from Ask lives on this phone and on the server: show it once.
+        let mine = Set(store.myTrips.map { $0.name.lowercased() })
+        for s in store.saved where !mine.contains(s.name.lowercased()) {
             _ = add(HomeTrip(kind: .saved, name: s.name, from: s.from, to: s.to))
-        }
-        var recent = 0
-        for r in store.recentTrips where recent < 2 {
-            if add(HomeTrip(kind: .recent, name: nil, from: r.from, to: r.to)) { recent += 1 }
         }
         // Your own order from dragging wins. Home and Work share one key, so they move together
         // and keep their morning and evening order.
@@ -493,19 +550,106 @@ struct HomeView: View {
         store.tap()
     }
 
-    /// Starred stops first, then stops opened recently. At most 4.
-    private var homeStops: [StopRef] {
-        var out: [StopRef] = []
-        for s in store.starred + store.recents where !out.contains(where: { $0.id == s.id }) {
-            out.append(s)
+    /// Up to 3 trips you looked at that are not already one of your trips.
+    private var recentTripRows: [TripPair] {
+        let mine = Set(homeTrips.map { "\($0.from.id)>\($0.to.id)" })
+        var out: [TripPair] = []
+        for r in store.recentTrips where !mine.contains("\(r.from.id)>\(r.to.id)") && r.from.id != r.to.id {
+            if !out.contains(where: { $0.from.id == r.from.id && $0.to.id == r.to.id }) { out.append(r) }
+            if out.count == 3 { break }
         }
-        return Array(out.prefix(4))
+        return out
+    }
+
+    /// Up to 3 stops you opened lately that are not starred.
+    private var recentStops: [StopRef] {
+        var out: [StopRef] = []
+        for s in store.recents where !store.isStarred(s.id) && !out.contains(where: { $0.id == s.id }) {
+            out.append(s)
+            if out.count == 3 { break }
+        }
+        return out
     }
 
     private var stopIDs: [String] {
-        var ids = homeStops.map(\.id) + board.nearby.map(\.stop.id)
-        if homeTrips.isEmpty && homeStops.isEmpty { ids += Self.popular.map(\.id) }
-        return ids
+        Array(store.starred.prefix(4)).map(\.id) + recentStops.map(\.id) + board.nearby.map(\.stop.id)
+    }
+
+    /// A group header with Clear on the right.
+    private func groupHeader(_ title: String, id: String, clear: @escaping () -> Void) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Button("Clear") { clear() }
+                .font(.subheadline)
+                .textCase(nil)
+                .accessibilityIdentifier(id)
+                .accessibilityLabel("Clear \(title.lowercased())")
+        }
+    }
+
+    private func recentTripRow(_ r: TripPair) -> some View {
+        NavigationLink(value: TripPair(from: r.from, to: r.to)) {
+            Label {
+                Text("\(Naming.compact(Naming.short(r.from.name))) to \(Naming.compact(Naming.short(r.to.name)))")
+                    .lineLimit(1)
+            } icon: {
+                Image(systemName: "clock.arrow.circlepath").foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityIdentifier("recentTrip")
+        .contextMenu {
+            Button {
+                store.saveMyTrip(MyTrip(name: "\(Naming.compact(Naming.short(r.from.name))) to \(Naming.compact(Naming.short(r.to.name)))",
+                                        from: r.from, to: r.to, via: nil, conn: nil, modes: nil))
+            } label: { Label("Save trip", systemImage: "bookmark") }
+            Button(role: .destructive) { store.forgetTrip(from: r.from, to: r.to) } label: {
+                Label("Remove from Recent", systemImage: "minus.circle")
+            }
+        }
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) { store.forgetTrip(from: r.from, to: r.to) } label: {
+                Label("Remove", systemImage: "minus.circle")
+            }
+        }
+    }
+
+    /// The long press menu on a trip card.
+    @ViewBuilder
+    private func tripMenu(_ t: HomeTrip) -> some View {
+        switch t.kind {
+        case .mine, .saved:
+            Button { editTrip(t) } label: { Label("Edit trip", systemImage: "pencil") }
+            Button(role: .destructive) {
+                if t.kind == .mine { store.removeMyTrip(t.id) } else { Task { await store.deleteSavedTrip(name: t.name ?? "") } }
+            } label: { Label("Delete trip", systemImage: "trash") }
+        case .place:
+            Button { pickingPlace = .home } label: { Label("Change home", systemImage: "house") }
+            Button { pickingPlace = .work } label: { Label("Change work", systemImage: "briefcase") }
+            Button(role: .destructive) {
+                store.homePlace = nil
+                store.workPlace = nil
+            } label: { Label("Remove home and work", systemImage: "minus.circle") }
+        case .commute:
+            if let c = commute(for: t) {
+                Button { editingCommute = c } label: { Label("Edit commute", systemImage: "pencil") }
+                Button(role: .destructive) { Task { await store.deleteCommute(c) } } label: { Label("Delete commute", systemImage: "trash") }
+            }
+        case .recent:
+            Button(role: .destructive) { store.forgetTrip(from: t.from, to: t.to) } label: { Label("Remove from Recent", systemImage: "minus.circle") }
+        }
+    }
+
+    private func editTrip(_ t: HomeTrip) {
+        if t.kind == .mine, let m = store.myTrips.first(where: { $0.id == t.id }) {
+            editingTrip = EditTarget(mine: m, saved: nil)
+        } else if t.kind == .saved, let s = store.saved.first(where: { $0.name == t.name }) {
+            editingTrip = EditTarget(mine: nil, saved: s)
+        }
+    }
+
+    private func commute(for t: HomeTrip) -> Commute? {
+        store.commutes.first { $0.from.id == t.from.id && $0.to.id == t.to.id }
     }
 
     private var refreshKey: String {
@@ -524,6 +668,11 @@ struct HomeView: View {
             path.append(s)
         case .trip(let from, let to):
             path.append(TripPair(from: from, to: to))
+        case .legs(let legs):
+            if let first = legs.first, let last = legs.last {
+                path.append(TripPair(from: first.from, to: last.to, via: legs.count == 2 ? first.to : nil,
+                                     conn: legs.count == 2 ? (legs[1].conn ?? 5) : nil, legs: legs.count > 2 ? legs : nil))
+            }
         case .track(let stopID):
             Task {
                 // Opens the first live service at this stop on the map.
@@ -541,6 +690,8 @@ struct TripPair: Hashable, Codable {
     /// Set for an extended trip: change here, with `conn` minutes to connect.
     var via: StopRef? = nil
     var conn: Int? = nil
+    /// Set for a trip of 3 or more legs.
+    var legs: [TripLeg]? = nil
 }
 
 struct JourneyLink: Hashable {
@@ -557,8 +708,10 @@ struct HomeTrip: Identifiable, Hashable {
     var to: StopRef
     var via: StopRef? = nil
     var conn: Int = 5
+    var legs: [TripLeg]? = nil
+    var modes: [String]? = nil
 
-    var id: String { TripKey.of(from: from, via: via, to: to) }
+    var id: String { legs.map { TripLeg.key($0) } ?? TripKey.of(from: from, via: via, to: to) }
     /// The key for your order on Trips. Home and Work move together.
     var orderKey: String { kind == .place ? "places" : id }
     var route: String { "\(Naming.compact(Naming.short(from.name))) to \(Naming.compact(Naming.short(to.name)))" }
@@ -607,13 +760,16 @@ final class HomeBoard {
     }
 
     private func load(api: TransportAPI, device: String, trips: [HomeTrip], stops: [String]) async {
-        let tripJobs = trips.map { (key: $0.id, from: $0.from.id, to: $0.to.id, via: $0.via?.id, conn: $0.conn) }
+        let tripJobs = trips.map { t in
+            (key: t.id, from: t.from.id, to: t.to.id, via: t.via?.id, conn: t.conn,
+             legs: TripPlan.legs(from: t.from, via: t.via, to: t.to, conn: t.conn, legs: t.legs, modes: t.modes))
+        }
         let stopJobs = Array(Set(stops))
         let now = Date()
         await withTaskGroup(of: HomeFetch.self) { group in
             for job in tripJobs {
                 group.addTask {
-                    let r = try? await TripPlan.plan(api: api, from: job.from, via: job.via, to: job.to, conn: job.conn, count: 5)
+                    let r = try? await TripPlan.plan(api: api, from: job.from, via: job.via, to: job.to, conn: job.conn, count: 5, legs: job.legs)
                     return HomeFetch.trip(job.key, r)
                 }
             }
@@ -767,6 +923,7 @@ struct TripHeader: View {
     var trip: HomeTrip
     var colorHex: String?
     var alertCount: Int
+    var fare: Fare? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -792,11 +949,24 @@ struct TripHeader: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                if let via = trip.via {
+                if let legs = trip.legs, legs.count > 2 {
+                    Label("\(legs.count) legs via \(legs.dropLast().map { Naming.compact(Naming.short($0.to.name)) }.joined(separator: ", "))", systemImage: "arrow.triangle.swap")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("tripVia")
+                } else if let via = trip.via {
                     Label("Change at \(Naming.compact(Naming.short(via.name))), \(trip.conn) min", systemImage: "arrow.triangle.swap")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("tripVia")
+                }
+                if let total = fare?.total {
+                    HStack(spacing: 6) {
+                        FareChip(total: total)
+                        if let nudge = fare?.offPeakText {
+                            Text(nudge).font(.caption).foregroundStyle(.green).lineLimit(1)
+                        }
+                    }
                 }
                 if alertCount > 0 {
                     HStack(spacing: 4) {
@@ -824,10 +994,31 @@ struct ServiceRow: View {
     var showDuration = false
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            mainRow
+            if let w = journey.warn, !w.isEmpty {
+                Label(w, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(journey.risk == "tight" ? Color.orange : Color.red)
+                    .accessibilityIdentifier("tripWarn")
+            }
+            if let out = journey.liftOutage {
+                Label("Lift out: \(out)", systemImage: "figure.roll")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
+        }
+        .opacity(dimmed ? 0.45 : 1)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
+    private var mainRow: some View {
         let f = journey.firstTransit
         let cancelled = status.tone == .bad
         let leave = journey.leave ?? f?.departTime
-        HStack(spacing: 12) {
+        return HStack(spacing: 12) {
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
                 let secs = leave.map { $0.timeIntervalSince(ctx.date) } ?? 0
                 let tone = showDuration ? ChipTone.duration : ChipTone.of(seconds: secs, cancelled: cancelled)
@@ -899,13 +1090,13 @@ struct ServiceRow: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
+                if let total = journey.fare?.total {
+                    FareChip(total: total)
+                }
             }
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(.vertical, 2)
-        .opacity(dimmed ? 0.45 : 1)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
     }
 
     private var boardLine: String {

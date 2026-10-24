@@ -10,7 +10,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "8"
+    CURRENT_PROJECT_VERSION: "9"
     TARGETED_DEVICE_FAMILY: "1"
   configs:
     Release:
@@ -42,7 +42,7 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSSupportsLiveActivities: true
         NSSupportsLiveActivitiesFrequentUpdates: true
-        NSLocationWhenInUseUsageDescription: Transport uses your location to show the stops and stations closest to you and to plan trips from where you are.
+        NSLocationWhenInUseUsageDescription: Transport uses your location to show the stops, stations, car parks and Opal machines closest to you, and where you are on the map during a live trip. Your location stays on this iPhone.
         UILaunchScreen: {}
         UIBackgroundModes: [fetch]
         BGTaskSchedulerPermittedIdentifiers: [com.maisysen.nswtransport.refresh]

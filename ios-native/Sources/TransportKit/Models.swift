@@ -174,6 +174,8 @@ public struct Leg: Codable, Hashable, Sendable, Identifiable {
     public var platformChangedFrom: String?
     public var alerts: [ServiceAlert]?
     public var path: [[Double]]?
+    /// Step free access and lift status where you board and get off (stations only).
+    public var access: LegAccess?
 
     public var isWalk: Bool { kind == "walk" }
     public var isLive: Bool { realtime == true && estimated != nil }
@@ -193,6 +195,10 @@ public struct Journey: Codable, Hashable, Sendable, Identifiable {
     public var risk: String?
     public var beaten: Bool?
     public var legs: [Leg]
+    /// Opal fare estimate for the fare type sent with the request.
+    public var fare: Fare?
+    /// A tight or missed change on a multi leg trip, as text.
+    public var warn: String?
 
     public var transitLegs: [Leg] { legs.filter { !$0.isWalk } }
     public var firstTransit: Leg? { transitLegs.first }
@@ -204,6 +210,10 @@ public struct TripResponse: Codable, Sendable {
     public var saved: String?
     public var journeys: [Journey]
     public var tomorrow: Bool?
+    /// True when the request asked for step free trips only.
+    public var accessible: Bool?
+    /// Live Park and Ride spaces when the first leg starts at a Park and Ride station.
+    public var parking: TripParking?
 }
 
 public struct ServiceStop: Codable, Hashable, Sendable, Identifiable {
@@ -240,6 +250,8 @@ public struct ServiceResponse: Codable, Sendable {
     public var `where`: WhereInfo?
     public var nextIndex: Int?
     public var mineIndex: Int?
+    /// Where you get off, when the request named it with `to`.
+    public var alightIndex: Int?
     public var stopsAway: Int?
     public var stops: [ServiceStop]
     public var path: [[Double]]?

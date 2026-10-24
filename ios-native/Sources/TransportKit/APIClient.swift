@@ -26,7 +26,10 @@ public enum AppIdentity {
 
     public static var groupDefaults: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }
 
-    public static let profile: String = {
+    /// Read from the shared defaults each time, so a profile switch takes effect at once.
+    public static var profile: String { resolveProfile() }
+
+    static func resolveProfile() -> String {
         let std = UserDefaults.standard
         let group = groupDefaults
         // The UI tests pass -apiProfile, which lands in the standard defaults.
@@ -41,13 +44,22 @@ public enum AppIdentity {
         std.set(p, forKey: "apiProfile")
         group.set(p, forKey: "apiProfile")
         return p
-    }()
+    }
+
+    /// Profiles that were shared by several people in early test builds.
+    public static let sharedProfiles: Set<String> = ["bidur"]
+
+    /// A fresh private profile id.
+    public static func newProfileID() -> String {
+        "u" + String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(16)).lowercased()
+    }
 
     /// Moves this install to another profile (for example the one used on a previous phone).
     /// Takes effect the next time the app starts.
     public static func adopt(_ p: String) -> Bool {
         let clean = p.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
-        guard clean.count >= 3, clean.count <= 40 else { return false }
+        // The old shared profile is never adopted: everyone gets a private one.
+        guard clean.count >= 5, clean.count <= 40, !sharedProfiles.contains(clean) else { return false }
         UserDefaults.standard.set(clean, forKey: "apiProfile")
         groupDefaults.set(clean, forKey: "apiProfile")
         return true
@@ -63,7 +75,7 @@ public struct TransportAPI: Sendable {
         #endif
         return URL(string: "https://nsw-transport-bot.sites.tab.bot")!
     }()
-    public static let shared = TransportAPI(profile: AppIdentity.profile)
+    public static var shared: TransportAPI { TransportAPI(profile: AppIdentity.profile) }
 
     public var base: URL
     public var profile: String
@@ -158,7 +170,9 @@ public struct TransportAPI: Sendable {
 
     /// `time` is HHmm Sydney time, for earlier or later services.
     public func trip(from: String, to: String, count: Int = 5, time: String? = nil) async throws -> TripResponse {
-        try await send(TripResponse.self, "api/trip", query: ["from": from, "to": to, "count": String(count), "time": time])
+        var q: [String: String?] = ["from": from, "to": to, "count": String(count), "time": time]
+        for (k, v) in TripPrefs.query { q[k] = v }
+        return try await send(TripResponse.self, "api/trip", query: q)
     }
 
     public func service(trip: String?, line: String?, stop: String?, planned: Date?, mode: String?, destId: String?) async throws -> ServiceResponse {
@@ -183,7 +197,9 @@ public struct TransportAPI: Sendable {
     }
 
     public func next(name: String, count: Int = 5) async throws -> TripResponse {
-        try await send(TripResponse.self, "api/next", query: ["name": name, "count": String(count)])
+        var q: [String: String?] = ["name": name, "count": String(count)]
+        for (k, v) in TripPrefs.query { q[k] = v }
+        return try await send(TripResponse.self, "api/next", query: q)
     }
 
     public func commutes(device: String?) async throws -> CommutesResponse {

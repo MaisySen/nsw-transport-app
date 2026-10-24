@@ -4,6 +4,8 @@ import TransportKit
 struct SettingsView: View {
     @Environment(AppStore.self) private var store
     @State private var editing: Commute?
+    @State private var confirmHistory = false
+    @State private var confirmAll = false
 
     var body: some View {
         @Bindable var store = store
@@ -50,7 +52,63 @@ struct SettingsView: View {
                 } header: { Text("Alerts") }
 
                 Section {
-                    LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
+                    Picker("Fare type", selection: $store.fareType) {
+                        ForEach(FareType.allCases) { t in
+                            Text(t.longTitle).tag(t.rawValue)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                    .accessibilityIdentifier("fareType")
+                } header: {
+                    Text("Opal fare estimates")
+                } footer: {
+                    Text("Trips show an Opal fare estimate for this fare type, worked out from the Opal fare tables: peak or off peak, transfer discount, airport station fee and daily cap. It is not your card's charge.")
+                }
+
+                Section {
+                    Toggle(isOn: $store.accessibleTrips) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Accessible trips")
+                            Text("Step free trips only, from the Trip Planner").font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("accessibleTrips")
+                    Toggle(isOn: liftAlertsBinding) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Lift outage alerts")
+                            Text("For stations on your saved trips").font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("liftAlerts")
+                    NavigationLink { OpalMachinesView() } label: {
+                        Label("Opal top up machines near me", systemImage: "creditcard.fill")
+                    }
+                } header: {
+                    Text("Accessibility")
+                }
+
+                Section {
+                    Button("Clear recent stops") { store.clearRecentStops() }
+                        .disabled(store.recents.isEmpty)
+                        .badge(store.recents.isEmpty ? Text("None") : Text("\(store.recents.count)"))
+                        .accessibilityIdentifier("clearRecentStopsSetting")
+                    Button("Clear recent trips") { store.clearRecentTrips() }
+                        .disabled(store.recentTrips.isEmpty)
+                        .badge(store.recentTrips.isEmpty ? Text("None") : Text("\(store.recentTrips.count)"))
+                        .accessibilityIdentifier("clearRecentTripsSetting")
+                    Button("Delete my trip history on server", role: .destructive) { confirmHistory = true }
+                        .accessibilityIdentifier("deleteServerHistory")
+                    Button("Delete all my data", role: .destructive) { confirmAll = true }
+                        .accessibilityIdentifier("deleteAllData")
+                } header: {
+                    Text("Clear history")
+                } footer: {
+                    Text("Recent stops and trips are kept only on this phone. The server keeps the trips you search for 90 days, under this app's private id, to suggest commutes. Delete them here at any time.")
+                }
+
+                Section {
+                    LabeledContent("Version", value: "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""))")
                     LabeledContent("Live data", value: "Transport for NSW")
                     Link("Open the web version", destination: TransportAPI.defaultBase)
                     Link("Help and support", destination: URL(string: "https://nsw-transport-bot.sites.tab.bot/support/")!)
@@ -63,7 +121,25 @@ struct SettingsView: View {
             .sheet(item: $editing) { c in
                 CommuteEditor(commute: c).environment(store)
             }
+            .confirmationDialog("Delete your trip history?", isPresented: $confirmHistory, titleVisibility: .visible) {
+                Button("Delete trip history", role: .destructive) { Task { await store.deleteServerHistory() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This deletes the trips you searched for that the server keeps, and the commute suggestions made from them. Saved trips, commutes and watches stay. This cannot be undone.")
+            }
+            .confirmationDialog("Delete all your data?", isPresented: $confirmAll, titleVisibility: .visible) {
+                Button("Delete all my data", role: .destructive) { Task { await store.deleteAllData() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This deletes your saved trips, starred stops, commutes, watched trips, alerts and trip history, on this phone and on the server. Alerts on this phone turn off. This cannot be undone.")
+            }
         }
+    }
+}
+
+extension SettingsView {
+    private var liftAlertsBinding: Binding<Bool> {
+        Binding(get: { store.liftAlerts }, set: { on in Task { await store.setLiftAlerts(on) } })
     }
 }
 

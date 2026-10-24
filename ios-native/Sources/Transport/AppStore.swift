@@ -2,18 +2,26 @@ import SwiftUI
 import Observation
 import TransportKit
 import UserNotifications
+import WidgetKit
 
 /// App wide state: identity, starred stops, recent stops, saved trips, commutes and watches.
 @MainActor
 @Observable
 final class AppStore {
-    let api = TransportAPI.shared
+    /// Read each time so a profile switch takes effect at once.
+    var api: TransportAPI { TransportAPI.shared }
     let device: String
 
     var tab: AppTab = .home
     var isActive = true
 
-    var starred: [StopRef] = [] { didSet { Persist.save(starred, "starred") } }
+    var starred: [StopRef] = [] {
+        didSet {
+            Persist.save(starred, "starred")
+            // The stop board widget offers your starred stops.
+            AppIdentity.groupDefaults.set(try? JSONEncoder().encode(starred), forKey: "starredStops")
+        }
+    }
     var recents: [StopRef] = [] { didSet { Persist.save(recents, "recents") } }
     var recentTrips: [TripPair] = [] { didSet { Persist.save(recentTrips, "recentTrips") } }
     /// Home and work stops set with Add home and Add work. Siri reads home too.
@@ -29,6 +37,26 @@ final class AppStore {
     var focusSearch = false
     var hapticsOn: Bool = true { didSet { UserDefaults.standard.set(hapticsOn, forKey: "haptics") } }
     var refreshSeconds: Int = 15 { didSet { UserDefaults.standard.set(refreshSeconds, forKey: "refresh") } }
+    /// Opal fare type sent with every trip request: adult, child, concession or gold.
+    var fareType: String = TripPrefs.fare { didSet { TripPrefs.fare = fareType } }
+    /// Step free trips only (acc=1 on trip requests).
+    var accessibleTrips: Bool = TripPrefs.accessible { didSet { TripPrefs.accessible = accessibleTrips } }
+    /// Lift outage alerts for the stations on your trips.
+    var liftAlerts: Bool = UserDefaults.standard.bool(forKey: "tb_liftAlerts") { didSet { UserDefaults.standard.set(liftAlerts, forKey: "tb_liftAlerts") } }
+
+    /// The trip you started with Start trip, kept on this phone until you end it.
+    var liveTrip: LiveTripRecord? { didSet { Persist.save(liveTrip, "liveTrip") } }
+    var liveState: LiveTripState?
+    var liveServices: [ServiceResponse?] = []
+    /// Set to open the live trip screen from anywhere.
+    var openLiveTrip = false
+    @ObservationIgnored var liveAlerted: Set<String> = []
+    @ObservationIgnored var liveTask: Task<Void, Never>?
+
+    /// A profile from a nswtransport://profile/<id> link, waiting for you to confirm.
+    var pendingProfile: String?
+    /// The last Clear, with its Undo, for 5 seconds.
+    var undo: UndoAction?
 
     var saved: [SavedTrip] = []
     var commutes: [Commute] = []
@@ -58,7 +86,9 @@ final class AppStore {
         }
         if d.bool(forKey: "uiTestReset") {
             // UI tests start from a clean device.
-            for k in ["starred", "recents", "recentTrips", "haptics", "refresh", "seenNotes", "placeHome", "placeWork", "ask.chat.v1", "myTrips", "tripOrder", "allServices"] { d.removeObject(forKey: k) }
+            for k in ["starred", "recents", "recentTrips", "haptics", "refresh", "seenNotes", "placeHome", "placeWork", "ask.chat.v1", "myTrips", "tripOrder", "allServices", "liveTrip", "tb_liftAlerts", "recentSearches"] { d.removeObject(forKey: k) }
+            TripPrefs.fare = "adult"
+            TripPrefs.accessible = false
         }
         starred = Persist.load([StopRef].self, "starred") ?? []
         recents = Persist.load([StopRef].self, "recents") ?? []
@@ -72,17 +102,24 @@ final class AppStore {
         let r = d.integer(forKey: "refresh")
         refreshSeconds = r == 0 ? 15 : r
         seenNoteIDs = Set(d.stringArray(forKey: "seenNotes") ?? [])
+        fareType = TripPrefs.fare
+        accessibleTrips = TripPrefs.accessible
+        liftAlerts = d.bool(forKey: "tb_liftAlerts")
+        liveTrip = Persist.load(LiveTripRecord.self, "liveTrip")
     }
 
     func start() async {
         guard !started else { return }
         started = true
+        await moveOffSharedProfile()
         async let a: Void = loadSaved()
         async let b: Void = loadCommutes()
         async let c: Void = loadWatches(notify: false)
         _ = await (a, b, c)
         // Keep watches and Live Activities moving while the app is open.
         Task { await watchLoop() }
+        if liveTrip != nil { startLiveLoop() }
+        if liftAlerts { await syncLiftAlerts(announce: false) }
     }
 
     private func watchLoop() async {
@@ -121,10 +158,11 @@ final class AppStore {
             tab = .home
             pendingRoute = .trip(from: StopRef(id: parts[1], name: "Stop \(parts[1])"), to: StopRef(id: parts[2], name: "Stop \(parts[2])"))
         case "profile" where parts.count > 1:
-            // nswtransport://profile/<id> moves this install to the saved trips of another install.
-            if AppIdentity.adopt(parts[1]) {
-                banner = Banner(title: "Profile changed", detail: "Close and reopen Transport to load its saved trips.")
-            }
+            // nswtransport://profile/<id> moves this install to a private profile, after you confirm.
+            let p = parts[1].lowercased()
+            if p != AppIdentity.profile && p.count >= 5 { pendingProfile = p }
+        case "go":
+            if liveTrip != nil { tab = .home; openLiveTrip = true }
         case "tab":
             switch parts.count > 1 ? parts[1] : "" {
             case "search": tab = .search
@@ -293,6 +331,7 @@ enum DeepRoute: Hashable {
     case stop(StopRef)
     case track(stopID: String)
     case trip(from: StopRef, to: StopRef)
+    case legs([TripLeg])
 }
 
 struct Banner: Identifiable, Equatable {

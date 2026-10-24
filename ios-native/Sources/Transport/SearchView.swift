@@ -94,10 +94,34 @@ struct SearchView: View {
                             }
                         }
                     } header: { Text("Nearby") }
+                    Section {
+                        NavigationLink { ParkRideListView() } label: {
+                            Label("Park and Ride spaces", systemImage: "car.fill")
+                        }
+                        .accessibilityIdentifier("parkRideList")
+                        NavigationLink { OpalMachinesView() } label: {
+                            Label("Opal top up machines", systemImage: "creditcard.fill")
+                        }
+                        .accessibilityIdentifier("opalMachines")
+                    }
                     if !store.recents.isEmpty {
-                        Section("Recent") {
+                        Section {
                             ForEach(store.recents) { s in
                                 NavigationLink(value: s) { StopRow(stop: s) }
+                                    .swipeActions(edge: .trailing) {
+                                        Button(role: .destructive) { store.forgetStop(s.id) } label: {
+                                            Label("Remove", systemImage: "minus.circle")
+                                        }
+                                    }
+                            }
+                        } header: {
+                            HStack {
+                                Text("Recent")
+                                Spacer()
+                                Button("Clear") { store.clearRecentStops() }
+                                    .font(.subheadline)
+                                    .textCase(nil)
+                                    .accessibilityLabel("Clear recent stops")
                             }
                         }
                     }
@@ -121,6 +145,7 @@ struct SearchView: View {
             .listStyle(.insetGrouped)
             .navigationTitle("Search")
             .navigationDestination(for: StopRef.self) { s in StopView(stop: s) }
+            .overlay(alignment: .bottom) { UndoToast() }
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Station, stop or stop number")
             .modifier(FocusSearchOnRequest())
             .autocorrectionDisabled()

@@ -10,6 +10,7 @@ struct TransportWidgets: WidgetBundle {
         NextTripWidget()
         StopBoardWidget()
         TripLiveActivity()
+        LiveTripActivityWidget()
     }
 }
 #endif
@@ -608,7 +609,11 @@ struct StopBoardProvider: AppIntentTimelineProvider {
     }
 
     static func load(_ c: StopBoardIntent) async -> StopBoardEntry {
-        let stop = c.stop ?? StopChoice.popular[0]
+        // No stop is ever picked for you: your first starred stop, else a prompt to choose one.
+        guard let stop = c.stop ?? StopChoice.starred.first else {
+            return StopBoardEntry(date: .now, stopID: "", stopName: "Stop board", filter: nil, rows: [],
+                                  message: "Touch and hold, then Edit Widget to choose a stop.")
+        }
         return await entry(stop: stop.ref, lines: c.lines)
     }
 

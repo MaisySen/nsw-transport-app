@@ -160,6 +160,10 @@ struct StopView: View {
                 }
             }
 
+            if Peak.isPeak() && rows.contains(where: { Mode(raw: $0.mode) != .ferry }) {
+                Section { PeakNudge() }
+            }
+
             Section {
                 ForEach(rows) { d in
                     Button { selected = ServiceKey(d) } label: {
@@ -195,6 +199,10 @@ struct StopView: View {
                 } else {
                     Text("Swipe left to watch a service. Swipe right to star this stop.")
                 }
+            }
+
+            if stop.id.allSatisfy(\.isNumber) {
+                StationSections(stopID: stop.id)
             }
         }
         .listStyle(.insetGrouped)

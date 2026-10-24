@@ -14,6 +14,10 @@ struct AskLink: Codable, Hashable {
     var from: String?
     var to: String?
     var stop: String?
+    var fn: String?
+    var tn: String?
+    /// Every leg of a multi stop trip, as JSON text.
+    var legs: String?
 }
 struct AskDep: Codable, Hashable {
     var line: String
@@ -44,6 +48,7 @@ struct AskJourney: Codable, Hashable {
     var durationMin: Int
     var changes: Int
     var legs: [AskLeg]
+    var fare: Fare?
 }
 struct AskAlert: Codable, Hashable { var title: String; var url: String? }
 struct AskPlace: Codable, Hashable { var id: String; var name: String }
@@ -56,8 +61,12 @@ struct AskCard: Codable, Hashable {
     var journeys: [AskJourney]?
     var deps: [AskDep]?
     var alerts: [AskAlert]?
+    /// Park and Ride car parks (type "parking").
+    var parks: [CarPark]?
+    /// Station access and facilities (type "station").
+    var station: StationInfo?
 
-    enum CodingKeys: String, CodingKey { case type, title, link, from, to, journeys, items }
+    enum CodingKeys: String, CodingKey { case type, title, link, from, to, journeys, items, station }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         type = try c.decode(String.self, forKey: .type)
@@ -68,6 +77,9 @@ struct AskCard: Codable, Hashable {
         journeys = try c.decodeIfPresent([AskJourney].self, forKey: .journeys)
         if type == "departures" { deps = try c.decodeIfPresent([AskDep].self, forKey: .items) }
         if type == "alerts" { alerts = try c.decodeIfPresent([AskAlert].self, forKey: .items) }
+        // Card types this version does not know are kept as a title only, never a failure.
+        if type == "parking" { parks = try? c.decodeIfPresent([CarPark].self, forKey: .items) }
+        if type == "station" { station = try? c.decodeIfPresent(StationInfo.self, forKey: .station) }
     }
     func encode(to e: Encoder) throws {
         var c = e.container(keyedBy: CodingKeys.self)
@@ -79,6 +91,8 @@ struct AskCard: Codable, Hashable {
         try c.encodeIfPresent(journeys, forKey: .journeys)
         if let deps { try c.encode(deps, forKey: .items) }
         if let alerts { try c.encode(alerts, forKey: .items) }
+        if let parks { try c.encode(parks, forKey: .items) }
+        try c.encodeIfPresent(station, forKey: .station)
     }
 }
 struct AskAnswer: Codable {
@@ -123,6 +137,7 @@ final class AskModel {
         var items = [URLQueryItem(name: "q", value: q), URLQueryItem(name: "profile", value: TransportAPI.shared.profile)]
         if let home { items.append(URLQueryItem(name: "home", value: "\(home.id)|\(home.name)")) }
         if let work { items.append(URLQueryItem(name: "work", value: "\(work.id)|\(work.name)")) }
+        for (k, v) in TripPrefs.query { if let v { items.append(URLQueryItem(name: k, value: v)) } }
         c.queryItems = items
         do {
             var req = URLRequest(url: c.url!)
@@ -252,6 +267,24 @@ struct AskView: View {
                 Divider().padding(.leading, 14)
                 Button { open(c.link) } label: { journeyRow(j) }.buttonStyle(.plain)
             }
+            ForEach(Array((c.parks ?? []).enumerated()), id: \.offset) { _, p in
+                Divider().padding(.leading, 14)
+                CarParkRow(park: p, station: nil)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+            }
+            if let s = c.station {
+                Divider().padding(.leading, 14)
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(AccessText.level(s.access?.level), systemImage: "figure.roll")
+                    ForEach(Array((s.outages ?? []).enumerated()), id: \.offset) { _, o in
+                        Label(o.title ?? "Lift out of service", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                    }
+                    if let t = s.ticket { Label(TicketText.machine(t.kind), systemImage: "creditcard.fill") }
+                }
+                .font(.subheadline)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+            }
             ForEach(Array((c.alerts ?? []).enumerated()), id: \.offset) { i, a in
                 if i > 0 { Divider().padding(.leading, 14) }
                 Button { if let u = a.url.flatMap(URL.init(string:)) { openURL(u) } } label: {
@@ -299,6 +332,13 @@ struct AskView: View {
                     Text("\(j.durationMin) min, \(j.changes == 0 ? "Direct" : "\(j.changes) change\(j.changes > 1 ? "s" : "")")").font(.footnote).foregroundStyle(.secondary)
                 }
                 if let f = tl.first { statusText(realtime: f.realtime, delay: f.delayMin, cancelled: f.cancelled).font(.footnote) }
+                if let fare = j.fare, let total = fare.total {
+                    Text("Opal fare estimate \(Money.text(total)) \(fare.summary)")
+                        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    if let nudge = fare.offPeakText {
+                        Text(nudge).font(.caption).foregroundStyle(.green)
+                    }
+                }
             }
             Spacer(minLength: 4)
             countdown(j.leave, live: tl.first?.realtime ?? false)
@@ -374,7 +414,20 @@ struct AskView: View {
         var url: URL?
         switch l.kind {
         case "stop": url = l.id.flatMap { URL(string: "nswtransport://stop/\($0)") }
-        case "trip": if let f = l.from, let t = l.to { url = URL(string: "nswtransport://trip/\(f)/\(t)") }
+        case "trip":
+            if let legs = TripLeg.parse(l.legs), legs.count >= 2 {
+                store.openTrip(legs: legs)
+                return
+            }
+            if let f = l.from, let t = l.to { url = URL(string: "nswtransport://trip/\(f)/\(t)") }
+        case "saveTrip":
+            if let legs = TripLeg.parse(l.legs) {
+                Task { await store.saveTrip(legs: legs) }
+            } else if let f = l.from, let t = l.to {
+                let legs = [TripLeg(mode: "", from: StopRef(id: f, name: l.fn ?? f), to: StopRef(id: t, name: l.tn ?? t))]
+                Task { await store.saveTrip(legs: legs) }
+            }
+            return
         case "service": url = l.stop.flatMap { URL(string: "nswtransport://track/\($0)") }
         default: url = l.href.flatMap { $0.hasPrefix("http") ? URL(string: $0) : nil }
         }

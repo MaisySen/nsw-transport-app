@@ -98,13 +98,12 @@ struct StopChoice: AppEntity, Hashable {
 
     var ref: StopRef { StopRef(id: stopID, name: name) }
 
-    static let popular: [StopChoice] = [
-        StopChoice(StopRef(id: "200060", name: "Central Station")),
-        StopChoice(StopRef(id: "200070", name: "Town Hall Station")),
-        StopChoice(StopRef(id: "213510", name: "Strathfield Station")),
-        StopChoice(StopRef(id: "213410", name: "Burwood Station")),
-        StopChoice(StopRef(id: "215020", name: "Parramatta Station")),
-    ]
+    /// Your starred stops, shared by the app through the app group. Nothing is suggested for you.
+    static var starred: [StopChoice] {
+        guard let d = AppIdentity.groupDefaults.data(forKey: "starredStops"),
+              let list = try? JSONDecoder().decode([StopRef].self, from: d) else { return [] }
+        return list.map { StopChoice($0) }
+    }
 }
 
 struct StopChoiceQuery: EntityStringQuery {
@@ -114,16 +113,15 @@ struct StopChoiceQuery: EntityStringQuery {
 
     func entities(matching string: String) async throws -> [StopChoice] {
         let q = string.trimmingCharacters(in: .whitespaces)
-        guard q.count >= 2 else { return StopChoice.popular }
+        guard q.count >= 2 else { return try await suggestedEntities() }
         return (try await TransportAPI.shared.search(q)).prefix(12).map { StopChoice($0) }
     }
 
     func suggestedEntities() async throws -> [StopChoice] {
-        var out: [StopChoice] = []
+        var out: [StopChoice] = StopChoice.starred
         if let s = try? await TransportAPI.shared.saved() {
             for x in s { out.append(StopChoice(x.from)); out.append(StopChoice(x.to)) }
         }
-        out += StopChoice.popular
         var seen = Set<String>()
         return out.filter { seen.insert($0.stopID).inserted }
     }

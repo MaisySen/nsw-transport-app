@@ -14,8 +14,13 @@ struct MyTrip: Codable, Hashable, Identifiable {
     var via: StopRef?
     var conn: Int?
     var modes: [String]?
+    /// Set for a trip of 3 or more legs (from Ask): every leg in order.
+    var legs: [TripLeg]? = nil
 
-    var id: String { TripKey.of(from: from, via: via, to: to) }
+    var id: String { legs.map { TripLeg.key($0) } ?? TripKey.of(from: from, via: via, to: to) }
+
+    /// The trip as legs, for /api/plan: 2 legs for an extended trip.
+    var planLegs: [TripLeg]? { TripPlan.legs(from: from, via: via, to: to, conn: conn ?? 5, legs: legs, modes: modes) }
 }
 
 /// The key a trip is stored under: "from>to", or "from>via>to" for an extended trip.
@@ -63,45 +68,28 @@ enum TripPlan {
         return f.string(from: d)
     }
 
-    /// A plain trip is one request. An extended trip pairs each first leg with the first
-    /// second leg that leaves at least `conn` minutes after it arrives.
+    /// The legs to plan in one call, or nil for a plain A to B trip.
+    static func legs(from: StopRef, via: StopRef?, to: StopRef, conn: Int, legs: [TripLeg]?, modes: [String]? = nil) -> [TripLeg]? {
+        if let legs, legs.count >= 2 { return legs }
+        guard let via else { return nil }
+        let m = (modes ?? []).map { $0 == "search" ? "" : $0 }
+        return [TripLeg(mode: m.count > 0 ? m[0] : "", from: from, to: via),
+                TripLeg(mode: m.count > 1 ? m[1] : "", from: via, to: to, conn: conn)]
+    }
+
+    /// A plain trip is /api/trip. An extended or multi leg trip is one /api/plan call: the server pairs
+    /// each first leg service with the first connection that leaves at least `conn` minutes later.
     static func plan(api: TransportAPI, from: String, via: String?, to: String, conn: Int,
-                     count: Int = 5, time: String? = nil) async throws -> TripResponse {
+                     count: Int = 5, time: String? = nil, legs: [TripLeg]? = nil, all: Bool = false) async throws -> TripResponse {
+        if let legs, legs.count >= 2 {
+            return try await api.plan(legs: legs, count: count, time: time, all: all)
+        }
         guard let via, !via.isEmpty else {
             return try await api.trip(from: from, to: to, count: count, time: time)
         }
-        let gap = TimeInterval(max(0, conn) * 60)
-        var first = try await api.trip(from: from, to: via, count: count, time: time)
-        let legs1 = first.journeys.filter { isDirect($0, extended: false) }
-        guard let firstArrival = legs1.compactMap(arrival).min() else {
-            first.journeys = []
-            return first
-        }
-        let second = try await api.trip(from: via, to: to, count: 8, time: hhmm(firstArrival.addingTimeInterval(gap)))
-        let legs2 = second.journeys
-            .filter { isDirect($0, extended: false) }
-            .compactMap { j -> (journey: Journey, leave: Date)? in
-                guard let l = leaveTime(j) else { return nil }
-                return (j, l)
-            }
-            .sorted { $0.leave < $1.leave }
-        var out: [Journey] = []
-        for a in legs1 {
-            guard let arr = arrival(a),
-                  let b = legs2.first(where: { $0.leave >= arr.addingTimeInterval(gap) }) else { continue }
-            var j = a
-            j.legs = a.legs + b.journey.legs
-            j.arrive = b.journey.arrive ?? arrival(b.journey)
-            j.changes = (a.changes ?? 0) + (b.journey.changes ?? 0) + 1
-            if let start = a.leave ?? a.board, let end = j.arrive {
-                j.durationMin = Int(end.timeIntervalSince(start) / 60)
-            }
-            j.anyCancelled = (a.anyCancelled == true || b.journey.anyCancelled == true)
-            out.append(j)
-        }
-        first.to = second.to ?? first.to
-        first.journeys = out
-        return first
+        let two = [TripLeg(mode: "", from: StopRef(id: from, name: from), to: StopRef(id: via, name: via)),
+                   TripLeg(mode: "", from: StopRef(id: via, name: via), to: StopRef(id: to, name: to), conn: max(0, conn))]
+        return try await api.plan(legs: two, count: count, time: time, all: all)
     }
 }
 
