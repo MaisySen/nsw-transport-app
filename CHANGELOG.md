@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 24 Oct 2026
 
+### Server: morning check, platform change alerts, occupancy, lift aware trips, server switches (24 Oct 2026, 11:55 PM)
+* Morning check: a phone registers a usual trip (from, to, usual time, days) at `/api/morning-check`. About 15 minutes before the usual time the server looks at live data once and sends one alert, only if something is wrong: a delay over 5 minutes, a cancellation, trackwork, a platform change, a change that is now too tight, or a lift out of service at either end (train or metro). Silent when all is fine. Each check is claimed in the database before it runs, so it never sends twice. List, edit and delete by device with no login; Privacy and data, Delete everything removes them too. `/api/morning-check/preview` shows what the check would say now without sending.
+* Platform change while waiting: fixed a false alert. When the departure board did not answer for a minute, the planned platform stood in and read as a change back. Now only a platform the board reports counts, and nothing is sent once the service has left. Still one alert per real change.
+* Occupancy: departures, trip and plan legs show crowding only when Transport for NSW sends it for that service; otherwise nothing (no guesses). Tests now cover both.
+* Accessible trips (`acc=1`): trips through a station with a lift out of service right now are left out when another trip avoids it, and trips that are step free at every station come first. Each trip says `stepFree` and lists any `liftOutages`.
+* Remote config: new flags `morningCheck`, `platformAlerts`, `occupancy` and `liftAwareRouting`, all on. `platform=server` switches the server's part of each off for every app within a minute, with no deploy.
+* Request and answer shapes for the app workers are in [docs/API.md](docs/API.md). Backend tests: 118 of 118 pass (31 new).
+
 ### Android app: Fintex in About, map scroll, taps that buzzed and did nothing, contrast and touch targets (over the air update, 11:16 PM)
 * About in More: Made by Fintex Australia Pty Ltd, Contact us (opens an email to contact@fintex.au), Fintex website (fintex.au) and a copyright line. No other email address is left in the app.
 * Opal machines: dragging the map moves the map and the page stays still; the page scrolls again when your finger lifts. The small map no longer rotates or tilts. On the web preview it has + and - buttons and the mouse wheel scrolls the page.

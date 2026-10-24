@@ -10,7 +10,7 @@ Secrets are named in [Security](SECURITY.md). Never paste a value into the repo,
 
 ```bash
 cd backend                      # /home/user/nsw-backend on the build box
-node --test test/*.test.mjs     # all 80 pass (the same run as .github/workflows/backend.yml)
+node --test test/*.test.mjs     # all 118 pass (the same run as .github/workflows/backend.yml)
 grep -rnP "\x{2013}|\x{2014}" src/ && echo "fix dashes first"
 node build.mjs site             # reads .env, writes site/ with worker.mjs (every HTML page is inside it) and tab-site.json
 ```
@@ -77,7 +77,7 @@ The repo must stay public for free macOS minutes, or GitHub billing must allow A
 
 ## 5. Watch the minute scheduler (cron-job.org)
 
-cron-job.org job 8707266 "NSW Transport Bot heartbeat" calls `https://nsw-transport-bot.sites.tab.bot/api/tick` every minute with `TICK_KEY` in an `x-admin-key` header (a key in the address is ignored). It drives watch alerts, commute alerts, delay sampling and data clean up.
+cron-job.org job 8707266 "NSW Transport Bot heartbeat" calls `https://nsw-transport-bot.sites.tab.bot/api/tick` every minute with `TICK_KEY` in an `x-admin-key` header (a key in the address is ignored). It drives watch alerts, commute alerts, morning checks, delay sampling and data clean up.
 
 * Healthy: `curl -s -H "x-admin-key: $ADMIN_KEY" https://nsw-transport-bot.sites.tab.bot/api/usage` shows `lastTick` within the last two minutes. Without the key, `/api/usage` only shows the count of recorded live times, and `/api/health` answers 403.
 * If it is stale: sign in to console.cron-job.org (account in the credentials email), check the job is enabled and its last responses are 200. cron-job.org disables a job after repeated failures and emails bidur@mail.tab.bot.

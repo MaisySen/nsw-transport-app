@@ -55,3 +55,9 @@ test("merge ignores junk", () => {
   assert.equal(d.flags.ask, true);
   assert.deepEqual(d.tabs, ["home", "plan", "watching", "more"]);
 });
+
+test("the travel feature flags are on by default", async () => {
+  stored = null;
+  const d = await (await get("10.7.0.9")).json();
+  for (const k of ["morningCheck", "platformAlerts", "occupancy", "liftAwareRouting"]) assert.equal(d.flags[k], true, k);
+});

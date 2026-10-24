@@ -56,7 +56,7 @@ Example (Central to Chatswood by metro): `/api/plan?legs=[{"f":"200060","fn":"Ce
 | `/api/commutes` | POST | `{from, to, tod, days, name}` to create, or `{id, name, tod, days, active}` to edit | `item` |
 | `/api/commutes` | DELETE | `profile`, `id` | `ok` |
 | `/api/commutes/dismiss` | POST | `{key}` | `ok` |
-| `/api/history/delete` | POST | `{profile, device, scope}`. `scope` is `history` (trip searches and dismissed commute suggestions; suggestions are worked out from searches, so they go too) or `all` (also saved trips, commutes, watches, alerts, and for this `device` its push sign ups, Expo tokens and live trip shares). A valid `profile` is required; searches this `device` made under any older profile id are deleted too. Rate limited to 10 a client address per 10 minutes | `{ok, scope, deleted: {searches, dismissed, saved, commutes, watches, alerts, push, shares}}` (row counts) |
+| `/api/history/delete` | POST | `{profile, device, scope}`. `scope` is `history` (trip searches and dismissed commute suggestions; suggestions are worked out from searches, so they go too) or `all` (also saved trips, commutes, watches, alerts, and for this `device` its push sign ups, Expo tokens, live trip shares and morning checks). A valid `profile` is required; searches this `device` made under any older profile id are deleted too. Rate limited to 10 a client address per 10 minutes | `{ok, scope, deleted: {searches, dismissed, saved, commutes, watches, alerts, push, shares, morningChecks, morningCheckLog}}` (row counts) |
 
 `tod` is minutes after midnight (0 to 1439). `days` is a string of weekday numbers, 1 is Monday (default `12345`).
 
@@ -161,6 +161,126 @@ Trip results: `/api/trip`, `/api/plan`, `/api/next` and `/api/ask` take `acc=1` 
 
 Ask: parking, lift and top up questions answer with `kind: "facility"`, a `reply`, and cards of type `parking` (`title`, `items` as above, `source`) or `station` (`station`: `id`, `name`, `access`, `ticket`, `outages`, `parking`, `source`). Clients that do not know these card types can show the reply text alone.
 
+## Morning check (per device)
+
+A device registers a usual trip. About 15 minutes before the usual departure (Sydney time) the minute tick looks at live data once and sends ONE alert to that device, only if something is wrong. When all is fine it stays silent. Alerts go to the same push targets as trip alerts: the device's Expo push tokens (`/api/push/expo`) and Web Push sign ups (`/api/push/subscribe`). No login: everything is keyed by `device`, and `/api/history/delete` with `scope: "all"` and the `device` removes it too.
+
+What counts as wrong, all from live or published data, never guessed:
+* a delay over 5 minutes on any leg (live times only; a service with no live data is never called late)
+* a cancellation (the leg is cancelled, or a cancellation alert on its line)
+* trackwork or a changed service on the line (Transport for NSW alerts such as "Buses replace trains", "changed timetable", "not running", "suspended")
+* a platform change for a leg's departure
+* a change that is now too tight to make
+* a lift out of service at the start or end station, when that end of the trip is by train or metro (escalator only outages are not counted; a bus stop outside a station is reached from the street)
+
+The service checked is the one whose first train, bus or ferry is planned closest to the usual time (within 45 minutes; see `mode` below). If none is found, nothing is sent. The check is claimed in D1 (`morning_sent`, one row per check per departure day) before it runs, so two ticks never send it twice; if live data does not answer, the claim is given back and the next minute tries again, until 3 minutes before the usual time.
+
+| Endpoint | Method | Body or parameters | Returns |
+| --- | --- | --- | --- |
+| `/api/morning-check` | POST | Create: `{device, from: {id, name}, to: {id, name}, time, days, lead, mode, name}`. Edit: the same with `id` (only this device's) | `{ok, item, push, enabled}` |
+| `/api/morning-check` | GET | `device` | `{items, push, enabled, max}` |
+| `/api/morning-check` | DELETE | `device`, and `id` for one (without `id`: all of this device's) | `{ok, deleted}` |
+| `/api/morning-check/preview` | GET | `device`, `id` | What the check would say right now, without sending or claiming: `{item, found, issues, service, alert, sent: false}` |
+
+Fields:
+* `device`: the same device id used for trip alerts (6 to 64 of `A` to `Z`, `a` to `z`, `0` to `9`, `_ . : -`).
+* `from`, `to`: stop or station ids from `/api/search` or `/api/stations`, with the names to show.
+* `time`: usual departure, `"HH:MM"` 24 hour Sydney time (`"7:45"` and `"0745"` also work).
+* `days`: weekday numbers, 1 is Monday to 7 is Sunday. Default `[1, 2, 3, 4, 5]`.
+* `lead`: minutes before `time` that the check runs, 5 to 45. Default 15.
+* `mode`: optional, the kind of service usually taken: `train`, `metro`, `bus`, `coach`, `ferry` or `lightrail`. Journeys starting with it are checked first. Without it, any mode near the usual time, with services of an unknown kind (on demand, school runs) last.
+* `name`: optional label, up to 40 characters. `active: false` pauses a check without deleting it.
+* Up to 6 checks per device (`409` past that). Bad input answers `400` with `error` saying which field.
+
+```json
+POST /api/morning-check
+{ "device": "a1b2c3d4e5", "from": { "id": "213410", "name": "Burwood Station" }, "to": { "id": "213510", "name": "Strathfield Station" }, "time": "08:00", "days": [1, 2, 3, 4, 5] }
+
+200
+{
+  "ok": true,
+  "item": {
+    "id": "Zk3mPq8rTw1y", "name": null,
+    "from": { "id": "213410", "name": "Burwood Station" }, "to": { "id": "213510", "name": "Strathfield Station" },
+    "time": "08:00", "timeText": "8:00am", "days": [1, 2, 3, 4, 5], "mode": null, "lead": 15, "active": true, "created": 1793080800000,
+    "last": null
+  },
+  "push": { "web": 0, "expo": 1 },
+  "enabled": true
+}
+```
+
+* `push`: how many push targets this device has. `{web: 0, expo: 0}` means an alert would reach nobody, so the app should ask for notifications first.
+* `enabled`: `false` when the server flag `morningCheck` is off (checks are kept but nothing runs).
+* `last` after the first run: `{day: "20261026", at, result, issues, alert}`. `result` is `ok` (all fine, nothing sent), `alert` (sent), or `no service found`. `issues` lists the kinds found: `delay`, `cancelled`, `trackwork`, `platform`, `connection`, `lift`. `alert` is `{title, body}` as sent, or null.
+
+The alert as sent (push `data.tag` is `m<id>`, `data.url` is `/`). Up to 3 problems, one sentence each; the body is at most 300 characters and a long Transport for NSW alert is cut at a word with `...`:
+
+```json
+{ "title": "Check before you go: Burwood to Strathfield", "body": "The 8:00am T1 is 7 min late. The 8:00am T1 now leaves from Platform 4, not Platform 3. Lift out of service at Strathfield." }
+```
+
+Preview answer:
+
+```json
+{
+  "item": { "id": "Zk3mPq8rTw1y", "time": "08:00", "...": "as above" },
+  "found": true,
+  "issues": [ { "kind": "delay", "minutes": 7, "text": "The 8:00am T1 is 7 min late." } ],
+  "service": { "line": "T1", "mode": "train", "planned": "2026-10-25T21:00:00.000Z", "estimated": "2026-10-25T21:07:00.000Z", "platform": "Platform 3", "realtime": true,
+    "leave": "2026-10-25T21:02:00.000Z", "arrive": "2026-10-25T21:13:00.000Z", "changes": 0 },
+  "alert": { "title": "Check before you go: Burwood to Strathfield", "body": "The 8:00am T1 is 7 min late." },
+  "sent": false
+}
+```
+
+Preview is rate limited to 20 a client address per 10 minutes; writes share the 60 per 10 minutes write limit.
+
+## Platform change while waiting
+
+A followed trip (`/api/watch`, and Start trip in the apps) gets one alert when the platform of the leg you are about to board changes before it leaves. Only a platform the departure board actually reports counts, so a board that does not answer for a minute never reads as a change back. Each new platform of each leg is claimed in D1 before it is sent (`watch_sent`, key `plat:<leg>:<platform>`), so the minute tick and an open app never both send it. A second real change (for example 3 to 4, then 4 to 1) is a second alert. Nothing is sent after the service has left. Server flag: `platformAlerts`.
+
+```json
+{ "title": "Platform changed to 4", "body": "The 8:00am T1 to Hornsby now leaves from Platform 4, not Platform 3." }
+```
+
+Push `data.tag` is `w<watch id>` and `data.watch` the watch id, like the other trip alerts.
+
+## Occupancy
+
+Departures (`items[].occupancy`), trip and plan legs (`journeys[].legs[].occupancy`) and live vehicles (`vehicle.occupancy`) carry occupancy only when Transport for NSW sends it for that service: the Trip Planner's occupancy on the stop event, or the realtime vehicle feed's occupancy status. Shape: `{level, text}`, for example `{"level": 2, "text": "Few seats"}`.
+
+| `level` | `text` |
+| --- | --- |
+| 1 | `Empty` or `Many seats` |
+| 2 | `Few seats` |
+| 3 | `Standing room` |
+| 4 | `Very full`, `Full` or `Not taking passengers` |
+
+When it is not sent, or the value is one we do not know, `occupancy` is `null`: show nothing. Never fill it in. Server flag `occupancy` off removes the field from every answer.
+
+## Lift aware trips
+
+`/api/trip`, `/api/plan` and `/api/next` with `acc=1`: on top of the Trip Planner's step free option, a trip that boards, changes or gets off at a station with a lift out of service right now is left out when another trip avoids it, and trips that are step free at every station come first (otherwise the Trip Planner's order is kept). `/api/trip` and `/api/plan` ask for 3 more trips than `count` so there is something to choose from, then return `count`. Lift data is the same as `/api/lifts` (escalator only outages do not count). Only train and metro legs count: a bus or coach stop outside a station is reached from the street. Server flag: `liftAwareRouting` (off: `acc=1` is only the Trip Planner's step free option, as before).
+
+Added to the answer with `acc=1`:
+
+```json
+{
+  "accessible": true,
+  "liftAware": { "avoided": 1, "allAffected": false, "stations": ["Central"] },
+  "journeys": [
+    { "stepFree": true, "liftOutages": [], "legs": [ { "access": { "from": { "id": "213410", "level": "independent", "lift": true }, "to": { "id": "200070", "level": "independent", "lift": true } } } ] }
+  ]
+}
+```
+
+* `liftAware.avoided`: trips left out because of a lift outage. `stations`: where the outages were.
+* `liftAware.allAffected: true`: every trip found meets a lift outage, so all are kept; show each trip's `liftOutages`.
+* `journeys[].stepFree`: every station on the trip is listed as step free (stations with no access data count as not step free).
+* `journeys[].liftOutages`: `[{id, name, title}]` for stations on that trip with a lift out.
+* Each station in `legs[].access` gets `liftOut: true` when the outage is a lift.
+
 ## Remote config for the phone apps
 
 `GET /api/app/config?platform=ios` returns the settings the iPhone app reads at launch and each time it comes to the front (cached for 5 minutes at the edge; the app keeps its last good copy and has the same defaults built in, so it works offline). Native code cannot be changed over the air, so this only switches what the app already has.
@@ -168,7 +288,8 @@ Ask: parking, lift and top up questions answer with `kind: "facility"`, a `reply
 ```json
 {
   "version": 1,
-  "flags": { "ask": true, "parkRide": true, "opalMachines": true, "liveTrip": true, "shareTrip": true, "weekdayReminder": true, "nearby": true },
+  "flags": { "ask": true, "parkRide": true, "opalMachines": true, "liveTrip": true, "shareTrip": true, "weekdayReminder": true, "nearby": true,
+    "morningCheck": true, "platformAlerts": true, "occupancy": true, "liftAwareRouting": true },
   "kill": {},
   "copy": {},
   "tabs": ["home", "plan", "watching", "more"],
@@ -177,10 +298,12 @@ Ask: parking, lift and top up questions answer with `kind: "facility"`, a `reply
 }
 ```
 
-* `flags`: `false` hides a feature (Ask, Park and Ride, Opal machines on More; Start trip; Share trip on the live trip; Remind me every weekday; Nearby on Home).
+* `flags`: `false` hides a feature (Ask, Park and Ride, Opal machines on More; Start trip; Share trip on the live trip; Remind me every weekday; Nearby on Home; `morningCheck` the Morning check screen; `platformAlerts` the platform change alert option; `occupancy` crowding labels; `liftAwareRouting` the lift aware note on Accessible trips).
 * `kill`: feature name to the words shown in its place, for example `{"liveTrip": "Live trips are paused for a moment."}`. A killed feature is hidden even if its flag is true.
 * `copy`: `welcomeTitle` (Home welcome) and `startTripFooter` (under Start trip). Empty or missing uses the text in the app.
 * `tabs`: tab order. Unknown keys are ignored and a missing tab is added at the end, so no tab can disappear.
 * `timing`: `liveRefreshSec` (5 to 120), `alertRepeatWindowMin` (how long the same alert is held back, 1 to 120), `sameRunToleranceSec` (how far a service's boarding time may be from the planned one and still count as the same run, 30 to 600), `configRefreshMin`. Values outside the range are clamped in the app.
 
 Change it without a build or a deploy: `POST /api/app/config?platform=ios` with the `x-admin-key` header and a JSON object holding only the parts to change. It is stored in D1 (`app_config`) and merged over the defaults. Send `{}` to go back to the defaults.
+
+Server side switches: the same POST with `platform=server` turns the server's part of a feature off for every app at once, within a minute and with no deploy. The server reads `flags` (or a `kill` entry) for `morningCheck` (no morning checks run), `platformAlerts` (no platform change alerts), `occupancy` (no occupancy in any answer) and `liftAwareRouting` (`acc=1` is only step free, no lift outage ranking). For example `{"flags": {"morningCheck": false}}`. The stored body replaces the previous one for that platform, so send every switch you want off.

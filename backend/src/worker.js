@@ -2283,6 +2283,9 @@ const RATE_RULES = [
   [/^\/api\/share\/update$/, "shareup", 240, 600000],
   [/^\/api\/share$/, "read", 600, 60000],
   [/^\/api\/(lifts\/alerts|parking\/watch)$/, "write", 60, 600000, "POST"],
+  [/^\/api\/morning-check$/, "write", 60, 600000, "POST"],
+  [/^\/api\/morning-check$/, "write", 60, 600000, "DELETE"],
+  [/^\/api\/morning-check\/preview$/, "mpreview", 20, 600000],
   [/^\/api\/(ask|trip|plan|departures|service|status|next|search|nearby|alerts|predict|obs|stations|station|parking|topup|lifts)$/, "read", 600, 60000],
 ];
 function rateOk(request, pathname) {
@@ -2818,7 +2821,7 @@ async function liveLegs(env, spec, now, opts = {}) {
       else arr = ms(l.arrPlanned);
     }
     const veh = vehicleOf(rt.vp(l.mode, l.line, l.tripId));
-    return { i, dep, depLive, arr, arrLive, cancelled: !!it.cancelled, platform: l.fromPlatform || "", platformFrom: null, vehicle: veh ? { lat: veh.lat, lon: veh.lon } : null };
+    return { i, dep, depLive, arr, arrLive, cancelled: !!it.cancelled, platform: l.fromPlatform || "", platformFrom: null, platformSeen: false, vehicle: veh ? { lat: veh.lat, lon: veh.lon } : null };
   });
   // Board leg: refine with the departure board (platform changes, cancellations).
   const bi = out.findIndex((o) => o.dep > now - 60000);
@@ -2833,7 +2836,7 @@ async function liveLegs(env, spec, now, opts = {}) {
           out[bi].dep = ms(m.estimated); out[bi].depLive = true;
           if (out[bi].arr && !out[bi].arrLive) { out[bi].arr += shift; out[bi].arrLive = true; }
         }
-        if (m.platform) out[bi].platform = m.platform;
+        if (m.platform) { out[bi].platform = m.platform; out[bi].platformSeen = true; }
         if (m.platformChangedFrom) out[bi].platformFrom = m.platformChangedFrom;
         if (m.cancelled) out[bi].cancelled = true;
         out[bi].boardItems = b.items.filter((x) => x.line === l.line && ms(x.estimated || x.planned) > ms(x.planned) - 1).slice(0, 4);
@@ -2844,7 +2847,7 @@ async function liveLegs(env, spec, now, opts = {}) {
   if (spec.sim && out[spec.sim.leg]) {
     const s = out[spec.sim.leg], add = Number(spec.sim.delay || 0) * 60000;
     s.dep += add; if (s.arr) s.arr += add; s.depLive = true; s.arrLive = !!s.arr; s.simulated = true;
-    if (spec.sim.platform) { s.platformFrom = s.platform || "the planned one"; s.platform = spec.sim.platform; }
+    if (spec.sim.platform) { s.platformFrom = s.platform || "the planned one"; s.platform = spec.sim.platform; s.platformSeen = true; }
   }
   for (const o of out) {
     const l = legs[o.i];
@@ -2911,7 +2914,8 @@ async function rescuePlan(env, spec, i, live, now) {
 // build and no deploy. The apps keep the last good copy and fall back to their own defaults.
 const APP_CONFIG_DEFAULTS = {
   version: 1,
-  flags: { ask: true, parkRide: true, opalMachines: true, liveTrip: true, shareTrip: true, weekdayReminder: true, nearby: true },
+  flags: { ask: true, parkRide: true, opalMachines: true, liveTrip: true, shareTrip: true, weekdayReminder: true, nearby: true,
+    morningCheck: true, platformAlerts: true, occupancy: true, liftAwareRouting: true },
   kill: {},
   copy: {},
   tabs: ["home", "plan", "watching", "more"],
@@ -2946,6 +2950,7 @@ async function appConfigRoute(request, env, p, adminOk) {
         if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "send an object" }, 400);
         await d.prepare("INSERT INTO app_config (platform, body, at) VALUES (?1, ?2, ?3) ON CONFLICT(platform) DO UPDATE SET body = ?2, at = ?3").bind(platform, JSON.stringify(body), Date.now()).run();
         over = body;
+        if (platform === "server") serverCfg.at = 0;
       } else {
         const row = await d.prepare("SELECT body FROM app_config WHERE platform = ?1").bind(platform).first();
         if (row && row.body) over = JSON.parse(row.body);
@@ -3037,12 +3042,17 @@ async function processWatch(env, w, now, opts = {}) {
     }
   }
   // Platform change on whichever leg you are about to board
-  if (bi >= 0 && !live[bi].cancelled) {
+  // Only a platform the departure board actually reported counts (platformSeen false means the
+  // board did not answer and the planned platform stands in), so a board that drops out for a
+  // minute never reads as a change. Each new platform of each leg is sent once (claimed in D1).
+  if (bi >= 0 && !live[bi].cancelled && live[bi].platformSeen !== false && live[bi].dep > now) {
     const o = live[bi], l = legs[bi];
     const key = `${bi}:${o.platform}`;
     if (o.platform && (o.platformFrom || (st.lastPlatform && st.lastPlatformLeg === bi && st.lastPlatform !== o.platform)) && st.platformKey !== key) {
       const was = o.platformFrom || st.lastPlatform;
-      await push(`Platform changed to ${o.platform.replace(/^Platform /, "")}`, `The ${clock(o.dep)} ${l.line} to ${l.towards || l.to} now leaves from ${o.platform}${was ? `, not ${was}` : ""}.`, { once: `plat:${key}` });
+      if (await serverOn(env, "platformAlerts")) {
+        await push(`Platform changed to ${o.platform.replace(/^Platform /, "")}`, `The ${clock(o.dep)} ${l.line} to ${l.towards || l.to} now leaves from ${o.platform}${was && was !== o.platform ? `, not ${was}` : ""}.`, { once: `plat:${key}` });
+      }
       st.platformKey = key;
     }
     st.lastPlatform = o.platform; st.lastPlatformLeg = bi;
@@ -3299,6 +3309,306 @@ async function processCommute(env, c, now, sn, opts = {}) {
   return { id: c.id, sent, plan: st.plan };
 }
 
+// ---------- morning check ----------
+// A device registers a usual trip (from, to, usual departure time, days). About 15 min before
+// that time the minute tick checks live data once and sends ONE alert, only if something is
+// wrong: a delay over 5 min, a cancellation, trackwork, a platform change, a missed connection
+// or a lift outage at either end. Silent when all is fine. The check is claimed in D1
+// (morning_sent, one row per check per day) before it runs, so it never sends twice.
+
+const MORNING_MAX_PER_DEVICE = 6;
+const MORNING_DELAY_MIN = 5;          // a delay must be over this many minutes
+const MORNING_TRACKWORK_RE = /track ?work|buses replace|replac(?:e|ed|es|ement) (?:bus|buses|coach)|not running|no trains|suspend|changed timetable|timetable change|line closure|closed between/i;
+const MORNING_CANCEL_RE = /cancel/i;
+let morningSchemaReady = null;
+
+async function morningSchema(env) {
+  const d = db(env);
+  if (!d) return false;
+  if (!morningSchemaReady) {
+    morningSchemaReady = d.batch([
+      d.prepare(`CREATE TABLE IF NOT EXISTS morning_checks (id TEXT PRIMARY KEY, device TEXT NOT NULL, name TEXT, from_id TEXT, from_name TEXT,
+        to_id TEXT, to_name TEXT, tod INTEGER, days TEXT, lead INTEGER DEFAULT 15, active INTEGER DEFAULT 1, created INTEGER, last TEXT)`),
+      d.prepare(`CREATE INDEX IF NOT EXISTS morning_checks_dev ON morning_checks (device)`),
+      d.prepare(`CREATE TABLE IF NOT EXISTS morning_sent (check_id TEXT NOT NULL, day TEXT NOT NULL, at INTEGER, result TEXT, PRIMARY KEY (check_id, day))`),
+    ]).then(async () => {
+      // Added after the first release: the mode you usually take (train, bus...), optional.
+      await d.prepare("ALTER TABLE morning_checks ADD COLUMN mode TEXT").run().catch(() => null);
+      return true;
+    }).catch((e) => { morningSchemaReady = null; throw e; });
+  }
+  return morningSchemaReady;
+}
+
+// Server side switches: an admin POST to /api/app/config?platform=server with flags (or kill)
+// turns server features off for every app at once. Read at most once a minute per copy.
+const serverCfg = { at: 0, cfg: null };
+async function serverConfig(env) {
+  if (serverCfg.cfg && Date.now() - serverCfg.at < 60000) return serverCfg.cfg;
+  let over = null;
+  try {
+    const row = env && env.DB ? await env.DB.prepare("SELECT body FROM app_config WHERE platform = 'server'").first() : null;
+    if (row && row.body) over = JSON.parse(row.body);
+  } catch (e) { /* no table yet: defaults */ }
+  serverCfg.cfg = mergeAppConfig(over); serverCfg.at = Date.now();
+  return serverCfg.cfg;
+}
+async function serverOn(env, flag) {
+  const c = await serverConfig(env).catch(() => null);
+  if (!c) return true;
+  return c.flags[flag] !== false && !c.kill[flag];
+}
+
+function parseTod(v) {
+  if (Number.isInteger(v) && v >= 0 && v < 1440) return v;
+  const m = /^(\d{1,2}):?(\d{2})$/.exec(String(v == null ? "" : v).trim());
+  if (!m) return null;
+  const h = Number(m[1]), mi = Number(m[2]);
+  return h < 24 && mi < 60 ? h * 60 + mi : null;
+}
+function hhmmColon(tod) { return String(Math.floor(tod / 60)).padStart(2, "0") + ":" + String(tod % 60).padStart(2, "0"); }
+function cleanDays(v) {
+  if (v == null) return [1, 2, 3, 4, 5];
+  if (!Array.isArray(v)) return null;
+  const s = [...new Set(v.map(Number).filter((x) => Number.isInteger(x) && x >= 1 && x <= 7))].sort();
+  return s.length ? s : null;
+}
+function shortStation(n) { return String(n || "").split(",")[0].replace(/ Station$/, "").trim(); }
+
+function morningOut(c) {
+  let last = null;
+  try { last = c.last ? JSON.parse(c.last) : null; } catch (e) { last = null; }
+  return { id: c.id, name: c.name || null, from: { id: c.from_id, name: c.from_name }, to: { id: c.to_id, name: c.to_name },
+    time: hhmmColon(c.tod), timeText: todText(c.tod), days: String(c.days || "").split("").map(Number).filter(Boolean),
+    mode: c.mode || null, lead: c.lead, active: !!c.active, created: c.created, last };
+}
+
+// The service you usually take: the journey whose first train, bus or ferry is planned closest
+// to your usual time, not one that has already gone.
+// With a usual mode (train, bus...) a journey that starts with it comes first; services of an
+// unknown kind (on demand, school runs) only when nothing else is near the usual time.
+function morningJourney(journeys, tod, now, mode = null) {
+  const firstT = (j) => (j.legs || []).find((l) => l.kind === "transit");
+  const off = (j) => { const t = sydneyNow(new Date(ms(firstT(j).planned))).tod; const d = Math.abs(t - tod); return Math.min(d, 1440 - d); };
+  const cand = (journeys || []).filter((j) => firstT(j) && ms(j.board) > now - 60000 && off(j) <= 45);
+  if (!cand.length) return null;
+  const rank = (j) => { const m = firstT(j).mode; return (mode && m !== mode ? 2 : 0) + (m === "other" ? 1 : 0); };
+  cand.sort((a, b) => rank(a) - rank(b) || off(a) - off(b) || ms(a.board) - ms(b.board));
+  return cand[0];
+}
+const MORNING_MODES = new Set(["train", "metro", "bus", "coach", "ferry", "lightrail"]);
+function wordCut(s, n) { s = String(s || ""); if (s.length <= n) return s; const c = s.slice(0, n); const i = c.lastIndexOf(" "); return (i > n * 0.6 ? c.slice(0, i) : c).replace(/[,;:\s]+$/, "") + "..."; }
+
+// What is wrong with a journey right now. Every item comes from live or published data.
+function morningIssues(j, c, outs) {
+  const issues = [];
+  const tl = (j.legs || []).filter((l) => l.kind === "transit");
+  for (const l of tl) {
+    const name = `${clock(ms(l.planned))} ${l.line}`;
+    if (l.cancelled) issues.push({ kind: "cancelled", text: `The ${name} is cancelled.` });
+    else if (l.realtime && l.delayMin != null && l.delayMin > MORNING_DELAY_MIN) issues.push({ kind: "delay", minutes: l.delayMin, text: `The ${name} is ${l.delayMin} min late.` });
+    if (!l.cancelled && l.platformChangedFrom && l.fromPlatform) issues.push({ kind: "platform", text: `The ${name} now leaves from ${l.fromPlatform}, not ${l.platformChangedFrom}.` });
+    if (l.transfer && l.transfer.risk === "miss") issues.push({ kind: "connection", text: `The change at ${shortStation(l.transfer.at)} to the ${name} looks too tight to make.` });
+    for (const a of l.alerts || []) {
+      const t = String(a.title || "").replace(/[.\s]+$/, "");
+      if (!t) continue;
+      const said = wordCut(t.toLowerCase().startsWith(String(l.line).toLowerCase()) ? t : `${l.line}: ${t}`, 140).replace(/([^.])$/, "$1.");
+      if (MORNING_TRACKWORK_RE.test(t)) { issues.push({ kind: "trackwork", text: said }); break; }
+      if (MORNING_CANCEL_RE.test(t) && !l.cancelled) { issues.push({ kind: "cancelled", text: said }); break; }
+    }
+  }
+  if (tl.length) {
+    const ends = [
+      { ids: [c.from_id, tl[0].fromParent, tl[0].stopId], name: shortStation(c.from_name) || shortStation(tl[0].from), lifts: ["train", "metro"].includes(tl[0].mode) },
+      { ids: [c.to_id, tl[tl.length - 1].toParent, tl[tl.length - 1].toStopId], name: shortStation(c.to_name) || shortStation(tl[tl.length - 1].to), lifts: ["train", "metro"].includes(tl[tl.length - 1].mode) },
+    ];
+    for (const e of ends) {
+      if (!e.lifts) continue;
+      const ids = e.ids.filter(Boolean).map(String);
+      const o = (outs || []).find((x) => x.kind === "lift" && x.stops.some((s) => ids.includes(s)));
+      if (o) issues.push({ kind: "lift", station: e.name, text: `Lift out of service at ${e.name}.` });
+    }
+  }
+  // One line per problem.
+  const seen = new Set();
+  return issues.filter((i) => !seen.has(i.text) && seen.add(i.text));
+}
+
+function morningMessage(c, j, issues) {
+  const from = shortStation(c.from_name), to = shortStation(c.to_name);
+  const body = issues.slice(0, 3).map((i) => i.text).join(" ") + (issues.length > 3 ? ` And ${issues.length - 3} more.` : "");
+  return { title: `Check before you go: ${from} to ${to}`, body: wordCut(body, 300) };
+}
+
+async function morningEvaluate(env, c, now) {
+  const r = await trip(env, c.from_id, c.to_id, { count: 5, time: hhmmOf(c.tod - 10) });
+  const j = morningJourney(r.journeys || [], c.tod, now, c.mode || null);
+  if (!j) return { found: false, issues: [], service: null, alert: null };
+  const outs = await liftOutages(env).catch(() => []);
+  const issues = morningIssues(j, c, outs);
+  const first = j.legs.find((l) => l.kind === "transit");
+  return {
+    found: true, issues,
+    service: { line: first.line, mode: first.mode, planned: first.planned, estimated: first.estimated, platform: first.fromPlatform || null, realtime: !!first.realtime,
+      leave: j.leave, arrive: j.arrive, changes: j.changes },
+    alert: issues.length ? morningMessage(c, j, issues) : null,
+  };
+}
+
+// Run from the minute tick: checks whose usual time is between 3 min and `lead` min away.
+async function processMorningChecks(env, now, opts = {}) {
+  await morningSchema(env);
+  const sn = sydneyNow(new Date(now));
+  const out = [];
+  const due = await d1all(env, `SELECT * FROM morning_checks WHERE active = 1 AND ((tod - ?1 + 1440) % 1440) BETWEEN 3 AND lead ORDER BY tod LIMIT 30`, sn.tod);
+  for (const c of due) {
+    const until = (c.tod - sn.tod + 1440) % 1440;
+    const dep = sydneyNow(new Date(now + until * 60000));
+    if (!String(c.days || "").includes(String(dep.dow))) { out.push({ id: c.id, skipped: "not today" }); continue; }
+    const claim = await db(env).prepare("INSERT OR IGNORE INTO morning_sent (check_id, day, at, result) VALUES (?1, ?2, ?3, 'checking')").bind(c.id, dep.day, now).run();
+    if (claim && claim.meta && claim.meta.changes === 0) continue; // already checked for this departure
+    let ev;
+    try { ev = await (opts.evaluate || morningEvaluate)(env, c, now); }
+    catch (e) {
+      // Live data did not answer: give the claim back so the next minute tries again.
+      await db(env).prepare("DELETE FROM morning_sent WHERE check_id = ?1 AND day = ?2 AND result = 'checking'").bind(c.id, dep.day).run();
+      out.push({ id: c.id, error: String(e && e.message || e).slice(0, 120) });
+      continue;
+    }
+    let result = ev.found ? "ok" : "no service found";
+    let pushed = null;
+    if (ev.alert) {
+      const n = await notify(env, { device: c.device }, { title: ev.alert.title, body: ev.alert.body, url: "/", tag: "m" + c.id, ttl: 1200 });
+      result = "alert"; pushed = n.noteId || null;
+    }
+    const last = { day: dep.day, at: now, result, issues: ev.issues.map((i) => i.kind), alert: ev.alert || null };
+    await db(env).prepare("UPDATE morning_sent SET result = ?3 WHERE check_id = ?1 AND day = ?2").bind(c.id, dep.day, result).run();
+    await db(env).prepare("UPDATE morning_checks SET last = ?2 WHERE id = ?1").bind(c.id, JSON.stringify(last)).run();
+    out.push({ id: c.id, result, issues: last.issues, note: pushed });
+  }
+  return out;
+}
+
+async function morningRoute(request, env, url) {
+  await morningSchema(env);
+  const p = url.searchParams;
+  const d = db(env);
+  const pushCount = async (device) => {
+    const w = await d1all(env, "SELECT COUNT(*) AS n FROM push_subs WHERE device = ?1", device).catch(() => []);
+    const e = await d1all(env, "SELECT COUNT(*) AS n FROM expo_tokens WHERE device = ?1", device).catch(() => []);
+    return { web: (w[0] && w[0].n) || 0, expo: (e[0] && e[0].n) || 0 };
+  };
+  if (request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    const device = cleanId(b.device);
+    if (device.length < 6) return json({ error: "device needed" }, 400);
+    const from = b.from || {}, to = b.to || {};
+    const fromId = cleanId(from.id), toId = cleanId(to.id);
+    if (!fromId || !toId) return json({ error: "from.id and to.id needed" }, 400);
+    if (fromId === toId) return json({ error: "from and to are the same" }, 400);
+    const tod = parseTod(b.time);
+    if (tod == null) return json({ error: "time must be HH:MM (24 hour, Sydney time)" }, 400);
+    const days = cleanDays(b.days);
+    if (!days) return json({ error: "days must be a list of 1 (Monday) to 7 (Sunday)" }, 400);
+    const lead = b.lead == null ? 15 : Math.round(Number(b.lead));
+    if (!Number.isFinite(lead) || lead < 5 || lead > 45) return json({ error: "lead must be 5 to 45 minutes" }, 400);
+    const name = b.name == null ? null : String(b.name).replace(/[\u0000-\u001f]/g, "").trim().slice(0, 40) || null;
+    const fromName = String(from.name || fromId).trim().slice(0, 80), toName = String(to.name || toId).trim().slice(0, 80);
+    const active = b.active === false ? 0 : 1;
+    const mode = b.mode == null || b.mode === "" ? null : String(b.mode).toLowerCase();
+    if (mode && !MORNING_MODES.has(mode)) return json({ error: "mode must be train, metro, bus, coach, ferry or lightrail" }, 400);
+    let id = cleanId(b.id, 24);
+    if (id) {
+      const row = await d.prepare("SELECT id FROM morning_checks WHERE id = ?1 AND device = ?2").bind(id, device).first();
+      if (!row) return json({ error: "not found" }, 404);
+      await d.prepare(`UPDATE morning_checks SET name = ?3, from_id = ?4, from_name = ?5, to_id = ?6, to_name = ?7, tod = ?8, days = ?9, lead = ?10, active = ?11, mode = ?12 WHERE id = ?1 AND device = ?2`)
+        .bind(id, device, name, fromId, fromName, toId, toName, tod, days.join(""), lead, active, mode).run();
+      // A changed time or trip gets a fresh check today.
+      await d.prepare("DELETE FROM morning_sent WHERE check_id = ?1").bind(id).run();
+    } else {
+      const n = await d1all(env, "SELECT COUNT(*) AS n FROM morning_checks WHERE device = ?1", device);
+      if (n[0] && n[0].n >= MORNING_MAX_PER_DEVICE) return json({ error: `up to ${MORNING_MAX_PER_DEVICE} morning checks per device` }, 409);
+      id = rid(9);
+      await d.prepare(`INSERT INTO morning_checks (id, device, name, from_id, from_name, to_id, to_name, tod, days, lead, active, created, last, mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, ?13)`)
+        .bind(id, device, name, fromId, fromName, toId, toName, tod, days.join(""), lead, active, Date.now(), mode).run();
+    }
+    const row = await d.prepare("SELECT * FROM morning_checks WHERE id = ?1").bind(id).first();
+    return json({ ok: true, item: morningOut(row), push: await pushCount(device), enabled: await serverOn(env, "morningCheck") });
+  }
+  const device = cleanId(p.get("device"));
+  if (device.length < 6) return json({ error: "device needed" }, 400);
+  if (request.method === "DELETE") {
+    const id = cleanId(p.get("id"), 24);
+    const ids = (id ? await d1all(env, "SELECT id FROM morning_checks WHERE id = ?1 AND device = ?2", id, device)
+      : await d1all(env, "SELECT id FROM morning_checks WHERE device = ?1", device)).map((r) => r.id);
+    for (const x of ids) {
+      await d.prepare("DELETE FROM morning_sent WHERE check_id = ?1").bind(x).run();
+      await d.prepare("DELETE FROM morning_checks WHERE id = ?1 AND device = ?2").bind(x, device).run();
+    }
+    return json({ ok: true, deleted: ids.length });
+  }
+  if (request.method !== "GET") return json({ error: "method" }, 405);
+  const items = (await d1all(env, "SELECT * FROM morning_checks WHERE device = ?1 ORDER BY tod", device)).map(morningOut);
+  return json({ items, push: await pushCount(device), enabled: await serverOn(env, "morningCheck"), max: MORNING_MAX_PER_DEVICE });
+}
+
+// Check now without sending or claiming anything: what the morning check would say.
+async function morningPreview(env, url) {
+  await morningSchema(env);
+  const p = url.searchParams;
+  const device = cleanId(p.get("device")), id = cleanId(p.get("id"), 24);
+  if (device.length < 6 || !id) return json({ error: "device and id needed" }, 400);
+  const c = await db(env).prepare("SELECT * FROM morning_checks WHERE id = ?1 AND device = ?2").bind(id, device).first();
+  if (!c) return json({ error: "not found" }, 404);
+  const ev = await morningEvaluate(env, c, Date.now());
+  return json({ item: morningOut(c), ...ev, sent: false });
+}
+
+// ---------- lift aware routing ----------
+// With acc=1 the Trip Planner already asks for step free trips. On top of that, a trip that
+// boards, changes or gets off at a station with a lift out of service right now is dropped
+// when another option avoids it, and trips that are step free at every station come first.
+const LIFT_MODES = new Set(["train", "metro"]);
+function liftAwareRank(d, count) {
+  const js = d && d.journeys;
+  if (!Array.isArray(js) || !js.length) return d;
+  const scored = js.map((j, i) => {
+    const out = [], seen = new Set();
+    let stepFree = true;
+    for (const l of j.legs || []) {
+      if (l.kind === "walk") continue;
+      const a = l.access || {};
+      // A station lift matters for trains and metro; a bus or coach stop outside the station
+      // is reached from the street.
+      const usesLifts = LIFT_MODES.has(l.mode);
+      for (const [s, name] of [[a.from, l.from], [a.to, l.to]]) {
+        if (!s) { stepFree = false; continue; }
+        if (s.level !== "independent") stepFree = false;
+        if (usesLifts && s.liftOut && !seen.has(s.id)) { seen.add(s.id); out.push({ id: s.id, name: shortStation(name), title: s.outage || null }); }
+      }
+    }
+    j.stepFree = stepFree;
+    j.liftOutages = out;
+    return { j, i, blocked: out.length > 0, stepFree };
+  });
+  const clear = scored.filter((s) => !s.blocked);
+  const keep = clear.length ? clear : scored;
+  keep.sort((a, b) => (a.stepFree === b.stepFree ? 0 : a.stepFree ? -1 : 1) || a.i - b.i);
+  d.journeys = keep.map((s) => s.j).slice(0, count || keep.length);
+  d.liftAware = { avoided: scored.length - keep.length, allAffected: !clear.length,
+    stations: [...new Map(scored.flatMap((s) => s.j.liftOutages).map((o) => [o.id, o.name])).values()] };
+  return d;
+}
+
+// Occupancy switched off from the server config: drop it from every answer.
+function stripOccupancy(d) {
+  const strip = (x) => { if (x && typeof x === "object") { delete x.occupancy; if (x.vehicle && typeof x.vehicle === "object") delete x.vehicle.occupancy; } };
+  for (const it of (d && d.items) || []) strip(it);
+  for (const j of (d && d.journeys) || []) for (const l of j.legs || []) strip(l);
+  if (d && d.vehicle) strip(d);
+  return d;
+}
+
 // ---------- the minute scheduler ----------
 
 async function sampleStops(env, sn, budgetOk) {
@@ -3369,6 +3679,10 @@ async function runTick(env, opts = {}) {
       catch (e) { out.commutes.push({ id: c.id, error: String(e && e.message || e).slice(0, 160) }); }
     }
   }
+  // Morning checks: one look at live data shortly before a usual trip, an alert only if something is wrong
+  if (!opts.device && use.calls < WATCH_BUDGET && (await serverOn(env, "morningCheck"))) {
+    out.morning = await processMorningChecks(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+  }
   // Lift outages on saved trip stations, car park nearly full watches
   if (!opts.device) out.facilities = await facTick(env, Date.now(), sn, opts).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   // Background sampling for predictions
@@ -3379,6 +3693,7 @@ async function runTick(env, opts = {}) {
     await db(env).prepare("UPDATE watches SET active = 0, ended = 'expired' WHERE active = 1 AND expires < ?1").bind(now).run().catch(() => null);
     // Retention promised in the privacy policy: trip searches 90 days, finished watches 30 days.
     await db(env).prepare("DELETE FROM searches WHERE at < ?1").bind(now - 90 * 86400000).run().catch(() => null);
+    await db(env).prepare("DELETE FROM morning_sent WHERE at < ?1").bind(now - 7 * 86400000).run().catch(() => null);
     await db(env).prepare("DELETE FROM ip_rate WHERE win < ?1").bind(Math.floor(now / 60000) - 5).run().catch(() => null);
     await db(env).prepare("DELETE FROM watches WHERE active = 0 AND updated < ?1").bind(now - 30 * 86400000).run().catch(() => null);
     // Shared live trips: deleted, positions included, once the trip is over.
@@ -3736,6 +4051,7 @@ async function addAccess(env, d, opts = {}) {
     const b = { id: String(id), level: ACCESS_LEVEL[s.a] || "unknown", lift: (s.x || []).includes("lift") };
     const o = outs.filter((x) => x.stops.includes(String(id)));
     if (o.length) { b.outage = o[0].title; b.outages = o.length; }
+    if (o.some((x) => x.kind === "lift")) b.liftOut = true;
     return b;
   };
   const mem = new Map();
@@ -4058,17 +4374,23 @@ async function handleRequest(request, env, exec) {
             try { r = await pr; } catch (e) { depMem.delete(depKey); throw e; }
           }
           const d = { kind: "departures", ...r };
+          if (!(await serverOn(env, "occupancy"))) { d.items = d.items.map((x) => ({ ...x, vehicle: x.vehicle ? { ...x.vehicle } : x.vehicle })); stripOccupancy(d); }
           await afterAnswer(env, d, { profile, device: p.get("device"), exec });
           return asTxt ? textRes(await asText(env, d)) : json(d);
         }
         case "/api/trip": {
           const acc = p.get("acc") === "1";
-          const r = await trip(env, p.get("from"), p.get("to"), { time: p.get("time") || null, arriveBy: p.get("arriveBy") === "1", count: Number(p.get("count") || 5), accessible: acc });
+          const want = Math.max(1, Math.min(8, Number(p.get("count") || 5) || 5));
+          const liftAware = acc && (await serverOn(env, "liftAwareRouting"));
+          // Lift aware: ask for a few more trips so one that avoids a lift outage can be found.
+          const r = await trip(env, p.get("from"), p.get("to"), { time: p.get("time") || null, arriveBy: p.get("arriveBy") === "1", count: liftAware ? Math.min(8, want + 3) : want, accessible: acc });
           // A link with stop ids and no names takes the names from the first trip found.
           const given = (k) => { const v = (p.get(k) || "").trim(); return v && !/^\d+$/.test(v) ? v : null; };
           const d = { kind: "trip", from: { id: p.get("from"), name: given("fromName") || tripEndName(r, "from") || p.get("from") }, to: { id: p.get("to"), name: given("toName") || tripEndName(r, "to") || p.get("to") }, ...r };
           pickFares(d, fareType(p));
           await addAccess(env, d, { accessible: acc }).catch(() => null);
+          if (liftAware) liftAwareRank(d, want);
+          if (!(await serverOn(env, "occupancy"))) stripOccupancy(d);
           await afterAnswer(env, d, { profile, device: p.get("device"), exec, log: p.get("refresh") !== "1" });
           return asTxt ? textRes(await asText(env, d)) : json(d);
         }
@@ -4079,10 +4401,14 @@ async function handleRequest(request, env, exec) {
           const legs = chainLegs(raw);
           if (!legs) return json({ error: "legs must be a list of 1 to 6 legs, each with f and t, and the first leg not a walk" }, 400);
           const acc = p.get("acc") === "1";
-          const r = await planChain(env, legs, { time: p.get("time") || null, count: Math.max(1, Math.min(8, Number(p.get("count") || 5))), all: p.get("all") === "1", accessible: acc });
+          const want = Math.max(1, Math.min(8, Number(p.get("count") || 5) || 5));
+          const liftAware = acc && (await serverOn(env, "liftAwareRouting"));
+          const r = await planChain(env, legs, { time: p.get("time") || null, count: liftAware ? Math.min(8, want + 3) : want, all: p.get("all") === "1", accessible: acc });
           const z = legs[legs.length - 1];
           pickFares(r, fareType(p));
           await addAccess(env, r, { accessible: acc }).catch(() => null);
+          if (liftAware) liftAwareRank(r, want);
+          if (!(await serverOn(env, "occupancy"))) stripOccupancy(r);
           return json({ kind: "trip", from: { id: legs[0].f, name: legs[0].fn }, to: { id: z.t, name: z.tn }, stops: legs.slice(0, -1).map((l) => ({ id: l.t, name: l.tn })), ...r });
         }
         case "/api/service":
@@ -4106,6 +4432,8 @@ async function handleRequest(request, env, exec) {
           const d = await savedTrip(env, s, Math.min(5, Number(p.get("count") || 5)), p.get("acc") === "1");
           pickFares(d, fareType(p));
           await addAccess(env, d, { accessible: p.get("acc") === "1" }).catch(() => null);
+          if (p.get("acc") === "1" && (await serverOn(env, "liftAwareRouting"))) liftAwareRank(d);
+          if (!(await serverOn(env, "occupancy"))) stripOccupancy(d);
           await afterAnswer(env, d, { profile, device: p.get("device"), exec });
           return asTxt ? textRes(await asText(env, d)) : json(d);
         }
@@ -4177,6 +4505,10 @@ async function handleRequest(request, env, exec) {
         }
         case "/api/app/config":
           return await appConfigRoute(request, env, p, adminOk(request, p));
+        case "/api/morning-check":
+          return await morningRoute(request, env, url);
+        case "/api/morning-check/preview":
+          return await morningPreview(env, url);
         case "/api/push/key":
           return json({ publicKey: VAPID_PUBLIC });
         case "/api/push/subscribe": {
@@ -4352,6 +4684,8 @@ async function handleRequest(request, env, exec) {
               await del("push", "DELETE FROM push_subs WHERE device = ?1", dev);
               await del("push", "DELETE FROM expo_tokens WHERE device = ?1", dev);
               await del("shares", "DELETE FROM shares WHERE device = ?1", dev);
+              await del("morningCheckLog", "DELETE FROM morning_sent WHERE check_id IN (SELECT id FROM morning_checks WHERE device = ?1)", dev);
+              await del("morningChecks", "DELETE FROM morning_checks WHERE device = ?1", dev);
               if (await facSchema(env).catch(() => false)) {
                 await del("alerts", "DELETE FROM lift_alerts WHERE device = ?1", dev);
                 await del("watches", "DELETE FROM park_watches WHERE device = ?1", dev);
