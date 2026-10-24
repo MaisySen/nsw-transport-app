@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.maisysen.nswtransport",
-      "buildNumber": "204",
+      "buildNumber": "205",
       "appleTeamId": "B85KQRQZW7",
       "supportsTablet": false,
       "config": {
