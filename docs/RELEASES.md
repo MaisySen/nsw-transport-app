@@ -1,0 +1,68 @@
+# Releases
+
+Every shipped build and update. Times are Sydney time (AEDT). Updated 24 Oct 2026, 2:15 PM.
+
+## iPhone (native SwiftUI)
+
+Unsigned builds from CI, attached to GitHub releases. Install with Sideloadly or AltStore ([ios-native/INSTALL.md](../ios-native/INSTALL.md)). Version 1.0 throughout. Builds 1 to 6 used a temporary bundle id; build 7 and later use `com.maisysen.nswtransport`.
+
+| Build | Released | CI run | Commit | What changed |
+| --- | --- | --- | --- | --- |
+| [8](https://github.com/MaisySen/nsw-transport-app/releases/tag/ios-native-build-8) | 24 Oct, 1:26 PM | 20 | 5a3675a (built at ec65e4b) | New trip by mode with A to Z side index, By distance, By map; bus route, direction and stops; Confirm trip with rename, Extend trip and connection time; direct services with an All services switch; reorder trips. Release builds compile one file at a time. Fix run 21 in progress |
+| [7](https://github.com/MaisySen/nsw-transport-app/releases/tag/ios-native-build-7) | 24 Oct, 11:46 AM | 16 | e8f387f | Store readiness: per install profile, privacy manifests, app group, bundle id `com.maisysen.nswtransport`, location text, TfNSW attribution with support and privacy links, offline start test, App Store screenshots |
+| [6](https://github.com/MaisySen/nsw-transport-app/releases/tag/ios-native-build-6) | 24 Oct, 10:18 AM | 15 | 76f21bc | Trips home with Add home and Add work, countdown colours, crowding, Earlier and Later services; Ask tab; Siri shortcuts "Next train home" and "Ask Transport" |
+| [5](https://github.com/MaisySen/nsw-transport-app/releases/tag/ios-native-build-5) | 24 Oct, 8:31 AM | 9 | 3e96a01 | UI tap through tests, Home as a live board, widgets (any trip or stop, Smart Home and Work, large, StandBy, Lock Screen, stop board), dark Live Activity |
+| [4](https://github.com/MaisySen/nsw-transport-app/releases/tag/ios-native-build-4) | 24 Oct, 2:19 AM | 4 | a7e3baa | One line service alerts in rows |
+| [3](https://github.com/MaisySen/nsw-transport-app/releases/tag/ios-native-build-3) | 24 Oct, 2:14 AM | 3 | 00b81c3 | Tidier departure rows, mode icons, hour countdown |
+| [2](https://github.com/MaisySen/nsw-transport-app/releases/tag/ios-native-build-2) | 24 Oct, 2:05 AM | 2 | 1f97343 | Screenshot script opens screens by launch argument |
+| [1](https://github.com/MaisySen/nsw-transport-app/releases/tag/ios-native-build-1) | 24 Oct, 1:43 AM | 1 | 3bf98e4 | First native iPhone app |
+
+No TestFlight or App Store build yet: that needs Bidur's App Store Connect API key (see [Store](STORE.md)).
+
+## Android (Expo)
+
+Package `com.maisysen.nswtransport`, versionName 1.0.0, signed with one upload key throughout.
+
+| versionCode | Built | Commit | Form | What changed |
+| --- | --- | --- | --- | --- |
+| 4 | 24 Oct, 11:01 AM | e8f387f | Signed AAB for Google Play (`transport-1.0.0-vc4.aab`, kept on the build box) | Target API 36, per install profile, widget reads the install profile, fewer permissions, attribution and links in Settings |
+| 3 | 24 Oct, 8:48 AM | 19bcfff | APK, on the download page since 8:47 AM | Next trip home screen widget (small and medium) |
+| 2 | 24 Oct, 7:40 AM | 2706fc4 | APK | Live flag on the service sheet, all tab labels, one retry on dropped requests, x86_64 build |
+| 1 | 24 Oct, 1:32 AM | 06185d9 | APK | First Android app |
+
+The download page serves versionCode 3. Every JavaScript change since then has reached installed apps as an over the air update.
+
+## Over the air updates (EAS Update)
+
+Project `cf1f4c4c-5157-41bf-a254-4480223f6368`, owner `bidurtab`. `production` is the Android APK (runtime 1.0.0). `expo-go` is the iPhone preview in Expo Go (runtime exposdk:58.0.0). Newest first.
+
+| Time (about) | Update | production group | expo-go group |
+| --- | --- | --- | --- |
+| 24 Oct, 1:50 PM | Multi leg trips: add, remove and reorder legs, change time per connection, walk legs, tight and missed connection warnings | c0bd6116-bf5f-49b4-8c7f-ef849f15092d | db5cefd5-b7fe-478e-bf63-a6fb114d64dd |
+| 24 Oct, 11:45 AM | New trip by mode, confirm trip with extend and connection time, direct services with All services, drag to reorder | 6372d294-62c6-4557-a2e5-a683dc3b898b | 88b28c86-7280-4d9b-9ca2-d997d4ca0566 |
+| 24 Oct, 9:19 AM | Ask tab: chat with live answers, cards open the board, trip or live map | 48f77045-bb8d-4445-a29b-ea75943a5d3b | 69c9d3d5-9c12-4c93-9c5d-5d0438de9e6a |
+| 24 Oct, 8:32 AM | Trips: Add home and work, alerts banner, countdown colour by time left, crowding, skip departed, earlier and later services, travel time | 84710310-906e-4eb3-9b60-179ddae7da22 | 6b466af0-22c1-4c96-b576-d31c38b91955 |
+| 24 Oct, 8:17 AM | Home redesign: live trip boards with countdowns, recent and nearby stops, add a trip | 33171cff-54ee-4c34-9135-5a290a0896c3 | f52734e8-023f-47ce-bdf6-62fd1751726a |
+| 24 Oct, 7:40 AM | Live flag on the service sheet, all tab labels, one retry on dropped requests | 98632aea-4a22-443c-a7f5-173a01a0a876 (and fc26c497-f6ef-4015-bfdf-dbbab9468867 just before) | f51f20f7-3610-4a5d-a7ed-f2d24c39ed47 |
+| 24 Oct, about 2 AM | Map fits the trip, labelled tabs | 4a6fec34-7921-4542-b1a0-63220072f97e | d92b1829-47d1-4d9c-9996-4ac096fde073 |
+| 24 Oct, about 2 AM | Live alerts text and map fixes | dcb4e7d6-77e0-4d79-82b9-a707bf07628f | 5f86471e-c7a4-438b-984a-e841ba6b05f6 |
+| 24 Oct, about 1:30 AM | First Expo Go previews | none | e000aa11-9766-4cc5-83b1-06dfdf926c0f, 4287579e-5d31-4d23-a0cd-0b82017faf87, 3db1bc27-f63e-4f61-ba26-af2cc678314a, 0272c9f6-f415-477c-8c00-c7db35ed144e |
+
+## Web (backend, web app and site)
+
+Published to https://nsw-transport-bot.sites.tab.bot. Each publish replaces the whole site.
+
+| Time (about) | Release | Commit |
+| --- | --- | --- |
+| 24 Oct, 1:55 PM | Multi leg trips and `/api/plan` | 1bed1c1, d7e5eb8 |
+| 24 Oct, 1:37 PM | Ask: stations and suburbs before businesses, typo fixes, Did you mean, via | 9ac2c5a, bb563d7 |
+| 24 Oct, 1:07 PM | Website launch checklist: landing page, 404, meta tags, favicon set, robots and sitemap, share image, terms, contact form with thank you page, page counter without cookies, per visitor profile on the web | bd8ed89 |
+| 24 Oct, 11:45 AM | New trip by mode and `/api/stations` | 7ff789c |
+| 24 Oct, 11:20 AM | Support page, rewritten privacy policy, data retention (90 and 30 days) | 388203e |
+| 24 Oct, 8:32 AM | Trips home redesign | d46c5a4 |
+| 24 Oct, about 1:30 AM | v4: download page, APK from R2, Expo push, `/api/app` | |
+| 24 Oct, 12:41 AM | v3: watches with Web Push, connection rescue, commute memory, predictions, PWA, iOS style redesign; cron-job.org scheduler | |
+| 24 Oct, about midnight | v2: auto refresh, Live and Scheduled badges, GTFS realtime, live vehicle map, saved trips | |
+| 23 Oct, 5:14 PM | v1: Transport Bot: stop boards, trip planning, alerts, nearby, text answers | |
+
+Before 24 Oct, 11:45 AM the backend source lived only on the build box and in the private repo `MaisySen/nsw-transport-bot`; it has been in `backend/` of this repo since commit 7ff789c.
