@@ -40,14 +40,26 @@ Tests 9 to 13 came with the multi stop Ask (commit 2be460a).
 
 A separate live list of 55 real phrasings (including "I need to go to campsie to newcastle via chatswood", typos, landmarks and suburbs that sound like other words) was run against the live `/api/ask`: 55 of 55 sensible, 7 of 7 Did you mean choices resolve.
 
-### `backend/test/site.test.mjs`: 6 tests, 5 pass, 1 known failure
+### `backend/test/site.test.mjs`: 6 tests, 6 pass
 
 1. Page has title, viewport and local assets: pass
 2. No API key in the public files or source: pass
 3. No em dashes or en dashes anywhere: pass
-4. Live features are present in the app: **fails (known)**. It looks for an old "Live" label in `app.js` that the Home redesign removed on 24 Oct. The app is fine; the test is out of date. Fix: update the expected strings to the current Trips home.
+4. Live features are present in the app: pass (updated 24 Oct to the current `Live <time>` label)
 5. Proactive layer is present: pass
 6. Worker merges GTFS realtime feeds: pass
+
+### `backend/test/ask-size.test.mjs`: 3 tests, 3 pass
+
+1. `askSlim` keeps every field the web, Android and iPhone Ask screens read, drops the rest, and brings a 180 KB answer under 30 KB
+2. Alert links are links only when they are https
+3. `/api/ask` answers carry no internal error text and no top level journeys
+
+### `backend/test/profile-copy.test.mjs`: 3 tests, 3 pass
+
+1. Refuses a missing or wrong admin key
+2. Refuses GET and short or identical ids
+3. Copies rows to the new id, with fresh commute ids
 
 ## iPhone UI tests (XCUITest)
 
@@ -91,7 +103,7 @@ Earlier runs: 15 (build 6) 10 of 10 light and 9 of 9 dark. Runs 10 and 11 failed
 
 ## Before a release
 
-1. `node --test test/` in `backend/`: all pass except the known `site.test.mjs` item.
+1. `node --test test/` in `backend/`: all 35 pass.
 2. `npx tsc --noEmit` in `app/`.
 3. iPhone: CI run green, then read `r2.txt` on `ci-out` for per test counts in light and dark.
 4. After publishing the web: the live checks above.

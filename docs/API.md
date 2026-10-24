@@ -19,7 +19,7 @@ Errors: `400` for bad input with an `error` message, `403` for a wrong key, `404
 
 | Endpoint | Method | Parameters | Returns |
 | --- | --- | --- | --- |
-| `/api/ask` | GET | `q` (the question), `home`, `work` (optional saved places), `profile`, `device`, `lat`, `lon`, `format` | `reply`, `cards`, `links`, `suggestions`; for trips also `journeys` and `understood {from, via, to}`. When a place is unclear it returns `options` (Did you mean choices, each a full question). Rule based, no AI model |
+| `/api/ask` | GET | `q` (the question), `home`, `work` (optional saved places), `profile`, `device`, `lat`, `lon`, `format` | `reply`, `cards`, `links`, `suggestions`; for trips also `understood {from, via, to}`. Trip answers carry their journeys inside the `trip` card only, trimmed to the fields the Ask screens read (5 to 21 KB a reply). Alert `url` values are `https://` or null. When a place is unclear it returns `options` (Did you mean choices, each a full question). Rule based, no AI model |
 | `/api/search` | GET | `q` (2 or more characters) | `items`: up to 8 stops with `id`, `name`, `modes` |
 | `/api/nearby` | GET | `lat`, `lon` | `stops` near the point |
 | `/api/stations` | GET | `mode` = `train`, `metro`, `ferry`, `lightrail` or `bus`; for bus, optional `route` (for example `461X`) | Station list A to Z; for bus, the route list or one route's directions and stops. Cached for a day |
@@ -95,10 +95,11 @@ These need `key=TICK_KEY` or `key=ADMIN_KEY`. The keys are secrets (see [Securit
 
 | Endpoint | Key | What it does |
 | --- | --- | --- |
-| `/api/tick` | TICK_KEY or ADMIN_KEY | Runs the minute scheduler. `force=1` (admin only) and `nosample=1` |
+| `/api/tick` | TICK_KEY or ADMIN_KEY (in the `x-admin-key` header, or `?key=`) | Runs the minute scheduler. `force=1` (admin only) and `nosample=1` |
 | `/api/stats` | ADMIN_KEY | Page counter by day, page and referrer. `days` (1 to 90). DELETE with `day` clears a day |
 | `/api/feedback` | ADMIN_KEY | GET lists contact form messages; DELETE with `id` removes one |
 | `/api/admin/file` | ADMIN_KEY | PUT uploads an APK into R2 (`name=transport.apk`, `version=N`); GET shows the stored file |
 | `/api/admin/sim` | ADMIN_KEY | Simulates a delay or platform change on a watch (`id`, `leg`, `delay`, `platform`) |
 | `/api/admin/commute` | ADMIN_KEY | Runs one commute now (`id`, `reset=1`, `leave=1`) |
 | `/api/admin/searches` | ADMIN_KEY | Adds or clears test searches for commute memory |
+| `/api/admin/profile-copy` | ADMIN_KEY | POST `{from, to}`: copies saved trips, trip legs, commutes, searches and dismissed suggestions from one profile to a new id of 20 to 40 characters. Device bound rows (push, watches, notes) stay with their device |

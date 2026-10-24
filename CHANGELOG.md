@@ -4,6 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 24 Oct 2026
 
+### Backend follow ups from the security review (2:50 PM)
+* `/api/ask` replies are now 5 to 21 KB instead of 180 to 490 KB (about 1 to 2.5 KB gzipped). They carry only what the web, Android and iPhone Ask screens read; the full planner output and the internal error text are gone.
+* TfNSW alert links are links only when they start with `https://`.
+* The cron-job.org scheduler job sends its key in an `x-admin-key` header instead of the URL. `?key=` still works.
+* New admin endpoint `POST /api/admin/profile-copy` copies everything stored under one profile to a new private id. Bidur's data was copied off the public "bidur" profile; the "bidur" fallback stays until his devices move.
+* Android: `nswtransport://profile/<id>` now opens a screen that asks before switching this phone to that profile (new file `app/src/app/profile/[id].tsx`).
+* The security review summary is in [docs/SECURITY.md](docs/SECURITY.md).
+* Tests: the old "Live" label check in `site.test.mjs` now matches the current UI. Backend suite: 35 of 35 pass.
+
 ### In progress
 * iPhone build 8 fix run (CI run 21): the new trip UI test filters the list after the side index jump; bus stop rows use the primary text colour.
 

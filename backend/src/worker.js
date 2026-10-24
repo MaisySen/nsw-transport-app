@@ -569,7 +569,7 @@ async function departures(env, stopId, opts = {}) {
       const k = info.id || info.subtitle;
       if (!k) continue;
       alertIds.push(k);
-      if (!alerts.has(k)) alerts.set(k, { id: k, title: info.subtitle || info.title || "", url: info.url || null, priority: info.priority || "", lines: new Set() });
+      if (!alerts.has(k)) alerts.set(k, { id: k, title: info.subtitle || info.title || "", url: httpsUrl(info.url), priority: info.priority || "", lines: new Set() });
       alerts.get(k).lines.add(line);
     }
     items.push({
@@ -673,7 +673,7 @@ async function trip(env, fromId, toId, opts = {}) {
         cancelled: !!lg.isCancelled,
         occupancy: OCC_EFA[(o.properties && o.properties.occupancy) || ""] || null,
         platformChangedFrom: platformChange(o.properties, cls),
-        alerts: (lg.infos || []).map((i) => ({ title: i.subtitle || "", url: i.url || null, priority: i.priority || "" })).filter((a) => a.title).slice(0, 3),
+        alerts: (lg.infos || []).map((i) => ({ title: i.subtitle || "", url: httpsUrl(i.url), priority: i.priority || "" })).filter((a) => a.title).slice(0, 3),
         path: (lg.coords || []).map((c) => [Math.round(c[0] * 1e5) / 1e5, Math.round(c[1] * 1e5) / 1e5]),
       };
     });
@@ -975,7 +975,7 @@ async function service(env, q) {
   if (!path.length) path = stops.map((s) => [s.lat, s.lon]);
   let lineAlerts = [];
   if (line && /^[a-z]{0,3}\d{1,3}[a-z]?$/i.test(line)) {
-    try { lineAlerts = (await alertsCached(env, line)).items.slice(0, 3).map((a) => ({ title: a.title, priority: a.priority, url: a.url })); } catch (e) { lineAlerts = []; }
+    try { lineAlerts = (await alertsCached(env, line)).items.slice(0, 3).map((a) => ({ title: a.title, priority: a.priority, url: httpsUrl(a.url) })); } catch (e) { lineAlerts = []; }
   }
   return {
     alerts: lineAlerts,
@@ -1038,7 +1038,7 @@ async function alerts(env, q) {
         const m = n.match(/^([A-Z]{1,3}\d{0,3})\b/);
         return m ? m[1] : n;
       }).filter(Boolean))].slice(0, 6),
-      url: i.url || null,
+      url: httpsUrl(i.url),
     };
   });
   const lineQ = q && /^[a-z]{0,3}\d{1,3}[a-z]?$/i.test(q) ? q.toUpperCase() : null;
@@ -1862,7 +1862,7 @@ function askDecorate(d, ctx) {
       } else reply = d.nearbyTried ? `I couldn't see a ${d.line} at the stops near you in the next hour. Ask like "${d.line} from Burwood".` : `No ${d.line} departures from ${d.stop.name} in the next hour or so. It may stop at another stand nearby.`;
       if (d.alerts && d.alerts.length) reply += ` ${d.alerts.length} alert${d.alerts.length > 1 ? "s" : ""} for this route.`;
       if (d.items.length) cards.push({ type: "departures", title: `${d.line} from ${d.stop.name}`, stop: d.stop, items: d.items.map(askDep), link: askStopLink(d.stop.id, d.stop.name) });
-      if (d.alerts && d.alerts.length) cards.push({ type: "alerts", items: d.alerts.map((a) => ({ title: a.title, url: a.url, lines: a.lines || [] })) });
+      if (d.alerts && d.alerts.length) cards.push({ type: "alerts", items: d.alerts.map((a) => ({ title: a.title, url: httpsUrl(a.url), lines: a.lines || [] })) });
       links.push({ label: "Open board", ...askStopLink(d.stop.id, d.stop.name) });
       if (f) links.push({ label: `Track this ${d.line}`, ...askSvc(f) });
       break;
@@ -1883,7 +1883,7 @@ function askDecorate(d, ctx) {
       if (d.alertTotal) reply += ` ${d.alertTotal} alert${d.alertTotal > 1 ? "s" : ""}: ${d.alerts[0].title.length > 110 ? d.alerts[0].title.slice(0, 107).replace(/\s+\S*$/, "") + "..." : d.alerts[0].title}`;
       else reply += " No alerts for this line.";
       if (d.items.length) cards.push({ type: "departures", title: `${d.line}${at}`, stop: d.stop, items: d.items.slice(0, 6).map(askDep), link: askStopLink(d.stop.id, d.stop.name) });
-      if (d.alerts.length) cards.push({ type: "alerts", items: d.alerts.slice(0, 2).map((a) => ({ title: a.title, url: a.url, lines: a.lines || [] })) });
+      if (d.alerts.length) cards.push({ type: "alerts", items: d.alerts.slice(0, 2).map((a) => ({ title: a.title, url: httpsUrl(a.url), lines: a.lines || [] })) });
       if (d.stop) links.push({ label: "Open board", ...askStopLink(d.stop.id, d.stop.name) });
       if (d.alerts.length) links.push({ kind: "alerts", label: "All alerts", href: "#/alerts" });
       break;
@@ -1945,7 +1945,7 @@ function askDecorate(d, ctx) {
     }
     case "alerts":
       reply = d.items.length ? `${d.total} current alert${d.total > 1 ? "s" : ""}${d.filter ? " for " + d.filter : ""}. Top one: ${d.items[0].title}` : "No current alerts for that.";
-      if (d.items.length) cards.push({ type: "alerts", items: d.items.slice(0, 5).map((a) => ({ title: a.title, url: a.url, lines: a.lines || [] })) });
+      if (d.items.length) cards.push({ type: "alerts", items: d.items.slice(0, 5).map((a) => ({ title: a.title, url: httpsUrl(a.url), lines: a.lines || [] })) });
       links.push({ kind: "alerts", label: "All alerts", href: "#/alerts" });
       break;
     case "nearby":
@@ -2126,6 +2126,9 @@ const RATE_RULES = [
   [/^\/api\/watch$/, "watch", 30, 600000, "POST"],
   [/^\/api\/(saved|commutes|commutes\/dismiss|push\/subscribe|push\/expo|push\/expo\/unregister|push\/unsubscribe)$/, "write", 60, 600000, "POST"],
   [/^\/api\/hit$/, "hit", 120, 600000],
+  [/^\/api\/share$/, "share", 20, 600000, "POST"],
+  [/^\/api\/share\/update$/, "shareup", 240, 600000],
+  [/^\/api\/share$/, "read", 600, 60000],
   [/^\/api\/(ask|trip|plan|departures|service|status|next|search|nearby|alerts|predict|obs|stations)$/, "read", 600, 60000],
 ];
 function rateOk(request, pathname) {
@@ -2392,6 +2395,36 @@ function todText(tod) {
 }
 function rid(n = 10) { return b64u(crypto.getRandomValues(new Uint8Array(n))); }
 function cleanId(s, n = 64) { return String(s || "").replace(/[^A-Za-z0-9_.:-]/g, "").slice(0, n); }
+// Alert links from TfNSW become tappable links only when they are plain https URLs.
+function httpsUrl(u) { const s = String(u || "").trim(); return /^https:\/\/[^\s"'<>]+$/i.test(s) && s.length <= 500 ? s : null; }
+
+// /api/ask replies carry only what the web, Android and iPhone Ask screens read. The full
+// planner output (every leg's path, top level journeys, items and alerts) was 180 to 490 KB.
+const ASK_DEP_KEYS = ["line", "color", "mode", "dest", "platform", "planned", "estimated", "realtime", "delayMin", "cancelled", "link"];
+const ASK_LEG_KEYS = ["kind", "mode", "line", "color", "from", "to", "fromPlatform", "planned", "estimated", "realtime", "delayMin", "cancelled", "durationMin", "link"];
+const ASK_DROP = new Set(["journeys", "items", "alerts", "detail", "path"]);
+function pickKeys(o, keys) { const r = {}; for (const k of keys) if (o[k] !== undefined) r[k] = o[k]; return r; }
+function askSlimCard(c) {
+  if (!c || typeof c !== "object") return c;
+  const r = {};
+  for (const [k, v] of Object.entries(c)) if (k !== "items" && k !== "journeys") r[k] = v;
+  if (c.type === "departures" && Array.isArray(c.items)) r.items = c.items.map((i) => ({ ...pickKeys(i, ASK_DEP_KEYS), realtime: !!i.realtime, cancelled: !!i.cancelled }));
+  else if (c.type === "alerts" && Array.isArray(c.items)) r.items = c.items.map((a) => ({ title: a.title || "", url: httpsUrl(a.url), lines: a.lines || [] }));
+  else if (c.type === "stops" && Array.isArray(c.items)) r.items = c.items.map((s) => pickKeys(s, ["id", "name", "distance", "link"]));
+  else if (c.items !== undefined) r.items = c.items;
+  if (Array.isArray(c.journeys)) r.journeys = c.journeys.map((j) => ({
+    leave: j.leave, arrive: j.arrive, durationMin: j.durationMin, changes: j.changes || 0, warn: j.warn || null,
+    legs: (j.legs || []).map((l) => ({ ...pickKeys(l, ASK_LEG_KEYS), realtime: !!l.realtime, cancelled: !!l.cancelled })),
+  }));
+  return r;
+}
+function askSlim(d) {
+  if (!d || typeof d !== "object") return d;
+  const r = {};
+  for (const [k, v] of Object.entries(d)) if (!ASK_DROP.has(k)) r[k] = v;
+  if (Array.isArray(d.cards)) r.cards = d.cards.map(askSlimCard);
+  return r;
+}
 
 async function bumpUsage(env, f) {
   const d = db(env);
@@ -2792,6 +2825,21 @@ async function processWatch(env, w, now, opts = {}) {
     if (!l.toStopId || !o.arr) continue;
     if (o.dep > now) continue;
     const left = o.arr - now;
+    // Started from "Start trip": one stop before you get off, from where the vehicle really is.
+    if (spec.track && l.tripId && left > 0 && left <= 15 * 60000 && !(st.oneStop || {})[i]) {
+      const c = await oneStopCheck(env, l).catch(() => null);
+      if (c && c.nextIsYours) {
+        st.oneStop = st.oneStop || {}; st.oneStop[i] = 1;
+        st.arrived = st.arrived || {}; st.arrived[i] = 1;
+        const at = c.eta ? ` at ${clock(c.eta)}` : "";
+        if (i === last) await push(`Next stop: ${l.to}`, `Get ready to get off. Your ${l.line} gets in${at}.`, { tagSuffix: "a" });
+        else {
+          const n = legs[i + 1], no = live[i + 1];
+          await push(`Next stop: ${l.to}, change here`, `Get off${at} for the ${clock(no.dep)} ${n.line}${no.platform ? " from " + no.platform : ""}, ${no.depLive ? lateWords(no.delay) : "scheduled"}.`, { tagSuffix: "a" });
+        }
+        continue;
+      }
+    }
     if (left <= 150000 && left > -60000 && !(st.arrived || {})[i]) {
       st.arrived = st.arrived || {}; st.arrived[i] = 1;
       const mins = Math.max(1, Math.round(left / 60000));
@@ -2828,6 +2876,8 @@ async function createWatch(env, b, now) {
     legs, lead: b.lead != null ? Math.max(0, Math.min(60, Number(b.lead) || 0)) : null,
     to: b.to ? { id: String(b.to.id || "").slice(0, 60), name: String(b.to.name || "").slice(0, 80) } : null,
     origin: b.origin ? { id: String(b.origin.id || "").slice(0, 60), name: String(b.origin.name || "").slice(0, 80) } : null,
+
+    track: !!b.track,
   };
   const L = legs[legs.length - 1];
   const end = Math.max(ms(L.arrPlanned || L.planned), ms(legs[0].planned)) + 3 * 3600000;
@@ -3048,6 +3098,8 @@ async function runTick(env, opts = {}) {
     // Retention promised in the privacy policy: trip searches 90 days, finished watches 30 days.
     await db(env).prepare("DELETE FROM searches WHERE at < ?1").bind(now - 90 * 86400000).run().catch(() => null);
     await db(env).prepare("DELETE FROM watches WHERE active = 0 AND updated < ?1").bind(now - 30 * 86400000).run().catch(() => null);
+    // Shared live trips: deleted, positions included, once the trip is over.
+    await db(env).prepare("DELETE FROM shares WHERE expires < ?1").bind(now).run().catch(() => null);
     // Contact form messages: deleted within 12 months, as the privacy policy says.
     await db(env).prepare("DELETE FROM feedback WHERE at < ?1").bind(now - 365 * 86400000).run().catch(() => null);
   }
@@ -3097,6 +3149,106 @@ function serviceQuery(p) {
   return q;
 }
 
+// ---- live trip start
+// Shared live trips. "Share live trip" makes a link anyone can open to follow a trip, with no
+// account. The owner's phone sends its position only while sharing is on, and the row (with every
+// position in it) is deleted when the trip ends, when the owner stops sharing, or when it expires.
+let shareSchema = null;
+async function ensureShares(env) {
+  const d = db(env);
+  if (!d) return false;
+  if (!shareSchema) {
+    shareSchema = d.prepare(`CREATE TABLE IF NOT EXISTS shares (id TEXT PRIMARY KEY, okey TEXT, device TEXT, spec TEXT, state TEXT,
+      created INTEGER, updated INTEGER, expires INTEGER)`).run().then(() => true).catch((e) => { shareSchema = null; throw e; });
+  }
+  return shareSchema;
+}
+const SHARE_MAX_MS = 6 * 3600000;
+const SHARE_GRACE_MS = 30 * 60000;
+const shareIdOk = (s) => typeof s === "string" && /^[A-Za-z0-9_-]{12,40}$/.test(s);
+function sharePos(p, now) {
+  if (!p || typeof p !== "object") return null;
+  const lat = Number(p.lat), lon = Number(p.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  // Rounded to about a metre: enough for the map, nothing finer is kept.
+  return { lat: Math.round(lat * 1e5) / 1e5, lon: Math.round(lon * 1e5) / 1e5, acc: Math.max(0, Math.min(5000, Math.round(Number(p.acc) || 0))), at: now };
+}
+function shareProg(p) {
+  if (!p || typeof p !== "object") return null;
+  const n = (v, lo, hi) => (Number.isFinite(Number(v)) ? Math.max(lo, Math.min(hi, Math.round(Number(v)))) : null);
+  const s = (v, k = 80) => (v == null ? null : String(v).replace(/[\u0000-\u001f]/g, " ").slice(0, k));
+  return { leg: n(p.leg, 0, 5), phase: s(p.phase, 12), next: s(p.next), stopsLeft: n(p.stopsLeft, 0, 200), eta: n(p.eta, 0, 9e15), note: s(p.note, 140) };
+}
+function shareExpiry(spec, prog, created, now) {
+  const L = spec.legs[spec.legs.length - 1];
+  const planned = ms(L.arrPlanned || L.planned) || now;
+  const eta = prog && prog.eta ? prog.eta : planned;
+  return Math.min(created + SHARE_MAX_MS, Math.max(now, planned, eta) + SHARE_GRACE_MS);
+}
+function shareOut(row, now) {
+  const spec = JSON.parse(row.spec || "{}"), st = JSON.parse(row.state || "{}");
+  const pos = st.pos && now - st.pos.at < 5 * 60000 ? st.pos : null;
+  return { id: row.id, title: spec.title || "Live trip", from: spec.from || null, to: spec.to || null, legs: spec.legs || [], pos, prog: st.prog || null,
+    started: row.created, updated: row.updated, expires: row.expires, now };
+}
+async function shareRoutes(request, env, url) {
+  const p = url.searchParams, now = Date.now();
+  if (!(await ensureShares(env).catch(() => false))) return json({ error: "Sharing is not available right now." }, 503);
+  const d = db(env);
+  const path = url.pathname;
+  if (path === "/api/share" && request.method === "GET") {
+    const id = p.get("id") || "";
+    if (!shareIdOk(id)) return json({ ended: true, error: "This live trip link is not valid." }, 404);
+    const row = await d.prepare("SELECT * FROM shares WHERE id = ?1").bind(id).first();
+    if (!row || row.expires < now) {
+      if (row) await d.prepare("DELETE FROM shares WHERE id = ?1").bind(id).run();
+      return json({ ended: true, error: "This trip has ended." }, 404);
+    }
+    return json(shareOut(row, now));
+  }
+  const b = request.method === "DELETE" ? { id: p.get("id"), key: request.headers.get("x-share-key") || p.get("key") } : await request.json().catch(() => ({}));
+  if (path === "/api/share" && request.method === "POST") {
+    const legs = (Array.isArray(b.legs) ? b.legs : []).slice(0, 6).map(legFromInput).filter((l) => l.stopId && l.planned);
+    if (!legs.length) return json({ error: "legs needed" }, 400);
+    const place = (x) => (x && typeof x === "object" ? { id: String(x.id || "").slice(0, 60), name: String(x.name || "").slice(0, 80) } : null);
+    const spec = { title: String(b.title || "Live trip").slice(0, 90), from: place(b.from), to: place(b.to), legs };
+    const prog = shareProg(b.prog), pos = sharePos(b.pos, now);
+    const id = rid(12), key = rid(18);
+    const expires = shareExpiry(spec, prog, now, now);
+    await d.prepare("INSERT INTO shares (id, okey, device, spec, state, created, updated, expires) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)")
+      .bind(id, key, cleanId(b.device) || null, JSON.stringify(spec), JSON.stringify({ pos, prog }), now, expires).run();
+    return json({ ok: true, id, key, url: `${url.origin}/live/?t=${id}`, expires });
+  }
+  if (!shareIdOk(String(b.id || ""))) return json({ error: "not found" }, 404);
+  const row = await d.prepare("SELECT * FROM shares WHERE id = ?1").bind(String(b.id)).first();
+  if (!row || !safeEq(String(b.key || ""), row.okey)) return json({ error: "not found" }, 404);
+  if (request.method === "DELETE" || (path === "/api/share/update" && b.end)) {
+    await d.prepare("DELETE FROM shares WHERE id = ?1").bind(row.id).run();
+    return json({ ok: true, ended: true });
+  }
+  if (path === "/api/share/update" && request.method === "POST") {
+    const spec = JSON.parse(row.spec || "{}");
+    if (Array.isArray(b.legs) && b.legs.length) {
+      const legs = b.legs.slice(0, 6).map(legFromInput).filter((l) => l.stopId && l.planned);
+      if (legs.length) spec.legs = legs;
+    }
+    const st = JSON.parse(row.state || "{}");
+    if ("pos" in b) st.pos = sharePos(b.pos, now);
+    if (b.prog) st.prog = shareProg(b.prog);
+    const expires = shareExpiry(spec, st.prog, row.created, now);
+    await d.prepare("UPDATE shares SET spec = ?2, state = ?3, updated = ?4, expires = ?5 WHERE id = ?1").bind(row.id, JSON.stringify(spec), JSON.stringify(st), now, expires).run();
+    return json({ ok: true, expires });
+  }
+  return json({ error: "method" }, 405);
+}
+// One stop before you get off: used by watches started from "Start trip".
+async function oneStopCheck(env, l) {
+  const s = await service(env, { mode: l.mode, line: l.line, trip: l.tripId, stop: l.stopId, to: l.toStopId, destId: l.destId, planned: l.planned });
+  if (!s || s.alightIndex == null || s.alightIndex < 1) return null;
+  return { nextIsYours: s.nextIndex === s.alightIndex, stopsLeft: s.alightIndex - s.nextIndex, eta: s.stops[s.alightIndex] ? ms(s.stops[s.alightIndex].estimated || s.stops[s.alightIndex].planned) : null };
+}
+// ---- live trip end
+
 export default {
   async fetch(request, env, exec) {
     const url = new URL(request.url);
@@ -3105,6 +3257,10 @@ export default {
     if (/^\/download\/[A-Za-z0-9._-]+\.apk$/.test(url.pathname)) return serveFile(env, url.pathname.slice("/download/".length), request);
     if (!url.pathname.startsWith("/api/")) return withSec(await env.ASSETS.fetch(request), false);
     if (!rateOk(request, url.pathname)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
+    if (/^\/api\/share(\/update)?$/.test(url.pathname)) {
+      try { return await shareRoutes(request, env, url); }
+      catch (e) { return json({ error: "Sharing is not available right now." }, 500); }
+    }
     if (/^\/api\/(hit|stats|feedback)$/.test(url.pathname)) {
       try { const s = await siteRoutes(request, env, url, exec); if (s) return s; }
       catch (e) { return json({ ok: false, error: "server", errors: { form: "We could not save that right now. Please email bidur@mail.tab.bot instead." } }, 500); }
@@ -3120,7 +3276,7 @@ export default {
           const actx = { ...ctx, origin: url.origin, home: askPlaceArg(p.get("home")), work: askPlaceArg(p.get("work")) };
           const d = await askV2(env, p.get("q") || "", actx);
           await afterAnswer(env, d, { profile, device: p.get("device"), exec });
-          return asTxt ? textRes(await askText(env, d)) : json(d);
+          return asTxt ? textRes(await askText(env, d)) : json(askSlim(d));
         }
         case "/api/departures": {
           const depKey = (p.get("stop") || "") + "|" + (p.get("mode") || "");
@@ -3412,6 +3568,32 @@ export default {
           if (!c) return json({ error: "not found" }, 404);
           if (p.get("reset") === "1") c.state = "{}";
           return json(await processCommute(env, c, Date.now(), sydneyNow(), { force: true, forceLeave: p.get("leave") === "1" }));
+        }
+        case "/api/admin/profile-copy": {
+          // Copies everything stored under one profile to a new private profile id (admin only).
+          // Device bound rows (push subscriptions, Expo tokens, watches, notes) stay with their
+          // device and follow when that device moves to the new profile.
+          if (!adminOk(request, p)) return json({ error: "forbidden" }, 403);
+          if (request.method !== "POST") return json({ error: "use POST" }, 405);
+          const b = await request.json().catch(() => ({}));
+          const from = cleanId(String(b.from || "").toLowerCase(), 40), to = cleanId(String(b.to || "").toLowerCase(), 40);
+          if (!from || to.length < 20 || from === to) return json({ error: "from and a new id of 20 to 40 characters are needed" }, 400);
+          await ensureSchema(env); await ensureSchema3(env);
+          const d = db(env);
+          const copied = {};
+          for (const t of ["saved", "saved_legs", "commutes", "searches", "dismissed"]) {
+            const rows = (await d.prepare(`SELECT * FROM ${t} WHERE profile = ?1 LIMIT 2000`).bind(from).all()).results || [];
+            let n = 0;
+            for (const row of rows) {
+              const r = { ...row, profile: to };
+              if (t === "commutes") r.id = "c" + [...crypto.getRandomValues(new Uint8Array(9))].map((x) => x.toString(16).padStart(2, "0")).join("");
+              const cols = Object.keys(r);
+              const res = await d.prepare(`INSERT OR IGNORE INTO ${t} (${cols.join(", ")}) VALUES (${cols.map((_, i) => "?" + (i + 1)).join(", ")})`).bind(...cols.map((c) => r[c])).run();
+              n += (res.meta && res.meta.changes) || 0;
+            }
+            copied[t] = { found: rows.length, copied: n };
+          }
+          return json({ ok: true, from, to, copied });
         }
         case "/api/admin/searches": {
           if (!adminOk(request, p)) return json({ error: "forbidden" }, 403);

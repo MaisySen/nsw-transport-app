@@ -36,7 +36,7 @@ test("no em dashes or en dashes anywhere", () => {
 
 test("live features are present in the app", () => {
   const js = read("src/public/app.js");
-  for (const s of ["`Live ${fmtSecs(S.lastOk)}`", "Scheduled", "/api/service", "every(15000", "every(10000", "tb_saved", "tb_stars"]) assert.ok(js.includes(s), "missing " + s);
+  for (const s of ["`Live ${fmtHM(S.lastOk)}`", "Scheduled", "/api/service", "every(15000", "every(10000", "tb_saved", "tb_stars"]) assert.ok(js.includes(s), "missing " + s);
 });
 
 test("proactive layer is present", () => {

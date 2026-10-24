@@ -79,7 +79,7 @@
         ${c.journeys.map((j, i) => journeyRow(j, null, c.highlight != null && i === c.highlight && c.journeys.length > 1)).join("") || '<div class="ak-empty">No trips found.</div>'}</div>`;
     }
     if (c.type === "alerts") {
-      return `<div class="ak-card">${c.items.map((a) => `<a class="ak-row ak-alert" ${a.url ? `href="${esc(a.url)}" target="_blank" rel="noopener"` : ""}><span class="ak-warn">${ICON.warn}</span><div class="ak-mid"><div class="ak-t3">${esc(a.title)}</div>${a.lines && a.lines.length ? `<div class="ak-t2">${esc(a.lines.join(", "))}</div>` : ""}</div></a>`).join("")}</div>`;
+      return `<div class="ak-card">${c.items.map((a) => `<a class="ak-row ak-alert" ${a.url && /^https:\/\//i.test(a.url) ? `href="${esc(a.url)}" target="_blank" rel="noopener"` : ""}><span class="ak-warn">${ICON.warn}</span><div class="ak-mid"><div class="ak-t3">${esc(a.title)}</div>${a.lines && a.lines.length ? `<div class="ak-t2">${esc(a.lines.join(", "))}</div>` : ""}</div></a>`).join("")}</div>`;
     }
     if (c.type === "stops") {
       return `<div class="ak-card">${c.items.map((s) => `<a class="ak-row" href="${esc(s.link.href)}"><div class="ak-mid"><div class="ak-t1">${esc(s.name)}</div><div class="ak-t2">${s.distance != null ? s.distance + " m" : ""}</div></div>${ICON.chev}</a>`).join("")}</div>`;
