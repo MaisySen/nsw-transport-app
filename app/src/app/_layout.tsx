@@ -67,6 +67,7 @@ export default function RootLayout() {
           <Stack.Screen name="watching" options={{ title: 'Watching' }} />
           <Stack.Screen name="welcome" options={{ title: 'Set up' }} />
           <Stack.Screen name="morning" options={{ title: 'Check before I go' }} />
+          <Stack.Screen name="shared/[id]" options={{ title: 'Shared trip' }} />
           <Stack.Screen name="watch/[id]" options={{ title: 'Watching', presentation: Platform.OS === 'ios' ? 'formSheet' : 'card', sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true }} />
         </Stack>
       </ThemeProvider>

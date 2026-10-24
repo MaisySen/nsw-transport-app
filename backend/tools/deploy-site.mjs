@@ -27,9 +27,9 @@ step("1. Pages project " + PROJECT);
 const projects = (await cf("GET", `/accounts/${ACC}/pages/projects`)).result || [];
 if (!projects.some((p) => p.name === PROJECT)) await cf("POST", `/accounts/${ACC}/pages/projects`, { name: PROJECT, production_branch: "main" });
 
-step("2. Upload site/");
+step("2. Upload site/ (run inside site/ so wrangler also builds site/functions)");
 if (!DRY) {
-  const r = spawnSync("npx", ["--yes", "wrangler@4", "pages", "deploy", siteDir, "--project-name", PROJECT, "--branch", "main", "--commit-dirty=true"], { stdio: "inherit", env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACC } });
+  const r = spawnSync("npx", ["--yes", "wrangler@4", "pages", "deploy", ".", "--project-name", PROJECT, "--branch", "main", "--commit-dirty=true"], { cwd: siteDir, stdio: "inherit", env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACC } });
   if (r.status !== 0) process.exit(r.status || 1);
 }
 

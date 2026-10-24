@@ -98,11 +98,13 @@ It turns Email Routing on (Cloudflare adds the MX, SPF and DKIM records in the t
 
 ## 6. App links
 
-`site/.well-known/apple-app-site-association` (team `B85KQRQZW7`, bundle `com.maisysen.nswtransport`) and `site/.well-known/assetlinks.json` (package `com.maisysen.nswtransport`) let `https://transportsydney.app/trip/...`, `/stop/...`, `/plan` and `/open/...` open the app. Both are served as `application/json` with no redirect (`_headers`). Without the app installed those addresses show `site/open/`, a page with the store links. Check after deploy:
+`site/.well-known/apple-app-site-association` (team `B85KQRQZW7`, bundle `com.maisysen.nswtransport`) and `site/.well-known/assetlinks.json` (package `com.maisysen.nswtransport`) let `https://transportsydney.app/trip/...`, `/stop/...`, `/plan` and `/open/...` open the app. Both are served as `application/json` with no redirect (`_headers`). Without the app, in a browser: `/trip/<share id>` answers 302 to `https://api.transportsydney.app/live/?t=<share id>` (the live trip page; `site/functions/trip/[id].js`, because Pages rules cannot put a path part into a query string; `site/_routes.json` runs it on `/trip/*` only), and `/stop/...`, `/plan` and `/open/...` show `site/open/`, a page with the store links (200, address kept). Run `wrangler pages deploy` from inside `site/` (as `tools/deploy-site.mjs` does) or the function is left out. This box resolves the domain to IPv6 only, so add `-4 --doh-url https://1.1.1.1/dns-query` to curl here. Check after deploy:
 
 ```bash
 curl -sI https://transportsydney.app/.well-known/apple-app-site-association | grep -i content-type   # application/json
 curl -s https://transportsydney.app/.well-known/assetlinks.json
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://transportsydney.app/trip/abcdefghijkl   # 302 https://api.transportsydney.app/live/?t=abcdefghijkl
+curl -s -o /dev/null -w '%{http_code}\n' 'https://transportsydney.app/plan?from=200060&to=2150110'      # 200 (Open in the app page)
 ```
 
 `assetlinks.json` holds the SHA-256 of the Android upload key (the key the APK and Play uploads are signed with). With Play App Signing, Google signs installs from Play with its own key: copy that key's SHA-256 from Play Console, Test and release, App integrity, App signing key certificate, and add it to the `sha256_cert_fingerprints` list. The apps also need the domain declared in their builds: iPhone entitlement `applinks:transportsydney.app`, Android intent filter with `autoVerify` for `transportsydney.app` (a native build each).
