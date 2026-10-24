@@ -397,12 +397,24 @@ public enum LiveTripLogic {
 
     static func timed(_ s: ServiceStop) -> Bool { (s.planned != nil || s.estimated != nil) && s.skipped != true }
 
+    /// A service answer belongs to a leg only when it is the same run: the stop you board at is
+    /// planned within 2 minutes of the leg. Once a run has finished, the server can answer with
+    /// the next service on the line; that answer must not move the trip onto the next train.
+    public static func matches(_ r: ServiceResponse, leg l: WatchLeg) -> Bool {
+        guard let m = r.mineIndex, r.stops.indices.contains(m), let p = r.stops[m].planned, let lp = l.planned else { return true }
+        return abs(p.timeIntervalSince(lp)) <= 120
+    }
+
     /// `services[i]` is the latest /api/service answer for leg i, or nil.
-    public static func compute(legs: [WatchLeg], services: [ServiceResponse?], now: Date = Date()) -> LiveTripState? {
+    public static func compute(legs: [WatchLeg], services raw: [ServiceResponse?], now: Date = Date()) -> LiveTripState? {
         guard !legs.isEmpty else { return nil }
+        let services: [ServiceResponse?] = legs.indices.map { i in
+            guard i < raw.count, let r = raw[i], matches(r, leg: legs[i]) else { return nil }
+            return r
+        }
         var times: [LiveTripState.LegTimes] = []
         for (i, l) in legs.enumerated() {
-            let d = i < services.count ? services[i] : nil
+            let d = services[i]
             let mine = d.flatMap { r in r.mineIndex.flatMap { r.stops.indices.contains($0) ? r.stops[$0] : nil } }
             let off = d.flatMap { r in r.alightIndex.flatMap { r.stops.indices.contains($0) ? r.stops[$0] : nil } }
             let plannedDep = l.estimated ?? l.planned ?? now
@@ -453,6 +465,39 @@ public enum LiveTripLogic {
         }
         return LiveTripState(done: false, current: cur, phase: phase, nextStop: nextStop, stopsLeft: stopsLeft,
                              times: times, connections: conns, eta: times[last].arr, live: times[cur].live)
+    }
+}
+
+// MARK: Notification dedupe
+
+/// Each trip alert once. The phone can hear the same moment twice: from the server watch and
+/// from the app's own live trip, or from two server checks that ran together. Alerts about the
+/// same moment share a key ("Arriving at X in 2 min", "Next stop: X" and "Change at X in 1 min"
+/// are all "arrive:x"), and a key posts once inside the window.
+public struct NoticeDeduper: Sendable {
+    public private(set) var recent: [String: Date] = [:]
+    public init() {}
+
+    public static func key(title: String) -> String {
+        var t = title.lowercased().trimmingCharacters(in: .whitespaces)
+        t = t.replacingOccurrences(of: #" in \d+ min(utes?)?"#, with: "", options: .regularExpression)
+        for suffix in [", change here", " (get off)", ", get off"] where t.hasSuffix(suffix) {
+            t = String(t.dropLast(suffix.count))
+        }
+        for prefix in ["next stop: ", "arriving at ", "change at "] where t.hasPrefix(prefix) {
+            t = "arrive:" + t.dropFirst(prefix.count)
+        }
+        if t.hasPrefix("arrive:") && t.hasSuffix(" station") { t = String(t.dropLast(" station".count)) }
+        return t
+    }
+
+    /// True the first time an alert with this title is seen inside the window.
+    public mutating func shouldPost(title: String, now: Date = Date(), window: TimeInterval = 15 * 60) -> Bool {
+        recent = recent.filter { now.timeIntervalSince($0.value) < window }
+        let k = Self.key(title: title)
+        if recent[k] != nil { return false }
+        recent[k] = now
+        return true
     }
 }
 

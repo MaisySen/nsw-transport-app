@@ -62,19 +62,38 @@ extension AppStore {
         if let share = trip.share {
             try? await api.updateShare(share, leg: st.current, phase: st.phase, next: st.nextStop, stopsLeft: st.stopsLeft, eta: st.eta)
         }
-        if st.done && st.eta.addingTimeInterval(10 * 60) < Date() {
-            await endLiveTrip(silent: true)
+        // Arrived: the trip ends here, once. It never rolls on to the next service.
+        if st.done {
+            await arriveLiveTrip(trip)
         }
     }
 
-    /// Get off and connection alerts, once per leg.
+    /// The final step of a live trip: one "You've arrived" alert, then the Lock Screen card, the
+    /// share link and the app's own following all stop.
+    func arriveLiveTrip(_ trip: LiveTripRecord) async {
+        guard liveTrip?.started == trip.started else { return }
+        let place = Naming.short(trip.to.name)
+        if liveAlerted.insert("arrived").inserted {
+            // The server watch says it with the app closed; the app says it only when there is none.
+            if trip.watchID == nil {
+                Notifier.post(title: "You've arrived at \(place)", body: trip.title, id: "live-arrived-\(trip.started.timeIntervalSince1970)")
+            }
+            show(Banner(title: "You've arrived at \(place)", symbol: "checkmark.circle.fill"))
+            success()
+        }
+        await endLiveTrip(silent: true, keepServerWatch: trip.watchID != nil)
+    }
+
+    /// Get off and connection alerts, once per leg. When the server follows the trip it sends
+    /// these as notifications, so the app shows them in app only.
     private func liveAlerts(trip: LiveTripRecord, state st: LiveTripState) {
         let last = trip.legs.count - 1
+        let notify = trip.watchID == nil
         if !st.done, st.phase == "ride", let n = st.stopsLeft, n == 1, let next = st.nextStop {
             let key = "off\(st.current)"
             if liveAlerted.insert(key).inserted {
                 let title = st.current < last ? "Next stop: \(next), change here" : "Next stop: \(next) (get off)"
-                Notifier.post(title: title, body: trip.title, id: "live-\(key)-\(trip.started.timeIntervalSince1970)")
+                if notify { Notifier.post(title: title, body: trip.title, id: "live-\(key)-\(trip.started.timeIntervalSince1970)") }
                 show(Banner(title: title, symbol: "bell.fill"))
                 success()
             }
@@ -82,11 +101,11 @@ extension AppStore {
         for c in st.connections {
             if c.risk == "miss", liveAlerted.insert("miss\(c.index)").inserted {
                 let body = "Live times leave \(abs(c.spare)) min too little to catch the \(c.nextLine) at \(Naming.short(c.at))."
-                Notifier.post(title: "Connection at risk", body: body, id: "live-miss\(c.index)-\(trip.started.timeIntervalSince1970)")
+                if notify { Notifier.post(title: "Connection at risk", body: body, id: "live-miss\(c.index)-\(trip.started.timeIntervalSince1970)") }
                 show(Banner(title: "Connection at risk", detail: body, symbol: "exclamationmark.triangle.fill"))
             } else if c.risk == "tight", liveAlerted.insert("tight\(c.index)").inserted {
                 let body = "\(max(0, c.spare)) min to catch the \(c.nextLine)."
-                Notifier.post(title: "Tight change at \(Naming.short(c.at))", body: body, id: "live-tight\(c.index)-\(trip.started.timeIntervalSince1970)")
+                if notify { Notifier.post(title: "Tight change at \(Naming.short(c.at))", body: body, id: "live-tight\(c.index)-\(trip.started.timeIntervalSince1970)") }
             }
         }
     }
@@ -116,7 +135,8 @@ extension AppStore {
     }
 
     /// End trip: deletes the share link and the server watch, and ends the Lock Screen card.
-    func endLiveTrip(silent: Bool = false) async {
+    /// On arrival the server watch is left to finish by itself, so it can say "arrived" once.
+    func endLiveTrip(silent: Bool = false, keepServerWatch: Bool = false) async {
         guard let trip = liveTrip else { return }
         liveTask?.cancel()
         liveTask = nil
@@ -124,7 +144,7 @@ extension AppStore {
         liveState = nil
         liveServices = []
         if let s = trip.share { try? await api.endShare(s) }
-        if let id = trip.watchID { try? await api.unwatch(id: FlexID(id), device: device) }
+        if !keepServerWatch, let id = trip.watchID { try? await api.unwatch(id: FlexID(id), device: device) }
         await LiveTripActivities.endAll()
         if !silent {
             show(Banner(title: "Trip ended", symbol: "checkmark.circle.fill"))

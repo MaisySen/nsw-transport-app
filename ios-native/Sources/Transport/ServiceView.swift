@@ -203,16 +203,7 @@ struct ServiceSheet: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(key.departure == nil)
-                        Button {
-                            Task { await LiveActivities.shared.start(key: key, service: data) }
-                            store.success()
-                        } label: {
-                            Label("Lock Screen", systemImage: "lock.iphone")
-                                .labelStyle(.titleOnly)
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
+
                     }
                     .controlSize(.large)
                     .listRowBackground(Color.clear)

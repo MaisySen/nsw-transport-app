@@ -365,7 +365,12 @@ enum Notifier {
     }
 
     /// A local notification. Works with a free Apple ID: no push entitlement needed.
+    nonisolated(unsafe) private static var dedupe = NoticeDeduper()
+
+    /// Posts a notification now. The same moment is posted once (see NoticeDeduper), and the
+    /// identifier is stable, so a repeat replaces instead of adding.
     static func post(title: String, body: String, id: String) {
+        guard dedupe.shouldPost(title: title) else { return }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body

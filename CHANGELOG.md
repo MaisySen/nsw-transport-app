@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 24 Oct 2026
 
+### iPhone app: live trip ends at your stop, each alert once (10:10 PM)
+* Fixed: a live trip could roll on to the next train after you arrived. Once a run has finished the server can answer with the next service on the line; the app now only accepts an answer for the same run (the stop you board at planned within 2 minutes of your leg), so arrival stays arrival.
+* The live trip now ends when you arrive: one "You've arrived" alert, then the Lock Screen card and the share link stop. Before, it kept running for 10 more minutes.
+* Each trip alert is said once. When the server follows your trip, the app no longer posts its own copy of the same alert, and alerts about the same moment ("Arriving at Kings Cross in 2 min", "Next stop: Kings Cross") post once.
+* The Lock Screen buttons on the trip screen and the service map are gone. Start trip puts the countdown on the Lock Screen by itself.
+* New unit tests for arrival, no rollover and alert dedupe (LiveTripLogicTests, also run on Linux).
+
 ### Web and server: audit fixes (security, privacy, accessibility, 5:20 PM)
 * Fixed: the Watching tab crashed for anyone without alerts turned on. It now shows a Turn on alerts card (or why alerts cannot work in that browser). A headless check opens every route in light and dark and fails on any page error.
 * The shared fallback profile is gone. With no profile the server logs no searches and returns no saved trips or commutes, and writes answer "profile needed". A profile id must be 6 to 40 safe characters. Browsers still on the old shared profile move to a new random one and their saved trips are uploaded again. The web app and Ask send the profile in an `x-profile` header, not the address. `/api/history/delete` also deletes the searches this device made under an older profile id.

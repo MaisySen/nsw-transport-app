@@ -470,17 +470,10 @@ struct JourneyDetailView: View {
             }
 
             Section {
-                HStack(spacing: 10) {
-                    Button {
-                        Task { await store.watch(journey.watchRequest(device: store.device, profile: store.api.profile, from: from, to: to)) }
-                    } label: { Label("Watch trip", systemImage: "bell.fill").frame(maxWidth: .infinity) }
-                    .buttonStyle(.borderedProminent)
-                    Button {
-                        Task { await LiveActivities.shared.start(journey: journey, from: from, to: to) }
-                        store.success()
-                    } label: { Label("Lock Screen", systemImage: "platter.filled.bottom.iphone").frame(maxWidth: .infinity) }
-                    .buttonStyle(.bordered)
-                }
+                Button {
+                    Task { await store.watch(journey.watchRequest(device: store.device, profile: store.api.profile, from: from, to: to)) }
+                } label: { Label("Watch trip", systemImage: "bell.fill").frame(maxWidth: .infinity) }
+                .buttonStyle(.bordered)
                 .controlSize(.large)
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets())
