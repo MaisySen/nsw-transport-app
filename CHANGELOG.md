@@ -4,6 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 24 Oct 2026
 
+### Android app: Park and Ride, lifts and station access, Opal machines (over the air update, 4:29 PM)
+* Station screens show Park and Ride car parks with live spaces free, a fill bar and a Spaces free, Nearly full, Full or No live count badge. The bell on each car park sets a notification for when it gets nearly full in the next 3 hours.
+* Station screens show the access level, lifts and escalators, live lift outages (tap one for the Transport for NSW alert), Lifts working when none are out, the Opal machine, short platform, facilities and peak times, with the sources named under each section.
+* Trips that start at a Park and Ride station show its live spaces above the trip list. Trip rows and saved trips on Home show a red Lift out line when a lift is out at a station on the trip, and each leg shows step free or lift out chips for both stations.
+* Settings > Accessibility: Accessible trips (step free trips only; trips show "Step free trips only."), Lift outage alerts for stations on saved trips (kept in step when saved trips change), and Opal top up machines near me.
+* New Opal machines screen (from Search and Settings): a map and a list, closest first, with All machines and Takes cash. New Park and Ride screen in Search: every car park with live spaces, closest first.
+* Ask shows Park and Ride and station answers as cards.
+* Fixed: the Commute menu in Settings had 5 actions but Android dialogs show at most 3, so Weekdays only, Delete and Cancel could be hidden. It is now a bottom sheet with every action.
+
 ### Park and Ride, lifts and station access, Opal machines (web and server, 4:15 PM)
 * Station screens show Park and Ride car parks with live spaces free, a fill bar and a Nearly full or Full badge. Tap the bell on a car park for a notification if it gets nearly full in the next 3 hours.
 * Trips that start at a Park and Ride station show its live spaces above the trip list. Search has a Park and Ride list with every car park, closest first.

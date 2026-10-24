@@ -1,6 +1,6 @@
 # Releases
 
-Every shipped build and update. Times are Sydney time (AEDT). Updated 24 Oct 2026, 4:00 PM.
+Every shipped build and update. Times are Sydney time (AEDT). Updated 24 Oct 2026, 4:30 PM.
 
 ## iPhone (native SwiftUI)
 
@@ -39,6 +39,7 @@ Project `cf1f4c4c-5157-41bf-a254-4480223f6368`, owner `bidurtab`. `production` i
 
 | Time (about) | Update | production group | expo-go group |
 | --- | --- | --- | --- |
+| 24 Oct, 4:29 PM | Park and Ride live spaces with Nearly full alerts (station screen, trips from a Park and Ride station, Park and Ride list in Search); station access, lifts and live lift outages on station screens; step free and lift out marks on trip legs; Settings > Accessibility (Accessible trips sends acc=1, Lift outage alerts); Opal machine finder with a Takes cash filter; Ask parking and station cards; the Commute menu in Settings is a bottom sheet so all 5 actions show on Android. Commit 5eb62a5. Update ids: production 01a16c61-a7e2-7fa2-917b-ce685cbec033, expo-go 01a16c62-8dd2-7ff7-a98a-03f253205988 | d3be033e-c835-4084-a635-78c16cdc6664 | 11d4ee34-d711-4e8d-b80b-1ec7b82e5a8a |
 | 24 Oct, 4:00 PM | Live trip tracking (Start trip, live map, next stop, countdown, stops left, get off and connection alerts, Share trip, ongoing notification with Share and End trip, Trip in progress bar); Opal fare estimates with a fare type setting; no hard coded stations; Recent trips and stops with Clear and Undo; saved trip Edit and Delete; Clear history and Delete all my data. Commits db1f3aa and the Edit trip fix after it. Update ids: production 01a16c46-b2d9-72bc-9251-2e1907293f77, expo-go 01a16c47-41a7-7fc3-8c8e-aeb2b447c653 | 644d626e-54bd-4927-ba1a-41b86f7a5a79 (republished over 646ed232-d5ba-4c93-95f7-5d1084bb4ca6 from 3:54 PM) | 874c3185-364f-4120-baf9-bea6dd4b673e (over f933e5e8-d6b1-42c8-9ea5-9b9282a9d234) |
 | 24 Oct, 2:55 PM | Published with Android versionCode 5: the current JavaScript, including random install ids and the private profile page | ae1ab30a-fffe-413a-b3eb-054dc99ed2da | c2641a5f-66e8-4ad2-9fb0-a93797177115 |
 | 24 Oct, 2:15 PM | Ask: several stops in one question, Open trip and Save trip open as a multi leg trip | 809a3a8e-74dd-4fb6-b082-2ace00c68948 (republished over 1e683ee4-ff26-4485-ade0-f1858ab1f73c) | edd8ad30-66d9-4347-b8de-1108c7dc2801 |
