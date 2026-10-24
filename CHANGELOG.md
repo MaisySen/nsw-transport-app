@@ -4,6 +4,16 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 24 Oct 2026
 
+### Android app: Fintex in About, map scroll, taps that buzzed and did nothing, contrast and touch targets (over the air update, 11:16 PM)
+* About in More: Made by Fintex Australia Pty Ltd, Contact us (opens an email to contact@fintex.au), Fintex website (fintex.au) and a copyright line. No other email address is left in the app.
+* Opal machines: dragging the map moves the map and the page stays still; the page scrolls again when your finger lifts. The small map no longer rotates or tilts. On the web preview it has + and - buttons and the mouse wheel scrolls the page.
+* Fixed: on Home, tapping near the arrow on a trip card buzzed and did nothing (the reorder handle took the tap). A tap there opens the trip; press and drag the handle to reorder.
+* Fixed: a choice in a bottom menu (for example Opal fare type, Privacy and data) could vanish on Android when it opened a dialog. It now runs once the menu has closed.
+* Start trip opens the live trip straight away; the notification prompt follows. End trip and Done leave the screen at once. Buttons behind a swipe (Watch, Delete) use a press that the swipe can't swallow. Vibrations never hold up a tap.
+* Easier to read: every text colour is at least 4.5:1 in light and dark, line badges use dark text on light colours (T1, buses), countdowns, the lift out and Cancelled labels and the Trip in progress bar are darker, and the bottom tabs have set colours. TalkBack skips icons and reads the Accessible trips and Lift outage alerts switches by name.
+* Bigger touch targets (48 dp): rows, the Trip and Departures switch, the From and To fields, the Ask field, the fare row, Earlier and Later, card headers, header icons and filter chips.
+* Checked: axe finds no problems on 10 screens in light and dark (it found 86 before), 26 of 26 buttons act on the first tap in the browser, and Burwood to Strathfield replays to one You've arrived with and without server alerts.
+
 ### Android app: cleaner screens, one way to do each job, buttons act on the first tap (over the air update, 10:33 PM, and 10:37 PM)
 * Four tabs: Home, Plan, Ask and More. Watching moved into More (with a count of what is being watched), and Settings is now the Settings section of More.
 * One place to plan: the Plan tab, with From and To (and a swap button) for a trip, or Departures for a stop. Home no longer has its own search field or + button, and the Search tab's separate Stops and Trip planner screens are one screen. Recent trips and recent stops show only in Plan, each with Clear.
