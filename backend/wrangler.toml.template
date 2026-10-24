@@ -21,7 +21,7 @@ run_worker_first = true
 API_ONLY = "1"
 API_HOST = "api.transportsydney.app"
 SITE_URL = "https://transportsydney.app"
-VAPID_SUBJECT = "mailto:contact@fintex.au"
+VAPID_SUBJECT = "mailto:hello@transportsydney.app"
 
 [[d1_databases]]
 binding = "DB"

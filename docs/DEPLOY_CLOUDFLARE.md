@@ -41,8 +41,10 @@ Records in the Cloudflare zone once deployed (the scripts create them; this is t
 | Worker (shown as `AAAA 100::`) | `api` | Worker `transport-api` | Proxied | `wrangler deploy` (custom domain in `wrangler.toml`) |
 | CNAME | `@` | `transportsydney.pages.dev` | Proxied | `tools/deploy-site.mjs` |
 | CNAME | `www` | `transportsydney.pages.dev` | Proxied | `tools/deploy-site.mjs` |
-| TXT | `@` | `v=spf1 -all` | | by hand, recommended: the domain sends no email |
-| TXT | `_dmarc` | `v=DMARC1; p=reject;` | | by hand, recommended: stops others sending email as the domain |
+| MX | `@` | `route1.mx.cloudflare.net`, `route2.mx.cloudflare.net`, `route3.mx.cloudflare.net` (priorities set by Cloudflare) | DNS only | `tools/setup-email.mjs` (Email Routing) |
+| TXT | `@` | `v=spf1 include:_spf.mx.cloudflare.net ~all` | DNS only | `tools/setup-email.mjs` (Email Routing) |
+| TXT | `cf2024-1._domainkey` | the DKIM key Email Routing generates | DNS only | `tools/setup-email.mjs` (Email Routing) |
+| TXT | `_dmarc` | `v=DMARC1; p=quarantine; adkim=r; aspf=r; rua=mailto:contact@fintex.au` | DNS only | `tools/setup-email.mjs` |
 
 Certificates are issued by Cloudflare on their own. `.app` only works over HTTPS, which is already the case.
 
@@ -81,7 +83,30 @@ node tools/deploy-site.mjs
 
 It creates the Pages project `transportsydney` if missing, uploads `site/`, adds `transportsydney.app` and `www.transportsydney.app` as custom domains, sets both DNS records in the table above, and adds the `www` to bare domain redirect. `_headers` in `site/` sets HSTS, a strict Content Security Policy and the other security headers.
 
-## 5. Check
+## 5. Email addresses on the domain
+
+`support@transportsydney.app` (support page, store listings), `privacy@transportsydney.app` (privacy policy) and `hello@transportsydney.app` (everything else) forward to `contact@fintex.au` with Cloudflare Email Routing (free).
+
+```bash
+cd backend
+node tools/setup-email.mjs --dry-run
+node tools/setup-email.mjs
+```
+
+It turns Email Routing on (Cloudflare adds the MX, SPF and DKIM records in the table above), adds `contact@fintex.au` as the destination, adds one forwarding rule per address and the DMARC record, then prints the mail records. **One click needed:** Cloudflare emails `contact@fintex.au` a "Verify email address" link; nothing is forwarded until it is clicked. Replies go out from `contact@fintex.au` (forwarding does not send mail as the new addresses). Token permissions for this step: Account Email Routing Addresses Edit; Zone Email Routing Rules Edit and Zone Settings Edit, plus DNS Edit.
+
+## 6. App links
+
+`site/.well-known/apple-app-site-association` (team `B85KQRQZW7`, bundle `com.maisysen.nswtransport`) and `site/.well-known/assetlinks.json` (package `com.maisysen.nswtransport`) let `https://transportsydney.app/trip/...`, `/stop/...`, `/plan` and `/open/...` open the app. Both are served as `application/json` with no redirect (`_headers`). Without the app installed those addresses show `site/open/`, a page with the store links. Check after deploy:
+
+```bash
+curl -sI https://transportsydney.app/.well-known/apple-app-site-association | grep -i content-type   # application/json
+curl -s https://transportsydney.app/.well-known/assetlinks.json
+```
+
+`assetlinks.json` holds the SHA-256 of the Android upload key (the key the APK and Play uploads are signed with). With Play App Signing, Google signs installs from Play with its own key: copy that key's SHA-256 from Play Console, Test and release, App integrity, App signing key certificate, and add it to the `sha256_cert_fingerprints` list. The apps also need the domain declared in their builds: iPhone entitlement `applinks:transportsydney.app`, Android intent filter with `autoVerify` for `transportsydney.app` (a native build each).
+
+## 7. Check
 
 ```bash
 A=https://api.transportsydney.app
@@ -93,7 +118,7 @@ for p in / /support/ /privacy/ /terms/; do echo "$p $(curl -s -o /dev/null -w '%
 curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://www.transportsydney.app/privacy/   # 301 https://transportsydney.app/privacy/
 ```
 
-## 6. Move the data (optional)
+## 8. Move the data (optional)
 
 The new D1 database starts empty: saved trips, commutes, morning checks, watches and notification sign ups live in the first deploy's database. To copy them, the first deploy needs this code's admin export endpoint (`GET /api/admin/export`), which means one deploy of `backend/` to the first address with its usual runbook. Nothing changes there for the apps (the old address keeps its full behaviour), but it is a deploy of the live address, so do it only with Bidur's go ahead.
 
@@ -106,14 +131,14 @@ rm export.sql                                                                   
 
 Do the export right before the switch, and pause the first deploy's minute tick right after it (otherwise both addresses send the same alerts).
 
-## 7. The switch
+## 9. The switch
 
 The apps read `copy.api_base` from `/api/app/config` and move to it (https only, from their allowlist). Android round 4 and iPhone build 108 and later read it; older builds keep using the old address until they update.
 
-1. Sections 3 to 5 pass.
+1. Sections 3 to 7 pass.
 2. On the **new** address, so moved apps stay moved:
    `curl -X POST -H "x-admin-key: $ADMIN_KEY" -H "content-type: application/json" -d '{"copy":{"api_base":"https://api.transportsydney.app"}}' "https://api.transportsydney.app/api/app/config?platform=ios"` and the same with `platform=android`.
-3. Optional data move (section 6).
+3. Optional data move (section 8).
 4. The same two POSTs on the **old** address. A POST replaces that platform's stored overrides, so first read `/api/app/config?platform=ios` there and include any flags or timings that differ from the defaults.
 5. Apps pick it up at their next launch or within 30 minutes. Watch `/api/usage` on both addresses: calls move to the new one.
 6. When the old address has had no traffic for a while: stop its minute tick and retire it.

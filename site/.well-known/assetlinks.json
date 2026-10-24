@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.maisysen.nswtransport",
+      "sha256_cert_fingerprints": [
+        "A3:BF:0D:9A:AB:AF:2C:51:22:17:32:12:94:61:4A:24:52:37:33:ED:16:39:B3:A4:11:B6:1A:13:87:E7:7E:EE"
+      ]
+    }
+  }
+]

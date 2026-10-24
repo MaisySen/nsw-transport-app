@@ -1,2 +1,9 @@
-/download/ / 301
-/download / 301
+# Pages rules. App links (trip, stop, plan) open the app through the files in .well-known; when the
+# app is not installed the browser shows the Open in the app page. Status 200 keeps the address.
+/download/  /  301
+/download   /  301
+/trip/*     /open/  200
+/stop/*     /open/  200
+/plan       /open/  200
+/plan/*     /open/  200
+/open/*     /open/  200
