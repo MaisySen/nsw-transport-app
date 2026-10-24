@@ -21,21 +21,34 @@ window.TBApp = () => {
     get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
   };
+  // Random ids from the browser's secure generator: a profile id is the only key to its saved trips.
+  const randId = (prefix) => {
+    try { return prefix + Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(36).padStart(2, "0")).join(""); }
+    catch (e) { return prefix + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) + Date.now().toString(36); }
+  };
   const PROFILE = (() => {
-    const me = new URLSearchParams(location.search).get("me");
-    if (me) LS.set("tb_profile", me.toLowerCase());
+    const qp = new URLSearchParams(location.search);
+    const me = (qp.get("me") || "").toLowerCase().replace(/[^a-z0-9_.:-]/g, "").slice(0, 40);
+    if (qp.has("me")) {
+      // A ?me= link switches to another set of saved trips. Ask first when this browser already
+      // has its own, so a link from someone else cannot quietly move you onto their profile.
+      const cur = LS.get("tb_profile", null);
+      if (me && me !== cur && (!cur || window.confirm("Open the saved trips from this link? Your current trips stay saved on the server under your old profile."))) LS.set("tb_profile", me);
+      qp.delete("me");
+      try { history.replaceState(null, "", location.pathname + (qp.toString() ? "?" + qp : "") + location.hash); } catch (e) { /* old browser */ }
+    }
     let p = LS.get("tb_profile", null);
     if (!p) {
       // Browsers that used the app before per install profiles keep the original profile.
       // Everyone else gets a random profile of their own, so saved trips are never shared.
-      p = LS.get("tb_device", null) ? "bidur" : "w" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      p = LS.get("tb_device", null) ? "bidur" : randId("w");
       LS.set("tb_profile", p);
     }
     return p;
   })();
   const DEVICE = (() => {
     let d = LS.get("tb_device", null);
-    if (!d) { d = "d" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); LS.set("tb_device", d); }
+    if (!d) { d = randId("d"); LS.set("tb_device", d); }
     return d;
   })();
   const stars = () => LS.get("tb_stars", []);

@@ -9,8 +9,19 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export let PROFILE = '';
 let cached: string | null = null;
 
+// A profile id is the only key to its saved trips, so it is long and random.
+// Uses the secure generator when the runtime has one.
 function randomId(prefix: string) {
-  return prefix + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+  try {
+    const c = (globalThis as any).crypto;
+    if (c && typeof c.getRandomValues === 'function') {
+      const b: Uint8Array = c.getRandomValues(new Uint8Array(12));
+      return prefix + Array.from(b, (x) => x.toString(36).padStart(2, '0')).join('');
+    }
+  } catch {}
+  let s = '';
+  while (s.length < 24) s += Math.random().toString(36).slice(2);
+  return prefix + s.slice(0, 24);
 }
 
 export async function initProfile(): Promise<string> {
