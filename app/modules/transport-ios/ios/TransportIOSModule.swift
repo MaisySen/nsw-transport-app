@@ -60,6 +60,12 @@ public class TransportIOSModule: Module {
       }
     }
 
+    /// 2: the trip card carries `updated` and the widget draws a stale card as "Updated 8:21am" with clock times.
+    /// The app reads this to choose the card's stale date (iosNative.cardVersion). Builds without it are version 1.
+    Function("liveCardVersion") { () -> Int in
+      return 2
+    }
+
     Function("areActivitiesEnabled") { () -> Bool in
       #if canImport(ActivityKit)
       if #available(iOS 16.2, *) {
