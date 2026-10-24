@@ -4,6 +4,9 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Shared trip links open in a browser again (server, 25 Oct, 10:03 AM)
+* A trip shared from the app and opened by someone without the app showed "This trip has ended" straight away, because the link's page asked the new server, which did not have the share. It now finds the share and shows the live trip. No update needed.
+
 ### QA pass A fixes (over the air update for iPhone and Android, 25 Oct, 10:00 AM)
 * Trip screen: services from Earlier services that have already left say Left instead of Now.
 * Trip legs and the live trip say 1 stop instead of 1 stops.
