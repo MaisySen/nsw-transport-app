@@ -81,7 +81,7 @@ jobs:
           xcrun simctl boot "$DEV"
           xcrun simctl bootstatus "$DEV" -b > /dev/null
           xcrun simctl status_bar "$DEV" override --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 || true
-          xcrun simctl privacy "$DEV" grant location bot.tab.nswtransport || true
+          xcrun simctl privacy "$DEV" grant location com.maisysen.nswtransport || true
           xcrun simctl location "$DEV" set -33.8773,151.1043 || true
 
       - name: Build for testing
@@ -113,6 +113,38 @@ jobs:
           xcodebuild test-without-building -project Transport.xcodeproj -scheme Transport -configuration Debug \
             -destination "id=$DEV" -derivedDataPath dd-test -resultBundlePath ../out/dark.xcresult \
             -only-testing:TransportUITests CODE_SIGNING_ALLOWED=NO > ../test-dark.log 2>&1
+
+      - name: App Store screenshots (6.9 and 6.5 inch, live data)
+        continue-on-error: true
+        timeout-minutes: 25
+        run: |
+          RT=$(xcrun simctl list runtimes -j | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)['runtimes'] if x.get('platform')=='iOS' and x.get('isAvailable')]; r.sort(key=lambda x:[int(p) for p in x['version'].split('.')]); print(r[-1]['identifier'])")
+          xcrun simctl shutdown "$(cat ../sim-id.txt)" || true
+          shoot() {
+            NAME="$1"; TYPE="$2"; MODE="$3"; DIR="$GITHUB_WORKSPACE/out/store/$NAME"
+            DEV=$(xcrun simctl create "Store $NAME" "$TYPE" "$RT") || return 1
+            xcrun simctl boot "$DEV"; xcrun simctl bootstatus "$DEV" -b > /dev/null
+            xcrun simctl status_bar "$DEV" override --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 --dataNetwork 5g || true
+            xcrun simctl privacy "$DEV" grant location com.maisysen.nswtransport || true
+            xcrun simctl location "$DEV" set -33.8773,151.1043 || true
+            xcrun simctl ui "$DEV" appearance "$MODE"
+            mkdir -p "$DIR"
+            TEST_RUNNER_STORE_SHOTS=1 TEST_RUNNER_SHOTS_DIR="$DIR" TEST_RUNNER_SHOT_PREFIX="$MODE" \
+            xcodebuild test-without-building -project Transport.xcodeproj -scheme Transport -configuration Debug \
+              -destination "id=$DEV" -derivedDataPath dd-test -only-testing:TransportUITests/StoreShots \
+              CODE_SIGNING_ALLOWED=NO > "../store-$NAME-$MODE.log" 2>&1 || true
+            xcrun simctl shutdown "$DEV" || true
+            ls "$DIR"
+          }
+          shoot iphone-6.9 com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max light
+          shoot iphone-6.9 com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max dark
+          shoot iphone-6.5 com.apple.CoreSimulator.SimDeviceType.iPhone-11-Pro-Max light \
+            || shoot iphone-6.5 com.apple.CoreSimulator.SimDeviceType.iPhone-14-Plus light
+          python3 -c "
+          import glob,struct
+          for p in sorted(glob.glob('../out/store/*/*.png')):
+              w,h=struct.unpack('>II',open(p,'rb').read()[16:24]); print(p,w,h)
+          " || true
 
       - name: Collect screenshots
         if: always()
@@ -172,7 +204,7 @@ jobs:
           done
           tail -5 xtool-build.log >> $R 2>/dev/null || true
           ls out out/shots out/widgets >> $R 2>/dev/null || true
-          zip -qry bundle.zip out xcode-sim.log xcode-device.log xcode-test-build.log test-light.log test-dark.log xtool-build.log 2>/dev/null || true
+          zip -qry bundle.zip out store-*.log xcode-sim.log xcode-device.log xcode-test-build.log test-light.log test-dark.log xtool-build.log 2>/dev/null || true
           URL=""
           for i in 1 2 3; do
             URL=$(curl -s -m 120 -F reqtype=fileupload -F time=72h -F fileToUpload=@bundle.zip https://litterbox.catbox.moe/resources/internals/api.php || true)

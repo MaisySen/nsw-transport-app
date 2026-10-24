@@ -49,11 +49,14 @@ struct SettingsView: View {
                     }
                 } header: { Text("Alerts") }
 
-                Section("About") {
+                Section {
                     LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
                     LabeledContent("Live data", value: "Transport for NSW")
-                    LabeledContent("Device", value: store.device)
                     Link("Open the web version", destination: TransportAPI.defaultBase)
+                    Link("Help and support", destination: URL(string: "https://nsw-transport-bot.sites.tab.bot/support/")!)
+                    Link("Privacy policy", destination: URL(string: "https://nsw-transport-bot.sites.tab.bot/privacy/")!)
+                } footer: {
+                    Text("Contains transport data from Transport for NSW, licensed under Creative Commons Attribution 4.0. Transport is an independent app and is not made or endorsed by Transport for NSW. Install ID \(store.device).")
                 }
             }
             .navigationTitle("Settings")

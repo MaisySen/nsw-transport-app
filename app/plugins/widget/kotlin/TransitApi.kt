@@ -1,5 +1,7 @@
 package com.maisysen.nswtransport.widget
 
+import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import android.graphics.Color
 import org.json.JSONArray
 import org.json.JSONObject
@@ -14,7 +16,24 @@ import java.util.TimeZone
 /** Reads live trips from the Transport backend. Runs off the main thread. */
 object TransitApi {
     const val BASE = "https://nsw-transport-bot.sites.tab.bot"
-    const val PROFILE = "bidur"
+    /** This install's server profile, written by the app on first launch (see src/lib/device.ts). */
+    @Volatile private var PROFILE = "none"
+
+    /** Reads the app's "profile" key from its key value storage. Until the app has been opened once, no saved trips show. */
+    fun init(context: Context) {
+        try {
+            val path = context.getDatabasePath("RKStorage")
+            if (!path.exists()) return
+            SQLiteDatabase.openDatabase(path.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+                db.rawQuery("SELECT value FROM catalystLocalStorage WHERE key = ?", arrayOf("profile")).use { c ->
+                    if (c.moveToFirst()) {
+                        val v = c.getString(0)
+                        if (!v.isNullOrBlank()) PROFILE = enc(v)
+                    }
+                }
+            }
+        } catch (e: Exception) { }
+    }
     val SYDNEY: TimeZone = TimeZone.getTimeZone("Australia/Sydney")
 
     data class Stop(val id: String, val name: String)

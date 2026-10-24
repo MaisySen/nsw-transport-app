@@ -5,7 +5,7 @@ import TransportKit
 /// iOS wakes the app now and then (it decides how often). Each wake checks watched trips,
 /// posts any new alert as a local notification and refreshes the Live Activity.
 enum BackgroundRefresh {
-    static let identifier = "bot.tab.nswtransport.refresh"
+    static let identifier = "com.maisysen.nswtransport.refresh"
 
     static func schedule() {
         let req = BGAppRefreshTaskRequest(identifier: identifier)

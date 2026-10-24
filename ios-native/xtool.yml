@@ -1,9 +1,9 @@
 version: 1
-bundleID: bot.tab.nswtransport
+bundleID: com.maisysen.nswtransport
 product: Transport
 infoPath: Support/Transport-Info.plist
 iconPath: Support/AppIcon.png
 extensions:
   - product: TransportWidget
-    bundleID: bot.tab.nswtransport.widget
+    bundleID: com.maisysen.nswtransport.widget
     infoPath: Support/TransportWidget-Info.plist

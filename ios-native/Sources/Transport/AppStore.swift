@@ -111,6 +111,11 @@ final class AppStore {
         case "trip" where parts.count > 2:
             tab = .home
             pendingRoute = .trip(from: StopRef(id: parts[1], name: "Stop \(parts[1])"), to: StopRef(id: parts[2], name: "Stop \(parts[2])"))
+        case "profile" where parts.count > 1:
+            // nswtransport://profile/<id> moves this install to the saved trips of another install.
+            if AppIdentity.adopt(parts[1]) {
+                banner = Banner(title: "Profile changed", detail: "Close and reopen Transport to load its saved trips.")
+            }
         case "tab":
             switch parts.count > 1 ? parts[1] : "" {
             case "search": tab = .search

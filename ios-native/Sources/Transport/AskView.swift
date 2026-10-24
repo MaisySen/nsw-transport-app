@@ -119,7 +119,7 @@ final class AskModel {
         messages.append(AskMessage(mine: true, text: q))
         busy = true
         defer { busy = false; save() }
-        var c = URLComponents(string: "https://nsw-transport-bot.sites.tab.bot/api/ask")!
+        var c = URLComponents(url: TransportAPI.defaultBase.appendingPathComponent("api/ask"), resolvingAgainstBaseURL: false)!
         var items = [URLQueryItem(name: "q", value: q), URLQueryItem(name: "profile", value: TransportAPI.shared.profile)]
         if let home { items.append(URLQueryItem(name: "home", value: "\(home.id)|\(home.name)")) }
         if let work { items.append(URLQueryItem(name: "work", value: "\(work.id)|\(work.name)")) }

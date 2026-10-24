@@ -18,15 +18,57 @@ public enum APIError: LocalizedError, Sendable {
     }
 }
 
+/// Which server profile holds this install's saved trips, commutes and watches.
+/// Every install gets its own random profile on first launch, shared with the widget through the app group.
+/// There is no account and nothing personal in it.
+public enum AppIdentity {
+    public static let appGroup = "group.com.maisysen.nswtransport"
+
+    public static var groupDefaults: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }
+
+    public static let profile: String = {
+        let std = UserDefaults.standard
+        let group = groupDefaults
+        // The UI tests pass -apiProfile, which lands in the standard defaults.
+        if let p = std.string(forKey: "apiProfile"), !p.isEmpty {
+            if group.string(forKey: "apiProfile") == nil { group.set(p, forKey: "apiProfile") }
+            return p
+        }
+        if let p = group.string(forKey: "apiProfile"), !p.isEmpty { return p }
+        // The widget never creates a profile; it waits for the app to be opened once.
+        if Bundle.main.bundlePath.hasSuffix(".appex") { return "none" }
+        let p = "u" + String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(16)).lowercased()
+        std.set(p, forKey: "apiProfile")
+        group.set(p, forKey: "apiProfile")
+        return p
+    }()
+
+    /// Moves this install to another profile (for example the one used on a previous phone).
+    /// Takes effect the next time the app starts.
+    public static func adopt(_ p: String) -> Bool {
+        let clean = p.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+        guard clean.count >= 3, clean.count <= 40 else { return false }
+        UserDefaults.standard.set(clean, forKey: "apiProfile")
+        groupDefaults.set(clean, forKey: "apiProfile")
+        return true
+    }
+}
+
 /// Talks to the live Transport Bot backend. No keys live in the app: the server holds them.
 public struct TransportAPI: Sendable {
-    public static let defaultBase = URL(string: "https://nsw-transport-bot.sites.tab.bot")!
-    public static let shared = TransportAPI(profile: UserDefaults.standard.string(forKey: "apiProfile") ?? "bidur")
+    public static let defaultBase: URL = {
+        #if DEBUG
+        // UI tests point the app at an address that does not answer, to prove it starts without a network.
+        if let s = UserDefaults.standard.string(forKey: "apiBase"), let u = URL(string: s) { return u }
+        #endif
+        return URL(string: "https://nsw-transport-bot.sites.tab.bot")!
+    }()
+    public static let shared = TransportAPI(profile: AppIdentity.profile)
 
     public var base: URL
     public var profile: String
 
-    public init(base: URL = TransportAPI.defaultBase, profile: String = "bidur") {
+    public init(base: URL = TransportAPI.defaultBase, profile: String = AppIdentity.profile) {
         self.base = base
         self.profile = profile
     }

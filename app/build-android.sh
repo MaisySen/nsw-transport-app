@@ -31,6 +31,7 @@ t=re.sub(r'org.gradle.jvmargs=.*','org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSiz
 if 'org.gradle.workers.max' not in t: t+='\norg.gradle.workers.max=6\nkotlin.daemon.jvmargs=-Xmx2g\n'
 open(g,'w').write(t)
 PY
+if [ "$1" = "--prebuild-only" ]; then exit 0; fi
 export NSW_KEYSTORE_PASSWORD=$(python3 -c "import json;print(json.load(open('/home/user/.nsw-secrets/android-keystore.json'))['store_password'])")
 ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon --console=plain
 ls -la app/build/outputs/apk/release/

@@ -53,6 +53,7 @@ class TripWidgetProvider : AppWidgetProvider() {
 
         /** Fetches and draws one widget. Call off the main thread. */
         fun update(context: Context, manager: AppWidgetManager, id: Int) {
+            TransitApi.init(context)
             val cfg = WidgetPrefs.load(context, id)
             val choice = if (cfg == null) TransitApi.smart() else cfg
             if (choice == null) {

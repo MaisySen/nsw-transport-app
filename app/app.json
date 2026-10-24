@@ -9,13 +9,12 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.maisysen.nswtransport",
-      "supportsTablet": true,
+      "supportsTablet": false,
       "icon": "./assets/images/icon.png",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Transport uses your location to show stops near you.",
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": [
-          "remote-notification",
           "remote-notification"
         ]
       },
@@ -23,7 +22,7 @@
     },
     "android": {
       "package": "com.maisysen.nswtransport",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "backgroundColor": "#2E8BFF",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -34,20 +33,11 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "POST_NOTIFICATIONS",
-        "VIBRATE",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
-        "POST_NOTIFICATIONS",
-        "VIBRATE",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "VIBRATE"
       ],
       "predictiveBackGestureEnabled": true,
       "edgeToEdgeEnabled": true,
       "blockedPermissions": [
-        "android.permission.RECORD_AUDIO",
         "android.permission.RECORD_AUDIO"
       ]
     },
@@ -87,7 +77,7 @@
       "typedRoutes": true,
       "reactCompiler": true
     },
-    "description": "Live Sydney and NSW departures, trips and alerts.",
+    "description": "Live Sydney and NSW departures, trips, alerts and widgets.",
     "extra": {
       "router": {
         "asyncRoutes": {

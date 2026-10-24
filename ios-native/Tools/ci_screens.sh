@@ -11,7 +11,7 @@ xcrun simctl boot "$DEV" || true
 xcrun simctl bootstatus "$DEV" -b
 xcrun simctl status_bar "$DEV" override --time "9:41" --batteryState charged --batteryLevel 100 --cellularBars 4 || true
 xcrun simctl install "$DEV" "$APP"
-BID=bot.tab.nswtransport
+BID=com.maisysen.nswtransport
 shot() { sleep "$2"; xcrun simctl io "$DEV" screenshot "$OUT/$1.png"; echo "shot $1"; }
 go() { xcrun simctl terminate "$DEV" $BID 2>/dev/null || true; xcrun simctl launch "$DEV" $BID -screen "$1" > /dev/null; }
 for MODE in light dark; do

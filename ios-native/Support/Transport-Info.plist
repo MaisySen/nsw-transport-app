@@ -7,25 +7,24 @@
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>7</string>
     <key>NSSupportsLiveActivities</key>
     <true/>
     <key>NSSupportsLiveActivitiesFrequentUpdates</key>
     <true/>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Shows the stops closest to you.</string>
+    <string>Transport uses your location to show the stops and stations closest to you and to plan trips from where you are.</string>
     <key>UILaunchScreen</key>
-    <dict>
-        <key>UIColorName</key>
-        <string></string>
-    </dict>
+    <dict/>
+    <key>UIRequiresFullScreen</key>
+    <true/>
     <key>UIBackgroundModes</key>
     <array>
         <string>fetch</string>
     </array>
     <key>BGTaskSchedulerPermittedIdentifiers</key>
     <array>
-        <string>bot.tab.nswtransport.refresh</string>
+        <string>com.maisysen.nswtransport.refresh</string>
     </array>
     <key>UISupportedInterfaceOrientations</key>
     <array>
@@ -35,7 +34,7 @@
     <array>
         <dict>
             <key>CFBundleURLName</key>
-            <string>bot.tab.nswtransport</string>
+            <string>com.maisysen.nswtransport</string>
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>nswtransport</string>
