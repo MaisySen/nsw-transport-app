@@ -9,21 +9,19 @@ import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
 import { useNow } from '@/lib/hooks';
-import { modeColor, radius, usePalette } from '@/lib/theme';
-import { clock, shortName } from '@/lib/format';
-import { endLive, getLive, liveAlert, liveWatch, setLive, showOngoing, useLiveTrip } from '@/lib/live';
-import { computeLive, cutPath, LiveState, minsWords, timed, tOf } from '@/lib/liveCalc';
+import { radius, usePalette } from '@/lib/theme';
+import { clock } from '@/lib/format';
+import { endLive, getLive, liveWatch, setLive, useLiveTrip } from '@/lib/live';
+import { legColor, plat, progOf, setEnginePos, short, tickLive, useLiveEngineState } from '@/lib/liveEngine';
+import { cutPath, LiveState, minsWords, timed, tOf } from '@/lib/liveCalc';
 import { fareWords, money } from '@/lib/fare';
 import { enablePush, getPushState } from '@/lib/push';
-import type { ServiceResp, WatchLeg } from '@/lib/types';
+import type { WatchLeg } from '@/lib/types';
 import TransitMap from '@/components/TransitMap';
 import { Icon, I } from '@/components/Icon';
 import { LineBadge } from '@/components/Transit';
 import { Button, Sep, T } from '@/components/ui';
 
-const short = (n?: string | null) => shortName(n || '').replace(/ Station$/, '');
-const plat = (p?: string | null) => (p ? p.replace(/^Platform\s*/i, 'Platform ').replace(/^Stand\s*/i, 'Stand ') : '');
-const legColor = (l: WatchLeg) => l.color || modeColor[l.mode] || '#0A84FF';
 const noun = (m?: string) => (m === 'bus' || m === 'coach' ? 'bus' : m === 'ferry' ? 'ferry' : m === 'lightrail' ? 'tram' : m === 'metro' ? 'metro' : 'train');
 
 export default function LiveTripScreen() {
@@ -33,19 +31,19 @@ export default function LiveTripScreen() {
   const now = useNow(1000);
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
-  const [svc, setSvc] = useState<(ServiceResp | null)[]>([]);
-  const [st, setSt] = useState<LiveState | null>(null);
+  const eng = useLiveEngineState();
+  const live = eng.gid === g?.id ? eng : null;
+  const svc = live?.svc || [];
+  const st = live?.st || null;
+  const offline = live?.offline || null;
+  const updated = live?.updated || 0;
   const [me, setMe] = useState<{ lat: number; lon: number; acc?: number } | null>(null);
   const [locDenied, setLocDenied] = useState(false);
   const [push, setPush] = useState<string>('on');
-  const [offline, setOffline] = useState<string | null>(null);
-  const [updated, setUpdated] = useState(0);
   const snaps = useMemo(() => ['34%', '60%', '92%'], []);
-  const svcRef = useRef<(ServiceResp | null)[]>([]);
   const meRef = useRef(me);
   meRef.current = me;
-  const lastFull = useRef(0);
-  const busy = useRef(false);
+  useEffect(() => { setEnginePos(me); }, [me]);
   const geo = useRef<Location.LocationSubscription | null>(null);
 
   const legs = g?.legs || [];
@@ -72,101 +70,13 @@ export default function LiveTripScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [g?.id]);
 
+  // Opening the screen refreshes at once; the engine keeps refreshing every 15 seconds on any screen.
+  useEffect(() => { tickLive(); }, [g?.id]);
+
   const askLocation = () => Alert.alert('Show where you are?', "Your location stays on this phone. It's only sent if you share your trip with your location on.", [
     { text: 'Not now', style: 'cancel' },
     { text: 'Continue', onPress: () => startGeo(true) },
   ]);
-
-  const progOf = (s: LiveState | null) => {
-    if (!s || s.done) return { phase: 'done' };
-    const d = s.L2[s.cur].d, ns = d && s.nextIdx >= 0 ? d.stops[s.nextIdx] : null;
-    return { leg: s.cur, phase: s.phase, next: ns ? short(ns.name) : null, stopsLeft: s.stopsLeft, eta: s.eta };
-  };
-
-  // Words for the ongoing notification and the sheet.
-  const words = (s: LiveState) => {
-    if (s.done) return { title: "You've arrived", body: `${short(legs[last].to)} at ${clock(s.eta)}` };
-    const l = legs[s.cur], x = s.L2[s.cur], d = x.d;
-    const arrive = `Arrive ${clock(s.eta)} (${minsWords((s.eta - Date.now()) / 60000)})`;
-    if (s.phase === 'wait') {
-      const dm = Math.round((x.dep - Date.now()) / 60000);
-      return { title: `${l.line} to ${short(l.towards || l.to)}`, body: `${s.cur ? 'Change to' : 'Board'} the ${l.line} ${dm <= 0 ? 'now' : `at ${clock(x.dep)}`}${l.fromPlatform ? `, ${plat(l.fromPlatform)}` : ''}. ${arrive}` };
-    }
-    const ns = d && s.nextIdx >= 0 ? d.stops[s.nextIdx] : null;
-    const yours = !!d && s.nextIdx === d.alightIndex;
-    const left = s.stopsLeft != null ? `${s.stopsLeft} stop${s.stopsLeft === 1 ? '' : 's'} to ${short(l.to)}` : `to ${short(l.to)}`;
-    return { title: `${l.line} to ${short(l.towards || l.to)}`, body: `${yours ? `Get off at ${short(l.to)}, next stop` : ns ? `Next stop: ${short(ns.name)}, ${left}` : `On the ${l.line}, ${left}`}. ${arrive}` };
-  };
-
-  const alerts = (s: LiveState) => {
-    const cur = getLive();
-    if (!cur || s.done) return;
-    const a = { ...(cur.alerted || {}) };
-    let changed = false;
-    const fire = (k: string, title: string, body: string) => {
-      if (a[k]) return;
-      a[k] = 1; changed = true;
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      liveAlert(title, body);
-    };
-    if (s.phase === 'ride') {
-      const d = s.L2[s.cur].d, l = legs[s.cur];
-      if (d && (d.alightIndex ?? -1) > 0 && s.nextIdx === d.alightIndex) {
-        if (s.cur === last) fire('off' + s.cur, `Next stop: ${short(l.to)}`, `Get ready to get off. You arrive at ${clock(s.eta)}.`);
-        else { const n = legs[s.cur + 1]; fire('off' + s.cur, `Next stop: ${short(l.to)}, change here`, `Then the ${clock(s.L2[s.cur + 1].dep)} ${n.line}${n.fromPlatform ? ' from ' + plat(n.fromPlatform) : ''}.`); }
-      }
-    }
-    for (const cn of s.conns) {
-      if (cn.risk === 'miss') fire('miss' + cn.i, 'Connection at risk', `With live times you'll likely miss the ${clock(new Date(cn.next.planned).getTime())} ${cn.next.line} at ${short(cn.at)}.`);
-      else if (cn.risk === 'tight') fire('tight' + cn.i, `Tight change at ${short(cn.at)}`, `${Math.max(0, cn.spare)} min to catch the ${cn.next.line}.`);
-    }
-    if (changed) setLive({ ...cur, alerted: a });
-  };
-
-  const load = useCallback(async () => {
-    const cur = getLive();
-    if (!cur || busy.current) return;
-    busy.current = true;
-    try {
-      const L = cur.legs;
-      const full = Date.now() - lastFull.current > 60000;
-      const prev = st && !st.done ? st.cur : 0;
-      let failed = 0;
-      const next = svcRef.current.slice();
-      await Promise.all(L.map(async (l, i) => {
-        if (!(full || i === prev || i === prev + 1)) return;
-        try {
-          next[i] = await api.service({ trip: l.tripId || undefined, mode: l.mode, line: l.line, stop: l.stopId, destId: l.destId || undefined, planned: l.planned, to: l.toStopId || undefined, dest: l.towards || undefined, stopName: l.from || undefined, color: l.color || undefined });
-        } catch { failed++; }
-      }));
-      if (full) lastFull.current = Date.now();
-      svcRef.current = next;
-      setSvc(next);
-      setOffline(failed ? 'Connection lost. Showing the last live times.' : null);
-      if (!failed) setUpdated(Date.now());
-      const s = computeLive(L, next, Date.now());
-      setSt(s);
-      alerts(s);
-      const w = words(s);
-      if (!s.done) showOngoing(w.title, w.body, legColor(L[s.cur]));
-      const c2 = getLive();
-      if (c2?.share) {
-        const pos = c2.share.pos && meRef.current ? meRef.current : null;
-        api.shareUpdate({ id: c2.share.id, key: c2.share.key, pos, prog: progOf(s) }).catch((e: any) => { if (/not found/i.test(String(e?.message))) { const c3 = getLive(); if (c3) setLive({ ...c3, share: null }); } });
-      }
-      if (s.done && Date.now() > s.eta + 10 * 60000) await endLive();
-    } finally { busy.current = false; }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [st]);
-  const loadRef = useRef(load);
-  loadRef.current = load;
-  useEffect(() => {
-    if (!g?.id) return;
-    lastFull.current = 0; svcRef.current = []; setSvc([]); setSt(null);
-    loadRef.current();
-    const t = setInterval(() => loadRef.current(), 15000);
-    return () => clearInterval(t);
-  }, [g?.id]);
 
   const share = useCallback(async () => {
     const cur = getLive();

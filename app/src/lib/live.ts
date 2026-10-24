@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { api } from './api';
-import { getPushState } from './push';
+import { enablePush, getPushState } from './push';
 import type { Fare, Place, WatchLeg } from './types';
 import type { WatchSpec } from './watch';
 
@@ -12,6 +12,8 @@ export type LiveShare = { id: string; key: string; url: string; pos: boolean };
 export type LiveTrip = {
   id: string; title: string; origin: Place | null; to: Place | null; legs: WatchLeg[]; fare: Fare | null; started: number;
   alerted: Record<string, 1>; share: LiveShare | null; watchId: string | null; loc?: boolean;
+  /** Arrival time of each leg while it was being ridden, and when the trip arrived. See LiveMemo. */
+  rode?: Record<number, number>; arrivedAt?: number | null;
 };
 
 const KEY = 'liveTrip';
@@ -49,6 +51,10 @@ export async function startLive(spec: WatchSpec, fare?: Fare | null) {
   const g: LiveTrip = { id: 'g' + Date.now().toString(36), title: spec.title, origin: spec.origin || null, to: spec.to || null, legs, fare: fare && fare.total != null ? fare : null,
     started: Date.now(), alerted: {}, share: null, watchId: null };
   setLive(g);
+  // The ongoing notification starts with the trip: ask for notifications here, once, if never asked.
+  if (Platform.OS !== 'web') {
+    try { const ps = await getPushState(); if (ps.status === 'off') await enablePush(false); } catch {}
+  }
   liveWatch().catch(() => {});
   return g;
 }
@@ -56,11 +62,13 @@ export async function startLive(spec: WatchSpec, fare?: Fare | null) {
 /** With notifications on, the server also sends next stop, change and connection alerts while the app is closed. */
 export async function liveWatch() {
   const g = cur;
-  if (!g || g.watchId) return;
+  if (!g || g.watchId || g.arrivedAt) return;
   const ps = await getPushState();
   if (ps.status !== 'on' && ps.status !== 'local') return;
   const r = await api.watch({ kind: 'trip', title: g.title, legs: g.legs, origin: g.origin, to: g.to, lead: 0, track: true, silentStart: true });
-  if (cur && cur.id === g.id && r.watch?.id) setLive({ ...cur, watchId: r.watch.id });
+  if (!r.watch?.id) return;
+  if (cur && cur.id === g.id && !cur.arrivedAt) setLive({ ...cur, watchId: r.watch.id });
+  else api.stopWatch(r.watch.id).catch(() => {});
 }
 
 /** Ends the trip: stops the share link and the server alerts, removes the ongoing notification. */
@@ -114,12 +122,15 @@ export async function clearOngoing() {
   try { await Notifications.dismissNotificationAsync(NOTE); } catch {}
 }
 
-/** A one off alert: Next stop, change here, connection at risk. */
-export async function liveAlert(title: string, body: string) {
+/**
+ * A one off alert: next stop, change here, connection at risk, you've arrived. The identifier is stable per trip
+ * and alert, so showing it again replaces the first one instead of adding a second.
+ */
+export async function liveAlert(title: string, body: string, identifier?: string) {
   try {
     const p = await Notifications.getPermissionsAsync();
     if (!p.granted) return false;
-    await Notifications.scheduleNotificationAsync({ content: { title, body, data: { go: 1 } }, trigger: Platform.OS === 'android' ? { channelId: 'default' } : null });
+    await Notifications.scheduleNotificationAsync({ ...(identifier ? { identifier } : {}), content: { title, body, data: { go: 1 } }, trigger: Platform.OS === 'android' ? { channelId: 'default' } : null });
     return true;
   } catch { return false; }
 }

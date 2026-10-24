@@ -1,0 +1,95 @@
+// The live trip engine: refreshes the trip you are on every 15 seconds while the app is open, on any screen.
+// The decisions are in stepLive (liveCalc.ts, covered by the replay tests); this file fetches the live feed and
+// carries out what stepLive returns: the ongoing notification, each trip alert once, the share link, and the end
+// of all trip alerts the moment you arrive. The live trip screen only reads its state.
+import { useEffect, useSyncExternalStore } from 'react';
+import { AppState } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { api } from './api';
+import { clock, shortName } from './format';
+import { clearOngoing, endLive, getLive, liveAlert, setLive, showOngoing, useLiveTrip } from './live';
+import { LiveState, progOf as progOfCalc, stepLive } from './liveCalc';
+import { endedWatches } from './push';
+import { modeColor } from './theme';
+import type { ServiceResp, WatchLeg } from './types';
+
+export const short = (n?: string | null) => shortName(n || '').replace(/ Station$/, '');
+export const plat = (p?: string | null) => (p ? p.replace(/^Platform\s*/i, 'Platform ').replace(/^Stand\s*/i, 'Stand ') : '');
+export const legColor = (l: WatchLeg) => l.color || modeColor[l.mode] || '#0A84FF';
+const fmt = { clock, short, plat };
+export const progOf = (s: LiveState | null) => progOfCalc(s, fmt);
+
+export type EngineState = { gid: string | null; svc: (ServiceResp | null)[]; st: LiveState | null; offline: string | null; updated: number };
+let state: EngineState = { gid: null, svc: [], st: null, offline: null, updated: 0 };
+const subs = new Set<() => void>();
+function put(p: Partial<EngineState>) { state = { ...state, ...p }; subs.forEach((f) => f()); }
+
+/** The engine's latest state, for the live trip screen. */
+export function useLiveEngineState() {
+  return useSyncExternalStore((l) => { subs.add(l); return () => { subs.delete(l); }; }, () => state, () => state);
+}
+
+let pos: { lat: number; lon: number } | null = null;
+/** Your position from the live trip screen, sent with a share link that includes your location. */
+export function setEnginePos(p: { lat: number; lon: number } | null) { pos = p; }
+
+let busy = false;
+let lastFull = 0;
+let svcCache: (ServiceResp | null)[] = [];
+let cacheFor: string | null = null;
+
+/** One refresh of the trip you are on. Safe to call any time; does nothing without a trip. */
+export async function tickLive() {
+  const cur = getLive();
+  if (!cur) { if (state.gid) put({ gid: null, svc: [], st: null, offline: null, updated: 0 }); return; }
+  if (busy) return;
+  busy = true;
+  try {
+    if (cacheFor !== cur.id) { cacheFor = cur.id; svcCache = []; lastFull = 0; put({ gid: cur.id, svc: [], st: null, offline: null, updated: 0 }); }
+    const L = cur.legs;
+    let failed = 0;
+    if (!cur.arrivedAt) {
+      const full = Date.now() - lastFull > 60000;
+      const prev = state.st && !state.st.done ? state.st.cur : 0;
+      const next = svcCache.slice();
+      await Promise.all(L.map(async (l, i) => {
+        if (!(full || i === prev || i === prev + 1)) return;
+        try {
+          next[i] = await api.service({ trip: l.tripId || undefined, mode: l.mode, line: l.line, stop: l.stopId, destId: l.destId || undefined, planned: l.planned, to: l.toStopId || undefined, dest: l.towards || undefined, stopName: l.from || undefined, color: l.color || undefined });
+        } catch { failed++; }
+      }));
+      if (full) lastFull = Date.now();
+      svcCache = next;
+    }
+    const g = getLive();
+    if (!g || g.id !== cur.id) return;
+    const now = Date.now();
+    const r = stepLive(g, svcCache, now, fmt);
+    put({ svc: svcCache.slice(), st: r.s, offline: failed ? 'Connection lost. Showing the last live times.' : null, ...(failed ? {} : { updated: now }) });
+    if (r.g !== g) setLive({ ...g, alerted: r.g.alerted, watchId: r.g.watchId, rode: r.g.rode, arrivedAt: r.g.arrivedAt });
+    let buzzed = false;
+    for (const a of r.actions) {
+      if (a.t === 'alert') { liveAlert(a.title, a.body, a.id); if (!buzzed) { buzzed = true; Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); } }
+      else if (a.t === 'ongoing') showOngoing(a.title, a.body, legColor(L[a.leg]));
+      else if (a.t === 'clearOngoing') await clearOngoing();
+      else if (a.t === 'stopWatch') { endedWatches.add(a.id); api.stopWatch(a.id).catch(() => {}); }
+      else if (a.t === 'share' && g.share) {
+        const p = g.share.pos && pos && !r.s.done ? pos : null;
+        api.shareUpdate({ id: g.share.id, key: g.share.key, pos: p, prog: a.prog }).catch((e: any) => { if (/not found/i.test(String(e?.message))) { const c3 = getLive(); if (c3) setLive({ ...c3, share: null }); } });
+      } else if (a.t === 'end') await endLive();
+    }
+  } finally { busy = false; }
+}
+
+/** Mounted once at the root: runs the engine while a trip is in progress. */
+export function LiveTripEngine() {
+  const g = useLiveTrip();
+  useEffect(() => {
+    tickLive();
+    if (!g?.id) return;
+    const t = setInterval(() => { if (AppState.currentState === 'active') tickLive(); }, 15000);
+    const sub = AppState.addEventListener('change', (a) => { if (a === 'active') tickLive(); });
+    return () => { clearInterval(t); sub.remove(); };
+  }, [g?.id]);
+  return null;
+}

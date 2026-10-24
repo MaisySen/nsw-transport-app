@@ -10,6 +10,7 @@ import { finishProfileMove, initProfile } from '@/lib/device';
 import { api } from '@/lib/api';
 import { usePalette } from '@/lib/theme';
 import { LiftAlertSync } from '@/lib/liftAlerts';
+import { LiveTripEngine } from '@/lib/liveEngine';
 
 export default function RootLayout() {
   const scheme = useColorScheme();
@@ -46,6 +47,7 @@ export default function RootLayout() {
       <ThemeProvider value={theme}>
         <StatusBar style="auto" />
         <LiftAlertSync />
+        <LiveTripEngine />
         <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal', headerTintColor: c.tint, contentStyle: { backgroundColor: c.bg } }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="stop/[id]" options={{ title: '', headerLargeTitle: Platform.OS === 'ios', headerTransparent: Platform.OS === 'ios', headerBlurEffect: 'systemChromeMaterial', headerLargeTitleShadowVisible: false, headerShadowVisible: false }} />

@@ -4,6 +4,7 @@ import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
+import { noteKey } from './liveCalc';
 
 Notifications.setNotificationHandler({
   // The ongoing trip notification updates quietly; every other alert shows as a banner with sound.
@@ -62,10 +63,24 @@ export async function disablePush() {
   await AsyncStorage.removeItem('expoPushToken');
 }
 
+/** Watches ended on this phone (a live trip that arrived): their late alerts are never shown. */
+export const endedWatches = new Set<string>();
 let lastId: number | null = null;
-/** While the app is open, shows alerts the server wrote for this phone that push did not already deliver. */
-export async function pollNotes() {
+let polling: Promise<any> | null = null;
+let shown: string[] | null = null;
+/**
+ * While the app is open, shows alerts the server wrote for this phone that push did not already deliver.
+ * One poll at a time, so two timers never show the same alert twice. Alerts about the same stop on the same
+ * trip ("Next stop: Kings Cross", "Arriving at Kings Cross in 2 min") show once, and a newer alert for that
+ * trip replaces the older notification instead of stacking.
+ */
+export function pollNotes() {
+  if (!polling) polling = pollOnce().finally(() => { polling = null; });
+  return polling;
+}
+async function pollOnce() {
   try {
+    if (shown == null) { try { shown = JSON.parse((await AsyncStorage.getItem('shownNoteKeys')) || '[]'); } catch { shown = []; } }
     if (lastId == null) {
       const saved = await AsyncStorage.getItem('lastNoteId');
       if (saved) lastId = Number(saved);
@@ -78,13 +93,17 @@ export async function pollNotes() {
     } else {
       const hasToken = !!(await AsyncStorage.getItem('expoPushToken'));
       for (const n of notes.filter((x) => x.id > (lastId || 0))) {
-        if (!hasToken || !n.pushed) {
-          await Notifications.scheduleNotificationAsync({ content: { title: n.title, body: n.body, data: { url: n.url, watch: n.watch_id } }, trigger: null });
+        const k = noteKey(n);
+        if ((!hasToken || !n.pushed) && !shown!.includes(k.key) && !(n.watch_id && endedWatches.has(n.watch_id))) {
+          shown!.push(k.key);
+          await Notifications.scheduleNotificationAsync({ identifier: k.id, content: { title: n.title, body: n.body, data: { url: n.url, watch: n.watch_id } }, trigger: Platform.OS === 'android' ? { channelId: 'default' } : null });
         }
         lastId = Math.max(lastId || 0, n.id);
       }
     }
     await AsyncStorage.setItem('lastNoteId', String(lastId));
+    if (shown!.length > 200) shown = shown!.slice(-200);
+    await AsyncStorage.setItem('shownNoteKeys', JSON.stringify(shown));
     return r;
   } catch {
     return null;
