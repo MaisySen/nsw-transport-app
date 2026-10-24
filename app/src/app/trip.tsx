@@ -7,6 +7,8 @@ import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius, modeColor } from '@/lib/theme';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
 import { store, tripKeyOf, useStore } from '@/lib/store';
+import { journeyOutages, stShort } from '@/lib/access';
+import { LegAccessChips, OutageLine, ParkGroup } from '@/components/Access';
 import { fareOf, fareWords, money, offPeakText } from '@/lib/fare';
 import { getLive, startLive } from '@/lib/live';
 import { directFilter, isChain, planTrip, stName, tLegs, tripKey, viaText } from '@/lib/trips';
@@ -86,6 +88,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
             <T kind="foot" style={{ color: c.lateText, flex: 1 }} numberOfLines={3}>{l.alerts[0].title}</T>
           </View>
         ) : null}
+        <LegAccessChips access={l.access} from={l.from} to={l.to} />
         <View style={{ marginTop: 10 }}>
           <T kind="headline" numberOfLines={2}>{shortName(l.to)}</T>
           <T kind="foot" tone="text2">{[l.toPlatform, `Arrive ${clock(arr)}`].filter(Boolean).join(' \u00b7 ')}</T>
@@ -333,6 +336,18 @@ export default function TripScreen() {
             </View>
           );
         })() : null}
+        {data?.parking?.carparks?.length ? (
+          <View style={{ marginTop: -10 }}>
+            <ParkGroup list={data.parking.carparks} title={`Park and Ride at ${stShort(data.parking.station?.name)}`} station={data.parking.station?.name} watch />
+          </View>
+        ) : null}
+        {data?.accessible ? (
+          <View style={{ marginHorizontal: 20, marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <Icon name={I.access} size={15} color={c.tint} />
+            <T kind="sub" tone="text2">Step free trips only.{!js.length ? ' None found for this trip.' : ''}</T>
+            <Pressable hitSlop={8} onPress={() => router.push('/settings')}><T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Settings</T></Pressable>
+          </View>
+        ) : null}
         {chain ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 12 }}>{(() => { const L = tLegs(plan); return L.length === 2 && L[1].mode !== 'walk' ? `Via ${stName(shortName(L[0].to.name))}, ${L[1].conn ?? 5} min to change` : `${L.length} legs via ${viaText(plan)}`; })()}</T> : null}
         {jsAll.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>
@@ -364,6 +379,7 @@ export default function TripScreen() {
                 <Sep inset={0} />
                 <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { Haptics.selectionAsync(); setOpen(open === i ? null : i); }} />
                 <WarnLine j={j} />
+                <OutageLine outages={journeyOutages(j)} />
                 {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} /></View> : null}
               </View>
             ))}

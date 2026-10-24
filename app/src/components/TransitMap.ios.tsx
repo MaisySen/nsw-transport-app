@@ -22,7 +22,7 @@ export default function TransitMap(p: TransitMapProps) {
       {coords.length > 1 ? <Polyline coordinates={coords} strokeColor={p.color} strokeWidth={5} lineCap="round" lineJoin="round" /> : null}
       {(p.stops || []).filter((s) => s.lat != null && s.lon != null).map((s) => (
         <Marker key={s.id} coordinate={{ latitude: s.lat!, longitude: s.lon! }} title={s.name} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} onPress={p.onStopPress ? () => p.onStopPress!(s.id) : undefined}>
-          <View style={{ width: s.mine ? 14 : 9, height: s.mine ? 14 : 9, borderRadius: 7, backgroundColor: s.passed ? '#C7C7CC' : '#fff', borderWidth: s.mine ? 3.5 : 2, borderColor: s.passed ? '#AEAEB2' : p.color }} />
+          {s.color ? <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: s.color, borderWidth: 2, borderColor: '#fff' }} /> : <View style={{ width: s.mine ? 14 : 9, height: s.mine ? 14 : 9, borderRadius: 7, backgroundColor: s.passed ? '#C7C7CC' : '#fff', borderWidth: s.mine ? 3.5 : 2, borderColor: s.passed ? '#AEAEB2' : p.color }}/>}
         </Marker>
       ))}
       {p.vehicle ? (

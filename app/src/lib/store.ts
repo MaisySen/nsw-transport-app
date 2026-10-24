@@ -10,7 +10,9 @@ export type MyTripLeg = { mode: string; from: Place; to: Place; conn?: number; a
 export type MyTrip = { from: Place; to: Place; via?: Place; conn?: number; name: string; modes?: string[]; legs?: MyTripLeg[] };
 export type FareType = 'adult' | 'child' | 'concession' | 'gold';
 type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; watchedTrips: Record<string, string>; places: Places;
-  myTrips: MyTrip[]; tripOrder: string[]; allServices: Record<string, boolean>; fareType: FareType };
+  myTrips: MyTrip[]; tripOrder: string[]; allServices: Record<string, boolean>; fareType: FareType;
+  /** Settings > Accessibility: step free trips only, and lift outage alerts for stations on saved trips. */
+  acc?: boolean; liftAlerts?: boolean };
 const EMPTY: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {}, places: {}, myTrips: [], tripOrder: [], allServices: {}, fareType: 'adult' };
 let state: State = { ...EMPTY };
 
@@ -61,8 +63,15 @@ export const store = {
   restoreRecentTrips(list: RecentTrip[]) { state = { ...state, recentTrips: list }; save(); },
   fareType: (): FareType => state.fareType || 'adult',
   setFareType(f: FareType) { state = { ...state, fareType: f }; save(); },
+  /** Accessible trips: acc=1 on trip, plan and Ask calls. */
+  accOn: (): boolean => !!state.acc,
+  setAcc(on: boolean) { state = { ...state, acc: on }; save(); },
+  liftAlertsOn: (): boolean => !!state.liftAlerts,
+  setLiftAlerts(on: boolean) { state = { ...state, liftAlerts: on }; save(); },
+  /** Saved trips on this phone, for lift outage alerts. */
+  myTrips: (): MyTrip[] => state.myTrips || [],
   /** Delete all my data: everything this store keeps goes back to empty (the fare type stays). */
-  resetAll() { state = { ...EMPTY, fareType: state.fareType || 'adult' }; save(); },
+  resetAll() { state = { ...EMPTY, fareType: state.fareType || 'adult', acc: !!state.acc }; save(); },
   /** Remembers an A to B trip the user opened, newest first. */
   addRecentTrip(from: Place, to: Place) {
     if (!from?.id || !to?.id || from.id === to.id) return;

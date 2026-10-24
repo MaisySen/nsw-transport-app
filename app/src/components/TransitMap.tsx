@@ -11,7 +11,7 @@ export default function TransitMap(p: TransitMapProps) {
 var d=${data};var m=L.map('m',{zoomControl:false,attributionControl:true});
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'OpenStreetMap',className:d.dark?'dk':''}).addTo(m);
 if(d.path.length>1){L.polyline(d.path,{color:'#fff',weight:9,opacity:1}).addTo(m);L.polyline(d.path,{color:d.color,weight:5}).addTo(m);}
-d.stops.forEach(function(s){var c=L.circleMarker([s.lat,s.lon],{radius:d.pick?7:s.mine?7:4.5,color:d.pick?'#fff':s.passed?'#9e9e9e':d.color,weight:s.mine||d.pick?3:2,fillColor:d.pick?d.color:s.passed?'#c7c7cc':'#fff',fillOpacity:1}).addTo(m);if(d.pick)c.on('click',function(){parent.postMessage({tbStop:s.id},'*')})});
+d.stops.forEach(function(s){var c=L.circleMarker([s.lat,s.lon],{radius:s.color||d.pick?7:s.mine?7:4.5,color:s.color||d.pick?'#fff':s.passed?'#9e9e9e':d.color,weight:s.color?2:s.mine||d.pick?3:2,fillColor:s.color||(d.pick?d.color:s.passed?'#c7c7cc':'#fff'),fillOpacity:1}).addTo(m);if(d.pick)c.on('click',function(){parent.postMessage({tbStop:s.id},'*')})});
 if(d.v){L.marker([d.v.lat,d.v.lon],{icon:L.divIcon({className:'',iconSize:[34,34],html:'<div style="width:28px;height:28px;border-radius:17px;background:'+d.color+';border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3)"></div>'})}).addTo(m)}
 if(d.me){L.circleMarker([d.me.lat,d.me.lon],{radius:8,color:'#fff',weight:3,fillColor:'#0A84FF',fillOpacity:1}).addTo(m)}
 if(d.b){m.fitBounds([[d.b[1],d.b[0]],[d.b[3],d.b[2]]],{paddingTopLeft:[30,70],paddingBottomRight:[30,d.bottom+30]})}else{m.setView([-33.8688,151.2093],11)}

@@ -13,6 +13,8 @@ import { Icon, I } from '@/components/Icon';
 import { openService } from '@/components/Cards';
 import { DepartureRow, LiveStamp } from '@/components/Transit';
 import { Chip, Empty, Screen, Sep, T } from '@/components/ui';
+import { StationInfo } from '@/components/Access';
+import type { Station } from '@/lib/access';
 
 const MODE_LABEL: Record<string, string> = { train: 'Trains', metro: 'Metro', bus: 'Buses', lightrail: 'Light rail', ferry: 'Ferries', coach: 'Coaches', school: 'School buses' };
 
@@ -29,6 +31,16 @@ export default function StopScreen() {
   const stopName = data?.stop?.name || (name ? String(name) : '');
   // Remember opened stops for Home's Recent stops.
   useEffect(() => { if (id && stopName) store.addRecent({ id: String(id), name: stopName }); }, [id, stopName]);
+  // Station access, lifts and Park and Ride: once, then every 2 minutes. No data (404) shows nothing.
+  const [station, setStation] = useState<Station | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () => api.station(String(id)).then((r) => { if (live) setStation(r && (r as any).access ? r : null); }).catch((e: any) => { if (live && e?.http === 404) setStation(null); });
+    setStation(null);
+    load();
+    const t = setInterval(load, 120000);
+    return () => { live = false; clearInterval(t); };
+  }, [id]);
   const items = (data?.items || []).filter((d) => (!mode || d.mode === mode) && ms(d.realtime ? d.estimated : d.planned) > now - 60000);
 
   return (
@@ -86,6 +98,7 @@ export default function StopScreen() {
         {data && !items.length ? <Empty icon={I.clock} title="No more services" body="Nothing is due from here in the next few hours." /> : null}
         {!data && error ? <Empty icon={I.warn} title="Can't load this stop" body={error} /> : null}
         {data ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>Swipe left on a service, or touch and hold, to get alerts for it. Green times are live from the vehicle. Grey times are the timetable.</T> : null}
+        <StationInfo st={station} />
       </Screen>
     </>
   );

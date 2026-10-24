@@ -22,6 +22,8 @@ export type Leg = {
   planned?: string; estimated?: string; arrPlanned?: string; arrEstimated?: string; realtime?: boolean; delayMin?: number | null;
   durationMin: number; stops?: number; cancelled?: boolean; occupancy?: Occupancy; platformChangedFrom?: string | null; alerts?: Alert[];
   path?: [number, number][]; distanceM?: number;
+  /** Step free access and live lift outages at each end of a transit leg. */
+  access?: import('./access').LegAccess | null;
 };
 
 export type Journey = {
@@ -37,7 +39,11 @@ export type FareLeg = { line?: string; mode?: string; km?: number; peak?: boolea
 export type Fare = { type: string; typeName: string; total: number | null; peak: boolean; offPeak?: { from: string; save: number } | null; transfer?: number; airportFee?: number;
   capped?: boolean; unknown?: boolean; legs: FareLeg[]; estimate?: boolean };
 
-export type TripResp = { kind: 'trip'; from: { id: string; name: string }; to: { id: string; name: string }; journeys: Journey[]; tomorrow?: boolean; now: number; error?: string; stops?: Place[]; fallback?: boolean[] };
+export type TripResp = { kind: 'trip'; from: { id: string; name: string }; to: { id: string; name: string }; journeys: Journey[]; tomorrow?: boolean; now: number; error?: string; stops?: Place[]; fallback?: boolean[];
+  /** True when Accessible trips (acc=1) was on. */
+  accessible?: boolean;
+  /** Car parks when the first leg starts at a Park and Ride station. */
+  parking?: { station: Place; carparks: import('./access').CarPark[] } | null };
 
 export type ServiceStop = { id: string; name: string; lat?: number; lon?: number; planned?: string; estimated?: string; passed?: boolean; mine?: boolean; alight?: boolean; skipped?: boolean; platform?: string };
 export type ServiceResp = {

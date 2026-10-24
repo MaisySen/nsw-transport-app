@@ -1,6 +1,7 @@
 import type { Commute, DeparturesResp, Saved, SearchItem, ServiceResp, TripResp, Watch, WatchesResp, Place } from './types';
 import { getDevice, PROFILE } from './device';
 import { store } from './store';
+import type { CarPark, Station, TopupItem } from './access';
 
 export const BASE = 'https://nsw-transport-bot.sites.tab.bot';
 
@@ -53,9 +54,9 @@ export const api = {
   nearby: (lat: number, lon: number) => req<{ stops: (SearchItem & { distanceM?: number; dist?: number })[] }>(`/api/nearby?${qs({ lat: lat.toFixed(5), lon: lon.toFixed(5) })}`),
   departures: async (stop: string, refresh = false) => req<DeparturesResp>(`/api/departures?${qs({ stop, device: await getDevice(), profile: PROFILE, refresh: refresh ? 1 : '' })}`),
   trip: async (from: Place, to: Place, opts: { refresh?: boolean; count?: number; time?: string; arriveBy?: boolean } = {}) =>
-    req<TripResp>(`/api/trip?${qs({ from: from.id, to: to.id, fromName: from.name, toName: to.name, count: opts.count || 5, time: opts.time, arriveBy: opts.arriveBy ? 1 : '', fare: store.fareType(), device: await getDevice(), profile: PROFILE, refresh: opts.refresh ? 1 : '' })}`),
+    req<TripResp>(`/api/trip?${qs({ from: from.id, to: to.id, fromName: from.name, toName: to.name, count: opts.count || 5, time: opts.time, arriveBy: opts.arriveBy ? 1 : '', fare: store.fareType(), acc: store.accOn() ? 1 : '', device: await getDevice(), profile: PROFILE, refresh: opts.refresh ? 1 : '' })}`),
   plan: (legs: any[], opts: { count?: number; time?: string; all?: boolean } = {}) =>
-    req<TripResp>(`/api/plan?${qs({ legs: JSON.stringify(legs), count: opts.count || 5, time: opts.time, all: opts.all ? 1 : '', fare: store.fareType() })}`),
+    req<TripResp>(`/api/plan?${qs({ legs: JSON.stringify(legs), count: opts.count || 5, time: opts.time, all: opts.all ? 1 : '', fare: store.fareType(), acc: store.accOn() ? 1 : '' })}`),
   service: (q: Record<string, string | undefined>) => req<ServiceResp>(`/api/service?${qs(q)}`),
   alerts: (q = '') => req<{ items?: any[]; alerts?: any[] }>(`/api/alerts?${qs({ q })}`),
   saved: () => req<{ items: Saved[] }>(`/api/saved?${qs({ profile: PROFILE })}`),
@@ -78,5 +79,11 @@ export const api = {
   shareStart: async (body: any) => req<{ ok: boolean; id: string; key: string; url: string; expires: number }>(`/api/share`, { method: 'POST', body: JSON.stringify({ device: await getDevice(), ...body }) }),
   shareUpdate: (body: any) => req<{ ok: boolean }>(`/api/share/update`, { method: 'POST', body: JSON.stringify(body) }),
   shareEnd: (id: string, key: string) => req<{ ok: boolean }>(`/api/share?${qs({ id })}`, { method: 'DELETE', headers: { 'x-share-key': key } }),
+  // Station access, Park and Ride and Opal machines.
+  station: (id: string) => req<Station>(`/api/station?${qs({ id })}`),
+  parking: (stop?: string) => req<{ carparks: CarPark[]; station?: string; source?: string }>(`/api/parking?${qs({ stop })}`, undefined, 30000),
+  topup: (lat?: number, lon?: number, limit = 40) => req<{ items: TopupItem[]; source?: string }>(`/api/topup?${qs({ lat: lat != null ? lat.toFixed(5) : '', lon: lon != null ? lon.toFixed(5) : '', limit: lat != null ? limit : '' })}`),
+  parkingWatch: async (facility: string) => req<{ ok: boolean; watch?: { name: string }; now?: { status: string } }>(`/api/parking/watch`, { method: 'POST', body: JSON.stringify({ device: await getDevice(), profile: PROFILE, facility }) }),
+  liftAlerts: async (on: boolean, stations: string[] = []) => req<{ ok: boolean; now?: { title: string; url?: string }[] }>(`/api/lifts/alerts`, { method: 'POST', body: JSON.stringify(on ? { device: await getDevice(), profile: PROFILE, on: true, stations } : { device: await getDevice(), on: false }) }),
   testPush: async () => req<{ ok: boolean; pushed: any[]; expo?: any[] }>(`/api/push/test`, { method: 'POST', body: JSON.stringify({ device: await getDevice() }) }),
 };

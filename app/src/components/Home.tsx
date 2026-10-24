@@ -13,6 +13,8 @@ import { fareOf, money } from '@/lib/fare';
 import { directFilter, isChain, planTrip, stName, tLegs, tripKey, viaText } from '@/lib/trips';
 import type { TripLeg } from '@/lib/trips';
 import { Icon, I, IconName } from './Icon';
+import { OutageLine } from './Access';
+import { journeyOutages } from '@/lib/access';
 import { openService } from './Cards';
 import { LineBadge } from './Transit';
 import { font, Sep, T } from './ui';
@@ -345,6 +347,7 @@ export function TripBoard({ trip, now, handle, allServices }: { trip: TripItem; 
           <Sep inset={0} />
           <ServiceRow j={j} now={now} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => open(i)} />
           <WarnLine j={j} />
+          <OutageLine outages={journeyOutages(j)} />
         </View>
       ))}
     </Card>

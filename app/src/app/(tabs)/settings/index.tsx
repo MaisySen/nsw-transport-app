@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Alert, Linking, Switch, View } from 'react-native';
-import { Stack } from 'expo-router';
+import { ActivityIndicator, Alert, Linking, Platform, Switch, View } from 'react-native';
+import { router, Stack } from 'expo-router';
 import Constants from 'expo-constants';
 import { api } from '@/lib/api';
 import { useLive } from '@/lib/hooks';
@@ -14,6 +14,8 @@ import { FARE_TYPES } from '@/lib/fare';
 import { endLive } from '@/lib/live';
 import { Icon, I } from '@/components/Icon';
 import { Row, Screen, Section, Sep, T } from '@/components/ui';
+import { ActionSheet, type SheetAction } from '@/components/Sheet';
+import { syncLiftAlerts } from '@/lib/liftAlerts';
 import type { Commute } from '@/lib/types';
 
 function pushText(p: PushState | null) {
@@ -58,6 +60,7 @@ export default function Settings() {
       } catch (e: any) { Alert.alert("Couldn't reach the server", `${e.message} Nothing was deleted. Try again when you're online.`); return; }
       await endLive().catch(() => {});
       await disablePush().catch(() => {});
+      await syncLiftAlerts(false).catch(() => {});
       store.resetAll();
       // Everything this app keeps on the phone goes, except the install's private id and device id.
       try {
@@ -82,16 +85,44 @@ export default function Settings() {
   const test = async () => {
     try { await api.testPush(); Alert.alert('Sent', 'A test alert is on its way.'); } catch (e: any) { Alert.alert("Couldn't send", e.message); }
   };
-  const editCommute = (cm: Commute) => {
-    const move = (d: number) => api.saveCommute({ ...cm, tod: (cm.tod + d + 1440) % 1440 }).then(refresh);
-    Alert.alert(cm.name, `${shortName(cm.from.name)} to ${shortName(cm.to.name)}, ${daysText(cm.days)} around ${cm.todText}`, [
-      { text: `Earlier (${todText((cm.tod - 15 + 1440) % 1440)})`, onPress: () => move(-15) },
-      { text: `Later (${todText((cm.tod + 15) % 1440)})`, onPress: () => move(15) },
-      { text: cm.days === '12345' ? 'Every day' : 'Weekdays only', onPress: () => api.saveCommute({ ...cm, days: cm.days === '12345' ? '1234567' : '12345' }).then(refresh) },
-      { text: 'Delete', style: 'destructive', onPress: () => api.deleteCommute(cm.id).then(refresh) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+  // Commute actions: 5 choices, more than an Android dialog shows, so they go in a bottom sheet.
+  const [sheet, setSheet] = useState<Commute | null>(null);
+  const commuteActions = (cm: Commute): SheetAction[] => {
+    const move = (d: number) => api.saveCommute({ ...cm, tod: (cm.tod + d + 1440) % 1440 }).then(refresh).catch((e: any) => Alert.alert("Couldn't change it", e.message));
+    return [
+      { text: `Earlier (${todText((cm.tod - 15 + 1440) % 1440)})`, icon: I.up, onPress: () => move(-15) },
+      { text: `Later (${todText((cm.tod + 15) % 1440)})`, icon: I.down, onPress: () => move(15) },
+      { text: cm.days === '12345' ? 'Every day' : 'Weekdays only', icon: I.clock, onPress: () => api.saveCommute({ ...cm, days: cm.days === '12345' ? '1234567' : '12345' }).then(refresh).catch((e: any) => Alert.alert("Couldn't change it", e.message)) },
+      { text: 'Delete', icon: I.trash, destructive: true, onPress: () => api.deleteCommute(cm.id).then(refresh).catch((e: any) => Alert.alert("Couldn't delete it", e.message)) },
+    ];
   };
+  const editCommute = (cm: Commute) => setSheet(cm);
+
+  // Accessibility: step free trips and lift outage alerts for stations on saved trips.
+  const [liftBusy, setLiftBusy] = useState(false);
+  const setLift = async (on: boolean) => {
+    Haptics.selectionAsync();
+    if (!on) {
+      store.setLiftAlerts(false);
+      syncLiftAlerts(false).catch(() => {});
+      return;
+    }
+    setLiftBusy(true);
+    try {
+      let ps = push && (push.status === 'on' || push.status === 'local') ? push : await enablePush(false);
+      setPush(ps);
+      if (ps.status === 'denied') { Alert.alert('Notifications are off', 'Open Settings, find Transport, and allow notifications.', [{ text: 'Not now', style: 'cancel' }, { text: 'Open Settings', onPress: () => Linking.openSettings() }]); return; }
+      const r = await syncLiftAlerts(true);
+      store.setLiftAlerts(true);
+      const now = (r as any)?.now || [];
+      Alert.alert('Lift outage alerts on', now.length ? `Out of service now on your saved trips: ${now.map((x: any) => x.title).join('. ')}.` : "No lifts are out on your saved trips right now. I'll tell you if one goes out.");
+    } catch (e: any) {
+      Alert.alert("Couldn't turn it on", e.message);
+    } finally { setLiftBusy(false); }
+  };
+  const sw = (v: boolean, onChange: (v: boolean) => void, disabled?: boolean) => (
+    <Switch value={v} onValueChange={onChange} disabled={disabled} trackColor={Platform.OS === 'android' ? { true: c.tint, false: c.fill } : undefined} thumbColor={Platform.OS === 'android' ? (v ? (c.dark ? '#062E6F' : '#fff') : c.text3) : undefined} />
+  );
 
   return (
     <>
@@ -128,6 +159,16 @@ export default function Settings() {
                 onPress={() => Alert.alert(`Delete "${s.name}"?`, undefined, [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => api.deleteSaved(s.name).then(refresh) }])} />
             </View>
           )) : <Row title="No saved trips" subtitle="Open a trip and tap the star to save it as Home or Work." chevron={false} />}
+        </Section>
+
+        <Section title="Accessibility" footer="Accessible trips asks the Trip Planner for step free trips only. Lift outage alerts tell you when a lift goes out at a station on your saved trips. Lift status from Transport for NSW service alerts, live.">
+          <Row icon={I.access} iconBg={c.tint} title="Accessible trips" subtitle="Step free trips only, from the Trip Planner" chevron={false}
+            right={sw(!!st.acc, (v) => { Haptics.selectionAsync(); store.setAcc(v); })} />
+          <Sep inset={57} />
+          <Row icon={I.bell} iconBg={c.red} title="Lift outage alerts" subtitle="For stations on your saved trips" chevron={false}
+            right={liftBusy ? <ActivityIndicator size="small" color={c.tint} /> : sw(!!st.liftAlerts, setLift)} />
+          <Sep inset={57} />
+          <Row icon={I.fare} iconBg={c.indigo} title="Opal top up machines near me" onPress={() => router.push('/topup')} />
         </Section>
 
         <Section title="Opal fare estimates" footer="Trips show an Opal fare estimate for this fare type, worked out from the Opal fare tables: peak or off peak, transfer discount, airport station fee and daily cap. It is not your card's charge.">
@@ -168,6 +209,9 @@ export default function Settings() {
           <Row title="Privacy policy" onPress={() => Linking.openURL('https://nsw-transport-bot.sites.tab.bot/privacy/')} />
         </Section>
       </Screen>
+      <ActionSheet visible={!!sheet} title={sheet?.name}
+        message={sheet ? `${shortName(sheet.from.name)} to ${shortName(sheet.to.name)}, ${daysText(sheet.days)} around ${sheet.todText}` : undefined}
+        actions={sheet ? commuteActions(sheet) : []} onClose={() => setSheet(null)} />
     </>
   );
 }

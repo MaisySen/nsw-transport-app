@@ -148,6 +148,10 @@ export default function Search() {
           <>
             <Section>
               <Row icon={I.location} iconBg={c.tint} title="Stops near me" onPress={findNearby} right={locBusy ? <ActivityIndicator size="small" /> : undefined} />
+              <Sep inset={57} />
+              <Row icon={I.car} iconBg="#0A84FF" title="Park and Ride" subtitle="Live spaces at station car parks" onPress={() => router.push('/parking')} />
+              <Sep inset={57} />
+              <Row icon={I.fare} iconBg={c.indigo} title="Opal top up machines" subtitle="Closest machines, and which take cash" onPress={() => router.push('/topup')} />
             </Section>
             {nearby?.length ? (
               <Section title="Near you">

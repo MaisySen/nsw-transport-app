@@ -46,6 +46,10 @@ export const I = {
   history: { ios: 'clock.arrow.circlepath', android: 'history' },
   edit: { ios: 'pencil', android: 'edit' },
   fare: { ios: 'creditcard', android: 'payments' },
+  car: { ios: 'car.fill', android: 'directions_car' },
+  access: { ios: 'figure.roll', android: 'accessible' },
+  bellPlus: { ios: 'bell.badge', android: 'notification_add' },
+  ticket: { ios: 'ticket', android: 'confirmation_number' },
 } satisfies Record<string, IconName>;
 
 export function modeIconName(mode?: string): IconName {
