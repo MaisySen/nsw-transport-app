@@ -16,13 +16,15 @@ import { ACC_LABEL, accessKit, outageText, parkBadge, safeUrl, ticketText, type 
 import { LineBadge } from '@/components/Transit';
 import { RemindLastButton } from '@/components/LastHome';
 import { canRemind, type LastHomeHint } from '@/lib/lastHomeCore';
+import { shortPlace, statusOf, tripSummary, type AskFare } from '@/lib/askFormat';
+import { PlainAnswer, TripAnswer } from '@/components/AskAnswer';
 
 type Link = { kind?: string; label?: string; href?: string; id?: string; name?: string; from?: string; to?: string; fn?: string; tn?: string; [k: string]: any };
 type Dep = { line: string; color?: string; mode?: string; dest: string; platform?: string | null; planned: string; estimated?: string | null; realtime: boolean; delayMin: number; cancelled: boolean; link?: Link };
 type Leg = { kind: string; mode?: string; line?: string; color?: string; fromPlatform?: string | null; realtime: boolean; delayMin: number; cancelled: boolean; planned?: string; link?: Link | null };
 type Jny = { leave: string; arrive: string; durationMin: number; changes: number; legs: Leg[]; warn?: string | null; fare?: Fare | null };
 type Card = { type: 'departures' | 'trip' | 'alerts' | 'stops' | 'parking' | 'station' | string; station?: Station; title?: string; titleOnly?: boolean; link?: Link | null; items?: any[]; journeys?: Jny[]; from?: { id: string; name: string }; to?: { id: string; name: string } };
-type Msg = { id: string; role: 'me' | 'bot'; text: string; cards?: Card[]; links?: Link[]; suggestions?: string[]; ask?: string | null; t: number; lastHome?: LastHomeHint | null };
+type Msg = { id: string; role: 'me' | 'bot'; text: string; kind?: string | null; fare?: AskFare | null; cards?: Card[]; links?: Link[]; suggestions?: string[]; ask?: string | null; t: number; lastHome?: LastHomeHint | null };
 
 const KEY = 'ask_chat_v1';
 
@@ -36,14 +38,7 @@ function cd(t: string, now: number) {
   if (m >= 60) return { big: clock(t), unit: '' };
   return { big: String(m), unit: 'min' };
 }
-function status(it: { cancelled?: boolean; realtime?: boolean; delayMin?: number }) {
-  if (it.cancelled) return { text: 'Cancelled', tone: 'red' as const };
-  if (!it.realtime) return { text: 'Scheduled', tone: 'text2' as const };
-  const d = Math.round(it.delayMin || 0);
-  if (d >= 2) return { text: `${d} min late`, tone: 'lateText' as const };
-  if (d <= -2) return { text: `${-d} min early`, tone: 'liveText' as const };
-  return { text: 'On time', tone: 'liveText' as const };
-}
+const status = statusOf;
 /** Opens a server link in the native screens: stop board, trip, live map. */
 function open(l?: Link | null) {
   if (!l) return;
@@ -88,7 +83,7 @@ export default function AskScreen() {
       const qs = Object.entries(p).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
       const r = await fetch(`${apiBase()}/api/ask?${qs}`);
       const d = await r.json();
-      setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: d.reply || d.text || "Sorry, I didn't get that.", cards: d.cards || [], links: d.links || [], suggestions: d.suggestions || [], ask: d.ask || null, t: Date.now(), lastHome: d.lastHome && d.lastHome.from && d.lastHome.to ? d.lastHome : null }]);
+      setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: d.reply || d.text || "Sorry, I didn't get that.", kind: typeof d.kind === 'string' ? d.kind : null, fare: d.fare || null, cards: d.cards || [], links: d.links || [], suggestions: d.suggestions || [], ask: d.ask || null, t: Date.now(), lastHome: d.lastHome && d.lastHome.from && d.lastHome.to ? d.lastHome : null }]);
     } catch {
       setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: 'No connection right now. Check your signal and try again.', suggestions: [q], t: Date.now() }]);
     } finally { setBusy(false); }
@@ -124,7 +119,7 @@ export default function AskScreen() {
     <View style={[st.card, { backgroundColor: c.card, borderColor: c.sep }]}>
       {card.type !== 'alerts' && card.type !== 'stops' ? (
         <Pressable onPress={() => open(card.link)} style={st.head}>
-          <Text numberOfLines={1} style={[st.headText, { color: c.text2 }]}>{card.type === 'trip' ? (card.titleOnly && card.title ? card.title : `${card.title ? card.title + ': ' : ''}${card.from?.name} to ${card.to?.name}`) : card.type === 'station' ? card.station?.name : card.title}</Text>
+          <Text numberOfLines={1} style={[st.headText, { color: c.text2 }]}>{card.type === 'trip' ? (card.titleOnly && card.title ? card.title : `${card.title ? card.title + ': ' : ''}${shortPlace(card.from?.name)} to ${shortPlace(card.to?.name)}`) : card.type === 'station' ? card.station?.name : card.title}</Text>
           {card.link ? <Text style={{ color: c.text3, fontSize: 17 }}>{'\u203a'}</Text> : null}
         </Pressable>
       ) : null}
@@ -219,14 +214,14 @@ export default function AskScreen() {
     <View style={[st.bubble, st.me, { backgroundColor: c.tint }]}><Text style={st.meText}>{item.text}</Text></View>
   ) : (
     <View style={{ alignItems: 'flex-start', marginTop: 6 }}>
-      <View style={[st.bubble, st.bot, { backgroundColor: c.dark ? '#26252A' : '#E9E9EB' }]}><Text style={[st.botText, { color: c.text }]}>{item.text}</Text></View>
+      {(() => { const sum = tripSummary(item, now); return sum ? <TripAnswer s={sum} /> : <PlainAnswer text={item.text} />; })()}
       {(item.cards || []).map((card, i) => <CardView key={i} card={card} />)}
       {item.lastHome && canRemind(Date.parse(item.lastHome.leave || ''), now) ? <RemindLastButton hint={item.lastHome} known acc={store.accOn()} /> : null}
       {item.links && item.links.length ? <View style={st.chips}>{item.links.map((l, i) => <Chip key={i} label={l.label || 'Open'} onPress={() => open(l)} />)}</View> : null}
       {index === msgs.length - 1 && (item.ask === 'location' || (item.suggestions || []).length) ? (
         <View style={st.chips}>
           {item.ask === 'location' ? <Chip label="Use my location" onPress={askWithLocation} /> : null}
-          {(item.suggestions || []).map((s) => <Chip key={s} label={s} onPress={() => ask(s)} />)}
+          {(item.suggestions || []).map((s) => <Chip key={s} label={s.replace(/ (Station|Light Rail|Wharf)\b/g, '')} onPress={() => ask(s)} />)}
         </View>
       ) : null}
     </View>
