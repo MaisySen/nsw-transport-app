@@ -104,7 +104,8 @@ extension AppStore {
             show(Banner(title: "You've arrived at \(place)", symbol: "checkmark.circle.fill"))
             success()
         }
-        await endLiveTrip(silent: true, keepServerWatch: trip.watchID != nil)
+        await LiveTripActivities.finish(record: trip, state: liveState)
+        await endLiveTrip(silent: true, keepServerWatch: trip.watchID != nil, cardFinished: true)
     }
 
     /// Get off and connection alerts, once per leg. When the server follows the trip it sends
@@ -159,7 +160,7 @@ extension AppStore {
 
     /// End trip: deletes the share link and the server watch, and ends the Lock Screen card.
     /// On arrival the server watch is left to finish by itself, so it can say "arrived" once.
-    func endLiveTrip(silent: Bool = false, keepServerWatch: Bool = false) async {
+    func endLiveTrip(silent: Bool = false, keepServerWatch: Bool = false, cardFinished: Bool = false) async {
         guard let trip = liveTrip else { return }
         liveTask?.cancel()
         liveTask = nil
@@ -168,8 +169,8 @@ extension AppStore {
         liveServices = []
         if let s = trip.share { try? await api.endShare(s) }
         if !keepServerWatch, let id = trip.watchID { try? await api.unwatch(id: FlexID(id), device: device) }
-        ReplayLog.shared.add("trip ended, Lock Screen card ended")
-        await LiveTripActivities.endAll()
+        ReplayLog.shared.add(cardFinished ? "trip ended, Lock Screen card says You've arrived and leaves in 2 min" : "trip ended, Lock Screen card ended")
+        if !cardFinished { await LiveTripActivities.endAll() }
         if !silent {
             show(Banner(title: "Trip ended", symbol: "checkmark.circle.fill"))
             tap()
@@ -201,7 +202,7 @@ enum LiveTripActivities {
             nextStop: st?.phase == "wait" ? Optional(LiveCardText.place(leg.from)) : st?.nextStop.map { LiveCardText.place($0) },
             stopsLeft: st?.stopsLeft, getOffAt: LiveCardText.place(leg.to ?? record.to.name),
             arrival: st?.eta ?? record.legs.last?.arrPlanned ?? Date().addingTimeInterval(1800),
-            phase: st?.phase ?? "wait", warning: warning, progress: progress, fareLine: nil,
+            phase: LiveCardText.phase(st), warning: warning, progress: progress, fareLine: nil,
             towards: LiveCardText.place(leg.towards ?? leg.to), platform: leg.fromPlatform,
             departs: times?.dep ?? leg.planned, legArrives: times?.arr ?? leg.arrPlanned,
             destination: LiveCardText.place(record.to.name))
@@ -230,7 +231,7 @@ enum LiveTripActivities {
         // Never two cards for one trip.
         for extra in cards.dropFirst() { Task { await extra.end(nil, dismissalPolicy: .immediate) } }
         if let a = cards.first {
-            Task { await a.update(ActivityContent(state: c, staleDate: c.arrival.addingTimeInterval(15 * 60))) }
+            Task { await a.update(ActivityContent(state: c, staleDate: c.arrival.addingTimeInterval(30))) }
         } else if !st.done && !requesting && Activity<TripActivityAttributes>.activities.isEmpty {
             start(record: record, state: st)
         }
@@ -239,6 +240,15 @@ enum LiveTripActivities {
     static func endAll() async {
         for a in Activity<LiveTripAttributes>.activities {
             await a.end(nil, dismissalPolicy: .immediate)
+        }
+    }
+
+    /// At arrival: the card says "You've arrived at X" and leaves the Lock Screen 2 minutes later.
+    static func finish(record: LiveTripRecord, state st: LiveTripState?) async {
+        var c = content(record: record, state: st)
+        c.phase = "arrived"
+        for a in Activity<LiveTripAttributes>.activities {
+            await a.end(ActivityContent(state: c, staleDate: nil), dismissalPolicy: .after(Date().addingTimeInterval(120)))
         }
     }
 }
@@ -265,7 +275,7 @@ final class ActivityCardHost: LiveCardHost {
 
     func requestCard() throws -> String {
         try Activity.request(attributes: attributes,
-                             content: ActivityContent(state: content, staleDate: content.arrival.addingTimeInterval(15 * 60)),
+                             content: ActivityContent(state: content, staleDate: content.arrival.addingTimeInterval(30)),
                              pushType: nil).id
     }
 }
@@ -356,7 +366,7 @@ struct LiveTripView: View {
                     .accessibilityLabel("Hide live trip")
                     .accessibilityIdentifier("hideLiveTrip")
                     Spacer()
-                    Button { camera = .automatic } label: {
+                    Button { frameTrip() } label: {
                         Image(systemName: "location.fill")
                             .font(.headline)
                             .frame(width: 44, height: 44)
@@ -379,7 +389,9 @@ struct LiveTripView: View {
         }
         .task {
             if store.liveTrip != nil { await store.refreshLive() }
+            frameTrip()
         }
+        .onChange(of: frameKey) { _, _ in frameTrip() }
     }
 
     private var map: some View {
@@ -412,14 +424,39 @@ struct LiveTripView: View {
     private struct VehiclePin { var index: Int; var line: String; var coordinate: CLLocationCoordinate2D }
     private struct LinePath { var index: Int; var coords: [CLLocationCoordinate2D] }
 
+    /// Only the part of each service you ride, boarding stop to the stop you get off at, not the
+    /// whole line out to Penrith.
     private var lines: [LinePath] {
         var out: [LinePath] = []
         for (i, s) in store.liveServices.enumerated() {
-            guard let s, let path = s.path, path.count > 1 else { continue }
-            let coords = path.compactMap { p in p.count >= 2 ? CLLocationCoordinate2D(latitude: p[0], longitude: p[1]) : nil }
-            out.append(LinePath(index: i, coords: coords))
+            guard let s else { continue }
+            let pts = LegMap.ridden(s)
+            guard pts.count > 1 else { continue }
+            out.append(LinePath(index: i, coords: pts.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }))
         }
         return out
+    }
+
+    /// The trip's frame: the ridden parts plus where you are, with padding.
+    private var tripRegion: MKCoordinateRegion? {
+        var pts = store.liveServices.compactMap { $0 }.flatMap { LegMap.ridden($0) }
+        // You are added when you are near the trip, so a far away phone does not zoom out to the state.
+        if let c = location.coordinate, let base = LegMap.frame(pts),
+           abs(c.latitude - base.center.lat) < max(base.latSpan, 0.05), abs(c.longitude - base.center.lon) < max(base.lonSpan, 0.05) {
+            pts.append(GeoPoint(c.latitude, c.longitude))
+        }
+        guard let f = LegMap.frame(pts) else { return nil }
+        return MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: f.center.lat, longitude: f.center.lon),
+                                  span: MKCoordinateSpan(latitudeDelta: f.latSpan, longitudeDelta: f.lonSpan))
+    }
+
+    /// Changes when the first service answers arrive, so the map frames itself once they do.
+    private var frameKey: Int {
+        store.liveServices.compactMap { $0 }.count
+    }
+
+    private func frameTrip() {
+        if let r = tripRegion { camera = .region(r) } else { camera = .automatic }
     }
     private struct StopPin { var id: String; var leg: Int; var name: String; var coordinate: CLLocationCoordinate2D }
 
@@ -490,15 +527,7 @@ struct LiveTripSheet: View {
                                     }
                                 }
                             }
-                            HStack(spacing: 8) {
-                                LiveBadge(isLive: st?.live == true, cancelled: false)
-                                if let f = trip.fare, let t = f.total {
-                                    Text("Opal fare estimate \(Money.text(t)) (\(f.summary))")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
-                            }
+                            LiveBadge(isLive: st?.live == true, cancelled: false)
                         }
                         .accessibilityElement(children: .combine)
                     }

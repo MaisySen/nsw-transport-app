@@ -192,6 +192,18 @@ jobs:
           rm -rf out/light.xcresult out/dark.xcresult
           if [ -n "$(ls out/shots 2>/dev/null)" ] && [ -n "$(ls out/widgets 2>/dev/null)" ]; then rm -rf out/attachments-*; fi
 
+      - name: Upload the CI bundle (GitHub artifact)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ci-${{ github.run_number }}
+          path: |
+            out
+            *.log
+          retention-days: 14
+          if-no-files-found: ignore
+
       - name: Build with xtool (second toolchain check)
         if: ${{ inputs.xtool == true }}
         continue-on-error: true
@@ -235,22 +247,22 @@ jobs:
           done
           tail -5 xtool-build.log >> $R 2>/dev/null || true
           ls out out/shots out/widgets >> $R 2>/dev/null || true
-          zip -qry bundle.zip out store-*.log xcode-sim.log xcode-device.log xcode-test-build.log test-light.log test-dark.log xtool-build.log 2>/dev/null || true
-          URL=""
-          for i in 1 2 3; do
-            URL=$(curl -s -m 120 -F reqtype=fileupload -F time=72h -F fileToUpload=@bundle.zip https://litterbox.catbox.moe/resources/internals/api.php || true)
-            case "$URL" in https://*) break;; *) URL="";; esac
-            sleep 5
+          # No third party file hosts: the full bundle is a GitHub Actions artifact (step below), and
+          # small JPEG copies of the screenshots plus the replay timelines go to the ci-out branch.
+          echo "bundle: GitHub Actions artifact ios-ci-${{ github.run_number }} on run ${{ github.run_id }}; screenshots in ci-out/shots" >> $R
+          rm -rf shots && mkdir -p shots
+          for f in out/shots/*.png; do
+            [ -f "$f" ] || continue
+            sips -s format jpeg -s formatOptions 55 -Z 1000 "$f" --out "shots/$(basename "${f%.png}").jpg" > /dev/null 2>&1 || true
           done
-          if [ -z "$URL" ]; then URL=$(curl -s -m 120 -F file=@bundle.zip https://tmpfiles.org/api/v1/upload || true); fi
-          echo "bundle: $URL" >> $R
+          cp out/shots/*.txt shots/ 2>/dev/null || true
           { grep -E "^bundle: " $R; head -c 7000 $R; } > r2.txt
           git config user.name "ci"
           git config user.email "ci@users.noreply.github.com"
           git fetch -q origin ci-out || true
           git checkout -q -B ci-out
           git rm -rq --cached . > /dev/null
-          git add -f r2.txt
+          git add -f r2.txt shots
           git commit -qm "Build report ${{ github.run_number }}"
           git push -qf origin ci-out
 

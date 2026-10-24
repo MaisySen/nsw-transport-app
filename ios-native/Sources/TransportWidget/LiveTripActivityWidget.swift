@@ -7,7 +7,7 @@ import TransportKit
 struct LiveTripActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: LiveTripAttributes.self) { context in
-            LiveTripLockCard(attrs: context.attributes, state: context.state)
+            LiveTripLockCard(attrs: context.attributes, state: context.state, stale: context.isStale)
                 .padding(16)
                 .environment(\.colorScheme, .dark)
                 .activityBackgroundTint(Color.black.opacity(0.6))
@@ -15,13 +15,14 @@ struct LiveTripActivityWidget: Widget {
                 .widgetURL(URL(string: "nswtransport://go"))
         } dynamicIsland: { context in
             let s = context.state
+            let stale = context.isStale
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     WidgetLineBadge(line: s.line, colorHex: s.lineColorHex, mode: s.mode)
                         .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    MinutesUntil(date: liveTripTarget(s))
+                    MinutesUntil(date: s.countdownTarget, arrived: s.arrived(stale: stale))
                         .font(.title3.weight(.semibold))
                         .monospacedDigit()
                         .lineLimit(1)
@@ -30,15 +31,15 @@ struct LiveTripActivityWidget: Widget {
                         .frame(width: 80, alignment: .trailing)
                 }
                 DynamicIslandExpandedRegion(.center) {
-                    Text(liveTripHeadline(s)).font(.subheadline.weight(.semibold)).lineLimit(1)
+                    Text(s.headline(stale: stale)).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    LiveTripIslandBottom(state: s)
+                    LiveTripIslandBottom(state: s, stale: stale)
                 }
             } compactLeading: {
                 WidgetLineBadge(line: s.line, colorHex: s.lineColorHex, mode: s.mode)
             } compactTrailing: {
-                MinutesUntil(date: liveTripTarget(s))
+                MinutesUntil(date: s.countdownTarget, arrived: s.arrived(stale: stale))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
@@ -51,39 +52,15 @@ struct LiveTripActivityWidget: Widget {
     }
 }
 
-/// Wait: "To Central". On board: "Get off at Redfern". Short names, no "Station".
-func liveTripHeadline(_ s: LiveTripAttributes.ContentState) -> String {
-    if s.phase == "wait" { return "To \(s.towards ?? s.getOffAt)" }
-    return "Get off at \(s.getOffAt)"
-}
-
-/// Wait: "Leaves 9:51pm, Platform 2". On board: "3 stops" or "Next stop: Central".
-func liveTripDetail(_ s: LiveTripAttributes.ContentState) -> String {
-    if s.phase == "wait" {
-        var t = s.departs.map { "Leaves \(Clock.time($0))" } ?? "Board at \(s.nextStop ?? "")"
-        if let p = s.platform, !p.isEmpty { t += ", \(p)" }
-        return t
-    }
-    if let n = s.stopsLeft, n > 1 { return "\(n) stops" }
-    if let n = s.stopsLeft, n == 1 { return "Next stop" }
-    return s.nextStop.map { "Next stop: \($0)" } ?? ""
-}
-
-/// The moment the big number counts to: leaving while you wait, getting off while on board.
-func liveTripTarget(_ s: LiveTripAttributes.ContentState) -> Date {
-    s.phase == "wait" ? (s.departs ?? s.arrival) : (s.legArrives ?? s.arrival)
-}
-
-func liveTripArriveLine(_ s: LiveTripAttributes.ContentState) -> String {
-    "Arrive \(s.destination ?? s.getOffAt) \(Clock.time(s.arrival))"
-}
-
 /// "26 min", "1 min", "Now": whole minutes that keep counting on the Lock Screen (iOS 18), or
 /// the clock time on iOS 17, which has no minutes only countdown. Never a seconds timer.
 struct MinutesUntil: View {
     var date: Date
+    var arrived = false
     var body: some View {
-        if #available(iOS 18.0, *) {
+        if arrived {
+            Image(systemName: "checkmark.circle.fill").accessibilityLabel("Arrived")
+        } else if #available(iOS 18.0, *) {
             Text(.currentDate, format: .reference(to: date, allowedFields: [.hour, .minute]))
         } else {
             Text(Clock.time(date))
@@ -93,14 +70,17 @@ struct MinutesUntil: View {
 
 struct LiveTripIslandBottom: View {
     var state: LiveTripAttributes.ContentState
+    var stale = false
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(liveTripDetail(state)).foregroundStyle(.secondary).lineLimit(1)
+                Text(state.detail(stale: stale)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
-                Text(liveTripArriveLine(state)).monospacedDigit().lineLimit(1)
+                if !state.arrived(stale: stale) {
+                    Text(state.arriveLine).monospacedDigit().lineLimit(1)
+                }
             }
-            if let w = state.warning {
+            if let w = state.warning, !state.arrived(stale: stale) {
                 Label(w, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(w.contains("miss") ? Color.red : Color.orange)
                     .lineLimit(1)
@@ -114,6 +94,7 @@ struct LiveTripIslandBottom: View {
 struct LiveTripLockCard: View {
     var attrs: LiveTripAttributes
     var state: LiveTripAttributes.ContentState
+    var stale = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -121,13 +102,13 @@ struct LiveTripLockCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode)
-                        Text(liveTripHeadline(state)).font(.headline).lineLimit(1).minimumScaleFactor(0.8)
+                        Text(state.headline(stale: stale)).font(.headline).lineLimit(1).minimumScaleFactor(0.8)
                     }
-                    Text(liveTripDetail(state))
+                    Text(state.detail(stale: stale))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    if let w = state.warning {
+                    if let w = state.warning, !state.arrived(stale: stale) {
                         Text(w)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(w.contains("miss") ? Color.red : Color.orange)
@@ -136,8 +117,8 @@ struct LiveTripLockCard: View {
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 0) {
-                    Text(state.phase == "wait" ? "Leaves" : "Get off").font(.caption2).foregroundStyle(.secondary)
-                    MinutesUntil(date: liveTripTarget(state))
+                    Text(state.arrived(stale: stale) ? "Arrived" : (state.phase == "wait" ? "Leaves" : "Get off")).font(.caption2).foregroundStyle(.secondary)
+                    MinutesUntil(date: state.countdownTarget, arrived: state.arrived(stale: stale))
                         .font(.title2.weight(.bold))
                         .monospacedDigit()
                         .lineLimit(1)
@@ -145,9 +126,11 @@ struct LiveTripLockCard: View {
                         .multilineTextAlignment(.trailing)
                 }
             }
-            ProgressView(value: min(max(state.progress, 0), 1))
+            ProgressView(value: state.arrived(stale: stale) ? 1 : min(max(state.progress, 0), 1))
                 .tint(RGB(hex: state.lineColorHex).map { Color(red: $0.r, green: $0.g, blue: $0.b) } ?? Color.blue)
-            Text(liveTripArriveLine(state)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            if !state.arrived(stale: stale) {
+                Text(state.arriveLine).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
         }
     }
 }

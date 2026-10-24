@@ -24,6 +24,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * No Lock screen button: the ongoing notification starts with the trip.
 * New replay test (`app/test/livereplay.test.mjs`): a two leg trip changing at Redfern to the T4 for Kings Cross, on time, delayed and early, to 15 minutes past arrival.
 
+### iPhone app: live trip map and arrival on the Lock Screen (11:05 PM)
+* The live trip map draws only the part you ride (boarding stop to the stop you get off at), not the whole line out to Penrith, and frames that part plus where you are. The locate button goes back to that frame.
+* The live trip screen no longer shows the Opal fare (it is on the trip details).
+* At arrival the Lock Screen card says "You've arrived at Strathfield" with the time the train got in, then leaves the Lock Screen 2 minutes later. Even if the app is not running, the card switches to the arrived state at the arrival time instead of sitting at "Next stop" and 0:00.
+* Tests: the map frame for Burwood to Strathfield is under 5 km and holds both stops, nothing is drawn towards Penrith, and the card at arrival is the arrived state.
+* CI no longer uploads to third party file hosts: the full bundle is a GitHub Actions artifact and the screenshots and replay timelines go to the ci-out branch.
+
 ### Remote config for the iPhone app (10:45 PM)
 * New `GET /api/app/config` on the server (deployed) and a matching reader in the app, fetched at launch and when the app comes to the front, with the last good copy kept for offline launches. From the server, without a new build: hide a feature, pause one with a message (kill switch), change the welcome title and the Start trip footer, change alert timings and the live refresh rate, and reorder the tabs. Trip and alert decisions stay on the server as before. Details in docs/API.md.
 * An admin can change it with `POST /api/app/config` (stored in D1, merged over the defaults).

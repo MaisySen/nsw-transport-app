@@ -53,4 +53,35 @@ public struct LiveTripAttributes: ActivityAttributes {
         self.legsCount = legsCount
     }
 }
+
+/// The words on the trip card. `stale` is true once the system marks the card out of date, which
+/// happens at the arrival time, so the card says it has arrived even if the app was not running.
+extension LiveTripAttributes.ContentState {
+    public func arrived(stale: Bool) -> Bool { phase == "arrived" || stale }
+
+    /// Waiting: "To Central". On board: "Get off at Redfern". At the end: "You've arrived at Strathfield".
+    public func headline(stale: Bool = false) -> String {
+        if arrived(stale: stale) { return "You've arrived at \(destination ?? getOffAt)" }
+        if phase == "wait" { return "To \(towards ?? getOffAt)" }
+        return "Get off at \(getOffAt)"
+    }
+
+    /// Waiting: "Leaves 9:51pm, Platform 2". On board: "3 stops" or "Next stop". At the end: the time.
+    public func detail(stale: Bool = false) -> String {
+        if arrived(stale: stale) { return "Got in at \(Clock.time(arrival)). The trip has ended." }
+        if phase == "wait" {
+            var t = departs.map { "Leaves \(Clock.time($0))" } ?? "Board at \(nextStop ?? "")"
+            if let p = platform, !p.isEmpty { t += ", \(p)" }
+            return t
+        }
+        if let n = stopsLeft, n > 1 { return "\(n) stops" }
+        if let n = stopsLeft, n == 1 { return "Next stop" }
+        return nextStop.map { "Next stop: \($0)" } ?? ""
+    }
+
+    /// What the big number counts to: leaving while you wait, getting off while on board.
+    public var countdownTarget: Date { phase == "wait" ? (departs ?? arrival) : (legArrives ?? arrival) }
+
+    public var arriveLine: String { "Arrive \(destination ?? getOffAt) \(Clock.time(arrival))" }
+}
 #endif
