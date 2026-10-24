@@ -59,11 +59,25 @@ jobs:
           test -s ../sim-app-path.txt
 
       - name: Build for device (unsigned ipa)
+        timeout-minutes: 25
         run: |
           set -o pipefail
+          # Names the source files a slow optimizer pass is still working on, for the report.
+          (
+            for m in 4 8 12 16 20; do
+              sleep 240
+              echo "== still compiling after $m min"
+              ps -axo etime=,command= | grep "[s]wift-frontend" | while read -r ET CMD; do
+                echo "frontend running $ET: $(echo "$CMD" | grep -oE "(-primary-file|-c) [^ ]+\.swift" | sed -E "s#.*/ios-native/##" | tr "\n" " ")"
+                echo "$CMD" | grep -q " -primary-file " || echo "  whole module: $(echo "$CMD" | grep -oE "[^ ]+/Sources/[^ ]+\.swift" | sed -E "s#.*/ios-native/##" | tr "\n" " " | head -c 600)"
+              done
+            done
+          ) > ../device-watch.log 2>&1 &
           xcodebuild -project Transport.xcodeproj -scheme Transport -configuration Release \
             -sdk iphoneos -destination "generic/platform=iOS" -derivedDataPath dd-device \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build > ../xcode-device.log 2>&1 || { grep -E "error:" ../xcode-device.log | sort -u | head -80; exit 1; }
+            SWIFT_COMPILATION_MODE=singlefile \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build > ../xcode-device.log 2>&1 || { grep -E "error:" ../xcode-device.log | sort -u | head -80; cat ../device-watch.log; exit 1; }
+          cat ../device-watch.log || true
           APP=$(find dd-device -path "*Release-iphoneos/Transport.app" -maxdepth 6 | head -1)
           test -n "$APP"
           mkdir -p ../out/Payload
@@ -194,6 +208,7 @@ jobs:
               grep -E "Test Case .* (passed|failed)|error: -\[|XCTAssert|failed -" $L | sed -E "s#.*/ios-native/##" | sort -u | head -60 >> $R
             fi
           done
+          if [ -s device-watch.log ]; then echo "== device build watch" >> $R; head -c 1500 device-watch.log >> $R; fi
           echo "== warnings" >> $R
           cat xcode-sim.log xcode-device.log xcode-test-build.log 2>/dev/null | grep -E "warning:" | grep -v appintentsmetadataprocessor | sed -E "s#.*/ios-native/##" | sort -u | head -40 >> $R
           for L in xcode-sim.log xcode-device.log xtool-build.log; do
