@@ -17,12 +17,8 @@ type Native = {
 
 const native: Native | null = Platform.OS === 'ios' ? requireOptionalNativeModule<Native>('TransportIOS') : null;
 
-/** What the Lock Screen card shows. Dates are milliseconds since 1970. Matches LiveTripAttributes.ContentState. */
-export type TripCardState = {
-  line: string; lineColorHex: string; mode: string; nextStop: string | null; stopsLeft: number | null; getOffAt: string;
-  arrival: number; phase: 'wait' | 'ride' | 'arrived'; warning: string | null; progress: number;
-  towards: string | null; platform: string | null; departs: number | null; legArrives: number | null; destination: string | null;
-};
+export type { TripCardState } from '../../platform/tripCard';
+import type { TripCardState } from '../../platform/tripCard';
 
 const clean = (s: TripCardState) => JSON.stringify(Object.fromEntries(Object.entries(s).filter(([, v]) => v !== null && v !== undefined)));
 

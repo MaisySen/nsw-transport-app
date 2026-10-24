@@ -1,6 +1,28 @@
 # Releases
 
-Every shipped build and update. Times are Sydney time (AEDT). Updated 25 Oct 2026, 12:20 AM.
+Every shipped build and update. Times are Sydney time (AEDT). Updated 25 Oct 2026, 1:15 AM.
+
+## iPhone (Expo, over the air)
+
+The same Expo app as Android, built for iPhone with EAS and uploaded to TestFlight on the App Store Connect app `6826543653` (`com.maisysen.nswtransport`), so it replaces the SwiftUI build there. Version 1.0.0, runtime 1.0.0, channel `production`. JavaScript changes reach it over the air like Android (see Over the air updates below). Native parts, which need a new build to change:
+
+* `app/targets/widget`: the home screen widgets (small, medium, large), Lock Screen widgets (inline, rectangular, circular) and the trip Live Activity, ported from `ios-native` build 108 with its widget rules (no m:ss timers, a title on every size, one line alerts, rows open the trip). Built by `@bacons/apple-targets`; bundle `com.maisysen.nswtransport.widget`, iOS 17.
+* `app/modules/transport-ios`: writes widget data to the app group and starts, updates and ends the trip Live Activity.
+* `app/platform/iosBridge.ts` (JavaScript, ships over the air): shares the install profile, starred stops and fare type with the widgets, and runs one Live Activity per trip from the trip the app is following.
+
+| Build | Built | EAS build | Commit | TestFlight | What changed |
+| --- | --- | --- | --- | --- | --- |
+| 201 | 25 Oct, 1:06 AM | 3db2b80c-2d8e-4100-a105-a8fd753de76a | 425c041 | Uploaded 25 Oct, 1:09 AM (EAS submission 30eb1d77-2bdf-4c8b-8811-1fb7069144e2) | First Expo build for iPhone: all Android round 3 screens, widgets and trip Live Activity, update checks on start and foreground. Checked in the IPA: channel `production`, runtime 1.0.0, widget extension at the same version and build |
+
+Over the air on iPhone: first update 25 Oct, 1:11 AM. Preview `01a16e3f-60e5-7891-ab88-8911db5712f2` (group `84802d51-ae3d-4f45-9ba8-d661ba8f4bee`), manifest checked on the preview channel for iOS (runtime 1.0.0, launch asset hash `ctp45YJO7ob7IAP-QaAUy1hqXBrZp_PEeY4nRJCQMv4` matches the local export), then republished to production: `01a16e3f-a827-7541-9564-6d63e0ba9552` (group `6c63629a-37cd-4458-a2ba-9832440ea419`), served on the production channel for iOS with the same hash. The Android production update stayed `01a16e0f-c2fa-7298-ae3e-5cfd32af7fa8`.
+
+How to build and upload (from `app/`, `EXPO_TOKEN` set; signing files stay outside git):
+
+1. Signing: `credentials.json` (git ignored) points at the Apple Distribution certificate and the two App Store profiles ("Expo Transport AppStore" for the app, "Expo Transport Widget AppStore" for the widget) kept in the build box secrets folder. eas.json profile `production` uses them (`credentialsSource: local`).
+2. `npx eas-cli build -p ios --profile production --non-interactive --no-wait`. The build number goes up by one each time (app.json `ios.buildNumber`).
+3. `npx eas-cli submit -p ios --profile production --id <build id> --non-interactive`, with the App Store Connect API key copied to `app/credentials/` (git ignored) for the upload and removed after.
+
+Still needed from Bidur: register the app group `group.com.maisysen.nswtransport` and tick it on both App IDs ([SUBMIT.md](../SUBMIT.md), item 5). Until then iPhone builds are signed without it (`IOS_APP_GROUP=0` in eas.json): widgets work by picking a stop or trip in Edit Widget, but cannot see the app's profile, saved trips and starred stops. After he registers it: set `IOS_APP_GROUP` to `1` in eas.json, recreate the two profiles, build once.
 
 ## iPhone (native SwiftUI)
 
@@ -44,23 +66,29 @@ The download page serves versionCode 5. Every JavaScript change since then reach
 
 ## Over the air updates (EAS Update)
 
-Project `cf1f4c4c-5157-41bf-a254-4480223f6368`, owner `bidurtab`. Runtime version 1.0.0 for every Android build, so every installed APK and AAB takes JavaScript updates without a new build. Only a native change (a new module, a permission, widget code, app.json native fields) needs a new versionCode, and then the runtime version goes up with it.
+Project `cf1f4c4c-5157-41bf-a254-4480223f6368`, owner `bidurtab`, update URL `https://u.expo.dev/cf1f4c4c-5157-41bf-a254-4480223f6368`. One Expo project for Android and iPhone; every JavaScript change ships to both over the air.
 
-Channels and branches (each channel reads the branch of the same name):
+Runtime version: policy `appVersion` (app.json), so the runtime is the `version` field, 1.0.0, on both platforms. Android versionCode 5 was built with the fixed runtime 1.0.0, so it keeps taking updates unchanged. The fingerprint policy was not used: it hashes the native config, so versionCode 5 (built before it) would stop getting updates, and the iPhone runtime would change whenever app.json changes, which happens in most rounds. Rule: a native change (a new native module, a permission, widget or Live Activity code, app.json native fields) needs a new build on that platform and a new `version` (for example 1.1.0), which starts a new runtime. Updates published before that keep going to the older builds only.
+
+When the app checks: on every cold start (`updates.checkAutomatically` ON_LOAD) and each time it comes back to the foreground, at most every 15 minutes (`platform/updates.ts`). A downloaded update runs on the next start.
+
+Channels and branches (each channel reads the branch of the same name). EAS writes the channel of the eas.json profile into each EAS build; a local build (`build-android-aab.sh`) gets `APP_CHANNEL`, or `production` when unset (`app.config.js`):
 
 | Channel | Branch | Who gets it |
 | --- | --- | --- |
-| `production` | `production` | Every Android build so far (versionCode 2 to 5; checked in the versionCode 5 AAB manifest: channel `production`, runtime 1.0.0). eas.json profile `production` |
-| `preview` | `preview` | Builds from eas.json profile `preview` (internal APK). No installed build reads it yet, so a preview update is checked by its manifest and the web export before it is promoted |
+| `production` | `production` | Android versionCode 2 to 5 (checked in the versionCode 5 AAB manifest: channel `production`, runtime 1.0.0) and every iPhone build from eas.json profile `production` (TestFlight and App Store, build 201 and later) |
+| `preview` | `preview` | Builds from eas.json profile `preview` (Android internal APK; iPhone ad hoc once test devices are registered). Until such a build is installed, a preview update is checked by its manifest before it is promoted |
 | `expo-go` | `expo-go` | The iPhone preview in Expo Go (runtime exposdk:58.0.0) |
 
 How to ship a JavaScript change (from the app folder, `EXPO_TOKEN` set):
 
 1. `npx tsc --noEmit` and `OFFLINE=1 node --test test/*.test.mjs` pass, and the browser checks in [app/test/e2e](../app/test/e2e/README.md) pass on the web export.
-2. Publish to preview: `npx eas-cli update --branch preview --environment production --platform android --message "..." --non-interactive`.
-3. Test it: on a preview build, open the app twice (it downloads on the first open and runs on the next), or fetch its manifest with the headers `expo-channel-name: preview`, `expo-runtime-version: 1.0.0`, `expo-platform: android` from `https://u.expo.dev/cf1f4c4c-5157-41bf-a254-4480223f6368`.
-4. Promote the same bundle to everyone: `npx eas-cli update:republish --group <preview group id> --destination-branch production --message "..." --non-interactive`. Installed apps get it on their next launch, and run it on the launch after.
-5. Undo: `npx eas-cli update:republish --group <previous production group id> --destination-branch production`, or `npx eas-cli update:roll-back-to-embedded --branch production --runtime-version 1.0.0`.
+2. Publish to preview, both platforms, one command: `npx eas-cli update --branch preview --environment production --platform all --message "..." --non-interactive`.
+3. Check it: on a preview build, open the app twice (it downloads on the first open and runs on the next), or fetch the manifest from the update URL with the headers `expo-channel-name: preview`, `expo-runtime-version: 1.0.0` and `expo-platform: android` (then `ios`).
+4. Promote the same bundles to everyone: `npx eas-cli update:republish --group <preview group id> --destination-branch production --message "..." --non-interactive`. One group holds the Android and the iPhone update, so one republish moves both. Installed apps get it on their next launch or foreground check, and run it on the launch after.
+5. Roll back: `npx eas-cli update:republish --group <previous production group id> --destination-branch production --non-interactive`, or go back to the code inside the build with `npx eas-cli update:roll-back-to-embedded --branch production --runtime-version 1.0.0 --platform ios` (or `android`).
+
+Publishing with `--platform android` only (as before 25 Oct) leaves iPhones on the last iPhone update; use `--platform all`.
 
 Newest first.
 

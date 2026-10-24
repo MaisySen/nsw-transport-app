@@ -20,6 +20,8 @@ first TestFlight run on 24 Oct 2026 (App Groups capability on). The app group it
    Then back in Identifiers, open App ID `com.maisysen.nswtransport` (listed as "XC com maisysen nswtransport"),
    App Groups is already ticked, press Configure (or Edit) next to it, tick `group.com.maisysen.nswtransport`, Continue, Save, Confirm.
    Do the same for `com.maisysen.nswtransport.widget`. After that the next TestFlight run signs with the app group by itself.
+   For the Expo iPhone app (build 201 and later): set `IOS_APP_GROUP` to `1` in app/eas.json, recreate the two App Store
+   profiles so they carry the group, and build once ([docs/RELEASES.md](docs/RELEASES.md), iPhone (Expo)).
    Until then TestFlight builds are signed without it: the app and Live Activities work as normal, but the home screen
    widgets cannot read the app's starred stops or saved trips (a stop can still be picked in the widget's own settings).
 6. Play Console for a personal account: Google asks new personal developer accounts to run a closed test with at

@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### iPhone: the Expo app, with over the air updates
+* The iPhone app is now the same Expo app as Android (build 201 on TestFlight, same App Store Connect app and bundle id as the SwiftUI build). JavaScript changes reach iPhones over the air, like Android.
+* Widgets (small, medium, large, Lock Screen inline, rectangular and circular) and the trip Live Activity come across from build 108 as a native extension: "13 min" instead of timers, a title on every size, one line alerts, tapping a row opens that trip.
+* One Lock Screen card per trip: waiting, on board, tight or missed change, then "You've arrived" for 2 minutes.
+* Updates are checked on every start and when the app comes back to the foreground. Channels come from the build profile (preview or production); the runtime stays 1.0.0, so Android versionCode 5 keeps getting updates.
+* Not yet: the app group (Bidur registers it on developer.apple.com), so widgets cannot see saved trips and starred stops; iPhone push notifications need an APNs key.
+
 ### Own domain: transportsydney.app (server and website)
 * New public website at https://transportsydney.app: store links (coming soon until the listings are live), Support, Privacy Policy and Terms of Use, light and dark, no scripts, no cookies, no tracking. Published by Fintex Australia Pty Ltd. Plain files in `site/` on Cloudflare Pages.
 * Email on the domain: support@, privacy@ and hello@transportsydney.app, forwarded to contact@fintex.au.
