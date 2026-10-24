@@ -19,6 +19,8 @@ type Native = {
   supportsActivityPush?: () => boolean;
   tripActivityPushToken?: (id: string) => string | null;
   addListener?: (event: 'onActivityPushToken', cb: (e: { id: string; token: string }) => void) => { remove(): void };
+  /** From the build with the Apple Watch app: hands the watch its context (WatchConnectivity). Absent before. */
+  sendWatchContext?: (json: string) => boolean;
 };
 
 const native: Native | null = Platform.OS === 'ios' ? requireOptionalNativeModule<Native>('TransportIOS') : null;
@@ -47,6 +49,12 @@ export const iosNative = {
       const sub = native?.addListener?.('onActivityPushToken', (e) => { if (e?.id && e?.token) cb(String(e.id), String(e.token)); });
       return () => { try { sub?.remove(); } catch {} };
     } catch { return () => {}; }
+  },
+  /** True on builds that carry the Apple Watch app. */
+  hasWatch: (): boolean => typeof native?.sendWatchContext === 'function',
+  /** Sends the watch its context. Does nothing (false) on builds without the watch app or with no watch paired. */
+  sendWatch(json: string): boolean {
+    try { return typeof native?.sendWatchContext === 'function' ? !!native.sendWatchContext(json) : false; } catch { return false; }
   },
   activityIds: (): string[] => { try { return native?.tripActivityIds() || []; } catch { return []; } },
   async startTrip(title: string, legsCount: number, s: TripCardState, staleMs?: number | null) {

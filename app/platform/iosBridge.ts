@@ -19,7 +19,9 @@ import type { LiveTrip } from '@/lib/live';
 import type { ServiceResp, WatchLeg } from '@/lib/types';
 import { boardTime, missedConn, missedPlanLegs, pickNextOption, sydHHMM } from '@/lib/smart';
 import { cardFor, shortName, staleAt, type CardAlt, type CardOpts } from './tripCard';
-import { homeWorkFor, liveCardFor } from './widgetShare';
+import { homeWorkFor, liveCardFor, type HomeWork, type LiveCardShare, type SharedStop } from './widgetShare';
+import { watchContextFor, watchContextJSON } from './watchShare';
+import { apiBase } from '@/lib/server';
 import { endActivityToken, sendActivityToken, sendDeviceToken } from './livePush';
 
 const ARRIVED_KEEP_S = 120;
@@ -128,10 +130,12 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   function shareLive(g: LiveTrip | null, card: TripCardState | null) {
     if (!g || !card) {
       if (liveKey) { liveKey = ''; iosNative.setJSON('liveCard', null); iosNative.reloadWidgets('NextTrip'); }
+      watchData.live = null; shareWatch();
       return;
     }
     const share = liveCardFor(g.title || `${shortName(g.origin?.name)} to ${shortName(g.to?.name)}`, card, ARRIVED_KEEP_S * 1000);
     iosNative.setJSON('liveCard', share);
+    watchData.live = share; shareWatch();
     const k = [card.phase, card.line, card.getOffAt, card.departs, card.legArrives, card.platform].join('|');
     if (k !== liveKey) { liveKey = k; iosNative.reloadWidgets('NextTrip'); }
   }
@@ -152,6 +156,24 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     dropToken();
   }
 
+  // Apple Watch (builds with the watch app): Home, Work, starred stops and the trip card, sent when they change.
+  const watchData: { profile: string | null; hw: HomeWork; starred: SharedStop[]; live: LiveCardShare | null } =
+    { profile: null, hw: homeWorkFor(null), starred: [], live: null };
+  let watchJSON = '';
+  let watchTimer: ReturnType<typeof setTimeout> | null = null;
+  // Sent at most once every 2 seconds, and only when the context differs from the last one sent.
+  function shareWatch() {
+    if (!iosNative.hasWatch() || watchTimer) return;
+    watchTimer = setTimeout(() => {
+      watchTimer = null;
+      const c = watchContextFor(apiBase(), watchData.profile, watchData.hw, watchData.starred, watchData.live);
+      if (!c) return;
+      const j = watchContextJSON(c);
+      if (j === watchJSON) return;
+      if (iosNative.sendWatch(j)) watchJSON = j;
+    }, 2000);
+  }
+
   // Widget data.
   async function shareWidgetData() {
     try {
@@ -163,11 +185,15 @@ if (Platform.OS === 'ios' && iosNative.available()) {
         iosNative.setJSON('starredStops', starred);
         if (st?.fareType) iosNative.setString('tb_fare', String(st.fareType));
         iosNative.setJSON('homeWork', homeWorkFor(st));
+        watchData.starred = starred; watchData.hw = homeWorkFor(st);
       } else {
         iosNative.setJSON('starredStops', []);
         iosNative.setJSON('homeWork', homeWorkFor(null));
+        watchData.starred = []; watchData.hw = homeWorkFor(null);
       }
+      watchData.profile = profile || null;
       iosNative.reloadWidgets();
+      shareWatch();
     } catch {}
   }
 

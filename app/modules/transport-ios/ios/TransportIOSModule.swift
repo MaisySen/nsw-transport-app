@@ -67,11 +67,18 @@ public class TransportIOSModule: Module {
     Events("onActivityPushToken")
 
     OnCreate {
+      WatchLink.shared.start()
       #if canImport(ActivityKit)
       if #available(iOS 16.2, *) {
         for a in Activity<LiveTripAttributes>.activities where a.activityState == .active { self.follow(a) }
       }
       #endif
+    }
+
+    /// From the build with the Apple Watch app: the watch's context (JSON from platform/watchShare.ts). False when
+    /// this phone cannot talk to a watch.
+    Function("sendWatchContext") { (json: String) -> Bool in
+      WatchLink.shared.send(json)
     }
 
     /// True from the build whose trip card can be updated by push (build 205).
