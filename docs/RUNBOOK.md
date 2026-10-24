@@ -78,6 +78,7 @@ The repo must stay public for free macOS minutes, or GitHub billing must allow A
 
 On Cloudflare a Cron Trigger runs the tick every minute (`[triggers]` in `wrangler.toml.template`). It drives watch alerts, commute alerts, morning checks, delay sampling and data clean up.
 
+* Trip card pushes (build 205): `curl -s -H "x-admin-key: $ADMIN_KEY" https://api.transportsydney.app/api/admin/live-activity` lists the cards and what Apple said; `curl -s -X POST -H "x-admin-key: $ADMIN_KEY" https://api.transportsydney.app/api/admin/live-activity` sends the newest active card a test update (its warning line reads "Server test" and the time). See [API](API.md).
 * Healthy: `curl -s -H "x-admin-key: $ADMIN_KEY" https://api.transportsydney.app/api/usage` shows `lastTick` within the last two minutes. Without the key, `/api/usage` only shows the count of recorded live times, and `/api/health` answers 403.
 * If it is stale: Cloudflare dashboard, Workers and Pages, `transport-api`, Settings, Trigger Events: the cron must be listed; Logs shows each run.
 * The first address is ticked by an outside cron service (cron-job.org job 8707266) until the switch; pause that job once the first address is retired, or right after a data export (see [Deploy on Cloudflare](DEPLOY_CLOUDFLARE.md)).
@@ -97,6 +98,7 @@ Rotate when a key may have leaked, when someone who had it leaves, or once a yea
 | --- | --- | --- |
 | `TFNSW_API_KEY` | opendata.transport.nsw.gov.au, sign in, My account, API tokens: create a new token, then revoke the old one after the deploy | `cd backend && npx wrangler@4 secret put NAME` (also `backend/.env` while the first address runs) |
 | `ADMIN_KEY` | Generate 24 random characters (`node -e "console.log(require('crypto').randomBytes(18).toString('base64url'))"`) | `cd backend && npx wrangler@4 secret put NAME` (also `backend/.env` while the first address runs) |
+| `APNS_KEY` | The Apple push key (.p8, Key ID 69AK74573Z, team B85KQRQZW7) from Certificates, Identifiers and Profiles, Keys. To replace it: make a new key with Apple Push Notifications service, set `APNS_KEY_ID` in `wrangler.toml.template`, then revoke the old key | `cd backend && npx wrangler@4 secret put APNS_KEY < AuthKey_XXXX.p8` (the file text, never committed) |
 | `TICK_KEY` | Same as ADMIN_KEY | `npx wrangler@4 secret put TICK_KEY`; while the first address runs, also its `.env` and the cron-job.org job header |
 | `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` | `node backend/tools/vapid.mjs` | `npx wrangler@4 secret put` for both keys. Existing Web Push subscriptions stop working; each browser must turn alerts on again |
 | Cloudflare API token | My Profile, API Tokens: Roll | The deploying machine environment (`CLOUDFLARE_API_TOKEN`) |

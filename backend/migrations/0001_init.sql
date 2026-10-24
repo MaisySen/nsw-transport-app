@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS app_config (platform TEXT PRIMARY KEY, body TEXT NOT 
 CREATE TABLE IF NOT EXISTS morning_checks (id TEXT PRIMARY KEY, device TEXT NOT NULL, name TEXT, from_id TEXT, from_name TEXT, to_id TEXT, to_name TEXT, tod INTEGER, days TEXT, lead INTEGER DEFAULT 15, active INTEGER DEFAULT 1, created INTEGER, last TEXT);
 CREATE TABLE IF NOT EXISTS morning_sent (check_id TEXT NOT NULL, day TEXT NOT NULL, at INTEGER, result TEXT, PRIMARY KEY (check_id, day));
 CREATE TABLE IF NOT EXISTS last_home (id TEXT PRIMARY KEY, device TEXT NOT NULL, from_id TEXT, from_name TEXT, to_id TEXT, to_name TEXT, mode TEXT, svc_mode TEXT, lead INTEGER DEFAULT 15, leave INTEGER, first_leave INTEGER, board INTEGER, line TEXT, stop TEXT, platform TEXT, status TEXT, created INTEGER, checked INTEGER, sent INTEGER, sent_text TEXT);
+CREATE TABLE IF NOT EXISTS live_activities (token TEXT PRIMARY KEY, activity TEXT, device TEXT, trip TEXT, created INTEGER, updated INTEGER, expires INTEGER, active INTEGER, last_push INTEGER, last_state TEXT, last_status INTEGER, last_reason TEXT, pushes INTEGER);
+CREATE TABLE IF NOT EXISTS apns_devices (token TEXT PRIMARY KEY, device TEXT, env TEXT, created INTEGER, updated INTEGER);
 CREATE TABLE IF NOT EXISTS shares (id TEXT PRIMARY KEY, okey TEXT, device TEXT, spec TEXT, state TEXT, created INTEGER, updated INTEGER, expires INTEGER);
 CREATE TABLE IF NOT EXISTS lift_alerts (device TEXT PRIMARY KEY, profile TEXT, stations TEXT, seen TEXT, created INTEGER, updated INTEGER);
 CREATE TABLE IF NOT EXISTS park_watches (id TEXT PRIMARY KEY, device TEXT, profile TEXT, facility TEXT, name TEXT, station TEXT, created INTEGER, expires INTEGER, done INTEGER DEFAULT 0);

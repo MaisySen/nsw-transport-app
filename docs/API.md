@@ -362,6 +362,17 @@ The push: title "Last train to Burwood", body like "Leaves in 15 min: the 12:04a
 
 `/api/ask` adds `lastHome: {from, to, mode, leave, lead}` to a `lastService` answer when the service is between 16 minutes and 8 hours away and the flag is on; the app shows "Remind me 15 min before" only then. Delete all data (`/api/history/delete`, `scope: "all"` with the `device`) removes the reminder. Server flag: `lastWayHome`.
 
+## iPhone trip card by push (build 205 and later)
+
+The trip card on the Lock Screen and in the Dynamic Island (Live Activity) is updated by Apple push while the phone is locked. The app sends the card's push token here, whichever address the rest of the app uses; the server holds the push key (Worker secret `APNS_KEY`, vars `APNS_BUNDLE`, `APNS_KEY_ID`, `APNS_TEAM_ID`).
+
+* `POST /api/live-activity` body `{ token, activity, device, trip: { id, title, origin, to, legs, rode, arrivedAt } }`: stores the card (table `live_activities`). Sent again when the token changes, a leg is ridden or the trip arrives. Answers `{ ok, push }` (`push` false when the key is not set). 400 for a token that is not hex or a trip with no usable legs (at most 8).
+* `POST /api/live-activity/end` body `{ token }`: the trip ended on the phone; no more pushes.
+* `POST /api/apns/device` body `{ token, device, env }`: the phone's own push token, saved for alerts later (table `apns_devices`). Nothing is sent to it yet.
+* Minute tick: each active card not pushed in the last 50 s (10 per tick) gets the card worked out from live times with the app's own code (`LIVECARD` in `src/worker.js`, written by `tools/gen-livecard.mjs` from `app/src/lib/liveCalc.ts` and `app/platform/tripCard.ts`; `app/test/livecard-sync.test.mjs` fails when they drift). Push: topic `<APNS_BUNDLE>.push-type.liveactivity`, `apns-push-type: liveactivity`, `event: update` with `content-state` matching `LiveTripAttributes.ContentState` (dates as seconds since 1 Jan 2001), `stale-date` 2 minutes after the live times, priority 10 when the card looks different and 5 otherwise. On arrival (or 7 hours at most) `event: end` with the arrived card and `dismissal-date` 2 minutes later. A token Apple refuses (410, BadDeviceToken, Unregistered) stops the card.
+* `GET /api/admin/live-activity` (admin key): the last 10 cards (token cut to 8 characters, trip title, pushes, Apple's last status and reason) and the count of saved phone tokens.
+* `POST /api/admin/live-activity` (admin key) body `{ token?, warning?, end? }`: sends the newest active card (or the one whose token starts with `token`) its live state now, with the warning line "Server test 9:41am" unless `warning` is given (`false` for none); `end: true` ends it. Answers Apple's status and reason, the event, phase and the content state sent.
+
 ## Remote config for the phone apps
 
 `GET /api/app/config?platform=ios` returns the settings the iPhone app reads at launch and each time it comes to the front (cached for 5 minutes at the edge; the app keeps its last good copy and has the same defaults built in, so it works offline). Native code cannot be changed over the air, so this only switches what the app already has.

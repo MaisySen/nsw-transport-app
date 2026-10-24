@@ -24,6 +24,10 @@ API_ONLY = "1"
 API_HOST = "api.transportsydney.app"
 SITE_URL = "https://transportsydney.app"
 VAPID_SUBJECT = "mailto:hello@transportsydney.app"
+# iPhone trip card pushes (the key itself is the secret APNS_KEY).
+APNS_BUNDLE = "com.maisysen.nswtransport"
+APNS_KEY_ID = "69AK74573Z"
+APNS_TEAM_ID = "B85KQRQZW7"
 
 [[d1_databases]]
 binding = "DB"
