@@ -6,7 +6,7 @@ Live at **https://nsw-transport-bot.sites.tab.bot**
 
 ## Native app (v4)
 
-The Android and iPhone app lives in the private repo MaisySen/nsw-transport-app (folder `app/`). Download page: https://nsw-transport-bot.sites.tab.bot/download/
+The Android app lives in the public repo MaisySen/nsw-transport-app (folder `app/`), the iPhone app in `ios-native/`. Download page: https://nsw-transport-bot.sites.tab.bot/download/
 
 | New endpoint | What it does |
 | --- | --- |
@@ -14,7 +14,7 @@ The Android and iPhone app lives in the private repo MaisySen/nsw-transport-app 
 | `POST /api/push/expo/unregister` | Removes one |
 | `GET /api/app` | Latest Android APK (size, version) and the Expo Go link |
 | `GET /download/transport.apk` | The Android APK, served from R2 (binding `FILES`) with range support |
-| `PUT /api/admin/file?key=ADMIN_KEY&name=transport.apk` | Uploads a new APK into R2 |
+| `PUT /api/admin/file?name=transport.apk` with `x-admin-key: ADMIN_KEY` | Uploads a new APK into R2 |
 
 Every alert now goes to Web Push subscriptions and Expo push tokens for the device. `/download/` and `/privacy/` are static pages.
 
@@ -33,7 +33,7 @@ Every alert now goes to Web Push subscriptions and Expo push tokens for the devi
 
 ### How the proactive layer works
 
-* `GET /api/tick?key=TICK_KEY` runs the scheduler: it follows every active watch and commute, then samples a few busy stops for the delay history. An external cron service calls it every minute (Worker sites here have no cron of their own). A D1 lease stops two ticks overlapping, and an open app keeps its own watches moving if the cron goes quiet.
+* `GET /api/tick` with `x-admin-key: TICK_KEY` runs the scheduler: it follows every active watch and commute, then samples a few busy stops for the delay history. An external cron service calls it every minute (Worker sites here have no cron of their own). A D1 lease stops two ticks overlapping, and an open app keeps its own watches moving if the cron goes quiet.
 * Notifications are Web Push with VAPID (ES256) and aes128gcm payload encryption, written with WebCrypto inside the Worker, no libraries. The private key stays on the server.
 * API budget: every upstream call is counted per day in D1 (`/api/usage`). Background sampling stops above 40,000 calls and watches above 56,000, inside the 60,000 a day plan.
 * New tables: `push_subs`, `watches`, `notes` (every alert sent, also shown as an in app banner when notifications are off), `searches`, `commutes`, `dismissed`, `meta`, `usage`.
@@ -91,9 +91,9 @@ All endpoints return JSON. Add `format=text` for a short plain text answer.
 | `GET /api/obs?route=415&stop=213516` | Recorded realtime observations (for delay prediction) |
 | `GET /api/health` | Feed cache state |
 | `POST /api/hit` `{p, r}` | Website page view counter: one daily total per page and referring site, no cookies, no IP or IDs stored |
-| `GET /api/stats?key=ADMIN_KEY&days=30` | Page view totals by day, page and referrer |
+| `GET /api/stats?days=30` with `x-admin-key: ADMIN_KEY` | Page view totals by day, page and referrer |
 | `POST /api/feedback` | Contact form (form post redirects to /support/thanks/, JSON gets `{ok}` or field `errors`) |
-| `GET /api/feedback?key=ADMIN_KEY` | Read contact form messages (`DELETE ?key=&id=` removes one) |
+| `GET /api/feedback` with `x-admin-key: ADMIN_KEY` | Read contact form messages (`DELETE ?id=` with the same header removes one) |
 
 ## Website
 
@@ -115,7 +115,7 @@ All endpoints return JSON. Add `format=text` for a short plain text answer.
 2. Copy `.env.example` to `.env`, paste the key after `TFNSW_API_KEY=`, run `node tools/vapid.mjs` for the push keys, and set `TICK_KEY` and `ADMIN_KEY` to long random strings.
 3. `node build.mjs` writes a ready to deploy folder to `site/` (static files plus `worker.mjs`).
 4. Deploy `site/` as a Cloudflare Worker with static assets (`ASSETS` binding) and a D1 database bound as `DB`.
-5. Point any cron service at `https://YOUR-SITE/api/tick?key=TICK_KEY` every minute.
+5. Point any cron service at `https://YOUR-SITE/api/tick` every minute, with the header `x-admin-key: TICK_KEY`.
 
 ## Data
 

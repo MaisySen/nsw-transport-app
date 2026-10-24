@@ -83,14 +83,14 @@ Fixed:
 * L1. `/api/obs?limit=-1` returned every row. The limit is now 1 to 1000.
 * L2. A non text profile in a `POST /api/saved` body crashed the handler. It is now coerced to text.
 * L3. Contact messages are now deleted after 12 months, as the privacy policy says. The 90 day search and 30 day watch purges were already running.
-* L4 (server side). Bidur's data under the public profile id "bidur" was copied to a new private random id with the admin endpoint `POST /api/admin/profile-copy`. The new id is not in this repo. The "bidur" fallback stays in the clients until every device has moved.
+* L4 (server side). Bidur's data under the public profile id "bidur" was copied to a new private random id with the admin endpoint `POST /api/admin/profile-copy`. The new id is not in this repo. On 24 Oct 2026 the server stopped accepting it: a profile id must be 6 to 40 safe characters, there is no default profile, and a request with no profile logs nothing and reads no saved trips. The web app moves any browser still on it to a fresh random id and uploads its saved trips again.
 * L9. The cron-job.org job sends `TICK_KEY` in an `x-admin-key` header instead of the URL.
 * L12. TfNSW alert links become links only when they are plain `https://` URLs, checked on the server (`httpsUrl`) and again in the web Ask screen.
 * `/api/ask` replies were 180 to 490 KB because they carried the full planner output. They now carry only the fields the web, Android and iPhone Ask screens read: 5 to 21 KB, about 1 to 2.5 KB gzipped on the wire.
 
 Open:
 
-* L4 (clients). Remove the "bidur" fallback from the web, Android and iPhone clients once Bidur's devices use the private id.
+* L4 (clients). Done on the web (24 Oct 2026). Android and iPhone move off it in their own updates.
 * L5. CORS is open (`*`). Acceptable: there are no cookies or logins.
 * L6. `/api/stations` answers do not carry the API security headers. Harmless JSON.
 * L7. Expo `npm audit`: 7 high, all in build tooling, none in the app runtime. Dependabot alerts and security update pull requests are on.

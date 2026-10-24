@@ -1,0 +1,47 @@
+name: backend
+
+# Backend and web app checks: the full test suite, the build, and no em or en dashes.
+on:
+  push:
+    paths:
+      - "backend/**"
+      - "docs/**"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "docs/**"
+      - ".github/workflows/backend.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Tests
+        run: node --test test/*.test.mjs
+      - name: Build with placeholder keys
+        env:
+          TFNSW_API_KEY: ci
+          VAPID_PUBLIC_KEY: ci
+          VAPID_PRIVATE_KEY: ci
+          VAPID_SUBJECT: mailto:ci@example.com
+          TICK_KEY: ci
+          ADMIN_KEY: ci
+        run: node build.mjs "$RUNNER_TEMP/site" && test ! -e "$RUNNER_TEMP/site/_headers"
+      - name: No em or en dashes
+        shell: bash
+        run: |
+          if grep -rnI -e $'\xe2\x80\x93' -e $'\xe2\x80\x94' . ../docs; then
+            echo "Replace the em or en dashes above."; exit 1
+          fi

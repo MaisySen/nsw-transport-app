@@ -2,19 +2,19 @@
 
 Base URL: https://nsw-transport-bot.sites.tab.bot
 
-All endpoints return JSON unless noted. Most read endpoints also take `format=text` for a short plain text answer (used for messaging). CORS is open (`access-control-allow-origin: *`). Updated 24 Oct 2026.
+All endpoints return JSON unless noted. Most read endpoints also take `format=text` for a short plain text answer (used for messaging). CORS is open (`access-control-allow-origin: *`). Updated 24 Oct 2026. Shared live answers (`departures`, `trip`, `plan`, `service`, `status`, `alerts`, `stations`, `search`, `nearby`, `station`, `parking`, `topup`, `lifts`) are cached at the edge for 15 seconds, keyed without `profile` and `device`; a cached answer carries `x-edge-cache: hit`. Every HTML page is served by the worker with HSTS, a Content Security Policy with `frame-ancestors 'none'`, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy and COOP. Admin endpoints and `/api/tick` read their key only from the `x-admin-key` header; a `?key=` in the address is ignored.
 
 ## Common parameters
 
 | Parameter | Meaning |
 | --- | --- |
-| `profile` | The install's profile id. Each app install makes a random one. Saved trips, commutes and searches belong to a profile. Defaults to the legacy owner profile when missing |
+| `profile` | The install's profile id: 6 to 40 of `a` to `z`, `0` to `9`, `_`, `.`, `:` or `-`. Each app install makes a random one. Saved trips, commutes and searches belong to a profile. Send it in the `x-profile` header (preferred, kept out of access logs) or as `profile` in the query or body. With no valid profile nothing is logged, saved trips and commutes read as empty, and writes answer `400 profile needed`. There is no shared default profile |
 | `device` | The device id used for watches and push |
 | `lat`, `lon` | Location, when the client shares it |
 | `format=text` | Plain text answer instead of JSON |
 | `fare` | Fare type for Opal fare estimates on `/api/trip`, `/api/plan`, `/api/next` and `/api/ask`: `adult` (default), `child`, `concession` or `gold` |
 
-Errors: `400` for bad input with an `error` message, `403` for a wrong key, `404` for unknown routes or items, `405` for a wrong method, `502` with `kind: "error"` when Transport for NSW does not answer.
+Errors: `400` for bad input with an `error` message (checked before any upstream call: place and stop ids up to 200 characters with no markup, `q` up to 300 characters, `count` 1 to 8, `time` as HHMM, `lat` and `lon` as numbers), `429` over a rate limit (per address: 120 upstream reads and 60 writes a minute across all copies of the worker, plus per copy limits), `403` for a wrong key, `404` for unknown routes or items, `405` for a wrong method, `502` with `kind: "error"` when Transport for NSW does not answer.
 
 ## Ask and search
 
@@ -55,7 +55,7 @@ Example (Central to Chatswood by metro): `/api/plan?legs=[{"f":"200060","fn":"Ce
 | `/api/commutes` | POST | `{from, to, tod, days, name}` to create, or `{id, name, tod, days, active}` to edit | `item` |
 | `/api/commutes` | DELETE | `profile`, `id` | `ok` |
 | `/api/commutes/dismiss` | POST | `{key}` | `ok` |
-| `/api/history/delete` | POST | `{profile, device, scope}`. `scope` is `history` (trip searches and dismissed commute suggestions; suggestions are worked out from searches, so they go too) or `all` (also saved trips, commutes, watches, alerts, and for this `device` its push sign ups, Expo tokens and live trip shares). `profile` is required (5 or more characters); on the shared legacy profile `device` is required and only that device's searches are deleted. Rate limited to 10 a client address per 10 minutes | `{ok, scope, deleted: {searches, dismissed, saved, commutes, watches, alerts, push, shares}}` (row counts) |
+| `/api/history/delete` | POST | `{profile, device, scope}`. `scope` is `history` (trip searches and dismissed commute suggestions; suggestions are worked out from searches, so they go too) or `all` (also saved trips, commutes, watches, alerts, and for this `device` its push sign ups, Expo tokens and live trip shares). A valid `profile` is required; searches this `device` made under any older profile id are deleted too. Rate limited to 10 a client address per 10 minutes | `{ok, scope, deleted: {searches, dismissed, saved, commutes, watches, alerts, push, shares}}` (row counts) |
 
 `tod` is minutes after midnight (0 to 1439). `days` is a string of weekday numbers, 1 is Monday (default `12345`).
 
@@ -102,13 +102,13 @@ Watches: `POST /api/watch` takes `track: true` (sent by Start trip). A tracked w
 
 | Endpoint | Method | Parameters | Returns |
 | --- | --- | --- | --- |
-| `/api/health` | GET | none | Feed fetch stats, cached realtime feeds and their age, storage status |
-| `/api/usage` | GET | none | Today's upstream calls against the 60,000 budget, observation count, last tick time |
+| `/api/health` | GET | `x-admin-key` header | Feed fetch stats, cached realtime feeds and their age, storage status. `403` without the key |
+| `/api/usage` | GET | `x-admin-key` header for the full answer | With the key: today's upstream calls against the 60,000 budget, observation count, last tick time. Without it: only `observations.n` (shown in Settings) |
 | `/api/obs` | GET | `route`, `stop`, `day`, `limit` (up to 1000) | Recorded live observations |
 
 ## Keyed endpoints
 
-These need `key=TICK_KEY` or `key=ADMIN_KEY`. The keys are secrets (see [Security](SECURITY.md)).
+These need `TICK_KEY` or `ADMIN_KEY` in an `x-admin-key` header. The keys are secrets (see [Security](SECURITY.md)).
 
 | Endpoint | Key | What it does |
 | --- | --- | --- |

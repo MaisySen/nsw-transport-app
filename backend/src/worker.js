@@ -10,7 +10,6 @@ const FEED_TTL_MS = 15000;
 const FEED_WAIT_MS = 2500;
 const depMem = new Map();          // stop board answers, shared for 12 s         // a slow realtime feed never holds an answer longer than this          // shared realtime feed cache
 const VEHICLE_MAX_AGE_S = 600;      // ignore vehicle positions older than this
-const DEFAULT_PROFILE = "bidur";
 
 const MODES = {
   1: { key: "train", name: "Train", color: "#F6891F", noun: "train" },
@@ -535,6 +534,13 @@ async function bestPlace(env, q) {
   if (stops.length && (!top || stops[0].quality >= top.quality * 0.9)) return { place: stops[0], others: stops.slice(1, 4) };
   if (top) return { place: top, others: stops.slice(0, 3) };
   return { place: null, others: [] };
+}
+// The stop name at one end of the first journey, without the platform or stand part.
+function tripEndName(r, end) {
+  const legs = (((r && r.journeys) || [])[0] || {}).legs || [];
+  const l = end === "from" ? legs[0] : legs[legs.length - 1];
+  const n = l && (end === "from" ? l.from : l.to);
+  return n ? String(n).split(/,\s*(Platform|Stand|Wharf \d|Stop)\b/i)[0].trim() || null : null;
 }
 function shortName(n) {
   const s = String(n || "").replace(/,\s*(Sydney|NSW)$/i, "");
@@ -1226,11 +1232,13 @@ function logObservations(env, ctx, items, stopId) {
 }
 
 async function savedList(env, profile) {
+  if (!profile) return [];
   if (!(await ensureSchema(env).catch(() => false))) return [];
   const r = await db(env).prepare("SELECT s.name, s.from_id, s.from_name, s.to_id, s.to_name, s.created, l.legs FROM saved s LEFT JOIN saved_legs l ON l.profile = s.profile AND l.name = s.name WHERE s.profile = ?1 ORDER BY s.created").bind(profile).all();
   return (r.results || []).map((x) => withLegs({ name: x.name, from: { id: x.from_id, name: x.from_name }, to: { id: x.to_id, name: x.to_name }, created: x.created }, x.legs));
 }
 async function savedGet(env, profile, name) {
+  if (!profile) return null;
   if (!(await ensureSchema(env).catch(() => false))) return null;
   const x = await db(env).prepare("SELECT s.name, s.from_id, s.from_name, s.to_id, s.to_name, l.legs FROM saved s LEFT JOIN saved_legs l ON l.profile = s.profile AND l.name = s.name WHERE s.profile = ?1 AND s.name = ?2").bind(profile, name.toLowerCase()).first();
   return x ? withLegs({ name: x.name, from: { id: x.from_id, name: x.from_name }, to: { id: x.to_id, name: x.to_name } }, x.legs) : null;
@@ -1242,6 +1250,7 @@ function withLegs(s, legsJson) {
   return s;
 }
 async function savedPut(env, profile, name, from, to, legs = null) {
+  if (!profile) throw new Error("profile needed");
   await ensureSchema(env);
   if (legs && legs.length > 1) await db(env).prepare("INSERT INTO saved_legs (profile, name, legs) VALUES (?1, ?2, ?3) ON CONFLICT (profile, name) DO UPDATE SET legs = excluded.legs").bind(profile, name.toLowerCase(), JSON.stringify(legs)).run();
   else await db(env).prepare("DELETE FROM saved_legs WHERE profile = ?1 AND name = ?2").bind(profile, name.toLowerCase()).run();
@@ -1321,7 +1330,7 @@ async function answer(env, raw, ctx = {}) {
   const text = (raw || "").trim();
   if (!text) return { kind: "help" };
   const lower = text.toLowerCase();
-  const profile = ctx.profile || DEFAULT_PROFILE;
+  const profile = profileId(ctx.profile);
 
   if (/^(hi|hey|hello|start|get started|help|menu|what can you do\??|\?)$/i.test(lower)) return { kind: "help" };
 
@@ -1337,6 +1346,7 @@ async function answer(env, raw, ctx = {}) {
   // "save Burwood to Central as home"
   const sv = text.match(/^save\s+(.+?)\s+as\s+["']?([\w ]{1,24}?)["']?$/i);
   if (sv && TRIP_RE.test(sv[1])) {
+    if (!profile) return { kind: "text", text: "Open the app to save trips. They are saved to your phone and your own private profile." };
     const tm = sv[1].match(TRIP_RE);
     const [from, to] = await Promise.all([resolvePlace(env, cleanPlace(tm[1])), resolvePlace(env, cleanPlace(tm[2]))]);
     if (!from || !to) return { kind: "text", text: "I couldn't find one of those stops. Try station names or stop numbers." };
@@ -2255,10 +2265,10 @@ function safeEq(a, b) {
   for (let i = 0; i < Math.max(a.length, b.length); i++) diff |= (a.charCodeAt(i % a.length) || 0) ^ (b.charCodeAt(i % b.length) || 0);
   return diff === 0;
 }
-function keyOk(request, p, secret) {
-  return safeEq((request && request.headers.get("x-admin-key")) || p.get("key"), secret);
-}
-function adminOk(request, p) { return keyOk(request, p, ADMIN_KEY); }
+// Keys are only read from the x-admin-key header, never from the address, so they stay out of
+// access logs and browser history. The cron service sends TICK_KEY the same way.
+function keyOk(request, p, secret) { return safeEq(request && request.headers.get("x-admin-key"), secret); }
+function adminOk(request) { return keyOk(request, null, ADMIN_KEY); }
 // Per isolate request limits: a cheap brake on scripted abuse of the shared Transport for NSW
 // quota, the contact form and test pushes. Keyed by client IP, never stored.
 const rateMem = new Map();
@@ -2293,6 +2303,42 @@ const API_SEC_HEADERS = {
   "x-frame-options": "DENY",
   "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
 };
+// Every HTML page is served by the worker, with the full header set. build.mjs fills PAGES with
+// the built pages (path to html) and PAGE_CSP with the page policy, and leaves the html files out
+// of the static assets, because the host serves static files before the worker runs and ignores
+// a _headers file.
+const PAGES = {} /*__PAGES__*/;
+const PAGE_CSP = "default-src 'self'; frame-ancestors 'none'" /*__PAGE_CSP__*/;
+const PAGE_SEC_HEADERS = {
+  "strict-transport-security": "max-age=31536000; includeSubDomains",
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "strict-origin-when-cross-origin",
+  "permissions-policy": "geolocation=(self), microphone=(self), camera=(), payment=(), usb=(), browsing-topics=()",
+  "x-frame-options": "DENY",
+  "cross-origin-opener-policy": "same-origin",
+};
+function pageHeaders(extra = {}) {
+  return { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=0, must-revalidate", "content-security-policy": PAGE_CSP, ...PAGE_SEC_HEADERS, ...extra };
+}
+// Returns the page response for a path, a redirect to its canonical form, or null.
+function servePage(request, url, status = 200) {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+  const p = url.pathname;
+  let html = PAGES[p];
+  if (html == null) {
+    let to = null;
+    if (/\/index\.html?$/.test(p) && PAGES[p.replace(/index\.html?$/, "")] != null) to = p.replace(/index\.html?$/, "");
+    else if (!p.endsWith("/") && PAGES[p + "/"] != null) to = p + "/";
+    if (to) return new Response(null, { status: 301, headers: pageHeaders({ location: to + url.search }) });
+    return null;
+  }
+  return new Response(request.method === "HEAD" ? null : html, { status, headers: pageHeaders() });
+}
+function notFoundPage(request) {
+  const html = PAGES["/404.html"];
+  if (html == null) return null;
+  return new Response(request.method === "HEAD" ? null : html, { status: 404, headers: pageHeaders({ "cache-control": "no-store" }) });
+}
 function withSec(res, api) {
   const r = new Response(res.body, res);
   for (const [k, v] of Object.entries(API_SEC_HEADERS)) {
@@ -2539,6 +2585,10 @@ function todText(tod) {
 }
 function rid(n = 10) { return b64u(crypto.getRandomValues(new Uint8Array(n))); }
 function cleanId(s, n = 64) { return String(s || "").replace(/[^A-Za-z0-9_.:-]/g, "").slice(0, n); }
+// A profile id is the only key to its saved trips, so only long random ids are accepted:
+// 6 to 40 of a to z, 0 to 9, "_", ".", ":" or "-". Anything else counts as no profile, which
+// means no trip search is logged and saved trips and commutes come back empty.
+function profileId(v) { const s = String(v == null ? "" : v).trim().toLowerCase(); return /^[a-z0-9_.:-]{6,40}$/.test(s) ? s : ""; }
 // Alert links from TfNSW become tappable links only when they are plain https URLs.
 function httpsUrl(u) { const s = String(u || "").trim(); return /^https:\/\/[^\s"'<>]+$/i.test(s) && s.length <= 500 ? s : null; }
 
@@ -3013,7 +3063,7 @@ function legFromInput(l) {
 }
 
 async function createWatch(env, b, now) {
-  const device = cleanId(b.device), profile = cleanId(b.profile || DEFAULT_PROFILE, 40).toLowerCase();
+  const device = cleanId(b.device), profile = profileId(b.profile);
   if (!device) throw new Error("device needed");
   const legs = (b.legs || []).slice(0, 6).map(legFromInput).filter((l) => l.stopId && l.planned);
   if (!legs.length) throw new Error("nothing to watch");
@@ -3046,12 +3096,12 @@ function watchOut(w) {
 
 async function logSearch(env, s) {
   const d = db(env);
-  if (!d || !s.from || !s.to || !s.from.id || !s.to.id) return;
+  if (!d || !s.profile || !s.from || !s.to || !s.from.id || !s.to.id) return;
   try {
     await ensureSchema3(env);
     const sn = sydneyNow(new Date(s.at || Date.now()));
     await d.prepare("INSERT INTO searches (profile, device, day, dow, tod, from_id, from_name, to_id, to_name, src, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)")
-      .bind(s.profile || DEFAULT_PROFILE, s.device || null, sydneyNow().day, sn.dow, sn.tod, String(s.from.id), String(s.from.name || ""), String(s.to.id), String(s.to.name || ""), s.src || "search", Date.now()).run();
+      .bind(s.profile, s.device || null, sydneyNow().day, sn.dow, sn.tod, String(s.from.id), String(s.from.name || ""), String(s.to.id), String(s.to.name || ""), s.src || "search", Date.now()).run();
   } catch (e) { /* best effort */ }
 }
 function commuteName(tod) { return tod < 12 * 60 ? "Morning trip" : tod < 16 * 60 ? "Afternoon trip" : "Evening trip"; }
@@ -3244,6 +3294,7 @@ async function runTick(env, opts = {}) {
     await db(env).prepare("UPDATE watches SET active = 0, ended = 'expired' WHERE active = 1 AND expires < ?1").bind(now).run().catch(() => null);
     // Retention promised in the privacy policy: trip searches 90 days, finished watches 30 days.
     await db(env).prepare("DELETE FROM searches WHERE at < ?1").bind(now - 90 * 86400000).run().catch(() => null);
+    await db(env).prepare("DELETE FROM ip_rate WHERE win < ?1").bind(Math.floor(now / 60000) - 5).run().catch(() => null);
     await db(env).prepare("DELETE FROM watches WHERE active = 0 AND updated < ?1").bind(now - 30 * 86400000).run().catch(() => null);
     // Shared live trips: deleted, positions included, once the trip is over.
     await db(env).prepare("DELETE FROM shares WHERE expires < ?1").bind(now).run().catch(() => null);
@@ -3819,7 +3870,7 @@ async function facRoutes(request, env, url) {
     if (dev.length < 8) return json({ error: "device needed" }, 400);
     if (b.on === false) { await db(env).prepare("DELETE FROM lift_alerts WHERE device = ?1").bind(dev).run(); return json({ ok: true, on: false }); }
     const stations = [...new Set((Array.isArray(b.stations) ? b.stations : []).map((s) => String(s)).filter((s) => /^\d{5,8}$/.test(s)))].slice(0, 40);
-    const prof = String(b.profile || "").toLowerCase().replace(/[^a-z0-9_.:-]/g, "").slice(0, 40);
+    const prof = profileId(b.profile);
     const outs = await liftOutages(env).catch(() => []);
     const now = Date.now();
     const match = outs.filter((o) => o.stops.some((s) => stations.includes(s)));
@@ -3848,21 +3899,28 @@ async function facRoutes(request, env, url) {
     const id = "p" + rid(9);
     const now = Date.now();
     await db(env).prepare("INSERT INTO park_watches (id, device, profile, facility, name, station, created, expires, done) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0)")
-      .bind(id, dev, String(b.profile || "").toLowerCase().replace(/[^a-z0-9_.:-]/g, "").slice(0, 40), c.id, c.name, c.tsn, now, now + PARK_WATCH_HOURS * 3600000).run();
+      .bind(id, dev, profileId(b.profile), c.id, c.name, c.tsn, now, now + PARK_WATCH_HOURS * 3600000).run();
     return json({ ok: true, watch: { id, facility: c.id, name: c.name, expires: now + PARK_WATCH_HOURS * 3600000 }, now: await carparkLive(env, c) });
   }
   return json({ error: "not found" }, 404);
 }
 // ---- facilities end
 
-export default {
-  async fetch(request, env, exec) {
+async function handleRequest(request, env, exec) {
     const url = new URL(request.url);
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "content-type", "access-control-max-age": "86400" } });
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "content-type, x-profile", "access-control-max-age": "86400" } });
     if (/^\/(worker\.m?js|_worker\.js|tab-site\.json)$/.test(url.pathname)) return new Response("Not found", { status: 404 });
     if (/^\/download\/[A-Za-z0-9._-]+\.apk$/.test(url.pathname)) return serveFile(env, url.pathname.slice("/download/".length), request);
-    if (!url.pathname.startsWith("/api/")) return withSec(await env.ASSETS.fetch(request), false);
+    if (!url.pathname.startsWith("/api/")) {
+      if (url.pathname !== "/404.html") { const page = servePage(request, url); if (page) return page; }
+      const res = await env.ASSETS.fetch(request);
+      if (res.status === 404) { const nf = notFoundPage(request); if (nf) return nf; }
+      return withSec(res, false);
+    }
     if (!rateOk(request, url.pathname)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
+    const bad = badInput(url.searchParams);
+    if (bad) return url.searchParams.get("format") === "text" ? textRes(bad) : json({ error: bad, text: bad }, 400);
+    if (!(await ipLimitOk(env, request, url.pathname))) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
     if (/^\/api\/share(\/update)?$/.test(url.pathname)) {
       try { return await shareRoutes(request, env, url); }
       catch (e) { return json({ error: "Sharing is not available right now." }, 500); }
@@ -3874,7 +3932,7 @@ export default {
     feedStats.requests++;
     const p = url.searchParams;
     const asTxt = p.get("format") === "text";
-    const profile = (p.get("profile") || DEFAULT_PROFILE).toLowerCase().slice(0, 40);
+    const profile = profileId(request.headers.get("x-profile") || p.get("profile"));
     try {
       const ctx = { lat: p.get("lat"), lon: p.get("lon"), profile, exec };
       switch (url.pathname) {
@@ -3921,7 +3979,9 @@ export default {
         case "/api/trip": {
           const acc = p.get("acc") === "1";
           const r = await trip(env, p.get("from"), p.get("to"), { time: p.get("time") || null, arriveBy: p.get("arriveBy") === "1", count: Number(p.get("count") || 5), accessible: acc });
-          const d = { kind: "trip", from: { id: p.get("from"), name: p.get("fromName") || p.get("from") }, to: { id: p.get("to"), name: p.get("toName") || p.get("to") }, ...r };
+          // A link with stop ids and no names takes the names from the first trip found.
+          const given = (k) => { const v = (p.get(k) || "").trim(); return v && !/^\d+$/.test(v) ? v : null; };
+          const d = { kind: "trip", from: { id: p.get("from"), name: given("fromName") || tripEndName(r, "from") || p.get("from") }, to: { id: p.get("to"), name: given("toName") || tripEndName(r, "to") || p.get("to") }, ...r };
           pickFares(d, fareType(p));
           await addAccess(env, d, { accessible: acc }).catch(() => null);
           await afterAnswer(env, d, { profile, device: p.get("device"), exec, log: p.get("refresh") !== "1" });
@@ -3965,11 +4025,12 @@ export default {
           return asTxt ? textRes(await asText(env, d)) : json(d);
         }
         case "/api/saved": {
-          if (request.method === "GET") return json({ profile, items: await savedList(env, profile) });
-          if (request.method === "DELETE") { await savedDelete(env, profile, p.get("name") || ""); return json({ ok: true }); }
+          if (request.method === "GET") return json({ profile: profile || null, items: profile ? await savedList(env, profile) : [] });
+          if (request.method === "DELETE") { if (!profile) return json({ error: "profile needed" }, 400); await savedDelete(env, profile, p.get("name") || ""); return json({ ok: true }); }
           if (request.method === "POST") {
             const b = await request.json().catch(() => ({}));
-            const prof = String(b.profile || profile).toLowerCase().slice(0, 40);
+            const prof = profileId(b.profile || profile);
+            if (!prof) return json({ error: "profile needed" }, 400);
             const name = String(b.name || "").trim().slice(0, 24);
             if (!name) return json({ error: "name needed" }, 400);
             const legs = b.legs ? chainLegs(b.legs) : null;
@@ -4038,7 +4099,7 @@ export default {
           const device = cleanId(b.device), s = b.subscription || {};
           if (!device || !s.endpoint || !s.keys || !s.keys.p256dh || !s.keys.auth) return json({ error: "subscription needed" }, 400);
           if (!/^https:\/\//.test(s.endpoint) || s.endpoint.length > 1000) return json({ error: "bad endpoint" }, 400);
-          const prof = cleanId(b.profile || profile, 40).toLowerCase() || DEFAULT_PROFILE;
+          const prof = profileId(b.profile || profile);
           await db(env).prepare(`INSERT INTO push_subs (endpoint, device, profile, p256dh, auth, ua, created, fails) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)
             ON CONFLICT (endpoint) DO UPDATE SET device = excluded.device, profile = excluded.profile, p256dh = excluded.p256dh, auth = excluded.auth, ua = excluded.ua, fails = 0`)
             .bind(s.endpoint, device, prof, String(s.keys.p256dh).slice(0, 200), String(s.keys.auth).slice(0, 100), String(request.headers.get("user-agent") || "").slice(0, 200), Date.now()).run();
@@ -4052,7 +4113,7 @@ export default {
           const b = await request.json().catch(() => ({}));
           const device = cleanId(b.device), token = String(b.token || "");
           if (!device || !/^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]{10,}\]$/.test(token)) return json({ error: "device and Expo push token needed" }, 400);
-          const prof = cleanId(b.profile || profile, 40).toLowerCase() || DEFAULT_PROFILE;
+          const prof = profileId(b.profile || profile);
           await db(env).prepare(`INSERT INTO expo_tokens (token, device, profile, platform, created, fails) VALUES (?1, ?2, ?3, ?4, ?5, 0)
             ON CONFLICT (token) DO UPDATE SET device = excluded.device, profile = excluded.profile, platform = excluded.platform, fails = 0`)
             .bind(token, device, prof, String(b.platform || "").slice(0, 20), Date.now()).run();
@@ -4132,12 +4193,13 @@ export default {
           }
           const since = Number(p.get("since") || 0);
           const items = (await d1all(env, "SELECT * FROM watches WHERE device = ?1 AND (active = 1 OR updated > ?2) ORDER BY created DESC LIMIT 12", device, Date.now() - 20 * 60000)).map(watchOut);
-          const notes = await d1all(env, "SELECT id, watch_id, at, title, body, url, pushed FROM notes WHERE (device = ?1 OR profile = ?3) AND id > ?2 AND at > ?4 ORDER BY id DESC LIMIT 5", device, since, profile, Date.now() - 30 * 60000);
+          const notes = await d1all(env, "SELECT id, watch_id, at, title, body, url, pushed FROM notes WHERE (device = ?1 OR (?3 <> '' AND profile = ?3)) AND id > ?2 AND at > ?4 ORDER BY id DESC LIMIT 5", device, since, profile, Date.now() - 30 * 60000);
           const subs = await d1all(env, "SELECT COUNT(*) AS n FROM push_subs WHERE device = ?1", device);
           const exs = await d1all(env, "SELECT COUNT(*) AS n FROM expo_tokens WHERE device = ?1", device).catch(() => [{ n: 0 }]);
           return json({ items, notes, push: subs[0] ? subs[0].n : 0, expo: exs[0] ? exs[0].n : 0, lastTick: lt ? Number(lt.v) : null, ticked, now: Date.now() });
         }
         case "/api/commutes": {
+          if (!profile) return request.method === "GET" ? json({ items: [], suggestion: null, now: Date.now() }) : json({ error: "profile needed" }, 400);
           await ensureSchema3(env);
           if (request.method === "POST") {
             const b = await request.json().catch(() => ({}));
@@ -4167,41 +4229,36 @@ export default {
         case "/api/commutes/dismiss": {
           await ensureSchema3(env);
           const b = await request.json().catch(() => ({}));
-          if (b.key) await db(env).prepare("INSERT OR REPLACE INTO dismissed (profile, k, at) VALUES (?1, ?2, ?3)").bind(profile, String(b.key).slice(0, 200), Date.now()).run();
+          if (b.key && profile) await db(env).prepare("INSERT OR REPLACE INTO dismissed (profile, k, at) VALUES (?1, ?2, ?3)").bind(profile, String(b.key).slice(0, 200), Date.now()).run();
           return json({ ok: true });
         }
         case "/api/history/delete": {
           // Deletes what the server stored for one profile. scope "history": trip searches and
           // dismissed commute suggestions (suggestions are worked out from the searches, so they go
           // too). scope "all": also saved trips, commutes, watches, alerts, push sign ups and live
-          // trip shares for this device. The profile id is required. On the shared fallback
-          // profile only this device's own rows are deleted.
+          // trip shares for this device. A valid profile id is required, and searches this
+          // device made under any older profile id are deleted too.
           if (request.method !== "POST") return json({ error: "method" }, 405);
           await ensureSchema3(env);
           const b = await request.json().catch(() => ({}));
-          const prof = String(b.profile || "").toLowerCase().replace(/[^a-z0-9_.:-]/g, "").slice(0, 40);
+          const prof = profileId(b.profile);
           const dev = cleanId(b.device, 64);
           const scope = b.scope === "all" ? "all" : b.scope === "history" ? "history" : null;
-          if (!prof || prof.length < 5) return json({ error: "profile needed" }, 400);
+          if (!prof) return json({ error: "profile needed" }, 400);
           if (!scope) return json({ error: "scope must be history or all" }, 400);
-          const shared = prof === DEFAULT_PROFILE;
-          if (shared && !dev) return json({ error: "device needed for this profile" }, 400);
           const d = db(env);
           const n = {};
           const del = async (k, q, ...a) => { try { const r = await d.prepare(q).bind(...a).run(); n[k] = (n[k] || 0) + ((r && r.meta && r.meta.changes) || 0); } catch (e) { n[k] = n[k] || 0; } };
-          if (shared) await del("searches", "DELETE FROM searches WHERE profile = ?1 AND device = ?2", prof, dev);
-          else {
-            await del("searches", "DELETE FROM searches WHERE profile = ?1", prof);
-            await del("dismissed", "DELETE FROM dismissed WHERE profile = ?1", prof);
-          }
+          await del("searches", "DELETE FROM searches WHERE profile = ?1", prof);
+          await del("dismissed", "DELETE FROM dismissed WHERE profile = ?1", prof);
+          // Searches this device made under any older profile id go too.
+          if (dev) await del("searches", "DELETE FROM searches WHERE device = ?1", dev);
           if (scope === "all") {
-            if (!shared) {
-              await del("saved", "DELETE FROM saved WHERE profile = ?1", prof);
-              await del("saved", "DELETE FROM saved_legs WHERE profile = ?1", prof);
-              await del("commutes", "DELETE FROM commutes WHERE profile = ?1", prof);
-              await del("watches", "DELETE FROM watches WHERE profile = ?1", prof);
-              await del("alerts", "DELETE FROM notes WHERE profile = ?1", prof);
-            }
+            await del("saved", "DELETE FROM saved WHERE profile = ?1", prof);
+            await del("saved", "DELETE FROM saved_legs WHERE profile = ?1", prof);
+            await del("commutes", "DELETE FROM commutes WHERE profile = ?1", prof);
+            await del("watches", "DELETE FROM watches WHERE profile = ?1", prof);
+            await del("alerts", "DELETE FROM notes WHERE profile = ?1", prof);
             if (dev) {
               await del("watches", "DELETE FROM watches WHERE device = ?1", dev);
               await del("alerts", "DELETE FROM notes WHERE device = ?1", dev);
@@ -4229,9 +4286,11 @@ export default {
           return json({ prediction: it.pred || null });
         }
         case "/api/usage": {
+          // Without the admin key only the count of recorded live times is shown (Settings).
           await ensureSchema3(env);
-          const u = await usageToday(env);
           const c = await db(env).prepare("SELECT COUNT(*) AS n, COUNT(DISTINCT day) AS days FROM obs").first().catch(() => null);
+          if (!adminOk(request)) return json({ observations: c ? { n: c.n } : null });
+          const u = await usageToday(env);
           const lt = await db(env).prepare("SELECT v FROM meta WHERE k = 'last_tick'").first().catch(() => null);
           return json({ today: u, budget: DAILY_BUDGET, observations: c, lastTick: lt ? new Date(Number(lt.v)).toISOString() : null });
         }
@@ -4296,6 +4355,7 @@ export default {
           return json({ items: await d1all(env, "SELECT * FROM searches WHERE profile = ?1 ORDER BY at DESC LIMIT 50", profile) });
         }
         case "/api/health":
+          if (!adminOk(request)) return json({ error: "forbidden" }, 403);
           return json({ ok: true, at: new Date().toISOString(), feeds: feedStats, cachedFeeds: [...feedMem.entries()].filter(([, v]) => v.buf).map(([k, v]) => ({ feed: k, ageS: Math.round((Date.now() - v.at) / 1000), trips: v.idx.size, bytes: v.buf.length })), storage: !!db(env) });
         default:
           return json({ error: "not found" }, 404);
@@ -4305,5 +4365,115 @@ export default {
       console.error("api error", url.pathname, String((e && e.message) || e).slice(0, 300));
       return asTxt ? textRes(msg) : json({ kind: "error", text: msg }, 502);
     }
+}
+
+// ---------- edge cache, shared limits and input checks ----------
+// Shared live answers are cached at the edge for 15 seconds, keyed on the query without the
+// profile and device, so many phones looking at the same board cost one upstream call.
+const EDGE_CACHE_RE = /^\/api\/(departures|trip|plan|service|status|alerts|stations|search|nearby|station|parking|topup|lifts)$/;
+const EDGE_CACHE_S = 15;
+const EDGE_SKIP = new Set(["profile", "device", "refresh", "_"]);
+function edgeKey(url) {
+  const u = new URL(url.origin + url.pathname);
+  for (const k of [...new Set(url.searchParams.keys())].filter((k) => !EDGE_SKIP.has(k)).sort()) u.searchParams.append(k, url.searchParams.get(k));
+  return new Request(u.toString(), { method: "GET" });
+}
+// The Cache API is not available on every host (it does nothing on some), so each copy of the
+// worker also keeps the same answers in memory for 15 seconds.
+const memCacheMap = new Map();
+const memCache = {
+  async match(req) {
+    const e = memCacheMap.get(req.url);
+    if (!e || Date.now() - e.at > EDGE_CACHE_S * 1000) { if (e) memCacheMap.delete(req.url); return undefined; }
+    return new Response(e.body, { status: e.status, headers: e.headers });
+  },
+  async put(req, res) {
+    const body = await res.arrayBuffer();
+    if (body.byteLength > 512 * 1024) return;
+    memCacheMap.set(req.url, { at: Date.now(), body, status: res.status, headers: [...res.headers] });
+    if (memCacheMap.size > 300) memCacheMap.delete(memCacheMap.keys().next().value);
+  },
+};
+const layeredCache = (edge) => ({
+  async match(req) { return (await memCache.match(req)) || (edge ? await edge.match(req).catch(() => undefined) : undefined); },
+  async put(req, res) { const c = res.clone(); await memCache.put(req, res); if (edge) await edge.put(req, c).catch(() => null); },
+});
+function edgeCache() { let edge = null; try { edge = typeof caches !== "undefined" && caches.default ? caches.default : null; } catch (e) { edge = null; } return layeredCache(edge); }
+
+// Checks every query before any upstream call: place and stop ids, question length, counts.
+const PLACE_KEYS = ["from", "to", "stop", "via", "destId", "id"];
+function badInput(p) {
+  const q = p.get("q");
+  if (q != null && q.length > 300) return "Keep it under 300 characters.";
+  for (const k of PLACE_KEYS) {
+    const v = p.get(k);
+    if (v == null || v === "") continue;
+    if (v.length > 200 || /[<>"`{}\\\u0000-\u001f]/.test(v)) return `${k} is not a stop or place id`;
+  }
+  for (const k of ["fromName", "toName", "name"]) { const v = p.get(k); if (v != null && (v.length > 120 || /[<>`{}\u0000-\u001f]/.test(v))) return `${k} is not valid`; }
+  const c = p.get("count");
+  if (c != null && c !== "" && !(/^\d{1,2}$/.test(c) && Number(c) >= 1 && Number(c) <= 8)) return "count must be 1 to 8";
+  const t = p.get("time");
+  if (t != null && t !== "" && !/^([01]\d|2[0-3])[0-5]\d$/.test(t)) return "time must be HHMM";
+  const legs = p.get("legs");
+  if (legs != null && legs.length > 4000) return "legs is too long";
+  for (const k of ["lat", "lon"]) { const v = p.get(k); if (v != null && v !== "" && !/^-?\d{1,3}(\.\d{1,8})?$/.test(v)) return `${k} must be a number`; }
+  return null;
+}
+
+// Per address limits shared by every copy of the worker, kept in D1 per minute. They cover
+// writes and the routes that spend the Transport for NSW quota (an edge cache hit spends
+// nothing, so it is not counted). If D1 does not answer, the per copy limits above still apply.
+const IP_LIMITS = [
+  [/^\/api\/(ask|trip|plan|departures|service|status|next|search|nearby|alerts|station|parking|topup|lifts)$/, "up", 120, "GET"],
+  [/^\/api\/(saved|commutes|commutes\/dismiss|watch|push\/subscribe|push\/expo|push\/expo\/unregister|push\/unsubscribe|push\/test|share|share\/update|history\/delete|lifts\/alerts|parking\/watch|feedback)$/, "w", 60, null],
+];
+let ipSchemaOk = false;
+async function ipLimitOk(env, request, pathname) {
+  const rule = IP_LIMITS.find((r) => r[0].test(pathname) && (r[3] ? request.method === r[3] : request.method !== "GET"));
+  const d = db(env);
+  if (!rule || !d) return true;
+  const ip = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "?";
+  const win = Math.floor(Date.now() / 60000);
+  try {
+    if (!ipSchemaOk) { await d.prepare("CREATE TABLE IF NOT EXISTS ip_rate (k TEXT PRIMARY KEY, win INTEGER, n INTEGER)").run(); ipSchemaOk = true; }
+    const r = await d.prepare("INSERT INTO ip_rate (k, win, n) VALUES (?1, ?2, 1) ON CONFLICT (k) DO UPDATE SET n = CASE WHEN win = ?2 THEN n + 1 ELSE 1 END, win = ?2 RETURNING n").bind(rule[1] + "|" + ip.slice(0, 64), win).first();
+    return !r || !(Number(r.n) > rule[2]);
+  } catch (e) { return true; }
+}
+
+export default {
+  async fetch(request, env, exec) {
+    const url = new URL(request.url);
+    const cache = request.method === "GET" && EDGE_CACHE_RE.test(url.pathname) && !badInput(url.searchParams) ? edgeCache() : null;
+    if (cache) {
+      const key = edgeKey(url);
+      const hit = await cache.match(key).catch(() => null);
+      if (hit) {
+        if (!rateOk(request, url.pathname)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
+        // A trip from the cache still counts toward commute memory.
+        const p = url.searchParams, profile = profileId(request.headers.get("x-profile") || p.get("profile"));
+        if (url.pathname === "/api/trip" && profile && p.get("refresh") !== "1" && /^\d{4,10}$/.test(p.get("from") || "") && /^\d{4,10}$/.test(p.get("to") || "") && !p.get("time")) {
+          const s = { profile, device: cleanId(p.get("device")) || null, from: { id: p.get("from"), name: p.get("fromName") || p.get("from") }, to: { id: p.get("to"), name: p.get("toName") || p.get("to") }, src: "search" };
+          if (exec && exec.waitUntil) exec.waitUntil(logSearch(env, s));
+        }
+        // Answers carry the server clock in "now" for the countdowns; a cached one gets the current time.
+        let body = await hit.text();
+        if (/json/.test(hit.headers.get("content-type") || "")) body = body.replace(/"now":\d{13}/g, '"now":' + Date.now());
+        const r = new Response(body, hit);
+        r.headers.set("cache-control", "no-store");
+        r.headers.set("x-edge-cache", "hit");
+        return r;
+      }
+      const res = await handleRequest(request, env, exec);
+      if (res.status === 200) {
+        const copy = new Response(res.clone().body, res);
+        copy.headers.set("cache-control", `public, max-age=${EDGE_CACHE_S}`);
+        const put = cache.put(key, copy).catch(() => null);
+        if (exec && exec.waitUntil) exec.waitUntil(put);
+      }
+      return res;
+    }
+    return handleRequest(request, env, exec);
   },
 };

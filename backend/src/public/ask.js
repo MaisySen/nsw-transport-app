@@ -165,14 +165,15 @@
     const pl = places();
     const c = await maybeCoords(opts.forceLoc);
     const p = {
-      q, profile: LS.get("tb_profile", "bidur"), device: LS.get("tb_device", ""), fare: LS.get("tb_fare", "adult"),
+      q, profile: (window.TBApp && window.TBApp.profile) || LS.get("tb_profile", ""), device: LS.get("tb_device", ""), fare: LS.get("tb_fare", "adult"),
       home: pl.home && pl.home.id ? pl.home.id + "|" + (pl.home.name || "") : null,
       work: pl.work && pl.work.id ? pl.work.id + "|" + (pl.work.name || "") : null,
       lat: c ? c.latitude.toFixed(5) : null, lon: c ? c.longitude.toFixed(5) : null,
     };
     let d;
     try {
-      const r = await fetch("/api/ask?" + qs(p));
+      const prof = p.profile; delete p.profile;
+      const r = await fetch("/api/ask?" + qs(p), prof ? { headers: { "x-profile": prof } } : undefined);
       d = await r.json();
     } catch (e) { d = { reply: "No connection right now. Check your signal and try again.", suggestions: [q] }; }
     busy = false;
@@ -189,7 +190,7 @@
     let bar = $("#akBar");
     if (!bar) {
       bar = document.createElement("form");
-      bar.id = "akBar"; bar.className = "ak-bar"; bar.setAttribute("autocomplete", "off");
+      bar.id = "akBar"; bar.className = "ak-bar"; bar.setAttribute("autocomplete", "off"); bar.setAttribute("role", "search"); bar.setAttribute("aria-label", "Ask");
       const canTalk = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
       bar.innerHTML = `<div class="ak-field"><input id="akIn" type="text" enterkeyhint="send" placeholder="Ask about a train, bus or trip" aria-label="Your question">
         ${canTalk ? `<button type="button" class="ak-mic" id="akMic" aria-label="Speak your question">${ICON.mic}</button>` : ""}</div>

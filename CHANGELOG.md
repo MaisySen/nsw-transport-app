@@ -4,6 +4,19 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 24 Oct 2026
 
+### Web and server: audit fixes (security, privacy, accessibility, 5:20 PM)
+* Fixed: the Watching tab crashed for anyone without alerts turned on. It now shows a Turn on alerts card (or why alerts cannot work in that browser). A headless check opens every route in light and dark and fails on any page error.
+* The shared fallback profile is gone. With no profile the server logs no searches and returns no saved trips or commutes, and writes answer "profile needed". A profile id must be 6 to 40 safe characters. Browsers still on the old shared profile move to a new random one and their saved trips are uploaded again. The web app and Ask send the profile in an `x-profile` header, not the address. `/api/history/delete` also deletes the searches this device made under an older profile id.
+* Every page (Trips, download, privacy, support, terms, live trip and the 404 page) is now served by the worker with HSTS, a Content Security Policy with frame-ancestors none, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy and COOP. No `_headers` file is written any more.
+* Shared live answers are cached for 15 seconds, keyed without profile or device. New per address limits shared by every copy of the worker (120 upstream reads and 60 writes a minute, in D1). Inputs are checked before any upstream call: place and stop ids, questions up to 300 characters, count 1 to 8, time, lat and lon.
+* `/api/health` needs the admin key and `/api/usage` without it shows only the recorded live time count. Admin and scheduler keys are read only from the `x-admin-key` header.
+* Accessibility: text contrast at least 4.5:1 in light and dark (darker blue and secondary text in light, solid buttons in dark, black text on light line colours), 44 point hit areas on small buttons, tab roles on segmented controls, landmarks on the download page, heading order, and text sizes in rem so browser text size settings work.
+* Web maps use OpenFreeMap vector tiles (light and dark styles) instead of the OpenStreetMap tile servers.
+* The download page no longer tells people to bypass Play Protect or sends iPhone users to Expo Go; iPhone users get the web app until the App Store listing.
+* A trip link with only stop ids now shows the station names.
+* Privacy policy: a sentence on how the services we use protect data, and the map provider.
+* The generated station, bus route and stop data are now in the repo, so a clean clone passes all 80 backend tests. New CI workflow `backend.yml` runs them on every push.
+
 ### Android app: Park and Ride, lifts and station access, Opal machines (over the air update, 4:29 PM)
 * Station screens show Park and Ride car parks with live spaces free, a fill bar and a Spaces free, Nearly full, Full or No live count badge. The bell on each car park sets a notification for when it gets nearly full in the next 3 hours.
 * Station screens show the access level, lifts and escalators, live lift outages (tap one for the Transport for NSW alert), Lifts working when none are out, the Opal machine, short platform, facilities and peak times, with the sources named under each section.

@@ -5,7 +5,7 @@ One backend does all the work. The web app, the Android app and the iPhone app a
 ```
  Transport for NSW Open Data                 cron-job.org (every minute)
  (trip planner, GTFS realtime,                        |
-  vehicle positions, alerts)                          | GET /api/tick?key=TICK_KEY
+  vehicle positions, alerts)                          | GET /api/tick (x-admin-key)
             ^                                         v
             |  API key (server only)        +-------------------------+
             +-------------------------------|  Backend Worker          |
@@ -46,7 +46,7 @@ One backend does all the work. The web app, the Android app and the iPhone app a
 
 ### The scheduler
 
-Worker sites here have no cron of their own, so cron-job.org calls `GET /api/tick?key=TICK_KEY` every minute (job "NSW Transport Bot heartbeat"). Each tick follows every active watch and commute, sends alerts, samples a few busy stops for the delay history and runs the retention clean up. A D1 lease stops two ticks overlapping. If the scheduler goes quiet for more than 100 seconds, an open app's `/api/watches` call runs a tick for its own device.
+Worker sites here have no cron of their own, so cron-job.org calls `GET /api/tick` with `TICK_KEY` in an `x-admin-key` header every minute (job "NSW Transport Bot heartbeat"). Each tick follows every active watch and commute, sends alerts, samples a few busy stops for the delay history and runs the retention clean up. A D1 lease stops two ticks overlapping. If the scheduler goes quiet for more than 100 seconds, an open app's `/api/watches` call runs a tick for its own device.
 
 ### Notifications
 

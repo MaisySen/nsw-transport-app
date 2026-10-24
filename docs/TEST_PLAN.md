@@ -6,13 +6,14 @@ How Transport is tested, what runs where, and the current results. Updated 24 Oc
 
 | Level | Where | Runs |
 | --- | --- | --- |
-| Backend unit tests | `backend/test/*.mjs`, Node's built in test runner | By hand before each publish: `cd backend && node --test test/` |
+| Backend unit tests | `backend/test/*.mjs`, Node's built in test runner | Every push touching `backend/` or `docs/` (`.github/workflows/backend.yml`), and by hand before each publish: `cd backend && node --test test/*.test.mjs` |
 | iPhone UI tests (XCUITest) | `ios-native/Tests/UITests/` | Every CI run of `ios-native.yml`, in light and in dark mode |
 | iPhone widget snapshot test | `ios-native/Tests/Snapshots/` | Every CI run, light pass |
 | App Store screenshot run | `ios-native/Tests/UITests/StoreShots.swift` | Every CI run, 6.9 inch light and dark, 6.5 inch light |
 | Expo type check | `app/`, `npx tsc --noEmit` | Before each EAS Update and APK build |
 | Live checks after each web publish | curl | `/`, `/download/`, `/download/transport.apk` (206 for a range), `/privacy/`, `/support/`, `/terms/`, `/robots.txt`, `/sitemap.xml`, `/api/status`, `/api/stations`, `/api/plan`, `/api/ask` and a random path (expects the 404 page) |
 | Phone size screenshots | Headless browser at phone width, light and dark | For each feature on web and on the Expo web build; looked at before shipping |
+| Web route and accessibility check | Headless browser at 390 x 844, light and dark | Opens every web route (Trips, Search, Ask, Watching, Settings, a stop, a trip, the download, privacy, support, terms and live pages), fails on any page error, and runs axe (WCAG 2.2 AA) on each |
 | Lighthouse (mobile) | Landing, support, privacy and web app | After site changes. Last run: 100 in all four categories on landing, support and privacy; web app 100, 100, 100 and 96 for accessibility |
 | Writing style check | grep in every test file and before every push | No em dashes, no en dashes, no filler words |
 
@@ -113,7 +114,7 @@ Earlier runs: 15 (build 6) 10 of 10 light and 9 of 9 dark. Runs 10 and 11 failed
 
 ## Before a release
 
-1. `node --test test/` in `backend/`: all 35 pass.
+1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).
 2. `npx tsc --noEmit` in `app/`.
 3. iPhone: CI run green, then read `r2.txt` on `ci-out` for per test counts in light and dark.
 4. After publishing the web: the live checks above.

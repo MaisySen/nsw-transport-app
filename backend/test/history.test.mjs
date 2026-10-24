@@ -53,9 +53,9 @@ test("history scope deletes searches and dismissed suggestions for that profile 
   assert.equal(r.status, 200);
   const d = await r.json();
   assert.equal(d.ok, true);
-  assert.equal(d.deleted.searches, 3);
-  assert.deepEqual(runs.map((x) => x.q), ["DELETE FROM searches WHERE profile = ?1", "DELETE FROM dismissed WHERE profile = ?1"]);
-  for (const x of runs) assert.deepEqual(x.args, ["wprofileabc123"]);
+  assert.equal(d.deleted.searches, 6);
+  assert.deepEqual(runs.map((x) => x.q), ["DELETE FROM searches WHERE profile = ?1", "DELETE FROM dismissed WHERE profile = ?1", "DELETE FROM searches WHERE device = ?1"]);
+  assert.deepEqual(runs.map((x) => x.args[0]), ["wprofileabc123", "wprofileabc123", "dDev1"]);
 });
 
 test("all scope also deletes saved trips, commutes, watches, alerts and this device's push and shares", async () => {
@@ -68,15 +68,12 @@ test("all scope also deletes saved trips, commutes, watches, alerts and this dev
   assert.ok(!runs.some((x) => /WHERE 1|WHERE profile IS|without/.test(x.q)));
 });
 
-test("on the shared fallback profile only this device's own searches go", async () => {
+test("a short or shared profile id is refused, and nothing is deleted", async () => {
   runs.length = 0;
-  assert.equal((await call({ profile: "bidur", scope: "history" }, "10.9.4.1")).status, 400);
-  const r = await call({ profile: "bidur", device: "dPhone9", scope: "all" }, "10.9.4.2");
-  assert.equal(r.status, 200);
-  const prof = runs.filter((x) => x.args.includes("bidur"));
-  assert.deepEqual(prof.map((x) => x.q), ["DELETE FROM searches WHERE profile = ?1 AND device = ?2"]);
-  assert.deepEqual(prof[0].args, ["bidur", "dPhone9"]);
-  assert.ok(!runs.some((x) => /FROM (saved|commutes|dismissed) /.test(x.q)), "shared saved trips are not touched");
+  for (const profile of ["bidur", "abc", "../../etc/passwd", "a".repeat(41)]) {
+    assert.equal((await call({ profile, device: "dPhone9", scope: "all" }, "10.9.4." + profile.length)).status, 400, profile);
+  }
+  assert.equal(runs.length, 0);
 });
 
 test("history delete is rate limited per address", async () => {

@@ -29,10 +29,8 @@ fs.mkdirSync(out, { recursive: true });
 fs.cpSync(path.join(root, "src/public"), out, { recursive: true });
 let worker = fs.readFileSync(path.join(root, "src/worker.js"), "utf8");
 for (const k of need) worker = worker.split(`__${k}__`).join(vals[k]);
-fs.writeFileSync(path.join(out, "worker.mjs"), worker);
-// Security headers for the static files (served before the worker runs). The Content
-// Security Policy allows only this site's own scripts plus the exact inline scripts in the
-// built pages, hashed here at build time so later page edits stay covered.
+// The Content Security Policy allows only this site's own scripts plus the exact inline
+// scripts in the built pages, hashed here at build time so later page edits stay covered.
 const htmlFiles = [];
 const walkOut = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) walkOut(f); else if (e.name.endsWith(".html")) htmlFiles.push(f); } };
 walkOut(out);
@@ -46,36 +44,38 @@ const csp = [
   "default-src 'self'",
   "script-src 'self' " + [...hashes].sort().join(" "),
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://tile.openstreetmap.org",
-  "connect-src 'self'",
+  "img-src 'self' data: blob: https://tile.openstreetmap.org https://tiles.openfreemap.org",
+  "connect-src 'self' https://tiles.openfreemap.org",
   "font-src 'self'",
   "manifest-src 'self'",
-  "worker-src 'self'",
+  "worker-src 'self' blob:",
+  "child-src blob:",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
   "upgrade-insecure-requests",
 ].join("; ");
-fs.writeFileSync(path.join(out, "_headers"), [
-  "/*",
-  "  Content-Security-Policy: " + csp,
-  "  Strict-Transport-Security: max-age=31536000",
-  "  X-Content-Type-Options: nosniff",
-  "  Referrer-Policy: strict-origin-when-cross-origin",
-  "  Permissions-Policy: geolocation=(self), microphone=(self), camera=(), payment=(), usb=(), browsing-topics=()",
-  "  X-Frame-Options: DENY",
-  "  Cross-Origin-Opener-Policy: same-origin",
-  "",
-].join("\n"));
-// The hosting serves static pages without the headers above, so each page also carries the
-// policy in a meta tag (frame-ancestors only works as a header, so it is left out here).
+// The host serves static files before the worker runs and ignores a _headers file, so every
+// HTML page is moved into the worker (PAGES) and served there with the full header set,
+// including frame-ancestors and HSTS. The pages also keep the policy in a meta tag.
 const metaCsp = csp.split("; ").filter((d) => !d.startsWith("frame-ancestors")).join("; ");
+const pages = {};
 for (const f of htmlFiles) {
-  const html = fs.readFileSync(f, "utf8");
-  if (html.includes('http-equiv="Content-Security-Policy"')) continue;
-  fs.writeFileSync(f, html.replace(/<head([^>]*)>/i, (m) => m + '\n<meta http-equiv="Content-Security-Policy" content="' + metaCsp + '">'));
+  let html = fs.readFileSync(f, "utf8");
+  if (!html.includes('http-equiv="Content-Security-Policy"')) html = html.replace(/<head([^>]*)>/i, (m) => m + '\n<meta http-equiv="Content-Security-Policy" content="' + metaCsp + '">');
+  const rel = "/" + path.relative(out, f).split(path.sep).join("/");
+  pages[rel.endsWith("/index.html") || rel === "/index.html" ? rel.slice(0, -"index.html".length) : rel] = html;
+  fs.rmSync(f);
 }
+for (const k of ["/", "/404.html", "/privacy/", "/support/", "/terms/", "/download/", "/live/"]) {
+  if (!(k in pages)) { console.error("Missing page " + k); process.exit(1); }
+}
+const marker = (name) => { const re = new RegExp("[^\\n]*/\\*__" + name + "__\\*/"); if (!re.test(worker)) { console.error("worker.js lacks the " + name + " marker"); process.exit(1); } return re; };
+worker = worker.replace(marker("PAGES"), () => "const PAGES = " + JSON.stringify(pages) + ";");
+worker = worker.replace(marker("PAGE_CSP"), () => "const PAGE_CSP = " + JSON.stringify(csp) + ";");
+fs.writeFileSync(path.join(out, "worker.mjs"), worker);
+fs.rmSync(path.join(out, "_headers"), { force: true });
 // Stamp the service worker so each deploy refreshes the offline cache.
 const swPath = path.join(out, "sw.js");
 if (fs.existsSync(swPath)) {

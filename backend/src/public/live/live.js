@@ -19,11 +19,28 @@
   sheet.style.setProperty("--y", Math.round(sheet.getBoundingClientRect().height * 0.45) + "px");
   var map = null, route = null, vMarker = null, pMarker = null, stopsLayer = null, follow = true, share = null, svc = null, svcLeg = -1, timer = null;
 
+
+  // Vector tiles from OpenFreeMap with MapLibre GL inside Leaflet, loaded when the map opens;
+  // OpenStreetMap raster tiles when the phone has no WebGL.
+  function baseTiles(m) {
+    var dark = matchMedia("(prefers-color-scheme: dark)").matches;
+    function raster() { L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, className: dark ? "dk-tiles" : "", attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(m); }
+    var gl = false;
+    try { var c = document.createElement("canvas"); gl = !!(c.getContext("webgl2") || c.getContext("webgl")); } catch (e) { gl = false; }
+    if (!gl) { raster(); return; }
+    var add = function (src, next) { var s = document.createElement("script"); s.src = src; s.onload = next; s.onerror = raster; document.head.appendChild(s); };
+    var css = document.createElement("link"); css.rel = "stylesheet"; css.href = "/vendor/maplibre-gl.css?v=1"; document.head.appendChild(css);
+    add("/vendor/maplibre-gl.js?v=1", function () {
+      add("/vendor/leaflet-maplibre-gl.js?v=1", function () {
+        if (!L.maplibreGL) { raster(); return; }
+        L.maplibreGL({ style: "https://tiles.openfreemap.org/styles/" + (dark ? "dark" : "liberty"), attribution: '<a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(m);
+      });
+    });
+  }
   function makeMap() {
     if (map || !window.L) return;
     map = L.map("map", { zoomControl: false }).setView([-33.8688, 151.2093], 12);
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
-    if (matchMedia("(prefers-color-scheme: dark)").matches) map.getContainer().classList.add("dark-tiles");
+    baseTiles(map);
     map.on("dragstart", function () { follow = false; });
   }
   $("#lFollow").onclick = function () { follow = true; paintMap(); };
@@ -78,7 +95,7 @@
     var badge = live ? (late >= 2 ? '<span class="badge late">' + late + " min late</span>" : '<span class="badge live">Live</span>') : '<span class="badge sched">Scheduled</span>';
     var age = Math.round((now() - s.updated) / 60000);
     var legRows = s.legs.map(function (x, i) {
-      return (i > 0 ? '<div class="go-chg">change at ' + esc(short(s.legs[i - 1].to)) + "</div>" : "") + '<div class="go-leg ' + (i < li ? "done" : i === li ? "now" : "next") + '" style="--c:' + esc(x.color || "#00B5EF") + '"><span class="lb" style="background:' + esc(x.color || "#00B5EF") + '">' + esc(x.line) + '</span><div class="grow"><div class="t1">' + esc(short(x.from)) + " to " + esc(short(x.to)) + '</div><div class="t2">' + clock(tms(x.estimated || x.planned)) + " to " + clock(tms(x.arrPlanned || x.planned)) + " planned</div></div>" + (i === li ? '<span class="go-now-dot"></span>' : "") + "</div>";
+      return (i > 0 ? '<div class="go-chg">change at ' + esc(short(s.legs[i - 1].to)) + "</div>" : "") + '<div class="go-leg ' + (i < li ? "done" : i === li ? "now" : "next") + '" style="--c:' + esc(x.color || "#00B5EF") + '"><span class="lb" style="background:' + esc(x.color || "#00B5EF") + ";color:" + ink(x.color || "#00B5EF") + '">' + esc(x.line) + '</span><div class="grow"><div class="t1">' + esc(short(x.from)) + " to " + esc(short(x.to)) + '</div><div class="t2">' + clock(tms(x.estimated || x.planned)) + " to " + clock(tms(x.arrPlanned || x.planned)) + " planned</div></div>" + (i === li ? '<span class="go-now-dot"></span>' : "") + "</div>";
     }).join("");
     var m = mins(eta);
     var inTxt = m === 0 ? "<b>Now</b>" : m < 60 ? "<b>" + m + "</b><span>min</span>" : "<b>" + Math.floor(m / 60) + "</b><span>h</span><b>" + (m % 60) + "</b><span>min</span>";
@@ -104,3 +121,10 @@
   timer = setInterval(function () { if (!document.hidden) load(); }, 15000);
   document.addEventListener("visibilitychange", function () { if (!document.hidden) load(); });
 })();
+  // Black text on light line colours so badges stay readable (4.5:1).
+  const ink = (hex) => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+    if (!m) return "#fff";
+    const c = [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16) / 255).map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+    return 1.05 / (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] + 0.05) >= 4.5 ? "#fff" : "#000";
+  };

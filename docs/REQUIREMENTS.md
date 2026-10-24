@@ -1,6 +1,6 @@
 # Requirements
 
-What Transport does, by version, and where each feature stands on each platform. Updated 24 Oct 2026, 2:20 PM Sydney time.
+What Transport does, by version, and where each feature stands on each platform. Updated 24 Oct 2026, 5:20 PM Sydney time.
 
 Status words: **Done** (live for users), **In progress** (being built now), **Planned** (agreed, not started), **Blocked** (waiting on something outside the code).
 
@@ -25,7 +25,13 @@ Platforms: **Web** is the web app at https://nsw-transport-bot.sites.tab.bot. **
 | Upstream budget | Transport for NSW Bronze plan: 60,000 calls a day. The backend counts calls and stops background sampling at 40,000 and watches at 56,000 | Done |
 | Works offline at launch | App opens with no network and shows each tab (tested on iPhone) | Done |
 | Accessibility | Labels on controls, Dynamic Type, dark mode. Lighthouse accessibility 96 to 100 on web | Done |
-| Writing style | No em dashes or en dashes and no filler words in any text | Done, checked by tests |
+| Writing style | No em dashes or en dashes and no filler words in any text | Done, checked by tests and CI |
+| Security headers | Every web page is served by the worker with HSTS, a Content Security Policy with frame-ancestors none, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy and COOP; checked with curl after each publish | Done (web) |
+| No shared profile | A profile id is 6 to 40 safe characters, there is no default; with no profile nothing is logged and nothing saved is read. Profile sent in an x-profile header | Done (web and server) |
+| Abuse limits | Inputs checked before any upstream call; shared answers cached for 15 seconds; per address limits in D1 (120 upstream reads and 60 writes a minute) | Done (server) |
+| Accessibility (web) | axe WCAG 2.2 AA in light and dark at 390 x 844 on every route: text contrast 4.5:1, 44 point hit areas, tab roles on segmented controls, landmarks, heading order, text sizes in rem | Done (web) |
+| Map tiles | OpenFreeMap vector tiles on web and Android (no app traffic on the OpenStreetMap tile servers, raster fallback without WebGL only) | Done (web) |
+| CI | backend.yml runs every backend test, the build and the dash check on each push | Done |
 | Cost of the Ask chat | Rule based, no AI model, no per message cost | Done |
 
 ## v1: Transport Bot (23 Oct 2026)

@@ -15,6 +15,19 @@ window.TBApp = () => {
   const qs = (o) => Object.entries(o).filter(([, v]) => v != null && v !== "").map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
   const cap = (s) => String(s || "").charAt(0).toUpperCase() + String(s || "").slice(1);
   const short = (n) => String(n || "").split(",")[0].trim();
+  // The profile id travels in an x-profile header instead of the address, so it stays out of
+  // access logs and shared caches. Every /api call in this file goes through this fetch.
+  const fetch = (u, o = {}) => {
+    if (typeof u === "string" && u.startsWith("/api/") && u.includes("profile=")) {
+      const i = u.indexOf("?"), sp = new URLSearchParams(u.slice(i + 1)), prof = sp.get("profile");
+      sp.delete("profile");
+      const h = new Headers(o.headers || {});
+      if (prof) h.set("x-profile", prof);
+      o = { ...o, headers: h };
+      u = u.slice(0, i) + (sp.toString() ? "?" + sp : "");
+    }
+    return window.fetch(u, o);
+  };
 
   // ---------- storage and identity ----------
   const LS = {
@@ -33,19 +46,33 @@ window.TBApp = () => {
       // A ?me= link switches to another set of saved trips. Ask first when this browser already
       // has its own, so a link from someone else cannot quietly move you onto their profile.
       const cur = LS.get("tb_profile", null);
-      if (me && me !== cur && (!cur || window.confirm("Open the saved trips from this link? Your current trips stay saved on the server under your old profile."))) LS.set("tb_profile", me);
+      if (validProfile(me) && me !== cur && (!cur || window.confirm("Open the saved trips from this link? Your current trips stay saved on the server under your old profile."))) LS.set("tb_profile", me);
       qp.delete("me");
       try { history.replaceState(null, "", location.pathname + (qp.toString() ? "?" + qp : "") + location.hash); } catch (e) { /* old browser */ }
     }
     let p = LS.get("tb_profile", null);
-    if (!p) {
-      // Browsers that used the app before per install profiles keep the original profile.
-      // Everyone else gets a random profile of their own, so saved trips are never shared.
-      p = LS.get("tb_device", null) ? "bidur" : randId("w");
+    if (!validProfile(p)) {
+      // Every browser gets a random profile of its own, so saved trips are never shared. A browser
+      // still on an old short or shared profile moves to a new one, and its saved trips are uploaded
+      // again under the new id (see migrateSaved below). Everything on this phone stays.
+      if (p) LS.set("tb_migrate", 1);
+      p = randId("w");
       LS.set("tb_profile", p);
     }
     return p;
   })();
+  window.TBApp.profile = PROFILE;
+  // Server rule: a profile id is 6 to 40 of a to z, 0 to 9, "_", ".", ":" or "-".
+  function validProfile(v) { return typeof v === "string" && /^[a-z0-9_.:-]{6,40}$/.test(v); }
+  // After a move to a new profile, upload this phone's saved trips under it (once).
+  setTimeout(() => {
+    if (!LS.get("tb_migrate", 0)) return;
+    const list = saved();
+    Promise.all(list.filter((t) => t && t.name).map((t) => {
+      const F = tLegs(t);
+      return post("/api/saved", F.length > 1 ? { profile: PROFILE, name: t.name, legs: wireLegs(t) } : { profile: PROFILE, name: t.name, from: t.from, to: t.to });
+    })).then(() => LS.set("tb_migrate", 0)).catch(() => null);
+  }, 1500);
   const DEVICE = (() => {
     let d = LS.get("tb_device", null);
     if (!d) { d = randId("d"); LS.set("tb_device", d); }
@@ -212,8 +239,39 @@ window.TBApp = () => {
   I.metro = I.train; I.lightrail = I.train; I.coach = I.bus;
   const icon = (mode) => I[mode] || I.bus;
   const noun = (mode) => ({ bus: "bus", coach: "coach", train: "train", metro: "metro", lightrail: "tram", ferry: "ferry" }[mode] || "service");
-  const lb = (line, color, sm) => `<span class="lb${sm ? " sm" : ""}" style="background:${esc(color || "#8e8e93")}">${esc(line || "?")}</span>`;
+  // Line badges keep the official line colour; the text is black on light colours so it stays readable (4.5:1).
+  const lbInk = (hex) => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+    if (!m) return "#fff";
+    const c = [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16) / 255).map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+    const L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    return 1.05 / (L + 0.05) >= 4.5 ? "#fff" : "#000";
+  };
+  const lb = (line, color, sm) => `<span class="lb${sm ? " sm" : ""}" style="background:${esc(color || "#6c6c70")};color:${lbInk(color || "#6c6c70")}">${esc(line || "?")}</span>`;
 
+
+  // ---------- map tiles ----------
+  // Vector tiles from OpenFreeMap (free, no key, built for app traffic), drawn with MapLibre GL
+  // inside Leaflet and loaded only when a map opens. Light and dark styles follow the phone.
+  // Without WebGL the map falls back to OpenStreetMap raster tiles.
+  let glLoad = null;
+  const loadGL = () => glLoad || (glLoad = new Promise((ok, no) => {
+    const css = document.createElement("link"); css.rel = "stylesheet"; css.href = "/vendor/maplibre-gl.css?v=1"; document.head.appendChild(css);
+    const s1 = document.createElement("script"); s1.src = "/vendor/maplibre-gl.js?v=1";
+    s1.onload = () => { const s2 = document.createElement("script"); s2.src = "/vendor/leaflet-maplibre-gl.js?v=1"; s2.onload = () => ok(); s2.onerror = no; document.head.appendChild(s2); };
+    s1.onerror = no; document.head.appendChild(s1);
+  }));
+  const hasGL = () => { try { const c = document.createElement("canvas"); return !!(c.getContext("webgl2") || c.getContext("webgl")); } catch (e) { return false; } };
+  const TILE_ATTR = '<a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+  function baseTiles(map) {
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+    const raster = () => L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, className: dark ? "dk-tiles" : "", attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+    if (!hasGL()) { raster(); return; }
+    loadGL().then(() => {
+      if (!L.maplibreGL) throw new Error("no gl");
+      L.maplibreGL({ style: "https://tiles.openfreemap.org/styles/" + (dark ? "dark" : "liberty"), attribution: TILE_ATTR }).addTo(map);
+    }).catch(() => raster());
+  }
   // ---------- network ----------
   // At most 3 requests in flight, and one quiet retry when the live feed is briefly busy.
   let inFlight = 0; const waiters = [];
@@ -1036,7 +1094,7 @@ window.TBApp = () => {
       const prompt = step === "from" ? `Where do you get on the ${M.name.toLowerCase()}?` : `From ${stName(short(from.name))}. Where do you get off?`;
       const m = openModal({ title: step === "from" ? "From" : "To", left: "Cancel",
         body: `<div class="pk-top"><p class="pkstep">${mico(mode, true)}<span>${esc(prompt)}</span></p>
-          ${isBus ? "" : `<div class="seg pkseg" role="tablist"><button class="on" data-tab="az">A to Z</button><button data-tab="dist">By distance</button><button data-tab="map">By map</button></div>`}
+          ${isBus ? "" : `<div class="seg pkseg" role="tablist"><button class="on" role="tab" aria-selected="true" data-tab="az">A to Z</button><button role="tab" aria-selected="false" data-tab="dist">By distance</button><button role="tab" aria-selected="false" data-tab="map">By map</button></div>`}
           <div class="sfield pk-s">${SEARCH_ICO}<input id="st_q" type="search" autocomplete="off" placeholder="${isBus ? "Route number or stop name" : `Filter ${M.name.toLowerCase()} stations`}" aria-label="Filter"></div></div>
           <div id="st_body" class="st-body"><div class="svc-empty" style="border:0">Loading</div></div>` });
       m.classList.add("tall");
@@ -1078,7 +1136,7 @@ window.TBApp = () => {
           body.innerHTML = `<div id="st_map" class="st-map"></div><p class="group-f">Tap a station, then Choose.</p>`;
           if (!window.L) { body.innerHTML = `<div class="empty">The map could not load. Use A to Z instead.</div>`; return; }
           map = L.map($("#st_map", body), { zoomControl: false, attributionControl: true });
-          L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, className: matchMedia("(prefers-color-scheme: dark)").matches ? "dk-tiles" : "", attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+          baseTiles(map);
           const pts = [];
           list.forEach((s) => {
             const mk = L.circleMarker([s[2], s[3]], { radius: 7, weight: 2, color: "#fff", fillColor: M.color, fillOpacity: 1 }).addTo(map);
@@ -1093,7 +1151,7 @@ window.TBApp = () => {
           setTimeout(() => map && map.invalidateSize(), 350);
         }
       }
-      $$("[data-tab]", m).forEach((b) => (b.onclick = () => { tab = b.dataset.tab; $$("[data-tab]", m).forEach((x) => x.classList.toggle("on", x === b)); scroller.scrollTop = 0; render(); }));
+      $$("[data-tab]", m).forEach((b) => (b.onclick = () => { tab = b.dataset.tab; $$("[data-tab]", m).forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-selected", String(x === b)); }); scroller.scrollTop = 0; render(); }));
       inp.addEventListener("input", () => { if (tab === "map") return render(); render(); });
       const jump = (ev) => {
         const el = document.elementFromPoint(ev.clientX, ev.clientY);
@@ -1339,7 +1397,7 @@ window.TBApp = () => {
       if (big.length) h += `<a class="abanner" href="#/alerts">${I.alert}<span>${esc(big[0].title)}</span>${big.length > 1 ? `<small>+${big.length - 1}</small>` : ""}</a>`;
       if (active.length) h += `<div class="group"><div class="group-h big">Watching</div>${active.map(watchCard).join("")}</div>`;
       if (suggestion) {
-        h += `<div class="group"><div class="card"><button class="x" data-dismiss aria-label="Not now">${I.x}</button><div class="prompt"><span class="sym" style="background:#5856d6">${I.sparkle}</span><div><h3>Make this your ${esc(suggestion.name.toLowerCase())}?</h3>
+        h += `<div class="group"><div class="card"><button class="x" data-dismiss aria-label="Not now">${I.x}</button><div class="prompt"><span class="sym" style="background:#5856d6">${I.sparkle}</span><div><h2>Make this your ${esc(suggestion.name.toLowerCase())}?</h2>
           <p>${esc(short(suggestion.from.name))} to ${esc(short(suggestion.to.name))}, around ${esc(suggestion.todText)} on ${suggestion.days} days. I'll tell you when to leave each weekday.</p>
           <div class="card-actions"><button class="pillbtn solid" data-accept>Yes, every weekday</button><button class="pillbtn" data-dismiss>Not now</button></div></div></div></div></div>`;
       }
@@ -1584,7 +1642,7 @@ window.TBApp = () => {
     }
     const chainSub = () => { const L = tLegs(T()); return L.length === 2 && L[1].mode !== "walk" ? `Via ${stName(short(L[0].to.name))}, ${L[1].conn == null ? 5 : L[1].conn} min to change` : `${L.length} legs via ${viaText(T())}`; };
     const sub = [name ? cap(name) : "", chain ? chainSub() : ""].filter(Boolean).join(". ");
-    const head = () => `<h1 class="large">${esc(short(fn))} <span style="color:var(--label3)">to</span> ${esc(short(tn))}${sub ? `<small>${esc(sub)}</small>` : ""}</h1>`;
+    const head = () => `<h1 class="large">${esc(short(fn))} <span style="color:var(--label3t)">to</span> ${esc(short(tn))}${sub ? `<small>${esc(sub)}</small>` : ""}</h1>`;
     let extra = [], showDep = true;
     const hhmm = (t) => { const p = new Intl.DateTimeFormat("en-AU", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date(t)); return (p.find((x) => x.type === "hour").value % 24).toString().padStart(2, "0") + p.find((x) => x.type === "minute").value; };
     const jkey = (j) => { const f = (j.legs || []).find((l) => l.kind === "transit"); return f ? legKey(f) : String(j.leave); };
@@ -1625,7 +1683,7 @@ window.TBApp = () => {
         ${(() => { const fj = js.find((o) => o.j.fare && o.x.leave > now() - 30000); const f = fj && fj.j.fare; return f ? `<div class="farebar">${f.offPeak ? `<span class="fb-peak">Peak</span><span>Off peak from ${esc(f.offPeak.from)}, save ${money(f.offPeak.save)}</span>` : `<span class="fb-t">Opal fare estimate</span><span>${money(f.total)} ${esc(f.typeName)}${f.peak ? ", peak" : ", off peak"}</span>`}</div>` : ""; })()}
         ${d.accessible ? `<div class="farebar accbar"><span class="fb-acc">${I.access}</span><span>Step free trips only. ${js.length ? "" : "None found for this trip. "}<a href="#/settings">Change in Settings</a></span></div>` : ""}
         ${d.parking && d.parking.carparks ? parkGroup(d.parking.carparks, `Park and Ride at ${stShort(d.parking.station.name)}`, true, d.parking.station.name) : ""}
-        <div class="seg tt" role="tablist"><button class="${showDep ? "on" : ""}" data-mode="dep">Departs in</button><button class="${showDep ? "" : "on"}" data-mode="dur">Travel time</button></div>
+        <div class="seg tt" role="tablist"><button class="${showDep ? "on" : ""}" role="tab" aria-selected="${showDep}" data-mode="dep">Departs in</button><button class="${showDep ? "" : "on"}" role="tab" aria-selected="${!showDep}" data-mode="dur">Travel time</button></div>
         <div class="group"><div class="list"><div class="cell static"><div class="grow"><div class="t1">All services</div><div class="t2">${df.all ? "Trips with a change are shown too" : df.chain ? ((d.fallback || []).some(Boolean) ? "Some legs have no direct service" : "Direct services on each leg") : df.none ? "None stop at both ends, so all are shown" : "Only services that stop at both ends"}</div></div><label class="switch"><input type="checkbox" data-all ${df.all ? "checked" : ""} aria-label="All services"><span></span></label></div></div></div>
         <div class="group"><div class="tcard"><button class="morebtn" data-more="-1">Earlier services</button>${rows || `<div class="svc-empty">No trips found right now</div>`}<button class="morebtn" data-more="1">Later services</button></div>
         <p class="group-f">${S.lastOk ? `Live data updated ${fmtSecs(S.lastOk)}. ` : ""}Tap a service for its stops, or to watch it. Greyed out: a later one gets you there sooner.</p></div>${foot()}`;
@@ -1754,8 +1812,7 @@ window.TBApp = () => {
       if (map || !window.L) return;
       const dark = matchMedia("(prefers-color-scheme: dark)").matches;
       map = L.map("map", { zoomControl: false, attributionControl: true }).setView([-33.8688, 151.2093], 13);
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
-      if (dark) map.getContainer().classList.add("dark-tiles");
+      baseTiles(map);
       map.on("dragstart", () => { follow = false; fb.hidden = !vMarker; });
       S.cleanup.push(() => { map.remove(); map = null; });
     };
@@ -1837,6 +1894,19 @@ window.TBApp = () => {
   }
 
   // ---------- watching ----------
+  // The "Turn on alerts" card for Watching. It respects "Not now" for 3 days and explains
+  // why alerts are not possible when the browser can't show them.
+  function promptCard() {
+    const ps = pushState();
+    if (ps === "on") return "";
+    const hideUntil = Number(LS.get("tb_hide_prompt", 0)) || 0;
+    if (ps === "off" && hideUntil > Date.now()) return "";
+    const text = ps === "install" ? "On iPhone, add this app to your Home Screen first (Share, then Add to Home Screen). Until then, alerts show here while it's open."
+      : ps === "denied" ? "Notifications are blocked for this site. Allow them in your phone's settings. Alerts still show here while the app is open."
+      : ps === "unsupported" ? "This browser can't show notifications. Alerts show here while the app is open."
+      : "Get told when to leave, about delays, platform changes and a connection at risk, even with the app closed.";
+    return `<div class="group"><div class="card">${ps === "off" ? `<button class="x" data-hide-prompt aria-label="Not now">${I.x}</button>` : ""}<div class="prompt"><span class="sym" style="background:#ff3b30">${I.bell}</span><div><h2>${ps === "off" ? "Turn on alerts" : "Alerts on this phone"}</h2><p>${esc(text)}</p>${ps === "off" ? `<button class="pillbtn solid" id="pushOn" style="margin-top:10px">Turn on alerts</button>` : ""}</div></div></div></div>`;
+  }
   function watchingView() {
     setTab("watching"); setNav({ title: "Watching" });
     const paint = (d) => {
@@ -1845,7 +1915,7 @@ window.TBApp = () => {
       const ps = pushState();
       view.innerHTML = `<h1 class="large">Watching<small>${active.length ? `${active.length} trip${active.length > 1 ? "s" : ""} followed live, every minute` : "Nothing followed right now"}</small></h1>
         ${ps === "on" ? "" : promptCard()}
-        ${active.length ? `<div class="group">${active.map(watchCard).join("")}</div>` : `<div class="group"><div class="card"><div class="prompt"><span class="sym" style="background:#ff9500">${I.bell}</span><div><h3>Watch a trip</h3><p>Swipe left on any service, or tap Watch on a trip or on the map. I'll follow it and tell you when to leave, if it runs late, changes platform, or your connection is at risk.</p></div></div></div></div>`}
+        ${active.length ? `<div class="group">${active.map(watchCard).join("")}</div>` : `<div class="group"><div class="card"><div class="prompt"><span class="sym" style="background:#ff9500">${I.bell}</span><div><h2>Watch a trip</h2><p>Swipe left on any service, or tap Watch on a trip or on the map. I'll follow it and tell you when to leave, if it runs late, changes platform, or your connection is at risk.</p></div></div></div></div>`}
         ${d && d.notes && d.notes.length ? `<div class="group"><div class="group-h">Recent alerts</div><div class="list">${d.notes.map((n) => `<a class="cell" href="${esc(n.url || "#/watching")}"><span class="s-ico orange">${I.bell}</span><div class="grow"><div class="t1" style="font-weight:600">${esc(n.title)}</div><div class="t2" style="white-space:normal">${esc(n.body)}</div></div><span class="clock">${fmtClock(n.at)}</span></a>`).join("")}</div></div>` : ""}
         ${done.length ? `<div class="group"><div class="group-h">Finished</div><div class="list">${done.map((w) => `<a class="cell" href="#/watch/${esc(w.id)}"><div class="grow"><div class="t1">${esc(w.title)}</div><div class="t2">${w.ended === "stopped" ? "Stopped" : "Trip ended"}</div></div>${I.chev}</a>`).join("")}</div></div>` : ""}${foot()}`;
       const po = $("#pushOn"); if (po) po.onclick = async () => { const r = await enablePush(true).catch(() => ({ ok: false })); toast(r.ok ? "Alerts are on. A test one is on its way." : pushWhyText(r.why)); paint(d); };
@@ -1969,7 +2039,7 @@ window.TBApp = () => {
           <button class="cell" id="delServer"><div class="grow danger-t">Delete my trip history on server</div></button>
           <button class="cell" id="delAll"><div class="grow danger-t">Delete all my data</div></button>
         </div><p class="group-f">Recent searches, stops and trips are kept only on this phone. The server keeps the trips you search for 90 days, under this app's private id, to suggest commutes. Delete them here at any time.</p></div>
-        <div class="group"><div class="group-h">Install</div><div class="card"><div class="prompt"><span class="sym" style="background:var(--tint)">${I.plusSq}</span><div><h3>${standalone ? "Installed" : "Add to Home Screen"}</h3>
+        <div class="group"><div class="group-h">Install</div><div class="card"><div class="prompt"><span class="sym" style="background:var(--tint)">${I.plusSq}</span><div><h2>${standalone ? "Installed" : "Add to Home Screen"}</h2>
           ${standalone ? `<p>You're using the installed app.</p>` : isIOS ? `<ol class="steps"><li>Tap ${I.share} Share in Safari</li><li>Tap Add to Home Screen</li><li>Open Transport from your Home Screen, then turn on alerts here</li></ol>` : `<p>In Chrome, tap the menu, then Install app or Add to Home screen.</p>${S.installEvt ? `<div class="card-actions"><button class="pillbtn solid" id="installBtn">Install</button></div>` : ""}`}</div></div></div></div>
         <div class="group"><div class="group-h">Predictions</div><div class="list"><div class="cell static"><span class="sym" style="background:#34c759">${I.chart}</span><div class="grow"><div class="t1">Delay history</div><div class="t2">${usage && usage.observations ? `${usage.observations.n.toLocaleString()} live times recorded` : "Recording"}</div></div></div></div>
         <p class="group-f">I record live times at busy stations and your stops every few minutes. Once a service has 5 or more recorded trips around the same time of day, it shows a usual delay, marked as a prediction. It never replaces live data.</p></div>
@@ -2019,7 +2089,7 @@ window.TBApp = () => {
       $$("[data-f]").forEach((b) => (b.onclick = () => { filter = b.dataset.f; paint(); }));
       if (window.L) {
         map = L.map("tu_map", { zoomControl: false, attributionControl: true });
-        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, className: matchMedia("(prefers-color-scheme: dark)").matches ? "dk-tiles" : "", attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+        baseTiles(map);
         const pts = (coords ? list.slice(0, 60) : list);
         pts.forEach((r) => {
           const k = TK[r.kind] || TK.card;
@@ -2198,8 +2268,7 @@ window.TBApp = () => {
     const makeMap = () => {
       if (map || !window.L) return;
       map = L.map("map", { zoomControl: false, attributionControl: true }).setView([-33.8688, 151.2093], 13);
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
-      if (matchMedia("(prefers-color-scheme: dark)").matches) map.getContainer().classList.add("dark-tiles");
+      baseTiles(map);
       map.on("dragstart", () => { follow = false; });
       S.cleanup.push(() => { if (map) map.remove(); map = null; });
     };

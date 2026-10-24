@@ -40,10 +40,14 @@ test("admin endpoints refuse a wrong or missing key", async () => {
   }
 });
 
-test("admin key works from the x-admin-key header and the query", async () => {
+test("admin key works only from the x-admin-key header, never the address", async () => {
   // In source the key is the build placeholder, so the test can use it.
   assert.equal((await call("/api/stats", { headers: { "x-admin-key": "__ADMIN_KEY__" } })).status, 200);
-  assert.equal((await call("/api/stats?key=__ADMIN_KEY__")).status, 200);
+  assert.equal((await call("/api/stats?key=__ADMIN_KEY__")).status, 403);
+  assert.equal((await call("/api/health")).status, 403);
+  assert.equal((await call("/api/health", { headers: { "x-admin-key": "__ADMIN_KEY__" } })).status, 200);
+  const u = await (await call("/api/usage")).json();
+  assert.deepEqual(Object.keys(u), ["observations"], "public usage shows only the recorded count");
 });
 
 test("key compare is exact", () => {
@@ -94,20 +98,40 @@ test("web app makes long random ids and asks before a ?me= link switches profile
   assert.ok(/qp\.has\("me"\)[\s\S]{0,400}window\.confirm/.test(js), "confirm before switching");
 });
 
-test("build writes security headers with a hash for every inline script", () => {
+test("build moves every page into the worker with a hash for every inline script, and writes no _headers", async () => {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), "sec-build-"));
   const fake = { TFNSW_API_KEY: "t", VAPID_PUBLIC_KEY: "t", VAPID_PRIVATE_KEY: "t", VAPID_SUBJECT: "mailto:t@example.com", TICK_KEY: "t", ADMIN_KEY: "t" };
   execFileSync(process.execPath, [root + "build.mjs", out], { env: { ...process.env, ...fake }, stdio: "pipe" });
-  const h = fs.readFileSync(path.join(out, "_headers"), "utf8");
-  for (const k of ["Content-Security-Policy:", "Strict-Transport-Security:", "X-Content-Type-Options: nosniff", "Referrer-Policy:", "Permissions-Policy:", "frame-ancestors 'none'", "object-src 'none'"]) assert.ok(h.includes(k), k);
-  const n = (h.match(/'sha256-/g) || []).length;
-  assert.ok(n >= 3, "inline script hashes present");
-  // meta CSP: every built page carries the policy before its first script
-  const pages = ["index.html", "privacy/index.html", "support/index.html", "download/index.html", "404.html"];
-  for (const p of pages) {
-    const html = fs.readFileSync(path.join(out, p), "utf8");
+  assert.ok(!fs.existsSync(path.join(out, "_headers")), "no _headers file");
+  const left = [];
+  const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (f.endsWith(".html")) left.push(f); } };
+  walk(out);
+  assert.deepEqual(left, [], "no html left in the static assets");
+  const wsrc = fs.readFileSync(path.join(out, "worker.mjs"), "utf8");
+  assert.ok(!wsrc.includes("/*__PAGES__*/") && !wsrc.includes("/*__PAGE_CSP__*/"), "markers filled");
+  const tmp = path.join(out, "w-test.mjs");
+  fs.writeFileSync(tmp, wsrc);
+  const BW = await import(tmp);
+  const assets = { fetch: async () => new Response("nope", { status: 404 }) };
+  const benv = { ...env, ASSETS: assets };
+  const get = (p, method = "GET") => BW.default.fetch(new Request("https://t.example" + p, { method, headers: { "cf-connecting-ip": "10.7.0.1" } }), benv, { waitUntil() {} });
+  for (const p of ["/", "/privacy/", "/support/", "/support/thanks/", "/terms/", "/download/", "/live/"]) {
+    const r = await get(p);
+    assert.equal(r.status, 200, p);
+    assert.match(r.headers.get("content-type"), /text\/html/, p);
+    for (const k of ["strict-transport-security", "x-content-type-options", "referrer-policy", "permissions-policy", "x-frame-options", "cross-origin-opener-policy"]) assert.ok(r.headers.get(k), p + " " + k);
+    const csp = r.headers.get("content-security-policy");
+    for (const d of ["frame-ancestors 'none'", "object-src 'none'", "script-src 'self' 'sha256-"]) assert.ok(csp.includes(d), p + " " + d);
+    const html = await r.text();
     const at = html.indexOf('http-equiv="Content-Security-Policy"');
-    assert.ok(at > 0 && at < html.indexOf("<script"), p);
+    assert.ok(at > 0 && (html.indexOf("<script") < 0 || at < html.indexOf("<script")), p + " meta CSP first");
   }
+  const red = await get("/privacy");
+  assert.equal(red.status, 301);
+  assert.equal(red.headers.get("location"), "/privacy/");
+  assert.equal((await get("/index.html")).headers.get("location"), "/");
+  const nf = await get("/no-such-page");
+  assert.equal(nf.status, 404);
+  assert.ok(nf.headers.get("strict-transport-security") && nf.headers.get("content-security-policy").includes("frame-ancestors"));
   fs.rmSync(out, { recursive: true, force: true });
 });
