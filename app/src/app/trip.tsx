@@ -7,13 +7,14 @@ import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius, modeColor } from '@/lib/theme';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
 import { store, tripKeyOf, useStore } from '@/lib/store';
-import { directFilter, planTrip, stName } from '@/lib/trips';
+import { directFilter, isChain, planTrip, stName, tLegs, tripKey, viaText } from '@/lib/trips';
+import type { TripLeg } from '@/lib/trips';
 import type { Journey, Leg, Place } from '@/lib/types';
 import { startWatch, stopWatch, tripSpec } from '@/lib/watch';
 import { Icon, I } from '@/components/Icon';
 import { openService } from '@/components/Cards';
 import { LineBadge, StatusLine } from '@/components/Transit';
-import { arrOf, ServiceRow } from '@/components/Home';
+import { arrOf, ServiceRow, WarnLine } from '@/components/Home';
 import { Button, Empty, Screen, Sep, T } from '@/components/ui';
 
 /** "0745" for the trip API's time parameter, Sydney time. */
@@ -94,6 +95,18 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
 
 function Transfer({ a, b }: { a: Leg; b: Leg }) {
   const c = usePalette();
+  const tf: any = (b as any).transfer;
+  if (tf && tf.chain) {
+    const bad = tf.risk === 'miss', tight = tf.risk === 'tight';
+    const text = tf.missed ? `Delays: you miss the ${clock(ms(tf.missed.planned))} ${tf.missed.line} at ${shortName(tf.at)}. Next connection: ${Math.max(0, tf.minutes)} min to change`
+      : `${Math.max(0, tf.minutes)} min to change at ${shortName(tf.at)}${tight ? ', tight' : `, you allow ${tf.conn}`}`;
+    return (
+      <View style={[st.walk, { paddingVertical: 6 }]}>
+        <View style={{ width: 36, alignItems: 'center' }}><Icon name={I.clock} size={15} color={bad ? c.red : tight ? c.orange : c.text3} /></View>
+        <T kind="foot" style={{ flex: 1, color: bad ? c.red : tight ? c.lateText : c.text2, fontWeight: bad || tight ? '600' : '400' }}>{text}</T>
+      </View>
+    );
+  }
   const gap = Math.round((bestTime(b.planned, b.estimated) - bestTime(a.arrPlanned, a.arrEstimated)) / 60000);
   if (!Number.isFinite(gap)) return null;
   const tight = gap < 3;
@@ -120,7 +133,7 @@ function JourneyDetail({ j, now, from, to }: { j: Journey; now: number; from: Pl
           const prevT = legs.slice(0, i).reverse().find((x) => x.kind === 'transit');
           return (
             <View key={i}>
-              {l.kind === 'transit' && prevT && legs[i - 1]?.kind === 'transit' ? <Transfer a={prevT} b={l} /> : null}
+              {l.kind === 'transit' && prevT && (legs[i - 1]?.kind === 'transit' || (l as any).transfer?.chain) ? <Transfer a={prevT} b={l} /> : null}
               <LegView l={l} now={now} />
             </View>
           );
@@ -144,19 +157,21 @@ function JourneyDetail({ j, now, from, to }: { j: Journey; now: number; from: Pl
 }
 
 export default function TripScreen() {
-  const p = useLocalSearchParams<{ from: string; fromName: string; to: string; toName: string; pick?: string; via?: string; viaName?: string; conn?: string; name?: string }>();
+  const p = useLocalSearchParams<{ from: string; fromName: string; to: string; toName: string; pick?: string; via?: string; viaName?: string; conn?: string; name?: string; legs?: string }>();
   const from = { id: String(p.from), name: String(p.fromName || '') };
   const to = { id: String(p.to), name: String(p.toName || '') };
   const via = p.via ? { id: String(p.via), name: String(p.viaName || p.via) } : null;
   const conn = p.conn != null ? Number(p.conn) : 5;
-  const plan = { from, to, via, conn };
-  const tkey = tripKeyOf(plan);
+  const legsP: TripLeg[] | null = (() => { try { const v = p.legs ? JSON.parse(String(p.legs)) : null; return Array.isArray(v) && v.length > 1 ? v : null; } catch { return null; } })();
+  const plan = legsP ? { from, to, legs: legsP } : { from, to, via, conn };
+  const chain = isChain(plan);
+  const tkey = tripKey(plan);
   const stAll = useStore().allServices || {};
   const allOn = !!stAll[tkey];
   const c = usePalette();
   const now = useNow(1000);
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
-  const { data, error, updatedAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6 }), 20000, [from.id, to.id, via?.id, conn]);
+  const { data, error, updatedAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn }), 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn]);
   const [extra, setExtra] = useState<Journey[]>([]);
   const [more, setMore] = useState<number>(0);
   const [showTravel, setShowTravel] = useState(false);
@@ -184,7 +199,7 @@ export default function TripScreen() {
     const t = dir < 0 ? Math.max(now - 25 * 60000, depMs(js[0]) - 40 * 60000) : depMs(js[js.length - 1]) + 60000;
     setMore(dir);
     try {
-      const r = await planTrip(plan, { time: hhmm(t), count: 5, refresh: true });
+      const r = await planTrip(plan, { time: hhmm(t), count: 5, refresh: true, all: chain && allOn });
       setExtra((e) => [...e, ...(r.journeys || [])]);
       if (dir < 0) setOpen(null);
     } catch (e: any) {
@@ -204,9 +219,11 @@ export default function TripScreen() {
   const toName = data?.to?.name || to.name;
   // Remember opened A to B trips for Home's Your trips.
   useEffect(() => { if (fromName && toName && !via) store.addRecentTrip({ id: from.id, name: fromName }, { id: to.id, name: toName }); }, [from.id, to.id, fromName, toName, via]);
+  useEffect(() => { setExtra([]); }, [chain && allOn]);
 
   const save = () => {
     // Saving goes through New trip's Confirm step: name, extend with a connection, change time.
+    if (chain) { router.push({ pathname: '/new-trip', params: { legs: JSON.stringify(tLegs(plan)), ...(p.name ? { name: String(p.name) } : {}) } }); return; }
     if (!via) { router.push({ pathname: '/new-trip', params: { from: from.id, fromName, to: to.id, toName, mode: firstT(js[0] || ({ legs: [] } as any))?.mode || '' } }); return; }
     const doSave = async (name: string) => {
       try { await api.saveTrip(name, from, to); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); Alert.alert('Saved', `It's on your Home screen as "${name}". You can also text "${name}" to Tab.`); }
@@ -223,7 +240,7 @@ export default function TripScreen() {
     <>
       <Stack.Screen options={{
         title: `${shortName(fromName).replace(/ Station$/, '')} to ${shortName(toName).replace(/ Station$/, '')}`,
-        headerBackTitle: via ? `Via ${stName(shortName(via.name))}` : undefined,
+        headerBackTitle: chain ? 'Back' : undefined,
         headerRight: () => <Pressable hitSlop={10} onPress={save}><Icon name={I.starOpen} size={22} color={c.tint} /></Pressable>,
       }} />
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
@@ -247,12 +264,12 @@ export default function TripScreen() {
             )) : null}
           </View>
         ) : null}
-        {via ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 12 }}>Via {stName(shortName(via.name))}, {conn} min to change</T> : null}
+        {chain ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 12 }}>{(() => { const L = tLegs(plan); return L.length === 2 && L[1].mode !== 'walk' ? `Via ${stName(shortName(L[0].to.name))}, ${L[1].conn ?? 5} min to change` : `${L.length} legs via ${viaText(plan)}`; })()}</T> : null}
         {jsAll.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>
             <View style={{ flex: 1 }}>
               <T kind="body">All services</T>
-              <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{allOn ? 'Trips with a change are shown too' : df.none ? 'None stop at both ends, so all are shown' : 'Only services that stop at both ends'}</T>
+              <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{allOn ? 'Trips with a change are shown too' : chain ? ((data?.fallback || []).some(Boolean) ? 'One leg has no direct service, so all are used there' : 'Direct services on each leg, as set for this trip') : df.none ? 'None stop at both ends, so all are shown' : 'Only services that stop at both ends'}</T>
             </View>
             <Switch value={allOn} onValueChange={(v) => { Haptics.selectionAsync(); store.setAllServices(tkey, v); }} accessibilityLabel="All services" />
           </View>
@@ -277,6 +294,7 @@ export default function TripScreen() {
               <View key={jKey(j) + i}>
                 <Sep inset={0} />
                 <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { Haptics.selectionAsync(); setOpen(open === i ? null : i); }} />
+                <WarnLine j={j} />
                 {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} /></View> : null}
               </View>
             ))}

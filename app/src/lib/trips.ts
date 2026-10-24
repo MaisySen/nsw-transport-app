@@ -1,9 +1,30 @@
 import { api } from './api';
-import { bestTime, ms } from './format';
+import { bestTime, ms, shortName } from './format';
 import type { Journey, Leg, Place, TripResp } from './types';
 
-/** A trip as Home and the trip screen plan it: optionally with a connection leg at `via`. */
-export type PlanTrip = { from: Place; to: Place; via?: Place | null; conn?: number };
+/** One leg of a saved trip: mode, change time before it (legs after the first), all services, walk minutes. */
+export type TripLeg = { mode: string; from: Place; to: Place; conn?: number; any?: boolean; walk?: number };
+/** A trip as Home and the trip screen plan it: one or more legs. Older trips have an optional `via` with `conn`. */
+export type PlanTrip = { from: Place; to: Place; via?: Place | null; conn?: number; legs?: TripLeg[]; modes?: string[] };
+
+/** The legs of a trip, for both the multi leg form and the older via form. */
+export function tLegs(t: PlanTrip): TripLeg[] {
+  if (t.legs && t.legs.length) return t.legs;
+  const md = t.modes || [];
+  return t.via
+    ? [{ mode: md[0] || '', from: t.from, to: t.via }, { mode: md[1] || '', from: t.via, to: t.to, conn: t.conn ?? 5 }]
+    : [{ mode: md[0] || '', from: t.from, to: t.to }];
+}
+export const isChain = (t: PlanTrip) => tLegs(t).length > 1;
+export const tripKey = (t: PlanTrip) => [t.from.id, ...tLegs(t).slice(0, -1).map((l) => l.to.id), t.to.id].join('>');
+export const viaText = (t: PlanTrip) => tLegs(t).slice(0, -1).map((l) => stName(shortName(l.to.name))).join(', ');
+export const wireLegs = (t: PlanTrip) => tLegs(t).map((l) => ({ f: l.from.id, fn: l.from.name, t: l.to.id, tn: l.to.name, m: l.mode || '', c: l.conn ?? 5, a: l.any ? 1 : 0, w: l.walk ?? 5 }));
+/** Reverse a trip: legs in the other order, each change time stays with its change stop. */
+export function reverseTrip(t: PlanTrip): PlanTrip {
+  const L = tLegs(t), n = L.length;
+  const legs = L.map((_, i) => ({ ...L[n - 1 - i], from: L[n - 1 - i].to, to: L[n - 1 - i].from, conn: i ? L[n - i].conn : undefined }));
+  return { from: t.to, to: t.from, legs: n > 1 ? legs : undefined, modes: legs.map((l) => l.mode) };
+}
 
 export const MODES = [
   { k: 'train', name: 'Train', sub: 'Sydney Trains and NSW TrainLink' },
@@ -19,11 +40,13 @@ const firstLeg = (j: Journey): Leg | undefined => j.legs.find((l) => l.kind === 
 const lastLeg = (j: Journey): Leg | undefined => [...j.legs].reverse().find((l) => l.kind === 'transit');
 export const transitCount = (j: Journey) => j.legs.filter((l) => l.kind === 'transit').length;
 /** Stops at both ends: no change on the way (one change allowed at the via stop of an extended trip). */
-export const isDirect = (j: Journey, t?: PlanTrip) => transitCount(j) <= (t?.via ? 2 : 1);
+export const isDirect = (j: Journey, t?: PlanTrip) => transitCount(j) <= (t ? tLegs(t).length : 1);
 
 /** Default is services that stop at both ends; falls back to all of them when none do. */
 export function directFilter<T>(list: T[], t: PlanTrip, all: boolean, getJ: (x: T) => Journey) {
   if (all) return { list, none: false };
+  // Multi leg trips are filtered per leg on the server.
+  if (isChain(t)) return { list, none: false };
   const d = list.filter((x) => isDirect(getJ(x), t));
   return d.length || !list.length ? { list: d, none: false } : { list, none: true };
 }
@@ -50,7 +73,8 @@ export function hhmmSydney(t: number) {
  * Plans a trip. With a via stop each first leg is paired with the first second leg
  * that leaves at least the connection time after it arrives.
  */
-export async function planTrip(t: PlanTrip, opts: { refresh?: boolean; count?: number; time?: string } = {}): Promise<TripResp> {
+export async function planTrip(t: PlanTrip, opts: { refresh?: boolean; count?: number; time?: string; all?: boolean } = {}): Promise<TripResp> {
+  if (isChain(t)) return api.plan(wireLegs(t), { count: opts.count, time: opts.time, all: opts.all });
   if (!t.via) return api.trip(t.from, t.to, opts);
   const conn = Math.max(0, t.conn ?? 5) * 60000;
   const d1 = await api.trip(t.from, t.via, { ...opts, refresh: true });

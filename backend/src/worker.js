@@ -730,6 +730,130 @@ async function trip(env, fromId, toId, opts = {}) {
   return { journeys: list, tomorrow, live: { feedAt: rt.fetchedAt() }, now };
 }
 
+// ---------- chained trips: any number of legs ----------
+// Each service on the first leg is paired with the first connection on every next leg that can be made
+// after the change time. Pairing follows the timetable; live times then mark a change as tight, or as
+// missed because of a delay, in which case the chain moves to the first connection still catchable.
+const CHAIN_MAX_LEGS = 6;
+function chainLegs(raw) {
+  const out = [];
+  for (const l of Array.isArray(raw) ? raw.slice(0, CHAIN_MAX_LEGS) : []) {
+    if (!l || !l.f || !l.t) return null;
+    const m = ["train", "metro", "bus", "ferry", "lightrail", "walk"].includes(l.m) ? l.m : "";
+    out.push({ f: String(l.f).slice(0, 40), fn: String(l.fn || l.f).slice(0, 80), t: String(l.t).slice(0, 40), tn: String(l.tn || l.t).slice(0, 80), m,
+      c: Math.max(0, Math.min(60, Number(l.c == null ? 5 : l.c) || 0)), a: l.a ? 1 : 0, w: Math.max(1, Math.min(90, Number(l.w == null ? 5 : l.w) || 5)) });
+  }
+  return out.length && out[0].m !== "walk" ? out : null;
+}
+function chainTimes(j) {
+  const legs = j.legs || [];
+  const tl = legs.filter((l) => l.kind === "transit");
+  const f = tl[0], z = tl[tl.length - 1];
+  if (!f) return { pLeave: ms(j.leave), pArr: ms(j.arrive), leave: ms(j.leave), arr: ms(j.arrive), cancelled: false };
+  const wb = ms(j.board) - ms(j.leave);
+  const wa = ms(j.arrive) - ms(z.arrEstimated || z.arrPlanned);
+  return { pLeave: ms(f.planned) - wb, pArr: ms(z.arrPlanned) + wa, leave: ms(j.leave), arr: ms(j.arrive), cancelled: tl.some((x) => x.cancelled) };
+}
+// Direct services only (one service for the leg), on the leg's own mode, unless the leg or the trip allows all.
+function chainFilter(js, leg, all) {
+  if (all || leg.a) return { list: js, fallback: false };
+  const tc = (j) => j.legs.filter((l) => l.kind === "transit");
+  let d = js.filter((j) => tc(j).length === 1);
+  if (leg.m && d.length) {
+    const mm = d.filter((j) => tc(j).every((l) => l.mode === leg.m || (leg.m === "bus" && l.mode === "coach")));
+    if (mm.length) d = mm;
+  }
+  return d.length ? { list: d, fallback: false } : { list: js, fallback: js.length > 0 };
+}
+async function chainLegJourneys(env, leg, fromMs, untilMs) {
+  const seen = new Set(), out = [];
+  let t = fromMs;
+  for (let page = 0; page < 3; page++) {
+    const r = await trip(env, leg.f, leg.t, { time: sydneyParts(new Date(t)).time, count: 8 });
+    const js = r.journeys || [];
+    for (const j of js) {
+      const k = j.legs.map((l) => `${l.tripId || l.line}@${l.planned}`).join("|");
+      if (!seen.has(k)) { seen.add(k); out.push(j); }
+    }
+    if (!js.length) break;
+    const last = Math.max(...js.map((j) => ms(j.leave)));
+    if (last >= untilMs || last + 60000 <= t) break;
+    t = last + 60000;
+  }
+  return out;
+}
+async function planChain(env, legs, opts = {}) {
+  const all = !!opts.all;
+  const L0 = legs[0];
+  const r0 = await trip(env, L0.f, L0.t, { time: opts.time || null, count: opts.count || 5 });
+  const f0 = chainFilter(r0.journeys || [], L0, all);
+  const fallback = [f0.fallback];
+  let chains = f0.list.map((j) => ({ legs: j.legs.map((l) => ({ ...l, seg: 0 })), t: chainTimes(j), lens: [Math.max(1, j.legs.filter((l) => l.kind === "transit").length)] }));
+  for (let k = 1; k < legs.length && chains.length; k++) {
+    const L = legs[k];
+    const at = shortName(L.fn);
+    if (L.m === "walk") {
+      const w = L.w * 60000;
+      for (const c of chains) {
+        c.legs.push({ kind: "walk", mode: "walk", modeName: "Walk", line: "", color: "#646974", towards: "", from: shortName(L.fn), to: shortName(L.tn), stopId: L.f, toStopId: L.t,
+          planned: iso(c.t.pArr), arrPlanned: iso(c.t.pArr + w), estimated: iso(c.t.arr), arrEstimated: iso(c.t.arr + w), durationMin: L.w, stops: 0, seg: k, chainWalk: true, alerts: [] });
+        c.t = { ...c.t, pArr: c.t.pArr + w, arr: c.t.arr + w };
+        c.lens.push(0);
+      }
+      fallback.push(false);
+      continue;
+    }
+    const conn = L.c * 60000;
+    const lo = Math.min(...chains.map((c) => Math.min(c.t.arr, c.t.pArr))) + conn;
+    const hi = Math.max(...chains.map((c) => Math.max(c.t.arr, c.t.pArr))) + conn;
+    const raw = await chainLegJourneys(env, L, lo, hi);
+    const fk = chainFilter(raw, L, all);
+    fallback.push(fk.fallback);
+    const live = fk.list.map((j) => ({ j, t: chainTimes(j) })).filter((o) => !o.t.cancelled).sort((a, b) => a.t.leave - b.t.leave);
+    const plan = [...live].sort((a, b) => a.t.pLeave - b.t.pLeave);
+    const next = [];
+    for (const c of chains) {
+      const P = plan.find((o) => o.t.pLeave >= c.t.pArr + conn);
+      let pick = P, risk = "ok", missed = null;
+      if (P) {
+        const g = P.t.leave - c.t.arr;
+        if (g < 0) { missed = P; risk = "miss"; pick = live.find((o) => o.t.leave >= c.t.arr + conn); }
+        else if (g < conn) risk = "tight";
+      } else pick = live.find((o) => o.t.leave >= c.t.arr + conn);
+      if (!pick) continue;
+      const nl = pick.j.legs.map((l) => ({ ...l, seg: k }));
+      const ft = nl.find((l) => l.kind === "transit");
+      const gap = Math.round((pick.t.leave - c.t.arr) / 60000);
+      if (ft) {
+        const mt = missed && missed.j.legs.find((l) => l.kind === "transit");
+        ft.transfer = { minutes: gap, conn: L.c, spare: gap - L.c, at, risk, chain: true, walkMin: Math.round((ms(pick.j.board) - ms(pick.j.leave)) / 60000),
+          missed: mt ? { line: mt.line, planned: mt.planned, estimated: mt.estimated } : null };
+      }
+      next.push({ legs: [...c.legs, ...nl], t: { ...c.t, pArr: pick.t.pArr, arr: pick.t.arr }, lens: [...c.lens, Math.max(1, nl.filter((l) => l.kind === "transit").length)] });
+    }
+    chains = next;
+  }
+  const out = chains.map((c) => {
+    const tl = c.legs.filter((l) => l.kind === "transit");
+    const first = tl[0] || null;
+    const trs = tl.map((l) => l.transfer).filter(Boolean);
+    const risk = trs.some((x) => x.risk === "miss") ? "miss" : trs.some((x) => x.risk === "tight") ? "tight" : "ok";
+    const bad = trs.find((x) => x.chain && x.risk === "miss") || trs.find((x) => x.chain && x.risk === "tight") || trs.find((x) => x.risk === "miss");
+    let warn = null;
+    if (bad && bad.risk === "miss" && bad.missed) warn = `Delays mean you miss the ${hm(bad.missed.planned)} ${bad.missed.line} at ${bad.at}. Next connection shown.`;
+    else if (bad && bad.risk === "miss") warn = `Connection at risk at ${bad.at}`;
+    else if (bad) warn = `Tight change at ${bad.at}: ${Math.max(0, bad.minutes)} min`;
+    if (tl.some((l) => l.cancelled)) warn = "A service on this trip is cancelled";
+    return {
+      leave: iso(c.t.leave), board: first ? first.estimated || first.planned : iso(c.t.leave), arrive: iso(c.t.arr),
+      durationMin: Math.round((c.t.arr - c.t.leave) / 60000), changes: Math.max(0, tl.length - 1),
+      live: !!(first && first.realtime), anyCancelled: tl.some((l) => l.cancelled), risk, warn, segs: c.lens, legs: c.legs,
+    };
+  });
+  for (const j of out) j.beaten = out.some((o) => o !== j && ms(o.leave) > ms(j.leave) && ms(o.arrive) < ms(j.arrive));
+  return { journeys: out, chain: true, legCount: legs.length, fallback, now: Date.now() };
+}
+
 // ---------- service view (live vehicle tracking) ----------
 
 function distM(aLat, aLon, bLat, bLon) {
@@ -940,6 +1064,7 @@ async function ensureSchema(env) {
       d.prepare(`CREATE INDEX IF NOT EXISTS obs_route ON obs (route, stop_id, planned)`),
       d.prepare(`CREATE TABLE IF NOT EXISTS saved (profile TEXT NOT NULL, name TEXT NOT NULL, from_id TEXT, from_name TEXT,
         to_id TEXT, to_name TEXT, created INTEGER, PRIMARY KEY (profile, name))`),
+      d.prepare(`CREATE TABLE IF NOT EXISTS saved_legs (profile TEXT NOT NULL, name TEXT NOT NULL, legs TEXT, PRIMARY KEY (profile, name))`),
     ]).then(() => true).catch((e) => { schemaReady = null; throw e; });
   }
   return schemaReady;
@@ -970,24 +1095,33 @@ function logObservations(env, ctx, items, stopId) {
 
 async function savedList(env, profile) {
   if (!(await ensureSchema(env).catch(() => false))) return [];
-  const r = await db(env).prepare("SELECT name, from_id, from_name, to_id, to_name, created FROM saved WHERE profile = ?1 ORDER BY created").bind(profile).all();
-  return (r.results || []).map((x) => ({ name: x.name, from: { id: x.from_id, name: x.from_name }, to: { id: x.to_id, name: x.to_name }, created: x.created }));
+  const r = await db(env).prepare("SELECT s.name, s.from_id, s.from_name, s.to_id, s.to_name, s.created, l.legs FROM saved s LEFT JOIN saved_legs l ON l.profile = s.profile AND l.name = s.name WHERE s.profile = ?1 ORDER BY s.created").bind(profile).all();
+  return (r.results || []).map((x) => withLegs({ name: x.name, from: { id: x.from_id, name: x.from_name }, to: { id: x.to_id, name: x.to_name }, created: x.created }, x.legs));
 }
 async function savedGet(env, profile, name) {
   if (!(await ensureSchema(env).catch(() => false))) return null;
-  const x = await db(env).prepare("SELECT name, from_id, from_name, to_id, to_name FROM saved WHERE profile = ?1 AND name = ?2").bind(profile, name.toLowerCase()).first();
-  return x ? { name: x.name, from: { id: x.from_id, name: x.from_name }, to: { id: x.to_id, name: x.to_name } } : null;
+  const x = await db(env).prepare("SELECT s.name, s.from_id, s.from_name, s.to_id, s.to_name, l.legs FROM saved s LEFT JOIN saved_legs l ON l.profile = s.profile AND l.name = s.name WHERE s.profile = ?1 AND s.name = ?2").bind(profile, name.toLowerCase()).first();
+  return x ? withLegs({ name: x.name, from: { id: x.from_id, name: x.from_name }, to: { id: x.to_id, name: x.to_name } }, x.legs) : null;
 }
-async function savedPut(env, profile, name, from, to) {
+// A saved trip with more than one leg keeps its legs in saved_legs; one leg trips have none.
+function withLegs(s, legsJson) {
+  if (!legsJson) return s;
+  try { const legs = chainLegs(JSON.parse(legsJson)); if (legs && legs.length > 1) s.legs = legs; } catch (e) { /* keep the one leg form */ }
+  return s;
+}
+async function savedPut(env, profile, name, from, to, legs = null) {
   await ensureSchema(env);
+  if (legs && legs.length > 1) await db(env).prepare("INSERT INTO saved_legs (profile, name, legs) VALUES (?1, ?2, ?3) ON CONFLICT (profile, name) DO UPDATE SET legs = excluded.legs").bind(profile, name.toLowerCase(), JSON.stringify(legs)).run();
+  else await db(env).prepare("DELETE FROM saved_legs WHERE profile = ?1 AND name = ?2").bind(profile, name.toLowerCase()).run();
   await db(env).prepare(`INSERT INTO saved (profile, name, from_id, from_name, to_id, to_name, created) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
     ON CONFLICT (profile, name) DO UPDATE SET from_id = excluded.from_id, from_name = excluded.from_name, to_id = excluded.to_id, to_name = excluded.to_name`)
     .bind(profile, name.toLowerCase(), from.id, from.name, to.id, to.name, Date.now()).run();
-  return { name: name.toLowerCase(), from, to };
+  return legs && legs.length > 1 ? { name: name.toLowerCase(), from, to, legs } : { name: name.toLowerCase(), from, to };
 }
 async function savedDelete(env, profile, name) {
   await ensureSchema(env);
   await db(env).prepare("DELETE FROM saved WHERE profile = ?1 AND name = ?2").bind(profile, name.toLowerCase()).run();
+  await db(env).prepare("DELETE FROM saved_legs WHERE profile = ?1 AND name = ?2").bind(profile, name.toLowerCase()).run();
 }
 async function resolvePlace(env, p) {
   if (p && typeof p === "object" && p.id) return { id: String(p.id), name: p.name || String(p.id) };
@@ -1043,6 +1177,10 @@ async function planTrip(env, text, ctx) {
 }
 
 async function savedTrip(env, s, count = 5) {
+  if (s.legs && s.legs.length > 1) {
+    const r = await planChain(env, s.legs, { count });
+    return { kind: "trip", saved: s.name, from: s.from, to: s.to, stops: s.legs.slice(0, -1).map((l) => ({ id: l.t, name: l.tn })), ...r, when: null };
+  }
   const r = await trip(env, s.from.id, s.to.id, { count });
   return { kind: "trip", saved: s.name, from: s.from, to: s.to, ...r, when: null };
 }
@@ -2852,6 +2990,16 @@ export default {
           await afterAnswer(env, d, { profile, device: p.get("device"), exec, log: p.get("refresh") !== "1" });
           return asTxt ? textRes(await asText(env, d)) : json(d);
         }
+        case "/api/plan": {
+          // A trip with any number of legs: legs=[{f, fn, t, tn, m, c, a, w}] (from, to, mode, change minutes, all services, walk minutes).
+          let raw = null;
+          try { raw = JSON.parse(p.get("legs") || "null"); } catch (e) { raw = null; }
+          const legs = chainLegs(raw);
+          if (!legs) return json({ error: "legs must be a list of 1 to 6 legs, each with f and t, and the first leg not a walk" }, 400);
+          const r = await planChain(env, legs, { time: p.get("time") || null, count: Math.max(1, Math.min(8, Number(p.get("count") || 5))), all: p.get("all") === "1" });
+          const z = legs[legs.length - 1];
+          return json({ kind: "trip", from: { id: legs[0].f, name: legs[0].fn }, to: { id: z.t, name: z.tn }, stops: legs.slice(0, -1).map((l) => ({ id: l.t, name: l.tn })), ...r });
+        }
         case "/api/service":
         case "/api/status": {
           const d = await service(env, serviceQuery(p));
@@ -2882,6 +3030,11 @@ export default {
             const prof = (b.profile || profile).toLowerCase().slice(0, 40);
             const name = String(b.name || "").trim().slice(0, 24);
             if (!name) return json({ error: "name needed" }, 400);
+            const legs = b.legs ? chainLegs(b.legs) : null;
+            if (legs && legs.length > 1) {
+              const z = legs[legs.length - 1];
+              return json({ ok: true, saved: await savedPut(env, prof, name, { id: legs[0].f, name: legs[0].fn }, { id: z.t, name: z.tn }, legs) });
+            }
             const [from, to] = await Promise.all([resolvePlace(env, b.from), resolvePlace(env, b.to)]);
             if (!from || !to) return json({ error: "could not find one of those stops" }, 400);
             return json({ ok: true, saved: await savedPut(env, prof, name, from, to) });

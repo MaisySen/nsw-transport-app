@@ -27,9 +27,11 @@ export type Leg = {
 export type Journey = {
   leave: string; board: string; arrive: string; durationMin: number; changes: number; live: boolean; anyCancelled?: boolean;
   risk?: string; riskText?: string; legs: Leg[];
+  /** Multi leg trips: a warning when a change is tight or missed because of a delay. */
+  warn?: string | null; segs?: number[];
 };
 
-export type TripResp = { kind: 'trip'; from: { id: string; name: string }; to: { id: string; name: string }; journeys: Journey[]; tomorrow?: boolean; now: number; error?: string };
+export type TripResp = { kind: 'trip'; from: { id: string; name: string }; to: { id: string; name: string }; journeys: Journey[]; tomorrow?: boolean; now: number; error?: string; stops?: Place[]; fallback?: boolean[] };
 
 export type ServiceStop = { id: string; name: string; lat?: number; lon?: number; planned?: string; estimated?: string; passed?: boolean; mine?: boolean; alight?: boolean; skipped?: boolean; platform?: string };
 export type ServiceResp = {

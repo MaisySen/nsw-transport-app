@@ -564,10 +564,10 @@ window.TBApp = () => {
     return `<div class="svc${beaten ? " beaten" : ""}${lead ? " lead" : ""}${x.st.c === "bad" ? " cancelled" : ""}">
       <div class="cdb ${cdClass(x.leave, x.st)}"><span class="cdb-n${cdn.length > 3 ? " xs" : cdn.length > 2 ? " sm" : ""}" data-cd="${x.leave}">${esc(cdn)}</span><span class="cdb-u"${m > 0 && m < 60 ? "" : " hidden"}>min</span></div>
       <div class="svc-l"><div class="svc-k">${esc(from)}</div><div class="svc-t">${fmtClock(x.dep)}</div><div class="stw st-${x.st.c}"><i class="sq"></i>${esc(x.st.w)}</div>${plc}</div>
-      <div class="svc-r"><div class="svc-k">${tl.map((l) => lb(l.line, l.color, true)).join("")}${x.changes ? ` \u00b7 ${x.changes} change${x.changes > 1 ? "s" : ""}` : ""}</div><div class="svc-t">${fmtClock(x.arr)}</div><div class="svc-k">${crowd(x.first)}${x.dur} min</div></div></div>`;
+      <div class="svc-r"><div class="svc-k">${tl.map((l) => lb(l.line, l.color, true)).join("")}${x.changes ? ` \u00b7 ${x.changes} change${x.changes > 1 ? "s" : ""}` : ""}</div><div class="svc-t">${fmtClock(x.arr)}</div><div class="svc-k">${crowd(x.first)}${x.dur} min</div></div></div>${j.warn ? `<div class="svc-warn${j.risk === "miss" || j.anyCancelled ? " bad" : ""}">${I.alert}<span>${esc(j.warn)}</span></div>` : ""}`;
   }
   function tripCard(t, d) {
-    const href = `#/trip?${qs({ from: t.from.id, to: t.to.id, fn: t.from.name, tn: t.to.name, name: t.name, via: t.via && t.via.id, vn: t.via && t.via.name, conn: t.via ? t.conn : null })}`;
+    const href = tripHref(t);
     const js0 = d && d.journeys ? d.journeys.map((j) => ({ j, x: journeyTimes(j) })).filter((o) => o.x.leave > now() - 30000) : [];
     const js = directFilter(js0, t).list.slice(0, 3);
     const alerts = new Set();
@@ -577,7 +577,7 @@ window.TBApp = () => {
     if (js.length) rows = js.map((o, i) => svcRow(o.j, o.x, js.slice(i + 1).some((p) => p.x.arr < o.x.arr - 30000), i === 0, t.from.name)).join("");
     else rows = `<div class="svc-empty">${d ? "No services found right now" : "Loading live times"}</div>`;
     const tag = t.tag ? t.tag : t.kind === "commute" ? (t.todText || "Commute") : t.kind === "saved" && t.name && !/ to /.test(t.name) ? cap(t.name) : "";
-    return `<div class="tcard" data-tk="${esc(t.okey || tripKey(t))}"><a class="tcard-h" href="${href}"><span class="stripe" style="background:${esc(stripe)}"></span><span class="tname"><b>${esc(short(t.from.name))}</b><b>${t.via ? `via ${esc(stName(short(t.via.name)))} to ` : ""}${esc(short(t.to.name))}</b></span>${tag ? `<span class="tsub">${esc(tag)}</span>` : ""}${t.grip ? "" : I.chev}</a>${t.grip ? `<button class="grip" aria-label="Drag to reorder" title="Drag to reorder">${MI.grip}</button>` : ""}
+    return `<div class="tcard" data-tk="${esc(t.okey || tripKey(t))}"><a class="tcard-h" href="${href}"><span class="stripe" style="background:${esc(stripe)}"></span><span class="tname"><b>${esc(short(t.from.name))}</b><b>${esc(short(t.to.name))}</b>${isChain(t) ? `<small class="tvia">${tLegs(t).length} legs via ${esc(viaText(t))}</small>` : ""}</span>${tag ? `<span class="tsub">${esc(tag)}</span>` : ""}${t.grip ? "" : I.chev}</a>${t.grip ? `<button class="grip" aria-label="Drag to reorder" title="Drag to reorder">${MI.grip}</button>` : ""}
       ${alerts.size ? `<a class="talerts" href="${href}">${I.alert}<span>${alerts.size} alert${alerts.size > 1 ? "s" : ""}</span></a>` : ""}
       <a class="tcard-b" href="${href}">${rows}</a></div>`;
   }
@@ -707,20 +707,47 @@ window.TBApp = () => {
   // ---------- trips with a connection leg, and direct services ----------
   // A trip can be extended with a second leg: each first leg is joined to the first second leg
   // that leaves at least the connection time after it arrives.
-  const tripKey = (t) => `${t.from.id}>${t.via ? t.via.id + ">" : ""}${t.to.id}`;
+  // A trip is one or more legs, each with its own mode, change time before it, direct services switch and walk time.
+  // Trips saved before multi leg trips have from, to and an optional via with conn; tLegs reads both shapes.
+  const tLegs = (t) => {
+    if (t.legs && t.legs.length) return t.legs;
+    const md = t.modes || [];
+    return t.via ? [{ mode: md[0] || "", from: t.from, to: t.via }, { mode: md[1] || "", from: t.via, to: t.to, conn: t.conn == null ? 5 : t.conn }] : [{ mode: md[0] || "", from: t.from, to: t.to }];
+  };
+  const isChain = (t) => tLegs(t).length > 1;
+  const tripKey = (t) => [t.from.id, ...tLegs(t).slice(0, -1).map((l) => l.to.id), t.to.id].join(">");
+  const wireLegs = (t) => tLegs(t).map((l) => ({ f: l.from.id, fn: l.from.name, t: l.to.id, tn: l.to.name, m: l.mode || "", c: l.conn == null ? 5 : l.conn, a: l.any ? 1 : 0, w: l.walk == null ? 5 : l.walk }));
+  const stopsOf = (t) => tLegs(t).slice(0, -1).map((l) => l.to);
+  const viaText = (t) => stopsOf(t).map((s) => stName(short(s.name))).join(", ");
+  // Link to the trip screen; a multi leg trip carries its legs.
+  function tripHref(t, extra = {}) {
+    const L = tLegs(t);
+    const o = { from: t.from.id, to: t.to.id, fn: t.from.name, tn: t.to.name, name: t.name, ...extra };
+    if (L.length > 1) o.legs = JSON.stringify(L.map((l) => ({ mode: l.mode || "", from: l.from, to: l.to, conn: l.conn, any: l.any ? 1 : undefined, walk: l.walk })));
+    return "#/trip?" + qs(o);
+  }
+  // Reverse a trip: legs in the other order, each change time stays with its change stop.
+  function reverseTrip(t) {
+    const L = tLegs(t), n = L.length;
+    const legs = L.map((l, i) => ({ ...L[n - 1 - i], from: L[n - 1 - i].to, to: L[n - 1 - i].from, conn: i ? L[n - i].conn : undefined }));
+    return { ...t, from: t.to, to: t.from, legs, via: null };
+  }
   const hhmmOf = (t) => { const p = new Intl.DateTimeFormat("en-AU", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date(t)); return (p.find((x) => x.type === "hour").value % 24).toString().padStart(2, "0") + p.find((x) => x.type === "minute").value; };
   const transitCount = (j) => (j.legs || []).filter((l) => l.kind === "transit").length;
-  const isDirect = (j, t) => transitCount(j) <= (t && t.via ? 2 : 1);
+  const isDirect = (j, t) => transitCount(j) <= (t ? tLegs(t).length : 1);
   const allSvc = () => LS.get("tb_allsvc", {});
   // Default: only services that stop at both ends. Falls back to every service when none do.
   function directFilter(list, t, getJ = (o) => o.j) {
     const all = !!allSvc()[tripKey(t)];
     if (all) return { list, all, none: false };
+    // Multi leg trips are filtered per leg on the server.
+    if (isChain(t)) return { list, all, none: false, chain: true };
     const d = list.filter((o) => isDirect(getJ(o), t));
     return d.length || !list.length ? { list: d, all, none: false } : { list, all, none: true };
   }
   async function planTrip(t, opt = {}) {
     const count = opt.count || 5;
+    if (isChain(t)) return api("/api/plan?" + qs({ legs: JSON.stringify(wireLegs(t)), count, time: opt.time, all: allSvc()[tripKey(t)] ? 1 : null }));
     if (!t.via) return api("/api/trip?" + qs({ from: t.from.id, to: t.to.id, fromName: t.from.name, toName: t.to.name, count, time: opt.time, device: opt.device, profile: opt.profile, refresh: opt.refresh == null ? 1 : opt.refresh }));
     const conn = Math.max(0, Number(t.conn == null ? 5 : t.conn)) * 60000;
     const d1 = await api("/api/trip?" + qs({ from: t.from.id, to: t.via.id, fromName: t.from.name, toName: t.via.name, count, time: opt.time, refresh: 1 }));
@@ -755,6 +782,8 @@ window.TBApp = () => {
     lightrail: P('<path d="M9 2h6v2h-2l-.5 1H16a3 3 0 0 1 3 3v8a3 3 0 0 1-2 2.83L18.5 21h-2.2l-1.2-2H8.9l-1.2 2H5.5L7 18.83A3 3 0 0 1 5 16V8a3 3 0 0 1 3-3h3.5L11 4H9V2Zm-1 6v4h8V8H8Zm1 9a1.2 1.2 0 1 0 0-2.4A1.2 1.2 0 0 0 9 17Zm6 0a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4Z"/>'),
     minus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
     grip: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14M5 12h14M5 16h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    up: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   };
   const modeOf = (k) => MODES.find((m) => m.k === k) || { k: "", name: "Any", color: "#8e8e93", sub: "" };
   const modeIco = (k) => MI[k] || I[k] || I.route;
@@ -772,19 +801,51 @@ window.TBApp = () => {
     const rows = MODES.map((m) => `<button class="cell" data-mode="${m.k}">${mico(m.k)}<div class="grow"><div class="t1">${m.name}</div><div class="t2">${esc(m.sub)}</div></div>${I.chev}</button>`).join("");
     const m = openModal({ title: ext ? "Extend trip" : "New trip",
       body: `${ext ? `<p class="pkstep">From ${esc(stName(short(ext.from.name)))}, how do you travel on?</p>` : ""}<div class="group"><div class="list" style="--inset:62px">${rows}</div></div>
+      ${ext && ext.walk ? `<div class="group"><div class="list" style="--inset:62px"><button class="cell" data-walk><span class="mico" style="background:#8e8e93">${I.walk}</span><div class="grow"><div class="t1">Walk</div><div class="t2">To a stop nearby, then carry on</div></div>${I.chev}</button></div></div>` : ""}
       ${ext ? "" : `<div class="group"><div class="list" style="--inset:62px"><button class="cell" data-any><span class="mico" style="background:#8e8e93">${SEARCH_ICO}</span><div class="grow"><div class="t1">Search any stop</div><div class="t2">Mixed modes or a change</div></div>${I.chev}</button></div></div>`}` });
     $$("[data-mode]", m).forEach((b) => (b.onclick = () => pickFlow(b.dataset.mode, ext)));
     const any = $("[data-any]", m); if (any) any.onclick = () => openAddTrip();
+    const wk = $("[data-walk]", m); if (wk) wk.onclick = async () => { const to = await pickWalkStop(ext.from); if (to) ext.done({ mode: "walk", from: ext.from, to, walk: 5 }); else if (ext.cancel) ext.cancel(); };
+    if (ext && ext.cancel) $("[data-m=close]", m).onclick = () => ext.cancel();
   }
   async function pickFlow(mode, ext) {
     const from = ext ? { ...ext.from } : await pickStation(mode, "from");
     if (!from) return;
     const to = await pickStation(mode, "to", from);
-    if (!to) return;
+    if (!to) { if (ext && ext.cancel) ext.cancel(); return; }
     const leg = { mode, from: { id: from.id, name: from.name }, to: { id: to.id, name: to.name } };
     if (ext) ext.done(leg); else openConfirmTrip({ legs: [leg] });
   }
 
+  // Walk leg: search for the stop you walk to.
+  function pickWalkStop(from) {
+    return new Promise((resolve) => {
+      let done = false;
+      const fin = (v) => { if (done) return; done = true; resolve(v); };
+      const m = openModal({ title: "Walk to", left: "Cancel",
+        body: `<p class="pkstep"><span class="mico sm" style="background:#8e8e93">${I.walk}</span><span>From ${esc(stName(short(from.name)))}, which stop do you walk to?</span></p>
+          <div class="sfield pk-s">${SEARCH_ICO}<input id="wk_q" type="search" autocomplete="off" placeholder="Stop or station name" aria-label="Stop or station name"></div>
+          <div id="wk_res" class="group" style="margin-top:12px"></div>` });
+      $("[data-m=close]", m).onclick = () => { closeModal(); fin(null); };
+      const q = $("#wk_q", m), res = $("#wk_res", m);
+      let timer = null;
+      q.oninput = () => {
+        clearTimeout(timer);
+        const v = q.value.trim();
+        if (v.length < 2) { res.innerHTML = ""; return; }
+        timer = setTimeout(async () => {
+          res.innerHTML = `<div class="svc-empty">Searching</div>`;
+          try {
+            const d = await fetch("/api/search?" + qs({ q: v })).then((r) => r.json());
+            const items = (d.items || []).filter((s) => String(s.id) !== String(from.id)).slice(0, 8);
+            res.innerHTML = items.length ? `<div class="list">${items.map((s, i) => `<button class="cell" data-wi="${i}"><span class="s-ico">${I.loc}</span><div class="grow"><div class="t1">${esc(s.name)}</div></div>${I.chev}</button>`).join("")}</div>` : `<div class="svc-empty">No stops found</div>`;
+            $$("[data-wi]", res).forEach((b) => (b.onclick = () => { const s = items[Number(b.dataset.wi)]; fin({ id: String(s.id), name: s.name }); }));
+          } catch (e) { res.innerHTML = `<div class="svc-empty">Could not search, check your connection</div>`; }
+        }, 250);
+      };
+      setTimeout(() => q.focus(), 350);
+    });
+  }
   function pickStation(mode, step, from) {
     return new Promise((resolve) => {
       const M = modeOf(mode);
@@ -917,36 +978,76 @@ window.TBApp = () => {
     });
   }
 
-  // Confirm a trip before it is saved: name it, extend it with a connection leg, set the change time.
+  // Confirm a trip before it is saved: name it, add, remove and reorder legs, set each change time.
+  // The sheet keeps the start stop and each leg's end stop; every leg starts where the one before it ends.
   function openConfirmTrip(st) {
-    const legs = st.legs;
-    const a = legs[0], b = legs[1];
-    let conn = st.conn == null ? 5 : st.conn;
-    const defName = `${stName(short(a.from.name))} to ${stName(short((b || a).to.name))}`;
-    const name0 = st.name != null ? st.name : defName;
-    const legRow = (l, i) => `<div class="cell static">${mico(l.mode)}<div class="grow"><div class="t1">${esc(stName(short(l.from.name)))} to ${esc(stName(short(l.to.name)))}</div><div class="t2">${esc(l.mode ? modeOf(l.mode).name : "Any service")}${i ? ", connection" : ""}</div></div>${i ? `<button class="icon-btn danger-t" data-unextend aria-label="Remove connection">${I.trash}</button>` : ""}</div>`;
-    const m = openModal({ title: "Confirm trip", right: "Save",
-      body: `<div class="group"><div class="list" style="--inset:62px">${legs.map(legRow).join("")}</div></div>
-        <div class="group-h">Name</div><div class="group"><div class="list"><div class="cell static pick"><input id="ct_name" maxlength="24" value="${esc(name0)}" aria-label="Trip name"></div></div></div>
-        <div class="group"><div class="list" style="--inset:62px">${b
-          ? `<div class="cell static"><div class="grow"><div class="t1">Connection time</div><div class="t2">Change at ${esc(stName(short(a.to.name)))}</div></div><div class="stepper"><button data-c="-1" aria-label="Less time">${MI.minus}</button><span id="ct_conn">${conn} min</span><button data-c="1" aria-label="More time">${PLUS}</button></div></div>`
-          : `<button class="cell" data-extend><span class="mico" style="background:var(--tint)">${PLUS}</span><div class="grow"><div class="t1 tint-t">Extend trip</div><div class="t2">Add a connection from ${esc(stName(short(a.to.name)))}</div></div>${I.chev}</button>`}</div>
-        <p class="group-f">${b ? "Each service on the first leg is paired with the first connection you can make in time." : "Only services that stop at both ends are shown, with a switch for all services on the trip screen."}</p></div>` });
-    const cur = () => ({ ...st, conn, name: $("#ct_name", m).value });
-    const ex = $("[data-extend]", m);
-    if (ex) ex.onclick = () => { const keep = cur(); openNewTrip({ from: a.to, done: (leg) => openConfirmTrip({ ...keep, legs: [a, leg], name: keep.name === defName ? null : keep.name }) }); };
-    const ux = $("[data-unextend]", m);
-    if (ux) ux.onclick = () => { const keep = cur(); openConfirmTrip({ ...keep, legs: [a], name: null }); };
-    $$("[data-c]", m).forEach((btn) => (btn.onclick = () => { conn = Math.max(0, Math.min(30, conn + Number(btn.dataset.c))); $("#ct_conn", m).textContent = `${conn} min`; }));
+    const L0 = st.legs;
+    let start = L0[0].from;
+    let legs = L0.map((l, i) => ({ mode: l.mode || "", to: l.to, conn: i ? (l.conn == null ? (st.conn != null && i === 1 ? st.conn : 5) : l.conn) : undefined, any: !!l.any, walk: l.walk == null ? 5 : l.walk }));
+    let nameTouched = st.name != null;
+    const full = () => legs.map((l, i) => ({ ...l, from: i ? legs[i - 1].to : start, conn: i && l.mode !== "walk" ? l.conn : undefined, walk: l.mode === "walk" ? l.walk : undefined, any: l.any ? 1 : undefined }));
+    const defName = () => `${stName(short(start.name))} to ${stName(short(legs[legs.length - 1].to.name))}`;
+    const m = openModal({ title: "Confirm trip", right: "Save", body: `<div id="ct_body"></div>` });
+    let nameVal = st.name != null ? st.name : defName();
+    const step = (k, val, lbl) => `<div class="stepper"><button data-s="${k}" data-d="-1" aria-label="Less ${lbl}">${MI.minus}</button><span>${val} min</span><button data-s="${k}" data-d="1" aria-label="More ${lbl}">${PLUS}</button></div>`;
+    const paint = () => {
+      const F = full();
+      const n = F.length;
+      const bad = F.some((l) => l.from.id === l.to.id);
+      const legGroup = (l, i) => {
+        const walk = l.mode === "walk";
+        const rows = [`<div class="cell static legrow">${walk ? `<span class="mico" style="background:#8e8e93">${I.walk}</span>` : mico(l.mode)}<div class="grow"><div class="t1">${esc(stName(short(l.from.name)))} to ${esc(stName(short(l.to.name)))}</div><div class="t2">${n > 1 ? `Leg ${i + 1}, ` : ""}${esc(walk ? "Walk" : l.mode ? modeOf(l.mode).name : "Any service")}</div></div>
+          ${n > 1 ? `<div class="legbtns"><button class="icon-btn" data-up="${i}" aria-label="Move leg ${i + 1} up"${i ? "" : " disabled"}>${MI.up}</button><button class="icon-btn" data-down="${i}" aria-label="Move leg ${i + 1} down"${i < n - 1 ? "" : " disabled"}>${MI.down}</button><button class="icon-btn danger-t" data-rm="${i}" aria-label="Remove leg ${i + 1}">${I.trash}</button></div>` : ""}</div>`];
+        if (walk) rows.push(`<div class="cell static"><div class="grow"><div class="t1">Walk time</div><div class="t2">From ${esc(stName(short(l.from.name)))}</div></div>${step("w" + i, l.walk, "walking time")}</div>`);
+        else {
+          if (i) rows.push(`<div class="cell static"><div class="grow"><div class="t1">Connection time</div><div class="t2">Change at ${esc(stName(short(l.from.name)))}</div></div>${step("c" + i, l.conn, "connection time")}</div>`);
+          rows.push(`<div class="cell static"><div class="grow"><div class="t1">Direct services only</div><div class="t2">${l.any ? "Services with a change are used too" : "One service for this leg"}</div></div><label class="switch"><input type="checkbox" data-direct="${i}" ${l.any ? "" : "checked"} aria-label="Direct services only, leg ${i + 1}"><span></span></label></div>`);
+        }
+        return `<div class="group"><div class="list" style="--inset:62px">${rows.join("")}</div></div>`;
+      };
+      const last = F[n - 1].to;
+      $("#ct_body", m).innerHTML = `${F.map(legGroup).join("")}
+        ${bad ? `<p class="group-f" style="color:var(--red)">A leg starts and ends at the same stop. Remove it or move it.</p>` : ""}
+        <div class="group"><div class="list" style="--inset:62px"><button class="cell" data-add><span class="mico" style="background:var(--tint)">${PLUS}</span><div class="grow"><div class="t1 tint-t">${n > 1 ? "Add another leg" : "Extend trip"}</div><div class="t2">Add a leg from ${esc(stName(short(last.name)))}</div></div>${I.chev}</button></div></div>
+        <div class="group-h">Name</div><div class="group"><div class="list"><div class="cell static pick"><input id="ct_name" maxlength="24" value="${esc(nameVal)}" aria-label="Trip name"></div></div></div>
+        <p class="group-f">${n > 1 ? "Each service on the first leg is paired with the first connection you can make on every next leg, after your connection time. Late services that break a change are flagged." : "Only services that stop at both ends are shown, with a switch for all services on the trip screen."}</p>`;
+      const nm = $("#ct_name", m);
+      nm.oninput = () => { nameVal = nm.value; nameTouched = true; };
+      const keepName = () => { if (!nameTouched) nameVal = defName(); };
+      $$("[data-s]", m).forEach((b) => (b.onclick = () => {
+        const k = b.dataset.s, i = Number(k.slice(1)), d = Number(b.dataset.d);
+        if (k[0] === "w") legs[i].walk = Math.max(1, Math.min(60, legs[i].walk + d));
+        else legs[i].conn = Math.max(0, Math.min(30, legs[i].conn + d));
+        paint();
+      }));
+      $$("[data-direct]", m).forEach((c) => (c.onchange = () => { legs[Number(c.dataset.direct)].any = !c.checked; paint(); }));
+      const fixConn = () => legs.forEach((l, i) => { if (i && l.conn == null) l.conn = legs[i - 1].mode === "walk" ? 2 : 5; if (!i) l.conn = undefined; });
+      $$("[data-up]", m).forEach((b) => (b.onclick = () => { const i = Number(b.dataset.up); [legs[i - 1], legs[i]] = [legs[i], legs[i - 1]]; fixConn(); keepName(); paint(); }));
+      $$("[data-down]", m).forEach((b) => (b.onclick = () => { const i = Number(b.dataset.down); [legs[i + 1], legs[i]] = [legs[i], legs[i + 1]]; fixConn(); keepName(); paint(); }));
+      $$("[data-rm]", m).forEach((b) => (b.onclick = () => {
+        const i = Number(b.dataset.rm);
+        if (i === 0) start = legs[0].to;
+        legs.splice(i, 1); fixConn(); keepName(); paint();
+      }));
+      $("[data-add]", m).onclick = () => {
+        const from = full()[legs.length - 1].to;
+        const reopen = (more) => { keepName(); openConfirmTrip({ legs: [...full(), ...more], name: nameTouched ? nameVal : null, after: st.after }); };
+        openNewTrip({ from, walk: true, cancel: () => reopen([]), done: (leg) => reopen([{ mode: leg.mode, from, to: leg.to, conn: leg.mode === "walk" ? undefined : legs[legs.length - 1].mode === "walk" ? 2 : 5, walk: leg.walk || 5 }]) });
+      };
+    };
+    paint();
     $("[data-m=right]", m).onclick = () => {
-      const name = ($("#ct_name", m).value || "").trim().toLowerCase() || defName.toLowerCase();
-      const t = { name, from: a.from, to: (b || a).to, modes: legs.map((l) => l.mode || "") };
-      if (b) { t.via = a.to; t.conn = conn; }
+      const F = full();
+      if (F.some((l) => l.from.id === l.to.id)) { toast("A leg starts and ends at the same stop"); return; }
+      const name = (nameVal || "").trim().toLowerCase() || defName().toLowerCase();
+      const t = { name, from: start, to: F[F.length - 1].to, modes: F.map((l) => l.mode || "") };
+      if (F.length > 1) t.legs = F;
+      if (F.length === 2 && F[1].mode !== "walk") { t.via = F[0].to; t.conn = F[1].conn; }
       const k = tripKey(t);
       const s = saved().filter((x) => tripKey(x) !== k && x.name !== name);
       s.unshift(t);
       LS.set("tb_saved", s.slice(0, 12));
-      if (!b) post("/api/saved", { profile: PROFILE, name, from: t.from, to: t.to }).catch(() => {});
+      post("/api/saved", F.length > 1 ? { profile: PROFILE, name, legs: wireLegs(t) } : { profile: PROFILE, name, from: t.from, to: t.to }).catch(() => {});
       closeModal(); toast("Trip saved");
       if (st.after) st.after(t);
       else if (!/^#\/(home)?$/.test(location.hash || "#/")) location.hash = "#/";
@@ -971,7 +1072,7 @@ window.TBApp = () => {
         list.push(...(am ? [hw, wh] : [wh, hw]));
       }
       commutes.forEach((c) => { if (!has(c.from.id, c.to.id)) list.push({ kind: "commute", from: c.from, to: c.to, name: c.name, todText: c.todText }); });
-      saved().forEach((s) => { if (!has(s.from.id, s.to.id, s.via && s.via.id)) list.push({ kind: "saved", from: s.from, to: s.to, via: s.via, conn: s.conn, name: s.name }); });
+      saved().forEach((s) => { if (!list.some((x) => tripKey(x) === tripKey(s))) list.push({ ...s, kind: "saved", grip: false }); });
       recentTrips().slice(0, 2).forEach((r) => { if (!has(r.from.id, r.to.id)) list.push({ kind: "recent", from: r.from, to: r.to }); });
       // Your own order from dragging wins; home and work move together and keep their morning and evening order.
       const order = LS.get("tb_order", []);
@@ -1205,18 +1306,24 @@ window.TBApp = () => {
     let fn = params.get("fn") || from, tn = params.get("tn") || to;
     const name = params.get("name") || "";
     const via = params.get("via") ? { id: params.get("via"), name: params.get("vn") || params.get("via") } : null;
-    const T = () => ({ from: { id: from, name: fn }, to: { id: to, name: tn }, via, conn: params.get("conn") == null ? 5 : Number(params.get("conn")) });
+    let legsP = null;
+    try { legsP = params.get("legs") ? JSON.parse(params.get("legs")) : null; } catch (e) { legsP = null; }
+    if (!Array.isArray(legsP) || legsP.length < 2) legsP = null;
+    const T = () => legsP ? { from: { id: from, name: fn }, to: { id: to, name: tn }, legs: legsP }
+      : { from: { id: from, name: fn }, to: { id: to, name: tn }, via, conn: params.get("conn") == null ? 5 : Number(params.get("conn")) };
+    const chain = isChain(T());
     let open = null, data = pre || null;
-    if (!via) addRecentTrip({ id: from, name: fn }, { id: to, name: tn });
+    if (!chain) addRecentTrip({ id: from, name: fn }, { id: to, name: tn });
     const isSavedT = () => saved().some((s) => tripKey(s) === tripKey(T()));
     const navNow = () => {
       const isSaved = isSavedT();
       setNav({ title: `${short(fn)} to ${short(tn)}`, back: true, actions: `<button class="icon-btn act" id="revBtn" aria-label="Reverse trip">${I.swap}</button><button class="icon-btn act${isSaved ? " on" : ""}" id="saveBtn" aria-label="Save this trip">${isSaved ? I.starOn : I.star}</button>` });
-      $("#revBtn").onclick = () => { location.hash = "#/trip?" + qs({ from: to, to: from, fn: tn, tn: fn, via: via && via.id, vn: via && via.name, conn: via ? T().conn : null }); };
+      $("#revBtn").onclick = () => { location.hash = tripHref(reverseTrip({ ...T(), name: null })); };
       $("#saveBtn").onclick = saveTrip;
     };
     navNow();
-    const sub = [name ? cap(name) : "", via ? `Via ${stName(short(via.name))}, ${T().conn} min to change` : ""].filter(Boolean).join(". ");
+    const chainSub = () => { const L = tLegs(T()); return L.length === 2 && L[1].mode !== "walk" ? `Via ${stName(short(L[0].to.name))}, ${L[1].conn == null ? 5 : L[1].conn} min to change` : `${L.length} legs via ${viaText(T())}`; };
+    const sub = [name ? cap(name) : "", chain ? chainSub() : ""].filter(Boolean).join(". ");
     const head = () => `<h1 class="large">${esc(short(fn))} <span style="color:var(--label3)">to</span> ${esc(short(tn))}${sub ? `<small>${esc(sub)}</small>` : ""}</h1>`;
     let extra = [], showDep = true;
     const hhmm = (t) => { const p = new Intl.DateTimeFormat("en-AU", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date(t)); return (p.find((x) => x.type === "hour").value % 24).toString().padStart(2, "0") + p.find((x) => x.type === "minute").value; };
@@ -1250,15 +1357,15 @@ window.TBApp = () => {
         if (!showDep) r = r.replace(/<div class="cdb [^"]*"><span class="cdb-n"[^>]*>[^<]*<\/span><span class="cdb-u"[^>]*>min<\/span><\/div>/, `<div class="cdb cd-x durb"><span class="cdb-n">${o.x.dur}</span><span class="cdb-u">min</span></div>`);
         const past = o.x.leave < now() - 30000;
         return `<div class="jrow${past ? " past" : ""}" data-key="${esc(key)}" data-i="${i}" role="button" tabindex="0" aria-expanded="${open === key}">${r}
-          ${open === key ? `<div class="jdetail"><div class="legs">${legsDetail(o.j)}</div><div class="card-actions"><button class="pillbtn${watched ? " on" : ""}" data-watch>${I.bell}${watched ? "Watching" : "Watch"}</button><button class="pillbtn" data-commute>${I.clock}Commute</button></div></div>` : ""}</div>`;
+          ${open === key ? `<div class="jdetail"><div class="legs">${legsDetail(o.j)}</div><div class="card-actions"><button class="pillbtn${watched ? " on" : ""}" data-watch>${I.bell}${watched ? "Watching" : "Watch"}</button>${chain ? "" : `<button class="pillbtn" data-commute>${I.clock}Commute</button>`}</div></div>` : ""}</div>`;
       }).join("");
       view.innerHTML = head() + `${alerts.length ? `<a class="abanner" href="#/alerts">${I.alert}<span><b>Service information</b><br>${alerts.length} alert${alerts.length > 1 ? "s" : ""}. ${esc(alerts[0].title)}</span></a>` : ""}
         <div class="seg tt" role="tablist"><button class="${showDep ? "on" : ""}" data-mode="dep">Departs in</button><button class="${showDep ? "" : "on"}" data-mode="dur">Travel time</button></div>
-        <div class="group"><div class="list"><div class="cell static"><div class="grow"><div class="t1">All services</div><div class="t2">${df.all ? "Trips with a change are shown too" : df.none ? "None stop at both ends, so all are shown" : "Only services that stop at both ends"}</div></div><label class="switch"><input type="checkbox" data-all ${df.all ? "checked" : ""} aria-label="All services"><span></span></label></div></div></div>
+        <div class="group"><div class="list"><div class="cell static"><div class="grow"><div class="t1">All services</div><div class="t2">${df.all ? "Trips with a change are shown too" : df.chain ? ((d.fallback || []).some(Boolean) ? "One leg has no direct service, so all are used there" : "Direct services on each leg, as set for this trip") : df.none ? "None stop at both ends, so all are shown" : "Only services that stop at both ends"}</div></div><label class="switch"><input type="checkbox" data-all ${df.all ? "checked" : ""} aria-label="All services"><span></span></label></div></div></div>
         <div class="group"><div class="tcard"><button class="morebtn" data-more="-1">Earlier services</button>${rows || `<div class="svc-empty">No trips found right now</div>`}<button class="morebtn" data-more="1">Later services</button></div>
         <p class="group-f">${S.lastOk ? `Live data updated ${fmtSecs(S.lastOk)}. ` : ""}Tap a service for its stops, or to watch it. Greyed out: a later one gets you there sooner.</p></div>${foot()}`;
       $$("[data-mode]").forEach((b) => (b.onclick = () => { showDep = b.dataset.mode === "dep"; paint(); }));
-      const sw = $("[data-all]"); if (sw) sw.onchange = () => { const a = allSvc(); if (sw.checked) a[tripKey(T())] = 1; else delete a[tripKey(T())]; LS.set("tb_allsvc", a); open = null; paint(); };
+      const sw = $("[data-all]"); if (sw) sw.onchange = () => { const a = allSvc(); if (sw.checked) a[tripKey(T())] = 1; else delete a[tripKey(T())]; LS.set("tb_allsvc", a); open = null; if (chain) { extra = []; load(); } paint(); };
       $$("[data-more]").forEach((b) => (b.onclick = () => more(Number(b.dataset.more))));
       $$(".jrow").forEach((b) => (b.onclick = (e) => {
         if (e.target.closest("a")) return;
@@ -1275,7 +1382,8 @@ window.TBApp = () => {
         LS.set("tb_saved", saved().filter((s) => tripKey(s) !== tripKey(T()))); toast("Removed from saved trips"); navNow(); return;
       }
       const lm = (j) => { const l = j && (j.legs || []).find((x) => x.kind === "transit"); return l && modeOf(l.mode).k ? l.mode : ""; };
-      const j0 = (merged()[0] || {}).j;
+      if (legsP) return openConfirmTrip({ legs: tLegs(T()), name: name || null, after: () => navNow() });
+      const j0 = (data && merged()[0] || {}).j;
       const t0 = T();
       const legs = via ? [{ mode: lm(j0), from: t0.from, to: via }, { mode: "", from: via, to: t0.to }] : [{ mode: lm(j0), from: t0.from, to: t0.to }];
       return openConfirmTrip({ legs, conn: t0.conn, name: name || null, after: () => navNow() });
@@ -1292,7 +1400,7 @@ window.TBApp = () => {
         } });
     }
     if (data) paint(); else view.innerHTML = head() + `<div class="group">${skel(3)}</div>`;
-    const load = () => (via ? planTrip(T(), { count: 6, time: params.get("time") }) : api("/api/trip?" + qs({ from, to, fromName: fn, toName: tn, count: 6, time: params.get("time"), arriveBy: params.get("arr"), device: DEVICE, profile: PROFILE, refresh: data ? 1 : "" }))).then((d) => { data = { ...d, when: pre && pre.when }; paint(); }).catch((e) => { if (!data) view.innerHTML = head() + `<div class="empty">${esc(e.message)}</div>`; });
+    const load = () => (chain ? planTrip(T(), { count: 6, time: params.get("time") }) : api("/api/trip?" + qs({ from, to, fromName: fn, toName: tn, count: 6, time: params.get("time"), arriveBy: params.get("arr"), device: DEVICE, profile: PROFILE, refresh: data ? 1 : "" }))).then((d) => { data = { ...d, when: pre && pre.when }; paint(); }).catch((e) => { if (!data) view.innerHTML = head() + `<div class="empty">${esc(e.message)}</div>`; });
     if (!pre) load();
     every(20000, load);
   }
@@ -1320,7 +1428,9 @@ window.TBApp = () => {
       if (l.kind === "walk") return l.durationMin < 1 ? "" : `<div class="leg walk"><div class="lt" style="font-weight:500">${I.walk.replace("<svg", '<svg style="width:16px;height:16px"')} Walk ${l.durationMin} min</div><div class="ls">to ${esc(l.to)}</div></div>`;
       const dep = tms(l.estimated || l.planned), arr = tms(l.arrEstimated || l.arrPlanned);
       const moved = l.estimated && Math.abs(tms(l.estimated) - tms(l.planned)) >= 60000;
-      const tr = l.transfer ? `<div class="transfer ${l.transfer.risk}">${l.transfer.risk === "miss" ? "Connection at risk: " : l.transfer.risk === "tight" ? "Tight change: " : ""}${Math.max(0, l.transfer.minutes)} min to change at ${esc(l.transfer.at)}${l.transfer.walkMin ? `, ${l.transfer.walkMin} min walk` : ""}</div>` : "";
+      const tf = l.transfer;
+      const tr = !tf ? "" : tf.missed ? `<div class="transfer miss">Delays: you miss the ${fmtClock(tms(tf.missed.planned))} ${esc(tf.missed.line)} at ${esc(tf.at)}. Next connection: ${Math.max(0, tf.minutes)} min to change</div>`
+        : `<div class="transfer ${tf.risk}">${tf.risk === "miss" ? "Connection at risk: " : tf.risk === "tight" ? "Tight change: " : ""}${Math.max(0, tf.minutes)} min to change at ${esc(tf.at)}${tf.walkMin ? `, ${tf.walkMin} min walk` : ""}${tf.chain && tf.conn != null && tf.risk !== "tight" ? `, you allow ${tf.conn}` : ""}</div>`;
       return `${tr}<div class="leg" style="--c:${esc(l.color)}"><div class="lt">${lb(l.line, l.color, true)} ${esc(short(l.towards))}</div>
         <div class="ls"><b>${moved ? `<s>${fmtClock(l.planned)}</s> ` : ""}${fmtClock(dep)}</b> ${esc(l.from)}${l.fromPlatform ? ", " + esc(l.fromPlatform) : ""}</div>
         <div class="ls">${statusLine(l, { noPlatform: true })}</div>

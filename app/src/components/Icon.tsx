@@ -38,6 +38,8 @@ export const I = {
   minus: { ios: 'minus', android: 'remove' },
   back: { ios: 'chevron.left', android: 'arrow_back' },
   grip: { ios: 'line.3.horizontal', android: 'drag_handle' },
+  up: { ios: 'chevron.up', android: 'expand_less' },
+  down: { ios: 'chevron.down', android: 'expand_more' },
 } satisfies Record<string, IconName>;
 
 export function modeIconName(mode?: string): IconName {

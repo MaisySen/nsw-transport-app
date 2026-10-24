@@ -4,14 +4,17 @@ import type { Place } from './types';
 
 export type RecentTrip = { from: Place; to: Place; at: number };
 export type Places = { home?: Place; work?: Place };
-/** A trip saved on this phone from New Trip, optionally with a connection leg (via) and a change time in minutes. */
-export type MyTrip = { from: Place; to: Place; via?: Place; conn?: number; name: string; modes?: string[] };
+/** One leg of a multi leg trip: mode, change time before it, all services on this leg, walk minutes for a walk leg. */
+export type MyTripLeg = { mode: string; from: Place; to: Place; conn?: number; any?: boolean; walk?: number };
+/** A trip saved on this phone from New Trip. Multi leg trips have legs; older two leg trips have via and conn. */
+export type MyTrip = { from: Place; to: Place; via?: Place; conn?: number; name: string; modes?: string[]; legs?: MyTripLeg[] };
 type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; watchedTrips: Record<string, string>; places: Places;
   myTrips: MyTrip[]; tripOrder: string[]; allServices: Record<string, boolean> };
 let state: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {}, places: {}, myTrips: [], tripOrder: [], allServices: {} };
 
 /** One key per trip, used for order, the All services switch and duplicates. */
-export const tripKeyOf = (t: { from: Place; to: Place; via?: Place | null }) => `${t.from.id}>${t.via ? t.via.id + '>' : ''}${t.to.id}`;
+export const tripKeyOf = (t: { from: Place; to: Place; via?: Place | null; legs?: { to: Place }[] }) =>
+  t.legs && t.legs.length > 1 ? [t.from.id, ...t.legs.slice(0, -1).map((l) => l.to.id), t.to.id].join('>') : `${t.from.id}>${t.via ? t.via.id + '>' : ''}${t.to.id}`;
 let loaded = false;
 const listeners = new Set<() => void>();
 

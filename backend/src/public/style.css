@@ -493,3 +493,15 @@ body.full .toast { bottom: calc(var(--safe-b) + 24px); }
 .trips.sorting .tcard.dragging .grip { cursor: grabbing; color: var(--label2); }
 .grip, .trips.sorting { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .dk-tiles { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.9); }
+
+/* multi leg trips */
+.svc-note.bad { color: var(--red); }
+.legbtns { display: flex; gap: 2px; margin-left: 6px; }
+.legbtns .icon-btn { width: 34px; height: 34px; }
+.legbtns .icon-btn svg { width: 18px; height: 18px; }
+.legbtns .icon-btn[disabled] { opacity: .3; pointer-events: none; }
+.tname .tvia { font-size: 13px; line-height: 18px; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.svc-warn { display: flex; align-items: flex-start; gap: 6px; margin: -4px 0 10px 76px; font-size: 13px; line-height: 17px; font-weight: 500; color: var(--orange); }
+.svc-warn svg { width: 15px; height: 15px; flex: none; margin-top: 1px; fill: currentColor; }
+.svc-warn.bad { color: var(--red); }
+.legrow .t1 { white-space: normal; overflow: visible; }

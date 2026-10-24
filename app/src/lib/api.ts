@@ -53,10 +53,13 @@ export const api = {
   departures: async (stop: string, refresh = false) => req<DeparturesResp>(`/api/departures?${qs({ stop, device: await getDevice(), profile: PROFILE, refresh: refresh ? 1 : '' })}`),
   trip: async (from: Place, to: Place, opts: { refresh?: boolean; count?: number; time?: string; arriveBy?: boolean } = {}) =>
     req<TripResp>(`/api/trip?${qs({ from: from.id, to: to.id, fromName: from.name, toName: to.name, count: opts.count || 5, time: opts.time, arriveBy: opts.arriveBy ? 1 : '', device: await getDevice(), profile: PROFILE, refresh: opts.refresh ? 1 : '' })}`),
+  plan: (legs: any[], opts: { count?: number; time?: string; all?: boolean } = {}) =>
+    req<TripResp>(`/api/plan?${qs({ legs: JSON.stringify(legs), count: opts.count || 5, time: opts.time, all: opts.all ? 1 : '' })}`),
   service: (q: Record<string, string | undefined>) => req<ServiceResp>(`/api/service?${qs(q)}`),
   alerts: (q = '') => req<{ items?: any[]; alerts?: any[] }>(`/api/alerts?${qs({ q })}`),
   saved: () => req<{ items: Saved[] }>(`/api/saved?${qs({ profile: PROFILE })}`),
   saveTrip: (name: string, from: Place, to: Place) => req<{ ok: boolean }>(`/api/saved`, { method: 'POST', body: JSON.stringify({ profile: PROFILE, name, from, to }) }),
+  saveTripLegs: (name: string, legs: any[]) => req<{ ok: boolean }>(`/api/saved`, { method: 'POST', body: JSON.stringify({ profile: PROFILE, name, legs }) }),
   deleteSaved: (name: string) => req<{ ok: boolean }>(`/api/saved?${qs({ profile: PROFILE, name })}`, { method: 'DELETE' }),
   commutes: () => req<{ items: Commute[]; suggestion: any; now: number }>(`/api/commutes?${qs({ profile: PROFILE })}`),
   saveCommute: (body: Partial<Commute> & { from?: Place; to?: Place }) => req<{ ok: boolean; item: Commute }>(`/api/commutes?${qs({ profile: PROFILE })}`, { method: 'POST', body: JSON.stringify(body) }),

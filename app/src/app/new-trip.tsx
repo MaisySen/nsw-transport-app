@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, PanResponder, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, PanResponder, Platform, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
@@ -8,69 +8,107 @@ import { modeColor, radius, usePalette } from '@/lib/theme';
 import { shortName } from '@/lib/format';
 import { store } from '@/lib/store';
 import type { Place, SearchItem } from '@/lib/types';
-import { BusDir, MODES, ModeKey, Station, busRoute, busRoutes, geoDist, modeName, natCmp, stName, stationsFor } from '@/lib/trips';
+import { BusDir, MODES, ModeKey, Station, busRoute, busRoutes, geoDist, modeName, natCmp, stName, stationsFor, wireLegs } from '@/lib/trips';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { pullHome } from '@/components/Home';
 import TransitMap from '@/components/TransitMap';
 import { Button, Row, Screen, Section, Sep, T, font } from '@/components/ui';
 
-type Leg = { mode: string; from: Place; to: Place };
+type Leg = { mode: string; from: Place; to: Place; conn?: number; any?: boolean; walk?: number };
+type Dest = { mode: string; to: Place; conn?: number; any?: boolean; walk?: number };
 type Pick = Place & { ctx?: { route: string; dir: BusDir; at: number } };
-type Step = { kind: 'mode'; ext?: boolean } | { kind: 'pick'; mode: ModeKey; which: 'from' | 'to'; from?: Pick } | { kind: 'confirm' };
+type Step = { kind: 'mode'; ext?: boolean } | { kind: 'pick'; mode: ModeKey; which: 'from' | 'to'; from?: Pick; ext?: boolean } | { kind: 'walk' } | { kind: 'confirm' };
 
 const ROW_H = 50, HEAD_H = 30;
 
-/** New trip: choose the mode, then where you get on and off, then confirm (name, extend, connection time). */
+/** New trip: choose the mode, then where you get on and off, then confirm (name, legs, connection times). */
 export default function NewTrip() {
   const c = usePalette();
-  const pre = useLocalSearchParams<{ from?: string; fromName?: string; to?: string; toName?: string; mode?: string }>();
-  const preLeg: Leg | null = pre.from && pre.to ? { mode: String(pre.mode || ''), from: { id: String(pre.from), name: String(pre.fromName || pre.from) }, to: { id: String(pre.to), name: String(pre.toName || pre.to) } } : null;
-  const [step, setStep] = useState<Step>(preLeg ? { kind: 'confirm' } : { kind: 'mode' });
-  const [legs, setLegs] = useState<Leg[]>(preLeg ? [preLeg] : []);
-  const [name, setName] = useState<string | null>(null);
-  const [conn, setConn] = useState(5);
+  const pre = useLocalSearchParams<{ from?: string; fromName?: string; to?: string; toName?: string; mode?: string; legs?: string; name?: string }>();
+  const preLegs: Leg[] | null = (() => {
+    try { const v = pre.legs ? JSON.parse(String(pre.legs)) : null; if (Array.isArray(v) && v.length) return v; } catch {}
+    return pre.from && pre.to ? [{ mode: String(pre.mode || ''), from: { id: String(pre.from), name: String(pre.fromName || pre.from) }, to: { id: String(pre.to), name: String(pre.toName || pre.to) } }] : null;
+  })();
+  const [step, setStep] = useState<Step>(preLegs ? { kind: 'confirm' } : { kind: 'mode' });
+  // The start stop and each leg's end stop; every leg starts where the one before it ends.
+  const [start, setStart] = useState<Place | null>(preLegs ? preLegs[0].from : null);
+  const [dests, setDests] = useState<Dest[]>(preLegs ? preLegs.map((l, i) => ({ mode: l.mode || '', to: l.to, conn: i ? l.conn ?? 5 : undefined, any: !!l.any, walk: l.walk ?? 5 })) : []);
+  const [name, setName] = useState<string | null>(pre.name ? String(pre.name) : null);
   const [saving, setSaving] = useState(false);
 
-  const a = legs[0], b = legs[1];
-  const defName = a ? `${stName(shortName(a.from.name))} to ${stName(shortName((b || a).to.name))}` : '';
+  const legs: Leg[] = start ? dests.map((d, i) => ({ ...d, from: i ? dests[i - 1].to : start, conn: i && d.mode !== 'walk' ? d.conn ?? 5 : undefined, walk: d.mode === 'walk' ? d.walk ?? 5 : undefined })) : [];
+  const a = legs[0], last = legs[legs.length - 1];
+  const defName = a ? `${stName(shortName(a.from.name))} to ${stName(shortName(last.to.name))}` : '';
+  const bad = legs.some((l) => l.from.id === l.to.id);
+  const fixConn = (ds: Dest[]) => ds.map((d, i) => ({ ...d, conn: i ? d.conn ?? (ds[i - 1].mode === 'walk' ? 2 : 5) : undefined }));
 
-  const choseMode = (m: ModeKey) => {
+  const choseMode = (m: ModeKey | 'walk') => {
     Haptics.selectionAsync();
-    if (step.kind === 'mode' && step.ext && a) setStep({ kind: 'pick', mode: m, which: 'to', from: a.to });
+    const ext = step.kind === 'mode' && step.ext && last;
+    if (m === 'walk') { if (ext) setStep({ kind: 'walk' }); return; }
+    if (ext) setStep({ kind: 'pick', mode: m, which: 'to', from: last.to, ext: true });
     else setStep({ kind: 'pick', mode: m, which: 'from' });
   };
+  const addDest = (d: Dest) => { setDests(fixConn([...dests, d])); setStep({ kind: 'confirm' }); };
   const picked = (p: Pick) => {
     Haptics.selectionAsync();
     if (step.kind !== 'pick') return;
     if (step.which === 'from') { setStep({ kind: 'pick', mode: step.mode, which: 'to', from: p }); return; }
-    const leg = { mode: step.mode, from: { id: step.from!.id, name: step.from!.name }, to: { id: p.id, name: p.name } };
-    setLegs(legs.length && a && step.from!.id === a.to.id ? [a, leg] : [leg]);
+    if (step.ext) { addDest({ mode: step.mode, to: { id: p.id, name: p.name }, any: false }); return; }
+    setStart({ id: step.from!.id, name: step.from!.name });
+    setDests([{ mode: step.mode, to: { id: p.id, name: p.name } }]);
     setStep({ kind: 'confirm' });
   };
   const back = () => {
     if (step.kind === 'pick') {
-      if (step.which === 'to' && !(legs.length && a && step.from?.id === a.to.id)) setStep({ kind: 'pick', mode: step.mode, which: 'from' });
+      if (step.which === 'to' && !step.ext) setStep({ kind: 'pick', mode: step.mode, which: 'from' });
       else if (legs.length) setStep({ kind: 'confirm' });
       else setStep({ kind: 'mode' });
-    } else if (step.kind === 'mode' && step.ext) setStep({ kind: 'confirm' });
+    } else if (step.kind === 'walk') setStep({ kind: 'mode', ext: true });
+    else if (step.kind === 'mode' && step.ext) setStep({ kind: 'confirm' });
     else router.back();
   };
+  const move = (i: number, d: -1 | 1) => {
+    Haptics.selectionAsync();
+    const ds = [...dests];
+    [ds[i], ds[i + d]] = [ds[i + d], ds[i]];
+    setDests(fixConn(ds));
+  };
+  const remove = (i: number) => {
+    Haptics.selectionAsync();
+    if (i === 0) setStart(dests[0].to);
+    setDests(fixConn(dests.filter((_, k) => k !== i)));
+  };
+  const patch = (i: number, p: Partial<Dest>) => setDests(dests.map((d, k) => (k === i ? { ...d, ...p } : d)));
 
   const save = async () => {
     if (!a) return;
+    if (bad) { Alert.alert('Check the legs', 'A leg starts and ends at the same stop. Remove it or move it.'); return; }
     setSaving(true);
     const n = (name ?? defName).trim() || defName;
-    const t = { name: n, from: a.from, to: (b || a).to, ...(b ? { via: a.to, conn } : {}), modes: legs.map((l) => l.mode) };
+    const multi = legs.length > 1;
+    const t: any = { name: n, from: a.from, to: last.to, modes: legs.map((l) => l.mode) };
+    if (multi) t.legs = legs.map((l) => ({ mode: l.mode, from: l.from, to: l.to, ...(l.conn != null ? { conn: l.conn } : {}), ...(l.any ? { any: true } : {}), ...(l.walk != null ? { walk: l.walk } : {}) }));
+    if (legs.length === 2 && legs[1].mode !== 'walk') { t.via = a.to; t.conn = legs[1].conn; }
     store.saveMyTrip(t);
-    if (!b) api.saveTrip(n, a.from, a.to).catch(() => {});
+    if (multi) api.saveTripLegs(n, wireLegs(t)).catch(() => {});
+    else api.saveTrip(n, a.from, a.to).catch(() => {});
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     pullHome();
     setSaving(false);
     router.back();
   };
 
-  const title = step.kind === 'mode' ? (step.ext ? 'Extend trip' : 'New trip') : step.kind === 'pick' ? (step.which === 'from' ? 'From' : 'To') : 'Confirm trip';
+  const title = step.kind === 'mode' ? (step.ext ? 'Add a leg' : 'New trip') : step.kind === 'walk' ? 'Walk to' : step.kind === 'pick' ? (step.which === 'from' ? 'From' : 'To') : 'Confirm trip';
   const first = step.kind === 'mode' && !step.ext;
+  const stepper = (val: number, lbl: string, set: (v: number) => void, min: number, max: number) => (
+    <View style={[s.stepper, { backgroundColor: c.fill, borderRadius: Platform.OS === 'android' ? 20 : 9 }]}>
+      <Pressable onPress={() => { Haptics.selectionAsync(); set(Math.max(min, val - 1)); }} style={s.stepBtn} accessibilityLabel={`Less ${lbl}`} hitSlop={4}><Icon name={I.minus} size={16} color={c.text} /></Pressable>
+      <T kind="headline" style={[s.stepVal, { borderColor: c.sep }]}>{val} min</T>
+      <Pressable onPress={() => { Haptics.selectionAsync(); set(Math.min(max, val + 1)); }} style={s.stepBtn} accessibilityLabel={`More ${lbl}`} hitSlop={4}><Icon name={I.plus} size={16} color={c.text} /></Pressable>
+    </View>
+  );
+  const n = legs.length;
   return (
     <>
       <Stack.Screen options={{
@@ -86,40 +124,52 @@ export default function NewTrip() {
           </Pressable>
         ) : () => null,
       }} />
-      {step.kind === 'mode' ? <ModeList ext={step.ext ? a?.to : undefined} onPick={choseMode} /> : null}
+      {step.kind === 'mode' ? <ModeList ext={step.ext ? last?.to : undefined} onPick={choseMode} /> : null}
+      {step.kind === 'walk' && last ? <WalkPicker from={last.to} onPick={(p) => addDest({ mode: 'walk', to: p, walk: 5 })} /> : null}
       {step.kind === 'pick' ? <StationPicker key={step.mode + step.which} mode={step.mode} which={step.which} from={step.from} onPick={picked} /> : null}
       {step.kind === 'confirm' && a ? (
         <Screen>
+          {legs.map((l, i) => {
+            const walk = l.mode === 'walk';
+            return (
+              <Section key={i} title={n > 1 ? `Leg ${i + 1}` : undefined}>
+                <Row icon={walk ? I.walk : modeIconName(l.mode || 'train')} iconBg={walk ? c.text3 : l.mode ? modeColor[l.mode] : c.text3} title={`${stName(shortName(l.from.name))} to ${stName(shortName(l.to.name))}`}
+                  subtitle={walk ? 'Walk' : modeName(l.mode)}
+                  right={n > 1 ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                      <Pressable hitSlop={8} disabled={!i} onPress={() => move(i, -1)} accessibilityLabel={`Move leg ${i + 1} up`} style={{ opacity: i ? 1 : 0.3 }}><Icon name={I.up} size={18} color={c.tint} /></Pressable>
+                      <Pressable hitSlop={8} disabled={i === n - 1} onPress={() => move(i, 1)} accessibilityLabel={`Move leg ${i + 1} down`} style={{ opacity: i < n - 1 ? 1 : 0.3 }}><Icon name={I.down} size={18} color={c.tint} /></Pressable>
+                      <Pressable hitSlop={8} onPress={() => remove(i)} accessibilityLabel={`Remove leg ${i + 1}`}><Icon name={I.trash} size={18} color={c.red} /></Pressable>
+                    </View>
+                  ) : undefined} />
+                {walk ? (
+                  <><Sep inset={16} /><View style={s.connRow}>
+                    <View style={{ flex: 1 }}><T kind="body">Walk time</T><T kind="foot" tone="text2" style={{ marginTop: 2 }}>From {stName(shortName(l.from.name))}</T></View>
+                    {stepper(l.walk ?? 5, 'walking time', (v) => patch(i, { walk: v }), 1, 60)}
+                  </View></>
+                ) : (
+                  <>
+                    {i ? <><Sep inset={16} /><View style={s.connRow}>
+                      <View style={{ flex: 1 }}><T kind="body">Connection time</T><T kind="foot" tone="text2" style={{ marginTop: 2 }}>Change at {stName(shortName(l.from.name))}</T></View>
+                      {stepper(l.conn ?? 5, 'connection time', (v) => patch(i, { conn: v }), 0, 30)}
+                    </View></> : null}
+                    <Sep inset={16} />
+                    <View style={s.connRow}>
+                      <View style={{ flex: 1 }}><T kind="body">Direct services only</T><T kind="foot" tone="text2" style={{ marginTop: 2 }}>{l.any ? 'Services with a change are used too' : 'One service for this leg'}</T></View>
+                      <Switch value={!l.any} onValueChange={(v) => { Haptics.selectionAsync(); patch(i, { any: !v }); }} accessibilityLabel={`Direct services only, leg ${i + 1}`} />
+                    </View>
+                  </>
+                )}
+              </Section>
+            );
+          })}
+          {bad ? <T kind="foot" style={{ color: c.red, marginHorizontal: 32, marginTop: 8 }}>A leg starts and ends at the same stop. Remove it or move it.</T> : null}
           <Section>
-            {legs.map((l, i) => (
-              <View key={i}>
-                {i ? <Sep inset={57} /> : null}
-                <Row icon={modeIconName(l.mode || 'train')} iconBg={l.mode ? modeColor[l.mode] : c.text3} title={`${stName(shortName(l.from.name))} to ${stName(shortName(l.to.name))}`}
-                  subtitle={i ? `${modeName(l.mode)}, connection` : modeName(l.mode)}
-                  right={i ? <Pressable hitSlop={10} onPress={() => setLegs([a])} accessibilityLabel="Remove connection"><Icon name={I.trash} size={19} color={c.red} /></Pressable> : undefined} />
-              </View>
-            ))}
+            <Row icon={I.plus} iconBg={c.tint} title={n > 1 ? 'Add another leg' : 'Extend trip'} subtitle={`Add a leg from ${stName(shortName(last.to.name))}`} onPress={() => setStep({ kind: 'mode', ext: true })} />
           </Section>
-          <Section title="Name">
+          <Section title="Name" footer={n > 1 ? 'Each service on the first leg is paired with the first connection you can make on every next leg, after your connection time. Late services that break a change are flagged.' : 'Only services that stop at both ends are shown, with a switch for all services on the trip screen.'}>
             <TextInput value={name ?? defName} onChangeText={setName} maxLength={24} placeholder={defName} placeholderTextColor={c.text3} returnKeyType="done"
-              accessibilityLabel="Trip name" style={[font.body, { color: c.text, paddingHorizontal: 16, paddingVertical: Platform.OS === 'android' ? 12 : 12 }]} />
-          </Section>
-          <Section footer={b ? 'Each service on the first leg is paired with the first connection you can make in time.' : 'Only services that stop at both ends are shown, with a switch for all services on the trip screen.'}>
-            {b ? (
-              <View style={s.connRow}>
-                <View style={{ flex: 1 }}>
-                  <T kind="body">Connection time</T>
-                  <T kind="foot" tone="text2" style={{ marginTop: 2 }}>Change at {stName(shortName(a.to.name))}</T>
-                </View>
-                <View style={[s.stepper, { backgroundColor: c.fill, borderRadius: Platform.OS === 'android' ? 20 : 9 }]}>
-                  <Pressable onPress={() => { Haptics.selectionAsync(); setConn(Math.max(0, conn - 1)); }} style={s.stepBtn} accessibilityLabel="Less time" hitSlop={4}><Icon name={I.minus} size={16} color={c.text} /></Pressable>
-                  <T kind="headline" style={[s.stepVal, { borderColor: c.sep }]}>{conn} min</T>
-                  <Pressable onPress={() => { Haptics.selectionAsync(); setConn(Math.min(30, conn + 1)); }} style={s.stepBtn} accessibilityLabel="More time" hitSlop={4}><Icon name={I.plus} size={16} color={c.text} /></Pressable>
-                </View>
-              </View>
-            ) : (
-              <Row icon={I.plus} iconBg={c.tint} title="Extend trip" subtitle={`Add a connection from ${stName(shortName(a.to.name))}`} onPress={() => setStep({ kind: 'mode', ext: true })} />
-            )}
+              accessibilityLabel="Trip name" style={[font.body, { color: c.text, paddingHorizontal: 16, paddingVertical: 12 }]} />
           </Section>
           <View style={{ marginHorizontal: 16, marginTop: 24 }}>
             <Button title="Save trip" icon={I.check} onPress={save} disabled={saving} />
@@ -130,7 +180,45 @@ export default function NewTrip() {
   );
 }
 
-function ModeList({ ext, onPick }: { ext?: Place; onPick: (m: ModeKey) => void }) {
+/** Walk leg: search for the stop you walk to. */
+function WalkPicker({ from, onPick }: { from: Place; onPick: (p: Place) => void }) {
+  const c = usePalette();
+  const [q, setQ] = useState('');
+  const [items, setItems] = useState<SearchItem[] | null>(null);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    const v = q.trim();
+    if (v.length < 2) { setItems(null); return; }
+    const t = setTimeout(() => {
+      api.search(v).then((d) => { setErr(''); setItems((d.items || []).filter((x) => String(x.id) !== String(from.id)).slice(0, 8)); }).catch((e) => setErr(String(e?.message || e)));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [q, from.id]);
+  return (
+    <Screen>
+      <T kind="sub" tone="text2" style={{ marginHorizontal: 32, marginTop: 16 }}>From {stName(shortName(from.name))}, which stop do you walk to?</T>
+      <View style={[s.search, { backgroundColor: c.fill, borderRadius: Platform.OS === 'android' ? 24 : 10, marginTop: 12, height: Platform.OS === 'android' ? 48 : 38 }]}>
+        <Icon name={I.search} size={16} color={c.text2} />
+        <TextInput value={q} onChangeText={setQ} autoFocus placeholder="Stop or station name" placeholderTextColor={c.text3} accessibilityLabel="Stop or station name"
+          style={[font.body, { flex: 1, color: c.text, marginLeft: 8, paddingVertical: 0 }]} returnKeyType="search" />
+      </View>
+      {err ? <T kind="foot" style={{ color: c.red, marginHorizontal: 32, marginTop: 12 }}>{err}</T> : null}
+      {items && !items.length ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>No stops found</T> : null}
+      {items && items.length ? (
+        <Section>
+          {items.map((it, i) => (
+            <View key={it.id}>
+              {i ? <Sep inset={57} /> : null}
+              <Row icon={I.location} iconBg={c.text3} title={shortName(it.name)} onPress={() => onPick({ id: String(it.id), name: it.name })} />
+            </View>
+          ))}
+        </Section>
+      ) : null}
+    </Screen>
+  );
+}
+
+function ModeList({ ext, onPick }: { ext?: Place; onPick: (m: ModeKey | 'walk') => void }) {
   const c = usePalette();
   return (
     <Screen>
@@ -143,6 +231,11 @@ function ModeList({ ext, onPick }: { ext?: Place; onPick: (m: ModeKey) => void }
           </View>
         ))}
       </Section>
+      {ext ? (
+        <Section>
+          <Row icon={I.walk} iconBg={c.text3} title="Walk" subtitle="To a stop nearby, then carry on" onPress={() => onPick('walk')} />
+        </Section>
+      ) : null}
       {ext ? null : (
         <Section>
           <Row icon={I.search} iconBg={c.text3} title="Search any stop" subtitle="Mixed modes or a change" onPress={() => router.replace('/add-trip')} />
