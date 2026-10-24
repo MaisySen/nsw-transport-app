@@ -4,6 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### QA pass B fixes (over the air update for iPhone and Android, 25 Oct, 9:57 AM)
+* Stop screens: the two alerts at the top are the ones that touch the most services there, so a generic "Station Update" shows once instead of under every train. With a mode filter on (for example Ferries at Circular Quay), only that mode's alerts show.
+* No signal and nothing kept on the phone: the stop screen and cards now say "Live times unavailable right now, trying again" and "You're offline. Check your connection." The old words promised kept times that were not there.
+* Nearby on Home no longer lists Circular Quay twice: a station's light rail or wharf stop folds into the station when the station covers that mode.
+* Ask: a slow answer ends after 25 seconds instead of spinning, a server error says "Ask isn't answering right now", and its buttons and text box have roles and labels for VoiceOver and TalkBack.
+* More: the Version row shows the build and the update running ("1.0.0 (204) · update 01a17022"), which helps with support. Contact us and the privacy email say where to write when the phone has no mail app.
+* Watching: the empty screen says to swipe left on a departure or touch and hold it.
+* No new build needed.
+
 ### Weekend trackwork and status of my lines (over the air update for iPhone and Android, 25 Oct, 9:52 AM)
 * From Thursday 6pm to Sunday, Home shows a Trackwork this weekend card, only when planned work this weekend touches your Home and Work trip or a saved trip. Each row says which trip, the days and what Transport for NSW says ("Sat and Sun: Buses replace trains between Central and Bondi Junction"), and when the planner shows it, "Buses replace trains Central to Kings Cross. Your trip takes about 25 min longer." Tap a row for the full details.
 * Status of my lines: under that card, one chip per line on your Home trips (Good service, Delays, Trackwork, Suspended; Changes for buses and ferries), problems first. More has the same list with what is wrong.
