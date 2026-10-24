@@ -148,7 +148,7 @@ final class FlowTests: XCTestCase {
         if toWork.waitForExistence(timeout: 10) {
             toWork.tap()
             let earlier = element("earlierServices")
-            XCTAssertTrue(earlier.waitForExistence(timeout: 30), "Earlier services on the trip screen")
+            XCTAssertTrue(earlier.waitForExistence(timeout: 30) || reveal(earlier), "Earlier services on the trip screen")
             pause(2)
             shot("trip-screen")
             let travel = app.buttons["Travel time"].firstMatch
@@ -503,10 +503,15 @@ final class FlowTests: XCTestCase {
         for _ in 0..<2 where !journey.waitForExistence(timeout: 30) {
             app.collectionViews.firstMatch.swipeDown(velocity: .slow)
         }
-        XCTAssertTrue(journey.waitForExistence(timeout: 30), "journeys from Strathfield to Central")
-        XCTAssertTrue(element("fareBar").waitForExistence(timeout: 10), "fare bar on the trip screen")
+        XCTAssertTrue(journey.waitForExistence(timeout: 30) || reveal(journey), "journeys from Strathfield to Central")
+        // The fare sits under the trips: scroll to it, then back up to the first trip.
+        XCTAssertTrue(reveal(element("fareBar")), "fare bar on the trip screen")
         pause(1)
         shot("trip-fares")
+        for _ in 0..<6 where !(journey.exists && journey.isHittable) {
+            app.collectionViews.firstMatch.swipeDown(velocity: .slow)
+            pause(0.5)
+        }
         journey.tap()
         let start = element("startTrip")
         XCTAssertTrue(start.waitForExistence(timeout: 10), "Start trip on the journey")

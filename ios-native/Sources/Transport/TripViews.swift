@@ -106,39 +106,12 @@ struct TripPlannerView: View {
                             }
                         }
                     }
-                    if let f = journeys.first?.fare {
-                        Section { FareBar(fare: f) }
-                    }
-                    if let p = data?.parking, let parks = p.carparks, !parks.isEmpty {
-                        Section {
-                            ForEach(parks) { c in CarParkRow(park: c, station: p.station?.name) }
-                        } header: {
-                            Text("Park and Ride at \(Naming.compact(Naming.short(p.station?.name ?? from?.name ?? "")))")
-                        } footer: {
-                            Text("Live spaces from the Transport for NSW Car Park API, live.")
-                        }
-                    }
                     if store.accessibleTrips {
                         Section {
                             Label(journeys.isEmpty ? "Step free trips only. None found for this trip." : "Step free trips only.", systemImage: "figure.roll")
                                 .font(.subheadline)
                                 .accessibilityIdentifier("accessibleNotice")
                         }
-                    }
-                    Section {
-                        Picker("Show", selection: $showDuration) {
-                            Text("Departs in").tag(false)
-                            Text("Travel time").tag(true)
-                        }
-                        .pickerStyle(.segmented)
-                        Toggle("All services", isOn: allServicesBinding)
-                            .accessibilityIdentifier("allServices")
-                    } footer: {
-                        Text(showAll
-                             ? "Every service, including ones with a change on the way."
-                             : picked.fellBack
-                                ? "Nothing runs direct right now, so every service is shown."
-                                : (via == nil ? "Only services that stop at both ends." : "Only services that stop at both ends of each leg."))
                     }
                     Section {
                         moreButton("Earlier services", direction: -1)
@@ -159,6 +132,33 @@ struct TripPlannerView: View {
                         Text(data?.tomorrow == true ? "Tomorrow" : "Next trips")
                     } footer: {
                         UpdatedLine(updated: updated, isLoading: loading, liveCount: nil)
+                    }
+                    if let f = journeys.first?.fare {
+                        Section { FareBar(fare: f) }
+                    }
+                    if let p = data?.parking, let parks = p.carparks, !parks.isEmpty {
+                        Section {
+                            ForEach(parks) { c in CarParkRow(park: c, station: p.station?.name) }
+                        } header: {
+                            Text("Park and Ride at \(Naming.compact(Naming.short(p.station?.name ?? from?.name ?? "")))")
+                        } footer: {
+                            Text("Live spaces from the Transport for NSW Car Park API, live.")
+                        }
+                    }
+                    Section {
+                        Picker("Show", selection: $showDuration) {
+                            Text("Departs in").tag(false)
+                            Text("Travel time").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        Toggle("All services", isOn: allServicesBinding)
+                            .accessibilityIdentifier("allServices")
+                    } footer: {
+                        Text(showAll
+                             ? "Every service, including ones with a change on the way."
+                             : picked.fellBack
+                                ? "Nothing runs direct right now, so every service is shown."
+                                : (via == nil ? "Only services that stop at both ends." : "Only services that stop at both ends of each leg."))
                     }
                 }
             } else {
