@@ -9,6 +9,9 @@
       "channel": "preview",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "IOS_APP_GROUP": "0"
       }
     },
     "production": {
@@ -16,6 +19,12 @@
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
+      },
+      "ios": {
+        "credentialsSource": "local"
+      },
+      "env": {
+        "IOS_APP_GROUP": "0"
       }
     }
   },
@@ -23,6 +32,10 @@
     "production": {
       "android": {
         "track": "internal"
+      },
+      "ios": {
+        "ascAppId": "6826543653",
+        "appleTeamId": "B85KQRQZW7"
       }
     }
   }

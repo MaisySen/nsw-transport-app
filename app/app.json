@@ -7,6 +7,53 @@
     "icon": "./assets/images/icon.png",
     "scheme": "nswtransport",
     "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "com.maisysen.nswtransport",
+      "buildNumber": "200",
+      "appleTeamId": "B85KQRQZW7",
+      "supportsTablet": false,
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSSupportsLiveActivities": true
+      },
+      "privacyManifests": {
+        "NSPrivacyTracking": false,
+        "NSPrivacyTrackingDomains": [],
+        "NSPrivacyCollectedDataTypes": [],
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1",
+              "1C8F.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "C617.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategorySystemBootTime",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "35F9.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "E174.1"
+            ]
+          }
+        ]
+      },
+      "associatedDomains": [
+        "applinks:transportsydney.app"
+      ]
+    },
     "android": {
       "package": "com.maisysen.nswtransport",
       "versionCode": 5,
@@ -83,7 +130,8 @@
         }
       ],
       "./plugins/withTransportWidget",
-      "./plugins/withStoreManifest"
+      "./plugins/withStoreManifest",
+      "@bacons/apple-targets"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -103,12 +151,11 @@
     "owner": "bidurtab",
     "updates": {
       "url": "https://u.expo.dev/cf1f4c4c-5157-41bf-a254-4480223f6368",
-      "requestHeaders": {
-        "expo-channel-name": "production"
-      },
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
     },
-    "runtimeVersion": "1.0.0"
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
   }
 }
