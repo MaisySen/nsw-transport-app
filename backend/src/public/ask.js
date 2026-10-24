@@ -65,7 +65,8 @@
       <div class="ak-mid"><div class="ak-t1 num">${clock(j.leave)} to ${clock(j.arrive)}</div>
       <div class="ak-t2 ak-lines">${lines || "Walk"} <span>${j.durationMin} min \u00b7 ${ch}${first.fromPlatform ? " \u00b7 " + plat(first.fromPlatform) : ""}</span></div>
       ${first.line ? `<div class="ak-t2">${statusChip(first)}</div>` : ""}
-      ${j.warn ? `<div class="ak-t2"><span class="ak-st late">${esc(j.warn)}</span></div>` : ""}</div>
+      ${j.warn ? `<div class="ak-t2"><span class="ak-st late">${esc(j.warn)}</span></div>` : ""}
+      ${j.fare && j.fare.total != null ? `<div class="ak-t2 ak-fare">Opal fare estimate $${Number(j.fare.total).toFixed(2)} ${esc(j.fare.typeName)}${j.fare.peak ? ", peak" : ", off peak"}${j.fare.offPeak ? ` <span class="ak-st">Off peak from ${esc(j.fare.offPeak.from)}, save $${Number(j.fare.offPeak.save).toFixed(2)}</span>` : ""}</div>` : ""}</div>
       <div class="ak-cd${first.realtime ? " live" : ""}${c.unit || c.big === "Now" ? "" : " clock"}"><b>${esc(c.big)}</b>${c.unit ? `<small>${c.unit}</small>` : ""}</div></a>`;
   }
   function cardHtml(c) {
@@ -148,7 +149,7 @@
     const pl = places();
     const c = await maybeCoords(opts.forceLoc);
     const p = {
-      q, profile: LS.get("tb_profile", "bidur"), device: LS.get("tb_device", ""),
+      q, profile: LS.get("tb_profile", "bidur"), device: LS.get("tb_device", ""), fare: LS.get("tb_fare", "adult"),
       home: pl.home && pl.home.id ? pl.home.id + "|" + (pl.home.name || "") : null,
       work: pl.work && pl.work.id ? pl.work.id + "|" + (pl.work.name || "") : null,
       lat: c ? c.latitude.toFixed(5) : null, lon: c ? c.longitude.toFixed(5) : null,

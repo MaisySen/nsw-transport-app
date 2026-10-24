@@ -619,8 +619,9 @@ async function departures(env, stopId, opts = {}) {
 // ---------- trips ----------
 
 function stopName(p) {
-  const n = (p && (p.disassembledName || p.name)) || "";
-  return n.replace(/,\s*(Platform|Stand|Wharf|Side)\s+\w+.*$/i, "").trim();
+  const strip = (n) => String(n || "").replace(/,\s*(Platform|Stand|Wharf|Side)\s+\w+.*$/i, "").trim();
+  // Some platforms carry only ", Platform 2" as their short name; fall back to the full name then.
+  return (p && (strip(p.disassembledName) || strip(p.name) || strip(p.parent && p.parent.name))) || "";
 }
 function legKind(t) {
   const cls = t && t.product ? t.product.class : null;
@@ -661,7 +662,7 @@ async function trip(env, fromId, toId, opts = {}) {
         towards: (t.destination && t.destination.name) || "",
         destId: (t.destination && t.destination.id) || null,
         tripId: (t.properties && (t.properties.RealtimeTripId || t.properties.AVMSTripID)) || null,
-        stopId: o.id || null, toStopId: d.id || null,
+        stopId: o.id || null, toStopId: d.id || null, fromParent: (o.parent && o.parent.id) || null, toParent: (d.parent && d.parent.id) || null,
         from: stopName(o), fromPlatform: platformLabel(o.properties, cls),
         to: stopName(d), toPlatform: platformLabel(d.properties, cls),
         planned: iso(o.departureTimePlanned), estimated: oEst ? iso(oEst) : null,
@@ -722,6 +723,7 @@ async function trip(env, fromId, toId, opts = {}) {
       anyCancelled: tl.some((l) => l.cancelled),
       risk: tl.some((l) => l.transfer && l.transfer.risk === "miss") ? "miss" : tl.some((l) => l.transfer && l.transfer.risk === "tight") ? "tight" : "ok",
       legs,
+      fares: faresAll(legs),
     });
   }
   const now = Date.now();
@@ -729,6 +731,132 @@ async function trip(env, fromId, toId, opts = {}) {
   for (const j of list) j.beaten = list.some((o) => o !== j && ms(o.leave) > ms(j.leave) && ms(o.arrive) < ms(j.arrive));
   return { journeys: list, tomorrow, live: { feedAt: rt.fetchedAt() }, now };
 }
+
+// ---- opal fares start
+// Opal fare estimates, worked out from the published fare tables because our Trip Planner key
+// returns no fare tickets (journeys[].fare.tickets is empty). Fares read 24 Oct 2026 from
+// transportnsw.info (adult, concession, caps, peak times, airport fee pages) and the Opal Fares open
+// data (fare values from 29 June 2026). Child or Youth and Gold Senior or Pensioner pay the
+// concession per trip fares; Gold is capped at $2.50 a day. Distance: train, metro and ferry along
+// the route, bus and light rail in a straight line between where you board and get off. Always an
+// estimate, never your card's charge.
+const FARE_TYPES = { adult: "Adult", child: "Child or Youth", concession: "Concession", gold: "Gold Senior or Pensioner" };
+// [up to km, adult peak, adult off peak, concession peak, concession off peak]
+const FARE_BANDS = {
+  rail: [[10, 4.33, 3.03, 2.16, 1.51], [20, 5.38, 3.76, 2.69, 1.88], [35, 6.20, 4.34, 3.10, 2.17], [65, 8.28, 5.79, 4.14, 2.89], [Infinity, 10.66, 7.46, 5.33, 3.73]],
+  bus: [[3, 3.30, 2.31, 1.65, 1.15], [8, 4.49, 3.14, 2.24, 1.56], [Infinity, 5.77, 4.03, 2.88, 2.01]],
+  ferry: [[9, 7.35, 7.35, 3.67, 3.67], [Infinity, 9.20, 9.20, 4.60, 4.60]],
+};
+// [daily cap Mon to Thu, daily cap Fri to Sun and public holidays, weekly cap]
+const FARE_CAPS = { adult: [19.30, 9.65, 50], child: [9.65, 4.80, 25], concession: [9.65, 4.80, 25], gold: [2.50, 2.50, 17.50] };
+const FARE_TRANSFER_OFF = { adult: 2, child: 1, concession: 1, gold: 1 };
+const FARE_AIRPORT = { adult: 18.61, child: 16.64, concession: 16.64, gold: 16.64 };
+// NSW public holidays that fall Monday to Thursday (the only days with peak fares).
+const FARE_HOLIDAYS = new Set(["20261228", "20270126", "20270329", "20270614", "20271004"]);
+const fareFamily = (mode) => (mode === "train" || mode === "metro" ? "rail" : mode === "bus" ? "bus" : mode === "lightrail" ? "lr" : mode === "ferry" ? "ferry" : null);
+const round2 = (x) => Math.round(x * 100) / 100;
+function farePeak(t, family) {
+  if (family === "ferry") return false;
+  const s = sydneyNow(new Date(t));
+  if (s.dow > 4 || FARE_HOLIDAYS.has(s.day)) return false;
+  return (s.tod >= 390 && s.tod < 600) || (s.tod >= 900 && s.tod < 1140);
+}
+function fareKm(l, family) {
+  const p = l.path || [];
+  if (p.length < 2) return l.km != null ? l.km : null;
+  if (family === "bus" || family === "lr") return distM(p[0][0], p[0][1], p[p.length - 1][0], p[p.length - 1][1]) / 1000;
+  let m = 0;
+  for (let i = 1; i < p.length; i++) m += distM(p[i - 1][0], p[i - 1][1], p[i][0], p[i][1]);
+  return m / 1000;
+}
+function fareBand(family, km, type, peak) {
+  const bands = FARE_BANDS[family === "lr" ? "bus" : family];
+  const b = bands.find((x) => km <= x[0]) || bands[bands.length - 1];
+  const conc = type !== "adult";
+  return conc ? (peak ? b[3] : b[4]) : (peak ? b[1] : b[2]);
+}
+const AIRPORT_RE = /\b(domestic|international) airport\b/i;
+// Domestic Airport Station is 202020 and International 202030; their platforms are 2020[23]1 to 9.
+const isAirport = (name, id) => AIRPORT_RE.test(String(name || "")) || /^2020[23]\d$/.test(String(id || ""));
+function fareAirport(group, type) {
+  const ends = [[group.from, group.fromId], [group.to, group.toId]];
+  const air = ends.filter((e) => isAirport(e[0], e[1])).length;
+  if (!air) return 0;
+  if (air === 2) return 5.20;
+  const other = (ends.find((e) => !isAirport(e[0], e[1])) || [])[0] || "";
+  if (/\bmascot\b/i.test(other)) return 10.34;
+  if (/\bgreen square\b/i.test(other)) return 12.74;
+  return FARE_AIRPORT[type];
+}
+// One fare type for one journey's legs.
+function fareOf(legs, type = "adult", forcePeak = null) {
+  if (!FARE_TYPES[type]) type = "adult";
+  const tl = (legs || []).filter((l) => l.kind === "transit");
+  if (!tl.length) return null;
+  const groups = [];
+  const perLeg = [];
+  for (const l of tl) {
+    const fam = fareFamily(l.mode);
+    const dep = ms(l.estimated || l.planned), arr = ms(l.arrEstimated || l.arrPlanned);
+    const km = fam ? fareKm(l, fam) : null;
+    const prev = groups[groups.length - 1];
+    const gap = prev ? (dep - prev.lastArr) / 60000 : Infinity;
+    if (!fam || km == null) { perLeg.push({ line: l.line, mode: l.mode, amount: null, km: null, peak: null, joined: false }); groups.push({ fam: null, lastArr: arr }); continue; }
+    // Same mode within 60 minutes is one journey on the total distance; trains and metro count as one mode.
+    if (prev && prev.fam === fam && gap <= 60) {
+      prev.km += km; prev.lastArr = arr; prev.to = l.to; prev.toId = l.toParent || l.toStopId; prev.legs.push(perLeg.length);
+      perLeg.push({ line: l.line, mode: l.mode, amount: 0, km: round2(km), peak: prev.peak, joined: true });
+      continue;
+    }
+    const peak = forcePeak != null ? (forcePeak && fam !== "ferry") : farePeak(dep, fam);
+    groups.push({ fam, km, peak, first: dep, lastArr: arr, from: l.from, to: l.to, fromId: l.fromParent || l.stopId, toId: l.toParent || l.toStopId, legs: [perLeg.length], transfer: prev && prev.fam && gap <= 60 });
+    perLeg.push({ line: l.line, mode: l.mode, amount: 0, km: round2(km), peak, joined: false });
+  }
+  let total = 0, transfer = 0, airportFee = 0, unknown = false, anyPeak = false;
+  for (const g of groups) {
+    if (!g.fam) { unknown = true; continue; }
+    let f = fareBand(g.fam, g.km, type, g.peak);
+    let off = 0;
+    if (g.transfer) { off = Math.min(f, FARE_TRANSFER_OFF[type]); transfer += off; }
+    const a = g.fam === "rail" ? fareAirport(g, type) : 0;
+    airportFee += a;
+    perLeg[g.legs[0]].amount = round2(f - off + a);
+    perLeg[g.legs[0]].fare = round2(f); if (off) perLeg[g.legs[0]].transferOff = round2(off); if (a) perLeg[g.legs[0]].airportFee = round2(a);
+    if (g.peak) anyPeak = true;
+    total += f - off;
+  }
+  const first = ms(tl[0].estimated || tl[0].planned);
+  const s = sydneyNow(new Date(first));
+  const cap = FARE_CAPS[type][s.dow <= 4 && !FARE_HOLIDAYS.has(s.day) ? 0 : 1];
+  const capped = total > cap;
+  if (capped) total = cap;
+  total = round2(total + airportFee);
+  const out = { type, typeName: FARE_TYPES[type], total, peak: anyPeak, transfer: round2(transfer), airportFee: round2(airportFee), capped, unknown, legs: perLeg, estimate: true };
+  if (anyPeak && forcePeak == null) {
+    const offTotal = fareOf(legs, type, false).total;
+    const save = round2(total - offTotal);
+    if (save > 0) out.offPeak = { from: s.tod < 600 ? "10am" : "7pm", save };
+  }
+  return out;
+}
+function faresAll(legs) { const r = {}; for (const t of Object.keys(FARE_TYPES)) r[t] = fareOf(legs, t); return r; }
+// Each response carries one fare type: the client's `fare` setting, Adult by default.
+function fareType(p) { const t = String((p && p.get && p.get("fare")) || "adult").toLowerCase(); return FARE_TYPES[t] ? t : "adult"; }
+function pickFares(o, type, depth = 0) {
+  if (!o || typeof o !== "object" || depth > 4) return o;
+  if (Array.isArray(o)) { for (const x of o) pickFares(x, type, depth + 1); return o; }
+  if (o.fares && typeof o.fares === "object" && !Array.isArray(o.fares)) { o.fare = o.fares[type] || o.fares.adult || null; delete o.fares; }
+  for (const k of ["journeys", "cards", "before", "last", "after"]) if (o[k]) pickFares(o[k], type, depth + 1);
+  return o;
+}
+const money = (x) => "$" + Number(x).toFixed(2);
+function fareSentence(f) {
+  if (!f || f.total == null) return "";
+  const bits = [`Opal fare estimate ${money(f.total)} (${f.typeName}, ${f.peak ? "peak" : "off peak"}${f.transfer ? `, ${money(f.transfer)} transfer discount` : ""}${f.airportFee ? `, includes ${money(f.airportFee)} airport station fee` : ""}${f.capped ? ", daily cap reached" : ""})`];
+  if (f.offPeak) bits.push(`Off peak from ${f.offPeak.from}, save ${money(f.offPeak.save)}`);
+  return bits.join(". ") + ".";
+}
+// ---- opal fares end
 
 // ---------- chained trips: any number of legs ----------
 // Each service on the first leg is paired with the first connection on every next leg that can be made
@@ -848,6 +976,7 @@ async function planChain(env, legs, opts = {}) {
       leave: iso(c.t.leave), board: first ? first.estimated || first.planned : iso(c.t.leave), arrive: iso(c.t.arr),
       durationMin: Math.round((c.t.arr - c.t.leave) / 60000), changes: Math.max(0, tl.length - 1),
       live: !!(first && first.realtime), anyCancelled: tl.some((l) => l.cancelled), risk, warn, segs: c.lens, legs: c.legs,
+      fares: faresAll(c.legs),
     };
   });
   for (const j of out) j.beaten = out.some((o) => o !== j && ms(o.leave) > ms(j.leave) && ms(o.arrive) < ms(j.arrive));
@@ -1304,7 +1433,7 @@ function askLegOut(l) {
   };
 }
 function askJourneyOut(j) {
-  return { leave: j.leave, board: j.board || null, arrive: j.arrive, durationMin: j.durationMin, changes: j.changes, live: !!j.live, cancelled: !!j.anyCancelled, legs: (j.legs || []).map(askLegOut) };
+  return { leave: j.leave, board: j.board || null, arrive: j.arrive, durationMin: j.durationMin, changes: j.changes, live: !!j.live, cancelled: !!j.anyCancelled, legs: (j.legs || []).map(askLegOut), fares: j.fares || null };
 }
 function askStatusWords(it) {
   if (it.cancelled) return "cancelled";
@@ -2416,6 +2545,7 @@ function askSlimCard(c) {
   if (Array.isArray(c.journeys)) r.journeys = c.journeys.map((j) => ({
     leave: j.leave, arrive: j.arrive, durationMin: j.durationMin, changes: j.changes || 0, warn: j.warn || null,
     legs: (j.legs || []).map((l) => ({ ...pickKeys(l, ASK_LEG_KEYS), realtime: !!l.realtime, cancelled: !!l.cancelled })),
+    fare: j.fare || null,
   }));
   return r;
 }
@@ -3277,7 +3407,12 @@ export default {
           const actx = { ...ctx, origin: url.origin, home: askPlaceArg(p.get("home")), work: askPlaceArg(p.get("work")) };
           const d = await askV2(env, p.get("q") || "", actx);
           await afterAnswer(env, d, { profile, device: p.get("device"), exec });
-          return asTxt ? textRes(await askText(env, d)) : json(askSlim(d));
+          pickFares(d, fareType(p));
+          const fj = (d.journeys || []).find((j) => j.fare && ms(j.board || j.leave) >= Date.now() - 60000) || (d.journeys || [])[0];
+          const fs = d.kind === "trip" && fj ? fareSentence(fj.fare) : "";
+          if (fs && d.reply) { d.reply += "\n" + fs; d.fare = fj.fare; }
+          if (asTxt) { const tx = await askText(env, d); return textRes(fs && !tx.includes(fs) ? tx + "\n" + fs : tx); }
+          return json(askSlim(d));
         }
         case "/api/departures": {
           const depKey = (p.get("stop") || "") + "|" + (p.get("mode") || "");
@@ -3297,6 +3432,7 @@ export default {
         case "/api/trip": {
           const r = await trip(env, p.get("from"), p.get("to"), { time: p.get("time") || null, arriveBy: p.get("arriveBy") === "1", count: Number(p.get("count") || 5) });
           const d = { kind: "trip", from: { id: p.get("from"), name: p.get("fromName") || p.get("from") }, to: { id: p.get("to"), name: p.get("toName") || p.get("to") }, ...r };
+          pickFares(d, fareType(p));
           await afterAnswer(env, d, { profile, device: p.get("device"), exec, log: p.get("refresh") !== "1" });
           return asTxt ? textRes(await asText(env, d)) : json(d);
         }
@@ -3308,6 +3444,7 @@ export default {
           if (!legs) return json({ error: "legs must be a list of 1 to 6 legs, each with f and t, and the first leg not a walk" }, 400);
           const r = await planChain(env, legs, { time: p.get("time") || null, count: Math.max(1, Math.min(8, Number(p.get("count") || 5))), all: p.get("all") === "1" });
           const z = legs[legs.length - 1];
+          pickFares(r, fareType(p));
           return json({ kind: "trip", from: { id: legs[0].f, name: legs[0].fn }, to: { id: z.t, name: z.tn }, stops: legs.slice(0, -1).map((l) => ({ id: l.t, name: l.tn })), ...r });
         }
         case "/api/service":
@@ -3329,6 +3466,7 @@ export default {
           const s = await savedGet(env, profile, p.get("name") || "");
           if (!s) return asTxt ? textRes(`No saved trip called ${p.get("name") || ""}.`) : json({ error: "not saved", name: p.get("name") }, 404);
           const d = await savedTrip(env, s, Math.min(5, Number(p.get("count") || 5)));
+          pickFares(d, fareType(p));
           await afterAnswer(env, d, { profile, device: p.get("device"), exec });
           return asTxt ? textRes(await asText(env, d)) : json(d);
         }

@@ -609,3 +609,25 @@ body.full .toast { bottom: calc(var(--safe-b) + 24px); }
 .sheet-act.danger-t .grow { color: var(--red); }
 [data-item] a { -webkit-user-drag: none; }
 .toast.has-act span { white-space: nowrap; }
+
+/* Opal fare estimates */
+.farechip { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 6px; background: var(--fill); color: var(--label2); font-size: 12px; font-weight: 600; line-height: 18px; font-variant-numeric: tabular-nums; }
+.farebox { margin: 10px 0 4px; padding: 12px 14px; border-radius: 12px; background: var(--bg); }
+.farebox .fh { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; font-size: 15px; margin-bottom: 6px; }
+.farebox .fh small, .farebox .fr small { color: var(--label2); font-weight: 400; font-size: 13px; margin-left: 4px; }
+.farebox .fh b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.farebox .fr { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; line-height: 22px; font-variant-numeric: tabular-nums; }
+.farebox .fr.sub { color: var(--label2); padding-left: 10px; }
+.farebox .fnudge { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--green, #34c759); font-size: 14px; font-weight: 600; }
+.farebox .fnudge svg { width: 16px; height: 16px; }
+.farebox .fnote { margin: 6px 0 0; font-size: 12px; line-height: 16px; color: var(--label2); }
+.farebar { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; background: var(--bg2); font-size: 14px; line-height: 19px; color: var(--label); }
+.farebar .fb-peak { flex: none; padding: 1px 7px; border-radius: 6px; background: rgba(255, 149, 0, .16); color: #c25e00; font-size: 12px; font-weight: 700; }
+.farebar .fb-t { flex: none; color: var(--label2); font-size: 13px; }
+@media (prefers-color-scheme: dark) { .farebar .fb-peak { color: #ffb340; } }
+.go-fare { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 16px; border-top: .5px solid var(--sep); font-size: 15px; }
+.go-fare small { display: block; color: var(--label2); font-size: 12px; }
+.go-fare b { font-variant-numeric: tabular-nums; }
+#fareSet .check { color: var(--tint); display: grid; place-items: center; }
+.go-fare { background: var(--bg2); border-radius: 12px; margin-top: 8px; border-top: 0; }
+.farebar { margin: 0 16px 16px; }

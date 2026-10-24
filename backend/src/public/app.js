@@ -54,6 +54,28 @@ window.TBApp = () => {
   const stars = () => LS.get("tb_stars", []);
   const saved = () => LS.get("tb_saved", []);
   const recents = () => LS.get("tb_recent", []);
+  // Opal fare estimates: the fare type is a setting (Adult by default); the server works out the fare.
+  const FARE_NAMES = { adult: "Adult", child: "Child or Youth", concession: "Concession", gold: "Gold Senior or Pensioner" };
+  const fareT = () => { const t = LS.get("tb_fare", "adult"); return FARE_NAMES[t] ? t : "adult"; };
+  const money = (x) => "$" + Number(x).toFixed(2);
+  // Peak: Monday to Thursday, 6:30am to 10am and 3pm to 7pm Sydney time (public holidays are off peak; the server knows them).
+  function peakNow() {
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Sydney", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date()).map((x) => [x.type, x.value]));
+    const tod = (Number(p.hour) % 24) * 60 + Number(p.minute);
+    if (!["Mon", "Tue", "Wed", "Thu"].includes(p.weekday)) return null;
+    return tod >= 390 && tod < 600 ? "10am" : tod >= 900 && tod < 1140 ? "7pm" : null;
+  }
+  function fareChip(f) { return f && f.total != null && !f.unknown ? `<span class="farechip">${money(f.total)}</span>` : ""; }
+  function fareBox(f) {
+    if (!f || f.total == null) return "";
+    const rows = (f.legs || []).map((l) => l.amount == null ? `<div class="fr"><span>${esc(l.line || "Service")}</span><span>Not an Opal fare</span></div>`
+      : l.joined ? `<div class="fr"><span>${esc(l.line)}</span><span class="t2">Same journey, no extra fare</span></div>`
+      : `<div class="fr"><span>${esc(l.line)} <small>${l.km != null ? Math.round(l.km) + " km · " : ""}${l.peak ? "Peak" : "Off peak"}</small></span><span>${money(l.fare)}</span></div>${l.transferOff ? `<div class="fr sub"><span>Transfer discount</span><span>−${money(l.transferOff)}</span></div>` : ""}${l.airportFee ? `<div class="fr sub"><span>Airport station access fee</span><span>${money(l.airportFee)}</span></div>` : ""}`).join("");
+    return `<div class="farebox"><div class="fh"><span>Opal fare estimate <small>${esc(f.typeName)}</small></span><b>${money(f.total)}</b></div>${rows}
+      ${f.capped ? `<div class="fr sub"><span>Daily cap reached</span><span></span></div>` : ""}
+      ${f.offPeak ? `<div class="fnudge">${I.clock}<span>Off peak from ${esc(f.offPeak.from)}, save ${money(f.offPeak.save)}</span></div>` : ""}
+      <p class="fnote">${f.peak ? "Peak fare. " : "Off peak fare. "}An estimate from the Opal fare tables, not your card's charge. Change the fare type in Settings.</p></div>`;
+  }
   function addRecent(q) { const r = recents().filter((x) => x.toLowerCase() !== q.toLowerCase()); r.unshift(q); LS.set("tb_recent", r.slice(0, 8)); }
   const ua = navigator.userAgent;
   const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -469,7 +491,7 @@ window.TBApp = () => {
         estimated: x.estimated, fromPlatform: x.fromPlatform, toPlatform: x.toPlatform, color: x.color, towards: short(x.towards), destId: x.destId, walkBefore: walk });
       walk = 0;
     }
-    return { kind: "trip", title: `${short(from.name)} to ${short(to.name)}`, legs, origin: from, to, lead: null, walkBefore: legs[0] ? legs[0].walkBefore : 0 };
+    return { kind: "trip", title: `${short(from.name)} to ${short(to.name)}`, legs, origin: from, to, lead: null, walkBefore: legs[0] ? legs[0].walkBefore : 0, fare: j.fare || null };
   }
   function openWatchSheet(spec) {
     const L0 = spec.legs[0];
@@ -646,7 +668,7 @@ window.TBApp = () => {
     return `<div class="svc${beaten ? " beaten" : ""}${lead ? " lead" : ""}${x.st.c === "bad" ? " cancelled" : ""}">
       <div class="cdb ${cdClass(x.leave, x.st)}"><span class="cdb-n${cdn.length > 3 ? " xs" : cdn.length > 2 ? " sm" : ""}" data-cd="${x.leave}">${esc(cdn)}</span><span class="cdb-u"${m > 0 && m < 60 ? "" : " hidden"}>min</span></div>
       <div class="svc-l"><div class="svc-k">${esc(from)}</div><div class="svc-t">${fmtClock(x.dep)}</div><div class="stw st-${x.st.c}"><i class="sq"></i>${esc(x.st.w)}</div>${plc}</div>
-      <div class="svc-r"><div class="svc-k">${tl.map((l) => lb(l.line, l.color, true)).join("")}${x.changes ? ` \u00b7 ${x.changes} change${x.changes > 1 ? "s" : ""}` : ""}</div><div class="svc-t">${fmtClock(x.arr)}</div><div class="svc-k">${crowd(x.first)}${x.dur} min</div></div></div>${j.warn ? `<div class="svc-warn${j.risk === "miss" || j.anyCancelled ? " bad" : ""}">${I.alert}<span>${esc(j.warn)}</span></div>` : ""}`;
+      <div class="svc-r"><div class="svc-k">${tl.map((l) => lb(l.line, l.color, true)).join("")}${x.changes ? ` \u00b7 ${x.changes} change${x.changes > 1 ? "s" : ""}` : ""}</div><div class="svc-t">${fmtClock(x.arr)}</div><div class="svc-k">${crowd(x.first)}${x.dur} min${fareChip(j.fare)}</div></div></div>${j.warn ? `<div class="svc-warn${j.risk === "miss" || j.anyCancelled ? " bad" : ""}">${I.alert}<span>${esc(j.warn)}</span></div>` : ""}`;
   }
   function tripCard(t, d) {
     const href = tripHref(t);
@@ -829,8 +851,8 @@ window.TBApp = () => {
   }
   async function planTrip(t, opt = {}) {
     const count = opt.count || 5;
-    if (isChain(t)) return api("/api/plan?" + qs({ legs: JSON.stringify(wireLegs(t)), count, time: opt.time, all: allSvc()[tripKey(t)] ? 1 : null }));
-    if (!t.via) return api("/api/trip?" + qs({ from: t.from.id, to: t.to.id, fromName: t.from.name, toName: t.to.name, count, time: opt.time, device: opt.device, profile: opt.profile, refresh: opt.refresh == null ? 1 : opt.refresh }));
+    if (isChain(t)) return api("/api/plan?" + qs({ legs: JSON.stringify(wireLegs(t)), count, time: opt.time, all: allSvc()[tripKey(t)] ? 1 : null, fare: fareT() }));
+    if (!t.via) return api("/api/trip?" + qs({ from: t.from.id, to: t.to.id, fromName: t.from.name, toName: t.to.name, count, fare: fareT(), time: opt.time, device: opt.device, profile: opt.profile, refresh: opt.refresh == null ? 1 : opt.refresh }));
     const conn = Math.max(0, Number(t.conn == null ? 5 : t.conn)) * 60000;
     const d1 = await api("/api/trip?" + qs({ from: t.from.id, to: t.via.id, fromName: t.from.name, toName: t.via.name, count, time: opt.time, refresh: 1 }));
     const j1 = (d1.journeys || []).filter((j) => isDirect(j)).map((j) => ({ j, x: journeyTimes(j) }));
@@ -1431,6 +1453,7 @@ window.TBApp = () => {
         ${tabs.length > 2 ? `<div class="seg" role="tablist">${tabs.map(([k, n]) => `<button class="${k === mode ? "on" : ""}" data-mode="${k}" role="tab" aria-selected="${k === mode}">${n}</button>`).join("")}</div>` : ""}
         ${d.alternatives && d.alternatives.length ? `<div class="group"><div class="chips">${d.alternatives.map((a) => `<a class="chip" href="#/stop/${encodeURIComponent(a.id)}?${qs({ name: a.name })}">${esc(a.name)}</a>`).join("")}</div></div>` : ""}
         ${alertsHtml(d.alerts)}
+        ${(() => { const pk = peakNow(); return pk && items.some((i) => i.mode !== "ferry") ? `<div class="farebar"><span class="fb-peak">Peak</span><span>Off peak from ${pk}: 30 percent off train, metro, bus and light rail fares</span></div>` : ""; })()}
         <div class="group"><div class="list">${shown.map((it) => depRow(it)).join("") || `<div class="empty">No upcoming services found right now.</div>`}
         ${items.length > shown.length ? `<button class="more" id="moreBtn">Show ${items.length - shown.length} more</button>` : ""}</div>
         <p class="group-f">Swipe left on a service to watch it. ${items.some((i) => i.pred) ? "* Usual delay, a prediction from recorded times, not live." : ""}</p></div>${foot()}`;
@@ -1507,9 +1530,10 @@ window.TBApp = () => {
         if (!showDep) r = r.replace(/<div class="cdb [^"]*"><span class="cdb-n"[^>]*>[^<]*<\/span><span class="cdb-u"[^>]*>min<\/span><\/div>/, `<div class="cdb cd-x durb"><span class="cdb-n">${o.x.dur}</span><span class="cdb-u">min</span></div>`);
         const past = o.x.leave < now() - 30000;
         return `<div class="jrow${past ? " past" : ""}" data-key="${esc(key)}" data-i="${i}" role="button" tabindex="0" aria-expanded="${open === key}">${r}
-          ${open === key ? `<div class="jdetail"><div class="legs">${legsDetail(o.j)}</div><div class="card-actions"><button class="pillbtn solid" data-go>${I.loc}Start trip</button><button class="pillbtn${watched ? " on" : ""}" data-watch>${I.bell}${watched ? "Watching" : "Watch"}</button>${chain ? "" : `<button class="pillbtn" data-commute>${I.clock}Commute</button>`}</div></div>` : ""}</div>`;
+          ${open === key ? `<div class="jdetail"><div class="legs">${legsDetail(o.j)}</div>${fareBox(o.j.fare)}<div class="card-actions"><button class="pillbtn solid" data-go>${I.loc}Start trip</button><button class="pillbtn${watched ? " on" : ""}" data-watch>${I.bell}${watched ? "Watching" : "Watch"}</button>${chain ? "" : `<button class="pillbtn" data-commute>${I.clock}Commute</button>`}</div></div>` : ""}</div>`;
       }).join("");
       view.innerHTML = head() + `${alerts.length ? `<a class="abanner" href="#/alerts">${I.alert}<span><b>Service information</b><br>${alerts.length} alert${alerts.length > 1 ? "s" : ""}. ${esc(alerts[0].title)}</span></a>` : ""}
+        ${(() => { const fj = js.find((o) => o.j.fare && o.x.leave > now() - 30000); const f = fj && fj.j.fare; return f ? `<div class="farebar">${f.offPeak ? `<span class="fb-peak">Peak</span><span>Off peak from ${esc(f.offPeak.from)}, save ${money(f.offPeak.save)}</span>` : `<span class="fb-t">Opal fare estimate</span><span>${money(f.total)} ${esc(f.typeName)}${f.peak ? ", peak" : ", off peak"}</span>`}</div>` : ""; })()}
         <div class="seg tt" role="tablist"><button class="${showDep ? "on" : ""}" data-mode="dep">Departs in</button><button class="${showDep ? "" : "on"}" data-mode="dur">Travel time</button></div>
         <div class="group"><div class="list"><div class="cell static"><div class="grow"><div class="t1">All services</div><div class="t2">${df.all ? "Trips with a change are shown too" : df.chain ? ((d.fallback || []).some(Boolean) ? "Some legs have no direct service" : "Direct services on each leg") : df.none ? "None stop at both ends, so all are shown" : "Only services that stop at both ends"}</div></div><label class="switch"><input type="checkbox" data-all ${df.all ? "checked" : ""} aria-label="All services"><span></span></label></div></div></div>
         <div class="group"><div class="tcard"><button class="morebtn" data-more="-1">Earlier services</button>${rows || `<div class="svc-empty">No trips found right now</div>`}<button class="morebtn" data-more="1">Later services</button></div>
@@ -1551,7 +1575,7 @@ window.TBApp = () => {
         } });
     }
     if (data) paint(); else view.innerHTML = head() + `<div class="group">${skel(3)}</div>`;
-    const load = () => (chain ? planTrip(T(), { count: 6, time: params.get("time") }) : api("/api/trip?" + qs({ from, to, fromName: fn, toName: tn, count: 6, time: params.get("time"), arriveBy: params.get("arr"), device: DEVICE, profile: PROFILE, refresh: data ? 1 : "" }))).then((d) => { data = { ...d, when: pre && pre.when }; paint(); }).catch((e) => { if (!data) view.innerHTML = head() + `<div class="empty">${esc(e.message)}</div>`; });
+    const load = () => (chain ? planTrip(T(), { count: 6, time: params.get("time") }) : api("/api/trip?" + qs({ from, to, fromName: fn, toName: tn, count: 6, time: params.get("time"), arriveBy: params.get("arr"), device: DEVICE, profile: PROFILE, refresh: data ? 1 : "", fare: fareT() }))).then((d) => { data = { ...d, when: pre && pre.when }; paint(); }).catch((e) => { if (!data) view.innerHTML = head() + `<div class="empty">${esc(e.message)}</div>`; });
     if (!pre) load();
     every(20000, load);
   }
@@ -1839,6 +1863,8 @@ window.TBApp = () => {
         <div class="group"><div class="group-h">Notifications</div><div class="list" style="--inset:57px">${pushRow}</div>
         <p class="group-f">Alerts come from trips you watch and from your commutes. Each watched trip ends on its own when you arrive.</p></div>
         <div class="group"><div class="group-h">Commutes</div><div class="list">${cm.length ? cm.map((c, i) => `<button class="cell" data-c="${i}"><span class="sym" style="background:${c.active ? "#5856d6" : "var(--label3)"}">${I.clock}</span><div class="grow"><div class="t1">${esc(c.name)}</div><div class="t2">${esc(short(c.from.name))} to ${esc(short(c.to.name))} \u00b7 ${esc(c.todText)} \u00b7 ${c.active ? esc(daysText(c.days)) : "Off"}</div></div>${I.chev}</button>`).join("") : `<div class="cell static"><div class="grow t2" style="white-space:normal">No commute yet. Open any trip and tap Commute, or search the same trip on two days and I'll offer it.</div></div>`}</div></div>
+        <div class="group" id="fareSet"><div class="group-h">Opal fare estimates</div><div class="list">${Object.entries(FARE_NAMES).map(([k, n]) => `<button class="cell" data-fare="${k}" role="radio" aria-checked="${fareT() === k}"><div class="grow">${esc(n)}</div>${fareT() === k ? `<span class="check"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>` : ""}</button>`).join("")}</div>
+          <p class="group-f">Trips show an Opal fare estimate for this fare type, worked out from the Opal fare tables: peak or off peak, transfer discount, airport station fee and daily cap. It is not your card's charge.</p></div>
         <div class="group" id="clearHist"><div class="group-h">Clear history</div><div class="list">
           ${[["tb_recent", "Clear recent searches", recents().length], ["tb_rstops", "Clear recent stops", recentStops().length], ["tb_rtrips", "Clear recent trips", recentTrips().length]].map(([k, t, n]) => `<button class="cell" data-clr="${k}"${n ? "" : " disabled"}><div class="grow${n ? " tint-t" : " t2"}">${t}</div><span class="val">${n || "None"}</span></button>`).join("")}
           <button class="cell" id="delServer"><div class="grow danger-t">Delete my trip history on server</div></button>
@@ -1853,6 +1879,7 @@ window.TBApp = () => {
       const po = $("#pushOn2"); if (po) po.onclick = async () => { const r = await enablePush(true).catch(() => ({ ok: false })); toast(r.ok ? "Alerts are on. A test one is on its way." : pushWhyText(r.why)); paint(cm, usage); };
       const tp = $("#testPush"); if (tp) tp.onclick = async () => { try { await syncPush(); const r = await post("/api/push/test", { device: DEVICE }); toast(r.pushed && r.pushed.some((x) => x === 201 || x === 200) ? "Sent. Check your notifications." : "Sent, but the phone's push service didn't accept it. Try turning alerts off and on."); } catch (e) { toast(e.message); } };
       const ib = $("#installBtn"); if (ib) ib.onclick = async () => { S.installEvt.prompt(); S.installEvt = null; };
+      $$("[data-fare]").forEach((b) => (b.onclick = () => { LS.set("tb_fare", b.dataset.fare); toast(`Fares shown for ${FARE_NAMES[b.dataset.fare]}`); paint(cm, usage); }));
       $$("[data-clr]").forEach((b) => (b.onclick = () => { LS.set(b.dataset.clr, []); toast("Cleared"); paint(cm, usage); }));
       $("#delServer").onclick = () => confirmDelete("history", () => paint(cm, usage));
       $("#delAll").onclick = () => confirmDelete("all", () => { cm = []; paint([], usage); });
@@ -1895,7 +1922,7 @@ window.TBApp = () => {
     try {
       const local = saved().find((s) => s.name === q.trim().toLowerCase());
       if (local) { location.replace("#/trip?" + qs({ from: local.from.id, to: local.to.id, fn: local.from.name, tn: local.to.name, name: local.name })); return; }
-      const d = await api("/api/ask?" + qs({ q, profile: PROFILE, device: DEVICE, lat: coords && coords.latitude.toFixed(5), lon: coords && coords.longitude.toFixed(5) }));
+      const d = await api("/api/ask?" + qs({ q, profile: PROFILE, device: DEVICE, fare: fareT(), lat: coords && coords.latitude.toFixed(5), lon: coords && coords.longitude.toFixed(5) }));
       if (d.kind === "departures") { S.pre = d; location.replace(`#/stop/${encodeURIComponent(d.stop.id)}?${qs({ name: d.stop.name, mode: d.mode || "" })}`); }
       else if (d.kind === "trip" && (d.chain || d.via) && (d.links || []).some((l) => l.kind === "trip" && l.legs)) location.replace(d.links.find((l) => l.kind === "trip" && l.legs).href);
       else if (d.kind === "trip") { S.pre = d; location.replace("#/trip?" + qs({ from: d.from.id, to: d.to.id, fn: d.from.name, tn: d.to.name, name: d.saved || "", time: d.when && d.when.time, arr: d.when && d.when.arriveBy ? "1" : "" })); }
@@ -1919,7 +1946,7 @@ window.TBApp = () => {
     if (!legs.length) { toast("This trip can't be tracked."); return; }
     const old = goGet();
     if (old) goStop(old, true);
-    goSet({ id: randId("g"), title: spec.title, origin: spec.origin || null, to: spec.to || null, legs, started: Date.now(), alerted: {}, share: null, watchId: null });
+    goSet({ id: randId("g"), title: spec.title, origin: spec.origin || null, to: spec.to || null, legs, fare: spec.fare || null, started: Date.now(), alerted: {}, share: null, watchId: null });
     if (pushState() === "on") goWatch();
     location.hash = "#/go";
   }
@@ -2146,7 +2173,7 @@ window.TBApp = () => {
         ${st.phase === "ride" ? stopsHtml(d, st.cur) : ""}
         ${setup.length ? `<div class="group"><div class="list">${setup.join("")}</div></div>` : ""}
         <div class="go-actions"><button class="btn go-share" id="gShare">${I.share}${g.share ? "Sharing" : "Share trip"}</button><button class="btn go-end" id="gEnd">End trip</button></div>
-        <div class="group-h">Your trip</div><div class="group"><div class="go-legs">${legRows}</div></div>
+        <div class="group-h">Your trip</div><div class="group"><div class="go-legs">${legRows}</div>${g.fare && g.fare.total != null ? `<div class="go-fare"><span>Opal fare estimate <small>${esc(g.fare.typeName)}${g.fare.peak ? ", peak" : ", off peak"}${g.fare.transfer ? `, ${money(g.fare.transfer)} transfer discount` : ""}${g.fare.airportFee ? `, includes ${money(g.fare.airportFee)} airport fee` : ""}</small></span><b>${money(g.fare.total)}</b></div>` : ""}</div>
         <p class="group-f">Live positions and times from Transport for NSW. Your location is used on this phone only${g.share && g.share.pos ? ", and sent to your share link while sharing" : ""}. Share links stop working when the trip ends.</p></div>`;
       const gl = $("#gLoc"); if (gl) gl.onclick = () => { LS.set("tb_go_loc", "asked"); startGeo(); };
       const gp = $("#gPush"); if (gp) gp.onclick = async () => { const r = await enablePush(false).catch(() => ({ ok: false })); if (r.ok) { toast("Get off alerts on"); goWatch(); } else toast(pushWhyText(r.why)); paint(); };

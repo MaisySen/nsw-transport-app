@@ -67,3 +67,4 @@ a.ak-head:active, .ak-row:active { background: var(--fill); }
 .ak-send { width: 34px; height: 34px; border-radius: 17px; display: grid; place-items: center; background: var(--tint); color: #fff; flex: none; margin-bottom: 1px; }
 .ak-send svg { width: 20px; height: 20px; }
 .ak-send:disabled { background: var(--fill2); color: var(--label3); }
+.ak-fare { color: var(--label2); }

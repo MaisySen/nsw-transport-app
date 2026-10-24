@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 24 Oct 2026
 
+### Opal fare estimates (web and server, 4:00 PM)
+* Every trip shows an Opal fare estimate: a chip on each trip row (trip results and saved trips on Home) and a breakdown in the trip details with each leg's distance, peak or off peak, transfer discount, airport station access fee and daily cap.
+* The live trip screen and Ask show it too. Ask replies end with "Opal fare estimate $X (Adult, peak)" and its trip cards show the fare.
+* Settings has a fare type: Adult (default), Child or Youth, Concession, Gold Senior or Pensioner.
+* During peak, trips show "Off peak from 7pm, save $X" and stop boards show when off peak starts.
+* Our Trip Planner key returns no fare tickets, so the server works it out from the Opal fare tables read 24 Oct 2026. Always labelled an estimate. Nothing needs an Opal login.
+* `stopName` now falls back to the full stop name when a platform's short name is only ", Platform 2" (some trip legs showed an empty destination).
+
 ### Clear history and no hard coded stations (web, 3:40 PM)
 * The Popular stations list (Central, Town Hall, Strathfield) is gone from the Trips screen and from the stop list. Nothing is hard coded or seeded: an empty Trips screen shows Add a trip and Nearby when location is allowed.
 * Recent trips and Recent stops are their own groups below saved trips, labelled Recent, each with Clear (with Undo). Remove one by swiping left or tapping and holding. Starred stops have their own group.

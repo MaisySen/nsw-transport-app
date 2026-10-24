@@ -116,3 +116,17 @@ Platforms: **Web** is the web app at https://nsw-transport-bot.sites.tab.bot. **
 | Delete my trip history on server (`POST /api/history/delete`, scope history), with a confirm sheet | Done | Planned | Planned |
 | Delete all my data (scope all: saved trips, commutes, watches, alerts, push sign up, shares, plus the app's storage), with a confirm sheet | Done | Planned | Planned |
 
+## Phase 7: Opal fare estimates (24 Oct 2026, web and server)
+
+Our Trip Planner API key returns no fare tickets (`journeys[].fare.tickets` is empty), so the server works out fares from the published Opal fare tables (read 24 Oct 2026). Nothing needs an Opal login or card.
+
+| Feature | Web | Android | iPhone |
+| --- | --- | --- | --- |
+| Fare per trip on every trip row (trip results, saved trips on Home) | Done | Planned | Planned |
+| Fare per leg in the trip details: distance, peak or off peak, transfer discount, airport station access fee, daily cap | Done | Planned | Planned |
+| Fare on the live trip screen and in Ask replies and Ask trip cards | Done | Ask: Done (server text). Cards: Planned | Ask: Done (server text). Cards: Planned |
+| Fare type setting: Adult (default), Child or Youth, Concession, Gold Senior or Pensioner | Done | Planned | Planned |
+| Peak nudge: "Off peak from 7pm, save $X" on trips, and on stop boards during peak | Done | Planned | Planned |
+| Labelled as an estimate, never the card charge | Done | Planned | Planned |
+| Opal card balance, top up, tap history | Skipped: needs an Opal login (Bidur's call) | | |
+

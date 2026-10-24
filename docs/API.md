@@ -12,6 +12,7 @@ All endpoints return JSON unless noted. Most read endpoints also take `format=te
 | `device` | The device id used for watches and push |
 | `lat`, `lon` | Location, when the client shares it |
 | `format=text` | Plain text answer instead of JSON |
+| `fare` | Fare type for Opal fare estimates on `/api/trip`, `/api/plan`, `/api/next` and `/api/ask`: `adult` (default), `child`, `concession` or `gold` |
 
 Errors: `400` for bad input with an `error` message, `403` for a wrong key, `404` for unknown routes or items, `405` for a wrong method, `502` with `kind: "error"` when Transport for NSW does not answer.
 
@@ -119,3 +120,23 @@ These need `key=TICK_KEY` or `key=ADMIN_KEY`. The keys are secrets (see [Securit
 | `/api/admin/commute` | ADMIN_KEY | Runs one commute now (`id`, `reset=1`, `leave=1`) |
 | `/api/admin/searches` | ADMIN_KEY | Adds or clears test searches for commute memory |
 | `/api/admin/profile-copy` | ADMIN_KEY | POST `{from, to}`: copies saved trips, trip legs, commutes, searches and dismissed suggestions from one profile to a new id of 20 to 40 characters. Device bound rows (push, watches, notes) stay with their device |
+
+## Opal fare estimates
+
+Every journey from `/api/trip`, `/api/plan` and `/api/next`, and every journey in an Ask trip card, carries `fare` for the requested `fare` type. Ask trip replies also end with a sentence like "Opal fare estimate $5.38 (Adult, peak). Off peak from 7pm, save $1.62." and the top level `fare` of the next journey.
+
+| Field | Meaning |
+| --- | --- |
+| `type`, `typeName` | `adult`, `child`, `concession` or `gold`, and its name |
+| `total` | The estimate in dollars, after transfer discounts and the daily cap, including any airport station access fee |
+| `peak` | True when any part is charged at the peak fare (Monday to Thursday 6:30am to 10am and 3pm to 7pm, not public holidays; ferries have no off peak) |
+| `offPeak` | `{from, save}` when the trip is in peak: when off peak starts (`10am` or `7pm`) and how much less it would be |
+| `transfer` | Total transfer discount ($2 Adult, $1 other types per change of mode within 60 minutes) |
+| `airportFee` | Airport station access fee included in `total` ($18.61 Adult, $16.64 other types; $5.20 between the two airport stations, $10.34 to Mascot, $12.74 to Green Square) |
+| `capped` | True when the daily cap was reached ($19.30 Adult Monday to Thursday, $9.65 Friday to Sunday; half for Child and Concession; $2.50 Gold) |
+| `unknown` | True when a leg is not an Opal fare (for example a coach); that leg has `amount: null` |
+| `legs` | One per transit leg, in order: `line`, `mode`, `km`, `peak`, `fare` (table fare), `transferOff`, `airportFee`, `amount` (what this leg adds), `joined` (true when it continues the previous journey: trains and metro, or the same mode within 60 minutes, are one fare on the total distance) |
+| `estimate` | Always true |
+
+Distances: train, metro and ferry along the route; bus and light rail in a straight line between where you board and get off. Child or Youth and Gold pay the concession per trip fares. Fares come from transportnsw.info and the Opal Fares open data (fare values from 29 June 2026), read 24 Oct 2026.
+
