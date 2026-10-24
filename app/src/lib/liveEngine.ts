@@ -3,7 +3,7 @@
 // carries out what stepLive returns: the ongoing notification, each trip alert once, the share link, and the end
 // of all trip alerts the moment you arrive. The live trip screen only reads its state.
 import { useEffect, useSyncExternalStore } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { api } from './api';
 import { clock, shortName } from './format';
@@ -69,6 +69,8 @@ export async function tickLive() {
     if (r.g !== g) setLive({ ...g, alerted: r.g.alerted, watchId: r.g.watchId, rode: r.g.rode, arrivedAt: r.g.arrivedAt });
     let buzzed = false;
     for (const a of r.actions) {
+      // The web preview logs every action, so a browser replay can check each alert and the end of the trip.
+      if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, at: now });
       if (a.t === 'alert') { liveAlert(a.title, a.body, a.id); if (!buzzed) { buzzed = true; Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); } }
       else if (a.t === 'ongoing') showOngoing(a.title, a.body, legColor(L[a.leg]));
       else if (a.t === 'clearOngoing') await clearOngoing();

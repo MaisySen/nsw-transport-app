@@ -4,6 +4,26 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 24 Oct 2026
 
+### Android app: cleaner screens, one way to do each job, buttons act on the first tap (over the air update, 10:33 PM, and 10:37 PM)
+* Four tabs: Home, Plan, Ask and More. Watching moved into More (with a count of what is being watched), and Settings is now the Settings section of More.
+* One place to plan: the Plan tab, with From and To (and a swap button) for a trip, or Departures for a stop. Home no longer has its own search field or + button, and the Search tab's separate Stops and Trip planner screens are one screen. Recent trips and recent stops show only in Plan, each with Clear.
+* Home: Your trips (with Add), Add home and Add work, starred stops and up to 3 nearby stops. Trip cards lost the colour stripe, the rainbow countdown, the crowding icons, the fare chip and the "To home" tag; each row is the countdown, departure and arrival, then status, platform and travel time.
+* Trip page: one Start trip button (Watch is gone; Start trip turns on the alerts). The Opal fare shows once, folded behind a tap, instead of a top card, a chip on every row and a line in the details. The Departs in and Travel time switch, the per row Lift out line, and the duplicate countdown and status inside each leg are gone. Walk only options are left out when there is a service, so the first trip that opens can always be started.
+* Live trip: the Show where I am and Get off alerts rows only show when location or notifications are off, the Opal estimate and the footer note are gone, and the current leg says Now instead of a second live dot. One Live tag.
+* Stop page: an alert shows once at the top instead of under every departure, the peak fare banner is gone, and the hint is one line.
+* More: Park and Ride and Opal top up machines (no longer also in Plan), commutes when you have some, Notifications, Accessible trips, Lift outage alerts, Opal fare type, Privacy and data, Help, Privacy policy, Web version and Version. The duplicate saved trips list and the WhatsApp text are gone.
+* Ask: suggestions come only from your own recent trips (and Last train home once home is set), and each answer row no longer repeats the fare.
+* Every main button was tapped once in a browser test and acted on the first tap: the four tabs, Opal fare, Later services, Include trips with a change, a service row, Start trip, Share trip, End trip, Save trip, star a stop, Watching and Opal fare type (`app/test/e2e/buttons.mjs`).
+* Live trip replay: the unit replay now also runs Burwood to Strathfield (one stop: on time, 3 min late, 1 min early) and Burwood to North Strathfield with a change at Strathfield, and a browser replay (`app/test/e2e/live-replay.mjs`) plans a real trip, taps Start trip and moves a fake clock to 15 minutes past arrival, logging every alert. Each alert fires once, You've arrived fires once, and nothing happens after the trip ends.
+* The web export can be built with `EXPO_PUBLIC_LOOK=android` to show the Android styling in a browser.
+
+### Android app: live trip ends at your stop, each alert once (same over the air update, 10:33 PM)
+* Fixed: the live trip could roll on to the next train after you arrived. The app only accepts the same run (planned time within 5 minutes, and never a vehicle behind your boarding stop once you have boarded), so it ends at your stop with one You've arrived and stops all alerts.
+* Each alert fires once per leg with a stable id, and "Arriving in 2 min" and "Next stop" for the same moment are one alert. When the server follows the trip (notifications on), it sends every alert and the one You've arrived and ends its watch at your stop; the phone posts none of its own, so nothing doubles. Without the server the phone sends them, each once.
+* One live trip engine runs on every screen, so the trip keeps updating and ends on time when you leave the trip screen.
+* No Lock screen button: the ongoing notification starts with the trip.
+* New replay test (`app/test/livereplay.test.mjs`): a two leg trip changing at Redfern to the T4 for Kings Cross, on time, delayed and early, to 15 minutes past arrival.
+
 ### iPhone app: trip screen buttons, one Start trip, journey replay (10:25 PM)
 * Fixed: on the trip screen the map link and Start trip could buzz and do nothing. Every link in the trip flow now opens by value (trip, map, planner), so each stack knows where it goes, and Start trip presents the live trip again even when an earlier one left it marked open.
 * Start trip and Watch trip were the same job: Watch trip is gone. Start trip asks for notifications once and also follows the trip on the server, so alerts arrive with the app closed. It ends at your stop.

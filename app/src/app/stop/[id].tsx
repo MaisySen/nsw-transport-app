@@ -7,7 +7,6 @@ import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius } from '@/lib/theme';
 import { ms, rowAlert, shortName } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
-import { peakNow } from '@/lib/fare';
 import { svcSpec, toggleWatch, tripKey } from '@/lib/watch';
 import { Icon, I } from '@/components/Icon';
 import { openService } from '@/components/Cards';
@@ -41,6 +40,10 @@ export default function StopScreen() {
     const t = setInterval(load, 120000);
     return () => { live = false; clearInterval(t); };
   }, [id]);
+  // The stop's alerts show once at the top; a row repeats an alert only when it is not already there.
+  const topAlerts = [...(data?.alerts || [])].sort((a, b) => (a.priority === 'low' ? 1 : 0) - (b.priority === 'low' ? 1 : 0)).slice(0, 2);
+  const topTitles = new Set(topAlerts.map((a) => a.title));
+  const rowNote = (d: any) => { const t = rowAlert(d.alerts, data?.alerts); return t && !topTitles.has(t) ? t : null; };
   const items = (data?.items || []).filter((d) => (!mode || d.mode === mode) && ms(d.realtime ? d.estimated : d.planned) > now - 60000);
 
   return (
@@ -56,7 +59,6 @@ export default function StopScreen() {
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 4 }}>
           <LiveStamp updatedAt={updatedAt} error={error} />
-          {data?.live?.total ? <T kind="foot" tone="text2">{data.live.liveCount} of {data.live.total} live</T> : null}
         </View>
 
         {modes.length > 1 ? (
@@ -66,18 +68,11 @@ export default function StopScreen() {
           </ScrollView>
         ) : null}
 
-        {peakNow(now) && (data?.items || []).some((d) => d.mode !== 'ferry') ? (
-          <View style={{ marginHorizontal: 16, marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <View style={{ backgroundColor: c.orange, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}><T kind="foot" style={{ color: '#fff', fontWeight: '700' }}>Peak</T></View>
-            <T kind="foot" tone="text2" style={{ flex: 1 }}>Off peak from {peakNow(now)}: 30 percent off train, metro, bus and light rail fares</T>
-          </View>
-        ) : null}
-
         {data?.alerts?.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 14, backgroundColor: c.card, borderRadius: radius, padding: 14, flexDirection: 'row', gap: 10 }}>
             <Icon name={I.warn} size={18} color={c.orange} />
             <View style={{ flex: 1 }}>
-              {[...data.alerts].sort((a, b) => (a.priority === 'low' ? 1 : 0) - (b.priority === 'low' ? 1 : 0)).slice(0, 2).map((a, i) => <T key={i} kind="sub" numberOfLines={3} style={{ marginTop: i ? 6 : 0 }}>{a.title}</T>)}
+              {topAlerts.map((a, i) => <T key={i} kind="sub" numberOfLines={3} style={{ marginTop: i ? 6 : 0 }}>{a.title}</T>)}
             </View>
           </View>
         ) : null}
@@ -89,7 +84,7 @@ export default function StopScreen() {
               return (
                 <View key={key + i}>
                   {i ? <Sep inset={82} /> : null}
-                  <DepartureRow d={d} now={now} alertText={rowAlert(d.alerts, data?.alerts)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), st.watchedTrips[key])} />
+                  <DepartureRow d={d} now={now} alertText={rowNote(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), st.watchedTrips[key])} />
                 </View>
               );
             })}
@@ -97,7 +92,7 @@ export default function StopScreen() {
         ) : null}
         {data && !items.length ? <Empty icon={I.clock} title="No more services" body="Nothing is due from here in the next few hours." /> : null}
         {!data && error ? <Empty icon={I.warn} title="Can't load this stop" body={error} /> : null}
-        {data ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>Swipe left on a service, or touch and hold, to get alerts for it. Green times are live from the vehicle. Grey times are the timetable.</T> : null}
+        {data ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>Touch and hold a service to watch it. Green times are live.</T> : null}
         <StationInfo st={station} />
       </Screen>
     </>

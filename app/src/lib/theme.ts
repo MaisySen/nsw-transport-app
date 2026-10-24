@@ -19,15 +19,18 @@ const md = {
 
 export type Palette = typeof ios.light;
 
+/** Android styling. The web export can be built with EXPO_PUBLIC_LOOK=android to preview it in a browser. */
+export const androidLook = Platform.OS === 'android' || (Platform.OS === 'web' && process.env.EXPO_PUBLIC_LOOK === 'android');
+
 export function usePalette(): Palette & { dark: boolean } {
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
-  const set = Platform.OS === 'android' ? md : ios;
+  const set = androidLook ? md : ios;
   return { ...(dark ? set.dark : set.light), dark };
 }
 
 export const isIOS = Platform.OS === 'ios';
-export const radius = Platform.select({ ios: 12, android: 16, default: 12 }) as number;
+export const radius = androidLook ? 16 : 12;
 
 // Brand colours for modes, used when the feed has no colour.
 export const modeColor: Record<string, string> = {

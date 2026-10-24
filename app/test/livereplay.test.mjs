@@ -36,7 +36,7 @@ const iso = (t) => new Date(t).toISOString();
 const T2 = { line: 'T2', mode: 'train', stops: [['Strathfield', -6], ['Burwood', -3], ['Ashfield', 0], ['Stanmore', 6], ['Newtown', 9], ['Redfern', 13], ['Central', 16]], mine: 2, off: 5 };
 const T4 = { line: 'T4', mode: 'train', stops: [['Wolli Creek', 12], ['Sydenham', 15], ['Redfern', 19], ['Central', 21], ['Town Hall', 23], ['Martin Place', 25], ['Kings Cross', 28], ['Edgecliff', 31], ['Bondi Junction', 34]], mine: 2, off: 6 };
 
-const legs = [
+const legsKX = [
   { mode: 'train', line: 'T2', tripId: 'T2.run1', stopId: 'ASH', toStopId: 'RDF', from: 'Ashfield Station', to: 'Redfern Station', planned: iso(at(0)), arrPlanned: iso(at(13)), fromPlatform: 'Platform 3', towards: 'Central Station' },
   { mode: 'train', line: 'T4', tripId: 'T4.run1', stopId: 'RDF4', toStopId: 'KXS', from: 'Redfern Station', to: 'Kings Cross Station', planned: iso(at(19)), arrPlanned: iso(at(28)), fromPlatform: 'Platform 9', towards: 'Bondi Junction Station' },
 ];
@@ -56,13 +56,30 @@ function feed(run, delay, t, { shift = 0, rollAfter = null } = {}) {
   return { kind: 'service', live: true, line: run.line, mode: run.mode, mineIndex: run.mine, alightIndex: run.off, nextIndex, stops };
 }
 
-function replay({ d1, d2, watchId = null, rollAfter = 1 }) {
+// Short trips Bidur picked to test on: Burwood to Strathfield (one stop), and one stop more with a change.
+const T1s = { line: 'T1', mode: 'train', stops: [['Croydon', -2], ['Burwood', 0], ['Strathfield', 3], ['Homebush', 5]], mine: 1, off: 2 };
+const T9s = { line: 'T9', mode: 'train', stops: [['Burwood', 3], ['Strathfield', 7], ['North Strathfield', 9]], mine: 1, off: 2 };
+const legBS = { mode: 'train', line: 'T1', tripId: 'T1.short', stopId: 'BWD', toStopId: 'STR', from: 'Burwood Station', to: 'Strathfield Station', planned: iso(at(0)), arrPlanned: iso(at(3)), fromPlatform: 'Platform 2', towards: 'Penrith Station' };
+const legSN = { mode: 'train', line: 'T9', tripId: 'T9.short', stopId: 'STR9', toStopId: 'NST', from: 'Strathfield Station', to: 'North Strathfield Station', planned: iso(at(7)), arrPlanned: iso(at(9)), fromPlatform: 'Platform 6', towards: 'Hornsby Station' };
+const SC = {
+  kx: { legs: legsKX, runs: [T2, T4], change: 'Redfern', final: 'Kings Cross', changeLeg: 1 },
+  bs: { legs: [legBS], runs: [T1s], change: null, final: 'Strathfield' },
+  bsn: { legs: [legBS, legSN], runs: [T1s, T9s], change: 'Strathfield', final: 'North Strathfield', changeLeg: 1 },
+};
+const offAt = (run, d) => at(run.stops[run.off][1]) + d * 60000;
+const depAt = (run, d) => at(run.stops[run.mine][1]) + d * 60000;
+
+function replay({ sc = 'kx', d1, d2 = 0, watchId = null, rollAfter = 1 }) {
+  const S = SC[sc];
+  const legs = S.legs;
+  const ds = [d1, d2];
   let g = { id: 'g1', legs, alerted: {}, watchId, share: null };
   const log = [];
   let ended = null;
-  for (let t = at(-5); t <= at(28 + d2 + 15); t += 15000) {
+  const endT = offAt(S.runs[S.runs.length - 1], ds[S.runs.length - 1]) + 15 * 60000;
+  for (let t = at(-5); t <= endT; t += 15000) {
     if (ended) { log.push({ time: t, after: true }); continue; }
-    const svc = [feed(T2, d1, t, { rollAfter }), feed(T4, d2, t, { rollAfter })];
+    const svc = S.runs.map((run, i) => feed(run, ds[i], t, { rollAfter }));
     const r = live.stepLive(g, svc, t, fmt);
     g = r.g;
     for (const a of r.actions) {
@@ -87,42 +104,55 @@ function timeline(name, log) {
   return lines;
 }
 
-function checks(name, { log, ended }, { d1, d2, server }) {
+function checks(name, { log, ended }, { sc = 'kx', d1, d2 = 0, server }) {
+  const S = SC[sc];
+  const ds = [d1, d2];
+  const lastRun = S.runs[S.runs.length - 1], dl = ds[S.runs.length - 1];
   const alerts = log.filter((e) => e.t === 'alert');
   // Each alert once, with a unique and stable id.
   const ids = alerts.map((a) => a.id);
   assert.equal(new Set(ids).size, ids.length, `${name}: an alert fired twice: ${ids.join(', ')}`);
+  const kx = offAt(lastRun, dl);
+  // Arrival: the ongoing notification is cleared once, on the first refresh after the train reaches the stop, never before.
+  const clear = log.filter((e) => e.t === 'clearOngoing');
+  assert.equal(clear.length, 1, `${name}: ongoing notification cleared once`);
+  const arrT = clear[0].time;
+  assert.ok(arrT >= kx && arrT <= kx + 60000, `${name}: arrived at ${format.clockSec(arrT)}, train in at ${format.clockSec(kx)}`);
   const arrived = alerts.filter((a) => a.key === 'arrived');
-  assert.equal(arrived.length, 1, `${name}: one You've arrived`);
-  const kx = at(28) + d2 * 60000;
-  // Arrival is noticed on the first refresh after the train reaches Kings Cross, never before.
-  assert.ok(arrived[0].time >= kx && arrived[0].time <= kx + 60000, `${name}: arrived at ${format.clockSec(arrived[0].time)}, train in at ${format.clockSec(kx)}`);
-  assert.match(arrived[0].body, new RegExp(`^Kings Cross at ${format.clock(kx).replace('.', '\\.')}`), `${name}: arrival time in the alert matches the feed`);
+  if (!server) {
+    assert.equal(arrived.length, 1, `${name}: one You've arrived`);
+    assert.equal(arrived[0].time, arrT, `${name}: You've arrived at arrival`);
+    assert.ok(arrived[0].body.startsWith(`${S.final} at ${format.clock(kx)}`), `${name}: arrival time in the alert matches the feed: ${arrived[0].body}`);
+  }
   if (server) {
-    assert.deepEqual(alerts.map((a) => a.key), ['arrived'], `${name}: with the server watching, the phone only adds You've arrived`);
+    // The server sends every alert for a trip it watches, You've arrived included, and ends its watch at the stop.
+    assert.deepEqual(alerts.map((a) => a.key), [], `${name}: with the server watching, the phone posts no alert of its own`);
+    assert.equal(log.filter((e) => e.t === 'stopWatch').length, 0, `${name}: the server watch is left to end itself at the stop`);
   } else {
-    const off0 = alerts.find((a) => a.key === 'off0'), off1 = alerts.find((a) => a.key === 'off1');
-    assert.ok(off0 && /^Next stop: Redfern, change here/.test(off0.title), `${name}: change alert`);
-    const rd = at(13) + d1 * 60000;
-    assert.ok(off0.time < rd, `${name}: change alert before Redfern`);
-    assert.ok(off0.body.includes(format.clock(at(19) + d2 * 60000)), `${name}: change alert names the T4 live time`);
-    assert.ok(off1 && /^Next stop: Kings Cross$/.test(off1.title), `${name}: get off alert`);
-    assert.ok(off1.time < kx, `${name}: get off alert before Kings Cross`);
-    assert.ok(off1.body.includes(format.clock(kx)), `${name}: get off alert has the live arrival`);
+    const lastI = S.runs.length - 1;
+    if (S.change) {
+      const off0 = alerts.find((a) => a.key === 'off0');
+      assert.ok(off0 && off0.title === `Next stop: ${S.change}, change here`, `${name}: change alert`);
+      assert.ok(off0.time < offAt(S.runs[0], d1), `${name}: change alert before ${S.change}`);
+      assert.ok(off0.body.includes(format.clock(depAt(S.runs[1], d2))), `${name}: change alert names the next train's live time`);
+    }
+    const offL = alerts.find((a) => a.key === 'off' + lastI);
+    assert.ok(offL && offL.title === `Next stop: ${S.final}`, `${name}: get off alert`);
+    assert.ok(offL.time < kx, `${name}: get off alert before ${S.final}`);
+    assert.ok(offL.body.includes(format.clock(kx)), `${name}: get off alert has the live arrival`);
+    assert.equal(alerts.filter((a) => a.key.startsWith('off')).length, S.runs.length, `${name}: one stop alert per leg`);
   }
   // The ongoing notification always shows the same arrival as the feed, and stops at arrival.
   const ongoing = log.filter((e) => e.t === 'ongoing');
+  const lastI0 = S.runs.length - 1;
   for (const o of ongoing) {
     assert.ok(o.time < kx + 60000, `${name}: ongoing notification after arrival at ${format.clockSec(o.time)}`);
     assert.ok(o.body.includes(`Arrive ${format.clock(kx)}`), `${name}: ongoing says ${o.body}, train in ${format.clock(kx)}`);
-    assert.ok(!/Board the T4/.test(o.body) || o.time < at(19) + d2 * 60000 + 60000, `${name}: rolled onto another T4: ${o.body}`);
+    assert.ok(!(o.leg === lastI0 && /Board the|Change to the/.test(o.body)) || o.time < depAt(lastRun, dl) + 60000, `${name}: rolled onto another train: ${o.body}`);
   }
-  const clear = log.filter((e) => e.t === 'clearOngoing');
-  assert.equal(clear.length, 1, `${name}: ongoing notification cleared once`);
-  assert.equal(clear[0].time, arrived[0].time, `${name}: cleared at arrival`);
   // Ends 10 minutes after arrival, then nothing at all.
-  assert.ok(ended && ended >= arrived[0].time + 10 * 60000 && ended <= arrived[0].time + 10 * 60000 + 15000, `${name}: trip record ends 10 min after arrival`);
-  const afterArrive = log.filter((e) => !e.after && e.time > arrived[0].time);
+  assert.ok(ended && ended >= arrT + 10 * 60000 && ended <= arrT + 10 * 60000 + 15000, `${name}: trip record ends 10 min after arrival`);
+  const afterArrive = log.filter((e) => !e.after && e.time > arrT);
   assert.deepEqual(afterArrive.map((e) => e.t), ['end'], `${name}: only the end after arrival, saw ${afterArrive.map((e) => format.clockSec(e.time) + ' ' + e.t).join(', ')}`);
   assert.equal(afterArrive[0].time, ended);
 }
@@ -147,9 +177,24 @@ for (const c of cases) {
     const r = replay({ ...c, watchId: 'w1' });
     timeline(`${c.name}, server watching`, r.log);
     checks(c.name + ' (server)', r, { ...c, server: true });
-    const stop = r.log.filter((e) => e.t === 'stopWatch');
-    assert.equal(stop.length, 1, 'server alerts stopped once');
-    assert.equal(stop[0].id, 'w1');
+  });
+}
+
+const shortTrips = [
+  { name: 'Burwood to Strathfield, one stop, on time', sc: 'bs', d1: 0 },
+  { name: 'Burwood to Strathfield, one stop, 3 min late', sc: 'bs', d1: 3 },
+  { name: 'Burwood to Strathfield, one stop, 1 min early', sc: 'bs', d1: -1 },
+  { name: 'Burwood to North Strathfield, change at Strathfield', sc: 'bsn', d1: 0, d2: 0 },
+  { name: 'Burwood to North Strathfield, change at Strathfield, T1 2 min late', sc: 'bsn', d1: 2, d2: 0 },
+];
+for (const c of shortTrips) {
+  test(`replay, short trip: ${c.name}`, () => {
+    const r = replay(c);
+    timeline(`${c.name}, phone alerts`, r.log);
+    checks(c.name, r, { ...c, server: false });
+    const rs = replay({ ...c, watchId: 'w2' });
+    timeline(`${c.name}, server watching`, rs.log);
+    checks(c.name + ' (server)', rs, { ...c, server: true });
   });
 }
 
@@ -159,7 +204,7 @@ test('replay: the feed rolls onto the next T4 the moment you arrive, the trip st
 });
 
 test('a later feed for the next service is not your train', () => {
-  const l = legs[1];
+  const l = legsKX[1];
   const ridden = feed(T4, 0, at(24));
   const next = feed(T4, 0, at(24), { shift: 15 });
   assert.equal(live.sameRun(ridden, l, true), true);

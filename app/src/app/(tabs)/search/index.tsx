@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import * as Location from 'expo-location';
+import * as Haptics from 'expo-haptics';
 import { api } from '@/lib/api';
 import { usePalette, radius } from '@/lib/theme';
 import { MODE_BY_CODE, shortName } from '@/lib/format';
@@ -9,6 +9,9 @@ import { store, useStore } from '@/lib/store';
 import type { Place, SearchItem } from '@/lib/types';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { Row, Screen, Section, Sep, T, font } from '@/components/ui';
+
+// Plan: the one place to search. Plan a trip from A to B, or look up a stop for its departures.
+// Recent trips and recent stops live here (and only here), each with Clear.
 
 type Field = 'stop' | 'from' | 'to';
 
@@ -42,18 +45,16 @@ function Field({ label, value, placeholder, active, onFocus, onChange, inputRef,
 export default function Search() {
   const c = usePalette();
   const st = useStore();
-  const [mode, setMode] = useState<'stop' | 'trip'>('stop');
-  const [field, setField] = useState<Field>('stop');
+  const [mode, setMode] = useState<'trip' | 'stop'>('trip');
+  const [field, setField] = useState<Field>('from');
   const [q, setQ] = useState('');
   const [from, setFrom] = useState<Place | null>(null);
   const [to, setTo] = useState<Place | null>(null);
   const [fromText, setFromText] = useState('');
   const [toText, setToText] = useState('');
-  const [nearby, setNearby] = useState<(SearchItem & { distance?: number })[] | null>(null);
-  const [locBusy, setLocBusy] = useState(false);
   const toRef = useRef<any>(null);
   const stopRef = useRef<any>(null);
-  // Home's search field opens this tab with focus=<nonce>: switch to stops and focus the field.
+  // Links can open this tab on stops with focus=<nonce>.
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   useEffect(() => {
     if (!focus) return;
@@ -83,45 +84,49 @@ export default function Search() {
     Keyboard.dismiss();
     router.push({ pathname: '/trip', params: { from: a.id, fromName: a.name, to: b.id, toName: b.name } });
   };
-  const findNearby = async () => {
-    setLocBusy(true);
-    try {
-      const p = await Location.requestForegroundPermissionsAsync();
-      if (!p.granted) { Alert.alert('Location is off', 'Allow location for Transport in Settings to see stops near you.'); return; }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const r: any = await api.nearby(pos.coords.latitude, pos.coords.longitude);
-      setNearby(r.stops || []);
-    } catch (e: any) { Alert.alert("Couldn't find you", String(e?.message || e)); }
-    finally { setLocBusy(false); }
-  };
+  const clearTrips = () => { store.clearRecentTrips(); Haptics.selectionAsync(); };
+  const removeTrip = (r: { from: Place; to: Place }, label: string) => Alert.alert(label, undefined, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Remove from Recent', style: 'destructive', onPress: () => store.removeRecentTrip(r.from.id, r.to.id) },
+  ]);
+  const removeStop = (p: Place) => Alert.alert(shortName(p.name), undefined, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Remove from Recent', style: 'destructive', onPress: () => store.removeRecent(p.id) },
+  ]);
 
   const list = text.trim().length >= 2 ? items : [];
+  const recentTrips = (st.recentTrips || []).slice(0, 6);
+  const recentStops = (st.recents || []).slice(0, 6);
+  const tripLabel = (r: { from: Place; to: Place }) => `${shortName(r.from.name).replace(/ Station$/, '')} to ${shortName(r.to.name).replace(/ Station$/, '')}`;
   return (
     <>
-      <Stack.Screen options={{ title: 'Search' }} />
+      <Stack.Screen options={{ title: 'Plan' }} />
       <Screen>
-        <View style={[s.seg, { backgroundColor: c.fill }]}>
-          {(['stop', 'trip'] as const).map((m) => (
-            <Pressable key={m} onPress={() => { setMode(m); setField(m === 'stop' ? 'stop' : from ? 'to' : 'from'); }} style={[s.segBtn, mode === m && { backgroundColor: c.dark ? c.card2 : '#fff', shadowOpacity: 0.12 }]}>
-              <T kind="sub" style={{ fontWeight: '600' }}>{m === 'stop' ? 'Stops' : 'Trip planner'}</T>
+        <View style={[s.seg, { backgroundColor: c.fill }]} accessibilityRole="tablist">
+          {(['trip', 'stop'] as const).map((m) => (
+            <Pressable key={m} accessibilityRole="tab" accessibilityState={{ selected: mode === m }}
+              onPress={() => { setMode(m); setField(m === 'stop' ? 'stop' : from ? 'to' : 'from'); }}
+              style={[s.segBtn, mode === m && { backgroundColor: c.card, shadowOpacity: 0.12 }]}>
+              <T kind="sub" style={{ fontWeight: '600', color: mode === m ? c.text : c.text2 }}>{m === 'stop' ? 'Departures' : 'Trip'}</T>
             </Pressable>
           ))}
         </View>
 
-        <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
+        <View style={{ marginHorizontal: 16, marginTop: 14, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
           {mode === 'stop' ? (
             <View style={[s.field, { borderColor: 'transparent' }]}>
               <Icon name={I.search} size={17} color={c.text2} style={{ marginRight: 8 }} />
               <TextInput ref={stopRef} value={q} onChangeText={setQ} placeholder="Stop, station or stop number" placeholderTextColor={c.text3} autoCorrect={false}
+                accessibilityLabel="Stop, station or stop number"
                 style={[font.body, { flex: 1, color: c.text, paddingVertical: Platform.OS === 'android' ? 6 : 10 }]} clearButtonMode="while-editing" returnKeyType="search" />
               {loading ? <ActivityIndicator size="small" /> : null}
             </View>
           ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <View style={{ flex: 1 }}>
-                <Field label="From" value={fromText} placeholder="Where from" active={field === 'from'} onFocus={() => setField('from')} onChange={(t: string) => { setFromText(t); setFrom(null); }} onClear={() => { setFromText(''); setFrom(null); }} />
+                <Field label="From" value={fromText} placeholder="Where from" active={field === 'from'} onFocus={() => setField('from')} onChange={(t: string) => { setFromText(t); setFrom(null); }} onClear={() => { setFromText(''); setFrom(null); setField('from'); }} />
                 <Sep inset={60} />
-                <Field label="To" value={toText} placeholder="Where to" inputRef={toRef} active={field === 'to'} onFocus={() => setField('to')} onChange={(t: string) => { setToText(t); setTo(null); }} onClear={() => { setToText(''); setTo(null); }} />
+                <Field label="To" value={toText} placeholder="Where to" inputRef={toRef} active={field === 'to'} onFocus={() => setField('to')} onChange={(t: string) => { setToText(t); setTo(null); }} onClear={() => { setToText(''); setTo(null); setField('to'); }} />
               </View>
               <Pressable accessibilityRole="button" accessibilityLabel="Swap From and To" hitSlop={8} style={{ padding: 14 }} onPress={() => { setFrom(to); setTo(from); setFromText(toText); setToText(fromText); if (from && to) go(to, from); }}>
                 <Icon name={I.swap} size={20} color={c.tint} />
@@ -144,49 +149,35 @@ export default function Search() {
           </Section>
         ) : null}
 
-        {!list.length ? (
-          <>
-            <Section>
-              <Row icon={I.location} iconBg={c.tint} title="Stops near me" onPress={findNearby} right={locBusy ? <ActivityIndicator size="small" /> : undefined} />
-              <Sep inset={57} />
-              <Row icon={I.car} iconBg="#0A84FF" title="Park and Ride" subtitle="Live spaces at station car parks" onPress={() => router.push('/parking')} />
-              <Sep inset={57} />
-              <Row icon={I.fare} iconBg={c.indigo} title="Opal top up machines" subtitle="Closest machines, and which take cash" onPress={() => router.push('/topup')} />
-            </Section>
-            {nearby?.length ? (
-              <Section title="Near you">
-                {nearby.slice(0, 8).map((it, i) => (
-                  <View key={it.id}>
-                    {i ? <Sep inset={57} /> : null}
-                    <Row icon={I.pin} iconBg={c.text2} title={shortName(it.name)} subtitle={it.distance != null ? `${Math.round(it.distance)} m` : undefined} onPress={() => pick(it)} />
-                  </View>
-                ))}
-              </Section>
-            ) : null}
-            {st.starred.length ? (
-              <Section title="Starred">
-                {st.starred.map((it, i) => (
-                  <View key={it.id}>
-                    {i ? <Sep inset={57} /> : null}
-                    <Row icon={I.star} iconBg={c.yellow} title={shortName(it.name)} onPress={() => pick(it)} />
-                  </View>
-                ))}
-              </Section>
-            ) : null}
-            {st.recents.length ? (
-              <Section title="Recent" right={<Pressable onPress={store.clearRecents}><T kind="foot" tone="tint">Clear</T></Pressable>}>
-                {st.recents.map((it, i) => (
-                  <View key={it.id}>
-                    {i ? <Sep inset={57} /> : null}
-                    <Row icon={I.clock} iconBg={c.text3} title={shortName(it.name)} onPress={() => pick(it)} />
-                  </View>
-                ))}
-              </Section>
-            ) : null}
-            <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 16 }}>
-              {mode === 'stop' ? 'Try Central, Strathfield, or a stop number like 213516.' : 'Pick where from and where to. Trips show live leave in times and every change.'}
-            </T>
-          </>
+        {!list.length && mode === 'trip' && recentTrips.length ? (
+          <Section title="Recent trips" right={<Pressable onPress={clearTrips} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear recent trips"><T kind="foot" tone="tint" style={{ fontWeight: '600' }}>Clear</T></Pressable>}>
+            {recentTrips.map((r, i) => {
+              const label = tripLabel(r);
+              return (
+                <View key={`${r.from.id}>${r.to.id}`}>
+                  {i ? <Sep inset={57} /> : null}
+                  <Row icon={I.history} iconBg={c.text3} title={label} onPress={() => go(r.from, r.to)} onLongPress={() => removeTrip(r, label)} />
+                </View>
+              );
+            })}
+          </Section>
+        ) : null}
+
+        {!list.length && mode === 'stop' && recentStops.length ? (
+          <Section title="Recent stops" right={<Pressable onPress={() => { store.clearRecents(); Haptics.selectionAsync(); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear recent stops"><T kind="foot" tone="tint" style={{ fontWeight: '600' }}>Clear</T></Pressable>}>
+            {recentStops.map((it, i) => (
+              <View key={it.id}>
+                {i ? <Sep inset={57} /> : null}
+                <Row icon={I.clock} iconBg={c.text3} title={shortName(it.name)} onPress={() => pick(it)} onLongPress={() => removeStop(it)} />
+              </View>
+            ))}
+          </Section>
+        ) : null}
+
+        {!list.length && ((mode === 'trip' && !recentTrips.length) || (mode === 'stop' && !recentStops.length)) ? (
+          <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 18 }}>
+            {mode === 'stop' ? 'Try Central, Strathfield, or a stop number like 213516.' : 'Pick where from and where to. Trips show live times and every change.'}
+          </T>
         ) : null}
       </Screen>
     </>
@@ -194,7 +185,7 @@ export default function Search() {
 }
 
 const s = StyleSheet.create({
-  seg: { flexDirection: 'row', marginHorizontal: 16, marginTop: 8, borderRadius: 9, padding: 2 },
-  segBtn: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 7, shadowColor: '#000', shadowOpacity: 0, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
-  field: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 48, borderLeftWidth: 0 },
+  seg: { flexDirection: 'row', marginHorizontal: 16, marginTop: 8, borderRadius: 12, padding: 3 },
+  segBtn: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 9, shadowColor: '#000', shadowOpacity: 0, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
+  field: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52, borderLeftWidth: 0 },
 });

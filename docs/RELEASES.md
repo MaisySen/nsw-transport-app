@@ -1,6 +1,6 @@
 # Releases
 
-Every shipped build and update. Times are Sydney time (AEDT). Updated 24 Oct 2026, 8:30 PM.
+Every shipped build and update. Times are Sydney time (AEDT). Updated 24 Oct 2026, 10:40 PM.
 
 ## iPhone (native SwiftUI)
 
@@ -44,10 +44,30 @@ The download page serves versionCode 5. Every JavaScript change since then reach
 
 ## Over the air updates (EAS Update)
 
-Project `cf1f4c4c-5157-41bf-a254-4480223f6368`, owner `bidurtab`. `production` is the Android APK (runtime 1.0.0). `expo-go` is the iPhone preview in Expo Go (runtime exposdk:58.0.0). Newest first.
+Project `cf1f4c4c-5157-41bf-a254-4480223f6368`, owner `bidurtab`. Runtime version 1.0.0 for every Android build, so every installed APK and AAB takes JavaScript updates without a new build. Only a native change (a new module, a permission, widget code, app.json native fields) needs a new versionCode, and then the runtime version goes up with it.
+
+Channels and branches (each channel reads the branch of the same name):
+
+| Channel | Branch | Who gets it |
+| --- | --- | --- |
+| `production` | `production` | Every Android build so far (versionCode 2 to 5; checked in the versionCode 5 AAB manifest: channel `production`, runtime 1.0.0). eas.json profile `production` |
+| `preview` | `preview` | Builds from eas.json profile `preview` (internal APK). No installed build reads it yet, so a preview update is checked by its manifest and the web export before it is promoted |
+| `expo-go` | `expo-go` | The iPhone preview in Expo Go (runtime exposdk:58.0.0) |
+
+How to ship a JavaScript change (from the app folder, `EXPO_TOKEN` set):
+
+1. `npx tsc --noEmit` and `OFFLINE=1 node --test test/*.test.mjs` pass, and the browser checks in [app/test/e2e](../app/test/e2e/README.md) pass on the web export.
+2. Publish to preview: `npx eas-cli update --branch preview --environment production --platform android --message "..." --non-interactive`.
+3. Test it: on a preview build, open the app twice (it downloads on the first open and runs on the next), or fetch its manifest with the headers `expo-channel-name: preview`, `expo-runtime-version: 1.0.0`, `expo-platform: android` from `https://u.expo.dev/cf1f4c4c-5157-41bf-a254-4480223f6368`.
+4. Promote the same bundle to everyone: `npx eas-cli update:republish --group <preview group id> --destination-branch production --message "..." --non-interactive`. Installed apps get it on their next launch, and run it on the launch after.
+5. Undo: `npx eas-cli update:republish --group <previous production group id> --destination-branch production`, or `npx eas-cli update:roll-back-to-embedded --branch production --runtime-version 1.0.0`.
+
+Newest first.
 
 | Time (about) | Update | production group | expo-go group |
 | --- | --- | --- | --- |
+| 24 Oct, 10:37 PM | With notifications on, the server follows the trip and sends every alert and the one You've arrived, and the phone posts none of its own (the server now ends its watch at your stop, commit 2a3225b), so nothing doubles. Same screens as 10:33 PM. Preview first (update 01a16db2-ea28-7dc3-94ba-8540e6a92427, group d7c796ae-674b-497c-8c0b-f05b09b97947), manifest checked, then republished to production. Commit f396c09. Update id: production 01a16db3-1586-7aef-a02a-29c69f9633f8 | fbb8d29e-117d-407c-bee3-a27d9bc389c1 | not published (iPhone uses the native app) |
+| 24 Oct, 10:33 PM | Live trip ends at your stop with one You've arrived and never rolls on to the next train; each alert once with stable ids; no Lock screen button. Cleaner screens: Home, Plan, Ask and More tabs, one Plan screen, one Start trip button, fare shown once, stop alerts once, live trip without setup rows. Published to `preview` first (update 01a16daf-d2b9-7517-be3c-4873190ec543, group f2d49e91-7387-478a-9706-395b6b73a809), manifest checked (runtime 1.0.0, bundle hash matches the export), then republished to `production`. Commits 7e7397d and f396c09. Update id: production 01a16db0-5216-747a-a562-83f4e3bcb408 | 716bb629-4ac9-47a8-a632-c6056f7b2c4a | not published (iPhone uses the native app) |
 | 24 Oct, 4:29 PM | Park and Ride live spaces with Nearly full alerts (station screen, trips from a Park and Ride station, Park and Ride list in Search); station access, lifts and live lift outages on station screens; step free and lift out marks on trip legs; Settings > Accessibility (Accessible trips sends acc=1, Lift outage alerts); Opal machine finder with a Takes cash filter; Ask parking and station cards; the Commute menu in Settings is a bottom sheet so all 5 actions show on Android. Commit 5eb62a5. Update ids: production 01a16c61-a7e2-7fa2-917b-ce685cbec033, expo-go 01a16c62-8dd2-7ff7-a98a-03f253205988 | d3be033e-c835-4084-a635-78c16cdc6664 | 11d4ee34-d711-4e8d-b80b-1ec7b82e5a8a |
 | 24 Oct, 4:00 PM | Live trip tracking (Start trip, live map, next stop, countdown, stops left, get off and connection alerts, Share trip, ongoing notification with Share and End trip, Trip in progress bar); Opal fare estimates with a fare type setting; no hard coded stations; Recent trips and stops with Clear and Undo; saved trip Edit and Delete; Clear history and Delete all my data. Commits db1f3aa and the Edit trip fix after it. Update ids: production 01a16c46-b2d9-72bc-9251-2e1907293f77, expo-go 01a16c47-41a7-7fc3-8c8e-aeb2b447c653 | 644d626e-54bd-4927-ba1a-41b86f7a5a79 (republished over 646ed232-d5ba-4c93-95f7-5d1084bb4ca6 from 3:54 PM) | 874c3185-364f-4120-baf9-bea6dd4b673e (over f933e5e8-d6b1-42c8-9ea5-9b9282a9d234) |
 | 24 Oct, 2:55 PM | Published with Android versionCode 5: the current JavaScript, including random install ids and the private profile page | ae1ab30a-fffe-413a-b3eb-054dc99ed2da | c2641a5f-66e8-4ad2-9fb0-a93797177115 |

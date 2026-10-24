@@ -9,12 +9,10 @@ import { modeColor, radius, usePalette } from '@/lib/theme';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
 import type { Departure, Journey, Leg, Place } from '@/lib/types';
 import { store, tripKeyOf } from '@/lib/store';
-import { fareOf, money } from '@/lib/fare';
-import { directFilter, isChain, planTrip, stName, tLegs, tripKey, viaText } from '@/lib/trips';
+import { directFilter, isChain, planTrip, tLegs, tripKey, viaText } from '@/lib/trips';
 import type { TripLeg } from '@/lib/trips';
 import { Icon, I, IconName } from './Icon';
-import { OutageLine } from './Access';
-import { journeyOutages, safeUrl } from '@/lib/access';
+import { safeUrl } from '@/lib/access';
 import { openService } from './Cards';
 import { LineBadge } from './Transit';
 import { font, Sep, T } from './ui';
@@ -122,15 +120,22 @@ const distText = (m?: number) => (m == null || !Number.isFinite(m) ? '' : m < 10
 
 // ---------- section header and simple rows ----------
 
-export function HomeSection({ title, children, onClear, footer }: { title: string; children: React.ReactNode; onClear?: () => void; footer?: string }) {
+export function HomeSection({ title, children, onClear, footer, action }: { title: string; children: React.ReactNode; onClear?: () => void; footer?: string; action?: { title: string; label?: string; onPress: () => void } }) {
   const c = usePalette();
   return (
-    <View style={{ marginTop: 24 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginBottom: 2 }}>
-        <Text accessibilityRole="header" maxFontSizeMultiplier={1.4} style={[font.title3, { fontWeight: '700', color: c.text, flex: 1 }]}>{title}</Text>
+    <View style={{ marginTop: 28 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginBottom: 4, minHeight: 32 }}>
+        <Text accessibilityRole="header" maxFontSizeMultiplier={1.4} style={[font.headline, { fontWeight: '700', color: c.text, flex: 1 }]}>{title}</Text>
         {onClear ? (
           <Pressable onPress={onClear} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Clear ${title}`}>
-            <T kind="body" tone="tint">Clear</T>
+            <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Clear</T>
+          </Pressable>
+        ) : null}
+        {action ? (
+          <Pressable onPress={action.onPress} hitSlop={10} accessibilityRole="button" accessibilityLabel={action.label || action.title}
+            style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, height: 32, borderRadius: 16, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>
+            <Icon name={I.plus} size={14} color={c.tint} />
+            <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>{action.title}</T>
           </Pressable>
         ) : null}
       </View>
@@ -224,7 +229,7 @@ export function WarnLine({ j }: { j: Journey }) {
   if (!j.warn) return null;
   const bad = j.risk === 'miss' || !!j.anyCancelled;
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, paddingLeft: 82, paddingRight: 16, paddingBottom: 10, marginTop: -4 }} accessibilityRole="text">
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, paddingLeft: 86, paddingRight: 16, paddingBottom: 12, marginTop: -6 }} accessibilityRole="text">
       <Icon name={I.warn} size={13} color={bad ? c.red : c.orange} style={{ marginTop: 2 }} />
       <T kind="foot" style={{ color: bad ? c.red : c.lateText, flex: 1, fontWeight: '500' }}>{j.warn}</T>
     </View>
@@ -319,14 +324,12 @@ export function TripBoard({ trip, now, handle, allServices }: { trip: TripItem; 
   }, [highKey, trip.key]);
   useEffect(() => () => reportHigh(trip.key, []), [trip.key]);
 
-  const stripe = (() => { const l = js.map(firstLeg).find(Boolean); return l ? l.color || modeColor[l.mode || 'train'] : c.tint; })();
 
   return (
     <Card>
       <View style={{ flexDirection: 'row' }}>
-        <View style={{ width: 4, backgroundColor: stripe }} />
         <View style={{ flex: 1 }}>
-          <CardHeader title={custom ? `${custom}: ${route}` : route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint} right={trip.tag} onPress={() => open()} onLongPress={menu} trailing={handle}
+          <CardHeader title={custom ? `${custom}: ${route}` : route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint} onPress={() => open()} onLongPress={menu} trailing={handle}
             sub={alerts.size || viaLine ? (
               <View>
                 {viaLine ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{viaLine}</T> : null}
@@ -347,23 +350,9 @@ export function TripBoard({ trip, now, handle, allServices }: { trip: TripItem; 
           <Sep inset={0} />
           <ServiceRow j={j} now={now} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => open(i)} />
           <WarnLine j={j} />
-          <OutageLine outages={journeyOutages(j)} />
         </View>
       ))}
     </Card>
-  );
-}
-
-/** Up to 3 small person icons from the first leg's occupancy level. */
-function Crowd({ l }: { l?: Leg }) {
-  const c = usePalette();
-  const lv = (l?.occupancy as any)?.level;
-  if (!lv) return null;
-  const n = Math.max(1, Math.min(3, Number(lv) || 1));
-  return (
-    <View style={{ flexDirection: 'row', marginRight: 4 }} accessibilityLabel={(l?.occupancy as any)?.text || `${n} of 3 full`}>
-      {[1, 2, 3].map((i) => <Icon key={i} name={I.person} size={10} color={i <= n ? c.text2 : c.text3} style={{ opacity: i <= n ? 1 : 0.45, marginLeft: -1 }} />)}
-    </View>
   );
 }
 
@@ -374,7 +363,6 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
   const dep = depOf(j);
   const stt = statusOf(j, now);
   const t = showTravel ? { big: String(j.durationMin), unit: 'min' } : cd(dep, now);
-  const tone = stt.tone === 'live' ? c.green : stt.tone === 'late' ? c.orange : stt.tone === 'red' ? c.red : c.text3;
   const toneText = stt.tone === 'live' ? c.liveText : stt.tone === 'late' ? c.lateText : stt.tone === 'red' ? c.red : c.text2;
   const legs = j.legs.filter((x) => x.kind === 'transit');
   const last = legs[legs.length - 1];
@@ -383,39 +371,26 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
   const badges: Leg[] = [];
   for (const x of legs) if (x.line && !badges.some((b) => b.line === x.line)) badges.push(x);
   const changes = j.changes || Math.max(0, legs.length - 1);
-  const boardAt = [shortName(l?.from || '').replace(/ Station$/, ''), plat(l?.fromPlatform)].filter(Boolean).join(', ');
+  const boardAt = plat(l?.fromPlatform);
   const bigSize = t.unit ? 22 : t.big === 'Now' ? 16 : 13;
   return (
-    <Pressable onPress={onPress} android_ripple={{ color: c.fill }} accessibilityLabel={`Leaves ${hm(dep)}, ${t.big} ${t.unit}, arrives ${hm(arrive)}, ${stt.text}`}
+    <Pressable onPress={onPress} android_ripple={{ color: c.fill }} accessibilityLabel={`Leaves ${hm(dep)}${boardAt ? ` from ${boardAt}` : ''}, ${t.big} ${t.unit}, arrives ${hm(arrive)}, ${stt.text}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}`}
       style={({ pressed }) => [s.svc, (beaten || dep < now - 30000) && { opacity: 0.45 }, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
-      <View style={[s.block, { backgroundColor: chip }]}>
-        <Text maxFontSizeMultiplier={1.3} style={{ color: '#fff', fontSize: bigSize, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }} numberOfLines={1} adjustsFontSizeToFit>{t.big}</Text>
-        {t.unit ? <Text maxFontSizeMultiplier={1.3} style={{ color: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: '600', marginTop: -2 }}>{t.unit}</Text> : null}
+      <View style={[s.block, { backgroundColor: chip + (c.dark ? '33' : '1F') }]}>
+        <Text maxFontSizeMultiplier={1.3} style={{ color: chip, fontSize: bigSize, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }} numberOfLines={1} adjustsFontSizeToFit>{t.big}</Text>
+        {t.unit ? <Text maxFontSizeMultiplier={1.3} style={{ color: chip, fontSize: 11, fontWeight: '600', marginTop: -2 }}>{t.unit}</Text> : null}
       </View>
-      <View style={{ flex: 1, minWidth: 0, marginLeft: 12 }}>
-        <T kind="foot" tone="text2" numberOfLines={1}>{boardAt}</T>
-        <Text maxFontSizeMultiplier={1.4} style={[font.title3, { color: c.text, fontVariant: ['tabular-nums'], textDecorationLine: cancelled ? 'line-through' : 'none' }]}>{hm(dep)}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 1 }}>
-          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: tone, marginRight: 5 }} />
-          <T kind="foot" numberOfLines={1} style={{ color: toneText, flexShrink: 1 }}>{stt.text}</T>
-        </View>
+      <View style={{ flex: 1, minWidth: 0, marginLeft: 14 }}>
+        <Text maxFontSizeMultiplier={1.4} style={[font.title3, { color: c.text, fontVariant: ['tabular-nums'], textDecorationLine: cancelled ? 'line-through' : 'none' }]}>{hm(dep)}{' '}<Text style={{ color: c.text3, fontWeight: '400' }}>{'\u2192'}</Text>{' '}{hm(arrive)}</Text>
+        <T kind="foot" numberOfLines={1} style={{ marginTop: 2 }}>
+          <T kind="foot" style={{ color: toneText }}>{stt.text}</T>
+          {boardAt ? <T kind="foot" tone="text2">{` \u00b7 ${boardAt}`}</T> : null}
+          <T kind="foot" tone="text2">{` \u00b7 ${j.durationMin} min`}</T>
+        </T>
         {l?.platformChangedFrom ? <T kind="foot" numberOfLines={1} style={{ color: c.lateText, marginTop: 1 }}>Platform changed from {plat(l.platformChangedFrom)}</T> : null}
       </View>
-      <View style={{ alignItems: 'flex-end', marginLeft: 8, maxWidth: '44%' }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-          {badges.slice(0, 3).map((b, i) => <MiniBadge key={`${b.line}${i}`} line={b.line} color={b.color || modeColor[b.mode || 'train']} />)}
-          {changes ? <T kind="foot" tone="text2" numberOfLines={1}>{` \u00b7 ${changes} change${changes > 1 ? 's' : ''}`}</T> : null}
-        </View>
-        <Text maxFontSizeMultiplier={1.4} style={[font.title3, { color: c.text, fontVariant: ['tabular-nums'] }]}>{hm(arrive)}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Crowd l={l} />
-          <T kind="foot" tone="text2" numberOfLines={1} style={{ fontVariant: ['tabular-nums'] }}>{j.durationMin} min</T>
-          {fareOf(j) ? (
-            <View style={{ backgroundColor: c.fill, borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1, marginLeft: 5 }} accessibilityLabel={`Opal fare estimate ${money(j.fare!.total)}`}>
-              <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ color: c.text2, fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] }}>{money(j.fare!.total)}</Text>
-            </View>
-          ) : null}
-        </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 8 }}>
+        {badges.slice(0, 3).map((b, i) => <MiniBadge key={`${b.line}${i}`} line={b.line} color={b.color || modeColor[b.mode || 'train']} />)}
       </View>
     </Pressable>
   );
@@ -626,8 +601,8 @@ export function LiveTag() {
 const s = StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10 },
   note: { paddingHorizontal: 16, paddingBottom: 13 },
-  svc: { flexDirection: 'row', alignItems: 'center', paddingLeft: 12, paddingRight: 16, paddingVertical: 10 },
-  block: { width: 56, alignSelf: 'stretch', minHeight: 56, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  svc: { flexDirection: 'row', alignItems: 'center', paddingLeft: 16, paddingRight: 16, paddingVertical: 12 },
+  block: { width: 56, alignSelf: 'stretch', minHeight: 52, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   dep: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, minHeight: 46 },
   action: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, minHeight: 48 },
   actionIcon: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 12 },

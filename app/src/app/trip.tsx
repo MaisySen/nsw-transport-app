@@ -6,19 +6,18 @@ import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius, modeColor } from '@/lib/theme';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
-import { store, tripKeyOf, useStore } from '@/lib/store';
-import { journeyOutages, safeUrl, stShort } from '@/lib/access';
-import { LegAccessChips, OutageLine, ParkGroup } from '@/components/Access';
+import { store, useStore } from '@/lib/store';
+import { safeUrl, stShort } from '@/lib/access';
+import { LegAccessChips, ParkGroup } from '@/components/Access';
 import { fareOf, fareWords, money, offPeakText } from '@/lib/fare';
 import { getLive, startLive } from '@/lib/live';
 import { directFilter, isChain, planTrip, stName, tLegs, tripKey, viaText } from '@/lib/trips';
 import type { TripLeg } from '@/lib/trips';
 import type { Journey, Leg, Place } from '@/lib/types';
-import { startWatch, stopWatch, tripSpec } from '@/lib/watch';
-import { appOpenNote } from '@/lib/push';
+import { tripSpec } from '@/lib/watch';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { openService } from '@/components/Cards';
-import { LineBadge, StatusLine } from '@/components/Transit';
+import { LineBadge } from '@/components/Transit';
 import { arrOf, ServiceRow, WarnLine } from '@/components/Home';
 import { Button, Empty, Screen, Sep, T } from '@/components/ui';
 
@@ -51,7 +50,6 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
   const color = l.color || modeColor[l.mode || 'bus'];
   const dep = bestTime(l.planned, l.realtime ? l.estimated : null);
   const arr = bestTime(l.arrPlanned, l.realtime ? l.arrEstimated : null);
-  const depMins = Math.round((dep - now) / 60000);
   return (
     <Pressable onPress={() => openService({ tripId: l.tripId, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId, color: l.color, dest: l.towards, realtime: l.realtime, estimated: l.estimated, delayMin: l.delayMin })}
       style={({ pressed }) => [st.leg, pressed ? { opacity: 0.7 } : null]}>
@@ -66,7 +64,6 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
             <T kind="headline" numberOfLines={2}>{shortName(l.from)}</T>
             <T kind="foot" tone="text2">{[l.fromPlatform, `${clock(dep)}`].filter(Boolean).join(' \u00b7 ')}</T>
           </View>
-          <T kind="headline" style={{ fontVariant: ['tabular-nums'], color: l.realtime ? (depMins <= 3 ? c.liveText : c.text) : c.text2 }}>{depMins <= 0 ? 'Now' : depMins < 60 ? `${depMins} min` : clock(dep)}</T>
         </View>
         {l.platformChangedFrom ? <T kind="foot" style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }}>Platform changed from {l.platformChangedFrom}</T> : null}
         <View style={[st.ride, { backgroundColor: c.bg }]}>
@@ -74,7 +71,6 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
           <View style={{ flex: 1, marginLeft: 8 }}>
             <T kind="sub" numberOfLines={1}>Towards {shortName(l.towards)}</T>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-              <StatusLine realtime={l.realtime} delayMin={l.delayMin} cancelled={l.cancelled} />
               <T kind="foot" tone="text2">{l.durationMin} min{l.stops ? `, ${l.stops} stops` : ''}{l.occupancy?.text ? ` \u00b7 ${l.occupancy.text}` : ''}</T>
             </View>
           </View>
@@ -136,15 +132,18 @@ function FareCard({ j }: { j: Journey }) {
     </View>
   );
   const op = offPeakText(f);
+  const [more, setMore] = useState(false);
   return (
-    <View style={{ marginHorizontal: 16, marginTop: 10, backgroundColor: c.card2, borderRadius: radius, paddingVertical: 10 }} accessibilityLabel={`Opal fare estimate ${money(f.total)}, ${fareWords(f)}`}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14 }}>
+    <View style={{ marginHorizontal: 16, marginTop: 10, backgroundColor: c.card2, borderRadius: radius, paddingVertical: 4 }}>
+      <Pressable onPress={() => setMore(!more)} accessibilityRole="button" accessibilityState={{ expanded: more }} accessibilityLabel={`Opal fare estimate ${money(f.total)}, ${fareWords(f)}. ${more ? 'Hide' : 'Show'} details`}
+        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8 }}>
         <Icon name={I.fare} size={16} color={c.text2} />
-        <T kind="headline" style={{ flex: 1, marginLeft: 8 }}>Opal fare estimate</T>
-        <T kind="foot" tone="text2" style={{ marginRight: 8 }}>{f.typeName}</T>
+        <T kind="body" style={{ flex: 1, marginLeft: 8 }}>Opal fare</T>
+        <T kind="foot" tone="text2" style={{ marginRight: 8 }}>{f.typeName}{f.peak ? ', peak' : ''}</T>
         <T kind="headline" style={{ fontVariant: ['tabular-nums'] }}>{money(f.total)}</T>
-      </View>
-      <View style={{ marginTop: 6 }}>
+        <Icon name={I.chevron} size={12} color={c.text3} style={{ marginLeft: 8, transform: [{ rotate: more ? '90deg' : '0deg' }] }} />
+      </Pressable>
+      {more ? <View style={{ marginTop: 2, paddingBottom: 8 }}>
         {(f.legs || []).map((fl, k) => (
           <View key={k}>
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 4 }}>
@@ -160,9 +159,9 @@ function FareCard({ j }: { j: Journey }) {
           </View>
         ))}
         {f.capped ? sub('Daily cap reached', '') : null}
-      </View>
-      {op ? <T kind="foot" style={{ color: c.liveText, fontWeight: '600', paddingHorizontal: 14, marginTop: 6 }}>{op}</T> : null}
-      <T kind="foot" tone="text2" style={{ paddingHorizontal: 14, marginTop: 6 }}>{f.peak ? 'Peak fare. ' : 'Off peak fare. '}An estimate from the Opal fare tables, not your card's charge. Change the fare type in Settings.</T>
+        {op ? <T kind="foot" style={{ color: c.liveText, fontWeight: '600', paddingHorizontal: 14, marginTop: 6 }}>{op}</T> : null}
+        <T kind="foot" tone="text2" style={{ paddingHorizontal: 14, marginTop: 6 }}>An estimate from the Opal fare tables, not your card's charge. Fare type is in More.</T>
+      </View> : null}
     </View>
   );
 }
@@ -171,7 +170,6 @@ function JourneyDetail({ j, now, from, to }: { j: Journey; now: number; from: Pl
   const c = usePalette();
   const st2 = useStore();
   const spec = tripSpec(j, from, to);
-  const watchedId = st2.watchedTrips[spec.key];
   const [busy, setBusy] = useState(false);
   const legs = j.legs;
   return (
@@ -189,29 +187,19 @@ function JourneyDetail({ j, now, from, to }: { j: Journey; now: number; from: Pl
         })}
       </View>
       <FareCard j={j} />
-      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginTop: 8 }}>
-        <View style={{ flex: 1 }}>
-          <Button title="Start trip" icon={I.nav} kind="filled" disabled={busy || !spec.legs.length}
-            onPress={async () => {
-              const go = async () => {
-                try { await startLive(spec, j.fare); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); router.push('/go'); } catch (e: any) { Alert.alert("Couldn't start it", e.message); }
-              };
-              const cur = getLive();
-              if (cur) Alert.alert('End your current trip?', `${cur.title} is in progress. Starting this one ends it.`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Start this trip', onPress: go }]);
-              else go();
-            }} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Button title={watchedId ? 'Stop watching' : 'Watch'} icon={watchedId ? I.bellOff : I.bell} kind="tinted" disabled={busy}
-            onPress={async () => {
+      <View style={{ paddingHorizontal: 16, marginTop: 12 }}>
+        <Button title={busy ? 'Starting' : 'Start trip'} icon={I.nav} kind="filled" disabled={busy || !spec.legs.length}
+          onPress={() => {
+            const go = async () => {
               setBusy(true);
-              try {
-                if (watchedId) await stopWatch(watchedId);
-                else { await startWatch(spec); Alert.alert('Watching this trip', "I'll alert you when it's time to leave, if it runs late, if the platform changes, if you'll miss a connection, and before your stop." + (await appOpenNote())); }
-              } catch (e: any) { Alert.alert("Couldn't do that", e.message); }
-              setBusy(false);
-            }} />
-        </View>
+              try { await startLive(spec, j.fare); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); router.push('/go'); }
+              catch (e: any) { Alert.alert("Couldn't start it", e.message); }
+              finally { setBusy(false); }
+            };
+            const cur = getLive();
+            if (cur) Alert.alert('End your current trip?', `${cur.title} is in progress. Starting this one ends it.`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Start this trip', onPress: go }]);
+            else go();
+          }} />
       </View>
     </View>
   );
@@ -250,7 +238,9 @@ export default function TripScreen() {
       seen.add(k);
       out.push(j);
     }
-    return out.sort((a, b) => depMs(a) - depMs(b));
+    // A walk only option would open first with nothing to start; it is left out when there is a service.
+    const withT = out.filter((j) => !!firstT(j));
+    return (withT.length ? withT : out).sort((a, b) => depMs(a) - depMs(b));
   })();
   const df = directFilter(jsAll, plan, allOn, (j) => j);
   const js = df.list;
@@ -325,18 +315,6 @@ export default function TripScreen() {
             )) : null}
           </View>
         ) : null}
-        {fareOf(js[0]) ? (() => {
-          const f = fareOf(js[0])!;
-          const op = offPeakText(f);
-          return (
-            <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>
-              {op ? (
-                <View style={{ backgroundColor: c.orange, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1, marginRight: 8 }}><T kind="foot" style={{ color: '#fff', fontWeight: '700' }}>Peak</T></View>
-              ) : <Icon name={I.fare} size={16} color={c.text2} style={{ marginRight: 8 }} />}
-              <T kind="sub" style={{ flex: 1, color: op ? c.liveText : c.text }} numberOfLines={2}>{op || `Opal fare estimate ${money(f.total)} ${f.typeName}, ${f.peak ? 'peak' : 'off peak'}`}</T>
-            </View>
-          );
-        })() : null}
         {data?.parking?.carparks?.length ? (
           <View style={{ marginTop: -10 }}>
             <ParkGroup list={data.parking.carparks} title={`Park and Ride at ${stShort(data.parking.station?.name)}`} station={data.parking.station?.name} watch />
@@ -346,30 +324,17 @@ export default function TripScreen() {
           <View style={{ marginHorizontal: 20, marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <Icon name={I.access} size={15} color={c.tint} />
             <T kind="sub" tone="text2">Step free trips only.{!js.length ? ' None found for this trip.' : ''}</T>
-            <Pressable hitSlop={8} onPress={() => router.push('/settings')}><T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Settings</T></Pressable>
+            <Pressable hitSlop={8} onPress={() => router.push('/settings')}><T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Change in More</T></Pressable>
           </View>
         ) : null}
         {chain ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 12 }}>{(() => { const L = tLegs(plan); return L.length === 2 && L[1].mode !== 'walk' ? `Via ${stName(shortName(L[0].to.name))}, ${L[1].conn ?? 5} min to change` : `${L.length} legs via ${viaText(plan)}`; })()}</T> : null}
         {jsAll.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>
             <View style={{ flex: 1 }}>
-              <T kind="body">All services</T>
-              <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{allOn ? 'Trips with a change are shown too' : chain ? ((data?.fallback || []).some(Boolean) ? 'One leg has no direct service, so all are used there' : 'Direct services on each leg, as set for this trip') : df.none ? 'None stop at both ends, so all are shown' : 'Only services that stop at both ends'}</T>
+              <T kind="body">Include trips with a change</T>
+              {!allOn && (df.none || (chain && (data?.fallback || []).some(Boolean))) ? <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{df.none ? 'No direct service, so all are shown' : 'One leg has no direct service, so all are used there'}</T> : null}
             </View>
-            <Switch value={allOn} onValueChange={(v) => { Haptics.selectionAsync(); store.setAllServices(tkey, v); }} accessibilityLabel="All services" />
-          </View>
-        ) : null}
-        {js.length ? (
-          <View style={[st.seg, { backgroundColor: c.fill }]} accessibilityRole="tablist">
-            {(['Departs in', 'Travel time'] as const).map((label, k) => {
-              const on = (k === 1) === showTravel;
-              return (
-                <Pressable key={label} accessibilityRole="tab" accessibilityState={{ selected: on }} onPress={() => { Haptics.selectionAsync(); setShowTravel(k === 1); }}
-                  style={[st.segBtn, on ? { backgroundColor: dark ? '#636366' : c.card, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 1 } : null]}>
-                  <T kind="foot" style={{ color: c.text, fontWeight: on ? '600' : '500' }}>{label}</T>
-                </Pressable>
-              );
-            })}
+            <Switch value={allOn} onValueChange={(v) => { Haptics.selectionAsync(); store.setAllServices(tkey, v); }} accessibilityLabel="Include trips with a change" />
           </View>
         ) : null}
         {js.length ? (
@@ -380,7 +345,6 @@ export default function TripScreen() {
                 <Sep inset={0} />
                 <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { Haptics.selectionAsync(); setOpen(open === i ? null : i); }} />
                 <WarnLine j={j} />
-                <OutageLine outages={journeyOutages(j)} />
                 {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} /></View> : null}
               </View>
             ))}

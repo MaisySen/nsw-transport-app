@@ -11,7 +11,7 @@ import { shortName } from '@/lib/format';
 import type { Place } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
 import { watchLine } from '@/components/Cards';
-import { ActionRow, AlertBanner, deleteTrip, HomeSection, LiveTag, PlaceBar, pullHome, SearchField, StopBoard, TripBoard, TripItem, tripMenu, useNearby } from '@/components/Home';
+import { ActionRow, AlertBanner, deleteTrip, HomeSection, LiveTag, PlaceBar, pullHome, StopBoard, TripBoard, TripItem, useNearby } from '@/components/Home';
 import { LineBadge } from '@/components/Transit';
 import { useLiveTrip } from '@/lib/live';
 import { modeColor, radius } from '@/lib/theme';
@@ -26,15 +26,6 @@ function sydneyHour(t: number) {
   }
 }
 
-function AddButton() {
-  const c = usePalette();
-  return (
-    <Pressable onPress={() => router.push('/new-trip')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add a trip"
-      style={({ pressed }) => ({ width: 32, height: 32, borderRadius: 16, backgroundColor: c.fill, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
-      <Icon name={I.plus} size={17} color={c.tint} />
-    </Pressable>
-  );
-}
 
 export default function Home() {
   const c = usePalette();
@@ -75,21 +66,18 @@ export default function Home() {
   (d?.commutes.items || []).filter((x) => x.active).forEach((cm) => add({ key: '', from: cm.from, to: cm.to, kind: 'commute', name: cm.name, id: cm.id }));
   (st.myTrips || []).forEach((m) => add({ key: '', from: m.from, to: m.to, via: m.via, conn: m.conn, legs: m.legs, modes: m.modes, kind: 'mine', name: m.name }));
   (d?.saved.items || []).forEach((s) => add({ key: '', from: s.from, to: s.to, kind: 'saved', name: s.name }));
-  // Recent trips: trips you looked at, not already saved. Their own group below, up to 3.
-  const recentTrips = (st.recentTrips || []).filter((r) => !seen.has(`${r.from.id}>${r.to.id}`)).slice(0, 3);
 
   // Your own order from dragging wins; home and work move together and keep their morning and evening order.
   const order = st.tripOrder || [];
   const sorted = trips.map((t, i) => ({ t, p: order.indexOf(t.okey!) < 0 ? 1000 + i : order.indexOf(t.okey!), i })).sort((x, y) => x.p - y.p || x.i - y.i).map((o) => o.t);
 
-  // Starred stops, then Recent stops (opened lately, not starred, up to 3).
+  // Starred stops. Recent stops and trips live in Plan, so Home shows each thing once.
   const starred = st.starred || [];
-  const recentStops = (st.recents || []).filter((p) => !starred.some((s) => s.id === p.id)).slice(0, 3);
+  // Nearby leaves out stops already on Home as starred, and shows at most 3.
+  const nearStops = (near.stops || []).filter((p: Place) => !starred.some((s) => s.id === p.id)).slice(0, 3);
   const g = useLiveTrip();
   const [snack, setSnack] = useState<{ text: string; undo: () => void; id: number } | null>(null);
   useEffect(() => { if (!snack) return; const t = setTimeout(() => setSnack(null), 5000); return () => clearTimeout(t); }, [snack]);
-  const clearTrips = () => { const old = store.clearRecentTrips(); Haptics.selectionAsync(); setSnack({ text: 'Recent trips cleared', undo: () => store.restoreRecentTrips(old), id: Date.now() }); };
-  const clearStops = () => { const old = store.clearRecents(); Haptics.selectionAsync(); setSnack({ text: 'Recent stops cleared', undo: () => store.restoreRecents(old), id: Date.now() }); };
   const stopMenu = (p: Place, isStarred: boolean) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(shortName(p.name), undefined, isStarred ? [
@@ -120,19 +108,9 @@ export default function Home() {
 
   return (
     <>
-      <Stack.Screen options={{
-        title: 'Trips',
-        headerRight: () => (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <LiveTag />
-            <AddButton />
-          </View>
-        ),
-      }} />
+      <Stack.Screen options={{ title: 'Home', headerRight: () => <LiveTag /> }} />
       <Screen scrollEnabled={scrollOn} refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} enabled={scrollOn} />}>
         {g ? <LiveBar title={g.title} line={g.legs[0]?.line} mode={g.legs[0]?.mode} color={g.legs[0]?.color} /> : null}
-        <SearchField />
-        <PlaceBar places={places} />
         <AlertBanner />
 
         {activeWatches.length ? (
@@ -164,15 +142,11 @@ export default function Home() {
           </Section>
         ) : null}
 
-        <View style={{ marginTop: 6 }}>
+        <HomeSection title="Your trips" action={{ title: 'Add', label: 'Add a trip', onPress: () => router.push('/new-trip') }}>
           <DragTrips trips={sorted} now={now} all={st.allServices || {}} onScroll={setScrollOn} />
-          {d && !trips.length ? (
-            <View>
-              <ActionRow icon={I.plus} title="Add a trip" onPress={() => router.push('/new-trip')} />
-              <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>Save the trips you take, like home to work. They show here with live times. Nothing is added for you.</T>
-            </View>
-          ) : null}
-        </View>
+          {d && !trips.length ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 6 }}>Save the trips you take. They show here with live times.</T> : null}
+          <PlaceBar places={places} />
+        </HomeSection>
 
         {starred.length ? (
           <HomeSection title="Starred stops">
@@ -180,43 +154,10 @@ export default function Home() {
           </HomeSection>
         ) : null}
 
-        {recentTrips.length ? (
-          <HomeSection title="Recent trips" onClear={clearTrips} footer="Trips you looked at. Tap and hold, or swipe left, to remove one.">
-            <View style={{ backgroundColor: c.card, borderRadius: radius, marginHorizontal: 16, marginTop: 10, overflow: 'hidden' }}>
-              {recentTrips.map((r, i) => {
-                const item: TripItem = { key: `${r.from.id}>${r.to.id}`, from: r.from, to: r.to, kind: 'recent' };
-                const label = `${shortName(r.from.name).replace(/ Station$/, '')} to ${shortName(r.to.name).replace(/ Station$/, '')}`;
-                return (
-                  <View key={item.key}>
-                    {i ? <Sep inset={57} /> : null}
-                    <SwipeRemove label="Remove" onRemove={() => store.removeRecentTrip(r.from.id, r.to.id)}>
-                      <View style={{ backgroundColor: c.card }}>
-                        <Row icon={I.history} iconBg={c.text3} title={label}
-                          onPress={() => router.push({ pathname: '/trip', params: { from: r.from.id, fromName: r.from.name, to: r.to.id, toName: r.to.name } })}
-                          onLongPress={() => tripMenu(item, label)} />
-                      </View>
-                    </SwipeRemove>
-                  </View>
-                );
-              })}
-            </View>
-          </HomeSection>
-        ) : null}
-
-        {recentStops.length ? (
-          <HomeSection title="Recent stops" onClear={clearStops}>
-            {recentStops.map((p) => (
-              <SwipeRemove key={p.id} label="Remove" onRemove={() => store.removeRecent(p.id)}>
-                <StopBoard stop={p} now={now} onLongPress={() => stopMenu(p, false)} />
-              </SwipeRemove>
-            ))}
-          </HomeSection>
-        ) : null}
-
         {near.phase !== 'checking' ? (
           <HomeSection title="Nearby">
-            {near.phase === 'on' && near.stops.length ? near.stops.map((p) => <StopBoard key={p.id} stop={p} distance={p.distance} now={now} />) : null}
-            {near.phase === 'on' && !near.stops.length ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>No stops within walking distance</T> : null}
+            {near.phase === 'on' && nearStops.length ? nearStops.map((p) => <StopBoard key={p.id} stop={p} distance={p.distance} now={now} />) : null}
+            {near.phase === 'on' && !nearStops.length ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>No stops within walking distance</T> : null}
             {near.phase === 'off' || near.phase === 'loading' || near.phase === 'error' ? (
               <ActionRow icon={I.location} title="Show stops near me" onPress={near.ask} busy={near.phase === 'loading'} />
             ) : null}

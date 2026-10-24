@@ -94,19 +94,19 @@ type Fmt = { clock: (t: number) => string; short: (n?: string | null) => string;
 
 /**
  * The alerts this refresh should show, each once per trip: get off or change one stop before, tight or missed
- * connections, and one "You've arrived" at the end. When the server is watching the trip it sends the stop and
- * connection alerts itself, so only "You've arrived" comes from the phone. Keys are stable, so a key already in
+ * connections, and one "You've arrived" at the end. When the server is watching the trip it sends all of these
+ * itself (each once, and its watch ends at your stop), so the phone posts none. Keys are stable, so a key already in
  * `alerted` never fires again.
  */
 export function tripAlerts(legs: WatchLeg[], s: LiveState, alerted: Record<string, 1>, serverWatching: boolean, f: Fmt): TripAlert[] {
   const out: TripAlert[] = [];
   const add = (key: string, title: string, body: string) => { if (!alerted[key] && !out.some((a) => a.key === key)) out.push({ key, title, body }); };
   const last = legs.length - 1;
+  if (serverWatching) return out;
   if (s.done) {
     add('arrived', "You've arrived", `${f.short(legs[last]?.to)} at ${f.clock(s.eta)}. Trip alerts are off.`);
     return out;
   }
-  if (serverWatching) return out;
   if (s.phase === 'ride') {
     const d = s.L2[s.cur].d, l = legs[s.cur];
     if (d && (d.alightIndex ?? -1) > 0 && s.nextIdx === d.alightIndex) {
@@ -177,9 +177,9 @@ export function stepLive(g: LiveTripLike, svc: (ServiceResp | null | undefined)[
   if (s.done) {
     if (!n.arrivedAt) {
       if (n.share) actions.push({ t: 'share', prog: progOf(s, f) });
-      if (n.watchId) actions.push({ t: 'stopWatch', id: n.watchId });
+      // A server watch ends itself at your stop after its own "You've arrived", so it is left to finish.
       actions.push({ t: 'clearOngoing' });
-      n = { ...n, arrivedAt: now, watchId: null };
+      n = { ...n, arrivedAt: now };
     }
     if (now > (n.arrivedAt || now) + 10 * 60000) actions.push({ t: 'end' });
     return { g: n, s, actions };

@@ -11,7 +11,6 @@ import { getDevice, PROFILE } from '@/lib/device';
 import { usePalette } from '@/lib/theme';
 import { useNow } from '@/lib/hooks';
 import { store, useStore } from '@/lib/store';
-import { fareOf, money, offPeakText } from '@/lib/fare';
 import type { Fare } from '@/lib/types';
 import { ACC_LABEL, accessKit, outageText, parkBadge, safeUrl, ticketText, type CarPark, type Station } from '@/lib/access';
 import { LineBadge } from '@/components/Transit';
@@ -24,7 +23,6 @@ type Card = { type: 'departures' | 'trip' | 'alerts' | 'stops' | 'parking' | 'st
 type Msg = { id: string; role: 'me' | 'bot'; text: string; cards?: Card[]; links?: Link[]; suggestions?: string[]; ask?: string | null; t: number };
 
 const KEY = 'ask_chat_v1';
-const STARTERS = ['Next train Burwood to Central', "When's the 461 from Burwood", 'Is the T1 late', 'Departures Strathfield', 'How do I get to Bondi Beach', 'Last train home'];
 
 function clock(t: string) {
   return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, (_m, p) => ' ' + p.toLowerCase());
@@ -65,7 +63,13 @@ export default function AskScreen() {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const list = useRef<FlatList<Msg>>(null);
-  const { places } = useStore();
+  const { places, recentTrips } = useStore();
+  // Suggestions come from your own trips only: your two most recent, and the last train home once home is set.
+  const nm = (n: string) => n.split(',')[0].replace(/ Station$/, '');
+  const starters = [
+    ...(recentTrips || []).slice(0, 2).map((r) => `Next train ${nm(r.from.name)} to ${nm(r.to.name)}`),
+    ...(places?.home ? ['Last train home'] : []),
+  ];
 
   useEffect(() => { AsyncStorage.getItem(KEY).then((v) => { if (v) setMsgs(JSON.parse(v)); }).catch(() => {}); }, []);
   useEffect(() => { AsyncStorage.setItem(KEY, JSON.stringify(msgs.slice(-40))).catch(() => {}); }, [msgs]);
@@ -147,8 +151,6 @@ export default function AskScreen() {
               </View>
               {s ? <Text style={[st.t2, { color: (c as any)[s.tone], fontWeight: '600' }]}>{s.text}</Text> : null}
               {j.warn ? <Text style={[st.t2, { color: c.orange, fontWeight: '600' }]}>{j.warn}</Text> : null}
-              {fareOf(j as any) ? <Text style={[st.t2, { color: c.text2 }]}>Opal fare estimate {money(j.fare!.total)} {j.fare!.typeName}{j.fare!.peak ? ', peak' : ', off peak'}</Text> : null}
-              {offPeakText(j.fare) ? <Text style={[st.t2, { color: c.liveText, fontWeight: '600' }]}>{offPeakText(j.fare)}</Text> : null}
             </View>
             <Count t={j.leave} live={f?.realtime} />
           </Row>
@@ -238,9 +240,9 @@ export default function AskScreen() {
         contentContainerStyle={{ padding: 12, paddingBottom: 16 }}
         ListEmptyComponent={
           <View style={{ alignItems: 'center', paddingTop: 24 }}>
-            <Text style={[st.helloTitle, { color: c.text }]}>Ask Transport Bot</Text>
-            <Text style={[st.helloBody, { color: c.text2 }]}>Live times for any train, bus, ferry or light rail in NSW.</Text>
-            <View style={{ alignSelf: 'stretch', alignItems: 'flex-end', gap: 8, marginTop: 18 }}>{STARTERS.map((s) => <Chip key={s} label={s} onPress={() => ask(s)} />)}</View>
+            <Text style={[st.helloTitle, { color: c.text }]}>Ask about any trip</Text>
+            <Text style={[st.helloBody, { color: c.text2 }]}>Type a stop, a line or two places, like next train from one station to another.</Text>
+            {starters.length ? <View style={{ alignSelf: 'stretch', alignItems: 'flex-end', gap: 8, marginTop: 18 }}>{starters.map((s) => <Chip key={s} label={s} onPress={() => ask(s)} />)}</View> : null}
           </View>
         }
         ListFooterComponent={busy ? <View style={[st.bubble, st.bot, { backgroundColor: c.dark ? '#26252A' : '#E9E9EB', marginTop: 6 }]}><ActivityIndicator size="small" /></View> : undefined}

@@ -14,7 +14,6 @@ import { clock } from '@/lib/format';
 import { endLive, getLive, liveWatch, setLive, useLiveTrip } from '@/lib/live';
 import { legColor, plat, progOf, setEnginePos, short, tickLive, useLiveEngineState } from '@/lib/liveEngine';
 import { cutPath, LiveState, minsWords, timed, tOf } from '@/lib/liveCalc';
-import { fareWords, money } from '@/lib/fare';
 import { enablePush, getPushState } from '@/lib/push';
 import type { WatchLeg } from '@/lib/types';
 import TransitMap from '@/components/TransitMap';
@@ -244,16 +243,15 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
         </View>
       ) : null}
 
-      {!me || push !== 'on' ? (
+      {locDenied || push === 'off' || push === 'denied' ? (
         <View style={[sx.group, { backgroundColor: c.card2 }]}>
-          {!me ? (
-            <SetupRow icon={I.location} title="Show where I am" sub={locDenied ? "Location is off for Transport. Turn it on in your phone's settings." : 'Your location stays on this phone.'}
-              action={locDenied ? 'Settings' : 'Allow'} onPress={locDenied ? () => Linking.openSettings() : onLoc} />
+          {locDenied ? (
+            <SetupRow icon={I.location} title="Location is off" sub="Turn it on for Transport in your phone's settings to see where you are." action="Settings" onPress={() => Linking.openSettings()} />
           ) : null}
-          {!me && push !== 'on' ? <Sep inset={52} /> : null}
-          {push !== 'on' ? (
-            <SetupRow icon={I.bell} title="Get off alerts" sub={push === 'local' ? 'Alerts show while the app is running.' : push === 'denied' ? 'Notifications are off. Alerts show here while the app is open.' : 'One stop before yours, and at each change.'}
-              action={push === 'local' ? undefined : 'Turn on'} onPress={onPush} />
+          {locDenied && (push === 'off' || push === 'denied') ? <Sep inset={52} /> : null}
+          {push === 'off' || push === 'denied' ? (
+            <SetupRow icon={I.bell} title="Trip alerts are off" sub={push === 'denied' ? 'Turn on notifications for Transport in your phone settings.' : 'Get a heads up one stop before yours.'}
+              action={push === 'denied' ? 'Settings' : 'Turn on'} onPress={push === 'denied' ? () => Linking.openSettings() : onPush} />
           ) : null}
         </View>
       ) : null}
@@ -283,27 +281,12 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
                   <T kind="body" numberOfLines={1}>{short(ll.from)} to {short(ll.to)}</T>
                   <T kind="foot" tone="text2" style={{ fontVariant: ['tabular-nums'] }}>{clock(y2.dep)} to {clock(y2.arr)}{state === 'done' ? ' \u00b7 done' : ''}</T>
                 </View>
-                {state === 'now' ? <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: c.green }} /> : null}
+                {state === 'now' ? <T kind="foot" tone="tint" style={{ fontWeight: '600' }}>Now</T> : null}
               </View>
             </View>
           );
         })}
-        {g.fare && g.fare.total != null ? (
-          <>
-            <Sep inset={16} />
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>
-              <View style={{ flex: 1 }}>
-                <T kind="body">Opal fare estimate</T>
-                <T kind="foot" tone="text2">{fareWords(g.fare)}</T>
-              </View>
-              <T kind="headline" style={{ fontVariant: ['tabular-nums'] }}>{money(g.fare.total)}</T>
-            </View>
-          </>
-        ) : null}
       </View>
-      <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>
-        Live positions and times from Transport for NSW. Your location is used on this phone only{g.share?.pos ? ', and sent to your share link while sharing' : ''}. Share links stop working when the trip ends.
-      </T>
     </View>
   );
 }

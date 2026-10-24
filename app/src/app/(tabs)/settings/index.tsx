@@ -18,21 +18,13 @@ import { ActionSheet, type SheetAction } from '@/components/Sheet';
 import { syncLiftAlerts } from '@/lib/liftAlerts';
 import type { Commute } from '@/lib/types';
 
-function pushText(p: PushState | null) {
-  if (!p) return '';
-  if (p.status === 'on') return 'On. Alerts reach you even when the app is closed.';
-  if (p.status === 'local') return 'Alerts need the app open. Alerts when the app is closed are not set up in this version yet, so leave now, get off, lift and car park alerts show only while Transport is open.';
-  if (p.status === 'denied') return 'Blocked. Turn on notifications for Transport in your phone settings.';
-  return 'Off';
-}
-
 export default function Settings() {
   const c = usePalette();
   const [push, setPush] = useState<PushState | null>(null);
   const [busy, setBusy] = useState(false);
   const { data, refresh } = useLive(async () => {
-    const [cm, sv] = await Promise.all([api.commutes(), api.saved()]);
-    return { commutes: cm.items, saved: sv.items };
+    const [cm, w] = await Promise.all([api.commutes(), api.watches().catch(() => null)]);
+    return { commutes: cm.items, watching: (w?.items || []).filter((x) => x.active).length };
   }, 60000);
   useEffect(() => { getPushState().then(setPush); }, []);
   const st = useStore();
@@ -85,8 +77,8 @@ export default function Settings() {
   const test = async () => {
     try { await api.testPush(); Alert.alert('Sent', 'A test alert is on its way.'); } catch (e: any) { Alert.alert("Couldn't send", e.message); }
   };
-  // Commute actions: 5 choices, more than an Android dialog shows, so they go in a bottom sheet.
-  const [sheet, setSheet] = useState<Commute | null>(null);
+  // Menus with more choices than an Android dialog shows go in a bottom sheet.
+  const [sheet, setSheet] = useState<{ title: string; message?: string; actions: SheetAction[] } | null>(null);
   const commuteActions = (cm: Commute): SheetAction[] => {
     const move = (d: number) => api.saveCommute({ ...cm, tod: (cm.tod + d + 1440) % 1440 }).then(refresh).catch((e: any) => Alert.alert("Couldn't change it", e.message));
     return [
@@ -96,7 +88,19 @@ export default function Settings() {
       { text: 'Delete', icon: I.trash, destructive: true, onPress: () => api.deleteCommute(cm.id).then(refresh).catch((e: any) => Alert.alert("Couldn't delete it", e.message)) },
     ];
   };
-  const editCommute = (cm: Commute) => setSheet(cm);
+  const editCommute = (cm: Commute) => setSheet({ title: cm.name, message: `${shortName(cm.from.name)} to ${shortName(cm.to.name)}, ${daysText(cm.days)} around ${cm.todText}`, actions: commuteActions(cm) });
+  const fareName = (FARE_TYPES.find((f) => f.k === (st.fareType || 'adult')) || FARE_TYPES[0]).name;
+  const pickFare = () => setSheet({ title: 'Opal fare type', message: 'Trips show an Opal fare estimate for this fare type. It is not your card\'s charge.',
+    actions: FARE_TYPES.map((f) => ({ text: f.name + ((st.fareType || 'adult') === f.k ? ' (current)' : ''), onPress: () => { Haptics.selectionAsync(); store.setFareType(f.k); } })) });
+  const n = (k: number) => (k ? ` (${k})` : '');
+  const dataMenu = () => setSheet({ title: 'Privacy and data', message: 'Recent stops and trips are kept on this phone. The server keeps trips you search for 90 days, under this app\'s private id, to suggest commutes.',
+    actions: [
+      ...(nStops ? [{ text: `Clear recent stops${n(nStops)}`, onPress: () => { store.clearRecents(); Haptics.selectionAsync(); } }] : []),
+      ...(nTrips ? [{ text: `Clear recent trips${n(nTrips)}`, onPress: () => { store.clearRecentTrips(); Haptics.selectionAsync(); } }] : []),
+      ...(askCount ? [{ text: `Clear Ask chat${n(askCount)}`, onPress: () => { AsyncStorage.removeItem('ask_chat_v1').catch(() => {}); setAskCount(0); Haptics.selectionAsync(); } }] : []),
+      { text: 'Delete my trip history on server', icon: I.trash, destructive: true, onPress: deleteServerHistory },
+      { text: 'Delete all my data', icon: I.trash, destructive: true, onPress: deleteAll },
+    ] });
 
   // Accessibility: step free trips and lift outage alerts for stations on saved trips.
   const [liftBusy, setLiftBusy] = useState(false);
@@ -124,98 +128,60 @@ export default function Settings() {
     <Switch value={v} onValueChange={onChange} disabled={disabled} trackColor={Platform.OS === 'android' ? { true: c.tint, false: c.fill } : undefined} thumbColor={Platform.OS === 'android' ? (v ? (c.dark ? '#062E6F' : '#fff') : c.text3) : undefined} />
   );
 
+  const pushWord = push?.status === 'on' ? 'On' : push?.status === 'local' ? 'App open only' : push?.status === 'denied' ? 'Blocked' : 'Off';
+  const pushOff = !push || push.status === 'off' || push.status === 'denied';
+
   return (
     <>
-      <Stack.Screen options={{ title: 'Settings' }} />
+      <Stack.Screen options={{ title: 'More' }} />
       <Screen>
-        <Section title="Alerts" footer={pushText(push)}>
-          {push?.status === 'on' || push?.status === 'local' ? (
-            <>
-              <Row icon={I.bell} iconBg={c.red} title="Notifications" right={<T kind="body" tone="text2">{push.status === 'on' ? 'On' : 'App open only'}</T>} chevron={false} />
-              {push.status === 'on' ? (
-                <>
-                  <Sep inset={57} />
-                  <Row icon={I.check} iconBg={c.green} title="Send a test alert" onPress={test} />
-                </>
-              ) : null}
-            </>
-          ) : (
-            <Row icon={I.bell} iconBg={c.red} title={busy ? 'Turning on' : 'Turn on alerts'} onPress={turnOn} />
-          )}
+        <Section>
+          <Row icon={I.bell} iconBg={c.indigo} title="Watching" right={data?.watching ? <T kind="body" tone="text2">{String(data.watching)}</T> : undefined} onPress={() => router.push('/watching')} />
+          <Sep inset={57} />
+          <Row icon={I.car} iconBg="#0A84FF" title="Park and Ride" onPress={() => router.push('/parking')} />
+          <Sep inset={57} />
+          <Row icon={I.fare} iconBg={c.indigo} title="Opal top up machines" onPress={() => router.push('/topup')} />
         </Section>
 
-        <Section title="Commutes" footer="A commute gets a heads up about 30 minutes before, only when something is wrong, then a leave now alert near your usual time.">
-          {data?.commutes.length ? data.commutes.map((cm, i) => (
-            <View key={cm.id}>
-              {i ? <Sep inset={57} /> : null}
-              <Row icon={I.clock} iconBg={c.indigo} title={cm.name} subtitle={`${shortName(cm.from.name)} to ${shortName(cm.to.name)} \u00b7 ${daysText(cm.days)}, ${cm.todText}`}
-                onPress={() => editCommute(cm)} chevron={false}
-                right={<Switch value={cm.active} onValueChange={(v) => api.saveCommute({ ...cm, active: v }).then(refresh)} />} />
-            </View>
-          )) : <Row title="No commutes yet" subtitle="Plan the same trip on two days and Home offers to make it your commute." chevron={false} />}
-        </Section>
+        {data?.commutes.length ? (
+          <Section title="Commutes">
+            {data.commutes.map((cm, i) => (
+              <View key={cm.id}>
+                {i ? <Sep inset={57} /> : null}
+                <Row icon={I.clock} iconBg={c.indigo} title={cm.name} subtitle={`${daysText(cm.days)}, ${cm.todText}`}
+                  onPress={() => editCommute(cm)} chevron={false}
+                  right={<Switch value={cm.active} onValueChange={(v) => api.saveCommute({ ...cm, active: v }).then(refresh)} accessibilityLabel={`${cm.name} alerts`} />} />
+              </View>
+            ))}
+          </Section>
+        ) : null}
 
-        <Section title="Saved trips" footer='Saved trips show live on Home. You can also text the name, like "home", to Tab on WhatsApp.'>
-          {data?.saved.length ? data.saved.map((s, i) => (
-            <View key={s.name}>
-              {i ? <Sep inset={57} /> : null}
-              <Row icon={I.route} iconBg={c.tint} title={s.name.charAt(0).toUpperCase() + s.name.slice(1)} subtitle={`${shortName(s.from.name)} to ${shortName(s.to.name)}`} chevron={false}
-                onPress={() => Alert.alert(`Delete "${s.name}"?`, undefined, [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => api.deleteSaved(s.name).then(refresh) }])} />
-            </View>
-          )) : <Row title="No saved trips" subtitle="Open a trip and tap the star to save it as Home or Work." chevron={false} />}
-        </Section>
-
-        <Section title="Accessibility" footer="Accessible trips asks the Trip Planner for step free trips only. Lift outage alerts tell you when a lift goes out at a station on your saved trips. Lift status from Transport for NSW service alerts, live.">
-          <Row icon={I.access} iconBg={c.tint} title="Accessible trips" subtitle="Step free trips only, from the Trip Planner" chevron={false}
+        <Section title="Settings" footer={push?.status === 'local' ? 'Alerts show while Transport is open.' : push?.status === 'denied' ? 'Turn on notifications for Transport in your phone settings.' : undefined}>
+          <Row icon={I.bell} iconBg={c.red} title={busy ? 'Turning on' : 'Notifications'} right={<T kind="body" tone="text2">{pushWord}</T>}
+            onPress={pushOff ? (push?.status === 'denied' ? () => Linking.openSettings() : turnOn) : push?.status === 'on' ? test : undefined} chevron={pushOff} />
+          <Sep inset={57} />
+          <Row icon={I.access} iconBg={c.tint} title="Accessible trips" subtitle="Step free trips only" chevron={false}
             right={sw(!!st.acc, (v) => { Haptics.selectionAsync(); store.setAcc(v); })} />
           <Sep inset={57} />
-          <Row icon={I.bell} iconBg={c.red} title="Lift outage alerts" subtitle="For stations on your saved trips" chevron={false}
+          <Row icon={I.bell} iconBg={c.orange} title="Lift outage alerts" subtitle="Stations on your saved trips" chevron={false}
             right={liftBusy ? <ActivityIndicator size="small" color={c.tint} /> : sw(!!st.liftAlerts, setLift)} />
           <Sep inset={57} />
-          <Row icon={I.fare} iconBg={c.indigo} title="Opal top up machines near me" onPress={() => router.push('/topup')} />
+          <Row icon={I.fare} iconBg={c.green} title="Opal fare type" right={<T kind="body" tone="text2">{fareName}</T>} onPress={pickFare} />
+          <Sep inset={57} />
+          <Row icon={I.trash} iconBg={c.text2} title="Privacy and data" onPress={dataMenu} />
         </Section>
 
-        <Section title="Opal fare estimates" footer="Trips show an Opal fare estimate for this fare type, worked out from the Opal fare tables: peak or off peak, transfer discount, airport station fee and daily cap. It is not your card's charge.">
-          {FARE_TYPES.map((f, i) => {
-            const on = (st.fareType || 'adult') === f.k;
-            return (
-              <View key={f.k}>
-                {i ? <Sep /> : null}
-                <Row title={f.name} subtitle={f.sub} chevron={false} onPress={() => { Haptics.selectionAsync(); store.setFareType(f.k); }}
-                  right={on ? <Icon name={I.check} size={18} color={c.tint} /> : undefined} />
-              </View>
-            );
-          })}
-        </Section>
-
-        <Section title="Clear history" footer="Recent stops and trips are kept only on this phone. The server keeps the trips you search for 90 days, under this app's private id, to suggest commutes. Delete them here at any time.">
-          <Row title="Clear recent stops" subtitle="Stops you searched for or opened" right={count(nStops)} chevron={false}
-            onPress={nStops ? () => { store.clearRecents(); Haptics.selectionAsync(); } : undefined} />
-          <Sep />
-          <Row title="Clear recent trips" right={count(nTrips)} chevron={false}
-            onPress={nTrips ? () => { store.clearRecentTrips(); Haptics.selectionAsync(); } : undefined} />
-          <Sep />
-          <Row title="Clear Ask chat" right={count(askCount)} chevron={false}
-            onPress={askCount ? () => { AsyncStorage.removeItem('ask_chat_v1').catch(() => {}); setAskCount(0); Haptics.selectionAsync(); } : undefined} />
-          <Sep />
-          <Row title="Delete my trip history on server" destructive chevron={false} onPress={deleteServerHistory} />
-          <Sep />
-          <Row title="Delete all my data" destructive chevron={false} onPress={deleteAll} />
-        </Section>
-
-        <Section title="About" footer="Contains transport data from Transport for NSW, licensed under Creative Commons Attribution 4.0. Map data from OpenStreetMap contributors. Transport is an independent app and is not made or endorsed by Transport for NSW. Green times are live from the vehicle, grey times are the timetable, and predictions are always labelled.">
-          <Row title="Version" right={<T kind="body" tone="text2">{Constants.expoConfig?.version || '1.0.0'}</T>} chevron={false} />
-          <Sep />
-          <Row title="Open the web version" onPress={() => Linking.openURL('https://nsw-transport-bot.sites.tab.bot/')} />
-          <Sep />
+        <Section title="About" footer="Transport: Sydney Live is provided by Fintex Australia Pty Ltd. Data from Transport for NSW (CC BY 4.0) and OpenStreetMap contributors. Not made or endorsed by Transport for NSW.">
           <Row title="Help and support" onPress={() => Linking.openURL('https://nsw-transport-bot.sites.tab.bot/support/')} />
           <Sep />
           <Row title="Privacy policy" onPress={() => Linking.openURL('https://nsw-transport-bot.sites.tab.bot/privacy/')} />
+          <Sep />
+          <Row title="Web version" onPress={() => Linking.openURL('https://nsw-transport-bot.sites.tab.bot/')} />
+          <Sep />
+          <Row title="Version" right={<T kind="body" tone="text2">{Constants.expoConfig?.version || '1.0.0'}</T>} chevron={false} />
         </Section>
       </Screen>
-      <ActionSheet visible={!!sheet} title={sheet?.name}
-        message={sheet ? `${shortName(sheet.from.name)} to ${shortName(sheet.to.name)}, ${daysText(sheet.days)} around ${sheet.todText}` : undefined}
-        actions={sheet ? commuteActions(sheet) : []} onClose={() => setSheet(null)} />
+      <ActionSheet visible={!!sheet} title={sheet?.title} message={sheet?.message} actions={sheet?.actions || []} onClose={() => setSheet(null)} />
     </>
   );
 }

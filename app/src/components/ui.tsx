@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, ScrollViewProps, StyleSheet, Text, TextProps, View, ViewStyle } from 'react-native';
-import { radius, usePalette } from '@/lib/theme';
+import { androidLook, radius, usePalette } from '@/lib/theme';
 import { Icon, I, IconName } from './Icon';
 
 export const font = {
@@ -30,7 +30,7 @@ export function Screen({ children, ...p }: ScrollViewProps & { children: ReactNo
       keyboardDismissMode="on-drag"
       {...p}
       style={[{ flex: 1, backgroundColor: c.bg }, p.style]}
-      contentContainerStyle={[{ paddingBottom: 40, paddingTop: Platform.OS === 'android' ? 8 : 0 }, p.contentContainerStyle]}
+      contentContainerStyle={[{ paddingBottom: 40, paddingTop: androidLook ? 8 : 0 }, p.contentContainerStyle]}
     >
       {children}
     </ScrollView>
@@ -43,7 +43,7 @@ export function Section({ title, footer, children, right, style }: { title?: str
     <View style={[{ marginTop: 22, marginHorizontal: 16 }, style]}>
       {title ? (
         <View style={s.secHead}>
-          <Text maxFontSizeMultiplier={1.4} style={[Platform.OS === 'ios' ? { ...font.foot, textTransform: 'uppercase' } : { ...font.sub, fontWeight: '600' }, { color: Platform.OS === 'ios' ? c.text2 : c.tint, flex: 1 }]}>
+          <Text maxFontSizeMultiplier={1.4} style={[!androidLook ? { ...font.foot, textTransform: 'uppercase' } : { ...font.sub, fontWeight: '600' }, { color: !androidLook ? c.text2 : c.tint, flex: 1 }]}>
             {title}
           </Text>
           {right}
@@ -96,10 +96,10 @@ export function Empty({ icon, title, body, action }: { icon: IconName; title: st
 export function Button({ title, onPress, kind = 'filled', icon, disabled }: { title: string; onPress: () => void; kind?: 'filled' | 'tinted' | 'plain'; icon?: IconName; disabled?: boolean }) {
   const c = usePalette();
   const bg = kind === 'filled' ? c.tint : kind === 'tinted' ? c.fill : 'transparent';
-  const fg = kind === 'filled' ? (Platform.OS === 'android' && c.dark ? '#062E6F' : '#fff') : c.tint;
+  const fg = kind === 'filled' ? (androidLook && c.dark ? '#062E6F' : '#fff') : c.tint;
   return (
     <Pressable disabled={disabled} onPress={onPress} android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
-      style={({ pressed }) => [s.btn, { backgroundColor: bg, opacity: disabled ? 0.5 : pressed && Platform.OS === 'ios' ? 0.7 : 1, borderRadius: Platform.OS === 'android' ? 24 : 12 }]}>
+      style={({ pressed }) => [s.btn, { backgroundColor: bg, opacity: disabled ? 0.5 : pressed && Platform.OS === 'ios' ? 0.7 : 1, borderRadius: androidLook ? 24 : 12 }]}>
       {icon ? <Icon name={icon} size={17} color={fg} style={{ marginRight: 7 }} /> : null}
       <Text style={[font.headline, { color: fg }]}>{title}</Text>
     </Pressable>
@@ -110,7 +110,7 @@ export function Chip({ label, on, onPress }: { label: string; on: boolean; onPre
   const c = usePalette();
   return (
     <Pressable onPress={onPress} style={[s.chip, { backgroundColor: on ? c.tint : c.card, borderColor: on ? c.tint : c.sep }]}>
-      <Text style={[font.sub, { color: on ? (Platform.OS === 'android' && c.dark ? '#062E6F' : '#fff') : c.text, fontWeight: '600' }]}>{label}</Text>
+      <Text style={[font.sub, { color: on ? (androidLook && c.dark ? '#062E6F' : '#fff') : c.text, fontWeight: '600' }]}>{label}</Text>
     </Pressable>
   );
 }
