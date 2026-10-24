@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### iPhone app: round 4 and transportsydney.app links (over the air update, 25 Oct, 1:30 AM)
+* iPhone now has everything Android got at 1:18 AM: Check my trip before I go, crowding chips, Step free trips, one server address, transportsydney.app links and emails.
+* Links into the app: transportsydney.app/trip/<id> opens a Shared trip screen that shows the live trip, /stop/<id> opens that stop, and /plan?from=..&to=.. opens the trip. On iPhone they open the app where the build carries the transportsydney.app link permission; Android needs versionCode 6 (App Links) first.
+* Android production is unchanged by this update.
+
+### Site: shared trip links work in a browser (25 Oct, 1:25 AM)
+* transportsydney.app/trip/<id> sends the browser to the live trip page (302, the id kept). /stop and /plan links show Open in the app with the store badges. The .well-known files are still served as JSON with no redirect.
+
 ### Android app: check before I go, crowding, step free, one server address (over the air update, 25 Oct, 1:18 AM)
 * Check my trip before I go: More has a new screen for it, and the commute card has a link to it. It uses your saved home and work. Pick the trip (Home to Work or Work to Home), your usual leave time (5 minute steps, also adjustable with TalkBack), the days, how long before to check (5 to 30 min, 15 by default) and optionally how you usually go (train, metro, bus, ferry, light rail). About that long before you leave, the server looks at live times once and sends one alert, only if something is wrong: a delay over 5 min, a cancellation, trackwork, a platform change, a change too tight to make, or a lift out of service at either end. Check now shows what it would say right now, without sending anything. Edit, Delete, and Delete all checks. Delete everything in Privacy and data deletes them too. If the server has nowhere to send the alert, the app asks for notifications before saving. While this Android build has no background push (it needs Firebase, see app/NEEDS_BIDUR.md), the screen says so plainly: the check is kept and starts sending once a build with push is installed. Server switch: morningCheck.
 * Crowding: a small chip ("Few seats", "Standing room") on departures, on each leg of a trip and on the trip rows, only where Transport for NSW sends occupancy for that service. Nothing is shown when it does not. Standing room and fuller show in the warning colour. Server switch: occupancy.
