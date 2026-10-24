@@ -1,6 +1,6 @@
 # Releases
 
-Every shipped build and update. Times are Sydney time (AEDT). Updated 24 Oct 2026, 3:12 PM.
+Every shipped build and update. Times are Sydney time (AEDT). Updated 24 Oct 2026, 4:00 PM.
 
 ## iPhone (native SwiftUI)
 
@@ -39,6 +39,7 @@ Project `cf1f4c4c-5157-41bf-a254-4480223f6368`, owner `bidurtab`. `production` i
 
 | Time (about) | Update | production group | expo-go group |
 | --- | --- | --- | --- |
+| 24 Oct, 3:54 PM | Live trip tracking (Start trip, live map, next stop, countdown, stops left, get off and connection alerts, Share trip, ongoing notification with Share and End trip, Trip in progress bar); Opal fare estimates with a fare type setting; no hard coded stations; Recent trips and stops with Clear and Undo; saved trip Edit and Delete; Clear history and Delete all my data. Commit db1f3aa. Update ids: production 01a16c41-7492-7fc9-8a7d-de20ff851332, expo-go 01a16c42-cbdb-72c6-a7f4-a666a15f0452 | 646ed232-d5ba-4c93-95f7-5d1084bb4ca6 | f933e5e8-d6b1-42c8-9ea5-9b9282a9d234 |
 | 24 Oct, 2:55 PM | Published with Android versionCode 5: the current JavaScript, including random install ids and the private profile page | ae1ab30a-fffe-413a-b3eb-054dc99ed2da | c2641a5f-66e8-4ad2-9fb0-a93797177115 |
 | 24 Oct, 2:15 PM | Ask: several stops in one question, Open trip and Save trip open as a multi leg trip | 809a3a8e-74dd-4fb6-b082-2ace00c68948 (republished over 1e683ee4-ff26-4485-ade0-f1858ab1f73c) | edd8ad30-66d9-4347-b8de-1108c7dc2801 |
 | 24 Oct, 1:50 PM | Multi leg trips: add, remove and reorder legs, change time per connection, walk legs, tight and missed connection warnings | c0bd6116-bf5f-49b4-8c7f-ef849f15092d | db5cefd5-b7fe-478e-bf63-a6fb114d64dd |

@@ -61,6 +61,12 @@ A separate live list of 55 real phrasings (including "I need to go to campsie to
 2. Refuses GET and short or identical ids
 3. Copies rows to the new id, with fresh commute ids
 
+## Android app logic tests
+
+### `app/test/logic.test.mjs`: 10 tests, 10 pass
+
+Run with `cd app && npm test` (Node's own test runner; the TypeScript files are transpiled on the fly). Covers money and fare wording, the Opal peak hours in Sydney time, the live trip maths (waiting until the vehicle passes your stop, next stop and stops left skipping stops it runs through, done after arrival, spare minutes with tight and missed changes, moving to the next leg), cutting the route between your stops, and one live check that plans a real trip with a Concession fare and runs its live service through the same maths. Set `OFFLINE=1` to skip the live check. `npx tsc --noEmit` must pass before any update.
+
 ## iPhone UI tests (XCUITest)
 
 Run on an iPhone 16 Pro simulator with location set to Burwood, against the live backend. Results are written to `r2.txt` on the `ci-out` branch with per test pass or fail. Read the counts there, not only the step result, because the test steps are allowed to fail without failing the job.

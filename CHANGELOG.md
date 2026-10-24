@@ -4,6 +4,17 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 24 Oct 2026
 
+### Android app: live trip, fares and Clear history (over the air update, 3:55 PM)
+* Start trip on any trip opens a full screen live map: your train or bus, your position (only after you allow location), the arrival time with a countdown, the next stop, stops left, change times with spare minutes, and tight or missed connection warnings with a link to find the next connection. Refreshes every 15 seconds.
+* Get off alerts one stop before your stop and at each change, plus tight change and connection at risk alerts. With notifications on, the server sends the same alerts while the app is closed.
+* An ongoing notification shows the line, the next stop, stops left and the arrival time with minutes to go, with Share and End trip buttons. It updates while the app is running.
+* Share trip makes a link (`/live/?t=`) anyone can open, with your location only if you turn it on. It stops working when the trip ends.
+* Home shows a Trip in progress bar while a trip is running.
+* Opal fare estimates: a fare chip on every trip row, a fare breakdown in the trip details (each leg, peak or off peak, transfer discount, airport fee, daily cap), the off peak nudge, the fare on the live trip screen and in Ask trip cards. Settings has the fare type (Adult, Child or Youth, Concession, Gold Senior or Pensioner). Stop screens show when off peak starts during peak.
+* No hard coded stations: the Popular stations list is gone. An empty Home shows Add a trip and Nearby.
+* Recent trips and Recent stops are their own groups below saved trips and starred stops, each with Clear and Undo. Swipe left or tap and hold to remove one. Saved trips: tap and hold for Edit trip and Delete trip, or swipe left to delete; deleting also removes the server copy.
+* Settings > Clear history: clear recent stops, recent trips and the Ask chat; Delete my trip history on server; Delete all my data. Both deletes ask first.
+
 ### Opal fare estimates (web and server, 4:00 PM)
 * Every trip shows an Opal fare estimate: a chip on each trip row (trip results and saved trips on Home) and a breakdown in the trip details with each leg's distance, peak or off peak, transfer discount, airport station access fee and daily cap.
 * The live trip screen and Ask show it too. Ask replies end with "Opal fare estimate $X (Adult, peak)" and its trip cards show the fare.
