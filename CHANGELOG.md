@@ -4,6 +4,19 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Plan: addresses, leave and arrive times, Clear All (over the air update for iPhone and Android, 25 Oct, 10:33 AM)
+* Plan finds addresses, streets, landmarks and suburbs, not only stops, and plans trips from and to them. Each result says what it is, for example "Address, Sydney".
+* Leave now, Leave at or Arrive by: tap the When row under From and To, pick a time on the wheel, and the trip shows services for that time. A time already gone today means tomorrow, and the row says so.
+* Clear All on Your trips and on Starred stops, each asking first. Home and Work stay.
+* Home's header says "Live 9:52am", the same clock as the rows.
+
+### Ask answers (new server address, 25 Oct, 10:20 AM)
+* "How much is the fare from Central to Parramatta" answers with the fare first.
+* Nonsense gets "I didn't get that" with examples, instead of a far away stop.
+* Last train: the sentence names every train of the trip it shows ("T4 then T9, change at Redfern"), and intercity trains are named ("Blue Mountains Line").
+* Bus interchanges such as Railway Square no longer show the station's lifts and access.
+* These answers reach the app when it moves to the new server address.
+
 ### Car parks, bus delays and regional live times (over the air update for iPhone and Android, 25 Oct, 10:11 AM)
 * Park and Ride: each car park learns when it fills on weekday mornings and says "Usually full by 7:40am on weekdays". Until it has 5 weekday mornings it says how many it has. Shows once the app moves to the new server address.
 * Trip screen: bus and coach legs say how the bus is running right now, for example "Bus running 6 min late", when the bus sends live data.
