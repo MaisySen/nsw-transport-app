@@ -48,7 +48,7 @@ export default function StopScreen() {
       <Stack.Screen options={{
         title,
         headerRight: () => (
-          <Pressable hitSlop={10} onPress={() => { Haptics.selectionAsync(); store.toggleStar({ id: String(id), name: data?.stop?.name || String(name || title) }); }}>
+          <Pressable accessibilityRole="button" accessibilityLabel={starred ? 'Remove from Starred stops' : 'Add to Starred stops'} accessibilityState={{ selected: !!starred }} hitSlop={10} onPress={() => { Haptics.selectionAsync(); store.toggleStar({ id: String(id), name: data?.stop?.name || String(name || title) }); }}>
             <Icon name={starred ? I.star : I.starOpen} size={22} color={starred ? c.yellow : c.tint} />
           </Pressable>
         ),

@@ -9,9 +9,6 @@
       "channel": "production",
       "android": {
         "buildType": "apk"
-      },
-      "ios": {
-        "simulator": false
       }
     },
     "production": {
@@ -24,10 +21,6 @@
   },
   "submit": {
     "production": {
-      "ios": {
-        "appleId": "SET_TO_BIDURS_APPLE_ID_EMAIL",
-        "ascAppId": "SET_AFTER_CREATING_THE_APP_IN_APP_STORE_CONNECT"
-      },
       "android": {
         "track": "internal"
       }

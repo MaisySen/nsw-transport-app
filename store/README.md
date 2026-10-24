@@ -1,7 +1,7 @@
 # Store pack: Transport
 
 Everything needed to fill in App Store Connect and the Google Play Console for the Transport app.
-Copy each field as written. Nothing here is a secret.
+Copy each field as written. Nothing here is a secret. This folder is the only copy of the listing and privacy answers; app/ and ios-native/ do not keep their own.
 
 | File | What it is |
 | --- | --- |
@@ -23,5 +23,5 @@ Final identifiers (proposed, nothing registered yet):
 
 * iPhone bundle ID: `com.maisysen.nswtransport`, widget `com.maisysen.nswtransport.widget`, app group `group.com.maisysen.nswtransport`
 * Android application ID: `com.maisysen.nswtransport` (already in use by the installed APK and its upload key, so it stays)
-* Version 1.0 (iPhone build 7), Android versionName 1.0.0, versionCode 4
+* Version 1.0 (iPhone build 7), Android versionName 1.0.0, versionCode 5
 * Minimum OS: iOS 17.0, iPhone only. Android 7.0 (API 24), target API 36.

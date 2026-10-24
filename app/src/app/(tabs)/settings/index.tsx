@@ -21,7 +21,7 @@ import type { Commute } from '@/lib/types';
 function pushText(p: PushState | null) {
   if (!p) return '';
   if (p.status === 'on') return 'On. Alerts reach you even when the app is closed.';
-  if (p.status === 'local') return 'On while the app is open or in the background.';
+  if (p.status === 'local') return 'Alerts need the app open. Alerts when the app is closed are not set up in this version yet, so leave now, get off, lift and car park alerts show only while Transport is open.';
   if (p.status === 'denied') return 'Blocked. Turn on notifications for Transport in your phone settings.';
   return 'Off';
 }
@@ -115,7 +115,7 @@ export default function Settings() {
       const r = await syncLiftAlerts(true);
       store.setLiftAlerts(true);
       const now = (r as any)?.now || [];
-      Alert.alert('Lift outage alerts on', now.length ? `Out of service now on your saved trips: ${now.map((x: any) => x.title).join('. ')}.` : "No lifts are out on your saved trips right now. I'll tell you if one goes out.");
+      Alert.alert('Lift outage alerts on', now.length ? `Out of service now on your saved trips: ${now.map((x: any) => x.title).join('. ')}.${ps.status === 'local' ? ' Alerts need the app open.' : ''}` : "No lifts are out on your saved trips right now. I'll tell you if one goes out." + (ps.status === 'local' ? ' Alerts need the app open.' : ''));
     } catch (e: any) {
       Alert.alert("Couldn't turn it on", e.message);
     } finally { setLiftBusy(false); }
@@ -131,9 +131,13 @@ export default function Settings() {
         <Section title="Alerts" footer={pushText(push)}>
           {push?.status === 'on' || push?.status === 'local' ? (
             <>
-              <Row icon={I.bell} iconBg={c.red} title="Notifications" right={<T kind="body" tone="text2">On</T>} chevron={false} />
-              <Sep inset={57} />
-              <Row icon={I.check} iconBg={c.green} title="Send a test alert" onPress={test} />
+              <Row icon={I.bell} iconBg={c.red} title="Notifications" right={<T kind="body" tone="text2">{push.status === 'on' ? 'On' : 'App open only'}</T>} chevron={false} />
+              {push.status === 'on' ? (
+                <>
+                  <Sep inset={57} />
+                  <Row icon={I.check} iconBg={c.green} title="Send a test alert" onPress={test} />
+                </>
+              ) : null}
             </>
           ) : (
             <Row icon={I.bell} iconBg={c.red} title={busy ? 'Turning on' : 'Turn on alerts'} onPress={turnOn} />

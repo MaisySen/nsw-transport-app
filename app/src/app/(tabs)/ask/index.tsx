@@ -53,7 +53,8 @@ function open(l?: Link | null) {
   if (l.kind === 'trip' && l.from && l.to) return router.push({ pathname: '/trip', params: { from: l.from, fromName: l.fn || '', to: l.to, toName: l.tn || '', ...(l.legs ? { legs: String(l.legs) } : {}) } });
   if (l.kind === 'saveTrip' && l.legs) return router.push({ pathname: '/new-trip', params: { legs: String(l.legs) } });
   if (l.kind === 'service') return router.push({ pathname: '/service', params: { trip: l.trip || '', line: l.line || '', stop: l.stop || '', planned: l.planned || '', mode: l.mode || '', destId: l.destId || '', color: l.color || '', dest: l.dest || '' } });
-  if (l.href && /^https?:/.test(l.href)) Linking.openURL(l.href);
+  const u = safeUrl(l.href);
+  if (u) Linking.openURL(u);
 }
 
 export default function AskScreen() {
@@ -154,7 +155,7 @@ export default function AskScreen() {
         );
       })}
       {card.type === 'alerts' && (card.items || []).map((a: any, i: number) => (
-        <Row key={i} onPress={() => a.url && Linking.openURL(a.url)}>
+        <Row key={i} onPress={() => { const u = safeUrl(a.url); if (u) Linking.openURL(u); }}>
           <Text style={{ color: c.orange, fontSize: 16 }}>{'\u26a0\ufe0e'}</Text>
           <View style={st.mid}><Text numberOfLines={3} style={[st.t3, { color: c.text }]}>{a.title}</Text></View>
         </Row>

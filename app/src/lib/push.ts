@@ -51,6 +51,11 @@ export async function enablePush(welcome = true): Promise<PushState> {
   }
 }
 
+/** Added to "alert set" messages while this phone has no push token, so nobody counts on alerts with the app closed. */
+export async function appOpenNote(): Promise<string> {
+  try { return (await AsyncStorage.getItem('expoPushToken')) ? '' : ' Alerts need the app open.'; } catch { return ''; }
+}
+
 export async function disablePush() {
   const tok = await AsyncStorage.getItem('expoPushToken');
   if (tok) await api.unregisterExpo(tok).catch(() => {});

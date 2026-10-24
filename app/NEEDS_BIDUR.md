@@ -9,7 +9,7 @@ Everything else is built and ready. These steps need your own identity or paymen
    * an App Store Connect API key (Users and Access, Integrations, App Store Connect API, Generate, role App Manager), which lets Tab build and upload without your password, or
    * you sign in once on Tab's secure login page so the build tool can create the certificates.
 3. Tab then runs one build and one upload. The app appears in TestFlight for you within about 30 minutes of Apple processing it. Internal TestFlight testers (up to 100 people on your team) need no review.
-4. App Store: Tab fills in the listing (text in store/listing.md, privacy policy at https://nsw-transport-bot.sites.tab.bot/privacy/), screenshots and the privacy answers. You press Submit for Review, or approve Tab doing it. Review usually takes one to three days.
+4. App Store: Tab fills in the listing (text in store/apple/listing.md, privacy policy at https://nsw-transport-bot.sites.tab.bot/privacy/), screenshots and the privacy answers. You press Submit for Review, or approve Tab doing it. Review usually takes one to three days.
 
 ## Android: Google Play
 
@@ -19,7 +19,20 @@ Everything else is built and ready. These steps need your own identity or paymen
 
 ## Android push alerts when the app is closed
 
-Needs a free Firebase project. Easiest is one made with your Google account: open https://console.firebase.google.com, Add project, name it Transport, then Add app, Android, package `com.maisysen.nswtransport`, and download google-services.json. Send it to Tab, or let Tab make the project if you would rather share a Google login through the secure page. Tab then uploads the key to Expo and ships the update.
+Today Android alerts (leave now, get off, lift outages, car park nearly full) only show while the app is open. Settings > Alerts says "Alerts need the app open" until this is done. Alerts with the app closed need Google's Firebase Cloud Messaging. Tab has not created any account for this.
+
+What Bidur provides:
+
+1. **A Firebase project** made with your own Google account: open https://console.firebase.google.com, Add project, name it Transport. Google Analytics is not needed; turn it off.
+2. **google-services.json**: in the project, Add app, Android, package name `com.maisysen.nswtransport`, app nickname Transport, no SHA-1 needed. Download google-services.json at the end.
+3. **The FCM V1 service account key**: Project settings, Service accounts, Firebase Admin SDK, Generate new private key. This downloads a JSON file. It is a secret: email it to bidur@mail.tab.bot, never in WhatsApp or a chat.
+4. Email google-services.json to bidur@mail.tab.bot too (it is not a secret, but keep it with the key).
+
+What Tab then does:
+
+1. Uploads the service account key to the Expo project credentials (Android, FCM V1) and deletes the emailed copy.
+2. Adds google-services.json to the app (`android.googleServicesFile` in app.json). This is a native change, so it ships as a new APK, versionCode 6, signed with the same key, installed over the current app with your data kept.
+3. Checks a real alert on your phone with the app closed (Settings > Send a test alert), then updates the Play Data safety notes.
 
 ## Nothing to do
 

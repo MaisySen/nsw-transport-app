@@ -1,6 +1,6 @@
 # App Store and Google Play
 
-Where submission stands and what is waiting on Bidur. Updated 24 Oct 2026.
+Where submission stands and what is waiting on Bidur. Updated 24 Oct 2026, 5 PM.
 
 Both apps are ready to submit except for the steps that need Bidur's developer accounts. Nothing has been registered, created or paid for yet.
 
@@ -17,7 +17,7 @@ Both apps are ready to submit except for the steps that need Bidur's developer a
 | Subtitle | Trains, buses, metro, ferries |
 | iPhone bundle id | `com.maisysen.nswtransport` (widget `com.maisysen.nswtransport.widget`, app group `group.com.maisysen.nswtransport`) |
 | Android application id | `com.maisysen.nswtransport` |
-| Version | iPhone 1.0 (build 8 in CI; TestFlight builds start at 101). Android 1.0.0, versionCode 4 |
+| Version | iPhone 1.0 (build 8 in CI; TestFlight builds start at 101). Android 1.0.0, versionCode 5 (JavaScript kept current by over the air updates) |
 | Minimum OS | iOS 17.0, iPhone only. Android 7.0 (API 24), target API 36 |
 | Category | Navigation (Apple), Maps & Navigation (Play) |
 | Support URL | https://nsw-transport-bot.sites.tab.bot/support/ |
@@ -29,8 +29,8 @@ Both apps are ready to submit except for the steps that need Bidur's developer a
 | Item | Apple | Google |
 | --- | --- | --- |
 | App code ready (privacy manifests, attribution, no shared data, offline start) | Done | Done |
-| Signed build | Waiting on API key and Team ID (CI signs automatically once they exist) | Done: signed AAB, versionCode 4 |
-| Listing text and privacy answers | Done | Done |
+| Signed build | Waiting on API key and Team ID (CI signs automatically once they exist) | Done: signed AAB, versionCode 5 (kept on the build box, same upload key as versionCode 4) |
+| Listing text and privacy answers | Done | Done (Data safety and content rating redone 24 Oct for Share trip, lift and car park alerts) |
 | Screenshots | Done: 6.9 inch light and dark, 6.5 inch light, from CI with live data | Done: 6 phone shots (rendered at phone size, to be replaced with device captures), feature graphic, 512 icon |
 | App record in the console | Not created (needs Bidur's account) | Not created (needs Bidur's account) |
 | Upload | Not started | Not started |
@@ -55,4 +55,12 @@ Both apps are ready to submit except for the steps that need Bidur's developer a
 
 ## Notes for Bidur's own phone
 
-The App Store build has a new bundle id, so it starts with an empty profile. Open `nswtransport://profile/bidur` once on the phone after installing to get the saved trips back. The Play build keeps the same package and key, so an existing Android install keeps its data.
+The App Store build has a new bundle id, so it starts with an empty profile. Open the private profile link Tab sent (`nswtransport://profile/` followed by your own id) once on the phone after installing to get the saved trips back. The id is private, so it is not written here. The Play build keeps the same package and key, so an existing Android install keeps its data.
+
+The old shared test profile is retired: an Android install still on it moves to a fresh private id on its next launch and saves its phone's trips again there, and a profile link to the shared id is refused.
+
+## Before the first Play upload
+
+* Push alerts with the app closed need Firebase (see [app/NEEDS_BIDUR.md](../app/NEEDS_BIDUR.md)). Until then Settings says "Alerts need the app open".
+* The next native build (versionCode 6) drops `BIND_GET_INSTALL_REFERRER_SERVICE`, which a dependency added and the app never uses (blocked in app.json). Re-check [store/google/permissions.md](../store/google/permissions.md) against that build with aapt2.
+* The Expo project is Android only. The App Store app is ios-native/; an iOS build of the Expo project is refused by app/app.config.js.

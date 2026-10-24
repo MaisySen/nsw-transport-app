@@ -13,7 +13,7 @@ export function LineBadge({ line, mode, color, small }: { line?: string; mode?: 
   return (
     <View style={[st.badge, small && st.badgeSm, { backgroundColor: bg }]}>
       <Icon name={modeIconName(mode)} size={small ? 11 : 13} color="#fff" />
-      {line ? <Text allowFontScaling={false} style={[st.badgeText, small && { fontSize: 13 }]} numberOfLines={1}>{line}</Text> : null}
+      {line ? <Text maxFontSizeMultiplier={1.3} style={[st.badgeText, small && { fontSize: 13 }]} numberOfLines={1}>{line}</Text> : null}
     </View>
   );
 }
@@ -71,7 +71,7 @@ export function Countdown({ planned, estimated, realtime, cancelled, now, align 
   return (
     <View style={{ alignItems: align === 'right' ? 'flex-end' : 'flex-start', minWidth: 56 }}>
       <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-        <Text allowFontScaling maxFontSizeMultiplier={1.3} style={[{ fontSize: cd.big.length > 4 ? 19 : 26, fontWeight: '700', color, fontVariant: ['tabular-nums'], letterSpacing: -0.5 }, cancelled && { textDecorationLine: 'line-through' }]}>{cd.big}</Text>
+        <Text maxFontSizeMultiplier={1.3} style={[{ fontSize: cd.big.length > 4 ? 19 : 26, fontWeight: '700', color, fontVariant: ['tabular-nums'], letterSpacing: -0.5 }, cancelled && { textDecorationLine: 'line-through' }]}>{cd.big}</Text>
         {cd.unit ? <Text maxFontSizeMultiplier={1.3} style={[font.foot, { color, marginLeft: 2, fontWeight: '600' }]}>{cd.unit}</Text> : null}
       </View>
       <View style={{ flexDirection: 'row', gap: 4 }}>

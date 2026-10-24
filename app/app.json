@@ -7,19 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "nswtransport",
     "userInterfaceStyle": "automatic",
-    "ios": {
-      "bundleIdentifier": "com.maisysen.nswtransport",
-      "supportsTablet": false,
-      "icon": "./assets/images/icon.png",
-      "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Transport uses your location to show stops near you.",
-        "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": [
-          "remote-notification"
-        ]
-      },
-      "buildNumber": "1"
-    },
     "android": {
       "package": "com.maisysen.nswtransport",
       "versionCode": 5,
@@ -60,7 +47,9 @@
         "com.oppo.launcher.permission.READ_SETTINGS",
         "com.oppo.launcher.permission.WRITE_SETTINGS",
         "me.everything.badger.permission.BADGE_COUNT_READ",
-        "me.everything.badger.permission.BADGE_COUNT_WRITE"
+        "me.everything.badger.permission.BADGE_COUNT_WRITE",
+        "com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE",
+        "android.permission.BIND_GET_INSTALL_REFERRER_SERVICE"
       ]
     },
     "web": {

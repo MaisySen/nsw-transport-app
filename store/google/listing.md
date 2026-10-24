@@ -19,7 +19,7 @@ Live Sydney and NSW train, bus, metro and ferry times, trips, alerts and widgets
 
 ## Full description (4000 max)
 
-Live Sydney and NSW public transport. Trains, metro, buses, light rail and ferries, with the time each service really leaves.
+Live Sydney and NSW public transport. Trains, metro, buses, light rail and ferries, with live times for when each service leaves.
 
 Live departures
 Every board refreshes itself and the minutes count down on their own. Each service is marked Live or Scheduled, with its platform or stand, how late it is and how full it is when the data says so.
@@ -35,6 +35,15 @@ Swipe on any service or tap Watch trip. Transport tells you when to leave, when 
 
 Home screen widget
 Put your next trip on the home screen with a live countdown, platform and any delay or trackwork notice. Pick any trip for each widget and tap to open it.
+
+Live trip
+Tap Start trip to follow your trip on a live map with the next stop, stops left and a countdown to your arrival. Get an alert one stop before yours and at each change. Share trip sends a link that others can open to follow along; it stops working when the trip ends.
+
+Opal fares
+Each trip shows an Opal fare estimate for Adult, Child, Concession or Gold, per leg and in total, with peak and off peak prices.
+
+Park and Ride and lifts
+See live free spaces at Park and Ride car parks, lift outages and step free access at stations, and Opal machines near you.
 
 Ask
 Type a question like "next train Burwood to Central", "is the T1 late" or "last train home" and get a short answer with live times you can tap.

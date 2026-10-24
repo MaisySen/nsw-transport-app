@@ -34,7 +34,7 @@ function Field({ label, value, placeholder, active, onFocus, onChange, inputRef,
       <T kind="sub" tone="text2" style={{ width: 44 }}>{label}</T>
       <TextInput ref={inputRef} value={value} placeholder={placeholder} placeholderTextColor={c.text3} onFocus={onFocus} onChangeText={onChange}
         style={[font.body, { flex: 1, color: c.text, paddingVertical: Platform.OS === 'android' ? 6 : 10 }]} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing" />
-      {Platform.OS === 'android' && value ? <Pressable onPress={onClear} hitSlop={10}><Icon name={I.close} size={18} color={c.text2} /></Pressable> : null}
+      {Platform.OS === 'android' && value ? <Pressable accessibilityRole="button" accessibilityLabel={`Clear ${label}`} onPress={onClear} hitSlop={10}><Icon name={I.close} size={18} color={c.text2} /></Pressable> : null}
     </View>
   );
 }
@@ -123,7 +123,7 @@ export default function Search() {
                 <Sep inset={60} />
                 <Field label="To" value={toText} placeholder="Where to" inputRef={toRef} active={field === 'to'} onFocus={() => setField('to')} onChange={(t: string) => { setToText(t); setTo(null); }} onClear={() => { setToText(''); setTo(null); }} />
               </View>
-              <Pressable hitSlop={8} style={{ padding: 14 }} onPress={() => { setFrom(to); setTo(from); setFromText(toText); setToText(fromText); if (from && to) go(to, from); }}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Swap From and To" hitSlop={8} style={{ padding: 14 }} onPress={() => { setFrom(to); setTo(from); setFromText(toText); setToText(fromText); if (from && to) go(to, from); }}>
                 <Icon name={I.swap} size={20} color={c.tint} />
               </Pressable>
             </View>

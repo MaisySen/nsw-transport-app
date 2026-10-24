@@ -43,7 +43,7 @@ async function watchCarPark(p: CarPark, done: () => void) {
     done();
     const name = r.watch?.name || p.name;
     const st = r.now?.status;
-    Alert.alert('Alert set', st === 'nearly' || st === 'full' ? `${name} is already ${st === 'full' ? 'full' : 'nearly full'}. I'll still tell you.` : `I'll tell you if ${name} gets nearly full in the next 3 hours.`);
+    Alert.alert('Alert set', (st === 'nearly' || st === 'full' ? `${name} is already ${st === 'full' ? 'full' : 'nearly full'}. I'll still tell you.` : `I'll tell you if ${name} gets nearly full in the next 3 hours.`) + (ps.status === 'local' ? ' Alerts need the app open.' : ''));
   } catch (e: any) {
     Alert.alert("Couldn't set the alert", e.message);
   }

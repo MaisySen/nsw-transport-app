@@ -6,7 +6,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Notifications from 'expo-notifications';
 import { pollNotes } from '@/lib/push';
 import { endLive, setupLiveNotifications } from '@/lib/live';
-import { initProfile } from '@/lib/device';
+import { finishProfileMove, initProfile } from '@/lib/device';
+import { api } from '@/lib/api';
 import { usePalette } from '@/lib/theme';
 import { LiftAlertSync } from '@/lib/liftAlerts';
 
@@ -17,7 +18,7 @@ export default function RootLayout() {
 
   // Every install has its own profile on the server; read or create it before the first request.
   useEffect(() => {
-    initProfile().catch(() => {}).finally(() => setReady(true));
+    initProfile().catch(() => {}).finally(() => { setReady(true); finishProfileMove(api); });
   }, []);
 
   // Keep alerts coming while the app is open, and open the right screen when an alert is tapped.

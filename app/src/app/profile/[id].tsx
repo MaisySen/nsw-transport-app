@@ -4,13 +4,15 @@ import { Stack, router, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Updates from 'expo-updates';
 import { Button, Screen, Section, T } from '@/components/ui';
+import { isSharedProfile } from '@/lib/profileMigrate';
 
 // nswtransport://profile/<id> moves this install to the saved trips of another profile.
 // It always asks first, so a link from someone else cannot quietly switch your trips.
 export default function ProfileLink() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const clean = String(id || '').toLowerCase().replace(/[^a-z0-9_.:-]/g, '').slice(0, 40);
-  const valid = clean.length >= 3;
+  // The old shared test profile is public, so a link to it is refused.
+  const valid = clean.length >= 5 && !isSharedProfile(clean);
   const [done, setDone] = useState(false);
 
   const adopt = async () => {

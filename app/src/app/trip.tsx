@@ -7,7 +7,7 @@ import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius, modeColor } from '@/lib/theme';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
 import { store, tripKeyOf, useStore } from '@/lib/store';
-import { journeyOutages, stShort } from '@/lib/access';
+import { journeyOutages, safeUrl, stShort } from '@/lib/access';
 import { LegAccessChips, OutageLine, ParkGroup } from '@/components/Access';
 import { fareOf, fareWords, money, offPeakText } from '@/lib/fare';
 import { getLive, startLive } from '@/lib/live';
@@ -15,6 +15,7 @@ import { directFilter, isChain, planTrip, stName, tLegs, tripKey, viaText } from
 import type { TripLeg } from '@/lib/trips';
 import type { Journey, Leg, Place } from '@/lib/types';
 import { startWatch, stopWatch, tripSpec } from '@/lib/watch';
+import { appOpenNote } from '@/lib/push';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { openService } from '@/components/Cards';
 import { LineBadge, StatusLine } from '@/components/Transit';
@@ -206,7 +207,7 @@ function JourneyDetail({ j, now, from, to }: { j: Journey; now: number; from: Pl
               setBusy(true);
               try {
                 if (watchedId) await stopWatch(watchedId);
-                else { await startWatch(spec); Alert.alert('Watching this trip', "I'll alert you when it's time to leave, if it runs late, if the platform changes, if you'll miss a connection, and before your stop."); }
+                else { await startWatch(spec); Alert.alert('Watching this trip', "I'll alert you when it's time to leave, if it runs late, if the platform changes, if you'll miss a connection, and before your stop." + (await appOpenNote())); }
               } catch (e: any) { Alert.alert("Couldn't do that", e.message); }
               setBusy(false);
             }} />
@@ -301,7 +302,7 @@ export default function TripScreen() {
       <Stack.Screen options={{
         title: `${shortName(fromName).replace(/ Station$/, '')} to ${shortName(toName).replace(/ Station$/, '')}`,
         headerBackTitle: chain ? 'Back' : undefined,
-        headerRight: () => <Pressable hitSlop={10} onPress={save}><Icon name={I.starOpen} size={22} color={c.tint} /></Pressable>,
+        headerRight: () => <Pressable accessibilityRole="button" accessibilityLabel="Save trip" hitSlop={10} onPress={save}><Icon name={I.starOpen} size={22} color={c.tint} /></Pressable>,
       }} />
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
         {alertList.length ? (
@@ -317,7 +318,7 @@ export default function TripScreen() {
             {showAlerts ? alertList.map((a, k) => (
               <View key={k}>
                 <Sep inset={16} />
-                <Pressable disabled={!a.url} onPress={() => a.url && Linking.openURL(a.url)} style={{ paddingHorizontal: 16, paddingVertical: 10 }}>
+                <Pressable disabled={!safeUrl(a.url)} onPress={() => { const u = safeUrl(a.url); if (u) Linking.openURL(u); }} style={{ paddingHorizontal: 16, paddingVertical: 10 }}>
                   <T kind="sub" style={{ color: a.url ? c.tint : c.text }}>{a.title}</T>
                 </Pressable>
               </View>

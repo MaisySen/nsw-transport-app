@@ -14,7 +14,7 @@ import { directFilter, isChain, planTrip, stName, tLegs, tripKey, viaText } from
 import type { TripLeg } from '@/lib/trips';
 import { Icon, I, IconName } from './Icon';
 import { OutageLine } from './Access';
-import { journeyOutages } from '@/lib/access';
+import { journeyOutages, safeUrl } from '@/lib/access';
 import { openService } from './Cards';
 import { LineBadge } from './Transit';
 import { font, Sep, T } from './ui';
@@ -74,7 +74,7 @@ export function AlertBanner() {
   if (!list.length) return null;
   const a = list[0];
   return (
-    <Pressable onPress={() => (a.url ? Linking.openURL(a.url).catch(a.open) : a.open())} accessibilityRole="button"
+    <Pressable onPress={() => { const u = safeUrl(a.url); return u ? Linking.openURL(u).catch(a.open) : a.open(); }} accessibilityRole="button"
       style={({ pressed }) => [s.banner, { backgroundColor: c.orange + '26', opacity: pressed ? 0.7 : 1 }]}>
       <Icon name={I.warn} size={16} color={c.orange} style={{ marginTop: 1 }} />
       <T kind="sub" numberOfLines={2} style={{ flex: 1, marginLeft: 10, color: c.text }}>{a.title}</T>
@@ -389,8 +389,8 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
     <Pressable onPress={onPress} android_ripple={{ color: c.fill }} accessibilityLabel={`Leaves ${hm(dep)}, ${t.big} ${t.unit}, arrives ${hm(arrive)}, ${stt.text}`}
       style={({ pressed }) => [s.svc, (beaten || dep < now - 30000) && { opacity: 0.45 }, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
       <View style={[s.block, { backgroundColor: chip }]}>
-        <Text allowFontScaling={false} style={{ color: '#fff', fontSize: bigSize, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }} numberOfLines={1} adjustsFontSizeToFit>{t.big}</Text>
-        {t.unit ? <Text allowFontScaling={false} style={{ color: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: '600', marginTop: -2 }}>{t.unit}</Text> : null}
+        <Text maxFontSizeMultiplier={1.3} style={{ color: '#fff', fontSize: bigSize, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }} numberOfLines={1} adjustsFontSizeToFit>{t.big}</Text>
+        {t.unit ? <Text maxFontSizeMultiplier={1.3} style={{ color: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: '600', marginTop: -2 }}>{t.unit}</Text> : null}
       </View>
       <View style={{ flex: 1, minWidth: 0, marginLeft: 12 }}>
         <T kind="foot" tone="text2" numberOfLines={1}>{boardAt}</T>
@@ -412,7 +412,7 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
           <T kind="foot" tone="text2" numberOfLines={1} style={{ fontVariant: ['tabular-nums'] }}>{j.durationMin} min</T>
           {fareOf(j) ? (
             <View style={{ backgroundColor: c.fill, borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1, marginLeft: 5 }} accessibilityLabel={`Opal fare estimate ${money(j.fare!.total)}`}>
-              <Text allowFontScaling={false} numberOfLines={1} style={{ color: c.text2, fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] }}>{money(j.fare!.total)}</Text>
+              <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ color: c.text2, fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] }}>{money(j.fare!.total)}</Text>
             </View>
           ) : null}
         </View>
@@ -426,7 +426,7 @@ function MiniBadge({ line, color }: { line?: string; color: string }) {
   if (!line) return null;
   return (
     <View style={{ backgroundColor: color, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, minWidth: 22, alignItems: 'center' }}>
-      <Text allowFontScaling={false} numberOfLines={1} style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{line}</Text>
+      <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{line}</Text>
     </View>
   );
 }
