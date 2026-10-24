@@ -10,6 +10,7 @@ import { finishProfileMove, initProfile } from '@/lib/device';
 import { loadCachedConfig, refreshConfig } from '@/lib/config';
 import { api } from '@/lib/api';
 import { usePalette } from '@/lib/theme';
+import { stopHeaderOptions } from '@/lib/headerOptions';
 import { LiftAlertSync } from '@/lib/liftAlerts';
 import { LiveTripEngine } from '@/lib/liveEngine';
 
@@ -56,7 +57,7 @@ export default function RootLayout() {
         <LiveTripEngine />
         <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal', headerTintColor: c.tint, contentStyle: { backgroundColor: c.bg } }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="stop/[id]" options={{ title: '', headerLargeTitle: Platform.OS === 'ios', headerTransparent: Platform.OS === 'ios', headerBlurEffect: 'systemChromeMaterial', headerLargeTitleShadowVisible: false, headerShadowVisible: false }} />
+          <Stack.Screen name="stop/[id]" options={stopHeaderOptions(Platform.OS)} />
           <Stack.Screen name="trip" options={{ title: 'Trips', headerLargeTitle: false }} />
           <Stack.Screen name="service" options={{ headerShown: false, presentation: 'card' }} />
           <Stack.Screen name="go" options={{ headerShown: false, presentation: 'card' }} />
