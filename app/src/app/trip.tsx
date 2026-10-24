@@ -61,7 +61,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
   const arr = bestTime(l.arrPlanned, l.realtime ? l.arrEstimated : null);
   const bus = busLegStatus(l);
   return (
-    <Pressable onPress={() => openService({ tripId: l.tripId, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId, color: l.color, dest: l.towards, realtime: l.realtime, estimated: l.estimated, delayMin: l.delayMin })}
+    <Pressable onPress={() => openService({ tripId: l.tripId, feed: l.feed, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId, color: l.color, dest: l.towards, realtime: l.realtime, estimated: l.estimated, delayMin: l.delayMin })}
       style={({ pressed }) => [st.leg, pressed ? { opacity: 0.7 } : null]}>
       <View style={{ width: 36, alignItems: 'center' }}>
         <View style={[st.dotBig, { borderColor: color, backgroundColor: c.card }]} />

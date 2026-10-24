@@ -39,7 +39,37 @@ const FEEDS = {
   lr_iw: { tu: "/v2/gtfs/realtime/lightrail/innerwest", vp: "/v2/gtfs/vehiclepos/lightrail/innerwest" },
   lr_par: { tu: "/v1/gtfs/realtime/lightrail/parramatta", vp: "/v1/gtfs/vehiclepos/lightrail/parramatta" },
   lr_new: { tu: "/v1/gtfs/realtime/lightrail/newcastle", vp: "/v1/gtfs/vehiclepos/lightrail/newcastle" },
+  // Operators outside the Sydney feeds, chosen per service by feedHint (operator and network names
+  // from the Trip Planner), never by line name alone: regional route numbers repeat Sydney ones.
+  ferry_mff: { tu: "/v1/gtfs/realtime/ferries/MFF", vp: "/v1/gtfs/vehiclepos/ferries/MFF" },
+  nswtrains: { tu: "/v1/gtfs/realtime/nswtrains", vp: "/v1/gtfs/vehiclepos/nswtrains" },
 };
+// Regional buses: each network publishes one to three feeds under /regionbuses/.
+const REGION_FEEDS = [
+  [/north coast/i, ["northcoast", "northcoast2", "northcoast3"]],
+  [/central west|orana/i, ["centralwestandorana", "centralwestandorana2"]],
+  [/riverina|murray/i, ["riverinamurray", "riverinamurray2"]],
+  [/south east|tablelands/i, ["southeasttablelands", "southeasttablelands2"]],
+  [/new england|north west/i, ["newenglandnorthwest"]],
+  [/newcastle|hunter/i, ["newcastlehunter"]],
+  [/far west/i, ["farwest"]],
+  [/sydney and surrounds/i, ["sydneysurrounds"]],
+];
+const FEED_GROUPS = {};
+for (const [, names] of REGION_FEEDS) {
+  const g = "rb_" + names[0];
+  FEED_GROUPS[g] = names.map((n) => { FEEDS["rb_" + n] = { tu: "/v1/gtfs/realtime/regionbuses/" + n, vp: "/v1/gtfs/vehiclepos/regionbuses/" + n }; return "rb_" + n; });
+}
+// Which non-Sydney feed carries this service, from the planner's transportation object, or null
+// (the mode's usual feed).
+function feedHint(cls, t) {
+  if (!t) return null;
+  const op = (t.operator && t.operator.name) || "", net = (t.product && t.product.name) || "", id = String(t.id || "");
+  if (cls === 9 && (/manly fast ferr/i.test(op) || /^nsw:\d*MFF:/.test(id))) return "ferry_mff";
+  if ((cls === 1 || cls === 7) && (/nsw trainlink/i.test(op) || /^regional trains and coaches/i.test(net))) return "nswtrains";
+  if (cls === 5 || cls === 7 || cls === 11) { for (const [re, names] of REGION_FEEDS) if (re.test(net)) return "rb_" + names[0]; }
+  return null;
+}
 
 function feedKey(mode, line) {
   if (mode === "lightrail") {
@@ -49,6 +79,13 @@ function feedKey(mode, line) {
     return "lr_cse";
   }
   return FEEDS[mode] ? mode : null;
+}
+// The feed keys to read for a service: its hinted feed (or group) when known, else the mode's feed.
+function feedKeys(mode, line, feed) {
+  if (feed && FEED_GROUPS[feed]) return FEED_GROUPS[feed];
+  if (feed && FEEDS[feed]) return [feed];
+  const k = feedKey(mode, line);
+  return k ? [k] : [];
 }
 
 function apiKey(env) {
@@ -392,7 +429,7 @@ function decodeFrom(feed, tripId) {
 // Loads the trip update and vehicle feeds needed for a set of (mode, line) pairs.
 async function realtimeFor(env, pairs) {
   const keys = new Set();
-  for (const [mode, line] of pairs) { const k = feedKey(mode, line); if (k) keys.add(k); }
+  for (const [mode, line, feed] of pairs) for (const k of feedKeys(mode, line, feed)) keys.add(k);
   const out = {};
   await Promise.all([...keys].map(async (k) => {
     const f = FEEDS[k];
@@ -403,10 +440,15 @@ async function realtimeFor(env, pairs) {
     ]);
     out[k] = { tu, vp };
   }));
+  const pick = (mode, line, tripId, feed, kind) => {
+    if (!tripId) return null;
+    for (const k of feedKeys(mode, line, feed)) { const r = out[k] ? decodeFrom(out[k][kind], tripId) : null; if (r) return r; }
+    return null;
+  };
   return {
     feeds: out,
-    tu(mode, line, tripId) { const k = feedKey(mode, line); return tripId && out[k] ? decodeFrom(out[k].tu, tripId) : null; },
-    vp(mode, line, tripId) { const k = feedKey(mode, line); return tripId && out[k] ? decodeFrom(out[k].vp, tripId) : null; },
+    tu(mode, line, tripId, feed) { return pick(mode, line, tripId, feed, "tu"); },
+    vp(mode, line, tripId, feed) { return pick(mode, line, tripId, feed, "vp"); },
     fetchedAt() { let m = 0; for (const k in out) { if (out[k].tu) m = Math.max(m, out[k].tu.at); if (out[k].vp) m = Math.max(m, out[k].vp.at); } return m || null; },
   };
 }
@@ -518,8 +560,8 @@ function locateGeom(veh, stops) {
 // Applies feed data to a departure-like item (works for board rows and trip legs).
 // item needs: mode, line, tripId, stopId, planned, estimated, realtime.
 function enrich(item, rt) {
-  const tu = rt.tu(item.mode, item.line, item.tripId);
-  const vp = rt.vp(item.mode, item.line, item.tripId);
+  const tu = rt.tu(item.mode, item.line, item.tripId, item.feed);
+  const vp = rt.vp(item.mode, item.line, item.tripId, item.feed);
   const veh = vehicleOf(vp);
   item.source = item.realtime ? "planner" : null;
   const f = feedAtStop(tu, item.stopId);
@@ -643,13 +685,14 @@ async function departures(env, stopId, opts = {}) {
       wheelchair: !!(e.properties && e.properties.WheelchairAccess === "true"),
       occupancy: OCC_EFA[lp.occupancy] || null,
       alerts: alertIds,
+      ...(feedHint(cls, t) ? { feed: feedHint(cls, t) } : {}),
     });
   }
   // Background sampling (opts.sampleOnly) keeps only live times, and the feeds can change a row's
   // time only when the Trip Planner has no live time for it; rows that already have one skip the
   // feed work there. Every other caller gets the full merge.
   const needFeed = opts.sampleOnly ? items.filter((i) => !i.realtime) : items;
-  const rt = await realtimeFor(env, needFeed.map((i) => [i.mode, i.line]));
+  const rt = await realtimeFor(env, needFeed.map((i) => [i.mode, i.line, i.feed]));
   let filled = 0;
   for (const it of items) {
     const was = it.realtime;
@@ -722,6 +765,7 @@ async function trip(env, fromId, toId, opts = {}) {
         towards: (t.destination && t.destination.name) || "",
         destId: (t.destination && t.destination.id) || null,
         tripId: (t.properties && (t.properties.RealtimeTripId || t.properties.AVMSTripID)) || null,
+        ...(kind !== "walk" && feedHint(cls, t) ? { feed: feedHint(cls, t) } : {}),
         stopId: o.id || null, toStopId: d.id || null, fromParent: (o.parent && o.parent.id) || null, toParent: (d.parent && d.parent.id) || null,
         from: stopName(o), fromPlatform: platformLabel(o.properties, cls),
         to: stopName(d), toPlatform: platformLabel(d.properties, cls),
@@ -741,7 +785,7 @@ async function trip(env, fromId, toId, opts = {}) {
     if (legs.length) journeys.push(legs);
   }
   const transitLegs = journeys.flat().filter((l) => l.kind === "transit");
-  const rt = await realtimeFor(env, transitLegs.map((l) => [l.mode, l.line]));
+  const rt = await realtimeFor(env, transitLegs.map((l) => [l.mode, l.line, l.feed]));
   const out = [];
   for (const legs of journeys) {
     for (const l of legs) {
@@ -749,7 +793,7 @@ async function trip(env, fromId, toId, opts = {}) {
       enrich(l, rt);
       // Arrival from the feed when the planner has none.
       if (!l.arrEstimated) {
-        const tu = rt.tu(l.mode, l.line, l.tripId);
+        const tu = rt.tu(l.mode, l.line, l.tripId, l.feed);
         const fa = feedAtStop(tu, l.toStopId);
         if (fa && fa.est) l.arrEstimated = iso(fa.est);
         else if (l.realtime && l.delayMin) l.arrEstimated = iso(ms(l.arrPlanned) + l.delayMin * 60000);
@@ -1067,9 +1111,10 @@ function baseName(n) { return String(n || "").split(",")[0].trim().toLowerCase()
 
 async function service(env, q) {
   const mode = q.mode || "bus", line = q.line || "", tripId = q.trip || null;
-  const rt = await realtimeFor(env, [[mode, line]]);
-  const tu = tripId ? rt.tu(mode, line, tripId) : null;
-  const veh = tripId ? vehicleOf(rt.vp(mode, line, tripId)) : null;
+  const feed = q.feed && (FEEDS[q.feed] || FEED_GROUPS[q.feed]) ? q.feed : null;
+  const rt = await realtimeFor(env, [[mode, line, feed]]);
+  const tu = tripId ? rt.tu(mode, line, tripId, feed) : null;
+  const veh = tripId ? vehicleOf(rt.vp(mode, line, tripId, feed)) : null;
   const now = Date.now();
   let stops = [], path = [], source = "feed", dest = q.dest || "";
   const tuLive = !!(tu && tu.ts && tu.rel !== 3);
@@ -2235,7 +2280,7 @@ function liveWord(it) {
 // Short description of where a live vehicle is, using the trip update stop list.
 async function vehicleWhere(env, rt, it) {
   if (!it.vehicle) return null;
-  const tu = rt.tu(it.mode, it.line, it.tripId);
+  const tu = rt.tu(it.mode, it.line, it.tripId, it.feed);
   if (!tu || !tu.stus.length) return null;
   let ni = nextStopIndex(tu, it.vehicle);
   const ids = tu.stus.map((u) => u.stopId);
@@ -2270,7 +2315,7 @@ async function asText(env, d, limit = 6) {
     case "departures": {
       const title = d.byNumber && d.stop.exactName ? d.stop.exactName : d.stop.name;
       const items = d.items.slice(0, limit);
-      const rt = await realtimeFor(env, items.filter((i) => i.vehicle).slice(0, 3).map((i) => [i.mode, i.line]));
+      const rt = await realtimeFor(env, items.filter((i) => i.vehicle).slice(0, 3).map((i) => [i.mode, i.line, i.feed]));
       const lines = [];
       let described = 0;
       for (const it of items) {
@@ -3302,11 +3347,11 @@ function minsFrom(t, now) { return Math.max(0, Math.round((t - now) / 60000)); }
 
 async function liveLegs(env, spec, now, opts = {}) {
   const legs = spec.legs;
-  const rt = await realtimeFor(env, legs.map((l) => [l.mode, l.line]));
+  const rt = await realtimeFor(env, legs.map((l) => [l.mode, l.line, l.feed]));
   const out = legs.map((l, i) => {
-    const it = { mode: l.mode, line: l.line, tripId: l.tripId, stopId: l.stopId, planned: l.planned, estimated: l.estimated || null, realtime: false };
+    const it = { mode: l.mode, line: l.line, feed: l.feed, tripId: l.tripId, stopId: l.stopId, planned: l.planned, estimated: l.estimated || null, realtime: false };
     try { enrich(it, rt); } catch (e) { /* no feed */ }
-    const tu = rt.tu(l.mode, l.line, l.tripId);
+    const tu = rt.tu(l.mode, l.line, l.tripId, l.feed);
     let dep = ms(it.estimated || l.planned);
     let depLive = !!it.realtime && !!it.estimated;
     if (!depLive) {
@@ -3320,7 +3365,7 @@ async function liveLegs(env, spec, now, opts = {}) {
       else if (depLive) { arr = ms(l.arrPlanned) + (dep - ms(l.planned)); arrLive = true; }
       else arr = ms(l.arrPlanned);
     }
-    const veh = vehicleOf(rt.vp(l.mode, l.line, l.tripId));
+    const veh = vehicleOf(rt.vp(l.mode, l.line, l.tripId, l.feed));
     return { i, dep, depLive, arr, arrLive, cancelled: !!it.cancelled, platform: l.fromPlatform || "", platformFrom: null, platformSeen: false, vehicle: veh ? { lat: veh.lat, lon: veh.lon } : null };
   });
   // Board leg: refine with the departure board (platform changes, cancellations).
@@ -4437,7 +4482,7 @@ function json(obj, status = 200) {
 function textRes(s) { return new Response(s, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "*", ...API_SEC_HEADERS } }); }
 function serviceQuery(p) {
   const q = {};
-  for (const k of ["trip", "mode", "line", "stop", "destId", "planned", "to", "stopName", "dest", "color"]) if (p.get(k)) q[k] = p.get(k);
+  for (const k of ["trip", "mode", "line", "feed", "stop", "destId", "planned", "to", "stopName", "dest", "color"]) if (p.get(k)) q[k] = p.get(k);
   return q;
 }
 
@@ -4856,7 +4901,7 @@ function laLook(cs) {
 /** The card for a trip now, from live times for each leg (the same /api/service data the app reads). */
 async function laCardFor(env, trip, now) {
   const svcs = await Promise.all(trip.legs.map((l) =>
-    service(env, { trip: l.tripId, mode: l.mode, line: l.line, stop: l.stopId, destId: l.destId, planned: l.planned, to: l.toStopId, dest: l.towards, stopName: l.from, color: l.color })
+    service(env, { trip: l.tripId, mode: l.mode, line: l.line, feed: l.feed, stop: l.stopId, destId: l.destId, planned: l.planned, to: l.toStopId, dest: l.towards, stopName: l.from, color: l.color })
       .then((r) => (r && !r.error ? r : null)).catch(() => null)));
   const s = LIVECARD.computeLive(trip.legs, svcs, now, { rode: trip.rode, arrivedAt: trip.arrivedAt });
   const card = LIVECARD.cardFor(trip, s, now, { updated: now });
@@ -5105,7 +5150,7 @@ async function shareRoutes(request, env, url) {
 }
 // One stop before you get off: used by watches started from "Start trip".
 async function oneStopCheck(env, l) {
-  const s = await service(env, { mode: l.mode, line: l.line, trip: l.tripId, stop: l.stopId, to: l.toStopId, destId: l.destId, planned: l.planned });
+  const s = await service(env, { mode: l.mode, line: l.line, feed: l.feed, trip: l.tripId, stop: l.stopId, to: l.toStopId, destId: l.destId, planned: l.planned });
   if (!s || s.alightIndex == null || s.alightIndex < 1) return null;
   return { nextIsYours: s.nextIndex === s.alightIndex, stopsLeft: s.alightIndex - s.nextIndex, eta: s.stops[s.alightIndex] ? ms(s.stops[s.alightIndex].estimated || s.stops[s.alightIndex].planned) : null };
 }

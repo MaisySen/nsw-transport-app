@@ -6,6 +6,8 @@ export type Prediction = { delayMin: number; n: number; days: number; text: stri
 export type Departure = {
   mode: string; modeName?: string; line: string; color?: string; dest: string; destId?: string; description?: string;
   platform?: string; platformChangedFrom?: string | null; stopId: string; stopName?: string; tripId?: string;
+  /** Which non-Sydney realtime feed carries this service (regional, TrainLink, Manly Fast Ferry); passed back to /api/service. */
+  feed?: string;
   planned: string; estimated?: string | null; realtime: boolean; delayMin?: number | null; cancelled?: boolean;
   wheelchair?: boolean; occupancy?: Occupancy; alerts?: (Alert | string)[]; vehicle?: Vehicle; stopsAway?: number | null;
   status?: { key: string; text: string }; pred?: Prediction;
@@ -17,7 +19,7 @@ export type DeparturesResp = {
 };
 
 export type Leg = {
-  kind: 'transit' | 'walk'; mode?: string; modeName?: string; line?: string; color?: string; towards?: string; destId?: string; tripId?: string;
+  kind: 'transit' | 'walk'; mode?: string; modeName?: string; line?: string; color?: string; towards?: string; destId?: string; tripId?: string; feed?: string;
   stopId?: string; toStopId?: string; from?: string; fromPlatform?: string; to?: string; toPlatform?: string;
   planned?: string; estimated?: string; arrPlanned?: string; arrEstimated?: string; realtime?: boolean; delayMin?: number | null;
   durationMin: number; stops?: number; cancelled?: boolean; occupancy?: Occupancy; platformChangedFrom?: string | null; alerts?: Alert[];

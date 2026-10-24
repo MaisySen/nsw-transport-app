@@ -15,14 +15,14 @@ import { LineBadge, LiveStamp, OccupancyChip, StatusLine } from '@/components/Tr
 import { Button, T } from '@/components/ui';
 
 export default function ServiceScreen() {
-  const p = useLocalSearchParams<{ trip: string; line: string; stop: string; planned: string; mode: string; destId: string; color: string; dest: string; rt: string; est: string; delay: string }>();
+  const p = useLocalSearchParams<{ trip: string; feed: string; line: string; stop: string; planned: string; mode: string; destId: string; color: string; dest: string; rt: string; est: string; delay: string }>();
   const c = usePalette();
   const now = useNow(1000);
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const st = useStore();
   const sheet = useRef<BottomSheet>(null);
-  const { data, error, updatedAt } = useLive(() => api.service({ trip: p.trip, line: p.line, stop: p.stop, planned: p.planned, mode: p.mode, destId: p.destId }), 15000, [p.trip, p.planned]);
+  const { data, error, updatedAt } = useLive(() => api.service({ trip: p.trip, feed: p.feed || undefined, line: p.line, stop: p.stop, planned: p.planned, mode: p.mode, destId: p.destId }), 15000, [p.trip, p.planned]);
   const color = data?.color || p.color || modeColor[p.mode || 'bus'];
   const snaps = useMemo(() => ['38%', '62%', '92%'], []);
   const key = tripKey(p.trip, p.planned, p.line);
