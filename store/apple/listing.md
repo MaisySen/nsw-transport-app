@@ -1,73 +1,83 @@
 # App Store listing (App Store Connect)
 
+Set in App Store Connect through the API on 25 Oct 2026 (app 6826543653, version 1.0.0 with build 201). This file is the source; if you change a text here, change it there too.
+
 ## App information
 
 * Name (30 max): Transport: Sydney Live
-  * If the name is taken: Transport Live: Sydney NSW
 * Subtitle (30 max): Trains, buses, metro, ferries
 * Bundle ID: com.maisysen.nswtransport
 * SKU: nswtransport-ios-1
 * Primary language: English (Australia)
 * Primary category: Navigation
 * Secondary category: Travel
-* Content rights: Uses third party content (Transport for NSW open data, CC BY 4.0). Answer "Yes, it contains third party content and I have the rights to use it."
-* Age rating: 4+ (see age-rating.md)
+* Content rights: Uses third party content (Transport for NSW Open Data, CC BY 4.0), with the rights to use it.
+* Age rating: 4+ (every item None or No, see age-rating.md)
 * Price: Free. No in-app purchases. No ads.
-* Availability: Australia (all other countries can stay off; the data only covers NSW)
-* Copyright: 2026 (your legal name or business name, the seller name on the developer account)
+* Availability: Australia only
+* Copyright: 2026 Fintex Australia Pty Ltd
+* Export compliance: standard HTTPS only. ios.config.usesNonExemptEncryption is false in app.json, so builds carry ITSAppUsesNonExemptEncryption false and App Store Connect asks nothing.
 
 ## URLs
 
 * Support URL: https://transportsydney.app/support/
-* Marketing URL: https://transportsydney.app/support/
+* Marketing URL: https://transportsydney.app/
 * Privacy policy URL: https://transportsydney.app/privacy/
 
 ## Promotional text (170 max)
 
-Live times that count down every second, widgets for your Home Screen and Lock Screen, and a trip watch that tells you when to leave. Ask it anything in plain words.
+Live times for trains, metro, buses, light rail and ferries. Your trips first, step free options, widgets and a check before you leave. Ask in plain words.
 
 ## Description (4000 max)
 
-Live Sydney and NSW public transport, made for iPhone. Trains, metro, buses, light rail and ferries, with the time each service really leaves.
+Live Sydney and NSW public transport for iPhone. Trains, metro, buses, light rail and ferries, with live times for when each service leaves.
 
 LIVE DEPARTURES
-Every board refreshes itself and the minutes count down on their own. Each service is marked Live or Scheduled, with its platform or stand, how late it is and how full it is when the data says so.
+Boards refresh on their own and the minutes count down. Each service shows Live or Scheduled, its platform or stand, how late it is, and how full it is when the data says so.
 
-TRIPS FIRST
-Add home and add work once. In the morning Transport shows Home to Work first, in the evening the reverse. Each trip shows its next three services with leave and arrive times, changes, and earlier and later services.
+YOUR TRIPS FIRST
+Add home and work once. In the morning Home to Work comes first, in the evening the reverse. Each trip shows its next services with leave and arrive times, changes, an Opal fare estimate, and earlier and later services.
 
-SEE WHERE IT IS
-Tap a service to follow it on the map, with every stop, the next stop and how many stops away it is.
+STEP FREE AND LIFTS
+Plan step free trips and see lift outages on your way before you leave.
 
-WATCH A TRIP
-Swipe on any service or tap Watch trip. Transport tells you when to leave, when it runs late, when the platform changes, and when a late leg means you will miss your connection, with the next way to get there.
+CHECK MY TRIP BEFORE I GO
+Set your usual leave time and days. Before your trip you get one alert, only if something is wrong: a delay, a cancellation, trackwork, a platform change or a lift out of service.
 
-WIDGETS AND LOCK SCREEN
-Small, medium and large Home Screen widgets, a stop board widget, Lock Screen widgets and StandBy. Pick any saved trip or stop for each widget. Follow a service in the Dynamic Island and on the Lock Screen with a Live Activity.
+FOLLOW YOUR TRIP
+Tap Start trip to follow it on a live map with the next stop, stops left and your arrival time, also on the Lock Screen and in the Dynamic Island. Get an alert before your stop and at each change. Share trip sends a link others can open; it stops working when the trip ends.
+
+WATCH A SERVICE
+Swipe left on a departure to watch it. Transport alerts you when it is time to leave, if it runs late or if the platform changes.
+
+WIDGETS
+Home Screen and Lock Screen widgets for a stop or trip you choose.
 
 ASK
 Type a question like "next train Burwood to Central", "is the T1 late" or "last train home" and get a short answer with live times you can tap.
 
-SIRI
-Say "Next train home in Transport" or "Ask Transport" and hear the answer without opening the app.
+MORE
+Live free spaces at Park and Ride car parks and Opal machines near you.
 
 NO ACCOUNT
-No sign up, no ads, no tracking. Saved trips belong to a random ID made on your phone.
+No sign up, no ads, no tracking. Saved trips belong to a random ID made on your phone, and Delete all data in More removes them.
 
-Contains transport information from Transport for NSW Open Data, licensed under CC BY 4.0. Transport is an independent app. It is not made, endorsed or supported by Transport for NSW.
+Contains transport information from Transport for NSW Open Data, licensed under CC BY 4.0. Map data from OpenStreetMap contributors. Transport: Sydney Live is an independent app by Fintex Australia Pty Ltd. It is not made or endorsed by Transport for NSW.
 
 ## Keywords (100 max, commas, no spaces)
 
 train,bus,ferry,metro,light rail,timetable,departures,trip planner,nsw,commute,widget,platform,delay
 
-## What's New (version 1.0)
+## What's New
 
-First release.
+Not shown for the first version.
 
 ## Screenshots
 
-* iPhone 6.9 inch (1320 x 2868): screenshots/apple-6.9/
-* iPhone 6.5 inch (1242 x 2688): screenshots/apple-6.5/
-* iPad: not needed. The app is iPhone only (TARGETED_DEVICE_FAMILY 1).
+Made from the Expo app's web export with live data, light mode (store/screenshots/README.md says how):
 
-Upload order: 01 Trips, 02 trip, 03 board, 04 live map, 05 Ask, 06 nearby.
+* iPhone 6.9 inch (1320 x 2868): screenshots/apple-6.9/, uploaded
+* iPhone 6.5 inch (1284 x 2778): screenshots/apple-6.5/, uploaded
+* iPad: not needed (supportsTablet false)
+
+Order: 01 Home with the commute card, 02 Central departures, 03 a trip, 04 Ask, 05 Check my trip before I go.

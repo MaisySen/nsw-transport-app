@@ -1,5 +1,7 @@
 # SUBMIT: what is left once the keys arrive
 
+Current state per store (25 Oct 2026): [docs/STORE_READINESS.md](docs/STORE_READINESS.md).
+
 Everything that does not need a developer account login is done: code, privacy manifests, signed Android App Bundle,
 store copy, screenshots and the support and privacy pages. What remains is below, in order. Each step is one action.
 

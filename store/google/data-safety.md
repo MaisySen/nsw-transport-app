@@ -1,5 +1,8 @@
 # Play Data safety form answers
 
+The current answers are in [docs/STORE_PRIVACY.md](../../docs/STORE_PRIVACY.md) (25 Oct 2026). The text below is the earlier version, kept for reference.
+
+
 Matches Android versionCode 5 with the over the air updates up to 24 Oct 2026 (live trip and Share trip, Park and Ride and lift outage alerts). Re-check this form whenever the app starts collecting something new.
 
 Does your app collect or share any of the required user data types? Yes.

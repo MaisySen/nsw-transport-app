@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Store readiness (no app update, 25 Oct, 8 AM)
+* App Store Connect: version 1.0.0 with build 201 attached, listing rewritten for the Expo app, review notes, 6.9 and 6.5 inch screenshots uploaded. Not submitted.
+* app.json, for the next native builds: the unused Always location, motion and full accuracy purpose strings are removed, the When In Use string gives the full reason, and the privacy manifest lists the data the server keeps.
+* New: docs/STORE_READINESS.md (App Store and Play checklists), docs/STORE_PRIVACY.md (App Privacy and Data safety answers from the code), fresh screenshots and Play feature graphic from the Expo app.
+
 ### Ask answers easy to scan (over the air update for iPhone and Android, 25 Oct, 7:37 AM)
 * A trip answer in Ask is now a short card instead of one long paragraph: the departure time large with minutes to go, the line chips and platform, then "Arrives Kings Cross 7:55 am · 1 change".
 * Status as a chip in the same words and colours as the rows below: On time in green, N min late in orange, Cancelled in red.
