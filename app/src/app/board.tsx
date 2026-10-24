@@ -35,9 +35,9 @@ export default function Board() {
   const wide = width > height;
   useStayAwake();
   const { data, error, offlineAt } = useLive((r) => api.departures(String(id), r), 15000, [id], { cacheKey: cacheKey('dep', String(id)) });
-  const big = wide ? Math.min(64, Math.max(40, height / 7)) : Math.min(56, Math.max(36, width / 8));
-  const rowH = big * 1.75;
-  const rows = boardRows(data?.items || [], now, rowsThatFit(height - insets.top - insets.bottom, rowH, big * 2.4));
+  const big = wide ? Math.min(64, Math.max(32, height / 10)) : Math.min(52, Math.max(32, width / 10));
+  const rowH = big * 1.6;
+  const rows = boardRows(data?.items || [], now, rowsThatFit(height - insets.top - insets.bottom, rowH, 100));
   const title = shortName(data?.stop?.name || (name ? String(name) : 'Departures')).replace(/ Station$/, '');
   const close = () => { haptic.tap(); router.back(); };
 
@@ -69,12 +69,12 @@ export default function Board() {
               <Text numberOfLines={1} maxFontSizeMultiplier={1} style={{ color: fg, fontSize: big * 0.55, fontWeight: '800' }}>{r.line}</Text>
             </View>
             <View style={{ flex: 1, marginLeft: big * 0.35 }}>
-              <Text numberOfLines={1} maxFontSizeMultiplier={1} style={{ color: r.cancelled ? c.text3 : c.text, fontSize: big * 0.62, fontWeight: '600', textDecorationLine: r.cancelled ? 'line-through' : 'none' }}>{r.dest}</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1} style={{ color: r.cancelled ? c.text3 : c.text, fontSize: big * 0.6, fontWeight: '600', textDecorationLine: r.cancelled ? 'line-through' : 'none' }}>{r.dest}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
-                {r.platform ? <Text maxFontSizeMultiplier={1} style={{ color: c.text2, fontSize: big * 0.36, fontWeight: '600', marginRight: 12 }}>{r.platform}</Text> : null}
+                {r.platform ? <Text numberOfLines={1} maxFontSizeMultiplier={1} style={{ color: c.text2, fontSize: big * 0.36, fontWeight: '600', marginRight: 12 }}>{r.platform}</Text> : null}
                 {r.cancelled ? <Text maxFontSizeMultiplier={1} style={{ color: c.redText, fontSize: big * 0.36, fontWeight: '600' }}>Cancelled</Text>
                   : r.live ? <><View style={{ width: big * 0.16, height: big * 0.16, borderRadius: big, backgroundColor: c.green, marginRight: 5 }} /><Text maxFontSizeMultiplier={1} style={{ color: c.liveText, fontSize: big * 0.36, fontWeight: '600' }}>Live</Text></>
-                  : <><Icon name={I.clock} size={big * 0.32} color={c.text2} /><Text maxFontSizeMultiplier={1} style={{ color: c.text2, fontSize: big * 0.36, marginLeft: 4 }}>Timetable</Text></>}
+                  : <><Icon name={I.clock} size={big * 0.32} color={c.text2} /><Text numberOfLines={1} maxFontSizeMultiplier={1} style={{ color: c.text2, fontSize: big * 0.36, marginLeft: 4 }}>Timetable</Text></>}
               </View>
             </View>
             <Text maxFontSizeMultiplier={1} style={{ color: r.cancelled ? c.text3 : r.live ? c.liveText : c.text, fontSize: big, fontWeight: '700', fontVariant: ['tabular-nums'], marginLeft: 12 }}>
