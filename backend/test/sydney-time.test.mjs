@@ -1,12 +1,13 @@
-// The Sydney clock helpers keep one Intl answer per UTC hour. They must give exactly what a fresh
-// Intl.DateTimeFormat gives, including the hours around daylight saving changes.
+// The Sydney clock helpers work the local time out with date arithmetic (the NSW daylight saving
+// rule) instead of Intl. They must give exactly what Intl.DateTimeFormat gives, including the hours
+// around every daylight saving change.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const root = new URL("..", import.meta.url).pathname;
 const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {")
-  + "\nexport { sydneyNow, sydneyParts, todOfMs, relDayType, clock };\n";
+  + "\nexport { sydneyNow, sydneyParts, todOfMs, relDayType, clock, hm, hms };\n";
 const tmp = `/tmp/sydtime-test-${process.pid}-${Date.now()}.mjs`;
 fs.writeFileSync(tmp, src);
 const W = await import(tmp); fs.unlinkSync(tmp);
@@ -34,6 +35,34 @@ test("sydneyNow and sydneyParts match Intl every 7 minutes across both 2026 dayl
       assert.deepEqual(W.sydneyParts(new Date(t)), intlParts(new Date(t)), new Date(t).toISOString());
     }
   }
+});
+
+const clockIntl = (t, s) => new Date(t).toLocaleTimeString("en-AU", { timeZone: TZ, hour: "numeric", minute: "2-digit", ...(s ? { second: "2-digit" } : {}) }).replace(/\s/g, "").toLowerCase();
+
+test("every daylight saving change from 2009 to 2035: minute by minute around it, Intl and the arithmetic agree", () => {
+  for (let y = 2009; y <= 2035; y++) {
+    for (const m of [3, 9]) {
+      const first = new Date(Date.UTC(y, m, 1)).getUTCDay();
+      const change = Date.UTC(y, m, 1 + ((7 - first) % 7)) - 8 * 3600000;
+      for (let t = change - 3 * 3600000; t <= change + 3 * 3600000; t += 60000) {
+        assert.deepEqual(W.sydneyNow(new Date(t)), intlNow(new Date(t)), new Date(t).toISOString());
+      }
+      assert.deepEqual(W.sydneyParts(new Date(change)), intlParts(new Date(change)));
+      assert.equal(W.clock(change), clockIntl(change, false));
+    }
+  }
+});
+
+test("clock, hm and hms match the en-AU Intl format, midnight and noon included", () => {
+  for (let t = Date.UTC(2026, 0, 1, 0, 0, 7); t < Date.UTC(2027, 0, 1); t += 37 * 60000 + 11000) {
+    assert.equal(W.clock(t), clockIntl(t, false));
+    assert.equal(W.hm(t), clockIntl(t, false));
+    assert.equal(W.hms(t), clockIntl(t, true));
+  }
+  for (const t of [Date.UTC(2026, 9, 24, 13, 0), Date.UTC(2026, 9, 24, 13, 5), Date.UTC(2026, 9, 24, 1, 0), Date.UTC(2026, 5, 1, 14, 0)]) {
+    assert.equal(W.clock(t), clockIntl(t, false));
+  }
+  assert.equal(W.clock(new Date(Date.UTC(2026, 9, 24, 20, 30)).toISOString()), "7:30am");
 });
 
 test("sydneyNow matches Intl at random instants over three years, and at midnight and second edges", () => {

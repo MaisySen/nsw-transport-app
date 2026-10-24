@@ -342,8 +342,8 @@ function indexFeed(buf, kind) {
 }
 
 // ---------- shared feed cache ----------
-// Each feed is fetched at most once per FEED_TTL_MS per worker instance, and the raw bytes
-// are also put in a named edge cache so other instances in the same location can reuse them.
+// Each feed is fetched at most once per FEED_TTL_MS per worker instance, and Cloudflare's fetch
+// cache keeps the bytes for the same time so other instances in the same location can reuse them.
 
 const feedMem = new Map(); // path -> { at, buf, idx, headerTs, promise }
 const feedStats = { fetched: 0, edgeHits: 0, memHits: 0, edgeMiss: 0, edgeErr: 0, edgePutErr: 0, requests: 0, isolate: Math.random().toString(36).slice(2, 8), born: Date.now() };
@@ -354,32 +354,17 @@ async function loadFeed(env, path, kind) {
   if (hit && hit.buf && now - hit.at < FEED_TTL_MS) { feedStats.memHits++; return hit; }
   if (hit && hit.promise) return hit.promise;
   const promise = (async () => {
-    let buf = null, at = now;
-    const cacheKey = new Request("https://feed-cache.transport-bot.internal" + path);
-    let cache = null;
-    try { cache = await caches.open("feeds"); } catch (e) { cache = null; }
-    if (cache) {
-      try {
-        const c = await cache.match(cacheKey);
-        if (c) {
-          const t = Number(c.headers.get("x-fetched-at") || 0);
-          if (now - t < FEED_TTL_MS) { buf = new Uint8Array(await c.arrayBuffer()); at = t; feedStats.edgeHits++; }
-        } else feedStats.edgeMiss++;
-      } catch (e) { feedStats.edgeErr++; feedStats.lastErr = String(e && e.message || e).slice(0, 120); }
-    }
-    if (!buf) {
-      upstream.calls++;
-      const res = await fetch(API + path, { headers: { Authorization: "apikey " + apiKey(env) } });
-      if (!res.ok) throw new Error(`Realtime feed ${path} answered ${res.status}`);
-      buf = new Uint8Array(await res.arrayBuffer());
-      at = Date.now();
-      feedStats.fetched++;
-      if (cache) {
-        try {
-          await cache.put(cacheKey, new Response(buf, { headers: { "cache-control": "max-age=15", "x-fetched-at": String(at) } }));
-        } catch (e) { feedStats.edgePutErr++; feedStats.lastErr = String(e && e.message || e).slice(0, 120); }
-      }
-    }
+    // One copy per location is shared through Cloudflare's own fetch cache (good answers only): the same 15 s
+    // sharing the Cache API gave, but the copy is stored outside this isolate, so it costs no CPU here.
+    // Putting a 2.3 MB feed into the Cache API took about 25 ms of CPU on every fresh fetch, and most
+    // requests run in a fresh isolate. A copy from that cache says how old it is in Age.
+    const res = await fetch(API + path, { headers: { Authorization: "apikey " + apiKey(env) }, cf: { cacheEverything: true, cacheTtlByStatus: { "200-299": Math.round(FEED_TTL_MS / 1000), "300-599": 0 } } });
+    const shared = res.headers && res.headers.get("cf-cache-status") === "HIT";
+    if (shared) feedStats.edgeHits++; else { upstream.calls++; feedStats.fetched++; }
+    if (!res.ok) throw new Error(`Realtime feed ${path} answered ${res.status}`);
+    const buf = new Uint8Array(await res.arrayBuffer());
+    const age = shared ? Number(res.headers.get("age")) || 0 : 0;
+    const at = Date.now() - Math.min(age, FEED_TTL_MS / 1000) * 1000;
     const { idx, headerTs } = indexFeed(buf, kind);
     const entry = { at, buf, idx, headerTs, kind, cache: new Map() };
     feedMem.set(path, entry);
@@ -660,11 +645,16 @@ async function departures(env, stopId, opts = {}) {
       alerts: alertIds,
     });
   }
-  const rt = await realtimeFor(env, items.map((i) => [i.mode, i.line]));
+  // Background sampling (opts.sampleOnly) keeps only live times, and the feeds can change a row's
+  // time only when the Trip Planner has no live time for it; rows that already have one skip the
+  // feed work there. Every other caller gets the full merge.
+  const needFeed = opts.sampleOnly ? items.filter((i) => !i.realtime) : items;
+  const rt = await realtimeFor(env, needFeed.map((i) => [i.mode, i.line]));
   let filled = 0;
   for (const it of items) {
     const was = it.realtime;
-    enrich(it, rt);
+    if (opts.sampleOnly && was) it.source = "planner";
+    else enrich(it, rt);
     if (!was && it.realtime) filled++;
     it.status = statusOf(it);
   }
@@ -2221,9 +2211,11 @@ async function askText(env, d) {
 // ---------- plain text answers (WhatsApp, Telegram, SMS) ----------
 
 function hm(t) {
+  if (Number.isFinite(+t) && t !== null && t !== "") return clockOf(t, false);
   return dtf("en-AU", CLOCK_OPTS).format(new Date(t)).replace(/\s/g, "").toLowerCase();
 }
 function hms(t) {
+  if (Number.isFinite(+t) && t !== null && t !== "") return clockOf(t, true);
   return dtf("en-AU", CLOCK_S_OPTS).format(new Date(t)).replace(/\s/g, "").toLowerCase();
 }
 function inMins(t) {
@@ -2680,25 +2672,34 @@ function sydneyNowIntl(d) {
   const h = p.hour === "24" ? 0 : Number(p.hour);
   return { day: `${p.year}${p.month}${p.day}`, dow, tod: h * 60 + Number(p.minute) };
 }
-// Sydney is always a whole number of hours away from UTC (10 or 11), and daylight saving starts
-// and ends on a UTC hour boundary, so the local date, weekday and hour of any instant follow from
-// the start of its UTC hour. Those are worked out with Intl once per hour and kept: predictions
-// and the reliability pick ask this for every recorded row (thousands per request).
-const sydHourMemo = new Map();
+// Australia/Sydney is UTC+10, and UTC+11 from the first Sunday in October 2:00 standard time until
+// the first Sunday in April 3:00 daylight time (the NSW rule since 2008; both changes fall on a
+// Saturday at 16:00 UTC). Worked out with plain date arithmetic: most requests here run in a fresh
+// isolate, where the first Intl time zone formatter alone costs several milliseconds of CPU, and
+// predictions ask this for every recorded row. test/sydney-time.test.mjs checks it against Intl.
+function firstSundayUtc(y, m) { const w = new Date(Date.UTC(y, m, 1)).getUTCDay(); return Date.UTC(y, m, 1 + ((7 - w) % 7)); }
+const sydDst = new Map(); // UTC year -> [daylight saving ends, daylight saving starts] in epoch ms
+function sydOffsetMin(t) {
+  const y = new Date(t).getUTCFullYear();
+  let b = sydDst.get(y);
+  if (!b) { b = [firstSundayUtc(y, 3) - 8 * 3600000, firstSundayUtc(y, 9) - 8 * 3600000]; sydDst.set(y, b); }
+  return t >= b[0] && t < b[1] ? 600 : 660;
+}
+const pad2 = (n) => (n < 10 ? "0" : "") + n;
 function sydneyNow(d = new Date()) {
   const t = +d;
   if (!Number.isFinite(t)) return sydneyNowIntl(d);
-  const h0 = t - (((t % 3600000) + 3600000) % 3600000);
-  let hp = sydHourMemo.get(h0);
-  if (!hp) {
-    const s = sydneyNowIntl(new Date(h0));
-    hp = { day: s.day, dow: s.dow, tod0: s.tod };
-    if (sydHourMemo.size > 5000) sydHourMemo.clear();
-    sydHourMemo.set(h0, hp);
-  }
-  return { day: hp.day, dow: hp.dow, tod: hp.tod0 + Math.floor((t - h0) / 60000) };
+  const l = new Date(t + sydOffsetMin(t) * 60000);
+  return { day: `${l.getUTCFullYear()}${pad2(l.getUTCMonth() + 1)}${pad2(l.getUTCDate())}`, dow: l.getUTCDay() || 7, tod: l.getUTCHours() * 60 + l.getUTCMinutes() };
+}
+// "7:30am", as the en-AU Intl format with spaces removed and lower case.
+function clockOf(t, withSeconds) {
+  const l = new Date(+t + sydOffsetMin(+t) * 60000);
+  const h = l.getUTCHours();
+  return `${h % 12 || 12}:${pad2(l.getUTCMinutes())}${withSeconds ? ":" + pad2(l.getUTCSeconds()) : ""}${h < 12 ? "am" : "pm"}`;
 }
 function clock(t) {
+  if (Number.isFinite(+t) && t !== null && t !== "") return clockOf(t, false);
   return dtf("en-AU", CLOCK_OPTS).format(new Date(t)).replace(/\s/g, "").toLowerCase();
 }
 function hhmmOf(tod) { tod = ((tod % 1440) + 1440) % 1440; return String(Math.floor(tod / 60)).padStart(2, "0") + String(tod % 60).padStart(2, "0"); }
@@ -4030,7 +4031,7 @@ async function sampleStops(env, sn, budgetOk) {
   const done = [];
   for (const stop of mine) {
     try {
-      const r = await departures(env, stop, { log: false });
+      const r = await departures(env, stop, { log: false, sampleOnly: true });
       const now = Date.now();
       const keep = r.items.filter((i) => i.realtime && i.tripId && i.estimated && ms(i.estimated) - now < 6 * 60000 && ms(i.estimated) > now - 30000);
       if (keep.length) {

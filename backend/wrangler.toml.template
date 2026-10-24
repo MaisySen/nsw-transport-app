@@ -9,6 +9,8 @@ compatibility_date = "2026-08-01"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = false
 preview_urls = false
+# Smaller script: less to parse and compile in each fresh isolate (most requests start one).
+minify = true
 
 # The static files the API reads (stations, stops, facilities) and the shared live trip page.
 # The worker runs first so the API host never serves anything it does not route.
