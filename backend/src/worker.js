@@ -5031,6 +5031,24 @@ function shareOut(row, now) {
   return { id: row.id, title: spec.title || "Live trip", from: spec.from || null, to: spec.to || null, legs: spec.legs || [], pos, prog: st.prog || null,
     started: row.created, updated: row.updated, expires: row.expires, now };
 }
+// TEMP until the apps move to this address: a live trip shared from the old address (Worker secret
+// SHARE_FALLBACK_BASE, https only, kept out of the repo), read from there. Null when it is not set, not found there, or does not answer within 5 s.
+async function shareFromFallback(env, id) {
+  const base = String((env && env.SHARE_FALLBACK_BASE) || "").replace(/\/+$/, "");
+  if (!/^https:\/\/[a-z0-9.-]+$/i.test(base) || !shareIdOk(id)) return null;
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 5000);
+  try {
+    const r = await fetch(`${base}/api/share?id=${encodeURIComponent(id)}`, { signal: ctl.signal, headers: { accept: "application/json" } });
+    if (!r.ok) return null;
+    const b = await r.json();
+    return b && typeof b === "object" && b.id === id && !b.ended ? b : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
 async function shareRoutes(request, env, url) {
   const p = url.searchParams, now = Date.now();
   if (!(await ensureShares(env).catch(() => false))) return json({ error: "Sharing is not available right now." }, 503);
@@ -5042,6 +5060,10 @@ async function shareRoutes(request, env, url) {
     const row = await d.prepare("SELECT * FROM shares WHERE id = ?1").bind(id).first();
     if (!row || row.expires < now) {
       if (row) await d.prepare("DELETE FROM shares WHERE id = ?1").bind(id).run();
+      // TEMP until the apps move here (copy.api_base): shares are still made on the old address, so a link
+      // opened in a browser lands here first. Ask the old address before saying the trip has ended.
+      const old = await shareFromFallback(env, id);
+      if (old) return json(old);
       return json({ ended: true, error: "This trip has ended." }, 404);
     }
     return json(shareOut(row, now));

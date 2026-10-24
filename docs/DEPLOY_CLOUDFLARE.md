@@ -153,3 +153,5 @@ The apps read `copy.api_base` from `/api/app/config` and move to it (https only,
 6. When the old address has had no traffic for a while: stop its minute tick and retire it.
 
 **Undo:** POST `{"copy":{"api_base":""}}` on the old address and `{"copy":{"api_base":"<old address>"}}` on the new one; apps move back the same way.
+
+**Shared trips made on the old address (TEMP).** Until the apps move here, Share trip still makes the share on the old address, and a browser opening `transportsydney.app/trip/<id>` lands on this address. `GET /api/share` asks the old address when an id is not found here, so the live trip page shows it. The old address is the Worker secret `SHARE_FALLBACK_BASE` (https only), set once with `npx wrangler@4 secret put SHARE_FALLBACK_BASE`, so it is in no file. Remove the secret and `shareFromFallback` in `src/worker.js` once the apps have moved and older shares have ended (4 hours).

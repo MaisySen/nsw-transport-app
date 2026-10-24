@@ -119,3 +119,31 @@ test("watches started from Start trip are marked for the one stop before alert",
   assert.match(w, /Next stop: \$\{l\.to\}/);
   assert.match(w, /DELETE FROM shares WHERE expires < \?1/);
 });
+
+test("a share made on the old address is read from there (TEMP until the apps move)", async () => {
+  const seen = [];
+  const prev = globalThis.fetch;
+  globalThis.fetch = async (u) => {
+    seen.push(String(u));
+    if (String(u).startsWith("https://old.example/api/share?id=OldShare12345")) return new Response(JSON.stringify({ id: "OldShare12345", title: "From the old address", legs: [] }), { status: 200 });
+    if (String(u).startsWith("https://old.example/api/share?id=")) return new Response(JSON.stringify({ ended: true, error: "This trip has ended." }), { status: 404 });
+    return new Response("{}", { status: 503 });
+  };
+  const envF = { ...env, SHARE_FALLBACK_BASE: "https://old.example" };
+  const get = (id) => W.__default.fetch(new Request("https://t.example/api/share?id=" + id, { headers: { "cf-connecting-ip": "10.1.0.9" } }), envF, { waitUntil() {} });
+  try {
+    const ok = await get("OldShare12345");
+    assert.equal(ok.status, 200);
+    assert.equal((await ok.json()).title, "From the old address");
+    const gone = await get("NotThere12345");
+    assert.equal(gone.status, 404);
+    assert.equal((await gone.json()).ended, true);
+    // Without the setting nothing is asked.
+    const n = seen.length;
+    const none = await W.__default.fetch(new Request("https://t.example/api/share?id=OldShare12345", { headers: { "cf-connecting-ip": "10.1.0.9" } }), env, { waitUntil() {} });
+    assert.equal(none.status, 404);
+    assert.equal(seen.filter((u) => u.includes("old.example")).length, n);
+  } finally {
+    globalThis.fetch = prev;
+  }
+});
