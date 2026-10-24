@@ -5,6 +5,7 @@ import type { CarPark, Station, TopupItem } from './access';
 import { apiBase, NEW_API_BASE } from './server';
 import { placesGone, stopsAsPlaces, type PlaceItem } from './planCore';
 import { createReadCache } from './pollCore';
+import { createKeep, isLongTrip, longGone, LONG_TRIP_KEEP_MS, LONG_TRIP_TIMEOUT_MS, plannerTooSlow } from './longTripCore';
 
 function qs(o: Record<string, any>) {
   return Object.entries(o)
@@ -66,8 +67,19 @@ export const api = {
   search: (q: string) => req<{ items: SearchItem[] }>(`/api/search?${qs({ q })}`),
   nearby: (lat: number, lon: number) => req<{ stops: (SearchItem & { distanceM?: number; dist?: number })[] }>(`/api/nearby?${qs({ lat: lat.toFixed(5), lon: lon.toFixed(5) })}`),
   departures: async (stop: string, refresh = false) => req<DeparturesResp>(`/api/departures?${qs({ stop, device: await getDevice(), profile: PROFILE, refresh: refresh ? 1 : '' })}`),
-  trip: async (from: Place, to: Place, opts: { refresh?: boolean; count?: number; time?: string; arriveBy?: boolean } = {}) =>
-    req<TripResp>(`/api/trip?${qs({ from: from.id, to: to.id, fromName: from.name, toName: to.name, count: opts.count || 5, time: opts.time, arriveBy: opts.arriveBy ? 1 : '', fare: store.fareType(), acc: store.accOn() ? 1 : '', device: await getDevice(), profile: PROFILE, refresh: opts.refresh ? 1 : '' })}`),
+  trip: async (from: Place, to: Place, opts: { refresh?: boolean; count?: number; time?: string; arriveBy?: boolean } = {}): Promise<TripResp> => {
+    const base = { from: from.id, to: to.id, fromName: from.name, toName: to.name, count: opts.count || 5, time: opts.time, arriveBy: opts.arriveBy ? 1 : '', fare: store.fareType(), acc: store.accOn() ? 1 : '' };
+    const pair = `${from.id}>${to.id}`;
+    if (isLongTrip(from.id, to.id) || longPairs.has(pair)) return tripLong(base, opts.refresh);
+    try {
+      return await req<TripResp>(`/api/trip?${qs({ ...base, device: await getDevice(), profile: PROFILE, refresh: opts.refresh ? 1 : '' })}`);
+    } catch (e: any) {
+      // The planner took longer than the server waits: ask again the long way, and from now on for this pair.
+      if (!plannerTooSlow(e)) throw e;
+      longPairs.add(pair);
+      return tripLong(base, opts.refresh);
+    }
+  },
   plan: (legs: any[], opts: { count?: number; time?: string; all?: boolean } = {}) =>
     req<TripResp>(`/api/plan?${qs({ legs: JSON.stringify(legs), count: opts.count || 5, time: opts.time, all: opts.all ? 1 : '', fare: store.fareType(), acc: store.accOn() ? 1 : '' })}`),
   service: (q: Record<string, string | undefined>) => req<ServiceResp>(`/api/service?${qs(q)}`),
@@ -106,6 +118,59 @@ export const api = {
   morningPreview: async (id: string) => req<MorningPreview>(`/api/morning-check/preview?${qs({ device: await getDevice(), id })}`),
   testPush: async () => req<{ ok: boolean; pushed: any[]; expo?: any[] }>(`/api/push/test`, { method: 'POST', body: JSON.stringify({ device: await getDevice() }) }),
 };
+
+// Long distance trips (longTripCore.ts): the new server waits up to 35 s for the planner and keeps the answer for
+// 2 minutes; the app keeps it 2 minutes too, so the trip screen and Home do not ask the planner again on every
+// refresh. Until the app moves there, a 404 means the server in use, with a longer wait, for the session.
+const longPairs = new Set<string>();
+const longKeep = createKeep<TripResp>(LONG_TRIP_KEEP_MS);
+const longOut = new Map<string, Promise<TripResp>>();
+let longOff = false;
+async function tripLong(base: Record<string, any>, refresh?: boolean): Promise<TripResp> {
+  const path = `/api/trip?${qs({ ...base, long: 1 })}`;
+  const kept = longKeep.get(path);
+  if (kept && !refresh) return kept;
+  const out = longOut.get(path);
+  if (out) return out;
+  const p = (async () => {
+    let r: TripResp;
+    if (apiBase() === NEW_API_BASE || longOff) {
+      r = await req<TripResp>(apiBase() === NEW_API_BASE ? `${path}&${qs({ device: await getDevice(), profile: PROFILE })}` : path, undefined, LONG_TRIP_TIMEOUT_MS);
+    } else {
+      try {
+        r = await onNew<TripResp>(path, LONG_TRIP_TIMEOUT_MS);
+      } catch (e: any) {
+        if (!longGone(e)) throw e;
+        longOff = true;
+        r = await req<TripResp>(path, undefined, LONG_TRIP_TIMEOUT_MS);
+      }
+    }
+    if ((r as any)?.journeys?.length) longKeep.set(path, r);
+    return r;
+  })();
+  longOut.set(path, p);
+  try { return await p; } finally { longOut.delete(path); }
+}
+
+/** One GET to the new server (before the app has moved there), with a timeout; errors carry http like req. */
+async function onNew<T>(path: string, timeoutMs: number): Promise<T> {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const r = await fetch(`${NEW_API_BASE}${path}`, { signal: ctl.signal });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(new Error((body && (body as any).text) || (body && (body as any).error) || `Something went wrong (${r.status})`), { http: r.status });
+    return body as T;
+  } catch (e: any) {
+    if (e?.http) throw e;
+    throw Object.assign(new Error("No answer from the server. Check your connection."), { offline: true });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** True for a pair planned the long way (the trip screen then refreshes every 2 minutes, not every 20 s). */
+export const isLongPair = (fromId: string, toId: string) => isLongTrip(fromId, toId) || longPairs.has(`${fromId}>${toId}`);
 
 // Plan search: stops, addresses, streets, landmarks and suburbs from /api/places, which only the new host has.
 // Until every server has it, a 404 there means stops only from /api/search on the server in use, for the rest

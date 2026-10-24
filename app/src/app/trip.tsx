@@ -5,7 +5,8 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { whenFromParams, whenLabel, whenQuery } from '@/lib/planCore';
 import { haptic } from '@/lib/haptic';
 import { withTimeout } from '@/lib/gesture';
-import { api } from '@/lib/api';
+import { api, isLongPair } from '@/lib/api';
+import { LONG_TRIP_KEEP_MS, STILL_SEARCHING_MS } from '@/lib/longTripCore';
 import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius, modeColor } from '@/lib/theme';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
@@ -245,7 +246,7 @@ export default function TripScreen() {
   const c = usePalette();
   const now = useNow();
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
-  const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...whenQ }), 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey],
+  const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...whenQ }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey],
     { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '')) });
   const [extra, setExtra] = useState<Journey[]>([]);
   // Step free on or off asks again; earlier and later trips loaded before would be the other kind.
@@ -431,7 +432,7 @@ export default function TripScreen() {
         ) : null}
         {data && !js.length ? <Empty icon={I.route} title="No trips found" body={data.error || 'Try a different time or nearby stop.'} /> : null}
         {!data && error ? <Empty icon={I.warn} title="Can't plan this trip" body={error} /> : null}
-        {!data && !error ? <T kind="sub" tone="text2" style={{ textAlign: 'center', marginTop: 40 }}>Finding live trips</T> : null}
+        {!data && !error ? <Searching key={`${from.id}>${to.id}|${whenKey}`} long={!chain && !via && isLongPair(from.id, to.id)} /> : null}
         {data?.tomorrow ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>No more trips tonight. These are the first ones tomorrow.</T> : null}
       </Screen>
     </>
@@ -439,6 +440,19 @@ export default function TripScreen() {
 }
 
 /** Step free trips only, switchable right here (the same setting as More > Accessible trips), with the lift aware note. */
+/** Shown while the first answer is on its way. Long trips can take the planner up to about 30 seconds. */
+function Searching({ long }: { long: boolean }) {
+  const [still, setStill] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setStill(true), STILL_SEARCHING_MS); return () => clearTimeout(t); }, []);
+  return (
+    <View style={{ alignItems: 'center', marginTop: 40, paddingHorizontal: 24 }} accessibilityLiveRegion="polite">
+      <ActivityIndicator />
+      <T kind="sub" tone="text2" style={{ textAlign: 'center', marginTop: 12 }}>{still ? 'Still searching' : 'Finding live trips'}</T>
+      {still ? <T kind="foot" tone="text2" style={{ textAlign: 'center', marginTop: 6 }}>{long ? 'Long distance trips can take up to 30 seconds.' : 'This is taking longer than usual.'}</T> : null}
+    </View>
+  );
+}
+
 function StepFreeBar({ on, data, empty, liftOn }: { on: boolean; data: TripResp | null | undefined; empty: boolean; liftOn: boolean }) {
   const c = usePalette();
   const note = liftAwareNote(data, liftOn);

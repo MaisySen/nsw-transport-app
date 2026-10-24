@@ -117,14 +117,14 @@ function sydneyParts(d = new Date()) {
   return { date: s.day, time: String(Math.floor(s.tod / 60)).padStart(2, "0") + String(s.tod % 60).padStart(2, "0") };
 }
 
-async function tp(env, endpoint, params) {
+async function tp(env, endpoint, params, timeoutMs = 12000) {
   const qs = new URLSearchParams({
     outputFormat: "rapidJSON", coordOutputFormat: "EPSG:4326", version: "10.2.1.42", ...params,
   });
   upstream.calls++;
   const res = await fetch(API + "/v1/tp/" + endpoint + "?" + qs.toString(), {
     headers: { Authorization: "apikey " + apiKey(env) },
-    signal: AbortSignal.timeout(12000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
     const body = await res.text();
@@ -756,6 +756,17 @@ function legKind(t) {
 
 // "151.21070:-33.86760:EPSG:4326": a point (longitude:latitude) the Trip Planner takes with type coord.
 function isCoordId(id) { return /^-?\d{1,3}(\.\d+)?:-?\d{1,2}(\.\d+)?:EPSG:4326$/.test(String(id || "")); }
+// Long distance plans (Central to Albury or Dubbo) can take the Trip Planner up to about 30 s. The app asks
+// with long=1 for those; the answer is kept for LONG_TRIP_CACHE_S so the next refresh is instant.
+const LONG_TRIP_TIMEOUT_MS = 35000;
+const LONG_TRIP_CACHE_S = 120;
+function longTripCacheKey(p) {
+  const keep = ["from", "to", "time", "arriveBy", "count", "acc", "fare"];
+  const u = new URL("https://cache.internal/long-trip");
+  for (const k of keep) { const v = p.get(k); if (v) u.searchParams.set(k, v); }
+  return u.toString();
+}
+
 async function trip(env, fromId, toId, opts = {}) {
   let { date, time } = sydneyParts();
   let tomorrow = false;
@@ -772,7 +783,7 @@ async function trip(env, fromId, toId, opts = {}) {
     ...(opts.via ? { type_via: opts.viaType || "any", name_via: opts.via } : {}),
     // Step free trips only (Settings > Accessible trips): the Trip Planner's wheelchair option.
     ...(opts.accessible ? { wheelchair: "on" } : {}),
-  });
+  }, opts.long ? LONG_TRIP_TIMEOUT_MS : 12000);
   const journeys = [];
   for (const j of data.journeys || []) {
     const legs = (j.legs || []).map((lg) => {
@@ -3632,6 +3643,8 @@ async function processWatch(env, w, now, opts = {}) {
     st.count = (st.count || 0) + 1;
     return true;
   };
+  // Watches saved before legs carried a feed (app before 25 Oct): look the feed up once.
+  if ((spec.legs || []).some((l) => l.feed === undefined || l.feed === null)) await backfillFeeds(env, spec, now).catch(() => false);
   const live = await liveLegs(env, spec, now);
   const legs = spec.legs;
   const last = legs.length - 1;
@@ -3793,7 +3806,45 @@ function legFromInput(l) {
     from: s(l.from), to: s(l.to), planned: s(l.planned, 40), arrPlanned: s(l.arrPlanned, 40), estimated: s(l.estimated, 40),
     fromPlatform: s(l.fromPlatform, 30), toPlatform: s(l.toPlatform, 30), color: s(l.color, 10), towards: s(l.towards), destId: s(l.destId, 40),
     walkBefore: Math.max(0, Math.min(60, Number(l.walkBefore) || 0)),
+    ...(cleanFeed(l.feed) !== undefined ? { feed: cleanFeed(l.feed) } : {}),
   };
+}
+
+// A leg's feed as sent by the app: a known non-Sydney feed key, "" (checked: the mode's usual feed), or
+// undefined (an older app that never sent one; backfillFeeds looks it up).
+function cleanFeed(v) {
+  if (v === "") return "";
+  if (typeof v !== "string") return undefined;
+  return FEEDS[v] || FEED_GROUPS[v] ? v : undefined;
+}
+
+// Modes whose services can sit in a non-Sydney feed (TrainLink, regional buses and coaches, Manly Fast Ferry).
+const FEED_MODES = new Set(["train", "coach", "bus", "ferry"]);
+const FEED_TRIES = 3;
+/**
+ * Watches saved before legs carried a feed: find each leg's feed once from its stop's departure board (the
+ * board rows carry it), so TrainLink, regional bus and Manly Fast Ferry legs read the right live times.
+ * Only legs leaving within the next hour or left in the last two hours are looked up; a leg not found on the
+ * board after FEED_TRIES looks keeps its mode's usual feed. Changes spec.legs in place; true when it changed.
+ */
+async function backfillFeeds(env, spec, now, board = (stopId) => departures(env, stopId, { log: false })) {
+  let changed = false;
+  const boards = new Map();
+  for (const l of spec.legs || []) {
+    if (l.feed !== undefined && l.feed !== null) continue;
+    if (!FEED_MODES.has(l.mode)) { l.feed = ""; changed = true; continue; }
+    const t = ms(l.planned);
+    if (!t || t > now + 3600000 || t < now - 2 * 3600000 || !l.stopId) continue;
+    let b = boards.get(l.stopId);
+    if (b === undefined) { b = await board(l.stopId).catch(() => null); boards.set(l.stopId, b); }
+    if (!b || !Array.isArray(b.items)) continue;
+    const m = b.items.find((x) => (l.tripId && x.tripId === l.tripId) || (x.line === l.line && Math.abs(ms(x.planned) - t) < 90000));
+    if (m) { l.feed = cleanFeed(m.feed) || ""; delete l.feedTries; changed = true; continue; }
+    l.feedTries = (l.feedTries || 0) + 1;
+    if (l.feedTries >= FEED_TRIES) { l.feed = ""; delete l.feedTries; }
+    changed = true;
+  }
+  return changed;
 }
 
 async function createWatch(env, b, now) {
@@ -4911,6 +4962,8 @@ function laTripFrom(t) {
       const v = laStr(l[k]);
       if (v !== undefined) o[k] = v;
     }
+    const fd = cleanFeed(l.feed);
+    if (fd) o.feed = fd;
     if (!o.stopId || !o.planned || !o.mode) return null;
     o.line = o.line || "";
     legs.push(o);
@@ -5859,10 +5912,16 @@ async function handleRequest(request, env, exec) {
         }
         case "/api/trip": {
           const acc = p.get("acc") === "1";
+          const long = p.get("long") === "1";
+          const longKey = long && !asTxt ? longTripCacheKey(p) : null;
+          if (longKey) {
+            const hit = await caches.default.match(longKey).catch(() => null);
+            if (hit) { const d = await hit.json().catch(() => null); if (d) return json({ ...d, cached: true }); }
+          }
           const want = Math.max(1, Math.min(8, Number(p.get("count") || 5) || 5));
           const liftAware = acc && (await serverOn(env, "liftAwareRouting"));
           // Lift aware: ask for a few more trips so one that avoids a lift outage can be found.
-          const r = await trip(env, p.get("from"), p.get("to"), { time: p.get("time") || null, arriveBy: p.get("arriveBy") === "1", count: liftAware ? Math.min(8, want + 3) : want, accessible: acc });
+          const r = await trip(env, p.get("from"), p.get("to"), { time: p.get("time") || null, arriveBy: p.get("arriveBy") === "1", count: liftAware ? Math.min(8, want + 3) : want, accessible: acc, long });
           // A link with stop ids and no names takes the names from the first trip found.
           const given = (k) => { const v = (p.get(k) || "").trim(); return v && !/^\d+$/.test(v) ? v : null; };
           const d = { kind: "trip", from: { id: p.get("from"), name: given("fromName") || tripEndName(r, "from") || p.get("from") }, to: { id: p.get("to"), name: given("toName") || tripEndName(r, "to") || p.get("to") }, ...r };
@@ -5871,6 +5930,10 @@ async function handleRequest(request, env, exec) {
           if (liftAware) liftAwareRank(d, want);
           if (!(await serverOn(env, "occupancy"))) stripOccupancy(d);
           await afterAnswer(env, d, { profile, device: p.get("device"), exec, log: p.get("refresh") !== "1" });
+          if (longKey && (d.journeys || []).length) {
+            const put = caches.default.put(longKey, new Response(JSON.stringify(d), { headers: { "content-type": "application/json", "cache-control": `max-age=${LONG_TRIP_CACHE_S}` } })).catch(() => null);
+            if (exec && exec.waitUntil) exec.waitUntil(put); else await put;
+          }
           return asTxt ? textRes(await asText(env, d)) : json(d);
         }
         case "/api/plan": {

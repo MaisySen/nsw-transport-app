@@ -15,6 +15,8 @@ import { cancelWake, scheduleWake, wakeNow } from './smartNotify';
 import { endedWatches } from './push';
 import { modeColor } from './theme';
 import type { ServiceResp, WatchLeg } from './types';
+import { fillFeeds, needsFeed, stopsToLook } from './feedCore';
+import { apiBase, NEW_API_BASE } from './server';
 
 export const short = (n?: string | null) => shortName(n || '').replace(/ Station$/, '');
 export const plat = (p?: string | null) => (p ? p.replace(/^Platform\s*/i, 'Platform ').replace(/^Stand\s*/i, 'Stand ') : '');
@@ -44,6 +46,25 @@ let cacheFor: string | null = null;
 /** After the trip's legs change (Switch to this), the next refresh reads every leg again. */
 export function resetLiveCache() { svcCache = []; lastFull = 0; }
 
+// Trips started before legs carried their realtime feed (TrainLink, regional buses, Manly Fast Ferry): look the
+// feed up from each stop's departure board, at most every 5 minutes, until every leg has one.
+let feedLookAt = 0;
+let feedLookFor: string | null = null;
+async function backfillLiveFeeds(id: string) {
+  const g = getLive();
+  if (!g || g.id !== id || !g.legs.some(needsFeed)) return;
+  if (feedLookFor === id && Date.now() - feedLookAt < 300000) return;
+  feedLookFor = id; feedLookAt = Date.now();
+  const boards: Record<string, any[] | null> = {};
+  await Promise.all(stopsToLook(g.legs, Date.now()).map(async (s) => {
+    try { boards[s] = (await api.departures(s)).items || []; } catch { boards[s] = null; }
+  }));
+  const g2 = getLive();
+  if (!g2 || g2.id !== id) return;
+  const r = fillFeeds(g2.legs, boards);
+  if (r.changed) { setLive({ ...g2, legs: r.legs }); resetLiveCache(); }
+}
+
 /** One refresh of the trip you are on. Safe to call any time; does nothing without a trip. */
 export async function tickLive() {
   const cur = getLive();
@@ -52,7 +73,8 @@ export async function tickLive() {
   busy = true;
   try {
     if (cacheFor !== cur.id) { cacheFor = cur.id; svcCache = []; lastFull = 0; put({ gid: cur.id, svc: [], st: null, offline: null, updated: 0 }); }
-    const L = cur.legs;
+    if (!cur.arrivedAt && apiBase() === NEW_API_BASE && cur.legs.some(needsFeed)) await backfillLiveFeeds(cur.id).catch(() => {});
+    const L = (getLive() || cur).legs;
     let failed = 0;
     if (!cur.arrivedAt) {
       const full = Date.now() - lastFull > 60000;
@@ -61,7 +83,7 @@ export async function tickLive() {
       await Promise.all(L.map(async (l, i) => {
         if (!(full || i === prev || i === prev + 1)) return;
         try {
-          next[i] = await api.service({ trip: l.tripId || undefined, mode: l.mode, line: l.line, stop: l.stopId, destId: l.destId || undefined, planned: l.planned, to: l.toStopId || undefined, dest: l.towards || undefined, stopName: l.from || undefined, color: l.color || undefined });
+          next[i] = await api.service({ trip: l.tripId || undefined, mode: l.mode, line: l.line, stop: l.stopId, destId: l.destId || undefined, planned: l.planned, to: l.toStopId || undefined, dest: l.towards || undefined, stopName: l.from || undefined, color: l.color || undefined, feed: l.feed || undefined });
         } catch { failed++; }
       }));
       if (full) lastFull = Date.now();

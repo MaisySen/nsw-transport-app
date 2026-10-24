@@ -12,7 +12,7 @@ export type PushTrip = {
 };
 
 const LEG_KEYS: (keyof WatchLeg)[] = ['mode', 'line', 'tripId', 'stopId', 'toStopId', 'from', 'to', 'planned', 'arrPlanned', 'estimated',
-  'fromPlatform', 'toPlatform', 'color', 'towards', 'destId'];
+  'fromPlatform', 'toPlatform', 'color', 'towards', 'destId', 'feed'];
 
 const place = (p: any) => (p ? { id: p.id ? String(p.id) : undefined, name: p.name ? String(p.name) : undefined } : null);
 
