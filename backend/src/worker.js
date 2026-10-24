@@ -641,6 +641,7 @@ async function trip(env, fromId, toId, opts = {}) {
     type_origin: opts.fromType || "any", name_origin: fromId,
     type_destination: opts.toType || "any", name_destination: toId,
     calcNumberOfTrips: String(opts.count || 5), TfNSWTR: "true",
+    ...(opts.via ? { type_via: opts.viaType || "any", name_via: opts.via } : {}),
   });
   const journeys = [];
   for (const j of data.journeys || []) {
@@ -1194,6 +1195,187 @@ function askModeIn(s) {
   const m = s.match(/\b(trains?|rail|metro|bus(es)?|ferr(y|ies)|light rail|tram)\b/i);
   return m ? ASK_MODE_OF[m[1].toLowerCase()] || null : null;
 }
+// Place resolution for Ask. Never a silent guess: a bare suburb or city name means its station
+// or the suburb itself, never a business. Order: known landmarks, exact station names (the same
+// lists /api/stations serves), aliases, every NSW suburb and locality (stations/places.json),
+// typo fixes against those names, then stops, and named places or streets only when every word
+// asked is in their name. Anything unclear comes back as "Did you mean" choices.
+const ASK_STATION_MODES = ["train", "metro", "lightrail", "ferry"];
+const ASK_ALIASES = {
+  "city": "200060", "the city": "200060", "cbd": "200060", "sydney": "200060", "sydney cbd": "200060", "sydney city": "200060",
+  "sydney central": "200060", "central station": "200060", "town": "200060",
+  "the quay": "Circular Quay", "quay": "Circular Quay", "parra": "Parramatta Station", "sydney olympic park": "Olympic Park Station",
+  "olympic stadium": "Olympic Park Station", "accor stadium": "Olympic Park Station", "stadium australia": "Olympic Park Station",
+  "international airport": "202030", "intl airport": "202030", "domestic airport": "202020",
+  "macquarie uni": "Macquarie University Station", "mq uni": "Macquarie University Station", "uts": "200060",
+  "harbour bridge": "Milsons Point Station", "barangaroo": "Barangaroo Station",
+};
+// Landmarks: label shown on a choice chip -> what it resolves to (a station name, or a place query).
+const ASK_LANDMARKS = {
+  "unsw": { q: "UNSW Anzac Parade Light Rail", name: "UNSW (Kensington)" },
+  "sydney uni": { q: "Redfern Station", name: "Sydney Uni (Redfern Station)" }, "usyd": { q: "Redfern Station", name: "Sydney Uni (Redfern Station)" },
+  "university of sydney": { q: "Redfern Station", name: "Sydney Uni (Redfern Station)" },
+  "western sydney uni": { q: "Parramatta Station", name: "Western Sydney Uni (Parramatta)" },
+  "opera house": { q: "Circular Quay", name: "Circular Quay (Opera House)" }, "sydney opera house": { q: "Circular Quay", name: "Circular Quay (Opera House)" },
+  "scg": { q: "Moore Park Light Rail", name: "Moore Park (SCG)" }, "allianz stadium": { q: "Moore Park Light Rail", name: "Moore Park (Allianz Stadium)" },
+  "taronga zoo": { q: "Taronga Zoo Wharf", name: "Taronga Zoo Wharf" }, "the zoo": { q: "Taronga Zoo Wharf", name: "Taronga Zoo Wharf" },
+};
+const ASK_AMBIGUOUS = {
+  "uni": ["UNSW", "Sydney Uni", "Macquarie Uni", "UTS", "Western Sydney Uni"],
+  "university": ["UNSW", "Sydney Uni", "Macquarie Uni", "UTS", "Western Sydney Uni"],
+  "airport": ["International Airport", "Domestic Airport", "Newcastle Airport"],
+  "the airport": ["International Airport", "Domestic Airport", "Newcastle Airport"],
+  "sydney airport": ["International Airport", "Domestic Airport"],
+  "stadium": ["Accor Stadium", "Allianz Stadium", "SCG"],
+  "beach": ["Bondi Beach", "Manly", "Coogee", "Cronulla"],
+};
+const ASK_STOPWORDS = new Set(["the", "to", "from", "at", "in", "nsw", "australia", "station", "stn"]);
+const ASK_STREET_WORD = /\b(st|street|rd|road|ave|avenue|ln|lane|pde|parade|hwy|highway|dr|drive|pl|place|cres|crescent|blvd|tce|terrace|way|cl|close|ct|court)\b|\d/i;
+let askGazMem = null;
+function askNorm(s) {
+  return String(s || "").toLowerCase().replace(/&/g, " and ").replace(/['\u2019]/g, "").replace(/[^a-z0-9]+/g, " ")
+    .replace(/\bsaint\b/g, "st").replace(/\bmount\b/g, "mt").replace(/\s+/g, " ").trim();
+}
+function askBase(s) {
+  return askNorm(s).replace(/\s+(railway station|train station|metro station|station|stn|light rail stop|light rail station|light rail|ferry wharf|wharf|interchange)$/, "").trim();
+}
+async function askAsset(env, origin, path) {
+  try {
+    const req = new Request(new URL(path, origin || "https://assets.local"));
+    const r = env && env.ASSETS ? await env.ASSETS.fetch(req) : await fetch(req);
+    return r.ok ? await r.json() : [];
+  } catch { return []; }
+}
+// The gazetteer: every station (train, metro, light rail, ferry) and every NSW suburb.
+async function askGazetteer(env, origin) {
+  if (askGazMem && Date.now() - askGazMem.at < 86400000) return askGazMem;
+  const [places, ...lists] = await Promise.all([askAsset(env, origin, "/stations/places.json"), ...ASK_STATION_MODES.map((m) => askAsset(env, origin, `/stations/${m}.json`))]);
+  const keys = new Map(), byId = new Map(), byName = new Map(), subs = new Map();
+  lists.forEach((list, rank) => {
+    for (const row of Array.isArray(list) ? list : []) {
+      const st = { id: String(row[0]), name: String(row[1]), mode: ASK_STATION_MODES[rank], rank, lat: row[2], lon: row[3] };
+      if (!byId.has(st.id)) byId.set(st.id, st);
+      if (!byName.has(st.name)) byName.set(st.name, st);
+      for (const k of new Set([askNorm(st.name), askBase(st.name)])) if (k && !keys.has(k)) keys.set(k, st);
+    }
+  });
+  for (const row of Array.isArray(places) ? places : []) { const k = askNorm(row[0]); if (k && !subs.has(k)) subs.set(k, { name: String(row[0]), lat: row[1], lon: row[2] }); }
+  const fuzzy = [];
+  for (const [k, st] of keys) if (k === askBase(st.name)) fuzzy.push({ k, label: st.name, station: st });
+  for (const [k, sb] of subs) if (!keys.has(k)) fuzzy.push({ k, label: sb.name, suburb: sb });
+  const mem = { at: Date.now(), keys, byId, byName, subs, fuzzy };
+  if (keys.size && subs.size) askGazMem = mem;
+  return mem;
+}
+// Optimal string alignment distance (a swap of two letters counts as one edit), capped.
+function askEdits(a, b, cap) {
+  if (Math.abs(a.length - b.length) > cap) return cap + 1;
+  const d = [];
+  for (let i = 0; i <= a.length; i++) { d[i] = [i]; }
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    let rowMin = Infinity;
+    for (let j = 1; j <= b.length; j++) {
+      const c = a[i - 1] === b[j - 1] ? 0 : 1;
+      let v = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, d[i - 2][j - 2] + 1);
+      d[i][j] = v; if (v < rowMin) rowMin = v;
+    }
+    if (rowMin > cap) return cap + 1;
+  }
+  return d[a.length][b.length];
+}
+function askWords(s) { return askNorm(s).split(" ").filter((w) => w && !ASK_STOPWORDS.has(w)); }
+function askHasAll(words, name) {
+  const toks = askNorm(name).split(" ");
+  return words.length > 0 && words.every((w) => toks.includes(w) || (w.length >= 4 && toks.some((t) => t.startsWith(w))));
+}
+function askStationOut(st, how) { return { id: st.id, name: st.name, station: true, mode: st.mode, how: how || "station" }; }
+async function askSuburbOut(env, sb, how) {
+  const all = (await findLocations(env, sb.name).catch(() => [])).filter(isNswStop);
+  const hit = all.filter((l) => (l.type === "suburb" || l.type === "locality") && askNorm(String(l.name).split(",")[0]) === askNorm(sb.name)).sort((a, b) => b.quality - a.quality)[0];
+  if (hit) return { id: hit.id, name: sb.name, suburb: true, how: how || "suburb" };
+  return { id: `${sb.lon}:${sb.lat}:EPSG:4326`, name: sb.name, suburb: true, coord: true, how: how || "suburb" };
+}
+function askChoice(label) { return { name: label }; }
+async function askPlace(env, q, origin) {
+  const raw = String(q || "").trim().replace(/\s+/g, " ");
+  if (!raw) return null;
+  if (/^\d{5,8}$/.test(raw)) return { id: raw, name: "Stop " + raw, how: "stop" };
+  const g = await askGazetteer(env, origin);
+  const nq = askNorm(raw), nb = askBase(raw), noThe = askNorm(raw.replace(/^the\s+/i, ""));
+  const byLabel = (v) => g.byName.get(v) || g.byId.get(v) || g.keys.get(askNorm(v)) || g.keys.get(askBase(v));
+  if (ASK_AMBIGUOUS[nq]) return { ambiguous: true, q: raw, options: ASK_AMBIGUOUS[nq].map(askChoice) };
+  const lm = ASK_LANDMARKS[nq] || ASK_LANDMARKS[noThe];
+  if (lm) { const st = byLabel(lm.q); if (st) return { ...askStationOut(st, "landmark"), label: lm.name }; }
+  for (const k of [nq, nb, noThe]) { const st = g.keys.get(k); if (st) return askStationOut(st); }
+  const al = ASK_ALIASES[nq];
+  if (al) { const st = byLabel(al); if (st) return askStationOut(st, "alias"); }
+  const sb = g.subs.get(nq) || g.subs.get(nb);
+  if (sb) return askSuburbOut(env, sb);
+  // "bondi junction" style: one train or metro station whose name starts with the words asked.
+  const pre = [...new Set([...g.keys.entries()].filter(([k, st]) => k.startsWith(nb + " ") && st.rank < 2).map(([, st]) => st))];
+  if (pre.length === 1) return askStationOut(pre[0], "prefix");
+  // Typos ("campsei", "newcasle"): only against station and suburb names, never businesses.
+  const cap = nb.length >= 8 ? 2 : nb.length >= 5 ? 1 : 0;
+  let near = [];
+  if (cap) {
+    for (const f of g.fuzzy) { if (f.k[0] !== nb[0]) continue; const e = askEdits(nb, f.k, cap); if (e <= cap) near.push({ ...f, e }); }
+    near.sort((a, b) => a.e - b.e || (a.station ? 0 : 1) - (b.station ? 0 : 1));
+    const best = near.filter((x) => x.e === (near[0] && near[0].e));
+    if (best.length === 1) return best[0].station ? askStationOut(best[0].station, "typo") : askSuburbOut(env, best[0].suburb, "typo");
+    if (best.length > 1) return { ambiguous: true, q: raw, options: best.slice(0, 4).map((x) => askChoice(x.label)) };
+  }
+  const words = askWords(raw.replace(/^the\s+/i, ""));
+  const all = (await findLocations(env, raw)).filter(isNswStop);
+  const byQ = (list) => list.slice().sort((a, b) => b.quality - a.quality);
+  const place = (l, how) => ({ id: l.id, name: shortName(l.name), type: l.type, how });
+  const isLoc = (l) => l.type === "suburb" || l.type === "locality";
+  // One word that only partly matches ("rocks" in "Dog Rocks") is a guess, so it becomes a choice.
+  const sure = (l) => words.length >= 2 || askBase(String(l.name).split(",")[0]) === askBase(words.join(" "));
+  const stop = byQ(all.filter((l) => (l.type === "stop" || l.type === "platform") && askHasAll(words, l.name)))[0];
+  if (stop && sure(stop)) return place(stop, "stop");
+  const loc = byQ(all.filter((l) => isLoc(l) && askHasAll(words, l.name)))[0];
+  if (loc && sure(loc)) return place(loc, "suburb");
+  const poi = byQ(all.filter((l) => l.type === "poi" && askHasAll(words, l.name)))[0];
+  if (poi && words.length >= 2) return place(poi, "poi");
+  const street = ASK_STREET_WORD.test(raw) ? byQ(all.filter((l) => (l.type === "street" || l.type === "singlehouse") && askHasAll(words, l.name)))[0] : null;
+  if (street) return place(street, "street");
+  // Nothing clear: offer what came closest instead of picking one.
+  const opts = [];
+  const add = (n) => { const s = shortName(n); if (s && !opts.some((o) => askNorm(o.name) === askNorm(s)) && opts.length < 4) opts.push(askChoice(s)); };
+  const wide = cap ? [] : g.fuzzy.map((f) => ({ ...f, e: askEdits(nb, f.k, 2) })).filter((x) => x.e <= 2 && nb.length >= 3).sort((a, b) => a.e - b.e);
+  for (const x of near.concat(wide)) add(x.label);
+  for (const x of g.fuzzy.filter((f) => askHasAll(words, f.label)).sort((a, b) => (a.station ? 0 : 1) - (b.station ? 0 : 1) || a.label.length - b.label.length)) add(x.label);
+  for (const l of [loc, stop, poi]) if (l) add(l.name);
+  for (const l of byQ(all.filter((l) => l.type === "stop" || isLoc(l) || l.type === "poi"))) if (words.some((w) => askNorm(l.name).split(" ").includes(w))) add(l.name);
+  return opts.length ? { ambiguous: true, q: raw, options: opts } : null;
+}
+function askShort(name) { return String(name || "").replace(/\s+(Station|Light Rail)$/i, ""); }
+
+// Trip phrasing: "A to B", "from A to B", "to B from A", "go to A to B" (means A to B),
+// "B from A" after a travel verb, and "via C" anywhere ("A via C to B", "A to B via C").
+function askPlaceQ(s) {
+  return String(s || "").replace(/[?.!,]+$/, "").replace(/\s+(?:by|on|using|with|taking)\s+(?:the\s+)?(?:trains?|bus(?:es)?|metro|ferr(?:y|ies)|light rail|tram|public transport)$/i, "")
+    .replace(/\s+(?:please|pls|now|today|tonight|asap)$/i, "").replace(/^(?:the\s+)?(?:next\s+)?(?:trains?|bus(?:es)?|metro|ferry|light rail|tram)\s+(?:from\s+)?/i, "").trim();
+}
+function askParseTrip(s, travel) {
+  let rest = String(s || "").trim(), via = null;
+  const vm = rest.match(/\s+(?:via|through|thru|by way of|going through|stopping at|changing at)\s+(.+?)(?=\s+(?:to|from|>|->|\u2192)\s+|$)/i);
+  if (vm) { via = askPlaceQ(vm[1]); rest = (rest.slice(0, vm.index) + " " + rest.slice(vm.index + vm[0].length)).replace(/\s+/g, " ").trim(); }
+  const TO = "(?:to|>|->|\u2192)";
+  let m;
+  const out = (from, to) => ({ from: from == null ? null : askPlaceQ(from), to: to == null ? null : askPlaceQ(to), via });
+  if ((m = rest.match(new RegExp(`^from\\s+(.+?)\\s+${TO}\\s+(.+)$`, "i")))) return out(m[1], m[2]);
+  if ((m = rest.match(/^to\s+(.+?)\s+from\s+(.+)$/i))) return out(m[2], m[1]);
+  if ((m = rest.match(new RegExp(`^to\\s+(.+?)\\s+${TO}\\s+(.+)$`, "i")))) return out(m[1], m[2]);
+  if ((m = rest.match(new RegExp(`^(.+?)\\s+${TO}\\s+(.+)$`, "i")))) return out(m[1], m[2]);
+  if ((m = rest.match(/^to\s+(.+)$/i))) return out(null, m[1]);
+  if ((m = rest.match(/^(.+?)\s+from\s+(.+)$/i)) && (travel || !/\b(departures?|next|bus(es)?|trains?|services?|times?|board|line|route|stop|platform|late|status|delays?|alerts?|last|first)\b/i.test(m[1]))) return out(m[2], m[1]);
+  if (via) return out(null, rest.replace(/^to\s+/i, "") || null);
+  return null;
+}
+
 async function askResolve(env, q, ctx) {
   const k = String(q || "").trim().toLowerCase().replace(/^(my\s+)/, "");
   if ((k === "home" || k === "work") && ctx[k]) return ctx[k];
@@ -1201,17 +1383,37 @@ async function askResolve(env, q, ctx) {
     if (ctx.lat && ctx.lon) return { id: `${ctx.lon}:${ctx.lat}:EPSG:4326`, name: "Your location", coord: true };
     return { needLocation: true };
   }
-  const r = await bestPlace(env, cleanPlace(q));
-  return r.place ? { id: r.place.id, name: shortName(r.place.name) } : null;
+  return askPlace(env, askPlaceQ(q), ctx.origin);
+}
+function askIsHere(p) { return !!p && /EPSG/.test(String(p.id)) && !p.suburb; }
+function askLabel(p) { return p ? (askIsHere(p) ? "your location" : p.label || p.name) : ""; }
+function askPlaceOut(p) { return p ? { id: p.id, name: p.name, ...(p.label ? { label: p.label } : {}), ...(p.suburb ? { suburb: true } : {}), ...(p.station ? { station: true } : {}), ...(p.how ? { how: p.how } : {}) } : null; }
+// A "Did you mean" answer: one chip per choice, each a full question that resolves cleanly.
+function askDidYouMean(role, amb, parts, o) {
+  const when = o && o.time ? `${o.arriveBy ? " by " : " at "}${Number(o.time.slice(0, 2))}:${o.time.slice(2)}` : "";
+  const text = (sub) => {
+    const f = role === "from" ? sub : parts.from, t = role === "to" ? sub : parts.to, v = role === "via" ? sub : parts.via;
+    return ((o && o.prefix) || "") + (f ? `${f} to ${t}` : `to ${t}`) + (v ? ` via ${v}` : "") + when;
+  };
+  return { kind: "didYouMean", role, q: amb.q, options: amb.options, suggestions: amb.options.map((x) => text(x.name)) };
 }
 
 async function askTrip(env, fromQ, toQ, ctx, o = {}) {
-  const [a, b] = await Promise.all([typeof fromQ === "object" ? fromQ : askResolve(env, fromQ, ctx), typeof toQ === "object" ? toQ : askResolve(env, toQ, ctx)]);
+  const res = (q) => (q == null ? null : typeof q === "object" ? q : askResolve(env, q, ctx));
+  const [a, b, v] = await Promise.all([res(fromQ), res(toQ), res(o.via)]);
+  const nameOf = (p, q) => (p && !p.ambiguous && !p.needLocation ? askLabel(p) === "your location" ? null : p.label || p.name : typeof q === "string" ? q : q && q.name);
+  const parts = { from: a && a.needLocation ? null : nameOf(a, fromQ), to: nameOf(b, toQ), via: o.via ? nameOf(v, o.via) : null };
+  if (a && a.ambiguous) return askDidYouMean("from", a, parts, o);
+  if (b && b.ambiguous) return askDidYouMean("to", b, parts, o);
+  if (v && v.ambiguous) return askDidYouMean("via", v, parts, o);
   if (a && a.needLocation) return { kind: "needOrigin", to: b && !b.needLocation ? b : null };
-  if (!a) return { kind: "text", text: `I couldn't find a stop or place called "${fromQ}". Try the station name or a stop number.` };
-  if (!b || b.needLocation) return { kind: "text", text: `I couldn't find a stop or place called "${toQ}". Try the station name or a stop number.` };
+  if (!a) return { kind: "text", text: `I couldn't find a station, suburb or stop called "${fromQ}". Try the station name or a stop number.` };
+  if (!b || b.needLocation) return { kind: "text", text: `I couldn't find a station, suburb or stop called "${toQ}". Try the station name or a stop number.` };
+  if (o.via && (!v || v.needLocation)) return { kind: "text", text: `I couldn't find a station, suburb or stop called "${o.via}" for the via. Try the station name.` };
   const opt = { time: o.time, arriveBy: o.arriveBy, count: o.count || 6 };
   if (a.coord) opt.fromType = "coord";
+  if (b.coord) opt.toType = "coord";
+  if (v) { opt.via = v.id; if (v.coord) opt.viaType = "coord"; }
   const r = await trip(env, a.id, b.id, opt);
   let journeys = r.journeys || [];
   let modeNote = null;
@@ -1220,18 +1422,24 @@ async function askTrip(env, fromQ, toQ, ctx, o = {}) {
     if (only.length) journeys = only; else modeNote = `No ${o.mode === "lightrail" ? "light rail" : o.mode} only trips there, so here are the best options.`;
   }
   return {
-    kind: "trip", from: { id: a.id, name: a.name }, to: { id: b.id, name: b.name }, ...r, journeys, modeNote,
+    kind: "trip", from: askPlaceOut(a), to: askPlaceOut(b), ...r, journeys, modeNote,
+    ...(v ? { via: askPlaceOut(v) } : {}),
+    understood: { from: askLabel(a), to: askLabel(b), via: v ? askLabel(v) : null },
     when: o.time ? { time: o.time, arriveBy: !!o.arriveBy, tomorrow: !!r.tomorrow } : null,
   };
 }
 
 async function askLast(env, fromQ, toQ, ctx, mode) {
   const [a, b] = await Promise.all([typeof fromQ === "object" ? fromQ : askResolve(env, fromQ, ctx), typeof toQ === "object" ? toQ : askResolve(env, toQ, ctx)]);
+  const lastP = { prefix: `last ${mode === "lightrail" ? "light rail" : mode || "train"} ` };
+  if (a && a.ambiguous) return askDidYouMean("from", a, { from: null, to: typeof toQ === "string" ? toQ : b && b.name }, lastP);
+  if (b && b.ambiguous) return askDidYouMean("to", b, { from: typeof fromQ === "string" ? fromQ : a && (a.label || a.name), to: null }, lastP);
   if (!a || a.needLocation) return { kind: "needOrigin", to: b && !b.needLocation ? b : null, last: true, mode };
-  if (!b || b.needLocation) return { kind: "text", text: `I couldn't find a stop or place called "${toQ}".` };
+  if (!b || b.needLocation) return { kind: "text", text: `I couldn't find a station, suburb or stop called "${toQ}".` };
   const sn = sydneyNow();
   const base = { fromType: a.coord ? "coord" : undefined, count: 8 };
   const late = sn.tod >= 23 * 60 || sn.tod < 3 * 60;
+  if (b.coord) base.toType = "coord";
   const first = await trip(env, a.id, b.id, late ? base : { ...base, time: "2300" });
   const okMode = (j) => askTransit(j).length && (!mode || askTransit(j).every((l) => l.mode === mode || (mode === "train" && l.mode === "metro")));
   let all = (first.journeys || []).slice();
@@ -1335,22 +1543,31 @@ async function askRoute(env, raw, ctx) {
     return askLast(env, from, toQ, ctx, mode);
   }
 
-  // Trips: "next train Burwood to Central", "how do I get from A to B", "Burwood to Central at 9am"
-  const tripText = text.replace(/^(?:(?:when(?:'s| is)|what(?:'s| is))\s+)?(?:the\s+)?(?:next|first|earliest|fastest)?\s*(?:train|bus|metro|ferry|light rail|tram|service|trip|way)?\s*(?:from\s+)?/i, "")
-    .replace(/^(?:how (?:do|can|would) i (?:get|go)|how to get|get me|take me|directions|route|i need to get|i want to go|i need to go)\s+(?:from\s+)?/i, "");
+  // Trips: "next train Burwood to Central", "how do I get from A to B", "Burwood to Central at 9am",
+  // "I need to go to Campsie to Newcastle via Chatswood", "to Central from Burwood".
+  let tripText = text.replace(/^(?:(?:when(?:'s| is)|what(?:'s| is))\s+)?(?:the\s+(?=(?:next|first|earliest|fastest|train|bus|metro|ferry|light rail|tram|service|trip|way)\b))?(?:next|first|earliest|fastest)?\s*(?:train|bus|metro|ferry|light rail|tram|service|trip|way)?\s*(?:from\s+)?/i, "");
+  const tv = tripText.match(/^(?:(?:can|could|would) you\s+)?(?:please\s+)?(?:tell me\s+)?(?:how (?:do|can|would|should) i (?:get|go|travel)|how to (?:get|go)|how (?:long|far) (?:is it|does it take)(?: to get)?|get me|take me|show me (?:how to get|the way)|directions|route|plan (?:a |my )?(?:trip|journey|route)|i (?:need|want|have|got) to (?:get|go|travel|head)|i (?:wanna|gotta) (?:get|go)|i(?:'m| am) (?:going|heading|travelling|traveling)|going|heading|travel|get)\b\s*/i);
+  const travel = !!(tv && tv[0].trim());
+  if (travel) tripText = tripText.slice(tv[0].length);
   const mode = askModeIn(text);
   const t = parseTime(tripText);
-  const tm = t.rest.match(/^(.+?)\s+(?:to|>|->|\u2192)\s+(.+)$/i);
-  if (tm && !/^(save|alerts?)\b/i.test(lower)) return askTrip(env, cleanPlace(tm[1]), cleanPlace(tm[2]), ctx, { mode, time: t.time, arriveBy: t.arriveBy });
-  const toOnly = t.rest.match(/^to\s+(.+)$/i);
-  if (toOnly && tripText !== text) {
-    const from = ctx.lat && ctx.lon ? "here" : null;
-    if (!from) {
-      const b = await askResolve(env, cleanPlace(toOnly[1]), ctx);
-      if (!b) return { kind: "text", text: `I couldn't find a stop or place called "${cleanPlace(toOnly[1])}".` };
-      return { kind: "needOrigin", to: b };
-    }
-    return askTrip(env, from, cleanPlace(toOnly[1]), ctx, { mode, time: t.time, arriveBy: t.arriveBy });
+  const lineQ = /^(is|are|any|hows?|how's)\b/i.test(text) && ASK_LINE.test(text);
+  const pt = /^(save|alerts?)\b/i.test(lower) || lineQ ? null : askParseTrip(t.rest, travel);
+  const lineTok = (s) => /^(T\d|M1|L\d|F\d+|\d{3}[A-Z]?)$/i.test(String(s || ""));
+  const topt = { mode, time: t.time, arriveBy: t.arriveBy, via: pt && pt.via };
+  if (pt && pt.from && pt.to && !lineTok(pt.from)) return askTrip(env, pt.from, pt.to, ctx, topt);
+  if (pt && !pt.from && pt.to && (travel || tripText !== text || /^to\s/i.test(t.rest) || pt.via)) {
+    if (ctx.lat && ctx.lon) return askTrip(env, "here", pt.to, ctx, topt);
+    const b = await askResolve(env, pt.to, ctx);
+    if (b && b.ambiguous) return askDidYouMean("to", b, { from: null, to: null, via: pt.via }, topt);
+    if (!b) return { kind: "text", text: `I couldn't find a station, suburb or stop called "${pt.to}".` };
+    return { kind: "needOrigin", to: askPlaceOut(b), via: pt.via ? pt.via.replace(/\b[a-z]/g, (c) => c.toUpperCase()) : null };
+  }
+  const fo = text.match(/^(?:i'?m\s+|i am\s+)?(?:leaving\s+|going\s+)?from\s+(.+)$/i);
+  if (fo && !/\s(to|via)\s/i.test(fo[1]) && !lineTok(fo[1])) {
+    const a = await askResolve(env, fo[1], ctx);
+    if (a && a.ambiguous) return askDidYouMean("from", a, { from: null, to: "Central" }, topt);
+    if (a && !a.needLocation) return { kind: "needDest", from: askPlaceOut(a) };
   }
 
   // A line: "is the T1 late", "T4 status", "when's the 461 from Burwood", "461 at Burwood"
@@ -1383,7 +1600,7 @@ function askDecorate(d, ctx) {
     case "needLocation":
       reply = "I need your location for that. Allow location, or name a station."; d.ask = "location"; break;
     case "needOrigin":
-      reply = d.to ? `Where from? Share your location, or ask like "Burwood to ${d.to.name}".` : "Where from? Share your location, or name the start station.";
+      reply = d.to ? `Where from? Share your location, or ask like "Burwood to ${d.to.label || d.to.name}${d.via ? " via " + d.via : ""}".` : "Where from? Share your location, or name the start station.";
       d.ask = "location"; break;
     case "needHome":
       reply = "Set your home station first, then ask again. You can set Home on the Trips screen, or say \"save Central to Burwood as home\".";
@@ -1441,21 +1658,38 @@ function askDecorate(d, ctx) {
     case "trip": {
       const js = askNotPast((d.journeys || []).map((j) => ({ ...j, planned: j.leave })), now - 60000);
       const j = js[0];
-      if (!j) reply = `No trips found from ${d.from.name} to ${d.to.name} right now.`;
+      const U = d.understood || { from: askLabel(d.from), to: askLabel(d.to), via: d.via ? askLabel(d.via) : null };
+      const viaS = U.via ? ` via ${askShort(U.via)}` : "";
+      const head = U.from === "your location" ? `From your location to ${U.to}${viaS}.` : `${U.from} to ${U.to}${viaS}.`;
+      const geo = (p) => /EPSG/.test(String(p && p.id));
+      if (!j) reply = `${head} No trips found right now.`;
       else {
         const tl = askTransit(j)[0];
         const ch = j.changes ? ` with ${j.changes} change${j.changes > 1 ? "s" : ""}` : "";
-        const fromN = /EPSG/.test(String(d.from.id)) ? null : d.from.name;
-        reply = (d.modeNote ? d.modeNote + " " : "") + (tl
-          ? `Next: the ${tl.line} from ${tl.from}${askPlat(tl.fromPlatform)} at ${hm(tl.estimated || tl.planned)}${ms(j.leave) < ms(tl.planned) - 60000 ? ` (leave ${askWhen(j.leave)})` : ` (${askWhen(tl.estimated || tl.planned)})`}, arriving ${d.to.name} ${hm(j.arrive)}${ch}. ${cap(askStatusWords(tl))}.`
-          : `${fromN || "From where you are"} to ${d.to.name}: leave ${askWhen(j.leave)} (${hm(j.leave)}), arrive ${hm(j.arrive)}.`);
+        reply = head + " " + (d.modeNote ? d.modeNote + " " : "") + (tl
+          ? `Next: the ${tl.line} from ${tl.from || askShort(d.from.name)}${askPlat(tl.fromPlatform)} at ${hm(tl.estimated || tl.planned)}${ms(j.leave) < ms(tl.planned) - 60000 ? ` (leave ${askWhen(j.leave)})` : ` (${askWhen(tl.estimated || tl.planned)})`}, arriving ${d.to.name} ${hm(j.arrive)}${ch}. ${cap(askStatusWords(tl))}.`
+          : `Leave ${askWhen(j.leave)} (${hm(j.leave)}), arrive ${hm(j.arrive)}.`);
       }
-      cards.push({ type: "trip", from: d.from, to: d.to, journeys: js.slice(0, 4).map(askJourneyOut), link: /EPSG/.test(String(d.from.id)) ? null : askTripLink(d.from, d.to) });
-      if (!/EPSG/.test(String(d.from.id))) links.push({ label: "Open trip", ...askTripLink(d.from, d.to) });
+      const tlink = geo(d.from) || geo(d.to) ? null : askTripLink(d.from, d.to);
+      if (tlink && d.via && !geo(d.via)) { tlink.via = d.via.id; tlink.vn = d.via.name; tlink.href += "&via=" + encodeURIComponent(d.via.id) + "&vn=" + encodeURIComponent(d.via.name); }
+      cards.push({ type: "trip", ...(viaS ? { title: viaS.trim().replace(/^v/, "V") } : {}), from: d.from, to: d.to, via: d.via || null, journeys: js.slice(0, 4).map(askJourneyOut), link: tlink });
+      if (tlink) links.push({ label: "Open trip", ...tlink });
       if (j && askTransit(j)[0] && askTransit(j)[0].tripId) links.push({ label: "Live map", ...askSvc(askTransit(j)[0]) });
-      if (!/EPSG/.test(String(d.from.id))) sugg = [`${d.to.name} to ${d.from.name}`];
+      if (!askIsHere(d.from)) sugg = [`${U.to} to ${U.from}${viaS}`];
       break;
     }
+    case "didYouMean": {
+      const names = d.options.map((x) => x.name);
+      const list = names.length > 1 ? names.slice(0, -1).join(", ") + " or " + names[names.length - 1] : names[0];
+      const role = d.role === "from" ? "start" : d.role === "via" ? "via stop" : "destination";
+      reply = `I'm not sure which ${role} you mean by "${d.q}". Did you mean ${list}?`;
+      sugg = d.suggestions || [];
+      break;
+    }
+    case "needDest":
+      reply = `Where to from ${askLabel(d.from)}? Ask like "${askShort(askLabel(d.from))} to Central".`;
+      sugg = [`${askLabel(d.from)} to Central`, `Departures ${askLabel(d.from)}`];
+      break;
     case "lastService": {
       const noun = d.mode === "train" ? "train" : d.mode || "service";
       const l = d.last;
@@ -1500,7 +1734,8 @@ async function askText(env, d) {
     const extra = (d.cards || []).filter((c) => c.type === "departures").flatMap((c) => c.items.slice(0, 4).map((i) => `${i.line} to ${i.dest}${i.platform ? " (" + i.platform + ")" : ""}: ${inMins(i.estimated || i.planned)}, ${hm(i.estimated || i.planned)}, ${askStatusWords(i)}`));
     return [d.reply, ...extra].join("\n");
   }
-  if (d.kind === "trip" && d.modeNote) return d.modeNote + "\n" + (await asText(env, d));
+  if (d.kind === "didYouMean" || d.kind === "needDest") return [d.reply, ...(d.suggestions || [])].join("\n");
+  if (d.kind === "trip" && (d.modeNote || d.via)) return [d.via ? `Via ${askShort(askLabel(d.via))}` : "", d.modeNote || "", await asText(env, d)].filter(Boolean).join("\n");
   return asText(env, d);
 }
 // ---- ask v2 end
@@ -2547,7 +2782,7 @@ async function afterAnswer(env, d, o) {
     if (d.kind === "trip" && d.journeys) {
       const legs = d.journeys.flatMap((j) => j.legs.filter((l) => l.kind === "transit"));
       await predictions(env, legs, 16);
-      if (o.log !== false && d.from && d.to && d.from.id && !/EPSG/.test(String(d.from.id)) && !d.when) {
+      if (o.log !== false && d.from && d.to && d.from.id && !/EPSG/.test(String(d.from.id)) && !/EPSG/.test(String(d.to.id)) && !d.via && !d.when) {
         const s = { profile: o.profile, device: o.device ? cleanId(o.device) : null, from: d.from, to: d.to, src: d.saved ? "saved" : "search" };
         if (o.exec) o.exec.waitUntil(logSearch(env, s)); else await logSearch(env, s);
       }
@@ -2589,7 +2824,7 @@ export default {
       const ctx = { lat: p.get("lat"), lon: p.get("lon"), profile, exec };
       switch (url.pathname) {
         case "/api/ask": {
-          const actx = { ...ctx, home: askPlaceArg(p.get("home")), work: askPlaceArg(p.get("work")) };
+          const actx = { ...ctx, origin: url.origin, home: askPlaceArg(p.get("home")), work: askPlaceArg(p.get("work")) };
           const d = await askV2(env, p.get("q") || "", actx);
           await afterAnswer(env, d, { profile, device: p.get("device"), exec });
           return asTxt ? textRes(await askText(env, d)) : json(d);
