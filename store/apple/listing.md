@@ -18,9 +18,9 @@
 
 ## URLs
 
-* Support URL: https://nsw-transport-bot.sites.tab.bot/support/
-* Marketing URL: https://nsw-transport-bot.sites.tab.bot/support/
-* Privacy policy URL: https://nsw-transport-bot.sites.tab.bot/privacy/
+* Support URL: https://transportsydney.app/support/
+* Marketing URL: https://transportsydney.app/support/
+* Privacy policy URL: https://transportsydney.app/privacy/
 
 ## Promotional text (170 max)
 

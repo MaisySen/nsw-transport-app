@@ -24,7 +24,7 @@ One backend does all the work. The web app, the Android app and the iPhone app a
 ## Backend: the engine
 
 * **Code:** `backend/src/worker.js`, one file of about 3,400 lines. Routes are a `switch` on the path inside `fetch()`. The Ask chat lives between the markers `// ---- ask v2 start` and `// ---- ask v2 end`.
-* **Runtime:** a Worker (Cloudflare Workers API, `nodejs_compat`, compatibility date 2026-08-01), hosted on Tab's site hosting at `nsw-transport-bot.sites.tab.bot`. `backend/build.mjs` writes the deployable `site/` folder: static files, `worker.mjs` with secrets filled in, and `tab-site.json` naming the bindings.
+* **Runtime:** a Worker (Cloudflare Workers API, `nodejs_compat`, compatibility date 2026-08-01), on the Fintex Australia Cloudflare account at `api.transportsydney.app` (Worker `transport-api` with D1, a Cron Trigger and optional R2; see [Deploy on Cloudflare](DEPLOY_CLOUDFLARE.md)). `node backend/build.mjs --cloudflare` writes `dist/worker.mjs` and `dist/public`; secrets are Worker secrets. On the API address the worker serves only the API, the shared live trip page and the APK. The public site (`site/`, plain files) runs on Cloudflare Pages at `transportsydney.app`.
 * **Bindings:** `DB` (D1 database) and `FILES` (R2 bucket that holds the Android APK).
 * **Secrets:** filled in at build time from `backend/.env`: `TFNSW_API_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `TICK_KEY`, `ADMIN_KEY`. The source in git holds only placeholders like `__ADMIN_KEY__`. See [Security](SECURITY.md).
 * **Caching:** in memory per isolate (stop boards for 12 seconds, realtime feeds briefly). The hosting does not allow the default cache.
@@ -46,7 +46,7 @@ One backend does all the work. The web app, the Android app and the iPhone app a
 
 ### The scheduler
 
-Worker sites here have no cron of their own, so cron-job.org calls `GET /api/tick` with `TICK_KEY` in an `x-admin-key` header every minute (job "NSW Transport Bot heartbeat"). Each tick follows every active watch and commute, sends alerts, samples a few busy stops for the delay history and runs the retention clean up. A D1 lease stops two ticks overlapping. If the scheduler goes quiet for more than 100 seconds, an open app's `/api/watches` call runs a tick for its own device.
+A Cloudflare Cron Trigger runs the tick every minute (`scheduled()` in the worker; `GET /api/tick` with `TICK_KEY` in an `x-admin-key` header does the same, and an outside cron service calls it on the first address until the switch). Each tick follows every active watch and commute, sends alerts, samples a few busy stops for the delay history and runs the retention clean up. A D1 lease stops two ticks overlapping. If the scheduler goes quiet for more than 100 seconds, an open app's `/api/watches` call runs a tick for its own device.
 
 ### Notifications
 
@@ -100,9 +100,10 @@ The repo is public, so GitHub's macOS runners are free. Android builds and web p
 
 | Part | Where |
 | --- | --- |
-| Backend, web app, site pages | Tab site hosting, `nsw-transport-bot.sites.tab.bot` (Worker with D1 and R2). No separate account or bill |
+| API | Cloudflare (Fintex Australia account), `api.transportsydney.app`: Worker, D1, Cron Trigger, optional R2. Workers Paid plan recommended |
+| Public site | Cloudflare Pages, `transportsydney.app` and `www` |
 | Android APK | R2 bucket `FILES`, served at `/download/transport.apk` with range support |
 | Android over the air updates | Expo (EAS Update), account `bidurtab` |
 | iPhone builds | GitHub Releases on this repo |
 | Scheduler | cron-job.org, free plan |
-| Source | GitHub, `MaisySen/nsw-transport-app` (an older v1 copy of the backend is in the private repo `MaisySen/nsw-transport-bot`) |
+| Source | GitHub, `MaisySen/nsw-transport-app` (an older copy of the backend is in a separate private repo of the same account) |

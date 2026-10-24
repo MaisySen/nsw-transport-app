@@ -86,7 +86,7 @@ Newest first.
 
 ## Web (backend, web app and site)
 
-Published to https://nsw-transport-bot.sites.tab.bot. Each publish replaces the whole site.
+Until the switch: published to the first address (each publish replaces the whole site). From the switch: Cloudflare Worker `transport-api` at https://api.transportsydney.app and Pages at https://transportsydney.app, see [Deploy on Cloudflare](DEPLOY_CLOUDFLARE.md).
 
 | Time (about) | Release | Commit |
 | --- | --- | --- |
@@ -97,9 +97,9 @@ Published to https://nsw-transport-bot.sites.tab.bot. Each publish replaces the 
 | 24 Oct, 11:45 AM | New trip by mode and `/api/stations` | 7ff789c |
 | 24 Oct, 11:20 AM | Support page, rewritten privacy policy, data retention (90 and 30 days) | 388203e |
 | 24 Oct, 8:32 AM | Trips home redesign | d46c5a4 |
-| 24 Oct, about 1:30 AM | v4: download page, APK from R2, Expo push, `/api/app` | |
-| 24 Oct, 12:41 AM | v3: watches with Web Push, connection rescue, commute memory, predictions, PWA, iOS style redesign; cron-job.org scheduler | |
-| 24 Oct, about midnight | v2: auto refresh, Live and Scheduled badges, GTFS realtime, live vehicle map, saved trips | |
-| 23 Oct, 5:14 PM | v1: Transport Bot: stop boards, trip planning, alerts, nearby, text answers | |
+| 24 Oct, about 1:30 AM | Release 4: download page, APK from R2, Expo push, `/api/app` | |
+| 24 Oct, 12:41 AM | Release 3: watches with Web Push, connection rescue, commute memory, predictions, PWA, iOS style redesign; cron-job.org scheduler | |
+| 24 Oct, about midnight | Release 2: auto refresh, Live and Scheduled badges, GTFS realtime, live vehicle map, saved trips | |
+| 23 Oct, 5:14 PM | First release: stop boards, trip planning, alerts, nearby, text answers | |
 
-Before 24 Oct, 11:45 AM the backend source lived only on the build box and in the private repo `MaisySen/nsw-transport-bot`; it has been in `backend/` of this repo since commit 7ff789c.
+Before 24 Oct, 11:45 AM the backend source lived only on the build machine and in a separate private repo; it has been in `backend/` of this repo since commit 7ff789c.

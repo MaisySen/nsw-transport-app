@@ -1,6 +1,6 @@
 # Transport: live Sydney and NSW public transport
 
-Transport shows live departures, plans trips with any number of legs, follows a trip and tells you when to leave, and answers plain questions like "campsie to newcastle via chatswood". It runs on the web, on Android and on iPhone. All three talk to one backend, which reads Transport for NSW open data.
+Transport shows live departures, plans trips with any number of legs, follows a trip and tells you when to leave, and answers plain questions like "campsie to newcastle via chatswood". It runs on Android and iPhone. Both talk to one backend, which reads Transport for NSW open data.
 
 Owner: Bidur. Repository: https://github.com/MaisySen/nsw-transport-app (public).
 
@@ -8,22 +8,23 @@ Owner: Bidur. Repository: https://github.com/MaisySen/nsw-transport-app (public)
 
 | What | Link |
 | --- | --- |
-| Web app | https://nsw-transport-bot.sites.tab.bot |
-| Landing page | https://nsw-transport-bot.sites.tab.bot/?about |
-| Android download | https://nsw-transport-bot.sites.tab.bot/download/ |
-| Android APK (direct) | https://nsw-transport-bot.sites.tab.bot/download/transport.apk |
+| Website (store links, support, privacy, terms) | https://transportsydney.app |
+| Support | https://transportsydney.app/support/ (support@transportsydney.app) |
+| Privacy policy | https://transportsydney.app/privacy/ |
+| Terms | https://transportsydney.app/terms/ |
+| API | https://api.transportsydney.app (health: `/api/status`) |
+| Android APK (direct) | https://api.transportsydney.app/download/transport.apk |
 | iPhone builds (unsigned .ipa) | https://github.com/MaisySen/nsw-transport-app/releases |
-| Support | https://nsw-transport-bot.sites.tab.bot/support/ |
-| Privacy policy | https://nsw-transport-bot.sites.tab.bot/privacy/ |
-| Terms | https://nsw-transport-bot.sites.tab.bot/terms/ |
-| Backend health | https://nsw-transport-bot.sites.tab.bot/api/status |
 | Expo project | https://expo.dev/accounts/bidurtab/projects/nsw-transport |
+
+Publisher: Fintex Australia Pty Ltd (ABN 60 688 406 108), https://fintex.au.
 
 ## What is in this repo
 
 | Folder | What it is |
 | --- | --- |
-| `backend/` | The engine: a Cloudflare style Worker (`src/worker.js`) with a D1 database and an R2 file store, plus the web app and site pages in `src/public/`. Every client calls its `/api` endpoints. |
+| `backend/` | The engine: a Cloudflare Worker (`src/worker.js`) with a D1 database, a Cron Trigger and an optional R2 file store, at api.transportsydney.app. Every client calls its `/api` endpoints. `src/public/` holds the data files it reads, the shared live trip page and the older web app files (served only on the first address until the switch). |
+| `site/` | The public website at transportsydney.app: plain files on Cloudflare Pages, no build step. |
 | `app/` | The Expo (React Native, TypeScript, expo-router) app. Ships as the Android app, and as an iPhone preview in Expo Go. |
 | `ios-native/` | The native iPhone app in SwiftUI, with widgets, a Live Activity and Siri shortcuts. Built on GitHub macOS runners. |
 | `store/` | App Store and Google Play listing pack, screenshots, privacy answers and the policy audit. |
@@ -48,18 +49,18 @@ Owner: Bidur. Repository: https://github.com/MaisySen/nsw-transport-app (public)
 
 ## Run each part
 
-### Backend and web app
+### Backend
 
 Needs Node 20 or later.
 
 ```bash
 cd backend
-# create .env with the six values named in docs/SECURITY.md (never commit it)
-node build.mjs site         # writes site/ with the static files and worker.mjs
-node --test test/           # unit tests
+node --test test/*.test.mjs             # unit tests
+node build.mjs --cloudflare dist        # dist/worker.mjs and dist/public, no secrets in them
+tools/deploy-cloudflare.sh --dry-run    # everything short of deploying
 ```
 
-The built `site/` folder is what gets published. See [Runbook](docs/RUNBOOK.md) for the publish step and for local preview.
+Deploying, DNS, email and the switch to the new address: [Deploy on Cloudflare](docs/DEPLOY_CLOUDFLARE.md). Day to day: [Runbook](docs/RUNBOOK.md).
 
 ### Android app (Expo)
 

@@ -9,11 +9,11 @@ first TestFlight run on 24 Oct 2026 (App Groups capability on). The app group it
 
 ## What only Bidur can provide
 
-1. App Store Connect API key with Admin access: the .p8 file, Key ID and Issuer ID, emailed to bidur@mail.tab.bot.
+1. App Store Connect API key with Admin access: the .p8 file, Key ID and Issuer ID, emailed to contact@fintex.au.
 2. The Apple Team ID (developer.apple.com, Account, Membership details).
 3. The seller or legal name for the copyright line, and a phone number for App Review contact.
-4. Google Play Console invite to bidur@mail.tab.bot with Admin permission. Play invites need a Google account on that
-   address; Tab creates one at accounts.google.com ("Use my current email address instead") and reads the code from that mailbox.
+4. Google Play Console invite to contact@fintex.au with Admin permission. Play invites need a Google account on that
+   address (accounts.google.com, "Use my current email address instead").
 5. Register the app group (one time, about 2 minutes, developer.apple.com; an API key cannot do this):
    Certificates, Identifiers & Profiles, Identifiers, the plus button, App Groups, Continue.
    Description "Transport", Identifier `group.com.maisysen.nswtransport`, Continue, Register.

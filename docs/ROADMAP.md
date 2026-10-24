@@ -35,10 +35,10 @@ Open items, in the order they are planned. Updated 24 Oct 2026, 2:20 PM.
 
 ## Last: move to Bidur's Windows PC
 
-Planned at the end, after the store work. Goal: Bidur can build, run and publish everything without Tab.
+Planned at the end, after the store work. Goal: Bidur can build, run and publish everything on his own machine and accounts.
 
 1. A setup script and guide for Windows: Node 20, Git, Java 17, Android SDK, Expo and EAS CLI.
-2. Backend and web: run locally with a Worker dev server, and choose hosting (a Cloudflare account of Bidur's, with D1 and R2) or keep Tab hosting.
+2. Backend and web: run locally with a Worker dev server, on the Fintex Cloudflare account (done: see [Deploy on Cloudflare](DEPLOY_CLOUDFLARE.md)).
 3. Expo: EAS Update and APK and AAB builds from the PC, with the keystore moved to a safe place on the PC and a backup.
 4. iPhone: stays on GitHub Actions macOS runners (no Mac needed).
 5. Secrets and accounts handed over: Transport for NSW, Expo, cron-job.org, the keystore, Apple and Google keys, repo secrets.

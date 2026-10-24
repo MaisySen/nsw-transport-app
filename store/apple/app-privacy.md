@@ -1,6 +1,6 @@
 # App Privacy answers (App Store Connect, App Privacy)
 
-Privacy policy URL: https://nsw-transport-bot.sites.tab.bot/privacy/
+Privacy policy URL: https://transportsydney.app/privacy/
 
 Do you or your third party partners collect data from this app? Yes.
 

@@ -4,7 +4,7 @@ Matches Android versionCode 5 with the over the air updates up to 24 Oct 2026 (l
 
 Does your app collect or share any of the required user data types? Yes.
 Is all of the user data collected by your app encrypted in transit? Yes (HTTPS only).
-Do you provide a way for users to request that their data is deleted? Yes. In the app: Settings > Clear history > Delete my trip history on server, or Delete all my data. By email: contact@fintex.au. Deletion page: https://nsw-transport-bot.sites.tab.bot/support/#delete
+Do you provide a way for users to request that their data is deleted? Yes. In the app: Settings > Clear history > Delete my trip history on server, or Delete all my data. By email: privacy@transportsydney.app. Deletion page: https://transportsydney.app/support/#delete
 Account creation: the app has no accounts.
 
 Data shared with third parties: None.

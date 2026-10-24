@@ -7,7 +7,7 @@ Where every secret lives, by name only, and the rules that keep them out of the 
 1. No secret in git, commit messages, issues, screenshots or logs. The repo is public.
 2. The backend source holds placeholders (`__TFNSW_API_KEY__` and so on). `backend/build.mjs` fills them in at build time from `backend/.env`, which is ignored by git.
 3. Values only ever go into the server side `worker.mjs`. The web app, the Android app and the iPhone app hold no secrets. `backend/test/site.test.mjs` checks that no API key is in the public files or the source.
-4. Owner credentials are sent to Bidur by email from bidur@mail.tab.bot, organised by service, and resent in full whenever one changes.
+4. Owner credentials are sent to Bidur by email at contact@fintex.au, organised by service, and resent in full whenever one changes.
 5. Rotate a secret the moment it may have leaked. Steps per secret: [Runbook, section 7](RUNBOOK.md#7-rotate-keys).
 
 ## Secret inventory
@@ -26,8 +26,9 @@ Where every secret lives, by name only, and the rules that keep them out of the 
 | Appetize login and API token | Android emulator previews in the browser (free minutes used up) | Credentials email; `~/.nsw-secrets/appetize.json` |
 | `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`, `APPLE_TEAM_ID` | App Store Connect API key for signing and TestFlight upload | Not created yet. Will be GitHub Actions repository secrets, never files in the repo |
 | Play service account key | Command line Play uploads (`store/play-upload.mjs`) | Not created yet. Will stay on the build machine |
-| GitHub | Repository access | Bidur's own account `MaisySen`, connected to Tab by authorization. No password or token stored in the project |
-| bidur@mail.tab.bot | Project mailbox for sign ups, resets and store invites | Tab's own mailbox; no separate password |
+| GitHub | Repository access | Bidur's own account `MaisySen`, connected to the build machine by authorization. No password or token stored in the project |
+| contact@fintex.au | Fintex mailbox for sign ups, resets and store invites; support@, privacy@ and hello@transportsydney.app forward to it | Fintex's own mailbox |
+| Cloudflare | Fintex Australia account: API Worker, D1, Pages, DNS, Email Routing | API token in the deploying machine environment only (`CLOUDFLARE_API_TOKEN`), never in the repo |
 
 Admin and scheduler keys go in an `x-admin-key` header. The cron-job.org job sends `TICK_KEY` that way since 24 Oct 2026, so the key is no longer part of its URL. The older `?key=` query form still works; treat any URL that contains one as a secret and do not share it or paste it into a chat.
 
@@ -39,7 +40,7 @@ Admin and scheduler keys go in an `x-admin-key` header. The cron-job.org job sen
 * The page counter keeps one total per day, page and referring site. No cookies, IP addresses or browser details. Do Not Track and Global Privacy Control are respected.
 * Push subscriptions and Expo tokens are stored per device and removed when they fail or the user turns alerts off.
 
-The full policy is at https://nsw-transport-bot.sites.tab.bot/privacy/ and in [store/privacy-policy.md](../store/privacy-policy.md).
+The full policy is at https://transportsydney.app/privacy/ and in [store/privacy-policy.md](../store/privacy-policy.md).
 
 ## Reporting a problem
 
@@ -62,7 +63,7 @@ No secret has leaked. There were no critical or high findings. All 6 medium find
 
 * gitleaks over all 37 commits: no findings.
 * Every secret value held for the project was searched for in the full git history, the current tree, every public file on the live site and every file inside the published APK. None was found.
-* No keystore, .p8, .p12, .pem, .env or service account file was ever committed. `worker.mjs` and `tab-site.json` are not served (404).
+* No keystore, .p8, .p12, .pem, .env or service account file was ever committed. `worker.mjs` and the deploy manifest are not served (404).
 * Keys rotated: none. Nothing was exposed.
 
 ### Medium (all fixed)

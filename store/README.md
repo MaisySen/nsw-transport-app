@@ -15,7 +15,7 @@ Copy each field as written. Nothing here is a secret. This folder is the only co
 | google/content-rating.md | IARC content rating questionnaire answers |
 | google/permissions.md | Why each Android permission is there |
 | attribution.md | Transport for NSW data attribution text and licence terms |
-| privacy-policy.md | The privacy policy, as published at https://nsw-transport-bot.sites.tab.bot/privacy/ |
+| privacy-policy.md | The privacy policy, as published at https://transportsydney.app/privacy/ |
 | screenshots/ | App Store and Play screenshots at the exact sizes, plus the Play feature graphic |
 | ../SUBMIT.md | What is left once the App Store Connect API key and the Play Console invite arrive |
 

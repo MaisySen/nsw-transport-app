@@ -8,10 +8,10 @@
 * Category: Maps & Navigation
 * Tags: Public transit, Trip planner, Commute
 * Developer name: Fintex Australia Pty Ltd
-* Contact email: contact@fintex.au
+* Contact email: support@transportsydney.app
 * Developer website: https://fintex.au
-* Website: https://nsw-transport-bot.sites.tab.bot/support/
-* Privacy policy: https://nsw-transport-bot.sites.tab.bot/privacy/
+* Website: https://transportsydney.app/support/
+* Privacy policy: https://transportsydney.app/privacy/
 * Ads: No ads
 * Countries: Australia
 

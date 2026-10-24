@@ -1,8 +1,10 @@
 # API
 
-Base URL: https://nsw-transport-bot.sites.tab.bot
+Base URL: https://api.transportsydney.app (Cloudflare, see [Deploy on Cloudflare](DEPLOY_CLOUDFLARE.md)). Until the switch, installed apps still use the first address, which answers the same API.
 
-All endpoints return JSON unless noted. Most read endpoints also take `format=text` for a short plain text answer (used for messaging). CORS is open (`access-control-allow-origin: *`). Updated 24 Oct 2026. Shared live answers (`departures`, `trip`, `plan`, `service`, `status`, `alerts`, `stations`, `search`, `nearby`, `station`, `parking`, `topup`, `lifts`) are cached at the edge for 15 seconds, keyed without `profile` and `device`; a cached answer carries `x-edge-cache: hit`. Every HTML page is served by the worker with HSTS, a Content Security Policy with `frame-ancestors 'none'`, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy and COOP. Admin endpoints and `/api/tick` read their key only from the `x-admin-key` header; a `?key=` in the address is ignored.
+On the API address only `/api/*`, the shared live trip page `/live/` and `/download/transport.apk` are served. `/`, `/privacy/`, `/support/`, `/terms/` and `/download/` redirect (301) to https://transportsydney.app, and any other path answers `404 {"error": "...", "site": "https://transportsydney.app"}`. Shared live trip links (`POST /api/share`) are `https://api.transportsydney.app/live/?t=...`.
+
+All endpoints return JSON unless noted. Most read endpoints also take `format=text` for a short plain text answer (used for messaging). CORS is open (`access-control-allow-origin: *`). Updated 25 Oct 2026. Shared live answers (`departures`, `trip`, `plan`, `service`, `status`, `alerts`, `stations`, `search`, `nearby`, `station`, `parking`, `topup`, `lifts`) are cached at the edge for 15 seconds, keyed without `profile` and `device`; a cached answer carries `x-edge-cache: hit`. The live trip page is served by the worker with HSTS, a Content Security Policy with `frame-ancestors 'none'`, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy and COOP. Admin endpoints and `/api/tick` read their key only from the `x-admin-key` header; a `?key=` in the address is ignored.
 
 ## Common parameters
 
@@ -121,6 +123,10 @@ These need `TICK_KEY` or `ADMIN_KEY` in an `x-admin-key` header. The keys are se
 | `/api/admin/commute` | ADMIN_KEY | Runs one commute now (`id`, `reset=1`, `leave=1`) |
 | `/api/admin/searches` | ADMIN_KEY | Adds or clears test searches for commute memory |
 | `/api/admin/profile-copy` | ADMIN_KEY | POST `{from, to}`: copies saved trips, trip legs, commutes, searches and dismissed suggestions from one profile to a new id of 20 to 40 characters. Device bound rows (push, watches, notes) stay with their device |
+
+### Database export (admin)
+
+`GET /api/admin/export` with `x-admin-key`: `{tables: [{name, sql, rows}], indexes: [{name, table, sql}]}`. With `table=NAME&after=ROWID&limit=500` (1 to 1000): `{table, rows: [{__rowid, ...columns}], next}`; `next` is the rowid to pass as `after`, or null on the last page. Read only. Used by `backend/tools/export-d1.mjs`.
 
 ## Opal fare estimates
 
@@ -304,7 +310,8 @@ Added to the answer with `acc=1`:
 * `tabs`: tab order. Unknown keys are ignored and a missing tab is added at the end, so no tab can disappear.
 * `timing`: `liveRefreshSec` (5 to 120), `alertRepeatWindowMin` (how long the same alert is held back, 1 to 120), `sameRunToleranceSec` (how far a service's boarding time may be from the planned one and still count as the same run, 30 to 600), `configRefreshMin`. Values outside the range are clamped in the app.
 
-* `api_base` (iPhone): moves the app, its widgets and the Live Activity to another server address without a build. Send it inside `copy` (`{"copy": {"api_base": "https://api.fintex.au"}}`), which the server passes through today; a top level `api_base` is read too. The app takes it only when it is https, has no user name, port or query, and its host is the host in use now or on `APIBase.allowedDomains` (today `api.transportsydney.app`; `ios-native/Sources/TransportKit/APIBase.swift` is the one place the address and the list are written). Example: `{"copy": {"api_base": "https://api.transportsydney.app"}}`. A bad value is ignored and the last good one stays; removing it goes back to the address built into the app.
+* `api_base` (iPhone): moves the app, its widgets and the Live Activity to another server address without a build. Send it inside `copy` (`{"copy": {"api_base": "https://api.transportsydney.app"}}`), which the server passes through today; a top level `api_base` is read too. The app takes it only when it is https, has no user name, port or query, and its host is the host in use now or on `APIBase.allowedDomains` (today `api.transportsydney.app`; `ios-native/Sources/TransportKit/APIBase.swift` is the one place the address and the list are written). Example: `{"copy": {"api_base": "https://api.transportsydney.app"}}`. A bad value is ignored and the last good one stays; removing it goes back to the address built into the app.
+* Setting `copy.api_base` (admin POST to `/api/app/config?platform=ios` and `platform=android`): the server accepts only an https origin with no path, like `https://api.transportsydney.app`, or `""` to clear it; anything else answers 400. A POST replaces that platform's stored overrides, so send the other overrides with it. Nothing sets it by default. The switch steps are in [Deploy on Cloudflare](DEPLOY_CLOUDFLARE.md).
 
 Change it without a build or a deploy: `POST /api/app/config?platform=ios` with the `x-admin-key` header and a JSON object holding only the parts to change. It is stored in D1 (`app_config`) and merged over the defaults. Send `{}` to go back to the defaults.
 

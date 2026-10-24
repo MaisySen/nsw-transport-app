@@ -1,15 +1,17 @@
 name: backend
 
-# Backend and web app checks: the full test suite, the build, and no em or en dashes.
+# Server and website checks: the full test suite, both builds, the D1 migration, and no em or en dashes.
 on:
   push:
     paths:
       - "backend/**"
+      - "site/**"
       - "docs/**"
       - ".github/workflows/backend.yml"
   pull_request:
     paths:
       - "backend/**"
+      - "site/**"
       - "docs/**"
       - ".github/workflows/backend.yml"
 
@@ -39,9 +41,15 @@ jobs:
           TICK_KEY: ci
           ADMIN_KEY: ci
         run: node build.mjs "$RUNNER_TEMP/site" && test ! -e "$RUNNER_TEMP/site/_headers"
+      - name: Cloudflare build and migration
+        run: |
+          node tools/schema.mjs --check
+          node build.mjs --cloudflare "$RUNNER_TEMP/dist"
+          test -f "$RUNNER_TEMP/dist/worker.mjs" && test -f "$RUNNER_TEMP/dist/public/live/live.js"
+          test ! -e "$RUNNER_TEMP/dist/public/app.js"
       - name: No em or en dashes
         shell: bash
         run: |
-          if grep -rnI -e $'\xe2\x80\x93' -e $'\xe2\x80\x94' . ../docs; then
+          if grep -rnI -e $'\xe2\x80\x93' -e $'\xe2\x80\x94' . ../docs ../site; then
             echo "Replace the em or en dashes above."; exit 1
           fi

@@ -4,11 +4,11 @@ What Transport does, by version, and where each feature stands on each platform.
 
 Status words: **Done** (live for users), **In progress** (being built now), **Planned** (agreed, not started), **Blocked** (waiting on something outside the code).
 
-Platforms: **Web** is the web app at https://nsw-transport-bot.sites.tab.bot. **Android** is the Expo app (APK and over the air updates). **iPhone** is the native SwiftUI app. Expo Go on iPhone gets the same updates as Android.
+Platforms: **Android** is the Expo app (APK and over the air updates). **iPhone** is the native SwiftUI app. Expo Go on iPhone gets the same updates as Android.
 
 ## Goals
 
-1. Bring back the old Transport for NSW "Transport Bot": type a stop number or a place and get the next services.
+1. Type a stop number or a place and get the next services.
 2. Match or beat TripView and the Opal Travel app for live accuracy and trip planning.
 3. Feel native on each platform (Apple Human Interface Guidelines on iPhone and web, Material on Android).
 4. Cost nothing per user: no AI models, free Transport for NSW data, one small backend.
@@ -34,7 +34,7 @@ Platforms: **Web** is the web app at https://nsw-transport-bot.sites.tab.bot. **
 | CI | backend.yml runs every backend test, the build and the dash check on each push | Done |
 | Cost of the Ask chat | Rule based, no AI model, no per message cost | Done |
 
-## v1: Transport Bot (23 Oct 2026)
+## First release (23 Oct 2026)
 
 | Feature | Web | Android | iPhone |
 | --- | --- | --- | --- |

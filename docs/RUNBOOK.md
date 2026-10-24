@@ -1,41 +1,40 @@
 # Runbook
 
-How to deploy, build, update and look after each part of Transport. Updated 24 Oct 2026.
+How to deploy, build, update and look after each part of Transport. Updated 25 Oct 2026.
 
-Today everything runs from Tab's build box (`/home/user/nsw-backend` for the backend and web, `/home/user/nsw-app` for Expo, GitHub Actions for iPhone). The move to Bidur's Windows PC is planned last (see [Roadmap](ROADMAP.md)); the commands below are the same on any machine with Node 20, apart from the publish step.
+The API runs at https://api.transportsydney.app and the public site at https://transportsydney.app, both on the Fintex Australia Cloudflare account. The first address keeps serving installed apps that have not moved yet, until the switch is finished. The commands below need Node 20 or later.
 
 Secrets are named in [Security](SECURITY.md). Never paste a value into the repo, a commit message or a log.
 
-## 1. Deploy the web app and backend
+## 1. Deploy the API and the public site
+
+Full steps, DNS records, email and the switch: [Deploy on Cloudflare](DEPLOY_CLOUDFLARE.md). In short:
 
 ```bash
-cd backend                      # /home/user/nsw-backend on the build box
-node --test test/*.test.mjs     # all 118 pass (the same run as .github/workflows/backend.yml)
-grep -rnP "\x{2013}|\x{2014}" src/ && echo "fix dashes first"
-node build.mjs site             # reads .env, writes site/ with worker.mjs (every HTML page is inside it) and tab-site.json
+cd backend
+node --test test/*.test.mjs             # all pass (the same run as .github/workflows/backend.yml)
+tools/deploy-cloudflare.sh              # tests, build, D1 migrations, wrangler deploy to api.transportsydney.app
+node tools/deploy-site.mjs              # site/ to Cloudflare Pages (transportsydney.app and www)
 ```
-
-Publish `site/` to the slug `nsw-transport-bot` with Tab's publish tool (`publish-cli.mjs site.publish` with `slug`, `source_dir` and `title`). The whole site is replaced on each publish.
 
 Then check, all must answer:
 
 ```bash
-B=https://nsw-transport-bot.sites.tab.bot
-for p in / /download/ /privacy/ /support/ /terms/ /live/ /robots.txt /sitemap.xml /api/status /api/stations?mode=train; do
-  echo "$p $(curl -s -o /dev/null -w '%{http_code}' "$B$p")"; done
-# Every page must carry HSTS and a Content Security Policy with frame-ancestors
-for p in / /download/ /privacy/ /support/ /terms/ /live/ /no-such-page; do
-  h=$(curl -sI "$B$p"); echo "$h" | grep -qi '^strict-transport-security' && echo "$h" | grep -qi "frame-ancestors 'none'" && echo "$p headers ok" || echo "$p HEADERS MISSING"; done
-curl -s -o /dev/null -r 0-10 -w 'apk %{http_code}\n' $B/download/transport.apk     # 206
-curl -s -o /dev/null -w '404 page %{http_code}\n' $B/no-such-page                  # 404
-curl -s "$B/api/ask?q=campsie%20to%20newcastle%20via%20chatswood&format=text"
+A=https://api.transportsydney.app
+for p in /api/status "/api/stations?mode=train" "/api/app/config?platform=ios" /live/; do echo "$p $(curl -s -o /dev/null -w '%{http_code}' "$A$p")"; done   # 200
+curl -s -o /dev/null -w '%{http_code}\n' $A/no-such-page                           # 404
+curl -s -o /dev/null -r 0-10 -w 'apk %{http_code}\n' $A/download/transport.apk     # 206 once the APK is uploaded
+for p in / /support/ /privacy/ /terms/; do echo "$p $(curl -s -o /dev/null -w '%{http_code}' https://transportsydney.app$p)"; done   # 200
+curl -s "$A/api/ask?q=campsie%20to%20newcastle%20via%20chatswood&format=text"
 ```
 
-Several workers may edit `src/worker.js`. Always pull `main` and reread the file before writing; never write back an older copy, or another feature (for example `/api/plan`) disappears from the live site.
+Several workers may edit `src/worker.js`. Always pull `main` and reread the file before writing; never write back an older copy, or another feature (for example `/api/plan`) disappears from the live server.
 
-Commit the same source under `backend/` on `main`, including the generated station, bus route and stop data under `src/public/stations/` and `src/public/stops/` (rebuild them with `tools/build_stations.py` and `tools/build_stops.py`), so a clean clone passes every test. Never commit `.env`.
+Commit the generated station, bus route and stop data under `src/public/stations/` and `src/public/stops/` (rebuild them with `tools/build_stations.py` and `tools/build_stops.py`), so a clean clone passes every test. When a table changes in `src/worker.js`, run `node tools/schema.mjs` and commit `migrations/`. Never commit `.env`, `wrangler.toml` or an export file.
 
-**Rollback:** check out the previous commit of `backend/`, build and publish again.
+**Rollback:** `npx wrangler@4 rollback` in `backend/` (the previous Worker version), or check out the previous commit of `backend/` and deploy again. For the site, Cloudflare Pages, project `transportsydney`, Deployments, Rollback.
+
+**First address, until the switch.** It runs the build from before the move (`node build.mjs site` writes one folder with the secrets filled in). Do not redeploy it unless Bidur asks; `backend/` deployed there keeps its full behaviour for old app builds. Its address is in the credentials email.
 
 ## 2. Ship an over the air update (Android and Expo Go)
 
@@ -59,7 +58,7 @@ Needs the Android SDK (`ANDROID_HOME`), Java 17 and the keystore files in `~/.ns
 1. Bump `expo.android.versionCode` in `app/app.json` (next is 5).
 2. APK for the download page: `cd app && ./build-android.sh`. Output: `android/app/build/outputs/apk/release/app-release.apk`.
 3. Upload it so the download page and `/api/app` offer it:
-   `curl -X PUT -H "x-admin-key: $ADMIN_KEY" --data-binary @app-release.apk "https://nsw-transport-bot.sites.tab.bot/api/admin/file?name=transport.apk&version=5"` (the admin key is only read from the header)
+   `curl -X PUT -H "x-admin-key: $ADMIN_KEY" --data-binary @app-release.apk "https://api.transportsydney.app/api/admin/file?name=transport.apk&version=5"` (the admin key is only read from the header; needs the R2 bucket, see [Deploy on Cloudflare](DEPLOY_CLOUDFLARE.md))
 4. AAB for Google Play: `./build-android-aab.sh`. Output: `android/app/build/outputs/bundle/release/app-release.aab`. Upload steps are in [SUBMIT.md](../SUBMIT.md).
 5. Commit any `app/` changes. `android/` is generated by `expo prebuild` and is not committed.
 
@@ -75,19 +74,20 @@ A new native build is needed for native changes (widgets, permissions, new nativ
 
 The repo must stay public for free macOS minutes, or GitHub billing must allow Actions on a private repo.
 
-## 5. Watch the minute scheduler (cron-job.org)
+## 5. Watch the minute scheduler
 
-cron-job.org job 8707266 "NSW Transport Bot heartbeat" calls `https://nsw-transport-bot.sites.tab.bot/api/tick` every minute with `TICK_KEY` in an `x-admin-key` header (a key in the address is ignored). It drives watch alerts, commute alerts, morning checks, delay sampling and data clean up.
+On Cloudflare a Cron Trigger runs the tick every minute (`[triggers]` in `wrangler.toml.template`). It drives watch alerts, commute alerts, morning checks, delay sampling and data clean up.
 
-* Healthy: `curl -s -H "x-admin-key: $ADMIN_KEY" https://nsw-transport-bot.sites.tab.bot/api/usage` shows `lastTick` within the last two minutes. Without the key, `/api/usage` only shows the count of recorded live times, and `/api/health` answers 403.
-* If it is stale: sign in to console.cron-job.org (account in the credentials email), check the job is enabled and its last responses are 200. cron-job.org disables a job after repeated failures and emails bidur@mail.tab.bot.
+* Healthy: `curl -s -H "x-admin-key: $ADMIN_KEY" https://api.transportsydney.app/api/usage` shows `lastTick` within the last two minutes. Without the key, `/api/usage` only shows the count of recorded live times, and `/api/health` answers 403.
+* If it is stale: Cloudflare dashboard, Workers and Pages, `transport-api`, Settings, Trigger Events: the cron must be listed; Logs shows each run.
+* The first address is ticked by an outside cron service (cron-job.org job 8707266) until the switch; pause that job once the first address is retired, or right after a data export (see [Deploy on Cloudflare](DEPLOY_CLOUDFLARE.md)).
 * Fallback: an open app calls `/api/watches`, which runs a tick for its own device when the scheduler is quiet for more than 100 seconds.
 * Budget: `/api/usage` with the admin key also shows upstream calls today against 60,000. Sampling stops at 40,000 and watches at 56,000. Shared live answers are cached at the edge for 15 seconds, and each address is limited to 120 upstream calls and 60 writes a minute across all copies of the worker (D1 table `ip_rate`).
 
 ## 6. Read site stats and contact messages
 
-* Page counter: `curl -H "x-admin-key: $ADMIN_KEY" "https://nsw-transport-bot.sites.tab.bot/api/stats?days=30"`
-* Contact form messages: `curl -H "x-admin-key: $ADMIN_KEY" https://nsw-transport-bot.sites.tab.bot/api/feedback`; delete one with `DELETE ...?id=N` and the same header.
+* Page counter: `curl -H "x-admin-key: $ADMIN_KEY" "https://api.transportsydney.app/api/stats?days=30"`
+* Contact form messages: `curl -H "x-admin-key: $ADMIN_KEY" https://api.transportsydney.app/api/feedback`; delete one with `DELETE ...?id=N` and the same header.
 
 ## 7. Rotate keys
 
@@ -95,10 +95,11 @@ Rotate when a key may have leaked, when someone who had it leaves, or once a yea
 
 | Secret | How to rotate | Also update |
 | --- | --- | --- |
-| `TFNSW_API_KEY` | opendata.transport.nsw.gov.au, sign in, My account, API tokens: create a new token, then revoke the old one after the deploy | `backend/.env`, build and publish |
-| `ADMIN_KEY` | Generate 24 random characters (`node -e "console.log(require('crypto').randomBytes(18).toString('base64url'))"`) | `backend/.env`, build and publish |
-| `TICK_KEY` | Same as ADMIN_KEY | `backend/.env`, publish, then change the URL in the cron-job.org job right away |
-| `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` | `node backend/tools/vapid.mjs` | `backend/.env`, publish. Existing Web Push subscriptions stop working; each browser must turn alerts on again |
+| `TFNSW_API_KEY` | opendata.transport.nsw.gov.au, sign in, My account, API tokens: create a new token, then revoke the old one after the deploy | `cd backend && npx wrangler@4 secret put NAME` (also `backend/.env` while the first address runs) |
+| `ADMIN_KEY` | Generate 24 random characters (`node -e "console.log(require('crypto').randomBytes(18).toString('base64url'))"`) | `cd backend && npx wrangler@4 secret put NAME` (also `backend/.env` while the first address runs) |
+| `TICK_KEY` | Same as ADMIN_KEY | `npx wrangler@4 secret put TICK_KEY`; while the first address runs, also its `.env` and the cron-job.org job header |
+| `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` | `node backend/tools/vapid.mjs` | `npx wrangler@4 secret put` for both keys. Existing Web Push subscriptions stop working; each browser must turn alerts on again |
+| Cloudflare API token | My Profile, API Tokens: Roll | The deploying machine environment (`CLOUDFLARE_API_TOKEN`) |
 | Expo access token | expo.dev, Account settings, Access tokens: create new, delete old | The build machine environment (`EXPO_TOKEN`) |
 | cron-job.org password and API key | console.cron-job.org, Settings | Credentials email |
 | Android upload key | Cannot simply be replaced. If it is lost or leaked, ask Google Play for an upload key reset (needs Play App Signing). Keep two backups of the `.jks` and its password | |

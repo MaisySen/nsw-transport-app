@@ -20,9 +20,9 @@ Both apps are ready to submit except for the steps that need Bidur's developer a
 | Version | iPhone 1.0 (build 8 in CI; TestFlight builds start at 101). Android 1.0.0, versionCode 5 (JavaScript kept current by over the air updates) |
 | Minimum OS | iOS 17.0, iPhone only. Android 7.0 (API 24), target API 36 |
 | Category | Navigation (Apple), Maps & Navigation (Play) |
-| Support URL | https://nsw-transport-bot.sites.tab.bot/support/ |
-| Marketing URL | https://nsw-transport-bot.sites.tab.bot/?about |
-| Privacy policy | https://nsw-transport-bot.sites.tab.bot/privacy/ |
+| Support URL | https://transportsydney.app/support/ |
+| Marketing URL | https://transportsydney.app/ |
+| Privacy policy | https://transportsydney.app/privacy/ |
 
 ## Status
 
@@ -38,11 +38,11 @@ Both apps are ready to submit except for the steps that need Bidur's developer a
 
 ## Waiting on Bidur
 
-1. **App Store Connect API key** with Admin access: the `.p8` file, Key ID and Issuer ID, emailed to bidur@mail.tab.bot (App Store Connect, Users and Access, Integrations, App Store Connect API, Generate).
+1. **App Store Connect API key** with Admin access: the `.p8` file, Key ID and Issuer ID, emailed to contact@fintex.au (App Store Connect, Users and Access, Integrations, App Store Connect API, Generate).
 2. **Apple Team ID** (developer.apple.com, Account, Membership details).
 3. **Seller or legal name** for the copyright line and the terms page.
 4. **A phone number for App Review** contact.
-5. **Google Play Console invite** to bidur@mail.tab.bot with Admin permission. Google needs a Google account on that address, which Tab can create and verify from the mailbox.
+5. **Google Play Console invite** to contact@fintex.au with Admin permission. Google needs a Google account on that address.
 6. **12 testers for 14 days** if the Play account is a new personal account: Google requires a closed test before production. Friends with Android phones, opted in by email.
 
 ## Once the keys arrive
@@ -55,7 +55,7 @@ Both apps are ready to submit except for the steps that need Bidur's developer a
 
 ## Notes for Bidur's own phone
 
-The App Store build has a new bundle id, so it starts with an empty profile. Open the private profile link Tab sent (`nswtransport://profile/` followed by your own id) once on the phone after installing to get the saved trips back. The id is private, so it is not written here. The Play build keeps the same package and key, so an existing Android install keeps its data.
+The App Store build has a new bundle id, so it starts with an empty profile. Open the private profile link you were sent (`nswtransport://profile/` followed by your own id) once on the phone after installing to get the saved trips back. The id is private, so it is not written here. The Play build keeps the same package and key, so an existing Android install keeps its data.
 
 The old shared test profile is retired: an Android install still on it moves to a fresh private id on its next launch and saves its phone's trips again there, and a profile link to the shared id is refused.
 

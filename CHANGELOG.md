@@ -4,6 +4,16 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Own domain: transportsydney.app (server and website)
+* New public website at https://transportsydney.app: store links (coming soon until the listings are live), Support, Privacy Policy and Terms of Use, light and dark, no scripts, no cookies, no tracking. Published by Fintex Australia Pty Ltd. Plain files in `site/` on Cloudflare Pages.
+* Email on the domain: support@, privacy@ and hello@transportsydney.app, forwarded to contact@fintex.au.
+* App links: `/.well-known/apple-app-site-association` and `assetlinks.json` for com.maisysen.nswtransport; `/trip/...`, `/stop/...` and `/plan` open the app, or a page with the store links.
+* The server is ready to run on the Fintex Cloudflare account at https://api.transportsydney.app: API only on that address (the site's pages redirect to the website), a Cron Trigger for the minute tick, Worker secrets, a D1 migration with every table, a data export from the first deploy, and deploy scripts. Steps in [docs/DEPLOY_CLOUDFLARE.md](docs/DEPLOY_CLOUDFLARE.md).
+* Remote config `copy.api_base` moves the apps to the new address when an admin sets it (not set yet); the server accepts only an https origin.
+* Old names and the first address removed from the server, website, docs and store texts.
+* Fixed: two morning check tests failed whenever the clock minute was 24 or later (a test helper bug, not the server).
+* Server tests: 134 of 134.
+
 ### Android app: it just knows (over the air update, 25 Oct, 12:18 AM)
 * Two question setup: on first launch the app asks for your home station, then your work station (search, or Skip). Kept on this phone only. Change or clear them any time in More, Home and work. Delete everything in Privacy and data clears them and the setup shows again.
 * Your commute: one card on top of Home. Before 12pm it goes Home to Work, after 12pm Work to Home, with live times. The swap button beside its title shows the other way until the next 12. It sits outside the card's tap area, so a tap on it never also opens the trip.
@@ -25,7 +35,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * Large widget: fewer rows, so the title is never pushed off the top.
 * Lock Screen: inline "T1 4 min, Plat 2", and the rectangular widget shows the next commute departure (title, line, wait, platform, then the status and the next two).
 * Travel updates on a live trip: Leave now, Board, Next stop (get off, or change here), Change, and You've arrived, each once. Steps still to come are scheduled with iOS, so they arrive on time with the app closed, and each refresh moves them to the latest live time under the same identifier, so a delay never makes a second alert. Nothing is said after arrival, and the trip's older alerts are cleared from the Lock Screen when it ends (You've arrived stays until you next open the app 10 or more minutes later). The iPhone gets no push from the server, so the phone says these itself and the server watch's notes for the trip are never shown again.
-* The server address is written in one place in the app. Remote config `api_base` can move it without a build, only to an https host on the allowed list (api.transportsydney.app, one line in APIBase.swift) or the current host; the last good value is kept and the widgets follow it. Help, privacy and terms open https://transportsydney.app/support, /privacy and /terms (one constant), About has Contact us (contact@fintex.au), and Ask no longer says Transport Bot.
+* The server address is written in one place in the app. Remote config `api_base` can move it without a build, only to an https host on the allowed list (api.transportsydney.app, one line in APIBase.swift) or the current host; the last good value is kept and the widgets follow it. Help, privacy and terms open https://transportsydney.app/support, /privacy and /terms (one constant), About has Contact us (contact@fintex.au), and Ask uses the app name.
 * Tests: Burwood to Strathfield replayed on time, 3 min late and 1 min early, a trip with a change at Strathfield, the app asleep while iOS shows each step, a late start, End trip; widget words and timeline; the address allowlist. Widget snapshots for small, medium, large and the Lock Screen widgets in light and dark. CI runs the unit and snapshot tests in their own step before the UI tests and puts the widget snapshots on ci-out.
 * Plan a trip: the trips come right under From and To (and any alert line); the fare, Park and Ride and the Departs in or Travel time switch follow them, so the trips are on screen without scrolling.
 * Docs: ios-native/INSTALL.md points at store/apple/ for the listing; the old ios-native/AppStore/listing.md is removed.
@@ -215,8 +225,8 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * iPhone widgets (8:17 AM): any trip or stop, Smart Home and Work, ticking countdown, large and StandBy layouts, Lock Screen ring, stop board widget.
 * iPhone UI tap through tests and widget snapshot tests (7:21 AM).
 * Native iPhone app and Expo app (1:25 AM to 2:15 AM): native tabs, live boards, trip planner, live vehicle map, watches and push; first unsigned iPhone builds; Android APK on the download page.
-* v3 (12:41 AM): watch any trip with phone notifications, connection rescue, commute memory, delay predictions, installable web app, iOS style redesign, minute scheduler.
-* v2 (12:00 AM): auto refresh with ticking countdowns, Live and Scheduled badges, GTFS realtime merged into the planner's times, live vehicle map, trips with change times, saved trips by name, alerts on services.
+* Web release 3 (12:41 AM): watch any trip with phone notifications, connection rescue, commute memory, delay predictions, installable web app, iOS style redesign, minute scheduler.
+* Web release 2 (12:00 AM): auto refresh with ticking countdowns, Live and Scheduled badges, GTFS realtime merged into the planner's times, live vehicle map, trips with change times, saved trips by name, alerts on services.
 
 ### Changed
 * iPhone Release builds compile one file at a time; the whole module build hung for 25 minutes. CI job limit raised to 90 minutes.
@@ -236,4 +246,4 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 ## 23 Oct 2026
 
 ### Added
-* v1 (5:14 PM): the Transport Bot web app. Stop number or station for a live board, "A to B" trip planning with "at" and "by" times, alerts, nearby stops, plain text answers. Transport for NSW Open Data account and API key created.
+* First release (5:14 PM): the web app. Stop number or station for a live board, "A to B" trip planning with "at" and "by" times, alerts, nearby stops, plain text answers. Transport for NSW Open Data account and API key created.
