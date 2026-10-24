@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Weekend trackwork and status of my lines (over the air update for iPhone and Android, 25 Oct, 9:52 AM)
+* From Thursday 6pm to Sunday, Home shows a Trackwork this weekend card, only when planned work this weekend touches your Home and Work trip or a saved trip. Each row says which trip, the days and what Transport for NSW says ("Sat and Sun: Buses replace trains between Central and Bondi Junction"), and when the planner shows it, "Buses replace trains Central to Kings Cross. Your trip takes about 25 min longer." Tap a row for the full details.
+* Status of my lines: under that card, one chip per line on your Home trips (Good service, Delays, Trackwork, Suspended; Changes for buses and ferries), problems first. More has the same list with what is wrong.
+* Both come from Transport for NSW service alerts and need the new server, so they show once the app moves to api.transportsydney.app. No new build needed.
+
 ### Plan B on the trip screen (over the air update for iPhone and Android, 25 Oct, 9:12 AM)
 * When the trip you picked has a cancelled service, a line Transport for NSW says is suspended, or a change the live times say you will miss, a Plan B card at the top of the trip screen says what is wrong ("The 8:04am T1 is cancelled") and offers the best other way: the earliest arrival that avoids the cancelled service or the suspended line, with lines, leave and arrive times. Show this trip opens it.
 * If none of the trips on screen avoids it, the app asks the planner once for the services leaving from now. A way with a change is offered as Show trips with a change.
