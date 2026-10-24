@@ -1,6 +1,6 @@
 # Releases
 
-Every shipped build and update. Times are Sydney time (AEDT). Updated 25 Oct 2026, 7:40 AM.
+Every shipped build and update. Times are Sydney time (AEDT). Updated 25 Oct 2026, 8:10 AM.
 
 ## iPhone (Expo, over the air)
 
@@ -12,6 +12,8 @@ The same Expo app as Android, built for iPhone with EAS and uploaded to TestFlig
 
 | Build | Built | EAS build | Commit | TestFlight | What changed |
 | --- | --- | --- | --- | --- | --- |
+| 203 | 25 Oct, 8:02 AM | dd59cb31-2275-499f-9714-74757c561cdd | 9a53f66 (built from 2dffe15 with the 9a53f66 changes) | Uploaded 25 Oct, 8:05 AM (EAS submission 381cc03f-b8e6-411e-893e-6b3fb646682a), VALID, In Beta Testing in the Internal group, export compliance answered (no non exempt encryption) | App group on both app and widget: checked in the IPA, both embedded profiles and both signed binaries carry `group.com.maisysen.nswtransport`, so widgets read the app's profile, starred stops and saved trips. Next trip Edit Widget: Show (Home and Work (auto), Saved trip, Pick stops) with only that choice's rows, short stop names, description "Live countdown to your next trip."; older widgets keep their stops or trip. `ITSAppUsesNonExemptEncryption` false in ios.infoPlist. Store readiness purpose strings from 2dffe15 |
+| 202 | 25 Oct, 7:54 AM | d5609b13-1b80-477b-8a2a-d39f28988b7d | 9f739d0 (built from 795b7f0 with the 9f739d0 changes) | Uploaded 25 Oct, 7:58 AM (EAS submission 7d3e40da-d221-4f7f-8c69-b3ca254c6286), VALID, In Beta Testing in the Internal group | First build with `IOS_APP_GROUP=1`. Superseded by 203: the IPA showed the app signed with the group but the widget binary without it (apple-targets copies the app's groups to a target only when the target config sets `entitlements`) |
 | 201 | 25 Oct, 1:06 AM | 3db2b80c-2d8e-4100-a105-a8fd753de76a | 425c041 | Uploaded 25 Oct, 1:09 AM (EAS submission 30eb1d77-2bdf-4c8b-8811-1fb7069144e2) | First Expo build for iPhone: all Android round 3 screens, widgets and trip Live Activity, update checks on start and foreground. Checked in the IPA: channel `production`, runtime 1.0.0, widget extension at the same version and build |
 
 Over the air on iPhone: first update 25 Oct, 1:11 AM. Preview `01a16e3f-60e5-7891-ab88-8911db5712f2` (group `84802d51-ae3d-4f45-9ba8-d661ba8f4bee`), manifest checked on the preview channel for iOS (runtime 1.0.0, launch asset hash `ctp45YJO7ob7IAP-QaAUy1hqXBrZp_PEeY4nRJCQMv4` matches the local export), then republished to production: `01a16e3f-a827-7541-9564-6d63e0ba9552` (group `6c63629a-37cd-4458-a2ba-9832440ea419`), served on the production channel for iOS with the same hash. The Android production update stayed `01a16e0f-c2fa-7298-ae3e-5cfd32af7fa8`.
@@ -24,7 +26,7 @@ How to build and upload (from `app/`, `EXPO_TOKEN` set; signing files stay outsi
 2. `npx eas-cli build -p ios --profile production --non-interactive --no-wait`. The build number goes up by one each time (app.json `ios.buildNumber`).
 3. `npx eas-cli submit -p ios --profile production --id <build id> --non-interactive`, with the App Store Connect API key copied to `app/credentials/` (git ignored) for the upload and removed after.
 
-Still needed from Bidur: register the app group `group.com.maisysen.nswtransport` and tick it on both App IDs ([SUBMIT.md](../SUBMIT.md), item 5). Until then iPhone builds are signed without it (`IOS_APP_GROUP=0` in eas.json): widgets work by picking a stop or trip in Edit Widget, but cannot see the app's profile, saved trips and starred stops. After he registers it: set `IOS_APP_GROUP` to `1` in eas.json, recreate the two profiles, build once.
+App group (since build 203): Bidur registered `group.com.maisysen.nswtransport` and ticked it on both App IDs on 25 Oct, 7:40 to 7:46 AM. The two App Store profiles were deleted and created again through the App Store Connect API (app `W6KB4HXY85` "Expo Transport AppStore", widget `82C9R6SF75` "Expo Transport Widget AppStore", both expire 24 Oct 2027) and both list the group; the files are in the build box secrets folder. eas.json `production` sets `IOS_APP_GROUP=1`, which adds the group to the app (app.config.js) and to the widget (targets/widget/expo-target.config.js). Build 201 has no group: the native module then writes to its own defaults, so the same JavaScript runs on 201 and 203 (runtime 1.0.0). To check a build: unzip the IPA and read `com.apple.security.application-groups` in both embedded.mobileprovision files and in the entitlements plist inside both binaries.
 
 ## iPhone (native SwiftUI)
 

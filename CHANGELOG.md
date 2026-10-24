@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### iPhone build 203: widgets share your trips, simpler widget settings (TestFlight, 25 Oct, 8:05 AM)
+* The app and the widgets now share the app group `group.com.maisysen.nswtransport`, so widgets see the app's profile, starred stops and saved trips without picking them again.
+* Next trip widget, Edit Widget: one Show choice (Home and Work (auto), Saved trip, Pick stops). Saved trip shows only Trip, Pick stops shows only From and To, Home and Work shows nothing more. With no saved trips the Trip list says "Save a trip in the app first".
+* Stop names drop the word Station in the pickers, the Next trip widget and the stop board, so names fit.
+* Widget description: "Live countdown to your next trip."
+* Widgets set up before this build keep showing what they showed.
+* Build 202 (7:58 AM) had the group on the app only; 203 replaces it. Version 1.0.0, runtime 1.0.0, same over the air updates as 201.
+
 ### Store readiness (no app update, 25 Oct, 8 AM)
 * App Store Connect: version 1.0.0 with build 201 attached, listing rewritten for the Expo app, review notes, 6.9 and 6.5 inch screenshots uploaded. Not submitted.
 * app.json, for the next native builds: the unused Always location, motion and full accuracy purpose strings are removed, the When In Use string gives the full reason, and the privacy manifest lists the data the server keeps.
