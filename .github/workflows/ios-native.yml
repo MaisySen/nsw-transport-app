@@ -23,7 +23,7 @@ concurrency:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: ios-native

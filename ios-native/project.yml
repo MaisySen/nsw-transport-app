@@ -14,7 +14,7 @@ settings:
     TARGETED_DEVICE_FAMILY: "1"
   configs:
     Release:
-      # Whole module optimization hung the Release build for over 20 minutes on build 8 (CI run 17);
+      # Whole module optimization took about 25 minutes for the Release build of build 8 (CI run 17);
       # one file at a time builds in about a minute. Used by the device ipa and the TestFlight archive.
       SWIFT_COMPILATION_MODE: singlefile
 targets:
