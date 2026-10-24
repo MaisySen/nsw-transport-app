@@ -1,8 +1,8 @@
 # Transport app (Android and iPhone)
 
-The native app for the NSW Transport Bot. One Expo (React Native, TypeScript, expo-router) codebase that talks to the live backend at https://nsw-transport-bot.sites.tab.bot.
+Transport: Sydney Live, by Fintex Australia Pty Ltd. One Expo (React Native, TypeScript, expo-router) codebase that talks to the live backend. The server address is written once, in `src/lib/server.ts`, and remote config can move it (see docs/API.md, Remote config). Privacy and support: https://transportsydney.app/privacy and https://transportsydney.app/support.
 
-Get it: https://nsw-transport-bot.sites.tab.bot/download/
+Get it: the download page on the server (`/download/`), until the store listings are live.
 
 * Android: a signed APK, installed straight from the download page. It updates its own JavaScript over the air from the `production` channel each time it opens.
 * iPhone today: a preview in the free Expo Go app (EAS Update, `expo-go` channel).

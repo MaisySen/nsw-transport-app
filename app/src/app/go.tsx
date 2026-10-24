@@ -21,6 +21,7 @@ import { Icon, I } from '@/components/Icon';
 import { LineBadge } from '@/components/Transit';
 import { Button, Sep, T } from '@/components/ui';
 import { NextOption, WakeRow } from '@/components/Smart';
+import { shareLink } from '@/lib/server';
 
 const noun = (m?: string) => (m === 'bus' || m === 'coach' ? 'bus' : m === 'ferry' ? 'ferry' : m === 'lightrail' ? 'tram' : m === 'metro' ? 'metro' : 'train');
 
@@ -84,7 +85,7 @@ export default function LiveTripScreen() {
     if (cur.share) {
       Alert.alert('Sharing this trip', 'Anyone with the link can follow it until the trip ends.', [
         { text: 'Stop sharing', style: 'destructive', onPress: () => { api.shareEnd(cur.share!.id, cur.share!.key).catch(() => {}); setLive({ ...cur, share: null }); } },
-        { text: 'Send link again', onPress: () => Share.share({ message: `Follow my trip live: ${cur.title} ${cur.share!.url}` }).catch(() => {}) },
+        { text: 'Send link again', onPress: () => Share.share({ message: `Follow my trip live: ${cur.title} ${shareLink(cur.share!.id)}` }).catch(() => {}) },
         { text: 'Done', style: 'cancel' },
       ]);
       return;
@@ -95,9 +96,10 @@ export default function LiveTripScreen() {
         const r = await api.shareStart({ title: cur.title, from: cur.origin, to: cur.to, legs: cur.legs, pos, prog: progOf(st) });
         const c2 = getLive();
         if (!c2) return;
-        setLive({ ...c2, share: { id: r.id, key: r.key, url: r.url, pos: withPos } });
+        const link = shareLink(r.id);
+        setLive({ ...c2, share: { id: r.id, key: r.key, url: link, pos: withPos } });
         haptic.success();
-        await Share.share({ message: `Follow my trip live: ${cur.title} ${r.url}` });
+        await Share.share({ message: `Follow my trip live: ${cur.title} ${link}` });
       } catch (e: any) { Alert.alert("Couldn't make a link", String(e?.message || e)); }
     };
     const body = `Anyone with the link can see your trip, the live position of your ${noun(cur.legs[0]?.mode)}, the next stop and your arrival time. No account needed. The link stops working when the trip ends, and everything it showed is deleted.`;

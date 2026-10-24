@@ -14,11 +14,13 @@ import { fareOf, fareWords, money, offPeakText } from '@/lib/fare';
 import { getLive, startLive } from '@/lib/live';
 import { directFilter, isChain, planTrip, stName, tLegs, tripKey, viaText } from '@/lib/trips';
 import type { TripLeg } from '@/lib/trips';
-import type { Journey, Leg, Place } from '@/lib/types';
+import type { Journey, Leg, Place, TripResp } from '@/lib/types';
+import { useFlag } from '@/lib/config';
+import { journeyAccess, liftAwareNote } from '@/lib/stepFree';
 import { tripSpec } from '@/lib/watch';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { openService } from '@/components/Cards';
-import { LineBadge } from '@/components/Transit';
+import { LineBadge, OccupancyChip } from '@/components/Transit';
 import { arrOf, ServiceRow, WarnLine } from '@/components/Home';
 import { Button, Empty, Screen, Sep, T } from '@/components/ui';
 
@@ -72,7 +74,8 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
           <View style={{ flex: 1, marginLeft: 8 }}>
             <T kind="sub" numberOfLines={1}>Towards {shortName(l.towards)}</T>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-              <T kind="foot" tone="text2">{l.durationMin} min{l.stops ? `, ${l.stops} stops` : ''}{l.occupancy?.text ? ` \u00b7 ${l.occupancy.text}` : ''}</T>
+              <T kind="foot" tone="text2">{l.durationMin} min{l.stops ? `, ${l.stops} stops` : ''}</T>
+              <OccupancyChip o={l.occupancy} />
             </View>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -216,13 +219,18 @@ export default function TripScreen() {
   const plan = legsP ? { from, to, legs: legsP } : { from, to, via, conn };
   const chain = isChain(plan);
   const tkey = tripKey(plan);
-  const stAll = useStore().allServices || {};
+  const stNow = useStore();
+  const stAll = stNow.allServices || {};
+  const accOn = !!stNow.acc;
+  const liftOn = useFlag('liftAwareRouting');
   const allOn = !!stAll[tkey];
   const c = usePalette();
   const now = useNow(1000);
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
-  const { data, error, updatedAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn }), 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn]);
+  const { data, error, updatedAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn }), 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn]);
   const [extra, setExtra] = useState<Journey[]>([]);
+  // Step free on or off asks again; earlier and later trips loaded before would be the other kind.
+  useEffect(() => { setExtra([]); }, [accOn]);
   const [more, setMore] = useState<number>(0);
   const [showTravel, setShowTravel] = useState(false);
   const dark = useColorScheme() === 'dark';
@@ -321,13 +329,7 @@ export default function TripScreen() {
             <ParkGroup list={data.parking.carparks} title={`Park and Ride at ${stShort(data.parking.station?.name)}`} station={data.parking.station?.name} watch />
           </View>
         ) : null}
-        {data?.accessible ? (
-          <View style={{ marginHorizontal: 20, marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <Icon name={I.access} size={15} color={c.tint} />
-            <T kind="sub" tone="text2">Step free trips only.{!js.length ? ' None found for this trip.' : ''}</T>
-            <Pressable hitSlop={12} accessibilityRole="button" onPress={() => router.push('/settings')}><T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Change in More</T></Pressable>
-          </View>
-        ) : null}
+        <StepFreeBar on={accOn} data={data} empty={!!data && !js.length} liftOn={liftOn} />
         {chain ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 12 }}>{(() => { const L = tLegs(plan); return L.length === 2 && L[1].mode !== 'walk' ? `Via ${stName(shortName(L[0].to.name))}, ${L[1].conn ?? 5} min to change` : `${L.length} legs via ${viaText(plan)}`; })()}</T> : null}
         {jsAll.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>
@@ -346,6 +348,7 @@ export default function TripScreen() {
                 <Sep inset={0} />
                 <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />
                 <WarnLine j={j} />
+                {data?.accessible ? <JourneyAccessLine j={j} liftOn={liftOn} /> : null}
                 {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} /></View> : null}
               </View>
             ))}
@@ -367,6 +370,56 @@ export default function TripScreen() {
   );
 }
 
+/** Step free trips only, switchable right here (the same setting as More > Accessible trips), with the lift aware note. */
+function StepFreeBar({ on, data, empty, liftOn }: { on: boolean; data: TripResp | null | undefined; empty: boolean; liftOn: boolean }) {
+  const c = usePalette();
+  const note = liftAwareNote(data, liftOn);
+  return (
+    <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, paddingHorizontal: 16, paddingVertical: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 48 }}>
+        <Icon name={I.access} size={18} color={c.tint} />
+        <View style={{ flex: 1, marginLeft: 10 }}>
+          <T kind="body">Step free</T>
+          <T kind="foot" tone="text2">{on ? (empty ? 'No step free trips found for this trip.' : 'Only trips with lifts or level access.') : 'Show only trips with lifts or level access.'}</T>
+        </View>
+        <Switch value={on} onValueChange={(v) => { haptic.select(); store.setAcc(v); }} accessibilityLabel="Step free trips only"
+          trackColor={Platform.OS === 'android' ? { true: c.tint, false: c.fill } : undefined}
+              thumbColor={Platform.OS === 'android' ? (on ? (c.dark ? '#062E6F' : '#fff') : c.text3) : undefined} />
+      </View>
+      {on && note ? (
+        <View style={{ flexDirection: 'row', gap: 6, paddingVertical: 6 }} accessible accessibilityLabel={note.text}>
+          <Icon name={note.tone === 'warn' ? I.warn : I.info} size={14} color={note.tone === 'warn' ? c.orange : c.text2} />
+          <T kind="foot" style={{ flex: 1, color: note.tone === 'warn' ? c.lateText : c.text2 }}>{note.text}</T>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/** Under each step free result: Step free when every station is, and each station with a lift out right now. */
+function JourneyAccessLine({ j, liftOn }: { j: Journey; liftOn: boolean }) {
+  const c = usePalette();
+  const a = journeyAccess(j, liftOn);
+  if (!a.stepFree && !a.outages.length) return null;
+  const words = [a.stepFree ? 'Step free at every station' : '', ...a.outages.map((o) => `Lift out of service at ${o}`)].filter(Boolean);
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 16, paddingBottom: 10 }} accessible accessibilityLabel={words.join('. ')}>
+      {a.stepFree ? (
+        <View style={[st.pill, { backgroundColor: c.fill }]}>
+          <Icon name={I.access} size={12} color={c.liveText} />
+          <T kind="caption" style={{ color: c.liveText, fontWeight: '600', marginLeft: 4 }}>Step free</T>
+        </View>
+      ) : null}
+      {a.outages.map((o) => (
+        <View key={o} style={[st.pill, { backgroundColor: c.fill }]}>
+          <Icon name={I.warn} size={12} color={c.orange} />
+          <T kind="caption" style={{ color: c.lateText, fontWeight: '600', marginLeft: 4 }}>Lift out at {o}</T>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function MoreButton({ title, busy, onPress }: { title: string; busy: boolean; onPress: () => void }) {
   const c = usePalette();
   return (
@@ -378,6 +431,7 @@ function MoreButton({ title, busy, onPress }: { title: string; busy: boolean; on
 }
 
 const st = StyleSheet.create({
+  pill: { flexDirection: 'row', alignItems: 'center', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   seg: { flexDirection: 'row', marginHorizontal: 16, marginTop: 12, borderRadius: 9, padding: 2 },
   segBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 6, borderRadius: 7 },
   more: { alignItems: 'center', justifyContent: 'center', paddingVertical: 12, minHeight: 48 },

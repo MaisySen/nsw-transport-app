@@ -107,10 +107,10 @@ export function Button({ title, onPress, kind = 'filled', icon, disabled }: { ti
   );
 }
 
-export function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
+export function Chip({ label, on, onPress, a11y }: { label: string; on: boolean; onPress: () => void; a11y?: string }) {
   const c = usePalette();
   return (
-    <Pressable onPress={onPress} hitSlop={{ top: 7, bottom: 7 }} accessibilityRole="button" accessibilityState={{ selected: on }} style={[s.chip, { backgroundColor: on ? c.tint : c.card, borderColor: on ? c.tint : c.sep }]}>
+    <Pressable onPress={onPress} hitSlop={{ top: 7, bottom: 7 }} accessibilityRole="button" accessibilityLabel={a11y} accessibilityState={{ selected: on }} style={[s.chip, { backgroundColor: on ? c.tint : c.card, borderColor: on ? c.tint : c.sep }]}>
       <Text style={[font.sub, { color: on ? (androidLook && c.dark ? '#062E6F' : '#fff') : c.text, fontWeight: '600' }]}>{label}</Text>
     </Pressable>
   );

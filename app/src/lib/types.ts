@@ -29,6 +29,10 @@ export type Leg = {
 };
 
 export type Journey = {
+  /** acc=1 only: every station on the trip is listed as step free. */
+  stepFree?: boolean;
+  /** acc=1 only: stations on this trip with a lift out of service now. */
+  liftOutages?: { id: string; name: string; title?: string }[];
   leave: string; board: string; arrive: string; durationMin: number; changes: number; live: boolean; anyCancelled?: boolean;
   risk?: string; riskText?: string; legs: Leg[];
   /** Multi leg trips: a warning when a change is tight or missed because of a delay. */
@@ -44,6 +48,8 @@ export type Fare = { type: string; typeName: string; total: number | null; peak:
 export type TripResp = { kind: 'trip'; from: { id: string; name: string }; to: { id: string; name: string }; journeys: Journey[]; tomorrow?: boolean; now: number; error?: string; stops?: Place[]; fallback?: boolean[];
   /** True when Accessible trips (acc=1) was on. */
   accessible?: boolean;
+  /** acc=1 with lift aware trips: trips left out for a lift outage, or allAffected when every trip meets one. */
+  liftAware?: { avoided: number; allAffected: boolean; stations: string[] } | null;
   /** Car parks when the first leg starts at a Park and Ride station. */
   parking?: { station: Place; carparks: import('./access').CarPark[] } | null };
 
@@ -68,3 +74,17 @@ export type Watch = { id: string; kind: 'svc' | 'trip'; title: string; active: b
   legs: WatchLeg[]; lead?: number | null; to?: Place | null; origin?: Place | null; snap?: any; replanned?: number };
 export type Note = { id: number; watch_id?: string; at: number; title: string; body: string; url?: string; pushed?: number };
 export type WatchesResp = { items: Watch[]; notes: Note[]; push: number; expo?: number; lastTick: number | null; now: number };
+
+export type PushCount = { web: number; expo: number };
+export type MorningMode = 'train' | 'metro' | 'bus' | 'coach' | 'ferry' | 'lightrail';
+export type MorningInput = { id?: string; from: Place; to: Place; time: string; days: number[]; lead: number; mode?: MorningMode | null; name?: string | null; active?: boolean };
+export type MorningCheck = {
+  id: string; name: string | null; from: Place; to: Place; time: string; timeText?: string; days: number[]; mode: MorningMode | null; lead: number; active: boolean; created?: number;
+  last?: { day: string; at?: number; result: string; issues?: string[]; alert?: { title: string; body: string } | null } | null;
+};
+export type MorningListResp = { items: MorningCheck[]; push: PushCount; enabled: boolean; max?: number };
+export type MorningPreview = {
+  item: MorningCheck; found: boolean; issues: { kind: string; text: string; minutes?: number }[];
+  service?: { line?: string; mode?: string; planned?: string; estimated?: string | null; platform?: string | null; realtime?: boolean; leave?: string; arrive?: string; changes?: number } | null;
+  alert: { title: string; body: string } | null; sent: false;
+};

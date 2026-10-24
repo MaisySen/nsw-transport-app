@@ -10,7 +10,7 @@ const screens = [
   ["home", "/home"], ["plan", "/search"], ["ask", "/ask"], ["more", "/settings"],
   ["stop", "/stop/200060?name=Central+Station"],
   ["trip", "/trip?from=213410&fromName=Burwood+Station&to=213510&toName=Strathfield+Station"],
-  ["topup", "/topup"], ["parking", "/parking"], ["watching", "/watching"], ["newtrip", "/new-trip"], ["welcome", "/welcome?edit=1"],
+  ["topup", "/topup"], ["parking", "/parking"], ["watching", "/watching"], ["newtrip", "/new-trip"], ["welcome", "/welcome?edit=1"], ["morning", "/morning"],
 ];
 const b = await chromium.launch({ executablePath: process.env.CHROME || undefined });
 const report = {};

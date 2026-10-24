@@ -1,9 +1,8 @@
-import type { Commute, DeparturesResp, Saved, SearchItem, ServiceResp, TripResp, Watch, WatchesResp, Place } from './types';
+import type { Commute, DeparturesResp, MorningCheck, MorningInput, MorningListResp, MorningPreview, PushCount, Saved, SearchItem, ServiceResp, TripResp, Watch, WatchesResp, Place } from './types';
 import { getDevice, PROFILE } from './device';
 import { store } from './store';
 import type { CarPark, Station, TopupItem } from './access';
-
-export const BASE = 'https://nsw-transport-bot.sites.tab.bot';
+import { apiBase } from './server';
 
 function qs(o: Record<string, any>) {
   return Object.entries(o)
@@ -17,7 +16,7 @@ async function once<T>(path: string, init: RequestInit | undefined, timeoutMs: n
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
     const headers: Record<string, string> = init?.body ? { 'content-type': 'application/json' } : {};
-    const r = await fetch(BASE + path, { ...init, signal: ctl.signal, headers: { ...headers, ...((init?.headers as any) || {}) } });
+    const r = await fetch(apiBase() + path, { ...init, signal: ctl.signal, headers: { ...headers, ...((init?.headers as any) || {}) } });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw Object.assign(new Error((body && (body as any).error) || `Something went wrong (${r.status})`), { http: r.status });
     return body as T;
@@ -85,5 +84,11 @@ export const api = {
   topup: (lat?: number, lon?: number, limit = 40) => req<{ items: TopupItem[]; source?: string }>(`/api/topup?${qs({ lat: lat != null ? lat.toFixed(5) : '', lon: lon != null ? lon.toFixed(5) : '', limit: lat != null ? limit : '' })}`),
   parkingWatch: async (facility: string) => req<{ ok: boolean; watch?: { name: string }; now?: { status: string } }>(`/api/parking/watch`, { method: 'POST', body: JSON.stringify({ device: await getDevice(), profile: PROFILE, facility }) }),
   liftAlerts: async (on: boolean, stations: string[] = []) => req<{ ok: boolean; now?: { title: string; url?: string }[] }>(`/api/lifts/alerts`, { method: 'POST', body: JSON.stringify(on ? { device: await getDevice(), profile: PROFILE, on: true, stations } : { device: await getDevice(), on: false }) }),
+  // Morning check: one alert before the usual trip, only when something is wrong. Keyed by the same device id as push.
+  morningList: async () => req<MorningListResp>(`/api/morning-check?${qs({ device: await getDevice() })}`),
+  morningSave: async (body: MorningInput) => req<{ ok: boolean; item: MorningCheck; push: PushCount; enabled: boolean }>(`/api/morning-check`, { method: 'POST', body: JSON.stringify({ device: await getDevice(), ...body }) }),
+  /** Deletes one check, or every check of this phone without an id. */
+  morningDelete: async (id?: string) => req<{ ok: boolean; deleted: number }>(`/api/morning-check?${qs({ device: await getDevice(), id })}`, { method: 'DELETE' }),
+  morningPreview: async (id: string) => req<MorningPreview>(`/api/morning-check/preview?${qs({ device: await getDevice(), id })}`),
   testPush: async () => req<{ ok: boolean; pushed: any[]; expo?: any[] }>(`/api/push/test`, { method: 'POST', body: JSON.stringify({ device: await getDevice() }) }),
 };

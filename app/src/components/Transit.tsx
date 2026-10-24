@@ -10,6 +10,24 @@ import { bestTime, clock, countdown, delayWords, ms, shortName } from '@/lib/for
 import type { Departure, Journey, Leg } from '@/lib/types';
 import { Icon, I, modeIconName } from './Icon';
 import { font, T } from './ui';
+import { useFlag } from '@/lib/config';
+import { occBusy, occText } from '@/lib/occupancy';
+import type { Occupancy } from '@/lib/types';
+
+/** A small "Few seats" chip when Transport for NSW sends occupancy for this service; nothing when it does not. */
+export function OccupancyChip({ o, style }: { o?: Occupancy; style?: any }) {
+  const c = usePalette();
+  const on = useFlag('occupancy');
+  const text = occText(o, on);
+  if (!text) return null;
+  const busy = occBusy(o);
+  return (
+    <View accessible accessibilityLabel={`Crowding: ${text}`} style={[st.occ, { backgroundColor: c.fill }, style]}>
+      <Icon name={I.people} size={11} color={busy ? c.lateText : c.text2} />
+      <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={[font.caption, { color: busy ? c.lateText : c.text2, fontWeight: '600', marginLeft: 3 }]}>{text}</Text>
+    </View>
+  );
+}
 
 export function LineBadge({ line, mode, color, small }: { line?: string; mode?: string; color?: string; small?: boolean }) {
   const bg = color || modeColor[mode || 'bus'] || '#888888';
@@ -92,7 +110,6 @@ export function DepartureRow({ d, now, onPress, onWatch, watched, showStop, aler
   const extra: string[] = [];
   if (d.platform) extra.push(d.platform.replace(/^Platform /, 'Plat. '));
   if (d.stopsAway != null && d.realtime && d.stopsAway >= 0 && d.stopsAway <= 15) extra.push(d.stopsAway === 0 ? 'At the stop' : `${d.stopsAway} stop${d.stopsAway === 1 ? '' : 's'} away`);
-  if (d.occupancy?.text) extra.push(d.occupancy.text);
   const right = () => (
     <GHPressable onPress={() => { sw.current?.close(); onWatch?.(); }} accessibilityRole="button" accessibilityLabel={watched ? 'Stop watching' : 'Watch'} style={[st.swipeAct, { backgroundColor: watched ? c.text2 : c.indigo }]}>
       <Icon name={watched ? I.bellOff : I.bell} size={20} color="#fff" />
@@ -112,6 +129,7 @@ export function DepartureRow({ d, now, onPress, onWatch, watched, showStop, aler
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3, flexWrap: 'wrap', gap: 6 }}>
           <StatusLine realtime={d.realtime} delayMin={d.delayMin} cancelled={d.cancelled} />
           {extra.length ? <T kind="foot" tone="text2" numberOfLines={1}>{extra.join(' \u00b7 ')}</T> : null}
+          <OccupancyChip o={d.occupancy} />
         </View>
         {d.platformChangedFrom ? <T kind="foot" style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }}>Platform changed from {d.platformChangedFrom}</T> : null}
         {d.pred && !d.realtime ? <T kind="caption" tone="text2" style={{ marginTop: 2 }}>Prediction: {d.pred.short || d.pred.text} ({d.pred.n} trips)</T> : null}
@@ -183,6 +201,7 @@ export function JourneyCard({ j, now, onPress, best }: { j: Journey; now: number
 }
 
 const st = StyleSheet.create({
+  occ: { flexDirection: 'row', alignItems: 'center', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2, alignSelf: 'flex-start' },
   badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 7, height: 26, borderRadius: 7, gap: 4, maxWidth: 66 },
   badgeSm: { height: 22, paddingHorizontal: 6, borderRadius: 6, gap: 3 },
   badgeText: { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },

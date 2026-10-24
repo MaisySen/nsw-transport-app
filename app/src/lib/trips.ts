@@ -1,6 +1,7 @@
 import { api } from './api';
 import { bestTime, ms, shortName } from './format';
 import type { Fare, Journey, Leg, Place, TripResp } from './types';
+import { apiBase } from './server';
 
 /** One leg of a saved trip: mode, change time before it (legs after the first), all services, walk minutes. */
 export type TripLeg = { mode: string; from: Place; to: Place; conn?: number; any?: boolean; walk?: number };
@@ -111,7 +112,7 @@ const mem = new Map<string, Promise<any>>();
 function get<T>(path: string): Promise<T> {
   let p = mem.get(path);
   if (!p) {
-    p = fetch('https://nsw-transport-bot.sites.tab.bot' + path).then((r) => { if (!r.ok) throw new Error('Could not load the list. Check your connection.'); return r.json(); });
+    p = fetch(apiBase() + path).then((r) => { if (!r.ok) throw new Error('Could not load the list. Check your connection.'); return r.json(); });
     p.catch(() => mem.delete(path));
     mem.set(path, p);
   }

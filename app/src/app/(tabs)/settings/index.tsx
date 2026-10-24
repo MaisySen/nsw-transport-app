@@ -18,6 +18,9 @@ import { ActionSheet, type SheetAction } from '@/components/Sheet';
 import { syncLiftAlerts } from '@/lib/liftAlerts';
 import type { Commute } from '@/lib/types';
 import { COMPANY } from '@/lib/company';
+import { PRIVACY_URL, SUPPORT_URL } from '@/lib/server';
+import { useFlag } from '@/lib/config';
+import { checkSubtitle, checkTitle } from '@/lib/morning';
 
 export default function Settings() {
   const c = usePalette();
@@ -50,15 +53,18 @@ export default function Settings() {
     { text: 'Delete all', style: 'destructive', onPress: async () => {
       try {
         await api.deleteHistory('all');
+        // The server removes morning checks with scope all too; this makes sure, and does not block.
+        await api.morningDelete().catch(() => {});
       } catch (e: any) { Alert.alert("Couldn't reach the server", `${e.message} Nothing was deleted. Try again when you're online.`); return; }
       await endLive().catch(() => {});
       await disablePush().catch(() => {});
       await syncLiftAlerts(false).catch(() => {});
       store.resetAll();
-      // Everything this app keeps on the phone goes, except the install's private id and device id.
+      // Everything this app keeps on the phone goes, except the install's private id, device id, and the server
+      // address and switches (not personal data; the widgets read the address).
       try {
         const keys = await AsyncStorage.getAllKeys();
-        await AsyncStorage.multiRemove(keys.filter((k) => k !== 'profile' && k !== 'device' && k !== 'store'));
+        await AsyncStorage.multiRemove(keys.filter((k) => !['profile', 'device', 'store', 'apiBase', 'remoteConfig'].includes(k)));
       } catch {}
       setAskCount(0);
       setPush(await getPushState());
@@ -99,6 +105,7 @@ export default function Settings() {
       ...(nStops ? [{ text: `Clear recent stops${n(nStops)}`, onPress: () => { store.clearRecents(); haptic.select(); } }] : []),
       ...(nTrips ? [{ text: `Clear recent trips${n(nTrips)}`, onPress: () => { store.clearRecentTrips(); haptic.select(); } }] : []),
       ...(askCount ? [{ text: `Clear Ask chat${n(askCount)}`, onPress: () => { AsyncStorage.removeItem('ask_chat_v1').catch(() => {}); setAskCount(0); haptic.select(); } }] : []),
+      { text: `Email ${COMPANY.privacyEmail}`, onPress: () => { Linking.openURL(`mailto:${COMPANY.privacyEmail}`).catch(() => {}); } },
       { text: 'Delete my trip history on server', icon: I.trash, destructive: true, onPress: deleteServerHistory },
       { text: 'Delete all my data', icon: I.trash, destructive: true, onPress: deleteAll },
     ] });
@@ -129,6 +136,9 @@ export default function Settings() {
     <Switch value={v} onValueChange={onChange} disabled={disabled} accessibilityLabel={label} trackColor={Platform.OS === 'android' ? { true: c.tint, false: c.fill } : undefined} thumbColor={Platform.OS === 'android' ? (v ? (c.dark ? '#062E6F' : '#fff') : c.text3) : undefined} />
   );
 
+  const morningOn = useFlag('morningCheck');
+  const mList = st.morning || [];
+  const morningSub = mList.length === 1 ? `${checkTitle(mList[0])}, ${checkSubtitle(mList[0]).split('. ')[0]}` : mList.length ? `${mList.length} checks` : 'One alert before your usual trip, only if something is wrong';
   const pl = st.places || {};
   const homeWork = pl.home || pl.work ? [pl.home ? `Home ${shortName(pl.home.name).replace(/ Station$/, '')}` : 'No home', pl.work ? `Work ${shortName(pl.work.name).replace(/ Station$/, '')}` : 'No work'].join(', ') : 'Not set';
   const pushWord = push?.status === 'on' ? 'On' : push?.status === 'local' ? 'App open only' : push?.status === 'denied' ? 'Blocked' : 'Off';
@@ -140,6 +150,12 @@ export default function Settings() {
       <Screen>
         <Section>
           <Row icon={I.home} iconBg={c.tint} title="Home and work" subtitle={homeWork} onPress={() => router.push({ pathname: '/welcome', params: { edit: '1' } })} />
+          {morningOn ? (
+            <>
+              <Sep inset={57} />
+              <Row icon={I.clock} iconBg={c.green} title="Check my trip before I go" subtitle={morningSub} onPress={() => router.push('/morning')} />
+            </>
+          ) : null}
           <Sep inset={57} />
           <Row icon={I.bell} iconBg={c.indigo} title="Watching" right={data?.watching ? <T kind="body" tone="text2">{String(data.watching)}</T> : undefined} onPress={() => router.push('/watching')} />
           <Sep inset={57} />
@@ -183,11 +199,9 @@ export default function Settings() {
           <Sep />
           <Row title="Fintex website" subtitle={COMPANY.site.replace('https://', '')} onPress={() => Linking.openURL(COMPANY.site)} accessibilityHint="Opens in your browser" />
           <Sep />
-          <Row title="Help and support" onPress={() => Linking.openURL('https://nsw-transport-bot.sites.tab.bot/support/')} />
+          <Row title="Help and support" onPress={() => Linking.openURL(SUPPORT_URL)} />
           <Sep />
-          <Row title="Privacy policy" onPress={() => Linking.openURL('https://nsw-transport-bot.sites.tab.bot/privacy/')} />
-          <Sep />
-          <Row title="Web version" onPress={() => Linking.openURL('https://nsw-transport-bot.sites.tab.bot/')} />
+          <Row title="Privacy policy" onPress={() => Linking.openURL(PRIVACY_URL)} />
           <Sep />
           <Row title="Version" right={<T kind="body" tone="text2">{Constants.expoConfig?.version || '1.0.0'}</T>} chevron={false} />
         </Section>

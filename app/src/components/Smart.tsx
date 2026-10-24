@@ -18,6 +18,9 @@ import type { Journey } from '@/lib/types';
 import { Icon, I } from './Icon';
 import { LineBadge } from './Transit';
 import { T } from './ui';
+import { useFlag } from '@/lib/config';
+import { checkSubtitle } from '@/lib/morning';
+import type { Place } from '@/lib/types';
 
 const short = (n?: string | null) => shortName(n || '').replace(/ Station$/, '');
 const plat = (p?: string | null) => (p ? p.replace(/^Platform\s*/i, 'Platform ').replace(/^Stand\s*/i, 'Stand ') : '');
@@ -105,6 +108,25 @@ export function LeaveLine({ js, now, me }: { js: Journey[]; now: number; me: Pos
         </Pressable>
       ) : null}
     </View>
+  );
+}
+
+/** Under the commute card: the way into Check my trip before I go, or the check already set for this direction. */
+export function MorningLink({ from, to, dir }: { from: Place; to: Place; dir: 'toWork' | 'toHome' }) {
+  const c = usePalette();
+  const st = useStore();
+  const on = useFlag('morningCheck');
+  if (!on) return null;
+  const m = (st.morning || []).find((x) => x.from.id === from.id && x.to.id === to.id);
+  const words = m ? `Checked before you go: ${checkSubtitle(m).split('. ')[0]}` : 'Check my trip before I go';
+  return (
+    <Pressable onPress={() => { haptic.select(); router.push({ pathname: '/morning', params: { dir } }); }} accessibilityRole="button"
+      accessibilityLabel={m ? `${words}. Opens your checks` : `${words}. One alert before your usual trip, only if something is wrong`}
+      android_ripple={{ color: c.fill }} style={({ pressed }) => [s.leave, { minHeight: 48, opacity: pressed && Platform.OS !== 'android' ? 0.6 : 1 }]}>
+      <Icon name={I.clock} size={16} color={c.tint} />
+      <T kind="sub" tone="tint" numberOfLines={2} style={{ marginLeft: 8, fontWeight: '600', flex: 1 }}>{words}</T>
+      <Icon name={I.chevron} size={13} color={c.text3} />
+    </Pressable>
   );
 }
 

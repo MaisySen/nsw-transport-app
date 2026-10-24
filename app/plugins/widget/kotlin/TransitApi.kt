@@ -15,7 +15,12 @@ import java.util.TimeZone
 
 /** Reads live trips from the Transport backend. Runs off the main thread. */
 object TransitApi {
-    const val BASE = "https://nsw-transport-bot.sites.tab.bot"
+    /**
+     * The server address, written by the app on every launch (key "apiBase", see src/lib/server.ts, the one place
+     * the address and its allowlist are kept). Empty until the app has been opened once; then requests wait.
+     */
+    @Volatile var BASE = ""
+        private set
     /** This install's server profile, written by the app on first launch (see src/lib/device.ts). */
     @Volatile private var PROFILE = "none"
 
@@ -23,19 +28,20 @@ object TransitApi {
     @Volatile var STORE: JSONObject = JSONObject()
         private set
 
-    /** Reads the app's "profile" and "store" keys from its key value storage. Until the app has been opened once, no saved trips show. */
+    /** Reads the app's "profile", "store" and "apiBase" keys from its key value storage. Until the app has been opened once, no saved trips show. */
     fun init(context: Context) {
         try {
             val path = context.getDatabasePath("RKStorage")
             if (!path.exists()) return
             SQLiteDatabase.openDatabase(path.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
-                db.rawQuery("SELECT key, value FROM catalystLocalStorage WHERE key IN ('profile', 'store')", null).use { c ->
+                db.rawQuery("SELECT key, value FROM catalystLocalStorage WHERE key IN ('profile', 'store', 'apiBase')", null).use { c ->
                     while (c.moveToNext()) {
                         val k = c.getString(0)
                         val v = c.getString(1)
                         if (v.isNullOrBlank()) continue
                         if (k == "profile") PROFILE = enc(v)
                         else if (k == "store") STORE = try { JSONObject(v) } catch (e: Exception) { JSONObject() }
+                        else if (k == "apiBase" && Regex("^https://[a-z0-9.-]+$").matches(v)) BASE = v
                     }
                 }
             }
@@ -77,6 +83,7 @@ object TransitApi {
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
     private fun get(path: String): JSONObject {
+        if (BASE.isEmpty()) throw java.io.IOException("Open the app once to set the server address")
         val c = URL(BASE + path).openConnection() as HttpURLConnection
         c.connectTimeout = 8000
         c.readTimeout = 12000

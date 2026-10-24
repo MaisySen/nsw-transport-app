@@ -20,7 +20,7 @@ import { LineBadge } from '@/components/Transit';
 import { useLiveTrip } from '@/lib/live';
 import { modeColor, radius } from '@/lib/theme';
 import { Button, Empty, Row, Section, Screen, Sep, T } from '@/components/ui';
-import { LeaveLine, useMyPos } from '@/components/Smart';
+import { LeaveLine, MorningLink, useMyPos } from '@/components/Smart';
 import { commuteDir, halfDayKey } from '@/lib/smart';
 import { useLoaded } from '@/lib/store';
 
@@ -159,7 +159,7 @@ export default function Home() {
         {commute ? (
           <HomeSection title="Your commute">
             <TripBoard trip={commute} now={now} aside={<SwapButton to={commute.tag === 'To work' ? 'To home' : 'To work'} onPress={() => { store.setCommuteFlip(flipped ? null : half); haptic.select(); }} />}
-              below={(js) => <LeaveLine js={js} now={now} me={me} />} />
+              below={(js) => <><LeaveLine js={js} now={now} me={me} /><MorningLink from={commute.from} to={commute.to} dir={commute.tag === 'To work' ? 'toWork' : 'toHome'} /></>} />
           </HomeSection>
         ) : null}
 

@@ -1,4 +1,4 @@
-// Ask tab: chat with Transport Bot. Questions go to /api/ask; answers come back as a short reply
+// Ask tab: chat about trips. Questions go to /api/ask; answers come back as a short reply
 // plus live cards (departures, trips, alerts) that open the stop board, trip or live map.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -6,7 +6,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { haptic } from '@/lib/haptic';
-import { BASE } from '@/lib/api';
+import { apiBase } from '@/lib/server';
 import { getDevice, PROFILE } from '@/lib/device';
 import { usePalette } from '@/lib/theme';
 import { useNow } from '@/lib/hooks';
@@ -84,7 +84,7 @@ export default function AskScreen() {
       if (places?.home?.id) p.home = `${places.home.id}|${places.home.name || ''}`;
       if (places?.work?.id) p.work = `${places.work.id}|${places.work.name || ''}`;
       const qs = Object.entries(p).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-      const r = await fetch(`${BASE}/api/ask?${qs}`);
+      const r = await fetch(`${apiBase()}/api/ask?${qs}`);
       const d = await r.json();
       setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: d.reply || d.text || "Sorry, I didn't get that.", cards: d.cards || [], links: d.links || [], suggestions: d.suggestions || [], ask: d.ask || null, t: Date.now() }]);
     } catch {

@@ -18,7 +18,10 @@ type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; wa
   /** The commute card was swapped for this half day ("2026-10-24 pm"); it flips back at the next 12. */
   commuteFlip?: string | null;
   /** Remind me on the commute card: when the leave alert rings, and for which service. */
-  leaveReminder?: LeaveReminder | null };
+  leaveReminder?: LeaveReminder | null;
+  /** Morning checks this phone has on the server, as last read (the server is the record). */
+  morning?: import('./types').MorningCheck[];
+};
 export type LeaveReminder = { at: number; dep: number; label: string };
 const EMPTY: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {}, places: {}, myTrips: [], tripOrder: [], allServices: {}, fareType: 'adult' };
 let state: State = { ...EMPTY };
@@ -102,6 +105,7 @@ export const store = {
   setOnboarded(on: boolean) { state = { ...state, onboarded: on }; save(); },
   setCommuteFlip(key: string | null) { state = { ...state, commuteFlip: key }; save(); },
   setLeaveReminder(r: LeaveReminder | null) { state = { ...state, leaveReminder: r }; save(); },
+  setMorning(list: import('./types').MorningCheck[]) { state = { ...state, morning: list }; save(); },
   saveMyTrip(t: MyTrip) {
     const k = tripKeyOf(t);
     state = { ...state, myTrips: [t, ...(state.myTrips || []).filter((x) => tripKeyOf(x) !== k && x.name !== t.name)].slice(0, 12) };

@@ -14,7 +14,7 @@ import type { TripLeg } from '@/lib/trips';
 import { Icon, I, IconName } from './Icon';
 import { safeUrl } from '@/lib/access';
 import { openService } from './Cards';
-import { LineBadge } from './Transit';
+import { LineBadge, OccupancyChip } from './Transit';
 import { font, Sep, T } from './ui';
 
 // ---------- shared refresh signals for every card on Home ----------
@@ -401,6 +401,7 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
           <T kind="foot" tone="text2">{` \u00b7 ${j.durationMin} min`}</T>
         </T>
         {l?.platformChangedFrom ? <T kind="foot" numberOfLines={1} style={{ color: c.lateText, marginTop: 1 }}>Platform changed from {plat(l.platformChangedFrom)}</T> : null}
+        <OccupancyChip o={l?.occupancy} style={{ marginTop: 3 }} />
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 8 }}>
         {badges.slice(0, 3).map((b, i) => <MiniBadge key={`${b.line}${i}`} line={b.line} color={b.color || modeColor[b.mode || 'train']} />)}

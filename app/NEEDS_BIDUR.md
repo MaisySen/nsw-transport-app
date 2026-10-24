@@ -9,7 +9,7 @@ Everything else is built and ready. These steps need your own identity or paymen
    * an App Store Connect API key (Users and Access, Integrations, App Store Connect API, Generate, role App Manager), which lets Tab build and upload without your password, or
    * you sign in once on Tab's secure login page so the build tool can create the certificates.
 3. Tab then runs one build and one upload. The app appears in TestFlight for you within about 30 minutes of Apple processing it. Internal TestFlight testers (up to 100 people on your team) need no review.
-4. App Store: Tab fills in the listing (text in store/apple/listing.md, privacy policy at https://nsw-transport-bot.sites.tab.bot/privacy/), screenshots and the privacy answers. You press Submit for Review, or approve Tab doing it. Review usually takes one to three days.
+4. App Store: Tab fills in the listing (text in store/apple/listing.md, privacy policy at https://transportsydney.app/privacy), screenshots and the privacy answers. You press Submit for Review, or approve Tab doing it. Review usually takes one to three days.
 
 ## Android: Google Play
 
@@ -36,5 +36,5 @@ What Tab then does:
 
 ## Nothing to do
 
-* The Android app already installs from https://nsw-transport-bot.sites.tab.bot/download/ and updates itself.
+* The Android app already installs from the download page and updates itself.
 * The iPhone preview already runs in Expo Go.

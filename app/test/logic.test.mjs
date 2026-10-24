@@ -107,7 +107,7 @@ test('minsWords', () => {
 
 // Live check against the real server: a trip that is running now, then its service, through the same maths.
 test('live: a real trip, its service and its fare', { skip: process.env.OFFLINE === '1', timeout: 60000 }, async () => {
-  const base = 'https://nsw-transport-bot.sites.tab.bot';
+  const { DEFAULT_BASE: base } = await load('src/lib/server.ts');
   const trip = await (await fetch(`${base}/api/trip?from=200060&to=206710&count=2&fare=concession`)).json();
   const j = trip.journeys.find((x) => x.legs.some((l) => l.kind === 'transit'));
   assert.ok(j, 'a journey');

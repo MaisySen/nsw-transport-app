@@ -90,7 +90,7 @@ test('access labels and distances', () => {
 });
 
 // Live: the server sends every field the station screen, trip legs and the Opal finder read.
-const BASE = 'https://nsw-transport-bot.sites.tab.bot';
+const { DEFAULT_BASE: BASE } = await load('src/lib/server.ts');
 async function get(p) { const r = await fetch(BASE + p, { signal: AbortSignal.timeout(30000) }); assert.equal(r.status, 200, p); return r.json(); }
 
 test('live /api/station, /api/parking, /api/topup and acc=1 trip shapes', { timeout: 90000, skip: process.env.OFFLINE === '1' }, async () => {

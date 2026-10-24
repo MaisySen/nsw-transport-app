@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, Platform, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import { api } from '@/lib/api';
@@ -134,6 +134,19 @@ export default function Search() {
             </View>
           )}
         </View>
+
+        {mode === 'trip' ? (
+          <View style={{ marginHorizontal: 16, marginTop: 10, backgroundColor: c.card, borderRadius: radius, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', minHeight: 56 }}>
+            <Icon name={I.access} size={18} color={c.tint} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <T kind="body">Step free</T>
+              <T kind="foot" tone="text2">Only trips with lifts or level access</T>
+            </View>
+            <Switch value={!!st.acc} onValueChange={(v) => { store.setAcc(v); haptic.select(); }} accessibilityLabel="Step free trips only"
+              trackColor={Platform.OS === 'android' ? { true: c.tint, false: c.fill } : undefined}
+              thumbColor={Platform.OS === 'android' ? (!!st.acc ? (c.dark ? '#062E6F' : '#fff') : c.text3) : undefined} />
+          </View>
+        ) : null}
 
         {list.length ? (
           <Section>

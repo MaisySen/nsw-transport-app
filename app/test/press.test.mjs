@@ -191,10 +191,10 @@ test('the four native tabs have a label and an Android icon each', () => {
 
 test('the About screen names Fintex and has no personal or internal addresses', () => {
   const co = read(path.join(SRC, 'lib', 'company.ts'));
-  assert.match(co, /Fintex Australia Pty Ltd/); assert.match(co, /contact@fintex\.au/); assert.match(co, /https:\/\/fintex\.au/);
+  assert.match(co, /Fintex Australia Pty Ltd/); assert.match(co, /support@transportsydney\.app/); assert.match(co, /privacy@transportsydney\.app/); assert.doesNotMatch(co, /contact@fintex\.au/); assert.match(co, /https:\/\/fintex\.au/);
   const about = read(path.join(SRC, 'app', '(tabs)', 'settings', 'index.tsx'));
   assert.match(about, /COMPANY\.email/); assert.match(about, /COMPANY\.site/); assert.match(about, /Fintex Australia Pty Ltd/);
   const bad = [];
-  (function walk(d) { for (const f of fs.readdirSync(d, { withFileTypes: true })) { if (['node_modules', 'dist', 'dist-web', '.expo', 'android', 'ios'].includes(f.name)) continue; const p = path.join(d, f.name); if (f.isDirectory()) walk(p); else if (/\.(tsx?|js|mjs|json|md)$/.test(f.name) && f.name !== 'package-lock.json') { const s = read(p); const m = s.match(/[\w.+-]+@[\w-]+\.[\w.]+/g) || []; for (const e of m) if (!/^contact@fintex\.au$/.test(e) && !/^[\w-]+@[\d.^~]+$/.test(e) && !e.includes('@/')) bad.push(`${rel(p)}: ${e}`); } } })(path.join(here, '..'));
+  (function walk(d) { for (const f of fs.readdirSync(d, { withFileTypes: true })) { if (['node_modules', 'dist', 'dist-web', '.expo', 'android', 'ios'].includes(f.name)) continue; const p = path.join(d, f.name); if (f.isDirectory()) walk(p); else if (/\.(tsx?|js|mjs|json|md)$/.test(f.name) && f.name !== 'package-lock.json') { const s = read(p); const m = s.match(/[\w.+-]+@[\w-]+\.[\w.]+/g) || []; for (const e of m) if (!/^(support|privacy)@transportsydney\.app$/.test(e) && !/^[\w-]+@[\d.^~]+$/.test(e) && !e.includes('@/')) bad.push(`${rel(p)}: ${e}`); } } })(path.join(here, '..'));
   assert.deepEqual(bad, []);
 });
