@@ -123,16 +123,22 @@ curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://www.transportsy
 
 ## 8. Move the data (optional)
 
-The new D1 database starts empty: saved trips, commutes, morning checks, watches and notification sign ups live in the first deploy's database. To copy them, the first deploy needs this code's admin export endpoint (`GET /api/admin/export`), which means one deploy of `backend/` to the first address with its usual runbook. Nothing changes there for the apps (the old address keeps its full behaviour), but it is a deploy of the live address, so do it only with Bidur's go ahead.
+The new D1 database starts empty: saved trips, commutes, morning checks, watches and notification sign ups live in the first deploy's database. Reading them needs the admin export endpoint (`GET /api/admin/export`, read only, admin key) on the first address for a few minutes. Deploy it there without changing anything else:
+
+1. Copy the folder the first address was last deployed from (`node build.mjs site` output) and add only the export route to its `worker.mjs`, as the first check in `fetch` (the code is `exportRoute` in `src/worker.js`).
+2. Deploy that copy, check `/api/status`, `/api/stations?mode=train`, `/api/departures?stop=200060` and `/api/app/config` still answer 200, then run the export below.
+3. Deploy the untouched folder again (the same files give the same deploy manifest), check that `/api/admin/export` answers 404 and run the same checks.
 
 ```bash
 cd backend
-SOURCE=<first deploy address> ADMIN_KEY=<its admin key> node tools/export-d1.mjs export.sql   # SKIP=obs,ip_rate to leave out the delay history
+SOURCE=<first deploy address> ADMIN_KEY=<its admin key> node tools/export-d1.mjs export.sql   # SKIP=obs to leave out the delay history
 npx wrangler@4 d1 execute DB --remote --file export.sql
 rm export.sql                                                                                  # it holds user data; never commit it
 ```
 
-Do the export right before the switch, and pause the first deploy's minute tick right after it (otherwise both addresses send the same alerts).
+The file replaces every user table on the new database (row ids kept, so loading it twice gives the same result) and merges the tables the new server also writes itself (`obs`, `ip_rate`, `meta`, `usage`; `MERGE=` changes the list) so its own rows stay. Compare the row counts the script prints with `SELECT COUNT(*)` on the new database, table by table.
+
+The first copy was made on 25 Oct 2026 (12,011 rows). The first address keeps taking new saves until the switch, so copy again right before the switch, and pause the first deploy's minute tick right after it. Until then both addresses run their minute tick over the same copied watches, commutes and morning checks; on 25 Oct the only notification sign ups in the copy were two test browsers, so no person gets an alert twice, but a real sign up copied over would.
 
 ## 9. The switch
 
