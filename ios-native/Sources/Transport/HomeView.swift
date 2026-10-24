@@ -565,6 +565,10 @@ struct HomeView: View {
         store.commutes.first { $0.from.id == t.from.id && $0.to.id == t.to.id }
     }
 
+    private var stopIDs: [String] {
+        Array(store.starred.prefix(4)).map(\.id) + board.nearby.map(\.stop.id)
+    }
+
     private var refreshKey: String {
         homeTrips.map(\.id).joined(separator: ",") + "|" + stopIDs.joined(separator: ",")
     }
