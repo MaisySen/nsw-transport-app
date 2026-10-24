@@ -4,6 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### QA pass A fixes (over the air update for iPhone and Android, 25 Oct, 10:00 AM)
+* Trip screen: services from Earlier services that have already left say Left instead of Now.
+* Trip legs and the live trip say 1 stop instead of 1 stops.
+* Home: touch and hold the commute card, and the Home and work menu now has Cancel. On iPhone it could not be closed without picking an action.
+* Home: a saved trip you delete goes at once. Before, it stayed for about 9 seconds until the server answered, so it looked like Delete did nothing.
+* Home: a saved trip with the same two stops as your Home and Work commute says it shows in the commute card, instead of "Save the trips you take".
+* Plan: back from a trip, old search results no longer cover Recent trips, and a Show this trip row plans the same trip again.
+* Plan: a search with no match says "No stops match that", and with no connection "Can't search right now. Check your connection."
+
 ### QA pass B fixes (over the air update for iPhone and Android, 25 Oct, 9:57 AM)
 * Stop screens: the two alerts at the top are the ones that touch the most services there, so a generic "Station Update" shows once instead of under every train. With a mode filter on (for example Ferries at Circular Quay), only that mode's alerts show.
 * No signal and nothing kept on the phone: the stop screen and cards now say "Live times unavailable right now, trying again" and "You're offline. Check your connection." The old words promised kept times that were not there.
