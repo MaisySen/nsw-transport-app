@@ -60,3 +60,21 @@ test('cleanToken accepts hex tokens only', () => {
 test('pushes go to the new server', () => {
   assert.equal(m.PUSH_BASE, 'https://api.transportsydney.app');
 });
+
+test('builds 201 to 204 (no push functions) never report push or a token', () => {
+  const old = { liveCardVersion: () => 2, startTripActivity: async () => 'x' };
+  assert.equal(m.activityPushOf(old), false);
+  assert.equal(m.pushTokenOf(old, 'x'), null);
+  assert.equal(m.activityPushOf(null), false);
+  assert.equal(m.pushTokenOf(undefined, 'x'), null);
+  const throws = { supportsActivityPush: () => { throw new Error('no'); }, tripActivityPushToken: () => { throw new Error('no'); } };
+  assert.equal(m.activityPushOf(throws), false);
+  assert.equal(m.pushTokenOf(throws, 'x'), null);
+});
+
+test('build 205 reports push and hands back a clean token', () => {
+  const n = { supportsActivityPush: () => true, tripActivityPushToken: (id) => (id === 'a' ? 'AB'.repeat(32) : null) };
+  assert.equal(m.activityPushOf(n), true);
+  assert.equal(m.pushTokenOf(n, 'a'), 'ab'.repeat(32));
+  assert.equal(m.pushTokenOf(n, 'b'), null);
+});

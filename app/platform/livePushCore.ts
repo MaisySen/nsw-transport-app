@@ -45,3 +45,19 @@ export function cleanToken(t: unknown): string | null {
   const s = t.trim().toLowerCase();
   return /^[0-9a-f]{32,400}$/.test(s) ? s : null;
 }
+
+/** The parts of the native module this needs. Builds 201 to 204 have none of the push functions. */
+export type PushNative = {
+  supportsActivityPush?: () => boolean;
+  tripActivityPushToken?: (id: string) => string | null;
+} | null | undefined;
+
+/** True only on builds whose trip card can be updated by push (205 and later); false on 201 to 204 and off iPhone. */
+export function activityPushOf(native: PushNative): boolean {
+  try { return !!native && typeof native.supportsActivityPush === 'function' && native.supportsActivityPush() === true; } catch { return false; }
+}
+
+/** The card's push token, or null on builds without push and whenever the call fails. */
+export function pushTokenOf(native: PushNative, id: string): string | null {
+  try { return native && typeof native.tripActivityPushToken === 'function' ? cleanToken(native.tripActivityPushToken(id)) : null; } catch { return null; }
+}

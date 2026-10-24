@@ -25,6 +25,7 @@ const native: Native | null = Platform.OS === 'ios' ? requireOptionalNativeModul
 
 export type { TripCardState } from '../../platform/tripCard';
 import type { TripCardState } from '../../platform/tripCard';
+import { activityPushOf, pushTokenOf } from '../../platform/livePushCore';
 
 const clean = (s: TripCardState) => JSON.stringify(Object.fromEntries(Object.entries(s).filter(([, v]) => v !== null && v !== undefined)));
 
@@ -39,8 +40,8 @@ export const iosNative = {
   /** 1 on builds up to 204 (a stale card reads "You've arrived"), 2 once the card shows "Updated" when stale. */
   cardVersion: (): number => { try { return typeof native?.liveCardVersion === 'function' ? Number(native.liveCardVersion()) || 1 : 1; } catch { return 1; } },
   /** True on builds whose trip card can be updated by push (205 and later). */
-  activityPush: (): boolean => { try { return typeof native?.supportsActivityPush === 'function' && !!native.supportsActivityPush(); } catch { return false; } },
-  activityPushToken: (id: string): string | null => { try { return typeof native?.tripActivityPushToken === 'function' ? native.tripActivityPushToken(id) || null : null; } catch { return null; } },
+  activityPush: (): boolean => activityPushOf(native),
+  activityPushToken: (id: string): string | null => pushTokenOf(native, id),
   onActivityPushToken(cb: (id: string, token: string) => void): () => void {
     try {
       const sub = native?.addListener?.('onActivityPushToken', (e) => { if (e?.id && e?.token) cb(String(e.id), String(e.token)); });
