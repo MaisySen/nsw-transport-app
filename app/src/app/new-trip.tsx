@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, PanResponder, Platform, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/lib/haptic';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
-import { modeColor, radius, usePalette } from '@/lib/theme';
+import { modeColor, onColor, radius, usePalette } from '@/lib/theme';
 import { shortName } from '@/lib/format';
 import { store } from '@/lib/store';
 import type { Place, SearchItem } from '@/lib/types';
@@ -43,7 +43,7 @@ export default function NewTrip() {
   const fixConn = (ds: Dest[]) => ds.map((d, i) => ({ ...d, conn: i ? d.conn ?? (ds[i - 1].mode === 'walk' ? 2 : 5) : undefined }));
 
   const choseMode = (m: ModeKey | 'walk') => {
-    Haptics.selectionAsync();
+    haptic.select();
     const ext = step.kind === 'mode' && step.ext && last;
     if (m === 'walk') { if (ext) setStep({ kind: 'walk' }); return; }
     if (ext) setStep({ kind: 'pick', mode: m, which: 'to', from: last.to, ext: true });
@@ -51,7 +51,7 @@ export default function NewTrip() {
   };
   const addDest = (d: Dest) => { setDests(fixConn([...dests, d])); setStep({ kind: 'confirm' }); };
   const picked = (p: Pick) => {
-    Haptics.selectionAsync();
+    haptic.select();
     if (step.kind !== 'pick') return;
     if (step.which === 'from') { setStep({ kind: 'pick', mode: step.mode, which: 'to', from: p }); return; }
     if (step.ext) { addDest({ mode: step.mode, to: { id: p.id, name: p.name }, any: false }); return; }
@@ -69,13 +69,13 @@ export default function NewTrip() {
     else router.back();
   };
   const move = (i: number, d: -1 | 1) => {
-    Haptics.selectionAsync();
+    haptic.select();
     const ds = [...dests];
     [ds[i], ds[i + d]] = [ds[i + d], ds[i]];
     setDests(fixConn(ds));
   };
   const remove = (i: number) => {
-    Haptics.selectionAsync();
+    haptic.select();
     if (i === 0) setStart(dests[0].to);
     setDests(fixConn(dests.filter((_, k) => k !== i)));
   };
@@ -98,7 +98,7 @@ export default function NewTrip() {
     store.saveMyTrip(t);
     if (multi) api.saveTripLegs(n, wireLegs(t)).catch(() => {});
     else api.saveTrip(n, a.from, a.to).catch(() => {});
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptic.success();
     pullHome();
     setSaving(false);
     router.back();
@@ -108,9 +108,9 @@ export default function NewTrip() {
   const first = step.kind === 'mode' && !step.ext;
   const stepper = (val: number, lbl: string, set: (v: number) => void, min: number, max: number) => (
     <View style={[s.stepper, { backgroundColor: c.fill, borderRadius: Platform.OS === 'android' ? 20 : 9 }]}>
-      <Pressable onPress={() => { Haptics.selectionAsync(); set(Math.max(min, val - 1)); }} style={s.stepBtn} accessibilityLabel={`Less ${lbl}`} hitSlop={4}><Icon name={I.minus} size={16} color={c.text} /></Pressable>
+      <Pressable onPress={() => { haptic.select(); set(Math.max(min, val - 1)); }} style={s.stepBtn} accessibilityLabel={`Less ${lbl}`} hitSlop={8}><Icon name={I.minus} size={16} color={c.text} /></Pressable>
       <T kind="headline" style={[s.stepVal, { borderColor: c.sep }]}>{val} min</T>
-      <Pressable onPress={() => { Haptics.selectionAsync(); set(Math.min(max, val + 1)); }} style={s.stepBtn} accessibilityLabel={`More ${lbl}`} hitSlop={4}><Icon name={I.plus} size={16} color={c.text} /></Pressable>
+      <Pressable onPress={() => { haptic.select(); set(Math.min(max, val + 1)); }} style={s.stepBtn} accessibilityLabel={`More ${lbl}`} hitSlop={8}><Icon name={I.plus} size={16} color={c.text} /></Pressable>
     </View>
   );
   const n = legs.length;
@@ -119,12 +119,12 @@ export default function NewTrip() {
       <Stack.Screen options={{
         title,
         headerLeft: () => (
-          <Pressable hitSlop={10} onPress={back} accessibilityRole="button" accessibilityLabel={first ? 'Cancel' : 'Back'}>
+          <Pressable hitSlop={13} onPress={back} accessibilityRole="button" accessibilityLabel={first ? 'Cancel' : 'Back'}>
             {Platform.OS === 'ios' ? <T kind="body" tone="tint">{first ? 'Cancel' : 'Back'}</T> : <Icon name={first ? I.close : I.back} size={22} color={c.text} />}
           </Pressable>
         ),
         headerRight: step.kind === 'confirm' ? () => (
-          <Pressable hitSlop={10} disabled={saving} onPress={save} accessibilityRole="button" accessibilityLabel="Save trip">
+          <Pressable hitSlop={13} disabled={saving} onPress={save} accessibilityRole="button" accessibilityLabel="Save trip">
             {saving ? <ActivityIndicator color={c.tint} /> : <T kind="headline" tone="tint">Save</T>}
           </Pressable>
         ) : () => null,
@@ -142,9 +142,9 @@ export default function NewTrip() {
                   subtitle={walk ? 'Walk' : modeName(l.mode)}
                   right={n > 1 ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-                      <Pressable hitSlop={8} disabled={!i} onPress={() => move(i, -1)} accessibilityLabel={`Move leg ${i + 1} up`} style={{ opacity: i ? 1 : 0.3 }}><Icon name={I.up} size={18} color={c.tint} /></Pressable>
-                      <Pressable hitSlop={8} disabled={i === n - 1} onPress={() => move(i, 1)} accessibilityLabel={`Move leg ${i + 1} down`} style={{ opacity: i < n - 1 ? 1 : 0.3 }}><Icon name={I.down} size={18} color={c.tint} /></Pressable>
-                      <Pressable hitSlop={8} onPress={() => remove(i)} accessibilityLabel={`Remove leg ${i + 1}`}><Icon name={I.trash} size={18} color={c.red} /></Pressable>
+                      <Pressable hitSlop={15} accessibilityRole="button" disabled={!i} onPress={() => move(i, -1)} accessibilityLabel={`Move leg ${i + 1} up`} style={{ opacity: i ? 1 : 0.3 }}><Icon name={I.up} size={18} color={c.tint} /></Pressable>
+                      <Pressable hitSlop={15} accessibilityRole="button" disabled={i === n - 1} onPress={() => move(i, 1)} accessibilityLabel={`Move leg ${i + 1} down`} style={{ opacity: i < n - 1 ? 1 : 0.3 }}><Icon name={I.down} size={18} color={c.tint} /></Pressable>
+                      <Pressable hitSlop={15} accessibilityRole="button" onPress={() => remove(i)} accessibilityLabel={`Remove leg ${i + 1}`}><Icon name={I.trash} size={18} color={c.red} /></Pressable>
                     </View>
                   ) : undefined} />
                 {walk ? (
@@ -161,14 +161,14 @@ export default function NewTrip() {
                     <Sep inset={16} />
                     <View style={s.connRow}>
                       <View style={{ flex: 1 }}><T kind="body">Direct services only</T><T kind="foot" tone="text2" style={{ marginTop: 2 }}>{l.any ? 'Services with a change are used too' : 'One service for this leg'}</T></View>
-                      <Switch value={!l.any} onValueChange={(v) => { Haptics.selectionAsync(); patch(i, { any: !v }); }} accessibilityLabel={`Direct services only, leg ${i + 1}`} />
+                      <Switch value={!l.any} onValueChange={(v) => { haptic.select(); patch(i, { any: !v }); }} accessibilityLabel={`Direct services only, leg ${i + 1}`} />
                     </View>
                   </>
                 )}
               </Section>
             );
           })}
-          {bad ? <T kind="foot" style={{ color: c.red, marginHorizontal: 32, marginTop: 8 }}>A leg starts and ends at the same stop. Remove it or move it.</T> : null}
+          {bad ? <T kind="foot" style={{ color: c.redText, marginHorizontal: 32, marginTop: 8 }}>A leg starts and ends at the same stop. Remove it or move it.</T> : null}
           <Section>
             <Row icon={I.plus} iconBg={c.tint} title={n > 1 ? 'Add another leg' : 'Extend trip'} subtitle={`Add a leg from ${stName(shortName(last.to.name))}`} onPress={() => setStep({ kind: 'mode', ext: true })} />
           </Section>
@@ -207,7 +207,7 @@ function WalkPicker({ from, onPick }: { from: Place; onPick: (p: Place) => void 
         <TextInput value={q} onChangeText={setQ} autoFocus placeholder="Stop or station name" placeholderTextColor={c.text3} accessibilityLabel="Stop or station name"
           style={[font.body, { flex: 1, color: c.text, marginLeft: 8, paddingVertical: 0 }]} returnKeyType="search" />
       </View>
-      {err ? <T kind="foot" style={{ color: c.red, marginHorizontal: 32, marginTop: 12 }}>{err}</T> : null}
+      {err ? <T kind="foot" style={{ color: c.redText, marginHorizontal: 32, marginTop: 12 }}>{err}</T> : null}
       {items && !items.length ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>No stops found</T> : null}
       {items && items.length ? (
         <Section>
@@ -258,7 +258,7 @@ function Segments({ value, items, onChange }: { value: string; items: [string, s
       {items.map(([k, label], i) => {
         const on = k === value;
         return (
-          <Pressable key={k} onPress={() => { Haptics.selectionAsync(); onChange(k); }} accessibilityRole="tab" accessibilityState={{ selected: on }}
+          <Pressable key={k} onPress={() => { haptic.select(); onChange(k); }} accessibilityRole="tab" accessibilityState={{ selected: on }}
             style={[s.segBtn, android ? { borderRadius: 0, borderLeftWidth: i ? 1 : 0, borderColor: c.sep, backgroundColor: on ? c.card2 : 'transparent', paddingVertical: 8 } : on ? { backgroundColor: c.dark ? '#636366' : '#fff', ...s.segOn } : null,
               android && i === 0 ? { borderTopLeftRadius: 20, borderBottomLeftRadius: 20 } : null, android && i === items.length - 1 ? { borderTopRightRadius: 20, borderBottomRightRadius: 20 } : null]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -321,7 +321,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
     if (!letters.length || !barH.current) return;
     const i = Math.max(0, Math.min(letters.length - 1, Math.floor((y / barH.current) * letters.length)));
     const L = letters[i];
-    if (L.k !== lastL.current) { lastL.current = L.k; Haptics.selectionAsync(); listRef.current?.scrollToOffset({ offset: offsets[L.i], animated: false }); }
+    if (L.k !== lastL.current) { lastL.current = L.k; haptic.select(); listRef.current?.scrollToOffset({ offset: offsets[L.i], animated: false }); }
   };
   const pan = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
@@ -384,7 +384,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
       <View style={{ flex: 1, backgroundColor: c.bg }}>
         {head}
         <View style={{ flex: 1, marginHorizontal: 16, borderRadius: radius, overflow: 'hidden', marginBottom: 12 }}>
-          <TransitMap stops={pts} color={color} mode={mode} dark={c.dark} onStopPress={(id) => { Haptics.selectionAsync(); setMapSel(list.find((x) => x[0] === id) || null); }} />
+          <TransitMap stops={pts} color={color} mode={mode} dark={c.dark} onStopPress={(id) => { haptic.select(); setMapSel(list.find((x) => x[0] === id) || null); }} />
         </View>
         <View style={[s.mapBar, { backgroundColor: c.card, borderRadius: radius }]}>
           <T kind="body" numberOfLines={1} style={{ flex: 1 }}>{mapSel ? stName(mapSel[1]) : 'Tap a station on the map'}</T>
@@ -432,13 +432,13 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
   }, [q]);
 
   const openRoute = async (r: string) => {
-    Haptics.selectionAsync();
+    haptic.select();
     try {
       const dirs = await busRoute(r);
       if (dirs.length === 1) setDir({ r, d: dirs[0], start: -1 }); else setRoute({ r, dirs });
     } catch (e: any) { Alert.alert("Couldn't load that route", String(e?.message || e)); }
   };
-  const badge = (r: string) => <View style={[s.badge, { backgroundColor: color }]}><T kind="foot" style={{ color: '#fff', fontWeight: '700' }}>{r}</T></View>;
+  const badge = (r: string) => <View style={[s.badge, { backgroundColor: color }]}><T kind="foot" style={{ color: onColor(color), fontWeight: '700' }}>{r}</T></View>;
 
   if (err) return <T kind="sub" tone="text2" style={s.note}>{err}</T>;
   if (dir) {
@@ -465,7 +465,7 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
           {route.dirs.map((d, i) => (
             <View key={i}>
               {i ? <Sep inset={16} /> : null}
-              <Pressable onPress={() => { Haptics.selectionAsync(); setDir({ r: route.r, d, start: -1 }); }} android_ripple={{ color: c.fill }} style={s.routeRow}>
+              <Pressable onPress={() => { haptic.select(); setDir({ r: route.r, d, start: -1 }); }} android_ripple={{ color: c.fill }} style={s.routeRow}>
                 {badge(route.r)}
                 <View style={{ flex: 1 }}>
                   <T kind="body" numberOfLines={1}>To {shortName(d.to)}</T>

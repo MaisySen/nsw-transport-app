@@ -1,11 +1,11 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/lib/haptic';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
 import { useLive } from '@/lib/hooks';
-import { modeColor, radius, usePalette } from '@/lib/theme';
+import { modeColor, onColor, radius, usePalette } from '@/lib/theme';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
 import type { Departure, Journey, Leg, Place } from '@/lib/types';
 import { store, tripKeyOf } from '@/lib/store';
@@ -113,6 +113,13 @@ export function cdColor(t: number, now: number, cancelled: boolean, c: { red: st
   return m <= 3 ? c.red : m <= 9 ? AMBER : c.green;
 }
 const AMBER = '#F5A300';
+/** Text colour for a countdown chip: the chip's hue, dark enough (light mode) or light enough (dark mode) for 4.5:1 on its tint. */
+export function cdText(chip: string, c: { dark: boolean; red: string; green: string; redText: string; liveText: string; text2: string }) {
+  if (chip === c.red) return c.redText;
+  if (chip === AMBER) return c.dark ? '#FFC94D' : '#8A5A00';
+  if (chip === c.green) return c.liveText;
+  return c.text2;
+}
 
 const plat = (p?: string | null) => (p ? p.replace(/^Platform\s*/i, 'Plat ') : '');
 
@@ -231,7 +238,7 @@ export function WarnLine({ j }: { j: Journey }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, paddingLeft: 86, paddingRight: 16, paddingBottom: 12, marginTop: -6 }} accessibilityRole="text">
       <Icon name={I.warn} size={13} color={bad ? c.red : c.orange} style={{ marginTop: 2 }} />
-      <T kind="foot" style={{ color: bad ? c.red : c.lateText, flex: 1, fontWeight: '500' }}>{j.warn}</T>
+      <T kind="foot" style={{ color: bad ? c.redText : c.lateText, flex: 1, fontWeight: '500' }}>{j.warn}</T>
     </View>
   );
 }
@@ -240,7 +247,7 @@ export function WarnLine({ j }: { j: Journey }) {
 export function tripMenu(trip: TripItem, route?: string) {
   const { from, to, via } = trip;
   const title = route || `${shortName(from.name)} to ${shortName(to.name)}`;
-  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  haptic.tap();
   const key = tripKeyOf({ from, to, via, legs: trip.legs });
   const editParams = { from: from.id, fromName: from.name, to: to.id, toName: to.name, ...(trip.modes?.[0] ? { mode: trip.modes[0] } : {}), ...(trip.legs && trip.legs.length > 1 ? { legs: JSON.stringify(trip.legs) } : {}), ...(trip.name ? { name: trip.name } : {}), edit: key };
   if (trip.kind === 'mine') {
@@ -281,10 +288,10 @@ export function deleteTrip(trip: TripItem) {
   const st = store.getOrder();
   if (st.includes(key)) store.setTripOrder(st.filter((k) => k !== key));
   if (trip.name) api.deleteSaved(trip.name).then(pullHome).catch(() => {});
-  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  haptic.success();
 }
 
-export function TripBoard({ trip, now, handle, allServices }: { trip: TripItem; now: number; handle?: React.ReactNode; allServices?: boolean }) {
+export function TripBoard({ trip, now, handle, allServices }: { trip: TripItem; now: number; handle?: React.ReactNode | ((open: () => void) => React.ReactNode); allServices?: boolean }) {
   const c = usePalette();
   const { from, to, via } = trip;
   const plan = { from, to, via, conn: trip.conn, legs: trip.legs, modes: trip.modes };
@@ -329,7 +336,7 @@ export function TripBoard({ trip, now, handle, allServices }: { trip: TripItem; 
     <Card>
       <View style={{ flexDirection: 'row' }}>
         <View style={{ flex: 1 }}>
-          <CardHeader title={custom ? `${custom}: ${route}` : route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint} onPress={() => open()} onLongPress={menu} trailing={handle}
+          <CardHeader title={custom ? `${custom}: ${route}` : route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint} onPress={() => open()} onLongPress={menu} trailing={typeof handle === 'function' ? handle(() => open()) : handle}
             sub={alerts.size || viaLine ? (
               <View>
                 {viaLine ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{viaLine}</T> : null}
@@ -363,7 +370,7 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
   const dep = depOf(j);
   const stt = statusOf(j, now);
   const t = showTravel ? { big: String(j.durationMin), unit: 'min' } : cd(dep, now);
-  const toneText = stt.tone === 'live' ? c.liveText : stt.tone === 'late' ? c.lateText : stt.tone === 'red' ? c.red : c.text2;
+  const toneText = stt.tone === 'live' ? c.liveText : stt.tone === 'late' ? c.lateText : stt.tone === 'red' ? c.redText : c.text2;
   const legs = j.legs.filter((x) => x.kind === 'transit');
   const last = legs[legs.length - 1];
   const cancelled = stt.tone === 'red';
@@ -377,8 +384,8 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
     <Pressable onPress={onPress} android_ripple={{ color: c.fill }} accessibilityLabel={`Leaves ${hm(dep)}${boardAt ? ` from ${boardAt}` : ''}, ${t.big} ${t.unit}, arrives ${hm(arrive)}, ${stt.text}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}`}
       style={({ pressed }) => [s.svc, (beaten || dep < now - 30000) && { opacity: 0.45 }, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
       <View style={[s.block, { backgroundColor: chip + (c.dark ? '33' : '1F') }]}>
-        <Text maxFontSizeMultiplier={1.3} style={{ color: chip, fontSize: bigSize, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }} numberOfLines={1} adjustsFontSizeToFit>{t.big}</Text>
-        {t.unit ? <Text maxFontSizeMultiplier={1.3} style={{ color: chip, fontSize: 11, fontWeight: '600', marginTop: -2 }}>{t.unit}</Text> : null}
+        <Text maxFontSizeMultiplier={1.3} style={{ color: cdText(chip, c), fontSize: bigSize, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }} numberOfLines={1} adjustsFontSizeToFit>{t.big}</Text>
+        {t.unit ? <Text maxFontSizeMultiplier={1.3} style={{ color: cdText(chip, c), fontSize: 11, fontWeight: '600', marginTop: -2 }}>{t.unit}</Text> : null}
       </View>
       <View style={{ flex: 1, minWidth: 0, marginLeft: 14 }}>
         <Text maxFontSizeMultiplier={1.4} style={[font.title3, { color: c.text, fontVariant: ['tabular-nums'], textDecorationLine: cancelled ? 'line-through' : 'none' }]}>{hm(dep)}{' '}<Text style={{ color: c.text3, fontWeight: '400' }}>{'\u2192'}</Text>{' '}{hm(arrive)}</Text>
@@ -399,9 +406,10 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
 /** Small line badge for the right column: "T1" on the line colour. */
 function MiniBadge({ line, color }: { line?: string; color: string }) {
   if (!line) return null;
+  const fg = onColor(color);
   return (
     <View style={{ backgroundColor: color, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, minWidth: 22, alignItems: 'center' }}>
-      <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{line}</Text>
+      <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ color: fg, fontSize: 11, fontWeight: '700' }}>{line}</Text>
     </View>
   );
 }
@@ -599,7 +607,7 @@ export function LiveTag() {
 }
 
 const s = StyleSheet.create({
-  head: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10 },
+  head: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, minHeight: 48 },
   note: { paddingHorizontal: 16, paddingBottom: 13 },
   svc: { flexDirection: 'row', alignItems: 'center', paddingLeft: 16, paddingRight: 16, paddingVertical: 12 },
   block: { width: 56, alignSelf: 'stretch', minHeight: 52, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },

@@ -1,5 +1,5 @@
 import { Alert } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/lib/haptic';
 import { api } from './api';
 import { shortName } from './format';
 import { store } from './store';
@@ -33,14 +33,14 @@ export async function startWatch(spec: WatchSpec, leadExtra = 0) {
   if (!spec.legs[0]?.planned) throw new Error("This one can't be watched.");
   const r = await api.watch({ kind: spec.kind, title: spec.title, legs: spec.legs, origin: spec.origin, to: spec.to, lead: spec.lead + leadExtra });
   if (r.watch?.id) store.markWatched(spec.key, r.watch.id);
-  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  haptic.success();
   return r.watch?.id;
 }
 
 export async function stopWatch(id: string) {
   await api.stopWatch(id);
   store.unmarkWatched(id);
-  Haptics.selectionAsync();
+  haptic.select();
 }
 
 /** Toggle from a swipe or long press: start with the default lead, or stop if already watched. */

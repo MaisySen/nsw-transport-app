@@ -16,6 +16,8 @@ export type TransitMapProps = {
   style?: StyleProp<ViewStyle>;
   /** Called with the stop id when a stop is tapped (New Trip, By map). */
   onStopPress?: (id: string) => void;
+  /** A small map inside a scrolling page: no rotate or tilt, no wheel zoom on the web (+ and - buttons instead). */
+  embedded?: boolean;
   /** Points the map frames at first, instead of everything on it. */
   fit?: [number, number][];
 };

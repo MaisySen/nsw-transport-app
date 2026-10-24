@@ -1,6 +1,8 @@
+import { useRef } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { once } from '@/lib/gesture';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/lib/haptic';
 import { usePalette } from '@/lib/theme';
 import { Icon, IconName } from './Icon';
 import { Sep, T } from './ui';
@@ -15,8 +17,18 @@ export function ActionSheet({ visible, title, message, actions, onClose }: { vis
   const c = usePalette();
   const ins = useSafeAreaInsets();
   const ios = Platform.OS === 'ios';
+  // The chosen action runs once the sheet has gone (onDismiss, or 450 ms at the latest). An Android dialog
+  // opened while the sheet's window is still closing can vanish with it, which felt like a dead button.
+  const pending = useRef<(() => void) | null>(null);
+  const choose = (a: SheetAction) => {
+    if (pending.current) return;
+    const run = once(() => { pending.current = null; a.onPress(); }, 450);
+    pending.current = run;
+    onClose();
+    haptic.select();
+  };
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} onDismiss={() => pending.current?.()} statusBarTranslucent navigationBarTranslucent>
       <View style={s.wrap}>
         <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.32)' }]} onPress={onClose} accessibilityLabel="Close" />
         <View style={[s.sheet, { backgroundColor: ios ? 'transparent' : c.dark ? '#22262E' : '#F3F5FA', paddingBottom: Math.max(ins.bottom, 12) }]}>
@@ -32,10 +44,10 @@ export function ActionSheet({ visible, title, message, actions, onClose }: { vis
               <View key={a.text + i}>
                 {ios || i ? <Sep inset={ios ? 0 : 56} /> : null}
                 <Pressable accessibilityRole="button" android_ripple={{ color: c.fill }}
-                  onPress={() => { Haptics.selectionAsync(); onClose(); setTimeout(a.onPress, ios ? 250 : 120); }}
+                  onPress={() => choose(a)}
                   style={({ pressed }) => [s.item, ios ? { justifyContent: 'center' } : null, pressed && ios ? { backgroundColor: c.fill } : null]}>
                   {a.icon && !ios ? <Icon name={a.icon} size={22} color={a.destructive ? c.red : c.text2} style={{ marginRight: 20 }} /> : null}
-                  <T kind={ios ? 'body' : 'callout'} style={{ color: a.destructive ? c.red : ios ? c.tint : c.text, fontSize: ios ? 20 : 16 }}>{a.text}</T>
+                  <T kind={ios ? 'body' : 'callout'} style={{ color: a.destructive ? c.redText : ios ? c.tint : c.text, fontSize: ios ? 20 : 16 }}>{a.text}</T>
                 </Pressable>
               </View>
             ))}

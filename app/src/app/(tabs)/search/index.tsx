@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/lib/haptic';
 import { api } from '@/lib/api';
 import { usePalette, radius } from '@/lib/theme';
 import { MODE_BY_CODE, shortName } from '@/lib/format';
@@ -36,7 +36,7 @@ function Field({ label, value, placeholder, active, onFocus, onChange, inputRef,
     <View style={[s.field, { borderColor: active ? c.tint : 'transparent' }]}>
       <T kind="sub" tone="text2" style={{ width: 44 }}>{label}</T>
       <TextInput ref={inputRef} value={value} placeholder={placeholder} placeholderTextColor={c.text3} onFocus={onFocus} onChangeText={onChange}
-        style={[font.body, { flex: 1, color: c.text, paddingVertical: Platform.OS === 'android' ? 6 : 10 }]} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing" />
+        style={[font.body, { flex: 1, color: c.text, paddingVertical: Platform.OS === 'android' ? 6 : 10, minHeight: 48 }]} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing" />
       {Platform.OS === 'android' && value ? <Pressable accessibilityRole="button" accessibilityLabel={`Clear ${label}`} onPress={onClear} hitSlop={10}><Icon name={I.close} size={18} color={c.text2} /></Pressable> : null}
     </View>
   );
@@ -84,7 +84,7 @@ export default function Search() {
     Keyboard.dismiss();
     router.push({ pathname: '/trip', params: { from: a.id, fromName: a.name, to: b.id, toName: b.name } });
   };
-  const clearTrips = () => { store.clearRecentTrips(); Haptics.selectionAsync(); };
+  const clearTrips = () => { store.clearRecentTrips(); haptic.select(); };
   const removeTrip = (r: { from: Place; to: Place }, label: string) => Alert.alert(label, undefined, [
     { text: 'Cancel', style: 'cancel' },
     { text: 'Remove from Recent', style: 'destructive', onPress: () => store.removeRecentTrip(r.from.id, r.to.id) },
@@ -118,7 +118,7 @@ export default function Search() {
               <Icon name={I.search} size={17} color={c.text2} style={{ marginRight: 8 }} />
               <TextInput ref={stopRef} value={q} onChangeText={setQ} placeholder="Stop, station or stop number" placeholderTextColor={c.text3} autoCorrect={false}
                 accessibilityLabel="Stop, station or stop number"
-                style={[font.body, { flex: 1, color: c.text, paddingVertical: Platform.OS === 'android' ? 6 : 10 }]} clearButtonMode="while-editing" returnKeyType="search" />
+                style={[font.body, { flex: 1, color: c.text, paddingVertical: Platform.OS === 'android' ? 6 : 10, minHeight: 48 }]} clearButtonMode="while-editing" returnKeyType="search" />
               {loading ? <ActivityIndicator size="small" /> : null}
             </View>
           ) : (
@@ -164,7 +164,7 @@ export default function Search() {
         ) : null}
 
         {!list.length && mode === 'stop' && recentStops.length ? (
-          <Section title="Recent stops" right={<Pressable onPress={() => { store.clearRecents(); Haptics.selectionAsync(); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear recent stops"><T kind="foot" tone="tint" style={{ fontWeight: '600' }}>Clear</T></Pressable>}>
+          <Section title="Recent stops" right={<Pressable onPress={() => { store.clearRecents(); haptic.select(); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear recent stops"><T kind="foot" tone="tint" style={{ fontWeight: '600' }}>Clear</T></Pressable>}>
             {recentStops.map((it, i) => (
               <View key={it.id}>
                 {i ? <Sep inset={57} /> : null}
@@ -186,6 +186,6 @@ export default function Search() {
 
 const s = StyleSheet.create({
   seg: { flexDirection: 'row', marginHorizontal: 16, marginTop: 8, borderRadius: 12, padding: 3 },
-  segBtn: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 9, shadowColor: '#000', shadowOpacity: 0, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
+  segBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 48, paddingVertical: 9, borderRadius: 9, shadowColor: '#000', shadowOpacity: 0, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
   field: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52, borderLeftWidth: 0 },
 });

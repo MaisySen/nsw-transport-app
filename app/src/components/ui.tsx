@@ -60,19 +60,20 @@ export function Sep({ inset = 16 }: { inset?: number }) {
   return <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: c.sep, marginLeft: inset }} />;
 }
 
-export function Row({ title, subtitle, icon, iconBg, right, onPress, chevron = !!onPress, destructive, onLongPress }: {
-  title: string; subtitle?: string; icon?: IconName; iconBg?: string; right?: ReactNode; onPress?: () => void; chevron?: boolean; destructive?: boolean; onLongPress?: () => void;
+export function Row({ title, subtitle, icon, iconBg, right, onPress, chevron = !!onPress, destructive, onLongPress, accessibilityHint }: {
+  title: string; subtitle?: string; icon?: IconName; iconBg?: string; right?: ReactNode; onPress?: () => void; chevron?: boolean; destructive?: boolean; onLongPress?: () => void; accessibilityHint?: string;
 }) {
   const c = usePalette();
   return (
-    <Pressable onPress={onPress} onLongPress={onLongPress} android_ripple={{ color: c.fill }} style={({ pressed }) => [s.row, pressed && Platform.OS === 'ios' && onPress ? { backgroundColor: c.fill } : null]}>
+    <Pressable onPress={onPress} onLongPress={onLongPress} android_ripple={onPress ? { color: c.fill } : undefined}
+      accessibilityRole={onPress ? 'button' : undefined} accessibilityHint={accessibilityHint} style={({ pressed }) => [s.row, pressed && Platform.OS === 'ios' && onPress ? { backgroundColor: c.fill } : null]}>
       {icon ? (
         <View style={[s.iconBox, { backgroundColor: iconBg || c.tint }]}>
           <Icon name={icon} size={17} color="#fff" />
         </View>
       ) : null}
       <View style={{ flex: 1 }}>
-        <T kind="body" style={destructive ? { color: c.red } : undefined} numberOfLines={2}>{title}</T>
+        <T kind="body" style={destructive ? { color: c.redText } : undefined} numberOfLines={2}>{title}</T>
         {subtitle ? <T kind="foot" tone="text2" numberOfLines={2} style={{ marginTop: 2 }}>{subtitle}</T> : null}
       </View>
       {right}
@@ -109,7 +110,7 @@ export function Button({ title, onPress, kind = 'filled', icon, disabled }: { ti
 export function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
   const c = usePalette();
   return (
-    <Pressable onPress={onPress} style={[s.chip, { backgroundColor: on ? c.tint : c.card, borderColor: on ? c.tint : c.sep }]}>
+    <Pressable onPress={onPress} hitSlop={{ top: 7, bottom: 7 }} accessibilityRole="button" accessibilityState={{ selected: on }} style={[s.chip, { backgroundColor: on ? c.tint : c.card, borderColor: on ? c.tint : c.sep }]}>
       <Text style={[font.sub, { color: on ? (androidLook && c.dark ? '#062E6F' : '#fff') : c.text, fontWeight: '600' }]}>{label}</Text>
     </Pressable>
   );
@@ -117,7 +118,7 @@ export function Chip({ label, on, onPress }: { label: string; on: boolean; onPre
 
 const s = StyleSheet.create({
   secHead: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 7 },
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 11, minHeight: 44, gap: 12 },
+  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 11, minHeight: 48, gap: 12 },
   iconBox: { width: 29, height: 29, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
   btn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, height: 50 },
   chip: { paddingHorizontal: 14, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth },

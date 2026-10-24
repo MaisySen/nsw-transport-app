@@ -25,8 +25,8 @@ What Bidur provides:
 
 1. **A Firebase project** made with your own Google account: open https://console.firebase.google.com, Add project, name it Transport. Google Analytics is not needed; turn it off.
 2. **google-services.json**: in the project, Add app, Android, package name `com.maisysen.nswtransport`, app nickname Transport, no SHA-1 needed. Download google-services.json at the end.
-3. **The FCM V1 service account key**: Project settings, Service accounts, Firebase Admin SDK, Generate new private key. This downloads a JSON file. It is a secret: email it to bidur@mail.tab.bot, never in WhatsApp or a chat.
-4. Email google-services.json to bidur@mail.tab.bot too (it is not a secret, but keep it with the key).
+3. **The FCM V1 service account key**: Project settings, Service accounts, Firebase Admin SDK, Generate new private key. This downloads a JSON file. It is a secret: email it to your Tab's own mailbox (the address is in the private fintex-runbook repo), never in WhatsApp, a chat or this repo.
+4. Email google-services.json to the same mailbox too (it is not a secret, but keep it with the key).
 
 What Tab then does:
 

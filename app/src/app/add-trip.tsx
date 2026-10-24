@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/lib/haptic';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
 import { usePalette, radius } from '@/lib/theme';
@@ -71,7 +71,7 @@ export default function AddTrip() {
   useEffect(() => { const t = setTimeout(() => fromRef.current?.focus(), 350); return () => clearTimeout(t); }, []);
 
   const pick = (p: Place) => {
-    Haptics.selectionAsync();
+    haptic.select();
     if (placeKind) {
       store.setPlace(placeKind, { id: p.id, name: p.name });
       Keyboard.dismiss();
@@ -93,7 +93,7 @@ export default function AddTrip() {
     try {
       const n = name.trim() || `${shortName(from.name)} to ${shortName(to.name)}`;
       await api.saveTrip(n, from, to);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptic.success();
       pullHome();
       router.back();
     } catch (e: any) {
@@ -120,9 +120,9 @@ export default function AddTrip() {
     <>
       <Stack.Screen options={{
         title: placeKind === 'home' ? 'Add home' : placeKind === 'work' ? 'Add work' : 'Add a trip',
-        headerLeft: Platform.OS === 'ios' ? () => <Pressable hitSlop={10} onPress={() => router.back()}><T kind="body" tone="tint">Cancel</T></Pressable> : undefined,
+        headerLeft: Platform.OS === 'ios' ? () => <Pressable hitSlop={13} accessibilityRole="button" onPress={() => router.back()}><T kind="body" tone="tint">Cancel</T></Pressable> : undefined,
         headerRight: placeKind ? () => null : () => (
-          <Pressable hitSlop={10} disabled={!ready || saving} onPress={save} accessibilityLabel="Save trip">
+          <Pressable hitSlop={13} accessibilityRole="button" disabled={!ready || saving} onPress={save} accessibilityLabel="Save trip">
             {saving ? <ActivityIndicator color={c.tint} /> : <T kind="headline" style={{ color: ready ? c.tint : c.text3 }}>Save</T>}
           </Pressable>
         ),

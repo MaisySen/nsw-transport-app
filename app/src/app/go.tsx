@@ -5,11 +5,11 @@ import { Alert, Linking, Platform, Pressable, Share, StyleSheet, Text, View, use
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/lib/haptic';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
 import { useNow } from '@/lib/hooks';
-import { radius, usePalette } from '@/lib/theme';
+import { onColor, radius, usePalette } from '@/lib/theme';
 import { clock } from '@/lib/format';
 import { endLive, getLive, liveWatch, setLive, useLiveTrip } from '@/lib/live';
 import { legColor, plat, progOf, setEnginePos, short, tickLive, useLiveEngineState } from '@/lib/liveEngine';
@@ -95,7 +95,7 @@ export default function LiveTripScreen() {
         const c2 = getLive();
         if (!c2) return;
         setLive({ ...c2, share: { id: r.id, key: r.key, url: r.url, pos: withPos } });
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        haptic.success();
         await Share.share({ message: `Follow my trip live: ${cur.title} ${r.url}` });
       } catch (e: any) { Alert.alert("Couldn't make a link", String(e?.message || e)); }
     };
@@ -113,7 +113,7 @@ export default function LiveTripScreen() {
 
   const end = () => Alert.alert('End trip?', g?.share ? 'Your share link stops working.' : 'Live alerts for this trip stop.', [
     { text: 'Cancel', style: 'cancel' },
-    { text: 'End trip', style: 'destructive', onPress: async () => { await endLive(); Haptics.selectionAsync(); router.canGoBack() ? router.back() : router.replace('/'); } },
+    { text: 'End trip', style: 'destructive', onPress: () => { endLive().catch(() => {}); router.canGoBack() ? router.back() : router.replace('/'); haptic.select(); } },
   ]);
 
   if (!g) {
@@ -155,7 +155,7 @@ export default function LiveTripScreen() {
               <T kind="foot" tone="text2">You've arrived</T>
               <T kind="title2" style={{ marginTop: 2 }}>{short(legs[last].to)}</T>
               <T kind="sub" tone="text2" style={{ marginTop: 4 }}>{clock(st.eta)} {'\u00b7'} trip ended</T>
-              <View style={{ marginTop: 18 }}><Button title="Done" onPress={async () => { await endLive(); router.canGoBack() ? router.back() : router.replace('/'); }} /></View>
+              <View style={{ marginTop: 18 }}><Button title="Done" onPress={() => { endLive().catch(() => {}); router.canGoBack() ? router.back() : router.replace('/'); }} /></View>
             </View>
           ) : (
             <Sheet st={st} now={now} legs={legs} g={g} me={!!me} locDenied={locDenied} push={push} offline={offline} updated={updated}
@@ -204,8 +204,8 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
         <View style={{ alignItems: 'flex-end' }}>
           <Text style={{ fontSize: 28, fontWeight: '700', color: c.tint, fontVariant: ['tabular-nums'] }} maxFontSizeMultiplier={1.3} accessibilityLabel={`in ${minsWords(m)}`}>{minsWords(m)}</Text>
           <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
-            <View style={[sx.badge, { backgroundColor: badge.bg }]}><Text style={sx.badgeT}>{badge.t}</Text></View>
-            {g.share ? <View style={[sx.badge, { backgroundColor: c.indigo }]}><Text style={sx.badgeT}>Sharing</Text></View> : null}
+            <View style={[sx.badge, { backgroundColor: badge.bg }]}><Text style={[sx.badgeT, { color: onColor(badge.bg) }]}>{badge.t}</Text></View>
+            {g.share ? <View style={[sx.badge, { backgroundColor: c.indigo }]}><Text style={[sx.badgeT, { color: onColor(c.indigo) }]}>Sharing</Text></View> : null}
           </View>
         </View>
       </View>
@@ -272,7 +272,7 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
                 <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 6, gap: 6 }}>
                   {ll.walkBefore ? <Icon name={I.walk} size={13} color={c.text2} /> : null}
                   <T kind="foot" tone="text2">{ll.walkBefore ? `${ll.walkBefore} min walk, ` : ''}change at {short(legs[i - 1].to)}</T>
-                  {cn ? <T kind="foot" style={{ color: cn.risk === 'ok' ? c.text2 : cn.risk === 'tight' ? c.lateText : c.red, fontWeight: cn.risk === 'ok' ? '400' : '600' }}>{'\u00b7'} {Math.max(0, cn.spare)} min spare</T> : null}
+                  {cn ? <T kind="foot" style={{ color: cn.risk === 'ok' ? c.text2 : cn.risk === 'tight' ? c.lateText : c.redText, fontWeight: cn.risk === 'ok' ? '400' : '600' }}>{'\u00b7'} {Math.max(0, cn.spare)} min spare</T> : null}
                 </View>
               ) : null}
               <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, opacity: state === 'done' ? 0.5 : 1 }}>
@@ -298,9 +298,9 @@ function Warn({ tone, title, body, link, onLink }: { tone: 'bad' | 'tight' | 'gr
     <View style={[sx.warn, { backgroundColor: tone === 'grey' ? c.card2 : tone === 'bad' ? 'rgba(255,59,48,0.12)' : 'rgba(255,149,0,0.14)' }]} accessibilityRole="alert">
       <Icon name={I.warn} size={16} color={col} style={{ marginTop: 2 }} />
       <View style={{ flex: 1, marginLeft: 10 }}>
-        <T kind="headline" style={{ color: tone === 'grey' ? c.text : col }}>{title}</T>
+        <T kind="headline" style={{ color: tone === 'grey' ? c.text : tone === 'bad' ? c.redText : c.lateText }}>{title}</T>
         <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{body}</T>
-        {link ? <Pressable onPress={onLink} hitSlop={6}><T kind="foot" tone="tint" style={{ marginTop: 4, fontWeight: '600' }}>{link}</T></Pressable> : null}
+        {link ? <Pressable onPress={onLink} hitSlop={12} accessibilityRole="button" style={{ alignSelf: 'flex-start', minHeight: 32, justifyContent: 'center' }}><T kind="foot" tone="tint" style={{ marginTop: 4, fontWeight: '600' }}>{link}</T></Pressable> : null}
       </View>
     </View>
   );

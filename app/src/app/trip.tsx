@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, StyleSheet, Switch, useColorScheme, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/lib/haptic';
+import { withTimeout } from '@/lib/gesture';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius, modeColor } from '@/lib/theme';
@@ -105,7 +106,7 @@ function Transfer({ a, b }: { a: Leg; b: Leg }) {
     return (
       <View style={[st.walk, { paddingVertical: 6 }]}>
         <View style={{ width: 36, alignItems: 'center' }}><Icon name={I.clock} size={15} color={bad ? c.red : tight ? c.orange : c.text3} /></View>
-        <T kind="foot" style={{ flex: 1, color: bad ? c.red : tight ? c.lateText : c.text2, fontWeight: bad || tight ? '600' : '400' }}>{text}</T>
+        <T kind="foot" style={{ flex: 1, color: bad ? c.redText : tight ? c.lateText : c.text2, fontWeight: bad || tight ? '600' : '400' }}>{text}</T>
       </View>
     );
   }
@@ -135,8 +136,8 @@ function FareCard({ j }: { j: Journey }) {
   const [more, setMore] = useState(false);
   return (
     <View style={{ marginHorizontal: 16, marginTop: 10, backgroundColor: c.card2, borderRadius: radius, paddingVertical: 4 }}>
-      <Pressable onPress={() => setMore(!more)} accessibilityRole="button" accessibilityState={{ expanded: more }} accessibilityLabel={`Opal fare estimate ${money(f.total)}, ${fareWords(f)}. ${more ? 'Hide' : 'Show'} details`}
-        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8 }}>
+      <Pressable onPress={() => setMore(!more)} accessibilityRole="button" accessibilityState={{ expanded: more }} accessibilityHint={`An estimate, ${fareWords(f)}. ${more ? 'Hides' : 'Shows'} the fare for each leg.`}
+        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, minHeight: 48 }}>
         <Icon name={I.fare} size={16} color={c.text2} />
         <T kind="body" style={{ flex: 1, marginLeft: 8 }}>Opal fare</T>
         <T kind="foot" tone="text2" style={{ marginRight: 8 }}>{f.typeName}{f.peak ? ', peak' : ''}</T>
@@ -192,7 +193,7 @@ function JourneyDetail({ j, now, from, to }: { j: Journey; now: number; from: Pl
           onPress={() => {
             const go = async () => {
               setBusy(true);
-              try { await startLive(spec, j.fare); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); router.push('/go'); }
+              try { await withTimeout(startLive(spec, j.fare), 5000, null); router.push('/go'); haptic.success(); }
               catch (e: any) { Alert.alert("Couldn't start it", e.message); }
               finally { setBusy(false); }
             };
@@ -246,7 +247,7 @@ export default function TripScreen() {
   const js = df.list;
   const loadMore = async (dir: -1 | 1) => {
     if (!js.length || more) return;
-    Haptics.selectionAsync();
+    haptic.select();
     const t = dir < 0 ? Math.max(now - 25 * 60000, depMs(js[0]) - 40 * 60000) : depMs(js[js.length - 1]) + 60000;
     setMore(dir);
     try {
@@ -277,7 +278,7 @@ export default function TripScreen() {
     if (chain) { router.push({ pathname: '/new-trip', params: { legs: JSON.stringify(tLegs(plan)), ...(p.name ? { name: String(p.name) } : {}) } }); return; }
     if (!via) { router.push({ pathname: '/new-trip', params: { from: from.id, fromName, to: to.id, toName, mode: firstT(js[0] || ({ legs: [] } as any))?.mode || '' } }); return; }
     const doSave = async (name: string) => {
-      try { await api.saveTrip(name, from, to); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); Alert.alert('Saved', `It's on your Home screen as "${name}". You can also text "${name}" to Tab.`); }
+      try { await api.saveTrip(name, from, to); haptic.success(); Alert.alert('Saved', `It's on your Home screen as "${name}". You can also text "${name}" to Tab.`); }
       catch (e: any) { Alert.alert("Couldn't save it", e.message); }
     };
     Alert.alert('Save this trip', 'Saved trips show live on Home.', [
@@ -292,7 +293,7 @@ export default function TripScreen() {
       <Stack.Screen options={{
         title: `${shortName(fromName).replace(/ Station$/, '')} to ${shortName(toName).replace(/ Station$/, '')}`,
         headerBackTitle: chain ? 'Back' : undefined,
-        headerRight: () => <Pressable accessibilityRole="button" accessibilityLabel="Save trip" hitSlop={10} onPress={save}><Icon name={I.starOpen} size={22} color={c.tint} /></Pressable>,
+        headerRight: () => <Pressable accessibilityRole="button" accessibilityLabel="Save trip" hitSlop={13} onPress={save}><Icon name={I.starOpen} size={22} color={c.tint} /></Pressable>,
       }} />
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
         {alertList.length ? (
@@ -324,7 +325,7 @@ export default function TripScreen() {
           <View style={{ marginHorizontal: 20, marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <Icon name={I.access} size={15} color={c.tint} />
             <T kind="sub" tone="text2">Step free trips only.{!js.length ? ' None found for this trip.' : ''}</T>
-            <Pressable hitSlop={8} onPress={() => router.push('/settings')}><T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Change in More</T></Pressable>
+            <Pressable hitSlop={12} accessibilityRole="button" onPress={() => router.push('/settings')}><T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Change in More</T></Pressable>
           </View>
         ) : null}
         {chain ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 12 }}>{(() => { const L = tLegs(plan); return L.length === 2 && L[1].mode !== 'walk' ? `Via ${stName(shortName(L[0].to.name))}, ${L[1].conn ?? 5} min to change` : `${L.length} legs via ${viaText(plan)}`; })()}</T> : null}
@@ -334,7 +335,7 @@ export default function TripScreen() {
               <T kind="body">Include trips with a change</T>
               {!allOn && (df.none || (chain && (data?.fallback || []).some(Boolean))) ? <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{df.none ? 'No direct service, so all are shown' : 'One leg has no direct service, so all are used there'}</T> : null}
             </View>
-            <Switch value={allOn} onValueChange={(v) => { Haptics.selectionAsync(); store.setAllServices(tkey, v); }} accessibilityLabel="Include trips with a change" />
+            <Switch value={allOn} onValueChange={(v) => { haptic.select(); store.setAllServices(tkey, v); }} accessibilityLabel="Include trips with a change" />
           </View>
         ) : null}
         {js.length ? (
@@ -343,7 +344,7 @@ export default function TripScreen() {
             {js.map((j, i) => (
               <View key={jKey(j) + i}>
                 <Sep inset={0} />
-                <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { Haptics.selectionAsync(); setOpen(open === i ? null : i); }} />
+                <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />
                 <WarnLine j={j} />
                 {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} /></View> : null}
               </View>
@@ -379,7 +380,7 @@ function MoreButton({ title, busy, onPress }: { title: string; busy: boolean; on
 const st = StyleSheet.create({
   seg: { flexDirection: 'row', marginHorizontal: 16, marginTop: 12, borderRadius: 9, padding: 2 },
   segBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 6, borderRadius: 7 },
-  more: { alignItems: 'center', justifyContent: 'center', paddingVertical: 12, minHeight: 44 },
+  more: { alignItems: 'center', justifyContent: 'center', paddingVertical: 12, minHeight: 48 },
   walk: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
   leg: { flexDirection: 'row', paddingVertical: 8 },
   dotBig: { width: 14, height: 14, borderRadius: 7, borderWidth: 3.5 },

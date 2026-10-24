@@ -1,5 +1,5 @@
 import { SymbolView } from 'expo-symbols';
-import type { ColorValue, StyleProp, ViewStyle } from 'react-native';
+import { View, type ColorValue, type StyleProp, type ViewStyle } from 'react-native';
 
 export type IconName = { ios: string; android: string };
 
@@ -65,13 +65,15 @@ export function modeIconName(mode?: string): IconName {
 }
 
 export function Icon({ name, size = 20, color, style }: { name: IconName; size?: number; color?: ColorValue; style?: StyleProp<ViewStyle> }) {
+  // Icons are decoration: TalkBack and screen readers read the label of the button or row they sit in.
   return (
-    <SymbolView
-      name={{ ios: name.ios as any, android: name.android as any, web: name.android as any }}
-      size={size}
-      tintColor={color}
-      weight="medium"
-      style={style}
-    />
+    <View style={style} aria-hidden importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+      <SymbolView
+        name={{ ios: name.ios as any, android: name.android as any, web: name.android as any }}
+        size={size}
+        tintColor={color}
+        weight="medium"
+      />
+    </View>
   );
 }

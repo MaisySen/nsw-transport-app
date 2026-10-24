@@ -8,7 +8,7 @@ import { usePalette } from '@/lib/theme';
 import { daysText, shortName, todText } from '@/lib/format';
 import { disablePush, enablePush, getPushState, PushState } from '@/lib/push';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/lib/haptic';
 import { store, useStore } from '@/lib/store';
 import { FARE_TYPES } from '@/lib/fare';
 import { endLive } from '@/lib/live';
@@ -17,6 +17,7 @@ import { Row, Screen, Section, Sep, T } from '@/components/ui';
 import { ActionSheet, type SheetAction } from '@/components/Sheet';
 import { syncLiftAlerts } from '@/lib/liftAlerts';
 import type { Commute } from '@/lib/types';
+import { COMPANY } from '@/lib/company';
 
 export default function Settings() {
   const c = usePalette();
@@ -39,7 +40,7 @@ export default function Settings() {
       try {
         const r = await api.deleteHistory('history');
         const n = r.deleted?.searches ?? 0;
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        haptic.success();
         Alert.alert('Done', `Deleted ${n} trip search${n === 1 ? '' : 'es'}.`);
       } catch (e: any) { Alert.alert("Couldn't delete it", e.message); }
     } },
@@ -62,7 +63,7 @@ export default function Settings() {
       setAskCount(0);
       setPush(await getPushState());
       refresh();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptic.success();
       Alert.alert('All your data is deleted', 'This phone and the server no longer keep your trips, stops or alerts.');
     } },
   ]);
@@ -91,13 +92,13 @@ export default function Settings() {
   const editCommute = (cm: Commute) => setSheet({ title: cm.name, message: `${shortName(cm.from.name)} to ${shortName(cm.to.name)}, ${daysText(cm.days)} around ${cm.todText}`, actions: commuteActions(cm) });
   const fareName = (FARE_TYPES.find((f) => f.k === (st.fareType || 'adult')) || FARE_TYPES[0]).name;
   const pickFare = () => setSheet({ title: 'Opal fare type', message: 'Trips show an Opal fare estimate for this fare type. It is not your card\'s charge.',
-    actions: FARE_TYPES.map((f) => ({ text: f.name + ((st.fareType || 'adult') === f.k ? ' (current)' : ''), onPress: () => { Haptics.selectionAsync(); store.setFareType(f.k); } })) });
+    actions: FARE_TYPES.map((f) => ({ text: f.name + ((st.fareType || 'adult') === f.k ? ' (current)' : ''), onPress: () => { haptic.select(); store.setFareType(f.k); } })) });
   const n = (k: number) => (k ? ` (${k})` : '');
   const dataMenu = () => setSheet({ title: 'Privacy and data', message: 'Recent stops and trips are kept on this phone. The server keeps trips you search for 90 days, under this app\'s private id, to suggest commutes.',
     actions: [
-      ...(nStops ? [{ text: `Clear recent stops${n(nStops)}`, onPress: () => { store.clearRecents(); Haptics.selectionAsync(); } }] : []),
-      ...(nTrips ? [{ text: `Clear recent trips${n(nTrips)}`, onPress: () => { store.clearRecentTrips(); Haptics.selectionAsync(); } }] : []),
-      ...(askCount ? [{ text: `Clear Ask chat${n(askCount)}`, onPress: () => { AsyncStorage.removeItem('ask_chat_v1').catch(() => {}); setAskCount(0); Haptics.selectionAsync(); } }] : []),
+      ...(nStops ? [{ text: `Clear recent stops${n(nStops)}`, onPress: () => { store.clearRecents(); haptic.select(); } }] : []),
+      ...(nTrips ? [{ text: `Clear recent trips${n(nTrips)}`, onPress: () => { store.clearRecentTrips(); haptic.select(); } }] : []),
+      ...(askCount ? [{ text: `Clear Ask chat${n(askCount)}`, onPress: () => { AsyncStorage.removeItem('ask_chat_v1').catch(() => {}); setAskCount(0); haptic.select(); } }] : []),
       { text: 'Delete my trip history on server', icon: I.trash, destructive: true, onPress: deleteServerHistory },
       { text: 'Delete all my data', icon: I.trash, destructive: true, onPress: deleteAll },
     ] });
@@ -105,7 +106,7 @@ export default function Settings() {
   // Accessibility: step free trips and lift outage alerts for stations on saved trips.
   const [liftBusy, setLiftBusy] = useState(false);
   const setLift = async (on: boolean) => {
-    Haptics.selectionAsync();
+    haptic.select();
     if (!on) {
       store.setLiftAlerts(false);
       syncLiftAlerts(false).catch(() => {});
@@ -124,8 +125,8 @@ export default function Settings() {
       Alert.alert("Couldn't turn it on", e.message);
     } finally { setLiftBusy(false); }
   };
-  const sw = (v: boolean, onChange: (v: boolean) => void, disabled?: boolean) => (
-    <Switch value={v} onValueChange={onChange} disabled={disabled} trackColor={Platform.OS === 'android' ? { true: c.tint, false: c.fill } : undefined} thumbColor={Platform.OS === 'android' ? (v ? (c.dark ? '#062E6F' : '#fff') : c.text3) : undefined} />
+  const sw = (v: boolean, onChange: (v: boolean) => void, label: string, disabled?: boolean) => (
+    <Switch value={v} onValueChange={onChange} disabled={disabled} accessibilityLabel={label} trackColor={Platform.OS === 'android' ? { true: c.tint, false: c.fill } : undefined} thumbColor={Platform.OS === 'android' ? (v ? (c.dark ? '#062E6F' : '#fff') : c.text3) : undefined} />
   );
 
   const pushWord = push?.status === 'on' ? 'On' : push?.status === 'local' ? 'App open only' : push?.status === 'denied' ? 'Blocked' : 'Off';
@@ -161,17 +162,23 @@ export default function Settings() {
             onPress={pushOff ? (push?.status === 'denied' ? () => Linking.openSettings() : turnOn) : push?.status === 'on' ? test : undefined} chevron={pushOff} />
           <Sep inset={57} />
           <Row icon={I.access} iconBg={c.tint} title="Accessible trips" subtitle="Step free trips only" chevron={false}
-            right={sw(!!st.acc, (v) => { Haptics.selectionAsync(); store.setAcc(v); })} />
+            right={sw(!!st.acc, (v) => { store.setAcc(v); haptic.select(); }, 'Accessible trips')} />
           <Sep inset={57} />
           <Row icon={I.bell} iconBg={c.orange} title="Lift outage alerts" subtitle="Stations on your saved trips" chevron={false}
-            right={liftBusy ? <ActivityIndicator size="small" color={c.tint} /> : sw(!!st.liftAlerts, setLift)} />
+            right={liftBusy ? <ActivityIndicator size="small" color={c.tint} /> : sw(!!st.liftAlerts, setLift, 'Lift outage alerts')} />
           <Sep inset={57} />
           <Row icon={I.fare} iconBg={c.green} title="Opal fare type" right={<T kind="body" tone="text2">{fareName}</T>} onPress={pickFare} />
           <Sep inset={57} />
           <Row icon={I.trash} iconBg={c.text2} title="Privacy and data" onPress={dataMenu} />
         </Section>
 
-        <Section title="About" footer="Transport: Sydney Live is provided by Fintex Australia Pty Ltd. Data from Transport for NSW (CC BY 4.0) and OpenStreetMap contributors. Not made or endorsed by Transport for NSW.">
+        <Section title="About" footer={`Transport: Sydney Live is made by Fintex Australia Pty Ltd. Data from Transport for NSW (CC BY 4.0) and OpenStreetMap contributors. Not made or endorsed by Transport for NSW.\n\u00A9 ${new Date().getFullYear()} Fintex Australia Pty Ltd`}>
+          <Row title="Made by" right={<T kind="body" tone="text2">Fintex Australia Pty Ltd</T>} chevron={false} />
+          <Sep />
+          <Row title="Contact us" subtitle={COMPANY.email} onPress={() => Linking.openURL(`mailto:${COMPANY.email}`)} accessibilityHint="Opens your email app" />
+          <Sep />
+          <Row title="Fintex website" subtitle={COMPANY.site.replace('https://', '')} onPress={() => Linking.openURL(COMPANY.site)} accessibilityHint="Opens in your browser" />
+          <Sep />
           <Row title="Help and support" onPress={() => Linking.openURL('https://nsw-transport-bot.sites.tab.bot/support/')} />
           <Sep />
           <Row title="Privacy policy" onPress={() => Linking.openURL('https://nsw-transport-bot.sites.tab.bot/privacy/')} />

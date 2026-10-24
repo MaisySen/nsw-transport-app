@@ -51,11 +51,15 @@ export async function startLive(spec: WatchSpec, fare?: Fare | null) {
   const g: LiveTrip = { id: 'g' + Date.now().toString(36), title: spec.title, origin: spec.origin || null, to: spec.to || null, legs, fare: fare && fare.total != null ? fare : null,
     started: Date.now(), alerted: {}, share: null, watchId: null };
   setLive(g);
-  // The ongoing notification starts with the trip: ask for notifications here, once, if never asked.
-  if (Platform.OS !== 'web') {
-    try { const ps = await getPushState(); if (ps.status === 'off') await enablePush(false); } catch {}
-  }
-  liveWatch().catch(() => {});
+  // The ongoing notification starts with the trip: ask for notifications once, if never asked, then let the
+  // server follow the trip. This runs after Start trip has returned, so the live trip opens at once and the
+  // button never waits on the permission dialog or the network.
+  (async () => {
+    if (Platform.OS !== 'web') {
+      try { const ps = await getPushState(); if (ps.status === 'off') await enablePush(false); } catch {}
+    }
+    await liveWatch();
+  })().catch(() => {});
   return g;
 }
 

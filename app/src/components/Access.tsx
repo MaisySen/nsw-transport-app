@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/lib/haptic';
 import { api } from '@/lib/api';
 import { radius, usePalette } from '@/lib/theme';
 import { clock } from '@/lib/format';
@@ -19,7 +19,7 @@ export function Badge({ text, tone }: { text: string; tone: Tone }) {
   const col = toneColor(c, tone);
   return (
     <View style={[s.badge, { backgroundColor: col + (c.dark ? '33' : '22') }]}>
-      <T kind="caption" style={{ color: tone === 'green' ? c.liveText : tone === 'orange' ? c.lateText : tone === 'red' ? c.red : c.text2, fontWeight: '700' }}>{text}</T>
+      <T kind="caption" style={{ color: tone === 'green' ? c.liveText : tone === 'orange' ? c.lateText : tone === 'red' ? c.redText : c.text2, fontWeight: '700' }}>{text}</T>
     </View>
   );
 }
@@ -39,7 +39,7 @@ async function watchCarPark(p: CarPark, done: () => void) {
     }
     if (ps.status !== 'on' && ps.status !== 'local') { Alert.alert('Turn on alerts first', 'Settings > Alerts.'); return; }
     const r = await api.parkingWatch(p.id);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptic.success();
     done();
     const name = r.watch?.name || p.name;
     const st = r.now?.status;
@@ -134,7 +134,7 @@ export function StationInfo({ st }: { st?: Station | null }) {
                 <Pressable disabled={!u} onPress={() => u && Linking.openURL(u)} android_ripple={{ color: c.fill }} style={s.row}>
                   <Sym icon={I.access} bg={c.red} />
                   <View style={{ flex: 1 }}>
-                    <T kind="body" style={{ color: c.red }}>{o.kind === 'escalator' ? 'Escalator' : 'Lift'} out of service</T>
+                    <T kind="body" style={{ color: c.redText }}>{o.kind === 'escalator' ? 'Escalator' : 'Lift'} out of service</T>
                     <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{outageText(o.title, st.name)}</T>
                   </View>
                   {u ? <Icon name={I.chevron} size={14} color={c.text3} /> : null}
@@ -176,14 +176,14 @@ export function LegAccessChips({ access, from, to }: { access?: LegAccess | null
         {chips.map((ch, i) => (
           <View key={i} style={[s.accChip, { backgroundColor: toneColor(c, ch.tone) + (c.dark ? '33' : '1F') }]}>
             <Icon name={I.access} size={12} color={ch.tone === 'red' ? c.red : ch.tone === 'green' ? c.liveText : ch.tone === 'orange' ? c.lateText : c.text2} />
-            <T kind="caption" style={{ color: ch.tone === 'red' ? c.red : ch.tone === 'green' ? c.liveText : ch.tone === 'orange' ? c.lateText : c.text2, fontWeight: '600' }}>{ch.text}</T>
+            <T kind="caption" style={{ color: ch.tone === 'red' ? c.redText : ch.tone === 'green' ? c.liveText : ch.tone === 'orange' ? c.lateText : c.text2, fontWeight: '600' }}>{ch.text}</T>
           </View>
         ))}
       </View>
       {outs.map((o, i) => (
         <View key={i} style={{ flexDirection: 'row', gap: 6, marginTop: 6 }}>
           <Icon name={I.warn} size={13} color={c.red} style={{ marginTop: 1 }} />
-          <T kind="foot" style={{ color: c.red, flex: 1 }}>{o}</T>
+          <T kind="foot" style={{ color: c.redText, flex: 1 }}>{o}</T>
         </View>
       ))}
     </View>
@@ -197,7 +197,7 @@ export function OutageLine({ outages, inset = 82 }: { outages: string[]; inset?:
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, paddingLeft: inset, paddingRight: 16, paddingBottom: 10, marginTop: -4 }}>
       <Icon name={I.access} size={13} color={c.red} style={{ marginTop: 2 }} />
-      <T kind="foot" numberOfLines={2} style={{ color: c.red, flex: 1, fontWeight: '500' }}>Lift out: {outages[0]}{outages.length > 1 ? ` (+${outages.length - 1} more)` : ''}</T>
+      <T kind="foot" numberOfLines={2} style={{ color: c.redText, flex: 1, fontWeight: '500' }}>Lift out: {outages[0]}{outages.length > 1 ? ` (+${outages.length - 1} more)` : ''}</T>
     </View>
   );
 }

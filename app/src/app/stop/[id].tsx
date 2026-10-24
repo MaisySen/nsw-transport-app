@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/lib/haptic';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius } from '@/lib/theme';
@@ -51,7 +51,7 @@ export default function StopScreen() {
       <Stack.Screen options={{
         title,
         headerRight: () => (
-          <Pressable accessibilityRole="button" accessibilityLabel={starred ? 'Remove from Starred stops' : 'Add to Starred stops'} accessibilityState={{ selected: !!starred }} hitSlop={10} onPress={() => { Haptics.selectionAsync(); store.toggleStar({ id: String(id), name: data?.stop?.name || String(name || title) }); }}>
+          <Pressable accessibilityRole="button" accessibilityLabel={starred ? 'Remove from Starred stops' : 'Add to Starred stops'} accessibilityState={{ selected: !!starred }} hitSlop={13} onPress={() => { haptic.select(); store.toggleStar({ id: String(id), name: data?.stop?.name || String(name || title) }); }}>
             <Icon name={starred ? I.star : I.starOpen} size={22} color={starred ? c.yellow : c.tint} />
           </Pressable>
         ),

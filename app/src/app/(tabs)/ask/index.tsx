@@ -5,7 +5,7 @@ import { ActivityIndicator, FlatList, KeyboardAvoidingView, Linking, Platform, P
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/lib/haptic';
 import { BASE } from '@/lib/api';
 import { getDevice, PROFILE } from '@/lib/device';
 import { usePalette } from '@/lib/theme';
@@ -45,7 +45,7 @@ function status(it: { cancelled?: boolean; realtime?: boolean; delayMin?: number
 /** Opens a server link in the native screens: stop board, trip, live map. */
 function open(l?: Link | null) {
   if (!l) return;
-  Haptics.selectionAsync().catch(() => {});
+  haptic.select();
   if (l.kind === 'stop' && l.id) return router.push({ pathname: '/stop/[id]', params: { id: l.id, name: l.name || '' } });
   // A trip with stops (or a via) carries its legs and opens as a multi leg trip.
   if (l.kind === 'trip' && l.from && l.to) return router.push({ pathname: '/trip', params: { from: l.from, fromName: l.fn || '', to: l.to, toName: l.tn || '', ...(l.legs ? { legs: String(l.legs) } : {}) } });
@@ -173,7 +173,7 @@ export default function AskScreen() {
           <Row key={i} onPress={() => p.station && router.push({ pathname: '/stop/[id]', params: { id: p.station, name: '' } })}>
             <View style={st.mid}>
               <Text style={[st.t1, { color: c.text }]}>{p.name}</Text>
-              <Text style={[st.t2, { color: b.tone === 'green' ? c.liveText : b.tone === 'orange' ? c.lateText : b.tone === 'red' ? c.red : c.text2, fontWeight: '600' }]}>
+              <Text style={[st.t2, { color: b.tone === 'green' ? c.liveText : b.tone === 'orange' ? c.lateText : b.tone === 'red' ? c.redText : c.text2, fontWeight: '600' }]}>
                 {b.text}{p.free != null ? ` \u00b7 ${p.free} of ${p.spots} free` : ` \u00b7 ${p.spots} spaces`}
               </Text>
             </View>
@@ -194,7 +194,7 @@ export default function AskScreen() {
             {(sx.outages || []).map((o, i) => (
               <Row key={i} onPress={() => { const u = safeUrl(o.url); if (u) Linking.openURL(u); }}>
                 <View style={st.mid}>
-                  <Text style={[st.t1, { color: c.red }]}>{o.kind === 'escalator' ? 'Escalator' : 'Lift'} out of service</Text>
+                  <Text style={[st.t1, { color: c.redText }]}>{o.kind === 'escalator' ? 'Escalator' : 'Lift'} out of service</Text>
                   <Text numberOfLines={3} style={[st.t2, { color: c.text2 }]}>{outageText(o.title, sx.name)}</Text>
                 </View>
               </Row>
@@ -289,6 +289,6 @@ const st = StyleSheet.create({
   helloTitle: { fontSize: 20, fontWeight: '700' },
   helloBody: { fontSize: 15, marginTop: 6, textAlign: 'center', maxWidth: 300 },
   bar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth },
-  input: { flex: 1, minHeight: 36, borderRadius: 18, paddingHorizontal: 14, fontSize: 17, borderWidth: StyleSheet.hairlineWidth },
+  input: { flex: 1, minHeight: 48, borderRadius: 18, paddingHorizontal: 14, fontSize: 17, borderWidth: StyleSheet.hairlineWidth },
   send: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
 });

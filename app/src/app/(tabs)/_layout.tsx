@@ -6,7 +6,11 @@ import { usePalette } from '@/lib/theme';
 export default function TabsLayout() {
   const c = usePalette();
   return (
-    <NativeTabs tintColor={c.tint} labelVisibilityMode="labeled">
+    <NativeTabs tintColor={c.tint} labelVisibilityMode="labeled" backgroundColor={c.card}
+      // Explicit colours so labels pass 4.5:1 in light and dark (Android and the web preview).
+      labelStyle={{ default: { color: c.text2 }, selected: { color: c.tint } }}
+      iconColor={{ default: c.text2, selected: c.tint }}
+      indicatorColor={c.dark ? '#2A3B57' : '#DCE6F8'} rippleColor={c.fill}>
       <NativeTabs.Trigger labelVisibilityMode="labeled" name="home">
         <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: 'house', selected: 'house.fill' }} md="home" />

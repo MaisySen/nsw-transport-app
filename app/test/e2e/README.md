@@ -7,7 +7,9 @@ Build the web export with the Android look and serve it as a single page app:
 
 Then, with Playwright installed (`playwright-core` and a Chrome; set CHROME to its path):
 
-- `node test/e2e/buttons.mjs out.json PORT` taps each main button once (bottom tabs, Opal fare, Later services, Include trips with a change, a service row, Start trip, Share trip, End trip, Save trip, star a stop, More rows) and checks it acted on the first tap.
+- `node test/e2e/buttons.mjs out.json PORT` taps each main button once (bottom tabs, Opal fare, Later services, Include trips with a change, a service row, Start trip, Share trip, End trip, Save trip, star a stop, More rows, a menu sheet choice, the About rows for Fintex, the Opal machines list and filter) and checks it acted on the first tap.
+- `node test/e2e/mapscroll.mjs PORT` checks that the map on the Opal machines page does not trap the page scroll (no wheel zoom on the embedded map, + and - buttons instead) and that the page scrolls on and off the map.
+- `AXE=<path to axe.min.js> node test/e2e/a11y.mjs OUT PORT` runs axe (WCAG 2.1 A and AA) on every main screen in light and dark, and lists tappable things smaller than 48 by 48 (on the web hit slop is not counted, so header icons with a 13 dp slop and the web tab bar show up there; on Android the native tab bar is 80 dp tall).
 - `node test/e2e/live-replay.mjs OUT light PORT Burwood "Burwood Station" Strathfield "Strathfield Station"` plans a real short trip, taps Start trip, then moves a fake clock through boarding, the stop, arrival and 15 minutes past it. Each stage is screenshotted and every alert, ongoing notification change and the trip end is written to OUT/replay.json. Set NOWATCH=1 to run with phone side alerts instead of the server watch.
 
 The unit replay in `test/livereplay.test.mjs` covers the same stages with a fake feed and runs with the other tests.

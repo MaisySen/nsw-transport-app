@@ -17,7 +17,7 @@ export default function TransitMap(p: TransitMapProps) {
     setTimeout(() => ref.current?.fitToCoordinates([{ latitude: s, longitude: w }, { latitude: n, longitude: e }], { edgePadding: { top: 80, left: 40, right: 40, bottom: (p.bottomInset || 0) + 40 }, animated: false }), 50);
   }, [p]);
   return (
-    <MapView ref={ref} style={[{ flex: 1 }, p.style]} showsUserLocation showsPointsOfInterests={false} showsCompass={false} pitchEnabled={false}
+    <MapView ref={ref} style={[{ flex: 1 }, p.style]} showsUserLocation showsPointsOfInterests={false} showsCompass={false} pitchEnabled={false} rotateEnabled={!p.embedded}
       initialRegion={{ latitude: -33.8688, longitude: 151.2093, latitudeDelta: 0.2, longitudeDelta: 0.2 }}>
       {coords.length > 1 ? <Polyline coordinates={coords} strokeColor={p.color} strokeWidth={5} lineCap="round" lineJoin="round" /> : null}
       {(p.stops || []).filter((s) => s.lat != null && s.lon != null).map((s) => (

@@ -1,19 +1,23 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-import * as Haptics from 'expo-haptics';
-import { modeColor, usePalette } from '@/lib/theme';
+// Buttons revealed by a swipe use the gesture handler's Pressable: on Android a React Native Pressable there
+// can lose its press to the swipe gesture.
+import { Pressable as GHPressable } from 'react-native-gesture-handler';
+import { haptic } from '@/lib/haptic';
+import { modeColor, onColor, usePalette } from '@/lib/theme';
 import { bestTime, clock, countdown, delayWords, ms, shortName } from '@/lib/format';
 import type { Departure, Journey, Leg } from '@/lib/types';
 import { Icon, I, modeIconName } from './Icon';
 import { font, T } from './ui';
 
 export function LineBadge({ line, mode, color, small }: { line?: string; mode?: string; color?: string; small?: boolean }) {
-  const bg = color || modeColor[mode || 'bus'] || '#888';
+  const bg = color || modeColor[mode || 'bus'] || '#888888';
+  const fg = onColor(bg);
   return (
     <View style={[st.badge, small && st.badgeSm, { backgroundColor: bg }]}>
-      <Icon name={modeIconName(mode)} size={small ? 11 : 13} color="#fff" />
-      {line ? <Text maxFontSizeMultiplier={1.3} style={[st.badgeText, small && { fontSize: 13 }]} numberOfLines={1}>{line}</Text> : null}
+      <Icon name={modeIconName(mode)} size={small ? 11 : 13} color={fg} />
+      {line ? <Text maxFontSizeMultiplier={1.3} style={[st.badgeText, { color: fg }, small && { fontSize: 13 }]} numberOfLines={1}>{line}</Text> : null}
     </View>
   );
 }
@@ -51,7 +55,7 @@ export function LiveStamp({ updatedAt, error }: { updatedAt: number | null; erro
 export function StatusLine({ realtime, delayMin, cancelled }: { realtime?: boolean; delayMin?: number | null; cancelled?: boolean }) {
   const c = usePalette();
   const d = delayWords(delayMin, realtime, cancelled);
-  const color = d.tone === 'green' ? c.liveText : d.tone === 'orange' ? c.lateText : d.tone === 'red' ? c.red : c.text2;
+  const color = d.tone === 'green' ? c.liveText : d.tone === 'orange' ? c.lateText : d.tone === 'red' ? c.redText : c.text2;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       {realtime && !cancelled ? <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color, marginRight: 5 }} /> : null}
@@ -90,13 +94,13 @@ export function DepartureRow({ d, now, onPress, onWatch, watched, showStop, aler
   if (d.stopsAway != null && d.realtime && d.stopsAway >= 0 && d.stopsAway <= 15) extra.push(d.stopsAway === 0 ? 'At the stop' : `${d.stopsAway} stop${d.stopsAway === 1 ? '' : 's'} away`);
   if (d.occupancy?.text) extra.push(d.occupancy.text);
   const right = () => (
-    <Pressable onPress={() => { sw.current?.close(); onWatch?.(); }} style={[st.swipeAct, { backgroundColor: watched ? c.text2 : c.indigo }]}>
+    <GHPressable onPress={() => { sw.current?.close(); onWatch?.(); }} accessibilityRole="button" accessibilityLabel={watched ? 'Stop watching' : 'Watch'} style={[st.swipeAct, { backgroundColor: watched ? c.text2 : c.indigo }]}>
       <Icon name={watched ? I.bellOff : I.bell} size={20} color="#fff" />
       <Text style={[font.foot, { color: '#fff', fontWeight: '600', marginTop: 3 }]}>{watched ? 'Stop' : 'Watch'}</Text>
-    </Pressable>
+    </GHPressable>
   );
   const body = (
-    <Pressable onPress={onPress} onLongPress={onWatch ? () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onWatch(); } : undefined}
+    <Pressable onPress={onPress} onLongPress={onWatch ? () => { haptic.tap(); onWatch(); } : undefined}
       android_ripple={{ color: c.fill }} style={({ pressed }) => [st.depRow, { backgroundColor: pressed && Platform.OS === 'ios' ? c.card2 : c.card }]}>
       <View style={{ width: 66, alignItems: 'flex-start' }}><LineBadge line={d.line} mode={d.mode} color={d.color} /></View>
       <View style={{ flex: 1, marginRight: 8 }}>
@@ -124,7 +128,7 @@ export function DepartureRow({ d, now, onPress, onWatch, watched, showStop, aler
   if (!onWatch) return body;
   return (
     <ReanimatedSwipeable ref={sw} friction={2} rightThreshold={40} renderRightActions={right} overshootRight={false}
-      onSwipeableWillOpen={() => Haptics.selectionAsync()}>
+      onSwipeableWillOpen={() => haptic.select()}>
       {body}
     </ReanimatedSwipeable>
   );

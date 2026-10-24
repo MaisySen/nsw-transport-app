@@ -1,3 +1,4 @@
+import { withTimeout } from './gesture';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
@@ -43,7 +44,11 @@ export async function enablePush(welcome = true): Promise<PushState> {
   if (!Device.isDevice) return { status: 'local', detail: 'Simulator' };
   try {
     const projectId = (Constants.expoConfig as any)?.extra?.eas?.projectId || (Constants as any).easConfig?.projectId;
-    const { data } = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
+    // Without a push service on the phone (an Android build with no Firebase project yet) the token call can
+    // wait for ever, so it gets 10 seconds; alerts then show while the app is open.
+    const tok = await withTimeout(Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined), 10000, null);
+    if (!tok) return { status: 'local', detail: 'No push token' };
+    const { data } = tok;
     await api.registerExpo(data, Platform.OS, welcome);
     await AsyncStorage.setItem('expoPushToken', data);
     return { status: 'on' };
