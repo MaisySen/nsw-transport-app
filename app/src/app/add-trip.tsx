@@ -4,6 +4,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
+import { useStopSearch } from '@/lib/stopSearch';
 import { usePalette, radius } from '@/lib/theme';
 import { MODE_BY_CODE, shortName } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
@@ -13,21 +14,6 @@ import { nearbyStops, pullHome } from '@/components/Home';
 import { Button, Row, Screen, Section, Sep, T, font } from '@/components/ui';
 
 type Field = 'from' | 'to';
-
-function useStopSearch(q: string) {
-  const [items, setItems] = useState<SearchItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  useEffect(() => {
-    if (q.trim().length < 2) { setItems([]); return; }
-    let live = true;
-    setLoading(true);
-    const t = setTimeout(() => {
-      api.search(q.trim()).then((r) => { if (live) setItems(r.items || []); }).catch(() => {}).finally(() => live && setLoading(false));
-    }, 220);
-    return () => { live = false; clearTimeout(t); };
-  }, [q]);
-  return { items, loading };
-}
 
 function useNearbyIfAllowed() {
   const [items, setItems] = useState<(Place & { distance?: number })[]>([]);

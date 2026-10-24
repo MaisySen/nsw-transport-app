@@ -291,7 +291,11 @@ export function deleteTrip(trip: TripItem) {
   haptic.success();
 }
 
-export function TripBoard({ trip, now, handle, allServices }: { trip: TripItem; now: number; handle?: React.ReactNode | ((open: () => void) => React.ReactNode); allServices?: boolean }) {
+export function TripBoard({ trip, now, handle, allServices, below, aside }: { trip: TripItem; now: number; handle?: React.ReactNode | ((open: () => void) => React.ReactNode); allServices?: boolean;
+  /** A button beside the header, outside its tap area (the commute swap), so a tap on it never also opens the trip. */
+  aside?: React.ReactNode;
+  /** Extra content under the header that reads the services shown (the commute card's leave time). */
+  below?: (js: Journey[]) => React.ReactNode }) {
   const c = usePalette();
   const { from, to, via } = trip;
   const plan = { from, to, via, conn: trip.conn, legs: trip.legs, modes: trip.modes };
@@ -349,7 +353,9 @@ export function TripBoard({ trip, now, handle, allServices }: { trip: TripItem; 
               </View>
             ) : null} />
         </View>
+        {aside ? <View style={{ justifyContent: 'center', paddingRight: 6 }}>{aside}</View> : null}
       </View>
+      {below && js.length ? below(js) : null}
       {!data ? <T kind="foot" tone="text2" style={s.note}>{error ? 'Live times unavailable right now, trying again' : 'Loading live times'}</T> : null}
       {data && !js.length ? <T kind="foot" tone="text2" style={s.note}>{data.error || 'No more services today'}</T> : null}
       {js.map((j, i) => (

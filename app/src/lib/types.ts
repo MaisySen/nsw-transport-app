@@ -22,6 +22,8 @@ export type Leg = {
   planned?: string; estimated?: string; arrPlanned?: string; arrEstimated?: string; realtime?: boolean; delayMin?: number | null;
   durationMin: number; stops?: number; cancelled?: boolean; occupancy?: Occupancy; platformChangedFrom?: string | null; alerts?: Alert[];
   path?: [number, number][]; distanceM?: number;
+  /** The station ids around the platform or stand ids, from the planner. */
+  fromParent?: string; toParent?: string;
   /** Step free access and live lift outages at each end of a transit leg. */
   access?: import('./access').LegAccess | null;
 };
@@ -59,7 +61,9 @@ export type Commute = { id: string; name: string; from: Place; to: Place; tod: n
 export type Saved = { name: string; from: Place; to: Place };
 
 export type WatchLeg = { mode: string; line: string; tripId?: string | null; stopId: string; toStopId?: string | null; from?: string | null; to?: string | null;
-  planned: string; arrPlanned?: string | null; estimated?: string | null; fromPlatform?: string | null; toPlatform?: string | null; color?: string | null; towards?: string | null; destId?: string | null; walkBefore?: number };
+  planned: string; arrPlanned?: string | null; estimated?: string | null; fromPlatform?: string | null; toPlatform?: string | null; color?: string | null; towards?: string | null; destId?: string | null; walkBefore?: number;
+  /** Station ids of the boarding and get off stops, used to plan the next option after a missed change. */
+  fromParent?: string | null; toParent?: string | null };
 export type Watch = { id: string; kind: 'svc' | 'trip'; title: string; active: boolean; ended?: string | null; created: number; updated: number; expires: number;
   legs: WatchLeg[]; lead?: number | null; to?: Place | null; origin?: Place | null; snap?: any; replanned?: number };
 export type Note = { id: number; watch_id?: string; at: number; title: string; body: string; url?: string; pushed?: number };

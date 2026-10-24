@@ -124,6 +124,8 @@ export function tripAlerts(legs: WatchLeg[], s: LiveState, alerted: Record<strin
 export type LiveTripLike = {
   id: string; legs: WatchLeg[]; alerted: Record<string, 1>; watchId: string | null; share: { id: string; key: string; pos: boolean } | null;
   rode?: Record<number, number>; arrivedAt?: number | null;
+  /** Wake me before my stop is on: its alarm replaces the plain "Next stop" alert for each leg. */
+  wake?: boolean;
 };
 export type LiveAction =
   | { t: 'ongoing'; title: string; body: string; leg: number }
@@ -168,7 +170,7 @@ export function stepLive(g: LiveTripLike, svc: (ServiceResp | null | undefined)[
   let n: LiveTripLike = g;
   const m = nextMemo(memo, s);
   if (JSON.stringify(m.rode || {}) !== JSON.stringify(g.rode || {})) n = { ...n, rode: m.rode };
-  const list = tripAlerts(g.legs, s, n.alerted || {}, !!n.watchId, f);
+  const list = tripAlerts(g.legs, s, n.alerted || {}, !!n.watchId, f).filter((a) => !(g.wake && a.key.startsWith('off')));
   if (list.length) {
     const alerted = { ...(n.alerted || {}) };
     for (const a of list) { alerted[a.key] = 1; actions.push({ t: 'alert', id: `trip-${g.id}-${a.key}`, key: a.key, title: a.title, body: a.body }); }

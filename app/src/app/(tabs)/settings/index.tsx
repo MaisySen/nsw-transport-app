@@ -129,6 +129,8 @@ export default function Settings() {
     <Switch value={v} onValueChange={onChange} disabled={disabled} accessibilityLabel={label} trackColor={Platform.OS === 'android' ? { true: c.tint, false: c.fill } : undefined} thumbColor={Platform.OS === 'android' ? (v ? (c.dark ? '#062E6F' : '#fff') : c.text3) : undefined} />
   );
 
+  const pl = st.places || {};
+  const homeWork = pl.home || pl.work ? [pl.home ? `Home ${shortName(pl.home.name).replace(/ Station$/, '')}` : 'No home', pl.work ? `Work ${shortName(pl.work.name).replace(/ Station$/, '')}` : 'No work'].join(', ') : 'Not set';
   const pushWord = push?.status === 'on' ? 'On' : push?.status === 'local' ? 'App open only' : push?.status === 'denied' ? 'Blocked' : 'Off';
   const pushOff = !push || push.status === 'off' || push.status === 'denied';
 
@@ -137,6 +139,8 @@ export default function Settings() {
       <Stack.Screen options={{ title: 'More' }} />
       <Screen>
         <Section>
+          <Row icon={I.home} iconBg={c.tint} title="Home and work" subtitle={homeWork} onPress={() => router.push({ pathname: '/welcome', params: { edit: '1' } })} />
+          <Sep inset={57} />
           <Row icon={I.bell} iconBg={c.indigo} title="Watching" right={data?.watching ? <T kind="body" tone="text2">{String(data.watching)}</T> : undefined} onPress={() => router.push('/watching')} />
           <Sep inset={57} />
           <Row icon={I.car} iconBg="#0A84FF" title="Park and Ride" onPress={() => router.push('/parking')} />

@@ -20,6 +20,7 @@ import TransitMap from '@/components/TransitMap';
 import { Icon, I } from '@/components/Icon';
 import { LineBadge } from '@/components/Transit';
 import { Button, Sep, T } from '@/components/ui';
+import { NextOption, WakeRow } from '@/components/Smart';
 
 const noun = (m?: string) => (m === 'bus' || m === 'coach' ? 'bus' : m === 'ferry' ? 'ferry' : m === 'lightrail' ? 'tram' : m === 'metro' ? 'metro' : 'train');
 
@@ -218,13 +219,13 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
         </View>
       </View>
 
+      <WakeRow g={g} st={st} />
+
       {offline ? <Warn tone="grey" title={offline} body={ago != null ? `Last update ${ago < 90 ? `${ago} s` : `${Math.round(ago / 60)} min`} ago. Trying again.` : 'Trying again.'} /> : null}
       {!x.live && !offline ? <Warn tone="grey" title="No live data for this service" body="Times are from the timetable." /> : null}
-      {st.conns.filter((cn) => cn.risk !== 'ok').map((cn) => cn.risk === 'miss' ? (
-        <Warn key={cn.i} tone="bad" title={`You'll likely miss the ${clock(new Date(cn.next.planned).getTime())} ${cn.next.line} at ${short(cn.at)}`}
-          body={`Live times leave ${Math.abs(cn.spare)} min too little.`} link="Find the next connection"
-          onLink={() => router.push({ pathname: '/trip', params: { from: legs[cn.i].toStopId || '', fromName: legs[cn.i].to || '', to: g.to?.id || legs[last].toStopId || '', toName: g.to?.name || legs[last].to || '' } })} />
-      ) : (
+      {/* A change the live times say you will miss: the next way on, found at once, with Switch to this. */}
+      <NextOption g={g} st={st} />
+      {st.conns.filter((cn) => cn.risk === 'tight').map((cn) => (
         <Warn key={cn.i} tone="tight" title={`Tight change at ${short(cn.at)}`} body={`${Math.max(0, cn.spare)} min to catch the ${cn.next.line}${cn.next.fromPlatform ? ' from ' + plat(cn.next.fromPlatform) : ''}.`} />
       ))}
 

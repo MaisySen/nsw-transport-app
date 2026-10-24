@@ -23,7 +23,8 @@ export function tripSpec(j: Journey, from: Place, to: Place): WatchSpec {
   for (const x of j.legs) {
     if (x.kind === 'walk') { walk += x.durationMin; continue; }
     legs.push({ mode: x.mode || 'bus', line: x.line || '', tripId: x.tripId, stopId: x.stopId || '', toStopId: x.toStopId, from: x.from, to: x.to, planned: x.planned || '', arrPlanned: x.arrPlanned,
-      estimated: x.estimated, fromPlatform: x.fromPlatform, toPlatform: x.toPlatform, color: x.color, towards: shortName(x.towards), destId: x.destId, walkBefore: walk });
+      estimated: x.estimated, fromPlatform: x.fromPlatform, toPlatform: x.toPlatform, color: x.color, towards: shortName(x.towards), destId: x.destId, walkBefore: walk,
+      fromParent: x.fromParent, toParent: x.toParent });
     walk = 0;
   }
   return { kind: 'trip', title: `${shortName(from.name)} to ${shortName(to.name)}`, legs, origin: from, to, lead: legs[0]?.walkBefore || 0, key: tripKey(legs[0]?.tripId, legs[0]?.planned, legs[0]?.line) };

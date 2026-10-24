@@ -9,6 +9,8 @@ import { api } from './api';
 import { clock, shortName } from './format';
 import { clearOngoing, endLive, getLive, liveAlert, setLive, showOngoing, useLiveTrip } from './live';
 import { LiveState, progOf as progOfCalc, stepLive } from './liveCalc';
+import { wakeStep } from './smart';
+import { cancelWake, scheduleWake, wakeNow } from './smartNotify';
 import { endedWatches } from './push';
 import { modeColor } from './theme';
 import type { ServiceResp, WatchLeg } from './types';
@@ -38,6 +40,9 @@ let lastFull = 0;
 let svcCache: (ServiceResp | null)[] = [];
 let cacheFor: string | null = null;
 
+/** After the trip's legs change (Switch to this), the next refresh reads every leg again. */
+export function resetLiveCache() { svcCache = []; lastFull = 0; }
+
 /** One refresh of the trip you are on. Safe to call any time; does nothing without a trip. */
 export async function tickLive() {
   const cur = getLive();
@@ -65,8 +70,16 @@ export async function tickLive() {
     if (!g || g.id !== cur.id) return;
     const now = Date.now();
     const r = stepLive(g, svcCache, now, fmt);
+    // Wake me before my stop: one alarm per leg, set on the phone and moved with the live times.
+    const w = wakeStep({ id: g.id, legs: g.legs, wake: g.wake, wakeSet: g.wakeSet, alerted: r.g.alerted }, r.s, now, fmt);
     put({ svc: svcCache.slice(), st: r.s, offline: failed ? 'Connection lost. Showing the last live times.' : null, ...(failed ? {} : { updated: now }) });
-    if (r.g !== g) setLive({ ...g, alerted: r.g.alerted, watchId: r.g.watchId, rode: r.g.rode, arrivedAt: r.g.arrivedAt });
+    if (r.g !== g || w.g.alerted !== r.g.alerted || w.g.wakeSet !== g.wakeSet) setLive({ ...g, alerted: w.g.alerted, watchId: r.g.watchId, rode: r.g.rode, arrivedAt: r.g.arrivedAt, wakeSet: w.g.wakeSet });
+    for (const a of w.actions) {
+      if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, ...(a.t === 'wakeSchedule' ? { alarmAt: a.at } : {}), at: now });
+      if (a.t === 'wakeSchedule') await scheduleWake(a.id, a.at, a.title, a.body);
+      else if (a.t === 'wakeDue') await wakeNow(a.id, a.title, a.body);
+      else if (a.t === 'wakeCancel') await cancelWake(a.id);
+    }
     let buzzed = false;
     for (const a of r.actions) {
       // The web preview logs every action, so a browser replay can check each alert and the end of the trip.

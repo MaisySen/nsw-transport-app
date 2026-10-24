@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, PanResponder, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Alert, PanResponder, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 // Buttons revealed by a swipe use the gesture handler's Pressable: on Android a React Native Pressable there
 // can lose its press to the swipe gesture.
@@ -20,16 +20,9 @@ import { LineBadge } from '@/components/Transit';
 import { useLiveTrip } from '@/lib/live';
 import { modeColor, radius } from '@/lib/theme';
 import { Button, Empty, Row, Section, Screen, Sep, T } from '@/components/ui';
-
-/** Hour of the day in Sydney, 0 to 23. */
-function sydneyHour(t: number) {
-  try {
-    return Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Australia/Sydney' }).format(new Date(t))) % 24;
-  } catch {
-    return new Date(t).getHours();
-  }
-}
-
+import { LeaveLine, useMyPos } from '@/components/Smart';
+import { commuteDir, halfDayKey } from '@/lib/smart';
+import { useLoaded } from '@/lib/store';
 
 export default function Home() {
   const c = usePalette();
@@ -61,12 +54,29 @@ export default function Home() {
     seen.add(k);
     trips.push({ ...t, key: k, okey: t.kind === 'place' ? 'places' : k });
   };
+  // Your commute: one card on top, Home to Work before 12pm and Work to Home after, unless you swapped it for now.
+  const half = halfDayKey(now);
+  const flipped = st.commuteFlip === half;
+  let commute: TripItem | null = null;
   if (places.home && places.work && places.home.id !== places.work.id) {
-    const toWork: TripItem = { key: '', from: places.home, to: places.work, kind: 'place', tag: 'To work' };
-    const toHome: TripItem = { key: '', from: places.work, to: places.home, kind: 'place', tag: 'To home' };
-    const morning = sydneyHour(now) < 12;
-    (morning ? [toWork, toHome] : [toHome, toWork]).forEach(add);
+    const dir = commuteDir(now, flipped);
+    commute = dir === 'toWork'
+      ? { key: '', from: places.home, to: places.work, kind: 'place', tag: 'To work', name: 'To work' }
+      : { key: '', from: places.work, to: places.home, kind: 'place', tag: 'To home', name: 'To home' };
+    commute.key = tripKeyOf(commute);
+    seen.add(commute.key);
+    seen.add(tripKeyOf({ from: commute.to, to: commute.from }));
   }
+  const me = useMyPos();
+  // First launch: two questions, home and work. Skippable, and asked once.
+  const loaded = useLoaded();
+  const asked = useRef(false);
+  useEffect(() => {
+    if (!loaded || asked.current || st.onboarded || (places.home && places.work)) return;
+    asked.current = true;
+    const t = setTimeout(() => router.push('/welcome'), 300);
+    return () => clearTimeout(t);
+  }, [loaded, st.onboarded, places.home, places.work]);
   (d?.commutes.items || []).filter((x) => x.active).forEach((cm) => add({ key: '', from: cm.from, to: cm.to, kind: 'commute', name: cm.name, id: cm.id }));
   (st.myTrips || []).forEach((m) => add({ key: '', from: m.from, to: m.to, via: m.via, conn: m.conn, legs: m.legs, modes: m.modes, kind: 'mine', name: m.name }));
   (d?.saved.items || []).forEach((s) => add({ key: '', from: s.from, to: s.to, kind: 'saved', name: s.name }));
@@ -146,6 +156,13 @@ export default function Home() {
           </Section>
         ) : null}
 
+        {commute ? (
+          <HomeSection title="Your commute">
+            <TripBoard trip={commute} now={now} aside={<SwapButton to={commute.tag === 'To work' ? 'To home' : 'To work'} onPress={() => { store.setCommuteFlip(flipped ? null : half); haptic.select(); }} />}
+              below={(js) => <LeaveLine js={js} now={now} me={me} />} />
+          </HomeSection>
+        ) : null}
+
         <HomeSection title="Your trips" action={{ title: 'Add', label: 'Add a trip', onPress: () => router.push('/new-trip') }}>
           <DragTrips trips={sorted} now={now} all={st.allServices || {}} onScroll={setScrollOn} />
           {d && !trips.length ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 6 }}>Save the trips you take. They show here with live times.</T> : null}
@@ -197,6 +214,17 @@ function LiveBar({ title, line, mode, color }: { title: string; line?: string; m
       </View>
       {line ? <LineBadge small line={line} mode={mode} color={color || modeColor[mode || 'train']} /> : null}
       <Icon name={I.chevron} size={14} color="#fff" style={{ marginLeft: 8 }} />
+    </Pressable>
+  );
+}
+
+/** Swaps the commute card's direction until the next 12 (noon or midnight). */
+function SwapButton({ to, onPress }: { to: string; onPress: () => void }) {
+  const c = usePalette();
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`Swap direction, show ${to.toLowerCase()}`} android_ripple={{ color: c.fill, borderless: true, radius: 24 }}
+      style={({ pressed }) => ({ width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 24, opacity: pressed && Platform.OS !== 'android' ? 0.6 : 1 })}>
+      <Icon name={I.swap} size={20} color={c.tint} />
     </Pressable>
   );
 }

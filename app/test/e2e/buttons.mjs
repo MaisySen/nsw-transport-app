@@ -18,6 +18,23 @@ const res = [];
 const vis = (l) => l.locator("visible=true").first();
 async function check(name, act, ok) { let pass = false, note = ""; try { await act(); await page.waitForTimeout(1500); pass = !!(await ok()); } catch (e) { note = String(e).slice(0, 160); } res.push({ name, pass, note, url: page.url().replace(base, "") }); }
 await page.goto(base + "/home"); await page.waitForTimeout(7000);
+// First launch: two questions, home and work, then Home shows the commute card at once.
+await check("Setup opens on first launch", async () => {}, async () => page.url().includes("/welcome") && (await page.getByText("Where's home?").locator("visible=true").count()) === 1);
+await check("Setup: pick home Burwood", async () => { await vis(page.getByLabel("Home station")).fill("Burwood"); await page.waitForTimeout(3500); await vis(page.getByText(/^Burwood( Station)?$/)).click({ timeout: 5000 }); }, async () => (await page.getByText("Where's work?").locator("visible=true").count()) === 1);
+await check("Setup: pick work Strathfield", async () => { await vis(page.getByLabel("Work station")).fill("Strathfield"); await page.waitForTimeout(3500); await vis(page.getByText(/^Strathfield( Station)?$/)).click({ timeout: 5000 }); }, async () => page.url().endsWith("/home"));
+const commuteTitle = async () => (await page.getByText(/^To (work|home): /).locator("visible=true").first().textContent({ timeout: 8000 }).catch(() => "")) || "";
+let t0 = "";
+await check("Home: commute card on top, direction by time of day", async () => { await page.waitForTimeout(5000); t0 = await commuteTitle(); }, async () => { const h = Number(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hour12: false, timeZone: "Australia/Sydney" }).format(new Date())) % 24; return h < 12 ? t0 === "To work: Burwood to Strathfield" : t0 === "To home: Strathfield to Burwood"; });
+await check("Home: swap flips the commute", () => vis(page.getByRole("button", { name: /^Swap direction/ })).click({ timeout: 5000 }), async () => { await page.waitForTimeout(3000); const t1 = await commuteTitle(); return page.url().endsWith("/home") && !!t1 && t1 !== t0; });
+// After the swap at night the card is To work, Burwood to Strathfield; the browser stands at Burwood.
+await check("Home: Leave in N min from your location", async () => { await page.waitForTimeout(6000); }, async () => (await page.getByText(/^Leave (now|in \d+ (min|h))/).locator("visible=true").count()) >= 1);
+// Remind me shows while there is at least a minute before you have to leave; wait for one if it is Leave now.
+for (let k = 0; k < 6 && (await page.getByRole("button", { name: /^Remind me at / }).locator("visible=true").count()) === 0; k++) await page.waitForTimeout(15000);
+{
+  await check("Home: Remind me sets a leave alert", () => vis(page.getByRole("button", { name: /^Remind me at / })).click({ timeout: 5000 }), async () => (await page.getByRole("button", { name: /^Cancel the reminder at / }).locator("visible=true").count()) === 1);
+  await check("Home: Cancel the reminder", () => vis(page.getByRole("button", { name: /^Cancel the reminder at / })).click({ timeout: 5000 }), async () => (await page.getByRole("button", { name: /^Remind me at / }).locator("visible=true").count()) === 1);
+}
+await check("Home: swap back", () => vis(page.getByRole("button", { name: /^Swap direction/ })).click({ timeout: 5000 }), async () => { await page.waitForTimeout(2500); return page.url().endsWith("/home") && (await commuteTitle()) === t0; });
 for (const [tab, path] of [["Plan", "/search"], ["Ask", "/ask"], ["More", "/settings"], ["Home", "/home"]]) {
   await check(`tab ${tab}`, () => vis(page.getByRole("tab", { name: tab, exact: true })).click({ timeout: 5000 }), async () => page.url().endsWith(path));
 }
@@ -29,6 +46,8 @@ await check("Include trips with a change", () => vis(page.getByRole("switch", { 
 await check("Tap a service closes its details", () => vis(page.getByLabel(/^Leaves /)).click({ timeout: 5000 }), async () => (await page.getByText("Start trip", { exact: true }).locator("visible=true").count()) === 0);
 await check("Tap a service opens its details", () => vis(page.getByLabel(/^Leaves /)).click({ timeout: 5000 }), async () => (await page.getByText("Start trip", { exact: true }).locator("visible=true").count()) === 1);
 await check("Start trip", () => vis(page.getByText("Start trip", { exact: true })).click({ timeout: 5000 }), async () => { await page.waitForTimeout(2500); return page.url().includes("/go"); });
+await check("Wake me before my stop: on", () => vis(page.getByRole("switch", { name: "Wake me before my stop" })).click({ timeout: 5000 }), async () => { await page.waitForTimeout(1500); return (await vis(page.getByRole("switch", { name: "Wake me before my stop" })).isChecked()) && JSON.parse((await page.evaluate(() => localStorage.getItem("liveTrip"))) || "{}").wake === true; });
+await check("Wake me before my stop: off", () => vis(page.getByRole("switch", { name: "Wake me before my stop" })).click({ timeout: 5000 }), async () => { await page.waitForTimeout(1500); return !(await vis(page.getByRole("switch", { name: "Wake me before my stop" })).isChecked()); });
 await check("Share trip", () => vis(page.getByText("Share trip", { exact: true })).click({ timeout: 5000 }), async () => (await page.locator("#__dlg").count()) === 1);
 await check("Share dialog Cancel", () => page.locator("#__dlg button", { hasText: "Cancel" }).click({ timeout: 5000 }), async () => (await page.locator("#__dlg").count()) === 0);
 await check("End trip asks", () => vis(page.getByText("End trip", { exact: true })).click({ timeout: 5000 }), async () => (await page.locator("#__dlg").count()) === 1);
@@ -37,6 +56,9 @@ await check("Save trip star", () => vis(page.getByRole("button", { name: "Save t
 await page.goto(base + "/stop/200060?name=Central+Station"); await page.waitForTimeout(6000);
 await check("Star a stop", () => vis(page.getByLabel("Add to Starred stops")).click({ timeout: 5000 }), async () => (await page.getByLabel("Remove from Starred stops").locator("visible=true").count()) === 1);
 await page.goto(base + "/settings"); await page.waitForTimeout(5000);
+await check("More: Home and work shows both", async () => {}, async () => (await page.getByText("Home Burwood, Work Strathfield", { exact: true }).locator("visible=true").count()) === 1);
+await check("More: Home and work opens setup to edit", () => vis(page.getByText("Home and work", { exact: true })).click({ timeout: 5000 }), async () => page.url().includes("/welcome") && (await page.getByText("Home now").locator("visible=true").count()) === 1);
+await page.goto(base + "/settings"); await page.waitForTimeout(4000);
 await check("More: Watching", () => vis(page.getByText("Watching", { exact: true })).click({ timeout: 5000 }), async () => page.url().endsWith("/watching"));
 await page.goBack(); await page.waitForTimeout(1500);
 await check("More: Opal fare type", () => vis(page.getByText("Opal fare type", { exact: true })).click({ timeout: 5000 }), async () => (await page.getByText(/(current)/).locator("visible=true").count()) > 0);

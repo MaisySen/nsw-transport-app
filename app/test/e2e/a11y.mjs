@@ -10,13 +10,15 @@ const screens = [
   ["home", "/home"], ["plan", "/search"], ["ask", "/ask"], ["more", "/settings"],
   ["stop", "/stop/200060?name=Central+Station"],
   ["trip", "/trip?from=213410&fromName=Burwood+Station&to=213510&toName=Strathfield+Station"],
-  ["topup", "/topup"], ["parking", "/parking"], ["watching", "/watching"], ["newtrip", "/new-trip"],
+  ["topup", "/topup"], ["parking", "/parking"], ["watching", "/watching"], ["newtrip", "/new-trip"], ["welcome", "/welcome?edit=1"],
 ];
 const b = await chromium.launch({ executablePath: process.env.CHROME || undefined });
 const report = {};
 let total = 0;
 for (const scheme of ["light", "dark"]) {
   const ctx = await b.newContext({ viewport: { width: 412, height: 915 }, isMobile: true, hasTouch: true, colorScheme: scheme, geolocation: { latitude: -33.8773, longitude: 151.1040 }, permissions: ["geolocation"] });
+  // Home and work set, so Home shows the commute card with its leave time and swap button.
+  await ctx.addInitScript(() => { if (!localStorage.getItem("store")) localStorage.setItem("store", JSON.stringify({ onboarded: true, places: { home: { id: "213410", name: "Burwood Station" }, work: { id: "213510", name: "Strathfield Station" } } })); });
   const page = await ctx.newPage();
   for (const [name, path] of screens) {
     await page.goto(base + path); await page.waitForTimeout(name === "trip" ? 9000 : 5000);

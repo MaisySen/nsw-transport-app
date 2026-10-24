@@ -7,6 +7,8 @@ import { api } from './api';
 import { enablePush, getPushState } from './push';
 import type { Fare, Place, WatchLeg } from './types';
 import type { WatchSpec } from './watch';
+import { wakeId } from './smart';
+import { cancelWake } from './smartNotify';
 
 export type LiveShare = { id: string; key: string; url: string; pos: boolean };
 export type LiveTrip = {
@@ -14,6 +16,8 @@ export type LiveTrip = {
   alerted: Record<string, 1>; share: LiveShare | null; watchId: string | null; loc?: boolean;
   /** Arrival time of each leg while it was being ridden, and when the trip arrived. See LiveMemo. */
   rode?: Record<number, number>; arrivedAt?: number | null;
+  /** Wake me before my stop: on, and when each leg's alarm is set for (leg index to time). */
+  wake?: boolean; wakeSet?: Record<string, number>;
 };
 
 const KEY = 'liveTrip';
@@ -81,6 +85,8 @@ export async function endLive() {
   if (!g) return null;
   if (g.share) api.shareEnd(g.share.id, g.share.key).catch(() => {});
   if (g.watchId) api.stopWatch(g.watchId).catch(() => {});
+  // Wake alarms still set for this trip never ring after it ends.
+  for (const k of Object.keys(g.wakeSet || {})) cancelWake(wakeId(g.id, Number(k))).catch(() => {});
   setLive(null);
   await clearOngoing();
   return g;

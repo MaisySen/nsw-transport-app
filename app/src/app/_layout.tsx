@@ -59,6 +59,7 @@ export default function RootLayout() {
           <Stack.Screen name="new-trip" options={{ title: 'New trip', presentation: Platform.OS === 'ios' ? 'modal' : 'card' }} />
           <Stack.Screen name="add-trip" options={{ title: 'Add a trip', presentation: Platform.OS === 'ios' ? 'modal' : 'card' }} />
           <Stack.Screen name="watching" options={{ title: 'Watching' }} />
+          <Stack.Screen name="welcome" options={{ title: 'Set up' }} />
           <Stack.Screen name="watch/[id]" options={{ title: 'Watching', presentation: Platform.OS === 'ios' ? 'formSheet' : 'card', sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true }} />
         </Stack>
       </ThemeProvider>

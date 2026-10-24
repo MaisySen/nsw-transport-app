@@ -12,7 +12,14 @@ export type FareType = 'adult' | 'child' | 'concession' | 'gold';
 type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; watchedTrips: Record<string, string>; places: Places;
   myTrips: MyTrip[]; tripOrder: string[]; allServices: Record<string, boolean>; fareType: FareType;
   /** Settings > Accessibility: step free trips only, and lift outage alerts for stations on saved trips. */
-  acc?: boolean; liftAlerts?: boolean };
+  acc?: boolean; liftAlerts?: boolean;
+  /** The two question setup (home and work) was finished or skipped. */
+  onboarded?: boolean;
+  /** The commute card was swapped for this half day ("2026-10-24 pm"); it flips back at the next 12. */
+  commuteFlip?: string | null;
+  /** Remind me on the commute card: when the leave alert rings, and for which service. */
+  leaveReminder?: LeaveReminder | null };
+export type LeaveReminder = { at: number; dep: number; label: string };
 const EMPTY: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {}, places: {}, myTrips: [], tripOrder: [], allServices: {}, fareType: 'adult' };
 let state: State = { ...EMPTY };
 
@@ -71,7 +78,7 @@ export const store = {
   /** Saved trips on this phone, for lift outage alerts. */
   myTrips: (): MyTrip[] => state.myTrips || [],
   /** Delete all my data: everything this store keeps goes back to empty (the fare type stays). */
-  resetAll() { state = { ...EMPTY, fareType: state.fareType || 'adult', acc: !!state.acc }; save(); },
+  resetAll() { if (state.leaveReminder) import('./smartNotify').then((m) => m.cancelLeave()).catch(() => {}); state = { ...EMPTY, fareType: state.fareType || 'adult', acc: !!state.acc }; save(); },
   /** Remembers an A to B trip the user opened, newest first. */
   addRecentTrip(from: Place, to: Place) {
     if (!from?.id || !to?.id || from.id === to.id) return;
@@ -92,6 +99,9 @@ export const store = {
     state = { ...state, places };
     save();
   },
+  setOnboarded(on: boolean) { state = { ...state, onboarded: on }; save(); },
+  setCommuteFlip(key: string | null) { state = { ...state, commuteFlip: key }; save(); },
+  setLeaveReminder(r: LeaveReminder | null) { state = { ...state, leaveReminder: r }; save(); },
   saveMyTrip(t: MyTrip) {
     const k = tripKeyOf(t);
     state = { ...state, myTrips: [t, ...(state.myTrips || []).filter((x) => tripKeyOf(x) !== k && x.name !== t.name)].slice(0, 12) };
