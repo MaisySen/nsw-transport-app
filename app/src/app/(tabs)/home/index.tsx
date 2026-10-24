@@ -9,6 +9,7 @@ import { gripStep, type GripEvent, type GripState } from '@/lib/gesture';
 import { router, Stack } from 'expo-router';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
+import { cacheKey } from '@/lib/offlineCore';
 import { usePalette } from '@/lib/theme';
 import { store, tripKeyOf, useStore } from '@/lib/store';
 import { shortName } from '@/lib/format';
@@ -34,13 +35,17 @@ export default function Home() {
   const [pulling, setPulling] = useState(false);
   const [scrollOn, setScrollOn] = useState(true);
   const live = useLive(async () => {
+    let offline: any = null;
+    const soft = <T,>(p: Promise<T>, empty: T) => p.catch((e: any) => { if (e?.offline) offline = e; return empty; });
     const [commutes, saved, watches] = await Promise.all([
-      api.commutes().catch(() => ({ items: [], suggestion: null })),
-      api.saved().catch(() => ({ items: [] })),
-      api.watches().catch(() => ({ items: [], notes: [] })),
+      soft(api.commutes(), { items: [], suggestion: null } as unknown as Awaited<ReturnType<typeof api.commutes>>),
+      soft(api.saved(), { items: [] } as Awaited<ReturnType<typeof api.saved>>),
+      soft(api.watches(), { items: [], notes: [] } as unknown as Awaited<ReturnType<typeof api.watches>>),
     ]);
+    // No signal: fail so the saved trips list kept on the phone is shown instead of an empty one.
+    if (offline) throw offline;
     return { commutes, saved, watches };
-  }, 15000);
+  }, 15000, [], { cacheKey: cacheKey('home', 'lists') });
   const d = live.data;
   const activeWatches = (d?.watches.items || []).filter((w: any) => w.active);
   const sugg: any = d?.commutes.suggestion;

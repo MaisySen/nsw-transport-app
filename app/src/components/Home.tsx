@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
 import { useLive } from '@/lib/hooks';
+import { cacheKey, offlineText } from '@/lib/offlineCore';
 import { modeColor, onColor, radius, usePalette } from '@/lib/theme';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
 import type { Departure, Journey, Leg, Place } from '@/lib/types';
@@ -37,11 +38,30 @@ export function useLastLive() {
   return useSyncExternalStore((l) => { liveSubs.add(l); return () => { liveSubs.delete(l); }; }, () => lastLive, () => lastLive);
 }
 
-/** useLive at Home's 15 s pace, joined to pull to refresh and the Live stamp. */
-function useHomeLive<T>(load: (refresh: boolean) => Promise<T>, deps: any[]) {
-  const live = useLive(load, 15000, deps);
-  const { updatedAt, refresh } = live;
+// Cards showing times kept on the phone (no signal), for the Offline tag in Home's header.
+const offlineCards = new Map<string, number>();
+let offlineSnap = 0;
+function reportOffline(key: string, at: number | null) {
+  if (at) offlineCards.set(key, at); else offlineCards.delete(key);
+  const next = offlineCards.size ? Math.min(...offlineCards.values()) : 0;
+  if (next === offlineSnap) return;
+  offlineSnap = next;
+  liveSubs.forEach((f) => f());
+}
+function useOfflineSince() {
+  return useSyncExternalStore((l) => { liveSubs.add(l); return () => { liveSubs.delete(l); }; }, () => offlineSnap, () => offlineSnap);
+}
+
+/** useLive at Home's 15 s pace, joined to pull to refresh and the Live stamp. Answers are kept on the phone under `key`. */
+function useHomeLive<T>(load: (refresh: boolean) => Promise<T>, deps: any[], key?: string) {
+  const live = useLive(load, 15000, deps, { cacheKey: key });
+  const { updatedAt, refresh, offlineAt } = live;
   useEffect(() => { if (updatedAt) markLive(); }, [updatedAt]);
+  useEffect(() => {
+    if (!key) return;
+    reportOffline(key, offlineAt);
+    return () => reportOffline(key, null);
+  }, [key, offlineAt]);
   useEffect(() => {
     pullers.add(refresh);
     return () => { pullers.delete(refresh); };
@@ -301,8 +321,8 @@ export function TripBoard({ trip, now, handle, allServices, below, aside }: { tr
   const { from, to, via } = trip;
   const plan = { from, to, via, conn: trip.conn, legs: trip.legs, modes: trip.modes };
   const chain = isChain(plan);
-  const pkey = tripKey(plan) + JSON.stringify(chain ? tLegs(plan).map((l) => [l.mode, l.conn, l.any, l.walk]) : []);
-  const { data, error } = useHomeLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && !!allServices }), [pkey, chain && !!allServices]);
+  const pkey = tripPkey(plan);
+  const { data, error, offlineAt } = useHomeLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && !!allServices }), [pkey, chain && !!allServices], cacheKey('trip', tripCacheId(pkey, chain && !!allServices)));
 
   // Remember each live reading for the hold.
   useEffect(() => {
@@ -358,7 +378,8 @@ export function TripBoard({ trip, now, handle, allServices, below, aside }: { tr
       </View>
       {below && js.length ? below(js) : null}
       {!data ? <T kind="foot" tone="text2" style={s.note}>{error ? 'Live times unavailable right now, trying again' : 'Loading live times'}</T> : null}
-      {data && !js.length ? <T kind="foot" tone="text2" style={s.note}>{data.error || 'No more services today'}</T> : null}
+      {offlineAt ? <OfflineNote at={offlineAt} now={now} /> : null}
+      {data && !js.length ? <T kind="foot" tone="text2" style={s.note}>{offlineAt ? 'No kept times left for today' : data.error || 'No more services today'}</T> : null}
       {js.map((j, i) => (
         <View key={legKey(firstLeg(j)) + i}>
           <Sep inset={0} />
@@ -449,7 +470,7 @@ function groupDepartures(items: Departure[], now: number): Group[] {
 
 export function StopBoard({ stop, now, starred, distance, onLongPress }: { stop: Place; now: number; starred?: boolean; distance?: number; onLongPress?: () => void }) {
   const c = usePalette();
-  const { data, error } = useHomeLive((r) => api.departures(stop.id, r), [stop.id]);
+  const { data, error, offlineAt } = useHomeLive((r) => api.departures(stop.id, r), [stop.id], cacheKey('dep', stop.id));
   const groups = groupDepartures(data?.items || [], now);
   const name = shortName(data?.stop?.name || stop.name);
   return (
@@ -457,7 +478,8 @@ export function StopBoard({ stop, now, starred, distance, onLongPress }: { stop:
       <CardHeader title={name} glyph={starred ? I.star : undefined} glyphColor={c.yellow} right={distText(distance)} onLongPress={onLongPress}
         onPress={() => router.push({ pathname: '/stop/[id]', params: { id: stop.id, name: data?.stop?.name || stop.name } })} />
       {!data ? <T kind="foot" tone="text2" style={s.note}>{error ? 'Live times unavailable right now, trying again' : 'Loading live times'}</T> : null}
-      {data && !groups.length ? <T kind="foot" tone="text2" style={s.note}>No more services right now</T> : null}
+      {offlineAt ? <OfflineNote at={offlineAt} now={now} /> : null}
+      {data && !groups.length ? <T kind="foot" tone="text2" style={s.note}>{offlineAt ? 'No kept times left' : 'No more services right now'}</T> : null}
       {groups.map(({ d, next }, i) => {
         const t = cd(bestTime(d.planned, d.realtime ? d.estimated : null), now);
         const n = next ? cd(bestTime(next.planned, next.realtime ? next.estimated : null), now) : null;
@@ -605,9 +627,34 @@ export function PlaceBar({ places }: { places: { home?: Place; work?: Place } })
 }
 
 /** Small "Live 07:55" stamp with a green dot. */
+/** The cache id of a trip card: the trip key and the All services switch. The trip screen uses the same one. */
+export const tripCacheId = (pkey: string, all: boolean) => `${pkey}|${all ? 1 : 0}|${store.accOn() ? 1 : 0}`;
+/** The trip key Home and the trip screen share: from, via or legs, to, and each leg's settings. */
+export const tripPkey = (plan: Parameters<typeof tripKey>[0]) => tripKey(plan) + JSON.stringify(isChain(plan) ? tLegs(plan).map((l) => [l.mode, l.conn, l.any, l.walk]) : []);
+
+/** "Offline, times from 8:05am" under a card showing times kept on the phone. */
+function OfflineNote({ at, now }: { at: number; now: number }) {
+  const c = usePalette();
+  return (
+    <View style={[s.note, { flexDirection: 'row', alignItems: 'center' }]} accessibilityRole="text">
+      <Icon name={I.warn} size={11} color={c.orange} />
+      <T kind="foot" style={{ color: c.lateText, marginLeft: 5 }}>{offlineText(at, now)}</T>
+    </View>
+  );
+}
+
 export function LiveTag() {
   const c = usePalette();
   const t = useLastLive();
+  const off = useOfflineSince();
+  if (off) {
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel={offlineText(off, Date.now())}>
+        <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: c.orange, marginRight: 5 }} />
+        <T kind="foot" tone="text2">Offline</T>
+      </View>
+    );
+  }
   if (!t) return null;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel={`Live, updated ${hm24(t)}`}>

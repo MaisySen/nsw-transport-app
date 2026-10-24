@@ -4,6 +4,7 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
+import { cacheKey } from '@/lib/offlineCore';
 import { usePalette, radius } from '@/lib/theme';
 import { ms, rowAlert, shortName } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
@@ -23,7 +24,7 @@ export default function StopScreen() {
   const now = useNow(1000);
   const st = useStore();
   const [mode, setMode] = useState<string | null>(null);
-  const { data, error, updatedAt, refreshing, refresh } = useLive((r) => api.departures(String(id), r), 15000, [id]);
+  const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => api.departures(String(id), r), 15000, [id], { cacheKey: cacheKey('dep', String(id)) });
   const title = shortName(data?.stop?.name || name || 'Stop');
   const starred = st.starred.some((s) => s.id === id);
   const modes = useMemo(() => Array.from(new Set((data?.items || []).map((d) => d.mode))), [data]);
@@ -58,7 +59,7 @@ export default function StopScreen() {
       }} />
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 4 }}>
-          <LiveStamp updatedAt={updatedAt} error={error} />
+          <LiveStamp updatedAt={updatedAt} error={error} offlineAt={offlineAt} />
         </View>
 
         {modes.length > 1 ? (

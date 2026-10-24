@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { offlineText } from '@/lib/offlineCore';
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 // Buttons revealed by a swipe use the gesture handler's Pressable: on Android a React Native Pressable there
@@ -57,8 +58,16 @@ export function LiveDot({ beat, size = 7, color }: { beat?: any; size?: number; 
   );
 }
 
-export function LiveStamp({ updatedAt, error }: { updatedAt: number | null; error?: string | null }) {
+export function LiveStamp({ updatedAt, error, offlineAt }: { updatedAt: number | null; error?: string | null; offlineAt?: number | null }) {
   const c = usePalette();
+  if (offlineAt) {
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <LiveDot beat={offlineAt} color={c.orange} />
+        <T kind="foot" tone="text2" style={{ marginLeft: 2 }}>{offlineText(offlineAt, Date.now())}</T>
+      </View>
+    );
+  }
   if (!updatedAt) return <T kind="foot" tone="text2">Loading live times</T>;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>

@@ -41,8 +41,9 @@ async function req<T>(path: string, init?: RequestInit, timeoutMs = 20000): Prom
       try { return await once<T>(path, init, timeoutMs); } catch (e2: any) { e = e2; }
     }
     if (isNetErr(e)) {
-      if (/network request failed/i.test(String(e?.message || ''))) throw new Error("You're offline. Showing the last times I had.");
-      throw new Error('No answer from the server. Check your connection.');
+      // offline marks a failure to reach the server, so screens can fall back to the copy kept on the phone.
+      if (/network request failed/i.test(String(e?.message || ''))) throw Object.assign(new Error("You're offline. Showing the last times I had."), { offline: true });
+      throw Object.assign(new Error('No answer from the server. Check your connection.'), { offline: true });
     }
     throw e;
   }

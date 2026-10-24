@@ -21,7 +21,8 @@ import { tripSpec } from '@/lib/watch';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { openService } from '@/components/Cards';
 import { LineBadge, OccupancyChip } from '@/components/Transit';
-import { arrOf, ServiceRow, WarnLine } from '@/components/Home';
+import { arrOf, ServiceRow, tripCacheId, tripPkey, WarnLine } from '@/components/Home';
+import { cacheKey, offlineText } from '@/lib/offlineCore';
 import { RemindLastButton } from '@/components/LastHome';
 import { canRemind, lastTonightIndex, modeOfLegs } from '@/lib/lastHomeCore';
 import { Button, Empty, Screen, Sep, T } from '@/components/ui';
@@ -229,7 +230,8 @@ export default function TripScreen() {
   const c = usePalette();
   const now = useNow(1000);
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
-  const { data, error, updatedAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn }), 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn]);
+  const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn }), 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn],
+    { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn)) });
   const [extra, setExtra] = useState<Journey[]>([]);
   // Step free on or off asks again; earlier and later trips loaded before would be the other kind.
   useEffect(() => { setExtra([]); }, [accOn]);
@@ -361,7 +363,9 @@ export default function TripScreen() {
             <MoreButton title="Later services" busy={more === 1} onPress={() => loadMore(1)} />
           </View>
         ) : null}
-        {updatedAt ? (
+        {offlineAt ? (
+          <T kind="foot" tone="lateText" style={{ textAlign: 'center', marginTop: 14, fontVariant: ['tabular-nums'] }}>{offlineText(offlineAt, now)}</T>
+        ) : updatedAt ? (
           <T kind="foot" tone={error ? 'lateText' : 'text2'} style={{ textAlign: 'center', marginTop: 14, fontVariant: ['tabular-nums'] }}>
             {error ? `Offline. Live data updated ${hms(updatedAt)}` : `Live data updated ${hms(updatedAt)}`}
           </T>
