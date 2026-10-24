@@ -16,7 +16,8 @@ struct TransportWidgets: WidgetBundle {
 
 // MARK: Next trip widget
 
-/// The next services for a trip you pick, or Smart: Home to Work in the morning and back in the evening.
+/// The next services for a saved trip or two stops you pick, or Home and Work (auto): Home to Work in the
+/// morning and back in the evening.
 /// Data comes from the server, so the widget needs no shared storage with the app.
 struct NextTripWidget: Widget {
     var body: some WidgetConfiguration {
@@ -25,7 +26,7 @@ struct NextTripWidget: Widget {
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Next trip")
-        .description("A live countdown for your trip. Smart shows Home to Work in the morning and back in the evening.")
+        .description("Live countdown to your next trip.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge,
                             .accessoryCircular, .accessoryRectangular, .accessoryInline])
     }
@@ -117,11 +118,22 @@ struct NextTripProvider: AppIntentTimelineProvider {
     }
 
     static func load(_ c: NextTripIntent) async -> NextTripEntry {
-        if let f = c.from, let t = c.to {
+        switch c.effectiveMode {
+        case .stops:
+            guard let f = c.from, let t = c.to else {
+                return NextTripEntry(date: .now, title: "Next trip", from: "", to: "", trips: [],
+                                     message: "Touch and hold, then Edit Widget to pick From and To.")
+            }
             return await entry(title: "", from: f.ref, to: t.ref)
-        }
-        if let t = c.trip, !t.isSmart {
-            return await entry(title: t.name, from: t.from, to: t.to)
+        case .saved:
+            guard let t = c.trip, !t.isSmart, !t.isPlaceholder else {
+                return NextTripEntry(date: .now, title: "Next trip", from: "", to: "", trips: [],
+                                     message: c.trip?.isPlaceholder == true ? "Save a trip in the app first."
+                                         : "Touch and hold, then Edit Widget to pick a saved trip.")
+            }
+            return await entry(title: Naming.compact(t.name), from: t.from, to: t.to)
+        case .auto:
+            break
         }
         guard let pick = await SmartTrip.pick() else {
             return NextTripEntry(date: .now, title: "Next trip", from: "", to: "", trips: [],
@@ -579,7 +591,7 @@ struct StopBoardProvider: AppIntentTimelineProvider {
             guard let t = d.bestTime, t > now else { return nil }
             if !wanted.isEmpty && !wanted.contains(d.line.uppercased()) { return nil }
             return BoardRow(line: d.line, colorHex: d.color ?? Mode(raw: d.mode).fallbackHex, mode: d.mode ?? "bus",
-                            dest: Naming.short(d.dest ?? ""), time: t, isLive: d.isLive,
+                            dest: Naming.compact(Naming.short(d.dest ?? "")), time: t, isLive: d.isLive,
                             status: Delay.text(delayMin: d.delayMin, live: d.isLive, cancelled: d.isCancelled),
                             platform: d.platform)
         }

@@ -17,15 +17,19 @@ struct TripChoice: AppEntity, Hashable {
     var toName: String
 
     var isSmart: Bool { id == "smart" }
+    /// The one row the Trip picker shows when there are no saved trips yet.
+    var isPlaceholder: Bool { id == "none" }
 
     var displayRepresentation: DisplayRepresentation {
         if isSmart {
-            return DisplayRepresentation(title: "Smart", subtitle: "Home to Work in the morning, back in the evening")
+            return DisplayRepresentation(title: "Home and Work (auto)", subtitle: "Home to Work in the morning, back in the evening")
         }
-        return DisplayRepresentation(title: "\(name)", subtitle: "\(Naming.compact(fromName)) to \(Naming.compact(toName))")
+        if isPlaceholder { return DisplayRepresentation(title: "Save a trip in the app first") }
+        return DisplayRepresentation(title: "\(Naming.compact(name))", subtitle: "\(Naming.compact(fromName)) to \(Naming.compact(toName))")
     }
 
     static let smart = TripChoice(id: "smart", name: "Smart", fromID: "", fromName: "", toID: "", toName: "")
+    static let noSaved = TripChoice(id: "none", name: "Save a trip in the app first", fromID: "", fromName: "", toID: "", toName: "")
 
     init(id: String, name: String, fromID: String, fromName: String, toID: String, toName: String) {
         self.id = id; self.name = name; self.fromID = fromID; self.fromName = fromName; self.toID = toID; self.toName = toName
@@ -39,6 +43,7 @@ struct TripChoice: AppEntity, Hashable {
     /// Rebuilds a choice from its id.
     init?(id: String) {
         if id == "smart" { self = .smart; return }
+        if id == "none" { self = .noSaved; return }
         let p = id.components(separatedBy: "|")
         guard p.count >= 5 else { return nil }
         self.init(id: id, name: p[2], fromID: p[0], fromName: p[3], toID: p[1], toName: p[4])
@@ -53,22 +58,28 @@ struct TripChoiceQuery: EntityQuery {
         identifiers.compactMap { TripChoice(id: $0) }
     }
 
+    /// Your commutes and saved trips. Home and Work is its own choice under Show, so it is not listed here.
     func suggestedEntities() async throws -> [TripChoice] {
-        var out: [TripChoice] = [.smart]
+        var out: [TripChoice] = []
+        var answered = false
         let api = TransportAPI.shared
         if let c = try? await api.commutes(device: nil) {
+            answered = true
             for x in c.items where x.active != false {
                 out.append(TripChoice(name: x.name ?? "Commute \(x.todText ?? "")", from: x.from, to: x.to))
             }
         }
         if let s = try? await api.saved() {
+            answered = true
             for x in s { out.append(TripChoice(name: x.name.prefix(1).uppercased() + x.name.dropFirst(), from: x.from, to: x.to)) }
         }
         var seen = Set<String>()
-        return out.filter { seen.insert($0.id).inserted }
+        out = out.filter { seen.insert($0.id).inserted }
+        if out.isEmpty && answered { return [.noSaved] }
+        return out
     }
 
-    func defaultResult() async -> TripChoice? { .smart }
+    func defaultResult() async -> TripChoice? { nil }
 }
 
 /// A stop or station, found by typing its name.
@@ -81,7 +92,7 @@ struct StopChoice: AppEntity, Hashable {
     var stopID: String
     var name: String
 
-    var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(name)") }
+    var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(Naming.compact(name))") }
 
     init(_ s: StopRef) {
         stopID = s.id
@@ -126,23 +137,63 @@ struct StopChoiceQuery: EntityStringQuery {
     }
 }
 
+/// What the Next trip widget follows.
+enum TripMode: String, AppEnum {
+    case auto, saved, stops
+
+    static var typeDisplayRepresentation: TypeDisplayRepresentation { "Show" }
+    static var caseDisplayRepresentations: [TripMode: DisplayRepresentation] {
+        [.auto: "Home and Work (auto)", .saved: "Saved trip", .stops: "Pick stops"]
+    }
+}
+
 struct NextTripIntent: WidgetConfigurationIntent {
     static var title: LocalizedStringResource { "Next trip" }
-    static var description: IntentDescription { IntentDescription("Pick a saved trip, or two stops. Smart switches between Home and Work by time of day.") }
+    static var description: IntentDescription { IntentDescription("Live countdown to your next trip.") }
+
+    /// Empty on widgets set up before Show existed; `effectiveMode` maps those from their old values.
+    @Parameter(title: "Show")
+    var mode: TripMode?
 
     @Parameter(title: "Trip")
     var trip: TripChoice?
 
-    @Parameter(title: "Or from stop")
+    @Parameter(title: "From")
     var from: StopChoice?
 
-    @Parameter(title: "To stop")
+    @Parameter(title: "To")
     var to: StopChoice?
+
+    /// Only the rows for the chosen Show: Saved trip adds Trip, Pick stops adds From and To.
+    static var parameterSummary: some ParameterSummary {
+        When(\.$mode, .equalTo, .saved) {
+            Summary("Show \(\.$mode)") {
+                \.$trip
+            }
+        } otherwise: {
+            When(\.$mode, .equalTo, .stops) {
+                Summary("Show \(\.$mode)") {
+                    \.$from
+                    \.$to
+                }
+            } otherwise: {
+                Summary("Show \(\.$mode)")
+            }
+        }
+    }
+
+    /// The chosen Show, or for an older widget: its stops, then its trip, else Home and Work.
+    var effectiveMode: TripMode {
+        if let mode { return mode }
+        if from != nil && to != nil { return .stops }
+        if let t = trip, !t.isSmart, !t.isPlaceholder { return .saved }
+        return .auto
+    }
 
     init() {}
 
-    init(trip: TripChoice?, from: StopChoice? = nil, to: StopChoice? = nil) {
-        self.trip = trip; self.from = from; self.to = to
+    init(mode: TripMode? = nil, trip: TripChoice?, from: StopChoice? = nil, to: StopChoice? = nil) {
+        self.mode = mode; self.trip = trip; self.from = from; self.to = to
     }
 }
 
