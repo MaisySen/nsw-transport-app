@@ -430,24 +430,12 @@ struct LiveTripSheet: View {
                     }
 
                     Section {
-                        Button {
-                            Task {
-                                if let url = await store.liveShareURL() { shareURL = url; sharing = true }
-                            }
-                        } label: {
-                            Label(trip.share == nil ? "Share trip" : "Share trip link", systemImage: "square.and.arrow.up")
-                        }
-                        .accessibilityIdentifier("shareTrip")
                         if trip.share != nil {
                             Button("Stop sharing") { Task { await store.stopSharing() } }
                         }
                         Button { askLocation() } label: {
                             Label("Show where I am", systemImage: "location")
                         }
-                        Button(role: .destructive) { confirmEnd = true } label: {
-                            Label("End trip", systemImage: "stop.circle.fill")
-                        }
-                        .accessibilityIdentifier("endTrip")
                     } footer: {
                         Text("A shared link shows your progress and arrival time, not your location. It stops working when the trip ends.")
                     }
@@ -478,6 +466,34 @@ struct LiveTripSheet: View {
             }
             .listStyle(.insetGrouped)
             .contentMargins(.top, 4, for: .scrollContent)
+            .safeAreaInset(edge: .bottom) {
+                if let trip = store.liveTrip {
+                    HStack(spacing: 12) {
+                        Button {
+                            Task {
+                                if let url = await store.liveShareURL() { shareURL = url; sharing = true }
+                            }
+                        } label: {
+                            Label(trip.share == nil ? "Share trip" : "Share link", systemImage: "square.and.arrow.up")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("shareTrip")
+                        Button(role: .destructive) { confirmEnd = true } label: {
+                            Label("End trip", systemImage: "stop.circle.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .accessibilityIdentifier("endTrip")
+                    }
+                    .controlSize(.large)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 28)
+                    .background(.bar)
+                }
+            }
             .sheet(isPresented: $sharing) {
                 if let url = shareURL {
                     ShareSheet(items: [url])

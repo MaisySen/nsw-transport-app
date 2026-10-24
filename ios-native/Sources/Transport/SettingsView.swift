@@ -59,7 +59,6 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.inline)
                     .labelsHidden()
-                    .accessibilityIdentifier("fareType")
                 } header: {
                     Text("Opal fare estimates")
                 } footer: {

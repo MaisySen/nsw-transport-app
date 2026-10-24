@@ -14,8 +14,16 @@ A native iPhone app for live Sydney and NSW public transport, written in SwiftUI
 * **Watching**: everything the server is following for you, its live state and recent alerts. New alerts become local notifications while the app runs and on background refreshes.
 * **Widget** (`TransportWidget` extension): next live trips for your commute or first saved trip, in small, medium and Lock Screen sizes.
 * **Live Activity**: Lock Screen card and Dynamic Island for a followed service, with a countdown that ticks on its own.
+* **Build 9**:
+  * No suggested or popular stations anywhere. Home shows only what you saved, then Recent trips and Recent stops, each with Clear and Undo, and Remove by swipe or long press. Saved trips have Edit and Delete.
+  * Settings > Clear history: recent stops, recent trips, trip history on the server (`POST /api/history/delete`) and Delete all my data, each with a confirmation.
+  * Opal fare estimates: pick Adult, Child, Concession or Gold in Settings (sent as `fare`). A fare chip on each trip, a fare card on the trip with each leg, and an off peak nudge at peak times.
+  * Multi leg trips from Ask (`/api/plan`): Open trip and Save trip.
+  * Start trip: live map, countdown, next stop, get off alerts, connection warnings, Share trip (`/live/?t=`), a Trip in progress bar on Home, and a Live Activity with Dynamic Island updated while the app runs.
+  * Park and Ride live spaces, station access and lift outages, step free marks on each leg, Settings > Accessibility (step free trips, lift alerts for saved trip stations) and an Opal machine finder.
+  * Profile links (`nswtransport://profile/<id>`) ask before switching. The old shared test profile is never used; an install still on it moves to a private one and saves its trips again.
 * Haptics, Dynamic Type (system text styles everywhere), dark mode, VoiceOver labels.
-* Links: `nswtransport://stop/213516`, `nswtransport://track/213516`, `nswtransport://trip/213410/10101100`, `nswtransport://tab/watching`.
+* Links: `nswtransport://stop/213516`, `nswtransport://track/213516`, `nswtransport://trip/213410/10101100`, `nswtransport://tab/watching`, `nswtransport://profile/<id>`, `nswtransport://go` (the trip in progress).
 
 ## Layout
 

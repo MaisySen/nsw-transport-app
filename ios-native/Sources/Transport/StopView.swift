@@ -100,6 +100,7 @@ struct StopView: View {
     @State private var mode: String = "all"
     @State private var selected: ServiceKey?
     @State private var recentName: String?
+    @State private var station: StationInfo?
 
     var body: some View {
         List {
@@ -201,11 +202,19 @@ struct StopView: View {
                 }
             }
 
-            if stop.id.allSatisfy(\.isNumber) {
-                StationSections(stopID: stop.id)
+            if station != nil {
+                StationSections(info: station)
             }
         }
         .listStyle(.insetGrouped)
+        .task(id: stop.id) {
+            // Park and Ride, access, lifts and facilities for stations, every 2 minutes.
+            guard stop.id.allSatisfy(\.isNumber) else { return }
+            while !Task.isCancelled {
+                if let i = try? await store.api.station(id: stop.id) { station = i }
+                try? await Task.sleep(for: .seconds(120))
+            }
+        }
         .navigationTitle(Naming.short(data?.stop?.name ?? stop.name))
         .navigationBarTitleDisplayMode(.large)
         .toolbar {

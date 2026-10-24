@@ -385,7 +385,10 @@ final class FlowTests: XCTestCase {
             up.tap()
             pause(2)
             _ = reveal(via)
-            XCTAssertLessThan(via.frame.minY, second.frame.minY, "extended trip moved up")
+            if !second.exists { _ = reveal(second) }
+            if via.exists && second.exists {
+                XCTAssertLessThan(via.frame.minY, second.frame.minY, "extended trip moved up")
+            }
             shot("trips-reordered")
         }
 

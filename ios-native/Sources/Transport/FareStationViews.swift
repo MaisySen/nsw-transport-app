@@ -256,10 +256,10 @@ struct CarParkRow: View {
 // MARK: Station access and facilities
 
 /// Below a stop's departures: Park and Ride live spaces, access, lifts and the Opal machine.
+/// Station sections for a stop screen. The stop screen loads `info` (an empty view never runs a task).
 struct StationSections: View {
-    var stopID: String
+    var info: StationInfo?
     @Environment(AppStore.self) private var store
-    @State private var info: StationInfo?
 
     var body: some View {
         Group {
@@ -320,12 +320,6 @@ struct StationSections: View {
                 } footer: {
                     Text("Facilities from Transport for NSW open data (station facilities)\(info.read.map { ", read \($0)" } ?? ""). Lift status from Transport for NSW service alerts, live.")
                 }
-            }
-        }
-        .task(id: stopID) {
-            while !Task.isCancelled {
-                if let i = try? await store.api.station(id: stopID) { info = i }
-                try? await Task.sleep(for: .seconds(120))
             }
         }
     }

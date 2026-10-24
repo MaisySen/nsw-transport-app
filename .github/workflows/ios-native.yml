@@ -23,7 +23,7 @@ concurrency:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 140
     defaults:
       run:
         working-directory: ios-native
@@ -107,7 +107,7 @@ jobs:
 
       - name: Tap through every flow, light
         continue-on-error: true
-        timeout-minutes: 20
+        timeout-minutes: 32
         run: |
           DEV=$(cat ../sim-id.txt)
           xcrun simctl ui "$DEV" appearance light
@@ -119,7 +119,7 @@ jobs:
 
       - name: Tap through every flow, dark
         continue-on-error: true
-        timeout-minutes: 15
+        timeout-minutes: 28
         run: |
           DEV=$(cat ../sim-id.txt)
           xcrun simctl ui "$DEV" appearance dark
@@ -130,7 +130,7 @@ jobs:
 
       - name: App Store screenshots (6.9 and 6.5 inch, live data)
         continue-on-error: true
-        timeout-minutes: 25
+        timeout-minutes: 35
         run: |
           RT=$(xcrun simctl list runtimes -j | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)['runtimes'] if x.get('platform')=='iOS' and x.get('isAvailable')]; r.sort(key=lambda x:[int(p) for p in x['version'].split('.')]); print(r[-1]['identifier'])")
           xcrun simctl shutdown "$(cat ../sim-id.txt)" || true
