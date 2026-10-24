@@ -2530,7 +2530,7 @@ async function siteRoutes(request, env, url, exec) {
     if (message.length < 10) errors.message = "Write a few words so we know what to fix or answer.";
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) errors.email = "That email address does not look right.";
     if (Object.keys(errors).length) return isForm ? back("?error=" + Object.keys(errors).join(",") + "#contact") : json({ ok: false, errors }, 400);
-    if (!(await ensureSiteSchema(env).catch(() => false))) return isForm ? back("?error=server#contact") : json({ ok: false, errors: { form: "We could not save that right now. Please email bidur@mail.tab.bot instead." } }, 503);
+    if (!(await ensureSiteSchema(env).catch(() => false))) return isForm ? back("?error=server#contact") : json({ ok: false, errors: { form: "We could not save that right now. Please email contact@fintex.au instead." } }, 503);
     await db(env).prepare(`INSERT INTO feedback (at, topic, email, message, install, page) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
       .bind(Date.now(), topic, email, message, String(b.install || "").slice(0, 40), String(b.page || "").slice(0, 80)).run();
     return isForm ? Response.redirect(new URL("/support/thanks/", url.origin).toString(), 303) : json({ ok: true });
@@ -3927,7 +3927,7 @@ async function handleRequest(request, env, exec) {
     }
     if (/^\/api\/(hit|stats|feedback)$/.test(url.pathname)) {
       try { const s = await siteRoutes(request, env, url, exec); if (s) return s; }
-      catch (e) { return json({ ok: false, error: "server", errors: { form: "We could not save that right now. Please email bidur@mail.tab.bot instead." } }, 500); }
+      catch (e) { return json({ ok: false, error: "server", errors: { form: "We could not save that right now. Please email contact@fintex.au instead." } }, 500); }
     }
     feedStats.requests++;
     const p = url.searchParams;

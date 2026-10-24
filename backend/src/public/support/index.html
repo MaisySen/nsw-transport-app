@@ -58,9 +58,10 @@
 <p><b>Nearby stops are missing.</b> Allow location for Transport while using the app. Transport only covers NSW.</p>
 <p><b>Using a new phone.</b> Saved trips belong to your install. Email us the install ID from Settings on the old phone and we can move them.</p>
 <h2 id="delete">Deleting your data</h2>
-<p>Delete a saved trip by swiping left on it, or tap and hold it. Clear recent trips and stops with Clear next to their heading. In Settings, Clear history has Delete my trip history on server and Delete all my data, which work straight away. Stop watches in the Watching tab. You can also email <a href="mailto:bidur@mail.tab.bot?subject=Delete%20my%20Transport%20data">bidur@mail.tab.bot</a> with the install ID from the bottom of Settings. See the <a href="/privacy/">privacy policy</a>.</p>
+<p>Delete a saved trip by swiping left on it, or tap and hold it. Clear recent trips and stops with Clear next to their heading. In Settings, Clear history has Delete my trip history on server and Delete all my data, which work straight away. Stop watches in the Watching tab. You can also email <a href="mailto:contact@fintex.au?subject=Delete%20my%20Transport%20data">contact@fintex.au</a> with the install ID from the bottom of Settings. See the <a href="/privacy/">privacy policy</a>.</p>
 <h2 id="contact">Contact us</h2>
-<p>Email <a href="mailto:bidur@mail.tab.bot?subject=Transport%20app">bidur@mail.tab.bot</a> or use this form. We usually reply within two days.</p>
+<p>Email <a href="mailto:contact@fintex.au?subject=Transport%20app">contact@fintex.au</a> or use this form. We usually reply within two days.</p>
+<p>Transport: Sydney Live is provided by Fintex Australia Pty Ltd (ABN 60 688 406 108), New South Wales, Australia. Contact: <a href="mailto:contact@fintex.au">contact@fintex.au</a>.</p>
 <div class="card">
 <form class="form" id="fb" action="/api/feedback" method="post" novalidate>
   <div class="form-err" id="fbErr" role="alert"></div>
@@ -82,7 +83,7 @@
 <script>
 (function () {
   var f = document.getElementById("fb"), err = document.getElementById("fbErr"), btn = document.getElementById("fbBtn"), bt = document.getElementById("fbBtnT");
-  var msgs = { message: "Write a few words so we know what to fix or answer.", email: "That email address does not look right.", server: "We could not send that right now. Please try again, or email bidur@mail.tab.bot." };
+  var msgs = { message: "Write a few words so we know what to fix or answer.", email: "That email address does not look right.", server: "We could not send that right now. Please try again, or email contact@fintex.au." };
   function mark(id, bad) { var el = document.getElementById(id); el.classList.toggle("bad", bad); var inp = el.querySelector("input,textarea"); inp.setAttribute("aria-invalid", bad ? "true" : "false"); }
   function check() {
     var m = f.message.value.trim(), e = f.email.value.trim(), ok = true;
@@ -107,7 +108,7 @@
         err.textContent = es.form || (es.message || es.email ? "Please fix the highlighted fields." : msgs.server); err.classList.add("show");
         btn.disabled = false; btn.classList.remove("busy"); bt.textContent = "Send message";
       })
-      .catch(function () { err.textContent = "You look offline. Check your connection and try again, or email bidur@mail.tab.bot."; err.classList.add("show"); btn.disabled = false; btn.classList.remove("busy"); bt.textContent = "Send message"; });
+      .catch(function () { err.textContent = "You look offline. Check your connection and try again, or email contact@fintex.au."; err.classList.add("show"); btn.disabled = false; btn.classList.remove("busy"); bt.textContent = "Send message"; });
   });
 })();
 </script>
@@ -115,10 +116,10 @@
 <footer class="foot"><div class="foot-in">
   <div><a class="brand" href="/?about"><img src="/icon-192.png" alt="" width="28" height="28" loading="lazy">Transport</a>
     <p>Live Sydney and NSW departures, trip alerts and answers in plain words.</p>
-    <p>Questions or problems: <a href="mailto:bidur@mail.tab.bot?subject=Transport%20app">bidur@mail.tab.bot</a></p></div>
+    <p>Questions or problems: <a href="mailto:contact@fintex.au?subject=Transport%20app">contact@fintex.au</a></p></div>
   <div><h2>App</h2><ul><li><a href="/#/" data-open>Open the web app</a></li><li><a href="/download/">Get it on Android</a></li><li><a href="/download/#iphone">iPhone</a></li><li><a href="/support/">Help and support</a></li></ul></div>
   <div><h2>Legal</h2><ul><li><a href="/privacy/">Privacy policy</a></li><li><a href="/terms/">Terms of use</a></li><li><a href="/support/#contact">Contact us</a></li><li><a href="/support/#delete">Delete your data</a></li></ul></div>
-  <p class="legal">Contains transport information from Transport for NSW Open Data, licensed under CC BY 4.0. Map data &copy; OpenStreetMap contributors. Transport is an independent app. It is not made, endorsed or supported by Transport for NSW. Times can change, so check signs and announcements at your stop. &copy; 2026 Transport. No tracking cookies.</p>
+  <p class="legal">Contains transport information from Transport for NSW Open Data, licensed under CC BY 4.0. Map data &copy; OpenStreetMap contributors. Transport is an independent app. It is not made, endorsed or supported by Transport for NSW. Times can change, so check signs and announcements at your stop. Transport: Sydney Live is provided by Fintex Australia Pty Ltd (ABN 60 688 406 108), New South Wales, Australia. Contact: <a href="mailto:contact@fintex.au">contact@fintex.au</a>. &copy; 2026 <a href="https://fintex.au">Fintex Australia Pty Ltd</a>. No tracking cookies.</p>
 </div></footer>
 </body>
 </html>

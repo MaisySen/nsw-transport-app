@@ -7,7 +7,9 @@
 * Free or paid: Free
 * Category: Maps & Navigation
 * Tags: Public transit, Trip planner, Commute
-* Contact email: bidur@mail.tab.bot (or your own address)
+* Developer name: Fintex Australia Pty Ltd
+* Contact email: contact@fintex.au
+* Developer website: https://fintex.au
 * Website: https://nsw-transport-bot.sites.tab.bot/support/
 * Privacy policy: https://nsw-transport-bot.sites.tab.bot/privacy/
 * Ads: No ads

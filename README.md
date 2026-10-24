@@ -91,4 +91,6 @@ Install on a phone without the App Store: [ios-native/INSTALL.md](ios-native/INS
 
 Live data comes from the Transport for NSW Open Data Hub under Creative Commons Attribution 4.0. Transport is not made or endorsed by Transport for NSW. Map data on the web and Android is from OpenStreetMap contributors. Attribution text: [store/attribution.md](store/attribution.md).
 
-Contact: bidur@mail.tab.bot
+Publisher: Fintex Australia Pty Ltd (ABN 60 688 406 108), New South Wales, Australia. https://fintex.au
+
+Contact: contact@fintex.au

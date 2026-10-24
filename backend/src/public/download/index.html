@@ -90,7 +90,7 @@ footer{text-align:center;color:var(--text2);font-size:0.8125rem;margin-top:28px}
 
   <p class="meta" style="margin-top:22px">On a computer? <a href="/#/">Open the web app</a></p>
 </main>
-<footer class="wrap"><p><a href="/?about">Transport home</a> &nbsp; <a href="/support/">Support</a> &nbsp; <a href="/privacy/">Privacy</a> &nbsp; <a href="/terms/">Terms</a></p><p>Questions: <a href="mailto:bidur@mail.tab.bot?subject=Transport%20app">bidur@mail.tab.bot</a></p><p>Contains transport information from Transport for NSW Open Data, licensed under CC BY 4.0. Transport is an independent app, not made or endorsed by Transport for NSW.</p></footer>
+<footer class="wrap"><p><a href="/?about">Transport home</a> &nbsp; <a href="/support/">Support</a> &nbsp; <a href="/privacy/">Privacy</a> &nbsp; <a href="/terms/">Terms</a></p><p>Questions: <a href="mailto:contact@fintex.au?subject=Transport%20app">contact@fintex.au</a></p><p>Contains transport information from Transport for NSW Open Data, licensed under CC BY 4.0. Transport is an independent app, not made or endorsed by Transport for NSW.</p><p>Transport: Sydney Live is provided by Fintex Australia Pty Ltd (ABN 60 688 406 108), New South Wales, Australia. Contact: <a href="mailto:contact@fintex.au">contact@fintex.au</a>. &copy; 2026 <a href="https://fintex.au">Fintex Australia Pty Ltd</a>.</p></footer>
 <script>
 fetch('/api/app').then(function(r){return r.json()}).then(function(d){
   if(d.android&&d.android.size){document.getElementById('apkmeta').textContent=(d.android.version?'Version '+d.android.version+', ':'')+Math.round(d.android.size/1048576)+' MB'}

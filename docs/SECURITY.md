@@ -43,7 +43,7 @@ The full policy is at https://nsw-transport-bot.sites.tab.bot/privacy/ and in [s
 
 ## Reporting a problem
 
-Email bidur@mail.tab.bot, or use GitHub private vulnerability reporting on this repo (it is switched on).
+Email contact@fintex.au, or use GitHub private vulnerability reporting on this repo (it is switched on).
 
 ## Security review, 24 Oct 2026
 

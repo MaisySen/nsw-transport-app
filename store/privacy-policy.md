@@ -1,6 +1,8 @@
 # Transport privacy policy
 Updated 24 October 2026. This policy covers the Transport app for iPhone and Android and the web app at nsw-transport-bot.sites.tab.bot.
 
+Transport: Sydney Live is provided by Fintex Australia Pty Ltd (ABN 60 688 406 108), New South Wales, Australia. Contact: contact@fintex.au. In this policy, "we" and "us" mean Fintex Australia Pty Ltd.
+
 Transport has no accounts. It does not ask for your name, email or phone number, and it has no ads, no analytics and no third party tracking. Nothing is sold or shared for advertising.
 
 ## What the server keeps
@@ -43,11 +45,11 @@ Transport is a general audience app and does not knowingly collect information f
 
 ## Deleting your data
 
-Delete saved trips and commutes in the app (swipe left on a trip), and stop watching a trip from the Watching tab. To have everything kept for your install removed from the server, email bidur@mail.tab.bot with the install ID shown at the bottom of Settings. It is removed within 30 days.
+Delete saved trips and commutes in the app (swipe left on a trip), and stop watching a trip from the Watching tab. To have everything kept for your install removed from the server, email contact@fintex.au with the install ID shown at the bottom of Settings. It is removed within 30 days.
 
 ## Changes and contact
 
-If this policy changes, the date at the top changes too. Questions: bidur@mail.tab.bot.
+If this policy changes, the date at the top changes too. Questions: contact@fintex.au.
 
 Contains transport information from Transport for NSW Open Data, licensed under CC BY 4.0. Transport is an independent app and is not made or endorsed by Transport for NSW.
 
