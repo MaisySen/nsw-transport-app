@@ -1207,7 +1207,7 @@ const ASK_ALIASES = {
   "the quay": "Circular Quay", "quay": "Circular Quay", "parra": "Parramatta Station", "sydney olympic park": "Olympic Park Station",
   "olympic stadium": "Olympic Park Station", "accor stadium": "Olympic Park Station", "stadium australia": "Olympic Park Station",
   "international airport": "202030", "intl airport": "202030", "domestic airport": "202020",
-  "macquarie uni": "Macquarie University Station", "mq uni": "Macquarie University Station", "uts": "200060",
+  "macquarie uni": "Macquarie University Station", "mq uni": "Macquarie University Station",
   "harbour bridge": "Milsons Point Station", "barangaroo": "Barangaroo Station",
 };
 // Landmarks: label shown on a choice chip -> what it resolves to (a station name, or a place query).
@@ -1216,6 +1216,7 @@ const ASK_LANDMARKS = {
   "sydney uni": { q: "Redfern Station", name: "Sydney Uni (Redfern Station)" }, "usyd": { q: "Redfern Station", name: "Sydney Uni (Redfern Station)" },
   "university of sydney": { q: "Redfern Station", name: "Sydney Uni (Redfern Station)" },
   "western sydney uni": { q: "Parramatta Station", name: "Western Sydney Uni (Parramatta)" },
+  "uts": { q: "Central Station", name: "UTS (Central Station)" },
   "opera house": { q: "Circular Quay", name: "Circular Quay (Opera House)" }, "sydney opera house": { q: "Circular Quay", name: "Circular Quay (Opera House)" },
   "scg": { q: "Moore Park Light Rail", name: "Moore Park (SCG)" }, "allianz stadium": { q: "Moore Park Light Rail", name: "Moore Park (Allianz Stadium)" },
   "taronga zoo": { q: "Taronga Zoo Wharf", name: "Taronga Zoo Wharf" }, "the zoo": { q: "Taronga Zoo Wharf", name: "Taronga Zoo Wharf" },
@@ -1410,6 +1411,7 @@ async function askTrip(env, fromQ, toQ, ctx, o = {}) {
   if (!a) return { kind: "text", text: `I couldn't find a station, suburb or stop called "${fromQ}". Try the station name or a stop number.` };
   if (!b || b.needLocation) return { kind: "text", text: `I couldn't find a station, suburb or stop called "${toQ}". Try the station name or a stop number.` };
   if (o.via && (!v || v.needLocation)) return { kind: "text", text: `I couldn't find a station, suburb or stop called "${o.via}" for the via. Try the station name.` };
+  if (a.id === b.id) return { kind: "text", text: (askLabel(a) === askLabel(b) ? `${askLabel(a)} is both the start and the destination` : `${askLabel(a)} and ${askLabel(b)} are the same stop`) + ", so there is no trip to plan. Ask with another start or destination." };
   const opt = { time: o.time, arriveBy: o.arriveBy, count: o.count || 6 };
   if (a.coord) opt.fromType = "coord";
   if (b.coord) opt.toType = "coord";
