@@ -60,6 +60,7 @@ export const store = {
     save();
     return !has;
   },
+  clearStarred() { state = { ...state, starred: [] }; save(); },
   addRecent(p: Place) {
     state = { ...state, recents: [p, ...state.recents.filter((r) => r.id !== p.id)].slice(0, 8) };
     save();
@@ -111,6 +112,8 @@ export const store = {
     state = { ...state, myTrips: [t, ...(state.myTrips || []).filter((x) => tripKeyOf(x) !== k && x.name !== t.name)].slice(0, 12) };
     save();
   },
+  /** Clear all in Your trips: the trips kept on the phone with these keys, and their place in your order. */
+  removeMyTrips(keys: string[]) { const k = new Set(keys); state = { ...state, myTrips: (state.myTrips || []).filter((x) => !k.has(tripKeyOf(x))), tripOrder: (state.tripOrder || []).filter((x) => !k.has(x)) }; save(); },
   removeMyTrip(key: string) { state = { ...state, myTrips: (state.myTrips || []).filter((x) => tripKeyOf(x) !== key) }; save(); },
   getOrder: () => state.tripOrder || [],
   setTripOrder(keys: string[]) { state = { ...state, tripOrder: keys }; save(); },

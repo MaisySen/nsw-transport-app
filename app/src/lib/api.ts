@@ -2,7 +2,8 @@ import type { Commute, DeparturesResp, MorningCheck, MorningInput, MorningListRe
 import { getDevice, PROFILE } from './device';
 import { store } from './store';
 import type { CarPark, Station, TopupItem } from './access';
-import { apiBase } from './server';
+import { apiBase, NEW_API_BASE } from './server';
+import { placesGone, stopsAsPlaces, type PlaceItem } from './planCore';
 
 function qs(o: Record<string, any>) {
   return Object.entries(o)
@@ -93,3 +94,26 @@ export const api = {
   morningPreview: async (id: string) => req<MorningPreview>(`/api/morning-check/preview?${qs({ device: await getDevice(), id })}`),
   testPush: async () => req<{ ok: boolean; pushed: any[]; expo?: any[] }>(`/api/push/test`, { method: 'POST', body: JSON.stringify({ device: await getDevice() }) }),
 };
+
+// Plan search: stops, addresses, streets, landmarks and suburbs from /api/places, which only the new host has.
+// Until every server has it, a 404 there means stops only from /api/search on the server in use, for the rest
+// of the session; a dropped connection or a slow answer falls back for this search only.
+let placesOff = false;
+export async function searchPlaces(q: string): Promise<{ items: PlaceItem[]; places: boolean }> {
+  if (!placesOff) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 6000);
+    try {
+      const r = await fetch(`${NEW_API_BASE}/api/places?${qs({ q })}`, { signal: ctl.signal });
+      if (!r.ok) throw Object.assign(new Error(`Something went wrong (${r.status})`), { http: r.status });
+      const body = await r.json();
+      if (Array.isArray(body?.items)) return { items: body.items as PlaceItem[], places: true };
+    } catch (e: any) {
+      if (placesGone(e)) placesOff = true;
+    } finally {
+      clearTimeout(t);
+    }
+  }
+  const r = await api.search(q);
+  return { items: stopsAsPlaces(r.items || []), places: false };
+}

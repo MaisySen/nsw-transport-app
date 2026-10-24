@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { plural } from '@/lib/homeCore';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, StyleSheet, Switch, useColorScheme, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { whenFromParams, whenLabel, whenQuery } from '@/lib/planCore';
 import { haptic } from '@/lib/haptic';
 import { withTimeout } from '@/lib/gesture';
 import { api } from '@/lib/api';
@@ -223,7 +224,11 @@ function JourneyDetail({ j, now, from, to }: { j: Journey; now: number; from: Pl
 }
 
 export default function TripScreen() {
-  const p = useLocalSearchParams<{ from: string; fromName: string; to: string; toName: string; pick?: string; via?: string; viaName?: string; conn?: string; name?: string; legs?: string }>();
+  const p = useLocalSearchParams<{ from: string; fromName: string; to: string; toName: string; pick?: string; via?: string; viaName?: string; conn?: string; name?: string; legs?: string; time?: string; arriveBy?: string }>();
+  // Leave at or Arrive by from Plan (a Sydney clock time); without it the trip is from now.
+  const when = whenFromParams(p.time, p.arriveBy);
+  const whenQ = whenQuery(when);
+  const whenKey = whenQ.time ? `${whenQ.time}${whenQ.arriveBy ? 'a' : 'l'}` : '';
   const from = { id: String(p.from), name: String(p.fromName || '') };
   const to = { id: String(p.to), name: String(p.toName || '') };
   const via = p.via ? { id: String(p.via), name: String(p.viaName || p.via) } : null;
@@ -240,8 +245,8 @@ export default function TripScreen() {
   const c = usePalette();
   const now = useNow(1000);
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
-  const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn }), 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn],
-    { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn)) });
+  const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...whenQ }), 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey],
+    { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '')) });
   const [extra, setExtra] = useState<Journey[]>([]);
   // Step free on or off asks again; earlier and later trips loaded before would be the other kind.
   useEffect(() => { setExtra([]); }, [accOn]);
@@ -357,6 +362,12 @@ export default function TripScreen() {
         {data?.parking?.carparks?.length ? (
           <View style={{ marginTop: -10 }}>
             <ParkGroup list={data.parking.carparks} title={`Park and Ride at ${stShort(data.parking.station?.name)}`} station={data.parking.station?.name} watch />
+          </View>
+        ) : null}
+        {whenQ.time ? (
+          <View style={{ marginHorizontal: 20, marginTop: 12, flexDirection: 'row', alignItems: 'center' }} accessibilityRole="text">
+            <Icon name={I.clock} size={14} color={c.text2} />
+            <T kind="sub" tone="text2" style={{ marginLeft: 6 }}>{whenLabel(when, now)}</T>
           </View>
         ) : null}
         <StepFreeBar on={accOn} data={data} empty={!!data && !js.length} liftOn={liftOn} />

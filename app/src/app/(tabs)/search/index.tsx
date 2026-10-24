@@ -2,12 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Keyboard, Platform, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
-import { api } from '@/lib/api';
+import { api, searchPlaces } from '@/lib/api';
 import { usePalette, radius } from '@/lib/theme';
 import { MODE_BY_CODE, shortName } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
-import { noMatchText, planResults } from '@/lib/homeCore';
-import type { Place, SearchItem } from '@/lib/types';
+import { planResults } from '@/lib/homeCore';
+import { isStopItem, noPlaceText, NOW, placeSubtitle, stopsAsPlaces, whenLabel, whenParams, type PlaceItem, type When } from '@/lib/planCore';
+import { WhenPicker } from '@/components/WhenPicker';
+import { useNow } from '@/lib/hooks';
+import type { Place } from '@/lib/types';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { Row, Screen, Section, Sep, T, font } from '@/components/ui';
 
@@ -16,29 +19,34 @@ import { Row, Screen, Section, Sep, T, font } from '@/components/ui';
 
 type Field = 'stop' | 'from' | 'to';
 
-function useStopSearch(q: string) {
-  const [items, setItems] = useState<SearchItem[]>([]);
+// Trip ends can be any place (addresses, streets, landmarks, suburbs, stops); Departures needs a stop.
+function useStopSearch(q: string, places: boolean) {
+  const [items, setItems] = useState<PlaceItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [wide, setWide] = useState(false);
   useEffect(() => {
     if (q.trim().length < 2) { setItems([]); setFailed(false); return; }
     let live = true;
     setLoading(true);
     const t = setTimeout(() => {
-      api.search(q.trim()).then((r) => { if (live) { setItems(r.items || []); setFailed(false); } })
+      const ask = places ? searchPlaces(q.trim()) : api.search(q.trim()).then((r) => ({ items: stopsAsPlaces(r.items || []), places: false }));
+      ask.then((r) => { if (live) { setItems(r.items || []); setWide(r.places); setFailed(false); } })
         .catch(() => { if (live) { setItems([]); setFailed(true); } }).finally(() => live && setLoading(false));
     }, 220);
     return () => { live = false; clearTimeout(t); };
-  }, [q]);
-  return { items, loading, failed };
+  }, [q, places]);
+  return { items, loading, failed, wide };
 }
+
+const KIND_ICON = { address: I.pin, place: I.pin, street: I.route, suburb: I.location } as const;
 
 function Field({ label, value, placeholder, active, onFocus, onChange, inputRef, onClear }: any) {
   const c = usePalette();
   return (
     <View style={[s.field, { borderColor: active ? c.tint : 'transparent' }]}>
       <T kind="sub" tone="text2" style={{ width: 44 }}>{label}</T>
-      <TextInput ref={inputRef} value={value} placeholder={placeholder} placeholderTextColor={c.text3} onFocus={onFocus} onChangeText={onChange}
+      <TextInput ref={inputRef} value={value} placeholder={placeholder} accessibilityLabel={label} placeholderTextColor={c.text3} onFocus={onFocus} onChangeText={onChange}
         style={[font.body, { flex: 1, color: c.text, paddingVertical: Platform.OS === 'android' ? 6 : 10, minHeight: 48 }]} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing" />
       {Platform.OS === 'android' && value ? <Pressable accessibilityRole="button" accessibilityLabel={`Clear ${label}`} onPress={onClear} hitSlop={10}><Icon name={I.close} size={18} color={c.text2} /></Pressable> : null}
     </View>
@@ -66,12 +74,17 @@ export default function Search() {
     return () => clearTimeout(t);
   }, [focus]);
   const text = mode === 'stop' ? q : field === 'from' ? fromText : toText;
-  const { items, loading, failed } = useStopSearch(text);
+  const { items, loading, failed, wide } = useStopSearch(text, mode === 'trip');
+  // Leave now, Leave at or Arrive by, for trips planned from here.
+  const [when, setWhen] = useState<When>(NOW);
+  const [whenOpen, setWhenOpen] = useState(false);
+  const now = useNow(30000);
   // A field that already holds a chosen stop shows no results (its text is that stop's name).
   const chosen = mode === 'trip' && (field === 'from' ? !!from : !!to);
 
-  const pick = (p: Place) => {
-    store.addRecent(p);
+  const pick = (it: PlaceItem) => {
+    const p: Place = { id: it.id, name: it.name };
+    if (isStopItem(it)) store.addRecent(p);
     if (mode === 'stop') {
       Keyboard.dismiss();
       router.push({ pathname: '/stop/[id]', params: { id: p.id, name: p.name } });
@@ -85,9 +98,9 @@ export default function Search() {
       if (from) go(from, p);
     }
   };
-  const go = (a: Place, b: Place) => {
+  const go = (a: Place, b: Place, w: When = when) => {
     Keyboard.dismiss();
-    router.push({ pathname: '/trip', params: { from: a.id, fromName: a.name, to: b.id, toName: b.name } });
+    router.push({ pathname: '/trip', params: { from: a.id, fromName: a.name, to: b.id, toName: b.name, ...whenParams(w) } });
   };
   const clearTrips = () => { store.clearRecentTrips(); haptic.select(); };
   const removeTrip = (r: { from: Place; to: Place }, label: string) => Alert.alert(label, undefined, [
@@ -100,7 +113,7 @@ export default function Search() {
   ]);
 
   const list = planResults(items, text, chosen);
-  const noMatch = chosen ? null : noMatchText(text, loading, items.length, failed);
+  const noMatch = chosen ? null : noPlaceText(text, loading, items.length, failed, wide);
   const recentTrips = (st.recentTrips || []).slice(0, 6);
   const recentStops = (st.recents || []).slice(0, 6);
   const tripLabel = (r: { from: Place; to: Place }) => `${shortName(r.from.name).replace(/ Station$/, '')} to ${shortName(r.to.name).replace(/ Station$/, '')}`;
@@ -130,9 +143,9 @@ export default function Search() {
           ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <View style={{ flex: 1 }}>
-                <Field label="From" value={fromText} placeholder="Where from" active={field === 'from'} onFocus={() => setField('from')} onChange={(t: string) => { setFromText(t); setFrom(null); }} onClear={() => { setFromText(''); setFrom(null); setField('from'); }} />
+                <Field label="From" value={fromText} placeholder="Stop, address or place" active={field === 'from'} onFocus={() => setField('from')} onChange={(t: string) => { setFromText(t); setFrom(null); }} onClear={() => { setFromText(''); setFrom(null); setField('from'); }} />
                 <Sep inset={60} />
-                <Field label="To" value={toText} placeholder="Where to" inputRef={toRef} active={field === 'to'} onFocus={() => setField('to')} onChange={(t: string) => { setToText(t); setTo(null); }} onClear={() => { setToText(''); setTo(null); setField('to'); }} />
+                <Field label="To" value={toText} placeholder="Stop, address or place" inputRef={toRef} active={field === 'to'} onFocus={() => setField('to')} onChange={(t: string) => { setToText(t); setTo(null); }} onClear={() => { setToText(''); setTo(null); setField('to'); }} />
               </View>
               <Pressable accessibilityRole="button" accessibilityLabel="Swap From and To" hitSlop={8} style={{ padding: 14 }} onPress={() => { setFrom(to); setTo(from); setFromText(toText); setToText(fromText); if (from && to) go(to, from); }}>
                 <Icon name={I.swap} size={20} color={c.tint} />
@@ -154,14 +167,32 @@ export default function Search() {
           </View>
         ) : null}
 
+        {mode === 'trip' ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={`${whenLabel(when, now)}. Change when`} onPress={() => { Keyboard.dismiss(); setWhenOpen(true); }} android_ripple={{ color: c.fill }}
+            style={({ pressed }) => ({ marginHorizontal: 16, marginTop: 10, backgroundColor: pressed && Platform.OS === 'ios' ? c.fill : c.card, borderRadius: radius, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', minHeight: 52, overflow: 'hidden' })}>
+            <Icon name={I.clock} size={18} color={c.tint} />
+            <T kind="body" style={{ flex: 1, marginLeft: 10 }}>{whenLabel(when, now)}</T>
+            {when.kind !== 'now' ? (
+              <Pressable accessibilityRole="button" accessibilityLabel="Leave now instead" hitSlop={10} onPress={() => { setWhen(NOW); haptic.select(); }} style={{ marginRight: 12 }}>
+                <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Now</T>
+              </Pressable>
+            ) : null}
+            <Icon name={I.chevron} size={13} color={c.text3} />
+          </Pressable>
+        ) : null}
+        <WhenPicker visible={whenOpen} value={when} now={now} onClose={() => setWhenOpen(false)}
+          onDone={(w) => { setWhenOpen(false); setWhen(w); if (from && to) go(from, to, w); }} />
+
         {list.length ? (
           <Section>
             {list.map((it, i) => {
               const modes = (it.modes || []).map((m) => MODE_BY_CODE[m]).filter(Boolean);
+              const stop = isStopItem(it);
               return (
-                <View key={it.id}>
+                <View key={`${it.kind || 'stop'}:${it.id}`}>
                   {i ? <Sep inset={57} /> : null}
-                  <Row icon={modeIconName(modes[0])} iconBg={c.text2} title={shortName(it.name)} subtitle={it.name !== shortName(it.name) ? it.name : undefined} onPress={() => pick(it)} />
+                  <Row icon={stop ? modeIconName(modes[0]) : KIND_ICON[it.kind as keyof typeof KIND_ICON] || I.pin} iconBg={stop ? c.text2 : c.tint} title={shortName(it.name)}
+                    subtitle={stop ? (it.name !== shortName(it.name) ? it.name : undefined) : placeSubtitle(it)} onPress={() => pick(it)} />
                 </View>
               );
             })}

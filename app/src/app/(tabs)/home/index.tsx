@@ -7,6 +7,7 @@ import { Pressable as GHPressable } from 'react-native-gesture-handler';
 import { haptic } from '@/lib/haptic';
 import { gripStep, type GripEvent, type GripState } from '@/lib/gesture';
 import { sameEnds } from '@/lib/homeCore';
+import { clearAllWords } from '@/lib/planCore';
 import { router, Stack } from 'expo-router';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
@@ -17,7 +18,7 @@ import { shortName } from '@/lib/format';
 import type { Place } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
 import { watchLine } from '@/components/Cards';
-import { ActionRow, AlertBanner, deleteTrip, deletedSaved, HomeSection, LiveTag, PlaceBar, pullHome, StopBoard, TripBoard, TripItem, useNearby } from '@/components/Home';
+import { ActionRow, AlertBanner, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTag, PlaceBar, pullHome, StopBoard, TripBoard, TripItem, useNearby } from '@/components/Home';
 import { LineBadge } from '@/components/Transit';
 import { useLiveTrip } from '@/lib/live';
 import { modeColor, radius } from '@/lib/theme';
@@ -104,6 +105,13 @@ export default function Home() {
   const g = useLiveTrip();
   const [snack, setSnack] = useState<{ text: string; undo: () => void; id: number } | null>(null);
   useEffect(() => { if (!snack) return; const t = setTimeout(() => setSnack(null), 5000); return () => clearTimeout(t); }, [snack]);
+  // Clear all: Your trips (not the commute card or Home and Work) and Starred stops, each after a confirm dialog.
+  const clearable = sorted.filter((t) => t.kind === 'mine' || t.kind === 'saved' || t.kind === 'commute');
+  const clearWord = Platform.OS === 'ios' ? 'Clear All' : 'Clear all';
+  const confirmClear = (what: 'trips' | 'stops', count: number, run: () => void) => {
+    const w = clearAllWords(what, count, Platform.OS === 'ios');
+    Alert.alert(w.title, w.message, [{ text: 'Cancel', style: 'cancel' }, { text: w.confirm, style: 'destructive', onPress: run }]);
+  };
   const stopMenu = (p: Place, isStarred: boolean) => {
     haptic.tap();
     Alert.alert(shortName(p.name), undefined, isStarred ? [
@@ -178,14 +186,15 @@ export default function Home() {
           </HomeSection>
         ) : null}
 
-        <HomeSection title="Your trips" action={{ title: 'Add', label: 'Add a trip', onPress: () => router.push('/new-trip') }}>
+        <HomeSection title="Your trips" action={{ title: 'Add', label: 'Add a trip', onPress: () => router.push('/new-trip') }}
+          {...(clearable.length ? { onClear: () => confirmClear('trips', clearable.length, () => clearAllTrips(clearable)), clearTitle: clearWord } : {})}>
           <DragTrips trips={sorted} now={now} all={st.allServices || {}} onScroll={setScrollOn} />
           {d && !trips.length ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 6 }}>{twin ? `${twin.name.charAt(0).toUpperCase() + twin.name.slice(1)} is the same trip as your commute, so it shows in the card above.` : 'Save the trips you take. They show here with live times.'}</T> : null}
           <PlaceBar places={places} />
         </HomeSection>
 
         {starred.length ? (
-          <HomeSection title="Starred stops">
+          <HomeSection title="Starred stops" onClear={() => confirmClear('stops', starred.length, () => { store.clearStarred(); haptic.success(); })} clearTitle={clearWord}>
             {starred.map((p) => <StopBoard key={p.id} stop={p} starred now={now} onLongPress={() => stopMenu(p, true)} />)}
           </HomeSection>
         ) : null}

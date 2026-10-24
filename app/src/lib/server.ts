@@ -10,6 +10,8 @@ export const PRIVACY_URL = `${SITE}/privacy`;
 export const SUPPORT_URL = `${SITE}/support`;
 /** The link sent by Share trip: transportsydney.app/trip/<share id> (the site shows the live trip). */
 export const shareLink = (id: string) => `${SITE}/trip/${encodeURIComponent(id)}`;
+/** The new API host. Plan's place search (addresses, streets, landmarks) asks it even before the app moves there. */
+export const NEW_API_BASE = 'https://api.transportsydney.app';
 /** Hosts the app may move to (each, or a subdomain of it): the one in use today and the new API host. */
 export const ALLOWED_DOMAINS: readonly string[] = [DEFAULT_HOST, 'api.transportsydney.app'];
 

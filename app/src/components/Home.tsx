@@ -10,7 +10,8 @@ import { cacheKey, offlineText } from '@/lib/offlineCore';
 import { foldNear, type NearPick } from '@/lib/nearCore';
 import { chipTime, makeDeletedNames } from '@/lib/homeCore';
 import { modeColor, onColor, radius, usePalette } from '@/lib/theme';
-import { bestTime, clock, ms, shortName } from '@/lib/format';
+import { bestTime, clock, liveStamp, ms, shortName } from '@/lib/format';
+import { clearAllPlan } from '@/lib/planCore';
 import type { Departure, Journey, Leg, Place } from '@/lib/types';
 import { store, tripKeyOf } from '@/lib/store';
 import { directFilter, isChain, planTrip, tLegs, tripKey, viaText } from '@/lib/trips';
@@ -36,7 +37,7 @@ function markLive() {
   liveSubs.forEach((f) => f());
 }
 
-/** Time of the newest successful live load on Home, for the "Live 07:55" stamp. */
+/** Time of the newest successful live load on Home, for the "Live 9:52am" stamp. */
 export function useLastLive() {
   return useSyncExternalStore((l) => { liveSubs.add(l); return () => { liveSubs.delete(l); }; }, () => lastLive, () => lastLive);
 }
@@ -144,15 +145,15 @@ const distText = (m?: number) => (m == null || !Number.isFinite(m) ? '' : m < 10
 
 // ---------- section header and simple rows ----------
 
-export function HomeSection({ title, children, onClear, footer, action }: { title: string; children: React.ReactNode; onClear?: () => void; footer?: string; action?: { title: string; label?: string; onPress: () => void } }) {
+export function HomeSection({ title, children, onClear, clearTitle, footer, action }: { title: string; children: React.ReactNode; onClear?: () => void; clearTitle?: string; footer?: string; action?: { title: string; label?: string; onPress: () => void } }) {
   const c = usePalette();
   return (
     <View style={{ marginTop: 28 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginBottom: 4, minHeight: 32 }}>
         <Text accessibilityRole="header" maxFontSizeMultiplier={1.4} style={[font.headline, { fontWeight: '700', color: c.text, flex: 1 }]}>{title}</Text>
         {onClear ? (
-          <Pressable onPress={onClear} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Clear ${title}`}>
-            <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Clear</T>
+          <Pressable onPress={onClear} hitSlop={10} accessibilityRole="button" accessibilityLabel={`${clearTitle || 'Clear'}, ${title}`} style={action ? { marginRight: 14 } : null}>
+            <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>{clearTitle || 'Clear'}</T>
           </Pressable>
         ) : null}
         {action ? (
@@ -302,6 +303,16 @@ export function tripMenu(trip: TripItem, route?: string) {
 /** Delete trip: off this phone, out of the Home order, and the server copy too. */
 /** Saved trip names deleted on this phone, hidden from the server list until it catches up. */
 export const deletedSaved = makeDeletedNames();
+
+/** Clear all in Your trips: trips kept on the phone, saved trips and commutes, with one haptic and one refresh. */
+export async function clearAllTrips(trips: TripItem[]) {
+  const plan = clearAllPlan(trips);
+  if (plan.mine.length) store.removeMyTrips(plan.mine);
+  plan.saved.forEach((n) => deletedSaved.add(n));
+  haptic.success();
+  await Promise.all([...plan.saved.map((n) => api.deleteSaved(n).catch(() => null)), ...plan.commutes.map((id) => api.deleteCommute(id).catch(() => null))]);
+  pullHome();
+}
 
 export function deleteTrip(trip: TripItem) {
   const key = tripKeyOf({ from: trip.from, to: trip.to, via: trip.via, legs: trip.legs });
@@ -636,7 +647,6 @@ export function PlaceBar({ places }: { places: { home?: Place; work?: Place } })
   return <View style={{ flexDirection: 'row', gap: 10, marginHorizontal: 16, marginTop: 12 }}>{btn('home')}{btn('work')}</View>;
 }
 
-/** Small "Live 07:55" stamp with a green dot. */
 /** The cache id of a trip card: the trip key and the All services switch. The trip screen uses the same one. */
 export const tripCacheId = (pkey: string, all: boolean) => `${pkey}|${all ? 1 : 0}|${store.accOn() ? 1 : 0}`;
 /** The trip key Home and the trip screen share: from, via or legs, to, and each leg's settings. */
@@ -667,9 +677,9 @@ export function LiveTag() {
   }
   if (!t) return null;
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel={`Live, updated ${hm24(t)}`}>
+    <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel={`Live, updated ${clock(t)}`}>
       <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: c.green, marginRight: 5 }} />
-      <T kind="foot" tone="text2" style={{ fontVariant: ['tabular-nums'] }}>Live {hm24(t)}</T>
+      <T kind="foot" tone="text2" style={{ fontVariant: ['tabular-nums'] }}>{liveStamp(t)}</T>
     </View>
   );
 }

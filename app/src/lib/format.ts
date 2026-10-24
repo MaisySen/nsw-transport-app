@@ -17,6 +17,9 @@ export function clock(t: number) {
   }
 }
 
+/** Home's header stamp, "Live 9:52am": the same 12 hour clock as the rows. */
+export const liveStamp = (t: number) => `Live ${clock(t)}`;
+
 export function clockSec(t: number) {
   try {
     return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, (m) => m.trim().toLowerCase());
