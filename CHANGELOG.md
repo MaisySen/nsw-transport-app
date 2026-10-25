@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Simple mode: Plan Your Trip (over the air, 25 Oct, about 10:00 PM, group b4fd3a9a)
+Bidur at 9:37 PM: "User come. Look this to that place. They get the list like this. Thats it." And at 9:50 PM: "Just write Plan Your Trip".
+* Simple mode (More > Simple mode, off by default) is now one plain screen headed Plan Your Trip. From is your current location when location is already on; To is where you pick. Your places (Home, Work, recent places, starred stops) are big rows: one tap fills To and finds trips.
+* The trips come as a plain list: leave and arrive times, how long, changes, lines, on time or late or cancelled, and the minutes to go, with Earlier and Later. Tap one for big simple steps (walk to the platform, take the line, change, get off) and a Speak button that reads them.
+* No swiping, no chips, no maps. Leave now or pick a time. The gear turns Simple mode off.
+* Preview group f953ea90-9367-442d-8644-7668aa4c790f, production group b4fd3a9a-96aa-49d3-9e8c-68572201802d (iOS 01a172b7-861f-7620-9ec1-e2d322be6806, Android 01a172b7-861f-7658-ac00-c103ce730b92) from main 607323c. Roll back: `npx eas-cli update:republish --group a3a6ee75-552f-414b-b126-b2714bb106b5 --destination-branch production --non-interactive` (the 9:55 PM update).
+* Tests: `app/test/simple.test.mjs`. Not yet seen on a real iPhone or Android phone.
+
 ### Car parks and holding a departure (over the air, 25 Oct, about 9:55 PM, group a3a6ee75)
 Bidur: "Do everything. Keep building."
 * Car parks: a train station with a Park and Ride car park shows "Car park: N free of M" under its name, with when Transport for NSW read them. Tap for the car park: free spaces, how full, the address and Directions (Apple Maps on iPhone, Google Maps on Android). More > Car parks lists them all, closest first when location is already on, else A to Z. Only real counts: a car park without one says so, and a station without one shows nothing.
