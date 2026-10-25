@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Choose bus on a trip, an endless list of services, and any time or day (over the air update for iPhone and Android, 25 Oct, 5:43 PM)
+Bidur at 5:20 PM, on Strathfield to Town Hall: "How to choose bus? ... For later service, i have to keep clicking later button??"
+* Mode chips on the trip screen: Any, Train, Bus, plus Metro, Light rail or Ferry when that trip uses them. Tap Bus for bus only trips (Strathfield to Town Hall now shows the 415, 458, 461X, 492, 52 and 504 ways, with stand and stop numbers; there is no direct bus, so they have changes). Train and Bus together works too. The choice stays with that trip on your phone; the default is Any. When nothing runs: "No bus-only trips at this time. Try Any." Works now: bus only trips are planned on api.transportsydney.app (asked directly, like long trips, with no profile or device). If that server does not answer, the phone filters the usual results and says some bus trips may be missing.
+* No more Earlier and Later buttons: later services load by themselves as you scroll near the end, earlier ones when you pull down at the top, with a small loading row. At most 8 later and 3 earlier batches per visit, one at a time, only while the screen is on view, stopping at 4am or when there are no more, then Choose a time.
+* A Leave now chip at the top opens Leave at or Arrive by with a day row (today to 7 days ahead). Now is one tap back. Another day is planned on api.transportsydney.app.
+* Kept: Step free, Include trips with a change, alerts, live labels, seats, Track and Start trip.
+* Shipped in the same update as Why it's late (group 0c0bffd6, built from main e6bac7d, which is this change). Not yet seen on a device.
+
 ### Why it's late and a full screen departure board (over the air update for iPhone and Android, 25 Oct, 5:43 PM)
 * A late, cancelled or changed service says why in one line, in Transport for NSW's words: "Delayed: signal repairs at Redfern", "T4 delayed: incident requiring emergency services at Allawah" on a trip with more than one ride. Tap it for the full alert. Only a reason from an alert linked to that service is shown, and nothing when the alert names no cause. On departure rows, trip rows and legs, Home trip cards and the live trip.
 * Board on a station or stop: a big full screen board like the platform screens, with the platform or stand, where the next trains stop, minutes and Live, Timetable or Not tracking on every row. Dark by default with a Light board button, grows with your text size, works sideways, and keeps the screen on only while it is open.
