@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Why it's late and a full screen departure board (over the air update for iPhone and Android, 25 Oct, 5:43 PM)
+* A late, cancelled or changed service says why in one line, in Transport for NSW's words: "Delayed: signal repairs at Redfern", "T4 delayed: incident requiring emergency services at Allawah" on a trip with more than one ride. Tap it for the full alert. Only a reason from an alert linked to that service is shown, and nothing when the alert names no cause. On departure rows, trip rows and legs, Home trip cards and the live trip.
+* Board on a station or stop: a big full screen board like the platform screens, with the platform or stand, where the next trains stop, minutes and Live, Timetable or Not tracking on every row. Dark by default with a Light board button, grows with your text size, works sideways, and keeps the screen on only while it is open.
+* Also carries the trip screen mode chips (Any, Train, Metro, Bus, Light rail, Ferry) and "Usually on time on weekends around midday" wording.
+* Group 0c0bffd6. Roll back to a8766080 (the 5:28 PM update): `npx eas-cli update:republish --group a8766080-ee8f-4c4c-8d4f-d7b2feb64c59 --destination-branch production --message "Roll back" --non-interactive`.
+
 ### Delete all my data now really deletes everything, and the server tidies up after itself (25 Oct, 5:28 PM)
 * Delete all my data (More) also deletes the iPhone Lock Screen trip card and the phone's notification token from the server, straight away. Before, these two stayed behind. Works now on iPhone builds 205 and 206 after the update (close and reopen the app twice); earlier builds never sent them.
 * After Delete all my data the iPhone does not send its notification token again until you turn alerts back on.
