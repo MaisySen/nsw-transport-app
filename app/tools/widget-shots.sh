@@ -18,7 +18,9 @@ limit() {
   local s=$1; shift
   "$@" &
   local p=$!
-  ( sleep "$s"; kill -9 "$p" 2>/dev/null ) &
+  # The watcher writes nothing and kills its own sleep when stopped, so no stray sleep keeps the step's output open
+  # (build 70dd1762 waited out a 900 s sleep after the work was done).
+  ( trap 'kill $! 2>/dev/null; exit 0' TERM; sleep "$s" & wait $!; kill -9 "$p" 2>/dev/null ) >/dev/null 2>&1 &
   local w=$!
   wait "$p"; local rc=$?
   kill "$w" 2>/dev/null
@@ -29,11 +31,14 @@ runtime() { # newest available runtime id for iOS or watchOS
   xcrun simctl list runtimes | grep "^$1 " | grep -v unavailable | tail -1 | sed -E 's/.* - (com\.apple\.CoreSimulator\.SimRuntime\.[A-Za-z0-9.-]+).*/\1/'
 }
 ids() { xcrun simctl list devicetypes | grep -E "$1" | sed -E 's/.*\((com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9.-]+)\).*/\1/'; }
-newdevice() { # name, device type pattern, runtime: prints the new device's id, newest model first
+newdevice() { # name, device type pattern, runtime: prints a device id; a new device of the newest model the runtime
+  # takes, else any available device whose name matches the pattern (build 70dd1762 found no iPhone to create)
   local DT UDID
   for DT in $(ids "$2"); do
-    UDID=$(xcrun simctl create "$1" "$DT" "$3" 2>/dev/null) && { echo "$UDID"; return 0; }
+    UDID=$(xcrun simctl create "$1" "$DT" "$3" 2>>"$ROOT/widgets/simctl.txt") && [ -n "$UDID" ] && { echo "$UDID"; return 0; }
   done
+  UDID=$(xcrun simctl list devices available | grep -E "$4" | head -1 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+  [ -n "$UDID" ] && { echo "$UDID"; return 0; }
   return 1
 }
 
@@ -49,14 +54,15 @@ if limit 900 xcrun --sdk iphonesimulator swiftc -target "$ARCH-apple-ios17.0-sim
     -module-name WidgetShots -Onone "$W"/*.swift -o "$W/widget-shots"; then
   RT=$(runtime iOS)
   echo "iOS runtime: $RT"
-  UDID=$(newdevice shots-iphone "iPhone [0-9]+ Pro Max \(" "$RT")
+  xcrun simctl list devicetypes | grep -i iphone
+  UDID=$(newdevice shots-iphone "iPhone [0-9]+( Pro Max| Pro)? \(" "$RT" "iPhone")
   echo "iPhone simulator: $UDID"
   if [ -n "$UDID" ]; then
     xcrun simctl boot "$UDID"
     limit 300 xcrun simctl bootstatus "$UDID" -b
     limit 300 xcrun simctl spawn "$UDID" "$W/widget-shots" "$ROOT/widgets"
     xcrun simctl shutdown "$UDID"
-    xcrun simctl delete "$UDID"
+    xcrun simctl list devices | grep "$UDID" | grep -q "shots-" && xcrun simctl delete "$UDID"
   fi
 else
   echo "the iPhone widget drawing tool did not compile"
@@ -72,14 +78,14 @@ if limit 900 xcrun --sdk watchsimulator swiftc -target "$ARCH-apple-watchos10.0-
     -module-name ComplicationShots -Onone "$C"/*.swift -o "$C/complication-shots"; then
   RT=$(runtime watchOS)
   echo "watchOS runtime: $RT"
-  UDID=$(newdevice shots-watch "Apple Watch (Series [0-9]+ \(46mm\)|Ultra [0-9]+ \(49mm\))" "$RT")
+  UDID=$(newdevice shots-watch "Apple Watch (Series [0-9]+ \(46mm\)|Ultra [0-9]+ \(49mm\))" "$RT" "Apple Watch")
   echo "watch simulator: $UDID"
   if [ -n "$UDID" ]; then
     xcrun simctl boot "$UDID"
     limit 300 xcrun simctl bootstatus "$UDID" -b
     limit 300 xcrun simctl spawn "$UDID" "$C/complication-shots" "$ROOT/complications"
     xcrun simctl shutdown "$UDID"
-    xcrun simctl delete "$UDID"
+    xcrun simctl list devices | grep "$UDID" | grep -q "shots-" && xcrun simctl delete "$UDID"
   fi
 else
   echo "the complication drawing tool did not compile"
