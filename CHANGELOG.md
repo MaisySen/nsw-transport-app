@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Battery and data, buses at big stations (over the air, 26 Oct, about 8:22 AM, group fbf3cff7)
+Item 2 of the plan Bidur approved at 12:04 AM, and the 415 to Chiswick missing from Strathfield Station at 7:47 AM.
+* The 415 was not dropped: a board answer is 40 services, and at Strathfield at that hour 40 covers about 15 minutes (7:51 to 8:07). The next 415 to Chiswick was 8:10 from the same Stand G. Tapping Buses (or Trains, Metro) or a route at a station with several modes now loads 40 services of that mode, so buses at Strathfield reach about 50 minutes ahead and the 415 shows its Chiswick and Campsie trips. All is unchanged.
+* Battery: with no push token and nothing watched, the alerts check runs once a minute instead of every 20 seconds, on every screen. Starting a watch puts it back to every 20 seconds at once.
+* A fresh install used to make two to four device ids in its first second; it now makes one.
+* Server (transport-api 89566d44): `mode` on `/api/departures` asks the trip planner for that mode only. Rollback 98fd6119.
+
 ### Platform view hidden (over the air, 26 Oct, about 8:18 AM, group 9a46269a)
 Bidur at 7:57 AM: not to be used until it is reliable.
 * The platform button at the top of a train station and Platform view in the hold menu of train and metro rows are gone. The stop screen, the full screen board, the service screen and the trip list are unchanged.
