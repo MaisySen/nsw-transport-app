@@ -1391,9 +1391,10 @@ async function planChain(env, legs, opts = {}) {
 // ---------- service view (live vehicle tracking) ----------
 
 // The planner's stop list for one service. The data service answers 429 when too many questions arrive in the same
-// second (several people opening boards at once), which used to leave an empty stop list. So: a short retry, one
-// question at a time per service in this isolate, a stop list kept for a minute, and when the planner still cannot
-// answer, the last stop list seen for that service in the past 20 minutes (its planned times only).
+// second (several people opening boards at once), which used to leave an empty stop list. So: up to three retries a
+// short wait apart, one question at a time per service in this isolate, a stop list kept for a minute (in memory and in
+// the edge cache), and when the planner still cannot answer, the last stop list seen for that service in the past 20
+// minutes (its planned times only).
 // status: "ok", "stale" (kept list), "busy" (planner unavailable, nothing kept), "notFound" (the planner had no such run).
 const PLANNER_LEG_FRESH_MS = 60000, PLANNER_LEG_KEEP_MS = 20 * 60000, PLANNER_LEG_MAX = 150;
 const plannerLegMem = new Map();
@@ -1407,8 +1408,14 @@ async function plannerLeg(env, q, tripId, line, opts = {}) {
   if (hit && hit.leg && now - hit.at < PLANNER_LEG_FRESH_MS) return { leg: hit.leg, status: "ok", stale: false };
   if (plannerLegFlight.has(key)) return plannerLegFlight.get(key);
   const run = (async () => {
+    // Other isolates in this data centre may have asked already: the edge cache holds the list for everyone.
+    const shared = await edgeLegGet(env, key);
+    if (shared && shared.leg && Date.now() - shared.at < PLANNER_LEG_FRESH_MS) {
+      plannerLegMem.set(key, shared);
+      return { leg: shared.leg, status: "ok", stale: false };
+    }
     const p = sydneyParts(new Date(ms(q.planned) - 60000));
-    const tries = opts.tries || 3;
+    const tries = opts.tries || 4;
     let data = null, failed = false;
     for (let i = 0; i < tries; i++) {
       try {
@@ -1422,21 +1429,41 @@ async function plannerLeg(env, q, tripId, line, opts = {}) {
         failed = true;
         // Only a busy or failing answer is worth a second go; a timeout already used the wait.
         if (!/answered (429|5\d\d)/.test(String(e && e.message))) break;
-        if (i < tries - 1) await pause((opts.waitMs != null ? opts.waitMs : 400) * (i + 1) + Math.floor(Math.random() * 250));
+        if (i < tries - 1) await pause((opts.waitMs != null ? opts.waitMs : 450) * (i + 1) + Math.floor(Math.random() * 400));
       }
     }
     const leg = data ? plannerPick(data, tripId, line, q.planned) : null;
     if (leg) {
       const slim = plannerSlim(leg);
       if (plannerLegMem.size >= PLANNER_LEG_MAX) plannerLegMem.delete(plannerLegMem.keys().next().value);
-      plannerLegMem.set(key, { leg: slim, at: Date.now() });
+      const rec = { leg: slim, at: Date.now() };
+      plannerLegMem.set(key, rec);
+      await edgeLegPut(env, key, rec);
       return { leg, status: "ok", stale: false };
     }
-    if (hit && hit.leg && Date.now() - hit.at < PLANNER_LEG_KEEP_MS) return { leg: hit.leg, status: "stale", stale: true };
+    const kept = [hit, shared].filter((x) => x && x.leg && Date.now() - x.at < PLANNER_LEG_KEEP_MS).sort((a, b) => b.at - a.at)[0];
+    if (kept) return { leg: kept.leg, status: "stale", stale: true };
     return { leg: null, status: failed ? "busy" : "notFound", stale: false };
   })();
   plannerLegFlight.set(key, run);
   try { return await run; } finally { plannerLegFlight.delete(key); }
+}
+// The edge cache (Cache API) shares a stop list between isolates in one data centre for up to 20 minutes; the
+// record carries the time it was read, so fresh and kept lists are told apart the same way as in memory.
+const edgeLegUrl = (env, key) => `https://${(env && env.API_HOST) || "api.transportsydney.app"}/__edge/planner-leg/${encodeURIComponent(key)}`;
+async function edgeLegGet(env, key) {
+  try {
+    if (typeof caches === "undefined" || !caches.default) return null;
+    const r = await caches.default.match(new Request(edgeLegUrl(env, key)));
+    return r ? await r.json() : null;
+  } catch (e) { return null; }
+}
+async function edgeLegPut(env, key, rec) {
+  try {
+    if (typeof caches === "undefined" || !caches.default) return;
+    await caches.default.put(new Request(edgeLegUrl(env, key)),
+      new Response(JSON.stringify(rec), { headers: { "content-type": "application/json", "cache-control": `max-age=${PLANNER_LEG_KEEP_MS / 1000}` } }));
+  } catch (e) { /* the memory copy still works */ }
 }
 // Only the parts the service view reads, so a kept list stays small.
 function plannerSlim(leg) {

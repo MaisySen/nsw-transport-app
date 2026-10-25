@@ -42,6 +42,12 @@ globalThis.fetch = async (u) => {
   }
   return new Response("{}", { status: 503 });
 };
+// A fake edge cache (the Cache API), shared like the data centre's cache is between isolates.
+const edge = new Map();
+globalThis.caches = { default: {
+  match: async (req) => (edge.has(req.url) ? new Response(edge.get(req.url)) : undefined),
+  put: async (req, res) => { edge.set(req.url, await res.text()); },
+} };
 const W = await loadWorker();
 const q = (trip) => ({ trip, mode: "train", line: "T4", stop: "P1", destId: "D9", planned: at(0) });
 
@@ -57,7 +63,7 @@ test("a busy answer is retried and the stop list comes back", async () => {
 });
 
 test("still busy after the retries: empty list said as busy, not as a train with no stops", async () => {
-  plan = [429, 429, 429];
+  plan = [429, 429, 429, 429];
   const r = await W.plannerLeg({}, q("trip-b"), "trip-b", "T4", { waitMs: 1 });
   assert.equal(r.leg, null);
   assert.equal(r.status, "busy");
@@ -78,7 +84,8 @@ test("when the planner is busy later, the kept list is used and marked stale", a
   await W.plannerLeg({}, q("trip-d"), "trip-d", "T4", { waitMs: 1 });
   const k = [...W.plannerLegMem.keys()].find((x) => x.startsWith("trip-d|"));
   W.plannerLegMem.get(k).at -= 5 * 60000;
-  plan = [429, 429, 429];
+  for (const u of [...edge.keys()]) if (u.includes("trip-d")) edge.delete(u);
+  plan = [429, 429, 429, 429];
   const r = await W.plannerLeg({}, q("trip-d"), "trip-d", "T4", { waitMs: 1 });
   assert.equal(r.status, "stale");
   assert.equal(r.leg.stopSequence.length, 3);
@@ -97,4 +104,16 @@ test("two questions for the same service at once share one planner call", async 
   assert.equal(tripCalls, 1);
   assert.equal(a.leg.stopSequence.length, 3);
   assert.equal(b.leg.stopSequence.length, 3);
+});
+
+test("a list another isolate read (the edge cache) is used without asking the planner", async () => {
+  plan = [journey("trip-g")];
+  await W.plannerLeg({}, q("trip-g"), "trip-g", "T4", { waitMs: 1 });
+  assert.ok([...edge.keys()].some((u) => u.includes("/__edge/planner-leg/trip-g")));
+  W.plannerLegMem.clear();
+  tripCalls = 0;
+  const r = await W.plannerLeg({}, q("trip-g"), "trip-g", "T4", { waitMs: 1 });
+  assert.equal(tripCalls, 0);
+  assert.equal(r.status, "ok");
+  assert.equal(r.leg.stopSequence.length, 3);
 });
