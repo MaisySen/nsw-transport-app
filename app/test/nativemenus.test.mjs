@@ -138,3 +138,25 @@ test('no dashes in the new menu code', () => {
     assert.doesNotMatch(read(f), /[\u2013\u2014]/, f);
   }
 });
+
+// The departures row (stop screen, board, Home stop cards): hold opens the same native menu, not the old sheet.
+test('departure row menu: Watch or Stop watching, then Show stops, bell symbols, title from the service', () => {
+  let w = 0, o = 0;
+  const m = M.departureMenu({ line: 'T1', dest: 'Emu Plains Station, Emu Plains' }, false, { watch: () => { w++; }, open: () => { o++; } });
+  assert.equal(m.title, 'T1 to Emu Plains');
+  assert.deepEqual(m.items.map((i) => [i.text, i.sf, i.icon, i.destructive]), [['Watch', 'bell', 'bell', false], ['Show stops', 'list.bullet', 'list', false]]);
+  m.items[0].onPress(); m.items[1].onPress();
+  assert.equal(w, 1); assert.equal(o, 1);
+  const on = M.departureMenu({ line: '410', dest: 'Rockdale' }, true, { watch: noop, open: noop });
+  assert.deepEqual(on.items.map((i) => [i.text, i.sf]), [['Stop watching', 'bell.slash'], ['Show stops', 'list.bullet']]);
+  assert.deepEqual(M.departureMenu({ line: 'T1', dest: 'Central' }, false, { open: noop }).items.map((i) => i.text), ['Show stops']);
+  // VoiceOver: the swipe's Watch is not listed twice.
+  assert.deepEqual(M.withMenuActions([{ name: 'swipeAction', label: 'Watch' }], m.items).map((a) => a.label), ['Watch', 'Show stops']);
+});
+
+test('the departure row holds through HoldMenu, with no direct long press and no ActionSheetIOS', () => {
+  const src = read('src/components/Transit.tsx');
+  assert.match(src, /<HoldMenu menu=\{departureMenu\(d, !!watched, \{ watch: onWatch, open: onPress \}\)\}/);
+  assert.doesNotMatch(src, /onLongPress=/);
+  assert.doesNotMatch(src, /ActionSheetIOS|nativeMenu\(/);
+});

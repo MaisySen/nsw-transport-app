@@ -30,7 +30,23 @@ const ICONS: [RegExp, string, string][] = [
   [/^(every day|weekdays)\b/i, 'calendar', 'calendar'],
   [/^clear\b/i, 'xmark.circle', 'close'],
   [/^email\b/i, 'envelope', 'share'],
+  [/^stop watching\b/i, 'bell.slash', 'bellOff'],
+  [/^watch\b/i, 'bell', 'bell'],
+  [/^show stops\b/i, 'list.bullet', 'list'],
 ];
+
+/**
+ * Tap and hold on a departure (stop screen, board, Home stop cards): Watch or Stop watching (the same words as the
+ * row's swipe, so VoiceOver lists the action once), then Show stops. The title is the service, from live data.
+ */
+export function departureMenu(d: { line?: string | null; dest?: string | null }, watched: boolean, act: { watch?: (() => void) | null; open: () => void }): MenuSpec {
+  const dest = String(d.dest || '').split(',')[0].replace(/ Station$/, '').trim();
+  const title = [String(d.line || '').trim(), dest].filter(Boolean).join(' to ');
+  const items: MenuAction[] = [];
+  if (act.watch) items.push({ text: watched ? 'Stop watching' : 'Watch', ...iconsFor(watched ? 'Stop watching' : 'Watch'), destructive: false, onPress: act.watch });
+  items.push({ text: 'Show stops', ...iconsFor('Show stops'), destructive: false, onPress: act.open });
+  return { title: title || undefined, items };
+}
 
 export function iconsFor(text: string): { sf: string; icon: string } {
   for (const [re, sf, icon] of ICONS) if (re.test(text.trim())) return { sf, icon };

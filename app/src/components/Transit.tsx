@@ -4,7 +4,8 @@ import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-nat
 import type { Why } from '@/lib/whyLateCore';
 import { WhyLate, withWhyAction } from './WhyLate';
 import { SwipeRow, swipeA11y, type SwipeAct } from './Swipe';
-import { haptic } from '@/lib/haptic';
+import { HoldMenu } from './HoldMenu';
+import { departureMenu } from '@/lib/menuCore';
 import { usePalette } from '@/lib/theme';
 import { BADGE, badgeLook } from '@/lib/lineStyle';
 import { clock, delayWords, durText, ms, shortName } from '@/lib/format';
@@ -161,7 +162,7 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
     ? { label: watched ? 'Stop watching' : 'Watch', text: watched ? 'Stop' : 'Watch', icon: watched ? I.bellOff : I.bell, color: watched ? c.text2 : c.indigo, onPress: onWatch }
     : null;
   const body = (
-    <Pressable accessibilityRole="button" onPress={onPress} onLongPress={onWatch ? () => { haptic.tap(); onWatch(); } : undefined} {...rowA11y(act, why)}
+    <Pressable accessibilityRole="button" onPress={onPress} {...rowA11y(act, why)}
       android_ripple={{ color: c.fill }} style={({ pressed }) => [st.depRow, { backgroundColor: pressed && Platform.OS === 'ios' ? c.card2 : c.card }]}>
       <View style={{ width: 66, alignItems: 'flex-start' }}><LineBadge line={d.line} mode={d.mode} color={d.color} /></View>
       <View style={{ flex: 1, marginRight: 8 }}>
@@ -188,8 +189,11 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
       <LiveCountdown state={live} planned={d.planned} />
     </Pressable>
   );
-  if (!act) return body;
-  return <SwipeRow act={act}>{body}</SwipeRow>;
+  // Tap and hold: the system context menu on iPhone (Watch or Stop watching, Show stops), the Material 3 menu on
+  // Android, the old sheet on an iPhone build without the native view (components/HoldMenu.tsx, lib/menuCore.ts).
+  const held = <HoldMenu menu={departureMenu(d, !!watched, { watch: onWatch, open: onPress })} surface={c.card}>{body}</HoldMenu>;
+  if (!act) return held;
+  return <SwipeRow act={act}>{held}</SwipeRow>;
 }
 
 function legLine(l: Leg) {
