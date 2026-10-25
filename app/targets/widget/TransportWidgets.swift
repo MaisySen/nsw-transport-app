@@ -329,6 +329,8 @@ struct WaitText: View {
 struct NoticeLine: View {
     var notice: WidgetNotice
     var maxChars = 40
+    /// More than one line where the widget has room (medium 2, large 3).
+    var lines = 1
 
     var body: some View {
         let color: Color = notice.level == .severe ? .red : (notice.level == .warning ? .orange : .secondary)
@@ -336,8 +338,8 @@ struct NoticeLine: View {
             Image(systemName: notice.level == .info ? "info.circle.fill" : "exclamationmark.triangle.fill")
                 .accessibilityHidden(true)
             Text(WidgetText.compactAlert(notice.text, maxChars: maxChars))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .lineLimit(lines)
+                .minimumScaleFactor(lines > 1 ? 0.85 : 0.8)
         }
         .font(.caption2.weight(.semibold))
         .foregroundStyle(color)
@@ -467,10 +469,37 @@ struct NextTripView: View {
 
     // Home Screen
 
+    /// "Kings Cross to Strathfield" with "Station" dropped from each name, for the small widget.
+    private var shortSubtitle: String? {
+        guard let s = subtitle else { return nil }
+        return s.replacingOccurrences(of: " Station", with: "")
+    }
+
+    /// The small widget picks the first layout that fits inside its content margins: with the route line and
+    /// "then 13 min", then without the route line, then the countdown alone.
     private var small: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        ViewThatFits(in: .vertical) {
+            smallBody(route: true, showNext: true)
+            smallBody(route: false, showNext: true)
+            smallBody(route: false, showNext: false)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// The countdown is the hero: big whole minutes, the next service small under it. An alert is the warning
+    /// icon beside the status (its words are too long for this size; VoiceOver reads them in full).
+    private func smallBody(route: Bool, showNext: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.subheadline.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.85)
-            if let s = subtitle { Text(s).font(.caption2).foregroundStyle(Color.secondary).lineLimit(1) }
+            if route, let s = shortSubtitle {
+                // The route line shows only when it fits on one line, slightly smaller if needed; else it hides,
+                // since the title already names the trip.
+                ViewThatFits(in: .horizontal) {
+                    Text(s).font(.caption2).foregroundStyle(Color.secondary).lineLimit(1)
+                    Text(s).font(.system(size: 10)).foregroundStyle(Color.secondary).lineLimit(1)
+                    Color.clear.frame(width: 0, height: 0)
+                }
+            }
             Spacer(minLength: 0)
             if let t = entry.trips.first {
                 HStack(spacing: 4) {
@@ -478,12 +507,23 @@ struct NextTripView: View {
                     if let p = WidgetText.plat(t.platform) { Text(p).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 WaitText(leave: t.leave, now: entry.date)
-                    .font(.system(.title, design: .rounded).weight(.bold))
+                    .font(.system(size: 40, weight: .bold, design: .rounded))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                if let n = entry.notice {
-                    NoticeLine(notice: n, maxChars: 20)
-                } else {
+                    .minimumScaleFactor(0.5)
+                if showNext, let next = entry.trips.dropFirst().first {
+                    Text("then \(WidgetText.wait(next.leave, from: entry.date))")
+                        .font(.caption2)
+                        .foregroundStyle(Color.secondary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
+                HStack(spacing: 4) {
+                    if let n = entry.notice {
+                        Image(systemName: n.level == .info ? "info.circle.fill" : "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(n.level == .severe ? Color.red : (n.level == .warning ? Color.orange : Color.secondary))
+                            .accessibilityLabel("Alert: \(n.text)")
+                    }
                     statusLine(t, font: .caption)
                 }
             } else {
@@ -544,10 +584,10 @@ struct NextTripView: View {
         return WidgetText.startURL(from: entry.fromID, to: entry.toID, leave: t.leave, fromName: entry.from, toName: entry.to)
     }
 
-    /// The notice or the time of the last update, then the Start button.
-    @ViewBuilder private var footer: some View {
+    /// The notice (up to `lines` lines) or the time of the last update, then the Start button.
+    private func footer(lines: Int) -> some View {
         HStack(alignment: .center, spacing: 6) {
-            noticeOrUpdated
+            noticeOrUpdated(lines: lines)
             Spacer(minLength: 4)
             if let u = startURL { StartTripLink(url: u) }
         }
@@ -556,7 +596,10 @@ struct NextTripView: View {
     /// "On time" in its colour, then a small "1 change" and "6 min walk" when they apply.
     private func statusLine(_ t: TripLine, font: Font = .caption2) -> some View {
         HStack(spacing: 4) {
+            // The status ("3 min late") keeps its full width; the change and walk words give way first.
             Text(status(t)).foregroundStyle(Self.statusColor(t)).fontWeight(.semibold)
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(1)
             if let c = WidgetText.changes(t.changes) { Text(c).foregroundStyle(Color.secondary) }
             if t.walkMinutes > 0 { Text("\(t.walkMinutes) min walk").foregroundStyle(Color.secondary) }
         }
@@ -567,7 +610,9 @@ struct NextTripView: View {
     /// Every row has the same layout; the first is larger. Tapping a row opens that trip.
     @ViewBuilder private func row(_ t: TripLine, first: Bool) -> some View {
         let r = HStack(spacing: 8) {
+            // One column for the badges (T1, M, 410 and D400 fit), so every row's time starts at the same x.
             WidgetLineBadge(line: t.line, colorHex: t.colorHex, mode: t.mode, large: first)
+                .frame(minWidth: 40, alignment: .leading)
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 4) {
                     Text(Clock.time(t.leave)).font((first ? Font.subheadline : .footnote).weight(.semibold)).monospacedDigit()
@@ -588,43 +633,63 @@ struct NextTripView: View {
         if let u = link(t) { Link(destination: u) { r }.tint(Color.primary) } else { r }
     }
 
-    @ViewBuilder private var noticeOrUpdated: some View {
+    @ViewBuilder private func noticeOrUpdated(lines: Int) -> some View {
         if let n = entry.notice {
-            let chars = startURL == nil ? 44 : 32
-            if let u = alertsLink { Link(destination: u) { NoticeLine(notice: n, maxChars: chars) } }
-            else { NoticeLine(notice: n, maxChars: chars) }
+            let chars = (startURL == nil ? 44 : 32) * lines
+            if let u = alertsLink { Link(destination: u) { NoticeLine(notice: n, maxChars: chars, lines: lines) } }
+            else { NoticeLine(notice: n, maxChars: chars, lines: lines) }
         } else {
             Text("Updated \(Clock.time(entry.updated))").font(.caption2).foregroundStyle(.secondary).monospacedDigit()
         }
     }
 
+    /// Medium and large pick the first layout that fits inside the system content margins, so nothing runs
+    /// into the rounded corners at any text size. The alert keeps its lines before a service row is added.
     private var medium: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        ViewThatFits(in: .vertical) {
+            mediumBody(rows: 2, lines: 2)
+            mediumBody(rows: 1, lines: 2)
+            mediumBody(rows: 1, lines: 1)
+        }
+    }
+
+    private func mediumBody(rows: Int, lines: Int) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
             header
             if entry.trips.isEmpty {
                 Spacer(minLength: 0)
                 Text(entry.message ?? "No trips soon").font(.subheadline).foregroundStyle(.secondary)
             }
-            ForEach(Array(entry.trips.prefix(2).enumerated()), id: \.offset) { i, t in
+            ForEach(Array(entry.trips.prefix(rows).enumerated()), id: \.offset) { i, t in
                 row(t, first: i == 0)
             }
             Spacer(minLength: 0)
-            footer
+            footer(lines: lines)
         }
     }
 
     private var large: some View {
+        ViewThatFits(in: .vertical) {
+            largeBody(rows: 6, lines: 3)
+            largeBody(rows: 5, lines: 3)
+            largeBody(rows: 4, lines: 3)
+            largeBody(rows: 3, lines: 3)
+            largeBody(rows: 3, lines: 1)
+        }
+    }
+
+    private func largeBody(rows: Int, lines: Int) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             header
             if entry.trips.isEmpty {
                 Text(entry.message ?? "No trips soon").font(.subheadline).foregroundStyle(.secondary)
             }
-            ForEach(Array(entry.trips.prefix(entry.notice == nil ? 5 : 4).enumerated()), id: \.offset) { i, t in
+            ForEach(Array(entry.trips.prefix(rows).enumerated()), id: \.offset) { i, t in
                 row(t, first: i == 0)
                 if i == 0 && entry.trips.count > 1 { Divider() }
             }
             Spacer(minLength: 0)
-            footer
+            footer(lines: lines)
         }
     }
 }
@@ -787,6 +852,7 @@ struct StopBoardView: View {
             ForEach(Array(entry.rows.prefix(count).enumerated()), id: \.offset) { i, r in
                 HStack(spacing: 6) {
                     WidgetLineBadge(line: r.line, colorHex: r.colorHex, mode: r.mode)
+                        .frame(minWidth: 40, alignment: .leading)
                     if !compact {
                         VStack(alignment: .leading, spacing: 0) {
                             Text(r.dest).font(.subheadline.weight(.medium)).lineLimit(1)

@@ -4,6 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Widget layout fixes for the next iPhone build (branch native-207, after 207; not in 207)
+From Bidur's build 206 screenshots of the small, medium and large trip widgets.
+* Times line up: the line badge sits in a fixed column, so every row's time starts at the same place (trip and stop board widgets).
+* Nothing runs into the rounded corners: the medium and large widgets pick the first layout that fits inside the system content margins (the medium one was about 7 points too tall at the default text size, which pushed the title and the Start button into the edges). With little room the medium widget drops its second row before cutting the alert.
+* The alert reads on up to 2 lines on medium and 3 on large; the large widget adds a sixth service row when there is room.
+* The status ("3 min late") is never cut; the change and walk words give way first.
+* Small widget: a bigger countdown with "then 13 min" under it, the route line without "Station" and only when it fits, and an alert shown as its warning icon beside the status (VoiceOver reads it in full).
+* Parse checked only (swiftc -parse); compiled first by the next EAS build. widget layout: times aligned, alert 2 lines, Start not clipped (TEST_PLAN.md, Build 207 device checklist, items 22 to 25).
+
 ### Build 207 ready to build (branch native-207; simulator check 25 Oct, 5:15 PM)
 * native-207-bus and main (up to b8ddd1e) merged into native-207; only `ios.buildNumber` changed (207). Version and runtime stay 1.0.0, so 207 keeps every over the air update.
 * EAS simulator build 70dd1762 (watchshots profile, commit 375e6c8): the app, widget, watch app and complications all compiled, with no warnings in our code. Inside the built app: version 1.0.0 (207) on all four, no background modes.

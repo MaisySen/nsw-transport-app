@@ -219,6 +219,12 @@ Run on a real iPhone (iOS 26 and iOS 27.1) and a real Apple Watch paired with it
 **Unchanged in 207 (regression)**
 21. Live Activity and Dynamic Island on a trip, trip reminders ringing with the app closed, last train home reminder, notifications permission asked only on the first reminder, location asked only when in use (no Always prompt).
 
+**Widget layout (on `native-207` after 207 shipped; first in the next build, not in 207)**
+22. widget layout: times aligned, alert 2 lines, Start not clipped. Medium: every row's time starts in the same column (T1, T4, M, 410, D400), the alert reads on up to 2 lines, the title, rows and Start sit inside the rounded corners, "3 min late" never cut. With a long alert or a large text size the widget shows one row instead of cutting anything.
+23. Large: badges one size and times in one column; the alert in full on up to 3 lines; a sixth service row when there is room; nothing touches the edges.
+24. Small: the countdown big ("7 min") with "then 13 min" under it when it fits; the route line ("Kings Cross to Strathfield", no "Station") only when it fits on one line, else hidden; with an alert, the warning icon beside the status, and VoiceOver reads the alert in full.
+25. Stop board widget: times line up in one column on a bus stop with 410 and D400 rows.
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).
