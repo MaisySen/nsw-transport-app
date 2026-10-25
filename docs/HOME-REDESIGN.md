@@ -1,46 +1,50 @@
-# Home redesign proposal (branch home-redesign, not shipped)
+# Home redesign (shipped: Option A)
 
-Bidur, 25 Oct 3:09 PM: "Home page looks clustered. Add buttons in middle of screen. Hard to find. Plan something better."
+Bidur, 25 Oct 3:09 PM: "Home page looks clustered. Add buttons in middle of screen. Hard to find. Plan something better." Two options were shown at 3:43 PM (screenshots in `files/home-redesign/`); Bidur asked for a recommendation at 4:04 PM and Option A was picked. Option A is Home on `main` from the over the air update of 25 Oct (see docs/RELEASES.md). Option B and the `?design=` switch are gone. Before and after screenshots: `files/home-a-ship/`.
 
-Both options run on the real app code with live data. On this branch open `/home?design=a` or `/home?design=b` in the web preview; without the parameter Home is unchanged, so the branch is safe to merge and switch later. Screenshots (390 x 844, light and dark, Expo web, the floating tab bar drawn in the screenshot to match the iPhone): `files/home-redesign/`. Today's Home for comparison: `current-home-390-*.png`.
+## Home now, top to bottom
 
-## What is cluttered today (from the current screenshots)
+1. Navigation bar: title Home, the live stamp (or Offline) and one Add button (plus icon) at the top right.
+2. Trip in progress bar, the high priority alert banner, Watching now, and the commute suggestion, each only when there is one.
+3. Alerts on your trips: one line, "6 alerts on your trips", that opens in place to list them. Last train home, weekend trackwork and line status: one card or line each, only when something is on.
+4. Next trip card (titled Your commute when Home and Work are set, else Next trip): a big countdown, line badges, where to board (Platform 2; for a bus the stand and stop number, Stand X1, Stop 213723), the live label (3 min late, Live, updated 20 s ago; Timetable; Not tracking), leave and arrive with the journey time, and "Then 12, 19 min". The commute card keeps the swap button and the leave time and morning check lines.
+5. Your trips: every other trip as a compact row (name; badges, status and where to board; the next two times; the countdown at the right edge), the drag handle to reorder, swipe to delete, Clear all in the section header.
+6. Starred stops, then Nearby, as before.
+7. No trips: "Save the trips you take" with a large Add a trip button.
 
-* Each saved trip is a card with three full service rows (countdown, times, status, platform, duration, seats chip, badges). Three trips fill about three screens.
-* "6 alerts", "9 alerts" under every trip, repeating the same alerts.
-* The only Add is a small button in the middle of the page (the Your trips section header, next to Clear all), so it moves as cards load and sits under other content.
-* Add home and Add work tiles in the middle of the list, a star on every saved trip (they are all saved), Clear all next to Add.
+## Which trip is the Next trip card
 
-## Shared by both options
+Your commute (Home to Work before 12 pm, Work to Home after, unless swapped) when Home and Work are set. Otherwise the first trip in your order. Hold a row and choose Show first to make it the card; dragging rows never moves the card (`dragOrder` and `toFront` in src/lib/homeCore.ts).
 
-* One Add, always in the same place: a plus button in the navigation bar, top right, as in Apple's own apps (HIG: the primary action of a screen goes in the toolbar). It offers New trip, Star a stop, Set or change Home, Set or change Work. On Android the same menu (Material 3 top app bar action).
-* Empty Home: one centred card, "Save the trips you take" with a large Add a trip button.
-* Alerts collapsed into one line at the top, "N alerts on your trips", which opens in place to list them. Line status and trackwork stay as they are (one line each, only when something is on).
-* Removed from the trip list: the star on saved trips, the seats chip, journey duration, the third service and the per trip alert counts. All of it is still on the trip screen, one tap away.
-* Moved: Add home and Add work into the plus menu; Clear all into a later Edit mode (swipe to delete and long press stay).
-* Same badge style as the rest of the app, countdown colours unchanged (red 3 min or less, amber 4 to 9, green 10 plus).
+## Add
 
-## Option A: Next trip, then a short list (files option-a-*)
+The plus button offers New trip, Star a stop, Set (or Change) Home and Set (or Change) Work.
 
-* "Next trip" card at the top, TripView style: a big countdown (56 pt), platform, line badges, status, leave and arrive, and "Then 11, 18 min". It is your commute when one is set for this half of the day, otherwise the first trip in your order.
-* "Your trips": every other trip as one compact row (name; badges, status and platform; "Then 8, 11 min"), the next countdown at the right, drag handle kept.
-* Starred stops and Nearby below, as today.
-* Best for: one main trip you check every day. One glance answers "how long until my train and which platform".
+* iPhone: the system action sheet. On iOS 26 and 27 the system draws the glass behind bar buttons, so the button is a plain plus icon (22 pt, tint colour), like the star on the trip screen, and shares the bar's glass with the live stamp.
+* Android: a 48 dp top app bar action that opens the app's bottom sheet (components/Sheet.tsx). An Android dialog shows at most 3 buttons, so the 4 choices are not an alert. The web uses the same sheet (React Native web has no alerts).
+* VoiceOver and TalkBack: "Add", with the hint "New trip, star a stop, or set Home or Work".
 
-## Option B: One list at a time (files option-b-*)
+## What left the trip rows (still on the trip screen, one tap away)
 
-* A segmented control under the title: Trips, Stops, Nearby. Only one list is on screen, so Home is never longer than your trips.
-* Every trip is the same card: name, then the next three departures as countdown chips (the first one larger), badges, status, platform, leave and arrive. No hero, every trip looks the same.
-* Best for: several trips of equal weight (both directions of a commute, a bus and a train). Closest to TripView's list.
-* On iPhone the segmented control is the iOS one; the web preview shows the Android (Material 3) style.
+The star on saved trips, the seats chip, the journey time, the third service and the per trip alert counts. The add home and add work tiles moved into Add.
 
-## Recommendation
+## Delete and Undo
 
-Option A. It answers the question people open the app for in the first second and keeps everything on one scroll. With the same three trips, one starred stop and Nearby, Home is 1027 pt tall instead of 1615 pt today (full page at 390 pt wide, measured from the screenshots); Option B's Trips list fits on one screen (844 pt). Option B is a good fallback if Bidur prefers equal cards.
+Swipe a row (or the Next trip card) and tap Delete, or hold and choose Delete trip, or use the VoiceOver action. The trip leaves Home at once and "Strathfield to Kings Cross deleted" with Undo shows above the tab bar for 5 seconds (TabBarSafe). The server copy of a saved trip is deleted only after the bar has gone, or straight away when the app goes to the background; Undo puts the trip and its place in your order back. The saved trip data format is unchanged, so widgets and the watch read the same list (`undoableDelete` in homeCore.ts).
 
-## Not done yet (after a pick)
+## Hold menus on Android
 
-* The chosen option becomes the default; the other is removed with the `design` switch.
-* Edit mode for Clear all and reordering without the drag handle.
-* VoiceOver pass on the new rows (labels are written: name, countdown, platform, status, then times).
-* Not seen on an iPhone yet.
+Android dialogs drop all but the last 3 buttons, so when a hold menu has 3 actions the Cancel button gives way (tap outside or Back closes it). This also fixed the Home and Work menu, which lost Change home on Android.
+
+## VoiceOver labels
+
+* Next trip card: "Strathfield to Kings Cross. 14 minutes, leaves 4:29 from Platform 2, 3 min late, Live, updated 20 s ago, arrives 4:56, T1 and T4. Then 25, 29 min", hint "Opens the trip with every service".
+* Row: the same, shorter, with the Reorder trip handle and the Delete action.
+
+## Dynamic Type
+
+Trip names wrap to two lines, the status and where to board wrap, the countdown chip grows with the text (capped at 1.3 times), and the card's big countdown is capped at 1.2 times so the badges and platform wrap under it instead of squeezing. Checked on the web with every font size 1.35 times larger (`files/home-a-ship/after-bigtext-390-dark.png`); not yet checked at the largest accessibility sizes on a phone.
+
+## Not checked on a device yet
+
+The plus button inside the iOS 26 and 27 glass bar, the action sheet from it, the Android top app bar action and bottom sheet, the Undo bar above the floating tab bar after a delete, and VoiceOver reading the card.
