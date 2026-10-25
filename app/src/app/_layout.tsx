@@ -41,6 +41,8 @@ export default function RootLayout() {
       if (r.actionIdentifier === 'end') { endLive().finally(() => router.replace('/')); return; }
       if (r.actionIdentifier === 'share') { router.push({ pathname: '/go', params: { share: '1' } }); return; }
       if (d.go) { router.push('/go'); return; }
+      // A trip reminder opens its saved trip with live times.
+      if (d.tripOpen && typeof d.tripOpen === 'object') { router.push({ pathname: '/trip', params: d.tripOpen }); return; }
       // A morning check alert (tag m<id>) opens the checks, where Check now shows the latest.
       if (typeof d.tag === 'string' && /^m[A-Za-z0-9]/.test(d.tag)) { router.push('/morning'); return; }
       if (d.watch) router.push({ pathname: '/watch/[id]', params: { id: String(d.watch) } });

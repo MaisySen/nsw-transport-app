@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useUsualText } from '@/lib/usual';
+import { TripReminders } from '@/components/TripReminders';
 import { plural } from '@/lib/homeCore';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, StyleSheet, Switch, useColorScheme, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
@@ -11,7 +12,7 @@ import { LONG_TRIP_KEEP_MS, STILL_SEARCHING_MS } from '@/lib/longTripCore';
 import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius, modeColor } from '@/lib/theme';
 import { bestTime, clock, durText, ms, plainText, shortName } from '@/lib/format';
-import { store, useStore } from '@/lib/store';
+import { store, tripKeyOf, useStore } from '@/lib/store';
 import { safeUrl, stShort } from '@/lib/access';
 import { LegAccessChips, ParkGroup } from '@/components/Access';
 import { fareKind, fareOf, fareWords, money, offPeakText, TRAINLINK_BOOKING_URL } from '@/lib/fare';
@@ -317,6 +318,9 @@ export default function TripScreen() {
   const accOn = !!stNow.acc;
   const liftOn = useFlag('liftAwareRouting');
   const allOn = !!stAll[tkey];
+  // A saved trip (Your trips) can have reminders; they open it again with these params.
+  const saved = (stNow.myTrips || []).find((t) => tripKeyOf(t) === tkey) || null;
+  const openParams = Object.fromEntries(Object.entries(p).filter(([k, v]) => v != null && v !== '' && ['from', 'fromName', 'to', 'toName', 'via', 'viaName', 'conn', 'name', 'legs'].includes(k)).map(([k, v]) => [k, String(v)]));
   const c = usePalette();
   const now = useNow();
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
@@ -347,6 +351,8 @@ export default function TripScreen() {
   })();
   const df = directFilter(jsAll, plan, allOn, (j) => j);
   const js = df.list;
+  // A new reminder starts 15 min before the first service shown (phone time, as the reminder rings in phone time).
+  const suggest = (() => { const j = js[0]; if (!j) return null; const t = new Date(depMs(j) - 15 * 60000); return { hour: t.getHours(), minute: Math.floor(t.getMinutes() / 5) * 5 }; })();
   // Last way home: the last service tonight, only when the list shows the night gap after it.
   const lastIdx = lastTonightIndex(js.map(depMs));
   const loadMore = async (dir: -1 | 1) => {
@@ -520,6 +526,7 @@ export default function TripScreen() {
         {!data && error ? <Empty icon={I.warn} title="Can't plan this trip" body={error} /> : null}
         {!data && !error ? <Searching key={`${from.id}>${to.id}|${whenKey}`} long={!chain && !via && isLongPair(from.id, to.id)} /> : null}
         {data?.tomorrow ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>No more trips tonight. These are the first ones tomorrow.</T> : null}
+        {saved ? <TripReminders tripKey={tkey} name={saved.name} open={openParams} suggest={suggest} /> : null}
       </Screen>
     </>
   );
