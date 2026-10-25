@@ -218,3 +218,23 @@ export function whenWords(s: { kind: string; big: string; unit: string; counting
   if (/^\d+$/.test(s.big)) return `departs in ${s.big} minute${s.big === '1' ? '' : 's'}`;
   return `departs ${s.big}`;
 }
+
+/** The destination split for the board: "Newcastle Interchange" and "Epping" from "Newcastle Interchange via Epping". */
+export function splitVia(d?: string | null): { name: string; via: string } {
+  const full = destName(d);
+  const m = /^(.+?)\s+via\s+(.+)$/i.exec(full);
+  return m ? { name: m[1].trim(), via: m[2].trim() } : { name: full, via: '' };
+}
+
+/**
+ * What the stop list area says when it has no names to show, or null when it has names.
+ * status is the server's stopsStatus ("ok", "stale", "busy", "notFound", "none", "cancelled"), absent on older servers.
+ */
+export function stopsNote(stops: StopsAfter, o: { loading?: boolean; status?: string | null; cancelled?: boolean }): string | null {
+  if (stops && stops.names.length) return null;
+  if (o.loading) return 'Loading stops';
+  if (o.cancelled || o.status === 'cancelled') return 'This service is cancelled';
+  if (stops && stops.unnamed) return 'Stop names not given for this service';
+  if (stops && !(stops.skipped && stops.skipped.length)) return 'This station is the last stop';
+  return 'Full stop list not available yet';
+}

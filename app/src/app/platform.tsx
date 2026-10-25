@@ -1,7 +1,8 @@
-// Platform view: one train or metro at a station, full screen and readable from a distance. Its platform, the
-// carriages (only when live data reports them), when it leaves, the stops it calls at after this station and the
-// next two services. Opened from the platform button in a station's header and from Platform view in the hold menu
-// of a train or metro departure; nothing else on the existing screens changes.
+// Platform view: one train or metro at a station, styled as a station platform board and readable from a distance.
+// A white board (dark in dark mode) with an orange Next train bar, the line and destination in large type, the stops
+// it calls at in their own scrolling list, the platform with carriages (only when live data reports them), when it
+// departs, and the next two services in a small table. Opened from the platform button in a station's header and
+// from Platform view in the hold menu of a train or metro departure; nothing else on the existing screens changes.
 // Data: /api/departures (platform, live times, carriages) and /api/service (the stop list), both already served.
 // Battery (docs/PERFORMANCE.md): useLive polls only while this screen is on view with the app in front, the
 // countdown ticks on whole minutes (useCountdownNow), and the stop list is read once per service and then each minute.
@@ -9,23 +10,22 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api, platformDepartures } from '@/lib/api';
 import { useCountdownNow, useLive, useReportCountdowns } from '@/lib/hooks';
 import { adaptiveGapMs, nextInMs } from '@/lib/pollCore';
 import { cacheKey, offlineText } from '@/lib/offlineCore';
-import { usePalette, radius } from '@/lib/theme';
+import { usePalette } from '@/lib/theme';
 import { badgeLook } from '@/lib/lineStyle';
 import { bestTime, clock, shortName } from '@/lib/format';
 import { haptic } from '@/lib/haptic';
 import { goBack } from '@/lib/nav';
 import { useReduceMotion } from '@/lib/motion';
-import { useSolidLook } from '@/lib/cardSkin';
-import { skinStyle } from '@/lib/cardSkinCore';
 import { hasSpeech, speak } from '@/lib/nativeExtras';
 import { takeVoicePrompt } from '@/lib/voiceHelp';
 import { stationRows } from '@/lib/platform';
-import { carsOf, destName, listWords, pickService, platformLayout, platformNo, platformSentence, speakSentence, stoppingTag, stopsAfter, stopsShown, viaAirport, whenWords,
+import { carsOf, destName, listWords, pickService, platformLayout, platformNo, platformSentence, speakSentence, splitVia, stoppingTag, stopsAfter, stopsNote, viaAirport, whenWords,
   type StationRow, type StopsAfter } from '@/lib/platformCore';
 import type { Departure } from '@/lib/types';
 import { depState } from '@/components/Transit';
@@ -34,8 +34,15 @@ import { Icon, I, modeIconName } from '@/components/Icon';
 // The one time Get a better voice prompt, loaded only when it shows (the same as the other Speak buttons).
 const VoiceHelp = lazy(() => import('@/components/VoiceHelp').then((m) => ({ default: m.VoiceHelp })));
 
+/** Board colours: white with near black text, or the dark variant. Orange is for the bar and the big figures. */
+function boardColors(dark: boolean) {
+  return dark
+    ? { bg: '#141416', fg: '#F4F4F6', sub: '#A3A3AA', line: '#2F2F34', or: '#FF8A3D', bar: '#C9561A', pill: '#55555C', screen: '#000000', btn: '#2A2A2C', rgb: '20,20,22' }
+    : { bg: '#FFFFFF', fg: '#111111', sub: '#5C5C62', line: '#DEDEE3', or: '#D85A14', bar: '#E8641B', pill: '#4A4A50', screen: '#000000', btn: '#2A2A2C', rgb: '255,255,255' };
+}
+
 /** The stop list for the shown service: read once per service, again each minute while on view. */
-function useStopsAfter(d: Departure | null, station: string): { stops: StopsAfter; loading: boolean } {
+function useStopsAfter(d: Departure | null, station: string): { stops: StopsAfter; loading: boolean; status: string | null; cancelled: boolean } {
   const [stations, setStations] = useState<StationRow[] | null>(null);
   useEffect(() => { let on = true; stationRows().then((r) => { if (on) setStations(r); }).catch(() => {}); return () => { on = false; }; }, []);
   const key = d ? `${d.tripId || ''}|${d.planned || ''}` : '';
@@ -43,214 +50,290 @@ function useStopsAfter(d: Departure | null, station: string): { stops: StopsAfte
     60000, [key], { enabled: !!d });
   const stops = useMemo(() => (data && Array.isArray((data as any).stops) ? stopsAfter((data as any).stops, { mineIndex: (data as any).mineIndex, stopId: d?.stopId, station }, stations) : null),
     [data, d?.stopId, station, stations]);
-  return { stops, loading: !!d && !data && !error };
+  const status = data && typeof (data as any).stopsStatus === 'string' ? (data as any).stopsStatus as string : null;
+  return { stops, loading: !!d && !data && !error, status, cancelled: !!(data && (data as any).cancelled) };
 }
 
 export default function PlatformView() {
   const p = useLocalSearchParams<{ stop: string; name?: string; trip?: string; planned?: string; line?: string }>();
   const stop = String(p.stop || '');
   const c = usePalette();
+  const B = boardColors(!!c.dark);
   const now = useCountdownNow();
   const insets = useSafeAreaInsets();
-  const { width, fontScale } = useWindowDimensions();
+  const { width, height, fontScale } = useWindowDimensions();
   const L = platformLayout(width, fontScale);
+  const fs = Math.min(Math.max(fontScale || 1, 1), 2);
+  // With very large text or a short window the fixed parts would not fit, so the whole board scrolls instead.
+  const fixed = fs < 1.4 && height >= 560;
   const reduce = useReduceMotion();
-  const solid = useSolidLook();
   const canSpeak = useMemo(() => hasSpeech(), []);
+  // The fade under the stop list shows only when the list is longer than its area (so it scrolls).
+  const [boxH, setBoxH] = useState(0);
+  const [listH, setListH] = useState(0);
   const { data, error, offlineAt } = useLive((r) => platformDepartures(stop, r), (x) => adaptiveGapMs(15000, nextInMs(x?.items, Date.now())), [stop], { cacheKey: cacheKey('dep', stop) });
   const pick = useMemo(() => ({ trip: p.trip || null, planned: p.planned || null, line: p.line || null }), [p.trip, p.planned, p.line]);
   const { main, next } = pickService<Departure>(data?.items, now, pick);
   const stationName = shortName(data?.stop?.name || (p.name ? String(p.name) : '')).replace(/ Station$/, '');
-  const { stops, loading } = useStopsAfter(main, data?.stop?.name || String(p.name || ''));
+  const svc = useStopsAfter(main, data?.stop?.name || String(p.name || ''));
+  const stops = svc.stops;
   useReportCountdowns('platform:' + stop, [main, ...next].filter(Boolean).map((d) => bestTime(d!.planned, d!.realtime ? d!.estimated : null)));
   const live = main ? depState(main, now) : null;
   const cars = carsOf(main);
   const tag = stoppingTag(main);
   const plat = platformNo(main?.platform);
   const when = whenWords(live);
+  const dest = splitVia(main?.dest);
+  const note = main ? stopsNote(stops, { loading: svc.loading, status: svc.status, cancelled: svc.cancelled }) : null;
   const a11y = main ? platformSentence({ platform: main.platform, cars, when, stops, tag }) : '';
   const saidRef = useRef('');
   saidRef.current = main ? speakSentence({ line: main.line, mode: main.mode, dest: main.dest, platform: main.platform, cars, when, stops, tag }) : '';
   const close = () => { haptic.tap(); goBack(stop ? ({ pathname: '/stop/[id]', params: { id: stop, name: p.name ? String(p.name) : '' } } as any) : '/'); };
   const status = offlineAt ? offlineText(offlineAt, now) : !data ? (error ? 'Live times unavailable right now, trying again' : 'Loading live times') : null;
-  const sk = skinStyle('line', { dark: c.dark, line: main?.color || null, lines: [main?.color], solid, cardColor: c.card, text3: c.text3 });
-  const pad = { paddingLeft: insets.left + 20, paddingRight: insets.right + 20 };
+  const kindWord = main && main.mode === 'metro' ? 'metro' : 'train';
+  const stopsLabel = stops && stops.names.length
+    ? `Stops at ${listWords(stops.names)}${stops.skipped && stops.skipped.length ? `. Not stopping at ${listWords(stops.skipped)}` : ''}`
+    : note || '';
 
-  const head = (
-    <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 52 }}>
-      <Pressable onPress={close} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close Platform view"
-        style={({ pressed }) => ({ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: c.fill, opacity: pressed ? 0.6 : 1 })}>
-        <Icon name={I.close} size={19} color={c.text} />
-      </Pressable>
-      <View style={{ flex: 1, marginLeft: 12 }}>
-        <Text accessibilityRole="header" numberOfLines={1} maxFontSizeMultiplier={1.4} style={{ color: c.text, fontSize: 22, fontWeight: '700' }}>{stationName || 'Platform view'}</Text>
-        <Text numberOfLines={1} maxFontSizeMultiplier={1.4} style={{ color: c.text2, fontSize: 15 }}>Platform view</Text>
-      </View>
-      <Text maxFontSizeMultiplier={1.3} accessibilityLabel={`Time now ${clock(now)}`} style={{ color: c.text, fontSize: 20, fontWeight: '600', fontVariant: ['tabular-nums'] }}>{clock(now)}</Text>
-    </View>
-  );
+  // Big figures: a phone size and a wide size, growing with the text size within reason.
+  const k = L.wide ? 1.45 : 1;
+  const sz = { dest: 34 * k * (L.wide ? 0.82 : 1), via: 20 * (L.wide ? 1.1 : 1), stop: L.wide ? 26 : 24, plat: 68 * (L.wide ? 1.5 : 1), mins: 44 * (L.wide ? 1.6 : 1), label: L.wide ? 19 : 16 };
 
   const badge = (d: Departure, size: 'big' | 'small') => {
     const b = badgeLook(d.line, d.mode, d.color);
-    const h = size === 'big' ? 34 : 26;
+    const h = size === 'big' ? (L.wide ? 52 : 44) : 26;
     return (
-      <View accessible accessibilityLabel={b.label} style={{ minWidth: h * 1.4, height: h, borderRadius: size === 'big' ? 8 : 6, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: b.bg }}>
-        {b.text ? <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ color: b.fg, fontSize: size === 'big' ? 19 : 15, fontWeight: '800' }}>{b.text}</Text>
-          : <Icon name={modeIconName(b.mode)} size={size === 'big' ? 18 : 14} color={b.fg} />}
+      <View accessible accessibilityLabel={b.label} style={{ minWidth: size === 'big' ? h : 32, height: h, borderRadius: size === 'big' ? 9 : 5, paddingHorizontal: size === 'big' ? 6 : 4, alignItems: 'center', justifyContent: 'center', backgroundColor: b.bg }}>
+        {b.text ? <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ color: b.fg, fontSize: size === 'big' ? (L.wide ? 22 : 19) : 13, fontWeight: '800' }}>{b.text}</Text>
+          : <Icon name={modeIconName(b.mode)} size={size === 'big' ? 20 : 14} color={b.fg} />}
       </View>
     );
   };
 
-  const ring: any = sk.ring ? { backgroundImage: sk.ring, padding: sk.width } : { borderWidth: sk.width || 1, borderColor: sk.border || c.sep };
-  const mainCard = main && live ? (
-    <View style={[{ borderRadius: radius + 8 + (sk.width || 0) }, ring, sk.shadow ? ({ boxShadow: sk.shadow } as any) : null]}>
-      <View accessible accessibilityLabel={`${badgeLook(main.line, main.mode, main.color).label} to ${destName(main.dest)}. ${a11y}`}
-        style={{ borderRadius: radius + 8, overflow: 'hidden', backgroundColor: sk.surface || c.card, padding: 18 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-          {badge(main, 'big')}
-          <Text maxFontSizeMultiplier={1.6} style={{ color: c.text, fontSize: L.wide ? 30 : 26, fontWeight: '800', flexShrink: 1 }}>{destName(main.dest)}</Text>
-          {viaAirport(main.dest, stops?.names) ? <Icon name={I.plane} size={20} color={c.text2} /> : null}
-        </View>
-        {tag ? (
-          <View style={{ alignSelf: 'flex-start', marginTop: 10, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: c.fill }}>
-            <Text maxFontSizeMultiplier={1.6} style={{ color: c.text, fontSize: 14, fontWeight: '700' }}>{tag}</Text>
-          </View>
-        ) : null}
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginTop: 16, flexWrap: 'wrap', rowGap: 12 }}>
-          <View style={{ flex: 1, minWidth: 150 }}>
-            <Text maxFontSizeMultiplier={1.6} style={{ color: c.text2, fontSize: 15, fontWeight: '600' }}>Platform</Text>
-            {plat ? <Text maxFontSizeMultiplier={1.2} style={{ color: c.text, fontSize: L.big * 0.78, lineHeight: L.big * 0.86, fontWeight: '800', fontVariant: ['tabular-nums'] }}>{plat}</Text>
-              : <Text maxFontSizeMultiplier={1.6} style={{ color: c.text, fontSize: 20, fontWeight: '700', marginTop: 4 }}>Platform not given yet</Text>}
-            {cars ? <Text maxFontSizeMultiplier={1.6} style={{ color: c.text, fontSize: 20, fontWeight: '700', marginTop: 4 }}>{cars} cars</Text> : null}
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            {live.kind === 'stale' ? (
-              <>
-                <Text maxFontSizeMultiplier={1.6} style={{ color: c.lateText, fontSize: 17, fontWeight: '700' }}>Not tracking</Text>
-                <Text maxFontSizeMultiplier={1.2} style={{ color: c.text, fontSize: L.big * 0.5, fontWeight: '800', fontVariant: ['tabular-nums'] }}>{live.big}</Text>
-                <Text maxFontSizeMultiplier={1.6} style={{ color: c.text2, fontSize: 15 }}>Timetable time</Text>
-              </>
-            ) : (
-              <>
-                <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
-                  <Text maxFontSizeMultiplier={1.2} style={{ color: live.soon ? c.liveText : c.text, fontSize: live.unit ? L.big : L.big * 0.6, lineHeight: live.unit ? L.big * 1.05 : L.big * 0.7, fontWeight: '900', fontVariant: ['tabular-nums'] }}>{live.big}</Text>
-                  {live.unit ? <Text maxFontSizeMultiplier={1.4} style={{ color: c.text2, fontSize: 22, fontWeight: '700', marginLeft: 4, marginBottom: L.big * 0.14 }}>{live.unit}</Text> : null}
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: live.kind === 'live' ? c.green : c.text3, marginRight: 6 }} />
-                  <Text maxFontSizeMultiplier={1.6} style={{ color: live.kind === 'live' ? c.liveText : c.text2, fontSize: 15, fontWeight: '600' }}>{live.kind === 'cancelled' ? 'Cancelled' : live.kind === 'live' ? 'Live' : 'Timetable'} {clock(live.t)}</Text>
-                </View>
-              </>
-            )}
-          </View>
-        </View>
+  // Above the board: close, the station, Speak.
+  const top = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 50, paddingHorizontal: 12 }}>
+      <Pressable onPress={close} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close Platform view"
+        style={({ pressed }) => ({ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: B.btn, opacity: pressed ? 0.6 : 1 })}>
+        <Icon name={I.close} size={17} color="#FFFFFF" />
+      </Pressable>
+      <Text accessibilityRole="header" numberOfLines={1} maxFontSizeMultiplier={1.4} style={{ flex: 1, textAlign: 'center', color: '#C4C4C9', fontSize: 16, fontWeight: '600', marginHorizontal: 10 }}>
+        {stationName ? `${stationName}, Platform view` : 'Platform view'}
+      </Text>
+      {main && canSpeak ? <SpeakPill say={() => saidRef.current} bg={B.btn} /> : <View style={{ width: 44 }} />}
+    </View>
+  );
+
+  const bar = (
+    <View style={{ backgroundColor: B.bar, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, minHeight: L.wide ? 56 : 50 }}>
+      <Text accessibilityRole="header" maxFontSizeMultiplier={1.4} style={{ color: '#FFFFFF', fontSize: L.wide ? 24 : 21, fontWeight: '800' }}>{`Next ${kindWord}`}</Text>
+      <Text maxFontSizeMultiplier={1.4} accessibilityLabel={`Time now ${clock(now)}`} style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600' }}>
+        Time now <Text style={{ fontSize: L.wide ? 21 : 19, fontWeight: '800', fontVariant: ['tabular-nums'] }}>{clock(now)}</Text>
+      </Text>
+    </View>
+  );
+
+  const destBlock = main ? (
+    <View accessible accessibilityLabel={`${badgeLook(main.line, main.mode, main.color).label} to ${destName(main.dest)}. ${a11y}`} style={{ paddingHorizontal: L.wide ? 20 : 16, paddingTop: 14, paddingBottom: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        {badge(main, 'big')}
+        <Text maxFontSizeMultiplier={1.5} style={{ color: B.fg, fontSize: sz.dest, lineHeight: sz.dest * 1.08, fontWeight: '800', flexShrink: 1, letterSpacing: -0.4 }}>{dest.name}</Text>
       </View>
+      {dest.via || viaAirport(main.dest, stops?.names) ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, marginLeft: (L.wide ? 52 : 44) + 12, gap: 6 }}>
+          {dest.via ? <Text maxFontSizeMultiplier={1.5} style={{ color: B.sub, fontSize: sz.via, fontWeight: '600' }}>via {dest.via}</Text> : null}
+          {viaAirport(main.dest, stops?.names) ? <Icon name={I.plane} size={20} color={B.sub} /> : null}
+        </View>
+      ) : null}
     </View>
   ) : null;
 
-  const speakBtn = main && canSpeak ? <SpeakPill say={() => saidRef.current} /> : null;
+  const rule = (m = L.wide ? 20 : 16) => <View style={{ height: 2, backgroundColor: B.line, marginHorizontal: m }} />;
 
-  const after = next.length ? (
-    <View>
-      <Text accessibilityRole="header" maxFontSizeMultiplier={1.6} style={{ color: c.text2, fontSize: 15, fontWeight: '700', letterSpacing: 0.4, marginBottom: 8 }}>AFTER THIS</Text>
-      <View style={{ backgroundColor: c.card, borderRadius: radius + 4, overflow: 'hidden' }}>
-        {next.map((d, i) => {
-          const s = depState(d, now);
-          const pn = platformNo(d.platform);
-          const n = carsOf(d);
-          const right = s.kind === 'stale' ? s.big : s.unit ? `${s.big} ${s.unit}` : s.big;
-          return (
-            <View key={`${d.tripId || d.line}|${d.planned}`} accessible accessibilityLabel={`${badgeLook(d.line, d.mode, d.color).label} to ${destName(d.dest)}. ${platformSentence({ platform: d.platform, cars: n, when: whenWords(s) })}`}
-              style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, minHeight: 64, borderTopWidth: i ? 0.5 : 0, borderTopColor: c.sep }}>
+  // The stop list: large bold names down the left, in its own scrolling area with a soft fade at the bottom.
+  const stopNames = stops && stops.names.length ? (
+    <>
+      {stops.names.map((n, i) => (
+        <Text key={n + i} maxFontSizeMultiplier={1.5} numberOfLines={2} style={{ color: B.fg, fontSize: sz.stop, lineHeight: sz.stop * 1.25, fontWeight: '800', paddingVertical: sz.stop * 0.055 }}>{n}</Text>
+      ))}
+      {stops.skipped && stops.skipped.length ? (
+        <Text maxFontSizeMultiplier={1.5} style={{ color: B.or, fontSize: 17, fontWeight: '700', marginTop: 8 }}>Not stopping at {listWords(stops.skipped)}</Text>
+      ) : null}
+    </>
+  ) : (
+    <Text maxFontSizeMultiplier={1.5} style={{ color: B.sub, fontSize: 20, fontWeight: '700', marginTop: 4 }}>{note}</Text>
+  );
+  const fade = (
+    <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 56 }}>
+      {Platform.OS === 'web'
+        ? <View style={{ flex: 1, backgroundImage: `linear-gradient(to bottom, rgba(${B.rgb},0), rgba(${B.rgb},1))` } as any} />
+        : [0.15, 0.35, 0.55, 0.75, 0.92].map((o) => <View key={o} style={{ flex: 1, backgroundColor: `rgba(${B.rgb},${o})` }} />)}
+    </View>
+  );
+  const stopArea = main ? (fixed ? (
+    <View style={{ flex: 1, minWidth: 0 }} onLayout={(e) => setBoxH(e.nativeEvent.layout.height)}>
+      <ScrollView accessible accessibilityLabel={stopsLabel} contentContainerStyle={{ paddingTop: 10, paddingBottom: 44, paddingRight: 8 }} showsVerticalScrollIndicator
+        onContentSizeChange={(_w, h) => setListH(h)}>
+        {stopNames}
+      </ScrollView>
+      {listH > boxH + 4 ? fade : null}
+    </View>
+  ) : (
+    <View accessible accessibilityLabel={stopsLabel} style={{ flex: 1, minWidth: 0, paddingTop: 10, paddingBottom: 12 }}>{stopNames}</View>
+  )) : null;
+
+  const align = L.wide ? 'left' as const : 'right' as const;
+  const departs = main && live ? (
+    <View accessible accessibilityLabel={when}>
+      <Text maxFontSizeMultiplier={1.4} style={{ color: B.fg, fontSize: sz.label, fontWeight: '700', textAlign: align }}>Departs</Text>
+      {live.kind === 'stale' ? (
+        <>
+          <Text maxFontSizeMultiplier={1.4} style={{ color: B.or, fontSize: 19, fontWeight: '800', textAlign: align }}>Not tracking</Text>
+          <Text maxFontSizeMultiplier={1.2} style={{ color: B.or, fontSize: sz.mins * 0.62, fontWeight: '800', textAlign: align, fontVariant: ['tabular-nums'] }}>{live.big}</Text>
+          <Text maxFontSizeMultiplier={1.4} style={{ color: B.sub, fontSize: L.wide ? 16 : 13, fontWeight: '600', textAlign: align }}>Timetable time</Text>
+        </>
+      ) : (
+        <>
+          <Text maxFontSizeMultiplier={1.2} numberOfLines={1} style={{ color: live.kind === 'cancelled' ? B.sub : B.or, fontSize: live.unit ? sz.mins : sz.mins * 0.7, lineHeight: sz.mins * 1.08, fontWeight: '800', textAlign: align, fontVariant: ['tabular-nums'] }}>
+            {live.big}{live.unit ? <Text style={{ fontSize: sz.mins * 0.58 }}>{` ${live.unit}`}</Text> : null}
+          </Text>
+          <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={{ color: B.sub, fontSize: L.wide ? 16 : 13, fontWeight: '600', textAlign: align }}>
+            {live.kind === 'cancelled' ? 'Cancelled' : live.kind === 'live' ? 'Live' : 'Timetable'} {clock(live.t)}
+          </Text>
+        </>
+      )}
+    </View>
+  ) : null;
+
+  const platformBlock = main ? (
+    <View accessible accessibilityLabel={[plat ? `Platform ${plat}` : 'Platform not given yet', cars ? `${cars} cars` : ''].filter(Boolean).join(', ')} style={{ alignItems: 'flex-end' }}>
+      <Text maxFontSizeMultiplier={1.4} style={{ color: B.fg, fontSize: sz.label, fontWeight: '700' }}>Platform</Text>
+      {plat ? <Text maxFontSizeMultiplier={1.2} numberOfLines={1} adjustsFontSizeToFit style={{ color: B.or, fontSize: sz.plat, lineHeight: sz.plat * 1.05, fontWeight: '800', letterSpacing: -1, fontVariant: ['tabular-nums'] }}>{plat}</Text>
+        : <Text maxFontSizeMultiplier={1.4} style={{ color: B.sub, fontSize: 17, fontWeight: '700', textAlign: 'right', marginTop: 4 }}>Not given yet</Text>}
+      {cars ? (
+        <View style={{ marginTop: 8, backgroundColor: B.pill, borderRadius: 7, paddingHorizontal: 10, paddingVertical: 5 }}>
+          <Text maxFontSizeMultiplier={1.4} style={{ color: '#FFFFFF', fontSize: L.wide ? 17 : 15, fontWeight: '700' }}>{cars} cars</Text>
+        </View>
+      ) : null}
+    </View>
+  ) : null;
+
+  const tagPill = tag ? (
+    <View style={{ alignSelf: 'flex-start', backgroundColor: B.pill, borderRadius: 7, paddingHorizontal: 10, paddingVertical: 5 }}>
+      <Text maxFontSizeMultiplier={1.4} style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '700' }}>{tag}</Text>
+    </View>
+  ) : null;
+
+  // Next service | Platform | Departs, two rows.
+  const colP = L.wide ? 96 : 76, colD = L.wide ? 100 : 92;
+  const nextTable = next.length ? (
+    <View style={{ paddingHorizontal: L.wide ? 0 : 16, paddingTop: 8, paddingBottom: 12 }}>
+      <View style={{ flexDirection: 'row', paddingBottom: 4 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        <Text maxFontSizeMultiplier={1.4} style={{ flex: 1, color: B.sub, fontSize: L.wide ? 15 : 14, fontWeight: '700' }}>Next service</Text>
+        <Text maxFontSizeMultiplier={1.4} style={{ width: colP, textAlign: 'center', color: B.sub, fontSize: L.wide ? 15 : 14, fontWeight: '700' }}>Platform</Text>
+        <Text maxFontSizeMultiplier={1.4} style={{ width: colD, textAlign: 'right', color: B.sub, fontSize: L.wide ? 15 : 14, fontWeight: '700' }}>Departs</Text>
+      </View>
+      {next.map((d) => {
+        const s = depState(d, now);
+        const pn = platformNo(d.platform);
+        const n = carsOf(d);
+        const sv = splitVia(d.dest);
+        const right = s.kind === 'stale' ? s.big : s.unit ? `${s.big} ${s.unit}` : s.big;
+        return (
+          <View key={`${d.tripId || d.line}|${d.planned}`} accessible accessibilityLabel={`Next service, ${badgeLook(d.line, d.mode, d.color).label} to ${destName(d.dest)}. ${platformSentence({ platform: d.platform, cars: n, when: whenWords(s) })}`}
+            style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: L.wide ? 12 : 9, borderTopWidth: 1, borderTopColor: B.line, minHeight: 56 }}>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0 }}>
               {badge(d, 'small')}
-              <View style={{ flex: 1, marginHorizontal: 12 }}>
-                <Text maxFontSizeMultiplier={1.6} numberOfLines={2} style={{ color: c.text, fontSize: 18, fontWeight: '700' }}>{destName(d.dest)}</Text>
-                <Text maxFontSizeMultiplier={1.6} numberOfLines={1} style={{ color: c.text2, fontSize: 15 }}>{[pn ? `Platform ${pn}` : 'Platform not given yet', n ? `${n} cars` : ''].filter(Boolean).join(' \u00b7 ')}</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text maxFontSizeMultiplier={1.4} style={{ color: c.text, fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] }}>{right}</Text>
-                {s.kind === 'stale' ? <Text maxFontSizeMultiplier={1.6} style={{ color: c.lateText, fontSize: 13, fontWeight: '600' }}>Not tracking</Text> : null}
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text maxFontSizeMultiplier={1.4} numberOfLines={2} style={{ color: B.fg, fontSize: L.wide ? 24 : 21, lineHeight: (L.wide ? 24 : 21) * 1.12, fontWeight: '800' }}>{sv.name}</Text>
+                {sv.via ? <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={{ color: B.sub, fontSize: L.wide ? 15 : 13.5, fontWeight: '600' }}>via {sv.via}</Text> : null}
               </View>
             </View>
-          );
-        })}
-      </View>
-    </View>
-  ) : null;
-
-  // Odd caps, so with the "N more stops" cell the two column grid ends on a full row.
-  const maxStops = L.wide ? 23 : L.stopCols === 2 ? 15 : 12;
-  const shown = stops ? stopsShown(stops.names, maxStops) : null;
-  const stopList = main ? (
-    <View>
-      <Text accessibilityRole="header" maxFontSizeMultiplier={1.6} style={{ color: c.text2, fontSize: 15, fontWeight: '700', letterSpacing: 0.4, marginBottom: 8 }}>STOPS AFTER THIS STATION</Text>
-      <View style={{ backgroundColor: c.card, borderRadius: radius + 4, padding: 14 }}>
-        {shown && shown.shown.length ? (
-          <View accessible accessibilityLabel={`Stops at ${shown.shown.join(', ')}${shown.more ? `, and ${shown.more} more` : ''}`} style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-            {shown.shown.map((n, i) => {
-              const last = i === shown.shown.length - 1;
-              const cell = (key: string, text: string, kind: 'stop' | 'last' | 'more') => (
-                <View key={key} style={{ width: L.stopCols === 2 ? '50%' : '100%', flexDirection: 'row', alignItems: 'center', paddingVertical: 5, paddingRight: 8 }}>
-                  <View style={{ width: 9, height: 9, borderRadius: 5, borderWidth: kind === 'more' ? 0 : 2, borderColor: main.color || c.text2, backgroundColor: kind === 'last' ? main.color || c.text2 : kind === 'more' ? c.text3 : 'transparent', marginRight: 8 }} />
-                  <Text maxFontSizeMultiplier={1.6} numberOfLines={2} style={{ color: kind === 'more' ? c.text2 : c.text, fontSize: 17, fontWeight: kind === 'last' ? '800' : '500', flexShrink: 1 }}>{text}</Text>
-                </View>
-              );
-              return last && shown.more
-                ? [cell('more', `${shown.more} more stop${shown.more === 1 ? '' : 's'}`, 'more'), cell(n + i, n, 'last')]
-                : cell(n + i, n, last ? 'last' : 'stop');
-            })}
+            <Text maxFontSizeMultiplier={1.3} style={{ width: colP, textAlign: 'center', color: pn ? B.fg : B.sub, fontSize: pn ? (L.wide ? 30 : 26) : 15, fontWeight: '800' }}>{pn || 'Not given'}</Text>
+            <View style={{ width: colD, alignItems: 'flex-end' }}>
+              <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ color: B.fg, fontSize: L.wide ? 24 : 21, fontWeight: '800', fontVariant: ['tabular-nums'] }}>{right}</Text>
+              {s.kind === 'stale' ? <Text maxFontSizeMultiplier={1.4} style={{ color: B.or, fontSize: 12, fontWeight: '700' }}>Not tracking</Text> : null}
+            </View>
           </View>
-        ) : (
-          <Text maxFontSizeMultiplier={1.6} style={{ color: c.text2, fontSize: 16 }}>
-            {loading ? 'Loading stops' : stops && !stops.names.length ? (stops.unnamed ? 'Stop names not given for this service' : 'This station is the last stop') : 'Stops not available for this service right now'}
-          </Text>
-        )}
-        {stops && stops.skipped && stops.skipped.length ? (
-          <Text maxFontSizeMultiplier={1.6} style={{ color: c.lateText, fontSize: 15, fontWeight: '600', marginTop: 8 }}>Not stopping at {listWords(stops.skipped)}</Text>
-        ) : null}
-      </View>
+        );
+      })}
     </View>
   ) : null;
 
   const empty = data && !main ? (
-    <View style={{ backgroundColor: c.card, borderRadius: radius + 4, padding: 18 }}>
-      <Text maxFontSizeMultiplier={1.6} style={{ color: c.text, fontSize: 20, fontWeight: '700' }}>{offlineAt ? 'No kept times left' : 'No more trains right now'}</Text>
-      <Text maxFontSizeMultiplier={1.6} style={{ color: c.text2, fontSize: 16, marginTop: 4 }}>Platform view shows train and metro services at this station.</Text>
+    <View style={{ padding: 18 }}>
+      <Text maxFontSizeMultiplier={1.5} style={{ color: B.fg, fontSize: 24, fontWeight: '800' }}>{offlineAt ? 'No kept times left' : 'No more trains right now'}</Text>
+      <Text maxFontSizeMultiplier={1.5} style={{ color: B.sub, fontSize: 17, marginTop: 6 }}>Platform view shows train and metro services at this station.</Text>
     </View>
   ) : null;
 
+  const statusLine = status ? (
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingBottom: 6 }} accessibilityLiveRegion="polite">
+      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: offlineAt || error ? '#FF9F0A' : '#8E8E93', marginRight: 7 }} />
+      <Text maxFontSizeMultiplier={1.5} style={{ color: '#C4C4C9', fontSize: 15, flex: 1 }}>{status}</Text>
+    </View>
+  ) : null;
+
+  // The board. Phone: destination, then stops left with platform and departs right, then next services.
+  // Wide: destination and stops on the left; departs, platform and next services on the right.
+  const phoneBody = main ? (
+    <>
+      {destBlock}
+      {rule()}
+      <View style={[{ flexDirection: 'row', paddingLeft: 16 }, fixed ? { flex: 1, minHeight: 0 } : null]}>
+        {stopArea}
+        <View style={{ width: Math.round(128 * Math.min(fs, 1.3)), justifyContent: 'space-between', alignItems: 'flex-end', paddingVertical: 12, paddingRight: 16, gap: 16 }}>
+          {platformBlock}
+          {departs}
+        </View>
+      </View>
+      {tagPill ? <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}>{tagPill}</View> : null}
+      {next.length ? rule() : null}
+      {nextTable}
+    </>
+  ) : empty;
+  const wideBody = main ? (
+    <View style={[{ flexDirection: 'row' }, fixed ? { flex: 1, minHeight: 0 } : null]}>
+      <View style={{ flex: 1.35, minWidth: 0 }}>
+        {destBlock}
+        {rule()}
+        <View style={[{ paddingLeft: 20 }, fixed ? { flex: 1, minHeight: 0 } : null]}>{stopArea}</View>
+        {tagPill ? <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>{tagPill}</View> : null}
+      </View>
+      <View style={{ flex: 1, minWidth: 0, borderLeftWidth: 2, borderLeftColor: B.line }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: 24, paddingVertical: 22 }}>
+          <View style={{ alignItems: 'flex-start' }}>{departs}</View>
+          {platformBlock}
+        </View>
+        <View style={{ marginTop: fixed ? 'auto' : 0, marginHorizontal: 24, borderTopWidth: next.length ? 2 : 0, borderTopColor: B.line }}>{nextTable}</View>
+      </View>
+    </View>
+  ) : empty;
+
+  const board = (
+    <View style={[{ marginHorizontal: 8, marginBottom: 8, borderRadius: 18, overflow: 'hidden', backgroundColor: B.bg }, fixed ? { flex: 1 } : null]}>
+      {bar}
+      {L.wide ? wideBody : phoneBody}
+    </View>
+  );
+
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg }}>
+    <View style={{ flex: 1, backgroundColor: B.screen, paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }}>
       <Stack.Screen options={{ headerShown: false, animation: reduce ? 'none' : Platform.OS === 'ios' ? 'default' : 'fade' }} />
-      <ScrollView contentContainerStyle={[pad, { paddingTop: insets.top + 6, paddingBottom: insets.bottom + 24 }]}>
-        {head}
-        {status ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }} accessibilityLiveRegion="polite">
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: offlineAt || error ? c.orange : c.text3, marginRight: 7 }} />
-            <Text maxFontSizeMultiplier={1.6} style={{ color: c.text2, fontSize: 15, flex: 1 }}>{status}</Text>
-          </View>
-        ) : null}
-        {L.wide ? (
-          <View style={{ flexDirection: 'row', gap: 24, marginTop: 14, alignItems: 'flex-start' }}>
-            <View style={{ flex: 1, gap: 16 }}>{mainCard}{empty}{speakBtn}</View>
-            <View style={{ flex: 1, gap: 20 }}>{after}{stopList}</View>
-          </View>
-        ) : (
-          <View style={{ gap: 18, marginTop: 14 }}>
-            {mainCard}{empty}
-            {speakBtn}
-            {stopList}
-            {after}
-          </View>
-        )}
-      </ScrollView>
+      <StatusBar style="light" />
+      {top}
+      {statusLine}
+      {fixed ? (
+        <View style={{ flex: 1, paddingBottom: Math.max(insets.bottom, 8) }}>{board}</View>
+      ) : (
+        <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}>{board}</ScrollView>
+      )}
     </View>
   );
 }
 
 /** Speak: says the platform, carriages, when it leaves and the stops, in the best installed voice. */
-function SpeakPill({ say }: { say: () => string }) {
-  const c = usePalette();
+function SpeakPill({ say, bg }: { say: () => string; bg: string }) {
   const [help, setHelp] = useState(false);
   const go = () => {
     haptic.select();
@@ -261,10 +344,10 @@ function SpeakPill({ say }: { say: () => string }) {
   };
   return (
     <>
-      <Pressable onPress={go} accessibilityRole="button" accessibilityLabel="Speak" accessibilityHint="Reads the platform, carriages, departure time and stops out loud"
-        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch', minHeight: 52, borderRadius: 26, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>
-        <Icon name={I.speaker} size={18} color={c.tint} />
-        <Text maxFontSizeMultiplier={1.6} style={{ color: c.tint, fontSize: 18, fontWeight: '700', marginLeft: 8 }}>Speak</Text>
+      <Pressable onPress={go} hitSlop={6} accessibilityRole="button" accessibilityLabel="Speak" accessibilityHint="Reads the platform, carriages, departure time and stops out loud"
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingHorizontal: 14, borderRadius: 22, backgroundColor: bg, opacity: pressed ? 0.7 : 1 })}>
+        <Icon name={I.speaker} size={17} color="#FFFFFF" />
+        <Text maxFontSizeMultiplier={1.4} style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700', marginLeft: 6 }}>Speak</Text>
       </Pressable>
       {help ? <Suspense fallback={null}><VoiceHelp visible start="prompt" onClose={() => setHelp(false)} /></Suspense> : null}
     </>

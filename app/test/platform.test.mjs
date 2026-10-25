@@ -195,3 +195,38 @@ test('side safe areas: tab bar content and Simple mode', () => {
   assert.equal((simple.match(/paddingLeft: side\.left, paddingRight: side\.right/g) || []).length, 3);
   assert.match(simple, />Plan Your Trip</);
 });
+
+test('station board: destination split at "via", and what the stop list says when it has no names', () => {
+  assert.deepEqual(P.splitVia('Newcastle Interchange via Epping'), { name: 'Newcastle Interchange', via: 'Epping' });
+  assert.deepEqual(P.splitVia('Macarthur via Airport'), { name: 'Macarthur', via: 'Airport' });
+  assert.deepEqual(P.splitVia('Penrith Station, Penrith'), { name: 'Penrith', via: '' });
+  assert.deepEqual(P.splitVia('Bondi Junction'), { name: 'Bondi Junction', via: '' });
+  assert.deepEqual(P.splitVia(null), { name: '', via: '' });
+  assert.equal(P.stopsNote({ names: ['Redfern'], unnamed: 0 }, {}), null);
+  assert.equal(P.stopsNote(null, { loading: true }), 'Loading stops');
+  // The server was busy, the list did not include this station, or an older server sent an empty list.
+  assert.equal(P.stopsNote(null, { status: 'busy' }), 'Full stop list not available yet');
+  assert.equal(P.stopsNote(null, {}), 'Full stop list not available yet');
+  assert.equal(P.stopsNote(null, { status: 'cancelled' }), 'This service is cancelled');
+  assert.equal(P.stopsNote({ names: [], unnamed: 2 }, {}), 'Stop names not given for this service');
+  assert.equal(P.stopsNote({ names: [], unnamed: 0 }, {}), 'This station is the last stop');
+  // Every stop after this station is skipped: not "last stop", the list is not one to trust yet.
+  assert.equal(P.stopsNote({ names: [], unnamed: 0, skipped: ['Far End'] }, {}), 'Full stop list not available yet');
+});
+
+test('station board screen: orange bar, its own scrolling stop list, the fixed parts, two columns from 720 pt', () => {
+  const screen = read('src/app/platform.tsx');
+  assert.match(screen, /`Next \$\{kindWord\}`/);
+  assert.match(screen, /Time now/);
+  assert.match(screen, /Next service/);
+  assert.match(screen, /Departs/);
+  assert.match(screen, /stopsNote\(/);
+  assert.match(screen, /stopsStatus/);
+  assert.match(screen, /<ScrollView[^>]*accessibilityLabel=\{stopsLabel\}/);
+  assert.match(screen, /hasSpeech\(\)/);
+  assert.match(screen, /takeVoicePrompt/);
+  assert.match(screen, /useReduceMotion/);
+  assert.match(screen, /maxFontSizeMultiplier/);
+  assert.equal(P.WIDE_MIN, 720);
+  assert.doesNotMatch(screen, /[\u2013\u2014]/);
+});
