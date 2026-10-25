@@ -4,7 +4,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
-### Plan B on Home, Last way home on your current build, weekend trackwork now (over the air update for iPhone and Android, 25 Oct, PENDING)
+### Plan B on Home, Last way home on your current build, weekend trackwork now (over the air update for iPhone and Android, 25 Oct, 5:25 PM)
 * Plan B on Home: when the next service of a trip is cancelled, on a suspended line, will miss a change or uses replacement buses, a line under the trip says so and the best other way: "Plan B: T1 suspended. Try the 8:04am M1 from Epping, arrives 8:41am." Tap for the trip and its Plan B card. Works now.
 * Trackwork counts for Plan B: a trip with replacement buses gets a way without them when one arrives no more than 10 minutes later; otherwise the trip screen says the buses are still the quickest way. Works now.
 * A tapped morning check alert opens its trip with live times and Plan B, not the list of checks. Works now. The Plan B words inside the alert itself come with the server move.
@@ -12,6 +12,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * Weekend trackwork card from Thursday 6pm now works on the current server, from Transport for NSW alerts on the lines your trips use ("Sat and Sun: Trains run to a changed timetable..."). How much longer the trip takes comes with the server move.
 * More > Weekend trackwork heads up (off until you turn it on): one notification on Thursday 6pm, only when work this weekend touches one of your trips. It is set when you open Home earlier in the week; nothing runs in the background.
 * No server change. No new build needed.
+* Group edf0b9e8. Roll back to 003790dc (the 4:44 PM update): `npx eas-cli update:republish --group 003790dc-2dc0-4475-b817-5270feeaf7f8 --destination-branch production --message "Roll back" --non-interactive`.
 
 ### Website and docs (transportsydney.app, 25 Oct, 5:10 PM)
 * The home page says what the app does now (your next trip first, Live, Timetable and Not tracking, buses by stop number and route, reminders on your days, Check my trip, Ask, iPhone widgets, Siri and Apple Watch), with four screens from the current app, and lists what is coming in the next iPhone build (Apple Watch redesign, bus stop widget with stop number, Speak alerts in Silent mode, new icon).
