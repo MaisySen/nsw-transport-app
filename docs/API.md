@@ -34,7 +34,7 @@ Example: `/api/ask?q=campsie%20to%20newcastle%20via%20chatswood&format=text`
 
 | Endpoint | Method | Parameters | Returns |
 | --- | --- | --- | --- |
-| `/api/departures` | GET | `stop` (stop id), `mode` (optional filter) | `kind: "departures"` with live and scheduled rows, platforms, alerts |
+| `/api/departures` | GET | `stop` (stop id), `mode` (optional filter), `time` (optional, `HHMM` Sydney), `date` (optional, `YYYYMMDD`) | `kind: "departures"` with live and scheduled rows, platforms, alerts. With `time`: the board from that moment, services that already left included (`departed: true`), and `at` echoed. See "Departures from another time" |
 | `/api/trip` | GET | `from`, `to` (stop ids), `fromName`, `toName`, `time`, `arriveBy=1`, `count` (default 5), `refresh=1` to skip logging, `long=1` for long distance trips (api.transportsydney.app: planner wait 35 s instead of 12 s, answer kept 120 s); api.transportsydney.app only: `modes` (comma list of `train`, `metro`, `bus`, `lightrail`, `ferry`, `coach`; `bus` includes coach and school bus) asks the planner for those modes only (`excludedMeans=checkbox` with `exclMOT_n`) and drops any journey with another mode, and `date=YYYYMMDD` (today to 14 days ahead, Sydney) plans that day at `time` (from midnight without one) | `kind: "trip"` with journeys, legs, change times, live delays; bus and coach legs may carry `traffic` (see Live traffic on bus legs); with `modes` the answer echoes `modes` (sorted) and with a valid `date` it echoes `date`, which tells the app this server honoured them (the first server ignores both and echoes neither) |
 | `/api/plan` | GET | `legs` (JSON list of 1 to 6 legs), `time`, `count` (1 to 8, default 5), `all=1` for all services | `kind: "trip"` with each first leg service paired with the first catchable connection on every next leg, total time, arrival and warnings (tight or missed changes) |
 | `/api/service` | GET | `trip`, `mode`, `line`, `stop`, `destId`, `planned`, `to`, `stopName`, `dest`, `color` | One service: live vehicle position, stop list with live times, crowding |
@@ -462,3 +462,18 @@ On the minute tick, Thursday 6pm to 9pm Sydney time, with the `weekendTrackwork`
 ## NSW TrainLink fares
 
 Legs with `feed: "nswtrains"` (NSW TrainLink regional trains and coaches) are not priced as Opal: their `amount` is null and the fare is `unknown`. The app shows a booking link instead of an Opal estimate when every priced part is TrainLink.
+
+## Departures from another time
+
+`/api/departures` takes an optional `time` (`HHMM`, 24 hour Sydney time) and `date` (`YYYYMMDD`). Only api.transportsydney.app has it (25 Oct 2026); the first address ignores both and answers for now.
+
+* No `time`: the board for now, exactly as before (services gone over 45 s ago are dropped, no `at`).
+* `time` with no `date`: that time in the current service day, which runs 4am to 4am (at 1:30am, `2300` is the evening before and `0200` is tonight).
+* `time` with `date`: that day at that time.
+* Never before the start of the current service day (4am today, or yesterday's 4am when it is now before 4am): an earlier moment is answered from 4am with `at.clamped: true`. Never more than 14 days ahead.
+* The Trip Planner's departure monitor is asked for that moment (`itdDate`, `itdTime`, departures). Every service it returns is kept, gone or not. Each row carries `departed`: `true` when it left over a minute ago (its live time when there is one, else its timetable time). A gone service keeps the live time and `delayMin` it left with when Transport for NSW still reports them, else `realtime: false` (timetable only).
+* The answer carries `at: {date, time, clamped}`, the moment used. The app checks it: an answer without `at` is from a server without this parameter.
+* A board for another moment records no delay samples (`obs`), since those are live times read close to departure.
+* Edge cache as for every departures answer (15 s), keyed with `time` and `date`.
+
+Example: `GET /api/departures?stop=213510&time=1815` (Strathfield from 6:15pm today).

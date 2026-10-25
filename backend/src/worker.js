@@ -727,8 +727,39 @@ function shortName(n) {
 
 // ---------- departures ----------
 
+// The moment a board asks for (/api/departures `time` and optional `date`, docs/API.md): HHMM Sydney time on that
+// day, or with no date in the current service day (4am to 4am, so 1:30am means tonight, not tomorrow night).
+// Never before the start of the service day of now (4am, the day before when it is now before 4am), never more
+// than 14 days ahead. Null when there is no valid time: the board is for now, as before.
+function sydneyMomentOf(day, hhmm) {
+  const wall = Date.UTC(+day.slice(0, 4), +day.slice(4, 6) - 1, +day.slice(6, 8), +hhmm.slice(0, 2), +hhmm.slice(2, 4));
+  let t = wall - 660 * 60000;
+  for (let i = 0; i < 2; i++) t = wall - sydOffsetMin(t) * 60000;
+  return t;
+}
+function boardAt(rawTime, rawDate, now = Date.now()) {
+  const time = String(rawTime || "");
+  if (!/^([01]\d|2[0-3])[0-5]\d$/.test(time)) return null;
+  const s = sydneyNow(new Date(now));
+  const startDay = s.tod >= 240 ? s.day : sydneyNow(new Date(now - 12 * 3600000)).day;
+  const floor = sydneyMomentOf(startDay, "0400");
+  let t;
+  const day = String(rawDate || "");
+  if (/^\d{8}$/.test(day)) t = sydneyMomentOf(day, time);
+  else {
+    t = sydneyMomentOf(startDay, time);
+    if (t < floor) t = sydneyMomentOf(sydneyNow(new Date(floor + 24 * 3600000)).day, time);
+  }
+  if (!Number.isFinite(t)) return null;
+  const clamped = t < floor;
+  t = Math.min(Math.max(t, floor), now + 14 * 86400000);
+  const p = sydneyParts(new Date(t));
+  return { t, date: p.date, time: p.time, clamped };
+}
+
 async function departures(env, stopId, opts = {}) {
-  const { date, time } = sydneyParts();
+  // opts.at (boardAt): the board from that moment, services that have already left included.
+  const { date, time } = opts.at ? { date: opts.at.date, time: opts.at.time } : sydneyParts();
   const data = await tp(env, "departure_mon", {
     mode: "direct", type_dm: "stop", name_dm: stopId,
     departureMonitorMacro: "true", TfNSWDM: "true", itdDate: date, itdTime: time,
@@ -788,19 +819,25 @@ async function departures(env, stopId, opts = {}) {
     if (!was && it.realtime) filled++;
     it.status = statusOf(it);
   }
-  items = items.filter((i) => ms(i.estimated || i.planned) >= now - 45000);
+  // Now drops services gone over 45 s ago, as before. A chosen moment keeps every service from it, gone or not;
+  // a gone one carries departed: true (left over a minute ago) with the live time and delay it left with, when known.
+  if (opts.at) for (const it of items) it.departed = ms(it.estimated || it.planned) < now - 60000;
+  else items = items.filter((i) => ms(i.estimated || i.planned) >= now - 45000);
   items.sort((a, b) => ms(a.estimated || a.planned) - ms(b.estimated || b.planned));
   const modes = [...new Set(items.map((i) => i.mode))];
   if (opts.mode) items = items.filter((i) => i.mode === opts.mode || (opts.mode === "bus" && i.mode === "coach"));
   const first = data.stopEvents && data.stopEvents[0] && data.stopEvents[0].location;
   const exactName = first && first.properties && first.properties.platformName ? first.properties.platformName : null;
-  if (opts.log !== false) logObservations(env, opts.ctx, items, stopId);
+  // Delay samples are live times read close to departure: a board for another moment records none.
+  if (opts.log !== false && !opts.at) logObservations(env, opts.ctx, items, stopId);
   return {
     stop: { id: stopId, name: shortName(loc.disassembledName || loc.name || stopId), fullName: loc.name || "", exactName },
     items, modes,
     alerts: [...alerts.values()].map((a) => ({ ...a, lines: [...a.lines].filter(Boolean) })).slice(0, 10),
     live: { feedAt: rt.fetchedAt(), filledFromFeed: filled, liveCount: items.filter((i) => i.realtime).length, total: items.length },
     now,
+    // Echoed so the app knows this server honoured the moment (an older server ignores time and answers for now).
+    ...(opts.at ? { at: { date: opts.at.date, time: opts.at.time, clamped: opts.at.clamped } } : {}),
   };
 }
 
@@ -6502,12 +6539,13 @@ async function handleRequest(request, env, exec) {
           return json(askSlim(d));
         }
         case "/api/departures": {
-          const depKey = (p.get("stop") || "") + "|" + (p.get("mode") || "");
+          const at = boardAt(p.get("time"), p.get("date"));
+          const depKey = (p.get("stop") || "") + "|" + (p.get("mode") || "") + (at ? "|" + at.date + at.time : "");
           const depHit = depMem.get(depKey);
           let r;
           if (depHit && Date.now() - depHit.at < 12000) r = await depHit.p;
           else {
-            const pr = departures(env, p.get("stop"), { mode: p.get("mode") || null, ctx: exec });
+            const pr = departures(env, p.get("stop"), { mode: p.get("mode") || null, ctx: exec, ...(at ? { at } : {}) });
             depMem.set(depKey, { at: Date.now(), p: pr });
             if (depMem.size > 300) depMem.delete(depMem.keys().next().value);
             try { r = await pr; } catch (e) { depMem.delete(depKey); throw e; }
