@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Ask and the floating tab bar (over the air update for iPhone and Android, 25 Oct, 3:26 PM)
+* Ask: the field where you type is no longer hidden behind the tab bar on iPhone. It sits above the bar, and when the keyboard opens it moves up and sits right on top of the keyboard.
+* Ask opens on your latest message every time you switch to it, and stays at the newest message as answers come in, unless you have scrolled up to read.
+* Home: the Undo bar after deleting a trip or stop shows above the tab bar instead of behind it.
+* Lists and search results leave room for the keyboard, so the last results stay reachable.
+
 ### Speak alerts and buses (over the air update for iPhone and Android, 25 Oct, 3:15 PM)
 * Speak alerts now talk during a trip. Before, nothing was said once notifications were on. You hear short lines once each: "Your bus leaves in 2 minutes from stand X1", "Redfern is next. Change here for the T4", "Five Dock Shops is next. Get off here", a platform or stand change, running late, a tight change and "You've arrived". Music is lowered, not stopped. The switch stays on for your next trip. Speech needs the app open; on build 206 Silent mode mutes the speaker (headphones still work).
 * Bus routes: tap Route on a bus, on a bus leg in a trip, or a route badge on a bus stop, or search a route number (410, M90) in Plan. You see every stop in order with its stop number, where the buses are now, the next times at a stop you tap, the other direction and a map.
