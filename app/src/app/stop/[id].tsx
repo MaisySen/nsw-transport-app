@@ -9,6 +9,7 @@ import { cacheKey } from '@/lib/offlineCore';
 import { usePalette, radius } from '@/lib/theme';
 import { clock, ms, shortName } from '@/lib/format';
 import { byRoute, keepRoute } from '@/lib/stopBoardCore';
+import { useUsualText } from '@/lib/usual';
 import { departedWords } from '@/lib/recentCore';
 import { useRecentDeparted } from '@/lib/recent';
 import { rowNote, topAlerts } from '@/lib/stopAlertsCore';
@@ -67,6 +68,7 @@ export default function StopScreen() {
   const route = keepRoute(pick, routes);
   const items = byRoute((data?.items || []).filter((d) => (!mode || d.mode === mode) && ms(d.realtime ? d.estimated : d.planned) > now - 60000), route);
   // Services that left in the last few minutes, from this phone's own reads of this board (recentCore.ts).
+  const usual = useUsualText(route && items[0] ? { kind: 'transit', line: route, stopId: items[0].stopId || String(id), planned: items[0].planned } : null);
   const gone = byRoute(useRecentDeparted(id ? String(id) : undefined, now).filter((g) => !mode || g.mode === mode), route).slice(0, 5);
   // A bus stop opened by its own number (2046100) shows the number on the sign; a station or a stop with several
   // stands shows each row's stop number instead.
@@ -131,6 +133,11 @@ export default function StopScreen() {
                 <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Route {route}: all stops and live buses</T>
                 <Icon name={I.chevron} size={12} color={c.tint} />
               </Pressable>
+            ) : null}
+            {route && usual ? (
+              <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 2 }} accessibilityLabel={`Route ${route} here: ${usual}`}>
+                {route} here: {usual.charAt(0).toLowerCase() + usual.slice(1)}
+              </T>
             ) : null}
           </View>
         ) : null}

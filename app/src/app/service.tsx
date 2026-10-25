@@ -14,6 +14,7 @@ import { useStore } from '@/lib/store';
 import { svcSpec, toggleWatch, tripKey } from '@/lib/watch';
 import TransitMap from '@/components/TransitMap';
 import { Icon, I } from '@/components/Icon';
+import { useUsualText } from '@/lib/usual';
 import { LineBadge, LiveStamp, OccupancyChip, QuietChip, StatusLine } from '@/components/Transit';
 import { Button, font, T } from '@/components/ui';
 import { stopNumber } from '@/lib/busCore';
@@ -46,6 +47,7 @@ export default function ServiceScreen() {
   const busLike = (busMode === 'bus' || busMode === 'coach' || busMode === 'school') && !!(p.line || data?.line);
   // Opened from a trip or a plan (`to` is the stop you get off at): GET ON and GET OFF tags on your two stops.
   const tags = boardAlight(stops, p.stop, p.to);
+  const usual = useUsualText({ kind: 'transit', line: p.line || data?.line, stopId: p.stop, planned: p.planned });
   const mineStop = stops.find((s) => s.mine);
   const liveNow = liveState({ planned: mineStop?.planned || p.planned, estimated: mineEst || mineStop?.estimated, realtime: live, cancelled: data?.cancelled, seenAt: updatedAt, vehicleAgeS: data?.vehicle?.ageS }, now);
 
@@ -84,6 +86,7 @@ export default function ServiceScreen() {
               <QuietChip v={data?.vehicle as any} style={{ marginLeft: 6 }} />
               {data && !data.vehicle ? <T kind="foot" tone="text2">{'\u00b7'} No GPS position yet</T> : null}
             </View>
+            {usual ? <T kind="foot" tone="text2" style={{ marginTop: 4 }}>{usual} at this stop</T> : null}
             {data?.where?.text ? <T kind="body" style={{ marginTop: 10 }}>{data.where.text}</T> : null}
             {data?.mine ? (
               <T kind="sub" tone="text2" style={{ marginTop: 4 }}>

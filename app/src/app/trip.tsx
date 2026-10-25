@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useUsualText } from '@/lib/usual';
 import { plural } from '@/lib/homeCore';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, StyleSheet, Switch, useColorScheme, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
@@ -63,6 +64,7 @@ function walkTo(l: Leg, next?: Leg) {
 
 function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
   const c = usePalette();
+  const usual = useUsualText(l);
   if (l.kind === 'walk') {
     return (
       <View style={st.walk}>
@@ -90,6 +92,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
             <T kind="headline" numberOfLines={2}>{shortName(l.from)}</T>
             <T kind="foot" tone="text2">{[l.fromPlatform, stopLabel(l.stopId, l.mode), `${clock(dep)}`].filter(Boolean).join(' \u00b7 ')}</T>
             <View style={{ marginTop: 2 }}><StatusLine realtime={l.realtime} delayMin={l.delayMin} cancelled={l.cancelled} state={liveState({ planned: l.planned, estimated: l.estimated, realtime: l.realtime, cancelled: l.cancelled, seenAt: l.seenAt }, now)} /></View>
+            {usual ? <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{usual}</T> : null}
           </View>
         </View>
         {l.platformChangedFrom ? <T kind="foot" style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }}>Platform changed from {l.platformChangedFrom}</T> : null}
