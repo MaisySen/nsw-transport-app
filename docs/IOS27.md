@@ -44,11 +44,15 @@ How: menus are data (`src/lib/menuCore.ts`: no Cancel row, destructive rows red 
 
 Confirmations stay native alerts (Delete trip, Clear All, Delete all my data). The time picker and the reminder editor stay sheets: attached to the bottom edge, the system grabber, 16 pt corners, and a drag down on the grabber or the title bar closes them.
 
+## Settings links: no private URLs (Get a better voice, 25 Oct)
+
+Bidur asked for a button straight to the voice download in iPhone Settings. iPhone has no public link to that screen: `App-prefs:` and `prefs:root=` are private URL schemes, and App Review rejects apps that open them (Guideline 2.5.1, non public APIs). The app never uses them. The only settings link it opens is the app's own page, through `Linking.openSettings()` (the public `UIApplication.openSettingsURLString`), and the sheet shows three plain steps from there: Accessibility, Read & Speak (Spoken Content before iOS 26), Voices, English, a Premium or Enhanced voice. `app/test/voicehelp.test.mjs` fails if a voice help file names a private settings URL. Android has public intents for this (`com.android.settings.TTS_SETTINGS`, `android.speech.tts.engine.INSTALL_TTS_DATA`), sent with React Native's own `Linking.sendIntent`, each with a fallback.
+
 ## Build 209 (1 Nov)
 
 Native work left from the 25 Oct comfort, voice and performance pass (the JavaScript shipped over the air; these need a build):
 * Speak only with headphones: build 208 has no audio route API (`TransportIOS.startSpeechAudio` sets the spoken audio session with duck others, so ducking already works). Add an `AVAudioSession.currentRoute` read and a route change event, then a Voice setting "Only with headphones".
-* Voice download prompt: iOS has no API to download a Premium voice; the Voice screen's tip sends people to Settings > Accessibility > Spoken Content. Check `AVSpeechSynthesisVoice.speechVoices()` quality on iOS 27 again on a device.
+* Voice download prompt: iOS has no API to download a Premium voice. Since the Get a better voice update (JavaScript) the Voice screen shows three steps to Settings > Accessibility > Read & Speak > Voices (the page was called Spoken Content before iOS 26) and opens the app's own settings page. Check on a device that `AVSpeechSynthesisVoice.speechVoices()` lists a voice downloaded while the app was in the background without a restart (iOS 17 added `availableVoicesDidChangeNotification`; a native listener for it could go in 209 if the list turns out stale).
 * Simple mode as the app's home on a Lock Screen widget (the Here stand), using the widget extension already in the build.
 * A native list (FlashList or SwiftUI List) for the stop board was not needed: scroll held 60 fps with 0 slow frames on the web export after this pass. Check on a device first.
 
