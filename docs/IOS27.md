@@ -34,7 +34,7 @@ iOS 27.1 is the release iPhone Duo (the foldable, on sale 23 Oct 2026) runs. App
 * **Watch Connectivity:** fix for `transferCurrentComplicationUserInfo` with WidgetKit complications; we use application context.
 * **watchOS 27:** `WKExtension` deprecated (the watch app uses the SwiftUI `App` life cycle and `WKApplication`); `TabView.selection` timing change (no TabView in the watch app).
 * **SwiftUI:** `@State` initial values are now evaluated once (only good for us); TabView must not select a hidden tab (no SwiftUI TabView in the app).
-* **Notifications, Core Location, EventKit, AVSpeechSynthesizer:** nothing in the iOS 27 release notes that changes our use. Calendar stays add only (write only access).
+* **Notifications, Core Location, EventKit, AVSpeechSynthesizer:** nothing in the iOS 27 release notes that changes our use. Add to Calendar stays add only (write only access). Calendar leave by asks for full access from build 208, with its own text; reading needs it ([CALENDAR-LEAVE-BY.md](CALENDAR-LEAVE-BY.md)).
 * **Privacy:** no new required reason API categories found in the iOS 27 notes; App Privacy is published.
 * **Network security:** stricter TLS applies to system processes (MDM, app installs), not apps; our hosts use HTTPS.
 

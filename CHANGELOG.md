@@ -4,6 +4,22 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Calendar leave by, ready for build 208 (over the air update for iPhone and Android, 25 Oct, 6:40 PM)
+* More > Calendar leave by, off by default. When on, Home shows "Leave by 7:44pm for Team meeting (Barangaroo)" for events in the next 6 hours that have a place, with the live trip from where your usual trip starts (the commute card's start, else your first trip). Tap it for the trip screen at Arrive by the event's start, with the trip you'd take open.
+* Read only and read on the phone, only while Home is open, at most every 5 minutes. Only the event's place (as a place search, once, then kept on the phone) and the trip query leave the phone, with no install ID, so neither goes into trip history. The event's name, notes and people never leave the phone. Online meetings, all day events and places that can't be found show nothing.
+* Hidden on every build in use today: iPhone 206 and 207 have the calendar with add only access, which can't read events, and earlier builds have no calendar. It lights up by itself on iPhone build 208, which gets full calendar access with its own text (branch native-207, checklist in TEST_PLAN.md there), and on the first Android build with the calendar module.
+* The trip screen at Arrive by now opens the trip that leaves last and still arrives in time, not the earliest one.
+* Privacy policy on transportsydney.app (Calendar section, live from Pages deployment 602309ac, checked 200) and docs/STORE_PRIVACY.md say what Calendar leave by reads and sends. Details: [docs/CALENDAR-LEAVE-BY.md](docs/CALENDAR-LEAVE-BY.md). Not yet seen on a device.
+* Group f773ab8e (from main 2180c62; native part on native-207 8c5dd94 and e5a6cc2). Roll back to 0c0bffd6 (the 5:43 PM update): `npx eas-cli update:republish --group 0c0bffd6-6f89-40e8-91d9-94b34346b675 --destination-branch production --message "Roll back" --non-interactive`.
+
+### iPhone build 207 on TestFlight (25 Oct, 6:02 PM)
+* Apple Watch: redesigned app with trip cards (a big countdown in whole minutes, platform, lines, late in amber or red) and new complications. Swap direction and Refresh are rows at the end of the trip list, so nothing covers the first card.
+* Bus stop widgets show the stop number; Edit Widget lists starred bus stops with their stop numbers and routes.
+* Speak alerts use their own audio session: spoken with Silent mode on, other audio lowered while a line is read.
+* New Liquid Glass app icon for iOS 26.
+* Carries the JavaScript of every update through the 5:43 PM one (group 0c0bffd6); over the air updates keep arriving (runtime 1.0.0).
+* EAS build cfa52f8c from native-207 3419ed2, App Store Connect build f2614902, What to Test set, in the Internal and Public groups, Beta App Review approved. Not submitted for App Store review. Not yet seen on a real iPhone or Apple Watch: Build 207 device checklist in docs/TEST_PLAN.md.
+
 ### Widget layout fixes for the next iPhone build (branch native-207, after 207; not in 207)
 From Bidur's build 206 screenshots of the small, medium and large trip widgets.
 * Times line up: the line badge sits in a fixed column, so every row's time starts at the same place (trip and stop board widgets).

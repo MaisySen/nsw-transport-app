@@ -6,7 +6,7 @@ import { TripReminders } from '@/components/TripReminders';
 import { plural } from '@/lib/homeCore';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, useColorScheme, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { isTomorrow, NOW, whenFromParams, whenLabel, whenQuery, type When } from '@/lib/planCore';
+import { arriveByIndex, isTomorrow, NOW, whenFromParams, whenLabel, whenQuery, type When } from '@/lib/planCore';
 import { WhenPicker } from '@/components/WhenPicker';
 import { afterBatch, canLoadEarlier, canLoadLater, chipLabel, chipsToShow, dateNeeded, earlierFrom, emptyModes, filterModes, modesWords, MODE_CHIPS, nearEnd, normModes, PAGE0, PAGING, pickerDays, serviceDayEnd, sydneyTime, toggleMode, ymd, type ModeK, type PageState } from '@/lib/tripModesCore';
 import { useOnViewRef } from '@/lib/activity';
@@ -417,6 +417,20 @@ export default function TripScreen() {
     }
   };
   const pull = () => { refresh(); if (js.length) loadEarlier(); };
+  // Arrive by (picked here, or from a calendar leave by line on Home): open the trip that leaves last and still
+  // arrives in time, once per time picked, instead of the earliest one at the top.
+  // Only an answer for this time counts (the list on screen is the old time's until the new answer lands).
+  const arriveOpened = useRef('');
+  const whenSince = useRef({ key: whenKey, at: 0 });
+  if (whenSince.current.key !== whenKey) whenSince.current = { key: whenKey, at: Date.now() };
+  useEffect(() => {
+    if (when.kind !== 'arrive' || p.pick != null || !js.length || arriveOpened.current === whenKey) return;
+    if (!updatedAt || updatedAt < whenSince.current.at) return;
+    arriveOpened.current = whenKey;
+    const i = arriveByIndex(js.map((j) => ({ leave: ms(j.leave), arrive: ms(j.arrive) })), anchor + 59999);
+    if (i >= 0) setOpen(i);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [when.kind, whenKey, js.length, updatedAt]);
   const [viewH, setViewH] = useState(0);
   // A start link opens the service leaving closest to `at` and starts it, once.
   const [autoStart, setAutoStart] = useState<number | null>(null);

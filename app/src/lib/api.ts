@@ -185,6 +185,23 @@ async function tripPicked(base: Record<string, any>, pair: string, modes: string
   return { ...r, modesBy: modes.length ? (echoed ? 'server' : 'phone') : undefined } as TripResp;
 }
 
+/**
+ * Calendar leave by on Home (docs/CALENDAR-LEAVE-BY.md): the trip to an event's place, Arrive by its start, with no
+ * install id, profile or names, so the server can't keep it in trip history or link it to this phone. Another day
+ * (an event after midnight) needs the new host's date parameter; a server without it fails and the line is hidden.
+ */
+export async function tripForCalendar(fromId: string, toId: string, q: { time: string; arriveBy: boolean; date?: string }): Promise<TripResp> {
+  const path = `/api/trip?${qs({ from: fromId, to: toId, count: 6, time: q.time, arriveBy: q.arriveBy ? 1 : '', date: q.date || '', acc: store.accOn() ? 1 : '' })}`;
+  if (!q.date || apiBase() === NEW_API_BASE) {
+    const r = await req<TripResp>(path, undefined, 20000);
+    if (q.date && (r as any).date !== q.date) throw new Error('This server does not plan for another day.');
+    return r;
+  }
+  const r = await onNew<TripResp>(path, 20000);
+  if ((r as any).date !== q.date) throw new Error('This server does not plan for another day.');
+  return r;
+}
+
 /** One GET to the new server (before the app has moved there), with a timeout; errors carry http like req. */
 async function onNew<T>(path: string, timeoutMs: number): Promise<T> {
   const ctl = new AbortController();

@@ -53,6 +53,7 @@ export const I = {
   bellPlus: { ios: 'bell.badge', android: 'notification_add' },
   ticket: { ios: 'ticket', android: 'confirmation_number' },
   noLive: { ios: 'location.slash', android: 'location_off' },
+  calendar: { ios: 'calendar', android: 'event' },
 } satisfies Record<string, IconName>;
 
 export function modeIconName(mode?: string): IconName {
