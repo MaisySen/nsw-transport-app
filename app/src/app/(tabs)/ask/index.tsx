@@ -1,13 +1,16 @@
 // Ask tab: chat about trips. Questions go to /api/ask; answers come back as a short reply
 // plus live cards (departures, trips, alerts) that open the stop board, trip or live map.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { router, Stack, useFocusEffect } from 'expo-router';
 import { TabBarSafe } from '@/components/TabBarSafe';
 import { useKeyboardPad } from '@/lib/keyboard';
 import { atEnd } from '@/lib/keyboardCore';
 import { useSides } from '@/lib/layout';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { confirmClearChat, clearAskChat, setAskChat, useAskChat } from '@/lib/askChat';
+import { ASK_PAGE, earlierLabel, showMore, shownSlice } from '@/lib/askChatCore';
+import { ActionSheet } from '@/components/Sheet';
+import { Icon, I } from '@/components/Icon';
 import { haptic } from '@/lib/haptic';
 import { apiBase } from '@/lib/server';
 import { getDevice, PROFILE } from '@/lib/device';
@@ -29,8 +32,6 @@ type Leg = { kind: string; mode?: string; line?: string; color?: string; fromPla
 type Jny = { leave: string; arrive: string; durationMin: number; changes: number; legs: Leg[]; warn?: string | null; fare?: Fare | null };
 type Card = { type: 'departures' | 'trip' | 'alerts' | 'stops' | 'parking' | 'station' | string; station?: Station; title?: string; titleOnly?: boolean; link?: Link | null; items?: any[]; journeys?: Jny[]; from?: { id: string; name: string }; to?: { id: string; name: string } };
 type Msg = { id: string; role: 'me' | 'bot'; text: string; kind?: string | null; fare?: AskFare | null; cards?: Card[]; links?: Link[]; suggestions?: string[]; ask?: string | null; t: number; lastHome?: LastHomeHint | null };
-
-const KEY = 'ask_chat_v1';
 
 function clock(t: string) {
   return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, (_m, p) => ' ' + p.toLowerCase());
@@ -56,82 +57,14 @@ function open(l?: Link | null) {
   if (u) Linking.openURL(u);
 }
 
-export default function AskScreen() {
+function Row({ onPress, children, dim }: { onPress?: () => void; children: any; dim?: boolean }) {
   const c = usePalette();
-  const now = useNow(15000);
-  const side = useSides();
-  const [msgs, setMsgs] = useState<Msg[]>([]);
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const list = useRef<FlatList<Msg>>(null);
-  const { places, recentTrips } = useStore();
-  // Suggestions come from your own trips only: your two most recent, and the last train home once home is set.
-  const nm = (n: string) => n.split(',')[0].replace(/ Station$/, '');
-  const starters = [
-    ...(recentTrips || []).slice(0, 2).map((r) => `Next train ${nm(r.from.name)} to ${nm(r.to.name)}`),
-    ...(places?.home ? ['Last train home'] : []),
-  ];
-
-  useEffect(() => { AsyncStorage.getItem(KEY).then((v) => { if (v) setMsgs(JSON.parse(v)); }).catch(() => {}); }, []);
-  useEffect(() => { AsyncStorage.setItem(KEY, JSON.stringify(msgs.slice(-40))).catch(() => {}); }, [msgs]);
-
-  const ask = useCallback(async (q: string, extra: Record<string, string> = {}) => {
-    q = q.trim();
-    if (!q || busy) return;
-    setMsgs((m) => [...m, { id: 'u' + Date.now(), role: 'me', text: q, t: Date.now() }]);
-    setText(''); setBusy(true);
-    try {
-      const p: Record<string, string> = { q, profile: PROFILE, device: await getDevice(), fare: store.fareType(), ...(store.accOn() ? { acc: '1' } : {}), ...extra };
-      if (places?.home?.id) p.home = `${places.home.id}|${places.home.name || ''}`;
-      if (places?.work?.id) p.work = `${places.work.id}|${places.work.name || ''}`;
-      const qs = Object.entries(p).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-      // A slow answer ends after 25 s like a dropped one, so the chat never waits on a spinner for good.
-      const ctl = new AbortController();
-      const timer = setTimeout(() => ctl.abort(), 25000);
-      let d: any;
-      try {
-        const r = await fetch(`${apiBase()}/api/ask?${qs}`, { signal: ctl.signal });
-        if (!r.ok) throw Object.assign(new Error(String(r.status)), { http: r.status });
-        d = await r.json();
-      } finally { clearTimeout(timer); }
-      setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: d.reply || d.text || "Sorry, I didn't get that.", kind: typeof d.kind === 'string' ? d.kind : null, fare: d.fare || null, cards: d.cards || [], links: d.links || [], suggestions: d.suggestions || [], ask: d.ask || null, t: Date.now(), lastHome: askLastHint(d) }]);
-    } catch (e: any) {
-      const text = e?.http ? "Ask isn't answering right now. Try again in a minute." : 'No connection right now. Check your signal and try again.';
-      setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text, suggestions: [q], t: Date.now() }]);
-    } finally { setBusy(false); }
-  }, [busy, places]);
-
-  const askWithLocation = useCallback(async () => {
-    const last = [...msgs].reverse().find((m) => m.role === 'me');
-    if (!last) return;
-    try {
-      const Location = require('expo-location');
-      const perm = await Location.requestForegroundPermissionsAsync();
-      if (perm.status !== 'granted') return;
-      // A recent fix costs no GPS; otherwise about 100 m is plenty to find the nearest stop.
-      const pos = (await Location.getLastKnownPositionAsync({ maxAge: 120000 }).catch(() => null)) || (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
-      ask(last.text, { lat: pos.coords.latitude.toFixed(5), lon: pos.coords.longitude.toFixed(5) });
-    } catch { /* expo-location not in this build */ }
-  }, [msgs, ask]);
-
-  // The chat stays on its latest message: when you open the tab, when a message or answer arrives, when the keyboard
-  // comes up and while the answer's cards lay out. Scrolling up to read older messages stops that until you are back
-  // at the end. The list follows its content size, so a long history is shown from the end once it has laid out.
-  const stick = useRef(true);
-  const toEnd = useCallback((animated = false) => { stick.current = true; requestAnimationFrame(() => list.current?.scrollToEnd({ animated })); }, []);
-  useFocusEffect(useCallback(() => { toEnd(false); }, [toEnd]));
-  useEffect(() => { toEnd(true); }, [msgs.length, busy, toEnd]);
-  // Only your own scrolling decides (a drag and its glide), not the list's own scroll to the end.
-  const onUserScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const n = e.nativeEvent;
-    stick.current = atEnd(n.contentOffset.y, n.layoutMeasurement.height, n.contentSize.height, n.contentInset?.bottom || 0);
-  }, []);
-  const kb = useKeyboardPad(() => toEnd(true));
-
-  const Row = ({ onPress, children, dim }: { onPress?: () => void; children: any; dim?: boolean }) => (
+  return (
     <Pressable onPress={onPress} disabled={!onPress} accessibilityRole={onPress ? 'button' : undefined} style={({ pressed }) => [st.row, { borderTopColor: c.sep, opacity: dim ? 0.45 : 1, backgroundColor: pressed ? c.fill : 'transparent' }]}>{children}</Pressable>
   );
-  const Count = ({ t, live }: { t: string; live?: boolean }) => {
+}
+function Count({ t, live, now }: { t: string; live?: boolean; now: number }) {
+    const c = usePalette();
     const x = cd(t, now);
     return (
       <View style={st.cd}>
@@ -139,8 +72,10 @@ export default function AskScreen() {
         {x.unit ? <Text style={[st.cdUnit, { color: c.text2 }]}>{x.unit}</Text> : null}
       </View>
     );
-  };
-  const CardView = ({ card }: { card: Card }) => (
+}
+function CardView({ card, now }: { card: Card; now: number }) {
+  const c = usePalette();
+  return (
     <View style={[st.card, { backgroundColor: c.card, borderColor: c.sep }]}>
       {card.type !== 'alerts' && card.type !== 'stops' ? (
         <Pressable onPress={() => open(card.link)} disabled={!card.link} accessibilityRole={card.link ? 'button' : 'header'} style={st.head}>
@@ -157,7 +92,7 @@ export default function AskScreen() {
               <Text numberOfLines={1} style={[st.t1, { color: c.text }]}>{it.dest}</Text>
               <Text numberOfLines={1} style={[st.t2, { color: c.text2 }]}>{[it.platform?.replace(/^Platform /, 'Plat '), clock(t)].filter(Boolean).join(' \u00b7 ')}  <Text style={{ color: (c as any)[s.tone], fontWeight: '600' }}>{s.text}</Text></Text>
             </View>
-            <Count t={t} live={it.realtime && !it.cancelled} />
+            <Count now={now} t={t} live={it.realtime && !it.cancelled} />
           </Row>
         );
       })}
@@ -174,7 +109,7 @@ export default function AskScreen() {
               {s ? <Text style={[st.t2, { color: (c as any)[s.tone], fontWeight: '600' }]}>{s.text}</Text> : null}
               {j.warn ? <Text style={[st.t2, { color: c.orange, fontWeight: '600' }]}>{j.warn}</Text> : null}
             </View>
-            <Count t={j.leave} live={f?.realtime} />
+            <Count now={now} t={j.leave} live={f?.realtime} />
           </Row>
         );
       })}
@@ -229,32 +164,142 @@ export default function AskScreen() {
       })() : null}
     </View>
   );
-  const Chip = ({ label, onPress }: { label: string; onPress: () => void }) => (
+}
+function Chip({ label, onPress }: { label: string; onPress: () => void }) {
+  const c = usePalette();
+  return (
     <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [st.chip, { backgroundColor: pressed ? c.fill : c.card, borderColor: c.sep }]}>
       <Text style={{ color: c.tint, fontSize: 15 }}>{label}</Text>
     </Pressable>
   );
+}
 
-  const renderItem = ({ item, index }: { item: Msg; index: number }) => item.role === 'me' ? (
+/**
+ * One message. Memoized and defined once, so typing, a countdown tick or a new answer does not rebuild every
+ * card in the chat (they were made inside the screen and mounted again on every render).
+ */
+const MsgRow = memo(function MsgRow({ item, last, now, onAsk, onLocation }: { item: Msg; last: boolean; now: number; onAsk: (q: string) => void; onLocation: () => void }) {
+  const c = usePalette();
+  return item.role === 'me' ? (
     <View style={[st.bubble, st.me, { backgroundColor: c.tint }]}><Text style={st.meText}>{item.text}</Text></View>
   ) : (
     <View style={{ alignItems: 'flex-start', marginTop: 6 }}>
       {(() => { const sum = tripSummary(item, now); return sum ? <TripAnswer s={sum} /> : <PlainAnswer text={item.text} />; })()}
-      {(item.cards || []).map((card, i) => <CardView key={i} card={card} />)}
+      {(item.cards || []).map((card, i) => <CardView key={i} card={card} now={now} />)}
       {item.lastHome && canRemind(Date.parse(item.lastHome.leave || item.lastHome.svc?.leave || ''), now) ? <RemindLastButton hint={item.lastHome} known={!item.lastHome.svc} acc={store.accOn()} /> : null}
       {item.links && item.links.length ? <View style={st.chips}>{item.links.map((l, i) => <Chip key={i} label={l.label || 'Open'} onPress={() => open(l)} />)}</View> : null}
-      {index === msgs.length - 1 && (item.ask === 'location' || (item.suggestions || []).length) ? (
+      {last && (item.ask === 'location' || (item.suggestions || []).length) ? (
         <View style={st.chips}>
-          {item.ask === 'location' ? <Chip label="Use my location" onPress={askWithLocation} /> : null}
-          {(item.suggestions || []).map((s) => <Chip key={s} label={s.replace(/ (Station|Light Rail|Wharf)\b/g, '')} onPress={() => ask(s)} />)}
+          {item.ask === 'location' ? <Chip label="Use my location" onPress={onLocation} /> : null}
+          {(item.suggestions || []).map((s) => <Chip key={s} label={s.replace(/ (Station|Light Rail|Wharf)\b/g, '')} onPress={() => onAsk(s)} />)}
         </View>
       ) : null}
     </View>
   );
+});
+
+export default function AskScreen() {
+  const c = usePalette();
+  const now = useNow(15000);
+  const side = useSides();
+  // The chat is kept on this phone (lib/askChat.ts, at most 200 messages). Ask opens on the last 30; Load earlier
+  // (or scrolling to the top) adds 30 more, so a long chat opens as fast as a short one.
+  const { msgs } = useAskChat<Msg>();
+  const setMsgs = setAskChat as (f: (m: Msg[]) => Msg[]) => void;
+  const [shown, setShown] = useState(ASK_PAGE);
+  const view = shownSlice(msgs, shown);
+  const more = earlierLabel(view.length, msgs.length);
+  const [confirm, setConfirm] = useState<{ title: string; message: string; confirm: string } | null>(null);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const list = useRef<FlatList<Msg>>(null);
+  const { places, recentTrips } = useStore();
+  // Suggestions come from your own trips only: your two most recent, and the last train home once home is set.
+  const nm = (n: string) => n.split(',')[0].replace(/ Station$/, '');
+  const starters = [
+    ...(recentTrips || []).slice(0, 2).map((r) => `Next train ${nm(r.from.name)} to ${nm(r.to.name)}`),
+    ...(places?.home ? ['Last train home'] : []),
+  ];
+
+
+  const ask = useCallback(async (q: string, extra: Record<string, string> = {}) => {
+    q = q.trim();
+    if (!q || busy) return;
+    setMsgs((m) => [...m, { id: 'u' + Date.now(), role: 'me', text: q, t: Date.now() }]);
+    setText(''); setBusy(true);
+    try {
+      const p: Record<string, string> = { q, profile: PROFILE, device: await getDevice(), fare: store.fareType(), ...(store.accOn() ? { acc: '1' } : {}), ...extra };
+      if (places?.home?.id) p.home = `${places.home.id}|${places.home.name || ''}`;
+      if (places?.work?.id) p.work = `${places.work.id}|${places.work.name || ''}`;
+      const qs = Object.entries(p).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+      // A slow answer ends after 25 s like a dropped one, so the chat never waits on a spinner for good.
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 25000);
+      let d: any;
+      try {
+        const r = await fetch(`${apiBase()}/api/ask?${qs}`, { signal: ctl.signal });
+        if (!r.ok) throw Object.assign(new Error(String(r.status)), { http: r.status });
+        d = await r.json();
+      } finally { clearTimeout(timer); }
+      setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: d.reply || d.text || "Sorry, I didn't get that.", kind: typeof d.kind === 'string' ? d.kind : null, fare: d.fare || null, cards: d.cards || [], links: d.links || [], suggestions: d.suggestions || [], ask: d.ask || null, t: Date.now(), lastHome: askLastHint(d) }]);
+    } catch (e: any) {
+      const text = e?.http ? "Ask isn't answering right now. Try again in a minute." : 'No connection right now. Check your signal and try again.';
+      setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text, suggestions: [q], t: Date.now() }]);
+    } finally { setBusy(false); }
+  }, [busy, places]);
+
+  const askWithLocation = useCallback(async () => {
+    const last = [...msgs].reverse().find((m) => m.role === 'me');
+    if (!last) return;
+    try {
+      const Location = require('expo-location');
+      const perm = await Location.requestForegroundPermissionsAsync();
+      if (perm.status !== 'granted') return;
+      // A recent fix costs no GPS; otherwise about 100 m is plenty to find the nearest stop.
+      const pos = (await Location.getLastKnownPositionAsync({ maxAge: 120000 }).catch(() => null)) || (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+      ask(last.text, { lat: pos.coords.latitude.toFixed(5), lon: pos.coords.longitude.toFixed(5) });
+    } catch { /* expo-location not in this build */ }
+  }, [msgs, ask]);
+
+  // The chat stays on its latest message: when you open the tab, when a message or answer arrives, when the keyboard
+  // comes up and while the answer's cards lay out. Scrolling up to read older messages stops that until you are back
+  // at the end. The list follows its content size, so a long history is shown from the end once it has laid out.
+  const stick = useRef(true);
+  const toEnd = useCallback((animated = false) => { stick.current = true; requestAnimationFrame(() => list.current?.scrollToEnd({ animated })); }, []);
+  useFocusEffect(useCallback(() => { toEnd(false); }, [toEnd]));
+  useEffect(() => { toEnd(true); }, [msgs.length, busy, toEnd]);
+  // Only your own scrolling decides (a drag and its glide), not the list's own scroll to the end.
+  const onUserScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const n = e.nativeEvent;
+    stick.current = atEnd(n.contentOffset.y, n.layoutMeasurement.height, n.contentSize.height, n.contentInset?.bottom || 0);
+  }, []);
+  const kb = useKeyboardPad(() => toEnd(true));
+
+  // Older messages: Load earlier at the top, or scrolling up to it. The list keeps its place where the phone can.
+  const loadEarlier = useCallback(() => { stick.current = false; setShown((s) => showMore(s, msgs.length)); }, [msgs.length]);
+  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (e.nativeEvent.contentOffset.y < 40 && !stick.current && view.length < msgs.length) loadEarlier();
+  }, [loadEarlier, view.length, msgs.length]);
+  useEffect(() => { if (!msgs.length) setShown(ASK_PAGE); }, [msgs.length]);
+  const clear = useCallback(() => { clearAskChat(); setShown(ASK_PAGE); haptic.success(); }, []);
+  const askClear = () => { haptic.tap(); confirmClearChat(msgs.length, clear, setConfirm); };
+  // Rows only render again when their message, the minute or being last changes; typing does not touch them.
+  const askRef = useRef(ask); askRef.current = ask;
+  const locRef = useRef(askWithLocation); locRef.current = askWithLocation;
+  const onAsk = useCallback((q: string) => askRef.current(q), []);
+  const onLocation = useCallback(() => locRef.current(), []);
+  const lastId = view.length ? view[view.length - 1].id : '';
+  const renderItem = useCallback(({ item }: { item: Msg }) => <MsgRow item={item} last={item.id === lastId} now={now} onAsk={onAsk} onLocation={onLocation} />, [lastId, now, onAsk, onLocation]);
 
   return (
     // Above the tab bar (iOS 26 and 27 draw the screen under the floating bar), then above the keyboard.
     <TabBarSafe style={{ backgroundColor: c.bg }}>
+    <Stack.Screen options={{ headerRight: msgs.length ? () => (
+      <Pressable onPress={askClear} accessibilityRole="button" accessibilityLabel="Clear chat" accessibilityHint="Deletes the chat on this phone" hitSlop={10}
+        style={({ pressed }) => ({ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: pressed && Platform.OS !== 'android' ? 0.5 : 1 })}>
+        <Icon name={I.trash} size={20} color={c.tint} />
+      </Pressable>
+    ) : undefined }} />
     <View ref={kb.ref} onLayout={kb.onLayout} style={{ flex: 1, paddingBottom: kb.pad }}>
       <FlatList
         ref={list}
@@ -264,9 +309,21 @@ export default function AskScreen() {
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
         contentInsetAdjustmentBehavior="automatic"
-        data={msgs}
+        data={view}
         keyExtractor={(m) => m.id}
         renderItem={renderItem}
+        initialNumToRender={12}
+        maxToRenderPerBatch={8}
+        windowSize={9}
+        onScroll={onScroll}
+        scrollEventThrottle={100}
+        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+        ListHeaderComponent={more ? (
+          <Pressable onPress={loadEarlier} accessibilityRole="button" accessibilityLabel={more} hitSlop={6}
+            style={({ pressed }) => [st.earlier, { backgroundColor: pressed ? c.fill : 'transparent' }]}>
+            <Text style={{ color: c.tint, fontSize: 15, fontWeight: '600' }}>{more}</Text>
+          </Pressable>
+        ) : undefined}
         contentContainerStyle={{ padding: 12, paddingBottom: 16, paddingLeft: 12 + side.left, paddingRight: 12 + side.right }}
         ListEmptyComponent={
           <View style={{ alignItems: 'center', paddingTop: 24 }}>
@@ -293,6 +350,8 @@ export default function AskScreen() {
         </Pressable>
       </View>
     </View>
+    <ActionSheet visible={!!confirm} title={confirm?.title} message={confirm?.message} onClose={() => setConfirm(null)}
+      actions={confirm ? [{ text: confirm.confirm, icon: I.trash, destructive: true, onPress: clear }] : []} />
     </TabBarSafe>
   );
 }
@@ -322,5 +381,6 @@ const st = StyleSheet.create({
   helloBody: { fontSize: 15, marginTop: 6, textAlign: 'center', maxWidth: 300 },
   bar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth },
   input: { flex: 1, minHeight: 48, borderRadius: 18, paddingHorizontal: 14, fontSize: 17, borderWidth: StyleSheet.hairlineWidth },
+  earlier: { alignSelf: 'center', minHeight: 44, paddingHorizontal: 16, borderRadius: 22, justifyContent: 'center', marginBottom: 6 },
   send: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
 });

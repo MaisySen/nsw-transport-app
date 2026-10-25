@@ -23,6 +23,7 @@ import { syncLiftAlerts } from '@/lib/liftAlerts';
 import type { Commute } from '@/lib/types';
 import { COMPANY } from '@/lib/company';
 import { PRIVACY_URL, SUPPORT_URL } from '@/lib/server';
+import { clearAskChat, confirmClearChat, useAskChat } from '@/lib/askChat';
 import { useFlag } from '@/lib/config';
 import { checkSubtitle, checkTitle } from '@/lib/morning';
 import { clearLastHomeLocal, localLastSupported } from '@/lib/lastHome';
@@ -49,8 +50,9 @@ export default function Settings() {
   }, 60000);
   useEffect(() => { getPushState().then(setPush); }, []);
   const st = useStore();
-  const [askCount, setAskCount] = useState(0);
-  useEffect(() => { AsyncStorage.getItem('ask_chat_v1').then((v) => { try { setAskCount(v ? JSON.parse(v).length : 0); } catch {} }).catch(() => {}); }, []);
+  // Same chat as the Ask tab (lib/askChat.ts), so clearing here empties Ask at once.
+  const { msgs: askMsgs } = useAskChat();
+  const askCount = askMsgs.length;
   const nStops = (st.recents || []).length, nTrips = (st.recentTrips || []).length;
   const count = (n: number) => <T kind="body" tone="text2">{n ? String(n) : 'None'}</T>;
 
@@ -87,7 +89,7 @@ export default function Settings() {
         const keys = await AsyncStorage.getAllKeys();
         await AsyncStorage.multiRemove(keys.filter((k) => !['profile', 'device', 'store', 'apiBase', 'remoteConfig', PUSH_FORGOTTEN_KEY].includes(k)));
       } catch {}
-      setAskCount(0);
+      await clearAskChat();
       setPush(await getPushState());
       refresh();
       haptic.success();
@@ -127,7 +129,8 @@ export default function Settings() {
     actions: [
       ...(nStops ? [{ text: `Clear recent stops${n(nStops)}`, onPress: () => { store.clearRecents(); haptic.select(); } }] : []),
       ...(nTrips ? [{ text: `Clear recent trips${n(nTrips)}`, onPress: () => { store.clearRecentTrips(); haptic.select(); } }] : []),
-      ...(askCount ? [{ text: `Clear Ask chat${n(askCount)}`, onPress: () => { AsyncStorage.removeItem('ask_chat_v1').catch(() => {}); setAskCount(0); haptic.select(); } }] : []),
+      ...(askCount ? [{ text: `Clear Ask chat${n(askCount)}`, onPress: () => confirmClearChat(askCount, () => { clearAskChat(); haptic.success(); },
+        (w) => setSheet({ title: w.title, message: w.message, actions: [{ text: w.confirm, icon: I.trash, destructive: true, onPress: () => { clearAskChat(); haptic.success(); } }] })) }] : []),
       { text: `Email ${COMPANY.privacyEmail}`, onPress: () => { Linking.openURL(`mailto:${COMPANY.privacyEmail}`).catch(() => Alert.alert('No email app', `Write to ${COMPANY.privacyEmail}`)); } },
       { text: 'Delete my trip history on server', icon: I.trash, destructive: true, onPress: deleteServerHistory },
       { text: 'Delete all my data', icon: I.trash, destructive: true, onPress: deleteAll },
