@@ -80,7 +80,7 @@ Ask opens on the latest message and its field sits above the tab bar and the key
 
 Measured: `app/test/ask-corpus.test.mjs`, 309 questions from all over Sydney and NSW (every region and mode, at most 5% on one commute): 192 of 309 (62%) read right by the old path (the question as typed, the server's rules, exact names), 309 of 309 (100%) by the new one. A second batch of 60, written after the first passed, scored 58 of 60 (97%) on its first run before fixes.
 
-## Platform view (over the air, 25 Oct, about 11:17 PM; station board look about 12:20 AM 26 Oct)
+## Platform view (over the air, 25 Oct, about 11:17 PM; station board look 25 Oct, about 11:57 PM)
 
 One train or metro at a station, full screen and readable from a distance, laid out like the departure screens on station platforms (Bidur's photo of the real screen, approved mock 25 Oct 11:31 PM; our own build with system fonts and no logos). Open it with the platform button at the top of a train or metro station's screen, or hold a train or metro departure and choose **Platform view** (the row's tap still opens the service). Above the board: close, the station name, and **Speak**. The board:
 * A white board (dark in dark mode) with an orange bar: Next train (or Next metro) and Time now.

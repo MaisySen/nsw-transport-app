@@ -88,6 +88,8 @@ To read the sizes: `GET /accounts/$CF_ACCOUNT_ID/d1/database` (`file_size`), and
 
 Deploy log: 25 Oct 2026, 5:27 PM, from main c5f81f5 (Delete all my data for push tokens, token and `obs` clean up), Worker version 0eaaf004-496f-49f3-9e57-480fa7f046bf. Checks above all passed, plus `POST /api/live-activity/forget` 200 (400 without a device). The first hourly run after it (6:07 PM Sydney) deleted the 3 ended `live_activities` rows on the live database and kept both `apns_devices` rows (sent that day); no `obs` row was old enough to delete (oldest day 23 Oct). Database 3.56 MB after, `obs` 17,149 rows.
 
+Deploy log: 25 Oct 2026, 11:47 PM, from main 7239ff3 (service view stop lists survive a busy data service, `stopsStatus`), Worker version 98fd6119-cd0b-4b72-9655-78f042224555, replacing 0c748a01-d066-4de2-881d-07283cc761c3 (a first deploy of the fix at 11:44 PM was e5ec5d67-9014-45d8-ac91-b7f746624ff6). Same hand run steps; `d1 migrations list` said none to apply, none run. Checks above all passed.
+
 Deploy log: 25 Oct 2026, 10:16 PM, from main 7f1925c (bus rows carry `ahead`, the live delays ahead of the bus), Worker version 0c748a01-d066-4de2-881d-07283cc761c3, replacing 60316eaa-5d30-4617-bb21-db7503d83afe. Steps of `tools/deploy-cloudflare.sh` run by hand: schema check, all tests, dash check, build, render, `d1 migrations list` (none to apply, none run), `wrangler deploy`. Checks above all passed.
 
 **APK download (optional).** R2 must be turned on in the account first (R2, Purchase R2 Plan; the free allowance covers this).

@@ -4,6 +4,16 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Platform view looks like the station platform screen (over the air, 25 Oct, about 11:57 PM, group f8c00900)
+Bidur sent a photo of the real platform screen and approved the mock at 11:31 PM ("Yes").
+* A white board (dark in dark mode) with an orange Next train bar and the time now, the line and destination in large type with "via" under it.
+* The stops it calls at in large bold type, in their own scrolling list; the platform, carriages, departure time and next services stay still.
+* Platform large in orange with a grey "8 cars" pill (only when the live feed reports carriages), Departs in orange, Limited Stops only when the service says so, and a Next service, Platform, Departs table with the next two trains.
+* When a stop list is empty or does not include the station (as during this weekend's closure between Strathfield and Central), the board shows the destination and "Full stop list not available yet"; a cancelled service says so. Skipped stops are listed under Not stopping at.
+* Two columns on wide windows (720 pt and up). Large text, VoiceOver, TalkBack, Reduce Motion and Speak kept. Entry points unchanged.
+* Server: empty stop lists were our bug. When several stop list requests arrived in the same second the data service answered "rate limit" and the server sent an empty list. It now retries, shares one request between people asking about the same train, keeps lists for a minute, and says why when there is none (`stopsStatus`). Worker transport-api 98fd6119; roll back with `npx wrangler@4 rollback 0c748a01-d066-4de2-881d-07283cc761c3`.
+* Production group f8c00900-e5f7-4cec-8a4a-05b452fc33bd from main 5df871e (preview 4e3b6e31); roll back with `npx eas-cli update:republish --group 6789f5bf-efa9-44a3-81b8-ccba08e8ecd4 --destination-branch production --non-interactive`. Not yet seen on a device.
+
 ### Platform view, and the app on wide screens (over the air, 25 Oct, about 11:17 PM, group 6789f5bf)
 Bidur approved the mock at 10:50 PM.
 * Platform view: tap the new platform button at the top of a train or metro station, or hold a train departure and choose Platform view. One train, full screen: line and destination, the platform, how many carriages when the live feed reports them, minutes until it leaves (or Not tracking with the timetable time), the stops it calls at after this station, and the next two services. Stops it runs through are listed as Not stopping at. Speak reads it all out.
