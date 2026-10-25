@@ -2,6 +2,7 @@
 // phone only, and changed or cleared any time from More > Home and work. Home then shows your commute at once.
 import { useEffect, useRef, useState } from 'react';
 import { Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { searchFieldProps } from '@/lib/pickerCore';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import { MODE_BY_CODE, shortName } from '@/lib/format';
@@ -78,7 +79,7 @@ export default function Welcome() {
 
         <View style={[s.field, { backgroundColor: c.card }]}>
           <Icon name={I.search} size={17} color={c.text2} />
-          <TextInput ref={input} value={q} onChangeText={setQ} placeholder={step === 'home' ? 'Search for your home station' : 'Search for your work station'}
+          <TextInput {...searchFieldProps} ref={input} value={q} onChangeText={setQ} placeholder={step === 'home' ? 'Search for your home station' : 'Search for your work station'}
             placeholderTextColor={c.text2} autoCorrect={false} returnKeyType="search" accessibilityLabel={step === 'home' ? 'Home station' : 'Work station'}
             style={[font.body, s.input, noOutline, { color: c.text }]} />
           {q ? (

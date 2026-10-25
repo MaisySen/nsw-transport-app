@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { goBack } from '@/lib/nav';
 import { ActivityIndicator, Alert, FlatList, PanResponder, Platform, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
-import { modeColor, radius, usePalette } from '@/lib/theme';
+import { androidLook, modeColor, radius, usePalette } from '@/lib/theme';
 import { LineBadge } from '@/components/Transit';
 import { shortName } from '@/lib/format';
 import { store } from '@/lib/store';
@@ -16,13 +16,16 @@ import { pullHome } from '@/components/Home';
 import TransitMap from '@/components/TransitMap';
 import { Button, Row, Screen, Section, Sep, T, font } from '@/components/ui';
 import { useSides } from '@/lib/layout';
+import { HeaderHeightContext } from 'expo-router/react-navigation';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { pickerPlaceholder, searchFieldProps } from '@/lib/pickerCore';
 
 type Leg = { mode: string; from: Place; to: Place; conn?: number; any?: boolean; walk?: number };
 type Dest = { mode: string; to: Place; conn?: number; any?: boolean; walk?: number };
 type Pick = Place & { ctx?: { route: string; dir: BusDir; at: number } };
 type Step = { kind: 'mode'; ext?: boolean } | { kind: 'pick'; mode: ModeKey; which: 'from' | 'to'; from?: Pick; ext?: boolean } | { kind: 'walk' } | { kind: 'confirm' };
 
-const ROW_H = 50, HEAD_H = 30;
+const ROW_H = 50, HEAD_H = 28, INDEX_W = 20;
 
 /** New trip: choose the mode, then where you get on and off, then confirm (name, legs, connection times). */
 export default function NewTrip() {
@@ -122,8 +125,10 @@ export default function NewTrip() {
       <Stack.Screen options={{
         title,
         headerLeft: () => (
-          <Pressable hitSlop={13} onPress={back} accessibilityRole="button" accessibilityLabel={first ? 'Cancel' : 'Back'}>
-            {Platform.OS === 'ios' ? <T kind="body" tone="tint">{first ? 'Cancel' : 'Back'}</T> : <Icon name={first ? I.close : I.back} size={22} color={c.text} />}
+          <Pressable hitSlop={13} onPress={back} accessibilityRole="button" accessibilityLabel={first ? 'Cancel' : 'Back'}
+            style={Platform.OS === 'ios' && !first ? { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' } : undefined}>
+            {/* iPhone: Cancel on the first step, then the system back chevron (iOS 26 puts either in its glass button). */}
+            {Platform.OS === 'ios' ? (first ? <T kind="body" tone="tint">Cancel</T> : <Icon name={I.back} size={20} color={c.tint} />) : <Icon name={first ? I.close : I.back} size={22} color={c.text} />}
           </Pressable>
         ),
         headerRight: step.kind === 'confirm' ? () => (
@@ -207,7 +212,7 @@ function WalkPicker({ from, onPick }: { from: Place; onPick: (p: Place) => void 
       <T kind="sub" tone="text2" style={{ marginHorizontal: 32, marginTop: 16 }}>From {stName(shortName(from.name))}, which stop do you walk to?</T>
       <View style={[s.search, { backgroundColor: c.fill, borderRadius: Platform.OS === 'android' ? 24 : 10, marginTop: 12, height: Platform.OS === 'android' ? 48 : 38 }]}>
         <Icon name={I.search} size={16} color={c.text2} />
-        <TextInput value={q} onChangeText={setQ} autoFocus placeholder="Stop or station name" placeholderTextColor={c.text3} accessibilityLabel="Stop or station name"
+        <TextInput {...searchFieldProps} value={q} onChangeText={setQ} autoFocus placeholder="Stop or station name" placeholderTextColor={c.text3} accessibilityLabel="Stop or station name"
           style={[font.body, { flex: 1, color: c.text, marginLeft: 8, paddingVertical: 0 }]} returnKeyType="search" />
       </View>
       {err ? <T kind="foot" style={{ color: c.redText, marginHorizontal: 32, marginTop: 12 }}>{err}</T> : null}
@@ -338,46 +343,58 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
   }), [letters, offsets]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const choose = (x: Station) => onPick({ id: x[0], name: x[1] });
-  const prompt = which === 'from' ? `Where do you get on the ${modeName(mode).toLowerCase()}?` : `From ${stName(shortName(from?.name))}. Where do you get off?`;
+  // The question is the search field's placeholder; the navigation bar carries the title ("From" or "To").
+  const placeholder = isBus ? 'Route number or stop name' : pickerPlaceholder(which, which === 'to' ? stName(shortName(from?.name)) : undefined);
+
+  // iPhone: the sheet's navigation bar is transparent (src/lib/headerOptions.ts), so this screen starts under
+  // it and moves its own top edge down by the measured bar height. Elsewhere the bar is solid and this is 0.
+  const headerH = useContext(HeaderHeightContext) ?? 0;
+  const top = Platform.OS === 'ios' ? headerH : 0;
+  const insets = useSafeAreaInsets();
+  const bottomPad = insets.bottom + 24;
+  // iPhone (and the web preview): a plain list on the sheet's own background, white in light mode and the elevated
+  // grey in dark mode. Android: the Material 3 surface.
+  const surface = androidLook ? c.bg : c.card;
+  const box = { flex: 1, backgroundColor: surface, paddingTop: top, paddingLeft: side.left, paddingRight: side.right };
 
   const head = (
-    <View style={{ backgroundColor: c.bg, paddingBottom: 10 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 20, marginTop: 10, marginBottom: 10 }}>
-        <View style={{ width: 26, height: 26, borderRadius: 7, backgroundColor: color, alignItems: 'center', justifyContent: 'center' }}><Icon name={modeIconName(mode)} size={15} color="#fff" /></View>
-        <T kind="sub" tone="text2" style={{ flex: 1 }}>{prompt}</T>
+    <View style={{ backgroundColor: surface, paddingTop: 8, paddingBottom: 8 }}>
+      <View style={[s.search, { backgroundColor: c.fill, borderRadius: Platform.OS === 'android' ? 28 : 18, height: Platform.OS === 'android' ? 48 : 36 }]}>
+        <Icon name={I.search} size={16} color={c.text2} />
+        <TextInput {...searchFieldProps} value={q} onChangeText={setQ} placeholder={placeholder} placeholderTextColor={c.text2}
+          clearButtonMode="while-editing" accessibilityLabel={isBus ? 'Search routes and stops' : `Search ${modeName(mode).toLowerCase()} stations`} accessibilityHint={placeholder}
+          style={[font.body, { flex: 1, color: c.text, paddingVertical: 0, marginLeft: 6, height: '100%' }, Platform.OS === 'web' ? ({ outlineWidth: 0, outlineStyle: 'none' } as any) : null]} />
+        {Platform.OS !== 'ios' && q ? <Pressable accessibilityRole="button" accessibilityLabel="Clear search" hitSlop={10} onPress={() => setQ('')}><Icon name={I.close} size={16} color={c.text2} /></Pressable> : null}
       </View>
       {isBus ? null : <Segments value={tab} items={[['az', 'A to Z'], ['dist', 'By distance'], ['map', 'By map']]} onChange={(k) => setTab(k as any)} />}
-      {tab === 'map' && !isBus ? null : (
-        <View style={[s.search, { backgroundColor: c.fill, borderRadius: Platform.OS === 'android' ? 24 : 10 }]}>
-          <Icon name={I.search} size={16} color={c.text2} />
-          <TextInput value={q} onChangeText={setQ} placeholder={isBus ? 'Route number or stop name' : `Filter ${modeName(mode).toLowerCase()} stations`} placeholderTextColor={c.text2}
-            autoCorrect={false} autoCapitalize={isBus ? 'characters' : 'none'} clearButtonMode="while-editing" accessibilityLabel="Filter"
-            style={[font.body, { flex: 1, color: c.text, paddingVertical: Platform.OS === 'android' ? 8 : 7, marginLeft: 6 }, Platform.OS === 'web' ? ({ outlineWidth: 0 } as any) : null]} />
-        </View>
-      )}
     </View>
   );
 
-  if (isBus) return <View style={{ flex: 1, backgroundColor: c.bg, paddingLeft: side.left, paddingRight: side.right }}>{head}<BusPicker q={q} from={from} onPick={onPick} /></View>;
-  if (err) return <View style={{ flex: 1, backgroundColor: c.bg, paddingLeft: side.left, paddingRight: side.right }}>{head}<T kind="sub" tone="text2" style={s.note}>{err}</T></View>;
-  if (!all) return <View style={{ flex: 1, backgroundColor: c.bg, paddingLeft: side.left, paddingRight: side.right }}>{head}<ActivityIndicator style={{ marginTop: 30 }} color={c.tint} /></View>;
+  if (isBus) return <View style={box}>{head}<BusPicker q={q} from={from} onPick={onPick} /></View>;
+  if (err) return <View style={box}>{head}<T kind="sub" tone="text2" style={s.note}>{err}</T></View>;
+  if (!all) return <View style={box}>{head}<ActivityIndicator style={{ marginTop: 30 }} color={c.tint} /></View>;
 
+  // Full width rows with the separator inset from the leading edge, like a system list. With the A to Z index
+  // showing, the row's text stops short of it so the letters never sit on a name.
+  const indexOn = tab === 'az' && letters.length > 1;
   const stationRow = (x: Station, sub?: string) => (
-    <Pressable onPress={() => choose(x)} android_ripple={{ color: c.fill }} accessibilityRole="button"
-      style={({ pressed }) => [s.stRow, { backgroundColor: pressed && Platform.OS === 'ios' ? c.fill : c.card, borderBottomColor: c.sep }]}>
-      <T kind="body" numberOfLines={1} style={{ flex: 1 }}>{stName(x[1])}</T>
-      {sub ? <T kind="foot" tone="text2">{sub}</T> : null}
+    <Pressable onPress={() => choose(x)} android_ripple={{ color: c.fill }} accessibilityRole="button" accessibilityLabel={sub ? `${stName(x[1])}, ${sub}` : stName(x[1])}
+      style={({ pressed }) => [s.stRow, { backgroundColor: pressed && Platform.OS === 'ios' ? c.fill : surface }]}>
+      <View style={[s.stInner, { borderBottomColor: c.sep, paddingRight: indexOn ? INDEX_W + 8 : 16 }]}>
+        <T kind="body" numberOfLines={1} style={{ flex: 1 }}>{stName(x[1])}</T>
+        {sub ? <T kind="sub" tone="text2" style={{ marginLeft: 12 }}>{sub}</T> : null}
+      </View>
     </Pressable>
   );
 
   if (tab === 'dist') {
     const near = coords ? list.map((x) => ({ x, d: geoDist(coords.lat, coords.lon, x[2], x[3]) })).sort((p, r) => p.d - r.d).slice(0, 40) : [];
     return (
-      <View style={{ flex: 1, backgroundColor: c.bg, paddingLeft: side.left, paddingRight: side.right }}>
+      <View style={box}>
         {head}
         {!coords ? <T kind="sub" tone="text2" style={s.note}>{locErr || 'Finding where you are'}</T> : (
-          <FlatList data={near} keyExtractor={(o) => o.x[0]} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 40 }}
-            renderItem={({ item }) => <View style={{ marginHorizontal: 16 }}>{stationRow(item.x, item.d < 1000 ? `${Math.round(item.d / 10) * 10} m` : `${(item.d / 1000).toFixed(1)} km`)}</View>} />
+          <FlatList data={near} keyExtractor={(o) => o.x[0]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingBottom: bottomPad }}
+            renderItem={({ item }) => stationRow(item.x, item.d < 1000 ? `${Math.round(item.d / 10) * 10} m` : `${(item.d / 1000).toFixed(1)} km`)} />
         )}
       </View>
     );
@@ -386,12 +403,12 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
     const syd = list.filter((x) => x[2] > -34.3 && x[2] < -33.4 && x[3] > 150.5 && x[3] < 151.45);
     const pts = (syd.length ? syd : list).map((x) => ({ id: x[0], name: x[1], lat: x[2], lon: x[3], mine: mapSel?.[0] === x[0] }));
     return (
-      <View style={{ flex: 1, backgroundColor: c.bg, paddingLeft: side.left, paddingRight: side.right }}>
+      <View style={box}>
         {head}
-        <View style={{ flex: 1, marginHorizontal: 16, borderRadius: radius, overflow: 'hidden', marginBottom: 12 }}>
+        <View style={{ flex: 1, marginHorizontal: 16, marginTop: 4, borderRadius: radius, overflow: 'hidden', marginBottom: 12 }}>
           <TransitMap stops={pts} color={color} mode={mode} dark={c.dark} onStopPress={(id) => { haptic.select(); setMapSel(list.find((x) => x[0] === id) || null); }} />
         </View>
-        <View style={[s.mapBar, { backgroundColor: c.card, borderRadius: radius }]}>
+        <View style={[s.mapBar, { backgroundColor: c.fill, borderRadius: radius, marginBottom: Math.max(insets.bottom, 12) + 4 }]}>
           <T kind="body" numberOfLines={1} style={{ flex: 1 }}>{mapSel ? stName(mapSel[1]) : 'Tap a station on the map'}</T>
           {mapSel ? <Button title="Choose" onPress={() => choose(mapSel)} /> : null}
         </View>
@@ -399,19 +416,19 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
     );
   }
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg, paddingLeft: side.left, paddingRight: side.right }}>
+    <View style={box}>
       {head}
       <View style={{ flex: 1 }}>
         <FlatList ref={listRef} data={rows} keyExtractor={(r, i) => (r.t === 'h' ? 'h' + r.k : r.s[0]) + i} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
-          stickyHeaderIndices={headerIdx} initialNumToRender={30} contentContainerStyle={{ paddingBottom: 40 }}
+          stickyHeaderIndices={headerIdx} initialNumToRender={30} contentContainerStyle={{ paddingBottom: bottomPad }}
           getItemLayout={(_, i) => ({ length: rows[i]?.t === 'h' ? HEAD_H : ROW_H, offset: offsets[i] || 0, index: i })}
           ListEmptyComponent={<T kind="sub" tone="text2" style={s.note}>No {modeName(mode).toLowerCase()} stations match that</T>}
           renderItem={({ item }) => item.t === 'h'
-            ? <View style={{ height: HEAD_H, justifyContent: 'center', paddingHorizontal: 32, backgroundColor: c.bg }}><T kind="foot" tone="text2" style={{ fontWeight: '600' }}>{item.k}</T></View>
-            : <View style={{ marginLeft: 16, marginRight: 30 }}>{stationRow(item.s)}</View>} />
-        {letters.length > 1 ? (
-          <View style={s.idx} onLayout={(e) => { barH.current = e.nativeEvent.layout.height; }} {...pan.panHandlers} accessible={false}>
-            {letters.map((l) => <T key={l.k} kind="caption" style={{ color: c.tint, fontWeight: '600', fontSize: 11, lineHeight: 14 }}>{l.k}</T>)}
+            ? <View style={[s.secHead, { backgroundColor: androidLook ? surface : c.card2, paddingRight: indexOn ? INDEX_W + 8 : 16 }]} accessibilityRole="header"><T kind="foot" tone="text2" style={{ fontWeight: '600' }}>{item.k}</T></View>
+            : stationRow(item.s)} />
+        {indexOn ? (
+          <View style={[s.idx, { bottom: bottomPad - 16 }]} onLayout={(e) => { barH.current = e.nativeEvent.layout.height; }} {...pan.panHandlers} accessible={false}>
+            {letters.map((l) => <T key={l.k} kind="caption" maxFontSizeMultiplier={1} style={{ color: c.tint, fontWeight: '600', fontSize: 11, lineHeight: 14 }}>{l.k}</T>)}
           </View>
         ) : null}
       </View>
@@ -511,12 +528,14 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
 
 const s = StyleSheet.create({
   note: { marginHorizontal: 32, marginTop: 20 },
-  seg: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 10, padding: 2, borderRadius: 9 },
+  seg: { flexDirection: 'row', marginHorizontal: 16, marginTop: 12, padding: 2, borderRadius: 9, minHeight: 32 },
   segBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 6, borderRadius: 7 },
   segOn: { shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   search: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, paddingHorizontal: 10 },
-  stRow: { height: ROW_H, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, borderBottomWidth: StyleSheet.hairlineWidth },
-  idx: { position: 'absolute', right: 2, top: 8, bottom: 40, width: 24, alignItems: 'center', justifyContent: 'center' },
+  stRow: { height: ROW_H, paddingLeft: 16 },
+  stInner: { flex: 1, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth },
+  secHead: { height: HEAD_H, justifyContent: 'center', paddingLeft: 16 },
+  idx: { position: 'absolute', right: 0, top: 8, width: INDEX_W, alignItems: 'center', justifyContent: 'center' },
   mapBar: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginBottom: 24, paddingHorizontal: 16, paddingVertical: 10, minHeight: 60 },
   routeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, minHeight: 52, paddingVertical: 8 },
   lineRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, height: 50, marginHorizontal: 16 },

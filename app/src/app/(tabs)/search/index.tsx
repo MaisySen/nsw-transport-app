@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Keyboard, Platform, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { searchFieldProps } from '@/lib/pickerCore';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import { api, searchPlaces } from '@/lib/api';
@@ -46,7 +47,7 @@ function Field({ label, value, placeholder, active, onFocus, onChange, inputRef,
   return (
     <View style={[s.field, { borderColor: active ? c.tint : 'transparent' }]}>
       <T kind="sub" tone="text2" style={{ width: 44 }}>{label}</T>
-      <TextInput ref={inputRef} value={value} placeholder={placeholder} accessibilityLabel={label} placeholderTextColor={c.text3} onFocus={onFocus} onChangeText={onChange}
+      <TextInput {...searchFieldProps} ref={inputRef} value={value} placeholder={placeholder} accessibilityLabel={label} placeholderTextColor={c.text3} onFocus={onFocus} onChangeText={onChange}
         style={[font.body, { flex: 1, color: c.text, paddingVertical: Platform.OS === 'android' ? 6 : 10, minHeight: 48 }]} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing" />
       {Platform.OS === 'android' && value ? <Pressable accessibilityRole="button" accessibilityLabel={`Clear ${label}`} onPress={onClear} hitSlop={10}><Icon name={I.close} size={18} color={c.text2} /></Pressable> : null}
     </View>
@@ -135,7 +136,7 @@ export default function Search() {
           {mode === 'stop' ? (
             <View style={[s.field, { borderColor: 'transparent' }]}>
               <Icon name={I.search} size={17} color={c.text2} style={{ marginRight: 8 }} />
-              <TextInput ref={stopRef} value={q} onChangeText={setQ} placeholder="Stop, station or stop number" placeholderTextColor={c.text3} autoCorrect={false}
+              <TextInput {...searchFieldProps} ref={stopRef} value={q} onChangeText={setQ} placeholder="Stop, station or stop number" placeholderTextColor={c.text3} autoCorrect={false}
                 accessibilityLabel="Stop, station or stop number"
                 style={[font.body, { flex: 1, color: c.text, paddingVertical: Platform.OS === 'android' ? 6 : 10, minHeight: 48 }]} clearButtonMode="while-editing" returnKeyType="search" />
               {loading ? <ActivityIndicator size="small" /> : null}

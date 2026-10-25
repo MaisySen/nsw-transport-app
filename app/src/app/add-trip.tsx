@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { goBack } from '@/lib/nav';
 import { ActivityIndicator, Alert, Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { searchFieldProps } from '@/lib/pickerCore';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import * as Location from 'expo-location';
@@ -123,11 +124,11 @@ export default function AddTrip() {
               <View style={[s.dot, { backgroundColor: c.tint, borderColor: c.tint }]} />
             </View>}
             <View style={{ flex: 1 }}>
-              <TextInput ref={fromRef} value={fromText} placeholder={placeKind === 'home' ? 'Your home stop or station' : placeKind === 'work' ? 'Your work stop or station' : 'From'} placeholderTextColor={c.text3} onFocus={() => setField('from')}
+              <TextInput {...searchFieldProps} ref={fromRef} value={fromText} placeholder={placeKind === 'home' ? 'Your home stop or station' : placeKind === 'work' ? 'Your work stop or station' : 'From'} placeholderTextColor={c.text3} onFocus={() => setField('from')}
                 onChangeText={(t) => { setFromText(t); setFrom(null); }} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing"
                 style={[font.body, s.input, noOutline, { color: c.text, fontWeight: field === 'from' ? '600' : '400' }]} />
               {placeKind ? null : <Sep inset={0} />}
-              {placeKind ? null : <TextInput ref={toRef} value={toText} placeholder="To" placeholderTextColor={c.text3} onFocus={() => setField('to')}
+              {placeKind ? null : <TextInput {...searchFieldProps} ref={toRef} value={toText} placeholder="To" placeholderTextColor={c.text3} onFocus={() => setField('to')}
                 onChangeText={(t) => { setToText(t); setTo(null); }} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing"
                 style={[font.body, s.input, noOutline, { color: c.text, fontWeight: field === 'to' ? '600' : '400' }]} />}
             </View>
