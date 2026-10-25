@@ -3,7 +3,8 @@
 // it calls at in their own scrolling list, the platform with carriages (only when live data reports them), when it
 // departs, and the next two services in a small table. Opened from the platform button in a station's header and
 // from Platform view in the hold menu of a train or metro departure; nothing else on the existing screens changes.
-// Data: /api/departures (platform, live times, carriages) and /api/service (the stop list), both already served.
+// Data: /api/departures (platform, live times, carriages) and /api/service (the stop list), both already served, both
+// asked of api.transportsydney.app first (platformDepartures, platformService) with the server in use as the fallback.
 // Battery (docs/PERFORMANCE.md): useLive polls only while this screen is on view with the app in front, the
 // countdown ticks on whole minutes (useCountdownNow), and the stop list is read once per service and then each minute.
 // Wide windows (an open iPhone Duo or fold, a tablet, a resized window) get two columns, chosen by width alone.
@@ -12,7 +13,7 @@ import { Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { api, platformDepartures } from '@/lib/api';
+import { platformDepartures, platformService } from '@/lib/api';
 import { useCountdownNow, useLive, useReportCountdowns } from '@/lib/hooks';
 import { adaptiveGapMs, nextInMs } from '@/lib/pollCore';
 import { cacheKey, offlineText } from '@/lib/offlineCore';
@@ -53,7 +54,7 @@ function useStopsAfter(d: Departure | null, station: string): { stops: StopsAfte
   const { data, error, refresh } = useLive(async () => {
     if (!d) return null;
     const k = serviceKey(d);
-    const resp = await api.service({ trip: d.tripId, feed: d.feed || undefined, line: d.line, stop: d.stopId, planned: d.planned, mode: d.mode, destId: d.destId || undefined });
+    const resp = await platformService({ trip: d.tripId, feed: d.feed || undefined, line: d.line, stop: d.stopId, planned: d.planned, mode: d.mode, destId: d.destId || undefined });
     return { key: k, resp: resp as any };
   }, 60000, [key], { enabled: !!d });
   const fits = !!d && serviceFits(data as any, d);

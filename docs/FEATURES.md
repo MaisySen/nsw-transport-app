@@ -92,6 +92,13 @@ One train or metro at a station, full screen and readable from a distance, laid 
 * **Speak** reads the line, destination, platform, carriages, time and stops, with the one time Get a better voice offer.
 Works at every train and metro station; nothing is written in for a station. From 720 pt wide (an open iPhone Duo, a fold, a tablet), by width alone, two columns: destination and stops on the left, departs, platform and next services on the right. Dynamic Type (with very large text or a short window the whole board scrolls instead of only the stop list), dark mode, Reduce Motion (no transition), VoiceOver and TalkBack ("Platform 23, 8 cars, departs in 4 minutes, stops at ...").
 
+
+Fixes after Bidur's phone at 11:59 PM and 12:00 AM (over the air, 26 Oct):
+* A train that has gone never shows, as the next train or in the Next service rows. A live train counts until a minute after its live time; a train with no live time, or one whose live time has gone stale (Not tracking), counts until its timetable minute has passed. Rows are ordered by the time they show. The rule is `stillToCome` in `platformCore.ts`, with the same live label the departure rows use.
+* A stop list is shown only under the service it was asked for and only when it includes this station. When the next train takes over, an answer still arriving for the one before is dropped and the new list is asked for at once (`serviceKey`, `serviceFits`). Otherwise the board says "Full stop list not available yet". The list is asked of api.transportsydney.app first, the same server as the board (it retries a busy trip planner), with the server in use as the fallback.
+* Times stay on one line: Departs, Not tracking, the timetable time and the Next service times are sized to fit their column at every text size (`fitSize`), and shrink further on a phone if needed.
+* Departs sits right under the platform and cars. The board is as tall as what it shows, so a short stop list leaves no gap; a long one still scrolls in its own area.
+
 ## Wide windows (over the air, 25 Oct, about 11:17 PM)
 
 On an open iPhone Duo, a fold's inner screen or a tablet, screens turn and resize with the window; on a phone sized window (shortest side under 600 pt) they stay upright as before and only the departure board turns. Pinned bottom content in tabs (the Ask field, the Home undo bar) keeps clear of a tab bar standing on a side edge, and Simple mode keeps clear of the side safe areas and sits at a readable width in the middle.

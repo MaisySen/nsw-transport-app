@@ -288,3 +288,14 @@ export async function platformDepartures(stop: string, refresh = false): Promise
   } catch { /* the server in use answers instead */ }
   return api.departures(stop, refresh);
 }
+
+// Platform view's stop list, from the same server as its board: api.transportsydney.app retries a busy trip planner and
+// says how a list was found (stopsStatus), where the server in use can answer an empty list. Falls back the same way.
+export async function platformService(q: Record<string, string | undefined>): Promise<ServiceResp> {
+  if (apiBase() === NEW_API_BASE) return api.service(q);
+  try {
+    const r = await onNew<ServiceResp>(`/api/service?${qs(q)}`, 10000);
+    if (r && Array.isArray((r as any).stops)) return r;
+  } catch { /* the server in use answers instead */ }
+  return api.service(q);
+}

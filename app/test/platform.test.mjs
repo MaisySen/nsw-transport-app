@@ -320,6 +320,8 @@ test('Platform view: departs sits right under the platform and cars, and times n
   assert.ok(!/fixed \? \{ flex: 1 \}/.test(src), 'the board is as tall as its content, so a short stop list leaves no gap');
   assert.ok(/pickService<Departure>\(data\?\.items, now, pick, depState\)/.test(src), 'the board uses the shared live label to drop gone rows');
   assert.ok(/serviceFits\(data as any, d\)/.test(src), 'a stop list shows only under the service it was asked for');
+  assert.ok(/await platformService\(\{/.test(src), 'the stop list comes from the same server as the board, the one that retries a busy planner');
+  assert.ok(/export async function platformService/.test(read('src/lib/api.ts')));
   const timeTexts = src.match(/<Text[^>]*fontVariant: \['tabular-nums'\][^>]*>/g) || [];
   for (const t of timeTexts) if (!/Time now/.test(t) && !/fontSize: L\.wide \? 21 : 19/.test(t)) assert.ok(/numberOfLines=\{1\}/.test(t), t.slice(0, 120));
 });
