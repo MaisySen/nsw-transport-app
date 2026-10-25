@@ -2,6 +2,7 @@ import { api } from './api';
 import { bestTime, ms, shortName } from './format';
 import type { Fare, Journey, Leg, Place, TripResp } from './types';
 import { apiBase } from './server';
+import { dateNeeded, ymd } from './tripModesCore';
 
 /** One leg of a saved trip: mode, change time before it (legs after the first), all services, walk minutes. */
 export type TripLeg = { mode: string; from: Place; to: Place; conn?: number; any?: boolean; walk?: number };
@@ -82,7 +83,10 @@ export async function planTrip(t: PlanTrip, opts: { refresh?: boolean; count?: n
   const j1 = (d1.journeys || []).filter((j) => isDirect(j));
   if (!j1.length) return { ...d1, to: { id: t.to.id, name: t.to.name }, journeys: [] };
   const firstArr = Math.min(...j1.map(arrOf));
-  const d2 = await api.trip(t.via, t.to, { refresh: true, count: 8, time: hhmmSydney(firstArr + conn) });
+  // The second part's time can be over 30 min ago (a chosen time in the past): it then needs today's date too.
+  const t2 = hhmmSydney(firstArr + conn);
+  const day2 = dateNeeded(ymd(firstArr + conn), Number(t2.slice(0, 2)), Number(t2.slice(2)), Date.now());
+  const d2 = await api.trip(t.via, t.to, { refresh: true, count: 8, time: t2, ...(day2 ? { date: day2 } : {}) });
   const j2 = (d2.journeys || []).filter((j) => isDirect(j)).map((j) => ({ j, ...leaveOf(j) })).sort((a, b) => a.leave - b.leave);
   const journeys: Journey[] = [];
   for (const a of j1) {

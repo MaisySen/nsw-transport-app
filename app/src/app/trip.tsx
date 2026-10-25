@@ -6,9 +6,10 @@ import { TripReminders } from '@/components/TripReminders';
 import { plural } from '@/lib/homeCore';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, useColorScheme, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { arriveByIndex, isTomorrow, NOW, whenFromParams, whenLabel, whenQuery, type When } from '@/lib/planCore';
+import { arriveByIndex, NOW, whenFromParams, type When } from '@/lib/planCore';
 import { WhenPicker } from '@/components/WhenPicker';
-import { afterBatch, canLoadEarlier, canLoadLater, chipLabel, chipsToShow, dateNeeded, earlierFrom, emptyModes, filterModes, modesWords, MODE_CHIPS, nearEnd, normModes, PAGE0, PAGING, pickerDays, serviceDayEnd, sydneyTime, toggleMode, ymd, type ModeK, type PageState } from '@/lib/tripModesCore';
+import { afterBatch, canLoadEarlier, canLoadLater, chipLabel, chipsToShow, dateNeeded, EARLIER_NEEDS_NEW, earlierFloor, earlierFrom, emptyModes, filterModes, hasLeft, keepFrom, modesWords, MODE_CHIPS, nearEnd, normModes, PAGE0, PAGING, pickerDays, pinDay, queryAt, serviceDayEnd, toggleMode, whenAt, whenKeyOf, whenWords, ymd, type ModeK, type PageState } from '@/lib/tripModesCore';
+import { LeftRow } from '@/components/LeftRow';
 import { useOnViewRef } from '@/lib/activity';
 import { haptic } from '@/lib/haptic';
 import { withTimeout } from '@/lib/gesture';
@@ -311,10 +312,11 @@ function JourneyDetail({ j, now, from, to, autoStart }: { j: Journey; now: numbe
 export default function TripScreen() {
   const p = useLocalSearchParams<{ from: string; fromName: string; to: string; toName: string; pick?: string; via?: string; viaName?: string; conn?: string; name?: string; legs?: string; time?: string; arriveBy?: string; date?: string; start?: string; at?: string }>();
   // Leave at or Arrive by from Plan (a Sydney clock time), changed here with the time chip; without it the trip is from now.
-  const [when, setWhen] = useState<When>(() => whenFromParams(p.time, p.arriveBy, p.date));
+  // The day is written in when the time is picked (pinDay), so a time in the past stays today's: Leave 6:15pm picked
+  // at 6:27pm shows the services from 6:15pm, the gone ones marked Left, and does not turn into tomorrow's later on.
+  const [when, setWhen] = useState<When>(() => pinDay(whenFromParams(p.time, p.arriveBy, p.date), Date.now()));
   const [pickOpen, setPickOpen] = useState(false);
-  const whenQ = whenQuery(when);
-  const whenKey = whenQ.time ? `${whenQ.time}${whenQ.arriveBy ? 'a' : 'l'}${whenQ.date || ''}` : '';
+  const whenKey = whenKeyOf(when);
   const from = { id: String(p.from), name: String(p.fromName || '') };
   const to = { id: String(p.to), name: String(p.toName || '') };
   const via = p.via ? { id: String(p.via), name: String(p.viaName || p.via) } : null;
@@ -339,13 +341,14 @@ export default function TripScreen() {
   const c = usePalette();
   const now = useNow();
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
-  const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...whenQ, modes }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey],
+  const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey],
     { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '') + (modesKey ? `|m:${modesKey}` : '')) });
   const [extra, setExtra] = useState<Journey[]>([]);
   // Step free on or off, another time or other modes ask again; batches loaded before would be the other kind.
   const [later, setLater] = useState<PageState>(PAGE0);
   const [earlier, setEarlier] = useState<PageState>(PAGE0);
-  useEffect(() => { setExtra([]); setLater(PAGE0); setEarlier(PAGE0); }, [accOn, whenKey, modesKey]);
+  const [earlierNote, setEarlierNote] = useState('');
+  useEffect(() => { setExtra([]); setLater(PAGE0); setEarlier(PAGE0); setEarlierNote(''); }, [accOn, whenKey, modesKey]);
   // Modes seen in any answer for this trip, so Metro, Light rail or Ferry show only where they make sense.
   const seenModes = useRef<Set<string>>(new Set());
   const [showTravel, setShowTravel] = useState(false);
@@ -353,11 +356,15 @@ export default function TripScreen() {
   const firstT = (j: Journey) => j.legs.find((l) => l.kind === 'transit');
   const jKey = (j: Journey) => { const l = firstT(j); return l ? l.tripId || `${l.line}|${l.planned}` : String(j.leave); };
   const depMs = (j: Journey) => { const l = firstT(j); return l ? bestTime(l.planned, l.realtime ? l.estimated : null) : ms(j.leave); };
-  // Main results drop services gone over 2 min ago; ones loaded with Earlier services stay up to 30 min back.
+  // The moment the list is for: now, or the chosen Leave at or Arrive by time (past or not).
+  const anchor = whenAt(when, now);
+  // Now: main results drop services gone over 2 min ago and ones loaded with Earlier services stay up to 30 min back.
+  // A chosen time keeps everything the planner answered for it, gone or not (keepFrom); gone ones show as Left.
+  const keep = keepFrom(when, anchor, now);
   const jsAll = (() => {
     const seen = new Set<string>();
     const out: Journey[] = [];
-    for (const j of [...(data?.journeys || []).filter((x) => ms(x.leave) > now - 120000), ...extra.filter((x) => ms(x.leave) > now - 30 * 60000)]) {
+    for (const j of [...(data?.journeys || []).filter((x) => ms(x.leave) > keep.main), ...extra.filter((x) => ms(x.leave) > keep.extra)]) {
       for (const l of j.legs) if (l.kind !== 'walk' && l.mode) seenModes.current.add(l.mode);
       const k = jKey(j);
       if (seen.has(k)) continue;
@@ -373,7 +380,7 @@ export default function TripScreen() {
   const chips = modesOn ? chipsToShow([...seenModes.current], modes) : [];
   const js = df.list;
   // A new reminder starts 15 min before the first service shown (phone time, as the reminder rings in phone time).
-  const suggest = (() => { const j = js[0]; if (!j) return null; const t = new Date(depMs(j) - 15 * 60000); return { hour: t.getHours(), minute: Math.floor(t.getMinutes() / 5) * 5 }; })();
+  const suggest = (() => { const j = js.find((x) => !hasLeft(depMs(x), now)) || js[0]; if (!j) return null; const t = new Date(depMs(j) - 15 * 60000); return { hour: t.getHours(), minute: Math.floor(t.getMinutes() / 5) * 5 }; })();
   // Last way home: the last service tonight, only when the list shows the night gap after it.
   const lastIdx = lastTonightIndex(js.map(depMs));
   // Endless list: the next batch loads by itself near the end of the list, earlier ones on a pull at the top. Capped
@@ -382,12 +389,18 @@ export default function TripScreen() {
   const onView = useOnViewRef();
   const firstDep = js.length ? depMs(js[0]) : null;
   const lastDep = js.length ? depMs(js[js.length - 1]) : null;
-  const anchor = when.kind === 'now' ? now : sydneyTime(when.day || (isTomorrow(when, now) ? pickerDays(now, 2)[1].day : ymd(now)), when.h, when.m);
   const dayEnd = serviceDayEnd(data?.journeys?.length ? depMs(data.journeys[0]) : anchor);
-  const floor = when.kind === 'now' ? now - PAGING.earliestBeforeNowMs : Math.max(now - PAGING.earliestBeforeNowMs, anchor - 2 * 3600000);
+  // Earlier services reach back from the chosen time too, into the past (earlierFloor).
+  const floor = earlierFloor(when, anchor, now);
   const batch = async (t: number) => {
     const day = dateNeeded(ymd(t), Number(hhmm(t).slice(0, 2)), Number(hhmm(t).slice(2)), now);
-    const r = await planTrip(plan, { time: hhmm(t), count: 6, refresh: true, all: chain && allOn, modes, ...(day ? { date: day } : {}) });
+    let r: TripResp;
+    try {
+      r = await planTrip(plan, { time: hhmm(t), count: 6, refresh: true, all: chain && allOn, modes, ...(day ? { date: day } : {}) });
+    } catch (e: any) {
+      // Over 30 min ago today needs the new server's date (the older one plans that time for tomorrow).
+      throw Object.assign(e instanceof Error ? e : new Error(String(e)), { neededDate: !!day && day === ymd(now) });
+    }
     const have = new Set(jsAll.map(jKey));
     const fresh = (r.journeys || []).filter((j) => !have.has(jKey(j)));
     if (fresh.length) setExtra((e) => [...e, ...fresh]);
@@ -411,8 +424,10 @@ export default function TripScreen() {
     try {
       const fresh = await batch(earlierFrom(firstDep!, floor));
       setEarlier((x) => afterBatch(x, fresh.filter((j) => depMs(j) < firstDep!).length, null, Infinity));
+      setEarlierNote('');
       if (fresh.length) setOpen(null);
-    } catch {
+    } catch (e: any) {
+      if (e?.neededDate) setEarlierNote(EARLIER_NEEDS_NEW);
       setEarlier((x) => ({ ...x, busy: false, pages: x.pages + 1 }));
     }
   };
@@ -431,6 +446,18 @@ export default function TripScreen() {
     if (i >= 0) setOpen(i);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [when.kind, whenKey, js.length, updatedAt]);
+  // Leave at a time that has passed: the gone services stay as short Left rows and the first one you can still take
+  // opens, once per time picked (all gone: none opens).
+  const leaveOpened = useRef('');
+  useEffect(() => {
+    if (when.kind !== 'leave' || p.pick != null || !js.length || leaveOpened.current === whenKey) return;
+    if (!updatedAt || updatedAt < whenSince.current.at) return;
+    leaveOpened.current = whenKey;
+    if (!hasLeft(depMs(js[0]), Date.now())) return;
+    const i = js.findIndex((j) => !hasLeft(depMs(j), Date.now()));
+    setOpen(i >= 0 ? i : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [when.kind, whenKey, js.length, updatedAt]);
   const [viewH, setViewH] = useState(0);
   // A start link opens the service leaving closest to `at` and starts it, once.
   const [autoStart, setAutoStart] = useState<number | null>(null);
@@ -445,7 +472,9 @@ export default function TripScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.start, p.at, js.length]);
   // Plan B: the chosen trip (the open one, else the first) has a cancelled service, a suspended line or a missed change.
-  const chosen = js.length ? js[open != null && open < js.length ? open : 0] : null;
+  // Gone services are left out: Plan B is for the trip you can still take (the open one, else the next one to leave).
+  const openJ = open != null && open < js.length ? js[open] : null;
+  const chosen = openJ && !hasLeft(depMs(openJ), now) ? openJ : js.find((j) => !hasLeft(depMs(j), now)) || null;
   const prob = problemOf(chosen);
   const pbShown = prob ? planB(js, chosen, now) : null;
   const pbAll = prob && !pbShown ? planB(jsAll, chosen, now) : null;
@@ -564,10 +593,13 @@ export default function TripScreen() {
         {js.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
             {earlier.busy ? <LoadingRow text="Loading earlier services" /> : null}
+            {earlierNote && !earlier.busy ? <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}><T kind="foot" tone="text2">{earlierNote}</T></View> : null}
             {js.map((j, i) => (
               <View key={jKey(j) + i}>
                 <Sep inset={0} />
-                <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />
+                {hasLeft(depMs(j), now)
+                  ? <LeftRow j={j} arrive={arrs[i]} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />
+                  : <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />}
                 <WarnLine j={j} />
                 <JourneyWhy j={j} />
                 {!chain && i === lastIdx && canRemind(depMs(j), now) ? <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}><T kind="foot" tone="text2">Last service tonight</T><RemindLastButton hint={{ from, to, mode: modeOfLegs(j.legs), svc: slimLast(j) }} acc={accOn} /></View> : null}
@@ -604,8 +636,7 @@ export default function TripScreen() {
         onDone={(w) => {
           setPickOpen(false);
           if (w.kind === 'now') { setWhen(NOW); return; }
-          const day = dateNeeded(w.day, w.h, w.m, now);
-          setWhen({ kind: w.kind, h: w.h, m: w.m, ...(day ? { day } : {}) });
+          setWhen(pinDay({ kind: w.kind, h: w.h, m: w.m, ...(w.day ? { day: w.day } : {}) }, Date.now()));
           setOpen(0);
         }} />
     </>
@@ -615,7 +646,7 @@ export default function TripScreen() {
 /** "Leave now" as a chip that opens the time picker (any time, any day of the next week), and Now one tap back. */
 function WhenBar({ when, now, onOpen, onNow }: { when: When; now: number; onOpen: () => void; onNow: () => void }) {
   const c = usePalette();
-  const label = whenLabel(when, now);
+  const label = whenWords(when, now);
   const ios = Platform.OS === 'ios';
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 12, gap: 8 }}>

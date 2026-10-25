@@ -4,6 +4,7 @@ import { store } from './store';
 import type { CarPark, Station, TopupItem } from './access';
 import { apiBase, NEW_API_BASE } from './server';
 import { placesGone, stopsAsPlaces, type PlaceItem } from './planCore';
+import { EARLIER_NEEDS_NEW, ymd } from './tripModesCore';
 import { createReadCache } from './pollCore';
 import { stampSeen } from './liveLabelCore';
 import { noteBoard } from './recent';
@@ -167,6 +168,11 @@ async function tripLong(base: Record<string, any>, refresh?: boolean): Promise<T
 // planner for those modes and echoes them back). Until the app moves there these trips go to it directly, with no
 // profile or device. If it does not answer, modes fall back to the server in use with the phone filtering its usual
 // answer (`modesBy: 'phone'`, the screen says so honestly); a day cannot be planned there, so that is an error.
+// A date the new server could not plan. Today's date means a time over 30 min ago (the older server plans that
+// time for tomorrow), so it says so plainly; another day says pick a time today.
+function dayMiss(date: string): string {
+  return date === ymd(Date.now()) ? EARLIER_NEEDS_NEW : "Planning for another day didn't work just now. Pull down to try again, or pick a time today.";
+}
 async function tripPicked(base: Record<string, any>, pair: string, modes: string[], date: string): Promise<TripResp> {
   const long = isLongTrip(base.from, base.to) || longPairs.has(pair);
   const extra = { modes: modes.join(','), date, long: long ? 1 : '', count: Math.max(6, Number(base.count) || 6) };
@@ -176,12 +182,12 @@ async function tripPicked(base: Record<string, any>, pair: string, modes: string
   try {
     r = apiBase() === NEW_API_BASE ? await req<TripResp>(`${path}&${qs({ device: await getDevice(), profile: PROFILE })}`, undefined, wait) : await onNew<TripResp>(path, wait);
   } catch (e: any) {
-    if (date) throw Object.assign(new Error("Planning for another day didn't work just now. Pull down to try again, or pick a time today."), { http: e?.http, offline: e?.offline });
+    if (date) throw Object.assign(new Error(dayMiss(date)), { http: e?.http, offline: e?.offline });
     r = await req<TripResp>(`/api/trip?${qs({ ...base, count: 8, device: await getDevice(), profile: PROFILE })}`);
     return { ...r, modesBy: 'phone' } as TripResp;
   }
   const echoed = Array.isArray((r as any).modes);
-  if (date && (r as any).date !== date) throw new Error("Planning for another day didn't work just now. Pull down to try again, or pick a time today.");
+  if (date && (r as any).date !== date) throw new Error(dayMiss(date));
   return { ...r, modesBy: modes.length ? (echoed ? 'server' : 'phone') : undefined } as TripResp;
 }
 
