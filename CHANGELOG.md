@@ -4,6 +4,10 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### NSW TrainLink fares and the weekend trackwork push (over the air update for iPhone and Android, 25 Oct, 11:21 AM, and server)
+* Regional NSW TrainLink trips (Albury, Dubbo) no longer show an Opal fare, since Opal is not used on them. The trip shows "NSW TrainLink fare. Not an Opal trip. Book a seat ahead." with a Book link. A trip that is part Opal, part TrainLink keeps the Opal estimate and says the TrainLink part is booked ahead. Works now.
+* Thursday 6pm to 9pm: one push per phone per weekend when planned trackwork this weekend is on a trip it has a morning check for: "Trackwork this weekend: Strathfield to Central. Sat and Sun: Buses replace trains between Strathfield and Lidcombe." After the server move.
+
 ### Long distance trips, Plan B in the morning alert, traffic on bus legs, quieter carriages (over the air update for iPhone and Android, 25 Oct, 11:13 AM)
 * Regional trips plan again: Central to Albury, Dubbo or Grafton used to stop at "Live data didn't answer" after 12 seconds. The app now asks the new server, which waits up to 35 seconds and keeps the answer for 2 minutes. After 6 seconds the trip screen says "Still searching. Long distance trips can take up to 30 seconds." Works now.
 * Long trips show hours: "7 h 26 min", not "446 min". A TrainLink note that showed web code now reads "Book your seat with NSW TrainLink". Works now.

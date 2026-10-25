@@ -431,3 +431,11 @@ Bus and coach legs of `/api/trip` and `/api/plan` answers carry `traffic: {id, k
 ## Quieter carriage
 
 Vehicles carry `cars` (carriages reporting) and `quiet: {where, text}` (`where` is `front`, `middle`, `back` or `ends`) from per carriage occupancy: the GTFS realtime `multi_carriage_details` when sent, else the Transport for NSW consist extension (field 1007 on VehiclePosition: position, occupancy, quiet carriage). Sydney Trains, intercity and Metro send it; Metro sends position 0, so the order sent is used. A hint only when part of the train has few seats or less and another third is at least one level emptier. Removed with occupancy when the occupancy switch is off.
+
+## Weekend trackwork push
+
+On the minute tick, Thursday 6pm to 9pm Sydney time, with the `weekendTrackwork` and `morningCheck` switches on: each phone with an active morning check gets at most one push per weekend when a planned alert in the digest is active this weekend (Friday 8pm to Monday 3am) and lists a stop the check's trip passes (planned with `planShape` for Saturday at the check's time), or names a station on it. Up to 4 trips are looked at per minute; what was looked at and sent is kept in `meta` under `twk:<device>:<saturday>`.
+
+## NSW TrainLink fares
+
+Legs with `feed: "nswtrains"` (NSW TrainLink regional trains and coaches) are not priced as Opal: their `amount` is null and the fare is `unknown`. The app shows a booking link instead of an Opal estimate when every priced part is TrainLink.
