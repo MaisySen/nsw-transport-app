@@ -104,7 +104,7 @@ test('feed travels with watches, the live trip and the lock screen card', () => 
 test('long trips: the trip screen says it is still searching and refreshes every 2 minutes', () => {
   const t = read('src/app/trip.tsx');
   assert.match(t, /Still searching/);
-  assert.match(t, /isLongPair\(from\.id, to\.id\) \? LONG_TRIP_KEEP_MS : 20000/);
+  assert.match(t, /isLongPair\(from\.id, to\.id\) \? LONG_TRIP_KEEP_MS : \(d: TripResp \| null\) => tripGapMs\(firstLeaveInMs\(d\?\.journeys, Date\.now\(\)\)\)/);
   const a = read('src/lib/api.ts');
   assert.match(a, /tripLong\(base, opts\.refresh\)/);
   assert.match(a, /long: 1/);

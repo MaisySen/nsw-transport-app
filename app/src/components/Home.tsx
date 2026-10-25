@@ -74,7 +74,7 @@ function useOfflineSince() {
 /**
  * useLive for Home's cards, joined to pull to refresh and the Live stamp. Answers are kept on the phone under `key`,
  * and a fresh start shows that kept copy at once (stale, with its time in the header) while the live answer loads.
- * Adaptive (docs/PERFORMANCE.md): every 15 s while the next service is 5 minutes away or less, 30 s up to 15
+ * Adaptive (docs/PERFORMANCE.md): every 15 s while the next service is 10 minutes away or less, 30 s up to 20
  * minutes, once a minute beyond. `nextOf` gives the next departure in the data.
  */
 function useHomeLive<T>(load: (refresh: boolean) => Promise<T>, deps: any[], key?: string, nextOf?: (d: T) => number) {

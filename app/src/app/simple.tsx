@@ -13,7 +13,7 @@ import { api } from '@/lib/api';
 import { haptic } from '@/lib/haptic';
 import { useCountdownNow, useLive, useReportCountdowns, useStamp } from '@/lib/hooks';
 import { cacheKey, offlineText, staleText } from '@/lib/offlineCore';
-import { adaptiveGapMs } from '@/lib/pollCore';
+import { tripGapMs } from '@/lib/pollCore';
 import { NOW, type When } from '@/lib/planCore';
 import { hasSpeech, speak, stopSpeaking } from '@/lib/nativeExtras';
 import { searchFieldProps } from '@/lib/pickerCore';
@@ -335,7 +335,7 @@ export default function Simple() {
   const whenKey = whenKeyOf(when);
   const qKey = query ? `${query.from.id}>${query.to.id}` : '';
   const live = useLive<TripResp | null>((r) => (query ? planTrip(query, { refresh: r, count: 6, ...queryAt(when, Date.now()) }) : Promise.resolve(null)),
-    (d) => adaptiveGapMs(30000, d?.journeys?.length ? tripRows(d.journeys as any, Date.now()).rows[0]?.dep - Date.now() : null),
+    (d) => tripGapMs(d?.journeys?.length ? tripRows(d.journeys as any, Date.now()).rows[0]?.dep - Date.now() : null),
     [qKey, whenKey], { cacheKey: query ? cacheKey('trip', `simple|${qKey}|${whenKey}`) : undefined, enabled: !!query && !edit });
   useEffect(() => { setExtra([]); setKeepGone(false); }, [qKey, whenKey]);
   const stamp = useStamp(`${qKey}|${whenKey}`);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { keepOffline, peekOffline, readOffline } from './offline';
 import { createLatest, createStamp } from './pollCore';
+import { answerTime } from './liveLabelCore';
 import { useCountdownNow, useNow, useReportCountdowns, useScreenPoll } from './activity';
 
 /** Ticks so countdowns move on their own, only while the screen is on view and the app is in front. */
@@ -48,7 +49,8 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
     try {
       const d = await loadRef.current(refresh, round.signal);
       if (!round.current()) return true;
-      const at = Date.now();
+      // When the times were read (a cached answer from the server says so), not just when they arrived (honest "Updated").
+      const at = answerTime(d, Date.now());
       setData(d);
       setError(null);
       setUpdatedAt(at);

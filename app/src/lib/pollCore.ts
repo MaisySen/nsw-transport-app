@@ -164,16 +164,34 @@ export function createStamp(key: string) {
 }
 
 /**
- * Adaptive polling (docs/PERFORMANCE.md): the screen's normal gap while the next service is 5 minutes away or less,
- * 30 seconds from 5 to 15 minutes, and once a minute beyond 15 minutes (or with nothing to wait for today). A gap
- * longer than these is kept.
+ * Adaptive polling (docs/PERFORMANCE.md): the screen's normal gap (15 s on boards) while the next service is
+ * 10 minutes away or less, 30 seconds from 10 to 20 minutes, and once a minute beyond 20 minutes (or with nothing to
+ * wait for today). A gap longer than these is kept. Before 26 Oct 2026 the fast gap stopped at 5 minutes, so a train
+ * 6 to 15 minutes away was asked for every 30 s ("updates late", Bidur).
  */
+export const FAST_POLL_WITHIN_MS = 10 * 60000;
 export function adaptiveGapMs(baseMs: number, nextInMs: number | null | undefined): number {
   if (nextInMs == null || !Number.isFinite(nextInMs)) return Math.max(baseMs, 60000);
   const m = nextInMs / 60000;
-  if (m > 15) return Math.max(baseMs, 60000);
-  if (m > 5) return Math.max(baseMs, 30000);
+  if (m > 20) return Math.max(baseMs, 60000);
+  if (nextInMs > FAST_POLL_WITHIN_MS) return Math.max(baseMs, 30000);
   return baseMs;
+}
+
+/**
+ * Trip lists (trip screen, Simple mode, Home trip cards): every 15 s while the first service of the list leaves in
+ * 10 minutes or less, else every 20 s (the gap these lists always had).
+ */
+export function firstLeaveInMs(journeys: { leave?: string | null; board?: string | null }[] | null | undefined, now: number): number | null {
+  let best: number | null = null;
+  for (const j of journeys || []) {
+    const t = Date.parse(String(j?.board || j?.leave || '')) - now;
+    if (Number.isFinite(t) && t > -30000 && (best == null || t < best)) best = t;
+  }
+  return best;
+}
+export function tripGapMs(firstInMs: number | null | undefined): number {
+  return firstInMs != null && Number.isFinite(firstInMs) && firstInMs <= FAST_POLL_WITHIN_MS ? 15000 : 20000;
 }
 
 /**

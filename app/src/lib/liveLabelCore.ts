@@ -142,6 +142,12 @@ export function liveWords(s: LiveState): string {
  * Marks an answer with the moment this phone received it: `seenAt` on each departure row and each trip leg (set once;
  * a copy kept for offline use keeps its first time, so its age stays true). Returns the same object.
  */
+/** When an answer's times were read: its seenAt (api.ts sets it from the server's dataAt or the arrival), else now. */
+export function answerTime(d: any, now: number): number {
+  const t = d && typeof d === 'object' ? Number(d.seenAt) : NaN;
+  return Number.isFinite(t) && t <= now && now - t < 120000 ? t : now;
+}
+
 export function stampSeen<T>(resp: T, at: number): T {
   const r: any = resp;
   if (!r || typeof r !== 'object') return resp;

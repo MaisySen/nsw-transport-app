@@ -63,7 +63,7 @@ export default function StopScreen() {
   const [served, setServed] = useState<string[]>([]);
   const ask = boardAsk(served, mode, pick, at);
   const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => (at != null ? departuresAt(String(id), at) : ask ? departuresFor(String(id), ask, r) : api.departures(String(id), r)),
-    // Adaptive: every 15 s while the next service is 5 minutes away or less, slower when it is further off.
+    // Adaptive: every 15 s while the next service is 10 minutes away or less, slower when it is further off.
     (d) => adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), [id, at, ask], { cacheKey: at == null ? cacheKey('dep', boardKey(String(id), ask)) : undefined });
   useEffect(() => { setServed((p) => modesServed(p, data)); }, [data]);
   // A server without earlier times (no echo): the chip and the row go for the session and the board goes back to now.

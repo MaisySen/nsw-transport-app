@@ -2,6 +2,7 @@ import { Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
+import { adaptiveGapMs, firstLeaveInMs, nextInMs, tripGapMs } from '@/lib/pollCore';
 import { usePalette, radius } from '@/lib/theme';
 import { clock, ms, rowAlert, shortName } from '@/lib/format';
 import type { Place } from '@/lib/types';
@@ -37,7 +38,7 @@ export function StopCard({ stop }: { stop: Place }) {
   const c = usePalette();
   const now = useNow();
   const st = useStore();
-  const { data, updatedAt, error } = useLive((r) => api.departures(stop.id, r), 20000, [stop.id]);
+  const { data, updatedAt, error } = useLive((r) => api.departures(stop.id, r), (d) => adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), [stop.id]);
   const items = (data?.items || []).filter((d) => ms(d.estimated || d.planned) > now - 60000).slice(0, 3);
   const whyOf = useWhyLate(data?.items, data?.alerts);
   return (
@@ -62,7 +63,7 @@ export function StopCard({ stop }: { stop: Place }) {
 export function TripCard({ from, to, title, subtitle, icon }: { from: Place; to: Place; title?: string; subtitle?: string; icon?: any }) {
   const c = usePalette();
   const now = useNow();
-  const { data, updatedAt, error } = useLive((r) => api.trip(from, to, { refresh: r, count: 3 }), 20000, [from.id, to.id]);
+  const { data, updatedAt, error } = useLive((r) => api.trip(from, to, { refresh: r, count: 3 }), (d) => tripGapMs(firstLeaveInMs(d?.journeys, Date.now())), [from.id, to.id]);
   const js = (data?.journeys || []).filter((j) => ms(j.leave) > now - 120000).slice(0, 2);
   const open = () => router.push({ pathname: '/trip', params: { from: from.id, fromName: from.name, to: to.id, toName: to.name } });
   return (

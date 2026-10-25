@@ -22,13 +22,34 @@ async function load(rel) {
 const pc = await load('src/lib/pollCore.ts');
 const read = (rel) => fs.readFileSync(path.join(here, '..', rel), 'utf8');
 
-test('adaptive gap: 15 s in the last 5 minutes, 30 s up to 15, a minute beyond or with nothing ahead', () => {
+test('adaptive gap: 15 s in the last 10 minutes, 30 s up to 20, a minute beyond or with nothing ahead', () => {
   assert.equal(pc.adaptiveGapMs(15000, 2 * 60000), 15000);
   assert.equal(pc.adaptiveGapMs(15000, 5 * 60000), 15000);
-  assert.equal(pc.adaptiveGapMs(15000, 9 * 60000), 30000);
-  assert.equal(pc.adaptiveGapMs(15000, 16 * 60000), 60000);
+  assert.equal(pc.adaptiveGapMs(15000, 9 * 60000), 15000, 'a train 9 min away is asked for every 15 s (was 30 s)');
+  assert.equal(pc.adaptiveGapMs(15000, 10 * 60000), 15000);
+  assert.equal(pc.adaptiveGapMs(15000, 11 * 60000), 30000);
+  assert.equal(pc.adaptiveGapMs(15000, 16 * 60000), 30000);
+  assert.equal(pc.adaptiveGapMs(15000, 21 * 60000), 60000);
   assert.equal(pc.adaptiveGapMs(15000, null), 60000);
   assert.equal(pc.adaptiveGapMs(120000, 60000), 120000, 'a slower gap is never made faster');
+});
+
+test('trip lists: 15 s while the first service leaves in 10 minutes or less, else 20 s', () => {
+  const now = Date.parse('2026-10-26T07:40:00Z');
+  const at = (m) => new Date(now + m * 60000).toISOString();
+  assert.equal(pc.tripGapMs(4 * 60000), 15000);
+  assert.equal(pc.tripGapMs(10 * 60000), 15000);
+  assert.equal(pc.tripGapMs(11 * 60000), 20000);
+  assert.equal(pc.tripGapMs(null), 20000);
+  assert.equal(pc.firstLeaveInMs([{ leave: at(12), board: at(14) }, { leave: at(6), board: at(8) }], now), 8 * 60000, 'the first boarding');
+  assert.equal(pc.firstLeaveInMs([{ leave: at(-5) }, { leave: at(3) }], now), 3 * 60000, 'a trip already gone is skipped');
+  assert.equal(pc.firstLeaveInMs([], now), null);
+  // Every list that shows live times uses them (Simple mode was 30 s or slower before 26 Oct 2026).
+  assert.match(read('src/app/simple.tsx'), /\(d\) => tripGapMs\(/);
+  assert.match(read('src/app/trip.tsx'), /tripGapMs\(firstLeaveInMs\(d\?\.journeys, Date\.now\(\)\)\)/);
+  const cards = read('src/components/Cards.tsx');
+  assert.match(cards, /api\.departures\(stop\.id, r\), \(d\) => adaptiveGapMs\(15000, nextInMs\(d\?\.items, Date\.now\(\)\)\)/);
+  assert.match(cards, /tripGapMs\(firstLeaveInMs\(d\?\.journeys, Date\.now\(\)\)\)/);
 });
 
 test('next change of a whole minute countdown', () => {

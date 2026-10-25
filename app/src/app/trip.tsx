@@ -37,6 +37,7 @@ import { KeptBanner, LineBadge, OccupancyChip, StatusLine } from '@/components/T
 import { liveState } from '@/lib/liveLabelCore';
 import { arrOf, ServiceRow, tripCacheId, tripPkey, WarnLine } from '@/components/Home';
 import { cacheKey } from '@/lib/offlineCore';
+import { firstLeaveInMs, tripGapMs } from '@/lib/pollCore';
 import { planB, problemOf } from '@/lib/planBCore';
 import { busLegStatus, rowTraffic, trafficLine } from '@/lib/busLiveCore';
 import { startIndex } from '../../platform/intentInboxCore';
@@ -344,7 +345,7 @@ export default function TripScreen() {
   const c = usePalette();
   const now = useNow();
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
-  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey],
+  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : (d: TripResp | null) => tripGapMs(firstLeaveInMs(d?.journeys, Date.now())), [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey],
     { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '') + (modesKey ? `|m:${modesKey}` : '')) });
   const [extra, setExtra] = useState<Journey[]>([]);
   // Step free on or off, another time or other modes ask again; batches loaded before would be the other kind.
