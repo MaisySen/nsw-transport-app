@@ -202,9 +202,13 @@ struct NextProvider: TimelineProvider {
 }
 
 struct NextView: View {
-    @Environment(\.widgetFamily) private var family
+    @Environment(\.widgetFamily) private var hostFamily
     @Environment(\.isLuminanceReduced) private var dimmed
     let entry: NextEntry
+    /// Set by the screenshot tool (tools/widget-shots), which draws the view outside a widget host.
+    var familyOverride: WidgetFamily? = nil
+
+    private var family: WidgetFamily { familyOverride ?? hostFamily }
 
     var body: some View {
         Group {

@@ -1,16 +1,26 @@
-# Simulator compile check of the iPhone app with the watch app and complications, then screenshots of the watch
-# app on watch simulators (tools/watch-shots.sh). The screenshots never fail the build; they are uploaded as a
-# build artifact. Used by the "watchshots" profile in eas.json.
+# Simulator compile check of the iPhone app with the widget, the watch app and the complications, then screenshots:
+# the watch app on watch simulators (tools/watch-shots.sh) and the iPhone widgets, Lock Screen widgets and watch
+# complications drawn from their shipping SwiftUI views with live data (tools/widget-shots.sh). The screenshot steps
+# never fail the build. Both scripts write under $HOME/shots (watch, widgets, complications), and the upload reads that
+# absolute path: the run steps and the upload step do not share a working folder (build ba2ed886 lost its screenshots
+# that way). Used by the "watchshots" profile in eas.json.
 build:
-  name: Compile check and Apple Watch screenshots
+  name: Compile check and screenshots (watch app, widgets, complications)
   steps:
+    - run:
+        name: Screenshot folder
+        command: mkdir -p "$HOME/shots" && echo "Screenshots of the EAS simulator check" > "$HOME/shots/README.txt"
     - eas/build
     - run:
         name: Apple Watch screenshots
         command: bash tools/watch-shots.sh || true
+    - run:
+        name: Widget and complication screenshots
+        command: bash tools/widget-shots.sh || true
     - eas/upload_artifact:
-        name: Upload watch screenshots
+        name: Upload screenshots
         if: ${ always() }
         inputs:
           type: build-artifact
-          path: ${ eas.env.HOME }/watch-shots
+          path: ${ eas.env.HOME }/shots
+          ignore_error: true

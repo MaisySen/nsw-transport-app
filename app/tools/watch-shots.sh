@@ -63,6 +63,6 @@ for DT in $(ids "Apple Watch Ultra [0-9]+ \(49mm\)"); do
 done
 for f in "$OUT"/*.png; do sips -g pixelWidth -g pixelHeight "$f"; done
 # The upload step reads from the home folder (its working folder is not this one).
-rm -rf "$HOME/watch-shots" && cp -R "$OUT" "$HOME/watch-shots"
-ls -la "$HOME/watch-shots"
+mkdir -p "$HOME/shots" && rm -rf "$HOME/shots/watch" && cp -R "$OUT" "$HOME/shots/watch"
+ls -la "$HOME/shots/watch"
 exit 0
