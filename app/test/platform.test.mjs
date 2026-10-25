@@ -230,3 +230,96 @@ test('station board screen: orange bar, its own scrolling stop list, the fixed p
   assert.equal(P.WIDE_MIN, 720);
   assert.doesNotMatch(screen, /[\u2013\u2014]/);
 });
+
+
+// Owner's phone, Sun 25 Oct 11:59pm and 12:00am: a train showing "Not tracking, 11:54pm" stayed as the next train,
+// next service rows showed gone trains, and a stop list from the train shown a moment before appeared under the next.
+const LL = await load('src/lib/liveLabelCore.ts', 'll.mjs');
+const st = (d, now) => LL.liveState({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS }, now);
+
+test('gone services never show: an untracked row past its timetable minute, a stale live row past its timetable time', () => {
+  const items = [
+    // Not tracking: live time 9 min ahead, but its position is too old, so the board shows the timetable 11:54.
+    row({ tripId: 'stale', planned: at(-5), realtime: true, estimated: at(9), vehicle: { ageS: 400 } }),
+    row({ tripId: 'gone', planned: at(-4) }),
+    row({ tripId: 'soon', planned: at(1), realtime: true, estimated: at(1) }),
+    row({ tripId: 'later', planned: at(36) }),
+    row({ tripId: 'last', planned: at(40) }),
+  ];
+  const r = P.pickService(items, NOW, null, st);
+  assert.equal(r.main.tripId, 'soon');
+  assert.deepEqual(r.next.map((d) => d.tripId), ['later', 'last'], 'next service rows use the same rule');
+  // The same row while it is still tracking (fresh position) is a live train 9 minutes away: it stays.
+  const live = row({ tripId: 'late', planned: at(-5), realtime: true, estimated: at(9), vehicle: { ageS: 20 } });
+  assert.equal(P.stillToCome(live, NOW, st), true);
+  assert.equal(P.pickService([live, items[3]], NOW, null, st).main.tripId, 'late');
+});
+
+test('a live delayed train counts until a minute after its live time; untracked until its timetable minute ends', () => {
+  const delayed = row({ planned: at(-10), realtime: true, estimated: at(0), vehicle: { ageS: 10 } });
+  assert.equal(P.stillToCome(delayed, NOW, st), true, 'delayed 10 min, due now');
+  assert.equal(P.stillToCome(delayed, NOW + 60000, st), true, 'a minute after its live time it may still be at the platform');
+  assert.equal(P.stillToCome(delayed, NOW + 60001, st), false);
+  const untracked = row({ planned: at(0) });
+  assert.equal(P.stillToCome(untracked, NOW, st), true, 'due this minute');
+  assert.equal(P.stillToCome(untracked, NOW + 59999, st), true, 'still its own minute');
+  assert.equal(P.stillToCome(untracked, NOW + 60000, st), false, 'the next minute it has gone');
+  assert.equal(P.stillToCome(row({ planned: at(5), cancelled: true }), NOW, st), false);
+  assert.equal(P.stillToCome(row({ planned: at(5), departed: true }), NOW, st), false);
+  // Without the live label (older callers), a live estimate counts as live.
+  assert.equal(P.stillToCome(row({ planned: at(-5), realtime: true, estimated: at(2) }), NOW), true);
+  assert.equal(P.stillToCome(row({ planned: at(-2) }), NOW), false);
+});
+
+test('rows sort by the time they show: a not tracking row by its timetable time', () => {
+  const a = row({ tripId: 'a', planned: at(3), realtime: true, estimated: at(12), vehicle: { ageS: 400 } });
+  const b = row({ tripId: 'b', planned: at(6) });
+  assert.deepEqual(P.railRows([b, a], NOW, st).map((d) => d.tripId), ['a', 'b']);
+});
+
+test('two different trips at the same stop never share a stop list', () => {
+  const t9 = row({ tripId: 'Y9BB', line: 'T9', dest: 'Central', stopId: '213510', planned: at(-5) });
+  const ccn = row({ tripId: 'N486', line: 'CCN', dest: 'Newcastle Interchange via Epping', stopId: '213510', planned: at(1) });
+  assert.notEqual(P.serviceKey(t9), P.serviceKey(ccn));
+  const t9Answer = { key: P.serviceKey(t9), resp: { tripId: 'Y9BB', line: 'T9', stops: [] } };
+  assert.equal(P.serviceFits(t9Answer, t9), true);
+  assert.equal(P.serviceFits(t9Answer, ccn), false, 'the answer for the train shown before is not shown under the next one');
+  // Asked for this row, but the answer names another trip or line: not shown either.
+  assert.equal(P.serviceFits({ key: P.serviceKey(ccn), resp: { tripId: 'Y9BB', line: 'CCN' } }, ccn), false);
+  assert.equal(P.serviceFits({ key: P.serviceKey(ccn), resp: { tripId: 'N486', line: 'T9' } }, ccn), false);
+  assert.equal(P.serviceFits({ key: P.serviceKey(ccn), resp: { tripId: 'N486', line: 'CCN' } }, ccn), true);
+  assert.equal(P.serviceFits(null, ccn), false);
+  assert.equal(P.serviceFits({ key: P.serviceKey(ccn), resp: null }, ccn), false);
+  // Same trip id at another station, or another day's run: a different service.
+  assert.notEqual(P.serviceKey(ccn), P.serviceKey({ ...ccn, stopId: '2135231' }));
+  assert.notEqual(P.serviceKey(ccn), P.serviceKey({ ...ccn, planned: at(1441) }));
+});
+
+test('a stop list that does not include this station is not shown', () => {
+  const list = [{ id: 'h', name: 'Hornsby Station, Platform 3' }, { id: 'e', name: 'Epping Station, Platform 1' }];
+  assert.equal(P.stopsAfter(list, { mineIndex: -1, stopId: '213510', station: 'Strathfield Station' }), null);
+  assert.equal(P.stopsNote(null, { status: 'ok' }), 'Full stop list not available yet');
+});
+
+test('clock times fit on one line: 11:54pm in the phone column at default and large text', () => {
+  for (const scale of [1, 1.2, 1.4]) {
+    for (const [txt, max, w] of [['11:54pm', 44 * 0.62, 126], ['Not tracking', 19, 126], ['11:55pm', 21, 90], ['12:00am', 21, 90], ['1h 20 min', 44, 126]]) {
+      const f = P.fitSize(txt, max, w, scale);
+      assert.ok(f <= max && f >= 8, `${txt} ${f}`);
+      assert.ok(P.textEm(txt) * f * scale <= w + 0.01, `${txt} fits at ${scale}`);
+    }
+  }
+  assert.equal(P.fitSize('5', 44, 126), 44, 'a short value keeps its full size');
+  assert.ok(P.fitSize('11:54pm', 30, 90, 1.2) < 30);
+});
+
+test('Platform view: departs sits right under the platform and cars, and times never wrap mid word', () => {
+  const src = read('src/app/platform.tsx');
+  assert.ok(!/justifyContent: 'space-between', alignItems: 'flex-end'/.test(src), 'the right column does not spread Departs to the bottom');
+  assert.ok(/justifyContent: 'flex-start', alignItems: 'flex-end'/.test(src));
+  assert.ok(!/fixed \? \{ flex: 1 \}/.test(src), 'the board is as tall as its content, so a short stop list leaves no gap');
+  assert.ok(/pickService<Departure>\(data\?\.items, now, pick, depState\)/.test(src), 'the board uses the shared live label to drop gone rows');
+  assert.ok(/serviceFits\(data as any, d\)/.test(src), 'a stop list shows only under the service it was asked for');
+  const timeTexts = src.match(/<Text[^>]*fontVariant: \['tabular-nums'\][^>]*>/g) || [];
+  for (const t of timeTexts) if (!/Time now/.test(t) && !/fontSize: L\.wide \? 21 : 19/.test(t)) assert.ok(/numberOfLines=\{1\}/.test(t), t.slice(0, 120));
+});

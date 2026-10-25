@@ -21,11 +21,50 @@ export function depTime(d: PlatformDep): number {
   return d.realtime && Number.isFinite(e) ? e : t(d.planned);
 }
 
-/** Train and metro rows still to come (a minute's grace), soonest first. Cancelled and departed rows are left out. */
-export function railRows<T extends PlatformDep>(items: T[] | null | undefined, now: number): T[] {
+/** What a row shows at `now`: its kind ("live", "timetable", "stale", "cancelled") and the time it stands for. The screen
+ * passes the shared live label (liveLabelCore.liveState through depState); without one, a row with a live estimate
+ * counts as live. */
+export type RowState = { kind: string; t: number };
+export type RowStateOf<T> = (d: T, now: number) => RowState;
+
+/** A live train counts as departing for this long after its live time (it may still be at the platform). */
+export const LIVE_GRACE_MS = 60000;
+/** A timetable time (no live time, or a live time that went stale) stays for its own minute, then it has gone. */
+export const TIMETABLE_GRACE_MS = 60000;
+
+/**
+ * True while a row has not gone: live, until a minute after its live time; untracked or not tracking, until its
+ * timetable minute has passed (a train showing "Not tracking, 11:54pm" at 11:59pm is not the next train).
+ * Cancelled and departed rows are never still to come.
+ */
+export function stillToCome<T extends PlatformDep>(d: T | null | undefined, now: number, stateOf?: RowStateOf<T>): boolean {
+  if (!d || d.cancelled || d.departed) return false;
+  const s = stateOf ? stateOf(d, now) : null;
+  if (s && s.kind === 'cancelled') return false;
+  const est = t(d.estimated);
+  const live = s ? s.kind === 'live' : !!d.realtime && Number.isFinite(est);
+  if (live) {
+    const e = Number.isFinite(est) ? est : s ? s.t : NaN;
+    return Number.isFinite(e) && e >= now - LIVE_GRACE_MS;
+  }
+  const p = t(d.planned);
+  const tt = Number.isFinite(p) ? p : s && Number.isFinite(s.t) ? s.t : est;
+  return Number.isFinite(tt) && tt > now - TIMETABLE_GRACE_MS;
+}
+
+/** The time a row is sorted by: the time it shows (the timetable time for a row that is not tracking). */
+function shownTime<T extends PlatformDep>(d: T, now: number, stateOf?: RowStateOf<T>): number {
+  const s = stateOf ? stateOf(d, now) : null;
+  return s && Number.isFinite(s.t) ? s.t : depTime(d);
+}
+
+/** Train and metro rows still to come (stillToCome), sorted by the time each shows. Cancelled and gone rows are left out. */
+export function railRows<T extends PlatformDep>(items: T[] | null | undefined, now: number, stateOf?: RowStateOf<T>): T[] {
   return (items || [])
-    .filter((d) => d && isRail(d.mode) && !d.cancelled && !d.departed && Number.isFinite(depTime(d)) && depTime(d) >= now - 60000)
-    .sort((a, b) => depTime(a) - depTime(b));
+    .filter((d) => d && isRail(d.mode) && stillToCome(d, now, stateOf))
+    .map((d) => ({ d, k: shownTime(d, now, stateOf) }))
+    .sort((a, b) => a.k - b.k)
+    .map((x) => x.d);
 }
 
 export type Pick = { trip?: string | null; planned?: string | null; line?: string | null };
@@ -33,10 +72,10 @@ export type Pick = { trip?: string | null; planned?: string | null; line?: strin
 /**
  * The service to show and the two after it. With a pick (from a held row), that service when it is still on the
  * board; otherwise, or once it has gone, the next train or metro. The next two are the services after it at this
- * station, on any platform.
+ * station, on any platform, by the same rule (none of them has gone).
  */
-export function pickService<T extends PlatformDep>(items: T[] | null | undefined, now: number, pick?: Pick | null): { main: T | null; next: T[]; picked: boolean } {
-  const rows = railRows(items, now);
+export function pickService<T extends PlatformDep>(items: T[] | null | undefined, now: number, pick?: Pick | null, stateOf?: RowStateOf<T>): { main: T | null; next: T[]; picked: boolean } {
+  const rows = railRows(items, now, stateOf);
   let i = -1;
   if (pick && pick.trip) i = rows.findIndex((d) => d.tripId === pick.trip && (!pick.planned || d.planned === pick.planned));
   if (i < 0 && pick && pick.planned && pick.line) i = rows.findIndex((d) => d.planned === pick.planned && d.line === pick.line);
@@ -44,6 +83,43 @@ export function pickService<T extends PlatformDep>(items: T[] | null | undefined
   if (i < 0) i = rows.length ? 0 : -1;
   if (i < 0) return { main: null, next: [], picked: false };
   return { main: rows[i], next: rows.slice(i + 1, i + 3), picked };
+}
+
+/** Which service a stop list answer was asked for: the trip and its timetable time at this station. */
+export function serviceKey(d: PlatformDep | null | undefined): string {
+  return d ? `${d.tripId || ''}|${d.line || ''}|${d.stopId || ''}|${d.planned || ''}` : '';
+}
+
+/**
+ * True when a /api/service answer belongs to this departure: asked for the same service (key), and the answer's
+ * own trip and line agree with the row. A list from another trip (an answer still arriving for the train shown a
+ * moment ago) is never shown under this one.
+ */
+export function serviceFits(got: { key?: string | null; resp?: { tripId?: string | null; line?: string | null } | null } | null | undefined, d: PlatformDep | null | undefined): boolean {
+  if (!got || !d || !got.resp) return false;
+  if (got.key !== serviceKey(d)) return false;
+  const r = got.resp;
+  if (r.tripId && d.tripId && r.tripId !== d.tripId) return false;
+  if (r.line && d.line && String(r.line).toUpperCase() !== String(d.line).toUpperCase()) return false;
+  return true;
+}
+
+/** The width of `text` in ems (bold system font, tabular figures), a little generous so it is safe to fit by. */
+export function textEm(text: string): number {
+  let em = 0;
+  for (const ch of String(text || '')) em += /[0-9]/.test(ch) ? 0.62 : ch === ' ' ? 0.28 : ch === ':' ? 0.32 : /[mwMW]/.test(ch) ? 0.92 : /[A-Z]/.test(ch) ? 0.72 : 0.6;
+  return em;
+}
+
+/**
+ * A font size at which `text` fits on one line in `width` points, at most `max`, with the text size setting
+ * `scale` (capped by the screen's own multiplier) applied on top, so "11:54pm" never breaks or gets cut at any size.
+ */
+export function fitSize(text: string, max: number, width: number, scale = 1): number {
+  const em = textEm(text);
+  const k = Math.max(1, scale || 1);
+  if (!em || !(width > 0)) return max;
+  return Math.max(8, Math.min(max, Math.floor((width / (em * k)) * 10) / 10));
 }
 
 /** "23" from "Platform 23", "1A" from "Platform 1A"; null when the data gives no platform. */

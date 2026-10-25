@@ -25,7 +25,7 @@ import { useReduceMotion } from '@/lib/motion';
 import { hasSpeech, speak } from '@/lib/nativeExtras';
 import { takeVoicePrompt } from '@/lib/voiceHelp';
 import { stationRows } from '@/lib/platform';
-import { carsOf, destName, listWords, pickService, platformLayout, platformNo, platformSentence, speakSentence, splitVia, stoppingTag, stopsAfter, stopsNote, viaAirport, whenWords,
+import { carsOf, destName, fitSize, listWords, textEm, pickService, serviceFits, serviceKey, platformLayout, platformNo, platformSentence, speakSentence, splitVia, stoppingTag, stopsAfter, stopsNote, viaAirport, whenWords,
   type StationRow, type StopsAfter } from '@/lib/platformCore';
 import type { Departure } from '@/lib/types';
 import { depState } from '@/components/Transit';
@@ -41,17 +41,32 @@ function boardColors(dark: boolean) {
     : { bg: '#FFFFFF', fg: '#111111', sub: '#5C5C62', line: '#DEDEE3', or: '#D85A14', bar: '#E8641B', pill: '#4A4A50', screen: '#000000', btn: '#2A2A2C', rgb: '255,255,255' };
 }
 
-/** The stop list for the shown service: read once per service, again each minute while on view. */
+/**
+ * The stop list for the shown service: read once per service, again each minute while on view. Each answer is kept
+ * with the service it was asked for, and shown only under that service (serviceFits): when the next train takes over,
+ * an answer still arriving for the one before is dropped and the new one is asked for at once.
+ */
 function useStopsAfter(d: Departure | null, station: string): { stops: StopsAfter; loading: boolean; status: string | null; cancelled: boolean } {
   const [stations, setStations] = useState<StationRow[] | null>(null);
   useEffect(() => { let on = true; stationRows().then((r) => { if (on) setStations(r); }).catch(() => {}); return () => { on = false; }; }, []);
-  const key = d ? `${d.tripId || ''}|${d.planned || ''}` : '';
-  const { data, error } = useLive(() => (d ? api.service({ trip: d.tripId, feed: d.feed || undefined, line: d.line, stop: d.stopId, planned: d.planned, mode: d.mode, destId: d.destId || undefined }) : Promise.resolve(null)),
-    60000, [key], { enabled: !!d });
-  const stops = useMemo(() => (data && Array.isArray((data as any).stops) ? stopsAfter((data as any).stops, { mineIndex: (data as any).mineIndex, stopId: d?.stopId, station }, stations) : null),
-    [data, d?.stopId, station, stations]);
-  const status = data && typeof (data as any).stopsStatus === 'string' ? (data as any).stopsStatus as string : null;
-  return { stops, loading: !!d && !data && !error, status, cancelled: !!(data && (data as any).cancelled) };
+  const key = serviceKey(d);
+  const { data, error, refresh } = useLive(async () => {
+    if (!d) return null;
+    const k = serviceKey(d);
+    const resp = await api.service({ trip: d.tripId, feed: d.feed || undefined, line: d.line, stop: d.stopId, planned: d.planned, mode: d.mode, destId: d.destId || undefined });
+    return { key: k, resp: resp as any };
+  }, 60000, [key], { enabled: !!d });
+  const fits = !!d && serviceFits(data as any, d);
+  // An answer for another service landed after the switch (its request was already on the way): ask again now.
+  const asked = useRef('');
+  useEffect(() => {
+    if (d && data && !fits && asked.current !== key) { asked.current = key; refresh().catch(() => {}); }
+  }, [d, data, fits, key, refresh]);
+  const resp = fits ? (data as any).resp : null;
+  const stops = useMemo(() => (resp && Array.isArray(resp.stops) ? stopsAfter(resp.stops, { mineIndex: resp.mineIndex, stopId: d?.stopId, station }, stations) : null),
+    [resp, d?.stopId, station, stations]);
+  const status = resp && typeof resp.stopsStatus === 'string' ? resp.stopsStatus as string : null;
+  return { stops, loading: !!d && !fits && !error, status, cancelled: !!(resp && resp.cancelled) };
 }
 
 export default function PlatformView() {
@@ -73,7 +88,7 @@ export default function PlatformView() {
   const [listH, setListH] = useState(0);
   const { data, error, offlineAt } = useLive((r) => platformDepartures(stop, r), (x) => adaptiveGapMs(15000, nextInMs(x?.items, Date.now())), [stop], { cacheKey: cacheKey('dep', stop) });
   const pick = useMemo(() => ({ trip: p.trip || null, planned: p.planned || null, line: p.line || null }), [p.trip, p.planned, p.line]);
-  const { main, next } = pickService<Departure>(data?.items, now, pick);
+  const { main, next } = pickService<Departure>(data?.items, now, pick, depState);
   const stationName = shortName(data?.stop?.name || (p.name ? String(p.name) : '')).replace(/ Station$/, '');
   const svc = useStopsAfter(main, data?.stop?.name || String(p.name || ''));
   const stops = svc.stops;
@@ -171,7 +186,7 @@ export default function PlatformView() {
     </View>
   );
   const stopArea = main ? (fixed ? (
-    <View style={{ flex: 1, minWidth: 0 }} onLayout={(e) => setBoxH(e.nativeEvent.layout.height)}>
+    <View style={L.wide ? { flexShrink: 1, minHeight: 0, minWidth: 0 } : { flex: 1, minWidth: 0 }} onLayout={(e) => setBoxH(e.nativeEvent.layout.height)}>
       <ScrollView accessible accessibilityLabel={stopsLabel} contentContainerStyle={{ paddingTop: 10, paddingBottom: 44, paddingRight: 8 }} showsVerticalScrollIndicator
         onContentSizeChange={(_w, h) => setListH(h)}>
         {stopNames}
@@ -183,21 +198,35 @@ export default function PlatformView() {
   )) : null;
 
   const align = L.wide ? 'left' as const : 'right' as const;
+  // The right hand column on a phone, and the space Departs has on a wide window (beside the platform).
+  const sideW = Math.round(128 * Math.min(fs, 1.3));
+  const departsW = L.wide ? Math.max(150, Math.round(width * 0.42) - 48 - 140) : sideW - 2;
+  // Times stay on one line at every text size: each size is worked out to fit the space (fitSize), and the
+  // screen may still shrink a little further (adjustsFontSizeToFit) where the platform supports it.
+  const kM = Math.min(fs, 1.2), kL = Math.min(fs, 1.4);
+  const minsFont = live && live.unit
+    ? Math.min(sz.mins, Math.floor((departsW / ((textEm(live.big) + 0.58 * textEm(` ${live.unit}`)) * Math.max(1, kM))) * 10) / 10)
+    : live ? fitSize(live.big, sz.mins * 0.7, departsW, kM) : sz.mins;
   const departs = main && live ? (
-    <View accessible accessibilityLabel={when}>
-      <Text maxFontSizeMultiplier={1.4} style={{ color: B.fg, fontSize: sz.label, fontWeight: '700', textAlign: align }}>Departs</Text>
+    <View accessible accessibilityLabel={when} style={{ maxWidth: departsW + 2 }}>
+      <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={{ color: B.fg, fontSize: sz.label, fontWeight: '700', textAlign: align }}>Departs</Text>
       {live.kind === 'stale' ? (
         <>
-          <Text maxFontSizeMultiplier={1.4} style={{ color: B.or, fontSize: 19, fontWeight: '800', textAlign: align }}>Not tracking</Text>
-          <Text maxFontSizeMultiplier={1.2} style={{ color: B.or, fontSize: sz.mins * 0.62, fontWeight: '800', textAlign: align, fontVariant: ['tabular-nums'] }}>{live.big}</Text>
-          <Text maxFontSizeMultiplier={1.4} style={{ color: B.sub, fontSize: L.wide ? 16 : 13, fontWeight: '600', textAlign: align }}>Timetable time</Text>
+          <Text maxFontSizeMultiplier={1.4} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+            style={{ color: B.or, fontSize: fitSize('Not tracking', L.wide ? 22 : 19, departsW, kL), fontWeight: '800', textAlign: align }}>Not tracking</Text>
+          <Text maxFontSizeMultiplier={1.2} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+            style={{ color: B.or, fontSize: fitSize(live.big, sz.mins * 0.62, departsW, kM), fontWeight: '800', textAlign: align, fontVariant: ['tabular-nums'] }}>{live.big}</Text>
+          <Text maxFontSizeMultiplier={1.4} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+            style={{ color: B.sub, fontSize: fitSize('Timetable time', L.wide ? 16 : 13, departsW, kL), fontWeight: '600', textAlign: align }}>Timetable time</Text>
         </>
       ) : (
         <>
-          <Text maxFontSizeMultiplier={1.2} numberOfLines={1} style={{ color: live.kind === 'cancelled' ? B.sub : B.or, fontSize: live.unit ? sz.mins : sz.mins * 0.7, lineHeight: sz.mins * 1.08, fontWeight: '800', textAlign: align, fontVariant: ['tabular-nums'] }}>
-            {live.big}{live.unit ? <Text style={{ fontSize: sz.mins * 0.58 }}>{` ${live.unit}`}</Text> : null}
+          <Text maxFontSizeMultiplier={1.2} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+            style={{ color: live.kind === 'cancelled' ? B.sub : B.or, fontSize: minsFont, lineHeight: minsFont * 1.12, fontWeight: '800', textAlign: align, fontVariant: ['tabular-nums'] }}>
+            {live.big}{live.unit ? <Text style={{ fontSize: minsFont * 0.58 }}>{` ${live.unit}`}</Text> : null}
           </Text>
-          <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={{ color: B.sub, fontSize: L.wide ? 16 : 13, fontWeight: '600', textAlign: align }}>
+          <Text maxFontSizeMultiplier={1.4} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+            style={{ color: B.sub, fontSize: fitSize(`Timetable ${clock(live.t)}`, L.wide ? 16 : 13, departsW, kL), fontWeight: '600', textAlign: align }}>
             {live.kind === 'cancelled' ? 'Cancelled' : live.kind === 'live' ? 'Live' : 'Timetable'} {clock(live.t)}
           </Text>
         </>
@@ -239,6 +268,7 @@ export default function PlatformView() {
         const n = carsOf(d);
         const sv = splitVia(d.dest);
         const right = s.kind === 'stale' ? s.big : s.unit ? `${s.big} ${s.unit}` : s.big;
+        const rightFont = fitSize(right, L.wide ? 24 : 21, colD - 2, Math.min(fs, 1.3));
         return (
           <View key={`${d.tripId || d.line}|${d.planned}`} accessible accessibilityLabel={`Next service, ${badgeLook(d.line, d.mode, d.color).label} to ${destName(d.dest)}. ${platformSentence({ platform: d.platform, cars: n, when: whenWords(s) })}`}
             style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: L.wide ? 12 : 9, borderTopWidth: 1, borderTopColor: B.line, minHeight: 56 }}>
@@ -249,10 +279,10 @@ export default function PlatformView() {
                 {sv.via ? <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={{ color: B.sub, fontSize: L.wide ? 15 : 13.5, fontWeight: '600' }}>via {sv.via}</Text> : null}
               </View>
             </View>
-            <Text maxFontSizeMultiplier={1.3} style={{ width: colP, textAlign: 'center', color: pn ? B.fg : B.sub, fontSize: pn ? (L.wide ? 30 : 26) : 15, fontWeight: '800' }}>{pn || 'Not given'}</Text>
+            <Text maxFontSizeMultiplier={1.3} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ width: colP, textAlign: 'center', color: pn ? B.fg : B.sub, fontSize: fitSize(pn || 'Not given', pn ? (L.wide ? 30 : 26) : 15, colP - 4, Math.min(fs, 1.3)), fontWeight: '800' }}>{pn || 'Not given'}</Text>
             <View style={{ width: colD, alignItems: 'flex-end' }}>
-              <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ color: B.fg, fontSize: L.wide ? 24 : 21, fontWeight: '800', fontVariant: ['tabular-nums'] }}>{right}</Text>
-              {s.kind === 'stale' ? <Text maxFontSizeMultiplier={1.4} style={{ color: B.or, fontSize: 12, fontWeight: '700' }}>Not tracking</Text> : null}
+              <Text maxFontSizeMultiplier={1.3} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ color: B.fg, fontSize: rightFont, fontWeight: '800', fontVariant: ['tabular-nums'] }}>{right}</Text>
+              {s.kind === 'stale' ? <Text maxFontSizeMultiplier={1.4} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ color: B.or, fontSize: fitSize('Not tracking', 12, colD - 2, Math.min(fs, 1.4)), fontWeight: '700' }}>Not tracking</Text> : null}
             </View>
           </View>
         );
@@ -280,9 +310,9 @@ export default function PlatformView() {
     <>
       {destBlock}
       {rule()}
-      <View style={[{ flexDirection: 'row', paddingLeft: 16 }, fixed ? { flex: 1, minHeight: 0 } : null]}>
+      <View style={[{ flexDirection: 'row', paddingLeft: 16 }, fixed ? { flexShrink: 1, minHeight: 0 } : null]}>
         {stopArea}
-        <View style={{ width: Math.round(128 * Math.min(fs, 1.3)), justifyContent: 'space-between', alignItems: 'flex-end', paddingVertical: 12, paddingRight: 16, gap: 16 }}>
+        <View style={{ width: sideW, justifyContent: 'flex-start', alignItems: 'flex-end', paddingVertical: 12, paddingRight: 16, gap: 16 }}>
           {platformBlock}
           {departs}
         </View>
@@ -293,11 +323,11 @@ export default function PlatformView() {
     </>
   ) : empty;
   const wideBody = main ? (
-    <View style={[{ flexDirection: 'row' }, fixed ? { flex: 1, minHeight: 0 } : null]}>
+    <View style={[{ flexDirection: 'row' }, fixed ? { flexShrink: 1, minHeight: 0 } : null]}>
       <View style={{ flex: 1.35, minWidth: 0 }}>
         {destBlock}
         {rule()}
-        <View style={[{ paddingLeft: 20 }, fixed ? { flex: 1, minHeight: 0 } : null]}>{stopArea}</View>
+        <View style={[{ paddingLeft: 20 }, fixed ? { flexShrink: 1, minHeight: 0 } : null]}>{stopArea}</View>
         {tagPill ? <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>{tagPill}</View> : null}
       </View>
       <View style={{ flex: 1, minWidth: 0, borderLeftWidth: 2, borderLeftColor: B.line }}>
@@ -305,13 +335,13 @@ export default function PlatformView() {
           <View style={{ alignItems: 'flex-start' }}>{departs}</View>
           {platformBlock}
         </View>
-        <View style={{ marginTop: fixed ? 'auto' : 0, marginHorizontal: 24, borderTopWidth: next.length ? 2 : 0, borderTopColor: B.line }}>{nextTable}</View>
+        <View style={{ marginHorizontal: 24, borderTopWidth: next.length ? 2 : 0, borderTopColor: B.line }}>{nextTable}</View>
       </View>
     </View>
   ) : empty;
 
   const board = (
-    <View style={[{ marginHorizontal: 8, marginBottom: 8, borderRadius: 18, overflow: 'hidden', backgroundColor: B.bg }, fixed ? { flex: 1 } : null]}>
+    <View style={[{ marginHorizontal: 8, marginBottom: 8, borderRadius: 18, overflow: 'hidden', backgroundColor: B.bg }, fixed ? { flexShrink: 1, minHeight: 0 } : null]}>
       {bar}
       {L.wide ? wideBody : phoneBody}
     </View>
