@@ -3393,6 +3393,62 @@ function onPath(hit, shape) {
   return places.some((p) => shape.names.includes(p));
 }
 
+// ---------- weekend trackwork push ----------
+// Thursday 6pm to 9pm Sydney time: for each phone with a morning check (it asked for alerts about that trip),
+// one push per weekend when planned work this weekend sits on the trip's path. At most WEEKEND_PUSH_PER_TICK
+// trips are looked at each minute (one planner call each), and each phone is pushed once per weekend.
+const WEEKEND_PUSH_PER_TICK = 4;
+function weekendPushDue(now) { const sn = sydneyNow(now); return sn.dow === 4 && sn.tod >= 18 * 60 && sn.tod < 21 * 60; }
+/** Planned work this weekend on the stops a trip passes (shape from planShape), first the one that touches both days. */
+function weekendPushHits(items, shape, w) {
+  if (!shape || !shape.stops || !shape.stops.length) return [];
+  const out = [];
+  for (const it of items || []) {
+    if (!it.pl) continue;
+    const d = weekendDays(it, w);
+    if (!d.sat && !d.sun) continue;
+    const onTrip = it.s && it.s.length ? it.s.some((s) => shape.stops.includes(s)) : alertPlaces(it.h).map(plainStop).some((p) => shape.names.includes(p));
+    if (onTrip) out.push({ id: it.id, title: it.h, sat: d.sat, sun: d.sun });
+  }
+  return out.sort((a, b) => (b.sat && b.sun) - (a.sat && a.sun));
+}
+function weekendPushText(c, hits) {
+  const h = hits[0];
+  const from = shortStation(c.from_name), to = shortStation(c.to_name);
+  const more = hits.length > 1 ? ` And ${hits.length - 1} more.` : "";
+  return { title: `Trackwork this weekend: ${from} to ${to}`, body: wordCut(`${daysWord(h.sat, h.sun)}: ${h.title.replace(/[.\s]+$/, "")}.${more}`, 240) };
+}
+async function processWeekendPush(env, now, opts = {}) {
+  if (!weekendPushDue(now) && !opts.force) return [];
+  await morningSchema(env);
+  const w = weekendWindow(now);
+  const rows = await d1all(env, `SELECT device, from_id, to_id, from_name, to_name, MIN(tod) AS tod FROM morning_checks WHERE active = 1 GROUP BY device, from_id, to_id ORDER BY device LIMIT 200`);
+  const dg = await alertDigest(env);
+  const out = [];
+  let looked = 0;
+  for (const c of rows) {
+    if (looked >= WEEKEND_PUSH_PER_TICK) break;
+    const key = `twk:${c.device}:${w.sat}`;
+    const seen = await db(env).prepare("SELECT v FROM meta WHERE k = ?1").bind(key).first().catch(() => null);
+    if (seen && String(seen.v).split(",").includes(`${c.from_id}>${c.to_id}`)) continue;
+    if (seen && /^sent/.test(seen.v)) continue;
+    looked++;
+    const shape = await (opts.shape || planShape)(env, c.from_id, c.to_id, w.sat, hhmmOf(c.tod)).catch(() => null);
+    const hits = weekendPushHits(dg.items || [], shape, w);
+    const tried = seen ? `${seen.v},${c.from_id}>${c.to_id}` : `${c.from_id}>${c.to_id}`;
+    if (!hits.length) {
+      await db(env).prepare("INSERT OR REPLACE INTO meta (k, v) VALUES (?1, ?2)").bind(key, tried.slice(0, 2000)).run();
+      out.push({ device: c.device.slice(0, 6), hits: 0 });
+      continue;
+    }
+    const n = weekendPushText(c, hits);
+    await db(env).prepare("INSERT OR REPLACE INTO meta (k, v) VALUES (?1, ?2)").bind(key, "sent," + tried.slice(0, 2000)).run();
+    const r = await (opts.notify || notify)(env, { device: c.device }, { title: n.title, body: n.body, url: "/", tag: "twk" + w.sat, ttl: 86400 });
+    out.push({ device: c.device.slice(0, 6), hits: hits.length, note: r && r.noteId || null });
+  }
+  return out;
+}
+
 async function trackworkRoute(env, p) {
   const enabled = await serverOn(env, "weekendTrackwork");
   const w = weekendWindow();
@@ -4731,6 +4787,10 @@ async function runTick(env, opts = {}) {
   // Morning checks: one look at live data shortly before a usual trip, an alert only if something is wrong
   if (!opts.device && use.calls < WATCH_BUDGET && (await serverOn(env, "morningCheck"))) {
     out.morning = await processMorningChecks(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+  }
+  // Weekend trackwork: one push on Thursday evening when planned work this weekend is on a morning check's trip
+  if (!opts.device && use.calls < WATCH_BUDGET && (await serverOn(env, "weekendTrackwork")) && (await serverOn(env, "morningCheck"))) {
+    out.weekendPush = await processWeekendPush(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   }
   // Last way home: one push before the last service home, looked at again live as the time comes near
   if (!opts.device && use.calls < WATCH_BUDGET && (await serverOn(env, "lastWayHome"))) {
