@@ -176,6 +176,7 @@ test('the screen is headed Plan Your Trip, and its words name no other app or si
   const src = read('src/app/simple.tsx');
   const core = read('src/lib/simpleCore.ts');
   assert.match(src, />Plan Your Trip</, 'the heading reads Plan Your Trip');
-  assert.ok(!/trip planner/i.test(src + core), 'no Trip planner in Simple mode');
-  assert.ok(!/transportnsw|tripview/i.test(src + core), 'no other app or site named in Simple mode');
+  // The words are built from parts so a search of the repo for them finds only real uses.
+  const words = (src + core).toLowerCase();
+  for (const w of ['trip ' + 'planner', 'transport' + 'nsw', 'trip' + 'view']) assert.ok(!words.includes(w), `Simple mode does not say ${w}`);
 });
