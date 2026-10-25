@@ -49,7 +49,9 @@ let svcCache: (ServiceResp | null)[] = [];
 let cacheFor: string | null = null;
 
 /** After the trip's legs change (Switch to this), the next refresh reads every leg again. */
-export function resetLiveCache() { svcCache = []; lastFull = 0; }
+// Bumped whenever the legs change, so service answers asked for the old legs are never kept under the new ones.
+let cacheGen = 0;
+export function resetLiveCache() { svcCache = []; lastFull = 0; cacheGen++; }
 
 // Trips started before legs carried their realtime feed (TrainLink, regional buses, Manly Fast Ferry): look the
 // feed up from each stop's departure board, at most every 5 minutes, until every leg has one.
@@ -80,6 +82,7 @@ export async function tickLive() {
     if (cacheFor !== cur.id) { cacheFor = cur.id; svcCache = []; lastFull = 0; put({ gid: cur.id, svc: [], st: null, offline: null, updated: 0 }); }
     if (!cur.arrivedAt && apiBase() === NEW_API_BASE && cur.legs.some(needsFeed)) await backfillLiveFeeds(cur.id).catch(() => {});
     const L = (getLive() || cur).legs;
+    const gen = cacheGen;
     let failed = 0;
     if (!cur.arrivedAt) {
       const full = Date.now() - lastFull > 60000;
@@ -91,6 +94,10 @@ export async function tickLive() {
           next[i] = await api.service({ trip: l.tripId || undefined, mode: l.mode, line: l.line, stop: l.stopId, destId: l.destId || undefined, planned: l.planned, to: l.toStopId || undefined, dest: l.towards || undefined, stopName: l.from || undefined, color: l.color || undefined, feed: l.feed || undefined });
         } catch { failed++; }
       }));
+      // The trip or its legs changed while these were on their way (Switch to this, a new trip): drop them; the next
+      // tick reads the new legs.
+      const g0 = getLive();
+      if (gen !== cacheGen || !g0 || g0.id !== cur.id) return;
       if (full) lastFull = Date.now();
       svcCache = next;
     }

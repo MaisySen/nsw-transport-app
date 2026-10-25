@@ -206,10 +206,12 @@ function WalkPicker({ from, onPick }: { from: Place; onPick: (p: Place) => void 
   useEffect(() => {
     const v = q.trim();
     if (v.length < 2) { setItems(null); return; }
+    // An answer for what was typed before (slower than the newer one) is dropped, not shown over it.
+    let live = true;
     const t = setTimeout(() => {
-      api.search(v).then((d) => { setErr(''); setItems((d.items || []).filter((x) => String(x.id) !== String(from.id)).slice(0, 8)); }).catch((e) => setErr(String(e?.message || e)));
+      api.search(v).then((d) => { if (!live) return; setErr(''); setItems((d.items || []).filter((x) => String(x.id) !== String(from.id)).slice(0, 8)); }).catch((e) => { if (live) setErr(String(e?.message || e)); });
     }, 250);
-    return () => clearTimeout(t);
+    return () => { live = false; clearTimeout(t); };
   }, [q, from.id]);
   return (
     <Screen>

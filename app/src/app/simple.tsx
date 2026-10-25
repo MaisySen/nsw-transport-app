@@ -11,8 +11,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
 import { haptic } from '@/lib/haptic';
-import { useCountdownNow, useLive, useReportCountdowns } from '@/lib/hooks';
-import { cacheKey } from '@/lib/offlineCore';
+import { useCountdownNow, useLive, useReportCountdowns, useStamp } from '@/lib/hooks';
+import { cacheKey, offlineText, staleText } from '@/lib/offlineCore';
 import { adaptiveGapMs } from '@/lib/pollCore';
 import { NOW, type When } from '@/lib/planCore';
 import { hasSpeech, speak, stopSpeaking } from '@/lib/nativeExtras';
@@ -338,6 +338,7 @@ export default function Simple() {
     (d) => adaptiveGapMs(30000, d?.journeys?.length ? tripRows(d.journeys as any, Date.now()).rows[0]?.dep - Date.now() : null),
     [qKey, whenKey], { cacheKey: query ? cacheKey('trip', `simple|${qKey}|${whenKey}`) : undefined, enabled: !!query && !edit });
   useEffect(() => { setExtra([]); setKeepGone(false); }, [qKey, whenKey]);
+  const stamp = useStamp(`${qKey}|${whenKey}`);
   const all = useMemo(() => [...((live.data?.journeys || []) as JourneyLike[]), ...(extra as JourneyLike[])], [live.data, extra]);
   const { rows, byKey } = useMemo(() => tripRows(all, now, { keepGone }), [all, now, keepGone]);
   useReportCountdowns('simple', rows.filter((r) => !r.gone).slice(0, 6).map((r) => r.dep));
@@ -349,11 +350,14 @@ export default function Simple() {
     const hm = hhmm(t);
     const day = dateNeeded(ymd(t), Number(hm.slice(0, 2)), Number(hm.slice(2)), Date.now());
     setBusy(dir);
+    const still = stamp();
     try {
       const r = await planTrip(query, { time: hm, count: 6, refresh: true, ...(day ? { date: day } : {}) });
+      // Another trip or time picked while this was on its way: its trips are not added to the new list.
+      if (!still()) return;
       setExtra((e) => [...e, ...(r.journeys || [])]);
       if (dir === 'earlier') setKeepGone(true);
-    } catch (e: any) { Alert.alert(dir === 'earlier' ? 'Could not load earlier trips' : 'Could not load later trips', String(e?.message || e)); }
+    } catch (e: any) { if (still()) Alert.alert(dir === 'earlier' ? 'Could not load earlier trips' : 'Could not load later trips', String(e?.message || e)); }
     finally { setBusy(null); }
   };
 
@@ -413,6 +417,11 @@ export default function Simple() {
         {note ? <Text maxFontSizeMultiplier={BIG} style={[font.body, { color: c.text2, marginHorizontal: 20, marginTop: 16 }]}>{note}</Text> : null}
         {!hasList ? <Places rows={places} onPick={onPlace} /> : (
           <View style={{ marginTop: 18 }}>
+            {live.data && (live.offlineAt || (live.staleAt && !live.updatedAt)) ? (
+              <Text maxFontSizeMultiplier={BIG} accessibilityLiveRegion="polite" style={[font.callout, { color: live.offlineAt ? c.lateText : c.text2, marginHorizontal: 20, marginBottom: 8, fontVariant: ['tabular-nums'] }]}>
+                {live.offlineAt ? offlineText(live.offlineAt, now) : staleText(live.staleAt!, now)}
+              </Text>
+            ) : null}
             {live.data?.tomorrow ? <Text maxFontSizeMultiplier={BIG} style={[font.callout, { color: c.text2, marginHorizontal: 20, marginBottom: 8 }]}>No more trips tonight. These are the first ones tomorrow.</Text> : null}
             {rows.length ? (
               <View style={[s.group, { backgroundColor: c.card }]}>

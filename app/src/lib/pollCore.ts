@@ -115,6 +115,55 @@ export function createReadCache(ttlMs: number, now: () => number = Date.now, max
 }
 
 /**
+ * The latest answer rule for a screen's live data (useLive in hooks.ts). Each change of what the screen shows (its
+ * stop, trip, time or query) starts a new round with `next()`; a request belongs to the round it started in, and its
+ * answer is used only while that round is still the current one. So an answer still on its way for the stop or
+ * service shown a moment ago is dropped instead of landing under the new one, and the new round asks at once rather
+ * than waiting behind it. Within one round only one request is out at a time.
+ * The old round's signal is aborted, so a load can skip any follow up step; reads themselves are shared between
+ * screens (createReadCache), so the fetch they share is left to finish.
+ */
+export type LiveRound = { gen: number; current: () => boolean; signal?: AbortSignal; end: () => void };
+export function createLatest() {
+  let gen = 0;
+  let out: { gen: number; ctl: AbortController | null } | null = null;
+  return {
+    /** What the screen shows changed, or the screen closed: a new round. */
+    next(): number {
+      gen++;
+      if (out) { try { out.ctl?.abort(); } catch {} out = null; }
+      return gen;
+    },
+    /** A request for the current round, or null when one is already out for it. Call `end()` when it settles. */
+    begin(): LiveRound | null {
+      if (out && out.gen === gen) return null;
+      const g = gen;
+      const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+      const mine = { gen: g, ctl };
+      out = mine;
+      return { gen: g, current: () => g === gen, signal: ctl?.signal, end: () => { if (out === mine) out = null; } };
+    },
+    /** The current round, for one off reads that start beside the poll (the kept copy). */
+    gen: () => gen,
+  };
+}
+
+/**
+ * The same rule for one off loads (the next batch of a trip list, search as you type, another way after a missed
+ * change): `stamp()` before the request returns a check that is true only while `key` is still the same and the
+ * screen is still open (`close()`), so an answer for an earlier query is never added to the new one.
+ */
+export function createStamp(key: string) {
+  let k = key;
+  let gen = 0;
+  return {
+    setKey(next: string) { if (next !== k) { k = next; gen++; } },
+    close() { gen++; },
+    stamp(): () => boolean { const g = gen; return () => g === gen; },
+  };
+}
+
+/**
  * Adaptive polling (docs/PERFORMANCE.md): the screen's normal gap while the next service is 5 minutes away or less,
  * 30 seconds from 5 to 15 minutes, and once a minute beyond 15 minutes (or with nothing to wait for today). A gap
  * longer than these is kept.

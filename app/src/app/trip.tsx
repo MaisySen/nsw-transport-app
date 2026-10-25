@@ -17,7 +17,7 @@ import { haptic } from '@/lib/haptic';
 import { withTimeout } from '@/lib/gesture';
 import { api, isLongPair } from '@/lib/api';
 import { LONG_TRIP_KEEP_MS, STILL_SEARCHING_MS } from '@/lib/longTripCore';
-import { useLive, useNow } from '@/lib/hooks';
+import { useLive, useNow, useStamp } from '@/lib/hooks';
 import { usePalette, radius, modeColor } from '@/lib/theme';
 import { bestTime, clock, durText, ms, plainText, shortName } from '@/lib/format';
 import { store, tripKeyOf, useStore } from '@/lib/store';
@@ -33,10 +33,10 @@ import { journeyAccess, liftAwareNote } from '@/lib/stepFree';
 import { tripSpec } from '@/lib/watch';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { openService } from '@/components/Cards';
-import { LineBadge, OccupancyChip, StatusLine } from '@/components/Transit';
+import { KeptBanner, LineBadge, OccupancyChip, StatusLine } from '@/components/Transit';
 import { liveState } from '@/lib/liveLabelCore';
 import { arrOf, ServiceRow, tripCacheId, tripPkey, WarnLine } from '@/components/Home';
-import { cacheKey, offlineText } from '@/lib/offlineCore';
+import { cacheKey } from '@/lib/offlineCore';
 import { planB, problemOf } from '@/lib/planBCore';
 import { busLegStatus, rowTraffic, trafficLine } from '@/lib/busLiveCore';
 import { startIndex } from '../../platform/intentInboxCore';
@@ -344,14 +344,18 @@ export default function TripScreen() {
   const c = usePalette();
   const now = useNow();
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
-  const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey],
+  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey],
     { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '') + (modesKey ? `|m:${modesKey}` : '')) });
   const [extra, setExtra] = useState<Journey[]>([]);
   // Step free on or off, another time or other modes ask again; batches loaded before would be the other kind.
   const [later, setLater] = useState<PageState>(PAGE0);
   const [earlier, setEarlier] = useState<PageState>(PAGE0);
   const [earlierNote, setEarlierNote] = useState('');
-  useEffect(() => { setExtra([]); setLater(PAGE0); setEarlier(PAGE0); setEarlierNote(''); }, [accOn, whenKey, modesKey]);
+  // A batch or Plan B answer still on its way when the trip, time, modes or switches change is dropped (useStamp),
+  // and the batches already added for the old ones go.
+  const listKey = [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey].join('|');
+  const stamp = useStamp(listKey);
+  useEffect(() => { setExtra([]); setLater(PAGE0); setEarlier(PAGE0); setEarlierNote(''); }, [listKey]);
   // Modes seen in any answer for this trip, so Metro, Light rail or Ferry show only where they make sense.
   const seenModes = useRef<Set<string>>(new Set());
   const [showTravel, setShowTravel] = useState(false);
@@ -397,6 +401,7 @@ export default function TripScreen() {
   const floor = earlierFloor(when, anchor, now);
   const batch = async (t: number) => {
     const day = dateNeeded(ymd(t), Number(hhmm(t).slice(0, 2)), Number(hhmm(t).slice(2)), now);
+    const still = stamp();
     let r: TripResp;
     try {
       r = await planTrip(plan, { time: hhmm(t), count: 6, refresh: true, all: chain && allOn, modes, ...(day ? { date: day } : {}) });
@@ -404,6 +409,7 @@ export default function TripScreen() {
       // Over 30 min ago today needs the new server's date (the older one plans that time for tomorrow).
       throw Object.assign(e instanceof Error ? e : new Error(String(e)), { neededDate: !!day && day === ymd(now) });
     }
+    if (!still()) return [];
     const have = new Set(jsAll.map(jKey));
     const fresh = (r.journeys || []).filter((j) => !have.has(jKey(j)));
     if (fresh.length) setExtra((e) => [...e, ...fresh]);
@@ -412,11 +418,14 @@ export default function TripScreen() {
   const loadLater = async () => {
     if (!canLoadLater(later, lastDep, dayEnd, onView.current)) return;
     setLater((x) => ({ ...x, busy: true }));
+    const still = stamp();
     try {
       const fresh = await batch(lastDep! + 60000);
+      if (!still()) return;
       const last = fresh.length ? Math.max(...fresh.map(depMs)) : lastDep;
       setLater((x) => afterBatch(x, filterModes(fresh, modes).length ? fresh.length : 0, last, dayEnd));
     } catch {
+      if (!still()) return;
       // No retry loop: the next scroll near the end tries once more.
       setLater((x) => ({ ...x, busy: false, pages: x.pages + 1 }));
     }
@@ -424,11 +433,13 @@ export default function TripScreen() {
   const loadEarlier = async () => {
     if (!canLoadEarlier(earlier, firstDep, floor, onView.current)) return;
     setEarlier((x) => ({ ...x, busy: true }));
+    const still = stamp();
     try {
       // One tap or pull: step back 40 min, then further over a quiet stretch, until something earlier comes.
       let added = 0;
       for (const t of earlierSteps(firstDep!, floor)) {
         const fresh = await batch(t);
+        if (!still()) return;
         added = fresh.filter((j) => depMs(j) < firstDep!).length;
         if (added) break;
       }
@@ -436,6 +447,7 @@ export default function TripScreen() {
       setEarlierNote('');
       if (added) setOpen(null);
     } catch (e: any) {
+      if (!still()) return;
       if (e?.neededDate) setEarlierNote(EARLIER_NEEDS_NEW);
       setEarlier((x) => ({ ...x, busy: false, pages: x.pages + 1 }));
     }
@@ -493,7 +505,8 @@ export default function TripScreen() {
     // Nothing in the results avoids it: ask the planner once for the services leaving from now.
     if (!probKey || pbShown || pbAll || pbAsked === probKey || offlineAt) return;
     setPbAsked(probKey);
-    planTrip(plan, { time: hhmm(now), count: 8, refresh: true, all: chain && allOn, modes }).then((r) => setExtra((e) => [...e, ...(r.journeys || [])])).catch(() => {});
+    const still = stamp();
+    planTrip(plan, { time: hhmm(now), count: 8, refresh: true, all: chain && allOn, modes }).then((r) => { if (still()) setExtra((e) => [...e, ...(r.journeys || [])]); }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [probKey, !!pbShown, !!pbAll, offlineAt]);
   const [showAlerts, setShowAlerts] = useState(false);
@@ -587,6 +600,7 @@ export default function TripScreen() {
         ) : null}
         {chips.length ? <ModeChips chips={chips} modes={modes} onChange={(m) => { haptic.select(); store.setTripModes(tkey, m); setOpen(0); }} /> : null}
         {modes.length && data?.modesBy === 'phone' && js.length ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>From the usual results only, so some {modesWords(modes).toLowerCase()} trips may be missing.</T> : null}
+        {data ? <KeptBanner offlineAt={offlineAt} staleAt={updatedAt ? null : staleAt} now={now} /> : null}
         {prob ? (
           <View accessibilityRole="summary" style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, padding: 16, borderLeftWidth: 4, borderLeftColor: c.red }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -651,9 +665,7 @@ export default function TripScreen() {
             </Pressable>
           </View>
         ) : null}
-        {offlineAt ? (
-          <T kind="foot" tone="lateText" style={{ textAlign: 'center', marginTop: 14, fontVariant: ['tabular-nums'] }}>{offlineText(offlineAt, now)}</T>
-        ) : updatedAt ? (
+        {offlineAt ? null : updatedAt ? (
           <T kind="foot" tone={error ? 'lateText' : 'text2'} style={{ textAlign: 'center', marginTop: 14, fontVariant: ['tabular-nums'] }}>
             {error ? `Offline. Live data updated ${hms(updatedAt)}` : `Live data updated ${hms(updatedAt)}`}
           </T>

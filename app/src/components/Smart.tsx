@@ -261,9 +261,12 @@ export function NextOption({ g, st }: { g: LiveTrip; st: LiveState | null }) {
     setOpt((o) => ({ key: k, loading: true, j: o && o.key === k ? o.j : null, err: null, at: Date.now() }));
     try {
       const r = await api.plan(missedPlanLegs(mm), { count: 5, time: sydHHMM(mm.readyAt - 60000) });
+      // The miss changed while this was on its way: this answer is for the old one.
+      if (keyRef.current !== k) return;
       const j = pickNextOption(r.journeys || [], mm);
       setOpt({ key: k, loading: false, j, err: j ? null : 'No later service found from here.', at: Date.now() });
     } catch {
+      if (keyRef.current !== k) return;
       // A failed or slow answer is tried again in 15 seconds rather than waiting for the minute refresh.
       setOpt((o) => (o && o.key === k && o.j ? { ...o, loading: false } : { key: k, loading: false, j: null, err: "Couldn't reach the trip planner. Trying again.", at: Date.now() }));
       if (retry.current) clearTimeout(retry.current);
