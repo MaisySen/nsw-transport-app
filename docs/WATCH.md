@@ -98,6 +98,11 @@ Build 207 sends every saved trip and makes every card, service and button do som
 * Screenshots: the `watchshots` EAS profile (`.eas/build/watch-shots.yml`) runs the simulator compile check, then
   `tools/watch-shots.sh` installs the watch app on watch simulators, writes a context with three real trips where the
   app reads it, lets the app load live times and takes screenshots (list, trip, service), uploaded as build artifacts.
+* Complication screenshots: a simulator cannot put a complication on a face from a script, so `tools/widget-shots.sh` compiles
+  `Complications.swift` (without its `@main`) and `WatchCore.swift` with `tools/widget-shots/ComplicationShots.swift`, runs it
+  on a watch simulator, loads live times through `WatchAPI` and `NextProvider` like the watch does, and draws `NextView` in
+  each family (`familyOverride`, only set by this tool) onto a plain black face. Everything lands in `$HOME/shots`
+  (`watch/`, `widgets/`, `complications/`), which the upload step reads by absolute path.
 
 ## Signing
 

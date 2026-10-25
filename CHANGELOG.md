@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Build 207 ready to build (branch native-207; simulator check 25 Oct, 5:15 PM)
+* native-207-bus and main (up to b8ddd1e) merged into native-207; only `ios.buildNumber` changed (207). Version and runtime stay 1.0.0, so 207 keeps every over the air update.
+* EAS simulator build 70dd1762 (watchshots profile, commit 375e6c8): the app, widget, watch app and complications all compiled, with no warnings in our code. Inside the built app: version 1.0.0 (207) on all four, no background modes.
+* Screenshots now come from the simulator check: the watch app (list, trip, service) on a Series 12 46 mm and an Ultra 4 watch simulator, and the complications (rectangular, circular, inline, a face) drawn from their own SwiftUI views with live times. The iPhone widget step compiled the widget views but found no iPhone simulator to run on; fixed in tools/widget-shots.sh for the next build.
+* The production profile no longer adds one to the build number on its own (`autoIncrement` false), so 207 builds as 207.
+
 ### Apple Watch app redesign and matching widget badges (build 207, not built yet; branch native-207)
 * The watch app opens to your trips as a list you scroll with the Digital Crown: line colour bar and the route, like TripView. Home to Work (or back) first, then Your trips in the iPhone's order.
 * Tap a trip: the stop you leave from at the top and the next 6 services as cards, each with a big countdown in whole minutes (green on time, amber or red when late, "26 min late"), the platform, the lines and "11:56 to 12:18". Tap a service for its legs and platforms.

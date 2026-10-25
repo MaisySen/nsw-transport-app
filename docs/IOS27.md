@@ -51,6 +51,10 @@ iOS 27.1 is the release iPhone Duo (the foldable, on sale 23 Oct 2026) runs. App
 4. Apple Watch app redesign (docs/WATCH.md): saved trips list, trip screen with service cards and a big countdown,
    Swap direction, Refresh, complications in whole minutes from the first trip. Widget line badges in one style. The phone side (context version 2) is
    on this branch too, so native-207 must be merged into main before the next over the air update after 207 ships.
+5. Bus stop widget (from native-207-bus): the stop board shows "Stop 2046100" on a bus stop; Edit Widget lists starred bus stops with their stop number and routes.
+6. Speak alerts audio session (from native-207-bus): `startSpeechAudio` and `endSpeechAudio` in the native module (playback, voice prompt, ducks other audio), so the Silent switch no longer mutes the lines. The JavaScript on main already feature detects them.
+7. No background modes: the 207 Info.plist has no `UIBackgroundModes` (checked with `expo config --type introspect` and the production profile), so no background audio, location or fetch. Speech stops when the phone locks.
+8. Simulator check for 207: EAS build 70dd1762 (watchshots profile, native-207 375e6c8), with screenshots of the watch app, the iPhone widgets, the Lock Screen widgets and the complications (Runbook, section 4). Result in [RELEASES.md](RELEASES.md).
 
 ## Sources
 
