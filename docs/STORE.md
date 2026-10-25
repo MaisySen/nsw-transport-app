@@ -1,8 +1,8 @@
 # App Store and Google Play
 
-Where submission stands and what is waiting on Bidur. Updated 24 Oct 2026, 5 PM.
+Where submission stands and what is waiting on Bidur. Updated 25 Oct 2026, 5:30 PM.
 
-Both apps are ready to submit except for the steps that need Bidur's developer accounts. Nothing has been registered, created or paid for yet.
+Apple: the App Store Connect app 6826543653 exists, the iPhone app is the Expo app (builds 201 to 206 on TestFlight, public beta link https://testflight.apple.com/join/ZKZY7PKX), version 1.0.0 has not been submitted for review, and the plan is to submit with build 207. Google: at the last check (25 Oct, 8 AM) the app did not exist in Play Console yet. The item by item state, with what needs Bidur, is in [STORE_READINESS.md](STORE_READINESS.md) (25 Oct, 8 AM); builds are in [RELEASES.md](RELEASES.md). From "Status" down, this page is as it was on 24 Oct, 5 PM: its Apple column is out of date and it is kept for the Google steps.
 
 * Step by step submission checklist: [SUBMIT.md](../SUBMIT.md)
 * Store pack (listing text, privacy answers, ratings, review notes, attribution, audit): [store/](../store/README.md)
@@ -13,11 +13,11 @@ Both apps are ready to submit except for the steps that need Bidur's developer a
 
 | Item | Value |
 | --- | --- |
-| Proposed name | Transport: Sydney Live (fallback: Transport Live: Sydney NSW; availability not checked yet) |
+| Name | Transport: Sydney Live (the App Store Connect record uses it) |
 | Subtitle | Trains, buses, metro, ferries |
 | iPhone bundle id | `com.maisysen.nswtransport` (widget `com.maisysen.nswtransport.widget`, app group `group.com.maisysen.nswtransport`) |
 | Android application id | `com.maisysen.nswtransport` |
-| Version | iPhone 1.0 (build 8 in CI; TestFlight builds start at 101). Android 1.0.0, versionCode 5 (JavaScript kept current by over the air updates) |
+| Version | iPhone 1.0.0, builds 201 to 206 (Expo, EAS Build), 207 being prepared. Android 1.0.0, versionCode 5. Both kept current by over the air updates (runtime 1.0.0) |
 | Minimum OS | iOS 17.0, iPhone only. Android 7.0 (API 24), target API 36 |
 | Category | Navigation (Apple), Maps & Navigation (Play) |
 | Support URL | https://transportsydney.app/support/ |
@@ -63,4 +63,4 @@ The old shared test profile is retired: an Android install still on it moves to 
 
 * Push alerts with the app closed need Firebase (see [app/NEEDS_BIDUR.md](../app/NEEDS_BIDUR.md)). Until then Settings says "Alerts need the app open".
 * The next native build (versionCode 6) drops `BIND_GET_INSTALL_REFERRER_SERVICE`, which a dependency added and the app never uses (blocked in app.json). Re-check [store/google/permissions.md](../store/google/permissions.md) against that build with aapt2.
-* The Expo project is Android only. The App Store app is ios-native/; an iOS build of the Expo project is refused by app/app.config.js.
+* The Expo project builds for both platforms; the App Store app is the Expo app since build 201 (ios-native/ is no longer shipped).
