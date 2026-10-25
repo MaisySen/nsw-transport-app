@@ -57,7 +57,7 @@ export default function StopScreen() {
   const [at, setAt] = useState<number | null>(() => { const t = /^([01]\d|2[0-3])[0-5]\d$/.test(String(time || '')) ? String(time) : ''; return t && boardTimeSupported() ? boardMoment(+t.slice(0, 2), +t.slice(2), Date.now()) : null; });
   const [pickOpen, setPickOpen] = useState(false);
   const [timeOk, setTimeOk] = useState(boardTimeSupported());
-  const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => (at == null ? api.departures(String(id), r) : departuresAt(String(id), at)),
+  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => (at == null ? api.departures(String(id), r) : departuresAt(String(id), at)),
     // Adaptive: every 15 s while the next service is 5 minutes away or less, slower when it is further off.
     (d) => adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), [id, at], { cacheKey: at == null ? cacheKey('dep', String(id)) : undefined });
   // A server without earlier times (no echo): the chip and the row go for the session and the board goes back to now.
@@ -181,8 +181,8 @@ export default function StopScreen() {
       }} />
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pull} />}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 4 }}>
-          <LiveStamp updatedAt={updatedAt} error={error} offlineAt={offlineAt} />
-          <View style={{ flex: 1 }} />
+          {/* The stamp wraps to a second line rather than pushing Speak and Board off the screen. */}
+          <View style={{ flex: 1, marginRight: 8 }}><LiveStamp updatedAt={updatedAt} error={error} offlineAt={offlineAt} staleAt={staleAt} /></View>
           {canSpeak && at == null ? (
             <Pressable onPress={() => { haptic.select(); speak(departuresSentence(itemsRef.current, Date.now(), { stop: stopName }), { interrupt: true }); }} hitSlop={8}
               accessibilityRole="button" accessibilityLabel="Speak departures" accessibilityHint="Reads the next two services out loud"

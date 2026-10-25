@@ -4,7 +4,7 @@
 /** Copies older than this are not shown at all: by then every time in them has gone. */
 export const MAX_AGE_MS = 18 * 3600 * 1000;
 /** How many answers are kept on the phone. The oldest goes first. */
-export const MAX_ENTRIES = 24;
+export const MAX_ENTRIES = 32;
 
 const t = (s?: string | null) => (s ? new Date(s).getTime() : NaN);
 /** Estimated time when the service is live and has one, else the timetable. */
@@ -73,10 +73,24 @@ export function stampText(at: number, now: number): string {
   return day(at) === day(now) ? s : `yesterday ${s}`;
 }
 
-/** The line shown with stored times: "Offline, times from 8:05am". */
+/** The line shown with stored times: "Offline, showing times from 8:05am". */
 export function offlineText(at: number, now: number): string {
-  return `Offline, times from ${stampText(at, now)}`;
+  return `Offline, showing times from ${stampText(at, now)}`;
+}
+
+/** How old a kept copy is, in words: "just now", "4 min ago", "1 h 5 min ago", or its time when older than 3 hours. */
+export function agoText(at: number, now: number): string {
+  const min = Math.floor(Math.max(0, now - at) / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min} min ago`;
+  if (min < 180) return `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ''} ago`;
+  return `at ${stampText(at, now)}`;
+}
+
+/** The line shown with a kept copy while the live answer is on its way: "Updated 4 min ago, refreshing". */
+export function staleText(at: number, now: number): string {
+  return `Updated ${agoText(at, now)}, refreshing`;
 }
 
 /** Storage key for a cached answer. */
-export const cacheKey = (kind: 'trip' | 'dep' | 'home', id: string) => `offline:${kind}:${id}`;
+export const cacheKey = (kind: 'trip' | 'dep' | 'home' | 'svc', id: string) => `offline:${kind}:${id}`;

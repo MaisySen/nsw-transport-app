@@ -1,4 +1,5 @@
-// Offline from a fresh start: the copies kept on the phone, what is dropped, and the "Offline, times from" line.
+// Offline from a fresh start: the copies kept on the phone, what is dropped, the "Offline, showing times from" line
+// and the "Updated 4 min ago, refreshing" line shown with a kept copy while the live answer loads.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -79,16 +80,33 @@ test('the index keeps the newest first and drops the oldest past the limit', () 
   assert.deepEqual(r.index, ['b', 'a', 'c']);
   assert.deepEqual(r.evict, []);
   assert.deepEqual(o.touch(['a', 'b', 'c'], 'd', 3).evict, ['c']);
-  assert.equal(o.MAX_ENTRIES, 24);
+  assert.equal(o.MAX_ENTRIES, 32);
 });
 
 test('the offline line names the time in Sydney, and yesterday when it was', () => {
-  assert.equal(o.offlineText(NOW - 15 * 60000, NOW), 'Offline, times from 7:45am');
-  assert.equal(o.offlineText(Date.parse('2026-10-24T10:30:00Z'), NOW), 'Offline, times from yesterday 9:30pm');
+  assert.equal(o.offlineText(NOW - 15 * 60000, NOW), 'Offline, showing times from 7:45am');
+  assert.equal(o.offlineText(Date.parse('2026-10-24T10:30:00Z'), NOW), 'Offline, showing times from yesterday 9:30pm');
   assert.doesNotMatch(o.offlineText(NOW, NOW), /[\u2013\u2014]/);
 });
 
 test('cache keys are separate per kind', () => {
   assert.equal(o.cacheKey('dep', '200060'), 'offline:dep:200060');
   assert.notEqual(o.cacheKey('trip', 'a'), o.cacheKey('dep', 'a'));
+});
+
+test('a kept copy says how old it is, never live', () => {
+  assert.equal(o.staleText(NOW - 20000, NOW), 'Updated just now, refreshing');
+  assert.equal(o.staleText(NOW - 4 * 60000 - 5000, NOW), 'Updated 4 min ago, refreshing');
+  assert.equal(o.staleText(NOW - 65 * 60000, NOW), 'Updated 1 h 5 min ago, refreshing');
+  assert.equal(o.staleText(NOW - 120 * 60000, NOW), 'Updated 2 h ago, refreshing');
+  assert.equal(o.staleText(NOW - 5 * 3600000, NOW), 'Updated at 3:00am, refreshing');
+  assert.equal(o.agoText(NOW + 30000, NOW), 'just now');
+  for (const m of [0, 1, 59, 61, 179, 600]) assert.doesNotMatch(o.staleText(NOW - m * 60000, NOW), /[\u2013\u2014]|live/i);
+});
+
+test('a service screen has its own kind of kept copy', () => {
+  assert.equal(o.cacheKey('svc', 't1|x'), 'offline:svc:t1|x');
+  const svc = { trip: 't1', stops: [{ name: 'A' }], seenAt: NOW };
+  assert.equal(o.worthKeeping(svc), true);
+  assert.equal(o.prune(svc, NOW), svc);
 });

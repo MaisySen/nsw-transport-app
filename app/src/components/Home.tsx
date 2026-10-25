@@ -10,7 +10,7 @@ import { adaptiveGapMs } from '@/lib/pollCore';
 
 /** The first departure still ahead (or NaN). */
 const nextDep = (ts: number[]) => { const n = Date.now() - 30000; let b = NaN; for (const t of ts) if (t > n && !(t >= b)) b = t; return b; };
-import { cacheKey, offlineText, stampText } from '@/lib/offlineCore';
+import { cacheKey, offlineText, staleText } from '@/lib/offlineCore';
 import { foldNear, type NearPick } from '@/lib/nearCore';
 import { stopNumber } from '@/lib/busCore';
 import { HoldMenu } from './HoldMenu';
@@ -539,6 +539,7 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
           <View style={{ position: 'absolute', top: 2, right: 2 }}>{aside}</View>
         </View>
       ) : glance}
+      {offlineAt && js.length ? <OfflineNote at={offlineAt} now={now} /> : null}
       {pbText ? <PlanBRow title={pbTitle} text={pbText} onPress={() => open()} /> : null}
       {look === 'hero' && js.length ? <SpeakButton say={() => tripSentence(jsRef.current, Date.now())} /> : null}
       {below && js.length ? below(js) : null}
@@ -908,7 +909,7 @@ export const tripCacheId = (pkey: string, all: boolean) => `${pkey}|${all ? 1 : 
 /** The trip key Home and the trip screen share: from, via or legs, to, and each leg's settings. */
 export const tripPkey = (plan: Parameters<typeof tripKey>[0]) => tripKey(plan) + JSON.stringify(isChain(plan) ? tLegs(plan).map((l) => [l.mode, l.conn, l.any, l.walk]) : []);
 
-/** "Offline, times from 8:05am" under a card showing times kept on the phone. */
+/** "Offline, showing times from 8:05am" under a card showing times kept on the phone. */
 function OfflineNote({ at, now }: { at: number; now: number }) {
   const c = usePalette();
   return (
@@ -927,9 +928,9 @@ export function LiveTag() {
   if (!off && stale && !t) {
     // A fresh start: the kept copy is on screen while the live answer loads.
     return (
-      <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel={`Updating, showing times from ${stampText(stale, Date.now())}`}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel={staleText(stale, Date.now())}>
         <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: c.text3, marginRight: 5 }} />
-        <T kind="foot" tone="text2" style={{ fontVariant: ['tabular-nums'] }}>Updating, from {stampText(stale, Date.now())}</T>
+        <T kind="foot" tone="text2" style={{ fontVariant: ['tabular-nums'] }}>{staleText(stale, Date.now())}</T>
       </View>
     );
   }

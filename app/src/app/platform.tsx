@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { platformDepartures, platformService } from '@/lib/api';
 import { useCountdownNow, useLive, useReportCountdowns } from '@/lib/hooks';
 import { adaptiveGapMs, nextInMs } from '@/lib/pollCore';
-import { cacheKey, offlineText } from '@/lib/offlineCore';
+import { cacheKey, offlineText, staleText } from '@/lib/offlineCore';
 import { usePalette } from '@/lib/theme';
 import { badgeLook } from '@/lib/lineStyle';
 import { bestTime, clock, shortName } from '@/lib/format';
@@ -87,7 +87,7 @@ export default function PlatformView() {
   // The fade under the stop list shows only when the list is longer than its area (so it scrolls).
   const [boxH, setBoxH] = useState(0);
   const [listH, setListH] = useState(0);
-  const { data, error, offlineAt } = useLive((r) => platformDepartures(stop, r), (x) => adaptiveGapMs(15000, nextInMs(x?.items, Date.now())), [stop], { cacheKey: cacheKey('dep', stop) });
+  const { data, error, offlineAt, staleAt } = useLive((r) => platformDepartures(stop, r), (x) => adaptiveGapMs(15000, nextInMs(x?.items, Date.now())), [stop], { cacheKey: cacheKey('dep', stop) });
   const pick = useMemo(() => ({ trip: p.trip || null, planned: p.planned || null, line: p.line || null }), [p.trip, p.planned, p.line]);
   const { main, next } = pickService<Departure>(data?.items, now, pick, depState);
   const stationName = shortName(data?.stop?.name || (p.name ? String(p.name) : '')).replace(/ Station$/, '');
@@ -105,7 +105,7 @@ export default function PlatformView() {
   const saidRef = useRef('');
   saidRef.current = main ? speakSentence({ line: main.line, mode: main.mode, dest: main.dest, platform: main.platform, cars, when, stops, tag }) : '';
   const close = () => { haptic.tap(); goBack(stop ? ({ pathname: '/stop/[id]', params: { id: stop, name: p.name ? String(p.name) : '' } } as any) : '/'); };
-  const status = offlineAt ? offlineText(offlineAt, now) : !data ? (error ? 'Live times unavailable right now, trying again' : 'Loading live times') : null;
+  const status = offlineAt ? offlineText(offlineAt, now) : staleAt ? staleText(staleAt, now) : !data ? (error ? 'Live times unavailable right now, trying again' : 'Loading live times') : null;
   const kindWord = main && main.mode === 'metro' ? 'metro' : 'train';
   const stopsLabel = stops && stops.names.length
     ? `Stops at ${listWords(stops.names)}${stops.skipped && stops.skipped.length ? `. Not stopping at ${listWords(stops.skipped)}` : ''}`

@@ -7,6 +7,7 @@ import { useSides } from '@/lib/layout';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
+import { cacheKey } from '@/lib/offlineCore';
 import { usePalette } from '@/lib/theme';
 import { badgeLook } from '@/lib/lineStyle';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
@@ -32,7 +33,8 @@ export default function ServiceScreen() {
   const { height } = useWindowDimensions();
   const st = useStore();
   const sheet = useRef<BottomSheet>(null);
-  const { data, error, updatedAt } = useLive(() => api.service({ trip: p.trip, feed: p.feed || undefined, line: p.line, stop: p.stop, planned: p.planned, mode: p.mode, destId: p.destId, to: p.to || undefined }), 15000, [p.trip, p.planned, p.to]);
+  const { data, error, updatedAt, offlineAt, staleAt } = useLive(() => api.service({ trip: p.trip, feed: p.feed || undefined, line: p.line, stop: p.stop, planned: p.planned, mode: p.mode, destId: p.destId, to: p.to || undefined }), 15000, [p.trip, p.planned, p.to],
+    { cacheKey: p.trip ? cacheKey('svc', `${p.trip}|${p.planned || ''}|${p.stop || ''}|${p.to || ''}`) : undefined });
   const color = badgeLook(p.line || data?.line, p.mode || data?.mode, data?.color || p.color).bg;
   const snaps = useMemo(() => ['38%', '62%', '92%'], []);
   const key = tripKey(p.trip, p.planned, p.line);
@@ -53,7 +55,7 @@ export default function ServiceScreen() {
   // Buses: "Running slow in traffic" when the live delays ahead grow, and where to draw the bus on the line of stops.
   const traffic = busLike && data ? tripTraffic({ ...data, mode: data.mode || busMode }) : null;
   const mk = busLike && data?.live ? busMarker(stops, nextIdx, data.where, !!data.vehicle) : null;
-  const liveNow = liveState({ planned: mineStop?.planned || p.planned, estimated: mineEst || mineStop?.estimated, realtime: live, cancelled: data?.cancelled, seenAt: updatedAt, vehicleAgeS: data?.vehicle?.ageS }, now);
+  const liveNow = liveState({ planned: mineStop?.planned || p.planned, estimated: mineEst || mineStop?.estimated, realtime: live, cancelled: data?.cancelled, seenAt: updatedAt ?? (data as any)?.seenAt, vehicleAgeS: data?.vehicle?.ageS }, now);
 
   const watch = () => {
     const mine = stops.find((s) => s.mine);
@@ -103,7 +105,7 @@ export default function ServiceScreen() {
                 At {shortName(data.mine.name)} {clock(bestTime(data.mine.planned, mineEst))}{data.stopsAway != null && data.stopsAway > 0 ? `, ${data.stopsAway} stop${data.stopsAway === 1 ? '' : 's'} away` : ''}
               </T>
             ) : null}
-            <View style={{ marginTop: 10 }}><LiveStamp updatedAt={updatedAt} error={error} /></View>
+            <View style={{ marginTop: 10 }}><LiveStamp updatedAt={updatedAt} error={error} offlineAt={offlineAt} staleAt={staleAt} /></View>
             <View style={{ marginTop: 14 }}>
               <Button title={watchedId ? 'Stop watching' : 'Watch this service'} icon={watchedId ? I.bellOff : I.bell} kind={watchedId ? 'tinted' : 'filled'} onPress={watch} />
             </View>

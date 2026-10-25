@@ -19,6 +19,9 @@ import { LiftAlertSync } from '@/lib/liftAlerts';
 import { LiveTripEngine } from '@/lib/liveEngine';
 import { orientationFor } from '@/lib/layoutCore';
 
+/** Startup work that is not the first screen's own data waits this long after the app is ready. */
+const STARTUP_DEFER_MS = 1500;
+
 export default function RootLayout() {
   const scheme = useColorScheme();
   const c = usePalette();
@@ -32,9 +35,15 @@ export default function RootLayout() {
   // Every install has its own profile on the server; read or create it before the first request.
   useEffect(() => {
     // The last good remote config (and server address) is read before the first request.
-    Promise.all([initProfile().catch(() => {}), loadCachedConfig()]).finally(() => { setReady(true); finishProfileMove(api); refreshConfig(true); });
+    // The fresh config is asked a moment after the first screen has asked for its own times, so the first board is
+    // not queued behind it on a slow connection (docs/PERFORMANCE.md, startup). The cached one is already in use.
+    let later: ReturnType<typeof setTimeout> | null = null;
+    Promise.all([initProfile().catch(() => {}), loadCachedConfig()]).finally(() => {
+      setReady(true);
+      later = setTimeout(() => { later = null; finishProfileMove(api); refreshConfig(true); }, STARTUP_DEFER_MS);
+    });
     const sub = AppState.addEventListener('change', (s) => { if (s === 'active') refreshConfig(); });
-    return () => sub.remove();
+    return () => { sub.remove(); if (later) clearTimeout(later); };
   }, []);
 
   // Keep alerts coming while the app is open, and open the right screen when an alert is tapped.
@@ -43,8 +52,9 @@ export default function RootLayout() {
     // Only while the app is in front (activity.ts); with a push token the server is asked once a minute (push.ts).
     const poll = startAppPoll(pollNotesTick, 20000, { runAtStart: false });
     // The phone's own Last way home reminder looks at live times again while the app is open (and on opening it).
-    const lastPoll = startAppPoll(() => recheckLastLocal(), 60000, { runAtStart: true });
-    pollNotes();
+    const lastPoll = startAppPoll(() => recheckLastLocal(), 60000, { runAtStart: false });
+    // Alerts for watched services and the Last way home recheck wait until the first screen has its times.
+    const first = setTimeout(() => { pollNotes(); recheckLastLocal().catch(() => {}); }, STARTUP_DEFER_MS);
     setupLiveNotifications();
     const sub = Notifications.addNotificationResponseReceivedListener((r) => {
       const d: any = r.notification.request.content.data || {};
@@ -64,7 +74,7 @@ export default function RootLayout() {
       }
       if (d.watch) router.push({ pathname: '/watch/[id]', params: { id: String(d.watch) } });
     });
-    return () => { poll.remove(); lastPoll.remove(); sub.remove(); };
+    return () => { poll.remove(); lastPoll.remove(); sub.remove(); clearTimeout(first); };
   }, [ready]);
 
   const base = scheme === 'dark' ? DarkTheme : DefaultTheme;

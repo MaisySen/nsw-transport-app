@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef } from 'react';
-import { offlineText } from '@/lib/offlineCore';
+import { offlineText, staleText } from '@/lib/offlineCore';
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Why } from '@/lib/whyLateCore';
 import { WhyLate, withWhyAction } from './WhyLate';
@@ -85,13 +85,39 @@ export function LiveDot({ beat, size = 7, color }: { beat?: any; size?: number; 
   );
 }
 
-export function LiveStamp({ updatedAt, error, offlineAt }: { updatedAt: number | null; error?: string | null; offlineAt?: number | null }) {
+/**
+ * A banner over a list showing times kept on the phone: "Offline, showing times from 8:05am" (orange) when the server
+ * can't be reached, or "Updated 4 min ago, refreshing" (grey) while the live answer is on its way. Nothing otherwise.
+ */
+export function KeptBanner({ offlineAt, staleAt, now, style }: { offlineAt?: number | null; staleAt?: number | null; now: number; style?: any }) {
   const c = usePalette();
+  if (!offlineAt && !staleAt) return null;
+  const text = offlineAt ? offlineText(offlineAt, now) : staleText(staleAt!, now);
+  return (
+    <View accessibilityRole="text" accessibilityLiveRegion="polite" accessibilityLabel={text}
+      style={[{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 12, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: offlineAt ? c.card : 'transparent' }, style]}>
+      {offlineAt ? <Icon name={I.warn} size={13} color={c.orange} /> : <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: c.text3 }} />}
+      <T kind="foot" style={{ color: offlineAt ? c.lateText : c.text2, marginLeft: 7, flexShrink: 1, fontVariant: ['tabular-nums'] }}>{text}</T>
+    </View>
+  );
+}
+
+export function LiveStamp({ updatedAt, error, offlineAt, staleAt }: { updatedAt: number | null; error?: string | null; offlineAt?: number | null; staleAt?: number | null }) {
+  const c = usePalette();
+  if (!offlineAt && !updatedAt && staleAt) {
+    // A kept copy is on screen while the live answer is on its way: say how old it is, never "Live".
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <LiveDot beat={staleAt} color={c.text3} />
+        <T kind="foot" tone="text2" style={{ marginLeft: 2, flexShrink: 1 }}>{staleText(staleAt, Date.now())}</T>
+      </View>
+    );
+  }
   if (offlineAt) {
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         <LiveDot beat={offlineAt} color={c.orange} />
-        <T kind="foot" tone="text2" style={{ marginLeft: 2 }}>{offlineText(offlineAt, Date.now())}</T>
+        <T kind="foot" tone="text2" style={{ marginLeft: 2, flexShrink: 1 }}>{offlineText(offlineAt, Date.now())}</T>
       </View>
     );
   }
@@ -99,7 +125,7 @@ export function LiveStamp({ updatedAt, error, offlineAt }: { updatedAt: number |
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       <LiveDot beat={updatedAt} color={error ? c.orange : undefined} />
-      <T kind="foot" tone="text2" style={{ marginLeft: 2 }}>
+      <T kind="foot" tone="text2" style={{ marginLeft: 2, flexShrink: 1 }}>
         {error ? `Offline, last update ${clock(updatedAt)}` : `Live, updated ${new Date(updatedAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(' ', '')}`}
       </T>
     </View>
