@@ -8,7 +8,7 @@ import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl,
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { arriveByIndex, NOW, whenFromParams, type When } from '@/lib/planCore';
 import { WhenPicker } from '@/components/WhenPicker';
-import { afterBatch, canLoadEarlier, canLoadLater, chipLabel, chipsToShow, dateNeeded, EARLIER_NEEDS_NEW, earlierFloor, earlierFrom, emptyModes, filterModes, hasLeft, keepFrom, modesWords, MODE_CHIPS, nearEnd, normModes, PAGE0, PAGING, pickerDays, pinDay, queryAt, serviceDayEnd, toggleMode, whenAt, whenKeyOf, whenWords, ymd, type ModeK, type PageState } from '@/lib/tripModesCore';
+import { afterBatch, canLoadEarlier, canLoadLater, chipLabel, chipsToShow, dateNeeded, EARLIER_NEEDS_NEW, earlierFloor, earlierRow, earlierSteps, emptyModes, filterModes, hasLeft, keepFrom, modesWords, MODE_CHIPS, nearEnd, normModes, PAGE0, PAGING, pickerDays, pinDay, queryAt, serviceDayEnd, toggleMode, whenAt, whenKeyOf, whenWords, ymd, type ModeK, type PageState } from '@/lib/tripModesCore';
 import { LeftRow } from '@/components/LeftRow';
 import { useOnViewRef } from '@/lib/activity';
 import { haptic } from '@/lib/haptic';
@@ -422,10 +422,16 @@ export default function TripScreen() {
     if (!canLoadEarlier(earlier, firstDep, floor, onView.current)) return;
     setEarlier((x) => ({ ...x, busy: true }));
     try {
-      const fresh = await batch(earlierFrom(firstDep!, floor));
-      setEarlier((x) => afterBatch(x, fresh.filter((j) => depMs(j) < firstDep!).length, null, Infinity));
+      // One tap or pull: step back 40 min, then further over a quiet stretch, until something earlier comes.
+      let added = 0;
+      for (const t of earlierSteps(firstDep!, floor)) {
+        const fresh = await batch(t);
+        added = fresh.filter((j) => depMs(j) < firstDep!).length;
+        if (added) break;
+      }
+      setEarlier((x) => afterBatch(x, added, null, Infinity));
       setEarlierNote('');
-      if (fresh.length) setOpen(null);
+      if (added) setOpen(null);
     } catch (e: any) {
       if (e?.neededDate) setEarlierNote(EARLIER_NEEDS_NEW);
       setEarlier((x) => ({ ...x, busy: false, pages: x.pages + 1 }));
@@ -593,6 +599,18 @@ export default function TripScreen() {
         {js.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
             {earlier.busy ? <LoadingRow text="Loading earlier services" /> : null}
+            {(() => {
+              // Earlier services, also on Now: each tap loads the batch before the first service shown, gone ones as Left,
+              // back to the start of the service day (pull down at the top does the same).
+              const er = earlierRow(earlier, firstDep, floor);
+              return er.show ? (
+                <Pressable accessibilityRole="button" accessibilityLabel={`${er.label}. Loads the services before ${firstDep != null ? clock(firstDep) : 'the first one'}`} onPress={() => { haptic.select(); loadEarlier(); }}
+                  android_ripple={{ color: c.fill }} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingHorizontal: 16, opacity: pressed ? 0.6 : 1 })}>
+                  <Icon name={I.clock} size={14} color={c.tint} />
+                  <T kind="sub" tone="tint" style={{ fontWeight: '600', marginLeft: 6 }}>{er.label}</T>
+                </Pressable>
+              ) : null;
+            })()}
             {earlierNote && !earlier.busy ? <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}><T kind="foot" tone="text2">{earlierNote}</T></View> : null}
             {js.map((j, i) => (
               <View key={jKey(j) + i}>

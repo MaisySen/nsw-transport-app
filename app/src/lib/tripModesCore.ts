@@ -76,7 +76,7 @@ export const chipLabel = (name: string, on: boolean) => `${name}${on ? ', select
 
 /** Caps so the list never loops on the network: batches each way per screen visit, and a stop at the end of the
  * service day (4am Sydney after the first service shown). */
-export const PAGING = { maxLater: 8, maxEarlier: 3, nearEndPx: 700, earlierBackMs: 40 * 60000, earliestBeforeNowMs: 30 * 60000 };
+export const PAGING = { maxLater: 8, maxEarlier: 30, nearEndPx: 700, earlierBackMs: 40 * 60000, earliestBeforeNowMs: 30 * 60000 };
 
 /** The next 4:00am in Sydney after `t` (the service day ends there). */
 export function serviceDayEnd(t: number): number {
@@ -93,7 +93,8 @@ export const PAGE0: PageState = { pages: 0, done: false, busy: false };
 export function canLoadLater(st: PageState, lastDep: number | null, dayEnd: number, visible: boolean): boolean {
   return visible && !st.busy && !st.done && st.pages < PAGING.maxLater && lastDep != null && lastDep < dayEnd;
 }
-/** Whether a pull at the top can ask for earlier services: not before half an hour ago (or the chosen time). */
+/** Whether Earlier services (the row at the top of the list, or a pull at the top) can ask for more: not before the floor
+ * (earlierFloor: the start of the service day). Each batch is one tap or pull, so the cap is only a guard. */
 export function canLoadEarlier(st: PageState, firstDep: number | null, floor: number, visible: boolean): boolean {
   return visible && !st.busy && !st.done && st.pages < PAGING.maxEarlier && firstDep != null && firstDep - 60000 > floor;
 }
@@ -186,18 +187,42 @@ export function leftWords(dep: number, l: { realtime?: boolean; delayMin?: numbe
   return `Left ${hm(dep)} \u00b7 ${d > 0 ? `${d} min late` : d < 0 ? `${-d} min early` : 'On time'}`;
 }
 
-/** How far back a pull at the top (Earlier services) may go. Now: half an hour ago, as before. A chosen time:
- * 2 hours before it, even when that is in the past (Arrive by: 4 hours, as its trips leave well before the time). */
-export function earlierFloor(w: WhenLike, anchor: number, now: number): number {
-  if (w.kind === 'now') return now - PAGING.earliestBeforeNowMs;
-  return anchor - (w.kind === 'arrive' ? 4 : 2) * 3600000;
+/** The 4:00am Sydney that starts the service day `t` is in (the planner's day runs 4am to 4am). */
+export function serviceDayStart(t: number): number {
+  const p = sydney(t);
+  const day = p.h >= 4 ? ymd(t) : ymd(sydneyTime(ymd(t), 12, 0) - 86400000);
+  return sydneyTime(day, 4, 0);
 }
 
-/** The earliest departure the list keeps. Now: services gone over 2 min ago drop off (main answer) and ones loaded
- * with Earlier stay half an hour. A chosen time keeps the planner's whole answer for it, gone or not, so Leave 6:15
- * at 6:27 shows the 6:18 and the 6:24, and Earlier batches down to the floor above. */
+/** How far back Earlier services may go: the start of the service day of now, or of the chosen time (past or not), so
+ * Now at 7pm can go back to this morning's first services. */
+export function earlierFloor(w: WhenLike, anchor: number, now: number): number {
+  return serviceDayStart(w.kind === 'now' ? now : anchor);
+}
+
+/** Where one Earlier tap asks, in turn, until a batch brings something earlier: 40 min, then 90 min, then 3 hours
+ * before the first service shown, never before the floor (a quiet stretch with no service does not end the list). */
+export function earlierSteps(firstDep: number, floor: number): number[] {
+  const out: number[] = [];
+  for (const back of [PAGING.earlierBackMs, 90 * 60000, 180 * 60000]) {
+    const t = Math.max(floor, firstDep - back);
+    if (!out.includes(t)) out.push(t);
+    if (t === floor) break;
+  }
+  return out;
+}
+
+/** The Earlier services row at the top of the list: shown while another batch can load, with its words. */
+export function earlierRow(st: PageState, firstDep: number | null, floor: number): { show: boolean; label: string } {
+  const show = !st.busy && canLoadEarlier(st, firstDep, floor, true);
+  return { show, label: 'Earlier services' };
+}
+
+/** The earliest departure the list keeps. Now: the planner's answer drops services gone over 2 min ago (as before);
+ * services loaded with Earlier stay, down to the start of the service day, shown as Left. A chosen time keeps the planner's whole answer
+ * for it, gone or not, so Leave 6:15 at 6:27 shows the 6:18 and the 6:24, and Earlier batches down to the floor. */
 export function keepFrom(w: WhenLike, anchor: number, now: number): { main: number; extra: number } {
-  if (w.kind === 'now') return { main: now - 120000, extra: now - PAGING.earliestBeforeNowMs };
+  if (w.kind === 'now') return { main: now - 120000, extra: earlierFloor(w, anchor, now) };
   return { main: -Infinity, extra: earlierFloor(w, anchor, now) };
 }
 

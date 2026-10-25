@@ -24,6 +24,7 @@ const m = await load('src/lib/tripModesCore.ts');
 const NOW = Date.parse('2026-10-25T07:27:00Z');
 const at = (hhmm) => Date.parse(`2026-10-25T${String(+hhmm.slice(0, 2) - 11).padStart(2, '0')}:${hhmm.slice(2)}:00Z`);
 const hm = (t) => new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)$/i, '');
+const FOUR = Date.parse('2026-10-24T17:00:00Z'); // 4:00am Sun 25 Oct Sydney
 const LEAVE_615 = { kind: 'leave', h: 18, m: 15 };
 
 test('a time picked today is pinned to today, over 30 min ago too, and an old one with no day to tomorrow', () => {
@@ -63,24 +64,28 @@ test('the list keeps the planner\'s whole answer for a chosen time, gone service
   assert.deepEqual(answer.filter((t) => t > k.main), answer, 'the 6:18 and the 6:24 stay (the bug dropped them)');
   const kn = m.keepFrom({ kind: 'now' }, NOW, NOW);
   assert.equal(kn.main, NOW - 120000, 'Now: gone over 2 min ago drops off, as before');
-  assert.equal(kn.extra, NOW - 30 * 60000, 'Now: Earlier batches stay half an hour, as before');
-  assert.equal(k.extra, at('1615'), 'a chosen time: Earlier batches stay down to 2 hours before it');
+  assert.equal(kn.extra, FOUR, 'Now: services loaded with Earlier stay back to the start of the service day');
+  assert.equal(k.extra, FOUR, 'a chosen time: the same, from its own service day');
 });
 
-test('Earlier services reach back from a past time, not only half an hour before now', () => {
+test('Earlier services reach back to the start of the service day, on Now and from a past time', () => {
   const w = m.pinDay(LEAVE_615, NOW);
   const floor = m.earlierFloor(w, m.whenAt(w, NOW), NOW);
-  assert.equal(floor, at('1615'));
-  assert.equal(m.canLoadEarlier(m.PAGE0, at('1818'), floor, true), true, 'a pull at the top asks for the services before 6:18');
-  assert.equal(m.earlierFrom(at('1818'), floor), at('1738'), 'the batch starts 40 min earlier');
-  // Three batches back, then the cap.
+  assert.equal(floor, FOUR, '4am starts the service day');
+  assert.equal(m.earlierFloor({ kind: 'now' }, NOW, NOW), FOUR, 'Now too (Bidur, 7:13 PM: all the earlier ones)');
+  assert.equal(m.serviceDayStart(Date.parse('2026-10-25T14:30:00Z')), Date.parse('2026-10-24T17:00:00Z'), '1:30am belongs to the day that started at 4am the day before');
+  assert.equal(m.canLoadEarlier(m.PAGE0, at('1818'), floor, true), true, 'Earlier asks for the services before 6:18');
+  assert.deepEqual(m.earlierSteps(at('1818'), floor), [at('1738'), at('1648'), at('1518')], '40 min back, then 90 min, then 3 hours over a quiet stretch');
+  assert.deepEqual(m.earlierSteps(FOUR + 30 * 60000, floor), [FOUR], 'never before the floor');
+  assert.equal(m.canLoadEarlier(m.PAGE0, FOUR + 30000, floor, true), false, 'nothing before the start of the day');
+  assert.deepEqual(m.earlierRow(m.PAGE0, at('1818'), floor), { show: true, label: 'Earlier services' });
+  assert.equal(m.earlierRow({ pages: 1, done: true, busy: false }, at('1818'), floor).show, false, 'gone once a tap brings nothing earlier');
+  assert.equal(m.earlierRow({ pages: 0, done: false, busy: true }, at('1818'), floor).show, false, 'hidden while loading (the loading row shows)');
+  // Many taps, one batch each: from 6:18pm back to 4am fits under the cap of 30.
   let st = m.PAGE0, first = at('1818');
-  for (let i = 0; i < 3; i++) { assert.equal(m.canLoadEarlier(st, first, floor, true), true); first = m.earlierFrom(first, floor); st = m.afterBatch(st, 2, null, Infinity); }
-  assert.equal(m.canLoadEarlier(st, first, floor, true), false, 'capped at 3 batches a visit');
-  // Arrive by goes further back (its trips leave well before the time); Now keeps its half hour.
-  assert.equal(m.earlierFloor({ kind: 'arrive', h: 18, m: 0, day: '20261025' }, at('1800'), NOW), at('1400'));
-  assert.equal(m.earlierFloor({ kind: 'now' }, NOW, NOW), NOW - 30 * 60000);
-  assert.equal(m.canLoadEarlier(m.PAGE0, NOW + 60000, NOW - 30 * 60000, true), true);
+  while (m.canLoadEarlier(st, first, floor, true)) { first = m.earlierSteps(first, floor)[0]; st = m.afterBatch(st, 2, null, Infinity); }
+  assert.equal(first, floor, 'reaches the start of the service day');
+  assert.ok(st.pages <= m.PAGING.maxEarlier);
 });
 
 test('an Earlier batch over 30 min back asks with today\'s date (new server); within 30 min a plain time', () => {
