@@ -32,13 +32,18 @@ Laid out the way TripView shows trips on the wrist (Bidur's photos, 25 Oct):
 * Buttons that act in place (Refresh, Swap direction, Try Again) give a light click; moving between screens does not.
 
 Complications and Smart Stack (watch face editor or Smart Stack, "Transport", "Next train"): the trip in progress,
-else the first card above (Home to Work or back, else your first saved trip):
+else the first trip on the list (Home to Work or back, else your first saved trip). Bidur, 25 Oct: "Apple watch
+widget. Trip view like feature."
 
-* Rectangular: "T1 2 min, Plat 2", what it is for ("To work", the route, "Off at Redfern") and the next service
-  time or "Updated h:mm" when the kept times are over 5 minutes old or came from the phone.
-* Circular: the line over the minutes, with a ring that empties over the last 15 minutes.
-* Inline: "T1 2 min, Plat 2". Corner: the minutes, with the line and platform.
-* The countdown is amber or red when the service runs late, like the app.
+* Rectangular, three lines: "T1 Strathfield" (the line in its colour and where it goes), "2, 16, 18 min" (the next
+  service and the two after it, amber or red when the first runs late), then "From Kings Cross, Plat 1" ("To work,
+  Plat 1" for Home and Work) or "Updated 2:41pm" when the kept times are over 5 minutes old or came from the iPhone.
+* Inline: "T1 2, 16, 18 min". Circular: the line over the minutes, with a ring that empties over the last 15 minutes.
+  Corner: the minutes, with the line and platform.
+* Tap any of them: the watch app opens on that trip's screen (its next 6 services), with Back to the list. During a
+  trip in progress the tap opens the app as usual.
+* Whole minutes only, one timeline entry a minute, from the times the watch app last loaded. The complication never
+  loads times itself and never shows a seconds timer.
 
 ## iPhone widget badges (build 207)
 

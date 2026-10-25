@@ -196,6 +196,28 @@ struct WCard: Hashable, Identifiable {
     }
 }
 
+/// Where a complication tap opens the watch app: "nswtransportwatch://trip?key=10101>10102". The scheme is in the
+/// watch app's Info.plist.
+enum WatchLinks {
+    static let scheme = "nswtransportwatch"
+
+    static func trip(_ key: String) -> URL? {
+        var c = URLComponents()
+        c.scheme = scheme
+        c.host = "trip"
+        c.queryItems = [URLQueryItem(name: "key", value: key)]
+        return c.url
+    }
+
+    /// The trip key in a link from `trip(_:)`, or nil for anything else.
+    static func tripKey(_ url: URL) -> String? {
+        guard url.scheme == scheme, url.host == "trip",
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+              let key = items.first(where: { $0.name == "key" })?.value, !key.isEmpty else { return nil }
+        return key
+    }
+}
+
 struct Commute: Hashable {
     var title: String
     var from: WStop
@@ -751,7 +773,7 @@ enum WText {
     static func tag(_ card: WCard) -> String? {
         let n = card.name.trimmingCharacters(in: .whitespaces)
         guard !n.isEmpty, n.lowercased() != card.title.lowercased() else { return nil }
-        return n.prefix(1).uppercased() + n.dropFirst()
+        return String(n.prefix(1)).uppercased() + String(n.dropFirst())
     }
 
     /// "Kings Cross Station, Kings Cross" becomes "Kings Cross".

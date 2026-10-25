@@ -278,6 +278,20 @@ struct ContentView: View {
     @EnvironmentObject var model: WatchModel
     @Environment(\.scenePhase) private var phase
     @State private var path: [Route] = []
+    /// The trip a complication tap asked for, until it is on screen.
+    @State private var openKey: String?
+
+    private func open() {
+        guard let key = openKey else { return }
+        if let card = model.cards.first(where: { $0.key == key }) {
+            path = [.trip(card)]
+            openKey = nil
+        } else if model.context != nil, !model.cards.isEmpty {
+            // The trip is no longer saved: stay on the list.
+            path = []
+            openKey = nil
+        }
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -296,6 +310,14 @@ struct ContentView: View {
                 }
             }
         }
+        // A complication tap opens that trip's screen, over the list so Back returns to it.
+        .onOpenURL { url in
+            guard let key = WatchLinks.tripKey(url) else { return }
+            openKey = key
+            open()
+        }
+        // On a cold start the trips may arrive a moment after the link.
+        .onChange(of: model.cards) { _, _ in open() }
         // Screenshots (tools/watch-shots.sh, simulator only): "-shotRoute trip" or "service" opens the first trip, or
         // its first service, once the times are in. Without that launch argument nothing happens here.
         .task {

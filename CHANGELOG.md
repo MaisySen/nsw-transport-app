@@ -9,7 +9,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * Tap a trip: the stop you leave from at the top and the next 6 services as cards, each with a big countdown in whole minutes (green on time, amber or red when late, "26 min late"), the platform, the lines and "11:56 to 12:18". Tap a service for its legs and platforms.
 * Swap direction and Refresh on the trip screen, pull to refresh, swipe a trip to swap.
 * Opening shows the last times at once, then loads; it refreshes every 30 seconds only while on screen. With no signal it shows the times the iPhone last loaded.
-* Complications show the first trip's next service in whole minutes ("T1 2 min"), no seconds.
+* Watch face and Smart Stack: the first trip's next three services, "T1 Strathfield 2, 16, 18 min", with the platform; tap to open that trip on the watch. Whole minutes, no seconds.
 * Empty: "Save a trip on your iPhone to see it here."
 * iPhone widgets, Lock Screen and Live Activity: every line badge is one style, official colours (buses always bus blue, never grey), one size, no glyph inside.
 

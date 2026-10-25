@@ -224,3 +224,19 @@ test('no em or en dashes in the watch code', () => {
   }
   for (const f of ['platform/watchShare.ts', 'modules/transport-ios/ios/WatchLink.swift']) assert.ok(!/[\u2013\u2014]/.test(swift(f)), f);
 });
+
+test('watch complications show the next 3 times and open that trip', () => {
+  const comp = fs.readFileSync(path.join(root, 'targets/watch-widget/Complications.swift'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'targets/watch/TransportWatchApp.swift'), 'utf8');
+  const core = fs.readFileSync(path.join(root, 'targets/watch/WatchCore.swift'), 'utf8');
+  const plist = fs.readFileSync(path.join(root, 'targets/watch/Info.plist'), 'utf8');
+  assert.match(comp, /var scheduleText: String/, 'rectangular "2, 16, 18 min"');
+  assert.match(comp, /dropFirst\(i \+ 1\)\.prefix\(2\)/, 'the two services after the next one');
+  assert.match(comp, /\.accessoryInline: Text\(entry\.kind == \.trip \? entry\.inlineText/, 'inline "T1 2, 16, 18 min"');
+  assert.match(comp, /\.widgetURL\(entry\.url\)/, 'tap opens the trip');
+  assert.match(comp, /WatchLinks\.trip\(card\.key\)/);
+  assert.match(app, /\.onOpenURL/, 'the app opens the trip a complication links to');
+  assert.match(app, /WatchLinks\.tripKey\(url\)/);
+  assert.match(core, /static let scheme = "nswtransportwatch"/);
+  assert.ok(plist.includes('<string>nswtransportwatch</string>'), 'scheme registered in the watch Info.plist');
+});

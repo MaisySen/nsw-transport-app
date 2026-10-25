@@ -27,7 +27,7 @@ struct NextTrainComplication: Widget {
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Next train")
-        .description("Your trip in progress, else your first trip: Home to Work in the morning and back in the evening, or your first saved trip.")
+        .description("Your first trip's next 3 services in whole minutes, with the platform. Tap to open the trip. Your trip in progress while it runs.")
         .supportedFamilies([.accessoryRectangular, .accessoryCircular, .accessoryInline, .accessoryCorner])
     }
 }
@@ -41,6 +41,10 @@ struct NextEntry: TimelineEntry {
     var target: Date?
     var platform: String?
     var status: WStatus = .onTime
+    /// The services after `target` on the same trip, for "2, 16, 18 min".
+    var later: [Date] = []
+    /// Where a tap opens the watch app: the trip screen of this trip.
+    var url: URL?
     /// "To work", "Off at Redfern", the trip, or what to do on the iPhone when there is nothing to show.
     var title: String
     /// "then 9:52am", "Next stop: Burwood" or "Updated 9:41am".
@@ -63,11 +67,31 @@ struct NextEntry: TimelineEntry {
         return s
     }
 
-    /// For VoiceOver: "T1 in 2 minutes, Plat 2, To work".
+    /// "2, 16, 18 min": the next service and the ones after it in whole minutes; "Now, 14, 16 min" when the first
+    /// is leaving. Times an hour or more away are left out.
+    var scheduleText: String {
+        guard let t = target else { return title }
+        let all = [t] + later
+        let ms = all.map { Clock.minutes(until: $0, from: date) }.filter { $0 < 60 }
+        guard !ms.isEmpty else { return Clock.hhmm(t) }
+        let parts = ms.map { $0 < 1 ? "Now" : String($0) }
+        if parts == ["Now"] { return "Now" }
+        return parts.joined(separator: ", ") + " min"
+    }
+
+    /// "T1 2, 16, 18 min" for the inline complication.
+    var inlineText: String {
+        guard target != nil else { return title }
+        return line.isEmpty ? scheduleText : "\(line) \(scheduleText)"
+    }
+
+    /// For VoiceOver: "T1 in 2 minutes, then 16 and 18 minutes, Plat 2, To work".
     var spoken: String {
         guard let t = target else { return [title, detail].compactMap { $0 }.joined(separator: ". ") }
         let when = status == .cancelled ? "cancelled" : "in \(WText.minsSpoken(t, now: date))"
-        return [line.isEmpty ? nil : line, when, plat, title].compactMap { $0 }.joined(separator: ", ")
+        let then = later.prefix(2).map { Clock.minutes(until: $0, from: date) }.filter { $0 < 60 }.map { String($0) }
+        let thenText: String? = then.isEmpty ? nil : "then " + then.joined(separator: " and ") + " minutes"
+        return [line.isEmpty ? nil : line, when, thenText, plat, title].compactMap { $0 }.joined(separator: ", ")
     }
 
     /// How full the ring is: full until 15 minutes before, then it empties a step each minute.
@@ -150,24 +174,28 @@ struct NextProvider: TimelineProvider {
         let found = snapshot.services(for: card, context: c, now: now)
         let services = found.list.filter { !$0.cancelled }
         let stale = found.fromPhone || (found.at.map { now.timeIntervalSince($0) > 5 * 60 } ?? true)
-        let title = card.isCommute ? card.name : card.title
+        // "Strathfield" (where it goes) beside the line, like "T1 Strathfield 2, 16, 18 min".
+        let title = WText.short(card.to.name)
+        let url = WatchLinks.trip(card.key)
         var out: [NextEntry] = []
         var start = now
         for (i, s) in services.enumerated() where s.time > start {
-            var detail: String? = card.isCommute ? card.title : nil
-            if i + 1 < services.count { detail = "then \(Clock.hhmm(services[i + 1].time))" }
+            let later = services.dropFirst(i + 1).prefix(2).map(\.time)
+            let where_: String = card.isCommute ? card.name : "From \(WText.short(card.from.name))"
+            let parts: [String?] = [where_, WText.platform(s.platform)]
+            var detail: String? = parts.compactMap { $0 }.joined(separator: ", ")
             if stale, let at = found.at { detail = "Updated \(Clock.hhmm(at))" }
             let left = maxEntries - out.count
             if left <= 0 { break }
             out += minuteEntries(from: start, to: s.time, make: { d in
                 NextEntry(date: d, kind: .trip, line: s.line, colorHex: s.colorHex, target: s.time, platform: s.platform,
-                          status: s.status, title: title, detail: detail,
+                          status: s.status, later: Array(later), url: url, title: title, detail: detail,
                           relevance: TimelineEntryRelevance(score: s.time.timeIntervalSince(d) < 20 * 60 ? 50 : 10))
             }, limit: left)
             start = s.time
         }
         if out.count < maxEntries {
-            out.append(NextEntry(date: start, kind: .empty, title: title, detail: "Open Transport for times"))
+            out.append(NextEntry(date: start, kind: .empty, url: url, title: card.title, detail: "Open Transport for times"))
         }
         return out
     }
@@ -182,13 +210,14 @@ struct NextView: View {
         Group {
             switch family {
             case .accessoryCircular: circular
-            case .accessoryInline: Text(entry.countdownText)
+            case .accessoryInline: Text(entry.kind == .trip ? entry.inlineText : entry.countdownText)
             case .accessoryCorner: corner
             default: rectangular
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(entry.spoken)
+        .widgetURL(entry.url)
     }
 
     private var tint: Color { entry.tint.opacity(dimmed ? 0.7 : 1) }
@@ -198,6 +227,20 @@ struct NextView: View {
             if entry.target == nil {
                 Text(entry.title).font(.headline).lineLimit(1)
                 if let d = entry.detail { Text(d).font(.caption2).foregroundStyle(.secondary).lineLimit(2) }
+            } else if entry.kind == .trip {
+                // "T1 Strathfield" / "2, 16, 18 min" / "From Kings Cross, Plat 1"
+                HStack(spacing: 4) {
+                    Text(entry.line).font(.headline).foregroundStyle(tint).widgetAccentable()
+                    Text(entry.title).font(.headline).lineLimit(1)
+                }
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                Text(entry.scheduleText)
+                    .font(.headline.monospacedDigit())
+                    .foregroundStyle(entry.status == .onTime ? Color.primary : entry.status.color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                if let d = entry.detail { Text(d).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
             } else {
                 Text(entry.countdownText)
                     .font(.headline)
