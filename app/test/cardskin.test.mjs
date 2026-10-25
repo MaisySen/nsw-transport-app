@@ -115,10 +115,11 @@ test('no dashes in the words; Line glow is the shipped look', () => {
   assert.match(fs.readFileSync(path.join(here, '..', 'src/lib/cardSkin.ts'), 'utf8'), /SHIPPED_SKIN: CardSkin = 'line'/);
 });
 
-test('menus use the system action sheet on iPhone: the + button is anchored, no drawn sheet on iOS', () => {
+test('hold menus use the system action sheet on iPhone, no drawn sheet on iOS; the + is the system menu (test/plusmenu.test.mjs)', () => {
   const sheet = fs.readFileSync(path.join(here, '..', 'src/components/Sheet.tsx'), 'utf8');
   assert.match(sheet, /ActionSheetIOS\.showActionSheetWithOptions/);
   assert.match(sheet, /if \(ios\) return null;/);
   const home = fs.readFileSync(path.join(here, '..', 'src/app/(tabs)/home/index.tsx'), 'utf8');
-  assert.match(home, /showIosSheet\(\{ actions: items, anchor: findNodeHandle\(btn\.current\) \}\)/);
+  assert.match(home, /<Stack\.Toolbar\.Menu icon="plus"/);
+  assert.doesNotMatch(home, /showIosSheet/);
 });

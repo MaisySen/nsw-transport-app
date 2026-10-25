@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, findNodeHandle, PanResponder, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Alert, AppState, PanResponder, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { CARD_SWIPE, SwipeRow, type SwipeAct } from '@/components/Swipe';
 import { haptic } from '@/lib/haptic';
 import { gripStep, type GripEvent, type GripState } from '@/lib/gesture';
@@ -17,7 +17,8 @@ import type { Place } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
 import { watchLine } from '@/components/Cards';
 import { ActionRow, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTag, onTripDeleted, pullHome, StopBoard, TripBoard, TripItem, UNDO_MS, useNearby } from '@/components/Home';
-import { ActionSheet, nativeMenu, showIosSheet, type SheetAction } from '@/components/Sheet';
+import { nativeMenu } from '@/components/Sheet';
+import { AnchoredMenu, type MenuItem, type Rect } from '@/components/AnchoredMenu';
 import { LineBadge } from '@/components/Transit';
 import { TabBarSafe } from '@/components/TabBarSafe';
 import { useLiveTrip } from '@/lib/live';
@@ -168,12 +169,14 @@ export default function Home() {
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Home', headerRight: () => (
+      {/* iPhone: the + is a system bar button with its own UIMenu (AddMenu). Android and the web: a drawn + and menu. */}
+      <Stack.Screen options={Platform.OS === 'ios' ? { title: 'Home' } : { title: 'Home', headerRight: () => (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <LiveTag />
           <AddButton places={places} />
         </View>
       ) }} />
+      {Platform.OS === 'ios' ? <AddMenu places={places} /> : null}
       <Screen scrollEnabled={scrollOn} refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} enabled={scrollOn} />}>
         {/* Above the commute card: one slim bar for the trip in progress (or a single watched trip), nothing else. */}
         {g ? <LiveBar title={g.title} line={g.legs[0]?.line} mode={g.legs[0]?.mode} color={g.legs[0]?.color} />
@@ -421,37 +424,66 @@ function delAct(t: TripItem, red: string): SwipeAct {
   return { label: 'Delete', text: 'Delete', icon: I.trash, color: red, onPress: () => deleteTrip(t) };
 }
 
+/** New trip, Star a stop, Set or Change Home, Set or Change Work: the + menu on Home, on every platform. */
+function addItems(hasHome: boolean, hasWork: boolean) {
+  return [
+    { text: 'New trip', icon: I.route, sf: 'point.topleft.down.to.point.bottomright.curvepath', onPress: () => router.push('/new-trip') },
+    { text: 'Star a stop', icon: I.starOpen, sf: 'star', onPress: () => router.push('/search') },
+    { text: hasHome ? 'Change Home' : 'Set Home', icon: I.home, sf: 'house', onPress: () => router.push({ pathname: '/add-trip', params: { place: 'home' } }) },
+    { text: hasWork ? 'Change Work' : 'Set Work', icon: I.briefcase, sf: 'briefcase', onPress: () => router.push({ pathname: '/add-trip', params: { place: 'work' } }) },
+  ];
+}
+
 /**
- * The one Add on Home, in the navigation bar at the top right (HIG: a screen's main action goes in its toolbar;
- * Material 3: a top app bar action). New trip, Star a stop, Set Home, Set Work. iPhone: the system action sheet;
- * Android and the web: the app's bottom sheet, since an Android dialog shows at most 3 buttons. On iOS 26 and 27
- * the system draws the glass round bar buttons, so this is a plain icon, as the star on the trip screen is.
+ * iPhone: the one Add on Home is a system bar button in the navigation bar with a UIMenu (react-native-screens header
+ * items through expo-router's Stack.Toolbar, native code in every build from 201 to 208). Tapping + drops the system
+ * menu from the button, with SF Symbols and no Cancel row; on iOS 26 and 27 it is the Liquid Glass menu. The live
+ * time sits beside it as its own item. Bidur, 25 Oct 8:42 PM: the action sheet in the middle of the screen was wrong
+ * (React Native's ActionSheetIOS uses its anchor only on iPad, so on iPhone it was always the centred sheet).
+ */
+function AddMenu({ places }: { places: { home?: Place; work?: Place } }) {
+  const hasHome = !!places?.home, hasWork = !!places?.work;
+  // One element per Home/Work state: the toolbar's options change only when a label does.
+  return useMemo(() => {
+    const items = addItems(hasHome, hasWork);
+    return (
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.View hidesSharedBackground>
+          <LiveTag />
+        </Stack.Toolbar.View>
+        <Stack.Toolbar.Menu icon="plus" accessibilityLabel="Add" accessibilityHint="New trip, star a stop, or set Home or Work">
+          {items.map((it) => (
+            <Stack.Toolbar.MenuAction key={it.text} icon={it.sf as any} onPress={it.onPress}>{it.text}</Stack.Toolbar.MenuAction>
+          ))}
+        </Stack.Toolbar.Menu>
+      </Stack.Toolbar>
+    );
+  }, [hasHome, hasWork]);
+}
+
+/**
+ * Android and the web preview: the + in the top app bar opens a menu that drops from the button (Material 3 menu on
+ * Android, the iPhone menu's shape on the web), anchored by measuring the button on screen.
  */
 function AddButton({ places }: { places: { home?: Place; work?: Place } }) {
   const c = usePalette();
-  const [open, setOpen] = useState(false);
-  const items: SheetAction[] = [
-    { text: 'New trip', icon: I.route, onPress: () => router.push('/new-trip') },
-    { text: 'Star a stop', icon: I.starOpen, onPress: () => router.push('/search') },
-    { text: places?.home ? 'Change Home' : 'Set Home', icon: I.home, onPress: () => router.push({ pathname: '/add-trip', params: { place: 'home' } }) },
-    { text: places?.work ? 'Change Work' : 'Set Work', icon: I.briefcase, onPress: () => router.push({ pathname: '/add-trip', params: { place: 'work' } }) },
-  ];
+  const [at, setAt] = useState<Rect | null>(null);
+  const items: MenuItem[] = addItems(!!places?.home, !!places?.work);
   const btn = useRef<any>(null);
   const show = () => {
     haptic.tap();
-    // iPhone: the system action sheet opened from the + button itself (on iOS 26 a menu from the button, not a panel
-    // in the middle of the screen; Bidur, 25 Oct 7:50 PM: "looks vibe coded").
-    if (Platform.OS === 'ios') showIosSheet({ actions: items, anchor: findNodeHandle(btn.current) });
-    else setOpen(true);
+    const b = btn.current as any;
+    if (b?.measureInWindow) b.measureInWindow((x: number, y: number, w: number, h: number) => setAt({ x, y, w, h }));
+    else setAt({ x: 0, y: 0, w: 0, h: 0 });
   };
   return (
     <>
       <Pressable ref={btn} onPress={show} accessibilityRole="button" accessibilityLabel="Add" accessibilityHint="New trip, star a stop, or set Home or Work"
-        hitSlop={Platform.OS === 'ios' ? 13 : 4} android_ripple={{ color: c.fill, borderless: true, radius: 24 }}
-        style={({ pressed }) => ({ width: Platform.OS === 'ios' ? 30 : 48, height: Platform.OS === 'ios' ? 30 : 48, marginRight: Platform.OS === 'web' ? 8 : 0, alignItems: 'center', justifyContent: 'center', opacity: pressed && Platform.OS !== 'android' ? 0.5 : 1 })}>
-        <Icon name={I.plus} size={Platform.OS === 'ios' ? 22 : 24} color={Platform.OS === 'ios' ? c.tint : c.text} />
+        accessibilityState={{ expanded: !!at }} hitSlop={4} android_ripple={{ color: c.fill, borderless: true, radius: 24 }}
+        style={({ pressed }) => ({ width: Platform.OS === 'web' ? 36 : 48, height: Platform.OS === 'web' ? 36 : 48, marginRight: Platform.OS === 'web' ? 8 : 0, alignItems: 'center', justifyContent: 'center', opacity: pressed && Platform.OS !== 'android' ? 0.5 : 1 })}>
+        <Icon name={I.plus} size={24} color={Platform.OS === 'web' ? c.tint : c.text} />
       </Pressable>
-      {Platform.OS !== 'ios' ? <ActionSheet visible={open} title="Add" actions={items} onClose={() => setOpen(false)} /> : null}
+      <AnchoredMenu visible={!!at} anchor={at} items={items} label="Add" onClose={() => setAt(null)} />
     </>
   );
 }

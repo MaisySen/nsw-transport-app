@@ -113,7 +113,7 @@ test('Home source: Option A only, no design switch, one Add in the navigation ba
   assert.ok(!/action=\{\{ title: 'Add'/.test(home), 'no Add in the middle of the page');
   assert.ok(/look="hero"/.test(home), 'Next trip card');
   assert.ok(/<TabBarSafe overlay/.test(home), 'Undo bar above the tab bar');
-  assert.ok(/ActionSheet visible/.test(home), 'Android and web use the bottom sheet (an Android dialog shows 3 buttons at most)');
+  assert.ok(/<AnchoredMenu visible/.test(home), 'Android and the web: a menu that drops from the + (an Android dialog shows 3 buttons at most)');
   assert.ok(/accessibilityLabel="Add"/.test(home), 'VoiceOver label on Add');
 });
 
