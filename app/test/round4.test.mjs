@@ -112,12 +112,13 @@ test('one address: the old server host is written once, and no first phase names
   assert.deepEqual(bad, [], 'no em or en dashes');
 });
 
-test('Delete all data also deletes the morning checks, and keeps only the install ids and the server address', () => {
+test('Delete all data also deletes the morning checks, and keeps only the install ids, the server address and the push token mark', () => {
   const src = fs.readFileSync(path.join(root, 'src/app/(tabs)/settings/index.tsx'), 'utf8');
   const del = src.slice(src.indexOf('const deleteAll'), src.indexOf('const deleteAll') + 2000);
   assert.match(del, /api\.deleteHistory\('all'\)/);
   assert.match(del, /api\.morningDelete\(\)/);
-  assert.match(del, /\['profile', 'device', 'store', 'apiBase', 'remoteConfig'\]/);
+  // Kept: install ids, the server address and switches, and the mark that stops the phone push token being sent again.
+  assert.match(del, /\['profile', 'device', 'store', 'apiBase', 'remoteConfig', PUSH_FORGOTTEN_KEY\]/);
   const store = fs.readFileSync(path.join(root, 'src/lib/store.ts'), 'utf8');
   assert.match(store, /resetAll\(\) \{[^\n]*\.\.\.EMPTY/, 'the morning mirror goes with resetAll');
   assert.doesNotMatch(src, /Web version/, 'no link to the web app');

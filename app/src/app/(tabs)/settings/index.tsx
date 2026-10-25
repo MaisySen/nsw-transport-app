@@ -27,6 +27,7 @@ import { useFlag } from '@/lib/config';
 import { checkSubtitle, checkTitle } from '@/lib/morning';
 import { clearLastHomeLocal, localLastSupported } from '@/lib/lastHome';
 import { setTrackworkHeadsUp } from '@/lib/trackwork';
+import { forgetPushTokens, PUSH_FORGOTTEN_KEY } from '@/lib/forgetTokens';
 
 /** "1.0.0 (204) · update 01a16ff7": the build on the phone and the update it runs, for support. */
 function versionText() {
@@ -73,6 +74,8 @@ export default function Settings() {
       } catch (e: any) { Alert.alert("Couldn't reach the server", `${e.message} Nothing was deleted. Try again when you're online.`); return; }
       await endLive().catch(() => {});
       await disablePush().catch(() => {});
+      // iPhone trip card and phone push tokens live on the push server; a server without the route is skipped.
+      const tokens = await forgetPushTokens().catch(() => 'failed' as const);
       await syncLiftAlerts(false).catch(() => {});
       clearLastHomeLocal();
       setTrackworkHeadsUp(false).catch(() => {});
@@ -81,13 +84,15 @@ export default function Settings() {
       // address and switches (not personal data; the widgets read the address).
       try {
         const keys = await AsyncStorage.getAllKeys();
-        await AsyncStorage.multiRemove(keys.filter((k) => !['profile', 'device', 'store', 'apiBase', 'remoteConfig'].includes(k)));
+        await AsyncStorage.multiRemove(keys.filter((k) => !['profile', 'device', 'store', 'apiBase', 'remoteConfig', PUSH_FORGOTTEN_KEY].includes(k)));
       } catch {}
       setAskCount(0);
       setPush(await getPushState());
       refresh();
       haptic.success();
-      Alert.alert('All your data is deleted', 'This phone and the server no longer keep your trips, stops or alerts.');
+      Alert.alert('All your data is deleted', tokens === 'failed' && Platform.OS === 'ios'
+        ? 'This phone and the server no longer keep your trips, stops or alerts. The Lock Screen trip card and alert tokens could not be deleted just now; the server deletes them on its own within 30 days.'
+        : 'This phone and the server no longer keep your trips, stops or alerts.');
     } },
   ]);
 
