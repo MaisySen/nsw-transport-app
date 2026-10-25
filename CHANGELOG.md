@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### iPhone build 207 on TestFlight (25 Oct, 6:02 PM)
+* Apple Watch: redesigned app with trip cards (a big countdown in whole minutes, platform, lines, late in amber or red) and new complications. Swap direction and Refresh are rows at the end of the trip list, so nothing covers the first card.
+* Bus stop widgets show the stop number; Edit Widget lists starred bus stops with their stop numbers and routes.
+* Speak alerts use their own audio session: spoken with Silent mode on, other audio lowered while a line is read.
+* New Liquid Glass app icon for iOS 26.
+* Carries the JavaScript of every update through the 5:43 PM one (group 0c0bffd6); over the air updates keep arriving (runtime 1.0.0).
+* EAS build cfa52f8c from native-207 3419ed2, App Store Connect build f2614902, What to Test set, in the Internal and Public groups, Beta App Review approved. Not submitted for App Store review. Not yet seen on a real iPhone or Apple Watch: Build 207 device checklist in docs/TEST_PLAN.md.
+
 ### Choose bus on a trip, an endless list of services, and any time or day (over the air update for iPhone and Android, 25 Oct, 5:43 PM)
 Bidur at 5:20 PM, on Strathfield to Town Hall: "How to choose bus? ... For later service, i have to keep clicking later button??"
 * Mode chips on the trip screen: Any, Train, Bus, plus Metro, Light rail or Ferry when that trip uses them. Tap Bus for bus only trips (Strathfield to Town Hall now shows the 415, 458, 461X, 492, 52 and 504 ways, with stand and stop numbers; there is no direct bus, so they have changes). Train and Bus together works too. The choice stays with that trip on your phone; the default is Any. When nothing runs: "No bus-only trips at this time. Try Any." Works now: bus only trips are planned on api.transportsydney.app (asked directly, like long trips, with no profile or device). If that server does not answer, the phone filters the usual results and says some bus trips may be missing.

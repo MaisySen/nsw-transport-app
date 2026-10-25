@@ -80,15 +80,15 @@ App Store: not shown for the first version (1.0.0).
 
 ## TestFlight What to Test (build 207)
 
-Set on the build in App Store Connect (Test Information, What to Test) when 207 is uploaded. Build 207 is not built yet; check each line against the build before using it.
+Set on build 207 in App Store Connect (en-AU and en-US) on 25 Oct, 6:17 PM, exactly as below:
 
 ```
 New in build 207:
-- Apple Watch: redesigned app and new complications. Install from the Watch app on your iPhone.
+- Apple Watch: redesigned app and new complications. Install from the Watch app on your iPhone. Swap direction and Refresh are at the end of the trip list.
 - Bus stop widgets show the stop number. Edit Widget lists your starred bus stops with their stop numbers and routes.
 - Speak alerts now talk with Silent mode on, and lower your music while they speak.
 - New app icon for iOS 26.
-Also in this build, from the updates since 206: the Next trip card on Home, Live, Timetable and Not tracking labels, bus routes and stop numbers, bus stop boards with Recently departed, and trip reminders by weekday.
+Also in this build, from the updates since 206: the Next trip card on Home, Live, Timetable and Not tracking labels, bus routes and stop numbers, bus stop boards with Recently departed, trip reminders by weekday, Plan B when your line has a problem, Last way home reminder, weekend trackwork heads up, why a service is late, the full screen departure board, and trip mode chips (Train, Bus and more) with an endless list and a Leave at or Arrive by time.
 Please check: the watch app and complications, a bus stop widget, Speak alerts with Silent mode on, and the icon on the Home Screen. Feedback: support@transportsydney.app
 ```
 

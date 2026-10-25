@@ -171,7 +171,7 @@ Earlier runs: 15 (build 6) 10 of 10 light and 9 of 9 dark. Runs 10 and 11 failed
 | Home, Option A (update 25 Oct, 4:34 PM, group 0b1d956d): the plus button in the iOS 26 and 27 glass navigation bar (one glass group with the live stamp, nothing clipped, the action sheet opens from it) and as an Android top app bar action (bottom sheet with 4 choices); Next trip card with VoiceOver (one element, the Delete action) and at the largest Dynamic Type sizes (badges and platform wrap under the countdown, names wrap to two lines); swipe Delete on a row and on the card, then Undo above the floating tab bar within 5 s, and a saved trip that stays deleted after 5 s or after going to the home screen; Show first from a hold menu; dragging rows under the card; widgets and the watch still list the same saved trips after a delete and an Undo; light and dark, 390 and 430 pt wide (test/homea.test.mjs checks the logic and the source) | Not yet seen on a device; checked on the web export at 390 x 844 and 430 x 932, light and dark, with Bidur's trips and live data (`files/home-a-ship/`) |
 | Usually N min late: hidden on today's address (checked: 0 lines on the web build with the old host); shown on the stop board with a route chosen, the service screen and each trip leg once api_base moves (checked with a mocked answer in the web build only). Real answers need weeks of live times on the new host | Not yet seen on a device |
 | Trip reminders: the permission prompt on the first reminder only, a reminder ringing at the set time on the set days with the app closed, a tap opening the trip, Undo after deleting a trip keeping its reminders (update 25 Oct; the web build logs the weekly schedule instead of ringing) | Not yet seen on a device |
-| Speak alerts (update 25 Oct, 3:15 PM): on a real trip, each line spoken once ("Your bus leaves in 2 minutes from stand X1", the next stop and change lines, "You've arrived"), music lowered and not stopped, the switch remembered for the next trip. On build 206 Silent mode mutes the speaker (headphones work); build 207 should speak with Silent mode on | Not yet heard on a device |
+| Speak alerts (update 25 Oct, 3:15 PM): on a real trip, each line spoken once ("Your bus leaves in 2 minutes from stand X1", the next stop and change lines, "You've arrived"), music lowered and not stopped, the switch remembered for the next trip. On build 206 Silent mode mutes the speaker (headphones work); build 207 should speak with Silent mode on (Build 207 device checklist, items 9 to 11) | Not yet heard on a device |
 | Bus route view and stop numbers (update 25 Oct, 3:15 PM): search 410 and 2046100 in Plan, Route on a bus service and on a bus leg, "Stop 2046100" on bus rows, Home stop cards, bus legs and the live trip | Not yet seen on a device; checked in the web build |
 | Station picker and bus picker (updates 25 Oct, 3:06 PM and 3:30 PM): no Back button or title over the screen on iPhone, the question in the search field, no caps lock in search fields; the bus picker opening on Near you (only when location is already allowed), then saved and recent stops, then Sydney routes, with trackwork, school and regional routes closed at the end | Not yet seen on a device; checked in the web build |
 | Website (25 Oct, 5:10 PM, Pages deployment 6a3ba944): home, support, privacy and terms answer 200, the four screens load, www redirects, /beta 302, /plan and /stop links show the Open in the app page, a random path 404 | Done with curl after the deploy |
@@ -183,6 +183,43 @@ Earlier runs: 15 (build 6) 10 of 10 light and 9 of 9 dark. Runs 10 and 11 failed
 | Trip screen modes, endless list and time chip (update 25 Oct, see RELEASES): Strathfield to Town Hall, tap Bus: bus trips with stand and stop numbers (seen in the web build with live data: 415, 492, 52 and 461X with changes, there is no direct bus); Train and Bus together; the choice still there after closing the trip and opening it again; Any back. Scroll to the end: a small Loading later services row, more services, then No more services found for this day (seen in the web build: 8 batches to about 4am). Pull at the top: earlier services. The Leave now chip: the iOS sheet with the day row on iOS 26 and 27, the Material dialog on Android, VoiceOver reads each chip as selected or not, Dynamic Type at the largest sizes wraps the time chip, Now one tap back. Not yet seen on a device |
 | Android closed app push | Needs a Firebase project (see [Roadmap](ROADMAP.md)) |
 | Play phone screenshots | Rendered from the app code at phone size; replace with device captures from the first internal test build |
+
+## Build 207 device checklist
+
+Build 207 is on TestFlight (25 Oct, 6:15 PM): EAS build cfa52f8c-d54e-49ce-b2ab-eb30f7101a63, App Store Connect build f2614902-1e63-4399-8e73-87ec2a7931b7, Internal and Public groups, Beta App Review approved, external state In Beta Testing. Nothing below has been ticked yet. Not in 207 (follow up on `native-207` for the next build, from Bidur's 206 widget screenshots): trip widget times in one column, the alert on more lines, the Start button inside the margins, status words never cut, and a bigger countdown on the small widget.
+
+Run on a real iPhone (iOS 26 and iOS 27.1) and a real Apple Watch paired with it, after installing 207 from TestFlight. The EAS simulator check (watchshots profile) compiles everything and draws the widgets, but none of this has been seen on a device. Tick each line in the release record in [RELEASES.md](RELEASES.md).
+
+**Install and update**
+1. Settings, About shows version 1.0.0 (207). Over the air updates still arrive: the latest production group loads after two restarts (runtime 1.0.0).
+2. Upgrade over 206 keeps saved trips, starred stops, Home and Work, reminders and the Speak switch.
+3. The app icon on light, dark, clear and tinted Home Screens (Liquid Glass, Icon Composer file); no white frame.
+
+**iPhone widgets**
+4. Trip widget small, medium and large: whole minutes only (no seconds), each service gone the minute it leaves, the line badge in its official colour (buses always bus blue), live or timetable status.
+5. Stop board widget on a bus stop (star Five Dock Shops, Great North Rd, then Edit Widget): "Stop 2046100" next to the name; a station board shows no stop number.
+6. Edit Widget, Stop: starred bus stops show "Stop 2046100" and their routes under the name; choosing one still works after the app is updated again.
+7. Tinted and clear Home Screens: outlined badges with readable text. Lock Screen inline, circular and rectangular widgets, StandBy at night: readable, one tint.
+8. Battery: over a normal day the widgets refresh about every 5 to 15 minutes (every 1 to 5 during a live trip) and keep counting down between refreshes; Settings, Battery shows no unusual Transport background use.
+
+**Speak alerts (needs 207)**
+9. Silent switch on, no headphones: start a trip with Speak alerts on; the lines are spoken through the speaker.
+10. Music or a podcast playing: music is lowered while a line is read and comes back to full volume after; a podcast pauses and can be resumed.
+11. Locking the phone stops speech (no background audio by design); unlocking and opening the app speaks the next line.
+
+**Apple Watch**
+12. The watch app installs with 207 and opens to the saved trips list (Home to Work first when set), scrolled with the Digital Crown.
+13. Tap a trip: the next 6 services as cards with a big countdown in whole minutes, platform, lines and "11:56 to 12:18"; amber or red when late. Tap a card for its legs.
+14. watch trip screen: first card fully visible above Swap and Refresh. Nothing floats over the cards: Swap direction and Refresh are rows at the end of the list (the simulator check 70dd1762 had them as bottom bar buttons over "8 min late" and "Next: 5, 16 mins"). Check on a 42 mm or 41 mm watch and at the largest text size too.
+15. Swap direction, Refresh and pull to refresh respond at once with a haptic; swipe a row to swap.
+16. Times refresh every 30 seconds only while the app is on screen; with the wrist down nothing loads (check with Low Power Mode off and on).
+17. No signal (Airplane Mode on the watch, phone away): the times the iPhone last sent show, marked with when they were updated.
+18. Complications on a face (Modular, Infograph) and in the Smart Stack: rectangular "T1 Strathfield 2, 16, 18 min", inline, circular and corner; whole minutes; a tap opens that trip, also from a cold start.
+19. A new or reordered saved trip on the phone reaches the watch within a minute while both are awake.
+20. VoiceOver on the watch reads each card as one element; the largest Dynamic Type size wraps without cutting the countdown.
+
+**Unchanged in 207 (regression)**
+21. Live Activity and Dynamic Island on a trip, trip reminders ringing with the app closed, last train home reminder, notifications permission asked only on the first reminder, location asked only when in use (no Always prompt).
 
 ## Before a release
 
