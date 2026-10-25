@@ -6778,7 +6778,7 @@ async function handleRequest(request, env, exec) {
           const depKey = (p.get("stop") || "") + "|" + (p.get("mode") || "") + (at ? "|" + at.date + at.time : "");
           const depHit = depMem.get(depKey);
           let r;
-          if (depHit && Date.now() - depHit.at < 12000) r = await depHit.p;
+          if (depHit && Date.now() - depHit.at < (p.get("refresh") === "1" ? REFRESH_MAX_AGE_MS : 12000)) r = await depHit.p;
           else {
             const pr = departures(env, p.get("stop"), { mode: p.get("mode") || null, ctx: exec, ...(at ? { at } : {}) });
             depMem.set(depKey, { at: Date.now(), p: pr });
@@ -7261,6 +7261,11 @@ async function handleRequest(request, env, exec) {
 // profile and device, so many phones looking at the same board cost one upstream call.
 const EDGE_CACHE_RE = /^\/api\/(departures|trip|plan|service|status|alerts|stations|search|nearby|station|parking|topup|lifts)$/;
 const EDGE_CACHE_S = 15;
+// A refresh (refresh=1: the app's own polls and pull to refresh) takes a shared answer only while it is at most this
+// old, so a realtime change reaches a polling phone within seconds instead of up to 30 (edge copy plus the departures
+// copy below). Everyone at the same stop in a data centre still shares one Trip Planner call per 5 s. Measured
+// 26 Oct 2026, 9:31am: the departures lag behind the Trip Planner was 5 to 16 s median, 24 s worst, with 15 s.
+const REFRESH_MAX_AGE_MS = 5000;
 const EDGE_SKIP = new Set(["profile", "device", "refresh", "_"]);
 function edgeKey(url) {
   const u = new URL(url.origin + url.pathname);
@@ -7344,7 +7349,10 @@ export default {
     const cache = request.method === "GET" && EDGE_CACHE_RE.test(url.pathname) && !badInput(url.searchParams) ? edgeCache() : null;
     if (cache) {
       const key = edgeKey(url);
-      const hit = await cache.match(key).catch(() => null);
+      let hit = await cache.match(key).catch(() => null);
+      // When the copy was made (x-stored-at, set below). A refresh skips a copy older than REFRESH_MAX_AGE_MS.
+      const storedAt = hit ? Number(hit.headers.get("x-stored-at")) || 0 : 0;
+      if (hit && url.searchParams.get("refresh") === "1" && !(storedAt && Date.now() - storedAt <= REFRESH_MAX_AGE_MS)) hit = null;
       if (hit) {
         if (!rateOk(request, url.pathname)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
         // A trip from the cache still counts toward commute memory.
@@ -7355,7 +7363,11 @@ export default {
         }
         // Answers carry the server clock in "now" for the countdowns; a cached one gets the current time.
         let body = await hit.text();
-        if (/json/.test(hit.headers.get("content-type") || "")) body = body.replace(/"now":\d{13}/g, '"now":' + Date.now());
+        // The answer says when its times were read (dataAt), so the app's "Updated" line is honest about a cached copy.
+        if (/json/.test(hit.headers.get("content-type") || "")) {
+          body = body.replace(/"now":\d{13}/g, '"now":' + Date.now());
+          if (storedAt && /^\{\s*"/.test(body) && !/^\{"dataAt":/.test(body)) body = '{"dataAt":' + storedAt + "," + body.slice(1);
+        }
         const r = new Response(body, hit);
         r.headers.set("cache-control", "no-store");
         r.headers.set("x-edge-cache", "hit");
@@ -7365,6 +7377,7 @@ export default {
       if (res.status === 200) {
         const copy = new Response(res.clone().body, res);
         copy.headers.set("cache-control", `public, max-age=${EDGE_CACHE_S}`);
+        copy.headers.set("x-stored-at", String(Date.now()));
         const put = cache.put(key, copy).catch(() => null);
         if (exec && exec.waitUntil) exec.waitUntil(put);
       }
