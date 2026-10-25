@@ -1101,7 +1101,8 @@ function fareOf(legs, type = "adult", forcePeak = null) {
   const groups = [];
   const perLeg = [];
   for (const l of tl) {
-    const fam = fareFamily(l.mode);
+    // NSW TrainLink regional trains and coaches are booked fares, not Opal.
+    const fam = l.feed === "nswtrains" ? null : fareFamily(l.mode);
     const dep = ms(l.estimated || l.planned), arr = ms(l.arrEstimated || l.arrPlanned);
     const km = fam ? fareKm(l, fam) : null;
     const prev = groups[groups.length - 1];

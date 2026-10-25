@@ -17,6 +17,21 @@ export function money(v?: number | null) {
 /** The fare for a whole journey, or null when the server sent none. */
 export const fareOf = (j?: Journey | null): Fare | null => (j && j.fare && j.fare.total != null ? j.fare : null);
 
+/** Where NSW TrainLink regional seats are booked. */
+export const TRAINLINK_BOOKING_URL = 'https://transportnsw.info/regional-bookings/';
+/**
+ * Which fare a journey needs: 'opal' (an Opal estimate), 'booked' (NSW TrainLink regional only: no Opal fare, book a
+ * seat), 'mixed' (an Opal part plus a booked TrainLink part), or null (nothing to show).
+ */
+export function fareKind(j?: Journey | null): 'opal' | 'booked' | 'mixed' | null {
+  if (!j) return null;
+  const booked = (j.legs || []).some((l) => l.kind === 'transit' && l.feed === 'nswtrains');
+  const f = fareOf(j);
+  const opal = !!f && (f.legs || []).some((l: any) => l.amount != null && l.amount > 0) && Number(f.total) > 0;
+  if (booked) return opal ? 'mixed' : 'booked';
+  return f ? 'opal' : null;
+}
+
 /** "Adult, off peak" with any transfer discount and airport fee. */
 export function fareWords(f: Fare) {
   const bits = [`${f.typeName}${f.peak ? ', peak' : ', off peak'}`];

@@ -13,7 +13,7 @@ import { bestTime, clock, durText, ms, plainText, shortName } from '@/lib/format
 import { store, useStore } from '@/lib/store';
 import { safeUrl, stShort } from '@/lib/access';
 import { LegAccessChips, ParkGroup } from '@/components/Access';
-import { fareOf, fareWords, money, offPeakText } from '@/lib/fare';
+import { fareKind, fareOf, fareWords, money, offPeakText, TRAINLINK_BOOKING_URL } from '@/lib/fare';
 import { getLive, startLive } from '@/lib/live';
 import { directFilter, isChain, planTrip, stName, tLegs, tripKey, viaText } from '@/lib/trips';
 import type { TripLeg } from '@/lib/trips';
@@ -149,6 +149,30 @@ function Transfer({ a, b }: { a: Leg; b: Leg }) {
 /** Opal fare estimate for one journey: total, each leg, transfer discount, airport fee, daily cap, off peak nudge. */
 function FareCard({ j }: { j: Journey }) {
   const c = usePalette();
+  const kind = fareKind(j);
+  if (kind === 'booked') return <TrainLinkFare />;
+  return <OpalFareCard j={j} mixed={kind === 'mixed'} />;
+}
+
+/** NSW TrainLink regional trains and coaches: a booked seat, not Opal. One tap to their booking page. */
+function TrainLinkFare() {
+  const c = usePalette();
+  return (
+    <Pressable onPress={() => Linking.openURL(TRAINLINK_BOOKING_URL).catch(() => {})} accessibilityRole="link" accessibilityHint="Opens NSW TrainLink bookings"
+      style={({ pressed }) => [{ marginHorizontal: 16, marginTop: 10, backgroundColor: c.card2, borderRadius: radius, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, minHeight: 48 }, pressed ? { opacity: 0.7 } : null]}>
+      <Icon name={I.fare} size={16} color={c.text2} />
+      <View style={{ flex: 1, marginLeft: 8 }}>
+        <T kind="body">NSW TrainLink fare</T>
+        <T kind="foot" tone="text2">Not an Opal trip. Book a seat ahead.</T>
+      </View>
+      <T kind="foot" tone="tint" style={{ fontWeight: '600' }}>Book</T>
+      <Icon name={I.chevron} size={12} color={c.tint} style={{ marginLeft: 4 }} />
+    </Pressable>
+  );
+}
+
+function OpalFareCard({ j, mixed }: { j: Journey; mixed: boolean }) {
+  const c = usePalette();
   const f = fareOf(j);
   if (!f) return null;
   const sub = (label: string, val: string, tone?: string) => (
@@ -186,6 +210,7 @@ function FareCard({ j }: { j: Journey }) {
         ))}
         {f.capped ? sub('Daily cap reached', '') : null}
         {op ? <T kind="foot" style={{ color: c.liveText, fontWeight: '600', paddingHorizontal: 14, marginTop: 6 }}>{op}</T> : null}
+        {mixed ? <T kind="foot" tone="text2" style={{ paddingHorizontal: 14, marginTop: 6 }}>Plus the NSW TrainLink fare for the regional part, booked ahead.</T> : null}
         <T kind="foot" tone="text2" style={{ paddingHorizontal: 14, marginTop: 6 }}>An estimate from the Opal fare tables, not your card's charge. Fare type is in More.</T>
       </View> : null}
     </View>

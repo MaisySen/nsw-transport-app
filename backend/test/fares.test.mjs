@@ -121,3 +121,11 @@ test("clients send the fare type and show the estimate", () => {
   assert.match(ask, /fare: LS\.get\("tb_fare", "adult"\)/);
   assert.match(ask, /ak-fare/);
 });
+
+test("NSW TrainLink regional legs are booked fares, not Opal", () => {
+  const xpt = { ...leg("train", 640, SAT("08:42"), 446), feed: "nswtrains" };
+  const f = W.fareOf([xpt], "adult");
+  assert.equal(f.unknown, true);
+  assert.equal(f.legs[0].amount, null);
+  assert.equal(f.total, 0);
+});

@@ -134,3 +134,17 @@ test('quieter carriage hint only from live carriage data', async () => {
   assert.equal(O.quietText(null), null);
   assert.match(read('src/components/Transit.tsx'), /<QuietChip v=\{d\.vehicle\} \/>/);
 });
+
+test('NSW TrainLink regional trips show a booked fare, not Opal', async () => {
+  const src = fs.readFileSync(path.join(here, '..', 'src/lib/fare.ts'), 'utf8').replace(/^import .*$/gm, '');
+  const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const f = path.join(out, 'fare.mjs'); fs.writeFileSync(f, js);
+  const F2 = await import(pathToFileURL(f).href);
+  const xpt = { kind: 'transit', mode: 'train', line: '621', feed: 'nswtrains' };
+  const t1 = { kind: 'transit', mode: 'train', line: 'T1' };
+  assert.equal(F2.fareKind({ legs: [xpt], fare: { total: 0, unknown: true, legs: [{ amount: null }] } }), 'booked');
+  assert.equal(F2.fareKind({ legs: [t1, xpt], fare: { total: 4.2, legs: [{ amount: 4.2 }, { amount: null }] } }), 'mixed');
+  assert.equal(F2.fareKind({ legs: [t1], fare: { total: 4.2, legs: [{ amount: 4.2 }] } }), 'opal');
+  assert.equal(F2.fareKind({ legs: [t1] }), null);
+  assert.equal(F2.TRAINLINK_BOOKING_URL, 'https://transportnsw.info/regional-bookings/');
+});
