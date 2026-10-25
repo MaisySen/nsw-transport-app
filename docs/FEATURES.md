@@ -19,7 +19,15 @@ The iPhone and Android apps are one Expo app (`app/`). Anything below marked "ov
 * **Live labels** on every countdown (departures, trip screen, live trip, Home): "Live, updated 15 s ago", "Timetable" (grey, no live data for that service) or "Not tracking" (live data went stale, so the timetable time is shown instead of a countdown). A timetable time that has passed never says "left". See [LIVE-LABELS.md](LIVE-LABELS.md).
 * Departure boards refresh while open and pause in the background ([PERFORMANCE.md](PERFORMANCE.md)).
 * **Why it's late** (over the air): a late, cancelled or changed service shows one line with the reason from its own Transport for NSW alert ("Delayed: signal repairs at Redfern"); tap it for the full alert. Nothing is shown when the alert gives no reason. On departure rows, trip legs and services, Home trip cards and the live trip. See [WHY-LATE.md](WHY-LATE.md).
+* **Hold a departure** (over the air, 25 Oct, about 10:00 PM): on a stop screen, the full board's list rows and Home stop cards, tap and hold opens the system context menu on iPhone (Watch or Stop watching, Show stops, SF Symbols, no Cancel), the Material 3 menu on Android; VoiceOver lists both as actions. A swipe still watches in one move.
 * **Departure board** (over the air): Board at the top right of a station or stop opens a full screen board like the platform screens: line, destination, platform or stand, where trains stop after this station, minutes and Live, Timetable or Not tracking on every row. Dark, with a Light board button; grows with the text size setting; works in portrait and landscape; keeps the screen on only while it is open.
+
+## Car parks (over the air, 25 Oct, about 10:00 PM)
+
+* **Car park row on a station:** a train station with a Transport Park and Ride car park shows one row under its name, "Car park: 218 free of 228" (or "Car parks" with the free spaces across a station's car parks) and when Transport for NSW read it ("Updated 9:40pm, 3 min ago"). A car park without a live count says "no live count right now"; a station without one shows nothing. Tap opens the car park.
+* **Car park detail:** live free spaces of the total, Spaces free, Nearly full or Full, a fill bar, the reading time, "usually full by" when the server has it, the address, and **Directions**: Apple Maps on iPhone, Google Maps on Android, driving to the car park's coordinates. On iPhone it opens as a sheet with a grabber.
+* **More > Car parks:** every Park and Ride car park with live spaces, closest first when location is already allowed (low accuracy, never asks), else A to Z; a tap opens the same detail, with Station departures. The alert bell stays on the station's Park and Ride section.
+* Data: `/api/parking` on the server (Transport for NSW Car Park API, the server's own key, readings cached 90 s), see [API.md](API.md). No numbers are made up.
 
 ## Buses
 

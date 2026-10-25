@@ -169,6 +169,8 @@ Distances: train, metro and ferry along the route; bus and light rail in a strai
 
 Nearly full means 10 percent or fewer spaces left, or 10 or fewer on a small car park. Car park readings are cached for 90 seconds, the full list for 10 minutes, lift outages for 5 minutes.
 
+App use (over the air, 25 Oct, about 10:00 PM): a station's car park row reads `parking` from `/api/station`; the car park detail reads `/api/parking?id=<facility>` (or `?stop=<station>` for a station with several); More > Car parks reads `/api/parking`. Each car park already carries the facility id, name, `lat` and `lon`, `spots`, `free`, `updated` and `stale`, so no separate `/api/carparks` route was added and the server was not redeployed. The server's own Transport for NSW key covers the Car Park API (`/v1/carpark?facility=`), checked live on 25 Oct: 41 car parks answered with readings minutes old.
+
 Trip results: `/api/trip`, `/api/plan`, `/api/next` and `/api/ask` take `acc=1` for step free trips only (the Trip Planner `wheelchair=on` option; the answer then has `accessible: true`). Every transit leg gets `access: {from, to}`, each `{id, level, lift, outage, outages}` for the station where you board and get off. When the first leg starts at a Park and Ride station the answer has `parking: {station, carparks, source}`. Ask trip replies add lines for step free only, a lift outage on the trip, and the Park and Ride spaces.
 
 Ask: parking, lift and top up questions answer with `kind: "facility"`, a `reply`, and cards of type `parking` (`title`, `items` as above, `source`) or `station` (`station`: `id`, `name`, `access`, `ticket`, `outages`, `parking`, `source`). Clients that do not know these card types can show the reply text alone.
