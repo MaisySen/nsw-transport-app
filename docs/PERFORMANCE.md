@@ -28,7 +28,8 @@ Written 25 Oct 2026 after the battery, smoothness and iOS audit (report: files/q
    `getCurrentPositionAsync` with `Accuracy.Balanced` (about 100 m: wifi and cell, little GPS). Never `High`,
    `Highest` or `BestForNavigation` (a test checks). The live trip map watch is Balanced, every 10 s or 30 m, and
    runs only while the live trip screen is on view with the app in front.
-6. **Screen wake lock** only on the full screen board, taken on focus and released on blur (a test checks).
+6. **Screen wake lock** only on the full screen board, taken on focus and released on blur (a test checks). Since 25 Oct the board checks for the native keep awake module first (`requireOptionalNativeModule('ExpoKeepAwake')`) and skips the wake lock on a build without it. Where trains stop after the station is read once per service (`/api/service`, at most 3 at a time, kept for the session), not polled.
+7. **Why it's late** asks `/api/alerts?q=<line>` only when a screen's own live data shows a late, cancelled or changed service with linked alerts, once per line, kept 3 min; no timer of its own ([WHY-LATE.md](WHY-LATE.md)).
 7. **Background.** Nothing in JS runs in the background. The lock screen trip card is moved by server push
    (build 205), not by the app waking up. UIBackgroundModes stays empty unless a feature truly needs one (a test
    checks app.json).

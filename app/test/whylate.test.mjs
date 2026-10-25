@@ -88,7 +88,8 @@ test('cancelled and changed services, cause first titles, case and length', () =
   assert.equal(w.whyLate({ cancelled: true, alerts: ['p'] }, b2).text, 'Cancelled: police operation at Central');
   assert.equal(w.whyLate({ delayMin: 4, realtime: true, alerts: ['p'] }, b2).text, 'Delayed: police operation at Central');
   const ch = w.whyLate({ delayMin: 0, realtime: true, alerts: ['n'] }, b2);
-  assert.equal(ch.text, 'Urgent track repairs');
+  assert.equal(ch.text, 'Changed: urgent track repairs');
+  assert.equal(w.forJourney(ch, 'T3', 2).text, 'T3 changed: urgent track repairs');
   assert.equal(ch.kind, 'changed');
   const long = [{ id: 'l', title: 'Trains are delayed due to an earlier incident involving a broken down freight train between Granville and Harris Park near the old signal box and the yard' }];
   const r = w.whyLate({ delayMin: 6, realtime: true, alerts: ['l'] }, long);
@@ -111,6 +112,16 @@ test('lines to ask for full text: only rows that could show a reason, each line 
   assert.deepEqual(w.linesToAsk(rows, board), ['T4']);
   assert.deepEqual(w.linesToAsk([{ line: '410', delayMin: 4, realtime: true, alerts: ['c5212ba1'] }, ...rows], board), ['410', 'T4']);
   assert.deepEqual(w.linesToAsk(rows, board, 1), ['T4']);
+});
+
+test('a journey card names the line when the trip has more than one ride', () => {
+  const leg = { delayMin: 16, realtime: true, alerts: [board[0]] };
+  const r = w.whyLate(leg, board, full);
+  assert.equal(w.forJourney(r, 'T4', 2).text, 'T4 delayed: incident requiring emergency services at Allawah');
+  assert.equal(w.forJourney(r, 'T4', 1).text, 'Delayed: incident requiring emergency services at Allawah');
+  assert.equal(w.forJourney(null, 'T4', 2), null);
+  const c = w.whyLate({ cancelled: true, alerts: [{ title: 'Police operation at Central', priority: 'high' }] }, []);
+  assert.equal(w.forJourney(c, 'T1', 2).text, 'T1 cancelled: police operation at Central');
 });
 
 test('no dashes in the words the screens show', () => {

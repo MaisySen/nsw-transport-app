@@ -3,7 +3,7 @@
 // and the full alert text from /api/alerts for the same alert. Pure, so it is unit tested (test/whylate.test.mjs).
 //
 // Rules: a reason shows only when the service itself is delayed (2 min or more, live), cancelled, or has an alert
-// of its own trip ("Running late", "Not stopping at", "Now ending at", "Starting from"); the reason must be written
+// of its own trip ("Running late", "Not stopping at", "Now ending at", "Starting from", shown as Changed); the reason must be written
 // in an alert linked to that service ("due to signal repairs at Redfern", or an alert that starts with the cause,
 // "Police operation at Central"); nothing is guessed from the line, the time or other alerts. No reason, no line.
 
@@ -108,11 +108,11 @@ export function whyLate(s: WhyInput, board: WhyAlert[] | null | undefined, texts
     if (!reason) continue;
     const late = delayed || /^running late\b/i.test(clean(a.title));
     const kind: Why['kind'] = cancelled ? 'cancelled' : late ? 'delayed' : 'changed';
-    const lead = kind === 'cancelled' ? 'Cancelled: ' : kind === 'delayed' ? 'Delayed: ' : '';
+    const lead = kind === 'cancelled' ? 'Cancelled: ' : kind === 'delayed' ? 'Delayed: ' : 'Changed: ';
     // A common first word follows the lead in lower case ("Delayed: police operation at Central"); a name keeps
     // its capital ("Delayed: Sydney Trains crew shortage").
     const first = reason.charAt(0);
-    const fixed = lead ? (COMMON_FIRST.test(reason) ? first.toLowerCase() + reason.slice(1) : reason) : first.toUpperCase() + reason.slice(1);
+    const fixed = COMMON_FIRST.test(reason) ? first.toLowerCase() + reason.slice(1) : reason;
     return { text: shorten(lead + fixed), reason, kind, alert: { id: a.id || '', title: clean(a.title) || reason, url: a.url } };
   }
   return null;
@@ -132,6 +132,17 @@ export function linesToAsk(rows: (WhyInput & { line?: string | null })[], board:
     if (out.length >= max) break;
   }
   return out;
+}
+
+/**
+ * The same reason said for a whole journey, naming the line when the journey has more than one ride, so a card
+ * that says On time for its first train does not seem to contradict "Delayed" ("T4 delayed: signal repairs").
+ */
+export function forJourney(w: Why | null, line: string | null | undefined, rides: number): Why | null {
+  if (!w || rides < 2 || !line) return w;
+  const lead = `${line} ${w.kind}: `;
+  const body = w.text.replace(/^(Delayed|Cancelled|Changed): /, '').replace(/\u2026$/, '');
+  return { ...w, text: shorten(lead + body) };
 }
 
 /** What VoiceOver and TalkBack read for the line. */

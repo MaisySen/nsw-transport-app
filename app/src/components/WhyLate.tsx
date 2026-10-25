@@ -4,7 +4,7 @@ import { Linking, Pressable, View, type StyleProp, type ViewStyle } from 'react-
 import { usePalette } from '@/lib/theme';
 import { safeUrl } from '@/lib/access';
 import { haptic } from '@/lib/haptic';
-import { whyA11y, type Why } from '@/lib/whyLateCore';
+import { forJourney, whyA11y, type Why } from '@/lib/whyLateCore';
 import { useMemo } from 'react';
 import { useWhyLate } from '@/lib/whyLate';
 import type { Journey } from '@/lib/types';
@@ -50,7 +50,7 @@ export function withWhyAction<P extends { accessibilityActions?: { name: string;
 export function useJourneyWhy(j: Journey | null | undefined): Why | null {
   const legs = useMemo(() => (j ? j.legs.filter((l) => l.kind === 'transit') : []), [j]);
   const of = useWhyLate(legs);
-  for (const l of legs) { const w = of(l); if (w) return w; }
+  for (const l of legs) { const w = of(l); if (w) return forJourney(w, l.line, legs.length); }
   return null;
 }
 
