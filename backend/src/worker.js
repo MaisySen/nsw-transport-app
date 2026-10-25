@@ -912,16 +912,51 @@ async function addTraffic(env, d, hazardsFn = trafficHazards) {
 const LONG_TRIP_TIMEOUT_MS = 35000;
 const LONG_TRIP_CACHE_S = 120;
 function longTripCacheKey(p) {
-  const keep = ["from", "to", "time", "arriveBy", "count", "acc", "fare"];
+  const keep = ["from", "to", "time", "date", "modes", "arriveBy", "count", "acc", "fare"];
   const u = new URL("https://cache.internal/long-trip");
   for (const k of keep) { const v = p.get(k); if (v) u.searchParams.set(k, v); }
   return u.toString();
 }
 
+// Mode chips on the trip screen (modes=bus,train): which planner product classes to keep, the rest left out
+// with excludedMeans=checkbox and exclMOT_n (Trip Planner manual), then every journey checked again here.
+const TRIP_MODE_CLASSES = { train: [1], metro: [2], lightrail: [4], bus: [5, 7, 11], coach: [7], ferry: [9] };
+function tripModesParse(raw) {
+  const out = [];
+  for (const m of String(raw || "").toLowerCase().split(",").map((x) => x.trim())) if (TRIP_MODE_CLASSES[m] && !out.includes(m)) out.push(m);
+  return out.sort();
+}
+function tripModesExclude(modes) {
+  if (!modes.length) return null;
+  const keep = new Set(modes.flatMap((m) => TRIP_MODE_CLASSES[m]));
+  const ex = { excludedMeans: "checkbox" };
+  for (const c of [1, 2, 4, 5, 7, 9, 11]) if (!keep.has(c)) ex["exclMOT_" + c] = "1";
+  return ex;
+}
+function tripModesKeep(journeys, modes) {
+  if (!modes.length) return journeys;
+  const ok = new Set(modes.flatMap((m) => (m === "bus" ? ["bus", "coach"] : [m])));
+  return (journeys || []).filter((j) => {
+    const tl = (j.legs || []).filter((l) => l.kind === "transit");
+    return tl.length > 0 && tl.every((l) => ok.has(l.mode));
+  });
+}
+// A day for the planner: YYYYMMDD from today to 14 days ahead (Sydney), else null.
+function tripDate(raw, now = Date.now()) {
+  const v = String(raw || "");
+  if (!/^\d{8}$/.test(v)) return null;
+  const today = sydneyParts(new Date(now)).date, last = sydneyParts(new Date(now + 14 * 86400000)).date;
+  return v >= today && v <= last ? v : null;
+}
+
 async function trip(env, fromId, toId, opts = {}) {
   let { date, time } = sydneyParts();
   let tomorrow = false;
-  if (opts.time) {
+  if (opts.date) {
+    // A chosen day (trip screen time picker): that day at the given time, or from midnight.
+    date = opts.date;
+    time = opts.time || "0000";
+  } else if (opts.time) {
     const toMin = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(2));
     if (toMin(opts.time) < toMin(time) - 30) { date = sydneyParts(new Date(Date.now() + 86400000)).date; tomorrow = true; }
     time = opts.time;
@@ -6498,7 +6533,12 @@ async function handleRequest(request, env, exec) {
           const want = Math.max(1, Math.min(8, Number(p.get("count") || 5) || 5));
           const liftAware = acc && (await serverOn(env, "liftAwareRouting"));
           // Lift aware: ask for a few more trips so one that avoids a lift outage can be found.
-          const r = await trip(env, p.get("from"), p.get("to"), { time: p.get("time") || null, arriveBy: p.get("arriveBy") === "1", count: liftAware ? Math.min(8, want + 3) : want, accessible: acc, long });
+          const modes = tripModesParse(p.get("modes"));
+          const day = tripDate(p.get("date"));
+          const r = await trip(env, p.get("from"), p.get("to"), { time: p.get("time") || null, date: day, arriveBy: p.get("arriveBy") === "1", count: liftAware ? Math.min(8, want + 3) : want, accessible: acc, long, exclude: tripModesExclude(modes) });
+          // modes and date are echoed so the app knows this server honoured them (an older server does not).
+          if (modes.length) { r.journeys = tripModesKeep(r.journeys, modes); r.modes = modes; }
+          if (day) r.date = day;
           // A link with stop ids and no names takes the names from the first trip found.
           const given = (k) => { const v = (p.get(k) || "").trim(); return v && !/^\d+$/.test(v) ? v : null; };
           const d = { kind: "trip", from: { id: p.get("from"), name: given("fromName") || tripEndName(r, "from") || p.get("from") }, to: { id: p.get("to"), name: given("toName") || tripEndName(r, "to") || p.get("to") }, ...r };
