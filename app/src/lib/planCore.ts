@@ -143,3 +143,16 @@ export function clearAllWords(what: 'trips' | 'stops', count: number, ios: boole
     ? { title: ios ? 'Clear All Trips?' : 'Clear all trips?', message: `This removes ${n} from Your trips. Your commute stays.`, confirm: ios ? 'Clear All' : 'Clear all' }
     : { title: ios ? 'Clear All Starred Stops?' : 'Clear all starred stops?', message: `This unstars ${n}.`, confirm: ios ? 'Clear All' : 'Clear all' };
 }
+
+/**
+ * Arrive by: the trip to open first, the one that leaves last and still arrives by the time (the one you would
+ * take). -1 when none arrives in time.
+ */
+export function arriveByIndex(list: { leave: number; arrive: number }[], by: number): number {
+  let best = -1;
+  list.forEach((j, i) => {
+    if (!Number.isFinite(j.leave) || !Number.isFinite(j.arrive) || j.arrive > by) return;
+    if (best < 0 || j.leave > list[best].leave) best = i;
+  });
+  return best;
+}
