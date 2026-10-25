@@ -4,13 +4,18 @@ Bidur, 25 Oct 3:09 PM: "Home page looks clustered. Add buttons in middle of scre
 
 ## Home now, top to bottom
 
+Updated 25 Oct, evening: Bidur at 7:07 PM sent a mockup with "Yes commute should be main element here. Alerts should be minimized until open." and his own Home with "Ours look too much" (a Trip in progress bar, Watching now, "9 alerts on your trips" and a large trackwork card all sat above the commute card, which started halfway down).
+
 1. Navigation bar: title Home, the live stamp (or Offline) and one Add button (plus icon) at the top right.
-2. Trip in progress bar, the high priority alert banner, Watching now, and the commute suggestion, each only when there is one.
-3. Alerts on your trips: one line, "6 alerts on your trips", that opens in place to list them. Last train home, weekend trackwork and line status: one card or line each, only when something is on.
-4. Next trip card (titled Your commute when Home and Work are set, else Next trip): a big countdown, line badges, where to board (Platform 2; for a bus the stand and stop number, Stand X1, Stop 213723), the live label (3 min late, Live, updated 20 s ago; Timetable; Not tracking), leave and arrive with the journey time, and "Then 12, 19 min". The commute card keeps the swap button and the leave time and morning check lines.
-5. Your trips: every other trip as a compact row (name; badges, status and where to board; the next two times; the countdown at the right edge), the drag handle to reorder, swipe to delete, Clear all in the section header.
-6. Starred stops, then Nearby, as before.
-7. No trips: "Save the trips you take" with a large Add a trip button.
+2. One slim bar, only when there is something live: "In transit · Central to Strathfield" with the line badge while a trip is in progress (opens the live trip), or "Watching · title · Departs in 5 min" for a single watched trip when nothing is in progress. A watch of the live trip is not shown again (`topBar` in src/lib/noticesCore.ts).
+3. Next trip card (titled Your commute when Home and Work are set, else Next trip): a big countdown, line badges, where to board, the live label, Why it's late (one line), leave and arrive with the journey time, "Then 12, 19 min", Plan B (one line). The commute card keeps the swap button; When to leave and Check before I go are small buttons at its foot, and the leave time with its bell is one line.
+4. Notifications: a small header and one row of chips that scrolls sideways, all closed at first (components/Notices.tsx, `noticeChips` in noticesCore.ts). In order: a high priority alert by its first words (count when more), each line with a problem ("T4 Delays"), "9 trip alerts", "Trackwork this weekend" (count when more), "Watching 2 trips". A tap opens the chip's full text under the row, each line linking to Transport for NSW's page, the trip or the watch; a second tap closes it; one chip is open at a time.
+5. Make this your commute (when suggested), Calendar leave by, Last way home, in that order.
+6. Your trips: every other trip as a compact row, the drag handle to reorder, swipe to delete, Clear all in the section header.
+7. Starred stops, then Nearby, as before.
+8. No trips: "Save the trips you take" with a large Add a trip button.
+
+Checked in the web build at 390 x 844 (light and dark) with Kings Cross to Strathfield (To home) and live data, a trip in progress and its watch, 9 trip alerts and weekend trackwork: the card sits at 192 to 387 px, so it is fully on screen. Before and after: `files/home-commute-hero-25oct/`.
 
 ## Which trip is the Next trip card
 
@@ -38,6 +43,7 @@ Android dialogs drop all but the last 3 buttons, so when a hold menu has 3 actio
 
 ## VoiceOver labels
 
+* Order: the bar, the card, then the Notifications header and each chip. A chip reads its full alert text, "button", and expanded or collapsed, with the hint "Shows the details".
 * Next trip card: "Strathfield to Kings Cross. 14 minutes, leaves 4:29 from Platform 2, 3 min late, Live, updated 20 s ago, arrives 4:56, T1 and T4. Then 25, 29 min", hint "Opens the trip with every service".
 * Row: the same, shorter, with the Reorder trip handle and the Delete action.
 

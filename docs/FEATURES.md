@@ -1,15 +1,17 @@
 # Features
 
-What Transport: Sydney Live does today, where to find each thing, and what is still to come. Written for testers, support and App Review. Updated 25 Oct 2026, 5:45 PM Sydney time.
+What Transport: Sydney Live does today, where to find each thing, and what is still to come. Written for testers, support and App Review. Updated 25 Oct 2026, 7:45 PM Sydney time.
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches iPhone builds 201 to 206 and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
 ## Home
 
-* **Next trip card** on top: the big countdown, line badges, platform (for a bus, the stand and stop number), the live label, leave and arrive times and the next two times ("Then 12, 19 min"). It is your commute when Home and Work are set (home to work in the morning, work to home after midday), otherwise the first trip in your list. Hold a trip and choose Show first to make it the card. See [HOME-REDESIGN.md](HOME-REDESIGN.md).
+* **Next trip card** on top, the first card under the title (25 Oct, evening): the big countdown, line badges, platform (for a bus, the stand and stop number), the live label, leave and arrive times and the next two times ("Then 12, 19 min"). It is your commute when Home and Work are set (home to work in the morning, work to home after midday), otherwise the first trip in your list. Hold a trip and choose Show first to make it the card. See [HOME-REDESIGN.md](HOME-REDESIGN.md).
 * **Other trips** as slim rows with their next time; starred stops; Nearby.
 * **One +** at the top right: New trip, Star a stop, Set Home, Set Work.
-* **Alerts** on your trips in one line that opens in place.
+* **In transit bar:** while a trip is live, one slim bar above the card ("In transit · Central to Strathfield", line badge), tap for the live trip. With no live trip and one watched trip, the same bar shows that watch.
+* **Notifications** under the card: one row of small chips, closed until tapped: trip alerts with a count, Trackwork this weekend, lines with a problem ("T4 Delays"), a high priority alert, other watched trips. A tap opens the full text in place. Nothing alert related sits above the card. See [HOME-REDESIGN.md](HOME-REDESIGN.md).
+* **When to leave** and **Check before I go** as small buttons in the commute card.
 * **Delete** a trip by swiping, holding or with VoiceOver; Undo shows above the tab bar for 5 seconds.
 
 ## Live times
@@ -51,7 +53,7 @@ The iPhone and Android apps are one Expo app (`app/`). Anything below marked "ov
 
 ## Ask
 
-Type "next train Burwood to Central", "is the T1 late" or "last train home". Answers come from live data with fixed rules; there is no generative AI. Ask opens on the latest message and its field sits above the tab bar and the keyboard.
+Type "next train Burwood to Central", "is the T1 late" or "last train home". Answers come from live data with fixed rules; there is no generative AI. Ask opens on the latest message and its field sits above the tab bar and the keyboard. It shows the last 30 messages, with Load earlier at the top; up to 200 are kept on the phone. **Clear chat** is the trash button at the top right of Ask and in More > Privacy and data, and asks first. The chat is only kept on the phone.
 
 ## iPhone only (in build 206)
 
