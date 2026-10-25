@@ -26,6 +26,23 @@ iOS 27.1 is the release iPhone Duo (the foldable, on sale 23 Oct 2026) runs. App
 * **Widgets (build 207).** On tinted and clear Home Screens (accented mode) and on the Lock Screen and StandBy at night (vibrant mode) every colour is drawn as one tint, so the filled line badge hid its own white text. Outside full colour the badge is now outlined. Lock Screen widgets and watch complications use plain text and were fine.
 * **Liquid Glass.** Tab bar and headers are system ones. expo-glass-effect reports Liquid Glass as available in iOS 27 SDK builds.
 
+## Native menus (update 25 Oct, 9:20 PM)
+
+React Native's ActionSheetIOS uses its anchor only on iPad, so on iPhone every menu that went through it was the centred iOS 26 panel with capsule buttons and Cancel (Bidur, 8:42 PM). No menu goes through it now except on a build that lacks the native views below. Every native view is looked up first (`src/lib/nativeViews.ts`, `globalThis.expo.getViewConfig`); a build without it keeps the old sheet. All of these are compiled into builds 201 to 208, so this is JavaScript only.
+
+| Menu | iPhone | Module | Android |
+| --- | --- | --- | --- |
+| + on Home | System bar button with a UIMenu (8:56 PM) | expo-router 58.0.25 `Stack.Toolbar.Menu` (react-native-screens 4.30.0 header items) | Material 3 menu under the + |
+| Hold on a Home trip (Home and Work, commute, saved, your trips, recent) | Context menu: the trip lifts as the preview, the menu under it | expo-router 58.0.25 `Link.Menu` and `Link.MenuAction` (UIContextMenuInteraction, native view `ExpoRouterNativeLinkPreview`), New Architecture | Material 3 menu under the trip |
+| Hold on a starred stop's name on Home | Context menu | expo-router `Link.Menu` | Material 3 menu |
+| Hold on a Recent trip or stop in Search | Context menu | expo-router `Link.Menu` | Material 3 menu |
+| Save this trip (the star on the trip screen) | System bar button with a UIMenu: Save trip, Save as Home, Save as Work | expo-router `Stack.Toolbar.Menu` | Material 3 menu under the star |
+| Settings: Opal fare type, Privacy and data, a commute | The row is a SwiftUI Menu: tapping it drops the pull-down menu from the row, the note as the section title | @expo/ui 58.0.22 `Host`, `Menu`, `Button`, `Section` (native views `ExpoUI` HostView, MenuView, Button, SlotView) | Material 3 menu under the row |
+
+How: menus are data (`src/lib/menuCore.ts`: no Cancel row, destructive rows red and last, an SF Symbol and an Android icon for each row). `components/HoldMenu.tsx` wraps a row's own Pressable: on iPhone in `Link` with `asChild` and `Link.Trigger` around a plain view (the view the system lifts; Link's own tap is cancelled, so the row's tap still opens the trip), `Link.Menu` with the rows; elsewhere the row's long press measures the row and opens `AnchoredMenu`. `Link.Preview` is not used: it would mount the whole trip screen as the preview, from a tab stack into the root stack, which is not checked on a device. `components/RowMenu.ios.tsx` draws the Settings row in SwiftUI (29 pt icon tile, body text, secondary value, up and down chevron). VoiceOver and TalkBack: every menu row is also an accessibility action on the row (`withMenuActions`), after the row's own actions. `globalThis.__legacyMenus = true` in a development build tries the older build path; it does nothing in a release build.
+
+Confirmations stay native alerts (Delete trip, Clear All, Delete all my data). The time picker and the reminder editor stay sheets: attached to the bottom edge, the system grabber, 16 pt corners, and a drag down on the grabber or the title bar closes them.
+
 ## Other iOS 27 changes checked
 
 * **Live Activities (ActivityKit):** nothing in the iOS 27 release notes that changes our use. Expo SDK 58 adds `staleDate` for its own Live Activity API; ours is a native module.

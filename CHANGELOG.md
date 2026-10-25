@@ -4,6 +4,19 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Native menus on iPhone, Material 3 menus on Android (over the air, 25 Oct, about 9:20 PM, group 42b8a9e7)
+Bidur at 8:42 PM about the centred action sheet: "vibe coded and bad". The + was fixed at 8:56 PM; this does the same for every other menu.
+* Hold a trip on Home (Home and Work, your commute, a saved trip, one of your trips, a recent one): on iPhone the trip lifts and the system context menu opens under it (Edit trip, Show first, Delete trip in red; Change home, Change work, Remove both in red; and so on), with SF Symbols and no Cancel row. On Android a Material 3 menu opens under the trip.
+* Hold a starred stop's name on Home, or a Recent trip or stop in Search: the same context menu (Unstar stop, Remove from Recent in red).
+* Save this trip: the star on the trip screen is a system bar button with its own menu on iPhone (Save trip, Save as Home, Save as Work). Before, the Home and Work menu was only reached on trips with legs, which save straight away, so it never showed. Android: a Material 3 menu under the star.
+* Settings: Opal fare type (a tick beside the current one), Privacy and data and a commute row now drop the system pull-down menu from the row on iPhone, with the note as the menu's title. Android: a Material 3 menu under the row.
+* VoiceOver and TalkBack: every menu row is also an action on the row (swipe up or down), so nobody needs a long press.
+* The time picker and the reminder editor stay sheets, now with the system grabber and larger corners; a drag down on the grabber or the title bar closes them.
+* Confirmations (Delete trip?, Clear All, Delete all my data) stay native alerts.
+* Every native view is looked up first: expo-router `Link.Menu` and `Stack.Toolbar.Menu`, @expo/ui SwiftUI `Menu`, all compiled into builds 201 to 208. A build without them keeps the old menus. How it works: [docs/IOS27.md](docs/IOS27.md#native-menus-update-25-oct-920-pm).
+* Preview group ca9faf00-97c4-483c-8d31-7bf2dd0e5b2e, production group 42b8a9e7-f136-45db-8d51-65ba0baeb4a7 (iOS 01a17293-9ea4-7727-9fed-9f8d5320cd96, Android 01a17293-9ea4-7624-bbfa-cac1d3d40ebd) from main 66ec078. Roll back: `npx eas-cli update:republish --group 8a2d8055-1c15-437e-ac01-c8f3d8711f2d --destination-branch production --non-interactive` (the 9:00 PM update).
+* Tests: `app/test/nativemenus.test.mjs`. Not yet seen on a real iPhone or Android phone.
+
 ### Website SEO and polish (transportsydney.app, 25 Oct, about 9:00 PM, Pages deployment 6a797b2c)
 Bidur at 8:51 PM: "Favicon, Hero icon, Page description, Seo. All those 20 checklist all checked??"
 * The page looks the same. Links inside running text (the footer publisher line, the email and Privacy Policy links in Support, Privacy and Terms) are now underlined, so they do not rely on colour alone. These styles are in the new file `site/extra-1.css`. `site.css` and `home.css` are unchanged, so a rollback still looks right.
