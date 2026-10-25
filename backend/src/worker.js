@@ -121,19 +121,27 @@ async function tp(env, endpoint, params, timeoutMs = 12000) {
   const qs = new URLSearchParams({
     outputFormat: "rapidJSON", coordOutputFormat: "EPSG:4326", version: "10.2.1.42", ...params,
   });
-  upstream.calls++;
-  upstreamNote();
-  const res = await fetch(API + "/v1/tp/" + endpoint + "?" + qs.toString(), {
-    headers: { Authorization: "apikey " + apiKey(env) },
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  upstreamHeaders(res);
-  if (!res.ok) {
+  // Over the hub's per second limit (a 403 "Account Over Rate Limit") the call is asked again up to twice, after
+  // a short wait, because the limit frees up within the second; over the day's quota it is not.
+  for (let attempt = 0; ; attempt++) {
+    await upstreamSlot();
+    upstream.calls++;
+    upstreamNote();
+    const res = await fetch(API + "/v1/tp/" + endpoint + "?" + qs.toString(), {
+      headers: { Authorization: "apikey " + apiKey(env) },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    upstreamHeaders(res);
+    if (res.ok) return res.json();
     const body = await res.text();
-    upstreamRefused(res.status, (res.headers && res.headers.get("x-error-detail")) || body);
+    const detail = (res.headers && res.headers.get("x-error-detail")) || body;
+    upstreamRefused(res.status, detail);
+    if (res.status === 403 && /rate limit/i.test(detail) && !/quota/i.test(detail) && attempt < 2) {
+      await new Promise((r) => setTimeout(r, 400 + attempt * 600 + Math.floor(Math.random() * 300)));
+      continue;
+    }
     throw new Error(`Transport data answered ${res.status}: ${body.slice(0, 200)}`);
   }
-  return res.json();
 }
 
 // ---------- upstream budget ----------
@@ -148,6 +156,19 @@ const UPSTREAM_PER_S = 3;
 const UPSTREAM_WINDOW_MS = 10000;
 const STALE_MAX_MS = 60000;
 const budget = { calls: [], overUntil: 0, refused: 0, staleServed: 0, shared: 0, seen: {} };
+// Pacing inside one copy: at most UPSTREAM_BURST Trip Planner calls start in any second; the next waits for room
+// (up to 2 s, then it goes anyway), so a burst of first opens is spread instead of refused by the hub.
+const UPSTREAM_BURST = 4;
+const slotTimes = [];
+async function upstreamSlot() {
+  const until = Date.now() + 2000;
+  for (;;) {
+    const now = Date.now();
+    while (slotTimes.length && now - slotTimes[0] >= 1000) slotTimes.shift();
+    if (slotTimes.length < UPSTREAM_BURST || now >= until) { slotTimes.push(now); return; }
+    await new Promise((r) => setTimeout(r, Math.min(until - now, 1000 - (now - slotTimes[0]) + 5)));
+  }
+}
 function upstreamTrim(now) { while (budget.calls.length && now - budget.calls[0] > UPSTREAM_WINDOW_MS) budget.calls.shift(); }
 function upstreamNote() { const now = Date.now(); budget.calls.push(now); upstreamTrim(now); }
 // A load test request (loadOk) counts as busy from 1 call a second, so a test leaves the key's room to real phones.

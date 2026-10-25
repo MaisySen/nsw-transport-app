@@ -6,17 +6,18 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const root = new URL("..", import.meta.url).pathname;
-let src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {") + "\nexport { __default, budget, budgetStats, upstreamBusy, upstreamRefused, inFlight };\n";
+let src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {") + "\nexport { __default, budget, budgetStats, upstreamBusy, upstreamRefused, inFlight, upstreamSlot, slotTimes };\n";
 const tmp = `/tmp/shared-test-${process.pid}-${Date.now()}.mjs`;
 fs.writeFileSync(tmp, src);
 const W = await import(tmp); fs.unlinkSync(tmp);
 
-let upstream = 0, refuse = null, gate = null;
+let upstream = 0, refuse = null, gate = null, refuseTimes = 0;
 globalThis.fetch = async (u) => {
   const url = String(u);
   if (!/\/v1\/tp\/departure_mon/.test(url)) return new Response("{}", { status: 503 });
   upstream++;
   if (gate) await gate;
+  if (refuseTimes > 0) { refuseTimes--; return new Response('{"code":403,"message":"Account over rate limit"}', { status: 403, headers: { "x-error-detail": "Account Over Rate Limit" } }); }
   if (refuse) return new Response('{"code":403,"message":"Account over rate limit"}', { status: 403, headers: { "x-error-detail": refuse } });
   const stop = new URL(url).searchParams.get("name_dm");
   return new Response(JSON.stringify({ locations: [{ name: "Stop " + stop, disassembledName: "Stop " + stop }], stopEvents: [] }), { headers: { "content-type": "application/json", "x-ratelimit-limit": "5" } });
@@ -62,6 +63,7 @@ const putCopy = (k, ageMs, body = { kind: "departures", items: [], copy: true, n
 
 test("a refresh skips a 20 s old copy while upstream has room, and is served that copy when upstream is busy", async () => {
   const k = "https://t.example/api/departures?stop=219930";
+  W.slotTimes.length = 0;
   putCopy(k, 20000);
   const n0 = upstream;
   let r = await call("/api/departures?stop=219930&refresh=1", "10.7.3.1", L);
@@ -171,4 +173,33 @@ test("with no copy a phone waits for the answer however long it takes", async ()
   const r = await call("/api/departures?stop=219970", "10.7.7.1", L);
   assert.equal(r.headers.get("x-edge-cache"), "miss");
   assert.ok(Date.now() - t0 >= 850);
+});
+
+test("a 403 over the per second limit is asked again after a short wait; a phone with no copy gets the answer, not an error", async () => {
+  W.budget.overUntil = 0; W.budget.calls.length = 0;
+  refuseTimes = 2;
+  const n0 = upstream;
+  const r = await call("/api/departures?stop=219980", "10.7.8.1", L);
+  assert.equal(r.status, 200);
+  assert.equal(upstream - n0, 3, "refused twice, answered the third time");
+  W.budget.overUntil = 0;
+});
+
+test("over the day's quota is not asked again", async () => {
+  refuse = "Account Over Quota Limit";
+  const n0 = upstream;
+  const r = await call("/api/departures?stop=219981", "10.7.8.2", L);
+  refuse = null; W.budget.overUntil = 0;
+  assert.equal(r.status, 502);
+  assert.equal(upstream - n0, 1);
+});
+
+test("at most 4 Trip Planner calls start in any second in one copy; the fifth waits for room", async () => {
+  W.slotTimes.length = 0;
+  const t0 = Date.now();
+  for (let i = 0; i < 4; i++) await W.upstreamSlot();
+  assert.ok(Date.now() - t0 < 100);
+  await W.upstreamSlot();
+  assert.ok(Date.now() - t0 >= 900, "waited for the second to pass");
+  W.slotTimes.length = 0;
 });
