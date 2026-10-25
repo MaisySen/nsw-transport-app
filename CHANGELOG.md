@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Fits any window: iOS 27 and iPhone Duo (over the air update for iPhone and Android, 25 Oct, 12:49 PM)
+* On iPhone Duo and other resizable windows (iOS 27), screens keep clear of the status bar and bars when they sit on the right edge, and of the Dynamic Island in landscape.
+* On a wide window (iPhone Duo open, iPhone Mirroring, iPad) lists and cards stay at a comfortable reading width in the middle instead of stretching edge to edge. Sheets do the same.
+* Phones in portrait look the same as before.
+
 ### iPhone build 206 on TestFlight (25 Oct, 11:30 AM)
 * Siri: "Next train home in Transport", "Next train to work in Transport" and "When is my next train in Transport" answer out loud with the next service and platform from Home and Work; "Start my commute in Transport" opens the trip and starts it. They also show in Spotlight and Shortcuts with no setup. Without signal Siri answers from the times the widget kept.
 * Control Center (iOS 18): Next train home and Start my commute buttons.
