@@ -103,10 +103,10 @@ export function LeaveLine({ js, now, me, compact }: { js: Journey[]; now: number
     return (
       <View style={s.leaveMini} accessibilityLiveRegion="polite">
         <Icon name={I.walk} size={16} color={urgent ? c.red : c.tint} />
-        <T kind="sub" style={{ flex: 1, marginLeft: 8 }} accessible accessibilityLabel={`${words}, ${p.walk} minute walk to ${station}, for the ${label}${set ? `. Reminder at ${clock(rem!.at)}` : ''}`}>
+        <View style={{ flex: 1, marginLeft: 8, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline' }} accessible accessibilityLabel={`${words}, ${p.walk} minute walk to ${station}, for the ${label}${set ? `. Reminder at ${clock(rem!.at)}` : ''}`}>
           <T kind="sub" style={{ fontWeight: '600', color: urgent ? c.redText : c.text }}>{words}</T>
           <T kind="sub" tone="text2">{` \u00b7 ${p.walk} min walk${set ? ` \u00b7 reminder ${clock(rem!.at)}` : ''}`}</T>
-        </T>
+        </View>
         {p.inMin > 0 ? (
           <Pressable onPress={remind} accessibilityRole="button" accessibilityLabel={set ? `Cancel the reminder at ${clock(rem!.at)}` : `Remind me at ${clock(p.leaveAt)}`}
             android_ripple={{ color: c.fill, borderless: true, radius: 22 }} hitSlop={4}
