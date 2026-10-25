@@ -16,7 +16,7 @@ Written 25 Oct 2026 after the battery, smoothness and iOS audit (report: files/q
 2. **Back off on failure.** A poll job returns `false` (or throws) when it failed; the wait then doubles each time,
    up to 5 minutes, and resets after a success or a pull to refresh. Never retry in a tight loop.
 3. **Catch up once.** Coming back to the app or the screen runs a stale job once at once, never once per missed tick.
-4. **Gaps in use today:** departures and trip results 15 to 20 s, live trip engine 15 s, iPhone trip card 30 s,
+4. **Gaps in use today:** trip list batches only on scroll near the end or a pull at the top (at most 8 later and 3 earlier per visit, one at a time, stopped at 4am, never while the screen is off view), departures and trip results 15 to 20 s, live trip engine 15 s, iPhone trip card 30 s,
    alerts poll 20 s (60 s when the phone has a push token, since push brings the alert), station info and walking
    position 2 min, car parks 2 min. Ask for longer gaps when the data changes slowly. The phone's own Last way home
    reminder: an app poll every 60 s that does nothing without a reminder, and with one asks live times every 5 min

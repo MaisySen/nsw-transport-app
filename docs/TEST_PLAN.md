@@ -69,7 +69,15 @@ A separate live list of 55 real phrasings (including "I need to go to campsie to
 
 Usual lateness on the server: a day folds into late_agg with the right minute counts (only live times read within 10 minutes of departure), older days fade by 0.95, a day is folded once (the meta claim), the median minute and the fallback from the part of the day to the whole day type (8 services or more), `/api/usual` batch and single forms, flag off answers null.
 
+### `backend/test/trip-modes.test.mjs`: 6 tests, 6 pass
+
+`/api/trip` modes and date: known modes only; Bus only leaves out train, metro, light rail and ferry (exclMOT 1, 2, 4, 9) and keeps bus, coach and school bus; Train and Bus keeps both; every journey checked again (a train leg in a bus only answer is dropped); date from today to 14 days ahead; the long trip cache keeps modes and date apart.
+
 ## Android app logic tests
+
+### `app/test/tripmodes.test.mjs`: 9 tests, 9 pass
+
+Trip screen mode chips (Any clears, toggles, several at once, every chip on is Any, which chips show), bus only filter (coach and school bus count, walks are fine), an honest empty state that depends on who filtered, the endless list's caps (8 later batches at most even when scrolled 100 times, one at a time, none off screen, stop at 4am or when a batch brings nothing new, earlier never before half an hour ago), Sydney days for the picker (AEDT and AEST) and when a date must go to the server, and When carrying a day through route params, the request and the label.
 
 ### `app/test/access.test.mjs`: 7 tests, 7 pass
 
@@ -172,6 +180,7 @@ Earlier runs: 15 (build 6) 10 of 10 light and 9 of 9 dark. Runs 10 and 11 failed
 | Weekend trackwork on the current server (update 25 Oct, 5 PM): the Trackwork this weekend card from Thursday 6pm with Sat and Sun rows for the T4 work on Strathfield to Kings Cross; More > Weekend trackwork heads up asking for notifications, then one notification on Thursday 6pm when work touches a trip (Home opened earlier in the week) | Card seen in the web build with live alerts on Sunday 25 Oct; the Thursday notification not yet seen on a device |
 | Why it's late (update 25 Oct, see RELEASES.md): the reason line on a late service on a stop screen, a trip leg and service row (Strathfield to Kings Cross), the Home Next trip card and the live trip card; tap opens the alert in the browser; VoiceOver reads the reason with the row and offers the "Why it's late" action; nothing on an on time service. Seen in the web build with live data on 25 Oct (a T4 13 min late, incident at Allawah) | Not yet seen on a device |
 | Departure board (update 25 Oct): Board on Strathfield station and a bus stop, portrait and landscape (rotate while open), dark by default and Light board, the close button clear of the Dynamic Island and the home indicator on iOS 26 and 27 and on Android, the screen staying on while open and sleeping again after Close (on builds 201 to 206; feature detected), stops after this station on the first trains, Live, Timetable and Not tracking, VoiceOver row by row, text size at the largest Dynamic Type sizes | Not yet seen on a device; checked in the web build at 390 x 844 and 844 x 390 with live data |
+| Trip screen modes, endless list and time chip (update 25 Oct, see RELEASES): Strathfield to Town Hall, tap Bus: bus trips with stand and stop numbers (seen in the web build with live data: 415, 492, 52 and 461X with changes, there is no direct bus); Train and Bus together; the choice still there after closing the trip and opening it again; Any back. Scroll to the end: a small Loading later services row, more services, then No more services found for this day (seen in the web build: 8 batches to about 4am). Pull at the top: earlier services. The Leave now chip: the iOS sheet with the day row on iOS 26 and 27, the Material dialog on Android, VoiceOver reads each chip as selected or not, Dynamic Type at the largest sizes wraps the time chip, Now one tap back. Not yet seen on a device |
 | Android closed app push | Needs a Firebase project (see [Roadmap](ROADMAP.md)) |
 | Play phone screenshots | Rendered from the app code at phone size; replace with device captures from the first internal test build |
 
