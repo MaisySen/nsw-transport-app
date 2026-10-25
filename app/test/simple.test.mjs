@@ -1,5 +1,5 @@
-// Simple mode (Bidur, 25 Oct 8:57 PM: "A simple mode in setting... It just show what bus in this stand. What time.
-// Same with train or anything. Like tripviewlite."). The rows, the stand chips and the page it opens on.
+// Simple mode, one screen (Bidur, 25 Oct 9:37 PM: "User come. Look this to that place. They get the list like this.
+// Thats it."). Your places and their order, the trip rows, the steps and the source rules for the screen.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -22,79 +22,152 @@ async function load(rel) {
 const s = await load('src/lib/simpleCore.ts');
 const read = (rel) => fs.readFileSync(path.join(here, '..', rel), 'utf8');
 
-test('stand and platform chips from /api/nearby, nearest first', () => {
-  const c = s.hereChoices([
-    { id: '213564', name: 'Strathfield Station, Everton Rd, Strathfield', distance: 52 },
-    { id: '2135234', name: 'Strathfield Station, Platform 4, Strathfield', distance: 41 },
-    { id: '213511', name: 'Strathfield Station, Everton Rd, Stand D, Strathfield', distance: 48 },
-    { id: '2135234', name: 'Strathfield Station, Platform 4, Strathfield', distance: 41 },
+
+const iso = (t) => new Date(t).toISOString();
+const NOW = Date.parse('2026-10-25T10:50:00Z'); // 9:50pm Sydney
+const min = 60000;
+const strath = { id: '213510', name: 'Strathfield Station' };
+const kx = { id: '201110', name: 'Kings Cross Station' };
+// Strathfield to Kings Cross as the planner sends it: T9 to Redfern, then T4.
+function commute(depMin, { delay = 0, realtime = true, cancelled = false } = {}) {
+  const dep = NOW + depMin * min;
+  return {
+    leave: iso(dep), arrive: iso(dep + 38 * min), durationMin: 38, changes: 1,
+    legs: [
+      { kind: 'transit', mode: 'train', line: 'T9', color: '#D11F2F', towards: 'Central', from: 'Strathfield Station', fromPlatform: 'Platform 2', to: 'Redfern Station', toPlatform: 'Platform 1',
+        fromParent: '213510', toParent: '201510', planned: iso(dep), estimated: iso(dep + delay * min), arrPlanned: iso(dep + 12 * min), arrEstimated: iso(dep + (12 + delay) * min),
+        realtime, delayMin: realtime ? delay : null, cancelled, stops: 2, durationMin: 12, tripId: `a${depMin}` },
+      { kind: 'transit', mode: 'train', line: 'T4', color: '#005AA3', towards: 'Bondi Junction via Central', from: 'Redfern Station', fromPlatform: 'Platform 11', to: 'Kings Cross Station', toPlatform: 'Platform 2',
+        fromParent: '201510', toParent: '201110', planned: iso(dep + 28 * min), estimated: iso(dep + 28 * min), arrPlanned: iso(dep + 38 * min), arrEstimated: iso(dep + 38 * min),
+        realtime, delayMin: 0, stops: 4, durationMin: 10, tripId: `b${depMin}` },
+    ],
+  };
+}
+
+test('your places: Home, Work, then recent places newest first, then starred stops, each once', () => {
+  const rows = s.simplePlaces({
+    home: strath, work: kx,
+    recentTrips: [
+      { from: strath, to: { id: 'G2046100', name: 'Five Dock Shops, Great North Rd, Five Dock' }, at: 100 },
+      { from: strath, to: { id: '200060', name: 'Central Station' }, at: 300 },
+      { from: strath, to: kx, at: 200 },
+    ],
+    starred: [{ id: '213511', name: 'Strathfield Station, Everton Rd, Stand D, Strathfield' }, { id: '200060', name: 'Central Station' }],
+  });
+  assert.deepEqual(rows.map((r) => [r.kind, r.title]), [['home', 'Home'], ['work', 'Work'], ['recent', 'Central'], ['recent', 'Five Dock Shops'], ['star', 'Strathfield']]);
+  assert.equal(rows[0].sub, 'Strathfield');
+  assert.equal(rows[3].sub, 'Great North Rd');
+  assert.equal(rows[4].a11y, 'Strathfield, Everton Rd, Stand D');
+  assert.equal(s.simplePlaces({ home: strath, recentTrips: [], starred: [strath] }).length, 1);
+  assert.deepEqual(s.simplePlaces({}), [], 'nothing saved, nothing shown');
+  assert.equal(s.simplePlaces({ recentTrips: Array.from({ length: 6 }, (_, i) => ({ from: strath, to: { id: String(i), name: `Stop ${i}` }, at: i })), starred: [kx, { id: 'x', name: 'X' }, { id: 'y', name: 'Y' }] }).length, 8);
+});
+
+test('a tapped place fills To, From when To is filled and From is empty, else To', () => {
+  assert.equal(s.fillTarget({ loc: true }, null), 'to');
+  assert.equal(s.fillTarget(null, null), 'to');
+  assert.equal(s.fillTarget(null, { place: kx }), 'from');
+  assert.equal(s.fillTarget({ loc: true }, { place: kx }), 'to');
+});
+
+test('Current location is the station named like the nearest stop', () => {
+  assert.deepEqual(s.nearPlace({ id: '2135234', name: 'Strathfield Station, Platform 4, Strathfield' }, [{ id: '213710', name: 'North Strathfield Station' }, strath]), strath);
+  assert.deepEqual(s.nearPlace({ id: 'G1', name: 'Five Dock Shops, Great North Rd, Five Dock' }, [{ id: 'G1', name: 'Five Dock Shops, Great North Rd, Five Dock' }]), { id: 'G1', name: 'Five Dock Shops, Great North Rd, Five Dock' });
+  assert.equal(s.nearPlace(null, [strath]), null);
+});
+
+test('result row: leave, arrive, duration, changes, lines, live status and whole minutes to go', () => {
+  const r = s.tripRow(commute(12), NOW);
+  assert.equal(r.leave, s.clock(NOW + 12 * min));
+  assert.equal(r.arrive, s.clock(NOW + 50 * min));
+  assert.equal(r.dur, '38 min');
+  assert.equal(r.changes, '1 change');
+  assert.deepEqual(r.lines.map((l) => l.line), ['T9', 'T4']);
+  assert.equal(r.status, 'On time');
+  assert.equal(r.inText, 'Leaves in 12 min');
+  assert.equal(r.a11y, `Leaves ${s.clock(NOW + 12 * min)}, arrives ${s.clock(NOW + 50 * min)}, 38 minutes, 1 change, T9 then T4, on time, leaves in 12 minutes.`);
+  assert.equal(s.tripRow(commute(12), NOW + 30 * 1000).inText, 'Leaves in 11 min', 'whole minutes, rounded down');
+  const late = s.tripRow(commute(12, { delay: 4 }), NOW);
+  assert.equal(late.status, '4 min late'); assert.equal(late.tone, 'late'); assert.equal(late.inText, 'Leaves in 16 min');
+  assert.match(late.a11y, /4 minutes late, leaves in 16 minutes\.$/);
+  const gone = s.tripRow(commute(12, { cancelled: true }), NOW);
+  assert.equal(gone.status, 'Cancelled'); assert.equal(gone.inText, ''); assert.equal(gone.tone, 'red');
+  assert.equal(s.tripRow(commute(12, { realtime: false }), NOW).status, 'Timetable');
+  assert.equal(s.tripRow(commute(0), NOW).inText, 'Leaves now');
+  assert.equal(s.tripRow(commute(75), NOW).inText, 'Leaves in 1 hr 15 min');
+  const direct = commute(5); direct.legs = direct.legs.slice(0, 1); direct.changes = 0;
+  assert.equal(s.tripRow(direct, NOW).changes, 'No changes');
+});
+
+test('trip list: soonest first, each once, gone ones only after Earlier', () => {
+  const js = [commute(20), commute(5), commute(-10), commute(5)];
+  const { rows } = s.tripRows(js, NOW);
+  assert.deepEqual(rows.map((r) => r.inText), ['Leaves in 5 min', 'Leaves in 20 min']);
+  const withGone = s.tripRows(js, NOW, { keepGone: true }).rows;
+  assert.equal(withGone.length, 3);
+  assert.equal(withGone[0].status, 'Left');
+  assert.equal(s.earlierAt(NOW), NOW - 30 * min);
+  assert.equal(s.laterAt(NOW), NOW + min);
+  assert.match(s.hhmm(Date.parse('2026-10-25T10:05:00Z')), /^2105$/);
+});
+
+test('steps from the real legs: walk to the platform, take, change, get off', () => {
+  const steps = s.buildSteps(commute(12));
+  assert.deepEqual(steps.map((x) => x.text), [
+    'Walk to Platform 2',
+    'Take T9 to Redfern, 2 stops',
+    'Change to T4 at Redfern, Platform 11',
+    'Get off at Kings Cross',
   ]);
-  assert.deepEqual(c.map((x) => x.id), ['2135234', '213511', '213564']);
-  assert.deepEqual(c.map(s.chipLabel), ['Platform 4', 'Stand D', 'Everton Rd']);
-  assert.equal(c[1].place, 'Strathfield Station');
-  assert.equal(s.chipLabel(s.hereChoices([{ id: '1', name: 'Kings Cross Station' }])[0]), 'All stops');
+  assert.equal(steps[0].sub, 'Strathfield');
+  assert.equal(steps[1].sub, `Leaves ${s.clock(NOW + 12 * min)}, towards Central`);
+  assert.equal(steps[2].sub, `Leaves ${s.clock(NOW + 40 * min)}, 4 stops to Kings Cross`);
+  assert.equal(steps[3].sub, `Arrive ${s.clock(NOW + 50 * min)}`);
+  assert.equal(steps[1].say, `Take T9 to Redfern, 2 stops. Leaves ${s.clock(NOW + 12 * min)}, towards Central.`);
+  assert.match(s.spokenSteps(steps), /^Walk to Platform 2\. Strathfield\. Take T9/);
 });
 
-const T0 = Date.parse('2026-10-25T10:00:00Z');
-const iso = (m) => new Date(T0 + m * 60000).toISOString();
-test('departure row: line, destination, scheduled time, status and whole minute countdown', () => {
-  const r = s.depRow({ line: '410', mode: 'bus', dest: 'Rockdale, Bay St', planned: iso(5), estimated: iso(8), realtime: true, delayMin: 3, tripId: 'x' }, T0);
-  assert.equal(r.dest, 'Rockdale');
-  assert.equal(r.status, '3 min late');
-  assert.equal(r.tone, 'late');
-  assert.equal(r.sched, s.clock(T0 + 5 * 60000));
-  assert.match(r.a11y, /^410 to Rockdale, scheduled .+, 3 minutes late, leaves in 8 minutes$/);
-  assert.equal(s.countdownWords(T0 + 8 * 60000 + 30000, T0).big, '8');
-  assert.equal(s.countdownWords(T0 + 30000, T0).big, 'Now');
-  assert.deepEqual(s.countdownWords(T0 + 497 * 60000, T0), { big: '8 hr', unit: '17 min', spoken: '8 hours 17 minutes' });
-  const x = s.depRow({ line: 'T1', mode: 'train', dest: 'Emu Plains Station', planned: iso(2), realtime: true, cancelled: true }, T0);
-  assert.equal(x.status, 'Cancelled');
-  assert.match(x.a11y, /cancelled$/);
-  assert.equal(s.depRow({ line: 'D400', dest: 'Bondi Junction', planned: iso(4), realtime: false }, T0).status, 'Scheduled');
-});
-
-test('rows: soonest first, gone ones out', () => {
-  const rows = s.depRows([
-    { line: 'A', dest: 'x', planned: iso(9) }, { line: 'B', dest: 'y', planned: iso(-3) }, { line: 'C', dest: 'z', planned: iso(1), departed: true }, { line: 'D', dest: 'w', planned: iso(2) },
-  ], T0);
-  assert.deepEqual(rows.map((r) => r.line), ['D', 'A']);
-});
-
-test('trip row: depart and arrive, duration, changes and platform', () => {
-  const j = { leave: iso(4), arrive: iso(31), durationMin: 27, changes: 1, legs: [
-    { kind: 'transit', line: 'T1', mode: 'train', planned: iso(4), estimated: iso(5), realtime: true, delayMin: 1, fromPlatform: 'Platform 1' },
-    { kind: 'walk' }, { kind: 'transit', line: 'T4', mode: 'train', planned: iso(16) },
+test('steps: a bus with walks, a walk between two stops, late and cancelled services', () => {
+  const dep = NOW + 6 * min;
+  const j = { leave: iso(dep - 3 * min), arrive: iso(dep + 30 * min), durationMin: 33, changes: 1, legs: [
+    { kind: 'walk', durationMin: 3, to: 'Strathfield Station, Everton Rd, Stand D, Strathfield' },
+    { kind: 'transit', mode: 'bus', line: '410', from: 'Strathfield Station, Everton Rd, Stand D, Strathfield', fromPlatform: 'Stand D', to: 'Burwood Station, Burwood Rd, Burwood', planned: iso(dep), estimated: iso(dep + 3 * min), realtime: true, delayMin: 3, stops: 7, arrPlanned: iso(dep + 10 * min) },
+    { kind: 'walk', durationMin: 4, to: 'Burwood Rd at Belmore St' },
+    { kind: 'transit', mode: 'bus', line: 'D400', from: 'Burwood Rd at Belmore St, Burwood', to: 'Five Dock Shops, Great North Rd, Five Dock', planned: iso(dep + 16 * min), realtime: false, cancelled: true, stops: 1, arrPlanned: iso(dep + 25 * min) },
+    { kind: 'walk', durationMin: 5, to: 'Five Dock Library' },
   ] };
-  const r = s.tripRow(j, T0);
-  assert.equal(r.times, `${s.clock(T0 + 5 * 60000)} to ${s.clock(T0 + 31 * 60000)}`);
-  assert.equal(r.sub, '27 min \u00b7 1 change \u00b7 Platform 1');
-  assert.deepEqual(r.lines.map((l) => l.line), ['T1', 'T4']);
-  assert.equal(r.status, '1 min late');
-  assert.match(r.a11y, /27 minutes, 1 change, Platform 1, T1 then T4, 1 minute late, leaves in 5 minutes$/);
-  assert.equal(s.tripRow({ ...j, changes: 0, legs: [j.legs[0]] }, T0).sub, '27 min \u00b7 Direct \u00b7 Platform 1');
+  const steps = s.buildSteps(j);
+  assert.deepEqual(steps.map((x) => x.text), [
+    'Walk to Stand D',
+    'Take bus 410 to Burwood, 7 stops',
+    'Walk to Burwood Rd at Belmore St',
+    'Take bus D400 to Five Dock Shops, 1 stop',
+    'Get off at Five Dock Shops',
+    'Walk to Five Dock Library',
+  ]);
+  assert.equal(steps[0].sub, 'Strathfield, 3 min walk');
+  assert.match(steps[1].sub, /3 min late$/);
+  assert.match(steps[3].sub, /Cancelled$/);
+  assert.equal(steps[5].sub, `5 min walk, there by ${s.clock(dep + 30 * min)}`);
+  assert.equal(s.buildSteps({ legs: [{ kind: 'walk', durationMin: 9 }] })[0].text, 'Walk all the way');
+  assert.equal(s.lineWords({ mode: 'ferry', line: 'F1' }), 'ferry F1');
+  assert.equal(s.platformWords('Plat 3'), 'Platform 3');
+  assert.equal(s.platformWords('4'), 'Platform 4');
 });
 
-test('opens on To work in the morning, To home in the evening, else a trip used at this hour, else Here', () => {
-  const pages = [{ kind: 'here' }, { kind: 'trip', key: 'a>b', from: { id: 'a' }, to: { id: 'b' }, tag: 'toWork' }, { kind: 'trip', key: 'b>a', from: { id: 'b' }, to: { id: 'a' }, tag: 'toHome' }, { kind: 'trip', key: 'a>c', from: { id: 'a' }, to: { id: 'c' } }];
-  const at = (h) => Date.parse(`2026-10-26T${String((h - 11 + 24) % 24).padStart(2, '0')}:15:00Z`); // Sydney is UTC+11
-  assert.equal(s.defaultPage(pages, at(8)), 1);
-  assert.equal(s.defaultPage(pages, at(18)), 2);
-  assert.equal(s.defaultPage(pages, at(12), [{ from: { id: 'a' }, to: { id: 'c' }, at: at(13) }]), 3);
-  assert.equal(s.defaultPage(pages, at(12), [{ from: { id: 'a' }, to: { id: 'c' }, at: at(22) }]), 0);
-  assert.equal(s.defaultPage([{ kind: 'here' }], at(8)), 0);
-});
-
-test('source: off by default, a switch in More, opens on its own screen, only the page on view polls, low accuracy', () => {
-  const store = read('src/lib/store.ts');
-  assert.match(store, /simple\?: boolean/);
-  assert.doesNotMatch(store, /simple: true/);
-  assert.match(read('src/app/(tabs)/settings/index.tsx'), /title="Simple mode"/);
-  assert.match(read('src/app/index.tsx'), /st\.simple \? '\/simple' : '\/home'/);
-  const scr = read('src/app/simple.tsx');
-  assert.match(scr, /enabled: visible && !!cur/);
-  assert.match(scr, /enabled: visible \}/);
-  assert.match(scr, /Accuracy\.Low/);
-  assert.doesNotMatch(scr, /Accuracy\.High|watchPositionAsync|startLocationUpdates|setInterval/);
-  assert.match(scr, /accessibilityLabel="Settings"/);
-  assert.match(scr, /Turn off Simple mode/);
+test('the screen: one page, no swiping or chips, live list only on view, location never asked on launch', () => {
+  const src = read('src/app/simple.tsx');
+  assert.ok(!/pagingEnabled|horizontal/.test(src), 'no swipe pages');
+  assert.ok(!/hereChoices|chipLabel|defaultPage/.test(src), 'old Here board code is gone');
+  assert.match(src, /enabled: !!query && !edit/, 'the trip list refreshes only while on view');
+  assert.ok(!/setInterval|Accuracy\.High|useNow\(1000\)/.test(src));
+  assert.match(src, /Accuracy\.Low/);
+  // On launch only the permission is read; asking happens from the Use my location row.
+  const launch = src.slice(src.indexOf('no prompt on launch'), src.indexOf('no prompt on launch') + 300);
+  assert.match(launch, /getForegroundPermissionsAsync/);
+  assert.ok(!/requestForegroundPermissionsAsync/.test(launch));
+  assert.match(src, /speak\(/, 'Speak reads the steps through nativeExtras.speak');
+  assert.match(src, /store\.setSimple\(false\)/, 'the gear still leaves Simple mode, after a confirm');
+  for (const chunk of src.split('<Pressable ').slice(1)) assert.match(chunk.slice(0, 400), /accessibilityRole=/, 'every Pressable has a role');
+  assert.ok(!/[\u2013\u2014]/.test(src + read('src/lib/simpleCore.ts')), 'no em or en dashes');
 });
