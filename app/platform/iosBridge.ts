@@ -19,7 +19,7 @@ import type { LiveTrip } from '@/lib/live';
 import type { ServiceResp, WatchLeg } from '@/lib/types';
 import { boardTime, missedConn, missedPlanLegs, pickNextOption, sydHHMM } from '@/lib/smart';
 import { cardFor, shortName, staleAt, type CardAlt, type CardOpts } from './tripCard';
-import { homeWorkFor, liveCardFor, type HomeWork, type LiveCardShare, type SharedStop } from './widgetShare';
+import { homeWorkFor, liveCardFor, starredFor, type HomeWork, type LiveCardShare, type SharedStop } from './widgetShare';
 import { watchContextFor, watchContextJSON } from './watchShare';
 import { apiBase } from '@/lib/server';
 import { endActivityToken, sendActivityToken, sendDeviceToken } from './livePush';
@@ -186,7 +186,7 @@ if (Platform.OS === 'ios' && iosNative.available()) {
       iosNative.setString('apiBase.v1', apiBase());
       if (store) {
         const st = JSON.parse(store);
-        const starred = Array.isArray(st?.starred) ? st.starred.filter((p: any) => p?.id).map((p: any) => ({ id: String(p.id), name: String(p.name || '') })) : [];
+        const starred = starredFor(st);
         iosNative.setJSON('starredStops', starred);
         if (st?.fareType) iosNative.setString('tb_fare', String(st.fareType));
         iosNative.setJSON('homeWork', homeWorkFor(st));
