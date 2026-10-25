@@ -11,13 +11,13 @@ import { T } from './ui';
 // Leave now, Leave at or Arrive by, with a time wheel. Built in JS (no native picker), so it works on every
 // installed build: an iOS style wheel in a sheet with Cancel and Done, a Material 3 dialog style on Android.
 
-const ITEM = 44;
+export const ITEM = 44;
 const ROWS = 5;
-const HOURS = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5);
-const HALVES = [0, 1];
+export const HOURS = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+export const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5);
+export const HALVES = [0, 1];
 
-function Wheel({ values, value, onChange, text, label, width }: { values: number[]; value: number; onChange: (v: number) => void; text: (v: number) => string; label: string; width: number }) {
+export function Wheel({ values, value, onChange, text, label, width }: { values: number[]; value: number; onChange: (v: number) => void; text: (v: number) => string; label: string; width: number }) {
   const c = usePalette();
   const ref = useRef<any>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);

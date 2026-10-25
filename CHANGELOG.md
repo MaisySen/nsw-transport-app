@@ -15,6 +15,41 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * Stop board widget on a bus stop shows its stop number ("Stop 2046100"); in Edit Widget your starred bus stops show the stop number and routes under the name (branch native-207-bus).
 * Speak alerts get their own audio session: the Ring/Silent switch no longer mutes them, music is lowered while a line is read and comes back after (branch native-207-bus).
 
+### Trip reminders and how late a route usually is (over the air update for iPhone and Android, 25 Oct, 4:44 PM)
+* Reminders on a saved trip: open it and scroll to Reminders. Add several, each with its own time and days (for example 7:30am on weekdays and 9:00am on Saturday). They ring on your phone with the app closed, and a tap opens the trip with live times.
+* Transport asks to send notifications only when you save your first reminder.
+* Deleting a trip removes its reminders (Undo keeps them).
+* Coming with the move to the new server: "Usually 3 min late on weekday mornings" for a route at your stop, on the stop board (choose a route), on the service screen and on each leg of a trip. It is hidden until then.
+* Group 003790dc. Roll back to 0b1d956d (the 4:34 PM update): `npx eas-cli update:republish --group 0b1d956d-ee83-4f92-81af-2677b2b82f4a --destination-branch production --message "Roll back" --non-interactive`.
+
+### Server: usual lateness (api.transportsydney.app, 25 Oct, 4:31 PM)
+* New `/api/usual` on the new address only, built once a day from the live times the server already records, kept as counts per route, stop, weekday or weekend and part of the day, with no trips, times or devices stored. Deployed from main cd4b8e7; the old address was not touched. Checks after deploy in docs/DEPLOY_CLOUDFLARE.md.
+
+### A calmer Home (over the air update for iPhone and Android, 25 Oct, 4:34 PM)
+* Your next trip is the big card on top: the countdown, line badges, the platform (for a bus, the stand and stop number), whether it is live, leave and arrive, and the next two times ("Then 12, 19 min"). It is your commute when Home and Work are set, otherwise the first trip in your list.
+* Every other trip is one slim row with its next time. The star, seats, journey time, third service and alert counts moved off the rows; they are all on the trip screen, one tap away.
+* One + at the top right adds a trip, stars a stop, or sets Home or Work. No more Add button in the middle of the page.
+* Alerts on your trips are one line that opens in place.
+* No trips yet: one big Add a trip button.
+* Delete a trip (swipe, hold, or VoiceOver) and Undo shows above the tab bar for 5 seconds.
+* Hold a trip and choose Show first to make it the big card. Dragging trips keeps the card on top.
+* On Android, hold menus no longer lose a choice (Home and work lost Change home).
+* Group 0b1d956d. Roll back to eadd0cc6 (the 4:29 PM update): `npx eas-cli update:republish --group eadd0cc6-7c92-434a-a4e7-06684bac02e6 --destination-branch production --message "Roll back" --non-interactive`.
+
+### Honest live times and cleaner bus stop boards (over the air update for iPhone and Android, 25 Oct, 4:29 PM)
+* Every countdown says where its time comes from: "Live, updated 15 s ago", "Timetable" (grey, no live data for that service) or "Not tracking".
+* No more ghost buses: when a bus's live position goes stale, the time shows the timetable time and "Not tracking" instead of counting down to Now and then saying it has gone. A timetable time that has passed shows the time, never "left".
+* Bus stops: tap a route chip (410) to see only that route; tap it again, or All routes, to see every route. "Route 410: all stops and live buses" opens the route.
+* Recently departed, one row above the departures: "Left 4:21pm" only when live data followed the service to its departure, otherwise "Due 4:20pm, not tracked".
+* Open a bus or train leg from a trip and its stop list marks GET ON and GET OFF on your two stops.
+* Group eadd0cc6. Roll back to 96c008eb (the 3:30 PM update): `npx eas-cli update:republish --group 96c008eb-0386-4368-9c14-7061aeefd02e --destination-branch production --message "Roll back" --non-interactive`.
+
+### Cleaner bus picker in New trip (over the air update for iPhone and Android, 25 Oct, 3:30 PM)
+* Choosing where you get on the bus starts with bus stops near you (with the stop number and how far), your saved and recent bus stops, then Sydney routes in number order with where each goes on two lines, nothing cut off. It no longer opens on trackwork and regional routes.
+* Trackwork buses, school buses and regional and coach routes have their own sections at the end, closed until you tap them.
+* Type a route number (410), a stop number from the sign (2046100) or a street or stop name. Sydney routes come first.
+* Near you shows only when you have already allowed location; otherwise tap Show bus stops near me.
+
 ### Ask and the floating tab bar (over the air update for iPhone and Android, 25 Oct, 3:26 PM)
 * Ask: the field where you type is no longer hidden behind the tab bar on iPhone. It sits above the bar, and when the keyboard opens it moves up and sits right on top of the keyboard.
 * Ask opens on your latest message every time you switch to it, and stays at the newest message as answers come in, unless you have scrolled up to read.

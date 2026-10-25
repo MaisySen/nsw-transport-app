@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { useUsualText } from '@/lib/usual';
+import { TripReminders } from '@/components/TripReminders';
 import { plural } from '@/lib/homeCore';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, StyleSheet, Switch, useColorScheme, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
@@ -10,7 +12,7 @@ import { LONG_TRIP_KEEP_MS, STILL_SEARCHING_MS } from '@/lib/longTripCore';
 import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius, modeColor } from '@/lib/theme';
 import { bestTime, clock, durText, ms, plainText, shortName } from '@/lib/format';
-import { store, useStore } from '@/lib/store';
+import { store, tripKeyOf, useStore } from '@/lib/store';
 import { safeUrl, stShort } from '@/lib/access';
 import { LegAccessChips, ParkGroup } from '@/components/Access';
 import { fareKind, fareOf, fareWords, money, offPeakText, TRAINLINK_BOOKING_URL } from '@/lib/fare';
@@ -23,7 +25,8 @@ import { journeyAccess, liftAwareNote } from '@/lib/stepFree';
 import { tripSpec } from '@/lib/watch';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { openService } from '@/components/Cards';
-import { LineBadge, OccupancyChip } from '@/components/Transit';
+import { LineBadge, OccupancyChip, StatusLine } from '@/components/Transit';
+import { liveState } from '@/lib/liveLabelCore';
 import { arrOf, ServiceRow, tripCacheId, tripPkey, WarnLine } from '@/components/Home';
 import { cacheKey, offlineText } from '@/lib/offlineCore';
 import { planB, problemOf } from '@/lib/planBCore';
@@ -62,6 +65,7 @@ function walkTo(l: Leg, next?: Leg) {
 
 function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
   const c = usePalette();
+  const usual = useUsualText(l);
   if (l.kind === 'walk') {
     return (
       <View style={st.walk}>
@@ -76,7 +80,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
   const bus = busLegStatus(l);
   const traffic = trafficLine(l);
   return (
-    <Pressable accessibilityRole="button" onPress={() => openService({ tripId: l.tripId, feed: l.feed, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId, color: l.color, dest: l.towards, realtime: l.realtime, estimated: l.estimated, delayMin: l.delayMin })}
+    <Pressable accessibilityRole="button" onPress={() => openService({ tripId: l.tripId, feed: l.feed, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId, color: l.color, dest: l.towards, realtime: l.realtime, estimated: l.estimated, delayMin: l.delayMin, toStopId: l.toStopId })}
       style={({ pressed }) => [st.leg, pressed ? { opacity: 0.7 } : null]}>
       <View style={{ width: 36, alignItems: 'center' }}>
         <View style={[st.dotBig, { borderColor: color, backgroundColor: c.card }]} />
@@ -88,6 +92,8 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
           <View style={{ flex: 1 }}>
             <T kind="headline" numberOfLines={2}>{shortName(l.from)}</T>
             <T kind="foot" tone="text2">{[l.fromPlatform, stopLabel(l.stopId, l.mode), `${clock(dep)}`].filter(Boolean).join(' \u00b7 ')}</T>
+            <View style={{ marginTop: 2 }}><StatusLine realtime={l.realtime} delayMin={l.delayMin} cancelled={l.cancelled} state={liveState({ planned: l.planned, estimated: l.estimated, realtime: l.realtime, cancelled: l.cancelled, seenAt: l.seenAt }, now)} /></View>
+            {usual ? <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{usual}</T> : null}
           </View>
         </View>
         {l.platformChangedFrom ? <T kind="foot" style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }}>Platform changed from {l.platformChangedFrom}</T> : null}
@@ -312,6 +318,9 @@ export default function TripScreen() {
   const accOn = !!stNow.acc;
   const liftOn = useFlag('liftAwareRouting');
   const allOn = !!stAll[tkey];
+  // A saved trip (Your trips) can have reminders; they open it again with these params.
+  const saved = (stNow.myTrips || []).find((t) => tripKeyOf(t) === tkey) || null;
+  const openParams = Object.fromEntries(Object.entries(p).filter(([k, v]) => v != null && v !== '' && ['from', 'fromName', 'to', 'toName', 'via', 'viaName', 'conn', 'name', 'legs'].includes(k)).map(([k, v]) => [k, String(v)]));
   const c = usePalette();
   const now = useNow();
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
@@ -342,6 +351,8 @@ export default function TripScreen() {
   })();
   const df = directFilter(jsAll, plan, allOn, (j) => j);
   const js = df.list;
+  // A new reminder starts 15 min before the first service shown (phone time, as the reminder rings in phone time).
+  const suggest = (() => { const j = js[0]; if (!j) return null; const t = new Date(depMs(j) - 15 * 60000); return { hour: t.getHours(), minute: Math.floor(t.getMinutes() / 5) * 5 }; })();
   // Last way home: the last service tonight, only when the list shows the night gap after it.
   const lastIdx = lastTonightIndex(js.map(depMs));
   const loadMore = async (dir: -1 | 1) => {
@@ -515,6 +526,7 @@ export default function TripScreen() {
         {!data && error ? <Empty icon={I.warn} title="Can't plan this trip" body={error} /> : null}
         {!data && !error ? <Searching key={`${from.id}>${to.id}|${whenKey}`} long={!chain && !via && isLongPair(from.id, to.id)} /> : null}
         {data?.tomorrow ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>No more trips tonight. These are the first ones tomorrow.</T> : null}
+        {saved ? <TripReminders tripKey={tkey} name={saved.name} open={openParams} suggest={suggest} /> : null}
       </Screen>
     </>
   );

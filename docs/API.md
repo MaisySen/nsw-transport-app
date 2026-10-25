@@ -42,6 +42,7 @@ Example: `/api/ask?q=campsie%20to%20newcastle%20via%20chatswood&format=text`
 | `/api/alerts` | GET | `q` (for example `T1`, `buses`) | `kind: "alerts"` |
 | `/api/app/config` | GET | `platform` (`ios`, default) | Remote config for the phone apps, see below |
 | `/api/predict` | GET | `line`, `stop`, `planned` | `prediction`: usual delay from recorded history, or null when there are fewer than 5 trips |
+| `/api/usual` | GET | `s=LINE~STOP` repeated, up to 12 (or `line`, `stop`), optional `at` (ISO time, default now) | `{items, enabled}` (or `{usual, enabled}`): Usually N min late per line and stop. api.transportsydney.app only. See Usual lateness below |
 | `/api/reliability` | GET | `line`, `stop`, `planned`; or `s=LINE~STOP~PLANNED` repeated, up to 8 | `{reliability, enabled}`, or `{items, enabled}` in the same order. See Reliability pick below |
 | `/api/lines` | GET | `l=T1,T4,M1` (up to 16 lines) | `{enabled, at, items}`, one per line in the order asked. See Status of my lines below. api.transportsydney.app only |
 | `/api/traffic` | GET | none | `{items, count, at}`: open Live Traffic NSW incidents as `{id, lat, lon, kind, text, major, updated}`, read at most every 2 min. api.transportsydney.app only |
@@ -298,6 +299,20 @@ Added to the answer with `acc=1`:
 * `journeys[].stepFree`: every station on the trip is listed as step free (stations with no access data count as not step free).
 * `journeys[].liftOutages`: `[{id, name, title}]` for stations on that trip with a lift out.
 * Each station in `legs[].access` gets `liftOut: true` when the outage is a lift.
+
+## Usual lateness
+
+`GET /api/usual?s=410~2046100&s=T1~2135223&at=2026-10-26T07:52:00%2B11:00` (api.transportsydney.app only; the old host answers 404 and the app hides the line) says how late a line usually is at a stop, for the day type (weekday or weekend) and part of the day of `at`: mornings 6am to 10am, middle of the day 10am to 3pm, afternoons 3pm to 7pm, evenings 7pm to 6am.
+
+```json
+{ "items": [ { "lateMin": 3, "plus": false, "n": 24, "lateShare": 58, "dayType": "weekday", "band": "mornings",
+    "text": "Usually 3 min late on weekday mornings", "short": "usually 3 min late",
+    "basis": "median lateness of recorded live departures, recent weeks weighted most", "kind": "usual" }, null ], "enabled": true }
+```
+
+`lateMin` is the median minute of lateness (0 for on time or early, 10 with `plus` for 10 or more), `lateShare` the percent of services 3 or more minutes late, `n` the services counted after fading. When the part of the day has fewer than 8 services the whole day type is used (`band` null, "on weekdays"); under 8 there too the item is null. Cached 10 minutes. Server flag `usualLate` off: every item is null and `enabled` is false.
+
+Where it comes from: the live times already recorded in `obs` (the same rows `/api/predict` and `/api/reliability` read, from Transport for NSW realtime departures). Once a day the minute tick folds one day into `late_agg`: one row per line, stop, day type and part of the day with a count per minute of lateness (early, 0 to 9, 10 or more), only rows whose live time was read within 10 minutes of departure. Each folded day first multiplies every count by 0.95 (recent weeks count most) and rows below half a service are deleted. The first run folds the last 28 days, one day per tick; after that yesterday is folded from 1am. The claim is in `meta` (`late_day`), so two ticks never fold one day twice. No trip, time, device or profile is kept in `late_agg`.
 
 ## Reliability pick
 

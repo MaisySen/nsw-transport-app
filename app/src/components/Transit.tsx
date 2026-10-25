@@ -5,11 +5,13 @@ import { SwipeRow, swipeA11y, type SwipeAct } from './Swipe';
 import { haptic } from '@/lib/haptic';
 import { usePalette } from '@/lib/theme';
 import { BADGE, badgeLook } from '@/lib/lineStyle';
-import { bestTime, clock, countdown, countdownKey, delayWords, durText, ms, shortName } from '@/lib/format';
+import { clock, delayWords, durText, ms, shortName } from '@/lib/format';
 import type { Departure, Journey, Leg } from '@/lib/types';
 import { Icon, I, modeIconName } from './Icon';
 import { stopLabel } from '@/lib/busCore';
 import { font, T } from './ui';
+import { LiveCountdown, LiveStatus } from './LiveLabel';
+import { liveKey, liveState, type LiveState } from '@/lib/liveLabelCore';
 import { useFlag } from '@/lib/config';
 import { occBusy, occText, quietText } from '@/lib/occupancy';
 import type { Vehicle } from '@/lib/types';
@@ -96,39 +98,33 @@ export function LiveStamp({ updatedAt, error, offlineAt }: { updatedAt: number |
   );
 }
 
-export function StatusLine({ realtime, delayMin, cancelled }: { realtime?: boolean; delayMin?: number | null; cancelled?: boolean }) {
+export function StatusLine({ realtime, delayMin, cancelled, state, compact }: { realtime?: boolean; delayMin?: number | null; cancelled?: boolean; state?: LiveState; compact?: boolean }) {
   const c = usePalette();
+  // With a live state (liveLabelCore.ts) the line says where the time comes from: Live with its age, Timetable, Not tracking.
+  if (state) return <LiveStatus state={state} delayMin={delayMin} compact={compact} />;
+  if (!realtime && !cancelled) return <LiveStatus state={{ kind: 'timetable', label: 'Timetable', age: null, t: NaN, big: '', unit: '', soon: false, counting: false, a11y: '' }} />;
   const d = delayWords(delayMin, realtime, cancelled);
   const color = d.tone === 'green' ? c.liveText : d.tone === 'orange' ? c.lateText : d.tone === 'red' ? c.redText : c.text2;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       {realtime && !cancelled ? <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color, marginRight: 5 }} /> : null}
-      {!realtime && !cancelled ? <Icon name={I.clock} size={12} color={c.text2} style={{ marginRight: 4 }} /> : null}
       <Text maxFontSizeMultiplier={1.4} style={[font.foot, { color, fontWeight: realtime ? '600' : '400' }]}>{d.text}</Text>
     </View>
   );
 }
 
-/** The big right-hand number. Live times are bold and coloured; scheduled ones stay grey so they never pass for live. */
-export function Countdown({ planned, estimated, realtime, cancelled, now, align = 'right' }: { planned?: string; estimated?: string | null; realtime?: boolean; cancelled?: boolean; now: number; align?: 'right' | 'left' }) {
-  const c = usePalette();
-  const t = bestTime(planned, realtime ? estimated : null);
-  const cd = countdown(t, now);
-  const changed = realtime && estimated && planned && Math.abs(ms(estimated) - ms(planned)) >= 60000;
-  const color = cancelled ? c.text3 : realtime ? (cd.soon ? c.liveText : c.text) : c.text2;
-  return (
-    <View style={{ alignItems: align === 'right' ? 'flex-end' : 'flex-start', minWidth: 56 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-        <Text maxFontSizeMultiplier={1.3} style={[{ fontSize: cd.big.length > 4 ? 19 : 26, fontWeight: '700', color, fontVariant: ['tabular-nums'], letterSpacing: -0.5 }, cancelled && { textDecorationLine: 'line-through' }]}>{cd.big}</Text>
-        {cd.unit ? <Text maxFontSizeMultiplier={1.3} style={[font.foot, { color, marginLeft: 2, fontWeight: '600' }]}>{cd.unit}</Text> : null}
-      </View>
-      <View style={{ flexDirection: 'row', gap: 4 }}>
-        {changed ? <Text style={[font.caption, { color: c.text3, textDecorationLine: 'line-through' }]}>{clock(ms(planned))}</Text> : null}
-        <Text style={[font.caption, { color: c.text2, fontVariant: ['tabular-nums'] }]}>{clock(t)}</Text>
-      </View>
-    </View>
-  );
+/**
+ * The big right-hand number, drawn by LiveCountdown (LiveLabel.tsx): live times bold, timetable times grey, and a live
+ * time that went stale shows its timetable clock time instead of counting down to "Now" and "Gone".
+ */
+export function Countdown({ planned, estimated, realtime, cancelled, now, align = 'right', seenAt, vehicleAgeS }: { planned?: string; estimated?: string | null; realtime?: boolean; cancelled?: boolean; now: number; align?: 'right' | 'left'; seenAt?: number | null; vehicleAgeS?: number | null }) {
+  const state = liveState({ planned, estimated, realtime, cancelled, seenAt, vehicleAgeS }, now);
+  return <LiveCountdown state={state} planned={planned} align={align} />;
 }
+
+/** The live state of a departure row (its own answer's age and the vehicle's GPS age). */
+export const depState = (d: { planned?: string; estimated?: string | null; realtime?: boolean; cancelled?: boolean; seenAt?: number; vehicle?: { ageS?: number; lat?: number } | null }, now: number) => liveState({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS }, now);
+const depKey = (d: Departure, now: number) => liveKey({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS }, now);
 
 export const DepartureRow = memo(DepartureRowView, sameDepartureRow);
 
@@ -140,16 +136,17 @@ type DepartureRowProps = { d: Departure; now: number; onPress: () => void; onWat
  */
 function sameDepartureRow(a: DepartureRowProps, b: DepartureRowProps) {
   return a.d === b.d && a.watched === b.watched && a.showStop === b.showStop && a.stopNo === b.stopNo && a.alertText === b.alertText && !!a.onWatch === !!b.onWatch
-    && countdownKey(a.d.planned, a.d.estimated, a.d.realtime, a.now) === countdownKey(b.d.planned, b.d.estimated, b.d.realtime, b.now);
+    && depKey(a.d, a.now) === depKey(b.d, b.now);
 }
 
 function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertText, stopNo }: DepartureRowProps) {
   const c = usePalette();
+  const live = depState(d, now);
   const extra: string[] = [];
   if (d.platform) extra.push(d.platform.replace(/^Platform /, 'Plat. '));
   // The number on the bus stop sign, unless the screen is that one stop (its number is in the header).
   if (stopNo !== false) { const n = stopLabel(d.stopId, d.mode); if (n) extra.push(n); }
-  if (d.stopsAway != null && d.realtime && d.stopsAway >= 0 && d.stopsAway <= 15) extra.push(d.stopsAway === 0 ? 'At the stop' : `${d.stopsAway} stop${d.stopsAway === 1 ? '' : 's'} away`);
+  if (d.stopsAway != null && live.kind === 'live' && d.stopsAway >= 0 && d.stopsAway <= 15) extra.push(d.stopsAway === 0 ? 'At the stop' : `${d.stopsAway} stop${d.stopsAway === 1 ? '' : 's'} away`);
   const act: SwipeAct | null = onWatch
     ? { label: watched ? 'Stop watching' : 'Watch', text: watched ? 'Stop' : 'Watch', icon: watched ? I.bellOff : I.bell, color: watched ? c.text2 : c.indigo, onPress: onWatch }
     : null;
@@ -164,13 +161,13 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
         </View>
         {showStop && d.stopName ? <T kind="foot" tone="text2" numberOfLines={1}>{shortName(d.stopName)}</T> : null}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3, flexWrap: 'wrap', gap: 6 }}>
-          <StatusLine realtime={d.realtime} delayMin={d.delayMin} cancelled={d.cancelled} />
+          <StatusLine realtime={d.realtime} delayMin={d.delayMin} cancelled={d.cancelled} state={live} compact />
           {extra.length ? <T kind="foot" tone="text2" numberOfLines={2}>{extra.join(' \u00b7 ')}</T> : null}
           <OccupancyChip o={d.occupancy} />
           <QuietChip v={d.vehicle} />
         </View>
         {d.platformChangedFrom ? <T kind="foot" style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }}>Platform changed from {d.platformChangedFrom}</T> : null}
-        {d.pred && !d.realtime ? <T kind="caption" tone="text2" style={{ marginTop: 2 }}>Prediction: {d.pred.short || d.pred.text} ({d.pred.n} trips)</T> : null}
+        {d.pred && live.kind !== 'live' ? <T kind="caption" tone="text2" style={{ marginTop: 2 }}>Prediction: {d.pred.short || d.pred.text} ({d.pred.n} trips)</T> : null}
         {alertText ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
             <Icon name={I.warn} size={12} color={c.orange} />
@@ -178,7 +175,7 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
           </View>
         ) : null}
       </View>
-      <Countdown planned={d.planned} estimated={d.estimated} realtime={d.realtime} cancelled={d.cancelled} now={now} />
+      <LiveCountdown state={live} planned={d.planned} />
     </Pressable>
   );
   if (!act) return body;
@@ -194,6 +191,7 @@ export function JourneyCard({ j, now, onPress, best }: { j: Journey; now: number
   const leave = ms(j.leave);
   const mins = Math.round((leave - now) / 60000);
   const first = j.legs.find((l) => l.kind === 'transit');
+  const firstLive = first ? liveState({ planned: first.planned, estimated: first.estimated, realtime: first.realtime, cancelled: j.anyCancelled, seenAt: first.seenAt ?? j.seenAt }, now) : undefined;
   const leaveText = mins <= 0 ? 'Leave now' : mins < 60 ? `Leave in ${mins} min` : `Leave ${clock(leave)}`;
   return (
     <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }} style={({ pressed }) => [st.jRow, pressed && Platform.OS === 'ios' ? { backgroundColor: c.card2 } : null]}>
@@ -207,7 +205,7 @@ export function JourneyCard({ j, now, onPress, best }: { j: Journey; now: number
             {clock(ms(j.board))} to {clock(ms(j.arrive))} {'\u00b7'} {durText(j.durationMin)}{j.changes ? ` \u00b7 ${j.changes} change${j.changes > 1 ? 's' : ''}` : ''}
           </T>
         </View>
-        <StatusLine realtime={first?.realtime} delayMin={first?.delayMin} cancelled={j.anyCancelled} />
+        <StatusLine realtime={first?.realtime} delayMin={first?.delayMin} cancelled={j.anyCancelled} state={firstLive} compact />
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 10, gap: 5 }}>
         {j.legs.map((l, i) => (

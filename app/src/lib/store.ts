@@ -54,6 +54,19 @@ export function useStore() {
   return snap;
 }
 
+/**
+ * Reminders set on saved trips (reminders.ts) go with the trip: 8 s after a delete (past Home's 5 s Undo, and an
+ * edit that saves the trip again), the ones whose trip is still gone are cancelled. Delete all my data drops all now.
+ */
+const dropReminders = (keys: string[] | null) => {
+  const go = (k: string[] | null) => { import('./reminders').then((m) => m.dropTripReminders(k)).catch(() => {}); };
+  if (keys == null) { go(null); return; }
+  setTimeout(() => {
+    const still = keys.filter((k) => !(state.myTrips || []).some((t) => tripKeyOf(t) === k));
+    if (still.length) go(still);
+  }, 8000);
+};
+
 export const store = {
   /** The watch on a trip right now (read at tap time, so a memoised row never acts on an old value). */
   watchedId: (key: string) => state.watchedTrips[key],
@@ -89,7 +102,7 @@ export const store = {
   /** Saved trips on this phone, for lift outage alerts. */
   myTrips: (): MyTrip[] => state.myTrips || [],
   /** Delete all my data: everything this store keeps goes back to empty (the fare type stays). */
-  resetAll() { if (state.leaveReminder) import('./smartNotify').then((m) => m.cancelLeave()).catch(() => {}); state = { ...EMPTY, fareType: state.fareType || 'adult', acc: !!state.acc }; save(); },
+  resetAll() { if (state.leaveReminder) import('./smartNotify').then((m) => m.cancelLeave()).catch(() => {}); dropReminders(null); state = { ...EMPTY, fareType: state.fareType || 'adult', acc: !!state.acc }; save(); },
   /** Remembers an A to B trip the user opened, newest first. */
   addRecentTrip(from: Place, to: Place) {
     if (!from?.id || !to?.id || from.id === to.id) return;
@@ -120,8 +133,10 @@ export const store = {
     save();
   },
   /** Clear all in Your trips: the trips kept on the phone with these keys, and their place in your order. */
-  removeMyTrips(keys: string[]) { const k = new Set(keys); state = { ...state, myTrips: (state.myTrips || []).filter((x) => !k.has(tripKeyOf(x))), tripOrder: (state.tripOrder || []).filter((x) => !k.has(x)) }; save(); },
-  removeMyTrip(key: string) { state = { ...state, myTrips: (state.myTrips || []).filter((x) => tripKeyOf(x) !== key) }; save(); },
+  removeMyTrips(keys: string[]) { dropReminders(keys); const k = new Set(keys); state = { ...state, myTrips: (state.myTrips || []).filter((x) => !k.has(tripKeyOf(x))), tripOrder: (state.tripOrder || []).filter((x) => !k.has(x)) }; save(); },
+  /** Undo of a delete on Home: the list exactly as it was. */
+  setMyTrips(list: MyTrip[]) { state = { ...state, myTrips: list }; save(); },
+  removeMyTrip(key: string) { dropReminders([key]); state = { ...state, myTrips: (state.myTrips || []).filter((x) => tripKeyOf(x) !== key) }; save(); },
   getOrder: () => state.tripOrder || [],
   setTripOrder(keys: string[]) { state = { ...state, tripOrder: keys }; save(); },
   setAllServices(key: string, on: boolean) {

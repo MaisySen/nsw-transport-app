@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { reportTripLines, tripLinesOf } from '@/lib/myLines';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, type AlertButton, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { haptic } from '@/lib/haptic';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
@@ -9,7 +9,7 @@ import { useLive } from '@/lib/hooks';
 import { cacheKey, offlineText } from '@/lib/offlineCore';
 import { foldNear, type NearPick } from '@/lib/nearCore';
 import { stopNumber } from '@/lib/busCore';
-import { chipTime, makeDeletedNames } from '@/lib/homeCore';
+import { chipTime, makeDeletedNames, thenText, undoableDelete, whereText } from '@/lib/homeCore';
 import { radius, usePalette } from '@/lib/theme';
 import { bestTime, clock, durText, liveStamp, ms, shortName } from '@/lib/format';
 import { clearAllPlan } from '@/lib/planCore';
@@ -24,6 +24,8 @@ import { LineBadge, OccupancyChip } from './Transit';
 import { swipeA11y, type SwipeAct } from './Swipe';
 import { useReliabilityText } from '@/lib/reliability';
 import { font, Sep, T } from './ui';
+import { LiveStatus } from './LiveLabel';
+import { liveState, liveWords } from '@/lib/liveLabelCore';
 
 // ---------- shared refresh signals for every card on Home ----------
 
@@ -89,6 +91,41 @@ function reportHigh(key: string, list: { title: string; url?: string; open: () =
   alertSubs.forEach((f) => f());
 }
 /** Unique high priority alerts across the trips on Home, for the banner. */
+// Every alert on the services the Home trip cards show, by trip, for the redesign's single alerts line.
+const tripAlerts = new Map<string, string[]>();
+const tripAlertSubs = new Set<() => void>();
+let tripAlertSnap: string[] = [];
+function reportTripAlerts(key: string, list: string[]) {
+  const prev = tripAlerts.get(key) || [];
+  if (prev.join('\n') === list.join('\n')) return;
+  if (list.length) tripAlerts.set(key, list); else tripAlerts.delete(key);
+  tripAlertSnap = [...new Set([...tripAlerts.values()].flat())];
+  tripAlertSubs.forEach((f) => f());
+}
+/** The distinct alert titles across the trips on Home. */
+export function useTripAlerts(): string[] {
+  return useSyncExternalStore((f) => { tripAlertSubs.add(f); return () => { tripAlertSubs.delete(f); }; }, () => tripAlertSnap, () => tripAlertSnap);
+}
+
+/** Redesign: all alerts on your trips as one line that opens in place, instead of "N alerts" under every card. */
+export function AlertsLine() {
+  const c = usePalette();
+  const list = useTripAlerts();
+  const [open, setOpen] = useState(false);
+  if (!list.length) return null;
+  return (
+    <View style={{ marginHorizontal: 16, marginTop: 12, borderRadius: radius, backgroundColor: c.card, overflow: 'hidden' }}>
+      <Pressable onPress={() => { haptic.select(); setOpen(!open); }} accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${list.length} ${list.length === 1 ? 'alert' : 'alerts'} on your trips`}
+        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 46 }}>
+        <Icon name={I.warn} size={14} color={c.orange} />
+        <T kind="sub" style={{ marginLeft: 8, flex: 1, fontWeight: '600' }}>{list.length} {list.length === 1 ? 'alert' : 'alerts'} on your trips</T>
+        <Icon name={I.chevron} size={12} color={c.text3} style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }} />
+      </Pressable>
+      {open ? list.map((a, i) => <View key={i}><Sep inset={16} /><T kind="foot" tone="text2" style={{ paddingHorizontal: 16, paddingVertical: 10 }}>{a}</T></View>) : null}
+    </View>
+  );
+}
+
 export function useHighAlerts() {
   return useSyncExternalStore((l) => { alertSubs.add(l); return () => { alertSubs.delete(l); }; }, () => alertSnap, () => alertSnap);
 }
@@ -265,41 +302,55 @@ export function WarnLine({ j }: { j: Journey }) {
 }
 
 /** Tap and hold (or swipe) on a Home trip: the actions for that kind of trip. */
-export function tripMenu(trip: TripItem, route?: string) {
+/**
+ * A hold menu as an alert. Android dialogs show at most 3 buttons (the first ones are dropped), so there Cancel
+ * gives way when a menu has 3 actions: tapping outside or Back closes the dialog.
+ */
+function holdMenu(title: string, message: string | undefined, buttons: AlertButton[]) {
+  const list = Platform.OS === 'android' && buttons.length > 3 ? buttons.filter((b) => b.style !== 'cancel') : buttons;
+  Alert.alert(title, message, list, { cancelable: true });
+}
+
+export function tripMenu(trip: TripItem, route?: string, onTop?: () => void) {
   const { from, to, via } = trip;
   const title = route || `${shortName(from.name)} to ${shortName(to.name)}`;
   haptic.tap();
   const key = tripKeyOf({ from, to, via, legs: trip.legs });
+  // Show first: the trip moves to the top of Home, where it is the Next trip card.
+  const top: AlertButton[] = onTop ? [{ text: 'Show first', onPress: onTop }] : [];
   const editParams = { from: from.id, fromName: from.name, to: to.id, toName: to.name, ...(trip.modes?.[0] ? { mode: trip.modes[0] } : {}), ...(trip.legs && trip.legs.length > 1 ? { legs: JSON.stringify(trip.legs) } : {}), ...(trip.name ? { name: trip.name } : {}), edit: key };
   if (trip.kind === 'mine') {
-    Alert.alert(trip.name || title, undefined, [
+    holdMenu(trip.name || title, undefined, [
       { text: 'Edit trip', onPress: () => router.push({ pathname: '/new-trip', params: editParams }) },
+      ...top,
       { text: 'Delete trip', style: 'destructive', onPress: () => deleteTrip(trip) },
       { text: 'Cancel', style: 'cancel' },
-    ], { cancelable: true });
+    ]);
   } else if (trip.kind === 'saved') {
-    Alert.alert(trip.name || title, 'Saved on your profile.', [
-      { text: 'Cancel', style: 'cancel' },
+    holdMenu(trip.name || title, 'Saved on your profile.', [
+      ...top,
       { text: 'Delete trip', style: 'destructive', onPress: () => deleteTrip(trip) },
-    ], { cancelable: true });
-  } else if (trip.kind === 'commute') {
-    Alert.alert(trip.name || title, 'Your commute: a leave now alert on the days you set.', [
       { text: 'Cancel', style: 'cancel' },
+    ]);
+  } else if (trip.kind === 'commute') {
+    holdMenu(trip.name || title, 'Your commute: a leave now alert on the days you set.', [
+      ...top,
       { text: 'Delete commute', style: 'destructive', onPress: () => { if (trip.id) api.deleteCommute(trip.id).then(pullHome).catch((e) => Alert.alert("Couldn't delete it", e.message)); } },
-    ], { cancelable: true });
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   } else if (trip.kind === 'place') {
-    Alert.alert('Home and work', undefined, [
+    holdMenu('Home and work', undefined, [
       { text: 'Change home', onPress: () => router.push({ pathname: '/add-trip', params: { place: 'home' } }) },
       { text: 'Change work', onPress: () => router.push({ pathname: '/add-trip', params: { place: 'work' } }) },
       { text: 'Remove both', style: 'destructive', onPress: () => { store.setPlace('home', null); store.setPlace('work', null); } },
       { text: 'Cancel', style: 'cancel' },
-    ], { cancelable: true });
+    ]);
   } else {
-    Alert.alert(title, undefined, [
+    holdMenu(title, undefined, [
       { text: 'Save trip', onPress: () => router.push({ pathname: '/new-trip', params: { from: from.id, fromName: from.name, to: to.id, toName: to.name } }) },
       { text: 'Remove from Recent', style: 'destructive', onPress: () => store.removeRecentTrip(from.id, to.id) },
       { text: 'Cancel', style: 'cancel' },
-    ], { cancelable: true });
+    ]);
   }
 }
 
@@ -319,14 +370,31 @@ export async function clearAllTrips(trips: TripItem[]) {
 
 export function deleteTrip(trip: TripItem) {
   const key = tripKeyOf({ from: trip.from, to: trip.to, via: trip.via, legs: trip.legs });
-  if (trip.kind === 'mine') store.removeMyTrip(key);
-  const st = store.getOrder();
-  if (st.includes(key)) store.setTripOrder(st.filter((k) => k !== key));
-  if (trip.name) { deletedSaved.add(trip.name); api.deleteSaved(trip.name).then(pullHome).catch(() => {}); }
+  const d = undoableDelete(() => {
+    const mine = store.myTrips(), order = store.getOrder();
+    if (trip.kind === 'mine') store.removeMyTrip(key);
+    if (order.includes(key)) store.setTripOrder(order.filter((k) => k !== key));
+    if (trip.name) deletedSaved.add(trip.name);
+    return () => { store.setMyTrips(mine); store.setTripOrder(order); if (trip.name) deletedSaved.remove(trip.name); pullHome(); };
+  }, trip.name ? () => { api.deleteSaved(trip.name!).then(pullHome).catch(() => {}); } : null, UNDO_MS + 500);
   haptic.success();
+  for (const f of undoSubs) f({ text: `${trip.name ? trip.name.charAt(0).toUpperCase() + trip.name.slice(1) : 'Trip'} deleted`, undo: () => { d.undo(); }, commit: d.commit });
 }
 
-export function TripBoard({ trip, now, handle, allServices, below, aside, flush, act }: { trip: TripItem; now: number; handle?: React.ReactNode | ((open: () => void) => React.ReactNode); allServices?: boolean;
+/** How long Home's Undo bar stays after a delete. The server copy is deleted just after it goes. */
+export const UNDO_MS = 5000;
+type UndoBar = { text: string; undo: () => void; commit: () => void };
+const undoSubs = new Set<(u: UndoBar) => void>();
+/** Home shows the Undo bar (above the tab bar) for every trip deleted from a swipe, a hold menu or VoiceOver. */
+export function onTripDeleted(f: (u: UndoBar) => void) { undoSubs.add(f); return () => { undoSubs.delete(f); }; }
+
+/** Home's trip looks: 'hero' is the Next trip card, 'row' every other trip. */
+export type TripLook = 'hero' | 'row';
+
+export function TripBoard({ trip, now, handle, allServices, below, aside, flush, act, look = 'row', onTop }: { trip: TripItem; now: number; handle?: React.ReactNode | ((open: () => void) => React.ReactNode); allServices?: boolean;
+  look?: TripLook;
+  /** Show first: puts this trip on top, where it becomes the Next trip card (offered in the trip's hold menu). */
+  onTop?: () => void;
   /** Inside a swipe row: the row has the card's margins, and act is its swipe action, offered to VoiceOver too. */
   flush?: boolean; act?: SwipeAct;
   /** A button beside the header, outside its tap area (the commute swap), so a tap on it never also opens the trip. */
@@ -367,11 +435,10 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
 
   const fromName = shortName(from.name).replace(/ Station$/, ''), toName = shortName(to.name).replace(/ Station$/, '');
   const route = `${fromName} to ${toName}`;
-  const viaLine = chain ? `${tLegs(plan).length} legs via ${viaText(plan)}` : '';
   const custom = trip.name && trip.name.toLowerCase() !== route.toLowerCase() ? trip.name.charAt(0).toUpperCase() + trip.name.slice(1) : '';
   const open = (pick?: number) => router.push({ pathname: '/trip', params: { from: from.id, fromName: from.name, to: to.id, toName: to.name, ...(chain ? { legs: JSON.stringify(tLegs(plan)) } : {}), ...(trip.name ? { name: trip.name } : {}), ...(pick != null ? { pick: String(pick) } : {}) } });
   const glyph = trip.kind === 'saved' || trip.kind === 'mine' ? I.star : trip.kind === 'commute' ? I.clock : trip.kind === 'place' ? (trip.tag === 'To work' ? I.briefcase : I.home) : undefined;
-  const menu = () => tripMenu(trip, route);
+  const menu = () => tripMenu(trip, route, onTop);
   useEffect(() => {
     const list: { title: string; url?: string; open: () => void }[] = [];
     for (const j of (data?.journeys || []).slice(0, 3)) for (const l of j.legs) for (const a of (l.alerts || []) as any[]) {
@@ -381,41 +448,127 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highKey, trip.key]);
   useEffect(() => () => reportHigh(trip.key, []), [trip.key]);
+  const alertSig = [...alerts].join('\n');
+  useEffect(() => { reportTripAlerts(trip.key, alertSig ? alertSig.split('\n') : []); }, [alertSig, trip.key]);
+  useEffect(() => () => reportTripAlerts(trip.key, []), [trip.key]);
 
 
+  const note = !data ? (error ? 'Live times unavailable, trying again' : 'Loading live times') : !js.length ? (offlineAt ? 'No kept times left for today' : data.error || 'No more services today') : '';
+  const glance = (
+    <TripGlance look={look} js={js} arrs={arrs} now={now} title={trip.kind === 'place' && custom ? `${custom}: ${route}` : custom || route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint}
+      note={note} onPress={() => open()} onLongPress={menu} act={act} roomRight={aside ? 40 : 0}
+      trailing={typeof handle === 'function' ? handle(() => open()) : handle} />
+  );
   return (
     <Card flush={flush}>
-      <View style={{ flexDirection: 'row' }}>
-        <View style={{ flex: 1 }}>
-          <CardHeader act={act} title={custom ? `${custom}: ${route}` : route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint} onPress={() => open()} onLongPress={menu} trailing={typeof handle === 'function' ? handle(() => open()) : handle}
-            sub={alerts.size || viaLine ? (
-              <View>
-                {viaLine ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{viaLine}</T> : null}
-                {alerts.size ? (
-                  <Pressable accessibilityRole="button" onPress={() => open()} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
-                    <Icon name={I.warn} size={11} color={c.orange} />
-                    <T kind="foot" style={{ color: c.lateText, marginLeft: 4 }}>{alerts.size} {alerts.size === 1 ? 'alert' : 'alerts'}</T>
-                  </Pressable>
-                ) : null}
-              </View>
-            ) : null} />
+      {aside ? (
+        // The swap button sits over the card's top right corner, outside the card's tap area, so a tap on it never opens the trip.
+        <View>
+          {glance}
+          <View style={{ position: 'absolute', top: 2, right: 2 }}>{aside}</View>
         </View>
-        {aside ? <View style={{ justifyContent: 'center', paddingRight: 6 }}>{aside}</View> : null}
-      </View>
+      ) : glance}
       {below && js.length ? below(js) : null}
-      {!data ? <T kind="foot" tone="text2" style={s.note}>{error ? 'Live times unavailable right now, trying again' : 'Loading live times'}</T> : null}
-      {offlineAt ? <OfflineNote at={offlineAt} now={now} /> : null}
-      {data && !js.length ? <T kind="foot" tone="text2" style={s.note}>{offlineAt ? 'No kept times left for today' : data.error || 'No more services today'}</T> : null}
-      {js.map((j, i) => (
-        <View key={legKey(firstLeg(j)) + i}>
-          <Sep inset={0} />
-          <ServiceRow j={j} now={now} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => open(i)} />
-          <WarnLine j={j} />
-        </View>
-      ))}
     </Card>
   );
 }
+
+/**
+ * Home's trip looks. 'hero' is the Next trip card: a big countdown, line badges, where to board, status, leave and
+ * arrive, then the next two. 'row' is every other trip: name; badges, status and where to board; the next two;
+ * the countdown at the right edge. One tap target per trip; every service is on the trip screen.
+ */
+function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPress, onLongPress, act, trailing, roomRight = 0 }: { look: TripLook; js: Journey[]; arrs: number[]; now: number; title: string; glyph?: IconName; glyphColor?: string; note: string; onPress: () => void; onLongPress: () => void; act?: SwipeAct; trailing?: React.ReactNode; roomRight?: number }) {
+  const c = usePalette();
+  const j = js[0];
+  const l = j ? firstLeg(j) : undefined;
+  const dep = j ? depOf(j) : 0;
+  const stt = j ? statusOf(j, now) : null;
+  // Honest live label (docs/LIVE-LABELS.md): a live time counts down, a timetable time is grey, a live time gone
+  // stale shows its timetable time and "Not tracking" instead of counting to Now.
+  const lsOf = (x: Journey) => { const fl = firstLeg(x); return fl?.planned ? liveState({ planned: fl.planned, estimated: fl.estimated, realtime: fl.realtime, cancelled: !!(x.anyCancelled || fl.cancelled), seenAt: fl.seenAt ?? x.seenAt }, now) : null; };
+  const ls = j ? lsOf(j) : null;
+  const honest = !!ls && ls.kind !== 'live' && ls.kind !== 'cancelled';
+  const tone = !stt ? c.text2 : ls?.kind === 'stale' ? c.lateText : honest ? c.text2 : stt.tone === 'live' ? c.liveText : stt.tone === 'late' ? c.lateText : stt.tone === 'red' ? c.redText : c.text2;
+  const cancelled = stt?.tone === 'red';
+  const chip = !j ? c.text3 : honest ? '#8E8E93' : cdColor(dep, now, cancelled, c);
+  const t = ls ? { big: ls.big, unit: ls.unit } : j ? cd(dep, now) : { big: '', unit: '' };
+  const status = ls && honest ? ls.label : stt?.text;
+  const badges: Leg[] = [];
+  for (const x of j ? j.legs.filter((y) => y.kind === 'transit') : []) if (x.line && !badges.some((b) => b.line === x.line)) badges.push(x);
+  const where = whereText(l?.fromPlatform, l?.stopId, l?.mode, look === 'hero');
+  const then = thenText(js.slice(1, 3).map((x) => { const s = lsOf(x); return s ? { big: s.big, unit: s.unit } : cd(depOf(x), now); }));
+  const head = (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      {glyph && glyph !== I.star && look === 'hero' ? <Icon name={glyph} size={15} color={glyphColor || c.tint} style={{ marginRight: 6 }} /> : null}
+      <T kind={look === 'row' ? 'body' : 'headline'} numberOfLines={2} style={{ flexShrink: 1, fontWeight: '600' }}>{title}</T>
+    </View>
+  );
+  const spoken = (x: { big: string; unit: string }) => (x.unit ? `${x.big} ${x.unit === 'min' ? 'minutes' : x.unit}` : x.big);
+  const whereLong = whereText(l?.fromPlatform, l?.stopId, l?.mode, true);
+  const a11y = j
+    ? `${title}. ${ls ? ls.a11y : spoken(t)}, leaves ${hm(dep)}${whereLong ? ` from ${whereLong}` : ''}, ${ls?.kind === 'live' ? `${stt?.text}, ${liveWords(ls)}` : status}, arrives ${hm(arrs[0])}${badges.length ? `, ${badges.map((b) => b.line).join(' and ')}` : ''}${then ? `. ${then}` : ''}`
+    : `${title}. ${note}`;
+  const press = ({ pressed }: { pressed: boolean }) => [pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null];
+
+  if (look === 'hero') {
+    return (
+      <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" accessibilityLabel={a11y} accessibilityHint="Opens the trip with every service" android_ripple={{ color: c.fill }} {...swipeA11y(act)} style={(p) => [g.hero, ...press(p)]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingRight: roomRight }}>
+          <View style={{ flex: 1 }}>{head}</View>
+          {trailing || (roomRight ? null : <Icon name={I.chevron} size={13} color={c.text3} style={{ marginLeft: 6 }} />)}
+        </View>
+        {j ? (
+          <>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', flexWrap: 'wrap', marginTop: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+                <Text maxFontSizeMultiplier={1.2} style={{ fontSize: 56, lineHeight: 62, fontWeight: '800', color: cdText(chip, c), fontVariant: ['tabular-nums'], letterSpacing: -1.5 }}>{t.big}</Text>
+                {t.unit ? <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 20, fontWeight: '700', color: cdText(chip, c), marginLeft: 5, marginBottom: 10 }}>{t.unit}</Text> : null}
+              </View>
+              <View style={{ flex: 1, minWidth: 120, alignItems: 'flex-end', marginBottom: 10, marginLeft: 12, gap: 6 }}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 4 }}>{badges.slice(0, 3).map((b, i) => <LineBadge key={`${b.line}${i}`} line={b.line} mode={b.mode} color={b.color} />)}</View>
+                {where ? <T kind="sub" numberOfLines={2} style={{ fontWeight: '600', textAlign: 'right' }}>{where}</T> : null}
+              </View>
+            </View>
+            {ls ? <LiveStatus state={ls} delayMin={l?.delayMin} /> : <T kind="foot" style={{ color: tone }}>{stt?.text}</T>}
+            <T kind="sub" tone="text2" numberOfLines={2} style={{ marginTop: 4 }}>{`${hm(dep)} \u2192 ${hm(arrs[0])} \u00b7 ${durText(j.durationMin)}`}</T>
+            {then ? <T kind="sub" tone="text2" style={{ marginTop: 4 }}>{then}</T> : null}
+          </>
+        ) : <T kind="foot" tone="text2" style={{ marginTop: 8 }}>{note}</T>}
+      </Pressable>
+    );
+  }
+
+  // 'row': two or three short lines per trip, the next countdown at the right edge.
+  return (
+    <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" accessibilityLabel={a11y} android_ripple={{ color: c.fill }} {...swipeA11y(act)} style={(p) => [g.row, ...press(p)]}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        {head}
+        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+          {badges.slice(0, 2).map((b, i) => <LineBadge key={`${b.line}${i}`} line={b.line} mode={b.mode} color={b.color} />)}
+          <T kind="foot" numberOfLines={2} style={{ flexShrink: 1 }}>
+            {j ? <T kind="foot" style={{ color: tone, fontWeight: ls?.kind === 'stale' ? '600' : undefined }}>{status}</T> : <T kind="foot" tone="text2">{note}</T>}
+            {where ? <T kind="foot" tone="text2">{` \u00b7 ${where}`}</T> : null}
+          </T>
+        </View>
+        {then ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{then}</T> : null}
+      </View>
+      {j ? (
+        <View style={[g.chip, { marginLeft: 10, backgroundColor: chip + (c.dark ? '33' : '1F') }]}>
+          <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ color: cdText(chip, c), fontSize: t.unit ? 22 : 14, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }}>{t.big}</Text>
+          {t.unit ? <Text maxFontSizeMultiplier={1.3} style={{ color: cdText(chip, c), fontSize: 11, fontWeight: '600', marginTop: -2 }}>{t.unit}</Text> : null}
+        </View>
+      ) : null}
+      {trailing || <Icon name={I.chevron} size={13} color={c.text3} style={{ marginLeft: 8 }} />}
+    </Pressable>
+  );
+}
+
+const g = StyleSheet.create({
+  hero: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 16 },
+  row: { flexDirection: 'row', alignItems: 'center', paddingLeft: 16, paddingRight: 12, paddingVertical: 10, minHeight: 64 },
+  chip: { minWidth: 52, minHeight: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 4 },
+});
 
 /** TripView style service row: countdown chip coloured by time left, leave time and status, arrive time with line badges. */
 export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j: Journey; now: number; arrive: number; beaten?: boolean; onPress: () => void; showTravel?: boolean }) {
