@@ -11,16 +11,16 @@ import { font } from './ui';
 export type LiveProps = LiveInput & { delayMin?: number | null; now: number };
 
 /** The label line: "3 min late · Live, updated 20 s ago", "Timetable", "Not tracking", "Cancelled". */
-export function LiveStatus({ state, delayMin, compact }: { state: LiveState; delayMin?: number | null; compact?: boolean }) {
+export function LiveStatus({ state, delayMin, compact, timetableText }: { state: LiveState; delayMin?: number | null; compact?: boolean; timetableText?: string }) {
   const c = usePalette();
   if (state.kind === 'cancelled') {
     return <Text maxFontSizeMultiplier={1.4} style={[font.foot, { color: c.redText, fontWeight: '600' }]}>Cancelled</Text>;
   }
   if (state.kind === 'timetable') {
     return (
-      <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel="Timetable time, no live data">
+      <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel={timetableText ? `${timetableText}, no live data` : 'Timetable time, no live data'}>
         <Icon name={I.clock} size={12} color={c.text2} style={{ marginRight: 4 }} />
-        <Text maxFontSizeMultiplier={1.4} style={[font.foot, { color: c.text2 }]}>Timetable</Text>
+        <Text maxFontSizeMultiplier={1.4} style={[font.foot, { color: c.text2 }]}>{timetableText || 'Timetable'}</Text>
       </View>
     );
   }

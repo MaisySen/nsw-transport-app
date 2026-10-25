@@ -12,6 +12,7 @@ import { clock, delayWords, durText, ms, shortName } from '@/lib/format';
 import type { Departure, Journey, Leg } from '@/lib/types';
 import { Icon, I, modeIconName } from './Icon';
 import { stopLabel } from '@/lib/busCore';
+import { rowTraffic } from '@/lib/busLiveCore';
 import { font, T } from './ui';
 import { LiveCountdown, LiveStatus } from './LiveLabel';
 import { liveKey, liveState, type LiveState } from '@/lib/liveLabelCore';
@@ -104,11 +105,13 @@ export function LiveStamp({ updatedAt, error, offlineAt }: { updatedAt: number |
   );
 }
 
-export function StatusLine({ realtime, delayMin, cancelled, state, compact }: { realtime?: boolean; delayMin?: number | null; cancelled?: boolean; state?: LiveState; compact?: boolean }) {
+export function StatusLine({ realtime, delayMin, cancelled, state, compact, timetableText }: { realtime?: boolean; delayMin?: number | null; cancelled?: boolean; state?: LiveState; compact?: boolean;
+  /** Words for a time with no live data ("Timetable only" on bus rows); "Timetable" when not given. */
+  timetableText?: string }) {
   const c = usePalette();
   // With a live state (liveLabelCore.ts) the line says where the time comes from: Live with its age, Timetable, Not tracking.
-  if (state) return <LiveStatus state={state} delayMin={delayMin} compact={compact} />;
-  if (!realtime && !cancelled) return <LiveStatus state={{ kind: 'timetable', label: 'Timetable', age: null, t: NaN, big: '', unit: '', soon: false, counting: false, a11y: '' }} />;
+  if (state) return <LiveStatus state={state} delayMin={delayMin} compact={compact} timetableText={timetableText} />;
+  if (!realtime && !cancelled) return <LiveStatus timetableText={timetableText} state={{ kind: 'timetable', label: 'Timetable', age: null, t: NaN, big: '', unit: '', soon: false, counting: false, a11y: '' }} />;
   const d = delayWords(delayMin, realtime, cancelled);
   const color = d.tone === 'green' ? c.liveText : d.tone === 'orange' ? c.lateText : d.tone === 'red' ? c.redText : c.text2;
   return (
@@ -130,6 +133,7 @@ export function Countdown({ planned, estimated, realtime, cancelled, now, align 
 
 /** The live state of a departure row (its own answer's age and the vehicle's GPS age). */
 export const depState = (d: { planned?: string; estimated?: string | null; realtime?: boolean; cancelled?: boolean; seenAt?: number; vehicle?: { ageS?: number; lat?: number } | null }, now: number) => liveState({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS }, now);
+const isBusMode = (m?: string) => m === 'bus' || m === 'coach' || m === 'school';
 const depKey = (d: Departure, now: number) => liveKey({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS }, now);
 
 export const DepartureRow = memo(DepartureRowView, sameDepartureRow);
@@ -153,6 +157,8 @@ function sameDepartureRow(a: DepartureRowProps, b: DepartureRowProps) {
 function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertText, stopNo, why }: DepartureRowProps) {
   const c = usePalette();
   const live = depState(d, now);
+  // Buses: "Running slow in traffic" when the live delays ahead grow (busLiveCore.ts); live rows only.
+  const traffic = live.kind === 'live' ? rowTraffic(d) : null;
   const extra: string[] = [];
   if (d.platform) extra.push(d.platform.replace(/^Platform /, 'Plat. '));
   // The number on the bus stop sign, unless the screen is that one stop (its number is in the header).
@@ -172,12 +178,18 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
         </View>
         {showStop && d.stopName ? <T kind="foot" tone="text2" numberOfLines={1}>{shortName(d.stopName)}</T> : null}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3, flexWrap: 'wrap', gap: 6 }}>
-          <StatusLine realtime={d.realtime} delayMin={d.delayMin} cancelled={d.cancelled} state={live} compact />
+          <StatusLine realtime={d.realtime} delayMin={d.delayMin} cancelled={d.cancelled} state={live} compact timetableText={isBusMode(d.mode) ? 'Timetable only' : undefined} />
           {extra.length ? <T kind="foot" tone="text2" numberOfLines={2}>{extra.join(' \u00b7 ')}</T> : null}
           <OccupancyChip o={d.occupancy} />
           <QuietChip v={d.vehicle} />
         </View>
         {d.platformChangedFrom ? <T kind="foot" style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }}>Platform changed from {d.platformChangedFrom}</T> : null}
+        {traffic ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }} accessibilityLabel={traffic}>
+            <Icon name={I.traffic} size={12} color={c.orange} />
+            <T kind="foot" numberOfLines={1} style={{ color: c.lateText, marginLeft: 4, flex: 1, fontWeight: '600' }}>{traffic}</T>
+          </View>
+        ) : null}
         {d.pred && live.kind !== 'live' ? <T kind="caption" tone="text2" style={{ marginTop: 2 }}>Prediction: {d.pred.short || d.pred.text} ({d.pred.n} trips)</T> : null}
         {why ? <WhyLate why={why} style={{ marginTop: 3 }} /> : alertText ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>

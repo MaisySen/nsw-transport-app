@@ -21,6 +21,7 @@ import { stopNumber } from '@/lib/busCore';
 import { boardAlight } from '@/lib/stopBoardCore';
 import { liveState } from '@/lib/liveLabelCore';
 import { onColor } from '@/lib/theme';
+import { busMarker, tripTraffic } from '@/lib/busLiveCore';
 
 export default function ServiceScreen() {
   const p = useLocalSearchParams<{ trip: string; feed: string; line: string; stop: string; planned: string; mode: string; destId: string; color: string; dest: string; rt: string; est: string; delay: string; to: string }>();
@@ -49,6 +50,9 @@ export default function ServiceScreen() {
   const tags = boardAlight(stops, p.stop, p.to);
   const usual = useUsualText({ kind: 'transit', line: p.line || data?.line, stopId: p.stop, planned: p.planned });
   const mineStop = stops.find((s) => s.mine);
+  // Buses: "Running slow in traffic" when the live delays ahead grow, and where to draw the bus on the line of stops.
+  const traffic = busLike && data ? tripTraffic({ ...data, mode: data.mode || busMode }) : null;
+  const mk = busLike && data?.live ? busMarker(stops, nextIdx, data.where, !!data.vehicle) : null;
   const liveNow = liveState({ planned: mineStop?.planned || p.planned, estimated: mineEst || mineStop?.estimated, realtime: live, cancelled: data?.cancelled, seenAt: updatedAt, vehicleAgeS: data?.vehicle?.ageS }, now);
 
   const watch = () => {
@@ -81,11 +85,17 @@ export default function ServiceScreen() {
               ) : null}
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
-              <StatusLine realtime={live} delayMin={delayMin} cancelled={data?.cancelled} state={liveNow} />
+              <StatusLine realtime={live} delayMin={delayMin} cancelled={data?.cancelled} state={liveNow} timetableText={busLike ? 'Timetable only' : undefined} />
               {data?.vehicle?.occupancy?.text ? <OccupancyChip o={data.vehicle.occupancy} style={{ marginLeft: 6 }} /> : null}
               <QuietChip v={data?.vehicle as any} style={{ marginLeft: 6 }} />
               {data && !data.vehicle ? <T kind="foot" tone="text2">{'\u00b7'} No GPS position yet</T> : null}
             </View>
+            {traffic ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }} accessibilityLabel={traffic}>
+                <Icon name={I.traffic} size={13} color={c.orange} />
+                <T kind="foot" style={{ color: c.lateText, fontWeight: '600', flexShrink: 1 }}>{traffic}</T>
+              </View>
+            ) : null}
             {usual ? <T kind="foot" tone="text2" style={{ marginTop: 4 }}>{usual} at this stop</T> : null}
             {data?.where?.text ? <T kind="body" style={{ marginTop: 10 }}>{data.where.text}</T> : null}
             {data?.mine ? (
@@ -118,6 +128,11 @@ export default function ServiceScreen() {
                   <View style={{ width: 28, alignItems: 'center' }}>
                     <View style={{ position: 'absolute', top: i === 0 ? 22 : 0, bottom: i === stops.length - 1 ? 22 : 0, width: 4, backgroundColor: dim ? c.text3 : color, opacity: dim ? 0.5 : 1 }} />
                     <View style={{ marginTop: 16, width: s.mine || isNext || tag ? 14 : 10, height: s.mine || isNext || tag ? 14 : 10, borderRadius: 7, backgroundColor: isNext ? color : c.card, borderWidth: 2.5, borderColor: dim ? c.text3 : color }} />
+                    {mk && mk.index === i ? (
+                      <View style={[sx.bus, { top: mk.at ? 11 : i === 0 ? -2 : -12, backgroundColor: color, borderColor: c.card }]}>
+                        <Icon name={I.bus} size={12} color={onColor(color)} />
+                      </View>
+                    ) : null}
                   </View>
                   <View style={{ flex: 1, paddingVertical: 11, paddingLeft: 8, flexDirection: 'row', alignItems: 'center' }}>
                     <View style={{ flex: 1 }}>
@@ -126,10 +141,11 @@ export default function ServiceScreen() {
                       {tag || isNext ? (
                         <View style={{ flexDirection: 'row', gap: 6, marginTop: 3 }}>
                           {tag ? <StopTag text={tag} on={tag === 'GET ON'} color={color} /> : null}
-                          {isNext ? <T kind="caption" style={{ color, fontWeight: '700' }}>NEXT STOP</T> : null}
+                          {isNext ? <T kind="caption" style={{ color, fontWeight: '700' }}>{mk && mk.at && mk.index === i ? 'BUS IS HERE' : 'NEXT STOP'}</T> : null}
                         </View>
                       ) : null}
                       {s.mine && !isNext && !tag ? <T kind="caption" tone="tint" style={{ fontWeight: '700', marginTop: 1 }}>YOUR STOP</T> : null}
+                      {mk && mk.at && mk.index === i && !isNext ? <T kind="caption" style={{ color, fontWeight: '700', marginTop: 1 }}>BUS IS HERE</T> : null}
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
                       <T kind="sub" tone={dim ? 'text3' : live ? 'text' : 'text2'} style={{ fontVariant: ['tabular-nums'], fontWeight: s.mine ? '600' : '400' }}>{clock(t)}</T>
@@ -159,5 +175,6 @@ function StopTag({ text, on, color }: { text: string; on: boolean; color: string
 }
 
 const sx = StyleSheet.create({
+  bus: { position: 'absolute', width: 24, height: 24, borderRadius: 12, borderWidth: 2, alignItems: 'center', justifyContent: 'center', zIndex: 2 },
   back: { position: 'absolute', left: 16, width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 4 },
 });

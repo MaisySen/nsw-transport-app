@@ -23,6 +23,7 @@ import type { Departure } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
 import { SpeakButton } from '@/components/SpeakButton';
 import { departuresSentence } from '@/lib/voiceCore';
+import { busBoardWords, rowTraffic } from '@/lib/busLiveCore';
 
 const TAG = 'departure-board';
 
@@ -104,6 +105,7 @@ export default function Board() {
   useReportCountdowns('board:' + id, (data?.items || []).slice(0, fit).map((d) => bestTime(d.planned, d.realtime ? d.estimated : null)));
   const whyOf = useWhyLate(data?.items, data?.alerts);
   const why = useMemo(() => new Map((data?.items || []).map((d) => [`${d.tripId || d.line}|${d.planned}`, whyOf(d)])), [data, whyOf]);
+  const depOf = useMemo(() => new Map((data?.items || []).map((d) => [`${d.tripId || d.line}|${d.planned}`, d])), [data]);
   const title = shortName(data?.stop?.name || (name ? String(name) : 'Departures')).replace(/ Station$/, '');
   const close = () => { haptic.tap(); goBack({ pathname: '/stop/[id]', params: { id: String(id), name: name ? String(name) : '' } } as any); };
   const flip = () => { haptic.select(); lightChosen = !light; setLight(!light); };
@@ -139,11 +141,17 @@ export default function Board() {
         const stops = stopsOf(r);
         const w = why.get(r.key) || null;
         const tone = r.cancelled ? c.redText : r.kind === 'live' ? c.liveText : r.kind === 'stale' ? c.lateText : c.text2;
-        const word = r.cancelled ? 'Cancelled' : r.kind === 'live' ? `Live${r.age ? `, ${r.age}` : ''}` : r.label;
+        const dep = depOf.get(r.key);
+        // Buses say how they are running: "4 min late, 3 stops away", or "Timetable only" (busLiveCore.ts).
+        const bus = dep && !r.cancelled && r.kind !== 'stale' ? busBoardWords(dep, r.kind === 'live') : null;
+        const slow = dep && r.kind === 'live' ? rowTraffic(dep) : null;
+        const word = r.cancelled ? 'Cancelled' : bus || (r.kind === 'live' ? `Live${r.age ? `, ${r.age}` : ''}` : r.label);
         const sub = [r.platform, word].filter(Boolean).join('  \u00b7  ');
-        const third = w ? w.text : stops ? `Stops: ${stops}` : '';
+        const third = w ? w.text : slow || (stops ? `Stops: ${stops}` : '');
+        const warm = !!w || !!slow;
+        const subTone = bus && / late/.test(bus) ? c.lateText : tone;
         return (
-          <View key={r.key + i} accessible accessibilityLabel={[r.a11y, stops && !r.pattern ? `stops at ${stops}` : '', w ? w.text : ''].filter(Boolean).join(', ')}
+          <View key={r.key + i} accessible accessibilityLabel={[r.a11y, bus && bus !== 'Timetable only' ? bus : '', slow || '', stops && !r.pattern ? `stops at ${stops}` : '', w ? w.text : ''].filter(Boolean).join(', ')}
             style={[s.row, { minHeight: rowH, borderTopColor: c.sep, borderTopWidth: i ? StyleSheet.hairlineWidth : 0 }]}>
             <View style={[s.badge, { backgroundColor: bg, minWidth: big * 1.6, height: big * 1.05, borderRadius: big * 0.22 }]}>
               <Text numberOfLines={1} maxFontSizeMultiplier={1} style={{ color: fg, fontSize: big * 0.52, fontWeight: '800' }}>{r.line}</Text>
@@ -152,9 +160,9 @@ export default function Board() {
               <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} maxFontSizeMultiplier={1} style={{ color: r.cancelled ? c.text3 : c.text, fontSize: big * 0.6, fontWeight: '700', textDecorationLine: r.cancelled ? 'line-through' : 'none' }}>{r.dest}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
                 {r.kind === 'live' && !r.cancelled ? <View style={{ width: small * 0.5, height: small * 0.5, borderRadius: small, backgroundColor: c.green, marginRight: 6 }} /> : null}
-                <Text numberOfLines={1} maxFontSizeMultiplier={1} style={{ color: tone, fontSize: small, fontWeight: '600', flexShrink: 1 }}>{sub}</Text>
+                <Text numberOfLines={1} maxFontSizeMultiplier={1} style={{ color: subTone, fontSize: small, fontWeight: '600', flexShrink: 1 }}>{sub}</Text>
               </View>
-              {third ? <Text numberOfLines={1} maxFontSizeMultiplier={1} style={{ color: w ? c.lateText : c.text2, fontSize: small * 0.92, marginTop: 2, fontWeight: w ? '600' : '400' }}>{third}</Text> : null}
+              {third ? <Text numberOfLines={1} maxFontSizeMultiplier={1} style={{ color: warm ? c.lateText : c.text2, fontSize: small * 0.92, marginTop: 2, fontWeight: warm ? '600' : '400' }}>{third}</Text> : null}
             </View>
             <Text maxFontSizeMultiplier={1} style={{ color: r.cancelled ? c.text3 : r.kind === 'live' ? c.liveText : r.kind === 'stale' ? c.lateText : c.text, fontSize: r.unit || r.when === 'Now' ? big : big * 0.62, fontWeight: '800', fontVariant: ['tabular-nums'], marginLeft: 12 }}>
               {r.when}{r.unit ? <Text style={{ fontSize: big * 0.4, fontWeight: '600' }}> {r.unit}</Text> : null}

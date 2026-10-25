@@ -12,6 +12,8 @@ export type Departure = {
   feed?: string;
   planned: string; estimated?: string | null; realtime: boolean; delayMin?: number | null; cancelled?: boolean;
   wheelchair?: boolean; occupancy?: Occupancy; alerts?: (Alert | string)[]; vehicle?: Vehicle; stopsAway?: number | null;
+  /** Buses: live delays (min) from the bus's next stop to this stop (new server), for busLiveCore.rowTraffic. */
+  ahead?: (number | null)[] | null;
   status?: { key: string; text: string }; pred?: Prediction;
   /** A board for another time (/api/departures with time): true when it left over a minute ago. */
   departed?: boolean;
@@ -38,6 +40,8 @@ export type Leg = {
   access?: import('./access').LegAccess | null;
   /** Bus and coach legs: a Live Traffic incident on the route (new server only). */
   traffic?: { id?: string; kind?: string; text: string; major?: boolean } | null;
+  /** Bus and coach legs: live delays (min) from the bus's next stop to this leg's stop (new server). */
+  ahead?: (number | null)[] | null;
   /** When this phone received the answer (set by api.ts, liveLabelCore.stampSeen). */
   seenAt?: number;
 };

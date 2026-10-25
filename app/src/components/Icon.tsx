@@ -52,6 +52,7 @@ export const I = {
   edit: { ios: 'pencil', android: 'edit' },
   fare: { ios: 'creditcard', android: 'payments' },
   car: { ios: 'car.fill', android: 'directions_car' },
+  traffic: { ios: 'car.fill', android: 'traffic' },
   access: { ios: 'figure.roll', android: 'accessible' },
   bellPlus: { ios: 'bell.badge', android: 'notification_add' },
   ticket: { ios: 'ticket', android: 'confirmation_number' },

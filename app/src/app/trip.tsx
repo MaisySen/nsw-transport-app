@@ -38,7 +38,7 @@ import { liveState } from '@/lib/liveLabelCore';
 import { arrOf, ServiceRow, tripCacheId, tripPkey, WarnLine } from '@/components/Home';
 import { cacheKey, offlineText } from '@/lib/offlineCore';
 import { planB, problemOf } from '@/lib/planBCore';
-import { busLegStatus, trafficLine } from '@/lib/busLiveCore';
+import { busLegStatus, rowTraffic, trafficLine } from '@/lib/busLiveCore';
 import { startIndex } from '../../platform/intentInboxCore';
 import { addToCalendar, hasCalendar } from '@/lib/nativeExtras';
 import { leaveByEvent } from '@/lib/leaveByCore';
@@ -89,7 +89,8 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
   const dep = bestTime(l.planned, l.realtime ? l.estimated : null);
   const arr = bestTime(l.arrPlanned, l.realtime ? l.arrEstimated : null);
   const bus = busLegStatus(l);
-  const traffic = trafficLine(l);
+  // A Live Traffic incident on the route first; else the live delays ahead say the bus is slowing (busLiveCore.ts).
+  const traffic = trafficLine(l) || rowTraffic(l);
   return (
     <Pressable accessibilityRole="button" {...withWhyAction({}, why)}
       onPress={() => openService({ tripId: l.tripId, feed: l.feed, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId, color: l.color, dest: l.towards, realtime: l.realtime, estimated: l.estimated, delayMin: l.delayMin, toStopId: l.toStopId })}
