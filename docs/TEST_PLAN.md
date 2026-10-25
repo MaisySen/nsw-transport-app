@@ -225,6 +225,20 @@ Run on a real iPhone (iOS 26 and iOS 27.1) and a real Apple Watch paired with it
 24. Small: the countdown big ("7 min") with "then 13 min" under it when it fits; the route line ("Kings Cross to Strathfield", no "Station") only when it fits on one line, else hidden; with an alert, the warning icon beside the status, and VoiceOver reads the alert in full.
 25. Stop board widget: times line up in one column on a bus stop with 410 and D400 rows.
 
+## Build 208 checklist: Calendar leave by
+
+Native part of Calendar leave by ([CALENDAR-LEAVE-BY.md](CALENDAR-LEAVE-BY.md)). The JavaScript has been in the over the air updates since 25 Oct and stays hidden until the app is 208 or later on iPhone (or an Android build with the calendar module). What 208 adds: expo-calendar with `writeOnlyAccess` false, so the app carries `NSCalendarsFullAccessUsageDescription` (read access) next to `NSCalendarsWriteOnlyAccessUsageDescription` (Add to Calendar, unchanged), and `READ_CALENDAR` and `WRITE_CALENDAR` in the Android manifest (expo-calendar asks for both together). Run on a real iPhone on iOS 26 and iOS 27.1.
+
+1. Before building: `npx expo config --type introspect` in app/ lists `NSCalendarsFullAccessUsageDescription` ("Transport reads the time and place of your upcoming events to show when to leave for them, if you turn on Calendar leave by. Event names and notes stay on your iPhone.") and `NSCalendarsWriteOnlyAccessUsageDescription`, and `NSRemindersUsageDescription` is absent.
+2. After installing 208: More shows Calendar leave by, switched off. On 206 or 207 (TestFlight or App Store) it is not there at all.
+3. Switch it on: the iOS 17+ full access prompt shows the text above and the Allow Full Access choice. Don't Allow leaves the switch off and offers Open Settings; Allow turns it on.
+4. Add an event starting in 1 to 6 hours with the location "Barangaroo" (or "200 Barangaroo Ave"). Open Home: "Leave by 8:12am for Team meeting (Barangaroo)" with the line, arrive time and start time under it. An event with a Zoom or Teams link, no location, an all day event or one more than 6 hours away shows nothing. A location the search can't place (a room number only) shows nothing.
+5. Tap the line: the trip screen opens from your commute start (or first saved trip) to the place, at Arrive by the event's start time, with the day chip when the event is after midnight.
+6. Battery and privacy: with the network inspector (Proxyman or Charles on the phone), Home open for 10 minutes sends the place search once (then it is kept on the phone) and one trip query per event every 5 minutes; nothing while Home is not on screen or the app is in the background. No request carries the event name, notes, attendees or calendar names.
+7. Add to Calendar on a trip still opens the system sheet; with Calendar leave by never switched on it needs no prompt (add only access still works).
+8. Switching Calendar leave by off hides the line at once and forgets the places found. Delete all my data turns it off too. Settings, Privacy and Security, Calendars lists Transport with Full Access only after step 3.
+9. VoiceOver reads the line, its details and "From your calendar", with the hint "Opens the trip, arriving by the start time". The largest Dynamic Type size wraps to two lines without cutting the time.
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).
