@@ -57,7 +57,8 @@ export function noticeChips(x: NoticeInput): Notice[] {
   }
   const tw = x.trackwork || [];
   if (tw.length) {
-    out.push({ key: 'trackwork', label: 'Trackwork this weekend', count: tw.length, tone: 'orange',
+    // Quiet like the alerts chip: plain text, a small orange icon (Bidur, 25 Oct 7:45 PM).
+    out.push({ key: 'trackwork', label: 'Trackwork this weekend', count: tw.length, tone: 'plain',
       a11y: `Trackwork this weekend: ${tw.map((r) => `${r.name}. ${r.text}${r.extra ? '. ' + r.extra : ''}`).join('. ')}`,
       items: tw.map((r) => ({ key: r.key, title: r.name, text: r.text, extra: r.extra, url: r.url })) });
   }

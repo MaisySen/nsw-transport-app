@@ -52,7 +52,7 @@ export function Notices({ now, watches }: { now: number; watches: { id: string; 
               android_ripple={{ color: c.fill }} hitSlop={{ top: 4, bottom: 4 }} {...(web ? ({ dataSet: { chip: '1' } } as any) : {})}
               style={({ pressed }) => [st.chip, { backgroundColor: on ? c.tint + (c.dark ? '3D' : '24') : c.card, borderColor: on ? c.tint : c.sep, opacity: pressed && Platform.OS !== 'android' ? 0.7 : 1 }]}>
               {n.line ? <LineBadge line={n.line.line} mode={n.line.mode} color={n.line.color} />
-                : <Icon name={n.key === 'watching' ? I.bell : I.warn} size={13} color={n.key === 'watching' ? c.indigo : n.tone === 'plain' ? c.text2 : fg} />}
+                : <Icon name={n.key === 'watching' ? I.bell : I.warn} size={13} color={n.key === 'watching' ? c.indigo : n.key === 'trackwork' || n.key === 'alerts' ? c.orange : n.tone === 'plain' ? c.text2 : fg} />}
               <T kind="foot" numberOfLines={1} style={{ marginLeft: 6, fontWeight: '600', color: fg, maxWidth: 230 }}>{n.label}</T>
               {n.count > 1 && (n.key === 'high' || n.key === 'trackwork') ? (
                 <View style={[st.count, { backgroundColor: c.fill }]}><T kind="foot" style={{ fontSize: 12, fontWeight: '700', color: c.text2 }}>{n.count}</T></View>

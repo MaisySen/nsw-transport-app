@@ -83,11 +83,19 @@ export function whereText(platform?: string | null, stopId?: string | null, mode
   return long ? p.replace(/^Plat(?:form)?\.?\s*/i, 'Platform ') : p.replace(/^Platform\s*/i, 'Plat ');
 }
 
-/** "Then 12, 19 min" under the next service: the later countdowns, with "min" only when every one is in minutes. */
+/** "Next 12 min, 19 min" under the next service: the later countdowns, each with its unit (Bidur, 25 Oct 7:45 PM). */
 export function thenText(later: { big: string; unit: string }[]): string {
   const xs = later.filter((x) => x.big);
   if (!xs.length) return '';
-  return `Then ${xs.map((x) => x.big).join(', ')}${xs.every((x) => x.unit === 'min') ? ' min' : ''}`;
+  return `Next ${xs.map((x) => (x.unit ? `${x.big} ${x.unit}` : x.big)).join(', ')}`;
+}
+
+/**
+ * The big countdown on the Next trip card: the normal text colour, red only when the service has gone (Left) or
+ * cannot be taken (cancelled). A late service keeps its own orange status line; a short wait is not an alarm.
+ */
+export function heroCountTone(o: { gone: boolean; cancelled: boolean }): 'text' | 'red' {
+  return o.gone || o.cancelled ? 'red' : 'text';
 }
 
 /**

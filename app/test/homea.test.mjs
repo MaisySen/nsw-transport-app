@@ -29,8 +29,11 @@ test('where to board: platform for trains, stop number (and stand on the card) f
 });
 
 test('then line: the next two countdowns, min only when all are minutes', () => {
-  assert.equal(H.thenText([{ big: '12', unit: 'min' }, { big: '19', unit: 'min' }]), 'Then 12, 19 min');
-  assert.equal(H.thenText([{ big: '45', unit: 'min' }, { big: '5:12', unit: '' }]), 'Then 45, 5:12');
+  assert.equal(H.thenText([{ big: '12', unit: 'min' }, { big: '19', unit: 'min' }]), 'Next 12 min, 19 min');
+  assert.equal(H.thenText([{ big: '45', unit: 'min' }, { big: '5:12', unit: '' }]), 'Next 45 min, 5:12');
+  assert.equal(H.heroCountTone({ gone: false, cancelled: false }), 'text', 'one minute to go is not red');
+  assert.equal(H.heroCountTone({ gone: true, cancelled: false }), 'red');
+  assert.equal(H.heroCountTone({ gone: false, cancelled: true }), 'red');
   assert.equal(H.thenText([]), '');
   assert.equal(H.thenText([{ big: '', unit: '' }]), '');
 });
@@ -115,7 +118,9 @@ test('Home source: Option A only, no design switch, one Add in the navigation ba
 
 test('hold menus fit Android dialogs (3 buttons at most)', () => {
   const src = read('src/components/Home.tsx');
-  assert.ok(/buttons\.length > 3 \? buttons\.filter\(\(b\) => b\.style !== 'cancel'\)/.test(src));
+  // The trimming lives in nativeMenu (Sheet.tsx), which holdMenu calls; iPhone gets the system action sheet there.
+  assert.ok(/nativeMenu\(title, message, buttons\)/.test(src));
+  assert.ok(/buttons\.length > 3 \? buttons\.filter\(\(b\) => b\.style !== 'cancel'\)/.test(read('src/components/Sheet.tsx')));
   const menu = src.slice(src.indexOf('export function tripMenu'), src.indexOf('export function tripMenu') + 4000);
   assert.ok(!/Alert\.alert\(trip\.name/.test(menu), 'trip menus go through holdMenu');
 });

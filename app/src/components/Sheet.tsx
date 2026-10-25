@@ -1,5 +1,5 @@
-import { useRef } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { ActionSheetIOS, Alert, type AlertButton, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { once } from '@/lib/gesture';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSides } from '@/lib/layout';
@@ -10,15 +10,52 @@ import { Sep, T } from './ui';
 
 export type SheetAction = { text: string; icon?: IconName; destructive?: boolean; onPress: () => void };
 
+/** The iPhone system action sheet for these actions, with Cancel last. onClose runs first, then the chosen action. */
+export function showIosSheet({ title, message, actions, anchor, onClose }: { title?: string; message?: string; actions: SheetAction[]; anchor?: number | null; onClose?: () => void }) {
+  const destructive = actions.map((a, i) => (a.destructive ? i : -1)).filter((i) => i >= 0);
+  ActionSheetIOS.showActionSheetWithOptions({
+    title, message,
+    options: [...actions.map((a) => a.text), 'Cancel'],
+    cancelButtonIndex: actions.length,
+    ...(destructive.length ? { destructiveButtonIndex: destructive.length === 1 ? destructive[0] : destructive } : {}),
+    ...(anchor ? { anchor } : {}),
+  }, (i) => {
+    onClose?.();
+    if (i >= 0 && i < actions.length) actions[i].onPress();
+  });
+}
+
+/**
+ * A menu of choices (a long press on a row, Save as Home or Work): the system action sheet on iPhone, the system
+ * dialog on Android and the web. Confirmations (Delete this?) stay Alert.alert.
+ */
+export function nativeMenu(title: string, message: string | undefined, buttons: AlertButton[], anchor?: number | null) {
+  if (Platform.OS === 'ios') {
+    const acts: SheetAction[] = buttons.filter((b) => b.style !== 'cancel').map((b) => ({ text: b.text || '', destructive: b.style === 'destructive', onPress: () => b.onPress?.() }));
+    showIosSheet({ title, message, actions: acts, anchor });
+    return;
+  }
+  const list = Platform.OS === 'android' && buttons.length > 3 ? buttons.filter((b) => b.style !== 'cancel') : buttons;
+  Alert.alert(title, message, list, { cancelable: true });
+}
+
 /**
  * Bottom sheet with any number of actions. Android dialogs show at most 3 buttons,
  * so menus with more choices use this instead of Alert.
  */
-export function ActionSheet({ visible, title, message, actions, onClose }: { visible: boolean; title?: string; message?: string; actions: SheetAction[]; onClose: () => void }) {
+export function ActionSheet({ visible, title, message, actions, onClose, anchor }: { visible: boolean; title?: string; message?: string; actions: SheetAction[]; onClose: () => void; anchor?: number | null }) {
   const c = usePalette();
   const ins = useSafeAreaInsets();
   const side = useSides();
   const ios = Platform.OS === 'ios';
+  // iPhone and iPad: the system action sheet (Bidur, 25 Oct: the drawn sheet looked home made). With an anchor it
+  // opens from that view (a popover on iPad and on iOS 26).
+  useEffect(() => {
+    if (!ios || !visible) return;
+    showIosSheet({ title, message, actions, anchor, onClose });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+  if (ios) return null;
   // The chosen action runs once the sheet has gone (onDismiss, or 450 ms at the latest). An Android dialog
   // opened while the sheet's window is still closing can vanish with it, which felt like a dead button.
   const pending = useRef<(() => void) | null>(null);

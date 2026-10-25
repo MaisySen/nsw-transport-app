@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Keyboard, Platform, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { searchFieldProps } from '@/lib/pickerCore';
+import { nativeMenu } from '@/components/Sheet';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import { api, searchPlaces } from '@/lib/api';
@@ -107,11 +108,11 @@ export default function Search() {
     router.push({ pathname: '/trip', params: { from: a.id, fromName: a.name, to: b.id, toName: b.name, ...whenParams(w) } });
   };
   const clearTrips = () => { store.clearRecentTrips(); haptic.select(); };
-  const removeTrip = (r: { from: Place; to: Place }, label: string) => Alert.alert(label, undefined, [
+  const removeTrip = (r: { from: Place; to: Place }, label: string) => nativeMenu(label, undefined, [
     { text: 'Cancel', style: 'cancel' },
     { text: 'Remove from Recent', style: 'destructive', onPress: () => store.removeRecentTrip(r.from.id, r.to.id) },
   ]);
-  const removeStop = (p: Place) => Alert.alert(shortName(p.name), undefined, [
+  const removeStop = (p: Place) => nativeMenu(shortName(p.name), undefined, [
     { text: 'Cancel', style: 'cancel' },
     { text: 'Remove from Recent', style: 'destructive', onPress: () => store.removeRecent(p.id) },
   ]);

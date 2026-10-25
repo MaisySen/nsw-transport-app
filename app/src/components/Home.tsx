@@ -9,7 +9,9 @@ import { useLive } from '@/lib/hooks';
 import { cacheKey, offlineText } from '@/lib/offlineCore';
 import { foldNear, type NearPick } from '@/lib/nearCore';
 import { stopNumber } from '@/lib/busCore';
-import { chipTime, makeDeletedNames, thenText, undoableDelete, whereText } from '@/lib/homeCore';
+import { nativeMenu } from './Sheet';
+import { skinStyle, type CardSkin, type SkinStyle } from '@/lib/cardSkinCore';
+import { chipTime, heroCountTone, makeDeletedNames, thenText, undoableDelete, whereText } from '@/lib/homeCore';
 import { radius, usePalette } from '@/lib/theme';
 import { bestTime, clock, durText, liveStamp, ms, shortName } from '@/lib/format';
 import { clearAllPlan } from '@/lib/planCore';
@@ -212,9 +214,27 @@ export function HomeSection({ title, children, onClear, clearTitle, footer, acti
 }
 
 /** A Home card. flush: no outer margins, for a card inside a swipe row that already has them (CARD_SWIPE). */
-function Card({ children, style, flush }: { children: React.ReactNode; style?: any; flush?: boolean }) {
+function Card({ children, style, flush }: { children: React.ReactNode; style?: any; flush?: boolean; sk?: SkinStyle }) {
   const c = usePalette();
   return <View style={[{ backgroundColor: c.card, borderRadius: radius, marginHorizontal: 16, marginTop: 10, overflow: 'hidden' }, flush && { marginHorizontal: 0, marginTop: 0 }, style]}>{children}</View>;
+}
+
+/**
+ * The Next trip card in one of the new looks: a gradient ring (padding of its width around the card), an inner fill,
+ * a thin highlight along the top edge and a shadow or glow. Plain styles only; nothing animates.
+ */
+function SkinCard({ children, flush, sk }: { children: React.ReactNode; flush?: boolean; sk?: SkinStyle }) {
+  const c = usePalette();
+  const s0 = sk!;
+  const ring: any = s0.ring ? { backgroundImage: s0.ring, padding: s0.width } : { borderWidth: s0.width, borderColor: s0.border || c.sep };
+  return (
+    <View style={[{ borderRadius: radius + s0.width, marginHorizontal: 16, marginTop: 10 }, flush && { marginHorizontal: 0, marginTop: 0 }, ring, s0.shadow ? ({ boxShadow: s0.shadow } as any) : null]}>
+      <View style={[{ borderRadius: radius, overflow: 'hidden', backgroundColor: c.card }, s0.fill ? ({ backgroundImage: s0.fill, backgroundColor: 'transparent' } as any) : null]}>
+        {s0.highlight ? <View pointerEvents="none" accessible={false} style={[{ position: 'absolute', top: 0, left: 14, right: 14, height: 1 }, { backgroundImage: s0.highlight } as any]} /> : null}
+        {children}
+      </View>
+    </View>
+  );
 }
 
 /** One tappable tinted row in its own card: "Add a trip", "Show stops near me". */
@@ -309,8 +329,7 @@ export function WarnLine({ j }: { j: Journey }) {
  * gives way when a menu has 3 actions: tapping outside or Back closes the dialog.
  */
 function holdMenu(title: string, message: string | undefined, buttons: AlertButton[]) {
-  const list = Platform.OS === 'android' && buttons.length > 3 ? buttons.filter((b) => b.style !== 'cancel') : buttons;
-  Alert.alert(title, message, list, { cancelable: true });
+  nativeMenu(title, message, buttons);
 }
 
 export function tripMenu(trip: TripItem, route?: string, onTop?: () => void) {
@@ -393,7 +412,9 @@ export function onTripDeleted(f: (u: UndoBar) => void) { undoSubs.add(f); return
 /** Home's trip looks: 'hero' is the Next trip card, 'row' every other trip. */
 export type TripLook = 'hero' | 'row';
 
-export function TripBoard({ trip, now, handle, allServices, below, aside, flush, act, look = 'row', onTop }: { trip: TripItem; now: number; handle?: React.ReactNode | ((open: () => void) => React.ReactNode); allServices?: boolean;
+export function TripBoard({ trip, now, handle, allServices, below, aside, flush, act, look = 'row', onTop, skin = 'plain', solid = false }: { trip: TripItem; now: number; handle?: React.ReactNode | ((open: () => void) => React.ReactNode); allServices?: boolean;
+  /** The card's look (lib/cardSkinCore.ts) and whether the phone asks for solid colours (Reduce Transparency and the like). */
+  skin?: CardSkin; solid?: boolean;
   look?: TripLook;
   /** Show first: puts this trip on top, where it becomes the Next trip card (offered in the trip's hold menu). */
   onTop?: () => void;
@@ -461,14 +482,17 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
   useEffect(() => () => reportTripAlerts(trip.key, []), [trip.key]);
 
 
+  const lineColor = (js[0]?.legs.find((x) => x.kind === 'transit') as any)?.color || null;
+  const sk = skinStyle(skin, { dark: c.dark, line: lineColor, solid, cardColor: c.card, text3: c.text3 });
   const note = !data ? (error ? 'Live times unavailable, trying again' : 'Loading live times') : !js.length ? (offlineAt ? 'No kept times left for today' : data.error || 'No more services today') : '';
   const glance = (
-    <TripGlance look={look} js={js} arrs={arrs} now={now} title={trip.kind === 'place' && custom ? `${custom}: ${route}` : custom || route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint}
+    <TripGlance look={look} js={js} arrs={arrs} now={now} count={sk.count} title={trip.kind === 'place' && custom ? `${custom}: ${route}` : custom || route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint}
       note={note} onPress={() => open()} onLongPress={menu} act={act} roomRight={aside ? 40 : 0}
       trailing={typeof handle === 'function' ? handle(() => open()) : handle} />
   );
+  const Wrap = skin === 'plain' ? Card : SkinCard;
   return (
-    <Card flush={flush}>
+    <Wrap flush={flush} sk={sk}>
       {aside ? (
         // The swap button sits over the card's top right corner, outside the card's tap area, so a tap on it never opens the trip.
         <View>
@@ -478,7 +502,7 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
       ) : glance}
       {pbText ? <PlanBRow title={pbTitle} text={pbText} onPress={() => open()} /> : null}
       {below && js.length ? below(js) : null}
-    </Card>
+    </Wrap>
   );
 }
 
@@ -502,7 +526,7 @@ function PlanBRow({ title, text, onPress }: { title: string; text: string; onPre
  * arrive, then the next two. 'row' is every other trip: name; badges, status and where to board; the next two;
  * the countdown at the right edge. One tap target per trip; every service is on the trip screen.
  */
-function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPress, onLongPress, act, trailing, roomRight = 0 }: { look: TripLook; js: Journey[]; arrs: number[]; now: number; title: string; glyph?: IconName; glyphColor?: string; note: string; onPress: () => void; onLongPress: () => void; act?: SwipeAct; trailing?: React.ReactNode; roomRight?: number }) {
+function TripGlance({ look, js, arrs, now, count = { size: 56, line: 62, weight: '800' }, title, glyph, glyphColor, note, onPress, onLongPress, act, trailing, roomRight = 0 }: { look: TripLook; js: Journey[]; arrs: number[]; now: number; count?: { size: number; line: number; weight: '800' | '900' }; title: string; glyph?: IconName; glyphColor?: string; note: string; onPress: () => void; onLongPress: () => void; act?: SwipeAct; trailing?: React.ReactNode; roomRight?: number }) {
   const c = usePalette();
   const j = js[0];
   const l = j ? firstLeg(j) : undefined;
@@ -539,6 +563,10 @@ function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPre
   const label = why ? `${a11y}. ${why.text}` : a11y;
 
   if (look === 'hero') {
+    // Normal text colour; red only once the service has gone or is cancelled (Bidur, 25 Oct 7:45 PM). Timetable and
+    // Not tracking stay grey (honest live labels).
+    const gone = t.big === 'Left' || (!!j && dep < now - 60000);
+    const heroColor = !j ? c.text3 : honest ? c.text2 : heroCountTone({ gone, cancelled }) === 'red' ? c.redText : c.text;
     return (
       <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" accessibilityLabel={label} accessibilityHint="Opens the trip with every service" android_ripple={{ color: c.fill }} {...withWhyAction(swipeA11y(act) as any, why)} style={(p) => [g.hero, ...press(p)]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingRight: roomRight }}>
@@ -549,8 +577,8 @@ function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPre
           <>
             <View style={{ flexDirection: 'row', alignItems: 'flex-end', flexWrap: 'wrap', marginTop: 6 }}>
               <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
-                <Text maxFontSizeMultiplier={1.2} style={{ fontSize: 56, lineHeight: 62, fontWeight: '800', color: cdText(chip, c), fontVariant: ['tabular-nums'], letterSpacing: -1.5 }}>{t.big}</Text>
-                {t.unit ? <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 20, fontWeight: '700', color: cdText(chip, c), marginLeft: 5, marginBottom: 10 }}>{t.unit}</Text> : null}
+                <Text maxFontSizeMultiplier={1.2} style={{ fontSize: count.size, lineHeight: count.line, fontWeight: count.weight, color: heroColor, fontVariant: ['tabular-nums'], letterSpacing: -1.5 }}>{t.big}</Text>
+                {t.unit ? <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 20, fontWeight: '700', color: heroColor, marginLeft: 5, marginBottom: 10 }}>{t.unit}</Text> : null}
               </View>
               <View style={{ flex: 1, minWidth: 120, alignItems: 'flex-end', marginBottom: 10, marginLeft: 12, gap: 6 }}>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 4 }}>{badges.slice(0, 3).map((b, i) => <LineBadge key={`${b.line}${i}`} line={b.line} mode={b.mode} color={b.color} />)}</View>

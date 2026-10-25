@@ -6,6 +6,7 @@ import { TripReminders } from '@/components/TripReminders';
 import { plural } from '@/lib/homeCore';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, useColorScheme, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { nativeMenu } from '@/components/Sheet';
 import { arriveByIndex, NOW, whenFromParams, type When } from '@/lib/planCore';
 import { WhenPicker } from '@/components/WhenPicker';
 import { afterBatch, canLoadEarlier, canLoadLater, chipLabel, chipsToShow, dateNeeded, EARLIER_NEEDS_NEW, earlierFloor, earlierRow, earlierSteps, emptyModes, filterModes, hasLeft, keepFrom, modesWords, MODE_CHIPS, nearEnd, normModes, PAGE0, PAGING, pickerDays, pinDay, queryAt, serviceDayEnd, toggleMode, whenAt, whenKeyOf, whenWords, ymd, type ModeK, type PageState } from '@/lib/tripModesCore';
@@ -514,7 +515,7 @@ export default function TripScreen() {
       try { await api.saveTrip(name, from, to); haptic.success(); Alert.alert('Saved', `It's on your Home screen as "${name}". You can also text "${name}" to Tab.`); }
       catch (e: any) { Alert.alert("Couldn't save it", e.message); }
     };
-    Alert.alert('Save this trip', 'Saved trips show live on Home.', [
+    nativeMenu('Save this trip', 'Saved trips show live on Home.', [
       { text: 'Home', onPress: () => doSave('home') },
       { text: 'Work', onPress: () => doSave('work') },
       { text: 'Cancel', style: 'cancel' },

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActionSheetIOS, Alert, AppState, PanResponder, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Alert, AppState, findNodeHandle, PanResponder, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { CARD_SWIPE, SwipeRow, type SwipeAct } from '@/components/Swipe';
 import { haptic } from '@/lib/haptic';
 import { gripStep, type GripEvent, type GripState } from '@/lib/gesture';
@@ -17,7 +17,7 @@ import type { Place } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
 import { watchLine } from '@/components/Cards';
 import { ActionRow, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTag, onTripDeleted, pullHome, StopBoard, TripBoard, TripItem, UNDO_MS, useNearby } from '@/components/Home';
-import { ActionSheet, type SheetAction } from '@/components/Sheet';
+import { ActionSheet, nativeMenu, showIosSheet, type SheetAction } from '@/components/Sheet';
 import { LineBadge } from '@/components/Transit';
 import { TabBarSafe } from '@/components/TabBarSafe';
 import { useLiveTrip } from '@/lib/live';
@@ -27,6 +27,7 @@ import { LeaveLine, MorningLink, useMyPos } from '@/components/Smart';
 import { LastHomeCard } from '@/components/LastHome';
 import { Notices } from '@/components/Notices';
 import { topBar } from '@/lib/noticesCore';
+import { useCardSkin, useSolidLook } from '@/lib/cardSkin';
 import { CalendarLeaveByCard } from '@/components/CalendarLeaveBy';
 import { pickOrigin } from '@/lib/calendarLeaveByCore';
 import { commuteDir, halfDayKey } from '@/lib/smart';
@@ -106,6 +107,9 @@ export default function Home() {
   // Nearby leaves out stops already on Home as starred, and shows at most 3.
   const nearStops = (near.stops || []).filter((p: Place) => !starred.some((s) => s.id === p.id)).slice(0, 3);
   const g = useLiveTrip();
+  // The Next trip card's look (plain today; three new looks switchable in development, lib/cardSkin.ts).
+  const skin = useCardSkin();
+  const solid = useSolidLook();
   // Trip in progress and Watching now share one bar; a watch of the live trip is not shown twice.
   const bar = topBar(g, activeWatches as any[]);
   // Undo bar after a trip is deleted (swipe, hold menu or VoiceOver). A newer delete sends the older one to the server.
@@ -125,14 +129,14 @@ export default function Home() {
   };
   const stopMenu = (p: Place, isStarred: boolean) => {
     haptic.tap();
-    Alert.alert(shortName(p.name), undefined, isStarred ? [
+    nativeMenu(shortName(p.name), undefined, isStarred ? [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Unstar stop', style: 'destructive', onPress: () => store.toggleStar(p) },
     ] : [
       { text: 'Star stop', onPress: () => store.toggleStar(p) },
       { text: 'Remove from Recent', style: 'destructive', onPress: () => store.removeRecent(p.id) },
       { text: 'Cancel', style: 'cancel' },
-    ], { cancelable: true });
+    ]);
   };
 
   const acceptSuggestion = async () => {
@@ -178,7 +182,7 @@ export default function Home() {
         {next ? (
           <HomeSection title={nextIsCommute ? 'Your commute' : 'Next trip'}>
             {nextIsCommute ? (
-              <TripBoard trip={next} now={now} look="hero"
+              <TripBoard trip={next} now={now} look="hero" skin={skin} solid={solid}
                 aside={<SwapButton to={next.tag === 'To work' ? 'To home' : 'To work'} onPress={() => { store.setCommuteFlip(flipped ? null : half); haptic.select(); }} />}
                 below={(js) => (
                   // When to leave and Check before I go as small buttons in the card, not two full rows.
@@ -189,9 +193,9 @@ export default function Home() {
                 )} />
             ) : nextDel ? (
               <SwipeRow act={nextDel} style={CARD_SWIPE}>
-                <TripBoard trip={next} now={now} look="hero" flush act={nextDel} />
+                <TripBoard trip={next} now={now} look="hero" flush act={nextDel} skin={skin} solid={solid} />
               </SwipeRow>
-            ) : <TripBoard trip={next} now={now} look="hero" />}
+            ) : <TripBoard trip={next} now={now} look="hero" skin={skin} solid={solid} />}
           </HomeSection>
         ) : null}
 
@@ -432,14 +436,17 @@ function AddButton({ places }: { places: { home?: Place; work?: Place } }) {
     { text: places?.home ? 'Change Home' : 'Set Home', icon: I.home, onPress: () => router.push({ pathname: '/add-trip', params: { place: 'home' } }) },
     { text: places?.work ? 'Change Work' : 'Set Work', icon: I.briefcase, onPress: () => router.push({ pathname: '/add-trip', params: { place: 'work' } }) },
   ];
+  const btn = useRef<any>(null);
   const show = () => {
     haptic.tap();
-    if (Platform.OS === 'ios') ActionSheetIOS.showActionSheetWithOptions({ options: [...items.map((x) => x.text), 'Cancel'], cancelButtonIndex: items.length }, (i) => { if (i < items.length) items[i].onPress(); });
+    // iPhone: the system action sheet opened from the + button itself (on iOS 26 a menu from the button, not a panel
+    // in the middle of the screen; Bidur, 25 Oct 7:50 PM: "looks vibe coded").
+    if (Platform.OS === 'ios') showIosSheet({ actions: items, anchor: findNodeHandle(btn.current) });
     else setOpen(true);
   };
   return (
     <>
-      <Pressable onPress={show} accessibilityRole="button" accessibilityLabel="Add" accessibilityHint="New trip, star a stop, or set Home or Work"
+      <Pressable ref={btn} onPress={show} accessibilityRole="button" accessibilityLabel="Add" accessibilityHint="New trip, star a stop, or set Home or Work"
         hitSlop={Platform.OS === 'ios' ? 13 : 4} android_ripple={{ color: c.fill, borderless: true, radius: 24 }}
         style={({ pressed }) => ({ width: Platform.OS === 'ios' ? 30 : 48, height: Platform.OS === 'ios' ? 30 : 48, marginRight: Platform.OS === 'web' ? 8 : 0, alignItems: 'center', justifyContent: 'center', opacity: pressed && Platform.OS !== 'android' ? 0.5 : 1 })}>
         <Icon name={I.plus} size={Platform.OS === 'ios' ? 22 : 24} color={Platform.OS === 'ios' ? c.tint : c.text} />
