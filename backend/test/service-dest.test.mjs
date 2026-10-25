@@ -149,3 +149,11 @@ test("a train's live list that stops before its destination station is called sh
   assert.equal(await W.feedEndsShort(env, { ...q, destId: "999" }, "train", toCentral), false);
   assert.equal(await W.feedEndsShort(env, q, "bus", toCentral), false);
 });
+
+test("the planner's run starts at your stop even when it names another platform of the station", async () => {
+  tripAsked = [];
+  tripPlan = [{ journeys: [{ legs: [leg("run-pc", "T1", 0)] }] }];
+  const d = await W.service(env, { trip: "run-pc", mode: "train", line: "T1", stop: "2148531", destId: "207720", planned: at(5) });
+  assert.equal(d.stops[0].id, "2148535");
+  assert.equal(d.mineIndex, 0);
+});

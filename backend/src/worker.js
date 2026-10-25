@@ -1607,6 +1607,7 @@ async function service(env, q) {
   // stops before yours stay, so where the train is and how many stops away still read as before.
   const feedShort = stops.length ? (mode === "train" || await feedEndsShort(env, q, mode, stops)) : false;
   const feedStops = stops;
+  let plannerFrom = -1;
   if ((!stops.length || feedShort) && q.stop && q.destId && q.planned) {
     // Fall back to the trip planner for the stop list from your stop onwards.
     const got = await plannerLeg(env, q, tripId, line);
@@ -1614,6 +1615,7 @@ async function service(env, q) {
     if (leg || !feedStops.length) { source = "planner"; stopsStatus = got.status; stops = []; }
     if (leg) {
       const k = feedStops.findIndex((s) => s.id === q.stop);
+      plannerFrom = k > 0 ? k : 0;
       stops = (k > 0 ? feedStops.slice(0, k) : []).concat((leg.stopSequence || []).map((s) => ({
         id: s.id, name: shortName(s.disassembledName || s.name), lat: s.coord ? s.coord[0] : null, lon: s.coord ? s.coord[1] : null,
         planned: iso(s.departureTimePlanned || s.arrivalTimePlanned),
@@ -1670,6 +1672,9 @@ async function service(env, q) {
 
   let mine = q.stop ? stops.findIndex((s) => s.id === q.stop) : -1;
   if (mine < 0 && q.stopName) mine = stops.findIndex((s) => baseName(s.name) === baseName(q.stopName));
+  // The planner's run starts where it was asked from: your stop, even when it names another platform of the station
+  // (a platform change, or a City Circle run asked from Central to Central).
+  if (mine < 0 && plannerFrom >= 0 && stops[plannerFrom]) mine = plannerFrom;
   if (mine >= 0) stops[mine].mine = true;
   let alight = q.to ? stops.findIndex((s) => s.id === q.to) : -1;
   if (alight >= 0) stops[alight].alight = true;
