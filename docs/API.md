@@ -332,6 +332,8 @@ Where it comes from: the live times already recorded in `obs` (the same rows `/a
 
 ## Weekend trackwork
 
+Without this route (the first address, 404) the apps work the card out from `/api/alerts?q=<line>` (no added time; docs/TRACKWORK.md).
+
 `GET /api/trackwork?t=213510~201110~T1.T4~8` says which planned work this coming weekend (Friday 8pm to Monday 3am, Sydney time; on Saturday and Sunday the weekend under way) touches each trip. Only on api.transportsydney.app; the app hides the card when the server answers 404.
 
 * Source: Transport for NSW's GTFS realtime service alerts v2 (`/v2/gtfs/alerts/all`, every mode). The minute tick reads it every 10 minutes, keeps alerts with lines or stops whose effect is no service, reduced service, delays, detour, modified service or stop moved, and stores the cut down list (about 30 KB) as one row in `meta` (`alert_digest`). Requests read that row; no request decodes the feed.
@@ -372,6 +374,8 @@ From the Ask "Last train home" answer, or a trip that is the last one tonight, t
 | `/api/last-home` | POST | `{device, from: {id, name}, to: {id, name}, mode, acc}`. `mode` optional (train, metro, bus, coach, ferry, lightrail; empty is any service) | `{ok, item, push, enabled}`. 409 with `reason`: `none` (no service home for the rest of tonight), `soon` (it leaves in 16 minutes or less), `far` (more than 8 hours away). 503 when the server flag is off |
 | `/api/last-home` | GET | `device` | `{item, push, enabled, lead}`. `item` is null when there is none, or once the service left over 30 minutes ago |
 | `/api/last-home` | DELETE | `device`, `id` optional | `{ok, deleted}` |
+
+Without this route (the first address, 404) the apps set the reminder on the phone from the Ask answer and look at live times again with `/api/trip` or `/api/ask` while open (docs/LAST-WAY-HOME.md). Android uses the phone's reminder on both addresses.
 
 `item`: `{id, from, to, mode, serviceMode, lead, leave, board, remindAt, line, stop, platform, changedFrom, status, checked, sent, text, leaveText, remindText}`. `leave` is when to set off (the first service, or earlier when the trip starts with a walk), `board` the first service's time, `remindAt` = `leave` minus `lead`. `status`: `waiting`, `sent`, `none` (no service showed any more; that was said once instead), `gone` (it left before a push could go). `changedFrom` is the first time found when the service has since moved by 2 minutes or more. `text` is the push body as sent.
 

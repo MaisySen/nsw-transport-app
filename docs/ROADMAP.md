@@ -30,7 +30,7 @@ Release ids and rollback commands: [RELEASES.md](RELEASES.md).
 
 | Item | Detail |
 | --- | --- |
-| Move the apps to api.transportsydney.app | Flip `api_base` in remote config ([API.md](API.md)). Lights up Usually N min late, the weekend trackwork card, Plan B, reliability, last way home, Park and Ride, bus traffic and occupancy. Then update the review notes as [REVIEW-NOTES.md](REVIEW-NOTES.md) says |
+| Move the apps to api.transportsydney.app | Flip `api_base` in remote config ([API.md](API.md)). Lights up Usually N min late, the added time on the weekend trackwork card, Plan B words inside the morning alert, reliability, the iPhone's server last way home push (follows the service while the app is closed), Park and Ride, bus traffic and occupancy. Plan B on Home and the trip screen, the phone's last way home reminder and the weekend trackwork card already work on the current address (25 Oct, 5 PM). Then update the review notes as [REVIEW-NOTES.md](REVIEW-NOTES.md) says |
 | App Store submission | Version 1.0.0 with build 207 or later, once the 207 device checks pass ([STORE.md](STORE.md)) |
 | Google Play | Internal, closed test, then review ([STORE.md](STORE.md)) |
 | Android push when the app is closed | Needs a Firebase project (google-services.json, FCM key uploaded to Expo) |
@@ -45,6 +45,7 @@ Release ids and rollback commands: [RELEASES.md](RELEASES.md).
 * Bus route numbers that exist in two regions keep only one region's version (for example route 46).
 * Late night buses often have no realtime in the Transport for NSW feeds; they show as Timetable.
 * "Usually N min late" needs a few weeks of live times on the new server before its answers mean much.
+* Until api_base moves: the phone's Last way home reminder follows the service only while the app is open, the weekend trackwork card has no added time, and a trip wholly inside a named trackwork section is missed (docs/LAST-WAY-HOME.md, docs/TRACKWORK.md).
 * Play phone screenshots are rendered, not device captures.
 * Generated station, suburb and stop data files are rebuilt with `backend/tools/`.
 
