@@ -33,7 +33,7 @@ const ST = {
   "2150311": ["Redfern Station, Platform 3", -33.892, 151.199], "2042111": ["Erskineville Station, Platform 1", -33.9, 151.186],
   "2043111": ["St Peters Station, Platform 1", -33.907, 151.18], "2044111": ["Sydenham Station, Platform 1", -33.914, 151.167],
 };
-const lists = { "/stations/train.json": [["200060", "Central Station", -33.88, 151.2], ["200020", "Circular Quay Station", -33.86, 151.21], ["204410", "Sydenham Station", -33.91, 151.16]], "/stations/metro.json": [] };
+const lists = { "/stations/train.json": [["200060", "Central Station", -33.88, 151.2], ["200020", "Circular Quay Station", -33.86, 151.21], ["204410", "Sydenham Station", -33.91, 151.16], ["204210", "Erskineville Station", -33.9, 151.18]], "/stations/metro.json": [] };
 const env = { ASSETS: { fetch: async (req) => { const p = new URL(req.url).pathname; if (lists[p]) return new Response(JSON.stringify(lists[p])); if (p.startsWith("/stops/")) return new Response(JSON.stringify(ST)); return new Response("no", { status: 404 }); } } };
 const seqOf = (ids, start) => ids.map((id, i) => ({ id, name: ST[id][0] + ", Sydney", disassembledName: ST[id][0], coord: [ST[id][1], ST[id][2]], departureTimePlanned: at(start + i * 2), arrivalTimePlanned: at(start + i * 2) }));
 const legOf = (trip, dest, ids, start, live) => ({ isRealtimeControlled: !!live, transportation: { disassembledName: "T8", destination: { name: dest }, properties: { RealtimeTripId: trip } }, origin: { departureTimePlanned: at(start) }, stopSequence: seqOf(ids, start) });
@@ -98,4 +98,31 @@ test("a run that is not a City Circle asks once, as before", async () => {
   const d = await W.service(env, { trip: "run-x", mode: "train", line: "T8", stop: "2150311", destId: "204410", planned: at(1) });
   assert.equal(d.stops.length, 3);
   assert.equal(asked.length, 1);
+});
+
+test("a City Circle run from the suburbs that ends at Circular Quay (the train goes on under another run): the list to Circular Quay", async () => {
+  planner = (p) => {
+    if (p.name_origin === "2150311" && p.name_destination === "200060") return { journeys: [{ legs: [legOf("run-t3", "City Circle via Regents Park", ["2150311", "2000323"], 0, true)] }] };
+    if (p.name_origin === "2150311" && p.name_destination === "200020") {
+      const leg = legOf("run-t3", "City Circle via Town Hall", ["2150311", "2000323", "2000071", "2000011", "2000021"], 0, true);
+      delete leg.stopSequence[4].departureTimePlanned;
+      return { journeys: [{ legs: [leg] }] };
+    }
+    return { journeys: [] };
+  };
+  const d = await W.service(env, { trip: "run-t3", mode: "train", line: "T3", stop: "2150311", destId: "200060", dest: "City Circle via Regents Park", planned: at(2) });
+  assert.deepEqual(d.stops.map((x) => x.id), ["2150311", "2000323", "2000071", "2000011", "2000021"]);
+});
+
+test("a slow run the planner leaves out for a faster one (\"Sydenham via Erskineville\"): asked to the via station, then on", async () => {
+  feedTrips = [];
+  planner = (p) => {
+    if (p.name_destination === "204410" && p.name_origin === "2150311") return { journeys: [{ legs: [legOf("run-fast", "Sydenham", ["2150311", "2044111"], 0, true)] }] };
+    if (p.name_origin === "2150311" && p.name_destination === "204210") return { journeys: [{ legs: [legOf("run-slow", "Sydenham via Erskineville", ["2150311", "2042111"], 0, true)] }] };
+    if (p.name_origin === "2042111" && p.name_destination === "204410") return { journeys: [{ legs: [legOf("run-slow", "Sydenham via Erskineville", ["2042111", "2043111", "2044111"], 2, true)] }] };
+    return { journeys: [] };
+  };
+  const d = await W.service(env, { trip: "run-slow", mode: "train", line: "T8", stop: "2150311", destId: "204410", dest: "Sydenham via Erskineville", planned: at(3) });
+  assert.deepEqual(d.stops.map((x) => x.id), ["2150311", "2042111", "2043111", "2044111"]);
+  assert.equal(d.stopsStatus, "ok");
 });

@@ -1500,33 +1500,50 @@ const PLANNER_LEG_FRESH_MS = 60000, PLANNER_LEG_KEEP_MS = 20 * 60000, PLANNER_LE
 const plannerLegMem = new Map();
 const plannerLegFlight = new Map();
 const pause = (n) => new Promise((r) => setTimeout(r, n));
-// A City Circle train runs into the city and round the loop back to Central, so the planner, asked from your stop to
-// Central, ends the list at its first call at Central (Liverpool T2s on 26 Oct), and from Central to Central has no
-// answer at all (City Circle trains at Central). Both halves are asked instead: your stop to Circular Quay (on the
-// loop whichever way it runs), then Circular Quay to Central on the same run, and the two lists are joined. Null when
-// either half has no answer for this run (a stop already past Circular Quay asks the usual way).
+// One run asked in parts, when one question cannot get its whole list: `ids` are stations on the run in order, each
+// asked from where the last part ended, on the same run id, and the lists are joined. A part whose last stop has no
+// departure time is where the run ends: the list stops there. `partial`: when a later part has no answer, the parts so
+// far are returned (else null). Null when the first part has no answer for this run.
+async function chainLeg(env, q, tripId, line, ids, partial) {
+  if (!tripId || !ids.length) return null;
+  let cur = q, seq = [], coords = [], live = true, stale = false, head = null;
+  for (let i = 0; i < ids.length; i++) {
+    const g = await plannerLeg(env, { ...cur, destId: ids[i] }, tripId, line);
+    const sq = (g.leg && g.leg.stopSequence) || [];
+    if (!g.leg || sq.length < 2) { if (i === 0 || !partial) return null; break; }
+    head = head || g.leg;
+    live = live && !!g.leg.isRealtimeControlled;
+    stale = stale || g.stale;
+    coords = coords.concat(g.leg.coords || []);
+    if (!seq.length) seq = sq.slice();
+    else { const joint = seq[seq.length - 1]; seq = seq.slice(0, -1).concat([{ ...sq[0], arrivalTimePlanned: joint.arrivalTimePlanned || sq[0].arrivalTimePlanned, arrivalTimeEstimated: joint.arrivalTimeEstimated || sq[0].arrivalTimeEstimated }], sq.slice(1)); }
+    const last = sq[sq.length - 1];
+    if (!last.departureTimePlanned || i === ids.length - 1) break;
+    cur = { ...q, stop: last.id, planned: iso(last.departureTimePlanned) };
+  }
+  return { leg: { ...head, isRealtimeControlled: live, coords, stopSequence: seq }, status: stale ? "stale" : "ok", stale };
+}
+// The station a train's destination names after "via" ("Central via Strathfield": Strathfield), or null.
+async function viaStationId(env, dest) {
+  const m = /\bvia\s+(.+)$/i.exec(String(dest || ""));
+  return m ? (await railDestMap(env)).get(railDestKey(m[1])) || null : null;
+}
+// A City Circle train runs into the city and round the loop, so the planner, asked from your stop to Central, ends the
+// list at its first call at Central (Liverpool T2 and T3 runs on 26 Oct), and from Central to Central has no answer at
+// all (City Circle trains at Central). It is asked in parts: to the station it runs via when that is named, to Circular
+// Quay (on the loop whichever way it runs), then to Central. A run from the suburbs ends at Circular Quay (the train
+// goes on under another run id), so the list ends there; a run that goes on is followed back to Central. Only when
+// the run to Circular Quay has no answer is it asked by way of the station it runs via, and then only a whole list counts.
 const isCircleName = (n) => /^city circle\b/i.test(String(n || "").trim());
-async function circleLeg(env, q, tripId, line) {
-  if (!tripId) return null;
+async function circleLeg(env, q, tripId, line, dest) {
   const map = await railDestMap(env);
   const quay = map.get(railDestKey("Circular Quay")), central = map.get(railDestKey("Central"));
   if (!quay || !central) return null;
-  const a = await plannerLeg(env, { ...q, destId: quay }, tripId, line);
-  const seqA = (a.leg && a.leg.stopSequence) || [];
-  const atQuay = seqA[seqA.length - 1];
-  const quayDep = atQuay && (atQuay.departureTimePlanned || atQuay.arrivalTimePlanned);
-  if (!a.leg || seqA.length < 2 || !quayDep) return null;
-  const b = await plannerLeg(env, { ...q, stop: atQuay.id, destId: central, planned: iso(quayDep) }, tripId, line);
-  const seqB = (b.leg && b.leg.stopSequence) || [];
-  if (!b.leg || seqB.length < 2) return null;
-  const leg = {
-    ...a.leg,
-    isRealtimeControlled: !!(a.leg.isRealtimeControlled && b.leg.isRealtimeControlled),
-    coords: [...(a.leg.coords || []), ...(b.leg.coords || [])],
-    stopSequence: [...seqA.slice(0, -1), { ...seqB[0], arrivalTimePlanned: atQuay.arrivalTimePlanned || seqB[0].arrivalTimePlanned, arrivalTimeEstimated: atQuay.arrivalTimeEstimated || seqB[0].arrivalTimeEstimated }, ...seqB.slice(1)],
-  };
-  const stale = a.stale || b.stale;
-  return { leg, status: stale ? "stale" : "ok", stale };
+  const direct = await chainLeg(env, q, tripId, line, [quay, central], true);
+  if (direct) return direct;
+  // A faster train to Circular Quay can push this one out of the answer: asked to the station it runs via first.
+  const via = await viaStationId(env, dest);
+  return via && via !== quay && via !== central ? chainLeg(env, q, tripId, line, [via, quay, central], false) : null;
 }
 function plannerLegKey(q, tripId, line) { return [tripId || "", line || "", q.stop, q.destId, q.planned].join("|"); }
 async function plannerLeg(env, q, tripId, line, opts = {}) {
@@ -1546,12 +1563,12 @@ async function plannerLeg(env, q, tripId, line, opts = {}) {
     const p = sydneyParts(new Date(ms(q.planned) - 60000));
     const tries = opts.tries || 4;
     let failed = false;
-    const ask = async (extra) => {
+    const ask = async (extra, at = p) => {
       for (let i = 0; i < tries; i++) {
         try {
           const d = await tp(env, "trip", {
-            depArrMacro: "dep", itdDate: p.date, itdTime: p.time, type_origin: "any", name_origin: q.stop,
-            type_destination: "any", name_destination: q.destId, calcNumberOfTrips: "4",
+            depArrMacro: "dep", itdDate: at.date, itdTime: at.time, type_origin: "any", name_origin: q.stop,
+            type_destination: "any", name_destination: q.destId, calcNumberOfTrips: "6",
             // Direct services only: the run asked for is one service, and with changes allowed the planner can prefer
             // a faster pair of trains and leave this one out of its answer.
             maxChanges: "0", ...extra,
@@ -1575,6 +1592,13 @@ async function plannerLeg(env, q, tripId, line, opts = {}) {
       const again = await ask({ calcNumberOfTrips: "6", ...(tripModesExclude(tripModesParse(q.mode)) || {}) });
       const l2 = again ? plannerPick(again, tripId, line, q.planned) : null;
       if (l2) { data = again; leg = l2; }
+    }
+    // Asked a minute early, a slower train can lose out to a faster one that leaves in that minute and gets there
+    // first (a T5 at Parramatta on 26 Oct); asked at its own minute, live, it is the first answer.
+    if (!leg && tripId && !opts.timetable && (data || failed === false)) {
+      const exact = await ask({ TfNSWTR: "true", calcNumberOfTrips: "6" }, sydneyParts(new Date(ms(q.planned))));
+      const l3 = exact ? plannerPick(exact, tripId, line, q.planned) : null;
+      if (l3) { data = exact; leg = l3; }
     }
     if (leg) {
       const slim = plannerSlim(leg);
@@ -1675,10 +1699,18 @@ async function service(env, q) {
   if ((!stops.length || feedShort) && q.stop && q.destId && q.planned) {
     // Fall back to the trip planner for the stop list from your stop onwards; a City Circle run is asked in two halves
     // (circleLeg), named by the app or by the planner's own answer.
-    let got = mode === "train" && isCircleName(q.dest) ? (await circleLeg(env, q, tripId, line)) : null;
+    let got = mode === "train" && isCircleName(q.dest) ? (await circleLeg(env, q, tripId, line, q.dest)) : null;
     if (!got || !got.leg) got = await plannerLeg(env, q, tripId, line);
-    if (got.leg && mode === "train" && !isCircleName(q.dest) && isCircleName(((got.leg.transportation || {}).destination || {}).name)) {
-      const c = await circleLeg(env, q, tripId, line);
+    const plannerDest = got.leg && ((got.leg.transportation || {}).destination || {}).name;
+    if (got.leg && mode === "train" && !isCircleName(q.dest) && isCircleName(plannerDest)) {
+      const c = await circleLeg(env, q, tripId, line, plannerDest);
+      if (c && c.leg) got = c;
+    }
+    // A slow train the planner leaves out for a faster one to the same place (a T9 to Central via Strathfield at
+    // Hornsby, a T5 at Parramatta): asked again to the station it runs via, then on to its destination.
+    if (!got.leg && mode === "train" && q.dest && !isCircleName(q.dest)) {
+      const via = await viaStationId(env, q.dest);
+      const c = via && via !== q.destId ? await chainLeg(env, q, tripId, line, [via, q.destId], false) : null;
       if (c && c.leg) got = c;
     }
     const leg = got.leg;

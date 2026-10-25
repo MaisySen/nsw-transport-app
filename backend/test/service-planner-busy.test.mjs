@@ -91,8 +91,8 @@ test("when the planner is busy later, the kept list is used and marked stale", a
   assert.equal(r.leg.stopSequence.length, 3);
 });
 
-test("the planner answering without this run, live and from the timetable, is notFound", async () => {
-  plan = [{ journeys: [] }, { journeys: [] }];
+test("the planner answering without this run, live, from the timetable and live at its own minute, is notFound", async () => {
+  plan = [{ journeys: [] }, { journeys: [] }, { journeys: [] }];
   const r = await W.plannerLeg({}, q("trip-e"), "trip-e", "T4", { waitMs: 1 });
   assert.equal(r.status, "notFound");
 });
@@ -114,6 +114,13 @@ test("a list another isolate read (the edge cache) is used without asking the pl
   tripCalls = 0;
   const r = await W.plannerLeg({}, q("trip-g"), "trip-g", "T4", { waitMs: 1 });
   assert.equal(tripCalls, 0);
+  assert.equal(r.status, "ok");
+  assert.equal(r.leg.stopSequence.length, 3);
+});
+
+test("a slower run the planner leaves out a minute early is found at its own minute", async () => {
+  plan = [{ journeys: [] }, { journeys: [] }, journey("trip-own")];
+  const r = await W.plannerLeg({}, q("trip-own"), "trip-own", "T4", { waitMs: 1 });
   assert.equal(r.status, "ok");
   assert.equal(r.leg.stopSequence.length, 3);
 });
