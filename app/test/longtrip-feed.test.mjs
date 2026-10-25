@@ -123,3 +123,13 @@ test('travel time in hours for long trips, alert titles without HTML', async () 
   assert.equal(M.plainText('<a href="https://transportnsw.info/regional-bookings/" target="_blank">Book your seat with NSW TrainLink</a>'), 'Book your seat with NSW TrainLink');
   assert.equal(M.plainText('Lifts &amp; ramps'), 'Lifts & ramps');
 });
+
+test('quieter carriage hint only from live carriage data', async () => {
+  const O = await load('src/lib/occupancy.ts');
+  assert.equal(O.quietText({ quiet: { where: 'back', text: 'Quieter at the back' } }), 'Quieter at the back');
+  assert.equal(O.quietText({ quiet: { where: 'back' } }, false), null, 'crowding switched off');
+  assert.equal(O.quietText({ quiet: { where: 'roof' } }), null);
+  assert.equal(O.quietText({}), null);
+  assert.equal(O.quietText(null), null);
+  assert.match(read('src/components/Transit.tsx'), /<QuietChip v=\{d\.vehicle\} \/>/);
+});

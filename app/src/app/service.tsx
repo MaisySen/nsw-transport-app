@@ -12,7 +12,7 @@ import { useStore } from '@/lib/store';
 import { svcSpec, toggleWatch, tripKey } from '@/lib/watch';
 import TransitMap from '@/components/TransitMap';
 import { Icon, I } from '@/components/Icon';
-import { LineBadge, LiveStamp, OccupancyChip, StatusLine } from '@/components/Transit';
+import { LineBadge, LiveStamp, OccupancyChip, QuietChip, StatusLine } from '@/components/Transit';
 import { Button, T } from '@/components/ui';
 
 export default function ServiceScreen() {
@@ -60,6 +60,7 @@ export default function ServiceScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
               <StatusLine realtime={live} delayMin={delayMin} cancelled={data?.cancelled} />
               {data?.vehicle?.occupancy?.text ? <OccupancyChip o={data.vehicle.occupancy} style={{ marginLeft: 6 }} /> : null}
+              <QuietChip v={data?.vehicle as any} style={{ marginLeft: 6 }} />
               {data && !data.vehicle ? <T kind="foot" tone="text2">{'\u00b7'} No GPS position yet</T> : null}
             </View>
             {data?.where?.text ? <T kind="body" style={{ marginTop: 10 }}>{data.where.text}</T> : null}

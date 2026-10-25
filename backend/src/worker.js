@@ -320,9 +320,41 @@ function readVehiclePosition(pb) {
     else if (f === 7) v.stopId = pb.str();
     else if (f === 8) v.vehicle = readVehicleDescriptor(pb.sub());
     else if (f === 9) v.occupancy = pb.uint();
+    else if (f === 18) (v.carriages || (v.carriages = [])).push(readCarriage(pb.sub()));
     else pb.skip(tag & 7);
   }
   return v;
+}
+// GTFS realtime CarriageDetails (multi_carriage_details): sequence 1 is the first carriage in the direction of travel.
+function readCarriage(pb) {
+  const c = { status: null, seq: null };
+  while (pb.p < pb.e) {
+    const tag = pb.uint(), f = Math.floor(tag / 8);
+    if (f === 2) c.label = pb.str();
+    else if (f === 3) c.status = pb.uint();
+    else if (f === 5) c.seq = pb.uint();
+    else pb.skip(tag & 7);
+  }
+  return c;
+}
+/**
+ * Where the train is quieter, from live carriage occupancy: "front", "middle" or "back", only when that third of the
+ * train is at least one level emptier than the fullest third and the train has some crowding (standing room or
+ * fuller somewhere). Null when there is no carriage data or nothing worth saying.
+ */
+function quietHint(cars) {
+  const ok = (cars || []).filter((c) => c && c.seq != null && c.status != null && c.status <= 6).sort((a, b) => a.seq - b.seq);
+  if (ok.length < 3) return null;
+  const lvl = (s) => (OCC_GTFS[s] || { level: 0 }).level;
+  const n = ok.length, parts = { front: ok.slice(0, Math.ceil(n / 3)), middle: ok.slice(Math.ceil(n / 3), n - Math.ceil(n / 3)), back: ok.slice(n - Math.ceil(n / 3)) };
+  const avg = (xs) => (xs.length ? xs.reduce((s, c) => s + lvl(c.status), 0) / xs.length : null);
+  const scores = Object.entries(parts).map(([k, xs]) => [k, avg(xs)]).filter(([, v]) => v != null);
+  const max = Math.max(...scores.map(([, v]) => v));
+  if (max < 3) return null;
+  scores.sort((a, b) => a[1] - b[1]);
+  const [where, low] = scores[0];
+  if (max - low < 1) return null;
+  return { where, text: `Quieter at the ${where}` };
 }
 
 // Quick pass: map trip_id -> [start, end] of the trip_update (field 3) or vehicle (field 4).
@@ -520,6 +552,8 @@ function vehicleOf(vp) {
     stopSeq: vp.stopSeq || null, stopId: vp.stopId || null, status: vp.status != null ? vp.status : null,
     occupancy: vp.occupancy != null ? OCC_GTFS[vp.occupancy] || null : null,
     label: (vp.vehicle && (vp.vehicle.label || null)) || null,
+    ...(vp.carriages && vp.carriages.length ? { cars: vp.carriages.length } : {}),
+    ...(quietHint(vp.carriages) ? { quiet: quietHint(vp.carriages) } : {}),
   };
 }
 
@@ -768,7 +802,7 @@ const HAZ_TTL_MS = 120000;
 const HAZ_NEAR_M = 120;
 let hazMem = null; // { at, items, promise }
 function hazCat(s) {
-  const t = String(s || "").replace(/_/g, " ").trim().toLowerCase();
+  const t = String(s || "").replace(/_/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
   return t ? t[0].toUpperCase() + t.slice(1) : "Incident";
 }
 /** One Live Traffic feature in the words the app shows: "Crash on Victoria Road at Gladesville". */
@@ -828,11 +862,19 @@ function hazardOnPath(path, hazards, nearM = HAZ_NEAR_M) {
   return best ? best.h : null;
 }
 const TRAFFIC_MODES = new Set(["bus", "coach"]);
+// Long running road notices (a 4WD only track, conditions changed months ago) are not why a bus is late today.
+const HAZ_FRESH_MS = 12 * 3600000;
+function hazardRelevant(h, now = Date.now()) {
+  if (!h || /4wd/i.test(h.kind)) return false;
+  const u = Number(h.updated);
+  return h.major || !Number.isFinite(u) || now - u < HAZ_FRESH_MS;
+}
 /** Adds traffic: { text, kind, id } to bus and coach legs of trip answers that have an incident on their route. */
 async function addTraffic(env, d, hazardsFn = trafficHazards) {
   const legs = ((d && d.journeys) || []).flatMap((j) => j.legs || []).filter((l) => l.kind === "transit" && TRAFFIC_MODES.has(l.mode) && Array.isArray(l.path) && l.path.length > 1);
   if (!legs.length) return d;
-  const hz = await hazardsFn(env);
+  const now = Date.now();
+  const hz = (await hazardsFn(env)).filter((h) => hazardRelevant(h, now));
   for (const l of legs) {
     const h = hazardOnPath(l.path, hz);
     if (h) l.traffic = { id: h.id, kind: h.kind, text: h.text, major: h.major };
@@ -4581,7 +4623,7 @@ function liftAwareRank(d, count) {
 
 // Occupancy switched off from the server config: drop it from every answer.
 function stripOccupancy(d) {
-  const strip = (x) => { if (x && typeof x === "object") { delete x.occupancy; if (x.vehicle && typeof x.vehicle === "object") delete x.vehicle.occupancy; } };
+  const strip = (x) => { if (x && typeof x === "object") { delete x.occupancy; if (x.vehicle && typeof x.vehicle === "object") { delete x.vehicle.occupancy; delete x.vehicle.quiet; } } };
   for (const it of (d && d.items) || []) strip(it);
   for (const j of (d && d.journeys) || []) for (const l of j.legs || []) strip(l);
   if (d && d.vehicle) strip(d);

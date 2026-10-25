@@ -12,7 +12,8 @@ import type { Departure, Journey, Leg } from '@/lib/types';
 import { Icon, I, modeIconName } from './Icon';
 import { font, T } from './ui';
 import { useFlag } from '@/lib/config';
-import { occBusy, occText } from '@/lib/occupancy';
+import { occBusy, occText, quietText } from '@/lib/occupancy';
+import type { Vehicle } from '@/lib/types';
 import type { Occupancy } from '@/lib/types';
 
 /** A small "Few seats" chip when Transport for NSW sends occupancy for this service; nothing when it does not. */
@@ -26,6 +27,20 @@ export function OccupancyChip({ o, style }: { o?: Occupancy; style?: any }) {
     <View accessible accessibilityLabel={`Crowding: ${text}`} style={[st.occ, { backgroundColor: c.fill }, style]}>
       <Icon name={I.people} size={11} color={busy ? c.lateText : c.text2} />
       <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={[font.caption, { color: busy ? c.lateText : c.text2, fontWeight: '600', marginLeft: 3 }]}>{text}</Text>
+    </View>
+  );
+}
+
+/** Where to stand: "Quieter at the back", from live carriage occupancy where Transport for NSW sends it. */
+export function QuietChip({ v, style }: { v?: Vehicle; style?: any }) {
+  const c = usePalette();
+  const on = useFlag('occupancy');
+  const text = quietText(v, on);
+  if (!text) return null;
+  return (
+    <View accessible accessibilityLabel={text} style={[st.occ, { backgroundColor: c.fill }, style]}>
+      <Icon name={I.people} size={11} color={c.liveText} />
+      <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={[font.caption, { color: c.liveText, fontWeight: '600', marginLeft: 3 }]}>{text}</Text>
     </View>
   );
 }
@@ -152,6 +167,7 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
           <StatusLine realtime={d.realtime} delayMin={d.delayMin} cancelled={d.cancelled} />
           {extra.length ? <T kind="foot" tone="text2" numberOfLines={1}>{extra.join(' \u00b7 ')}</T> : null}
           <OccupancyChip o={d.occupancy} />
+          <QuietChip v={d.vehicle} />
         </View>
         {d.platformChangedFrom ? <T kind="foot" style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }}>Platform changed from {d.platformChangedFrom}</T> : null}
         {d.pred && !d.realtime ? <T kind="caption" tone="text2" style={{ marginTop: 2 }}>Prediction: {d.pred.short || d.pred.text} ({d.pred.n} trips)</T> : null}
