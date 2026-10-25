@@ -87,6 +87,8 @@ Measured: `app/test/ask-corpus.test.mjs`, 309 questions from all over Sydney and
 
 ## Platform view (over the air, 25 Oct, about 11:17 PM; station board look 25 Oct, about 11:57 PM)
 
+**Hidden since 26 Oct, about 8:30 AM** (Bidur at 7:57 AM: not to be used until it is reliable). The switch is `PLATFORM_VIEW` in `app/src/lib/features.ts`, off: no platform button on the stop screen, no Platform view in the hold menu, `openPlatform()` does nothing and a link straight to `/platform` goes to Home. The code below stays; turning it back on is that one line and an over the air update, after the stop list check reaches 95% or more and Bidur says so.
+
 One train or metro at a station, full screen and readable from a distance, laid out like the departure screens on station platforms (Bidur's photo of the real screen, approved mock 25 Oct 11:31 PM; our own build with system fonts and no logos). Open it with the platform button at the top of a train or metro station's screen, or hold a train or metro departure and choose **Platform view** (the row's tap still opens the service). Above the board: close, the station name, and **Speak**. The board:
 * A white board (dark in dark mode) with an orange bar: Next train (or Next metro) and Time now.
 * The line badge and the destination in large type, with "via ..." under it and a plane mark when it runs via the airport stations.
