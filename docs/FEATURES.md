@@ -64,7 +64,21 @@ The iPhone and Android apps are one Expo app (`app/`). Anything below marked "ov
 
 ## Ask
 
-Type "next train Burwood to Central", "is the T1 late" or "last train home". Answers come from live data with fixed rules; there is no generative AI. Ask opens on the latest message and its field sits above the tab bar and the keyboard. It shows the last 30 messages, with Load earlier at the top; up to 200 are kept on the phone. **Clear chat** is the trash button at the top right of Ask and in More > Privacy and data, and asks first. The chat is only kept on the phone.
+Ask anything about getting around Sydney and NSW, the way you would say it: "strathfeild to kings x", "next 333 from bondi beach", "trains after 6pm tomorrow to parramatta", "is the t1 running late", "lift at redfern?", "parking at ashfield", "last train home". Answers come from live data with fixed rules; there is no generative AI and no paid service.
+
+The phone reads the question first (`src/lib/askBrain.ts`, pure and offline), then sends one clear question to the server:
+* **Places**: every train, metro, light rail and ferry stop and every NSW suburb, from the lists the server publishes (`/stations/*.json`, kept on the phone for 14 days by `src/lib/askPlaces.ts`). Typos are matched by spelling distance ("parramata", "katomba", "woolongong", "wolli ck"), short forms by rule ("kings x", "cq", "parra", "stn", "rd", "nth", "jn"). Landmarks, hospitals, streets and shopping centres that are not in the lists go to the server's place search as typed. A word that names several places ("the airport", "uni", "the city", "the beach") gets a question with the choices.
+* **Times and days**: "after 6", "around 8:30", "by 9am", "half past 7", "in 20 min", "tonight", "tomorrow morning", "friday arvo", "this weekend", "leave at 8 arrive by 9". A clock time with no am or pm is the next time that clock reads. Another day is planned with the trip planner for that day.
+* **You**: "home" and "work" are your saved places; chips under the box come from your own usual and recent trips, home and work, and starred stops, never a fixed list.
+* **Follow ups** (for 30 minutes, kept in memory only): "and the one after", "later", "earlier", "what about by bus", "by ferry instead", "from there", "and from there to Bondi Beach", "the way back", "what about tomorrow".
+* **What it answers**: trips (with via, no changes, step free), departures at a stop or for a route at a stop, the last service, delays on a line or mode, trackwork, Park and Ride car parks, lifts and access, fares (the Opal estimate that comes with the trip answer; without one it says where to see what a trip cost), "when does my bus come" (your usual bus trip, or a question with your stops), stops near you.
+* **Never a dead end**: when it is unsure it asks one short question with 2 or 3 choices you tap (from your own places, or Use my location). It never makes up a time or a number; every one comes from live data.
+
+Each answer shows what was understood in small type above it ("Katoomba to Central, tomorrow, from 6:00 am"), then one card, then **Open trip** or **Open board**, **Directions** (car parks, to Apple Maps or Google Maps) and **Speak** (the next services read out from the card, with the one time better voice offer), plus Earlier and Later chips on trips and boards. A trip with no start uses where you are only when location is already allowed (a recent fix, no prompt).
+
+Ask opens on the latest message and its field sits above the tab bar and the keyboard. It shows the last 30 messages, with Load earlier at the top; up to 200 are kept on the phone. **Clear chat** is the trash button at the top right of Ask and in More > Privacy and data, and asks first. The chat is only kept on the phone.
+
+Measured: `app/test/ask-corpus.test.mjs`, 309 questions from all over Sydney and NSW (every region and mode, at most 5% on one commute): 192 of 309 (62%) read right by the old path (the question as typed, the server's rules, exact names), 309 of 309 (100%) by the new one. A second batch of 60, written after the first passed, scored 58 of 60 (97%) on its first run before fixes.
 
 ## Simple mode
 

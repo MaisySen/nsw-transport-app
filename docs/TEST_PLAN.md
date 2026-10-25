@@ -75,6 +75,16 @@ Usual lateness on the server: a day folds into late_agg with the right minute co
 
 ## Android app logic tests
 
+### `app/test/ask-corpus.test.mjs`: 2 tests, 2 pass (added 25 Oct, 10:45 PM)
+
+309 real world questions with their intent and slots, across the CBD, inner west and south, eastern suburbs, north shore and northern beaches, west, south west, St George and the Shire, the Hills and north west, and regional NSW (Blue Mountains, Central Coast, Newcastle and the Hunter, Illawarra and South Coast, Southern Highlands, country towns), every mode (train, metro, light rail, ferry, bus, coach). Typos, lower case, no punctuation, slang and short forms. At most 5% may name one commute. Run against `askBrain.ts` with the station and suburb lists from `backend/src/public/stations`, a fixed clock (Monday 26 Oct 2026, 7:30 am) and saved places. Prints the pass rate by region, by mode and by batch, and the old path's rate for comparison; fails under 90%. On 25 Oct: before 192/309 (62%), after 309/309 (100%); by region and mode all 100% after. Set `ASK_CORPUS_JSON=<file>` to write the full result.
+
+### `app/test/askbrain.test.mjs`: 10 tests, 10 pass (added 25 Oct, 10:45 PM)
+
+Typo and short form matching against the published lists (and landmarks kept as typed), the clear question sent for each intent, another day and no changes going to the planner, home and work (and the Settings hint when unset), clarifying questions with 1 to 3 choices and under 60 characters, follow ups starting from the times shown and the 30 minute limit, time words, chips from your own trips only, the no change filter, the reply built from the card's own legs, the actions under a card (Open trip, Speak, Directions to Apple Maps or Google Maps), and the engine staying pure (no timers, no network, under 15 ms a question, no dashes).
+
+Device checks (not yet done on a phone): on iPhone and Android, type "chatswod to wynyrd" (Chatswood to Wynyard shown above the answer), ask a trip then "and the one after" (the next service), "katomba to central tomorrow morning" (tomorrow's trips from 6 am), "fastest way to the airport" (International or Domestic chips), "any delays on the t4"; with airplane mode after one use, the question is still understood and the error says no connection; Speak reads the card in the chosen voice; Directions on a car park opens the maps app; VoiceOver reads the understood line, the card and each button.
+
 ### `app/test/tripmodes.test.mjs`: 9 tests, 9 pass
 
 Trip screen mode chips (Any clears, toggles, several at once, every chip on is Any, which chips show), bus only filter (coach and school bus count, walks are fine), an honest empty state that depends on who filtered, the endless list's caps (8 later batches at most even when scrolled 100 times, one at a time, none off screen, stop at 4am or when a batch brings nothing new, earlier never before half an hour ago), Sydney days for the picker (AEDT and AEST) and when a date must go to the server, and When carrying a day through route params, the request and the label.

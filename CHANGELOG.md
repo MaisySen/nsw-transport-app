@@ -4,6 +4,16 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Ask understands far more (over the air, 25 Oct, about 10:45 PM, group 62b97fcd)
+Bidur: "We need to work to make ask screen and tab more smarter. Really smart", then "cant do it with only this suburb".
+* Type it any way: typos and short forms ("strathfeild to kings x", "katomba", "cq", "parra", "stn") are matched against every station, wharf, light rail stop and NSW suburb. Landmarks and streets go to the place search as typed.
+* Plain time words: "after 6", "around 8:30", "by 9am", "in 20 min", "tonight", "tomorrow morning", "this weekend", "leave at 8 arrive by 9". Another day is planned for that day.
+* "Home" and "work" are your saved places. Follow ups work: "and the one after", "earlier", "what about by bus", "from there", "the way back", "what about tomorrow".
+* Delays on a line, trackwork, car parks, lifts, fares (the Opal estimate from the trip answer), "when does my bus come", stops near you.
+* Not sure what you meant? One short question with 2 or 3 choices to tap, never a dead end. Every time and number comes from live data; still no AI and no paid service.
+* Each answer shows what was understood, one card, and Open trip, Open board, Directions or Speak under it, with Earlier and Later. Chips under the box come from your own trips.
+* Measured on 309 questions from all over Sydney and NSW: 62% understood before, 100% now. Production group 62b97fcd-4bef-48f3-b292-cf9fe1f44deb from main cc1939c (preview b3cc0cbc); roll back to group d5346636 (10:25 PM). Not yet seen on a device.
+
 ### Live bus status (over the air, 25 Oct, about 10:25 PM, group d5346636)
 Bidur: "live bus traffic on 410/D400", then "cant do it with only this suburb".
 * Every bus with live data, anywhere in NSW: bus rows say how late or early the bus is and where it is ("4 min late", "3 stops away", "At the stop"). With no live data a row says "Timetable only" and nothing more.
