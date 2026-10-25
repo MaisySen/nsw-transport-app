@@ -11,6 +11,8 @@ import { wakeId } from './smart';
 import { cancelWake } from './smartNotify';
 import { iosNative } from '../../modules/transport-ios';
 import { wantOngoing } from './leaveByCore';
+import { store } from './store';
+import { hasSpeech } from './nativeExtras';
 
 export type LiveShare = { id: string; key: string; url: string; pos: boolean };
 export type LiveTrip = {
@@ -20,8 +22,8 @@ export type LiveTrip = {
   rode?: Record<number, number>; arrivedAt?: number | null;
   /** Wake me before my stop: on, and when each leg's alarm is set for (leg index to time). */
   wake?: boolean; wakeSet?: Record<string, number>;
-  /** Say trip alerts out loud (builds with the speech module). */
-  speak?: boolean;
+  /** Say trip alerts out loud (builds with the speech module), and the alerts already read out. */
+  speak?: boolean; spoken?: Record<string, 1>;
 };
 
 const KEY = 'liveTrip';
@@ -50,6 +52,11 @@ export function useLiveTrip() {
   return useSyncExternalStore((l) => { subs.add(l); return () => subs.delete(l); }, () => cur, () => cur);
 }
 
+// Speak alerts stays as you last set it (Settings store), on builds that can speak.
+function speakDefault(): boolean {
+  try { return store.speakOn() && hasSpeech(); } catch { return false; }
+}
+
 /** Starts tracking a planned trip. Starting another trip ends the first. */
 export async function startLive(spec: WatchSpec, fare?: Fare | null) {
   await load();
@@ -57,7 +64,7 @@ export async function startLive(spec: WatchSpec, fare?: Fare | null) {
   if (!legs.length) throw new Error("This trip can't be tracked.");
   if (cur) await endLive();
   const g: LiveTrip = { id: 'g' + Date.now().toString(36), title: spec.title, origin: spec.origin || null, to: spec.to || null, legs, fare: fare && fare.total != null ? fare : null,
-    started: Date.now(), alerted: {}, share: null, watchId: null };
+    started: Date.now(), alerted: {}, share: null, watchId: null, ...(speakDefault() ? { speak: true } : {}) };
   setLive(g);
   // The ongoing notification starts with the trip: ask for notifications once, if never asked, then let the
   // server follow the trip. This runs after Start trip has returned, so the live trip opens at once and the

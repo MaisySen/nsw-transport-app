@@ -19,7 +19,7 @@ import { Icon, I } from './Icon';
 import { LineBadge } from './Transit';
 import { T } from './ui';
 import { useFlag } from '@/lib/config';
-import { hasSpeech, speak } from '@/lib/nativeExtras';
+import { hasSpeech, hasSpeechSession, speak } from '@/lib/nativeExtras';
 import { checkSubtitle } from '@/lib/morning';
 import { useScreenPoll } from '@/lib/activity';
 import type { Place } from '@/lib/types';
@@ -181,9 +181,11 @@ export function SpeakRow({ g }: { g: LiveTrip }) {
     const cur = getLive();
     if (!cur || cur.id !== g.id) return;
     setLive({ ...cur, speak: on });
+    store.setSpeak(on);
     haptic.select();
-    if (on) speak('Trip alerts will be spoken.');
+    if (on) { speak('Trip alerts will be spoken.'); tickLive(); }
   };
+  const silentNote = !hasSpeechSession();
   return (
     <View style={[s.wake, { backgroundColor: c.card }]}>
       <View style={[s.wakeIcon, { backgroundColor: g.speak ? c.tint : c.fill }]}>
@@ -191,7 +193,7 @@ export function SpeakRow({ g }: { g: LiveTrip }) {
       </View>
       <View style={{ flex: 1 }}>
         <T kind="body">Speak alerts</T>
-        <T kind="foot" tone="text2" numberOfLines={2}>{g.speak ? 'Next stop and get off alerts are read out' : 'Hear next stop and get off alerts in your headphones'}</T>
+        <T kind="foot" tone="text2" numberOfLines={4}>{g.speak ? `Read out while the app is open: leaving soon, delays, stand changes and your stop.${silentNote ? ' Silent mode mutes the speaker; headphones still work.' : ''}` : 'Hear next stop and get off alerts in your headphones'}</T>
       </View>
       <Switch value={!!g.speak} onValueChange={toggle} accessibilityLabel="Speak alerts"
         trackColor={Platform.OS === 'android' ? { true: c.tint, false: c.fill } : undefined}

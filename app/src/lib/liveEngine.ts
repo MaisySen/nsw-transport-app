@@ -98,7 +98,7 @@ export async function tickLive() {
     // Wake me before my stop: one alarm per leg, set on the phone and moved with the live times.
     const w = wakeStep({ id: g.id, legs: g.legs, wake: g.wake, wakeSet: g.wakeSet, alerted: r.g.alerted }, r.s, now, fmt);
     put({ svc: svcCache.slice(), st: r.s, offline: failed ? 'Connection lost. Showing the last live times.' : null, ...(failed ? {} : { updated: now }) });
-    if (r.g !== g || w.g.alerted !== r.g.alerted || w.g.wakeSet !== g.wakeSet) setLive({ ...g, alerted: w.g.alerted, watchId: r.g.watchId, rode: r.g.rode, arrivedAt: r.g.arrivedAt, wakeSet: w.g.wakeSet });
+    if (r.g !== g || w.g.alerted !== r.g.alerted || w.g.wakeSet !== g.wakeSet) setLive({ ...g, alerted: w.g.alerted, watchId: r.g.watchId, rode: r.g.rode, arrivedAt: r.g.arrivedAt, wakeSet: w.g.wakeSet, spoken: r.g.spoken });
     for (const a of w.actions) {
       if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, ...(a.t === 'wakeSchedule' ? { alarmAt: a.at } : {}), at: now });
       if (a.t === 'wakeSchedule') await scheduleWake(a.id, a.at, a.title, a.body);
@@ -109,7 +109,8 @@ export async function tickLive() {
     for (const a of r.actions) {
       // The web preview logs every action, so a browser replay can check each alert and the end of the trip.
       if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, at: now });
-      if (a.t === 'alert') { liveAlert(a.title, a.body, a.id); if (g.speak) speak(`${a.title}. ${a.body}`); if (!buzzed) { buzzed = true; Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); } }
+      if (a.t === 'say') speak(a.text);
+      else if (a.t === 'alert') { liveAlert(a.title, a.body, a.id); if (!buzzed) { buzzed = true; Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); } }
       else if (a.t === 'ongoing') showOngoing(a.title, a.body, legColor(L[a.leg]));
       else if (a.t === 'clearOngoing') await clearOngoing();
       else if (a.t === 'stopWatch') { endedWatches.add(a.id); api.stopWatch(a.id).catch(() => {}); }
