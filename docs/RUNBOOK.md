@@ -32,9 +32,51 @@ Several workers may edit `src/worker.js`. Always pull `main` and reread the file
 
 Commit the generated station, bus route and stop data under `src/public/stations/` and `src/public/stops/` (rebuild them with `tools/build_stations.py` and `tools/build_stops.py`), so a clean clone passes every test. When a table changes in `src/worker.js`, run `node tools/schema.mjs` and commit `migrations/`. Never commit `.env`, `wrangler.toml` or an export file.
 
-**Rollback:** `npx wrangler@4 rollback` in `backend/` (the previous Worker version), or check out the previous commit of `backend/` and deploy again. For the site, Cloudflare Pages, project `transportsydney`, Deployments, Rollback, or `POST /accounts/$CF_ACCOUNT_ID/pages/projects/transportsydney/deployments/<id>/rollback`; the deployment ids are in docs/RELEASES.md. The zone caches CSS at the edge for up to 4 hours and the token cannot purge it, so give a changed stylesheet a new file name (the home page uses `site/home.css` for this reason).
+**Rollback:** `npx wrangler@4 rollback` in `backend/` (the previous Worker version), or check out the previous commit of `backend/` and deploy again. For the site, Cloudflare Pages, project `transportsydney`, Deployments, Rollback, or `POST /accounts/$CF_ACCOUNT_ID/pages/projects/transportsydney/deployments/<id>/rollback`; the deployment ids are in docs/RELEASES.md. The zone caches CSS at the edge for up to 4 hours and the token cannot purge it, so give a changed stylesheet a new file name (the home page uses `site/home.css` for this reason; rules added later are in `site/extra-1.css`).
 
 **First address, until the switch.** It runs the build from before the move (`node build.mjs site` writes one folder with the secrets filled in). Do not redeploy it unless Bidur asks; `backend/` deployed there keeps its full behaviour for old app builds. Its address is in the credentials email.
+
+### Public site: current deployment, rollback and SEO checklist
+
+Current production deployment: `6a797b2c-197c-4ad0-8721-16737a8b6b03` (25 Oct, about 9:00 PM, SEO and polish). Roll back to the one before it (`564bc47c-7128-4534-83e1-b4fdce138fd4`, the 8:50 PM simple home page): Cloudflare dashboard, Workers and Pages, `transportsydney`, Deployments, 564bc47c, Rollback, or
+
+```bash
+curl -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/pages/projects/transportsydney/deployments/564bc47c-7128-4534-83e1-b4fdce138fd4/rollback"
+```
+
+Rules for the site: no scripts (JSON-LD data is the one allowed script element), no ads, no analytics, no tracking. The contact addresses are support@, privacy@ and hello@transportsydney.app, and contact@fintex.au never appears. No em or en dashes. Change a stylesheet by giving it a new file name. Leave `site.css` and `home.css` as they are, and put new rules in `extra-1.css`, or in `extra-2.css` once that file has changed. `backend/test/public-site.test.mjs` checks the items below.
+
+**Keep HTML `no-transform`.** The zone has Email Address Obfuscation on and adds Cloudflare Web Analytics on its own. Either one puts a script into the page, which the CSP blocks and which shows as a console error, and the beacon is analytics. `site/_headers` gives each HTML path `Cache-Control: public, max-age=0, must-revalidate, no-transform`, and the zone does not change those responses. The cost is uncompressed HTML (5 to 12 KB a page). Pages that do not exist (the 404) are not covered and still get both scripts, which stay blocked. They go away for good when someone with dashboard access turns off Web Analytics (Analytics and Logs, Web Analytics) and Scrape Shield, Email Address Obfuscation for transportsydney.app. The API token cannot see the Web Analytics site. Add any new HTML path to that list in `_headers`.
+
+**Lighthouse check** (mobile, the live site). Each page should score 100 in all four categories:
+
+```bash
+CHROME_PATH=/path/to/chrome npx lighthouse https://transportsydney.app/ --form-factor=mobile --output=json --output-path=lh-home.json --chrome-flags="--headless=new"
+```
+
+#### SEO checklist (status 25 Oct 2026, deployment 6a797b2c)
+
+| Item | Status |
+| --- | --- |
+| Title, meta description, canonical on home | Done (since 564bc47c) |
+| Open Graph (title, description, url, image 1200 x 630 `og.png`) and Twitter card on home | Done |
+| Favicon 16, 32 and `.ico`, apple-touch-icon | Done |
+| robots.txt with the sitemap line | Done. Lighthouse can now read it, because `connect-src 'self'` is in the CSP |
+| `lang="en-AU"` on every page | Done |
+| Hero icon alt "Transport: Sydney Live app icon" | Done (6a797b2c) |
+| `site.webmanifest` (name, short name "Sydney Live", icons 192 and 512, theme and background colour, standalone), linked from every page, `manifest-src 'self'` | Done (6a797b2c) |
+| theme-color for light (#f2f2f7) and dark (#000000) with `prefers-color-scheme` | Done on every page |
+| JSON-LD on home: SoftwareApplication (name, iOS and Android, TravelApplication, offer 0 AUD, publisher, url, image) and Organization (Fintex Australia Pty Ltd, https://fintex.au, logo https://fintex.au/apple-touch-icon.png), no ratings or reviews | Done (6a797b2c). It is validated by the test and on the live page |
+| Sitemap with `lastmod`, only real pages (`/beta` is a redirect, left out) | Done (6a797b2c) |
+| h1 reads "Transport: Sydney Live" to screen readers (a real space, `nw` span only stops the line break) | Done. Checked in the accessibility tree |
+| Own title, description, canonical, og:title, og:description, og:url on home, support, privacy and terms | Done. Checked by a test |
+| Lighthouse mobile, home: Performance, Accessibility, Best Practices, SEO | 99, 95, 93, 92 before. 100, 100, 100, 100 after |
+| Lighthouse mobile, support | 100, 96, 93, 92 before. 100, 100, 100, 100 after. Privacy and terms are also 100 in all four |
+| 404 page returns 404 with a link home | Done |
+| www goes to the bare domain (301) | Done (zone redirect rule) |
+| http goes to https (301) | Done (served by Pages; the zone's Always Use HTTPS is off and not needed). HSTS is one year |
+| Every image has width and height (no layout shift) | Done. Checked by a test; CLS is 0 |
+| No ads, analytics or tracking scripts | Done for every real page (`no-transform`). For the 404, see above |
 
 ## 2. Ship an over the air update (iPhone and Android)
 
