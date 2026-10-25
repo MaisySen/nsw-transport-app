@@ -321,6 +321,7 @@ function readVehiclePosition(pb) {
     else if (f === 8) v.vehicle = readVehicleDescriptor(pb.sub());
     else if (f === 9) v.occupancy = pb.uint();
     else if (f === 18) (v.carriages || (v.carriages = [])).push(readCarriage(pb.sub()));
+    else if (f === 1007 && (tag & 7) === 2) (v.consist || (v.consist = [])).push(readConsistCar(pb.sub()));
     else pb.skip(tag & 7);
   }
   return v;
@@ -334,6 +335,20 @@ function readCarriage(pb) {
     else if (f === 3) c.status = pb.uint();
     else if (f === 5) c.seq = pb.uint();
     else pb.skip(tag & 7);
+  }
+  return c;
+}
+// Transport for NSW extension 1007 on VehiclePosition (CarriageDescriptor): name, position_in_consist,
+// occupancy_status, quiet_carriage. Read so the cars of Sydney Trains and NSW TrainLink services can be shown.
+function readConsistCar(pb) {
+  const c = { status: null, seq: null };
+  while (pb.p < pb.e) {
+    const tag = pb.uint(), f = Math.floor(tag / 8), wt = tag & 7;
+    if (f === 1 && wt === 2) c.name = pb.str();
+    else if (f === 2 && wt === 0) c.seq = pb.uint();
+    else if (f === 3 && wt === 0) c.status = pb.uint();
+    else if (f === 4 && wt === 0) c.quiet = !!pb.uint();
+    else pb.skip(wt);
   }
   return c;
 }
@@ -553,6 +568,7 @@ function vehicleOf(vp) {
     occupancy: vp.occupancy != null ? OCC_GTFS[vp.occupancy] || null : null,
     label: (vp.vehicle && (vp.vehicle.label || null)) || null,
     ...(vp.carriages && vp.carriages.length ? { cars: vp.carriages.length } : {}),
+    ...(vp.consist && vp.consist.length ? { consist: vp.consist.map((c) => ({ seq: c.seq, status: c.status, quiet: !!c.quiet, name: c.name || null })) } : {}),
     ...(quietHint(vp.carriages) ? { quiet: quietHint(vp.carriages) } : {}),
   };
 }
