@@ -4,6 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Item 3: fares Did you mean, Simple mode statuses, alert text, airport names, more stop lists (server 26 Oct, 10:12 AM, transport-api 6ad9d3a5; over the air, see docs/RELEASES.md)
+* Fares, Did you mean: a fare question in Ask (typed or dictated) checks each station name against our own station and suburb lists, which the phone keeps, so it works offline. A clear slip is used ("Strathfeild", "Parramtta"). A name that matches several places gets up to 5 real stops, best first, each with its modes ("Kings Cross, Train", "Kingsford, Light rail"), one tap each. A suburb with no station offers its nearest stations and the suburb itself. Nothing is guessed between close names and nothing is made up. 49 messy names from all over NSW checked, all as expected.
+* Simple mode (Bidur's 8:50 AM screenshot, Strathfield to Five Dock Shops): the 27 and 22 min late were real (T1 and T2 delays from overhead wiring repairs at Homebush). A big delay now also says the timetable time ("27 min late, was due 10:04am"), and the arrive time counts a live delay once. The D400 is a Bridj on demand bus you book ahead; it showed as Timetable and now shows "On demand, book ahead", once per list. A trip with a change that gets there no sooner than a direct one leaving within 20 minutes goes under it; it is still shown.
+* Alerts: no web code in any alert (tags, encoded tags, cut off tags, entities), on the server and again on the phone, also for copies kept offline.
+* Airport stations: Domestic and International no longer show blank stop names (their platforms have only ", Platform 2" as a short name).
+* Train stop lists: City Circle runs go round the loop to Central (or end at Circular Quay where the run itself ends there), a train that skips a stop shows it as Not stopping, and a slower run the trip planner leaves out for a faster one is found. At 8 busy stations, 54 of 64 lists were whole on the old server and 61 of 64 on the new code in the same minutes.
+* The station lists phones keep for Ask were not served by api.transportsydney.app (404 since the move), so a phone setting up Ask after the move had no place lists. They are served again.
+* Platform view stays hidden.
+
 ### Train stop lists and regional badges (server 26 Oct, 8:34 AM, transport-api 12a75142; over the air 8:48 AM, group 3edfe9f1)
 * A train's stop list on the service screen runs from your stop to the real end of the line with every stop it makes. Before, through trains to Hornsby, Berowra and North Sydney stopped at Central (the feed gave Central's id as their destination), some trains had no list (the trip planner offered another train or a change instead), and Sydney Trains' feed left out stops it had no news for. At 8 busy stations, 39 of 63 lists were whole at 8:07 AM and 59 of 63 at 8:36 AM.
 * The two T1 trains to Hornsby that leave Blacktown in the same minute (platforms 1 and 5) are both real, and each now only ever shows its own stops.
