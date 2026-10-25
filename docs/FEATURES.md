@@ -47,6 +47,7 @@ The iPhone and Android apps are one Expo app (`app/`). Anything below marked "ov
 
 * **Trip reminders** (over the air, 25 Oct): open a saved trip, Reminders under the services. Several per trip, each at a time on the weekdays you choose (up to 6). Local notifications on the phone: nothing polls and nothing goes to the server. Notification permission is asked only when the first reminder is saved. See [REMINDERS.md](REMINDERS.md).
 * **Check my trip before I go** (More): one alert before your usual leave time, only when something is wrong.
+* **Calendar leave by** (More, off by default; shows from iPhone build 208): "Leave by 7:44pm for Team meeting (Barangaroo)" on Home for events in the next 6 hours that have a place, from where your usual trip starts, live. Tap for the trip at Arrive by the start time. Read only, read on the phone while Home is open (at most every 5 minutes); only the event's place and the trip query leave the phone, with no ID. See [CALENDAR-LEAVE-BY.md](CALENDAR-LEAVE-BY.md).
 
 ## Ask
 
@@ -64,6 +65,10 @@ Native changes, so they need a new build (branches `native-207` and `native-207-
 * Bus stop widget with the stop number; starred bus stops with stop number and routes in Edit Widget.
 * Speak alerts heard with Silent mode on (spoken audio session that lowers other audio).
 * Liquid Glass app icon for iOS 26.
+
+## Coming in build 208 (not built yet)
+
+* Calendar leave by: the calendar read access it needs (full access text on iPhone, READ_CALENDAR on Android) is on branch `native-207` for build 208; the JavaScript is already in the over the air update and stays hidden until then ([CALENDAR-LEAVE-BY.md](CALENDAR-LEAVE-BY.md)).
 
 ## After the server move (api_base)
 
