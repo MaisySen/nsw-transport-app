@@ -83,8 +83,8 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
         </View>
         {l.platformChangedFrom ? <T kind="foot" style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }}>Platform changed from {l.platformChangedFrom}</T> : null}
         <View style={[st.ride, { backgroundColor: c.bg }]}>
-          <LineBadge small line={l.line} mode={l.mode} color={l.color} />
-          <View style={{ flex: 1, marginLeft: 8 }}>
+          <LineBadge line={l.line} mode={l.mode} color={l.color} />
+          <View style={{ flex: 1, minWidth: 0, marginLeft: 8, marginRight: 8 }}>
             <T kind="sub" numberOfLines={1}>Towards {shortName(l.towards)}</T>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
               <T kind="foot" tone="text2">{durText(l.durationMin)}{l.stops ? `, ${plural(l.stops, 'stop')}` : ''}</T>

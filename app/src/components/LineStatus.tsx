@@ -36,7 +36,7 @@ export function LineStatusStrip({ now }: { now: number }) {
             <Pressable key={r.line} disabled={!tap} onPress={() => open(r)} accessibilityRole={tap ? 'link' : 'text'}
               accessibilityLabel={`${r.line}: ${r.label}${r.title ? '. ' + r.title : ''}`} android_ripple={tap ? { color: c.fill } : undefined}
               style={({ pressed }) => [st.chip, { backgroundColor: c.card, borderRadius: Platform.OS === 'android' ? 8 : radius, opacity: pressed && Platform.OS !== 'android' ? 0.6 : 1 }]}>
-              <LineBadge line={r.line} mode={r.mode} color={r.color} small />
+              <LineBadge line={r.line} mode={r.mode} color={r.color} />
               <T kind="foot" style={{ marginLeft: 6, color: tone(c, r), fontWeight: r.status === 'good' ? '400' : '600' }}>{r.label}</T>
             </Pressable>
           );
@@ -61,7 +61,7 @@ export function LineStatusSection() {
             {i ? <Sep inset={16} /> : null}
             <Pressable disabled={!tap} onPress={() => open(r)} accessibilityRole={tap ? 'link' : 'text'} accessibilityLabel={`${r.line}: ${r.label}${r.title ? '. ' + r.title : ''}`}
               android_ripple={tap ? { color: c.fill } : undefined} style={({ pressed }) => [st.row, { opacity: pressed && Platform.OS !== 'android' ? 0.6 : 1 }]}>
-              <LineBadge line={r.line} mode={r.mode} color={r.color} small />
+              <LineBadge line={r.line} mode={r.mode} color={r.color} />
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <T kind="body" style={{ color: tone(c, r), fontWeight: r.status === 'good' ? '400' : '600' }}>{r.label}</T>
                 {r.title ? <T kind="sub" tone="text2" style={{ marginTop: 2 }} numberOfLines={3}>{r.title}{r.more ? ` (+${r.more} more)` : ''}</T> : null}

@@ -299,7 +299,7 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
                 </View>
               ) : null}
               <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, opacity: state === 'done' ? 0.5 : 1 }}>
-                <LineBadge small line={ll.line} mode={ll.mode} color={legColor(ll)} />
+                <LineBadge line={ll.line} mode={ll.mode} color={legColor(ll)} />
                 <View style={{ flex: 1, marginLeft: 10 }}>
                   <T kind="body" numberOfLines={1}>{short(ll.from)} to {short(ll.to)}</T>
                   <T kind="foot" tone="text2" style={{ fontVariant: ['tabular-nums'] }}>{clock(y2.dep)} to {clock(y2.arr)}{state === 'done' ? ' \u00b7 done' : ''}</T>

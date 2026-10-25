@@ -39,9 +39,10 @@ export function usePalette(): Palette & { dark: boolean } {
 export const isIOS = Platform.OS === 'ios';
 export const radius = androidLook ? 16 : 12;
 
-// Brand colours for modes, used when the feed has no colour.
+// Transport for NSW mode colours, used when the feed has no colour. The same values as MODE_COLOR in lineStyle.ts
+// (test/badges.test.mjs keeps them equal); school buses are bus blue, never grey.
 export const modeColor: Record<string, string> = {
-  train: '#F99D1C', metro: '#168388', bus: '#00B5EF', lightrail: '#E4022D', ferry: '#5AB031', coach: '#742282', school: '#5C5C5C',
+  train: '#F6891F', metro: '#168388', bus: '#00B5EF', lightrail: '#E4022D', ferry: '#5AB031', coach: '#742282', school: '#00B5EF',
 };
 
 function lum(hex: string) {

@@ -13,7 +13,7 @@ import type { LiveState } from '@/lib/liveCalc';
 import { boardTime, leavePlan, leaveWords, legsOf, missedConn, missedPlanLegs, pickNextOption, switchLegs, sydHHMM, wakeId, type LatLon, type LeavePlan, type Missed } from '@/lib/smart';
 import { canNotify, cancelLeave, cancelWake, scheduleLeave } from '@/lib/smartNotify';
 import { store, useStore } from '@/lib/store';
-import { androidLook, modeColor, radius, usePalette } from '@/lib/theme';
+import { androidLook, radius, usePalette } from '@/lib/theme';
 import type { Journey } from '@/lib/types';
 import { Icon, I } from './Icon';
 import { LineBadge } from './Transit';
@@ -275,7 +275,7 @@ export function NextOption({ g, st }: { g: LiveTrip; st: LiveState | null }) {
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }} accessible
             accessibilityLabel={`Next option: ${tl.map((x) => x.line).join(' then ')} at ${clock(boardTime(j))}${l.fromPlatform ? ', ' + plat(l.fromPlatform) : ''}. Arrive ${short(m.toName)} at ${clock(arr)}.`}>
             <View style={{ flexDirection: 'row', gap: 4 }}>
-              {tl.slice(0, 3).map((x, i) => <LineBadge key={i} small line={x.line || ''} mode={x.mode} color={x.color || modeColor[x.mode || 'train']} />)}
+              {tl.slice(0, 3).map((x, i) => <LineBadge key={i} line={x.line || ''} mode={x.mode} color={x.color} />)}
             </View>
             <View style={{ flex: 1, marginLeft: 10 }}>
               <T kind="body" style={{ fontWeight: '600' }}>{clock(boardTime(j))} from {short(l.from || m.fromName)}{l.fromPlatform ? `, ${plat(l.fromPlatform)}` : ''}</T>

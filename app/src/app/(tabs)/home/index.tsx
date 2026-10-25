@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, PanResponder, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
-import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-// Buttons revealed by a swipe use the gesture handler's Pressable: on Android a React Native Pressable there
-// can lose its press to the swipe gesture.
-import { Pressable as GHPressable } from 'react-native-gesture-handler';
+import { CARD_SWIPE, SwipeRow, type SwipeAct } from '@/components/Swipe';
 import { haptic } from '@/lib/haptic';
 import { gripStep, type GripEvent, type GripState } from '@/lib/gesture';
 import { sameEnds } from '@/lib/homeCore';
@@ -22,7 +19,7 @@ import { watchLine } from '@/components/Cards';
 import { ActionRow, AlertBanner, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTag, PlaceBar, pullHome, StopBoard, TripBoard, TripItem, useNearby } from '@/components/Home';
 import { LineBadge } from '@/components/Transit';
 import { useLiveTrip } from '@/lib/live';
-import { modeColor, radius } from '@/lib/theme';
+import { radius } from '@/lib/theme';
 import { Button, Empty, Row, Section, Screen, Sep, T } from '@/components/ui';
 import { LeaveLine, MorningLink, useMyPos } from '@/components/Smart';
 import { LastHomeCard } from '@/components/LastHome';
@@ -238,7 +235,7 @@ function LiveBar({ title, line, mode, color }: { title: string; line?: string; m
         <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Trip in progress</Text>
         <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13 }} numberOfLines={1}>{title}</Text>
       </View>
-      {line ? <LineBadge small line={line} mode={mode} color={color || modeColor[mode || 'train']} /> : null}
+      {line ? <LineBadge line={line} mode={mode} color={color} /> : null}
       <Icon name={I.chevron} size={14} color="#fff" style={{ marginLeft: 8 }} />
     </Pressable>
   );
@@ -255,26 +252,9 @@ function SwapButton({ to, onPress }: { to: string; onPress: () => void }) {
   );
 }
 
-/** Swipe left to show a red Remove or Delete action. */
-function SwipeRemove({ children, label, onRemove }: { children: React.ReactNode; label: string; onRemove: () => void }) {
-  const c = usePalette();
-  const sw = useRef<any>(null);
-  return (
-    <ReanimatedSwipeable ref={sw} friction={2} rightThreshold={40} overshootRight={false} onSwipeableWillOpen={() => haptic.select()}
-      renderRightActions={() => (
-        <GHPressable onPress={() => { sw.current?.close(); onRemove(); }} accessibilityRole="button" accessibilityLabel={label}
-          style={{ backgroundColor: c.red, width: 88, alignItems: 'center', justifyContent: 'center', marginTop: 0 }}>
-          <Icon name={I.trash} size={20} color="#fff" />
-          <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600', marginTop: 3 }}>{label}</Text>
-        </GHPressable>
-      )}>
-      {children}
-    </ReanimatedSwipeable>
-  );
-}
-
 /** Trip cards that reorder by dragging the handle on each card. */
 function DragTrips({ trips, now, all, onScroll }: { trips: TripItem[]; now: number; all: Record<string, boolean>; onScroll: (on: boolean) => void }) {
+  const c = usePalette();
   const lay = useRef<{ y: number; h: number }[]>([]);
   const [drag, setDrag] = useState<{ i: number; dy: number; target: number } | null>(null);
   const dragRef = useRef(drag);
@@ -310,16 +290,19 @@ function DragTrips({ trips, now, all, onScroll }: { trips: TripItem[]; now: numb
         return (
           <View key={t.key} onLayout={(e) => { lay.current[i] = { y: e.nativeEvent.layout.y, h: e.nativeEvent.layout.height }; }}
             style={{ transform: [{ translateY: ty }, { scale: lifted ? 1.02 : 1 }], zIndex: lifted ? 10 : 0, elevation: lifted ? 8 : 0, shadowColor: '#000', shadowOpacity: lifted ? 0.18 : 0, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } }}>
-            {t.kind === 'mine' || t.kind === 'saved' ? (
-              <SwipeRemove label="Delete" onRemove={() => Alert.alert(t.name || 'Delete trip', 'Delete this saved trip? It is removed from this phone and the server.', [
+            {(() => {
+              const grip = trips.length > 1 ? (open: () => void) => <Grip onStart={() => start(i)} onMove={move} onEnd={end} onTap={open} /> : undefined;
+              if (t.kind !== 'mine' && t.kind !== 'saved') return <TripBoard trip={t} now={now} allServices={!!all[t.key]} handle={grip} />;
+              const del: SwipeAct = { label: 'Delete', text: 'Delete', icon: I.trash, color: c.red, onPress: () => Alert.alert(t.name || 'Delete trip', 'Delete this saved trip? It is removed from this phone and the server.', [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Delete trip', style: 'destructive', onPress: () => deleteTrip(t) },
-              ])}>
-                <TripBoard trip={t} now={now} allServices={!!all[t.key]} handle={trips.length > 1 ? (open: () => void) => <Grip onStart={() => start(i)} onMove={move} onEnd={end} onTap={open} /> : undefined} />
-              </SwipeRemove>
-            ) : (
-              <TripBoard trip={t} now={now} allServices={!!all[t.key]} handle={trips.length > 1 ? (open: () => void) => <Grip onStart={() => start(i)} onMove={move} onEnd={end} onTap={open} /> : undefined} />
-            )}
+              ]) };
+              return (
+                <SwipeRow act={del} style={CARD_SWIPE}>
+                  <TripBoard trip={t} now={now} allServices={!!all[t.key]} handle={grip} flush act={del} />
+                </SwipeRow>
+              );
+            })()}
           </View>
         );
       })}
