@@ -1,10 +1,10 @@
 # Requirements
 
-What Transport does, by version, and where each feature stands on each platform. Updated 24 Oct 2026, 5:20 PM Sydney time.
+What Transport does, by version, and where each feature stands on each platform. Updated 24 Oct 2026, 5:20 PM Sydney time; platforms note and Honest times updated 25 Oct 2026.
 
 Status words: **Done** (live for users), **In progress** (being built now), **Planned** (agreed, not started), **Blocked** (waiting on something outside the code).
 
-Platforms: **Android** is the Expo app (APK and over the air updates). **iPhone** is the native SwiftUI app. Expo Go on iPhone gets the same updates as Android.
+Platforms: **Android** is the Expo app (APK and over the air updates). **iPhone** was the native SwiftUI app until 24 Oct; since build 201 (25 Oct) it is the same Expo app, so the iPhone column below describes the SwiftUI app for the phases before 25 Oct. What the app does today is in [FEATURES.md](FEATURES.md).
 
 ## Goals
 
@@ -19,7 +19,7 @@ Platforms: **Android** is the Expo app (APK and over the air updates). **iPhone*
 | Requirement | How it is met | Status |
 | --- | --- | --- |
 | Live data refresh | Boards and trips refresh every 15 to 20 seconds while open; countdowns tick every second | Done |
-| Honest times | Every row says Live or Scheduled; predictions are labelled with how many trips they come from | Done |
+| Honest times | Every countdown says Live (with the age of the live time), Timetable or Not tracking; a stale live time shows its timetable time instead of counting down, and a timetable time that has passed never says left (25 Oct) | Done |
 | No account or login | Each install gets its own random profile id | Done |
 | Privacy | No cookies, no tracking, first party page counter only; searches deleted after 90 days, finished watches after 30 | Done |
 | Upstream budget | Transport for NSW Bronze plan: 60,000 calls a day. The backend counts calls and stops background sampling at 40,000 and watches at 56,000 | Done |
