@@ -4,6 +4,10 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Station picker and search fields (over the air update for iPhone and Android, 25 Oct, 3:06 PM)
+* New trip, choosing where you get on or off: the Back button and the From or To title no longer sit on top of the screen on iPhone. The question is now in the search field ("Where do you get on?", "Kings Cross to where?"), the search field sits above A to Z, By distance and By map, stations fill the full width with the A to Z letters clear of the names, and the list ends above the home indicator. Same for train, metro, ferry, light rail and bus.
+* Search fields no longer switch on capitals (the bus search used caps lock), autocorrect or spell check, and the keyboard shows a Search key: station picker, bus search, Add a trip, Plan and Set up.
+
 ### Swipe to delete and line badges (over the air update for iPhone and Android, 25 Oct, 2:48 PM)
 * Home: the red Delete button no longer peeks out beside a saved trip. It shows only when you swipe the trip left, sits inside the card's rounded corners, and swiping back hides it. Opening one trip's Delete closes any other. VoiceOver offers Delete as an action on the trip.
 * Line badges look the same everywhere in the app (Home, Plan results, departures, trip details, live trip, Ask, line status): the official line or mode colour, always (buses are blue even without live data; "No live data" stays as text), one size and shape, line name only.
