@@ -6,7 +6,8 @@ import { TripReminders } from '@/components/TripReminders';
 import { plural } from '@/lib/homeCore';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, useColorScheme, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { nativeMenu } from '@/components/Sheet';
+import { PullDownButton } from '@/components/HoldMenu';
+import { menuOf, type MenuSpec } from '@/lib/menuCore';
 import { arriveByIndex, NOW, whenFromParams, type When } from '@/lib/planCore';
 import { WhenPicker } from '@/components/WhenPicker';
 import { afterBatch, canLoadEarlier, canLoadLater, chipLabel, chipsToShow, dateNeeded, EARLIER_NEEDS_NEW, earlierFloor, earlierRow, earlierSteps, emptyModes, filterModes, hasLeft, keepFrom, modesWords, MODE_CHIPS, nearEnd, normModes, PAGE0, PAGING, pickerDays, pinDay, queryAt, serviceDayEnd, toggleMode, whenAt, whenKeyOf, whenWords, ymd, type ModeK, type PageState } from '@/lib/tripModesCore';
@@ -507,28 +508,38 @@ export default function TripScreen() {
   useEffect(() => { if (fromName && toName && !via) store.addRecentTrip({ id: from.id, name: fromName }, { id: to.id, name: toName }); }, [from.id, to.id, fromName, toName, via]);
   useEffect(() => { setExtra([]); }, [chain && allOn]);
 
+  // Save this trip as Home or Work (a trip through a via stop; others go through New trip's Confirm step).
+  const doSave = async (name: string) => {
+    try { await api.saveTrip(name, from, to); haptic.success(); Alert.alert('Saved', `It's on your Home screen as "${name}". You can also text "${name}" to Tab.`); }
+    catch (e: any) { Alert.alert("Couldn't save it", e.message); }
+  };
+  const saveMenu: MenuSpec | null = via ? { title: 'Save this trip', message: 'Saved trips show live on Home.', items: menuOf([
+    { text: 'Home', sf: 'house', icon: 'home', onPress: () => doSave('home') },
+    { text: 'Work', sf: 'briefcase', icon: 'briefcase', onPress: () => doSave('work') },
+  ]) } : null;
   const save = () => {
     // Saving goes through New trip's Confirm step: name, extend with a connection, change time.
     if (chain) { router.push({ pathname: '/new-trip', params: { legs: JSON.stringify(tLegs(plan)), ...(p.name ? { name: String(p.name) } : {}) } }); return; }
     if (!via) { router.push({ pathname: '/new-trip', params: { from: from.id, fromName, to: to.id, toName, mode: modes.length === 1 ? modes[0] : firstT(js[0] || ({ legs: [] } as any))?.mode || '' } }); return; }
-    const doSave = async (name: string) => {
-      try { await api.saveTrip(name, from, to); haptic.success(); Alert.alert('Saved', `It's on your Home screen as "${name}". You can also text "${name}" to Tab.`); }
-      catch (e: any) { Alert.alert("Couldn't save it", e.message); }
-    };
-    nativeMenu('Save this trip', 'Saved trips show live on Home.', [
-      { text: 'Home', onPress: () => doSave('home') },
-      { text: 'Work', onPress: () => doSave('work') },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
   };
+  // iPhone: Save this trip is a system bar button with its own UIMenu, dropping from the star (no Cancel row).
+  const saveInBar = Platform.OS === 'ios' && !!saveMenu && !chain;
+  const saveButton = <Pressable accessibilityRole="button" accessibilityLabel="Save trip" hitSlop={13} onPress={save}><Icon name={I.starOpen} size={22} color={c.tint} /></Pressable>;
 
   return (
     <>
       <Stack.Screen options={{
         title: `${shortName(fromName).replace(/ Station$/, '')} to ${shortName(toName).replace(/ Station$/, '')}`,
         headerBackTitle: chain ? 'Back' : undefined,
-        headerRight: () => <Pressable accessibilityRole="button" accessibilityLabel="Save trip" hitSlop={13} onPress={save}><Icon name={I.starOpen} size={22} color={c.tint} /></Pressable>,
+        headerRight: saveInBar ? undefined : () => (saveMenu && !chain ? <PullDownButton menu={saveMenu}>{saveButton}</PullDownButton> : saveButton),
       }} />
+      {saveInBar && saveMenu ? (
+        <Stack.Toolbar placement="right">
+          <Stack.Toolbar.Menu icon="star" accessibilityLabel="Save trip" accessibilityHint="Save this trip as Home or Work">
+            {saveMenu.items.map((it) => <Stack.Toolbar.MenuAction key={it.text} icon={(it.sf || undefined) as any} destructive={it.destructive} onPress={it.onPress}>{it.text}</Stack.Toolbar.MenuAction>)}
+          </Stack.Toolbar.Menu>
+        </Stack.Toolbar>
+      ) : null}
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pull} />} scrollEventThrottle={250}
         onLayout={(e) => setViewH(e.nativeEvent.layout.height)}
         onScroll={(e) => { const n = e.nativeEvent; if (nearEnd({ layoutH: n.layoutMeasurement.height, offsetY: n.contentOffset.y, contentH: n.contentSize.height })) loadLater(); }}
