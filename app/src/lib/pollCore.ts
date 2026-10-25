@@ -23,6 +23,12 @@ export type Poller = {
   setEnabled: (on: boolean) => void;
   /** Runs now (pull to refresh, a button), then keeps the normal gap. */
   runNow: () => Promise<void>;
+  /**
+   * Reads the gap again for the wait already running (adaptive gaps depend on the data on screen). The screen's first
+   * answer arrives after the first wait was set, when the gap read "nothing on screen yet"; without this the first
+   * refresh of a stop came a minute after opening it, whatever was due (measured 26 Oct 2026).
+   */
+  retime: () => void;
   stop: () => void;
   /** For tests: whether a run is waiting on the timer. */
   scheduled: () => boolean;
@@ -79,6 +85,7 @@ export function createPoller(run: () => Promise<boolean | void> | boolean | void
     setActive: (on) => { if (on === active) return; active = on; resume(); },
     setEnabled: (on) => { if (on === enabled) return; enabled = on; resume(); },
     runNow: async () => { clear(); failures = 0; await tick(); if (!handle) schedule(gap()); },
+    retime: () => { if (handle == null || running) return; schedule(gap() - (timers.now() - last)); },
     stop: () => { stopped = true; clear(); },
     scheduled: () => handle != null,
   };

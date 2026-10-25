@@ -120,7 +120,8 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
   const ivRef = useRef(intervalMs);
   ivRef.current = intervalMs;
   // enabled false (a Simple mode page that is not the one on view): nothing polls.
-  const runNow = useScreenPoll(() => run(true), typeof intervalMs === 'function' ? () => { const f = ivRef.current; return typeof f === 'function' ? f(dataRef.current) : f; } : intervalMs, { enabled: opts.enabled ?? true });
+  // updatedAt (each answer) re-reads an adaptive gap: the first wait is set before the first answer has arrived.
+  const runNow = useScreenPoll(() => run(true), typeof intervalMs === 'function' ? () => { const f = ivRef.current; return typeof f === 'function' ? f(dataRef.current) : f; } : intervalMs, { enabled: opts.enabled ?? true, retimeKey: updatedAt });
 
   const refresh = useCallback(async () => {
     setRefreshing(true);

@@ -50,6 +50,27 @@ test('poller runs every gap while active and enabled', async () => {
   await tm.advance(45000); assert.equal(n, 4);
 });
 
+test('retime: the first answer re-reads an adaptive gap set before it arrived (first refresh 15 s after opening, not 60)', async () => {
+  const tm = fakeTimers(); let n = 0; let data = null;
+  const gap = () => P.adaptiveGapMs(15000, data == null ? null : data);
+  const p = P.createPoller(() => { n++; }, gap, tm, { runAtStart: false });
+  await tm.advance(1000);
+  data = 3 * 60000; // the screen's first answer: a train in 3 minutes
+  p.retime();
+  await tm.advance(13999); assert.equal(n, 0);
+  await tm.advance(1); assert.equal(n, 1, '15 s after the poller started');
+  await tm.advance(15000); assert.equal(n, 2);
+  // Without a retime the first wait stays a minute.
+  let m = 0; data = null;
+  P.createPoller(() => { m++; }, gap, tm, { runAtStart: false });
+  data = 3 * 60000;
+  await tm.advance(59999); assert.equal(m, 0);
+  // retime never adds a run while away
+  p.setActive(false); p.retime(); assert.equal(p.scheduled(), false);
+  const src = fs.readFileSync(path.join(root, 'src/lib/hooks.ts'), 'utf8');
+  assert.match(src, /retimeKey: updatedAt/);
+});
+
 test('nothing is scheduled in the background, and it catches up once on return', async () => {
   const tm = fakeTimers(); let n = 0;
   const p = P.createPoller(() => { n++; }, 15000, tm, { runAtStart: false });
