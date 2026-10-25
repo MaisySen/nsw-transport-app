@@ -45,10 +45,52 @@ Written 25 Oct 2026 after the battery, smoothness and iOS audit (report: files/q
 10. **Countdowns redraw at whole minutes.** `useCountdownNow()` (src/lib/activity.ts) wakes only when a countdown
     the screen reported (`useReportCountdowns`) changes its whole minute, or at the next clock minute. No 5 s tick on
     Home, the stop screen, the board or Simple mode.
-11. **Kept copy first.** `useLive` shows the copy kept on the phone at once on a fresh start ("Updating, from
-    8:51pm") while the live answer loads.
+11. **Kept copy first.** `useLive` shows the copy kept on the phone at once on a fresh start ("Updated 4 min ago,
+    refreshing") while the live answer loads (see 14).
 12. **Simple mode** polls only the page on view; the pages beside it read once when drawn. Location there is the
     phone's last fix (up to 5 minutes old) or one `Accuracy.Low` fix, only when location is already allowed.
+
+13. **Latest answer only (26 Oct, item 1).** Every change of what a screen shows (stop, service, time, query, trip)
+    starts a new round in `useLive` (`createLatest` in src/lib/pollCore.ts). An answer that comes back for an earlier
+    round is dropped, so data asked for one stop, service or time never lands under another, and the new round asks at
+    once instead of waiting behind the old request. Before, only screens with a cache key checked the key, and a
+    request still out blocked the new one until the next poll (a stop list under the wrong train on 25 Oct, 11:59 PM).
+    One off loads beside it use `useStamp` (src/lib/hooks.ts): the trip list's next and earlier batches and Plan B,
+    Simple mode's Earlier and Later, the walk stop search in New trip, the next way on after a missed change; the live
+    trip engine drops service answers for legs that changed while they were out. Tests: app/test/race.test.mjs.
+14. **Kept copies are labelled.** A kept copy shown while the live answer loads says how old it is ("Updated 4 min
+    ago, refreshing", `staleText` in src/lib/offlineCore.ts) on Home, the stop screen, the board, Platform view, the
+    trip list, Simple mode and the service screen; with no signal it says "Offline, showing times from 8:05am"
+    (`offlineText`), on the trip list as a banner over the trips (`KeptBanner`). It is never shown as live. Services
+    already gone are taken out when it is read. A copy kept in memory this session shows on the first frame when a
+    screen opens again. The service screen keeps its own copy (`cacheKey('svc', ...)`); 32 copies at most.
+15. **Startup.** The first screen asks for its own times first: the fresh config, the alerts poll for watched
+    services and the Last way home recheck start 1.5 s after the app is ready (`STARTUP_DEFER_MS` in
+    src/app/_layout.tsx). The cached config is in use from the start.
+
+### Before and after (26 Oct, 12:56 to 1:01 AM, item 1: speed and offline)
+
+Web export at 390 x 844, median of 3 runs with live data. Home has Parramatta and Central set and Hornsby starred;
+the stop screen is Central. "On screen" is the first departure or trip on screen.
+
+| Measure | Before (main c4c573e) | After |
+|---|---|---|
+| Stop screen, first start, on screen | 2263 ms | 1987 ms (the server's answer time; varies run to run) |
+| Stop screen, second start (kept copy), on screen | 839 ms, no label (looked live) | 833 ms, "Updated just now, refreshing" |
+| Stop screen, no signal, on screen | 830 ms, offline line at 927 ms | 809 ms, offline line at 899 ms |
+| Home, first start, on screen | 998 ms | 1128 ms (server time; same work) |
+| Home, second start and no signal, on screen | 460 ms and 469 ms | 461 ms and 455 ms |
+| Requests before the stop screen's first content (second start / no signal) | 7 / 13 | 5 / 10 |
+| Requests before Home's first content (first start / no signal) | 14 / 20 | 11 / 17 |
+| JS work to first content (stop screen, first start) | 373 ms script, 552 ms tasks | 362 ms script, 539 ms tasks |
+| iPhone bundle (Hermes) | 6,094,802 bytes | 6,102,780 bytes (+7,978) |
+| Android bundle (Hermes) | 6,225,665 bytes | 6,233,697 bytes (+8,032) |
+
+First start time is the server's answer time and is not something the app can shorten; the kept copy is what makes
+a start instant. Not measured here (needs a phone): native start to first frame, Hermes module load time, AsyncStorage
+read time on a real device, and how often the radio wakes. Screens are not lazy loaded on iPhone and Android: Expo
+Router loads every route at start on native and async routes are not supported there for production, so that would
+need a build; the maps already load after the first frame.
 
 ### Before and after (25 Oct, web export at 390 x 844, Home with Strathfield and Kings Cross set)
 

@@ -80,6 +80,11 @@ Ask opens on the latest message and its field sits above the tab bar and the key
 
 Measured: `app/test/ask-corpus.test.mjs`, 309 questions from all over Sydney and NSW (every region and mode, at most 5% on one commute): 192 of 309 (62%) read right by the old path (the question as typed, the server's rules, exact names), 309 of 309 (100%) by the new one. A second batch of 60, written after the first passed, scored 58 of 60 (97%) on its first run before fixes.
 
+## Instant start and offline (over the air, 26 Oct, item 1)
+* Home, the stop screen, the full screen board, Platform view, the trip list, Simple mode and the service screen show the last answer kept on the phone at once, with "Updated 4 min ago, refreshing" until the live answer replaces it. Kept times are never shown as live, and services already gone are left out.
+* With no signal the same screens show the kept times with "Offline, showing times from 8:05am" (a banner over the trips on the trip list) instead of an error, and try again with a growing gap while the screen is on view.
+* Data for one stop, service, time or trip never shows under another one: an answer still on its way when you switch is dropped.
+
 ## Platform view (over the air, 25 Oct, about 11:17 PM; station board look 25 Oct, about 11:57 PM)
 
 One train or metro at a station, full screen and readable from a distance, laid out like the departure screens on station platforms (Bidur's photo of the real screen, approved mock 25 Oct 11:31 PM; our own build with system fonts and no logos). Open it with the platform button at the top of a train or metro station's screen, or hold a train or metro departure and choose **Platform view** (the row's tap still opens the service). Above the board: close, the station name, and **Speak**. The board:

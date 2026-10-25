@@ -60,8 +60,9 @@ await page.goto(base + "/trip?from=213410&fromName=Burwood+Station&to=213510&toN
 await check("Trip: Step free carried from Plan, results say so", async () => {}, async () => (await vis(page.getByRole("switch", { name: "Step free trips only" })).isChecked()) && (await page.getByText(/^(Only trips with lifts or level access\.|No step free trips found for this trip\.)$/).locator("visible=true").count()) === 1);
 await check("Trip: Step free off asks again", () => vis(page.getByRole("switch", { name: "Step free trips only" })).click({ timeout: 5000 }), async () => { await page.waitForTimeout(5000); return !(await vis(page.getByRole("switch", { name: "Step free trips only" })).isChecked()) && (await page.getByLabel(/^Leaves /).locator("visible=true").count()) > 0; });
 await check("Opal fare row opens", () => vis(page.getByRole("button", { name: /^Opal fare/ })).click({ timeout: 5000 }), async () => (await page.getByText(/An estimate from the Opal fare tables/).locator("visible=true").count()) > 0);
-const rows0 = await page.getByLabel(/^Leaves /).locator("visible=true").count();
-await check("Later services", () => vis(page.getByText("Later services", { exact: true })).click({ timeout: 5000 }), async () => { await page.waitForTimeout(4000); return (await page.getByLabel(/^Leaves /).locator("visible=true").count()) > rows0; });
+const rows0 = await page.getByLabel(/^Leaves /).count();
+// Later services load by themselves near the end of the list (there is no Later services button since the endless list).
+await check("Later services", async () => { for (let k = 0; k < 6; k++) { await page.mouse.move(200, 500); await page.mouse.wheel(0, 4000); await page.waitForTimeout(700); } }, async () => { await page.waitForTimeout(4000); return (await page.getByLabel(/^Leaves /).count()) > rows0; });
 await check("Include trips with a change", () => vis(page.getByRole("switch", { name: "Include trips with a change" })).click({ timeout: 5000 }), async () => (await vis(page.getByRole("switch", { name: "Include trips with a change" })).isChecked()));
 await check("Tap a service closes its details", () => vis(page.getByLabel(/^Leaves /)).click({ timeout: 5000 }), async () => (await page.getByText("Start trip", { exact: true }).locator("visible=true").count()) === 0);
 await check("Tap a service opens its details", () => vis(page.getByLabel(/^Leaves /)).click({ timeout: 5000 }), async () => (await page.getByText("Start trip", { exact: true }).locator("visible=true").count()) === 1);
@@ -72,7 +73,8 @@ await check("Share trip", () => vis(page.getByText("Share trip", { exact: true }
 await check("Share dialog Cancel", () => page.locator("#__dlg button", { hasText: "Cancel" }).click({ timeout: 5000 }), async () => (await page.locator("#__dlg").count()) === 0);
 await check("End trip asks", () => vis(page.getByText("End trip", { exact: true })).click({ timeout: 5000 }), async () => (await page.locator("#__dlg").count()) === 1);
 await check("End trip ends", () => page.locator("#__dlg button", { hasText: "End trip" }).click({ timeout: 5000 }), async () => { await page.waitForTimeout(1500); return !page.url().includes("/go") && !(await page.evaluate(() => localStorage.getItem("liveTrip"))); });
-await check("Save trip star", () => vis(page.getByRole("button", { name: "Save trip" })).click({ timeout: 5000 }), async () => page.url().includes("/new-trip"));
+// The star opens Save this trip (Save trip, Save as Home, Save as Work); Save trip goes to New trip's Confirm step.
+await check("Save trip star", async () => { await page.mouse.wheel(0, -20000); await vis(page.getByRole("button", { name: "Save trip" })).click({ timeout: 5000 }); await page.waitForTimeout(800); await page.getByText("Save trip", { exact: true }).locator("visible=true").last().click({ timeout: 5000 }); }, async () => { await page.waitForTimeout(1000); return page.url().includes("/new-trip"); });
 await page.goto(base + "/stop/200060?name=Central+Station"); await page.waitForTimeout(6000);
 {
   // The same server the app uses: the one address in src/lib/server.ts.
