@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { once } from '@/lib/gesture';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSides } from '@/lib/layout';
 import { haptic } from '@/lib/haptic';
 import { usePalette } from '@/lib/theme';
 import { Icon, IconName } from './Icon';
@@ -16,6 +17,7 @@ export type SheetAction = { text: string; icon?: IconName; destructive?: boolean
 export function ActionSheet({ visible, title, message, actions, onClose }: { visible: boolean; title?: string; message?: string; actions: SheetAction[]; onClose: () => void }) {
   const c = usePalette();
   const ins = useSafeAreaInsets();
+  const side = useSides();
   const ios = Platform.OS === 'ios';
   // The chosen action runs once the sheet has gone (onDismiss, or 450 ms at the latest). An Android dialog
   // opened while the sheet's window is still closing can vanish with it, which felt like a dead button.
@@ -31,7 +33,7 @@ export function ActionSheet({ visible, title, message, actions, onClose }: { vis
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} onDismiss={() => pending.current?.()} statusBarTranslucent navigationBarTranslucent>
       <View style={s.wrap}>
         <Pressable accessibilityRole="button" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.32)' }]} onPress={onClose} accessibilityLabel="Close" />
-        <View style={[s.sheet, { backgroundColor: ios ? 'transparent' : c.dark ? '#22262E' : '#F3F5FA', paddingBottom: Math.max(ins.bottom, 12) }]}>
+        <View style={[s.sheet, { marginLeft: side.left, marginRight: side.right, backgroundColor: ios ? 'transparent' : c.dark ? '#22262E' : '#F3F5FA', paddingBottom: Math.max(ins.bottom, 12) }]}>
           {!ios ? <View style={[s.grab, { backgroundColor: c.text3 }]} /> : null}
           <View style={ios ? [s.group, { backgroundColor: c.card }] : null}>
             {title || message ? (

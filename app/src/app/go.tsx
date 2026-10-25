@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState, Linking, Platform, Pressable, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSides } from '@/lib/layout';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { haptic } from '@/lib/haptic';
 import * as Location from 'expo-location';
@@ -33,6 +34,7 @@ export default function LiveTripScreen() {
   const params = useLocalSearchParams<{ share?: string }>();
   const now = useNow();
   const insets = useSafeAreaInsets();
+  const side = useSides();
   const { height } = useWindowDimensions();
   const eng = useLiveEngineState();
   const live = eng.gid === g?.id ? eng : null;
@@ -155,17 +157,17 @@ export default function LiveTripScreen() {
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <Stack.Screen options={{ headerShown: false }} />
       <TransitMap key={g.id + ':' + ci} path={path} stops={mapStops} vehicle={d?.vehicle || null} me={me} color={legColor(L)} mode={L.mode} dark={c.dark} bottomInset={height * 0.34} />
-      <Pressable accessibilityRole="button" onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} style={[sx.fab, { top: insets.top + 8, left: 12, backgroundColor: c.card }]} hitSlop={8} accessibilityLabel="Back">
+      <Pressable accessibilityRole="button" onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} style={[sx.fab, { top: insets.top + 8, left: insets.left + 12, backgroundColor: c.card }]} hitSlop={8} accessibilityLabel="Back">
         <Icon name={I.back} size={20} color={c.text} />
       </Pressable>
       {!me ? (
-        <Pressable accessibilityRole="button" onPress={askLocation} style={[sx.fab, { top: insets.top + 8, right: 12, backgroundColor: c.card }]} hitSlop={8} accessibilityLabel="Show where I am">
+        <Pressable accessibilityRole="button" onPress={askLocation} style={[sx.fab, { top: insets.top + 8, right: insets.right + 12, backgroundColor: c.card }]} hitSlop={8} accessibilityLabel="Show where I am">
           <Icon name={I.location} size={19} color={c.tint} />
         </Pressable>
       ) : null}
       <BottomSheet index={1} snapPoints={snaps} enableDynamicSizing={false}
         backgroundStyle={{ backgroundColor: c.card, borderRadius: Platform.OS === 'ios' ? 14 : 28 }} handleIndicatorStyle={{ backgroundColor: c.text3, width: 36 }}>
-        <BottomSheetScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 28 }}>
+        <BottomSheetScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 28, paddingLeft: side.left, paddingRight: side.right }}>
           {!st ? <T kind="sub" tone="text2" style={{ padding: 20 }}>Getting live times</T> : st.done ? (
             <View style={{ padding: 20 }}>
               <T kind="foot" tone="text2">You've arrived</T>

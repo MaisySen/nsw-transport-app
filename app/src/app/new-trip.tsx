@@ -14,6 +14,7 @@ import { Icon, I, modeIconName } from '@/components/Icon';
 import { pullHome } from '@/components/Home';
 import TransitMap from '@/components/TransitMap';
 import { Button, Row, Screen, Section, Sep, T, font } from '@/components/ui';
+import { useSides } from '@/lib/layout';
 
 type Leg = { mode: string; from: Place; to: Place; conn?: number; any?: boolean; walk?: number };
 type Dest = { mode: string; to: Place; conn?: number; any?: boolean; walk?: number };
@@ -275,6 +276,8 @@ function Segments({ value, items, onChange }: { value: string; items: [string, s
 
 function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'from' | 'to'; from?: Pick; onPick: (p: Pick) => void }) {
   const c = usePalette();
+  // Clear of the side safe areas and at a readable width on a wide window (src/lib/layout.ts).
+  const side = useSides();
   const [tab, setTab] = useState<'az' | 'dist' | 'map'>('az');
   const [q, setQ] = useState('');
   const [all, setAll] = useState<Station[] | null>(null);
@@ -354,9 +357,9 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
     </View>
   );
 
-  if (isBus) return <View style={{ flex: 1, backgroundColor: c.bg }}>{head}<BusPicker q={q} from={from} onPick={onPick} /></View>;
-  if (err) return <View style={{ flex: 1, backgroundColor: c.bg }}>{head}<T kind="sub" tone="text2" style={s.note}>{err}</T></View>;
-  if (!all) return <View style={{ flex: 1, backgroundColor: c.bg }}>{head}<ActivityIndicator style={{ marginTop: 30 }} color={c.tint} /></View>;
+  if (isBus) return <View style={{ flex: 1, backgroundColor: c.bg, paddingLeft: side.left, paddingRight: side.right }}>{head}<BusPicker q={q} from={from} onPick={onPick} /></View>;
+  if (err) return <View style={{ flex: 1, backgroundColor: c.bg, paddingLeft: side.left, paddingRight: side.right }}>{head}<T kind="sub" tone="text2" style={s.note}>{err}</T></View>;
+  if (!all) return <View style={{ flex: 1, backgroundColor: c.bg, paddingLeft: side.left, paddingRight: side.right }}>{head}<ActivityIndicator style={{ marginTop: 30 }} color={c.tint} /></View>;
 
   const stationRow = (x: Station, sub?: string) => (
     <Pressable onPress={() => choose(x)} android_ripple={{ color: c.fill }} accessibilityRole="button"
@@ -369,7 +372,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
   if (tab === 'dist') {
     const near = coords ? list.map((x) => ({ x, d: geoDist(coords.lat, coords.lon, x[2], x[3]) })).sort((p, r) => p.d - r.d).slice(0, 40) : [];
     return (
-      <View style={{ flex: 1, backgroundColor: c.bg }}>
+      <View style={{ flex: 1, backgroundColor: c.bg, paddingLeft: side.left, paddingRight: side.right }}>
         {head}
         {!coords ? <T kind="sub" tone="text2" style={s.note}>{locErr || 'Finding where you are'}</T> : (
           <FlatList data={near} keyExtractor={(o) => o.x[0]} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 40 }}
@@ -382,7 +385,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
     const syd = list.filter((x) => x[2] > -34.3 && x[2] < -33.4 && x[3] > 150.5 && x[3] < 151.45);
     const pts = (syd.length ? syd : list).map((x) => ({ id: x[0], name: x[1], lat: x[2], lon: x[3], mine: mapSel?.[0] === x[0] }));
     return (
-      <View style={{ flex: 1, backgroundColor: c.bg }}>
+      <View style={{ flex: 1, backgroundColor: c.bg, paddingLeft: side.left, paddingRight: side.right }}>
         {head}
         <View style={{ flex: 1, marginHorizontal: 16, borderRadius: radius, overflow: 'hidden', marginBottom: 12 }}>
           <TransitMap stops={pts} color={color} mode={mode} dark={c.dark} onStopPress={(id) => { haptic.select(); setMapSel(list.find((x) => x[0] === id) || null); }} />
@@ -395,7 +398,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
     );
   }
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg }}>
+    <View style={{ flex: 1, backgroundColor: c.bg, paddingLeft: side.left, paddingRight: side.right }}>
       {head}
       <View style={{ flex: 1 }}>
         <FlatList ref={listRef} data={rows} keyExtractor={(r, i) => (r.t === 'h' ? 'h' + r.k : r.s[0]) + i} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"

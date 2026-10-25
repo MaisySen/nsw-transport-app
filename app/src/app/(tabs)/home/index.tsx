@@ -13,6 +13,7 @@ import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { cacheKey } from '@/lib/offlineCore';
 import { usePalette } from '@/lib/theme';
+import { useSides } from '@/lib/layout';
 import { store, tripKeyOf, useStore } from '@/lib/store';
 import { shortName } from '@/lib/format';
 import type { Place } from '@/lib/types';
@@ -32,6 +33,7 @@ import { useLoaded } from '@/lib/store';
 
 export default function Home() {
   const c = usePalette();
+  const side = useSides();
   const now = useNow();
   const st = useStore();
   const near = useNearby();
@@ -214,7 +216,7 @@ export default function Home() {
         {!d && live.error ? <Empty icon={I.warn} title="Can't reach the live feed" body={live.error} action={<Button title="Try again" onPress={live.refresh} />} /> : null}
       </Screen>
       {snack ? (
-        <View style={[hs.snack, { backgroundColor: c.dark ? '#E6E1E5' : '#313033' }]} accessibilityLiveRegion="polite">
+        <View style={[hs.snack, { left: 16 + side.left, right: 16 + side.right, backgroundColor: c.dark ? '#E6E1E5' : '#313033' }]} accessibilityLiveRegion="polite">
           <Text style={{ color: c.dark ? '#313033' : '#F4EFF4', fontSize: 14, flex: 1 }}>{snack.text}</Text>
           <Pressable onPress={() => { snack.undo(); setSnack(null); haptic.select(); }} hitSlop={10} accessibilityRole="button">
             <Text style={{ color: c.dark ? '#1F6FEB' : '#8AB4F8', fontSize: 14, fontWeight: '700' }}>Undo</Text>

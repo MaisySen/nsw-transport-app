@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, ScrollViewProps, StyleSheet, Text, TextProps, View, ViewStyle } from 'react-native';
 import { androidLook, radius, usePalette } from '@/lib/theme';
 import { Icon, I, IconName } from './Icon';
+import { useSides } from '@/lib/layout';
 
 export const font = {
   // System font everywhere: SF Pro on iPhone, Roboto Flex on Android.
@@ -23,6 +24,8 @@ export function T({ style, kind = 'body', tone = 'text', ...p }: TextProps & { k
 
 export function Screen({ children, ...p }: ScrollViewProps & { children: ReactNode }) {
   const c = usePalette();
+  // Clear of the side safe areas and at a readable width on a wide window (iPhone Duo, resized windows).
+  const side = useSides();
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
@@ -30,7 +33,7 @@ export function Screen({ children, ...p }: ScrollViewProps & { children: ReactNo
       keyboardDismissMode="on-drag"
       {...p}
       style={[{ flex: 1, backgroundColor: c.bg }, p.style]}
-      contentContainerStyle={[{ paddingBottom: 40, paddingTop: androidLook ? 8 : 0 }, p.contentContainerStyle]}
+      contentContainerStyle={[{ paddingBottom: 40, paddingTop: androidLook ? 8 : 0, paddingLeft: side.left, paddingRight: side.right }, p.contentContainerStyle]}
     >
       {children}
     </ScrollView>

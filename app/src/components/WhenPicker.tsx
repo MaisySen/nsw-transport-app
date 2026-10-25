@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSides } from '@/lib/layout';
 import { haptic } from '@/lib/haptic';
 import { usePalette } from '@/lib/theme';
 import { defaultClock, from12, isTomorrow, NOW, snapMinute, to12, wrapStep, type When } from '@/lib/planCore';
@@ -50,6 +51,7 @@ function Wheel({ values, value, onChange, text, label, width }: { values: number
 export function WhenPicker({ visible, value, now, onDone, onClose }: { visible: boolean; value: When; now: number; onDone: (w: When) => void; onClose: () => void }) {
   const c = usePalette();
   const ins = useSafeAreaInsets();
+  const side = useSides();
   const ios = Platform.OS === 'ios';
   const [kind, setKind] = useState<When['kind']>(value.kind);
   const [h, setH] = useState(0);
@@ -93,7 +95,7 @@ export function WhenPicker({ visible, value, now, onDone, onClose }: { visible: 
       <View style={[s.wrap, !ios && { justifyContent: 'center' }]}>
         <Pressable accessibilityRole="button" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.32)' }]} onPress={onClose} accessibilityLabel="Close" />
         {ios ? (
-          <View style={[s.sheet, { backgroundColor: c.card, paddingBottom: Math.max(ins.bottom, 16) }]}>
+          <View style={[s.sheet, { marginLeft: side.left, marginRight: side.right, backgroundColor: c.card, paddingBottom: Math.max(ins.bottom, 16) }]}>
             <View style={s.bar}>
               <Pressable accessibilityRole="button" onPress={onClose} hitSlop={10}><T kind="body" tone="tint">Cancel</T></Pressable>
               <T kind="headline" accessibilityRole="header">When</T>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSides } from '@/lib/layout';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { haptic } from '@/lib/haptic';
 import { apiBase } from '@/lib/server';
@@ -57,6 +58,7 @@ export default function AskScreen() {
   const c = usePalette();
   const now = useNow(15000);
   const insets = useSafeAreaInsets();
+  const side = useSides();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -245,7 +247,7 @@ export default function AskScreen() {
         data={msgs}
         keyExtractor={(m) => m.id}
         renderItem={renderItem}
-        contentContainerStyle={{ padding: 12, paddingBottom: 16 }}
+        contentContainerStyle={{ padding: 12, paddingBottom: 16, paddingLeft: 12 + side.left, paddingRight: 12 + side.right }}
         ListEmptyComponent={
           <View style={{ alignItems: 'center', paddingTop: 24 }}>
             <Text style={[st.helloTitle, { color: c.text }]}>Ask about any trip</Text>
@@ -255,7 +257,7 @@ export default function AskScreen() {
         }
         ListFooterComponent={busy ? <View style={[st.bubble, st.bot, { backgroundColor: c.dark ? '#26252A' : '#E9E9EB', marginTop: 6 }]}><ActivityIndicator size="small" /></View> : undefined}
       />
-      <View style={[st.bar, { backgroundColor: c.card, borderTopColor: c.sep, paddingBottom: 8 + (Platform.OS === 'android' ? 0 : Math.max(0, insets.bottom - 34)) }]}>
+      <View style={[st.bar, { backgroundColor: c.card, borderTopColor: c.sep, paddingLeft: 12 + side.left, paddingRight: 12 + side.right, paddingBottom: 8 + (Platform.OS === 'android' ? 0 : Math.max(0, insets.bottom - 34)) }]}>
         <TextInput
           value={text}
           onChangeText={setText}

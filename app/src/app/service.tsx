@@ -3,6 +3,7 @@ import { goBack } from '@/lib/nav';
 import { Alert, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSides } from '@/lib/layout';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
@@ -20,6 +21,7 @@ export default function ServiceScreen() {
   const c = usePalette();
   const now = useNow();
   const insets = useSafeAreaInsets();
+  const side = useSides();
   const { height } = useWindowDimensions();
   const st = useStore();
   const sheet = useRef<BottomSheet>(null);
@@ -46,12 +48,12 @@ export default function ServiceScreen() {
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <Stack.Screen options={{ headerShown: false }} />
       <TransitMap path={data?.path} stops={stops} vehicle={data?.vehicle || null} color={color} mode={p.mode || data?.mode} dark={c.dark} bottomInset={height * 0.38} />
-      <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => goBack()} style={[sx.back, { top: insets.top + 8, backgroundColor: c.card }]} hitSlop={8}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => goBack()} style={[sx.back, { top: insets.top + 8, left: insets.left + 16, backgroundColor: c.card }]} hitSlop={8}>
         <Icon name={Platform.OS === 'ios' ? { ios: 'chevron.left', android: 'arrow_back' } : { ios: 'chevron.left', android: 'arrow_back' }} size={20} color={c.text} />
       </Pressable>
       <BottomSheet ref={sheet} index={0} snapPoints={snaps} enableDynamicSizing={false}
         backgroundStyle={{ backgroundColor: c.card, borderRadius: Platform.OS === 'ios' ? 14 : 28 }} handleIndicatorStyle={{ backgroundColor: c.text3, width: 36 }}>
-        <BottomSheetScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
+        <BottomSheetScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24, paddingLeft: side.left, paddingRight: side.right }}>
           <View style={{ paddingHorizontal: 20, paddingTop: 4 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <LineBadge line={p.line || data?.line} mode={p.mode || data?.mode} color={color} />
