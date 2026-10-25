@@ -175,13 +175,13 @@ test('hold menu: Platform view only when the row passes it, after Show stops', (
   assert.deepEqual(M.departureMenu({ line: '410', dest: 'Rockdale' }, false, { watch: noop, open: noop, platform: null }).items.map((i) => i.text), ['Watch', 'Show stops']);
   assert.match(read('src/components/Icon.tsx'), /\n  platform: \{/);
   const transit = read('src/components/Transit.tsx');
-  assert.match(transit, /d\.mode === 'train' \|\| d\.mode === 'metro' \? \(\) => openPlatform/);
+  assert.match(transit, /PLATFORM_VIEW && \(d\.mode === 'train' \|\| d\.mode === 'metro'\) \? \(\) => openPlatform/);
 });
 
-test('entry points: the station header button only at a station with trains or metro; tapping a row is unchanged', () => {
+test('entry points: the station header button only at a station with trains or metro and only while the switch is on; tapping a row is unchanged', () => {
   const stop = read('src/app/stop/[id].tsx');
   assert.match(stop, /const railHere = modes\.includes\('train'\) \|\| modes\.includes\('metro'\)/);
-  assert.match(stop, /\{railHere \? \(/);
+  assert.match(stop, /\{PLATFORM_VIEW && railHere \? \(/);
   assert.match(stop, /onPress=\{\(\) => openService\(d\)\}/);
   const screen = read('src/app/platform.tsx');
   assert.doesNotMatch(screen, /setInterval|useNow\(1000\)|Accuracy\.High/);

@@ -5,9 +5,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { apiBase, DEFAULT_BASE } from './server';
 import type { StationRow } from './platformCore';
+import { PLATFORM_VIEW } from './features';
 
-/** Opens Platform view for a station, on the given service when there is one (a held departure row). */
+/** Opens Platform view for a station, on the given service when there is one (a held departure row). Does nothing while the switch is off. */
 export function openPlatform(o: { stop: string; name?: string | null; trip?: string | null; planned?: string | null; line?: string | null }) {
+  if (!PLATFORM_VIEW) return;
   router.push({ pathname: '/platform', params: { stop: o.stop, name: o.name || '', trip: o.trip || '', planned: o.planned || '', line: o.line || '' } } as any);
 }
 

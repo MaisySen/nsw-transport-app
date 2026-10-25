@@ -37,6 +37,7 @@ import type { Station } from '@/lib/access';
 import { hasSpeech, speak } from '@/lib/nativeExtras';
 import { departuresSentence } from '@/lib/voiceCore';
 import { openPlatform } from '@/lib/platform';
+import { PLATFORM_VIEW } from '@/lib/features';
 
 const canSpeak = hasSpeech();
 
@@ -166,8 +167,8 @@ export default function StopScreen() {
         title,
         headerRight: () => (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-          {/* Platform view: only at a station with trains or metro (the hold menu on those rows opens it too). */}
-          {railHere ? (
+          {/* Platform view: only at a station with trains or metro, and only while the switch in lib/features.ts is on. */}
+          {PLATFORM_VIEW && railHere ? (
             <Pressable accessibilityRole="button" accessibilityLabel="Platform view" accessibilityHint="Shows the next train full screen with its platform and stops" hitSlop={9}
               onPress={() => { haptic.tap(); openPlatform({ stop: String(id), name: stopName }); }}>
               <Icon name={I.platform} size={22} color={c.tint} />

@@ -10,7 +10,8 @@
 // Wide windows (an open iPhone Duo or fold, a tablet, a resized window) get two columns, chosen by width alone.
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Redirect, Stack, useLocalSearchParams } from 'expo-router';
+import { PLATFORM_VIEW } from '@/lib/features';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { platformDepartures, platformService } from '@/lib/api';
@@ -70,7 +71,12 @@ function useStopsAfter(d: Departure | null, station: string): { stops: StopsAfte
   return { stops, loading: !!d && !fits && !error, status, cancelled: !!(resp && resp.cancelled) };
 }
 
-export default function PlatformView() {
+/** The route: while the switch in lib/features.ts is off, a link straight here goes to Home instead. */
+export default function PlatformRoute() {
+  return PLATFORM_VIEW ? <PlatformView /> : <Redirect href="/" />;
+}
+
+function PlatformView() {
   const p = useLocalSearchParams<{ stop: string; name?: string; trip?: string; planned?: string; line?: string }>();
   const stop = String(p.stop || '');
   const c = usePalette();

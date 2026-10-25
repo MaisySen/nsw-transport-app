@@ -7,6 +7,7 @@ import { SwipeRow, swipeA11y, type SwipeAct } from './Swipe';
 import { HoldMenu } from './HoldMenu';
 import { departureMenu } from '@/lib/menuCore';
 import { openPlatform } from '@/lib/platform';
+import { PLATFORM_VIEW } from '@/lib/features';
 import { usePalette } from '@/lib/theme';
 import { BADGE, badgeLook } from '@/lib/lineStyle';
 import { clock, delayWords, durText, ms, shortName } from '@/lib/format';
@@ -233,7 +234,8 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
   // Tap and hold: the system context menu on iPhone (Watch or Stop watching, Show stops, and Platform view on a train
   // or metro), the Material 3 menu on Android, the old sheet on an iPhone build without the native view
   // (components/HoldMenu.tsx, lib/menuCore.ts). A tap on the row still opens the service.
-  const platform = d.mode === 'train' || d.mode === 'metro' ? () => openPlatform({ stop: station || d.stopId || '', trip: d.tripId, planned: d.planned, line: d.line }) : null;
+  // Platform view is listed only while its switch (lib/features.ts) is on.
+  const platform = PLATFORM_VIEW && (d.mode === 'train' || d.mode === 'metro') ? () => openPlatform({ stop: station || d.stopId || '', trip: d.tripId, planned: d.planned, line: d.line }) : null;
   const held = <HoldMenu menu={departureMenu(d, !!watched, { watch: onWatch, open: onPress, platform })} surface={c.card}>{body}</HoldMenu>;
   if (!act) return held;
   return <SwipeRow act={act}>{held}</SwipeRow>;
