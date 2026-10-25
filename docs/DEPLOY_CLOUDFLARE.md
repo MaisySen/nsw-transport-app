@@ -172,6 +172,8 @@ The first copy was made on 25 Oct 2026 (12,011 rows). The first address keeps ta
 
 ## 9. The switch
 
+**Done 26 Oct 2026 by the app update, not by remote config.** The app's built in address is now api.transportsydney.app (`app/src/lib/server.ts`), with the first server as a read fallback. A phone that stored the first server starts on the new one once (`startBase`), and its first launch carries its saved trips, push token and morning checks over (`app/src/lib/serverMove.ts`). Remote config still works both ways: `copy.api_base` set to the first address on the new server moves updated apps back. Builds that have not taken the update keep using the first server, which keeps running. Not done: the second data copy (section 8 needs the export route deployed on the first address and its admin key, and the first address is not to be redeployed); the minute tick of the first address (cron-job.org job 8707266) keeps running, because builds without the update still save watches and morning checks there; `SHARE_FALLBACK_BASE` stays for shares made on the first address by those builds.
+
 The apps read `copy.api_base` from `/api/app/config` and move to it (https only, from their allowlist). Android round 4 and iPhone build 108 and later read it; older builds keep using the old address until they update.
 
 1. Sections 3 to 7 pass.

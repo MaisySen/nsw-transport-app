@@ -79,6 +79,43 @@ Written 25 Oct 2026 after the battery, smoothness and iOS audit (report: files/q
     chip or a route chip asks for that mode alone (`boardAsk` in src/lib/stopBoardCore.ts, `departuresFor` in
     src/lib/api.ts): one request when the chip is tapped, then the same adaptive gap. All is unchanged.
 
+### Freshness and the server move (26 Oct, 9:31 to 9:53 AM, live data)
+
+Bidur at 9:13 AM: "App still loads data slower and updates late. Almost missed the train." Two measurements:
+
+**How far each server is behind the Trip Planner.** A script asked the Trip Planner's departure monitor and both
+servers (`/api/departures?refresh=1`, as the app's polls do) every 3 s for Central (200060) and Strathfield Station
+(213510), and timed how long each change of a live time took to show on each server.
+
+| Server | Lag median | 90th percentile | Worst | Changes later than 15 s | Answer time median (90th) |
+|---|---|---|---|---|---|
+| First server (phones until this update) | 2.4 s | 9.7 s | 16.8 s | n/a | 473 ms (1474 ms) |
+| api.transportsydney.app before (15 s edge copy on a 12 s departures copy) | 8.4 s | 20.8 s | 26.8 s | 78 of 306 | 108 ms (1849 ms) |
+| api.transportsydney.app after (a refresh takes a copy up to 5 s old) | 1.1 s | 10.1 s | 34.5 s (once) | 1 of 222 | 163 ms (1589 ms) |
+
+**How often the app asks** (web export at 390 x 844, real data, Strathfield, 100 s on view):
+
+| Screen | Before (production, main de4b1c1) | After |
+|---|---|---|
+| Stop screen: first refresh after opening | 60 s | 15 s |
+| Stop screen: gap with a service under 10 min | 15 s while under 5 min, 30 s from 5 to 15 min | 15 s up to 10 min, 30 s to 20 min |
+| Home: first refresh of the commute and stop cards | 60 s | 15 s |
+| Home stop card (starred stop) | 20 s fixed | 15 s while a service is under 10 min |
+| Trip list and Home trip card | 20 s fixed | 15 s while the first service leaves within 10 min, else 20 s |
+| Simple mode | 30 s, 60 s past 15 min | 15 s within 10 min, else 20 s |
+
+The first refresh was a bug: the poll's first wait was set before the first answer, when the adaptive gap read "nothing
+due" and chose a minute. `retime` in `pollCore.ts` now reads the gap again when each answer lands.
+
+**From a change in the feed to the phone** (server lag plus the wait for the next poll plus the answer):
+with a train 6 to 10 minutes away, before: up to about 41 s (9.7 + 30 + 1.5), and up to about 70 s in the first minute
+after opening the stop; after: up to about 27 s (10.1 + 15 + 1.6), typically about 9 s. Target was 30 s.
+
+**Opening a stop** (median of 3, web export, time until "Live, updated" shows): first start 1104 ms before, 1086 ms after;
+with a kept copy 1245 ms before, 1216 ms after. Home first start 1430 ms before (703 to 1581), 719 ms after (718 to
+733). The web export runs on this build box; the first server's answers vary more (90th percentile 1.5 s) than the new
+one's shared copies. Not yet measured on a phone.
+
 ### Battery and data audit (26 Oct, 7:55 to 8:29 AM, item 2)
 
 Web export at 390 x 844 with live data, each screen in its own browser, every request to the servers counted with its

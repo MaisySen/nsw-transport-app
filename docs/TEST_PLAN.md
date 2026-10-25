@@ -75,6 +75,18 @@ Usual lateness on the server: a day folds into late_agg with the right minute co
 
 ## Android app logic tests
 
+### `app/test/servermove.test.mjs`: 9 tests (added 26 Oct, the server move)
+Start address (a stored first server is replaced once, then a stored address is kept so remote config can move the app back), fallback only on no answer or a 5xx (never a 4xx), the one minute hold on the first server and its end on a new server answer, `getJson` with a mocked fetch, reads fall back and writes do not, no second try after a time out, honest "Updated" from `dataAt`, and the morning checks carried over once within the per phone limit.
+
+### `app/test/perf.test.mjs` and `app/test/battery.test.mjs`: 3 more tests (26 Oct, freshness)
+Adaptive gap 15 s up to 10 minutes, 30 s to 20, a minute beyond; trip lists 15 s within 10 minutes, else 20 s, on the trip screen, Simple mode and Home cards; `retime` makes the first refresh 15 s after opening instead of 60 s, and adds no run while the app is away.
+
+### `backend/test/fresh-refresh.test.mjs`: 4 tests (added 26 Oct, freshness)
+A stored copy carries `x-stored-at`; a cached answer carries `dataAt`; `refresh=1` takes a copy up to 5 s old and skips an older one or one with no time, while a plain open still takes the 15 s copy; the departures copy is 5 s for a refresh.
+
+Live freshness check (26 Oct, 9:31 to 9:53 AM, before and after the server change): the Trip Planner and both servers asked every 3 s for Central and Strathfield for 7 minutes each; results in [PERFORMANCE.md](PERFORMANCE.md).
+
+
 ### `app/test/race.test.mjs`: 12 tests, and 2 more in `app/test/offline.test.mjs` (26 Oct, item 1: speed and offline)
 The latest answer rule (`createLatest`, `createStamp` in `pollCore.ts`, used by `useLive` and `useStamp`): an answer for the service shown before never lands under the new one, the new key asks at once, the old round's signal is aborted, one request out per round, an old round's failure is not shown, a closed screen drops what is on its way, six quick switches keep only the last answer whatever order they come back in, a batch for an old query is not added to the new list; every screen's one off loads are guarded (trip list batches and Plan B, Simple mode, walk search, next option, live trip engine); every screen with a kept copy labels it; startup work waits for the first screen. Offline: "Updated 4 min ago, refreshing" wording, 32 copies, the service screen's own copy.
 Browser checks (26 Oct, 1:00 AM): 6 stations (Central, Parramatta, Hornsby, Chatswood, Liverpool, Gosford) at 390 x 844 and 430 x 932, light and dark, live; kept copy 12 min old and no signal at Central, Hornsby and Liverpool; the trip list Parramatta to Central with no signal and Hornsby to Chatswood with an 8 minute old copy; Home and the board with no signal; Platform view at Hornsby with a kept copy: 68 screens, every one shows its label, none shows kept times as live. Screenshots: files/item1-speed/ on the build box.

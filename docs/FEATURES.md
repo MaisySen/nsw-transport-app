@@ -144,12 +144,14 @@ Native changes, so they need a new build (branches `native-207` and `native-207-
 
 * Calendar leave by: the calendar read access it needs (full access text on iPhone, READ_CALENDAR on Android) is on branch `native-207` for build 208; the JavaScript is already in the over the air update and stays hidden until then ([CALENDAR-LEAVE-BY.md](CALENDAR-LEAVE-BY.md)).
 
-## After the server move (api_base)
+## The new server (over the air, 26 Oct)
 
-The app still reads the first server address. These are in the app now and show by themselves when remote config moves `api_base` to api.transportsydney.app ([API.md](API.md), [REVIEW-NOTES.md](REVIEW-NOTES.md)):
+The app reads from api.transportsydney.app. A read it cannot get there (no answer, or a 5xx) is asked of the first server once, and reads stay there for a minute; saves always go to the new server. The first launch on this update carries the phone's saved trips, push token and morning checks over. These now show for everyone on the update ([API.md](API.md), [REVIEW-NOTES.md](REVIEW-NOTES.md)):
 
 * "Usually 3 min late on weekday mornings" on stop boards (with a route chosen), the service screen and trip legs. Real answers need a few weeks of live times on the new server.
 * Weekend trackwork card, Status of my lines, Plan B in the morning check, reliability lines, last way home reminder, Park and Ride "usually full by", live traffic on bus legs, carriage occupancy, and live times for NSW TrainLink, regional coach and Manly Fast Ferry services.
+
+Fresh times: boards refresh every 15 s while the next service is 10 minutes away or less and 15 s after opening; trip lists, Simple mode and Home trip cards every 15 s while the first service leaves within 10 minutes. "Live, updated" shows when the times were read on the server ([PERFORMANCE.md](PERFORMANCE.md)).
 
 ## Not in the app
 
