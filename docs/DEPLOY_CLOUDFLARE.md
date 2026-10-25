@@ -86,7 +86,7 @@ Free plan budget (D1 Free: 5 million rows read and 100,000 rows written a day, 5
 
 To read the sizes: `GET /accounts/$CF_ACCOUNT_ID/d1/database` (`file_size`), and `SELECT day, COUNT(*) FROM obs GROUP BY day` through `POST /accounts/$CF_ACCOUNT_ID/d1/database/<uuid>/query` (D1 has no `dbstat`, so sizes per table are not available; count rows instead). Daily reads and writes: the GraphQL dataset `d1AnalyticsAdaptiveGroups` (`rowsRead`, `rowsWritten`).
 
-Deploy log: 25 Oct 2026, 5:27 PM, from main c5f81f5 (Delete all my data for push tokens, token and `obs` clean up), Worker version 0eaaf004-496f-49f3-9e57-480fa7f046bf. Checks above all passed, plus `POST /api/live-activity/forget` 200 (400 without a device).
+Deploy log: 25 Oct 2026, 5:27 PM, from main c5f81f5 (Delete all my data for push tokens, token and `obs` clean up), Worker version 0eaaf004-496f-49f3-9e57-480fa7f046bf. Checks above all passed, plus `POST /api/live-activity/forget` 200 (400 without a device). The first hourly run after it (6:07 PM Sydney) deleted the 3 ended `live_activities` rows on the live database and kept both `apns_devices` rows (sent that day); no `obs` row was old enough to delete (oldest day 23 Oct). Database 3.56 MB after, `obs` 17,149 rows.
 
 **APK download (optional).** R2 must be turned on in the account first (R2, Purchase R2 Plan; the free allowance covers this).
 
