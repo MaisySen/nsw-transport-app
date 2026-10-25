@@ -643,10 +643,36 @@ function enrich(item, rt) {
     if (tu && tu.stus.length && item.realtime) {
       const mine = tu.stus.findIndex((u) => u.stopId === item.stopId);
       const nxt = nextStopIndex(tu, veh);
-      if (mine >= 0 && nxt >= 0 && mine >= nxt) item.stopsAway = mine - nxt;
+      if (mine >= 0 && nxt >= 0 && mine >= nxt) {
+        item.stopsAway = mine - nxt;
+        // Bus and coach rows: the live delays from the bus's next stop to this stop, for the app's slow traffic rule.
+        if (item.mode === "bus" || item.mode === "coach" || item.mode === "school") {
+          const a = aheadDelays(tu, nxt, mine);
+          if (a) item.ahead = a;
+        }
+      }
     }
   }
   return item;
+}
+
+// Live delays in minutes (one decimal) at the stops from index `from` to `to` of a trip update, null where a stop has
+// no live time. At most 24 values: the first two and last two are always kept, the stops between are sampled evenly.
+// Null when fewer than 3 stops have a live delay.
+function aheadDelays(tu, from, to) {
+  if (!tu || !tu.ts || tu.rel === 3 || from < 0 || to < from) return null;
+  const all = [];
+  for (let i = from; i <= Math.min(to, tu.stus.length - 1); i++) {
+    const u = tu.stus[i];
+    const st = u && u.rel !== 1 && u.rel !== 2 ? stuTime(u) : null;
+    all.push(st && st.delay != null ? Math.round(st.delay / 6) / 10 : null);
+  }
+  if (all.filter((v) => v != null).length < 3) return null;
+  if (all.length <= 24) return all;
+  const n = all.length, keep = [0, 1];
+  for (let k = 1; k <= 19; k++) keep.push(1 + Math.round((k * (n - 3)) / 20));
+  keep.push(n - 2, n - 1);
+  return [...new Set(keep)].sort((a, b) => a - b).map((i) => all[i]);
 }
 
 function statusOf(it) {
