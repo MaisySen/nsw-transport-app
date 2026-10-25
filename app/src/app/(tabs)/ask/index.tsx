@@ -9,6 +9,7 @@ import { haptic } from '@/lib/haptic';
 import { apiBase } from '@/lib/server';
 import { getDevice, PROFILE } from '@/lib/device';
 import { usePalette } from '@/lib/theme';
+import { durText } from '@/lib/format';
 import { useNow } from '@/lib/hooks';
 import { store, useStore } from '@/lib/store';
 import type { Fare } from '@/lib/types';
@@ -153,7 +154,7 @@ export default function AskScreen() {
               <Text style={[st.t1, { color: c.text, fontVariant: ['tabular-nums'] }]}>{clock(j.leave)} to {clock(j.arrive)}</Text>
               <View style={st.legs}>
                 {tl.map((l, k) => <LineBadge key={k} small line={l.line} mode={l.mode} color={l.color} />)}
-                <Text style={[st.t2, { color: c.text2 }]}>{j.durationMin} min {'\u00b7'} {j.changes ? `${j.changes} change${j.changes > 1 ? 's' : ''}` : 'Direct'}</Text>
+                <Text style={[st.t2, { color: c.text2 }]}>{durText(j.durationMin)} {'\u00b7'} {j.changes ? `${j.changes} change${j.changes > 1 ? 's' : ''}` : 'Direct'}</Text>
               </View>
               {s ? <Text style={[st.t2, { color: (c as any)[s.tone], fontWeight: '600' }]}>{s.text}</Text> : null}
               {j.warn ? <Text style={[st.t2, { color: c.orange, fontWeight: '600' }]}>{j.warn}</Text> : null}

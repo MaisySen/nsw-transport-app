@@ -7,7 +7,7 @@ import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeabl
 import { Pressable as GHPressable } from 'react-native-gesture-handler';
 import { haptic } from '@/lib/haptic';
 import { modeColor, onColor, usePalette } from '@/lib/theme';
-import { bestTime, clock, countdown, countdownKey, delayWords, ms, shortName } from '@/lib/format';
+import { bestTime, clock, countdown, countdownKey, delayWords, durText, ms, shortName } from '@/lib/format';
 import type { Departure, Journey, Leg } from '@/lib/types';
 import { Icon, I, modeIconName } from './Icon';
 import { font, T } from './ui';
@@ -193,7 +193,7 @@ export function JourneyCard({ j, now, onPress, best }: { j: Journey; now: number
             {best ? <View style={[st.tag, { backgroundColor: c.fill }]}><Text style={[font.caption, { color: c.tint, fontWeight: '700' }]}>BEST</Text></View> : null}
           </View>
           <T kind="sub" tone="text2" style={{ marginTop: 2, fontVariant: ['tabular-nums'] }}>
-            {clock(ms(j.board))} to {clock(ms(j.arrive))} {'\u00b7'} {j.durationMin} min{j.changes ? ` \u00b7 ${j.changes} change${j.changes > 1 ? 's' : ''}` : ''}
+            {clock(ms(j.board))} to {clock(ms(j.arrive))} {'\u00b7'} {durText(j.durationMin)}{j.changes ? ` \u00b7 ${j.changes} change${j.changes > 1 ? 's' : ''}` : ''}
           </T>
         </View>
         <StatusLine realtime={first?.realtime} delayMin={first?.delayMin} cancelled={j.anyCancelled} />

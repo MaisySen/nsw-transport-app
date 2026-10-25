@@ -161,6 +161,10 @@ function platformChange(props, cls) {
   return platformLabel({ platformName: props.plannedPlatformName }, cls) || props.plannedPlatformName;
 }
 function iso(t) { return t ? new Date(t).toISOString() : null; }
+// Alert titles from the planner can carry HTML ("<a href=...>Book your seat with NSW TrainLink</a>"): plain words only.
+function plainText(h) {
+  return String(h || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
+}
 function ms(t) { return t ? new Date(t).getTime() : null; }
 
 const OCC_EFA = {
@@ -688,7 +692,7 @@ async function departures(env, stopId, opts = {}) {
       const k = info.id || info.subtitle;
       if (!k) continue;
       alertIds.push(k);
-      if (!alerts.has(k)) alerts.set(k, { id: k, title: info.subtitle || info.title || "", url: httpsUrl(info.url), priority: info.priority || "", lines: new Set() });
+      if (!alerts.has(k)) alerts.set(k, { id: k, title: plainText(info.subtitle || info.title || ""), url: httpsUrl(info.url), priority: info.priority || "", lines: new Set() });
       alerts.get(k).lines.add(line);
     }
     items.push({
@@ -783,6 +787,8 @@ async function trip(env, fromId, toId, opts = {}) {
     ...(opts.via ? { type_via: opts.viaType || "any", name_via: opts.via } : {}),
     // Step free trips only (Settings > Accessible trips): the Trip Planner's wheelchair option.
     ...(opts.accessible ? { wheelchair: "on" } : {}),
+    // Plan B: leave out the means of transport that is disrupted (exclMOT_n, Trip Planner manual).
+    ...(opts.exclude || {}),
   }, opts.long ? LONG_TRIP_TIMEOUT_MS : 12000);
   const journeys = [];
   for (const j of data.journeys || []) {
@@ -815,7 +821,7 @@ async function trip(env, fromId, toId, opts = {}) {
         cancelled: !!lg.isCancelled,
         occupancy: OCC_EFA[(o.properties && o.properties.occupancy) || ""] || null,
         platformChangedFrom: platformChange(o.properties, cls),
-        alerts: (lg.infos || []).map((i) => ({ title: i.subtitle || "", url: httpsUrl(i.url), priority: i.priority || "" })).filter((a) => a.title).slice(0, 3),
+        alerts: (lg.infos || []).map((i) => ({ title: plainText(i.subtitle || ""), url: httpsUrl(i.url), priority: i.priority || "" })).filter((a) => a.title).slice(0, 3),
         path: (lg.coords || []).map((c) => [Math.round(c[0] * 1e5) / 1e5, Math.round(c[1] * 1e5) / 1e5]),
       };
     });
@@ -4124,10 +4130,57 @@ function morningIssues(j, c, outs) {
   return issues.filter((i) => !seen.has(i.text) && seen.add(i.text));
 }
 
-function morningMessage(c, j, issues) {
+function morningMessage(c, j, issues, planB = null) {
   const from = shortStation(c.from_name), to = shortStation(c.to_name);
   const body = issues.slice(0, 3).map((i) => i.text).join(" ") + (issues.length > 3 ? ` And ${issues.length - 3} more.` : "");
-  return { title: `Check before you go: ${from} to ${to}`, body: wordCut(body, 300) };
+  if (!planB) return { title: `Check before you go: ${from} to ${to}`, body: wordCut(body, 300) };
+  return { title: `Check before you go: ${from} to ${to}`, body: `${wordCut(body, 300 - planB.text.length - 4)} ${planB.text}` };
+}
+
+// Plan B in the alert: the issues that make the planned service a bad bet. A platform change or a lift is not one.
+const PLANB_KINDS = new Set(["cancelled", "delay", "connection", "trackwork"]);
+// The planner's means of transport numbers (product class) per mode, for exclMOT_n.
+const PLANB_MOT = { train: 1, metro: 2, lightrail: 4, bus: 5, coach: 7, ferry: 9, school: 11 };
+const tLegsOf = (j) => (j && j.legs || []).filter((l) => l.kind === "transit");
+const firstKey = (j) => { const l = tLegsOf(j)[0]; return l ? `${l.tripId || l.line}@${l.planned}` : ""; };
+/** True when the journey itself looks fine: nothing cancelled, no big delay, no change it will miss. */
+function journeyOk(j) {
+  return tLegsOf(j).every((l) => !l.cancelled && !(l.realtime && l.delayMin != null && l.delayMin > MORNING_DELAY_MIN) && !(l.transfer && l.transfer.risk === "miss"));
+}
+/** Lines named by a trackwork or suspension issue (only those can be avoided by a different route). */
+function blockedLines(j, issues) {
+  const out = new Set();
+  for (const i of issues) if (i.kind === "trackwork") for (const l of tLegsOf(j)) if (i.text.startsWith(`${l.line}:`) || i.text.includes(` ${l.line} `) || i.text.startsWith(l.line + " ")) out.add(l.line);
+  return out;
+}
+/**
+ * The best other way for a morning check alert, or null. From the journeys already planned when it can (a later
+ * service on the same line is fine for a cancellation or a delay); for trackwork on the line, one more planner
+ * call with that mode left out. Earliest arrival wins. text: "Plan B: the 8:04 M1 from Epping, arrives 8:41."
+ */
+async function morningPlanB(env, c, j, issues, journeys, now, planner = trip) {
+  if (!issues.some((i) => PLANB_KINDS.has(i.kind))) return null;
+  const blocked = blockedLines(j, issues);
+  const avoids = (x) => tLegsOf(x).every((l) => !blocked.has(l.line));
+  const usable = (x) => x && firstKey(x) !== firstKey(j) && tLegsOf(x).length && ms(x.board) > now + 60000 && journeyOk(x) && avoids(x);
+  let pool = (journeys || []).filter(usable);
+  if (!pool.length && blocked.size) {
+    const modes = new Set(tLegsOf(j).filter((l) => blocked.has(l.line)).map((l) => l.mode));
+    const exclude = { excludedMeans: "checkbox" };
+    for (const m of modes) if (PLANB_MOT[m]) exclude["exclMOT_" + PLANB_MOT[m]] = "1";
+    if (Object.keys(exclude).length > 1) {
+      const r = await planner(env, c.from_id, c.to_id, { count: 4, time: hhmmOf(sydneyNow(new Date(now)).tod), exclude }).catch(() => null);
+      pool = (r && r.journeys || []).filter(usable);
+    }
+  }
+  if (!pool.length) return null;
+  pool.sort((a, b) => ms(a.arrive) - ms(b.arrive) || ms(a.board) - ms(b.board));
+  const best = pool[0], f = tLegsOf(best)[0];
+  const dep = ms(f.realtime && f.estimated ? f.estimated : f.planned);
+  const what = f.mode === "bus" || f.mode === "coach" ? `${f.line} bus` : f.mode === "ferry" ? `${f.line} ferry` : f.line;
+  const at = shortStation(f.from);
+  const text = `Plan B: the ${clock(dep)} ${what}${at ? ` from ${at}` : ""}, arrives ${clock(ms(best.arrive))}.`;
+  return { text, leave: best.leave, arrive: best.arrive, line: f.line, mode: f.mode, from: f.from || null, planned: f.planned, changes: best.changes || 0 };
 }
 
 async function morningEvaluate(env, c, now) {
@@ -4137,11 +4190,13 @@ async function morningEvaluate(env, c, now) {
   const outs = await liftOutages(env).catch(() => []);
   const issues = morningIssues(j, c, outs);
   const first = j.legs.find((l) => l.kind === "transit");
+  const planB = issues.length ? await morningPlanB(env, c, j, issues, r.journeys || [], now).catch(() => null) : null;
   return {
     found: true, issues,
     service: { line: first.line, mode: first.mode, planned: first.planned, estimated: first.estimated, platform: first.fromPlatform || null, realtime: !!first.realtime,
       leave: j.leave, arrive: j.arrive, changes: j.changes },
-    alert: issues.length ? morningMessage(c, j, issues) : null,
+    planB,
+    alert: issues.length ? morningMessage(c, j, issues, planB) : null,
   };
 }
 

@@ -6,7 +6,7 @@ import fs from "node:fs";
 
 const root = new URL("..", import.meta.url).pathname;
 const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {")
-  + "\nexport { legFromInput, cleanFeed, backfillFeeds, laTripFrom, longTripCacheKey, LONG_TRIP_TIMEOUT_MS };\n";
+  + "\nexport { legFromInput, cleanFeed, backfillFeeds, laTripFrom, longTripCacheKey, LONG_TRIP_TIMEOUT_MS, plainText };\n";
 const tmp = `/tmp/watch-feed-test-${process.pid}-${Date.now()}.mjs`;
 fs.writeFileSync(tmp, src);
 const W = await import(tmp); fs.unlinkSync(tmp);
@@ -78,4 +78,9 @@ test("long trips: longer planner timeout and a cache key without the device or r
   assert.equal(a, b);
   assert.notEqual(b, W.longTripCacheKey(new URLSearchParams("from=200060&to=28301&count=6&long=1")));
   assert.notEqual(b, W.longTripCacheKey(new URLSearchParams("from=200060&to=26401&count=6&time=0900&long=1")));
+});
+
+test("leg alert titles lose their HTML", () => {
+  assert.equal(W.plainText('<a href="https://transportnsw.info/regional-bookings/" target="_blank">Book your seat with NSW TrainLink</a>'), "Book your seat with NSW TrainLink");
+  assert.equal(W.plainText("Lifts &amp; ramps"), "Lifts & ramps");
 });

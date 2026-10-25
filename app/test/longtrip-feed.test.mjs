@@ -109,3 +109,17 @@ test('long trips: the trip screen says it is still searching and refreshes every
   assert.match(a, /tripLong\(base, opts\.refresh\)/);
   assert.match(a, /long: 1/);
 });
+
+test('travel time in hours for long trips, alert titles without HTML', async () => {
+  const src = fs.readFileSync(path.join(here, '..', 'src/lib/format.ts'), 'utf8');
+  const fn = (name) => { const m = new RegExp(`export function ${name}[\\s\\S]*?\\n}\\n`).exec(src); return m[0]; };
+  const code = [fn('plainText'), fn('durText')].join('\n');
+  const js = ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const f = path.join(out, 'fmtbits.mjs'); fs.writeFileSync(f, js);
+  const M = await import(pathToFileURL(f).href);
+  assert.equal(M.durText(25), '25 min');
+  assert.equal(M.durText(60), '1 h');
+  assert.equal(M.durText(446), '7 h 26 min');
+  assert.equal(M.plainText('<a href="https://transportnsw.info/regional-bookings/" target="_blank">Book your seat with NSW TrainLink</a>'), 'Book your seat with NSW TrainLink');
+  assert.equal(M.plainText('Lifts &amp; ramps'), 'Lifts & ramps');
+});

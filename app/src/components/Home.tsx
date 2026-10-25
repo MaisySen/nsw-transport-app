@@ -10,7 +10,7 @@ import { cacheKey, offlineText } from '@/lib/offlineCore';
 import { foldNear, type NearPick } from '@/lib/nearCore';
 import { chipTime, makeDeletedNames } from '@/lib/homeCore';
 import { modeColor, onColor, radius, usePalette } from '@/lib/theme';
-import { bestTime, clock, liveStamp, ms, shortName } from '@/lib/format';
+import { bestTime, clock, durText, liveStamp, ms, shortName } from '@/lib/format';
 import { clearAllPlan } from '@/lib/planCore';
 import type { Departure, Journey, Leg, Place } from '@/lib/types';
 import { store, tripKeyOf } from '@/lib/store';
@@ -419,7 +419,7 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
   const dep = depOf(j);
   const stt = statusOf(j, now);
   const relRaw = useReliabilityText(l);
-  const t = showTravel ? { big: String(j.durationMin), unit: 'min' } : cd(dep, now);
+  const t = showTravel ? (j.durationMin >= 60 ? { big: `${Math.floor(j.durationMin / 60)}h ${j.durationMin % 60}`, unit: 'min' } : { big: String(j.durationMin), unit: 'min' }) : cd(dep, now);
   const toneText = stt.tone === 'live' ? c.liveText : stt.tone === 'late' ? c.lateText : stt.tone === 'red' ? c.redText : c.text2;
   const legs = j.legs.filter((x) => x.kind === 'transit');
   const last = legs[legs.length - 1];
@@ -443,7 +443,7 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
         <T kind="foot" numberOfLines={1} style={{ marginTop: 2 }}>
           <T kind="foot" style={{ color: toneText }}>{stt.text}</T>
           {boardAt ? <T kind="foot" tone="text2">{` \u00b7 ${boardAt}`}</T> : null}
-          <T kind="foot" tone="text2">{` \u00b7 ${j.durationMin} min`}</T>
+          <T kind="foot" tone="text2">{` \u00b7 ${durText(j.durationMin)}`}</T>
         </T>
         {l?.platformChangedFrom ? <T kind="foot" numberOfLines={1} style={{ color: c.lateText, marginTop: 1 }}>Platform changed from {plat(l.platformChangedFrom)}</T> : null}
         <OccupancyChip o={l?.occupancy} style={{ marginTop: 3 }} />

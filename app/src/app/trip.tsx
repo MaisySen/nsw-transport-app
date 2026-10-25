@@ -9,7 +9,7 @@ import { api, isLongPair } from '@/lib/api';
 import { LONG_TRIP_KEEP_MS, STILL_SEARCHING_MS } from '@/lib/longTripCore';
 import { useLive, useNow } from '@/lib/hooks';
 import { usePalette, radius, modeColor } from '@/lib/theme';
-import { bestTime, clock, ms, shortName } from '@/lib/format';
+import { bestTime, clock, durText, ms, plainText, shortName } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
 import { safeUrl, stShort } from '@/lib/access';
 import { LegAccessChips, ParkGroup } from '@/components/Access';
@@ -83,7 +83,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
           <View style={{ flex: 1, marginLeft: 8 }}>
             <T kind="sub" numberOfLines={1}>Towards {shortName(l.towards)}</T>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-              <T kind="foot" tone="text2">{l.durationMin} min{l.stops ? `, ${plural(l.stops, 'stop')}` : ''}</T>
+              <T kind="foot" tone="text2">{durText(l.durationMin)}{l.stops ? `, ${plural(l.stops, 'stop')}` : ''}</T>
               <OccupancyChip o={l.occupancy} />
             </View>
           </View>
@@ -101,7 +101,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
         {l.alerts?.length ? (
           <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
             <Icon name={I.warn} size={13} color={c.orange} />
-            <T kind="foot" style={{ color: c.lateText, flex: 1 }} numberOfLines={3}>{l.alerts[0].title}</T>
+            <T kind="foot" style={{ color: c.lateText, flex: 1 }} numberOfLines={3}>{plainText(l.alerts[0].title)}</T>
           </View>
         ) : null}
         <LegAccessChips access={l.access} from={l.from} to={l.to} />
@@ -354,7 +354,7 @@ export default function TripScreen() {
               <View key={k}>
                 <Sep inset={16} />
                 <Pressable accessibilityRole="link" disabled={!safeUrl(a.url)} onPress={() => { const u = safeUrl(a.url); if (u) Linking.openURL(u); }} style={{ paddingHorizontal: 16, paddingVertical: 10 }}>
-                  <T kind="sub" style={{ color: a.url ? c.tint : c.text }}>{a.title}</T>
+                  <T kind="sub" style={{ color: a.url ? c.tint : c.text }}>{plainText(a.title)}</T>
                 </Pressable>
               </View>
             )) : null}
