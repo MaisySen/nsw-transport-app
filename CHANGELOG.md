@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Get a better voice (over the air, 25 Oct, about 10:05 PM, group 30e7648e)
+Bidur: "Can we set the direct button to that audio setting in phone from our app??"
+* More > Voice has a Get a better voice row. On iPhone it shows three short steps to download a Premium or Enhanced voice (Settings, Accessibility, Read & Speak, Voices, English) and an Open Settings button. Apple has no public link to the voice list, so the button opens the app's page in Settings; no private settings link is used.
+* On Android the row opens the phone's text to speech settings directly, and Download voice data opens the speech engine's voice downloads.
+* Come back to the app after downloading and it says Better voice found and plays a sample from the live board. Every spoken line uses the new voice from then on.
+* The first time you tap Speak departures on a phone with only its basic voice, the app offers this once. Not now means never again.
+* Roll back to group b4fd3a9a (10:00 PM). Not yet seen on a device.
+
 ### Simple mode: Plan Your Trip (over the air, 25 Oct, about 10:00 PM, group b4fd3a9a)
 Bidur at 9:37 PM: "User come. Look this to that place. They get the list like this. Thats it." And at 9:50 PM: "Just write Plan Your Trip".
 * Simple mode (More > Simple mode, off by default) is now one plain screen headed Plan Your Trip. From is your current location when location is already on; To is where you pick. Your places (Home, Work, recent places, starred stops) are big rows: one tap fills To and finds trips.
