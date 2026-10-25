@@ -5,7 +5,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiBase, DEFAULT_BASE } from './server';
 import { buildGaz, type Gaz } from './askBrain';
 
-const KEY = 'ask:places:v1';
+// v2 keeps each place's position too: a suburb with no station offers its nearest stations (didYouMean).
+const KEY = 'ask:places:v2';
 const KEEP_MS = 14 * 86400000;
 const FILES = ['train', 'metro', 'lightrail', 'ferry', 'places'] as const;
 let gaz: Gaz | null = null;
@@ -18,7 +19,7 @@ async function fetchAll(base: string): Promise<Record<string, any[]> | null> {
     const lists = await Promise.all(FILES.map((f) => fetch(`${base}/stations/${f}.json`, { signal: ctl.signal }).then((r) => (r.ok ? r.json() : null))));
     if (lists.some((l) => !Array.isArray(l))) return null;
     const out: Record<string, any[]> = {};
-    FILES.forEach((f, i) => { out[f] = (lists[i] as any[]).map((row) => (f === 'places' ? [row[0]] : [row[0], row[1]])); });
+    FILES.forEach((f, i) => { out[f] = (lists[i] as any[]).map((row) => (f === 'places' ? [row[0], row[1], row[2]] : [row[0], row[1], row[2], row[3]])); });
     return out;
   } catch { return null; } finally { clearTimeout(t); }
 }

@@ -80,18 +80,24 @@ export function clean(raw: string): string {
 
 // ---------- Places ----------
 
-type Entry = { key: string; name: string; id?: string; mode?: string; kind: 'station' | 'suburb'; rank: number };
-export type Gaz = { keys: Map<string, Entry>; list: Entry[] };
+type Entry = { key: string; name: string; id?: string; mode?: string; kind: 'station' | 'suburb'; rank: number; lat?: number; lon?: number };
+/** keys: one entry per name; list: every entry; modes: every mode a stop id is listed under (Wynyard: train and light rail). */
+export type Gaz = { keys: Map<string, Entry>; list: Entry[]; modes?: Map<string, string[]> };
 const MODES = ['train', 'metro', 'lightrail', 'ferry'];
 
 /** Builds the place index from the published lists: stations [id, name, lat, lon] by mode, suburbs [name, lat, lon]. */
 export function buildGaz(src: { train?: any[]; metro?: any[]; lightrail?: any[]; ferry?: any[]; places?: any[] }): Gaz {
   const keys = new Map<string, Entry>();
   const list: Entry[] = [];
+  const modes = new Map<string, string[]>();
+  const num = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
   MODES.forEach((m, rank) => {
     for (const row of Array.isArray((src as any)[m]) ? (src as any)[m] : []) {
       if (!Array.isArray(row) || !row[1]) continue;
-      const e: Entry = { key: base(String(row[1])), name: String(row[1]), id: String(row[0]), mode: m, kind: 'station', rank };
+      const id = String(row[0]);
+      const ms = modes.get(id) || [];
+      if (!ms.includes(m)) { ms.push(m); modes.set(id, ms); }
+      const e: Entry = { key: base(String(row[1])), name: String(row[1]), id, mode: m, kind: 'station', rank, lat: num(row[2]), lon: num(row[3]) };
       if (!e.key || keys.has(e.key)) continue;
       keys.set(e.key, e); list.push(e);
     }
@@ -100,10 +106,10 @@ export function buildGaz(src: { train?: any[]; metro?: any[]; lightrail?: any[];
     const name = Array.isArray(row) ? String(row[0] || '') : '';
     const k = base(name);
     if (!k || keys.has(k)) continue;
-    const e: Entry = { key: k, name, kind: 'suburb', rank: 9 };
+    const e: Entry = { key: k, name, kind: 'suburb', rank: 9, lat: num(row[1]), lon: num(row[2]) };
     keys.set(k, e); list.push(e);
   }
-  return { keys, list };
+  return { keys, list, modes };
 }
 
 // Short forms people use for places all over the network. Each points at a name in the lists above.
@@ -437,6 +443,25 @@ export function understand(raw: string, ctx: Ctx): Understood {
   };
   const askWhich = (role: string, opts: string[], build: (o: string) => string, then: Intent): Understood =>
     done('clarify', { then, clarify: { text: role === 'from' ? 'Which one are you leaving from?' : role === 'stop' ? 'Which stop?' : 'Which one do you mean?', choices: opts.slice(0, 3).map((o) => ({ label: o, q: build(o) })) } });
+  // Fares: a saved place, your location or an exact name is used as it is; anything else goes through didYouMean.
+  const SURE = new Set(['exact', 'home', 'work', 'starred', 'alias', 'landmark']);
+  const fareResolve = (role: 'from' | 'to', q: string): (Match & { dym?: Suggestion[] }) | null => {
+    if (!q) return null;
+    const m = matchPlace(q, ctx);
+    const sure = m.place && (m.place.kind === 'here' || m.place.kind === 'saved' || SURE.has(String(m.place.how)));
+    if (sure || !ctx.gaz) { if (m.place) { places[role] = m.place; (slots as any)[role] = m.place.kind === 'saved' ? m.place.how : m.place.kind === 'here' ? 'here' : m.place.name; } return m; }
+    const d = didYouMean(q, ctx.gaz);
+    if (d.pick) {
+      const pl: PlaceRef = { name: d.pick.name, id: d.pick.id, mode: d.pick.modes[0], kind: d.pick.kind, how: d.pick.score === 0 ? 'exact' : 'didyoumean', typed: q };
+      places[role] = pl; (slots as any)[role] = pl.name;
+      return { place: pl };
+    }
+    if (d.options.length) return { dym: d.options };
+    if (m.place) { places[role] = m.place; (slots as any)[role] = m.place.name; }
+    return m;
+  };
+  const fareWhich = (role: 'from' | 'to', opts: Suggestion[], build: (q: string) => string): Understood =>
+    done('clarify', { then: 'fare', clarify: { text: role === 'from' ? 'Leaving from? Did you mean:' : 'Did you mean:', choices: opts.slice(0, 5).map((o) => ({ label: o.label, q: build(o.q) })) } });
 
   const mode = findMode(t);
   const line = findLine(t);
@@ -518,7 +543,17 @@ export function understand(raw: string, ctx: Ctx): Understood {
   if (/\b(fare|how much|cost|costs|price|opal|cheapest|cheap)\b/.test(t)) {
     const p = strip(t, /\b(how much|is it|does it cost|would it cost|will it cost|it cost|it|is|be|of|for|the|a|an|to go|to get|to travel|trip|ride|journey|opal|fare|cost|costs|price|cheapest|cheap|adult|child|concession|gold|card|what is|whats|with)\b/g);
     const sp = splitTrip(p) || (p ? { to: p } : null);
-    if (sp) { resolve('from', sp.from); const r = resolve('to', sp.to); if (r && r.options) return askWhich('to', r.options, (o) => `Fare ${sp.from ? sp.from + ' ' : ''}to ${o}`, 'fare'); }
+    if (sp) {
+      // Each name is checked against our own station lists: a slip or a part of a name with two or more close
+      // matches gets a short "Did you mean" list, one tap each (didYouMean). Nothing is guessed between close ones.
+      const fromQ = sp.from ? placeQ(sp.from) : '', toQ = placeQ(sp.to || '');
+      const f = fromQ ? fareResolve('from', fromQ) : null;
+      const r = fareResolve('to', toQ);
+      const fromWords = (o: string) => (f && f.place ? f.place.name : fromQ);
+      if (f && f.dym) return fareWhich('from', f.dym, (o) => `Fare from ${o}${toQ ? ` to ${r && r.place ? r.place.name : toQ}` : ''}`);
+      if (r && r.dym) return fareWhich('to', r.dym, (o) => `Fare ${fromQ ? `from ${fromWords(o)} ` : ''}to ${o}`);
+      if (r && r.options) return askWhich('to', r.options, (o) => `Fare ${sp.from ? sp.from + ' ' : ''}to ${o}`, 'fare');
+    }
     if (!slots.to) return done('clarify', { then: 'fare', clarify: { text: 'Fare for which trip?', choices: tripChoices(ctx).map((c) => ({ label: c.label, q: 'Fare ' + c.q })) } });
     return done('fare');
   }
@@ -804,4 +839,87 @@ export function chipsFor(ctx: Ctx, nowHour: number): string[] {
   if (home && nowHour >= 17) add('Last train home');
   for (const s of ctx.starred || []) add(`Departures ${sn(s.name)}`);
   return out;
+}
+
+// ---------- Did you mean (fares) ----------
+
+export type Suggestion = { name: string; id?: string; kind: 'station' | 'suburb'; modes: string[]; label: string; q: string; score: number };
+export type DidYouMean = { pick?: Suggestion; options: Suggestion[] };
+const DYM_MODE: Record<string, string> = { train: 'Train', metro: 'Metro', lightrail: 'Light rail', ferry: 'Ferry' };
+/** How close a "did you mean" choice must be to the best one to be offered beside it. */
+export const DYM_CLOSE = 1;
+const dymShort = (n: string) => n.replace(/ (Station|Light Rail|Wharf)$/, '');
+const kmBetween = (a: Entry, b: Entry) => {
+  if (a.lat == null || a.lon == null || b.lat == null || b.lon == null) return Infinity;
+  const r = Math.PI / 180, x = (b.lon - a.lon) * r * Math.cos(((a.lat + b.lat) / 2) * r), y = (b.lat - a.lat) * r;
+  return Math.sqrt(x * x + y * y) * 6371;
+};
+
+/**
+ * The real stops a typed name may mean, from our own station and suburb lists (works offline once the lists are
+ * kept). Rule based: the exact name, the start of a name, a word in a name, then spelling slips (two letters swapped
+ * count as one). `pick` only when one place is clearly meant: an exact name, or one candidate with nothing else close.
+ * Otherwise up to 5 `options`, best first, each a real station with its modes ("Kings Cross, Train"). A suburb with no
+ * station of its name offers its nearest stations and the suburb itself. Nothing is made up: no match, no options.
+ */
+export function didYouMean(phrase: string, gaz: Gaz | null | undefined, max = 5): DidYouMean {
+  const typed = String(phrase || '').trim();
+  if (!gaz || !typed) return { options: [] };
+  const wantSuburb = /\s+suburb$/i.test(typed);
+  let k = base(typed.replace(/\s+suburb$/i, ''));
+  if (PLACE_ALIAS[k]) k = PLACE_ALIAS[k];
+  else k = k.split(' ').map((w) => (Object.prototype.hasOwnProperty.call(WORD_ABBR, w) ? WORD_ABBR[w] : w)).filter(Boolean).join(' ');
+  if (!k) return { options: [] };
+  const modesOf = (e: Entry) => (e.id && gaz.modes?.get(e.id)) || (e.mode ? [e.mode] : []);
+  const make = (e: Entry, score: number, note = ''): Suggestion => {
+    const ms = e.kind === 'station' ? modesOf(e) : [];
+    const what = e.kind === 'station' ? ms.map((m) => DYM_MODE[m] || m).join(', ') : 'any stop';
+    return { name: e.name, id: e.id, kind: e.kind, modes: ms, label: `${dymShort(e.name)}, ${what}${note}`, q: e.kind === 'suburb' ? `${e.name} suburb` : e.name, score };
+  };
+  const exact = gaz.list.filter((e) => e.key === k);
+  if (wantSuburb) { const sb = exact.find((e) => e.kind === 'suburb') || gaz.list.find((e) => e.kind === 'suburb' && e.key === k); if (sb) return { pick: make(sb, 0), options: [] }; }
+  const exactStation = exact.find((e) => e.kind === 'station');
+  if (exactStation) return { pick: make(exactStation, 0), options: [] };
+  // A suburb with no station of its name: its nearest stations, then the suburb itself (any stop in it).
+  const nearOf = (sb: Entry): DidYouMean => {
+    const near = gaz.list.filter((e) => e.kind === 'station').map((e) => ({ e, d: kmBetween(sb, e) })).filter((x) => Number.isFinite(x.d) && x.d <= 6)
+      .sort((a, b) => a.d - b.d).slice(0, Math.max(0, max - 1));
+    const options = near.map((x) => make(x.e, 1 + x.d / 10, `, ${x.d < 1 ? 'under 1' : Math.round(x.d)} km from ${sb.name}`));
+    options.push(make(sb, 2));
+    return { options };
+  };
+  const exactSuburb = exact.find((e) => e.kind === 'suburb');
+  if (exactSuburb) return nearOf(exactSuburb);
+  const cap = k.length <= 3 ? 0 : k.length <= 6 ? 1 : k.length <= 11 ? 2 : 3;
+  const words = k.split(' ');
+  const scored: Suggestion[] = [];
+  for (const e of gaz.list) {
+    let sc = Infinity;
+    if (k.length >= 3 && e.key.startsWith(k + ' ')) sc = 0.9 + (e.key.length - k.length) / 100;
+    else if (k.length >= 3 && e.key.startsWith(k)) sc = 1 + (e.key.length - k.length) / 100;
+    else if (k.length >= 4 && words.every((w) => e.key.split(' ').some((t) => t.startsWith(w)))) sc = 1.5 + (e.key.length - k.length) / 100;
+    if (cap && Math.abs(e.key.length - k.length) <= cap) {
+      const d = edits(k, e.key, cap);
+      if (d <= cap) sc = Math.min(sc, 1 + d + (e.key[0] === k[0] ? 0 : 0.5));
+    }
+    // A slip inside a longer name: "strathfeild station platform 1" still finds Strathfield.
+    if (!Number.isFinite(sc) && cap && e.key.length >= 5 && e.key.length < k.length) {
+      const head = k.slice(0, e.key.length);
+      const d = edits(head, e.key, Math.min(cap, 2));
+      if (d <= Math.min(cap, 2) && k[e.key.length] === ' ') sc = 2 + d;
+    }
+    if (Number.isFinite(sc)) scored.push(make(e, sc + (e.kind === 'suburb' ? 0.6 : e.rank * 0.05)));
+  }
+  scored.sort((a, b) => a.score - b.score || a.name.length - b.name.length);
+  // One place per name: a station beats a suburb of the same name.
+  const seen = new Set<string>();
+  const uniq = scored.filter((x) => { const n = base(x.name); if (seen.has(n)) return false; seen.add(n); return true; });
+  if (!uniq.length) return { options: [] };
+  const best = uniq[0];
+  const close = uniq.filter((x) => x.score - best.score <= DYM_CLOSE);
+  // Exactly one candidate near the top, and a station: that is the one meant (a slip like "strathfeild").
+  if (close.length === 1 && best.kind === 'station' && best.score < 3.2) return { pick: best, options: [] };
+  // Only a suburb is close ("kings langly"): that suburb's nearest stations.
+  if (close.length === 1 && best.kind === 'suburb') { const sb = gaz.list.find((e) => e.kind === 'suburb' && e.name === best.name); if (sb) return nearOf(sb); }
+  return { options: uniq.filter((x) => x.score - best.score <= DYM_CLOSE + 1).slice(0, max) };
 }
