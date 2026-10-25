@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Speed and offline (over the air, 26 Oct, about 1:26 AM, group 2ed17e31)
+Item 1 of the plan Bidur approved at 12:04 AM.
+* Times for one stop, train, time or trip never show under another one. Every screen that loads live data now drops an answer that arrives for what it showed a moment before, and asks for the new one at once (the same kind of race put a wrong stop list on Platform view on 25 Oct). The trip list's extra services and Plan B, Simple mode's Earlier and Later, the walk stop search, the next way on after a missed change and the live trip follow the same rule.
+* Kept times say how old they are: "Updated 4 min ago, refreshing" until the live answer lands, on Home, stops, the board, Platform view, trips, Simple mode and the service screen. They are never shown as live.
+* No signal: the same screens show the kept times with "Offline, showing times from 8:05am" (a banner on the trip list, a note on Home's trip card) and keep trying with a growing gap. The service screen now keeps its own copy.
+* Startup: the first screen asks for its times before the app refreshes its settings and alerts.
+* Production group 2ed17e31-5480-48ac-9237-a86b78cd691f from main c9c0401 (preview f83a3b7c); roll back with `npx eas-cli update:republish --group 211c1057-dea1-47ff-a61b-355b962684da --destination-branch production --non-interactive`. No server change. Not yet seen on a device.
+
 ### Platform view fixes (over the air, 26 Oct, about 12:37 AM, group 211c1057)
 Bidur's iPhone at 11:59 PM and 12:00 AM showed gone trains, a wrong stop list and cut off times.
 * A train that has gone never shows, as the next train or in Next service. Live trains count until a minute after their live time; untracked or not tracking ones until their timetable minute has passed.
