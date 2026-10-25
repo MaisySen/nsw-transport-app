@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.maisysen.nswtransport",
-      "buildNumber": "206",
+      "buildNumber": "207",
       "icon": "./assets/transport.icon",
       "deploymentTarget": "17.0",
       "appleTeamId": "B85KQRQZW7",
