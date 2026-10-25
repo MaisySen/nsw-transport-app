@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Cleaner bus picker in New trip (over the air update for iPhone and Android, 25 Oct, 3:30 PM)
+* Choosing where you get on the bus starts with bus stops near you (with the stop number and how far), your saved and recent bus stops, then Sydney routes in number order with where each goes on two lines, nothing cut off. It no longer opens on trackwork and regional routes.
+* Trackwork buses, school buses and regional and coach routes have their own sections at the end, closed until you tap them.
+* Type a route number (410), a stop number from the sign (2046100) or a street or stop name. Sydney routes come first.
+* Near you shows only when you have already allowed location; otherwise tap Show bus stops near me.
+
 ### Ask and the floating tab bar (over the air update for iPhone and Android, 25 Oct, 3:26 PM)
 * Ask: the field where you type is no longer hidden behind the tab bar on iPhone. It sits above the bar, and when the keyboard opens it moves up and sits right on top of the keyboard.
 * Ask opens on your latest message every time you switch to it, and stays at the newest message as answers come in, unless you have scrolled up to read.
