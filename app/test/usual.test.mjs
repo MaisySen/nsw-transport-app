@@ -25,7 +25,7 @@ test('words come from the numbers: minutes, day type and part of the day', () =>
   assert.equal(u.usualText({ lateMin: 4, n: 9, dayType: 'weekend', band: null }), 'Usually 4 min late on weekends');
   assert.equal(u.usualText({ lateMin: 10, plus: true, n: 30, dayType: 'weekday', band: 'afternoons' }), 'Usually 10+ min late on weekday afternoons');
   assert.equal(u.usualText({ lateMin: 1, n: 30, dayType: 'weekday', band: 'evenings' }), 'Usually on time on weekday evenings');
-  assert.equal(u.usualText({ lateMin: 0, n: 30, dayType: 'weekend', band: 'middle of the day' }), 'Usually on time on weekend middle of the day');
+  assert.equal(u.usualText({ lateMin: 0, n: 30, dayType: 'weekend', band: 'middle of the day' }), 'Usually on time on weekends around midday');
 });
 
 test('nothing when the answer is missing or does not add up', () => {

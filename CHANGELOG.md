@@ -15,6 +15,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * Stop board widget on a bus stop shows its stop number ("Stop 2046100"); in Edit Widget your starred bus stops show the stop number and routes under the name (branch native-207-bus).
 * Speak alerts get their own audio session: the Ring/Silent switch no longer mutes them, music is lowered while a line is read and comes back after (branch native-207-bus).
 
+### Website and docs (transportsydney.app, 25 Oct, 5:10 PM)
+* The home page says what the app does now (your next trip first, Live, Timetable and Not tracking, buses by stop number and route, reminders on your days, Check my trip, Ask, iPhone widgets, Siri and Apple Watch), with four screens from the current app, and lists what is coming in the next iPhone build (Apple Watch redesign, bus stop widget with stop number, Speak alerts in Silent mode, new icon).
+* Support: what Live, Timetable and Not tracking mean, reminders, Speak alerts and Silent mode, the + on Home.
+* Privacy policy: the iPhone also sends a notification token and, during a trip, the Lock Screen card's push token; the last way home reminder; reminders and Speak alerts stay on the phone; Ask works by fixed rules.
+* Docs: new docs/FEATURES.md; README, ROADMAP, RUNBOOK (over the air updates and iPhone builds as done today), TEST_PLAN, REVIEW-NOTES, STORE_PRIVACY, ARCHITECTURE, REQUIREMENTS and the store texts brought up to date.
+* Pages deployment 6a3ba944. Roll back in Cloudflare Pages, project transportsydney, Deployments.
+
 ### Trip reminders and how late a route usually is (over the air update for iPhone and Android, 25 Oct, 4:44 PM)
 * Reminders on a saved trip: open it and scroll to Reminders. Add several, each with its own time and days (for example 7:30am on weekdays and 9:00am on Saturday). They ring on your phone with the app closed, and a tap opens the trip with live times.
 * Transport asks to send notifications only when you save your first reminder.

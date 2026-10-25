@@ -8,7 +8,7 @@ What the licence asks for, and where the app does it:
 
 * Credit the source. Shown in the app (iPhone: Settings, footer under About; Android and web: Settings) and in both store descriptions.
 * Do not suggest endorsement. The app and the store copy say it is independent and not made or endorsed by Transport for NSW. The app does not use the Transport for NSW name as its title or the Transport for NSW, Opal or Sydney Trains logos. Line colours and line names (T1, M1, 461) are part of the data.
-* Note changes. Times are shown as delivered, marked Live or Scheduled. Usual delay predictions are computed by the app and always labelled as a prediction.
+* Note changes. Times are shown as delivered, marked Live (with its age), Timetable or Not tracking. "Usually N min late" is worked out by our server from the live feed over past weeks and always worded as usual, not as a live time.
 
 Attribution text (use as written):
 

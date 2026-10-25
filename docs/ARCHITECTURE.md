@@ -1,6 +1,6 @@
 # Architecture
 
-One backend does all the work. The web app, the Android app and the iPhone app are thin clients that call its `/api` endpoints. Updated 24 Oct 2026.
+One backend does all the work. The iPhone and Android apps (one Expo app in `app/`) and the web app are thin clients that call its `/api` endpoints. Updated 25 Oct 2026: since build 201 the iPhone app is the Expo app; the SwiftUI app in `ios-native/` is no longer shipped. The public site at transportsydney.app is plain files in `site/` on Cloudflare Pages.
 
 ```
  Transport for NSW Open Data                 cron-job.org (every minute)
@@ -16,9 +16,9 @@ One backend does all the work. The web app, the Android app and the iPhone app a
                                                         | HTTPS JSON
              +--------------------+---------------------+--------------------+
              |                    |                                          |
-        Web app (PWA)       Android app (Expo)                         iPhone app (SwiftUI)
-        src/public/         app/  EAS Update                           ios-native/  GitHub Actions
-        Web Push            Expo push                                  widgets, Live Activity, Siri
+        Web app (PWA)       Android app (Expo)                         iPhone app (Expo)
+        src/public/         app/  EAS Update                           app/ + app/targets  EAS Build
+        Web Push            Expo push                                  widgets, Live Activity, Siri, Watch
 ```
 
 ## Backend: the engine

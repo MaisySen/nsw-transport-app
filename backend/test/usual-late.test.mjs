@@ -65,7 +65,7 @@ test("pure summary: the median minute, null under 8 services, the day type when 
   assert.equal(day.text, "Usually on time on weekends");
   assert.equal(day.band, null);
   const lots = W.lateOf([row(1, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9])], 1, 0);
-  assert.equal(lots.text, "Usually 10+ min late on weekday middle of the day");
+  assert.equal(lots.text, "Usually 10+ min late on weekdays around midday");
 });
 
 test("the tick folds one day per run into counts, ignores rows not tracked to departure, and the route answers", async () => {

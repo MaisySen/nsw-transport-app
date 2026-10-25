@@ -1,6 +1,6 @@
 # Runbook
 
-How to deploy, build, update and look after each part of Transport. Updated 25 Oct 2026.
+How to deploy, build, update and look after each part of Transport. Updated 25 Oct 2026, 5:20 PM.
 
 The API runs at https://api.transportsydney.app and the public site at https://transportsydney.app, both on the Fintex Australia Cloudflare account. The first address keeps serving installed apps that have not moved yet, until the switch is finished. The commands below need Node 20 or later.
 
@@ -14,7 +14,7 @@ Full steps, DNS records, email and the switch: [Deploy on Cloudflare](DEPLOY_CLO
 cd backend
 node --test test/*.test.mjs             # all pass (the same run as .github/workflows/backend.yml)
 tools/deploy-cloudflare.sh              # tests, build, D1 migrations, wrangler deploy to api.transportsydney.app
-node tools/deploy-site.mjs              # site/ to Cloudflare Pages (transportsydney.app and www)
+node tools/deploy-site.mjs              # site/ to Cloudflare Pages (transportsydney.app and www); needs CLOUDFLARE_API_TOKEN, CF_ACCOUNT_ID, CF_ZONE_ID
 ```
 
 Then check, all must answer:
@@ -36,26 +36,29 @@ Commit the generated station, bus route and stop data under `src/public/stations
 
 **First address, until the switch.** It runs the build from before the move (`node build.mjs site` writes one folder with the secrets filled in). Do not redeploy it unless Bidur asks; `backend/` deployed there keeps its full behaviour for old app builds. Its address is in the credentials email.
 
-## 2. Ship an over the air update (Android and Expo Go)
+## 2. Ship an over the air update (iPhone and Android)
 
-For JavaScript only changes (nothing under `android/`, no native module, no `app.json` native change):
+For JavaScript only changes (nothing under `app/targets/`, `app/modules/`, `android/`, no new native module, no `app.json` native change). One update group carries both platforms; builds 201 to 206 on iPhone and Android versionCode 2 to 5 take it (runtime 1.0.0). A new native call must be feature detected, since older builds do not have it. This is how every update on 25 Oct was shipped:
 
 ```bash
-cd app                          # /home/user/nsw-app
+cd app                                   # a fresh clone at the latest origin/main, your commits pushed first
 npx tsc --noEmit
-EXPO_TOKEN=... npx eas-cli update --branch production --environment production --platform android --message "What changed"
-# Expo Go on iPhone: move the android folder aside first
-EXPO_GO=1 EXPO_TOKEN=... npx eas-cli update --branch expo-go --environment production --platform ios --message "What changed"
-npx eas-cli update:list --all --json --non-interactive    # note the group ids in docs/RELEASES.md
+OFFLINE=1 node --test test/*.test.mjs    # all pass, including test/battery.test.mjs
+# EXPO_TOKEN in the environment of these commands only; never echo it or write it to a log
+npx eas-cli update --branch preview --environment production --platform all --message "What changed" --non-interactive
+# check both preview manifests: runtime 1.0.0 and the launch asset hash of the local export (docs/RELEASES.md, Over the air updates)
+npx eas-cli update:republish --group <preview group id> --destination-branch production --message "What changed" --non-interactive
 ```
 
-Installed apps pick up the update the next time they open. **Rollback:** `npx eas-cli update:republish --group <previous group id>` on the same branch.
+Right before publishing, read the current production group in `docs/RELEASES.md` on main: that is the rollback target. Then record the new update ids, the group, the commit and the rollback command in `docs/RELEASES.md` and `CHANGELOG.md`. Installed apps download the update on the next open and run it on the open after ("close and reopen twice").
+
+**Rollback:** republish the previous production group: `npx eas-cli update:republish --group <previous group id> --destination-branch production --message "Roll back" --non-interactive`. Each `CHANGELOG.md` entry for 25 Oct carries its exact command.
 
 ## 3. Build the Android APK and AAB
 
 Needs the Android SDK (`ANDROID_HOME`), Java 17 and the keystore files in `~/.nsw-secrets/` (see [Security](SECURITY.md)).
 
-1. Bump `expo.android.versionCode` in `app/app.json` (next is 5).
+1. Bump `expo.android.versionCode` in `app/app.json` (next is 6).
 2. APK for the download page: `cd app && ./build-android.sh`. Output: `android/app/build/outputs/apk/release/app-release.apk`.
 3. Upload it so the download page and `/api/app` offer it:
    `curl -X PUT -H "x-admin-key: $ADMIN_KEY" --data-binary @app-release.apk "https://api.transportsydney.app/api/admin/file?name=transport.apk&version=5"` (the admin key is only read from the header; needs the R2 bucket, see [Deploy on Cloudflare](DEPLOY_CLOUDFLARE.md))
@@ -64,15 +67,18 @@ Needs the Android SDK (`ANDROID_HOME`), Java 17 and the keystore files in `~/.ns
 
 A new native build is needed for native changes (widgets, permissions, new native modules). The runtime version stays 1.0.0 unless native code changes in a way older APKs cannot run; then bump `runtimeVersion` so old installs do not receive incompatible updates.
 
-## 4. iPhone CI build and release
+## 4. Build the iPhone app (EAS Build)
 
-1. Bump `CURRENT_PROJECT_VERSION` in `ios-native/project.yml` (next is 9) and change code under `ios-native/`.
-2. Push to `main`. `ios-native.yml` starts on its own (about 50 minutes with tests and store screenshots). Manual start: Actions, "iOS native build", Run workflow.
-3. Read the result in `r2.txt` on the `ci-out` branch: per test pass and fail for light and dark, build logs, screenshots. Test steps can fail without failing the job, so read the counts.
-4. The run publishes release `ios-native-build-N` with `Transport-unsigned.ipa`.
-5. TestFlight, once the four Apple secrets exist: Actions, "iOS TestFlight upload", Run workflow. See [SUBMIT.md](../SUBMIT.md).
+The iPhone app is built from `app/` with EAS Build (builds 201 to 206 so far). There are only a few iOS builds a month on the Expo plan, so a build goes out only when all pending native work is merged and checked. Steps, signing and the app group: [RELEASES.md](RELEASES.md), iPhone (Expo); the watch targets' signing: [WATCH.md](WATCH.md).
 
-The repo must stay public for free macOS minutes, or GitHub billing must allow Actions on a private repo.
+1. Merge the native branch (for build 207: `native-207-bus` into `native-207`, then main) and bump only `ios.buildNumber` in `app/app.json`; `version` stays 1.0.0 so the runtime stays 1.0.0.
+2. Static checks: `npx tsc --noEmit`, `OFFLINE=1 node --test test/*.test.mjs`, and `swiftc -parse` on every changed Swift file under `app/targets/` and `app/modules/`.
+3. One simulator compile check with a simulator profile in `app/eas.json` (`compilecheck` on main): `npx eas-cli build -p ios --profile compilecheck --non-interactive`.
+4. Production: `npx eas-cli build -p ios --profile production --non-interactive --no-wait`, then `npx eas-cli submit -p ios --profile production --id <build id> --non-interactive` (the App Store Connect key is copied into `app/credentials/`, git ignored, and removed after).
+5. TestFlight: add the build to the Public group, set What to Test (text in [store/apple/listing.md](../store/apple/listing.md)), submit for Beta App Review.
+6. Run the device checklist in [TEST_PLAN.md](TEST_PLAN.md) and record the build in [RELEASES.md](RELEASES.md).
+
+The SwiftUI app in `ios-native/` (CI workflow `ios-native.yml`) is no longer shipped.
 
 ## 5. Watch the minute scheduler
 
