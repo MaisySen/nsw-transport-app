@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Long distance trips, Plan B in the morning alert, traffic on bus legs, quieter carriages (over the air update for iPhone and Android, 25 Oct, 11:13 AM)
+* Regional trips plan again: Central to Albury, Dubbo or Grafton used to stop at "Live data didn't answer" after 12 seconds. The app now asks the new server, which waits up to 35 seconds and keeps the answer for 2 minutes. After 6 seconds the trip screen says "Still searching. Long distance trips can take up to 30 seconds." Works now.
+* Long trips show hours: "7 h 26 min", not "446 min". A TrainLink note that showed web code now reads "Book your seat with NSW TrainLink". Works now.
+* Watched trips and the trip you are on keep which live feed each service is in (NSW TrainLink, regional buses and coaches, Manly Fast Ferry), so their live times come from the right feed. Trips watched before this update get it once from the stop's board. Matters after the server move.
+* Morning check: when the usual service is cancelled, late, a change will be missed, or trackwork is on the line, the alert ends with the best other way: "Plan B: the 8:44am M1 from Epping, arrives 9:11am." After the server move.
+* Bus legs show a crash, breakdown or hazard on the route from Live Traffic NSW: "Crash on Victoria Road at Gladesville. Your 501 may run late." After the server move.
+* Departure rows and the service screen show "Quieter at the back", "Quieter at the front" or "Quieter at either end" when Transport for NSW sends occupancy per carriage (Sydney Trains, intercity, Metro) and part of the train is fuller. After the server move.
+
 ### Battery and smoothness (over the air update for iPhone and Android, 25 Oct, 10:44 AM)
 * Nothing refreshes in the background any more, and a screen stops refreshing when another screen covers it. Coming back refreshes once.
 * After a failed refresh the app waits longer each time (up to 5 minutes) instead of trying again every 15 seconds.

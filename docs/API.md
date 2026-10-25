@@ -35,7 +35,7 @@ Example: `/api/ask?q=campsie%20to%20newcastle%20via%20chatswood&format=text`
 | Endpoint | Method | Parameters | Returns |
 | --- | --- | --- | --- |
 | `/api/departures` | GET | `stop` (stop id), `mode` (optional filter) | `kind: "departures"` with live and scheduled rows, platforms, alerts |
-| `/api/trip` | GET | `from`, `to` (stop ids), `fromName`, `toName`, `time`, `arriveBy=1`, `count` (default 5), `refresh=1` to skip logging | `kind: "trip"` with journeys, legs, change times, live delays |
+| `/api/trip` | GET | `from`, `to` (stop ids), `fromName`, `toName`, `time`, `arriveBy=1`, `count` (default 5), `refresh=1` to skip logging, `long=1` for long distance trips (api.transportsydney.app: planner wait 35 s instead of 12 s, answer kept 120 s) | `kind: "trip"` with journeys, legs, change times, live delays; bus and coach legs may carry `traffic` (see Live traffic on bus legs) |
 | `/api/plan` | GET | `legs` (JSON list of 1 to 6 legs), `time`, `count` (1 to 8, default 5), `all=1` for all services | `kind: "trip"` with each first leg service paired with the first catchable connection on every next leg, total time, arrival and warnings (tight or missed changes) |
 | `/api/service` | GET | `trip`, `mode`, `line`, `stop`, `destId`, `planned`, `to`, `stopName`, `dest`, `color` | One service: live vehicle position, stop list with live times, crowding |
 | `/api/status` | GET | Same as `/api/service` | The service without the stop list and path, plus a `text` summary. Also used as a health check |
@@ -44,6 +44,7 @@ Example: `/api/ask?q=campsie%20to%20newcastle%20via%20chatswood&format=text`
 | `/api/predict` | GET | `line`, `stop`, `planned` | `prediction`: usual delay from recorded history, or null when there are fewer than 5 trips |
 | `/api/reliability` | GET | `line`, `stop`, `planned`; or `s=LINE~STOP~PLANNED` repeated, up to 8 | `{reliability, enabled}`, or `{items, enabled}` in the same order. See Reliability pick below |
 | `/api/lines` | GET | `l=T1,T4,M1` (up to 16 lines) | `{enabled, at, items}`, one per line in the order asked. See Status of my lines below. api.transportsydney.app only |
+| `/api/traffic` | GET | none | `{items, count, at}`: open Live Traffic NSW incidents as `{id, lat, lon, kind, text, major, updated}`, read at most every 2 min. api.transportsydney.app only |
 | `/api/trackwork` | GET | `t=FROM~TO~LINES~HOUR` repeated, up to 6 (`LINES` dot separated, e.g. `T1.T4`) | `{enabled, weekend, at, trips}`. See Weekend trackwork below. api.transportsydney.app only |
 
 `/api/plan` leg fields: `f` from stop id, `fn` from name, `t` to stop id, `tn` to name, `m` mode (`train`, `metro`, `bus`, `ferry`, `lightrail`, `walk`), `c` connection minutes before this leg (0 to 60, default 5), `a` all services for this leg (1 or 0), `w` walk minutes (1 to 90). The first leg cannot be a walk.
@@ -410,3 +411,23 @@ Server side switches: the same POST with `platform=server` turns the server's pa
 Trip legs and departures for services outside the Sydney feeds carry `feed`, and their live times, cancellations and vehicle positions come from that operator's feed: `ferry_mff` (Manly Fast Ferry, `/v1/gtfs/realtime/ferries/MFF`), `nswtrains` (NSW TrainLink trains and coaches, `/v1/gtfs/realtime/nswtrains`) and `rb_<network>` (regional buses, every `/v1/gtfs/realtime/regionbuses/<network>` feed of that network: North Coast, Central West and Orana, Riverina Murray, South East and Tablelands, New England North West, Newcastle and Hunter, Far West, Sydney and Surrounds; Hunter Buses Network services stay on the Sydney buses feed, where their trips are). The feed is chosen from the planner's operator and network names, never from the line name, because regional route numbers repeat Sydney ones. Legs without `feed` use the mode's feed as before. `/api/service` takes the same `feed` parameter; the app passes it from the leg or departure (over the air update group 9e15f138-cee2-4fc5-b804-7512ff516bc5, 25 Oct, 10:11 AM). The trip screen's "Bus running 6 min late" line on bus and coach legs reads `realtime` and `delayMin`, already on every leg. Feeds are read only when a trip or board includes such a service.
 
 Checked 25 Oct 2026: TrainLink and North Coast bus trip ids in the planner match their feeds. The Manly Fast Ferry feed still carries trips from 1 July (start date 20260701) whose ids do not match the current timetable, so those legs stay scheduled until TfNSW fixes the feed; the wiring needs no change when it does.
+
+## Long distance trips
+
+The Trip Planner takes up to about 30 s for regional trips (Central to Albury or Dubbo). The first server gives up at 12 s (502 "Live data didn't answer"). The app treats a trip as long when a stop id's postcode (its first four digits) is outside Sydney, the Central Coast, Newcastle and the Hunter, the Illawarra, Macarthur and the Blue Mountains, or when the server in use answered 502 or not at all; it then asks `/api/trip?...&long=1` on api.transportsydney.app (45 s timeout, stops only when it answers 404). The server waits up to 35 s for the planner and keeps the answer in the Cache API for 120 s, keyed on from, to, time, arriveBy, count, acc and fare. The app keeps it 120 s too and refreshes the trip screen every 2 minutes for these trips.
+
+## Feed on watched legs
+
+Watch legs (`POST /api/watch`), share legs and trip card legs (`/api/live-activity`) carry `feed`: a key from the operator feeds (`nswtrains`, `ferry_mff`, `rb_<network>`), or `""` for the mode's usual feed. Anything else is dropped. Watches saved without it get it from the stop's departure board on the minute tick (legs leaving within the next hour or in the last two hours; after 3 looks without a match, `""`).
+
+## Plan B in the morning check alert
+
+When the morning check finds a cancellation, a delay over 5 min, a change that will be missed, or trackwork on the line, the alert ends with `Plan B: the 8:44am M1 from Epping, arrives 9:11am.` It is the earliest arriving journey from the ones already planned for the check that is not the same service, has no issue of its own and avoids a line under trackwork. When trackwork leaves none, one more planner call leaves out that mode (`excludedMeans=checkbox`, `exclMOT_n`). `planB` is also on the check's evaluation (`{text, leave, arrive, line, mode, from, planned, changes}`). Not for a platform change or a lift.
+
+## Live traffic on bus legs
+
+Bus and coach legs of `/api/trip` and `/api/plan` answers carry `traffic: {id, kind, text, major}` when an open Live Traffic NSW incident (`/v1/live/hazards/incident/open`) sits within 120 m of the leg's path. 4WD only tracks and notices not updated for 12 hours are left out unless marked major. The app shows "Crash on Victoria Road at Gladesville. Your 501 may run late."
+
+## Quieter carriage
+
+Vehicles carry `cars` (carriages reporting) and `quiet: {where, text}` (`where` is `front`, `middle`, `back` or `ends`) from per carriage occupancy: the GTFS realtime `multi_carriage_details` when sent, else the Transport for NSW consist extension (field 1007 on VehiclePosition: position, occupancy, quiet carriage). Sydney Trains, intercity and Metro send it; Metro sends position 0, so the order sent is used. A hint only when part of the train has few seats or less and another third is at least one level emptier. Removed with occupancy when the occupancy switch is off.
