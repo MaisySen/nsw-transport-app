@@ -4,7 +4,7 @@
 // and big simple steps (with Speak) for the one you tap. No swiping, no tabs, no maps.
 // Battery (docs/PERFORMANCE.md): the list refreshes only while it is on view and the app is in front (useLive);
 // countdowns redraw at whole minutes; location is the low accuracy foreground fix, only when already allowed.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, BackHandler, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,6 +23,7 @@ import { usePalette } from '@/lib/theme';
 import { dateNeeded, pickerDays, pinDay, queryAt, whenKeyOf, whenWords, ymd } from '@/lib/tripModesCore';
 import { planTrip } from '@/lib/trips';
 import { sayPlace } from '@/lib/voiceCore';
+import { takeVoicePrompt } from '@/lib/voiceHelp';
 import { buildSteps, earlierAt, fillTarget, hhmm, laterAt, nearPlace, shortPlace, simplePlaces, splitStopName, spokenSteps, tripRows,
   type JourneyLike, type PlaceRow, type SimplePlace, type Step, type TripRow } from '@/lib/simpleCore';
 import type { Journey, TripResp } from '@/lib/types';
@@ -189,6 +190,9 @@ function ListButton({ title, busy, onPress, a11y }: { title: string; busy?: bool
   );
 }
 
+// The one time Get a better voice prompt, loaded only when it shows (the same as SpeakButton).
+const VoiceHelp = lazy(() => import('@/components/VoiceHelp').then((m) => ({ default: m.VoiceHelp })));
+
 /** The trip as big plain steps, with Speak. */
 function Steps({ j, from, to, onBack, now }: { j: JourneyLike; from: string; to: string; onBack: () => void; now: number }) {
   const c = usePalette();
@@ -196,6 +200,7 @@ function Steps({ j, from, to, onBack, now }: { j: JourneyLike; from: string; to:
   const row = useMemo(() => tripRows([j], now, { keepGone: true }).rows[0], [j, now]);
   const steps = useMemo(() => buildSteps(j), [j]);
   const [talking, setTalking] = useState(false);
+  const [help, setHelp] = useState(false);
   const canSpeak = useMemo(() => hasSpeech(), []);
   useEffect(() => () => stopSpeaking(), []);
   const say = () => {
@@ -204,6 +209,8 @@ function Steps({ j, from, to, onBack, now }: { j: JourneyLike; from: string; to:
     const words = buildSteps(j, { name: sayPlace });
     speak(`Your trip from ${sayPlace(from)} to ${sayPlace(to)}. ${spokenSteps(words)}`, { interrupt: true });
     setTalking(true);
+    // The first Speak on a phone with only its basic voice also offers the better voice, once ever (voiceHelpCore).
+    takeVoicePrompt().then((show) => { if (show) setHelp(true); }).catch(() => {});
   };
   useEffect(() => { if (!talking) return; const t = setTimeout(() => setTalking(false), 4000 + steps.length * 3500); return () => clearTimeout(t); }, [talking, steps.length]);
   return (
@@ -230,6 +237,7 @@ function Steps({ j, from, to, onBack, now }: { j: JourneyLike; from: string; to:
           <Text maxFontSizeMultiplier={BIG} style={[font.title3, { color: '#fff', marginLeft: 10 }]}>{talking ? 'Stop' : 'Speak'}</Text>
         </Pressable>
       ) : null}
+      {help ? <Suspense fallback={null}><VoiceHelp visible start="prompt" onClose={() => setHelp(false)} /></Suspense> : null}
       <View style={[s.group, { backgroundColor: c.card, marginTop: 16 }]}>
         {steps.map((st: Step, i) => (
           <View key={st.key} accessible accessibilityLabel={`Step ${i + 1}. ${st.say}`}

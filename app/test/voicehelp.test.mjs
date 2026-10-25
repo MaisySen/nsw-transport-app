@@ -127,3 +127,12 @@ test('the Voice screen always has the Get a better voice row', () => {
   assert.equal(h.voiceRowSub('basic', 'ios'), 'Your phone only has its basic voice. A clearer one is a free download.');
   assert.match(h.voiceRowSub(null, 'android'), /text to speech/);
 });
+
+test('Simple mode Speak offers the better voice the same once only way, and keeps its heading', () => {
+  const s = read('src/app/simple.tsx');
+  assert.match(s, /import \{ takeVoicePrompt \} from '@\/lib\/voiceHelp'/);
+  assert.match(s, /takeVoicePrompt\(\)\.then\(\(show\) => \{ if \(show\) setHelp\(true\); \}\)/);
+  assert.match(s, /lazy\(\(\) => import\('@\/components\/VoiceHelp'\)/);
+  assert.match(s, /<VoiceHelp visible start="prompt" onClose=\{\(\) => setHelp\(false\)\} \/>/);
+  assert.match(s, /Plan Your Trip/);
+});
