@@ -10,7 +10,7 @@ import { useScreenPoll } from '@/lib/activity';
 import { cacheKey } from '@/lib/offlineCore';
 import { usePalette, radius } from '@/lib/theme';
 import { clock, shortName } from '@/lib/format';
-import { byRoute, keepRoute } from '@/lib/stopBoardCore';
+import { boardAsk, boardKey, byRoute, keepRoute, modesServed } from '@/lib/stopBoardCore';
 import { useUsualText } from '@/lib/usual';
 import { departedWords } from '@/lib/recentCore';
 import { useRecentDeparted } from '@/lib/recent';
@@ -58,14 +58,19 @@ export default function StopScreen() {
   const [at, setAt] = useState<number | null>(() => { const t = /^([01]\d|2[0-3])[0-5]\d$/.test(String(time || '')) ? String(time) : ''; return t && boardTimeSupported() ? boardMoment(+t.slice(0, 2), +t.slice(2), Date.now()) : null; });
   const [pickOpen, setPickOpen] = useState(false);
   const [timeOk, setTimeOk] = useState(boardTimeSupported());
-  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => (at == null ? api.departures(String(id), r) : departuresAt(String(id), at)),
+  // The modes this stop serves, from its board for every mode. Where there are several, a chosen mode or route asks
+  // the server for that mode alone, so the board reaches further ahead than a mixed list of 40 (boardAsk).
+  const [served, setServed] = useState<string[]>([]);
+  const ask = boardAsk(served, mode, pick, at);
+  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => (at == null ? api.departures(String(id), r, ask || undefined) : departuresAt(String(id), at)),
     // Adaptive: every 15 s while the next service is 5 minutes away or less, slower when it is further off.
-    (d) => adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), [id, at], { cacheKey: at == null ? cacheKey('dep', String(id)) : undefined });
+    (d) => adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), [id, at, ask], { cacheKey: at == null ? cacheKey('dep', boardKey(String(id), ask)) : undefined });
+  useEffect(() => { setServed((p) => modesServed(p, data)); }, [data]);
   // A server without earlier times (no echo): the chip and the row go for the session and the board goes back to now.
   useEffect(() => { if (!boardTimeSupported()) { setTimeOk(false); setAt(null); } }, [error]);
   const title = shortName(data?.stop?.name || name || 'Stop');
   const starred = st.starred.some((s) => s.id === id);
-  const modes = useMemo(() => Array.from(new Set((data?.items || []).map((d) => d.mode))), [data]);
+  const modes = useMemo(() => (served.length ? served : Array.from(new Set((data?.items || []).map((d) => d.mode)))), [data, served]);
   const railHere = modes.includes('train') || modes.includes('metro');
   const stopName = data?.stop?.name || (name ? String(name) : '');
   // Remember opened stops for Home's Recent stops.
@@ -96,6 +101,8 @@ export default function StopScreen() {
   const routes = useMemo(() => linesHere(data?.items), [data]);
   // Route chips filter the board (Opal style); a route that has left the board drops the filter.
   const route = keepRoute(pick, routes);
+  // A route that is not on the live board for buses either drops the filter, so the board does not stay on buses alone.
+  useEffect(() => { if (pick && ask && data?.askedMode === ask && !staleAt && !offlineAt && !route) setPick(null); }, [pick, ask, data, staleAt, offlineAt, route]);
   // Earlier departures: batches before the first service on the board, back to 4am, gone ones as Left (also on Now).
   const [extra, setExtra] = useState<Departure[]>([]);
   const [earlier, setEarlier] = useState<PageState>(PAGE0);
@@ -147,13 +154,13 @@ export default function StopScreen() {
   const next = items.find((d) => !isGone(d, now));
   const usual = useUsualText(route && next ? { kind: 'transit', line: route, stopId: next.stopId || String(id), planned: next.planned } : null);
   // The phone's own Recently departed, on Now only until Earlier departures are loaded (they list the same services).
-  const recent = useRecentDeparted(id ? String(id) : undefined, now);
+  const recent = useRecentDeparted(id ? boardKey(String(id), ask) : undefined, now);
   const gone = at == null && !extra.length ? byRoute(recent.filter((g) => !mode || g.mode === mode), route).slice(0, 5) : [];
   // A bus stop opened by its own number (2046100) shows the number on the sign; a station or a stop with several
   // stands shows each row's stop number instead.
   const all = data?.items || [];
-  const busOnly = !!all.length && all.every((d) => d.mode === 'bus' || d.mode === 'coach' || d.mode === 'school');
-  const signNo = busOnly || (!all.length && !!data) ? stopNumber(String(id)) : null;
+  const busOnly = served.length ? served.every((m) => m === 'bus' || m === 'coach' || m === 'school') : !!all.length && all.every((d) => d.mode === 'bus' || d.mode === 'coach' || d.mode === 'school');
+  const signNo = busOnly || (!all.length && !!data && !ask) ? stopNumber(String(id)) : null;
   const stand = signNo ? String(data?.stop?.exactName || '').match(/\b(Stand|Side) [A-Z0-9]+\b/)?.[0] : undefined;
   const openRoute = (line: string) => {
     const d = (data?.items || []).find((x) => x.line === line);

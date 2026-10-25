@@ -29,3 +29,31 @@ export function byRoute<T extends { line?: string }>(items: T[], route: string |
 export function keepRoute(route: string | null, routes: RouteHere[]): string | null {
   return route && routes.some((r) => r.line === route) ? route : null;
 }
+
+/**
+ * Which mode a stop screen asks the server for. A board answer is 40 services, so at a station with trains and many bus
+ * stands a mixed board covers about 15 minutes (Strathfield, 26 Oct 2026, 7:51am: 7:51 to 8:07, and the 8:10 415 to
+ * Chiswick from Stand G was past the end). When the stop serves more than one mode and a mode chip is on, or a route
+ * chip (always a bus, coach or school bus line) is on, the screen asks for that mode alone: 40 buses there reach
+ * about 50 minutes ahead. Null asks for every mode, as before: a stop with one mode, nothing chosen, or another time.
+ */
+export function boardAsk(served: string[], mode: string | null | undefined, pick: string | null | undefined, at: unknown): string | null {
+  if (at != null || served.length < 2) return null;
+  if (mode) return served.includes(mode) ? mode : null;
+  return pick && served.some((m) => m === 'bus' || m === 'coach') ? 'bus' : null;
+}
+
+/** The key a board read is noted under for Recently departed: a board for one mode is kept apart from the full one. */
+export function boardKey(stop: string, mode?: string | null): string {
+  return mode ? `${stop}|${mode}` : stop;
+}
+
+/**
+ * The modes a stop serves, from its board for every mode. A board asked for one mode (askedMode) lists only that mode,
+ * so what was known stays.
+ */
+export function modesServed(prev: string[], data: { askedMode?: string; items?: { mode?: string }[] } | null | undefined): string[] {
+  if (!data || data.askedMode || !Array.isArray(data.items)) return prev;
+  const next = Array.from(new Set(data.items.map((d) => String(d.mode || '')).filter(Boolean)));
+  return next.length === prev.length && next.every((m, i) => m === prev[i]) ? prev : next;
+}

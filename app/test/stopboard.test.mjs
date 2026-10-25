@@ -46,3 +46,36 @@ test('route chips filter the board and drop a route the board no longer runs', (
   assert.equal(s.keepRoute('461', [{ line: '410' }]), null);
   assert.equal(s.keepRoute(null, [{ line: '410' }]), null);
 });
+
+test('boardAsk: one mode only at a stop with several, when a mode or route chip is on', () => {
+  const mixed = ['bus', 'train'];
+  assert.equal(s.boardAsk(mixed, null, null, null), null);
+  assert.equal(s.boardAsk(mixed, 'bus', null, null), 'bus');
+  assert.equal(s.boardAsk(mixed, 'train', null, null), 'train');
+  // A route chip is a bus, coach or school bus line: the board asks for buses.
+  assert.equal(s.boardAsk(mixed, null, '415', null), 'bus');
+  // The mode chip wins over the route.
+  assert.equal(s.boardAsk(mixed, 'train', '415', null), 'train');
+  // One mode here, a mode the stop does not serve, or another time: every mode, as before.
+  assert.equal(s.boardAsk(['bus'], 'bus', '415', null), null);
+  assert.equal(s.boardAsk([], 'bus', null, null), null);
+  assert.equal(s.boardAsk(mixed, 'ferry', null, null), null);
+  assert.equal(s.boardAsk(mixed, 'bus', null, 1815), null);
+  assert.equal(s.boardAsk(['train', 'metro'], null, 'X1', null), null);
+});
+
+test('boardKey: a board for one mode is noted apart', () => {
+  assert.equal(s.boardKey('213510'), '213510');
+  assert.equal(s.boardKey('213510', null), '213510');
+  assert.equal(s.boardKey('213510', 'bus'), '213510|bus');
+});
+
+test('modesServed: only a board for every mode changes the list; same list keeps its identity', () => {
+  const all = { items: [{ mode: 'train' }, { mode: 'bus' }, { mode: 'train' }] };
+  const a = s.modesServed([], all);
+  assert.deepEqual(a, ['train', 'bus']);
+  assert.equal(s.modesServed(a, all), a);
+  assert.equal(s.modesServed(a, { askedMode: 'bus', items: [{ mode: 'bus' }] }), a);
+  assert.equal(s.modesServed(a, null), a);
+  assert.deepEqual(s.modesServed(a, { items: [{ mode: 'bus' }] }), ['bus']);
+});

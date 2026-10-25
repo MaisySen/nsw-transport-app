@@ -9,6 +9,7 @@ import { BOARD_EARLIER_NEEDS_NEW, boardQuery, honoured } from './boardTimeCore';
 import { createReadCache } from './pollCore';
 import { stampSeen } from './liveLabelCore';
 import { noteBoard } from './recent';
+import { boardKey } from './stopBoardCore';
 import { createKeep, isLongTrip, longGone, LONG_TRIP_KEEP_MS, LONG_TRIP_TIMEOUT_MS, plannerTooSlow } from './longTripCore';
 
 function qs(o: Record<string, any>) {
@@ -71,11 +72,12 @@ async function send<T>(path: string, init: RequestInit | undefined, timeoutMs: n
 export const api = {
   search: (q: string) => req<{ items: SearchItem[] }>(`/api/search?${qs({ q })}`),
   nearby: (lat: number, lon: number) => req<{ stops: (SearchItem & { distanceM?: number; dist?: number })[] }>(`/api/nearby?${qs({ lat: lat.toFixed(5), lon: lon.toFixed(5) })}`),
-  departures: async (stop: string, refresh = false) => {
-    const r = await req<DeparturesResp>(`/api/departures?${qs({ stop, device: await getDevice(), profile: PROFILE, refresh: refresh ? 1 : '' })}`);
-    // Every board this phone reads (stop screens, Home cards) feeds Recently departed (recentCore.ts).
-    noteBoard(stop, r);
-    return r;
+  departures: async (stop: string, refresh = false, mode?: string) => {
+    const r = await req<DeparturesResp>(`/api/departures?${qs({ stop, mode: mode || '', device: await getDevice(), profile: PROFILE, refresh: refresh ? 1 : '' })}`);
+    // Every board this phone reads (stop screens, Home cards) feeds Recently departed (recentCore.ts). A board for one
+    // mode is kept apart, so trains missing from a bus board never read as departed.
+    noteBoard(boardKey(stop, mode), r);
+    return mode ? { ...r, askedMode: mode } : r;
   },
   trip: async (from: Place, to: Place, opts: { refresh?: boolean; count?: number; time?: string; arriveBy?: boolean; modes?: string[]; date?: string } = {}): Promise<TripResp> => {
     const base = { from: from.id, to: to.id, fromName: from.name, toName: to.name, count: opts.count || 5, time: opts.time, arriveBy: opts.arriveBy ? 1 : '', fare: store.fareType(), acc: store.accOn() ? 1 : '' };

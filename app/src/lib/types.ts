@@ -26,6 +26,8 @@ export type DeparturesResp = {
   items: Departure[]; modes?: any[]; alerts?: Alert[]; live?: { feedAt?: number; liveCount?: number; total?: number }; now: number; seenAt?: number;
   /** The moment a board for another time is from, echoed by a server that takes time (api.transportsydney.app). */
   at?: { date: string; time: string; clamped?: boolean };
+  /** Set by the app when it asked for one mode (`mode` on /api/departures); the items are that mode only. */
+  askedMode?: string;
 };
 
 export type Leg = {
