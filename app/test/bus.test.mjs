@@ -19,6 +19,7 @@ async function load(rel, name) {
   return import(pathToFileURL(f).href);
 }
 const bus = await load('src/lib/busCore.ts');
+const gen = await load('src/lib/busGroups.gen.ts');
 
 test('stop numbers: bus and coach stop ids are the number on the sign; stations and trains are not', () => {
   assert.equal(bus.stopNumber('2046100', 'bus'), '2046100');
@@ -123,4 +124,67 @@ test('route screen polls only while on view, through useScreenPoll, never setInt
   const src = fs.readFileSync(path.join(here, '..', 'src/app/route.tsx'), 'utf8');
   assert.match(src, /useScreenPoll\(load, 30000/);
   assert.doesNotMatch(src, /setInterval/);
+});
+
+// The bus picker (New trip): Bidur's 3:10 PM screenshot opened on 1AT9, 1B, 1HU, 1L1, 1T9, 2AT9 with cut off text.
+const routes = JSON.parse(fs.readFileSync(path.join(here, '..', '..', 'backend', 'src', 'public', 'stations', 'bus-routes.json'), 'utf8'));
+const R = gen.REGIONAL_ROUTES;
+
+test('picker groups: Sydney routes lead; trackwork, school and regional routes have their own sections', () => {
+  const g = (r) => bus.busGroup(r, routes[r] || '', R);
+  for (const r of ['1AT9', '1T9', '2AT9', '1L1', '1HU', '10HU', '11T8', '20T4', '14L4']) assert.equal(g(r), 'replacement', r);
+  for (const r of ['S101', 'S531']) assert.equal(g(r), 'school', r);
+  for (const r of ['11', '41', '2', '130', '160', '308', '351']) assert.equal(g(r), 'regional', `${r} ${routes[r]}`);
+  for (const r of ['410', '415', '438X', '492', '530', 'M90', 'B1', 'N10', 'T80', '100', '323', '360', 'S1', 'SW1'].filter((r) => routes[r])) assert.equal(g(r), 'sydney', `${r} ${routes[r]}`);
+  const syd = Object.keys(routes).filter((r) => g(r) === 'sydney').sort(bus.routeCmp);
+  assert.ok(syd.length > 400 && syd.length < 700, String(syd.length));
+  assert.deepEqual(syd.slice(0, 3), ['1B', '5A', '5B'], 'Sydney routes start 1B (Sydney Olympic Park to Warriewood), 5A, 5B');
+  assert.ok(!syd.some((r) => /T\d$|HU$/.test(r)), 'no trackwork buses among Sydney routes');
+});
+
+test('the generated groups match the route data the server has now', () => {
+  const src = fs.readFileSync(path.join(here, '..', 'src', 'lib', 'busGroups.gen.ts'), 'utf8');
+  const before = src;
+  const { execFileSync } = require('node:child_process');
+  execFileSync(process.execPath, [path.join(here, '..', 'tools', 'gen-bus-groups.mjs')]);
+  assert.equal(fs.readFileSync(path.join(here, '..', 'src', 'lib', 'busGroups.gen.ts'), 'utf8'), before, 'run node tools/gen-bus-groups.mjs');
+});
+
+test('natural route order: numbers first by value, then lettered routes', () => {
+  assert.deepEqual(['M90', 'D400', '410', '400', 'B1', '438X', '438', 'M30', 'N10', '41'].sort(bus.routeCmp), ['41', '400', '410', '438', '438X', 'B1', 'D400', 'M30', 'M90', 'N10']);
+});
+
+test('a route reads on two lines: from, then to with the via; a shared number shows where the Sydney service goes', () => {
+  assert.deepEqual(bus.routeEnds('Hurstville to Macquarie Park'), { from: 'Hurstville', to: 'Macquarie Park' });
+  assert.deepEqual(bus.routeEnds('Campsie to Chiswick via Five Dock'), { from: 'Campsie', to: 'Chiswick via Five Dock' });
+  assert.deepEqual(bus.routeEnds('Unknown'), { from: '', to: '' });
+  assert.deepEqual(bus.routeEnds('Nowra to Ulladulla', ['Taronga Zoo Via City QVB']), { from: '', to: 'Taronga Zoo via City QVB' });
+  assert.ok(gen.SYDNEY_TO['100'], 'route 100 runs in Sydney and around Nowra');
+});
+
+test('route search: the number typed comes first, Sydney before regional, then place names', () => {
+  const m = bus.matchRoutes(routes, '41', R);
+  assert.equal(m[0], '410');
+  assert.ok(m.indexOf('41') > m.indexOf('418'), 'regional 41 after the Sydney 41x routes');
+  assert.equal(bus.matchRoutes(routes, 'm90', R)[0], 'M90');
+  assert.equal(bus.matchRoutes(routes, 'route 410', R)[0], '410');
+  assert.ok(bus.matchRoutes(routes, 'Chiswick', R).includes('415'));
+  assert.deepEqual(bus.matchRoutes(routes, '', R), []);
+});
+
+test('a shared route number keeps the directions on your side: Sydney unless you are at a stop elsewhere', () => {
+  const dirs = [{ to: 'North Bondi', stops: [['202276', 'a'], ['202277', 'b']] }, { to: 'Port Macquarie', stops: [['244739', 'c'], ['244740', 'd']] }];
+  assert.deepEqual(bus.regionDirs(dirs).map((d) => d.to), ['North Bondi']);
+  assert.deepEqual(bus.regionDirs(dirs, '244739').map((d) => d.to), ['Port Macquarie']);
+  const one = [{ to: 'Belmont', stops: [{ id: '2290491' }] }];
+  assert.equal(bus.regionDirs(one).length, 1, 'never empties a route');
+  assert.ok(bus.sydneyStop('2046100') && bus.sydneyStop('2220328') && bus.sydneyStop('256712') && !bus.sydneyStop('2290491'));
+});
+
+test('the picker never asks for location on its own and lists no route without its from and to', () => {
+  const src = fs.readFileSync(path.join(here, '..', 'src', 'app', 'new-trip.tsx'), 'utf8');
+  const p = src.slice(src.indexOf('const GROUP_TITLE'));
+  assert.match(p, /getForegroundPermissionsAsync\(\)\.then\(\(p\) => \{ if \(p\.granted\) loadNear\(false\)/);
+  assert.doesNotMatch(p, /numberOfLines=\{1\}/, 'two lines, nothing cut off');
+  assert.match(p, /Trackwork buses/);
 });

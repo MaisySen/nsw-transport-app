@@ -13,7 +13,7 @@ import { usePalette } from '@/lib/theme';
 import { badgeLook } from '@/lib/lineStyle';
 import { clock, countdown, ms, shortName } from '@/lib/format';
 import { haptic } from '@/lib/haptic';
-import { awayWords, busesOn, lineTimes, nextBusAt, pickDir, probeStops, routeDirs, type BoardItem, type RouteBus, type RouteDir } from '@/lib/busCore';
+import { awayWords, busesOn, lineTimes, nextBusAt, pickDir, probeStops, routeDirs, type BoardItem, type RouteBus, type RouteDir, regionDirs } from '@/lib/busCore';
 import TransitMap from '@/components/TransitMap';
 import { Icon, I } from '@/components/Icon';
 import { LineBadge } from '@/components/Transit';
@@ -43,7 +43,7 @@ export default function RouteScreen() {
     setDirs(null); setErr(null);
     api.route(line, mode).then((raw) => {
       if (!live) return;
-      const d = routeDirs(raw);
+      const d = regionDirs(routeDirs(raw), p.stop ? String(p.stop) : null);
       if (!d.length) { setErr(`No stops found for route ${line}.`); return; }
       setDirs(d); setDi(pickDir(d, p.stop, p.towards));
     }).catch((e: any) => { if (live) setErr(e?.http === 404 ? `Route ${line} isn't in the timetable data.` : e?.message || `Can't load route ${line}.`); });

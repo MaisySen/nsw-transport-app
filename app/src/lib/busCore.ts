@@ -125,3 +125,67 @@ export function boardWords(name?: string | null, platform?: string | null, stopI
   if (n) parts.push(`Stop ${n}`);
   return parts.join(', ');
 }
+
+
+// ---- The bus picker: which routes lead, and how a route reads ----
+
+/** A stop number starts with its postcode; Sydney's are 2000 to 2249, Macarthur 2555 to 2574, and the west 2740 to 2772. */
+export function sydneyPostcode(pc: number): boolean {
+  return (pc >= 2000 && pc <= 2249) || (pc >= 2555 && pc <= 2574) || (pc >= 2740 && pc <= 2772);
+}
+/** A stop (by its number) in Sydney. Ids that are not stop numbers count as Sydney. */
+export function sydneyStop(id: string): boolean {
+  const s = String(id || '');
+  return !/^\d{6,7}$/.test(s) || sydneyPostcode(+s.slice(0, 4));
+}
+/** A route number used in Sydney and elsewhere has directions from both; keep the side of the stop you are at, else Sydney. */
+export function regionDirs<D extends { stops: any[] }>(dirs: D[], at?: string | null, idOf: (s: any) => string = (s) => (Array.isArray(s) ? String(s[0]) : String(s?.id))): D[] {
+  const syd = (d: D) => { const ids = d.stops.map(idOf).filter((x) => /^\d{6,7}$/.test(x)); return !ids.length || ids.filter(sydneyStop).length * 2 >= ids.length; };
+  const want = at && /^\d{6,7}$/.test(String(at)) ? sydneyStop(String(at)) : true;
+  const keep = dirs.filter((d) => syd(d) === want);
+  return keep.length ? keep : dirs;
+}
+
+export type BusGroup = 'sydney' | 'replacement' | 'school' | 'regional';
+/**
+ * Which list a route belongs in. Trackwork buses carry the line they replace after the number (1T9, 2AT9, 1L1, 10HU,
+ * 3SH, 2CN); school routes start with S and three digits or say school; routes whose services all run outside
+ * Sydney (from the route data, see busGroups.gen.ts) are regional; the rest are Sydney routes.
+ */
+export function busGroup(code: string, desc: string, regional: ReadonlySet<string>): BusGroup {
+  const c = String(code || '').toUpperCase();
+  if (/^\d+[A-Z]?(T\d|L\d|HU|SH|CN|SCO|BMT)$/.test(c) || /^\d+A(T\d|HU)$/.test(c)) return 'replacement';
+  if (/^S\d{3}$/.test(c) || /\bschools?\b/i.test(desc || '')) return 'school';
+  if (regional.has(code)) return 'regional';
+  return 'sydney';
+}
+
+/** Natural route order: 400, 410, 438X, then letters (B1, D400, M30, M90, N10), each by its number. */
+export function routeCmp(a: string, b: string): number {
+  const pa = /^([A-Z]*)(\d*)(.*)$/i.exec(a) || ['', '', '', a], pb = /^([A-Z]*)(\d*)(.*)$/i.exec(b) || ['', '', '', b];
+  if (!pa[1] !== !pb[1]) return pa[1] ? 1 : -1;
+  if (pa[1] !== pb[1]) return pa[1].localeCompare(pb[1]);
+  const na = pa[2] ? +pa[2] : Infinity, nb = pb[2] ? +pb[2] : Infinity;
+  if (na !== nb) return na - nb;
+  return pa[3].localeCompare(pb[3]);
+}
+
+/** "Hurstville to Macquarie Park" as two lines: from and to (the via part goes with to). */
+export function routeEnds(desc: string, sydneyTo?: string[]): { from: string; to: string } {
+  if (sydneyTo && sydneyTo.length) return { from: '', to: sydneyTo.map((t) => t.replace(/ Via /g, ' via ')).join(', or ') };
+  const d = String(desc || '').replace(/\s+/g, ' ').trim();
+  if (!d || /^unknown$/i.test(d)) return { from: '', to: '' };
+  const i = d.indexOf(' to ');
+  return i > 0 ? { from: d.slice(0, i), to: d.slice(i + 4) } : { from: '', to: d };
+}
+
+/** Routes matching what was typed: number first (410 finds 410, 410X), then by place name; Sydney before the rest. */
+export function matchRoutes(routes: Record<string, string>, q: string, regional: ReadonlySet<string>, limit = 30): string[] {
+  const up = String(q || '').trim().toUpperCase().replace(/^ROUTE\s+/, ''), lo = up.toLowerCase();
+  if (!up) return [];
+  const keys = Object.keys(routes);
+  const rank = (r: string) => (busGroup(r, routes[r], regional) === 'sydney' ? 0 : 1);
+  const byNum = keys.filter((r) => r.toUpperCase().startsWith(up)).sort((a, b) => rank(a) - rank(b) || (a.toUpperCase() === up ? -1 : b.toUpperCase() === up ? 1 : 0) || routeCmp(a, b));
+  const byName = /[a-z]{3}/i.test(up) ? keys.filter((r) => !byNum.includes(r) && routes[r].toLowerCase().includes(lo)).sort((a, b) => rank(a) - rank(b) || routeCmp(a, b)) : [];
+  return [...byNum, ...byName].slice(0, limit);
+}

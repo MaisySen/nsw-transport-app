@@ -2,7 +2,7 @@
 // (410, M90) offers the route. Both are looked up after a short pause, only while the text looks like one.
 import { useEffect, useState } from 'react';
 import { api } from './api';
-import { isStopNumber, routeDirs, routeQuery } from './busCore';
+import { isStopNumber, routeDirs, routeQuery, regionDirs } from './busCore';
 
 export type StopHit = { id: string; name: string; stand: string | null; modes: string[] };
 export type RouteHit = { line: string; ends: string[]; mode: string };
@@ -30,7 +30,7 @@ export function useBusLookup(text: string) {
     let live = true;
     const t = setTimeout(() => {
       if (num) api.departures(num).then((r) => { if (live) setStop(stopFromBoard(num, r)); }).catch(() => {});
-      if (line) api.route(line).then((raw) => { const d = routeDirs(raw); if (live && d.length) setRoute({ line, mode: 'bus', ends: d.map((x) => x.to).filter(Boolean) }); }).catch(() => {});
+      if (line) api.route(line).then((raw) => { const d = regionDirs(routeDirs(raw)); if (live && d.length) setRoute({ line, mode: 'bus', ends: d.map((x) => x.to).filter(Boolean) }); }).catch(() => {});
     }, 300);
     return () => { live = false; clearTimeout(t); };
   }, [text]);
