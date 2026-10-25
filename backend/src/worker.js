@@ -847,6 +847,11 @@ async function departures(env, stopId, opts = {}) {
       ...(feedHint(cls, t) ? { feed: feedHint(cls, t) } : {}),
     });
   }
+  // A train or metro's stop id for its destination, from the destination's own name (railDestId).
+  if (items.some((i) => i.mode === "train" || i.mode === "metro")) {
+    const dmap = await railDestMap(env);
+    for (const it of items) it.destId = railDestId(dmap, it.mode, it.dest, it.destId);
+  }
   // Background sampling (opts.sampleOnly) keeps only live times, and the feeds can change a row's
   // time only when the Trip Planner has no live time for it; rows that already have one skip the
   // feed work there. Every other caller gets the full merge.
@@ -1088,6 +1093,11 @@ async function trip(env, fromId, toId, opts = {}) {
     if (legs.length) journeys.push(legs);
   }
   const transitLegs = journeys.flat().filter((l) => l.kind === "transit");
+  // A train or metro's stop id for its destination, from the destination's own name (railDestId).
+  if (transitLegs.some((l) => l.mode === "train" || l.mode === "metro")) {
+    const dmap = await railDestMap(env);
+    for (const l of transitLegs) l.destId = railDestId(dmap, l.mode, l.towards, l.destId);
+  }
   const rt = await realtimeFor(env, transitLegs.map((l) => [l.mode, l.line, l.feed]));
   const out = [];
   for (const legs of journeys) {
@@ -1405,6 +1415,34 @@ async function planChain(env, legs, opts = {}) {
 
 // ---------- service view (live vehicle tracking) ----------
 
+// The departure board names a through train's destination right ("Hornsby via Gordon") but can carry the stop id of a
+// station on the way (Central's id on T1 trains that run through the city). The stop list was asked from the trip
+// planner to that id, so it ended at Central, or the planner offered a faster train to Central and this one was not
+// found ("Full stop list not available yet"). A train or metro destination is now taken from its own name when that
+// name is one of the stations in the server's /stations lists; any other name keeps the id as sent.
+const RAIL_DEST_TTL_MS = 86400000;
+let railDestMem = null;
+function railDestKey(name) {
+  return String(name || "").split(/\s+via\s+/i)[0].replace(/\s+(station|interchange)$/i, "").trim().toLowerCase();
+}
+async function railDestMap(env) {
+  if (railDestMem && Date.now() - railDestMem.at < (railDestMem.map.size ? RAIL_DEST_TTL_MS : 60000)) return railDestMem.map;
+  const lists = await Promise.all(["train", "metro"].map((m) => askAsset(env, null, `/stations/${m}.json`)));
+  const map = new Map();
+  for (const list of lists) for (const row of Array.isArray(list) ? list : []) {
+    const k = railDestKey(row && row[1]);
+    if (k && !map.has(k)) map.set(k, String(row[0]));
+  }
+  railDestMem = { at: Date.now(), map };
+  return map;
+}
+/** The stop id to ask the trip planner for: the station named by the destination when we know it, else the id sent. */
+function railDestId(map, mode, name, id) {
+  if (mode !== "train" && mode !== "metro") return id || null;
+  const hit = map && map.get(railDestKey(name));
+  return hit || id || null;
+}
+
 // The planner's stop list for one service. The data service answers 429 when too many questions arrive in the same
 // second (several people opening boards at once), which used to leave an empty stop list. So: up to three retries a
 // short wait apart, one question at a time per service in this isolate, a stop list kept for a minute (in memory and in
@@ -1437,6 +1475,9 @@ async function plannerLeg(env, q, tripId, line, opts = {}) {
         data = await tp(env, "trip", {
           depArrMacro: "dep", itdDate: p.date, itdTime: p.time, type_origin: "any", name_origin: q.stop,
           type_destination: "any", name_destination: q.destId, calcNumberOfTrips: "4", TfNSWTR: "true",
+          // Direct services only: the run asked for is one service, and with changes allowed the planner can prefer
+          // a faster pair of trains and leave this one out of its answer.
+          maxChanges: "0",
         }, 8000);
         failed = false;
         break;
@@ -1532,6 +1573,8 @@ async function service(env, q) {
   } else if (q.stop && q.destId && q.planned) {
     // Fall back to the trip planner for the stop list from your stop onwards.
     source = "planner";
+    // An app that sends the destination's name gets the stop list to that station (railDestId).
+    if (q.dest) q = { ...q, destId: railDestId(await railDestMap(env), mode, q.dest, q.destId) };
     const got = await plannerLeg(env, q, tripId, line);
     stopsStatus = got.status;
     const leg = got.leg;
