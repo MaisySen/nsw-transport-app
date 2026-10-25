@@ -18,6 +18,7 @@ import { Icon, I } from '@/components/Icon';
 import { watchLine } from '@/components/Cards';
 import { ActionRow, AlertBanner, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTag, PlaceBar, pullHome, StopBoard, TripBoard, TripItem, useNearby } from '@/components/Home';
 import { LineBadge } from '@/components/Transit';
+import { TabBarSafe } from '@/components/TabBarSafe';
 import { useLiveTrip } from '@/lib/live';
 import { radius } from '@/lib/theme';
 import { Button, Empty, Row, Section, Screen, Sep, T } from '@/components/ui';
@@ -213,12 +214,16 @@ export default function Home() {
         {!d && live.error ? <Empty icon={I.warn} title="Can't reach the live feed" body={live.error} action={<Button title="Try again" onPress={live.refresh} />} /> : null}
       </Screen>
       {snack ? (
-        <View style={[hs.snack, { left: 16 + side.left, right: 16 + side.right, backgroundColor: c.dark ? '#E6E1E5' : '#313033' }]} accessibilityLiveRegion="polite">
+        // Above the tab bar: on iPhone the screen runs under the floating bar, so the undo bar is lifted by the screen's
+        // bottom safe area (TabBarSafe) instead of a fixed 16 pt from the screen edge, where it sat behind the bar.
+        <TabBarSafe overlay style={StyleSheet.absoluteFill}>
+        <View style={[hs.snack, { marginLeft: 16 + side.left, marginRight: 16 + side.right, backgroundColor: c.dark ? '#E6E1E5' : '#313033' }]} accessibilityLiveRegion="polite">
           <Text style={{ color: c.dark ? '#313033' : '#F4EFF4', fontSize: 14, flex: 1 }}>{snack.text}</Text>
           <Pressable onPress={() => { snack.undo(); setSnack(null); haptic.select(); }} hitSlop={10} accessibilityRole="button">
             <Text style={{ color: c.dark ? '#1F6FEB' : '#8AB4F8', fontSize: 14, fontWeight: '700' }}>Undo</Text>
           </Pressable>
         </View>
+        </TabBarSafe>
       ) : null}
     </>
   );
@@ -350,5 +355,5 @@ function Grip({ onStart, onMove, onEnd, onTap }: { onStart: () => void; onMove: 
 
 const hs = StyleSheet.create({
   live: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 10, paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius },
-  snack: { position: 'absolute', left: 16, right: 16, bottom: 16, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderRadius: 8, elevation: 6, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+  snack: { marginTop: 'auto', marginBottom: 16, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderRadius: 8, elevation: 6, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
 });

@@ -29,6 +29,8 @@ export function Screen({ children, ...p }: ScrollViewProps & { children: ReactNo
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
+      // iPhone: the keyboard insets the scroll view, so results under a search field and the last rows stay reachable.
+      automaticallyAdjustKeyboardInsets
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
       {...p}

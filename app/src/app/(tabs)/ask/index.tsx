@@ -1,9 +1,11 @@
 // Ask tab: chat about trips. Questions go to /api/ask; answers come back as a short reply
 // plus live cards (departures, trips, alerts) that open the stop board, trip or live map.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { router } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ActivityIndicator, FlatList, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import { TabBarSafe } from '@/components/TabBarSafe';
+import { useKeyboardPad } from '@/lib/keyboard';
+import { atEnd } from '@/lib/keyboardCore';
 import { useSides } from '@/lib/layout';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { haptic } from '@/lib/haptic';
@@ -57,7 +59,6 @@ function open(l?: Link | null) {
 export default function AskScreen() {
   const c = usePalette();
   const now = useNow(15000);
-  const insets = useSafeAreaInsets();
   const side = useSides();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState('');
@@ -113,7 +114,19 @@ export default function AskScreen() {
     } catch { /* expo-location not in this build */ }
   }, [msgs, ask]);
 
-  useEffect(() => { setTimeout(() => list.current?.scrollToEnd({ animated: true }), 50); }, [msgs.length, busy]);
+  // The chat stays on its latest message: when you open the tab, when a message or answer arrives, when the keyboard
+  // comes up and while the answer's cards lay out. Scrolling up to read older messages stops that until you are back
+  // at the end. The list follows its content size, so a long history is shown from the end once it has laid out.
+  const stick = useRef(true);
+  const toEnd = useCallback((animated = false) => { stick.current = true; requestAnimationFrame(() => list.current?.scrollToEnd({ animated })); }, []);
+  useFocusEffect(useCallback(() => { toEnd(false); }, [toEnd]));
+  useEffect(() => { toEnd(true); }, [msgs.length, busy, toEnd]);
+  // Only your own scrolling decides (a drag and its glide), not the list's own scroll to the end.
+  const onUserScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const n = e.nativeEvent;
+    stick.current = atEnd(n.contentOffset.y, n.layoutMeasurement.height, n.contentSize.height, n.contentInset?.bottom || 0);
+  }, []);
+  const kb = useKeyboardPad(() => toEnd(true));
 
   const Row = ({ onPress, children, dim }: { onPress?: () => void; children: any; dim?: boolean }) => (
     <Pressable onPress={onPress} disabled={!onPress} accessibilityRole={onPress ? 'button' : undefined} style={({ pressed }) => [st.row, { borderTopColor: c.sep, opacity: dim ? 0.45 : 1, backgroundColor: pressed ? c.fill : 'transparent' }]}>{children}</Pressable>
@@ -240,9 +253,16 @@ export default function AskScreen() {
   );
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
+    // Above the tab bar (iOS 26 and 27 draw the screen under the floating bar), then above the keyboard.
+    <TabBarSafe style={{ backgroundColor: c.bg }}>
+    <View ref={kb.ref} onLayout={kb.onLayout} style={{ flex: 1, paddingBottom: kb.pad }}>
       <FlatList
         ref={list}
+        onScrollEndDrag={onUserScroll}
+        onMomentumScrollEnd={onUserScroll}
+        onContentSizeChange={() => { if (stick.current) list.current?.scrollToEnd({ animated: false }); }}
+        keyboardDismissMode="interactive"
+        keyboardShouldPersistTaps="handled"
         contentInsetAdjustmentBehavior="automatic"
         data={msgs}
         keyExtractor={(m) => m.id}
@@ -257,7 +277,7 @@ export default function AskScreen() {
         }
         ListFooterComponent={busy ? <View style={[st.bubble, st.bot, { backgroundColor: c.dark ? '#26252A' : '#E9E9EB', marginTop: 6 }]}><ActivityIndicator size="small" /></View> : undefined}
       />
-      <View style={[st.bar, { backgroundColor: c.card, borderTopColor: c.sep, paddingLeft: 12 + side.left, paddingRight: 12 + side.right, paddingBottom: 8 + (Platform.OS === 'android' ? 0 : Math.max(0, insets.bottom - 34)) }]}>
+      <View style={[st.bar, { backgroundColor: c.card, borderTopColor: c.sep, paddingLeft: 12 + side.left, paddingRight: 12 + side.right, paddingBottom: 8 }]}>
         <TextInput
           value={text}
           onChangeText={setText}
@@ -272,7 +292,8 @@ export default function AskScreen() {
           <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>{'\u2191'}</Text>
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+    </View>
+    </TabBarSafe>
   );
 }
 

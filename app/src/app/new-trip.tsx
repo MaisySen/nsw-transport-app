@@ -393,7 +393,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
       <View style={box}>
         {head}
         {!coords ? <T kind="sub" tone="text2" style={s.note}>{locErr || 'Finding where you are'}</T> : (
-          <FlatList data={near} keyExtractor={(o) => o.x[0]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingBottom: bottomPad }}
+          <FlatList data={near} keyExtractor={(o) => o.x[0]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets contentContainerStyle={{ paddingBottom: bottomPad }}
             renderItem={({ item }) => stationRow(item.x, item.d < 1000 ? `${Math.round(item.d / 10) * 10} m` : `${(item.d / 1000).toFixed(1)} km`)} />
         )}
       </View>
@@ -419,7 +419,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
     <View style={box}>
       {head}
       <View style={{ flex: 1 }}>
-        <FlatList ref={listRef} data={rows} keyExtractor={(r, i) => (r.t === 'h' ? 'h' + r.k : r.s[0]) + i} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
+        <FlatList ref={listRef} data={rows} keyExtractor={(r, i) => (r.t === 'h' ? 'h' + r.k : r.s[0]) + i} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets
           stickyHeaderIndices={headerIdx} initialNumToRender={30} contentContainerStyle={{ paddingBottom: bottomPad }}
           getItemLayout={(_, i) => ({ length: rows[i]?.t === 'h' ? HEAD_H : ROW_H, offset: offsets[i] || 0, index: i })}
           ListEmptyComponent={<T kind="sub" tone="text2" style={s.note}>No {modeName(mode).toLowerCase()} stations match that</T>}
@@ -512,7 +512,7 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
     ...(stops.length ? [{ t: 'h' as const, k: 'Stops' }] : []), ...stops.map((x) => ({ t: 's' as const, s: x })),
   ];
   return (
-    <FlatList data={data} keyExtractor={(x, i) => x.t + i} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingBottom: 40 }} initialNumToRender={24}
+    <FlatList data={data} keyExtractor={(x, i) => x.t + i} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets contentContainerStyle={{ paddingBottom: 40 }} initialNumToRender={24}
       ListEmptyComponent={<T kind="sub" tone="text2" style={s.note}>No routes or stops match that</T>}
       renderItem={({ item }) => item.t === 'h'
         ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 14, marginBottom: 7, textTransform: Platform.OS === 'ios' ? 'uppercase' : 'none' }}>{item.k}</T>

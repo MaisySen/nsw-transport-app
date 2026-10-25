@@ -58,7 +58,7 @@ test('Screen, lists, sheets and floating buttons use the side padding', () => {
   assert.match(src('src/components/Sheet.tsx'), /marginLeft: side\.left/);
   assert.match(src('src/components/WhenPicker.tsx'), /marginLeft: side\.left/);
   assert.match(src('src/app/new-trip.tsx'), /paddingLeft: side\.left/);
-  assert.match(src('src/app/(tabs)/home/index.tsx'), /left: 16 \+ side\.left/);
+  assert.match(src('src/app/(tabs)/home/index.tsx'), /marginLeft: 16 \+ side\.left/);
 });
 
 test('no screen size read once at import (a resized window would keep the old size)', () => {
