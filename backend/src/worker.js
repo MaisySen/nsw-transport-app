@@ -3294,7 +3294,7 @@ function lateOf(rows, band, dt) {
   let acc = 0, med = 10;
   for (let i = 0; i < LATE_COLS.length; i++) { acc += a[LATE_COLS[i]]; if (acc >= a.n / 2) { med = i - 1; break; } }
   const late3 = LATE_COLS.slice(4).reduce((s, c) => s + a[c], 0);
-  const when = scope === "band" ? `on ${dt ? "weekend" : "weekday"} ${LATE_BANDS[band]}` : `on ${dt ? "weekends" : "weekdays"}`;
+  const when = scope === "band" ? (band === 1 ? `on ${dt ? "weekends" : "weekdays"} around midday` : `on ${dt ? "weekend" : "weekday"} ${LATE_BANDS[band]}`) : `on ${dt ? "weekends" : "weekdays"}`;
   const lateMin = Math.max(0, med);
   const text = lateMin >= 2 ? `Usually ${lateMin}${med === 10 ? "+" : ""} min late ${when}` : `Usually on time ${when}`;
   const short = lateMin >= 2 ? `usually ${lateMin}${med === 10 ? "+" : ""} min late` : "usually on time";

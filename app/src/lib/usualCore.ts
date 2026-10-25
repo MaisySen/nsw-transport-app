@@ -37,7 +37,8 @@ export function usualText(u: Usual | undefined): string | null {
   if (!Number.isInteger(m) || m < 0 || m > 10 || !Number.isFinite(n) || n < MIN_N) return null;
   if (u.dayType !== 'weekday' && u.dayType !== 'weekend') return null;
   const band = typeof u.band === 'string' && BANDS.includes(u.band) ? u.band : null;
-  const span = band ? `on ${u.dayType} ${band}` : `on ${u.dayType}s`;
+  // "on weekday mornings", "on weekends around midday", "on weekdays"
+  const span = band === 'middle of the day' ? `on ${u.dayType}s around midday` : band ? `on ${u.dayType} ${band}` : `on ${u.dayType}s`;
   if (m <= 1) return `Usually on time ${span}`;
   return `Usually ${m === 10 || u.plus ? '10+' : m} min late ${span}`;
 }
