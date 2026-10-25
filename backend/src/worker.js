@@ -1602,20 +1602,25 @@ async function service(env, q) {
   if (q.dest && q.destId) q = { ...q, destId: railDestId(await railDestMap(env), mode, q.dest, q.destId) };
   // A train's live feed can list only part of the run (on 26 Oct T1 trains to Hornsby were listed to Central): when
   // its last stop is not the destination station, the planner's list is used, with the feed's live times on it.
-  const feedShort = stops.length ? await feedEndsShort(env, q, mode, stops) : false;
+  // Sydney Trains' feed lists only the stops it has news for (on 26 Oct an all stops South Coast train had 9 of its
+  // 41 stops), so a train's stops from your stop onwards always come from the planner when it can be asked; the feed's
+  // stops before yours stay, so where the train is and how many stops away still read as before.
+  const feedShort = stops.length ? (mode === "train" || await feedEndsShort(env, q, mode, stops)) : false;
+  const feedStops = stops;
   if ((!stops.length || feedShort) && q.stop && q.destId && q.planned) {
     // Fall back to the trip planner for the stop list from your stop onwards.
     const got = await plannerLeg(env, q, tripId, line);
     const leg = got.leg;
-    if (leg || !feedShort) { source = "planner"; stopsStatus = got.status; stops = []; }
+    if (leg || !feedStops.length) { source = "planner"; stopsStatus = got.status; stops = []; }
     if (leg) {
-      stops = (leg.stopSequence || []).map((s) => ({
+      const k = feedStops.findIndex((s) => s.id === q.stop);
+      stops = (k > 0 ? feedStops.slice(0, k) : []).concat((leg.stopSequence || []).map((s) => ({
         id: s.id, name: shortName(s.disassembledName || s.name), lat: s.coord ? s.coord[0] : null, lon: s.coord ? s.coord[1] : null,
         planned: iso(s.departureTimePlanned || s.arrivalTimePlanned),
         // A stop list kept from an earlier answer has its own planned times; live times come from the feed below.
         estimated: leg.isRealtimeControlled && !got.stale ? iso(s.departureTimeEstimated || s.arrivalTimeEstimated) : null,
-      }));
-      path = (leg.coords || []).map((c) => [c[0], c[1]]);
+      })));
+      if (k <= 0) path = (leg.coords || []).map((c) => [c[0], c[1]]);
       // Trains publish delays without clock times; apply them to the planned times.
       if (tu && tuLive) {
         for (const st of stops) {
