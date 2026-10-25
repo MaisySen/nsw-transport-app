@@ -2,6 +2,16 @@
 
 What changed in Transport, newest first. Times are Sydney time. Build numbers, update ids and links are in [docs/RELEASES.md](docs/RELEASES.md).
 
+## 26 Oct 2026
+
+### Platform view fixes (over the air, 26 Oct, about 12:37 AM, group 211c1057)
+Bidur's iPhone at 11:59 PM and 12:00 AM showed gone trains, a wrong stop list and cut off times.
+* A train that has gone never shows, as the next train or in Next service. Live trains count until a minute after their live time; untracked or not tracking ones until their timetable minute has passed.
+* A stop list shows only under the train it belongs to. A list still arriving for the train shown a moment before was landing under the next one (a CCN to Newcastle showed a T9's Burwood, Redfern); now each list is kept with its own service. The list comes from the same server as the board.
+* Times stay on one line at every text size (11:54pm, Not tracking, the Next service times), and the station name above the board is never cut off.
+* Departs sits right under the platform and cars, with no gap under a short stop list.
+* Checked live at 12 stations, two phone sizes, light and dark, and a wide window before it went out.
+
 ## 25 Oct 2026
 
 ### Platform view looks like the station platform screen (over the air, 25 Oct, about 11:57 PM, group f8c00900)
