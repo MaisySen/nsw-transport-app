@@ -1,6 +1,6 @@
 // Simple mode (More > Simple mode, off by default). Bidur, 25 Oct 9:37 PM: "User come. Look this to that place. They get
 // the list like this. Thats it. For someone minimalistic, slowpace, less tech friendly users. Not this swipe."
-// One plain screen, like the transportnsw.info trip planner: From and To, your places as big rows, a list of trips,
+// One plain screen headed Plan Your Trip: From and To, your places as big rows, a list of trips,
 // and big simple steps (with Speak) for the one you tap. No swiping, no tabs, no maps.
 // Battery (docs/PERFORMANCE.md): the list refreshes only while it is on view and the app is in front (useLive);
 // countdowns redraw at whole minutes; location is the low accuracy foreground fix, only when already allowed.
@@ -376,7 +376,7 @@ export default function Simple() {
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 48 }}
         refreshControl={hasList ? <RefreshControl refreshing={live.refreshing} onRefresh={live.refresh} /> : undefined}>
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 20, paddingRight: 8, minHeight: 52 }}>
-          <Text accessibilityRole="header" maxFontSizeMultiplier={1.6} style={[font.largeTitle, { color: c.text, flex: 1 }]}>Trip planner</Text>
+          <Text accessibilityRole="header" maxFontSizeMultiplier={1.6} style={[font.largeTitle, { color: c.text, flex: 1 }]}>Plan Your Trip</Text>
           <Pressable onPress={settings} hitSlop={8} accessibilityRole="button" accessibilityLabel="Settings" accessibilityHint="Turn off Simple mode"
             style={({ pressed }) => ({ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.5 : 1 })}>
             <Icon name={I.gear} size={24} color={c.text2} />

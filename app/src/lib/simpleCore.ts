@@ -77,7 +77,7 @@ export function clock(t: number): string {
   catch { const d = new Date(t); return `${((d.getHours() + 11) % 12) + 1}:${pad(d.getMinutes())}${d.getHours() < 12 ? 'am' : 'pm'}`; }
 }
 
-/** "2145" for the trip planner's time parameter, Sydney time. */
+/** "2145" for the planner's time parameter, Sydney time. */
 export function hhmm(t: number): string {
   try {
     const p = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Australia/Sydney' }).formatToParts(new Date(t));

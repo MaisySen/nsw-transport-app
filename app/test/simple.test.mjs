@@ -171,3 +171,11 @@ test('the screen: one page, no swiping or chips, live list only on view, locatio
   for (const chunk of src.split('<Pressable ').slice(1)) assert.match(chunk.slice(0, 400), /accessibilityRole=/, 'every Pressable has a role');
   assert.ok(!/[\u2013\u2014]/.test(src + read('src/lib/simpleCore.ts')), 'no em or en dashes');
 });
+
+test('the screen is headed Plan Your Trip, and its words name no other app or site', () => {
+  const src = read('src/app/simple.tsx');
+  const core = read('src/lib/simpleCore.ts');
+  assert.match(src, />Plan Your Trip</, 'the heading reads Plan Your Trip');
+  assert.ok(!/trip planner/i.test(src + core), 'no Trip planner in Simple mode');
+  assert.ok(!/transportnsw|tripview/i.test(src + core), 'no other app or site named in Simple mode');
+});
