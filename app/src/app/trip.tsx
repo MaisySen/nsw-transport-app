@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useWhyLate } from '@/lib/whyLate';
+import { JourneyWhy, WhyLate, withWhyAction } from '@/components/WhyLate';
 import { useUsualText } from '@/lib/usual';
 import { TripReminders } from '@/components/TripReminders';
 import { plural } from '@/lib/homeCore';
@@ -66,6 +68,9 @@ function walkTo(l: Leg, next?: Leg) {
 function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
   const c = usePalette();
   const usual = useUsualText(l);
+  // Why it's late: this leg's own linked alert, when the leg is delayed, cancelled or changed (whyLateCore.ts).
+  const legRows = useMemo(() => [l], [l]);
+  const why = useWhyLate(legRows)(l);
   if (l.kind === 'walk') {
     return (
       <View style={st.walk}>
@@ -80,7 +85,8 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
   const bus = busLegStatus(l);
   const traffic = trafficLine(l);
   return (
-    <Pressable accessibilityRole="button" onPress={() => openService({ tripId: l.tripId, feed: l.feed, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId, color: l.color, dest: l.towards, realtime: l.realtime, estimated: l.estimated, delayMin: l.delayMin, toStopId: l.toStopId })}
+    <Pressable accessibilityRole="button" {...withWhyAction({}, why)}
+      onPress={() => openService({ tripId: l.tripId, feed: l.feed, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId, color: l.color, dest: l.towards, realtime: l.realtime, estimated: l.estimated, delayMin: l.delayMin, toStopId: l.toStopId })}
       style={({ pressed }) => [st.leg, pressed ? { opacity: 0.7 } : null]}>
       <View style={{ width: 36, alignItems: 'center' }}>
         <View style={[st.dotBig, { borderColor: color, backgroundColor: c.card }]} />
@@ -130,7 +136,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
             <T kind="foot" style={{ color: c.lateText, flex: 1 }} numberOfLines={3}>{traffic}</T>
           </View>
         ) : null}
-        {l.alerts?.length ? (
+        {why ? <WhyLate why={why} big style={{ marginTop: 8 }} /> : l.alerts?.length ? (
           <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
             <Icon name={I.warn} size={13} color={c.orange} />
             <T kind="foot" style={{ color: c.lateText, flex: 1 }} numberOfLines={3}>{plainText(l.alerts[0].title)}</T>
@@ -506,6 +512,7 @@ export default function TripScreen() {
                 <Sep inset={0} />
                 <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />
                 <WarnLine j={j} />
+                <JourneyWhy j={j} />
                 {!chain && i === lastIdx && canRemind(depMs(j), now) ? <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}><T kind="foot" tone="text2">Last service tonight</T><RemindLastButton hint={{ from, to, mode: modeOfLegs(j.legs), svc: slimLast(j) }} acc={accOn} /></View> : null}
                 {data?.accessible ? <JourneyAccessLine j={j} liftOn={liftOn} /> : null}
                 {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} autoStart={autoStart === i} /></View> : null}

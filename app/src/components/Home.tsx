@@ -27,6 +27,7 @@ import { font, Sep, T } from './ui';
 import { LiveStatus } from './LiveLabel';
 import { liveState, liveWords } from '@/lib/liveLabelCore';
 import { planB, planBLine, problemOf } from '@/lib/planBCore';
+import { useJourneyWhy, WhyLate, withWhyAction } from './WhyLate';
 
 // ---------- shared refresh signals for every card on Home ----------
 
@@ -533,10 +534,13 @@ function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPre
     ? `${title}. ${ls ? ls.a11y : spoken(t)}, leaves ${hm(dep)}${whereLong ? ` from ${whereLong}` : ''}, ${ls?.kind === 'live' ? `${stt?.text}, ${liveWords(ls)}` : status}, arrives ${hm(arrs[0])}${badges.length ? `, ${badges.map((b) => b.line).join(' and ')}` : ''}${then ? `. ${then}` : ''}`
     : `${title}. ${note}`;
   const press = ({ pressed }: { pressed: boolean }) => [pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null];
+  // Why it's late: the next service's own linked reason, one line (components/WhyLate.tsx).
+  const why = useJourneyWhy(j);
+  const label = why ? `${a11y}. ${why.text}` : a11y;
 
   if (look === 'hero') {
     return (
-      <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" accessibilityLabel={a11y} accessibilityHint="Opens the trip with every service" android_ripple={{ color: c.fill }} {...swipeA11y(act)} style={(p) => [g.hero, ...press(p)]}>
+      <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" accessibilityLabel={label} accessibilityHint="Opens the trip with every service" android_ripple={{ color: c.fill }} {...withWhyAction(swipeA11y(act) as any, why)} style={(p) => [g.hero, ...press(p)]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingRight: roomRight }}>
           <View style={{ flex: 1 }}>{head}</View>
           {trailing || (roomRight ? null : <Icon name={I.chevron} size={13} color={c.text3} style={{ marginLeft: 6 }} />)}
@@ -554,6 +558,7 @@ function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPre
               </View>
             </View>
             {ls ? <LiveStatus state={ls} delayMin={l?.delayMin} /> : <T kind="foot" style={{ color: tone }}>{stt?.text}</T>}
+            <WhyLate why={why} style={{ marginTop: 4 }} />
             <T kind="sub" tone="text2" numberOfLines={2} style={{ marginTop: 4 }}>{`${hm(dep)} \u2192 ${hm(arrs[0])} \u00b7 ${durText(j.durationMin)}`}</T>
             {then ? <T kind="sub" tone="text2" style={{ marginTop: 4 }}>{then}</T> : null}
           </>
@@ -564,7 +569,7 @@ function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPre
 
   // 'row': two or three short lines per trip, the next countdown at the right edge.
   return (
-    <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" accessibilityLabel={a11y} android_ripple={{ color: c.fill }} {...swipeA11y(act)} style={(p) => [g.row, ...press(p)]}>
+    <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" accessibilityLabel={label} android_ripple={{ color: c.fill }} {...withWhyAction(swipeA11y(act) as any, why)} style={(p) => [g.row, ...press(p)]}>
       <View style={{ flex: 1, minWidth: 0 }}>
         {head}
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
@@ -575,6 +580,7 @@ function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPre
           </T>
         </View>
         {then ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{then}</T> : null}
+        <WhyLate why={why} style={{ marginTop: 2 }} />
       </View>
       {j ? (
         <View style={[g.chip, { marginLeft: 10, backgroundColor: chip + (c.dark ? '33' : '1F') }]}>

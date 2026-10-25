@@ -10,6 +10,7 @@ import { store, useStore } from '@/lib/store';
 import { Icon, I } from './Icon';
 import { DepartureRow, JourneyCard, LiveDot } from './Transit';
 import { Sep, T } from './ui';
+import { useWhyLate } from '@/lib/whyLate';
 
 /** Opens the service view. The board's own live flag, estimate and delay travel along so the sheet never contradicts the row that was tapped. */
 export function openService(d: { tripId?: string; feed?: string; line?: string; stopId?: string; planned?: string; mode?: string; destId?: string; color?: string; dest?: string; realtime?: boolean; estimated?: string | null; delayMin?: number | null; toStopId?: string | null }) {
@@ -38,6 +39,7 @@ export function StopCard({ stop }: { stop: Place }) {
   const st = useStore();
   const { data, updatedAt, error } = useLive((r) => api.departures(stop.id, r), 20000, [stop.id]);
   const items = (data?.items || []).filter((d) => ms(d.estimated || d.planned) > now - 60000).slice(0, 3);
+  const whyOf = useWhyLate(data?.items, data?.alerts);
   return (
     <View style={{ backgroundColor: c.card, borderRadius: radius, marginHorizontal: 16, marginTop: 12, overflow: 'hidden' }}>
       <CardHead icon={I.star} title={shortName(data?.stop?.name || stop.name)} live={!!updatedAt && !error} beat={updatedAt}
@@ -49,7 +51,7 @@ export function StopCard({ stop }: { stop: Place }) {
         return (
           <View key={key + i}>
             <Sep inset={16} />
-            <DepartureRow d={d} now={now} alertText={rowAlert(d.alerts, data?.alerts)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />
+            <DepartureRow d={d} now={now} alertText={rowAlert(d.alerts, data?.alerts)} why={whyOf(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />
           </View>
         );
       })}

@@ -22,6 +22,8 @@ import type { WatchLeg } from '@/lib/types';
 import TransitMap from '@/components/TransitMap';
 import { Icon, I } from '@/components/Icon';
 import { LineBadge } from '@/components/Transit';
+import { WhyLate } from '@/components/WhyLate';
+import { useWhyLate } from '@/lib/whyLate';
 import { Button, Sep, T } from '@/components/ui';
 import { NextOption, SpeakRow, WakeRow } from '@/components/Smart';
 import { boardWords, stopNumber } from '@/lib/busCore';
@@ -235,6 +237,9 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
     ? d.stops.slice(Math.max(d.mineIndex ?? 0, Math.min(st.nextIdx, d.alightIndex!)), d.alightIndex! + 1).filter(timed) : [];
   const show: (typeof list[number] | null)[] = list.length > 7 ? [...list.slice(0, 5), null, list[list.length - 1]] : list;
   const ago = updated ? Math.round((now - updated) / 1000) : null;
+  // Why it's late: the reason from this service's own linked alert (the live service answer, else the planned leg).
+  const whyRow = useMemo(() => [{ line: l.line, delayMin: late, realtime: !!x.live && lk.kind !== 'stale', cancelled: !!d?.cancelled, alerts: d?.alerts?.length ? d.alerts : (l as any).alerts }], [l, late, x.live, lk.kind, d]);
+  const why = useWhyLate(whyRow)(whyRow[0]);
   return (
     <View>
       <View style={{ paddingHorizontal: 20, paddingTop: 2, flexDirection: 'row', alignItems: 'flex-end' }}>
@@ -257,6 +262,7 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
           <T kind="headline">{now1}</T>
           <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{now2}</T>
           {now3 ? <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{now3}</T> : null}
+          <WhyLate why={why} style={{ marginTop: 4 }} />
         </View>
       </View>
 
