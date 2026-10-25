@@ -169,3 +169,84 @@ export function dayWords(day: string, now: number): string {
   if (!d) return `${+day.slice(6, 8)} ${MON[+day.slice(4, 6) - 1]}`;
   return d.label === 'Tomorrow' ? 'tomorrow' : d.label === 'Today' ? '' : d.label;
 }
+
+// ---- A chosen time in the past (Leave 6:15pm picked at 6:27pm) ----
+
+type WhenLike = { kind: 'now' } | { kind: 'leave' | 'arrive'; h: number; m: number; day?: string };
+
+/** Gone: left over a minute ago, the same moment the countdown chip says Left. */
+export const hasLeft = (dep: number, now: number) => Number.isFinite(dep) && dep < now - 60000;
+
+/** The words on a service that has gone: "Left 6:21 · 3 min late" with a live time (the time it really left),
+ * "Left 6:18 · Scheduled" with only the timetable, "Cancelled" when it did not run. */
+export function leftWords(dep: number, l: { realtime?: boolean; delayMin?: number | null; cancelled?: boolean } | null | undefined, hm: (t: number) => string): string {
+  if (l?.cancelled) return `Cancelled ${hm(dep)}`;
+  if (!l?.realtime) return `Left ${hm(dep)} \u00b7 Scheduled`;
+  const d = l.delayMin || 0;
+  return `Left ${hm(dep)} \u00b7 ${d > 0 ? `${d} min late` : d < 0 ? `${-d} min early` : 'On time'}`;
+}
+
+/** How far back a pull at the top (Earlier services) may go. Now: half an hour ago, as before. A chosen time:
+ * 2 hours before it, even when that is in the past (Arrive by: 4 hours, as its trips leave well before the time). */
+export function earlierFloor(w: WhenLike, anchor: number, now: number): number {
+  if (w.kind === 'now') return now - PAGING.earliestBeforeNowMs;
+  return anchor - (w.kind === 'arrive' ? 4 : 2) * 3600000;
+}
+
+/** The earliest departure the list keeps. Now: services gone over 2 min ago drop off (main answer) and ones loaded
+ * with Earlier stay half an hour. A chosen time keeps the planner's whole answer for it, gone or not, so Leave 6:15
+ * at 6:27 shows the 6:18 and the 6:24, and Earlier batches down to the floor above. */
+export function keepFrom(w: WhenLike, anchor: number, now: number): { main: number; extra: number } {
+  if (w.kind === 'now') return { main: now - 120000, extra: now - PAGING.earliestBeforeNowMs };
+  return { main: -Infinity, extra: earlierFloor(w, anchor, now) };
+}
+
+/** The day a chosen time means, written in when it is picked: a time with no day is today, or tomorrow when it is
+ * over 30 min before now (the rule every server uses). Pinned, Leave 6:15pm picked at 6:27pm is still today's
+ * 6:15pm at 7pm, instead of turning into tomorrow's half an hour later. */
+export function pinDay<W extends WhenLike>(w: W, now: number): W {
+  if (w.kind === 'now' || w.day) return w;
+  const c = sydney(now);
+  const tomorrow = w.h * 60 + w.m < c.h * 60 + c.m - 30;
+  return { ...w, day: tomorrow ? ymd(sydneyTime(ymd(now), 12, 0) + 86400000) : ymd(now) };
+}
+
+/** The trip request for a chosen time, worked out when it is sent: the date goes only when the time alone would
+ * mean another day (dateNeeded), so a time up to 30 min ago still goes to the older server as a plain time, and an
+ * older time today goes with today's date (the new server; the older one plans those for tomorrow). */
+export function queryAt(w: WhenLike, now: number): { time?: string; arriveBy?: boolean; date?: string } {
+  if (w.kind === 'now') return {};
+  const date = dateNeeded(w.day, w.h, w.m, now);
+  return { time: `${String(w.h).padStart(2, '0')}${String(w.m).padStart(2, '0')}`, ...(w.kind === 'arrive' ? { arriveBy: true } : {}), ...(date ? { date } : {}) };
+}
+
+/** A key that stays the same for one chosen time (the request itself can gain a date as the clock moves on). */
+export const whenKeyOf = (w: WhenLike) => (w.kind === 'now' ? '' : `${String(w.h).padStart(2, '0')}${String(w.m).padStart(2, '0')}${w.kind === 'arrive' ? 'a' : 'l'}${w.day || ''}`);
+
+/** The moment a chosen time stands for, or now. */
+export function whenAt(w: WhenLike, now: number): number {
+  if (w.kind === 'now') return now;
+  return sydneyTime(pinDay(w, now).day as string, w.h, w.m);
+}
+
+/** True when the chosen moment has passed: the list then starts with services that have gone. */
+export const isPastWhen = (w: WhenLike, now: number) => w.kind !== 'now' && whenAt(w, now) < now - 60000;
+
+/** "Leave 6:15pm", "Arrive by 9:00am tomorrow", "Leave 8:15am Tue 27 Oct" for a chosen time (today's needs no day). */
+export function whenWords(w: WhenLike, now: number): string {
+  if (w.kind === 'now') return 'Leave now';
+  const p = pinDay(w, now);
+  const t = `${w.h % 12 || 12}:${String(w.m).padStart(2, '0')}${w.h < 12 ? 'am' : 'pm'}`;
+  const today = ymd(now);
+  const tomorrow = ymd(sydneyTime(today, 12, 0) + 86400000);
+  const d = p.day === today ? '' : p.day === tomorrow ? ' tomorrow' : ` ${dayShortOf(p.day as string)}`;
+  return w.kind === 'arrive' ? `Arrive by ${t}${d}` : `Leave ${t}${d}`;
+}
+function dayShortOf(day: string): string {
+  const y = +day.slice(0, 4), mo = +day.slice(4, 6), d = +day.slice(6, 8);
+  return `${DOW[new Date(Date.UTC(y, mo - 1, d)).getUTCDay()]} ${d} ${MON[mo - 1]}`;
+}
+
+/** What a pull at the top says when an earlier batch could not be planned: times over 30 min ago need the newer
+ * server (the older one plans them for tomorrow), so that is said plainly instead of showing nothing. */
+export const EARLIER_NEEDS_NEW = 'Earlier trips need a newer server, which did not answer just now. Pull down to try again.';
