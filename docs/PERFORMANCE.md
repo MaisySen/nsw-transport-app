@@ -79,6 +79,10 @@ Written 25 Oct 2026 after the battery, smoothness and iOS audit (report: files/q
     chip or a route chip asks for that mode alone (`boardAsk` in src/lib/stopBoardCore.ts, `departuresFor` in
     src/lib/api.ts): one request when the chip is tapped, then the same adaptive gap. All is unchanged.
 
+### Many phones (26 Oct, 10:14 to 10:48 AM, load test)
+
+100 and 1,000 simulated phones against the new server: p95 783 ms and 678 ms, server CPU about 1 ms a request. The limit is Transport for NSW's 5 calls a second, not the server. Every number and the plan: [SCALING.md](SCALING.md).
+
 ### Freshness and the server move (26 Oct, 9:31 to 9:53 AM, live data)
 
 Bidur at 9:13 AM: "App still loads data slower and updates late. Almost missed the train." Two measurements:

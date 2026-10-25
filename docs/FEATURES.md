@@ -154,6 +154,8 @@ The app reads from api.transportsydney.app. A read it cannot get there (no answe
 
 Fresh times: boards refresh every 15 s while the next service is 10 minutes away or less and 15 s after opening; trip lists, Simple mode and Home trip cards every 15 s while the first service leaves within 10 minutes. "Live, updated" shows when the times were read on the server ([PERFORMANCE.md](PERFORMANCE.md)).
 
+Many phones (server, 26 Oct, 10:44 AM): phones at the same stop share one copy and one Transport for NSW call; a burst for one stop waits for that one answer; a slow answer is waited for at most 700 ms when a copy exists; when Transport for NSW is busy or refuses us, phones get the last copy (its "Updated" time says how old) instead of an error. Load tested at 100 and 1,000 phones ([SCALING.md](SCALING.md)).
+
 ## Not in the app
 
 No accounts or login, no ads, no analytics or tracking, no Opal card balance. Privacy details: [STORE_PRIVACY.md](STORE_PRIVACY.md) and https://transportsydney.app/privacy/.

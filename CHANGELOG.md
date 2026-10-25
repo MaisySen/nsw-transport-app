@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Many phones: shared fetching and the load test (server 26 Oct, 10:11 to 10:44 AM, transport-api 2592d738)
+* Phones looking at the same stop, trip or service share one copy and one Transport for NSW call, and a burst for one stop waits for that one answer instead of asking again. No copy holds anything about a person.
+* With a copy in hand a phone waits at most 700 ms for a new answer; a slow answer finishes in the background for the next poll. The "Updated" time says how old the copy is.
+* When Transport for NSW is busy or refuses us (our key allows 5 calls a second and 60,000 a day), phones get the last copy instead of an error, and refused calls are asked again for about 5 s.
+* Load test from the US west coast: 100 phones p95 783 ms, 0 errors. 1,000 phones (63 requests a second) p95 678 ms, 18 errors of 11,375 in the first 15 s of a surge onto an empty cache, all from Transport for NSW's limit; 0 errors after the ramp. Server CPU about 1 ms a request. The plan for 10,000 and 100,000 phones is in [docs/SCALING.md](docs/SCALING.md).
+
 ### Item 3: fares Did you mean, Simple mode statuses, alert text, airport names, more stop lists (server 26 Oct, 10:05 AM, transport-api 6ad9d3a5; over the air 10:12 AM, group fd6a8763)
 * Fares, Did you mean: a fare question in Ask (typed or dictated) checks each station name against our own station and suburb lists, which the phone keeps, so it works offline. A clear slip is used ("Strathfeild", "Parramtta"). A name that matches several places gets up to 5 real stops, best first, each with its modes ("Kings Cross, Train", "Kingsford, Light rail"), one tap each. A suburb with no station offers its nearest stations and the suburb itself. Nothing is guessed between close names and nothing is made up. 49 messy names from all over NSW checked, all as expected.
 * Simple mode (Bidur's 8:50 AM screenshot, Strathfield to Five Dock Shops): the 27 and 22 min late were real (T1 and T2 delays from overhead wiring repairs at Homebush). A big delay now also says the timetable time ("27 min late, was due 10:04am"), and the arrive time counts a live delay once. The D400 is a Bridj on demand bus you book ahead; it showed as Timetable and now shows "On demand, book ahead", once per list. A trip with a change that gets there no sooner than a direct one leaving within 20 minutes goes under it; it is still shown.

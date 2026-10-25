@@ -22,6 +22,28 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 ## Backend unit tests
 
+### `backend/test/shared-fetch.test.mjs`: 13 tests, 13 pass (26 Oct, shared fetching for many phones)
+
+1. 50 phones asking for one stop at once make one upstream call; every phone gets the answer (1 miss, 49 shared), stored once keyed by the stop only
+2. A second stop is its own key and its own call
+3. A refresh skips a 20 s old copy while upstream has room, is served that copy when upstream is busy (no upstream call, honest dataAt), never a copy over a minute old just for being busy
+4. Transport for NSW over its rate limit: the last copy instead of an error, then a 2 s back off; with no copy the usual 502
+5. A load test request counts as busy from 1 call a second, a phone from 3
+6. Over the day's quota backs off a minute; other 403s do not count; the hub's 429 counts (2 s with a good answer in the last minute, a minute without)
+7. Rate and quota headers from the hub are kept for /api/health
+8. The per address limit turns a phone away; the load test key is counted the same but not turned away; a wrong key or no secret matches nothing
+9. With a copy in hand a slow upstream answer is waited for 700 ms at most, then the copy; the answer is stored for the next poll
+10. With no copy a phone waits for the answer however long it takes
+11. A 429 over the hub limit is asked again after a short wait, so a phone with no copy gets the answer
+12. Over the day's quota is not asked again
+13. At most 4 Trip Planner calls start in any second in one copy; the fifth waits for room
+
+Also changed: `fresh-refresh.test.mjs` (a refresh that skips an old copy says `x-edge-cache: miss`) and `profile.test.mjs` (copies stored with a 120 s lifetime). Whole backend suite on 26 Oct, 10:44 AM: 295 of 295 pass.
+
+### Load test (26 Oct, 10:14 to 10:48 AM, live server)
+
+Simulated phones against api.transportsydney.app with the `LOAD_TEST_KEY` secret set for the test only: 100 phones for 2 min and 1,000 phones for 3 min (30 s ramp), polling every 15 s like the app, Zipf weighted over 125 real stops and 20 trip pairs. Last runs: 100 phones p95 783 ms, 0 errors; 1,000 phones p95 678 ms, p99 2.6 s, 18 errors of 11,375 (Transport for NSW's limit in the first 15 s), 0 errors after the ramp. Method, every run and the quota maths: [SCALING.md](SCALING.md).
+
 ### `backend/test/ask.test.mjs`: 13 tests, 13 pass
 
 Runs offline with recorded stop search answers in `backend/test/fixtures/stopfinder.json`.
