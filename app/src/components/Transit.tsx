@@ -1,12 +1,10 @@
 import { memo, useEffect, useRef } from 'react';
 import { offlineText } from '@/lib/offlineCore';
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-// Buttons revealed by a swipe use the gesture handler's Pressable: on Android a React Native Pressable there
-// can lose its press to the swipe gesture.
-import { Pressable as GHPressable } from 'react-native-gesture-handler';
+import { SwipeRow, swipeA11y, type SwipeAct } from './Swipe';
 import { haptic } from '@/lib/haptic';
-import { modeColor, onColor, usePalette } from '@/lib/theme';
+import { usePalette } from '@/lib/theme';
+import { BADGE, badgeLook } from '@/lib/lineStyle';
 import { bestTime, clock, countdown, countdownKey, delayWords, durText, ms, shortName } from '@/lib/format';
 import type { Departure, Journey, Leg } from '@/lib/types';
 import { Icon, I, modeIconName } from './Icon';
@@ -45,13 +43,16 @@ export function QuietChip({ v, style }: { v?: Vehicle; style?: any }) {
   );
 }
 
-export function LineBadge({ line, mode, color, small }: { line?: string; mode?: string; color?: string; small?: boolean }) {
-  const bg = color || modeColor[mode || 'bus'] || '#888888';
-  const fg = onColor(bg);
+/** The one line badge: "T1", "M1", "333" on the official line or mode colour (bus blue when the feed has no colour,
+ *  live data or not), one size, radius and font everywhere. No mode glyph, like Opal and the station signs; only a
+ *  badge with no line name shows the mode glyph so it is never empty. small is kept for callers and changes nothing. */
+export function LineBadge({ line, mode, color }: { line?: string | null; mode?: string | null; color?: string | null; small?: boolean }) {
+  const b = badgeLook(line, mode, color);
   return (
-    <View style={[st.badge, small && st.badgeSm, { backgroundColor: bg }]}>
-      <Icon name={modeIconName(mode)} size={small ? 11 : 13} color={fg} />
-      {line ? <Text maxFontSizeMultiplier={1.3} style={[st.badgeText, { color: fg }, small && { fontSize: 13 }]} numberOfLines={1}>{line}</Text> : null}
+    <View style={[st.badge, { backgroundColor: b.bg }]} accessible accessibilityLabel={b.label}>
+      {b.text
+        ? <Text maxFontSizeMultiplier={1.3} style={[st.badgeText, { color: b.fg }]} numberOfLines={1}>{b.text}</Text>
+        : <Icon name={modeIconName(b.mode)} size={BADGE.glyph} color={b.fg} />}
     </View>
   );
 }
@@ -143,18 +144,14 @@ function sameDepartureRow(a: DepartureRowProps, b: DepartureRowProps) {
 
 function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertText }: { d: Departure; now: number; onPress: () => void; onWatch?: () => void; watched?: boolean; showStop?: boolean; alertText?: string | null }) {
   const c = usePalette();
-  const sw = useRef<any>(null);
   const extra: string[] = [];
   if (d.platform) extra.push(d.platform.replace(/^Platform /, 'Plat. '));
   if (d.stopsAway != null && d.realtime && d.stopsAway >= 0 && d.stopsAway <= 15) extra.push(d.stopsAway === 0 ? 'At the stop' : `${d.stopsAway} stop${d.stopsAway === 1 ? '' : 's'} away`);
-  const right = () => (
-    <GHPressable onPress={() => { sw.current?.close(); onWatch?.(); }} accessibilityRole="button" accessibilityLabel={watched ? 'Stop watching' : 'Watch'} style={[st.swipeAct, { backgroundColor: watched ? c.text2 : c.indigo }]}>
-      <Icon name={watched ? I.bellOff : I.bell} size={20} color="#fff" />
-      <Text style={[font.foot, { color: '#fff', fontWeight: '600', marginTop: 3 }]}>{watched ? 'Stop' : 'Watch'}</Text>
-    </GHPressable>
-  );
+  const act: SwipeAct | null = onWatch
+    ? { label: watched ? 'Stop watching' : 'Watch', text: watched ? 'Stop' : 'Watch', icon: watched ? I.bellOff : I.bell, color: watched ? c.text2 : c.indigo, onPress: onWatch }
+    : null;
   const body = (
-    <Pressable accessibilityRole="button" onPress={onPress} onLongPress={onWatch ? () => { haptic.tap(); onWatch(); } : undefined}
+    <Pressable accessibilityRole="button" onPress={onPress} onLongPress={onWatch ? () => { haptic.tap(); onWatch(); } : undefined} {...swipeA11y(act)}
       android_ripple={{ color: c.fill }} style={({ pressed }) => [st.depRow, { backgroundColor: pressed && Platform.OS === 'ios' ? c.card2 : c.card }]}>
       <View style={{ width: 66, alignItems: 'flex-start' }}><LineBadge line={d.line} mode={d.mode} color={d.color} /></View>
       <View style={{ flex: 1, marginRight: 8 }}>
@@ -181,17 +178,12 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
       <Countdown planned={d.planned} estimated={d.estimated} realtime={d.realtime} cancelled={d.cancelled} now={now} />
     </Pressable>
   );
-  if (!onWatch) return body;
-  return (
-    <ReanimatedSwipeable ref={sw} friction={2} rightThreshold={40} renderRightActions={right} overshootRight={false}
-      onSwipeableWillOpen={() => haptic.select()}>
-      {body}
-    </ReanimatedSwipeable>
-  );
+  if (!act) return body;
+  return <SwipeRow act={act}>{body}</SwipeRow>;
 }
 
 function legLine(l: Leg) {
-  return l.kind === 'walk' ? null : <LineBadge small line={l.line} mode={l.mode} color={l.color} />;
+  return l.kind === 'walk' ? null : <LineBadge line={l.line} mode={l.mode} color={l.color} />;
 }
 
 export function JourneyCard({ j, now, onPress, best }: { j: Journey; now: number; onPress: () => void; best?: boolean }) {
@@ -239,12 +231,10 @@ export function JourneyCard({ j, now, onPress, best }: { j: Journey; now: number
 }
 
 const st = StyleSheet.create({
-  occ: { flexDirection: 'row', alignItems: 'center', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2, alignSelf: 'flex-start' },
-  badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 7, height: 26, borderRadius: 7, gap: 4, maxWidth: 66 },
-  badgeSm: { height: 22, paddingHorizontal: 6, borderRadius: 6, gap: 3 },
-  badgeText: { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
+  occ: { flexDirection: 'row', alignItems: 'center', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
+  badge: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: BADGE.padX, height: BADGE.height, minWidth: BADGE.minWidth, borderRadius: BADGE.radius, maxWidth: 72 },
+  badgeText: { fontSize: BADGE.font, fontWeight: '700', letterSpacing: -0.2 },
   depRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 16, paddingRight: 16, paddingVertical: 11, minHeight: 64 },
-  swipeAct: { width: 88, alignItems: 'center', justifyContent: 'center' },
   jRow: { paddingHorizontal: 16, paddingVertical: 14 },
   tag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
 });

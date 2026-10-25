@@ -13,6 +13,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * Empty: "Save a trip on your iPhone to see it here."
 * iPhone widgets, Lock Screen and Live Activity: every line badge is one style, official colours (buses always bus blue, never grey), one size, no glyph inside.
 
+### Swipe to delete and line badges (over the air update for iPhone and Android, 25 Oct, 2:48 PM)
+* Home: the red Delete button no longer peeks out beside a saved trip. It shows only when you swipe the trip left, sits inside the card's rounded corners, and swiping back hides it. Opening one trip's Delete closes any other. VoiceOver offers Delete as an action on the trip.
+* Line badges look the same everywhere in the app (Home, Plan results, departures, trip details, live trip, Ask, line status): the official line or mode colour, always (buses are blue even without live data; "No live data" stays as text), one size and shape, line name only.
+* Plan results: the "Towards" line no longer runs into Track on narrow screens.
+
 ### Fits any window: iOS 27 and iPhone Duo (over the air update for iPhone and Android, 25 Oct, 12:49 PM)
 * On iPhone Duo and other resizable windows (iOS 27), screens keep clear of the status bar and bars when they sit on the right edge, and of the Dynamic Island in landscape.
 * On a wide window (iPhone Duo open, iPhone Mirroring, iPad) lists and cards stay at a comfortable reading width in the middle instead of stretching edge to edge. Sheets do the same.

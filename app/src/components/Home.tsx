@@ -9,7 +9,7 @@ import { useLive } from '@/lib/hooks';
 import { cacheKey, offlineText } from '@/lib/offlineCore';
 import { foldNear, type NearPick } from '@/lib/nearCore';
 import { chipTime, makeDeletedNames } from '@/lib/homeCore';
-import { modeColor, onColor, radius, usePalette } from '@/lib/theme';
+import { radius, usePalette } from '@/lib/theme';
 import { bestTime, clock, durText, liveStamp, ms, shortName } from '@/lib/format';
 import { clearAllPlan } from '@/lib/planCore';
 import type { Departure, Journey, Leg, Place } from '@/lib/types';
@@ -20,6 +20,7 @@ import { Icon, I, IconName } from './Icon';
 import { safeUrl } from '@/lib/access';
 import { openService } from './Cards';
 import { LineBadge, OccupancyChip } from './Transit';
+import { swipeA11y, type SwipeAct } from './Swipe';
 import { useReliabilityText } from '@/lib/reliability';
 import { font, Sep, T } from './ui';
 
@@ -170,9 +171,10 @@ export function HomeSection({ title, children, onClear, clearTitle, footer, acti
   );
 }
 
-function Card({ children, style }: { children: React.ReactNode; style?: any }) {
+/** A Home card. flush: no outer margins, for a card inside a swipe row that already has them (CARD_SWIPE). */
+function Card({ children, style, flush }: { children: React.ReactNode; style?: any; flush?: boolean }) {
   const c = usePalette();
-  return <View style={[{ backgroundColor: c.card, borderRadius: radius, marginHorizontal: 16, marginTop: 10, overflow: 'hidden' }, style]}>{children}</View>;
+  return <View style={[{ backgroundColor: c.card, borderRadius: radius, marginHorizontal: 16, marginTop: 10, overflow: 'hidden' }, flush && { marginHorizontal: 0, marginTop: 0 }, style]}>{children}</View>;
 }
 
 /** One tappable tinted row in its own card: "Add a trip", "Show stops near me". */
@@ -191,10 +193,10 @@ export function ActionRow({ icon, title, onPress, busy }: { icon: IconName; titl
   );
 }
 
-function CardHeader({ title, glyph, glyphColor, right, sub, onPress, onLongPress, trailing }: { title: string; glyph?: IconName; glyphColor?: string; right?: string; sub?: React.ReactNode; onPress: () => void; onLongPress?: () => void; trailing?: React.ReactNode }) {
+function CardHeader({ title, glyph, glyphColor, right, sub, onPress, onLongPress, trailing, act }: { title: string; glyph?: IconName; glyphColor?: string; right?: string; sub?: React.ReactNode; onPress: () => void; onLongPress?: () => void; trailing?: React.ReactNode; act?: SwipeAct }) {
   const c = usePalette();
   return (
-    <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" android_ripple={{ color: c.fill }}
+    <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" android_ripple={{ color: c.fill }} {...swipeA11y(act)}
       style={({ pressed }) => [s.head, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -323,7 +325,9 @@ export function deleteTrip(trip: TripItem) {
   haptic.success();
 }
 
-export function TripBoard({ trip, now, handle, allServices, below, aside }: { trip: TripItem; now: number; handle?: React.ReactNode | ((open: () => void) => React.ReactNode); allServices?: boolean;
+export function TripBoard({ trip, now, handle, allServices, below, aside, flush, act }: { trip: TripItem; now: number; handle?: React.ReactNode | ((open: () => void) => React.ReactNode); allServices?: boolean;
+  /** Inside a swipe row: the row has the card's margins, and act is its swipe action, offered to VoiceOver too. */
+  flush?: boolean; act?: SwipeAct;
   /** A button beside the header, outside its tap area (the commute swap), so a tap on it never also opens the trip. */
   aside?: React.ReactNode;
   /** Extra content under the header that reads the services shown (the commute card's leave time). */
@@ -379,10 +383,10 @@ export function TripBoard({ trip, now, handle, allServices, below, aside }: { tr
 
 
   return (
-    <Card>
+    <Card flush={flush}>
       <View style={{ flexDirection: 'row' }}>
         <View style={{ flex: 1 }}>
-          <CardHeader title={custom ? `${custom}: ${route}` : route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint} onPress={() => open()} onLongPress={menu} trailing={typeof handle === 'function' ? handle(() => open()) : handle}
+          <CardHeader act={act} title={custom ? `${custom}: ${route}` : route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint} onPress={() => open()} onLongPress={menu} trailing={typeof handle === 'function' ? handle(() => open()) : handle}
             sub={alerts.size || viaLine ? (
               <View>
                 {viaLine ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{viaLine}</T> : null}
@@ -450,20 +454,9 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
         {rel ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{rel}</T> : null}
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 8 }}>
-        {badges.slice(0, 3).map((b, i) => <MiniBadge key={`${b.line}${i}`} line={b.line} color={b.color || modeColor[b.mode || 'train']} />)}
+        {badges.slice(0, 3).map((b, i) => <LineBadge key={`${b.line}${i}`} line={b.line} mode={b.mode} color={b.color} />)}
       </View>
     </Pressable>
-  );
-}
-
-/** Small line badge for the right column: "T1" on the line colour. */
-function MiniBadge({ line, color }: { line?: string; color: string }) {
-  if (!line) return null;
-  const fg = onColor(color);
-  return (
-    <View style={{ backgroundColor: color, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, minWidth: 22, alignItems: 'center' }}>
-      <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ color: fg, fontSize: 11, fontWeight: '700' }}>{line}</Text>
-    </View>
   );
 }
 
@@ -509,7 +502,7 @@ export function StopBoard({ stop, now, starred, distance, onLongPress }: { stop:
             <Sep inset={16} />
             <Pressable accessibilityRole="button" onPress={() => openService(d)} android_ripple={{ color: c.fill }} accessibilityLabel={`${d.line} to ${d.dest}, ${t.big} ${t.unit}${d.realtime ? ', live' : ', scheduled'}`}
               style={({ pressed }) => [s.dep, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
-              <LineBadge small line={d.line} mode={d.mode} color={d.color} />
+              <LineBadge line={d.line} mode={d.mode} color={d.color} />
               <T kind="body" numberOfLines={1} style={{ flex: 1, marginLeft: 10 }}>{shortName(d.dest)}</T>
               <Text maxFontSizeMultiplier={1.4} style={[font.callout, { fontWeight: '600', color: d.realtime ? c.liveText : c.text, fontVariant: ['tabular-nums'], marginLeft: 8 }]}>
                 {t.big}{t.unit ? ` ${t.unit}` : ''}

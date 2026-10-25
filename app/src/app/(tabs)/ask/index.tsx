@@ -155,7 +155,7 @@ export default function AskScreen() {
             <View style={st.mid}>
               <Text style={[st.t1, { color: c.text, fontVariant: ['tabular-nums'] }]}>{clock(j.leave)} to {clock(j.arrive)}</Text>
               <View style={st.legs}>
-                {tl.map((l, k) => <LineBadge key={k} small line={l.line} mode={l.mode} color={l.color} />)}
+                {tl.map((l, k) => <LineBadge key={k} line={l.line} mode={l.mode} color={l.color} />)}
                 <Text style={[st.t2, { color: c.text2 }]}>{durText(j.durationMin)} {'\u00b7'} {j.changes ? `${j.changes} change${j.changes > 1 ? 's' : ''}` : 'Direct'}</Text>
               </View>
               {s ? <Text style={[st.t2, { color: (c as any)[s.tone], fontWeight: '600' }]}>{s.text}</Text> : null}

@@ -14,14 +14,15 @@ import { wakeStep } from './smart';
 import { speak } from './nativeExtras';
 import { cancelWake, scheduleWake, wakeNow } from './smartNotify';
 import { endedWatches } from './push';
-import { modeColor } from './theme';
+import { badgeLook } from './lineStyle';
 import type { ServiceResp, WatchLeg } from './types';
 import { fillFeeds, needsFeed, stopsToLook } from './feedCore';
 import { apiBase, NEW_API_BASE } from './server';
 
 export const short = (n?: string | null) => shortName(n || '').replace(/ Station$/, '');
 export const plat = (p?: string | null) => (p ? p.replace(/^Platform\s*/i, 'Platform ').replace(/^Stand\s*/i, 'Stand ') : '');
-export const legColor = (l: WatchLeg) => l.color || modeColor[l.mode] || '#0A84FF';
+/** The leg's line colour, as on its badge: the official line or mode colour, never a neutral grey. */
+export const legColor = (l: WatchLeg) => badgeLook(l.line, l.mode, l.color).bg;
 const fmt = { clock, short, plat };
 export const progOf = (s: LiveState | null) => progOfCalc(s, fmt);
 

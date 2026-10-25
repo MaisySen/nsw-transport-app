@@ -7,7 +7,8 @@ import { useSides } from '@/lib/layout';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
-import { usePalette, modeColor } from '@/lib/theme';
+import { usePalette } from '@/lib/theme';
+import { badgeLook } from '@/lib/lineStyle';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
 import { useStore } from '@/lib/store';
 import { svcSpec, toggleWatch, tripKey } from '@/lib/watch';
@@ -26,7 +27,7 @@ export default function ServiceScreen() {
   const st = useStore();
   const sheet = useRef<BottomSheet>(null);
   const { data, error, updatedAt } = useLive(() => api.service({ trip: p.trip, feed: p.feed || undefined, line: p.line, stop: p.stop, planned: p.planned, mode: p.mode, destId: p.destId }), 15000, [p.trip, p.planned]);
-  const color = data?.color || p.color || modeColor[p.mode || 'bus'];
+  const color = badgeLook(p.line || data?.line, p.mode || data?.mode, data?.color || p.color).bg;
   const snaps = useMemo(() => ['38%', '62%', '92%'], []);
   const key = tripKey(p.trip, p.planned, p.line);
   const watchedId = st.watchedTrips[key];

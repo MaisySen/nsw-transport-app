@@ -7,7 +7,8 @@ import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { cacheKey, offlineText } from '@/lib/offlineCore';
 import { boardRows, rowsThatFit } from '@/lib/boardCore';
-import { modeColor, onColor, usePalette } from '@/lib/theme';
+import { usePalette } from '@/lib/theme';
+import { badgeLook } from '@/lib/lineStyle';
 import { clock, shortName } from '@/lib/format';
 import { haptic } from '@/lib/haptic';
 import { Icon, I } from '@/components/Icon';
@@ -65,8 +66,7 @@ export default function Board() {
       </View>
       {data && !rows.length ? <Text style={{ color: c.text2, fontSize: big * 0.5, marginTop: big }}>{offlineAt ? 'No kept times left' : 'No more services right now'}</Text> : null}
       {rows.map((r, i) => {
-        const bg = r.color || modeColor[r.mode || 'bus'] || '#888888';
-        const fg = onColor(bg);
+        const { bg, fg } = badgeLook(r.line, r.mode, r.color);
         return (
           <View key={r.key + i} accessible accessibilityLabel={r.a11y} style={[s.row, { height: rowH, borderTopColor: c.sep, borderTopWidth: i ? StyleSheet.hairlineWidth : 0 }]}>
             <View style={[s.badge, { backgroundColor: bg, minWidth: big * 1.6, height: big * 1.1, borderRadius: big * 0.22 }]}>

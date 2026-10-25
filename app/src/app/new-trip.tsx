@@ -5,7 +5,8 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
-import { modeColor, onColor, radius, usePalette } from '@/lib/theme';
+import { modeColor, radius, usePalette } from '@/lib/theme';
+import { LineBadge } from '@/components/Transit';
 import { shortName } from '@/lib/format';
 import { store } from '@/lib/store';
 import type { Place, SearchItem } from '@/lib/types';
@@ -442,7 +443,7 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
       if (dirs.length === 1) setDir({ r, d: dirs[0], start: -1 }); else setRoute({ r, dirs });
     } catch (e: any) { Alert.alert("Couldn't load that route", String(e?.message || e)); }
   };
-  const badge = (r: string) => <View style={[s.badge, { backgroundColor: color }]}><T kind="foot" style={{ color: onColor(color), fontWeight: '700' }}>{r}</T></View>;
+  const badge = (r: string) => <View style={s.badge}><LineBadge line={r} mode="bus" /></View>;
 
   if (err) return <T kind="sub" tone="text2" style={s.note}>{err}</T>;
   if (dir) {
@@ -519,7 +520,7 @@ const s = StyleSheet.create({
   mapBar: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginBottom: 24, paddingHorizontal: 16, paddingVertical: 10, minHeight: 60 },
   routeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, minHeight: 52, paddingVertical: 8 },
   lineRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, height: 50, marginHorizontal: 16 },
-  badge: { minWidth: 44, paddingHorizontal: 7, height: 24, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+  badge: { minWidth: 44, alignItems: 'flex-start', justifyContent: 'center' },
   connRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 12 },
   stepper: { flexDirection: 'row', alignItems: 'center', height: 34 },
   stepBtn: { width: 42, height: 34, alignItems: 'center', justifyContent: 'center' },

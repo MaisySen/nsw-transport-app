@@ -33,7 +33,7 @@ export default function WatchDetail() {
                     {i ? <Sep /> : null}
                     <Row title={`${l.line} to ${shortName(l.towards)}`}
                       subtitle={`${shortName(l.from)}${l.fromPlatform ? `, ${l.fromPlatform}` : ''} at ${clock(dep)}${l.to ? `, off at ${shortName(l.to)}` : ''}${s0?.delay > 0 ? `, ${s0.delay} min late` : s0?.depLive ? ', on time' : ''}`}
-                      right={<LineBadge small line={l.line} mode={l.mode} color={l.color || undefined} />}
+                      right={<LineBadge line={l.line} mode={l.mode} color={l.color || undefined} />}
                       onPress={() => openService({ tripId: l.tripId || undefined, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId || undefined, color: l.color || undefined, dest: l.towards || undefined })} />
                   </View>
                 );
