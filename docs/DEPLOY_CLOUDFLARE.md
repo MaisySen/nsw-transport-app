@@ -62,6 +62,19 @@ tools/deploy-cloudflare.sh               # later deploys
 
 What it does, in order: `node tools/schema.mjs --check`, all tests, dash check, `node build.mjs --cloudflare dist`, finds or creates the D1 database and renders `wrangler.toml` from `wrangler.toml.template` (`node tools/render-wrangler.mjs`), `wrangler d1 migrations apply DB --remote` (the schema in `migrations/0001_init.sql`, generated from `src/worker.js`), optionally `wrangler secret put` for each secret (values piped, never printed), then `wrangler deploy`, which also attaches `api.transportsydney.app`.
 
+**Before and after every API deploy (from 25 Oct 2026).**
+
+1. Deploy only from a fresh rebase of `origin/main` (`git fetch origin main && git rebase origin/main`), at or after 986c1c3, so no one else's server change is undone. Never deploy from an old branch.
+2. Check the Live Activity routes are still in the worker: `grep -c 'api/live-activity' src/worker.js` (5 or more).
+3. `tools/deploy-cloudflare.sh` (it runs `schema.mjs --check`, all tests and the dash check first). The old host (the address in use before the switch) is not deployed from here and must not be redeployed.
+4. After it: `/api/health` answers 403 without the key; `/api/lines` and `/api/trackwork` answer 200 with `enabled: true`; `POST /api/live-activity` with an empty body answers 400 `bad token` (the route is there); a shared link still opens: `https://transportsydney.app/trip/abcdefghijkl` answers 302 to `https://api.transportsydney.app/live/?t=abcdefghijkl`, which answers 200.
+
+New tables need no new migration on the live database: the worker creates its tables on first use (`CREATE TABLE IF NOT EXISTS`), and `migrations/0001_init.sql` (regenerated with `node tools/schema.mjs`) is only for a fresh database. Example: `late_agg` (usual lateness) arrived on 25 Oct and was made by the first minute tick.
+
+**Usual lateness (`/api/usual`).** The minute tick folds one past day of `obs` into `late_agg` per tick (28 day backfill on the first runs, then yesterday from 1am), with the claim in `meta` key `late_day`. Free plan only: D1 and the Cron Trigger, no R2, no new binding. It needs live times in `obs`, which the new host records only for departures it serves, so answers fill in as the app uses this host (after the api_base switch). `obs` itself has no pruning yet; watch its size in the D1 dashboard.
+
+Deploy log: 25 Oct 2026, 4:31 PM, from main cd4b8e7 (usual lateness, `/api/usual`). Checks above all passed.
+
 **APK download (optional).** R2 must be turned on in the account first (R2, Purchase R2 Plan; the free allowance covers this).
 
 ```bash
