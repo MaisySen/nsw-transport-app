@@ -2651,7 +2651,7 @@ const RATE_RULES = [
   [/^\/api\/morning-check$/, "write", 60, 600000, "POST"],
   [/^\/api\/morning-check$/, "write", 60, 600000, "DELETE"],
   [/^\/api\/morning-check\/preview$/, "mpreview", 20, 600000],
-  [/^\/api\/(ask|trip|plan|departures|service|status|next|search|nearby|alerts|predict|obs|stations|station|parking|topup|lifts)$/, "read", 600, 60000],
+  [/^\/api\/(ask|trip|plan|departures|service|status|next|search|nearby|alerts|predict|obs|stations|station|parking|topup|lifts|usual)$/, "read", 600, 60000],
 ];
 function rateOk(request, pathname) {
   const rule = RATE_RULES.find((r) => r[0].test(pathname) && (!r[4] || request.method === r[4]));
@@ -3184,6 +3184,161 @@ async function predictions(env, items, max = 14) {
     predMem.set(w.key, { at: Date.now(), p });
     if (p) w.it.pred = p;
   }
+}
+
+// ---------- usual lateness: "Usually 3 min late" per line and stop ----------
+// Built from the live times the server already records (obs: one row per service, stop and day, from the public
+// Transport for NSW realtime data in /api/departures answers and the minute tick's samples). Once a day, per day,
+// the minute tick folds that day's rows into late_agg: one row per line, stop, day type (weekday, weekend) and part
+// of the day, holding a count per minute of lateness (early, 0 to 9 min, 10 or more). Older days fade (each day
+// multiplies the counts by LATE_DECAY, so the last 3 weeks or so count most) and rows that fade below half a
+// service are deleted, so the table stays small: counts only, no service, trip, time or device. All the work is
+// one batch of SQL in D1 (the Free plan's 10 ms of CPU per run is not spent in JavaScript).
+const LATE_DECAY = 0.95;
+const LATE_MIN_N = 8;          // services seen (after fading) before a line and stop gets a line
+const LATE_BACKFILL_DAYS = 28; // first run: fold the days obs already holds, one day per minute tick
+const LATE_COLS = ["e", "m0", "m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9", "m10"];
+const LATE_BANDS = ["mornings", "middle of the day", "afternoons", "evenings"];
+let lateSchemaReady = null;
+async function ensureLateSchema(env) {
+  const d = db(env);
+  if (!d) return false;
+  if (!lateSchemaReady) {
+    lateSchemaReady = d.batch([
+      // Columns e, m0 ... m10 are LATE_COLS (written out so tools/schema.mjs can read the statement).
+      d.prepare(`CREATE TABLE IF NOT EXISTS late_agg (route TEXT NOT NULL, stop_id TEXT NOT NULL, dt INTEGER NOT NULL, band INTEGER NOT NULL,
+        n REAL NOT NULL DEFAULT 0, e REAL NOT NULL DEFAULT 0, m0 REAL NOT NULL DEFAULT 0, m1 REAL NOT NULL DEFAULT 0, m2 REAL NOT NULL DEFAULT 0,
+        m3 REAL NOT NULL DEFAULT 0, m4 REAL NOT NULL DEFAULT 0, m5 REAL NOT NULL DEFAULT 0, m6 REAL NOT NULL DEFAULT 0, m7 REAL NOT NULL DEFAULT 0,
+        m8 REAL NOT NULL DEFAULT 0, m9 REAL NOT NULL DEFAULT 0, m10 REAL NOT NULL DEFAULT 0, upd INTEGER,
+        PRIMARY KEY (route, stop_id, dt, band)) WITHOUT ROWID`),
+      d.prepare(`CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)`),
+    ]).then(() => true).catch((e) => { lateSchemaReady = null; throw e; });
+  }
+  return lateSchemaReady;
+}
+/** "20261024" plus n days. */
+function dayAdd(day, n) {
+  const t = Date.UTC(Number(day.slice(0, 4)), Number(day.slice(4, 6)) - 1, Number(day.slice(6, 8))) + n * 86400000;
+  const x = new Date(t);
+  return `${x.getUTCFullYear()}${pad2(x.getUTCMonth() + 1)}${pad2(x.getUTCDate())}`;
+}
+/** Weekday (0) or weekend (1) of a "YYYYMMDD" day. */
+function dayType(day) {
+  const w = new Date(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(4, 6)) - 1, Number(day.slice(6, 8)))).getUTCDay();
+  return w === 0 || w === 6 ? 1 : 0;
+}
+/** Part of the day from Sydney minutes after midnight: 0 6am to 10am, 1 to 3pm, 2 to 7pm, 3 evening and night. */
+function lateBand(tod) { return tod >= 360 && tod < 600 ? 0 : tod >= 600 && tod < 900 ? 1 : tod >= 900 && tod < 1140 ? 2 : 3; }
+/** The next day to fold, or null when it is not due yet (yesterday is folded from 1am, after late night services). */
+function lateNextDay(last, sn) {
+  const today = sn.day;
+  const next = last ? dayAdd(last, 1) : dayAdd(today, -LATE_BACKFILL_DAYS);
+  if (next >= today) return null;
+  if (next === dayAdd(today, -1) && sn.tod < 60) return null;
+  return next;
+}
+/** One day's fold: fade every row, add the day's counts, drop faded rows. One D1 batch (a transaction). */
+function lateFoldStatements(d, day, now) {
+  const off = sydOffsetMin(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(4, 6)) - 1, Number(day.slice(6, 8)), 2));
+  const m = `(((planned / 60000) + ${off}) % 1440)`;
+  const band = `CASE WHEN ${m} >= 360 AND ${m} < 600 THEN 0 WHEN ${m} >= 600 AND ${m} < 900 THEN 1 WHEN ${m} >= 900 AND ${m} < 1140 THEN 2 ELSE 3 END`;
+  const buckets = ["SUM(delay_s <= -60)", "SUM(delay_s > -60 AND delay_s < 60)"];
+  for (let k = 1; k <= 9; k++) buckets.push(`SUM(delay_s >= ${k * 60} AND delay_s < ${(k + 1) * 60})`);
+  buckets.push("SUM(delay_s >= 600)");
+  return [
+    d.prepare(`UPDATE late_agg SET n = n * ${LATE_DECAY}, ${LATE_COLS.map((c) => `${c} = ${c} * ${LATE_DECAY}`).join(", ")}`),
+    d.prepare(`INSERT INTO late_agg (route, stop_id, dt, band, n, ${LATE_COLS.join(", ")}, upd)
+      SELECT route, stop_id, ?2, band, COUNT(*), ${buckets.join(", ")}, ?3
+      FROM (SELECT route, stop_id, delay_s, ${band} AS band FROM obs
+        WHERE day = ?1 AND route IS NOT NULL AND route != '' AND delay_s IS NOT NULL AND last_seen >= est - 600000)
+      WHERE 1 GROUP BY route, stop_id, band
+      ON CONFLICT (route, stop_id, dt, band) DO UPDATE SET n = late_agg.n + excluded.n,
+        ${LATE_COLS.map((c) => `${c} = late_agg.${c} + excluded.${c}`).join(", ")}, upd = excluded.upd`).bind(day, dayType(day), now),
+    d.prepare("DELETE FROM late_agg WHERE n < 0.5"),
+  ];
+}
+/** Minute tick: fold the next due day, claimed in meta so two ticks never fold one day twice. */
+async function lateTick(env, now = Date.now()) {
+  const d = db(env);
+  if (!d || !(await serverOn(env, "usualLate"))) return { skipped: "off" };
+  await ensureLateSchema(env);
+  await d.prepare("INSERT OR IGNORE INTO meta (k, v) VALUES ('late_day', '')").run();
+  const row = await d.prepare("SELECT v FROM meta WHERE k = 'late_day'").first();
+  const last = row && row.v ? String(row.v) : "";
+  const day = lateNextDay(last, sydneyNow(new Date(now)));
+  if (!day) return { upTo: last || null };
+  const claim = await d.prepare("UPDATE meta SET v = ?1 WHERE k = 'late_day' AND v = ?2").bind(day, last).run();
+  if (!((claim.meta && claim.meta.changes) > 0)) return { skipped: "claimed" };
+  try {
+    await d.batch(lateFoldStatements(d, day, now));
+    lateMem.clear();
+    return { folded: day };
+  } catch (e) {
+    await d.prepare("UPDATE meta SET v = ?1 WHERE k = 'late_day' AND v = ?2").bind(last, day).run().catch(() => null);
+    return { error: String(e && e.message || e).slice(0, 160) };
+  }
+}
+/** Pure: the answer from one row of counts (or the sum of several), or null under LATE_MIN_N. */
+function lateOf(rows, band, dt) {
+  const sum = (rs) => {
+    const o = { n: 0 };
+    for (const c of LATE_COLS) o[c] = 0;
+    for (const r of rs) { o.n += Number(r.n) || 0; for (const c of LATE_COLS) o[c] += Number(r[c]) || 0; }
+    return o;
+  };
+  const inBand = rows.filter((r) => Number(r.band) === band);
+  let a = sum(inBand), scope = "band";
+  if (a.n < LATE_MIN_N) { a = sum(rows); scope = "day"; }
+  if (a.n < LATE_MIN_N) return null;
+  // The median minute of lateness: early (-1), 0 to 9, or 10 meaning 10 or more.
+  let acc = 0, med = 10;
+  for (let i = 0; i < LATE_COLS.length; i++) { acc += a[LATE_COLS[i]]; if (acc >= a.n / 2) { med = i - 1; break; } }
+  const late3 = LATE_COLS.slice(4).reduce((s, c) => s + a[c], 0);
+  const when = scope === "band" ? `on ${dt ? "weekend" : "weekday"} ${LATE_BANDS[band]}` : `on ${dt ? "weekends" : "weekdays"}`;
+  const lateMin = Math.max(0, med);
+  const text = lateMin >= 2 ? `Usually ${lateMin}${med === 10 ? "+" : ""} min late ${when}` : `Usually on time ${when}`;
+  const short = lateMin >= 2 ? `usually ${lateMin}${med === 10 ? "+" : ""} min late` : "usually on time";
+  return { lateMin, plus: med === 10, n: Math.round(a.n), lateShare: Math.round((late3 / a.n) * 100), dayType: dt ? "weekend" : "weekday",
+    band: scope === "band" ? LATE_BANDS[band] : null, text, short, basis: "median lateness of recorded live departures, recent weeks weighted most", kind: "usual" };
+}
+const lateMem = new Map(); // "route|stop|dt|band" -> { at, v }
+async function usualLate(env, pairs, at) {
+  const d = db(env);
+  const sn = sydneyNow(new Date(at));
+  const dt = sn.dow >= 6 ? 1 : 0, band = lateBand(sn.tod);
+  const out = pairs.map(() => null);
+  const want = [];
+  pairs.forEach((p, i) => {
+    const k = `${p.line}|${p.stop}|${dt}|${band}`;
+    const hit = lateMem.get(k);
+    if (hit && Date.now() - hit.at < 600000) out[i] = hit.v;
+    else want.push({ i, k, p });
+  });
+  if (want.length && d) {
+    await ensureLateSchema(env);
+    const res = await d.batch(want.map((w) => d.prepare("SELECT * FROM late_agg WHERE route = ?1 AND stop_id = ?2 AND dt = ?3").bind(w.p.line, w.p.stop, dt)));
+    want.forEach((w, j) => {
+      const v = lateOf((res[j] && res[j].results) || [], band, dt);
+      lateMem.set(w.k, { at: Date.now(), v });
+      if (lateMem.size > 2000) lateMem.delete(lateMem.keys().next().value);
+      out[w.i] = v;
+    });
+  }
+  return out;
+}
+// GET /api/usual?s=LINE~STOP (repeat, up to 12)[&at=ISO time]: {items, enabled} in the same order, null where fewer
+// than LATE_MIN_N services were seen. Also ?line=&stop= for one: {usual, enabled}. Server flag usualLate off: nulls.
+async function usualRoute(env, p) {
+  const enabled = await serverOn(env, "usualLate");
+  const single = !p.getAll("s").length;
+  const raw = single ? [[p.get("line"), p.get("stop")]] : p.getAll("s").slice(0, 12).map((s) => String(s).split("~"));
+  const pairs = raw.map(([line, stop]) => ({ line: String(line || "").trim().slice(0, 16), stop: String(stop || "").trim().slice(0, 24) }));
+  if (pairs.some((x) => !x.line || !/^[A-Za-z0-9_:.-]+$/.test(x.stop))) return json({ error: "line and stop are needed" }, 400);
+  const atMs = p.get("at") ? Date.parse(p.get("at")) : Date.now();
+  const r = enabled ? await usualLate(env, pairs, Number.isFinite(atMs) ? atMs : Date.now()) : pairs.map(() => null);
+  const res = single ? json({ usual: r[0], enabled }) : json({ items: r, enabled });
+  res.headers.set("cache-control", "public, max-age=600");
+  return res;
 }
 
 // ---------- service alerts digest: planned trackwork and line status ----------
@@ -3744,7 +3899,7 @@ async function rescuePlan(env, spec, i, live, now) {
 const APP_CONFIG_DEFAULTS = {
   version: 1,
   flags: { ask: true, parkRide: true, opalMachines: true, liveTrip: true, shareTrip: true, weekdayReminder: true, nearby: true,
-    morningCheck: true, platformAlerts: true, occupancy: true, liftAwareRouting: true, reliabilityPick: true, lastWayHome: true, weekendTrackwork: true, lineStatus: true },
+    morningCheck: true, platformAlerts: true, occupancy: true, liftAwareRouting: true, reliabilityPick: true, lastWayHome: true, weekendTrackwork: true, lineStatus: true, usualLate: true },
   kill: {},
   copy: {},
   tabs: ["home", "plan", "watching", "more"],
@@ -4798,6 +4953,8 @@ async function runTick(env, opts = {}) {
   }
   // Lift outages on saved trip stations, car park nearly full watches
   if (!opts.device) out.facilities = await facTick(env, Date.now(), sn, opts).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+  // Usual lateness: fold one day of recorded live times into late_agg when one is due (once a day after the backfill)
+  if (!opts.device) out.late = await lateTick(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   // Service alerts digest for the trackwork card and line status, every ALERT_EVERY_MIN minutes
   if (!opts.device && (sn.tod % ALERT_EVERY_MIN === 3 || opts.force)) out.alerts = await refreshAlertDigest(env, now).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   // Background sampling for predictions
@@ -6411,6 +6568,8 @@ async function handleRequest(request, env, exec) {
           return await lastHomeRoute(request, env, url);
         case "/api/reliability":
           return await reliabilityRoute(env, p);
+        case "/api/usual":
+          return await usualRoute(env, p);
         case "/api/trackwork":
           return await trackworkRoute(env, p);
         case "/api/lines":
