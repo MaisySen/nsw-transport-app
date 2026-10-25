@@ -4,6 +4,16 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### iPhone build 206 on TestFlight (25 Oct, 11:30 AM)
+* Siri: "Next train home in Transport", "Next train to work in Transport" and "When is my next train in Transport" answer out loud with the next service and platform from Home and Work; "Start my commute in Transport" opens the trip and starts it. They also show in Spotlight and Shortcuts with no setup. Without signal Siri answers from the times the widget kept.
+* Control Center (iOS 18): Next train home and Start my commute buttons.
+* Widgets: Refresh, Swap direction and Start buttons on the Next trip widget. Reloads at most every 15 minutes (5 near the end of the kept times or during a live trip).
+* Apple Watch app and complications (see docs/WATCH.md).
+* Add to Calendar on a trip opens the system event sheet with a leave by reminder. Asks only for add access, and only if the system needs it.
+* Speak alerts in trip mode reads trip alerts out loud.
+* No second trip notification while the Live Activity shows the trip.
+* Needs iOS 17 or later.
+
 ### NSW TrainLink fares and the weekend trackwork push (over the air update for iPhone and Android, 25 Oct, 11:21 AM, and server)
 * Regional NSW TrainLink trips (Albury, Dubbo) no longer show an Opal fare, since Opal is not used on them. The trip shows "NSW TrainLink fare. Not an Opal trip. Book a seat ahead." with a Book link. A trip that is part Opal, part TrainLink keeps the Opal estimate and says the TrainLink part is booked ahead. Works now.
 * Thursday 6pm to 9pm: one push per phone per weekend when planned trackwork this weekend is on a trip it has a morning check for: "Trackwork this weekend: Strathfield to Central. Sat and Sun: Buses replace trains between Strathfield and Lidcombe." After the server move.

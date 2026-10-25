@@ -11,6 +11,7 @@ import { clock, shortName } from './format';
 import { clearOngoing, endLive, getLive, liveAlert, setLive, showOngoing, useLiveTrip } from './live';
 import { LiveState, progOf as progOfCalc, stepLive } from './liveCalc';
 import { wakeStep } from './smart';
+import { speak } from './nativeExtras';
 import { cancelWake, scheduleWake, wakeNow } from './smartNotify';
 import { endedWatches } from './push';
 import { modeColor } from './theme';
@@ -107,7 +108,7 @@ export async function tickLive() {
     for (const a of r.actions) {
       // The web preview logs every action, so a browser replay can check each alert and the end of the trip.
       if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, at: now });
-      if (a.t === 'alert') { liveAlert(a.title, a.body, a.id); if (!buzzed) { buzzed = true; Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); } }
+      if (a.t === 'alert') { liveAlert(a.title, a.body, a.id); if (g.speak) speak(`${a.title}. ${a.body}`); if (!buzzed) { buzzed = true; Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); } }
       else if (a.t === 'ongoing') showOngoing(a.title, a.body, legColor(L[a.leg]));
       else if (a.t === 'clearOngoing') await clearOngoing();
       else if (a.t === 'stopWatch') { endedWatches.add(a.id); api.stopWatch(a.id).catch(() => {}); }

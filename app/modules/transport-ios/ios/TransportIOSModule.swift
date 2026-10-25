@@ -33,6 +33,8 @@ private func date(_ ms: Double?) -> Date? {
 public class TransportIOSModule: Module {
   /// Activities whose push token is already being followed, so one card never gets two followers.
   private var following = Set<String>()
+  /// Siri's "Start my commute" (in the app's own process) posts this after leaving a link in the app group.
+  private var intentObserver: NSObjectProtocol?
   private let followingLock = NSLock()
 
   private func claim(_ id: String) -> Bool {
@@ -64,14 +66,27 @@ public class TransportIOSModule: Module {
   public func definition() -> ModuleDefinition {
     Name("TransportIOS")
 
-    Events("onActivityPushToken")
+    Events("onActivityPushToken", "onIntentQueued")
 
     OnCreate {
+      WatchLink.shared.start()
+      self.intentObserver = NotificationCenter.default.addObserver(
+        forName: Notification.Name("TransportIntentQueued"), object: nil, queue: .main
+      ) { _ in
+        // The module lives as long as the app; the observer is removed in OnDestroy.
+        self.sendEvent("onIntentQueued", [:])
+      }
       #if canImport(ActivityKit)
       if #available(iOS 16.2, *) {
         for a in Activity<LiveTripAttributes>.activities where a.activityState == .active { self.follow(a) }
       }
       #endif
+    }
+
+    /// From the build with the Apple Watch app: the watch's context (JSON from platform/watchShare.ts). False when
+    /// this phone cannot talk to a watch.
+    Function("sendWatchContext") { (json: String) -> Bool in
+      WatchLink.shared.send(json)
     }
 
     /// True from the build whose trip card can be updated by push (build 205).
@@ -92,6 +107,19 @@ public class TransportIOSModule: Module {
       }
       #endif
       return nil
+    }
+
+    OnDestroy {
+      if let o = self.intentObserver { NotificationCenter.default.removeObserver(o) }
+      self.intentObserver = nil
+    }
+
+    /// Reads a string from the app group and removes it, so it is handled once. From build 206.
+    Function("takeSharedString") { (key: String) -> String? in
+      let d = sharedDefaults()
+      let v = d.string(forKey: key)
+      if v != nil { d.removeObject(forKey: key) }
+      return v
     }
 
     Function("hasAppGroup") { () -> Bool in

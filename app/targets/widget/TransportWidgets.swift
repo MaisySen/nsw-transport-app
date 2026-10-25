@@ -10,6 +10,10 @@ struct TransportWidgets: WidgetBundle {
         StopBoardWidget()
         TripLiveActivity()
         LiveTripActivityWidget()
+        if #available(iOS 18.0, *) {
+            TrainHomeControl()
+            StartCommuteControl()
+        }
     }
 }
 #endif
@@ -79,6 +83,10 @@ struct NextTripEntry: TimelineEntry {
     var notice: WidgetNotice?
     var updated: Date = .now
     var relevance: TimelineEntryRelevance?
+    /// Home and Work (auto) showing the commute, so the swap button applies.
+    var commute: Bool = false
+    /// A trip in progress, from the app.
+    var live: Bool = false
 
     static let sample = NextTripEntry(
         date: .now, title: "Home", from: "Burwood", to: "Central",
@@ -103,7 +111,7 @@ struct NextTripProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: NextTripIntent, in context: Context) async -> Timeline<NextTripEntry> {
         let e = await Self.load(configuration)
-        return Timeline(entries: Self.entries(from: e), policy: .after(WidgetText.reloadDate(updated: e.updated, departures: e.trips.map(\.leave))))
+        return Timeline(entries: Self.entries(from: e), policy: .after(WidgetText.reloadDate(updated: e.updated, departures: e.trips.map(\.leave), live: e.live)))
     }
 
     /// One entry a minute and one at each departure, so the minutes stay right and a service
@@ -144,6 +152,7 @@ struct NextTripProvider: AppIntentTimelineProvider {
                                  message: SmartTrip.emptyMessage())
         }
         var e = await entry(title: pick.title, from: pick.from, to: pick.to)
+        e.commute = SharedHomeWork.load()?.commute(now: Date()) != nil
         e.relevance = TimelineEntryRelevance(score: pick.relevance, duration: 30 * 60)
         return e
     }
@@ -201,8 +210,10 @@ struct NextTripProvider: AppIntentTimelineProvider {
                             leave: c.target, arrive: Date(timeIntervalSince1970: c.arrival / 1000), isLive: true,
                             status: status, platform: waiting ? c.platform : nil)
         let from = waiting ? Naming.compact(Naming.short(c.nextStop ?? "")) : "On board"
-        return NextTripEntry(date: now, title: "Your trip", from: from, to: to, trips: [line], message: nil,
-                             notice: WidgetNotice(text: waiting ? "Trip started" : status, level: .info), updated: now)
+        var e = NextTripEntry(date: now, title: "Your trip", from: from, to: to, trips: [line], message: nil,
+                              notice: WidgetNotice(text: waiting ? "Trip started" : status, level: .info), updated: now)
+        e.live = true
+        return e
     }
 
     /// The one thing worth knowing before you leave, most serious first, and only about the
@@ -476,13 +487,36 @@ struct NextTripView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(title).font(.headline).lineLimit(1).layoutPriority(1)
-            if let s = subtitle { Text(s).font(.caption).foregroundStyle(Color.secondary).lineLimit(1) }
+        HStack(alignment: .center, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(title).font(.headline).lineLimit(1).layoutPriority(1)
+                if let s = subtitle { Text(s).font(.caption).foregroundStyle(Color.secondary).lineLimit(1) }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
+            if !entry.live && !entry.fromID.isEmpty {
+                if entry.commute {
+                    WidgetIconButton(intent: SwapCommuteIntent(), symbol: "arrow.up.arrow.down", label: "Swap direction")
+                }
+                WidgetIconButton(intent: RefreshDeparturesIntent(), symbol: "arrow.clockwise", label: "Refresh")
+            }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
+    }
+
+    /// The Start button for the first service, when there is one to start.
+    private var startURL: URL? {
+        guard !entry.live, let t = entry.trips.first else { return nil }
+        return WidgetText.startURL(from: entry.fromID, to: entry.toID, leave: t.leave, fromName: entry.from, toName: entry.to)
+    }
+
+    /// The notice or the time of the last update, then the Start button.
+    @ViewBuilder private var footer: some View {
+        HStack(alignment: .center, spacing: 6) {
+            noticeOrUpdated
+            Spacer(minLength: 4)
+            if let u = startURL { StartTripLink(url: u) }
+        }
     }
 
     /// "On time" in its colour, then a small "1 change" and "6 min walk" when they apply.
@@ -522,8 +556,9 @@ struct NextTripView: View {
 
     @ViewBuilder private var noticeOrUpdated: some View {
         if let n = entry.notice {
-            if let u = alertsLink { Link(destination: u) { NoticeLine(notice: n, maxChars: 44) } }
-            else { NoticeLine(notice: n, maxChars: 44) }
+            let chars = startURL == nil ? 44 : 32
+            if let u = alertsLink { Link(destination: u) { NoticeLine(notice: n, maxChars: chars) } }
+            else { NoticeLine(notice: n, maxChars: chars) }
         } else {
             Text("Updated \(Clock.time(entry.updated))").font(.caption2).foregroundStyle(.secondary).monospacedDigit()
         }
@@ -540,7 +575,7 @@ struct NextTripView: View {
                 row(t, first: i == 0)
             }
             Spacer(minLength: 0)
-            noticeOrUpdated
+            footer
         }
     }
 
@@ -555,7 +590,7 @@ struct NextTripView: View {
                 if i == 0 && entry.trips.count > 1 { Divider() }
             }
             Spacer(minLength: 0)
-            noticeOrUpdated
+            footer
         }
     }
 }

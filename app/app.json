@@ -9,7 +9,8 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.maisysen.nswtransport",
-      "buildNumber": "205",
+      "buildNumber": "206",
+      "deploymentTarget": "17.0",
       "appleTeamId": "B85KQRQZW7",
       "supportsTablet": false,
       "config": {
@@ -18,7 +19,15 @@
       "infoPlist": {
         "NSSupportsLiveActivities": true,
         "ITSAppUsesNonExemptEncryption": false,
-        "NSSupportsLiveActivitiesFrequentUpdates": true
+        "NSSupportsLiveActivitiesFrequentUpdates": true,
+        "INAlternativeAppNames": [
+          {
+            "INAlternativeAppName": "Sydney Transport"
+          },
+          {
+            "INAlternativeAppName": "Transport Sydney"
+          }
+        ]
       },
       "privacyManifests": {
         "NSPrivacyTracking": false,
@@ -132,6 +141,38 @@
         "me.everything.badger.permission.BADGE_COUNT_WRITE",
         "com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE",
         "android.permission.BIND_GET_INSTALL_REFERRER_SERVICE"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "transportsydney.app",
+              "pathPrefix": "/trip"
+            },
+            {
+              "scheme": "https",
+              "host": "transportsydney.app",
+              "pathPrefix": "/stop"
+            },
+            {
+              "scheme": "https",
+              "host": "transportsydney.app",
+              "pathPrefix": "/plan"
+            },
+            {
+              "scheme": "https",
+              "host": "transportsydney.app",
+              "pathPrefix": "/open"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
       ]
     },
     "web": {
@@ -166,6 +207,15 @@
           "locationAlwaysPermission": false,
           "motionUsagePermission": false,
           "locationFullAccuracyPermission": false
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Transport adds a leave by reminder for a trip to your calendar when you ask it to.",
+          "remindersPermission": false,
+          "writeOnlyAccess": true,
+          "writeOnlyCalendarPermission": "Transport adds a leave by reminder for a trip to your calendar when you ask it to."
         }
       ],
       "./plugins/withTransportWidget",

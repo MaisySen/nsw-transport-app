@@ -324,7 +324,9 @@ struct SharedHomeWork: Decodable {
     func commute(now: Date = Date()) -> (title: String, from: StopRef, to: StopRef)? {
         guard let h = home, let w = work, !h.id.isEmpty, !w.id.isEmpty, h.id != w.id else { return nil }
         let morning = Clock.minuteOfDay(now) < 12 * 60
-        let flipped = flip == SharedHomeWork.halfDayKey(now)
+        var flipped = flip == SharedHomeWork.halfDayKey(now)
+        // The widget's swap button turns it round again for this half day.
+        if TSShared.widgetFlipped(now: now) { flipped.toggle() }
         if morning != flipped { return ("To work", h, w) }
         return ("To home", w, h)
     }

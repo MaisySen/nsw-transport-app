@@ -19,6 +19,7 @@ import { Icon, I } from './Icon';
 import { LineBadge } from './Transit';
 import { T } from './ui';
 import { useFlag } from '@/lib/config';
+import { hasSpeech, speak } from '@/lib/nativeExtras';
 import { checkSubtitle } from '@/lib/morning';
 import { useScreenPoll } from '@/lib/activity';
 import type { Place } from '@/lib/types';
@@ -168,6 +169,33 @@ export function WakeRow({ g, st }: { g: LiveTrip; st: LiveState | null }) {
       <Switch value={!!g.wake} onValueChange={toggle} disabled={busy || done} accessibilityLabel="Wake me before my stop"
         trackColor={Platform.OS === 'android' ? { true: c.tint, false: c.fill } : undefined}
         thumbColor={Platform.OS === 'android' ? (g.wake ? (c.dark ? '#062E6F' : '#fff') : c.text3) : undefined} />
+    </View>
+  );
+}
+
+/** Say trip alerts out loud, in headphones when they are in. Only on builds with the speech module (206 and later). */
+export function SpeakRow({ g }: { g: LiveTrip }) {
+  const c = usePalette();
+  if (!hasSpeech()) return null;
+  const toggle = (on: boolean) => {
+    const cur = getLive();
+    if (!cur || cur.id !== g.id) return;
+    setLive({ ...cur, speak: on });
+    haptic.select();
+    if (on) speak('Trip alerts will be spoken.');
+  };
+  return (
+    <View style={[s.wake, { backgroundColor: c.card }]}>
+      <View style={[s.wakeIcon, { backgroundColor: g.speak ? c.tint : c.fill }]}>
+        <Icon name={I.bell} size={16} color={g.speak ? (androidLook && c.dark ? '#062E6F' : '#fff') : c.tint} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <T kind="body">Speak alerts</T>
+        <T kind="foot" tone="text2" numberOfLines={2}>{g.speak ? 'Next stop and get off alerts are read out' : 'Hear next stop and get off alerts in your headphones'}</T>
+      </View>
+      <Switch value={!!g.speak} onValueChange={toggle} accessibilityLabel="Speak alerts"
+        trackColor={Platform.OS === 'android' ? { true: c.tint, false: c.fill } : undefined}
+        thumbColor={Platform.OS === 'android' ? (g.speak ? (c.dark ? '#062E6F' : '#fff') : c.text3) : undefined} />
     </View>
   );
 }
