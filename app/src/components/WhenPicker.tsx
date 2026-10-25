@@ -48,8 +48,12 @@ export function Wheel({ values, value, onChange, text, label, width }: { values:
   );
 }
 
+const KINDS: { k: When['kind']; label: string }[] = [{ k: 'now', label: 'Now' }, { k: 'leave', label: 'Leave at' }, { k: 'arrive', label: 'Arrive by' }];
+
 /** `days`: the trip screen's day row (Today, Tomorrow, then dates); without it the day follows from the time. */
-export function WhenPicker({ visible, value, now, onDone, onClose, days }: { visible: boolean; value: When; now: number; onDone: (w: When) => void; onClose: () => void; days?: { day: string; label: string; a11y: string }[] }) {
+/** `kinds` and `nowText`: the stop board uses Now and From (no Arrive by), with its own words for Now; `dayNote`
+ * replaces the Today or Tomorrow line under the wheels (the board's times stay in the service day). */
+export function WhenPicker({ visible, value, now, onDone, onClose, days, kinds = KINDS, nowText = 'Trips leaving from now, with live times.', dayNote }: { visible: boolean; value: When; now: number; onDone: (w: When) => void; onClose: () => void; days?: { day: string; label: string; a11y: string }[]; kinds?: { k: When['kind']; label: string }[]; nowText?: string; dayNote?: (w: When) => string }) {
   const c = usePalette();
   const ins = useSafeAreaInsets();
   const side = useSides();
@@ -74,10 +78,10 @@ export function WhenPicker({ visible, value, now, onDone, onClose, days }: { vis
   };
   const { h12, pm } = to12(h);
   const pick: When = kind === 'now' ? NOW : { kind, h, m, ...(days?.length && day ? { day } : {}) };
-  const dayText = kind === 'now' || days?.length ? '' : isTomorrow(pick, now) ? 'Tomorrow' : 'Today';
+  const dayText = kind === 'now' || days?.length ? '' : dayNote ? dayNote(pick) : isTomorrow(pick, now) ? 'Tomorrow' : 'Today';
   const done = () => { haptic.select(); onDone(pick); };
   const wheels = kind === 'now' ? (
-    <T kind="sub" tone="text2" style={{ textAlign: 'center', marginVertical: 24 }}>Trips leaving from now, with live times.</T>
+    <T kind="sub" tone="text2" style={{ textAlign: 'center', marginVertical: 24 }}>{nowText}</T>
   ) : (
     <View style={{ alignItems: 'center', marginTop: 8 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
@@ -118,13 +122,13 @@ export function WhenPicker({ visible, value, now, onDone, onClose, days }: { vis
               <T kind="headline" accessibilityRole="header">When</T>
               <Pressable accessibilityRole="button" onPress={done} hitSlop={10}><T kind="body" tone="tint" style={{ fontWeight: '600' }}>Done</T></Pressable>
             </View>
-            <Segmented value={kind} onChange={choose} options={[{ k: 'now', label: 'Now' }, { k: 'leave', label: 'Leave at' }, { k: 'arrive', label: 'Arrive by' }]} />
+            <Segmented value={kind} onChange={choose} options={kinds} />
             {wheels}
           </View>
         ) : (
           <View style={[s.dialog, { backgroundColor: c.dark ? '#22262E' : '#F3F5FA' }]}>
             <T kind="title3" accessibilityRole="header" style={{ fontSize: 24, marginHorizontal: 24, marginTop: 24 }}>When</T>
-            <Segmented value={kind} onChange={choose} options={[{ k: 'now', label: 'Now' }, { k: 'leave', label: 'Leave at' }, { k: 'arrive', label: 'Arrive by' }]} />
+            <Segmented value={kind} onChange={choose} options={kinds} />
             {wheels}
             <View style={s.actions}>
               <Pressable accessibilityRole="button" onPress={onClose} android_ripple={{ color: c.fill }} style={s.textBtn}><T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Cancel</T></Pressable>

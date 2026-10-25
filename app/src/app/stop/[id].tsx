@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
-import { api } from '@/lib/api';
+import { api, boardTimeSupported, departuresAt } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { useScreenPoll } from '@/lib/activity';
 import { cacheKey } from '@/lib/offlineCore';
@@ -19,7 +19,13 @@ import { svcSpec, toggleWatch, tripKey } from '@/lib/watch';
 import { Icon, I } from '@/components/Icon';
 import { openService } from '@/components/Cards';
 import { DepartureRow, LineBadge, LiveStamp } from '@/components/Transit';
-import { linesHere, stopNumber } from '@/lib/busCore';
+import { linesHere, stopLabel, stopNumber } from '@/lib/busCore';
+import { BOARD_EARLIER_NEEDS_NEW, BOARD_MAX_ASKS, boardEarlierRow, boardEarlierSteps, boardFloor, boardList, boardDayWord, boardMoment, boardWhenWords, fillFrom, firstDepOf, freshBefore, isGone } from '@/lib/boardTimeCore';
+import { afterBatch, canLoadEarlier, PAGE0, sydney, type PageState } from '@/lib/tripModesCore';
+import { LeftDepartureRow } from '@/components/LeftRow';
+import { WhenPicker } from '@/components/WhenPicker';
+import type { When } from '@/lib/planCore';
+import type { Departure } from '@/lib/types';
 import { Chip, Empty, Screen, Sep, T } from '@/components/ui';
 import { StationInfo } from '@/components/Access';
 import * as WebBrowser from 'expo-web-browser';
@@ -29,14 +35,22 @@ import type { Station } from '@/lib/access';
 const MODE_LABEL: Record<string, string> = { train: 'Trains', metro: 'Metro', bus: 'Buses', lightrail: 'Light rail', ferry: 'Ferries', coach: 'Coaches', school: 'School buses' };
 
 export default function StopScreen() {
-  const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
+  // `time` (HHMM, optional): a link can open the board from that time in the service day, like the chip.
+  const { id, name, time } = useLocalSearchParams<{ id: string; name?: string; time?: string }>();
   const c = usePalette();
   const now = useNow();
   const st = useStore();
   const [mode, setMode] = useState<string | null>(null);
   const [pick, setPick] = useState<string | null>(null);
   const [showGone, setShowGone] = useState(false);
-  const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => api.departures(String(id), r), 15000, [id], { cacheKey: cacheKey('dep', String(id)) });
+  // The time chip: null is now (the board as before); a moment is the board from that time in the service day, from
+  // api.transportsydney.app (departuresAt), gone services included. Only Now is kept on the phone for offline.
+  const [at, setAt] = useState<number | null>(() => { const t = /^([01]\d|2[0-3])[0-5]\d$/.test(String(time || '')) ? String(time) : ''; return t && boardTimeSupported() ? boardMoment(+t.slice(0, 2), +t.slice(2), Date.now()) : null; });
+  const [pickOpen, setPickOpen] = useState(false);
+  const [timeOk, setTimeOk] = useState(boardTimeSupported());
+  const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => (at == null ? api.departures(String(id), r) : departuresAt(String(id), at)), 15000, [id, at], { cacheKey: at == null ? cacheKey('dep', String(id)) : undefined });
+  // A server without earlier times (no echo): the chip and the row go for the session and the board goes back to now.
+  useEffect(() => { if (!boardTimeSupported()) { setTimeOk(false); setAt(null); } }, [error]);
   const title = shortName(data?.stop?.name || name || 'Stop');
   const starred = st.starred.some((s) => s.id === id);
   const modes = useMemo(() => Array.from(new Set((data?.items || []).map((d) => d.mode))), [data]);
@@ -69,10 +83,56 @@ export default function StopScreen() {
   const routes = useMemo(() => linesHere(data?.items), [data]);
   // Route chips filter the board (Opal style); a route that has left the board drops the filter.
   const route = keepRoute(pick, routes);
-  const items = byRoute((data?.items || []).filter((d) => (!mode || d.mode === mode) && ms(d.realtime ? d.estimated : d.planned) > now - 60000), route);
+  // Earlier departures: batches before the first service on the board, back to 4am, gone ones as Left (also on Now).
+  const [extra, setExtra] = useState<Departure[]>([]);
+  const [earlier, setEarlier] = useState<PageState>(PAGE0);
+  const [earlierNote, setEarlierNote] = useState('');
+  useEffect(() => { setExtra([]); setEarlier(PAGE0); setEarlierNote(''); }, [id, at]);
+  const board = useMemo(() => boardList(data?.items || [], extra, at, now), [data, extra, at, now]);
+  const firstDep = firstDepOf(board);
+  const floor = boardFloor(at, now);
+  const onView = useRef(true);
+  useEffect(() => () => { onView.current = false; }, []);
+  const loadEarlier = async () => {
+    if (!timeOk || !canLoadEarlier(earlier, firstDep, floor, true) || firstDep == null) return;
+    const sid = String(id), first = firstDep;
+    setEarlier((x) => ({ ...x, busy: true }));
+    try {
+      // One tap or pull: step back 40 min, then further over a quiet stretch; a busy station's batch that stops short
+      // of the first service is filled from its last one (a board answer is 40 services).
+      let got: Departure[] = [];
+      for (const t of boardEarlierSteps(first, floor)) {
+        let ask = t;
+        for (let n = 0; n < BOARD_MAX_ASKS; n++) {
+          const r = await departuresAt(sid, ask);
+          got = got.concat(freshBefore(r.items || [], first, got));
+          const next = fillFrom(r.items || [], first, ask);
+          if (next == null) break;
+          ask = next;
+        }
+        if (got.length) break;
+      }
+      if (!onView.current) return;
+      const fresh = got;
+      setExtra((x) => x.concat(freshBefore(fresh, first, x)));
+      setEarlier((x) => afterBatch(x, fresh.length, null, Infinity));
+      setEarlierNote('');
+    } catch (e: any) {
+      if (!onView.current) return;
+      if (e?.unsupported) { setTimeOk(false); setAt(null); }
+      else setEarlierNote(BOARD_EARLIER_NEEDS_NEW);
+      setEarlier((x) => ({ ...x, busy: false, pages: x.pages + 1 }));
+    }
+  };
+  // Pull down: refresh as before, and try Earlier departures again when they did not load.
+  const pull = () => { refresh(); if (earlierNote) loadEarlier(); };
+  const items = byRoute(board.filter((d) => !mode || d.mode === mode), route);
   // Services that left in the last few minutes, from this phone's own reads of this board (recentCore.ts).
-  const usual = useUsualText(route && items[0] ? { kind: 'transit', line: route, stopId: items[0].stopId || String(id), planned: items[0].planned } : null);
-  const gone = byRoute(useRecentDeparted(id ? String(id) : undefined, now).filter((g) => !mode || g.mode === mode), route).slice(0, 5);
+  const next = items.find((d) => !isGone(d, now));
+  const usual = useUsualText(route && next ? { kind: 'transit', line: route, stopId: next.stopId || String(id), planned: next.planned } : null);
+  // The phone's own Recently departed, on Now only until Earlier departures are loaded (they list the same services).
+  const recent = useRecentDeparted(id ? String(id) : undefined, now);
+  const gone = at == null && !extra.length ? byRoute(recent.filter((g) => !mode || g.mode === mode), route).slice(0, 5) : [];
   // A bus stop opened by its own number (2046100) shows the number on the sign; a station or a stop with several
   // stands shows each row's stop number instead.
   const all = data?.items || [];
@@ -95,7 +155,7 @@ export default function StopScreen() {
           </Pressable>
         ),
       }} />
-      <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
+      <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pull} />}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 4 }}>
           <LiveStamp updatedAt={updatedAt} error={error} offlineAt={offlineAt} />
           <Pressable onPress={() => { haptic.tap(); router.push({ pathname: '/board', params: { id: String(id), name: stopName } }); }} hitSlop={8}
@@ -105,6 +165,8 @@ export default function StopScreen() {
             <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Board</T>
           </Pressable>
         </View>
+
+        {timeOk ? <BoardWhen at={at} now={now} onOpen={() => setPickOpen(true)} onNow={() => { haptic.select(); setAt(null); }} /> : null}
 
         {signNo ? (
           <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }} accessibilityLabel={`Stop number ${signNo.split('').join(' ')}${stand ? ', ' + stand : ''}`}>
@@ -195,20 +257,44 @@ export default function StopScreen() {
 
         {items.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 14, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
+            {earlier.busy ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: 48, gap: 8 }} accessibilityLiveRegion="polite" accessibilityLabel="Loading earlier departures">
+                <ActivityIndicator size="small" />
+                <T kind="foot" tone="text2">Loading earlier departures</T>
+              </View>
+            ) : null}
+            {(() => {
+              // Earlier departures, also on Now (the trip screen's Earlier services row): each tap loads the services
+              // before the first one shown, gone ones as Left, back to 4am (pull down tries again after a miss).
+              const er = boardEarlierRow(earlier, firstDep, floor, timeOk);
+              return er.show ? (
+                <Pressable accessibilityRole="button" accessibilityLabel={`${er.label}. Loads the services before ${firstDep != null ? clock(firstDep) : 'the first one'}`} onPress={() => { haptic.select(); loadEarlier(); }}
+                  android_ripple={{ color: c.fill }} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingHorizontal: 16, opacity: pressed ? 0.6 : 1 })}>
+                  <Icon name={I.clock} size={14} color={c.tint} />
+                  <T kind="sub" tone="tint" style={{ fontWeight: '600', marginLeft: 6 }}>{er.label}</T>
+                </Pressable>
+              ) : null;
+            })()}
+            {earlierNote && !earlier.busy ? <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}><T kind="foot" tone="text2">{earlierNote}</T></View> : null}
             {items.map((d, i) => {
               const key = tripKey(d.tripId, d.planned, d.line);
+              const top = i === 0 && !earlier.busy && !earlierNote && !boardEarlierRow(earlier, firstDep, floor, timeOk).show;
               return (
                 <View key={key + i}>
-                  {i ? <Sep inset={82} /> : null}
-                  <DepartureRow d={d} now={now} stopNo={!signNo} alertText={noteFor(d)} why={whyOf(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />
+                  {top ? null : <Sep inset={i ? 82 : 0} />}
+                  {isGone(d, now)
+                    ? <LeftDepartureRow d={d} stopNo={signNo ? null : stopLabel(d.stopId, d.mode) || null} onPress={() => openService(d)} />
+                    : <DepartureRow d={d} now={now} stopNo={!signNo} alertText={noteFor(d)} why={whyOf(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />}
                 </View>
               );
             })}
           </View>
         ) : null}
-        {data && !items.length ? <Empty icon={I.clock} title={route ? `No more ${route} services` : 'No more services'} body="Nothing is due from here in the next few hours." /> : null}
+        {data && !items.length ? <Empty icon={I.clock} title={route ? `No more ${route} services` : 'No more services'} body={at == null ? 'Nothing is due from here in the next few hours.' : 'Nothing is due from here around that time.'} /> : null}
 
-        {!data && error ? <Empty icon={I.warn} title="Can't load this stop" body={error} /> : null}
+        {!data && error && at != null ? <T kind="sub" tone="text2" style={{ marginHorizontal: 32, marginTop: 16 }} accessibilityLiveRegion="polite">{error}</T> : null}
+        {!data && error && at == null ? <Empty icon={I.warn} title="Can't load this stop" body={error} /> : null}
+        {!data && !error && at != null ? <View style={{ alignItems: 'center', marginTop: 24 }}><ActivityIndicator size="small" /></View> : null}
         {data ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>Touch and hold a service to watch it. Live times show how old they are; grey times are from the timetable.</T> : null}
         {map ? (
           <Pressable onPress={() => { haptic.tap(); WebBrowser.openBrowserAsync(map.url).catch(() => {}); }} accessibilityRole="link" accessibilityLabel={`Station map, ${map.label}, from Transport for NSW`}
@@ -224,6 +310,36 @@ export default function StopScreen() {
         ) : null}
         <StationInfo st={station} />
       </Screen>
+      <WhenPicker visible={pickOpen} now={now} onClose={() => setPickOpen(false)}
+        value={at == null ? { kind: 'now' } : { kind: 'leave', h: sydney(at).h, m: sydney(at).m }}
+        kinds={[{ k: 'now', label: 'Now' }, { k: 'leave', label: 'From' }]} nowText="Departures from now, with live times."
+        dayNote={(w) => (w.kind === 'now' ? '' : boardDayWord(boardMoment(w.h, w.m, now), now))}
+        onDone={(w: When) => { setPickOpen(false); setAt(w.kind === 'now' ? null : boardMoment(w.h, w.m, Date.now())); }} />
     </>
+  );
+}
+
+/** The board's time chip: "Now", or "From 6:15pm" (any time in the service day, back to 4am), and Now one tap back.
+ * The trip screen's When chip, with From instead of Leave at and no Arrive by. */
+function BoardWhen({ at, now, onOpen, onNow }: { at: number | null; now: number; onOpen: () => void; onNow: () => void }) {
+  const c = usePalette();
+  const label = boardWhenWords(at, now);
+  const ios = Platform.OS === 'ios';
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 12, gap: 8 }}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Departures ${at == null ? 'from now' : label.replace(/^From/, 'from')}. Change time`} accessibilityHint="Opens a time picker, from 4am today" onPress={onOpen}
+        android_ripple={{ color: c.fill, borderless: false }}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: 44, paddingHorizontal: 14, borderRadius: ios ? 22 : 8, backgroundColor: c.card, borderWidth: ios ? 0 : 1, borderColor: c.sep, opacity: pressed ? 0.7 : 1, flexShrink: 1 })}>
+        <Icon name={I.clock} size={15} color={c.tint} />
+        <T kind="sub" numberOfLines={2} style={{ marginLeft: 6, fontWeight: '600', flexShrink: 1 }}>{label}</T>
+        <Icon name={I.chevron} size={11} color={c.text3} style={{ marginLeft: 6, transform: [{ rotate: '90deg' }] }} />
+      </Pressable>
+      {at != null ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Departures from now" onPress={onNow} android_ripple={{ color: c.fill }}
+          style={({ pressed }) => ({ minHeight: 44, paddingHorizontal: 14, borderRadius: ios ? 22 : 8, justifyContent: 'center', backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>
+          <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Now</T>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }

@@ -5,6 +5,7 @@ import type { CarPark, Station, TopupItem } from './access';
 import { apiBase, NEW_API_BASE } from './server';
 import { placesGone, stopsAsPlaces, type PlaceItem } from './planCore';
 import { EARLIER_NEEDS_NEW, ymd } from './tripModesCore';
+import { BOARD_EARLIER_NEEDS_NEW, boardQuery, honoured } from './boardTimeCore';
 import { createReadCache } from './pollCore';
 import { stampSeen } from './liveLabelCore';
 import { noteBoard } from './recent';
@@ -249,4 +250,27 @@ export async function searchPlaces(q: string): Promise<{ items: PlaceItem[]; pla
   }
   const r = await api.search(q);
   return { items: stopsAsPlaces(r.items || []), places: false };
+}
+
+// A stop's board at another time (Earlier departures and the time chip on the stop screen): only
+// api.transportsydney.app takes `time` and `date` on /api/departures, and it echoes `at`. Until the app moves there
+// these requests go to it directly, with no device or profile. No answer: the screen says Earlier departures need a
+// newer server. An answer without `at` (a server without the parameter): the row and the chip are hidden for the
+// rest of the session, and the board stays on now.
+let boardTimeOff = false;
+export const boardTimeSupported = () => !boardTimeOff;
+export async function departuresAt(stop: string, t: number): Promise<DeparturesResp> {
+  const q = boardQuery(t);
+  const path = `/api/departures?${qs({ stop, time: q.time, date: q.date })}`;
+  let r: DeparturesResp;
+  try {
+    r = apiBase() === NEW_API_BASE ? await req<DeparturesResp>(`${path}&${qs({ device: await getDevice(), profile: PROFILE })}`, undefined, 15000) : await onNew<DeparturesResp>(path, 15000);
+  } catch (e: any) {
+    throw Object.assign(new Error(BOARD_EARLIER_NEEDS_NEW), { http: e?.http, offline: e?.offline, needsNew: true });
+  }
+  if (!honoured(r, q)) {
+    boardTimeOff = true;
+    throw Object.assign(new Error('This server shows departures from now only.'), { unsupported: true });
+  }
+  return r;
 }

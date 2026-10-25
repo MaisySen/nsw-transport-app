@@ -13,6 +13,8 @@ export type Departure = {
   planned: string; estimated?: string | null; realtime: boolean; delayMin?: number | null; cancelled?: boolean;
   wheelchair?: boolean; occupancy?: Occupancy; alerts?: (Alert | string)[]; vehicle?: Vehicle; stopsAway?: number | null;
   status?: { key: string; text: string }; pred?: Prediction;
+  /** A board for another time (/api/departures with time): true when it left over a minute ago. */
+  departed?: boolean;
   /** When this phone received the answer (set by api.ts, liveLabelCore.stampSeen). */
   seenAt?: number;
 };
@@ -20,6 +22,8 @@ export type Departure = {
 export type DeparturesResp = {
   kind: 'departures'; stop: { id: string; name: string; fullName?: string; exactName?: string };
   items: Departure[]; modes?: any[]; alerts?: Alert[]; live?: { feedAt?: number; liveCount?: number; total?: number }; now: number; seenAt?: number;
+  /** The moment a board for another time is from, echoed by a server that takes time (api.transportsydney.app). */
+  at?: { date: string; time: string; clamped?: boolean };
 };
 
 export type Leg = {
