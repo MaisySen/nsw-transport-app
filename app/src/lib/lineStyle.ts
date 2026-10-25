@@ -51,6 +51,12 @@ export type BadgeLook = { bg: string; fg: string; mode: string; text: string; la
 
 const NOUN: Record<string, string> = { train: 'Train', metro: 'Metro', bus: 'Bus', lightrail: 'Light rail', ferry: 'Ferry', coach: 'Coach' };
 
+// NSW TrainLink regional trains and coaches come with a route number for a line ("427" is the Dubbo train), which
+// reads as a bus number on a badge. A train or coach whose line is only digits shows what it is instead, and the
+// number stays in the spoken label.
+const KIND: Record<string, { text: string; noun: string }> = { train: { text: 'Regional', noun: 'Regional train' }, coach: { text: 'Coach', noun: 'Coach' } };
+function kindOf(m: string, text: string) { return /^\d+$/.test(text) ? KIND[m] || null : null; }
+
 /** Colours and words for one badge. The live state of a service never changes its badge: "No live data" stays text. */
 export function badgeLook(line?: string | null, mode?: string | null, color?: string | null): BadgeLook {
   const m = badgeMode(line, mode);
@@ -58,6 +64,8 @@ export function badgeLook(line?: string | null, mode?: string | null, color?: st
   const L = lum(rgb(bg)!);
   const fg = ratio(1, L) >= ratio(lum([17, 17, 17]), L) ? '#FFFFFF' : '#111111';
   const text = (line || '').trim();
+  const kind = kindOf(m, text);
+  if (kind) return { bg, fg, mode: m, text: kind.text, label: `${kind.noun} ${text}` };
   return { bg, fg, mode: m, text, label: text ? `${NOUN[m]} ${text}` : NOUN[m] };
 }
 

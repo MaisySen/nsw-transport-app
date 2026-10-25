@@ -95,3 +95,17 @@ test('swipe rows: one shared component, action hidden at rest and clipped to the
   assert.match(hc, /\{\.\.\.swipeA11y\(act\)\}/);
   assert.match(read('src/components/Transit.tsx'), /<SwipeRow act=\{act\}>/);
 });
+
+test('regional trains and coaches with a route number show what they are, the number stays in the label', () => {
+  const x = L.badgeLook('427', 'train', '#495054');
+  assert.equal(x.text, 'Regional');
+  assert.equal(x.label, 'Regional train 427');
+  assert.equal(x.bg, '#F6891F');
+  assert.equal(L.badgeLook('590', 'coach', null).text, 'Coach');
+  assert.equal(L.badgeLook('590', 'coach', null).label, 'Coach 590');
+  // Lines with letters and buses keep their name.
+  assert.equal(L.badgeLook('T1', 'train', '#F99D1C').text, 'T1');
+  assert.equal(L.badgeLook('CCN', 'train', null).text, 'CCN');
+  assert.equal(L.badgeLook('427', 'bus', null).text, '427');
+  assert.equal(L.badgeLook('M1', 'metro', null).text, 'M1');
+});
