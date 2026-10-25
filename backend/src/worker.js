@@ -783,12 +783,27 @@ function boardAt(rawTime, rawDate, now = Date.now()) {
   return { t, date: p.date, time: p.time, clamped };
 }
 
+// A board for one mode (`mode` on /api/departures) asks the Trip Planner for that mode only. Its answer is 40
+// services, so at a station with trains and many bus stands a mixed list covers about 15 minutes and the buses in
+// it fewer still; asked for buses alone, the 40 reach about 50 minutes ahead (Strathfield, 26 Oct 2026, 7:51am).
+// Bus includes coach and school bus, as the filter below does. An unknown mode asks for everything, as before.
+const DM_CLASSES = [1, 2, 4, 5, 7, 9, 11];
+function modeOnly(mode) {
+  if (!mode) return {};
+  const keep = (cls) => modeOf(cls).key === mode || (mode === "bus" && modeOf(cls).key === "coach");
+  if (!DM_CLASSES.some(keep)) return {};
+  const out = { excludedMeans: "checkbox" };
+  for (const cls of DM_CLASSES) if (!keep(cls)) out["exclMOT_" + cls] = "1";
+  return out;
+}
+
 async function departures(env, stopId, opts = {}) {
   // opts.at (boardAt): the board from that moment, services that have already left included.
   const { date, time } = opts.at ? { date: opts.at.date, time: opts.at.time } : sydneyParts();
   const data = await tp(env, "departure_mon", {
     mode: "direct", type_dm: "stop", name_dm: stopId,
     departureMonitorMacro: "true", TfNSWDM: "true", itdDate: date, itdTime: time,
+    ...modeOnly(opts.mode),
     ...(opts.extra || {}),
   });
   const now = Date.now();
