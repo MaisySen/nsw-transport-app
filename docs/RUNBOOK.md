@@ -108,7 +108,26 @@ Rotate when a key may have leaked, when someone who had it leaves, or once a yea
 | `TICK_KEY` | Same as ADMIN_KEY | `npx wrangler@4 secret put TICK_KEY`; while the first address runs, also its `.env` and the cron-job.org job header |
 | `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` | `node backend/tools/vapid.mjs` | `npx wrangler@4 secret put` for both keys. Existing Web Push subscriptions stop working; each browser must turn alerts on again |
 | Cloudflare API token | My Profile, API Tokens: Roll | The deploying machine environment (`CLOUDFLARE_API_TOKEN`) |
-| Expo access token | expo.dev, Account settings, Access tokens: create new, delete old | The build machine environment (`EXPO_TOKEN`) |
+| Expo access token | See "Expo token rotation" below | `/home/user/.nsw-secrets/expo.json` (`access_token`) on the build machine, passed as `EXPO_TOKEN` |
 | cron-job.org password and API key | console.cron-job.org, Settings | Credentials email |
 | Android upload key | Cannot simply be replaced. If it is lost or leaked, ask Google Play for an upload key reset (needs Play App Signing). Keep two backups of the `.jks` and its password | |
 | App Store Connect API key (when it exists) | App Store Connect, Users and Access, Integrations: revoke and generate | Repo secrets `ASC_KEY_ID`, `ASC_KEY_P8` |
+
+
+### Expo token rotation
+
+Last rotated 25 Oct 2026, 7:06 PM Sydney (08:06 UTC), because the old token was written to a build log that day.
+
+* **What it is now:** a robot (service) account token, not a personal one. Robot `transportsydney-ci-2026-10-25` on the Expo account `bidurtab`, token note `transportsydney-ci-2026-10-25`. The robot has only the `publish` and `view` permissions (shown as "Custom: publish, view"), enough for `eas build`, `eas update`, `eas submit` and reading builds and updates. It cannot manage the account, members or billing.
+* **The old token:** the personal token `tab-cli` (made 23 Oct) was revoked after the new one was checked.
+* **Where it lives:** only in `/home/user/.nsw-secrets/expo.json` under `access_token` (file mode 600) on the build machine. No GitHub Actions workflow uses an Expo token, so there is no `EXPO_TOKEN` repo secret. Add one only when a workflow needs it.
+* **How it is used:** copy it to a mode 600 file in the task folder, pass it only as `EXPO_TOKEN` in the environment of the command, never echo or log it, delete the copy after.
+
+How to rotate:
+
+1. With the current token, create a new token for the robot (expo.dev, the `bidurtab` account, Settings, Robot users, the robot, Create token; or the GraphQL mutation `accessToken.createAccessToken` with the robot's id as `actorID`). To start over with a fresh robot, create it with `publish` and `view` only. Creating a robot or token works with a token; changing a robot's permissions later needs a signed in session on expo.dev.
+2. Check the new token: `EXPO_TOKEN=... npx eas-cli whoami` names the robot, and one read only call works, for example `npx eas-cli update:list --branch production --limit 1 --non-interactive`. No builds, no updates.
+3. Back up `expo.json` next to it as `expo.json.bak-<UTC time>` (mode 600), then write the new token into `access_token`, keeping the other keys and mode 600.
+4. If a workflow reads `EXPO_TOKEN`, update that repo secret (sealed with the repo public key) and check its `updated_at`.
+5. Only then revoke the old token (expo.dev Access tokens, or `accessToken.setAccessTokenRevoked`). Check that `whoami` now fails with the old token and still works with the new one.
+6. Update this section, CHANGELOG.md and the credentials record. Never put a token value in the repo, a log or an email.

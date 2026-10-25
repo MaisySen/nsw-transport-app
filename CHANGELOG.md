@@ -4,6 +4,10 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Expo access token rotated (25 Oct, 7:06 PM)
+* The Expo token used for builds and updates was written to a build log today, so it was replaced. The new one belongs to a robot (service) account, `transportsydney-ci-2026-10-25`, with only publish and view rights, instead of a personal token with full account rights. The old personal token `tab-cli` is revoked.
+* It lives only in the build machine's secrets file. No workflow in this repo uses an Expo token, so no repo secret was added. How to rotate: docs/RUNBOOK.md, section 7, Expo token rotation. Nothing changes in the app.
+
 ### Calendar leave by, ready for build 208 (over the air update for iPhone and Android, 25 Oct, 6:40 PM)
 * More > Calendar leave by, off by default. When on, Home shows "Leave by 7:44pm for Team meeting (Barangaroo)" for events in the next 6 hours that have a place, with the live trip from where your usual trip starts (the commute card's start, else your first trip). Tap it for the trip screen at Arrive by the event's start, with the trip you'd take open.
 * Read only and read on the phone, only while Home is open, at most every 5 minutes. Only the event's place (as a place search, once, then kept on the phone) and the trip query leave the phone, with no install ID, so neither goes into trip history. The event's name, notes and people never leave the phone. Online meetings, all day events and places that can't be found show nothing.
