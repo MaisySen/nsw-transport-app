@@ -52,10 +52,17 @@ shoot() { # device type id, short name
   xcrun simctl shutdown "$UDID"
 }
 
-pick() { xcrun simctl list devicetypes | grep -E "$1" | tail -1 | sed -E 's/.*\((com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9.-]+)\).*/\1/'; }
-S46=$(pick "Apple Watch Series 1[0-9].*46mm")
-ULT=$(pick "Apple Watch Ultra")
-[ -n "$S46" ] && shoot "$S46" series-46mm
-[ -n "$ULT" ] && shoot "$ULT" ultra
-ls -la "$OUT"
+# The newest model of each size the runtime takes (the list is newest first): 46 mm for 416 x 496, Ultra for
+# 422 x 514. Older models the runtime cannot run are skipped.
+ids() { xcrun simctl list devicetypes | grep -E "$1" | sed -E 's/.*\((com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9.-]+)\).*/\1/'; }
+for DT in $(ids "Apple Watch Series [0-9]+ \(46mm\)"); do
+  if xcrun simctl create probe "$DT" "$RT" >/tmp/probe 2>/dev/null; then xcrun simctl delete "$(cat /tmp/probe)"; shoot "$DT" series-46mm; break; fi
+done
+for DT in $(ids "Apple Watch Ultra [0-9]+ \(49mm\)"); do
+  if xcrun simctl create probe "$DT" "$RT" >/tmp/probe 2>/dev/null; then xcrun simctl delete "$(cat /tmp/probe)"; shoot "$DT" ultra; break; fi
+done
+for f in "$OUT"/*.png; do sips -g pixelWidth -g pixelHeight "$f"; done
+# The upload step reads from the home folder (its working folder is not this one).
+rm -rf "$HOME/watch-shots" && cp -R "$OUT" "$HOME/watch-shots"
+ls -la "$HOME/watch-shots"
 exit 0

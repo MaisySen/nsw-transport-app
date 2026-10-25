@@ -343,7 +343,7 @@ struct TripListView: View {
             ForEach(cards) { card in
                 let s = model.services(for: card)
                 NavigationLink(value: Route.trip(card)) {
-                    TripCardView(card: card, services: s.list, fromPhone: s.fromPhone, loading: model.loading, now: model.now)
+                    TripRowView(card: card, services: s.list, now: model.now)
                 }
                 .swipeActions(edge: .trailing) {
                     Button {
@@ -370,6 +370,7 @@ struct TripListView: View {
             }
         }
         .refreshable { await model.load() }
+        .navigationTitle("Transport")
     }
 }
 
@@ -461,19 +462,18 @@ extension WStatus {
     }
 }
 
-/// One trip on the list, laid out to read at a glance: route, a big countdown, platform, lines, the next two.
-struct TripCardView: View {
+/// One trip on the list, as in TripView: the line colour bar and the route on two lines. Times are on the trip screen.
+struct TripRowView: View {
     let card: WCard
     let services: [WService]
-    let fromPhone: Bool
-    let loading: Bool
     let now: Date
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .center, spacing: 8) {
             LineBar(colors: services.first?.barColors ?? [nil])
+                .frame(minHeight: 36)
             VStack(alignment: .leading, spacing: 1) {
-                if let tag = tag {
+                if let tag = WText.tag(card) {
                     Text(tag)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
@@ -482,30 +482,64 @@ struct TripCardView: View {
                 Text(card.title)
                     .font(.headline)
                     .lineLimit(2)
-                if let s = services.first {
-                    Text(s.cancelled ? "Cancelled" : WText.mins(s.time, now: now))
-                        .font(.system(.largeTitle, design: .rounded).weight(.semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(s.status.color)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(WText.spokenCard(title: card.title, services: services, now: now))
+        .accessibilityHint("Shows the next 6 services")
+    }
+}
+
+/// One service on the trip screen, as in TripView: the line colour bar, a big countdown, the platform, the lines,
+/// "11:56 to 12:18" and how late it runs. The top card also says where it goes and the two after it.
+struct ServiceCardView: View {
+    let service: WService
+    let now: Date
+    /// "To Strathfield" on the top card.
+    var caption: String? = nil
+    /// The services after this one, for "Next: 16, 18 mins" on the top card.
+    var rest: [WService] = []
+    var fromPhone = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            LineBar(colors: service.barColors)
+            VStack(alignment: .leading, spacing: 1) {
+                if let c = caption {
+                    Text(c)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                    if let p = WText.platformFull(s.platform) {
-                        Text(p).font(.body)
-                    }
-                    if let l = WText.lines(s) {
-                        Text(l).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
-                    }
-                    if let n = WText.nextLine(Array(services.dropFirst()), now: now) {
-                        Text(n).font(.footnote).foregroundStyle(.secondary)
-                    }
-                    if fromPhone {
-                        Label("From iPhone", systemImage: "iphone")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Text(loading ? "Loading" : "No services found right now.")
-                        .font(.footnote)
+                }
+                Text(service.cancelled ? "Cancelled" : WText.mins(service.time, now: now))
+                    .font(.system(.largeTitle, design: .rounded).weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(service.status.color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                if let p = WText.platformFull(service.platform) {
+                    Text(p).font(.body)
+                }
+                if let l = WText.lines(service) {
+                    Text(l).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                }
+                Text(WText.span(service))
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                if let late = WText.late(service) {
+                    Text(late)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(service.status.color)
+                }
+                if let n = WText.nextLine(rest, now: now) {
+                    Text(n).font(.footnote).foregroundStyle(.secondary)
+                }
+                if fromPhone {
+                    Label("From iPhone", systemImage: "iphone")
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -513,19 +547,21 @@ struct TripCardView: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(WText.spokenCard(title: card.title, services: services, now: now))
-        .accessibilityHint("Shows the next 6 services")
+        .accessibilityLabel(spoken)
+        .accessibilityHint("Shows the legs of this trip")
     }
 
-    /// "To work" on the Home and Work card, or the name you gave a saved trip when it says more than the route.
-    private var tag: String? {
-        let n = card.name.trimmingCharacters(in: .whitespaces)
-        guard !n.isEmpty, n.lowercased() != card.title.lowercased() else { return nil }
-        return n.prefix(1).uppercased() + n.dropFirst()
+    private var spoken: String {
+        var parts: [String] = []
+        if let c = caption { parts.append(c) }
+        parts.append(WText.spokenCard(title: Clock.hhmm(service.time), services: [service] + rest, now: now))
+        if let a = service.arrive { parts.append("arrives \(Clock.hhmm(a))") }
+        return parts.joined(separator: ", ")
     }
 }
 
-/// A trip's next 6 services, with Swap direction and Refresh at the bottom.
+/// A trip's next 6 services as cards, titled with the stop you leave from, with Swap direction and Refresh at the
+/// bottom.
 struct TripDetailView: View {
     @EnvironmentObject var model: WatchModel
     @State private var shown: WCard
@@ -538,17 +574,23 @@ struct TripDetailView: View {
 
     var body: some View {
         let s = model.services(for: shown)
+        let list = Array(s.list.prefix(6))
         List {
-            Section {
-                TripCardView(card: shown, services: s.list, fromPhone: s.fromPhone, loading: model.loading, now: model.now)
-                    .accessibilityHint("")
+            if list.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("To \(WText.short(shown.to.name))").font(.headline)
+                    Text(model.loading ? "Loading" : "No services found right now.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
-            if s.list.count > 1 {
-                Section("Next services") {
-                    ForEach(Array(s.list.prefix(6))) { svc in
-                        NavigationLink(value: Route.service(shown, svc)) {
-                            DepartureRow(service: svc, now: model.now)
-                        }
+            ForEach(Array(list.enumerated()), id: \.element.id) { i, svc in
+                NavigationLink(value: Route.service(shown, svc)) {
+                    if i == 0 {
+                        ServiceCardView(service: svc, now: model.now, caption: "To \(WText.short(shown.to.name))",
+                                        rest: Array(list.dropFirst()), fromPhone: s.fromPhone)
+                    } else {
+                        ServiceCardView(service: svc, now: model.now)
                     }
                 }
             }
@@ -559,7 +601,7 @@ struct TripDetailView: View {
                     .listRowBackground(Color.clear)
             }
         }
-        .navigationTitle("To \(WText.short(shown.to.name))")
+        .navigationTitle(WText.short(shown.from.name))
         .refreshable { await reload() }
         .toolbar {
             ToolbarItemGroup(placement: .bottomBar) {
@@ -590,55 +632,6 @@ struct TripDetailView: View {
     private func reload() async {
         await model.load()
         await model.show(shown)
-    }
-}
-
-/// "2:31pm  2 mins" with the platform, the lines and how late it runs.
-struct DepartureRow: View {
-    let service: WService
-    let now: Date
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(Clock.hhmm(service.time))
-                    .font(.headline.monospacedDigit())
-                    .strikethrough(service.cancelled)
-                HStack(spacing: 4) {
-                    ForEach(Array(service.allLines.enumerated()), id: \.offset) { item in
-                        LineBadge(line: item.element, colorHex: badgeColor(item.offset))
-                    }
-                }
-                Text([WText.platformFull(service.platform), WText.delay(service)].compactMap { $0 }.joined(separator: ", "))
-                    .font(.footnote)
-                    .foregroundStyle(service.status == .onTime ? Color.secondary : service.status.color)
-                    .lineLimit(2)
-            }
-            Spacer(minLength: 0)
-            Text(service.cancelled ? "" : WText.mins(service.time, now: now))
-                .font(.title3.weight(.semibold).monospacedDigit())
-                .foregroundStyle(service.status.color)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(spoken)
-        .accessibilityHint("Shows the legs of this trip")
-    }
-
-    private func badgeColor(_ i: Int) -> String? {
-        let c = service.barColors
-        return c.count == service.allLines.count && i < c.count ? c[i] : service.colorHex
-    }
-
-    private var spoken: String {
-        var parts = [Clock.hhmm(service.time)]
-        if service.cancelled { parts.append("cancelled") } else { parts.append("in \(WText.minsSpoken(service.time, now: now))") }
-        if let p = WText.platformFull(service.platform) { parts.append(p.lowercased()) }
-        let l = service.allLines
-        if !l.isEmpty { parts.append(l.joined(separator: " and ")) }
-        if !service.cancelled { parts.append(WText.delay(service).lowercased()) }
-        return parts.joined(separator: ", ")
     }
 }
 

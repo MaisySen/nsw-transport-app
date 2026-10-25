@@ -4,12 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
-### Apple Watch app redesign (build 207, not built yet; branch native-207)
-* The watch app opens to your trips as cards: Home to Work (or back), then Your trips in the iPhone's order. Each card has the line colour bar, the route, a big countdown in whole minutes (green on time, amber or red when late), the platform, the lines and the next two ("Next: 16, 18 mins"). Scroll with the Digital Crown.
-* Tap a card for the next 6 services, tap a service for its legs and platforms. Swap direction and Refresh on the trip screen, pull to refresh, swipe a card to swap.
+### Apple Watch app redesign and matching widget badges (build 207, not built yet; branch native-207)
+* The watch app opens to your trips as a list you scroll with the Digital Crown: line colour bar and the route, like TripView. Home to Work (or back) first, then Your trips in the iPhone's order.
+* Tap a trip: the stop you leave from at the top and the next 6 services as cards, each with a big countdown in whole minutes (green on time, amber or red when late, "26 min late"), the platform, the lines and "11:56 to 12:18". Tap a service for its legs and platforms.
+* Swap direction and Refresh on the trip screen, pull to refresh, swipe a trip to swap.
 * Opening shows the last times at once, then loads; it refreshes every 30 seconds only while on screen. With no signal it shows the times the iPhone last loaded.
 * Complications show the first trip's next service in whole minutes ("T1 2 min"), no seconds.
 * Empty: "Save a trip on your iPhone to see it here."
+* iPhone widgets, Lock Screen and Live Activity: every line badge is one style, official colours (buses always bus blue, never grey), one size, no glyph inside.
 
 ### Fits any window: iOS 27 and iPhone Duo (over the air update for iPhone and Android, 25 Oct, 12:49 PM)
 * On iPhone Duo and other resizable windows (iOS 27), screens keep clear of the status bar and bars when they sit on the right edge, and of the Dynamic Island in landscape.

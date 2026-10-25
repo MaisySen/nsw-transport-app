@@ -13,4 +13,4 @@ build:
         if: ${ always() }
         inputs:
           type: build-artifact
-          path: watch-shots
+          path: ${ eas.env.HOME }/watch-shots

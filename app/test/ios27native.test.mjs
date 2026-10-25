@@ -28,3 +28,12 @@ test('widget line badge has a non full colour form', () => {
   assert.match(badge, /renderingMode == \.fullColor/);
   assert.match(badge, /strokeBorder/);
 });
+
+test('widget line badges look the same everywhere: official colour, buses always bus blue, no glyph inside', () => {
+  const s = read('targets/widget/TransportWidgets.swift');
+  const badge = s.slice(s.indexOf('struct WidgetLineBadge'), s.indexOf('struct WaitText'));
+  assert.doesNotMatch(badge, /Image\(systemName/, 'no mode glyph inside the badge');
+  assert.match(badge, /case \.bus, \.school: return Mode\.bus\.fallbackHex/, 'buses are bus blue even with no live data');
+  assert.match(badge, /grey \? m\.fallbackHex/, 'a grey colour from the server falls back to the mode colour');
+  assert.doesNotMatch(badge, /large \?/, 'one size');
+});

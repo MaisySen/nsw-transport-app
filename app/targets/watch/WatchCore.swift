@@ -582,6 +582,15 @@ enum Clock {
         return f.string(from: d).lowercased().replacingOccurrences(of: " ", with: "")
     }
 
+    /// "11:56", Sydney time, no am or pm.
+    static func hm(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_AU")
+        f.timeZone = sydney
+        f.dateFormat = "h:mm"
+        return f.string(from: d)
+    }
+
     static func parseISO(_ s: String) -> Date? {
         let a = ISO8601DateFormatter()
         a.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -723,6 +732,26 @@ enum WText {
             parts.append("then " + (n.count == 1 ? n[0] : "\(n[0]) and \(n[1])") + (n.count == 1 && rest[0] == 1 ? " minute" : " minutes"))
         }
         return parts.joined(separator: ", ")
+    }
+
+    /// "11:56 to 12:18": when it leaves and when you arrive, no am or pm (the card is small); the leaving time
+    /// alone when the arrival is not known.
+    static func span(_ s: WService) -> String {
+        guard let a = s.arrive else { return Clock.hm(s.time) }
+        return "\(Clock.hm(s.time)) to \(Clock.hm(a))"
+    }
+
+    /// "26 min late" when a service runs 2 or more minutes late by the live times.
+    static func late(_ s: WService) -> String? {
+        guard !s.cancelled, s.live, let d = s.delay, d >= 2 else { return nil }
+        return "\(d) min late"
+    }
+
+    /// "To work" on the Home and Work card, or the name given to a saved trip when it says more than the route.
+    static func tag(_ card: WCard) -> String? {
+        let n = card.name.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty, n.lowercased() != card.title.lowercased() else { return nil }
+        return n.prefix(1).uppercased() + n.dropFirst()
     }
 
     /// "Kings Cross Station, Kings Cross" becomes "Kings Cross".

@@ -261,27 +261,43 @@ struct WidgetLineBadge: View {
     var line: String
     var colorHex: String
     var mode: String
+    /// Kept for the callers; every badge is now the same size (Bidur, 25 Oct: "Icons are inconsistent").
     var large = false
 
     /// fullColor on a normal Home Screen and in the Live Activity; accented on tinted and clear Home Screens
     /// (iOS 18 and later, Liquid Glass on iOS 26 and 27), vibrant on the Lock Screen and in StandBy at night.
     @Environment(\.widgetRenderingMode) private var renderingMode
 
-    var body: some View {
-        let c = RGB(hex: colorHex)
-        let white = c?.prefersWhiteText ?? true
-        let shape = RoundedRectangle(cornerRadius: large ? 6 : 5)
-        let label = HStack(spacing: 2) {
-            Image(systemName: Mode(raw: mode).symbol).font(.system(size: large ? 12 : 9, weight: .bold))
-            Text(line).font((large ? Font.subheadline : .caption).weight(.bold))
+    /// One style for every badge, like the Opal app: the official colour (buses always the bus blue, never grey
+    /// because a service has no live data), the same size and corner radius, and no mode glyph inside.
+    static func badgeHex(_ hex: String, mode: String) -> String {
+        let m = Mode(raw: mode)
+        switch m {
+        case .bus, .school: return Mode.bus.fallbackHex
+        case .walk: return m.fallbackHex
+        default:
+            guard let c = RGB(hex: hex) else { return m.fallbackHex }
+            let grey = abs(c.r - c.g) < 0.06 && abs(c.g - c.b) < 0.06 && abs(c.r - c.b) < 0.06
+            return grey ? m.fallbackHex : hex
         }
-        .padding(.horizontal, large ? 7 : 5)
-        .padding(.vertical, large ? 3 : 2)
+    }
+
+    var body: some View {
+        let c = RGB(hex: Self.badgeHex(colorHex, mode: mode))
+        let white = c?.prefersWhiteText ?? true
+        let shape = RoundedRectangle(cornerRadius: 5)
+        let label = Text(line)
+            .font(.caption.weight(.bold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .frame(minWidth: 30)
         Group {
             if renderingMode == .fullColor {
                 label
                     .foregroundStyle(white ? Color.white : Color.black)
-                    .background(Color(red: c?.r ?? 0, green: c?.g ?? 0.6, blue: c?.b ?? 0.9), in: shape)
+                    .background(Color(red: c?.r ?? 0, green: c?.g ?? 0.71, blue: c?.b ?? 0.94), in: shape)
             } else {
                 // Accented and vibrant modes draw every colour as one tint, so white text on a filled badge
                 // disappears into the fill. An outlined badge keeps the line name readable.

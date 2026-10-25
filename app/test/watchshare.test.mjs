@@ -203,7 +203,8 @@ test('Swift WatchContext and WLiveCard have the fields the phone sends', () => {
 test('watch app: list of trip cards, refresh while on screen only, no seconds timer in the complications', () => {
   const app = swift('targets/watch/TransportWatchApp.swift');
   const comp = swift('targets/watch-widget/Complications.swift');
-  assert.ok(app.includes('TripCardView'), 'trip cards');
+  assert.ok(app.includes('struct TripRowView') && app.includes('struct ServiceCardView'), 'trip rows and service cards');
+  assert.ok(/navigationTitle\(WText\.short\(shown\.from\.name\)\)/.test(app), 'trip screen titled with the stop you leave from');
   assert.ok(app.includes('Save a trip on your iPhone to see it here.'), 'empty state');
   assert.ok(/\.task\(id: phase\)/.test(app) && app.includes('guard phase == .active'), 'loads only while active');
   assert.ok(!/Timer\.publish/.test(app), 'no always on timers');

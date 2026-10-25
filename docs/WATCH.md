@@ -4,23 +4,25 @@ Branch `watch-app`, merged into the next iPhone build. watchOS 10 and later, com
 
 ## What it shows (build 207)
 
-The app opens straight to your trips, one card each, in a list you scroll with the Digital Crown (the next card peeks
-at the bottom), modelled on how TripView lays out a trip on the wrist:
+Laid out the way TripView shows trips on the wrist (Bidur's photos, 25 Oct):
 
+* The app opens straight to your trips: a list you scroll with the Digital Crown, "Transport" and the time at the
+  top. Each row is the line colour bar on the left (one stripe per line when a trip uses several, from the last
+  times loaded) and the route on up to two lines, "Town Hall to Strathfield". No times in the row. A saved trip's own
+  name shows small above the route when it says more ("To work" on the Home and Work row).
 * Order: Home to Work before 12pm and Work to Home after (swapped when the commute card on the phone was swapped for
   this half day), then the trips under Your trips on the iPhone in the same order (active commutes, trips saved on the
   phone, saved trips, then your own drag order). Nearest first is not done: it would need location on the watch.
-* Each card: a bar on the left in the line colour (one stripe per line when a trip uses several), the route ("Kings
-  Cross to Strathfield", two lines allowed), a big countdown in whole minutes ("Now" under a minute, "1 min", "2 mins",
-  "1 h 20 min"), the platform ("Platform 1"), the lines ("T4, T1 Lines", "Route 311") and the next two ("Next: 16,
-  18 mins"). The countdown is green on time, amber 2 to 4 minutes late and red 5 or more late or cancelled, from the
-  live delay; timetable times are green. A saved trip's own name shows small above the route when it says more.
-* Tap a card: the trip screen with the card on top and the next 6 services (time, countdown, lines, platform, "On
-  time", "3 min late", "Timetable" or "Cancelled"). Swap direction (bottom left) shows the same trip the other way at
-  once (a trip with changes is reversed leg by leg); Refresh (bottom right) loads again. Pull down to refresh too.
-* Tap a service: when it leaves and arrives, how late, and each leg with its line, platforms and times.
-* Swipe a card left for Swap direction. VoiceOver reads each card in one go ("Kings Cross to Strathfield, next train
-  in 2 minutes, platform 1, T4 and T1 lines, then 16 and 18 minutes") and offers Swap direction as an action.
+* Tap a row: the trip screen, titled with the stop you leave from ("Town Hall", back at the top left), lists the next
+  6 services as cards: line colour bar, a big countdown in whole minutes ("Now" under a minute, "1 min", "4 mins",
+  "1 h 20 min"), "Platform 4", "T4, T9 Lines", "11:56 to 12:18" (leave and arrive) and, when late, "26 min late".
+  The countdown and the late line are green on time, amber 2 to 4 minutes late, red 5 or more or cancelled, from the
+  live delay; timetable times are green. The top card also says "To Strathfield" and "Next: 7, 12 mins".
+* Swap direction (bottom left) shows the same trip the other way at once (a trip with changes is reversed leg by
+  leg); Refresh (bottom right) loads again; pull down to refresh too. Swipe a row on the list for Swap direction.
+* Tap a service card: when it leaves and arrives, how late, and each leg with its line, platforms and times.
+* VoiceOver reads each row and card in one go ("Town Hall to Strathfield, next train in 4 minutes, platform 4, T4 and
+  T9 lines, then 7 and 12 minutes") and offers Swap direction as an action on a row.
 * The trip in progress from the iPhone stays on top while it runs; starred stops are under the trips (tap one for
   its next 3). The wrist tap before your stop is unchanged.
 * The end of the list has Refresh with "Updated 2:41pm", "No connection. Updated 2:41pm" or "No connection. Times
@@ -37,6 +39,14 @@ else the first card above (Home to Work or back, else your first saved trip):
 * Circular: the line over the minutes, with a ring that empties over the last 15 minutes.
 * Inline: "T1 2 min, Plat 2". Corner: the minutes, with the line and platform.
 * The countdown is amber or red when the service runs late, like the app.
+
+## iPhone widget badges (build 207)
+
+Bidur, 25 Oct, beside the Opal app's widget: "Icons are inconsistent". Ours mixed grey badges with a bus glyph (D400
+with no live data) and blue ones with a bus glyph (410). Every line badge in the widgets, on the Lock Screen and in the
+Live Activity is now one style: the official colour (buses and school buses always the bus blue, a grey colour from
+the server falls back to the mode colour; "No live data" stays as text), one size, one corner radius and no glyph
+inside. On tinted and clear Home Screens it stays outlined.
 
 ## Why the 206 watch app felt static
 
