@@ -4,6 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### The + on Home opens Apple's menu from the button (over the air update for iPhone and Android, 25 Oct, 8:56 PM, group ffda4f33)
+Bidur at 8:42 PM, with a screenshot of 8:34 PM's + menu still in the middle of the screen: "Also this??".
+* Why the 8:34 PM fix did not work: React Native's `ActionSheetIOS` uses its `anchor` only on iPad (`RCTActionSheetManager` sets the popover source view under `UIUserInterfaceIdiomPad`), so on iPhone it is always the action sheet, which iOS 26 draws as the floating panel with capsule buttons and Cancel.
+* iPhone: the + is now a system bar button in the navigation bar with its own menu (UIMenu), made by expo-router's `Stack.Toolbar` (react-native-screens header items). Tapping it drops the menu from the button with SF Symbols (New trip, Star a stop, Change Home, Change Work) and no Cancel row; on iOS 26 and 27 it is the Liquid Glass menu. The live time sits beside it. The native part is react-native-screens 4.30.0, the same in the lockfiles of builds 201, 205, 206, 207 and 208, so no new build is needed.
+* Android: a Material 3 menu drops from the + in the top app bar (4 dp corners, 48 dp rows, leading icons); the web preview draws the iPhone menu's shape under the + (blurred, 13 pt corners, icons on the right, separators, solid with Reduce Transparency). A tap outside closes it; the chosen item runs once it has gone.
+* VoiceOver: the + is "Add"; each item is a button. The trip and stop hold menus and Save this trip still use the system action sheet.
+* Screens (web stand in, light and dark): files/plus-menu-25oct/. Not yet seen on a real iPhone or Android phone.
+* Roll back: `npx eas-cli update:republish --group c9a4913d-b324-434c-9cb7-f4f17c1f53f5 --destination-branch production --message "Roll back" --non-interactive`.
+
 ### Website home page is simple again (transportsydney.app, 25 Oct, about 8:50 PM, Pages deployment 564bc47c)
 Bidur at 8:41 PM: "website is over explaining. Make it simple and little nice marketing style. Nothing else. But focus should be on our previous kind of site before this last push".
 * The home page is back in the style it had before the 5:10 PM feature list (Pages deployment cff75587, commit 3afc3c3): app icon, name and one line, then the buttons, now as a TestFlight button (Join the iPhone beta, TEMP until the App Store listing) and Google Play coming soon, and "Free. No account, no ads, no tracking."
