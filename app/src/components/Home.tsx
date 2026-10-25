@@ -11,7 +11,7 @@ import { foldNear, type NearPick } from '@/lib/nearCore';
 import { stopNumber } from '@/lib/busCore';
 import { nativeMenu } from './Sheet';
 import { skinStyle, type CardSkin, type SkinStyle } from '@/lib/cardSkinCore';
-import { chipTime, heroCountTone, makeDeletedNames, thenText, undoableDelete, whereText } from '@/lib/homeCore';
+import { chipTime, heroCountTone, makeDeletedNames, spokenTime, thenText, undoableDelete, whereText } from '@/lib/homeCore';
 import { radius, usePalette } from '@/lib/theme';
 import { bestTime, clock, durText, liveStamp, ms, shortName } from '@/lib/format';
 import { clearAllPlan } from '@/lib/planCore';
@@ -229,7 +229,7 @@ function SkinCard({ children, flush, sk }: { children: React.ReactNode; flush?: 
   const ring: any = s0.ring ? { backgroundImage: s0.ring, padding: s0.width } : { borderWidth: s0.width, borderColor: s0.border || c.sep };
   return (
     <View style={[{ borderRadius: radius + s0.width, marginHorizontal: 16, marginTop: 10 }, flush && { marginHorizontal: 0, marginTop: 0 }, ring, s0.shadow ? ({ boxShadow: s0.shadow } as any) : null]}>
-      <View style={[{ borderRadius: radius, overflow: 'hidden', backgroundColor: c.card }, s0.fill ? ({ backgroundImage: s0.fill, backgroundColor: 'transparent' } as any) : null]}>
+      <View style={[{ borderRadius: radius, overflow: 'hidden', backgroundColor: s0.surface || c.card }, s0.fill ? ({ backgroundImage: s0.fill, backgroundColor: 'transparent' } as any) : null]}>
         {s0.highlight ? <View pointerEvents="none" accessible={false} style={[{ position: 'absolute', top: 0, left: 14, right: 14, height: 1 }, { backgroundImage: s0.highlight } as any]} /> : null}
         {children}
       </View>
@@ -482,8 +482,9 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
   useEffect(() => () => reportTripAlerts(trip.key, []), [trip.key]);
 
 
-  const lineColor = (js[0]?.legs.find((x) => x.kind === 'transit') as any)?.color || null;
-  const sk = skinStyle(skin, { dark: c.dark, line: lineColor, solid, cardColor: c.card, text3: c.text3 });
+  // Every line of the next service, in order (T4 then T1), so Line glow runs between their colours.
+  const lineColors = (js[0]?.legs || []).filter((x) => x.kind === 'transit').map((x: any) => x.color as string | undefined);
+  const sk = skinStyle(skin, { dark: c.dark, line: lineColors[0] || null, lines: lineColors, solid, cardColor: c.card, text3: c.text3 });
   const note = !data ? (error ? 'Live times unavailable, trying again' : 'Loading live times') : !js.length ? (offlineAt ? 'No kept times left for today' : data.error || 'No more services today') : '';
   const glance = (
     <TripGlance look={look} js={js} arrs={arrs} now={now} count={sk.count} title={trip.kind === 'place' && custom ? `${custom}: ${route}` : custom || route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint}
@@ -552,7 +553,7 @@ function TripGlance({ look, js, arrs, now, count = { size: 56, line: 62, weight:
       <T kind={look === 'row' ? 'body' : 'headline'} numberOfLines={2} style={{ flexShrink: 1, fontWeight: '600' }}>{title}</T>
     </View>
   );
-  const spoken = (x: { big: string; unit: string }) => (x.unit ? `${x.big} ${x.unit === 'min' ? 'minutes' : x.unit}` : x.big);
+  const spoken = spokenTime;
   const whereLong = whereText(l?.fromPlatform, l?.stopId, l?.mode, true);
   const a11y = j
     ? `${title}. ${ls ? ls.a11y : spoken(t)}, leaves ${hm(dep)}${whereLong ? ` from ${whereLong}` : ''}, ${ls?.kind === 'live' ? `${stt?.text}, ${liveWords(ls)}` : status}, arrives ${hm(arrs[0])}${badges.length ? `, ${badges.map((b) => b.line).join(' and ')}` : ''}${then ? `. ${then}` : ''}`

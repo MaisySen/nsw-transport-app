@@ -1,11 +1,11 @@
-// Which look the commute card uses, and whether the phone asks for solid colours. Today the shipped look is plain;
-// the three new looks are switchable in development only (on the web: ?card=titanium, line or glass).
+// Which look the commute card uses, and whether the phone asks for solid colours. The shipped look is Line glow (B);
+// in development the others stay switchable (on the web: ?card=plain, titanium, line or glass).
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Platform } from 'react-native';
 import { skinFrom, type CardSkin } from './cardSkinCore';
 
 /** The look shipped to everyone. */
-export const SHIPPED_SKIN: CardSkin = 'plain';
+export const SHIPPED_SKIN: CardSkin = 'line';
 
 /** The card look: SHIPPED_SKIN, or in development the one asked for. */
 export function useCardSkin(): CardSkin {
