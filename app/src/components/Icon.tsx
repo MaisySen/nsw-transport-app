@@ -28,6 +28,8 @@ export const I = {
   coach: { ios: 'bus.doubledecker.fill', android: 'airport_shuttle' },
   people: { ios: 'person.2.fill', android: 'group' },
   close: { ios: 'xmark', android: 'close' },
+  sun: { ios: 'sun.max', android: 'light_mode' },
+  moon: { ios: 'moon', android: 'dark_mode' },
   check: { ios: 'checkmark', android: 'check' },
   trash: { ios: 'trash', android: 'delete' },
   route: { ios: 'point.topleft.down.to.point.bottomright.curvepath', android: 'route' },
