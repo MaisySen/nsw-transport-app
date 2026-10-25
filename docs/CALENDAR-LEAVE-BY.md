@@ -7,7 +7,7 @@ More > Calendar leave by, off by default. When it is on, Home shows a line for e
 
 Tapping it opens the trip screen to that place at Arrive by the event's start time, with the trip you would take (the last one that still arrives in time) open. Asked for by Bidur at 5:10 PM on 25 Oct ("All yours. Do your wish", the brainstormed ideas).
 
-Code: `app/src/lib/calendarLeaveByCore.ts` (pure, unit tested in `app/test/calendarleaveby.test.mjs`), `app/src/lib/calendarLeaveBy.ts` (the calendar module, feature detected), `app/src/components/CalendarLeaveBy.tsx` (the Home card), `tripForCalendar` in `app/src/lib/api.ts`, the switch in `app/src/app/(tabs)/settings/index.tsx`, `calLeaveBy` and `calPlaces` in `app/src/lib/store.ts`, `arriveByIndex` in `app/src/lib/planCore.ts` (the trip screen at Arrive by). Remote flag `calendarLeaveBy` (on unless the server turns it off).
+Code: `app/src/lib/calendarLeaveByCore.ts` (pure, unit tested in `app/test/calendarleaveby.test.mjs`), `app/src/lib/calendarLeaveBy.ts` (the calendar module, feature detected), `app/src/components/CalendarLeaveBy.tsx` (the Home card), `tripForCalendar` in `app/src/lib/api.ts`, the switch in `app/src/app/(tabs)/settings/index.tsx`, `calLeaveBy` and `calPlaces` in `app/src/lib/store.ts`, `arriveByIndex` in `app/src/lib/planCore.ts` (the trip screen at Arrive by). Remote flag `calendarLeaveBy` (on unless the server turns it off). Shipped over the air on 25 Oct, 6:40 PM, group f773ab8e (docs/RELEASES.md).
 
 ## Which builds show it
 
@@ -30,7 +30,7 @@ Full access, not write only: write only access (iOS 17) lets an app add events b
 
 Add to Calendar keeps its own add only text and still needs no prompt for the system sheet.
 
-The native part for 208 (branch native-207, with its checklist in docs/TEST_PLAN.md there, "Build 208 checklist: Calendar leave by"): `writeOnlyAccess: false` and the text above for `calendarPermission`, `NSCalendarsWriteOnlyAccessUsageDescription` moved to `ios.infoPlist` so Add to Calendar keeps working, `READ_CALENDAR` and `WRITE_CALENDAR` listed in `android.permissions` (the plugin adds both anyway; expo-calendar asks for both together on Android). No EAS build was run for it.
+The native part for 208 (branch native-207, with its checklist in docs/TEST_PLAN.md there, "Build 208 checklist: Calendar leave by"): `writeOnlyAccess: false` and the text above for `calendarPermission`, `NSCalendarsWriteOnlyAccessUsageDescription` moved to `ios.infoPlist` so Add to Calendar keeps working, Android keeps `READ_CALENDAR` and `WRITE_CALENDAR`, which the plugin adds (expo-calendar asks for both together on Android). Checked with `npx expo config --type introspect` on native-207: `NSCalendarsFullAccessUsageDescription` and `NSCalendarsUsageDescription` carry the text above, `NSCalendarsWriteOnlyAccessUsageDescription` the add only text, no reminders keys, and both Android permissions. `app/test/leaveby206.test.mjs` on native-207 checks this config. Commits 8c5dd94 and e5a6cc2. No EAS build was run for it.
 
 ## What it reads and what leaves the phone
 
