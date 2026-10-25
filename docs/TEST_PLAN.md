@@ -91,6 +91,18 @@ GET ON and GET OFF only when a service is opened from a trip or plan, the server
 
 Usually N min late (`usualCore.ts`, `usual.ts`): the words come from the numbers only (minute 0 to 10, 10+, on time for 0 or 1, day type and part of the day, nothing under 8 services or for a value out of range), the batch query and its cache key per line, stop and hour, the quiet off switch on a 404 (the old host) and the usualLate flag, and the three screens that show it.
 
+### `app/test/planb.test.mjs`: 9 tests
+
+Plan B: cancelled, suspended, missed change, trackwork (replacement bus legs, the 10 min slack), replacement buses as a way round a cancellation, the Home sentence ("T1 suspended. Try the 8:04am M1 from Epping, arrives 8:41am."), and the morning alert tap opening its trip. See [Plan B](PLAN-B.md).
+
+### `app/test/lasthome-local.test.mjs`: 7 tests
+
+Last way home on the phone: the hint from a real Ask answer of the current server (fixture `test/fixtures/ask-last-home-old-host.json`), not offered on a "Latest I can see" answer, server push or phone per platform, the notification and Home card words (with a walk to the station), a late service moving it, a cancelled one followed by the last one still running or none left, the night gap, the recheck schedule. See [Last way home](LAST-WAY-HOME.md).
+
+### `app/test/trackwork-alerts.test.mjs`: 5 tests
+
+Weekend trackwork from `/api/alerts` on the current server: Sydney weekend dates and daylight saving, dates in alert words, real alerts of 25 Oct (fixture `test/fixtures/alerts-old-host-25oct.json`: the T4 work touches Strathfield to Kings Cross, the T1 North Shore and Western work does not), named places, the Thursday 6pm heads up plan. See [Weekend trackwork](TRACKWORK.md).
+
 ### `app/test/reminders.test.mjs`: 7 tests
 
 Trip reminders (`reminderCore.ts`, `reminders.ts`): clean reminders, clock and day words (Weekdays, Weekends, Every day, Mon, Wed, Fri), one weekly notification per day of each reminder with ids keyed by trip, the next ring time, the WEEKLY trigger feature detected, notification permission asked only when a reminder is saved (once in the code, after the feature check), no polling, reminders dropped 8 s after a trip is deleted (after Undo) and all of them on Delete all my data, a tap opening the trip.
@@ -147,6 +159,9 @@ Earlier runs: 15 (build 6) 10 of 10 light and 9 of 9 dark. Runs 10 and 11 failed
 | Bus route view and stop numbers (update 25 Oct, 3:15 PM): search 410 and 2046100 in Plan, Route on a bus service and on a bus leg, "Stop 2046100" on bus rows, Home stop cards, bus legs and the live trip | Not yet seen on a device; checked in the web build |
 | Station picker and bus picker (updates 25 Oct, 3:06 PM and 3:30 PM): no Back button or title over the screen on iPhone, the question in the search field, no caps lock in search fields; the bus picker opening on Near you (only when location is already allowed), then saved and recent stops, then Sydney routes, with trackwork, school and regional routes closed at the end | Not yet seen on a device; checked in the web build |
 | Website (25 Oct, 5:10 PM, Pages deployment 6a3ba944): home, support, privacy and terms answer 200, the four screens load, www redirects, /beta 302, /plan and /stop links show the Open in the app page, a random path 404 | Done with curl after the deploy |
+| Plan B on Home (update 25 Oct, 5 PM): a "Plan B:" line under a trip card when its next service is cancelled, on a suspended line, will miss a change or uses replacement buses; the tap opens the trip with its Plan B card. A tapped morning check alert opens that trip (the check must be in More > Check my trip on this phone) | Not yet seen on a device; checked in the web build with a real Strathfield to Kings Cross answer whose first T1 was marked cancelled (`files/commuter-25oct/`) |
+| Last way home on the phone (update 25 Oct, 5 PM): Ask "Last train home" (location allowed) or the last service in trip results, Remind me, the notification permission prompt at the tap, the notification 15 min before leaving with the app closed, Home card with Leave by and the service time, a later live time moving it after opening the app, Android getting a real notification. Cancel from the button and the Home card | Not yet seen on a device; checked in the web build with the current server's real answer for Kings Cross to Strathfield (12:54am T4, reminder 12:30am; the web build logs the schedule instead of ringing) |
+| Weekend trackwork on the current server (update 25 Oct, 5 PM): the Trackwork this weekend card from Thursday 6pm with Sat and Sun rows for the T4 work on Strathfield to Kings Cross; More > Weekend trackwork heads up asking for notifications, then one notification on Thursday 6pm when work touches a trip (Home opened earlier in the week) | Card seen in the web build with live alerts on Sunday 25 Oct; the Thursday notification not yet seen on a device |
 | Android closed app push | Needs a Firebase project (see [Roadmap](ROADMAP.md)) |
 | Play phone screenshots | Rendered from the app code at phone size; replace with device captures from the first internal test build |
 

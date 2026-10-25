@@ -38,6 +38,7 @@ test('the current server Ask answer gives a Remind me hint; the server hint wins
   const server = { lastHome: { from: hint.from, to: hint.to, leave: iso(60) } };
   assert.equal(h.askLastHint(server), server.lastHome);
   assert.equal(h.askLastHint({ kind: 'trip' }), null);
+  assert.equal(h.askLastHint({ ...fx, sure: false }), null, 'not sure it is the last one');
   assert.equal(h.askLastHint({ ...fx, last: { ...fx.last, anyCancelled: true } }), null);
 });
 
@@ -60,6 +61,8 @@ test('the reminder rings 15 min before leaving, with words written at scheduling
   assert.equal(w.body, "The 12:00am T4 from Kings Cross, Platform 1 leaves in 15 min. It's the last one tonight.");
   const walk = h.localItem(hint, h.slimLast({ ...J(60), leave: iso(51) }), T0);
   assert.match(h.localRingWords(walk).body, /^Leave by 11:51pm for the 12:00am T4/);
+  assert.equal(h.cardWords(walk, T0).line, 'Leave by 11:51pm for the 12:00am T4 from Kings Cross, Platform 1. Reminder at 11:36pm.');
+  assert.equal(h.cardWords(walk, T0 + 41 * 60000).line, 'Leave in 10 min for the 12:00am T4 from Kings Cross, Platform 1.');
   assert.match(h.setNoteLocal(it), /^Reminder set for 11:45pm, 15 min before you leave at 12:00am\./);
   assert.doesNotMatch(w.body + h.setNoteLocal(it), /[\u2013\u2014]/);
   assert.deepEqual(h.cardWords(it, T0).title, 'Last train to Strathfield');

@@ -70,10 +70,16 @@ export function cardWords(item: LastHomeItem | null | undefined, now: number): {
   const plat = item.platform ? `, ${item.platform}` : '';
   const what = [item.line, item.stop ? `from ${item.stop}` : ''].filter(Boolean).join(' ');
   const changed = item.changedFrom ? ' Time changed since you set it.' : '';
+  // A walk to the stop first: say when to set off and when the service itself leaves, so the two are not mixed up.
+  const board = item.board ? Date.parse(item.board) : NaN;
+  const walk = Number.isFinite(board) && board - leave >= 60000;
+  const svc = walk ? `the ${clock(board)}${what ? ` ${what}` : ''}${plat}` : '';
   if (now >= remindAt || item.status === 'sent') {
     const mins = Math.max(0, Math.round((leave - now) / 60000));
+    if (walk) return { title, line: `${mins >= 1 ? `Leave in ${mins} min` : 'Leave now'} for ${svc}.${changed}`, go: true };
     return { title, line: `${mins >= 1 ? `Leave in ${mins} min` : 'Leave now'}: ${item.leaveText || ''}${what ? ` ${what}` : ''}${plat}.${changed}`, go: true };
   }
+  if (walk) return { title, line: `Leave by ${item.leaveText || ''} for ${svc}. Reminder at ${item.remindText || ''}.${changed}`, go: false };
   return { title, line: `Leaves ${item.leaveText || ''}${what ? ` ${what}` : ''}${plat}. Reminder at ${item.remindText || ''}.${changed}`, go: false };
 }
 
@@ -214,7 +220,8 @@ export function recheckDue(item: LocalLast | null | undefined, now: number): boo
 export function askLastHint(d: any): LastHomeHint | null {
   if (!d || typeof d !== 'object') return null;
   if (d.lastHome && d.lastHome.from && d.lastHome.to) return d.lastHome;
-  if (d.kind !== 'lastService' || !d.last || !d.from?.id || !d.to?.id) return null;
+  // Only when the answer is sure it is the last one tonight ("Latest I can see" answers get no reminder).
+  if (d.kind !== 'lastService' || !d.last || !d.sure || !d.from?.id || !d.to?.id) return null;
   const svc = slimLast(d.last);
   if (!svc || svc.cancelled) return null;
   return { from: { id: String(d.from.id), name: String(d.from.name || '') }, to: { id: String(d.to.id), name: String(d.to.name || '') }, mode: d.mode || null, leave: svc.leave, svc };
