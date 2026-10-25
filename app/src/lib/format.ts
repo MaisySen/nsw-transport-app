@@ -113,12 +113,6 @@ export function versionLine(version?: string | null, build?: string | null, upda
   return v + b + u;
 }
 
-/** Words without HTML: some alert titles from Transport for NSW carry links as HTML. */
-export function plainText(h?: string | null): string {
-  return String(h || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
-}
-
 /** "25 min", "1 h", "7 h 26 min": travel time for long trips reads in hours. */
 export function durText(min?: number | null): string {
   const m = Math.max(0, Math.round(Number(min) || 0));

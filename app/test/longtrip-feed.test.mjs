@@ -113,7 +113,9 @@ test('long trips: the trip screen says it is still searching and refreshes every
 test('travel time in hours for long trips, alert titles without HTML', async () => {
   const src = fs.readFileSync(path.join(here, '..', 'src/lib/format.ts'), 'utf8');
   const fn = (name) => { const m = new RegExp(`export function ${name}[\\s\\S]*?\\n}\\n`).exec(src); return m[0]; };
-  const code = [fn('plainText'), fn('durText')].join('\n');
+  // plainText lives in htmlTextCore.ts (alert words for every screen, test/htmltext.test.mjs).
+  const core = fs.readFileSync(path.join(here, '..', 'src/lib/htmlTextCore.ts'), 'utf8');
+  const code = [core, fn('durText')].join('\n');
   const js = ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
   const f = path.join(out, 'fmtbits.mjs'); fs.writeFileSync(f, js);
   const M = await import(pathToFileURL(f).href);

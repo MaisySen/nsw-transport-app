@@ -8,6 +8,7 @@ import { EARLIER_NEEDS_NEW, ymd } from './tripModesCore';
 import { BOARD_EARLIER_NEEDS_NEW, boardQuery, honoured } from './boardTimeCore';
 import { createReadCache } from './pollCore';
 import { stampSeen } from './liveLabelCore';
+import { cleanAlertTexts } from './htmlTextCore';
 import { noteBoard } from './recent';
 import { boardKey } from './stopBoardCore';
 import { createKeep, isLongTrip, longGone, LONG_TRIP_KEEP_MS, LONG_TRIP_TIMEOUT_MS, plannerTooSlow } from './longTripCore';
@@ -29,7 +30,7 @@ async function once<T>(path: string, init: RequestInit | undefined, timeoutMs: n
     if (!r.ok) throw Object.assign(new Error((body && (body as any).error) || `Something went wrong (${r.status})`), { http: r.status });
     // Rows and legs carry the moment they arrived, so a countdown can say how old its live time is. An answer the
     // server took from its shared cache says when it was made (dataAt); the older of the two is the honest one.
-    return stampSeen(body as T, dataTime(body, Date.now()));
+    return stampSeen(cleanAlertTexts(body as T), dataTime(body, Date.now()));
   } finally {
     clearTimeout(t);
   }
@@ -258,7 +259,7 @@ async function onNew<T>(path: string, timeoutMs: number): Promise<T> {
     const r = await fetch(`${NEW_API_BASE}${path}`, { signal: ctl.signal });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw Object.assign(new Error((body && (body as any).text) || (body && (body as any).error) || `Something went wrong (${r.status})`), { http: r.status });
-    return stampSeen(body as T, Date.now());
+    return stampSeen(cleanAlertTexts(body as T), Date.now());
   } catch (e: any) {
     if (e?.http) throw e;
     throw Object.assign(new Error("No answer from the server. Check your connection."), { offline: true });

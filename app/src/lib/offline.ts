@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MAX_ENTRIES, prune, touch, usable, worthKeeping } from './offlineCore';
+import { cleanAlertTexts } from './htmlTextCore';
 
 const INDEX = 'offline:index';
 /** At most one write per answer every 60 s: refreshes come every 15 s and the times barely move. */
@@ -36,7 +37,8 @@ export async function readOffline<T>(key: string): Promise<{ at: number; data: T
     const raw = await AsyncStorage.getItem(key);
     const now = Date.now();
     const e = usable(raw ? JSON.parse(raw) : null, now);
-    return e ? { at: e.at, data: prune(e.data as T, now) } : null;
+    // A copy kept before alert words were cleaned on arrival is cleaned here too (htmlTextCore).
+    return e ? { at: e.at, data: prune(cleanAlertTexts(e.data as T), now) } : null;
   } catch {
     return null;
   }

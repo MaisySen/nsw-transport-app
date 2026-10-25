@@ -163,8 +163,21 @@ function platformChange(props, cls) {
 function iso(t) { return t ? new Date(t).toISOString() : null; }
 // Alert titles from the planner can carry HTML ("<a href=...>Book your seat with NSW TrainLink</a>"): plain words only.
 function plainText(h) {
-  return String(h || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
+  const tags = (x) => x
+    .replace(/<[^>]*>/g, " ")
+    // A tag cut off by a length limit ("<a href=...") has no closing bracket: drop it to the end.
+    .replace(/<\/?[a-z][^<]*$/i, " ");
+  const ents = (x) => x
+    .replace(/&#(\d+);/g, (m, n) => { const c = Number(n); return c > 0 && c < 0x110000 ? String.fromCodePoint(c) : " "; })
+    .replace(/&#x([0-9a-f]+);/gi, (m, n) => { const c = parseInt(n, 16); return c > 0 && c < 0x110000 ? String.fromCodePoint(c) : " "; })
+    .replace(/&(nbsp|amp|quot|apos|lt|gt|ndash|mdash|rsquo|lsquo|rdquo|ldquo|hellip);/gi, (m, n) => PLAIN_ENTITIES[n.toLowerCase()]);
+  // Twice: some alerts carry their HTML encoded ("&lt;a href=...&gt;"), which reads as a tag only once decoded.
+  return tags(ents(tags(String(h || ""))))
+    // No en or em dashes in what the app shows.
+    .replace(/\s*[\u2013\u2014]\s*/g, ", ")
+    .replace(/\s+/g, " ").replace(/\s+([,.;:!?])/g, "$1").replace(/,(\s*,)+/g, ",").trim();
 }
+const PLAIN_ENTITIES = { nbsp: " ", amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", ndash: ", ", mdash: ", ", rsquo: "'", lsquo: "'", rdquo: '"', ldquo: '"', hellip: "..." };
 function ms(t) { return t ? new Date(t).getTime() : null; }
 
 const OCC_EFA = {
@@ -1758,7 +1771,7 @@ async function alerts(env, q) {
   const mot = q && modeMap[q.toLowerCase()];
   if (mot) params.filterMOTType = mot;
   const data = await tp(env, "add_info", params);
-  const strip = (h) => String(h || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+  const strip = plainText;
   const list = ((data.infos && data.infos.current) || []).map((i) => {
     const head = strip(i.subtitle || i.urlText || "");
     const body = strip(i.content || "");
@@ -3725,7 +3738,7 @@ function digestAlerts(raw, table, now) {
     const stops = [...new Set(a.stops.map((s) => String(s).replace(/^G/, "")))].slice(0, 80);
     if (!lines.length && !stops.length) continue;
     const planned = ALERT_PLANNED_CAUSES.has(a.cause) || PLANNED_WORDS.test(a.header);
-    items.push({ id: a.id.slice(0, 64), h: a.header.replace(/\s+/g, " ").trim().slice(0, 240), u: httpsUrl(a.url), e: effect, pl: planned ? 1 : 0,
+    items.push({ id: a.id.slice(0, 64), h: plainText(a.header).slice(0, 240), u: httpsUrl(a.url), e: effect, pl: planned ? 1 : 0,
       p: periods.map(([s, e]) => [s, e]).slice(0, 12), l: lines, s: stops });
   }
   return items;
@@ -6204,7 +6217,7 @@ async function facData(env, name) {
     return v;
   } catch (e) { return hit ? hit.v : null; }
 }
-function facStrip(h) { return String(h || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim(); }
+function facStrip(h) { return plainText(h); }
 function facDist(aLat, aLon, bLat, bLon) {
   const r = Math.PI / 180, x = (bLon - aLon) * r * Math.cos(((aLat + bLat) / 2) * r), y = (bLat - aLat) * r;
   return Math.round(Math.sqrt(x * x + y * y) * 6371000);
