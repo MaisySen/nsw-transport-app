@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Train stop lists and regional badges (server 26 Oct, 8:34 AM, transport-api 12a75142; over the air 8:48 AM, group 3edfe9f1)
+* A train's stop list on the service screen runs from your stop to the real end of the line with every stop it makes. Before, through trains to Hornsby, Berowra and North Sydney stopped at Central (the feed gave Central's id as their destination), some trains had no list (the trip planner offered another train or a change instead), and Sydney Trains' feed left out stops it had no news for. At 8 busy stations, 39 of 63 lists were whole at 8:07 AM and 59 of 63 at 8:36 AM.
+* The two T1 trains to Hornsby that leave Blacktown in the same minute (platforms 1 and 5) are both real, and each now only ever shows its own stops.
+* Regional trains and coaches that come with only a route number show Regional or Coach on their row ("427" was the Dubbo train). Route chips keep the number.
+* Platform view stays hidden.
+
 ### Battery and data, buses at big stations (over the air, 26 Oct, about 8:22 AM, group fbf3cff7)
 Item 2 of the plan Bidur approved at 12:04 AM, and the 415 to Chiswick missing from Strathfield Station at 7:47 AM.
 * The 415 was not dropped: a board answer is 40 services, and at Strathfield at that hour 40 covers about 15 minutes (7:51 to 8:07). The next 415 to Chiswick was 8:10 from the same Stand G. Tapping Buses (or Trains, Metro) or a route at a station with several modes now loads 40 services of that mode, so buses at Strathfield reach about 50 minutes ahead and the 415 shows its Chiswick and Campsie trips. All is unchanged.
