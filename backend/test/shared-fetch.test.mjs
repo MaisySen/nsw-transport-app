@@ -17,7 +17,7 @@ globalThis.fetch = async (u) => {
   if (!/\/v1\/tp\/departure_mon/.test(url)) return new Response("{}", { status: 503 });
   upstream++;
   if (gate) await gate;
-  if (refuseTimes > 0) { refuseTimes--; return new Response('{"code":403,"message":"Account over rate limit"}', { status: 403, headers: { "x-error-detail": "Account Over Rate Limit" } }); }
+  if (refuseTimes > 0) { refuseTimes--; return new Response('{"ErrorDetails":{"Message":"Your API quota or rate limit has been exceeded. If you"}}', { status: 429 }); }
   if (refuse) return new Response('{"code":403,"message":"Account over rate limit"}', { status: 403, headers: { "x-error-detail": refuse } });
   const stop = new URL(url).searchParams.get("name_dm");
   return new Response(JSON.stringify({ locations: [{ name: "Stop " + stop, disassembledName: "Stop " + stop }], stopEvents: [] }), { headers: { "content-type": "application/json", "x-ratelimit-limit": "5" } });
@@ -116,8 +116,14 @@ test("a load test request counts as busy from 1 call a second, a phone from 3", 
   W.budget.calls.length = 0;
 });
 
-test("over the day's quota backs off a minute; other 403s do not count", () => {
-  W.budget.overUntil = 0;
+test("over the day's quota backs off a minute; other 403s do not count; the hub's 429 counts", () => {
+  W.budget.overUntil = 0; W.budget.lastOkAt = Date.now();
+  W.upstreamRefused(429, '{"ErrorDetails":{"Message":"Your API quota or rate limit has been exceeded. If you"}}');
+  assert.ok(W.budget.overUntil - Date.now() <= 2000 && W.budget.overUntil > Date.now(), "429 with a good answer in the last minute: 2 s");
+  W.budget.overUntil = 0; W.budget.lastOkAt = Date.now() - 120000;
+  W.upstreamRefused(429, "Your API quota or rate limit has been exceeded.");
+  assert.ok(W.budget.overUntil - Date.now() > 50000, "no good answer for a minute: taken as the quota");
+  W.budget.overUntil = 0; W.budget.lastOkAt = Date.now();
   W.upstreamRefused(403, "Account Over Quota Limit");
   assert.ok(W.budget.overUntil - Date.now() > 50000);
   W.budget.overUntil = 0;
@@ -175,7 +181,7 @@ test("with no copy a phone waits for the answer however long it takes", async ()
   assert.ok(Date.now() - t0 >= 850);
 });
 
-test("a 403 over the per second limit is asked again after a short wait; a phone with no copy gets the answer, not an error", async () => {
+test("a 429 over the hub limit is asked again after a short wait; a phone with no copy gets the answer, not an error", async () => {
   W.budget.overUntil = 0; W.budget.calls.length = 0;
   refuseTimes = 2;
   const n0 = upstream;

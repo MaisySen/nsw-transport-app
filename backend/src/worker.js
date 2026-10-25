@@ -121,8 +121,10 @@ async function tp(env, endpoint, params, timeoutMs = 12000) {
   const qs = new URLSearchParams({
     outputFormat: "rapidJSON", coordOutputFormat: "EPSG:4326", version: "10.2.1.42", ...params,
   });
-  // Over the hub's per second limit (a 403 "Account Over Rate Limit") the call is asked again up to twice, after
-  // a short wait, because the limit frees up within the second; over the day's quota it is not.
+  // Over the hub's limit the call is asked again up to 4 times after a short wait (about 5 s in all), because the per second limit
+  // frees up within the second. The hub's answer does not say which limit (429 "Your API quota or rate limit has
+  // been exceeded", seen 26 Oct 2026), so with no good answer for a minute it is taken as the day's quota and not
+  // asked again.
   for (let attempt = 0; ; attempt++) {
     await upstreamSlot();
     upstream.calls++;
@@ -132,12 +134,12 @@ async function tp(env, endpoint, params, timeoutMs = 12000) {
       signal: AbortSignal.timeout(timeoutMs),
     });
     upstreamHeaders(res);
-    if (res.ok) return res.json();
+    if (res.ok) { budget.lastOkAt = Date.now(); return res.json(); }
     const body = await res.text();
     const detail = (res.headers && res.headers.get("x-error-detail")) || body;
     upstreamRefused(res.status, detail);
-    if (res.status === 403 && /rate limit/i.test(detail) && !/quota/i.test(detail) && attempt < 2) {
-      await new Promise((r) => setTimeout(r, 400 + attempt * 600 + Math.floor(Math.random() * 300)));
+    if (overLimit(res.status, detail) && !/quota limit/i.test(detail) && Date.now() - budget.lastOkAt < 60000 && attempt < 4) {
+      await new Promise((r) => setTimeout(r, 400 + attempt * 600 + Math.floor(Math.random() * 400)));
       continue;
     }
     throw new Error(`Transport data answered ${res.status}: ${body.slice(0, 200)}`);
@@ -155,7 +157,7 @@ async function tp(env, endpoint, params, timeoutMs = 12000) {
 const UPSTREAM_PER_S = 3;
 const UPSTREAM_WINDOW_MS = 10000;
 const STALE_MAX_MS = 60000;
-const budget = { calls: [], overUntil: 0, refused: 0, staleServed: 0, shared: 0, seen: {} };
+const budget = { calls: [], overUntil: 0, refused: 0, staleServed: 0, shared: 0, seen: {}, lastOkAt: Date.now() };
 // Pacing inside one copy: at most UPSTREAM_BURST Trip Planner calls start in any second; the next waits for room
 // (up to 2 s, then it goes anyway), so a burst of first opens is spread instead of refused by the hub.
 const UPSTREAM_BURST = 4;
@@ -178,13 +180,17 @@ function upstreamBusy(test = false) {
   upstreamTrim(now);
   return budget.calls.length >= (test ? 1 : UPSTREAM_PER_S) * (UPSTREAM_WINDOW_MS / 1000);
 }
+// The documented answer over a limit is 403 with X-Error-Detail "Account Over Rate Limit" or "Account Over Quota
+// Limit"; the hub answered 429 "Your API quota or rate limit has been exceeded" on 26 Oct 2026. Both count.
+function overLimit(status, detail) { return (status === 403 || status === 429) && /rate|quota/i.test(String(detail || "")); }
 function upstreamRefused(status, detail) {
-  if (status !== 403 && status !== 429) return;
-  const d = String(detail || "");
-  if (!/rate|quota/i.test(d)) return;
+  if (!overLimit(status, detail)) return;
   budget.refused++;
-  // Over the per second limit: back off 2 s. Over the day's quota: a minute at a time (the hub resets at midnight).
-  budget.overUntil = Date.now() + (/quota/i.test(d) ? 60000 : 2000);
+  const d = String(detail || "");
+  // Over the per second limit: back off 2 s. Over the day's quota (said so, or no good answer for a minute): a
+  // minute at a time (the hub resets at midnight).
+  const quota = /quota limit/i.test(d) || Date.now() - budget.lastOkAt > 60000;
+  budget.overUntil = Date.now() + (quota ? 60000 : 2000);
 }
 // Any rate or quota header the hub sends back, kept so /api/health can show what the key is allowed.
 function upstreamHeaders(res) {
