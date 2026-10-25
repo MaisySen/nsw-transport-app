@@ -10,6 +10,8 @@ import { store, useStore } from '@/lib/store';
 import { planResults } from '@/lib/homeCore';
 import { isStopItem, noPlaceText, NOW, placeSubtitle, stopsAsPlaces, whenLabel, whenParams, type PlaceItem, type When } from '@/lib/planCore';
 import { WhenPicker } from '@/components/WhenPicker';
+import { useBusLookup } from '@/lib/busSearch';
+import { badgeLook } from '@/lib/lineStyle';
 import { useNow } from '@/lib/hooks';
 import type { Place } from '@/lib/types';
 import { Icon, I, modeIconName } from '@/components/Icon';
@@ -76,6 +78,7 @@ export default function Search() {
   }, [focus]);
   const text = mode === 'stop' ? q : field === 'from' ? fromText : toText;
   const { items, loading, failed, wide } = useStopSearch(text, mode === 'trip');
+  const bus = useBusLookup(text);
   // Leave now, Leave at or Arrive by, for trips planned from here.
   const [when, setWhen] = useState<When>(NOW);
   const [whenOpen, setWhenOpen] = useState(false);
@@ -183,6 +186,22 @@ export default function Search() {
         ) : null}
         <WhenPicker visible={whenOpen} value={when} now={now} onClose={() => setWhenOpen(false)}
           onDone={(w) => { setWhenOpen(false); setWhen(w); if (from && to) go(from, to, w); }} />
+
+        {!chosen && (bus.stop || bus.route) ? (
+          <Section>
+            {bus.stop ? (
+              <Row icon={I.bus} iconBg={badgeLook(null, 'bus', null).bg} title={shortName(bus.stop.name)}
+                subtitle={[`Stop ${bus.stop.id}`, bus.stop.stand].filter(Boolean).join(' \u00b7 ')}
+                onPress={() => pick({ id: bus.stop!.id, name: bus.stop!.stand ? `${bus.stop!.name}, ${bus.stop!.stand}` : bus.stop!.name } as PlaceItem)} />
+            ) : null}
+            {bus.stop && bus.route ? <Sep inset={57} /> : null}
+            {bus.route ? (
+              <Row icon={I.route} iconBg={badgeLook(bus.route.line, 'bus', null).bg} title={`Route ${bus.route.line}`}
+                subtitle={bus.route.ends.length ? `${bus.route.ends.map((e) => shortName(e)).join(' and ')}. Stops and live buses` : 'Stops and live buses'}
+                onPress={() => { Keyboard.dismiss(); router.push({ pathname: '/route', params: { line: bus.route!.line, mode: 'bus' } }); }} />
+            ) : null}
+          </Section>
+        ) : null}
 
         {list.length ? (
           <Section>

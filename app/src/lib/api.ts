@@ -83,6 +83,8 @@ export const api = {
   plan: (legs: any[], opts: { count?: number; time?: string; all?: boolean } = {}) =>
     req<TripResp>(`/api/plan?${qs({ legs: JSON.stringify(legs), count: opts.count || 5, time: opts.time, all: opts.all ? 1 : '', fare: store.fareType(), acc: store.accOn() ? 1 : '' })}`),
   service: (q: Record<string, string | undefined>) => req<ServiceResp>(`/api/service?${qs(q)}`),
+  /** A bus route's stops in order, each direction: [{ to, stops: [[id, name, lat, lon]] }]. 404 when there is no such route. */
+  route: (line: string, mode = 'bus') => req<any>(`/api/stations?${qs({ mode, route: line })}`, undefined, 25000),
   alerts: (q = '') => req<{ items?: any[]; alerts?: any[] }>(`/api/alerts?${qs({ q })}`),
   saved: () => req<{ items: Saved[] }>(`/api/saved?${qs({ profile: PROFILE })}`),
   saveTrip: (name: string, from: Place, to: Place) => req<{ ok: boolean }>(`/api/saved`, { method: 'POST', body: JSON.stringify({ profile: PROFILE, name, from, to }) }),
