@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Honest live times and cleaner bus stop boards (over the air update for iPhone and Android, 25 Oct, 4:29 PM)
+* Every countdown says where its time comes from: "Live, updated 15 s ago", "Timetable" (grey, no live data for that service) or "Not tracking".
+* No more ghost buses: when a bus's live position goes stale, the time shows the timetable time and "Not tracking" instead of counting down to Now and then saying it has gone. A timetable time that has passed shows the time, never "left".
+* Bus stops: tap a route chip (410) to see only that route; tap it again, or All routes, to see every route. "Route 410: all stops and live buses" opens the route.
+* Recently departed, one row above the departures: "Left 4:21pm" only when live data followed the service to its departure, otherwise "Due 4:20pm, not tracked".
+* Open a bus or train leg from a trip and its stop list marks GET ON and GET OFF on your two stops.
+* Group eadd0cc6. Roll back to 96c008eb (the 3:30 PM update): `npx eas-cli update:republish --group 96c008eb-0386-4368-9c14-7061aeefd02e --destination-branch production --message "Roll back" --non-interactive`.
+
 ### Cleaner bus picker in New trip (over the air update for iPhone and Android, 25 Oct, 3:30 PM)
 * Choosing where you get on the bus starts with bus stops near you (with the stop number and how far), your saved and recent bus stops, then Sydney routes in number order with where each goes on two lines, nothing cut off. It no longer opens on trackwork and regional routes.
 * Trackwork buses, school buses and regional and coach routes have their own sections at the end, closed until you tap them.
