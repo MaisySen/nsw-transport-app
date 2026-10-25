@@ -67,7 +67,7 @@ test('calendar and speech load only when the native module is there', () => {
   }
 });
 
-test('calendar sheet comes from the legacy API and only add only access is ever asked', () => {
+test('calendar sheet comes from the legacy API, Add to Calendar asks only add only access, and build 208 carries both texts', () => {
   const src = fs.readFileSync(path.join(root, 'src/lib/nativeExtras.ts'), 'utf8');
   // The root export of expo-calendar 58 throws for createEventInCalendarAsync.
   assert.match(src, /require\('expo-calendar\/legacy'\)/);
@@ -75,8 +75,11 @@ test('calendar sheet comes from the legacy API and only add only access is ever 
   assert.ok(!/requestCalendarPermissionsAsync/.test(src));
   const app = JSON.parse(fs.readFileSync(path.join(root, 'app.json'), 'utf8')).expo;
   const cal = app.plugins.find((p) => Array.isArray(p) && p[0] === 'expo-calendar')[1];
-  assert.equal(cal.writeOnlyAccess, true);
-  assert.ok(cal.writeOnlyCalendarPermission && cal.calendarPermission);
+  // Build 208: full access text for Calendar leave by (reading needs it on iOS 17+), and the add only text for Add
+  // to Calendar in ios.infoPlist, since the plugin writes only one of the two (docs/CALENDAR-LEAVE-BY.md).
+  assert.equal(cal.writeOnlyAccess, false);
+  assert.match(cal.calendarPermission, /reads the time and place of your upcoming events/);
+  assert.match(app.ios.infoPlist.NSCalendarsWriteOnlyAccessUsageDescription, /adds a leave by reminder/);
   assert.equal(cal.remindersPermission, false);
   assert.equal(app.ios.deploymentTarget, '17.0');
 });
