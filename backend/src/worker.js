@@ -757,6 +757,18 @@ function tripEndName(r, end) {
   const n = l && (end === "from" ? l.from : l.to);
   return n ? String(n).split(/,\s*(Platform|Stand|Wharf \d|Stop)\b/i)[0].trim() || null : null;
 }
+// A stop's name from a planner stop: its short name, unless that short name has no station in it. At both airport
+// stations every platform's short name is only ", Platform 2" (seen 26 Oct), so stop lists showed a blank row; the
+// full name "Domestic Airport Station, Platform 2, Mascot" without its suburb is used then.
+function seqStopName(s) {
+  const d = String((s && s.disassembledName) || "").trim();
+  if (d && !d.startsWith(",")) return shortName(d);
+  const n = String((s && s.name) || "").trim();
+  if (!d) return shortName(n);
+  const parts = n.split(", ");
+  if (parts[0]) return shortName(parts.length >= 3 ? parts.slice(0, -1).join(", ") : n);
+  return d.replace(/^,\s*/, "");
+}
 function shortName(n) {
   const s = String(n || "").replace(/,\s*(Sydney|NSW)$/i, "");
   const parts = s.split(", ");
@@ -890,7 +902,7 @@ async function departures(env, stopId, opts = {}) {
   // Delay samples are live times read close to departure: a board for another moment records none.
   if (opts.log !== false && !opts.at) logObservations(env, opts.ctx, items, stopId);
   return {
-    stop: { id: stopId, name: shortName(loc.disassembledName || loc.name || stopId), fullName: loc.name || "", exactName },
+    stop: { id: stopId, name: (loc.disassembledName || loc.name) ? seqStopName(loc) : stopId, fullName: loc.name || "", exactName },
     items, modes,
     alerts: [...alerts.values()].map((a) => ({ ...a, lines: [...a.lines].filter(Boolean) })).slice(0, 10),
     live: { feedAt: rt.fetchedAt(), filledFromFeed: filled, liveCount: items.filter((i) => i.realtime).length, total: items.length },
@@ -1640,7 +1652,7 @@ async function service(env, q) {
       const k = feedStops.findIndex((s) => s.id === q.stop);
       plannerFrom = k > 0 ? k : 0;
       stops = (k > 0 ? feedStops.slice(0, k) : []).concat((leg.stopSequence || []).map((s) => ({
-        id: s.id, name: shortName(s.disassembledName || s.name), lat: s.coord ? s.coord[0] : null, lon: s.coord ? s.coord[1] : null,
+        id: s.id, name: seqStopName(s), lat: s.coord ? s.coord[0] : null, lon: s.coord ? s.coord[1] : null,
         planned: iso(s.departureTimePlanned || s.arrivalTimePlanned),
         // A stop list kept from an earlier answer has its own planned times; live times come from the feed below.
         estimated: leg.isRealtimeControlled && !got.stale ? iso(s.departureTimeEstimated || s.arrivalTimeEstimated) : null,
@@ -3840,7 +3852,7 @@ async function planShape(env, f, t, day, hhmm) {
     for (const s of lg.stopSequence || []) {
       const pid = (s.parent && s.parent.id) || s.id;
       if (pid) stops.add(String(pid));
-      names.add(plainStop((s.parent && s.parent.disassembledName) || s.name));
+      names.add(plainStop((s.parent && seqStopName(s.parent)) || s.name));
     }
     const ttb = tr.properties && tr.properties.isTTB;
     if (!bus && (ttb || /temporary bus/i.test((tr.product && tr.product.name) || ""))) bus = { from: shortName((lg.origin || {}).name || "").replace(/ Station$/, ""), to: shortName((lg.destination || {}).name || "").replace(/ Station$/, "") };

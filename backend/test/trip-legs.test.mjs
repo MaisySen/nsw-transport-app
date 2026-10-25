@@ -8,7 +8,7 @@ import { efaLeg } from "./helpers/efa.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
 const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {")
-  + "\nexport { __default, trip, onDemandOf };\n";
+  + "\nexport { __default, trip, onDemandOf, seqStopName };\n";
 const tmp = `/tmp/trip-legs-test-${process.pid}-${Date.now()}.mjs`;
 fs.writeFileSync(tmp, src);
 const W = await import(tmp); fs.unlinkSync(tmp);
@@ -45,4 +45,12 @@ test("trip: the D400 comes through as on demand, the T2 then bus carries the tra
   assert.equal(tb.legs[0].delayMin, 27);
   assert.equal(tb.legs[1].delayMin, 0);
   assert.equal(Date.parse(tb.legs[0].estimated), now);
+});
+
+test("airport stations: a platform whose short name is only \", Platform 2\" gets the station's name", () => {
+  assert.equal(W.seqStopName({ name: "Domestic Airport Station, Platform 2, Mascot", disassembledName: ", Platform 2" }), "Domestic Airport Station, Platform 2");
+  assert.equal(W.seqStopName({ name: "International Airport Station, Platform 1, Mascot", disassembledName: ", Platform 1" }), "International Airport Station, Platform 1");
+  assert.equal(W.seqStopName({ name: "Mascot Station, Platform 2, Mascot", disassembledName: "Mascot Station, Platform 2" }), "Mascot Station, Platform 2");
+  assert.equal(W.seqStopName({ name: "Central Station, Sydney" }), "Central Station");
+  assert.equal(W.seqStopName({ disassembledName: ", Platform 3" }), "Platform 3");
 });
