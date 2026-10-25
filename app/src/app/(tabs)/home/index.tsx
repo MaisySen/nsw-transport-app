@@ -5,7 +5,9 @@ import { haptic } from '@/lib/haptic';
 import { gripStep, type GripEvent, type GripState } from '@/lib/gesture';
 import { sameEnds } from '@/lib/homeCore';
 import { clearAllWords } from '@/lib/planCore';
-import { router, Stack } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { Segmented } from '@/components/Segmented';
+import { ActionSheetIOS } from 'react-native';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { cacheKey } from '@/lib/offlineCore';
@@ -16,7 +18,8 @@ import { shortName } from '@/lib/format';
 import type { Place } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
 import { watchLine } from '@/components/Cards';
-import { ActionRow, AlertBanner, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTag, PlaceBar, pullHome, StopBoard, TripBoard, TripItem, useNearby } from '@/components/Home';
+import { type TripLook } from '@/components/Home';
+import { ActionRow, AlertBanner, AlertsLine, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTag, PlaceBar, pullHome, StopBoard, TripBoard, TripItem, useNearby } from '@/components/Home';
 import { LineBadge } from '@/components/Transit';
 import { TabBarSafe } from '@/components/TabBarSafe';
 import { useLiveTrip } from '@/lib/live';
@@ -30,6 +33,10 @@ import { commuteDir, halfDayKey } from '@/lib/smart';
 import { useLoaded } from '@/lib/store';
 
 export default function Home() {
+  // Redesign proposal (branch home-redesign only): /home?design=a or ?design=b. Without it, today's Home.
+  const { design } = useLocalSearchParams<{ design?: string }>();
+  const opt = design === 'a' || design === 'b' ? design : null;
+  const [seg, setSeg] = useState<'trips' | 'stops' | 'near'>('trips');
   const c = usePalette();
   const side = useSides();
   const now = useNow();
@@ -139,6 +146,79 @@ export default function Home() {
     await live.refresh();
     setPulling(false);
   };
+
+  if (opt) {
+    const hero = opt === 'a' ? (commute || sorted[0] || null) : null;
+    const rest = opt === 'a' ? sorted.filter((t) => t !== hero) : sorted;
+    const list = opt === 'b' && commute ? [commute, ...rest] : rest;
+    const hasTrips = !!(hero || list.length);
+    const showTrips = opt === 'a' || seg === 'trips';
+    const showStops = opt === 'a' ? starred.length > 0 : seg === 'stops';
+    const showNear = opt === 'a' ? near.phase !== 'checking' : seg === 'near';
+    const look = opt === 'a' ? 'row' : 'pills';
+    return (
+      <>
+        <Stack.Screen options={{ title: 'Home', headerRight: () => (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            <LiveTag />
+            <AddButton places={places} />
+          </View>
+        ) }} />
+        <Screen scrollEnabled={scrollOn} refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} enabled={scrollOn} />}>
+          {g ? <LiveBar title={g.title} line={g.legs[0]?.line} mode={g.legs[0]?.mode} color={g.legs[0]?.color} /> : null}
+          <AlertBanner />
+          {opt === 'b' ? <Segmented value={seg} onChange={setSeg} options={[{ k: 'trips', label: 'Trips' }, { k: 'stops', label: 'Stops' }, { k: 'near', label: 'Nearby' }]} /> : null}
+          {activeWatches.length && showTrips ? (
+            <Section title="Watching now">
+              {activeWatches.map((w: any, i: number) => (
+                <View key={w.id}>
+                  {i ? <Sep inset={57} /> : null}
+                  <Row icon={I.bell} iconBg={c.indigo} title={w.title} subtitle={watchLine(w, now)} onPress={() => router.push({ pathname: '/watch/[id]', params: { id: w.id } })} />
+                </View>
+              ))}
+            </Section>
+          ) : null}
+          {showTrips ? <AlertsLine /> : null}
+          {showTrips ? <LineStatusStrip now={now} /> : null}
+          {showTrips && hero ? (
+            <HomeSection title={commute && hero === commute ? 'Your commute' : 'Next trip'}>
+              <TripBoard trip={hero} now={now} look="hero" />
+              {hero === commute ? <View style={{ marginHorizontal: 16 }}><LeaveLine js={[]} now={now} me={me} /></View> : null}
+            </HomeSection>
+          ) : null}
+          {showTrips && list.length ? (
+            opt === 'a' ? (
+              <HomeSection title="Your trips">
+                <DragTrips trips={list} now={now} all={st.allServices || {}} onScroll={setScrollOn} look={look} />
+              </HomeSection>
+            ) : <View style={{ marginTop: 6 }}><DragTrips trips={list} now={now} all={st.allServices || {}} onScroll={setScrollOn} look={look} /></View>
+          ) : null}
+          {showTrips && !hasTrips && d ? (
+            <View style={{ alignItems: 'center', marginTop: 56, marginHorizontal: 32 }}>
+              <Icon name={I.star} size={36} color={c.tint} />
+              <T kind="title3" style={{ marginTop: 12, textAlign: 'center' }}>Save the trips you take</T>
+              <T kind="sub" tone="text2" style={{ marginTop: 6, textAlign: 'center' }}>They show here with live times, platforms and delays.</T>
+              <View style={{ marginTop: 18, alignSelf: 'stretch' }}><Button title="Add a trip" onPress={() => router.push('/new-trip')} /></View>
+            </View>
+          ) : null}
+          {showStops ? (
+            <HomeSection title="Starred stops">
+              {starred.map((p) => <StopBoard key={p.id} stop={p} starred now={now} onLongPress={() => stopMenu(p, true)} />)}
+              {!starred.length ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>Star a stop from its departures screen to see it here.</T> : null}
+            </HomeSection>
+          ) : null}
+          {showNear ? (
+            <HomeSection title="Nearby">
+              {near.phase === 'on' && nearStops.length ? nearStops.map((p) => <StopBoard key={p.id} stop={p} distance={p.distance} now={now} />) : null}
+              {near.phase === 'on' && !nearStops.length ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>No stops within walking distance</T> : null}
+              {near.phase !== 'on' ? <ActionRow icon={I.location} title="Show stops near me" onPress={near.ask} busy={near.phase === 'loading'} /> : null}
+            </HomeSection>
+          ) : null}
+          {!d && !live.error ? <T kind="sub" tone="text2" style={{ textAlign: 'center', marginTop: 40 }}>Loading</T> : null}
+        </Screen>
+      </>
+    );
+  }
 
   return (
     <>
@@ -258,7 +338,7 @@ function SwapButton({ to, onPress }: { to: string; onPress: () => void }) {
 }
 
 /** Trip cards that reorder by dragging the handle on each card. */
-function DragTrips({ trips, now, all, onScroll }: { trips: TripItem[]; now: number; all: Record<string, boolean>; onScroll: (on: boolean) => void }) {
+function DragTrips({ trips, now, all, onScroll, look }: { trips: TripItem[]; now: number; all: Record<string, boolean>; onScroll: (on: boolean) => void; look?: TripLook }) {
   const c = usePalette();
   const lay = useRef<{ y: number; h: number }[]>([]);
   const [drag, setDrag] = useState<{ i: number; dy: number; target: number } | null>(null);
@@ -297,14 +377,14 @@ function DragTrips({ trips, now, all, onScroll }: { trips: TripItem[]; now: numb
             style={{ transform: [{ translateY: ty }, { scale: lifted ? 1.02 : 1 }], zIndex: lifted ? 10 : 0, elevation: lifted ? 8 : 0, shadowColor: '#000', shadowOpacity: lifted ? 0.18 : 0, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } }}>
             {(() => {
               const grip = trips.length > 1 ? (open: () => void) => <Grip onStart={() => start(i)} onMove={move} onEnd={end} onTap={open} /> : undefined;
-              if (t.kind !== 'mine' && t.kind !== 'saved') return <TripBoard trip={t} now={now} allServices={!!all[t.key]} handle={grip} />;
+              if (t.kind !== 'mine' && t.kind !== 'saved') return <TripBoard trip={t} now={now} allServices={!!all[t.key]} handle={grip} look={look} />;
               const del: SwipeAct = { label: 'Delete', text: 'Delete', icon: I.trash, color: c.red, onPress: () => Alert.alert(t.name || 'Delete trip', 'Delete this saved trip? It is removed from this phone and the server.', [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Delete trip', style: 'destructive', onPress: () => deleteTrip(t) },
               ]) };
               return (
                 <SwipeRow act={del} style={CARD_SWIPE}>
-                  <TripBoard trip={t} now={now} allServices={!!all[t.key]} handle={grip} flush act={del} />
+                  <TripBoard trip={t} now={now} allServices={!!all[t.key]} handle={grip} flush act={del} look={look} />
                 </SwipeRow>
               );
             })()}
@@ -357,3 +437,24 @@ const hs = StyleSheet.create({
   live: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 10, paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius },
   snack: { marginTop: 'auto', marginBottom: 16, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderRadius: 8, elevation: 6, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
 });
+
+/** Redesign: the one Add, in the navigation bar (top right, as in Apple's apps). New trip, a stop, Home or Work. */
+function AddButton({ places }: { places: { home?: Place; work?: Place } }) {
+  const c = usePalette();
+  const items: { label: string; go: () => void }[] = [
+    { label: 'New trip', go: () => router.push('/new-trip') },
+    { label: 'Star a stop', go: () => router.push('/search') },
+    { label: places?.home ? 'Change Home' : 'Set Home', go: () => router.push({ pathname: '/add-trip', params: { place: 'home' } }) },
+    { label: places?.work ? 'Change Work' : 'Set Work', go: () => router.push({ pathname: '/add-trip', params: { place: 'work' } }) },
+  ];
+  const open = () => {
+    haptic.tap();
+    if (Platform.OS === 'ios') ActionSheetIOS.showActionSheetWithOptions({ options: [...items.map((x) => x.label), 'Cancel'], cancelButtonIndex: items.length }, (i) => { if (i < items.length) items[i].go(); });
+    else Alert.alert('Add', undefined, [...items.map((x) => ({ text: x.label, onPress: x.go })), { text: 'Cancel', style: 'cancel' as const }]);
+  };
+  return (
+    <Pressable onPress={open} accessibilityRole="button" accessibilityLabel="Add" hitSlop={10} style={{ marginRight: Platform.OS === 'web' ? 12 : 0, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: c.fill }}>
+      <Icon name={I.plus} size={18} color={c.tint} />
+    </Pressable>
+  );
+}
