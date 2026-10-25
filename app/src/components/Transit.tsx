@@ -98,10 +98,10 @@ export function LiveStamp({ updatedAt, error, offlineAt }: { updatedAt: number |
   );
 }
 
-export function StatusLine({ realtime, delayMin, cancelled, state }: { realtime?: boolean; delayMin?: number | null; cancelled?: boolean; state?: LiveState }) {
+export function StatusLine({ realtime, delayMin, cancelled, state, compact }: { realtime?: boolean; delayMin?: number | null; cancelled?: boolean; state?: LiveState; compact?: boolean }) {
   const c = usePalette();
   // With a live state (liveLabelCore.ts) the line says where the time comes from: Live with its age, Timetable, Not tracking.
-  if (state) return <LiveStatus state={state} delayMin={delayMin} />;
+  if (state) return <LiveStatus state={state} delayMin={delayMin} compact={compact} />;
   if (!realtime && !cancelled) return <LiveStatus state={{ kind: 'timetable', label: 'Timetable', age: null, t: NaN, big: '', unit: '', soon: false, counting: false, a11y: '' }} />;
   const d = delayWords(delayMin, realtime, cancelled);
   const color = d.tone === 'green' ? c.liveText : d.tone === 'orange' ? c.lateText : d.tone === 'red' ? c.redText : c.text2;
@@ -161,7 +161,7 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
         </View>
         {showStop && d.stopName ? <T kind="foot" tone="text2" numberOfLines={1}>{shortName(d.stopName)}</T> : null}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3, flexWrap: 'wrap', gap: 6 }}>
-          <StatusLine realtime={d.realtime} delayMin={d.delayMin} cancelled={d.cancelled} state={live} />
+          <StatusLine realtime={d.realtime} delayMin={d.delayMin} cancelled={d.cancelled} state={live} compact />
           {extra.length ? <T kind="foot" tone="text2" numberOfLines={2}>{extra.join(' \u00b7 ')}</T> : null}
           <OccupancyChip o={d.occupancy} />
           <QuietChip v={d.vehicle} />
@@ -205,7 +205,7 @@ export function JourneyCard({ j, now, onPress, best }: { j: Journey; now: number
             {clock(ms(j.board))} to {clock(ms(j.arrive))} {'\u00b7'} {durText(j.durationMin)}{j.changes ? ` \u00b7 ${j.changes} change${j.changes > 1 ? 's' : ''}` : ''}
           </T>
         </View>
-        <StatusLine realtime={first?.realtime} delayMin={first?.delayMin} cancelled={j.anyCancelled} state={firstLive} />
+        <StatusLine realtime={first?.realtime} delayMin={first?.delayMin} cancelled={j.anyCancelled} state={firstLive} compact />
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 10, gap: 5 }}>
         {j.legs.map((l, i) => (

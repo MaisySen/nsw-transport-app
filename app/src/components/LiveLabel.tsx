@@ -38,7 +38,7 @@ export function LiveStatus({ state, delayMin, compact }: { state: LiveState; del
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }} accessibilityLabel={`${d.text}, ${liveWords(state)}`}>
       <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color, marginRight: 5 }} />
-      <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={[font.foot, { color, fontWeight: '600', flexShrink: 1 }]}>
+      <Text maxFontSizeMultiplier={1.4} style={[font.foot, { color, fontWeight: '600', flexShrink: 1 }]}>
         {d.text}<Text style={{ color: c.text2, fontWeight: '400' }}>{` \u00b7 ${words}`}</Text>
       </Text>
     </View>

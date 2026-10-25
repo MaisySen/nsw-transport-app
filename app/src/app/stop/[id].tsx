@@ -33,6 +33,7 @@ export default function StopScreen() {
   const st = useStore();
   const [mode, setMode] = useState<string | null>(null);
   const [pick, setPick] = useState<string | null>(null);
+  const [showGone, setShowGone] = useState(false);
   const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => api.departures(String(id), r), 15000, [id], { cacheKey: cacheKey('dep', String(id)) });
   const title = shortName(data?.stop?.name || name || 'Stop');
   const starred = st.starred.some((s) => s.id === id);
@@ -150,6 +151,38 @@ export default function StopScreen() {
           </View>
         ) : null}
 
+        {gone.length ? (
+          <View style={{ marginHorizontal: 16, marginTop: 14, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded: showGone }} onPress={() => { haptic.tap(); setShowGone(!showGone); }}
+              accessibilityLabel={`Recently departed, ${gone.length}. Latest: ${gone[0].line} to ${shortName(gone[0].dest)}, ${departedWords(gone[0], clock).main}`}
+              android_ripple={{ color: c.fill }} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 48, backgroundColor: pressed && Platform.OS === 'ios' ? c.card2 : c.card })}>
+              <Icon name={I.history} size={15} color={c.text2} />
+              <T kind="sub" tone="text2" style={{ flex: 1, marginLeft: 8 }} numberOfLines={1}>
+                Recently departed{showGone ? '' : `: ${gone[0].line} ${departedWords(gone[0], clock).main.replace(/^Left/, 'left').replace(/^Due/, 'due')}`}
+              </T>
+              <Icon name={showGone ? I.up : I.down} size={12} color={c.text3} />
+            </Pressable>
+            {showGone ? gone.map((g) => {
+              const w = departedWords(g, clock);
+              return (
+                <View key={g.key}>
+                  <Sep inset={16} />
+                  <Pressable accessibilityRole="button" accessibilityLabel={`${g.line} to ${shortName(g.dest)}. ${w.main}. ${w.sub}`} android_ripple={{ color: c.fill }}
+                    onPress={() => openService({ tripId: g.tripId || undefined, feed: g.feed, line: g.line, stopId: g.stopId, planned: g.planned, mode: g.mode, destId: g.destId || undefined, color: g.color, dest: g.dest })}
+                    style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, minHeight: 56, backgroundColor: pressed && Platform.OS === 'ios' ? c.card2 : c.card })}>
+                    <View style={{ width: 66, alignItems: 'flex-start', opacity: 0.7 }}><LineBadge line={g.line} mode={g.mode} color={g.color} /></View>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <T kind="callout" tone="text2" numberOfLines={1}>{shortName(g.dest)}</T>
+                      <T kind="foot" tone="text2">{w.sub}</T>
+                    </View>
+                    <T kind="sub" style={{ color: g.confirmed ? c.text : c.text2, fontWeight: '600', fontVariant: ['tabular-nums'] }}>{w.main}</T>
+                  </Pressable>
+                </View>
+              );
+            }) : null}
+          </View>
+        ) : null}
+
         {items.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 14, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
             {items.map((d, i) => {
@@ -164,31 +197,7 @@ export default function StopScreen() {
           </View>
         ) : null}
         {data && !items.length ? <Empty icon={I.clock} title={route ? `No more ${route} services` : 'No more services'} body="Nothing is due from here in the next few hours." /> : null}
-        {gone.length ? (
-          <View style={{ marginTop: 18 }}>
-            <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginBottom: 6 }} accessibilityRole="header">RECENTLY DEPARTED</T>
-            <View style={{ marginHorizontal: 16, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
-              {gone.map((g, i) => {
-                const w = departedWords(g, clock);
-                return (
-                  <View key={g.key}>
-                    {i ? <Sep inset={82} /> : null}
-                    <Pressable accessibilityRole="button" accessibilityLabel={`${g.line} to ${shortName(g.dest)}. ${w.main}. ${w.sub}`} android_ripple={{ color: c.fill }}
-                      onPress={() => openService({ tripId: g.tripId || undefined, feed: g.feed, line: g.line, stopId: g.stopId, planned: g.planned, mode: g.mode, destId: g.destId || undefined, color: g.color, dest: g.dest })}
-                      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, minHeight: 56, backgroundColor: pressed && Platform.OS === 'ios' ? c.card2 : c.card })}>
-                      <View style={{ width: 66, alignItems: 'flex-start', opacity: 0.7 }}><LineBadge line={g.line} mode={g.mode} color={g.color} /></View>
-                      <View style={{ flex: 1, marginRight: 8 }}>
-                        <T kind="callout" tone="text2" numberOfLines={1}>{shortName(g.dest)}</T>
-                        <T kind="foot" tone="text2">{w.sub}</T>
-                      </View>
-                      <T kind="sub" style={{ color: g.confirmed ? c.text : c.text2, fontWeight: '600', fontVariant: ['tabular-nums'] }}>{w.main}</T>
-                    </Pressable>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-        ) : null}
+
         {!data && error ? <Empty icon={I.warn} title="Can't load this stop" body={error} /> : null}
         {data ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>Touch and hold a service to watch it. Live times show how old they are; grey times are from the timetable.</T> : null}
         {map ? (

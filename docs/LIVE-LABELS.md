@@ -18,9 +18,14 @@ Where it shows: departure rows (stop screens, Home stop cards, the board), Plan 
 
 ## Recently departed
 
-A departures board lists services from now on; a service drops off once it has gone. The app remembers what each board showed on its last read (memory only, this app session, nothing stored or sent) and, when a service drops off on the next read, lists it under Recently departed for 10 minutes:
+A departures board lists services from now on; a service drops off once it has gone. The app remembers what each board showed on its last read (memory only, this app session, nothing stored or sent) and, when a service drops off on the next read, lists it under Recently departed for 10 minutes. On a stop screen that is one row above the departures ("Recently departed: T8 left 4:21pm"); tap it to see up to 5, each opening its service:
 
 * **Left 8:42am, Live, 2 min late**: only when a live time tracked it right up to its departure (read 2 min or less before it, GPS not stale).
 * **Due 8:40am, Not tracked, no live time**: a timetable only service, or one whose live time had gone stale. The app does not say it left.
 
 Two reads more than 3 min apart record nothing (the app was closed in between). A service that drops off more than 90 s before its time is not a departure (cancelled or the list changed). Code: `app/src/lib/recentCore.ts`, `app/src/lib/recent.ts`, same tests.
+
+## Bus stop boards (Opal style)
+
+* **Route chips** on a bus stop: tap 410 to see only the 410 (tap again or All routes to see every route); with a route chosen, "Route 410: all stops and live buses" opens the route view. A route that leaves the board drops the filter. Code: `stopBoardCore.ts` (`byRoute`, `keepRoute`).
+* **GET ON / GET OFF** in a service's stop list when it is opened from a trip or plan leg (the leg passes its get off stop as `to`; `/api/service` marks it `alight` on servers that know `to`, otherwise the app finds the stop id after the boarding stop). GET ON is filled in the line colour, GET OFF outlined; stops after GET OFF are dimmed. Opened from a departure board there is no get off stop, so the list shows YOUR STOP as before. Code: `stopBoardCore.ts` (`boardAlight`), `app/src/app/service.tsx`.
