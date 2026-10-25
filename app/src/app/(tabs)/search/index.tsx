@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Keyboard, Platform, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { searchFieldProps } from '@/lib/pickerCore';
-import { nativeMenu } from '@/components/Sheet';
+import { HoldMenu } from '@/components/HoldMenu';
+import { menuFrom, type MenuSpec } from '@/lib/menuCore';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import { api, searchPlaces } from '@/lib/api';
@@ -108,14 +109,13 @@ export default function Search() {
     router.push({ pathname: '/trip', params: { from: a.id, fromName: a.name, to: b.id, toName: b.name, ...whenParams(w) } });
   };
   const clearTrips = () => { store.clearRecentTrips(); haptic.select(); };
-  const removeTrip = (r: { from: Place; to: Place }, label: string) => nativeMenu(label, undefined, [
-    { text: 'Cancel', style: 'cancel' },
+  // Tap and hold on a Recent row: the system context menu on iPhone, the Material 3 menu on Android (HoldMenu).
+  const tripRowMenu = (r: { from: Place; to: Place }, label: string): MenuSpec => ({ title: label, items: menuFrom([
     { text: 'Remove from Recent', style: 'destructive', onPress: () => store.removeRecentTrip(r.from.id, r.to.id) },
-  ]);
-  const removeStop = (p: Place) => nativeMenu(shortName(p.name), undefined, [
-    { text: 'Cancel', style: 'cancel' },
+  ]) });
+  const stopRowMenu = (p: Place): MenuSpec => ({ title: shortName(p.name), items: menuFrom([
     { text: 'Remove from Recent', style: 'destructive', onPress: () => store.removeRecent(p.id) },
-  ]);
+  ]) });
 
   const list = planResults(items, text, chosen);
   const noMatch = chosen ? null : noPlaceText(text, loading, items.length, failed, wide);
@@ -235,7 +235,7 @@ export default function Search() {
               return (
                 <View key={`${r.from.id}>${r.to.id}`}>
                   {i ? <Sep inset={57} /> : null}
-                  <Row icon={I.history} iconBg={c.text3} title={label} onPress={() => go(r.from, r.to)} onLongPress={() => removeTrip(r, label)} />
+                  <HoldMenu menu={tripRowMenu(r, label)} surface={c.card}><Row icon={I.history} iconBg={c.text3} title={label} onPress={() => go(r.from, r.to)} /></HoldMenu>
                 </View>
               );
             })}
@@ -247,7 +247,7 @@ export default function Search() {
             {recentStops.map((it, i) => (
               <View key={it.id}>
                 {i ? <Sep inset={57} /> : null}
-                <Row icon={I.clock} iconBg={c.text3} title={shortName(it.name)} onPress={() => pick(it)} onLongPress={() => removeStop(it)} />
+                <HoldMenu menu={stopRowMenu(it)} surface={c.card}><Row icon={I.clock} iconBg={c.text3} title={shortName(it.name)} onPress={() => pick(it)} /></HoldMenu>
               </View>
             ))}
           </Section>
