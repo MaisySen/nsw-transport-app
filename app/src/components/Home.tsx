@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { reportTripLines, tripLinesOf } from '@/lib/myLines';
-import { ActivityIndicator, Alert, type AlertButton, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { haptic } from '@/lib/haptic';
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
 import { useLive, useReportCountdowns } from '@/lib/hooks';
@@ -13,7 +13,8 @@ const nextDep = (ts: number[]) => { const n = Date.now() - 30000; let b = NaN; f
 import { cacheKey, offlineText, stampText } from '@/lib/offlineCore';
 import { foldNear, type NearPick } from '@/lib/nearCore';
 import { stopNumber } from '@/lib/busCore';
-import { nativeMenu } from './Sheet';
+import { HoldMenu } from './HoldMenu';
+import { menuFrom, type MenuButton, type MenuSpec } from '@/lib/menuCore';
 import { skinStyle, type CardSkin, type SkinStyle } from '@/lib/cardSkinCore';
 import { chipTime, heroCountTone, makeDeletedNames, spokenTime, thenText, undoableDelete, whereText } from '@/lib/homeCore';
 import { radius, usePalette } from '@/lib/theme';
@@ -285,21 +286,25 @@ export function ActionRow({ icon, title, onPress, busy }: { icon: IconName; titl
   );
 }
 
-function CardHeader({ title, glyph, glyphColor, right, sub, onPress, onLongPress, trailing, act }: { title: string; glyph?: IconName; glyphColor?: string; right?: string; sub?: React.ReactNode; onPress: () => void; onLongPress?: () => void; trailing?: React.ReactNode; act?: SwipeAct }) {
+function CardHeader({ title, glyph, glyphColor, right, sub, onPress, menu, href, trailing, act }: { title: string; glyph?: IconName; glyphColor?: string; right?: string; sub?: React.ReactNode; onPress: () => void;
+  /** Tap and hold: the system context menu on iPhone, the Material 3 menu on Android (components/HoldMenu.tsx). */
+  menu?: MenuSpec | null; href?: Href; trailing?: React.ReactNode; act?: SwipeAct }) {
   const c = usePalette();
   return (
-    <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" android_ripple={{ color: c.fill }} {...swipeA11y(act)}
-      style={({ pressed }) => [s.head, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
-      <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {glyph ? <Icon name={glyph} size={14} color={glyphColor || c.tint} style={{ marginRight: 6 }} /> : null}
-          <T kind="headline" numberOfLines={1} style={{ flexShrink: 1 }}>{title}</T>
+    <HoldMenu menu={menu} href={href} surface={c.card}>
+    <Pressable onPress={onPress} accessibilityRole="button" android_ripple={{ color: c.fill }} {...swipeA11y(act)}
+        style={({ pressed }) => [s.head, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {glyph ? <Icon name={glyph} size={14} color={glyphColor || c.tint} style={{ marginRight: 6 }} /> : null}
+            <T kind="headline" numberOfLines={1} style={{ flexShrink: 1 }}>{title}</T>
+          </View>
+          {sub}
         </View>
-        {sub}
-      </View>
-      {right ? <T kind="foot" tone="text2" style={{ marginLeft: 8, fontVariant: ['tabular-nums'] }}>{right}</T> : null}
-      {trailing || <Icon name={I.chevron} size={13} color={c.text3} style={{ marginLeft: 6 }} />}
-    </Pressable>
+        {right ? <T kind="foot" tone="text2" style={{ marginLeft: 8, fontVariant: ['tabular-nums'] }}>{right}</T> : null}
+        {trailing || <Icon name={I.chevron} size={13} color={c.text3} style={{ marginLeft: 6 }} />}
+      </Pressable>
+    </HoldMenu>
   );
 }
 
@@ -355,57 +360,52 @@ export function WarnLine({ j }: { j: Journey }) {
   );
 }
 
-/** Tap and hold (or swipe) on a Home trip: the actions for that kind of trip. */
 /**
- * A hold menu as an alert. Android dialogs show at most 3 buttons (the first ones are dropped), so there Cancel
- * gives way when a menu has 3 actions: tapping outside or Back closes the dialog.
+ * Tap and hold on a Home trip: the actions for that kind of trip, as data (lib/menuCore.ts). components/HoldMenu.tsx
+ * shows them: the system context menu on iPhone, the Material 3 menu under the trip on Android, and VoiceOver and
+ * TalkBack actions on the trip. Destructive rows are red and last; there is no Cancel row.
  */
-function holdMenu(title: string, message: string | undefined, buttons: AlertButton[]) {
-  nativeMenu(title, message, buttons);
-}
-
-export function tripMenu(trip: TripItem, route?: string, onTop?: () => void) {
+export function tripMenuSpec(trip: TripItem, route?: string, onTop?: () => void): MenuSpec {
   const { from, to, via } = trip;
   const title = route || `${shortName(from.name)} to ${shortName(to.name)}`;
-  haptic.tap();
   const key = tripKeyOf({ from, to, via, legs: trip.legs });
   // Show first: the trip moves to the top of Home, where it is the Next trip card.
-  const top: AlertButton[] = onTop ? [{ text: 'Show first', onPress: onTop }] : [];
+  const top: MenuButton[] = onTop ? [{ text: 'Show first', onPress: onTop }] : [];
   const editParams = { from: from.id, fromName: from.name, to: to.id, toName: to.name, ...(trip.modes?.[0] ? { mode: trip.modes[0] } : {}), ...(trip.legs && trip.legs.length > 1 ? { legs: JSON.stringify(trip.legs) } : {}), ...(trip.name ? { name: trip.name } : {}), edit: key };
   if (trip.kind === 'mine') {
-    holdMenu(trip.name || title, undefined, [
+    return { title: trip.name || title, items: menuFrom([
       { text: 'Edit trip', onPress: () => router.push({ pathname: '/new-trip', params: editParams }) },
       ...top,
       { text: 'Delete trip', style: 'destructive', onPress: () => deleteTrip(trip) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  } else if (trip.kind === 'saved') {
-    holdMenu(trip.name || title, 'Saved on your profile.', [
+    ]) };
+  }
+  if (trip.kind === 'saved') {
+    return { title: trip.name || title, message: 'Saved on your profile.', items: menuFrom([
       ...top,
       { text: 'Delete trip', style: 'destructive', onPress: () => deleteTrip(trip) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  } else if (trip.kind === 'commute') {
-    holdMenu(trip.name || title, 'Your commute: a leave now alert on the days you set.', [
+    ]) };
+  }
+  if (trip.kind === 'commute') {
+    return { title: trip.name || title, message: 'Your commute: a leave now alert on the days you set.', items: menuFrom([
       ...top,
       { text: 'Delete commute', style: 'destructive', onPress: () => { if (trip.id) api.deleteCommute(trip.id).then(pullHome).catch((e) => Alert.alert("Couldn't delete it", e.message)); } },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  } else if (trip.kind === 'place') {
-    holdMenu('Home and work', undefined, [
+    ]) };
+  }
+  if (trip.kind === 'place') {
+    return { title: 'Home and work', items: menuFrom([
       { text: 'Change home', onPress: () => router.push({ pathname: '/add-trip', params: { place: 'home' } }) },
       { text: 'Change work', onPress: () => router.push({ pathname: '/add-trip', params: { place: 'work' } }) },
       { text: 'Remove both', style: 'destructive', onPress: () => { store.setPlace('home', null); store.setPlace('work', null); } },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  } else {
-    holdMenu(title, undefined, [
-      { text: 'Save trip', onPress: () => router.push({ pathname: '/new-trip', params: { from: from.id, fromName: from.name, to: to.id, toName: to.name } }) },
-      { text: 'Remove from Recent', style: 'destructive', onPress: () => store.removeRecentTrip(from.id, to.id) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    ]) };
   }
+  return { title, items: menuFrom([
+    { text: 'Save trip', onPress: () => router.push({ pathname: '/new-trip', params: { from: from.id, fromName: from.name, to: to.id, toName: to.name } }) },
+    { text: 'Remove from Recent', style: 'destructive', onPress: () => store.removeRecentTrip(from.id, to.id) },
+  ]) };
 }
+
+/** The trip screen a Home trip opens (also the href its context menu carries). */
+export const tripHref = (trip: TripItem) => ({ pathname: '/trip' as const, params: { from: trip.from.id, fromName: trip.from.name, to: trip.to.id, toName: trip.to.name } });
 
 /** Delete trip: off this phone, out of the Home order, and the server copy too. */
 /** Saved trip names deleted on this phone, hidden from the server list until it catches up. */
@@ -504,7 +504,8 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
   const custom = trip.name && trip.name.toLowerCase() !== route.toLowerCase() ? trip.name.charAt(0).toUpperCase() + trip.name.slice(1) : '';
   const open = (pick?: number) => router.push({ pathname: '/trip', params: { from: from.id, fromName: from.name, to: to.id, toName: to.name, ...(chain ? { legs: JSON.stringify(tLegs(plan)) } : {}), ...(trip.name ? { name: trip.name } : {}), ...(pick != null ? { pick: String(pick) } : {}) } });
   const glyph = trip.kind === 'saved' || trip.kind === 'mine' ? I.star : trip.kind === 'commute' ? I.clock : trip.kind === 'place' ? (trip.tag === 'To work' ? I.briefcase : I.home) : undefined;
-  const menu = () => tripMenu(trip, route, onTop);
+  const menu = tripMenuSpec(trip, route, onTop);
+  const menuHref = tripHref(trip);
   useEffect(() => {
     const list: { title: string; url?: string; open: () => void }[] = [];
     for (const j of (data?.journeys || []).slice(0, 3)) for (const l of j.legs) for (const a of (l.alerts || []) as any[]) {
@@ -525,7 +526,7 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
   const note = !data ? (error ? 'Live times unavailable, trying again' : 'Loading live times') : !js.length ? (offlineAt ? 'No kept times left for today' : data.error || 'No more services today') : '';
   const glance = (
     <TripGlance look={look} js={js} arrs={arrs} now={now} count={sk.count} title={trip.kind === 'place' && custom ? `${custom}: ${route}` : custom || route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint}
-      note={note} onPress={() => open()} onLongPress={menu} act={act} roomRight={aside ? 40 : 0}
+      note={note} onPress={() => open()} menu={menu} href={menuHref} surface={sk.surface || c.card} act={act} roomRight={aside ? 40 : 0}
       trailing={typeof handle === 'function' ? handle(() => open()) : handle} />
   );
   const Wrap = skin === 'plain' ? Card : SkinCard;
@@ -565,7 +566,7 @@ function PlanBRow({ title, text, onPress }: { title: string; text: string; onPre
  * arrive, then the next two. 'row' is every other trip: name; badges, status and where to board; the next two;
  * the countdown at the right edge. One tap target per trip; every service is on the trip screen.
  */
-function TripGlance({ look, js, arrs, now, count = { size: 56, line: 62, weight: '800' }, title, glyph, glyphColor, note, onPress, onLongPress, act, trailing, roomRight = 0 }: { look: TripLook; js: Journey[]; arrs: number[]; now: number; count?: { size: number; line: number; weight: '800' | '900' }; title: string; glyph?: IconName; glyphColor?: string; note: string; onPress: () => void; onLongPress: () => void; act?: SwipeAct; trailing?: React.ReactNode; roomRight?: number }) {
+function TripGlance({ look, js, arrs, now, count = { size: 56, line: 62, weight: '800' }, title, glyph, glyphColor, note, onPress, menu, href, surface, act, trailing, roomRight = 0 }: { look: TripLook; js: Journey[]; arrs: number[]; now: number; count?: { size: number; line: number; weight: '800' | '900' }; title: string; glyph?: IconName; glyphColor?: string; note: string; onPress: () => void; menu?: MenuSpec | null; href?: Href; surface?: string; act?: SwipeAct; trailing?: React.ReactNode; roomRight?: number }) {
   const c = usePalette();
   const j = js[0];
   const l = j ? firstLeg(j) : undefined;
@@ -607,56 +608,60 @@ function TripGlance({ look, js, arrs, now, count = { size: 56, line: 62, weight:
     const gone = t.big === 'Left' || (!!j && dep < now - 60000);
     const heroColor = !j ? c.text3 : honest ? c.text2 : heroCountTone({ gone, cancelled }) === 'red' ? c.redText : c.text;
     return (
-      <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" accessibilityLabel={label} accessibilityHint="Opens the trip with every service" android_ripple={{ color: c.fill }} {...withWhyAction(swipeA11y(act) as any, why)} style={(p) => [g.hero, ...press(p)]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingRight: roomRight }}>
-          <View style={{ flex: 1 }}>{head}</View>
-          {trailing || (roomRight ? null : <Icon name={I.chevron} size={13} color={c.text3} style={{ marginLeft: 6 }} />)}
-        </View>
-        {j ? (
-          <>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', flexWrap: 'wrap', marginTop: 6 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
-                <Text maxFontSizeMultiplier={1.2} style={{ fontSize: count.size, lineHeight: count.line, fontWeight: count.weight, color: heroColor, fontVariant: ['tabular-nums'], letterSpacing: -1.5 }}>{t.big}</Text>
-                {t.unit ? <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 20, fontWeight: '700', color: heroColor, marginLeft: 5, marginBottom: 10 }}>{t.unit}</Text> : null}
+      <HoldMenu menu={menu} href={href} surface={surface}>
+        <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} accessibilityHint="Opens the trip with every service" android_ripple={{ color: c.fill }} {...withWhyAction(swipeA11y(act) as any, why)} style={(p) => [g.hero, ...press(p)]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingRight: roomRight }}>
+            <View style={{ flex: 1 }}>{head}</View>
+            {trailing || (roomRight ? null : <Icon name={I.chevron} size={13} color={c.text3} style={{ marginLeft: 6 }} />)}
+          </View>
+          {j ? (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', flexWrap: 'wrap', marginTop: 6 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+                  <Text maxFontSizeMultiplier={1.2} style={{ fontSize: count.size, lineHeight: count.line, fontWeight: count.weight, color: heroColor, fontVariant: ['tabular-nums'], letterSpacing: -1.5 }}>{t.big}</Text>
+                  {t.unit ? <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 20, fontWeight: '700', color: heroColor, marginLeft: 5, marginBottom: 10 }}>{t.unit}</Text> : null}
+                </View>
+                <View style={{ flex: 1, minWidth: 120, alignItems: 'flex-end', marginBottom: 10, marginLeft: 12, gap: 6 }}>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 4 }}>{badges.slice(0, 3).map((b, i) => <LineBadge key={`${b.line}${i}`} line={b.line} mode={b.mode} color={b.color} />)}</View>
+                  {where ? <T kind="sub" numberOfLines={2} style={{ fontWeight: '600', textAlign: 'right' }}>{where}</T> : null}
+                </View>
               </View>
-              <View style={{ flex: 1, minWidth: 120, alignItems: 'flex-end', marginBottom: 10, marginLeft: 12, gap: 6 }}>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 4 }}>{badges.slice(0, 3).map((b, i) => <LineBadge key={`${b.line}${i}`} line={b.line} mode={b.mode} color={b.color} />)}</View>
-                {where ? <T kind="sub" numberOfLines={2} style={{ fontWeight: '600', textAlign: 'right' }}>{where}</T> : null}
-              </View>
-            </View>
-            {ls ? <LiveStatus state={ls} delayMin={l?.delayMin} /> : <T kind="foot" style={{ color: tone }}>{stt?.text}</T>}
-            <WhyLate why={why} style={{ marginTop: 4 }} />
-            <T kind="sub" tone="text2" numberOfLines={2} style={{ marginTop: 4 }}>{`${hm(dep)} \u2192 ${hm(arrs[0])} \u00b7 ${durText(j.durationMin)}`}</T>
-            {then ? <T kind="sub" tone="text2" style={{ marginTop: 4 }}>{then}</T> : null}
-          </>
-        ) : <T kind="foot" tone="text2" style={{ marginTop: 8 }}>{note}</T>}
-      </Pressable>
+              {ls ? <LiveStatus state={ls} delayMin={l?.delayMin} /> : <T kind="foot" style={{ color: tone }}>{stt?.text}</T>}
+              <WhyLate why={why} style={{ marginTop: 4 }} />
+              <T kind="sub" tone="text2" numberOfLines={2} style={{ marginTop: 4 }}>{`${hm(dep)} \u2192 ${hm(arrs[0])} \u00b7 ${durText(j.durationMin)}`}</T>
+              {then ? <T kind="sub" tone="text2" style={{ marginTop: 4 }}>{then}</T> : null}
+            </>
+          ) : <T kind="foot" tone="text2" style={{ marginTop: 8 }}>{note}</T>}
+        </Pressable>
+      </HoldMenu>
     );
   }
 
   // 'row': two or three short lines per trip, the next countdown at the right edge.
   return (
-    <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" accessibilityLabel={label} android_ripple={{ color: c.fill }} {...withWhyAction(swipeA11y(act) as any, why)} style={(p) => [g.row, ...press(p)]}>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        {head}
-        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-          {badges.slice(0, 2).map((b, i) => <LineBadge key={`${b.line}${i}`} line={b.line} mode={b.mode} color={b.color} />)}
-          <T kind="foot" numberOfLines={2} style={{ flexShrink: 1 }}>
-            {j ? <T kind="foot" style={{ color: tone, fontWeight: ls?.kind === 'stale' ? '600' : undefined }}>{status}</T> : <T kind="foot" tone="text2">{note}</T>}
-            {where ? <T kind="foot" tone="text2">{` \u00b7 ${where}`}</T> : null}
-          </T>
+    <HoldMenu menu={menu} href={href} surface={surface}>
+      <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} android_ripple={{ color: c.fill }} {...withWhyAction(swipeA11y(act) as any, why)} style={(p) => [g.row, ...press(p)]}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          {head}
+          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+            {badges.slice(0, 2).map((b, i) => <LineBadge key={`${b.line}${i}`} line={b.line} mode={b.mode} color={b.color} />)}
+            <T kind="foot" numberOfLines={2} style={{ flexShrink: 1 }}>
+              {j ? <T kind="foot" style={{ color: tone, fontWeight: ls?.kind === 'stale' ? '600' : undefined }}>{status}</T> : <T kind="foot" tone="text2">{note}</T>}
+              {where ? <T kind="foot" tone="text2">{` \u00b7 ${where}`}</T> : null}
+            </T>
+          </View>
+          {then ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{then}</T> : null}
+          <WhyLate why={why} style={{ marginTop: 2 }} />
         </View>
-        {then ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{then}</T> : null}
-        <WhyLate why={why} style={{ marginTop: 2 }} />
-      </View>
-      {j ? (
-        <View style={[g.chip, { marginLeft: 10, backgroundColor: chip + (c.dark ? '33' : '1F') }]}>
-          <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ color: cdText(chip, c), fontSize: t.unit ? 22 : 14, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }}>{t.big}</Text>
-          {t.unit ? <Text maxFontSizeMultiplier={1.3} style={{ color: cdText(chip, c), fontSize: 11, fontWeight: '600', marginTop: -2 }}>{t.unit}</Text> : null}
-        </View>
-      ) : null}
-      {trailing || <Icon name={I.chevron} size={13} color={c.text3} style={{ marginLeft: 8 }} />}
-    </Pressable>
+        {j ? (
+          <View style={[g.chip, { marginLeft: 10, backgroundColor: chip + (c.dark ? '33' : '1F') }]}>
+            <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ color: cdText(chip, c), fontSize: t.unit ? 22 : 14, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }}>{t.big}</Text>
+            {t.unit ? <Text maxFontSizeMultiplier={1.3} style={{ color: cdText(chip, c), fontSize: 11, fontWeight: '600', marginTop: -2 }}>{t.unit}</Text> : null}
+          </View>
+        ) : null}
+        {trailing || <Icon name={I.chevron} size={13} color={c.text3} style={{ marginLeft: 8 }} />}
+      </Pressable>
+    </HoldMenu>
   );
 }
 
@@ -732,7 +737,9 @@ function groupDepartures(items: Departure[], now: number): Group[] {
   return out;
 }
 
-export function StopBoard({ stop, now, starred, distance, onLongPress }: { stop: Place; now: number; starred?: boolean; distance?: number; onLongPress?: () => void }) {
+export function StopBoard({ stop, now, starred, distance, menu }: { stop: Place; now: number; starred?: boolean; distance?: number;
+  /** Tap and hold on the stop's name: its actions (components/HoldMenu.tsx). */
+  menu?: MenuSpec | null }) {
   const c = usePalette();
   const { data, error, offlineAt } = useHomeLive((r) => api.departures(stop.id, r), [stop.id], cacheKey('dep', stop.id),
     (d) => nextDep((d?.items || []).map((x) => bestTime(x.planned, x.realtime ? x.estimated : null))));
@@ -745,7 +752,7 @@ export function StopBoard({ stop, now, starred, distance, onLongPress }: { stop:
   const right = [sign ? `Stop ${sign}` : '', distText(distance) || ''].filter(Boolean).join(' \u00b7 ') || undefined;
   return (
     <Card>
-      <CardHeader title={name} glyph={starred ? I.star : undefined} glyphColor={c.yellow} right={right} onLongPress={onLongPress}
+      <CardHeader title={name} glyph={starred ? I.star : undefined} glyphColor={c.yellow} right={right} menu={menu} href={{ pathname: '/stop/[id]', params: { id: stop.id, name: data?.stop?.name || stop.name } }}
         onPress={() => router.push({ pathname: '/stop/[id]', params: { id: stop.id, name: data?.stop?.name || stop.name } })} />
       {!data ? <T kind="foot" tone="text2" style={s.note}>{error ? 'Live times unavailable right now, trying again' : 'Loading live times'}</T> : null}
       {offlineAt ? <OfflineNote at={offlineAt} now={now} /> : null}

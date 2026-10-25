@@ -117,13 +117,15 @@ test('Home source: Option A only, no design switch, one Add in the navigation ba
   assert.ok(/accessibilityLabel="Add"/.test(home), 'VoiceOver label on Add');
 });
 
-test('hold menus fit Android dialogs (3 buttons at most)', () => {
+test('hold menus are data shown by HoldMenu (system context menu on iPhone, Material 3 menu on Android)', () => {
   const src = read('src/components/Home.tsx');
-  // The trimming lives in nativeMenu (Sheet.tsx), which holdMenu calls; iPhone gets the system action sheet there.
-  assert.ok(/nativeMenu\(title, message, buttons\)/.test(src));
+  const menu = src.slice(src.indexOf('export function tripMenuSpec'), src.indexOf('export function tripMenuSpec') + 4000);
+  assert.ok(/menuFrom\(\[/.test(menu), 'trip menus are menu rows');
+  assert.ok(!/Alert\.alert\(trip\.name/.test(menu), 'no alert as a menu');
+  assert.ok(!/text: 'Cancel'/.test(menu), 'no Cancel row');
+  assert.ok(/<HoldMenu menu=\{menu\}/.test(src), 'the trip rows and stop headers carry their menu');
+  // Older iPhone builds keep the old sheet, which trims Cancel when an Android dialog would drop buttons.
   assert.ok(/buttons\.length > 3 \? buttons\.filter\(\(b\) => b\.style !== 'cancel'\)/.test(read('src/components/Sheet.tsx')));
-  const menu = src.slice(src.indexOf('export function tripMenu'), src.indexOf('export function tripMenu') + 4000);
-  assert.ok(!/Alert\.alert\(trip\.name/.test(menu), 'trip menus go through holdMenu');
 });
 
 test('Next trip card and rows use the shared live label', () => {

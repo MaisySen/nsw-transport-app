@@ -17,7 +17,7 @@ import type { Place } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
 import { watchLine } from '@/components/Cards';
 import { ActionRow, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTag, onTripDeleted, pullHome, StopBoard, TripBoard, TripItem, UNDO_MS, useNearby } from '@/components/Home';
-import { nativeMenu } from '@/components/Sheet';
+import { menuFrom, type MenuSpec } from '@/lib/menuCore';
 import { AnchoredMenu, type MenuItem, type Rect } from '@/components/AnchoredMenu';
 import { LineBadge } from '@/components/Transit';
 import { TabBarSafe } from '@/components/TabBarSafe';
@@ -131,17 +131,13 @@ export default function Home() {
     const w = clearAllWords(what, count, Platform.OS === 'ios');
     Alert.alert(w.title, w.message, [{ text: 'Cancel', style: 'cancel' }, { text: w.confirm, style: 'destructive', onPress: run }]);
   };
-  const stopMenu = (p: Place, isStarred: boolean) => {
-    haptic.tap();
-    nativeMenu(shortName(p.name), undefined, isStarred ? [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Unstar stop', style: 'destructive', onPress: () => store.toggleStar(p) },
-    ] : [
-      { text: 'Star stop', onPress: () => store.toggleStar(p) },
-      { text: 'Remove from Recent', style: 'destructive', onPress: () => store.removeRecent(p.id) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  };
+  // Tap and hold on a starred stop: the system context menu on iPhone, the Material 3 menu on Android (HoldMenu).
+  const stopMenu = (p: Place, isStarred: boolean): MenuSpec => ({ title: shortName(p.name), items: menuFrom(isStarred ? [
+    { text: 'Unstar stop', style: 'destructive', onPress: () => store.toggleStar(p) },
+  ] : [
+    { text: 'Star stop', onPress: () => store.toggleStar(p) },
+    { text: 'Remove from Recent', style: 'destructive', onPress: () => store.removeRecent(p.id) },
+  ]) });
 
   const acceptSuggestion = async () => {
     setBusy(true);
@@ -247,7 +243,7 @@ export default function Home() {
 
         {starred.length ? (
           <HomeSection title="Starred stops" onClear={() => confirmClear('stops', starred.length, () => { store.clearStarred(); haptic.success(); })} clearTitle={clearWord}>
-            {starred.map((p) => <StopBoard key={p.id} stop={p} starred now={now} onLongPress={() => stopMenu(p, true)} />)}
+            {starred.map((p) => <StopBoard key={p.id} stop={p} starred now={now} menu={stopMenu(p, true)} />)}
           </HomeSection>
         ) : null}
 
