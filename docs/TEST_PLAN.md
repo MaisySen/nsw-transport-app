@@ -226,17 +226,44 @@ Run on a real iPhone (iOS 26 and iOS 27.1) and a real Apple Watch paired with it
 **Unchanged in 207 (regression)**
 21. Live Activity and Dynamic Island on a trip, trip reminders ringing with the app closed, last train home reminder, notifications permission asked only on the first reminder, location asked only when in use (no Always prompt).
 
-**Widget layout (on `native-207` after 207 shipped; first in the next build, not in 207)**
+**Widget layout (on `native-207` after 207 shipped; not in 207, first in build 208, see the Build 208 device checklist)**
 22. widget layout: times aligned, alert 2 lines, Start not clipped. Medium: every row's time starts in the same column (T1, T4, M, 410, D400), the alert reads on up to 2 lines, the title, rows and Start sit inside the rounded corners, "3 min late" never cut. With a long alert or a large text size the widget shows one row instead of cutting anything.
 23. Large: badges one size and times in one column; the alert in full on up to 3 lines; a sixth service row when there is room; nothing touches the edges.
 24. Small: the countdown big ("7 min") with "then 13 min" under it when it fits; the route line ("Kings Cross to Strathfield", no "Station") only when it fits on one line, else hidden; with an alert, the warning icon beside the status, and VoiceOver reads the alert in full.
 25. Stop board widget: times line up in one column on a bus stop with 410 and D400 rows.
 
+## Build 208 device checklist
+
+Build 208 is on TestFlight (25 Oct, 7:00 PM): EAS build 94a11c72-df9a-4442-a456-98ca8a46da32 from `native-207` 5a3e20e, App Store Connect build acf55ebc-aa84-4dbd-9c7f-7096f339d3a4, Internal and Public groups, Beta App Review approved, external state In Beta Testing. The production build compiled the new widget Swift (ARCHIVE SUCCEEDED, no warnings in `app/targets`). Run on a real iPhone on iOS 26 and iOS 27.1 after installing 208 from TestFlight; tick each line in the release record in [RELEASES.md](RELEASES.md).
+
+Status: done before or at the build (no device needed)
+* Done: `npx expo config --type introspect` lists `NSCalendarsFullAccessUsageDescription` and `NSCalendarsWriteOnlyAccessUsageDescription`, no `NSRemindersUsageDescription`, no `UIBackgroundModes` (Calendar leave by item 1 below).
+* Done: the IPA has 1.0.0 (208) on the app, widget, watch app and complications, both calendar texts in the app's Info.plist, the CalendarNext module, and the same signing as 207 (app group on app and widget, `aps-environment` production, keychain group on the watch targets, `get-task-allow` false).
+* Done: tsc clean, 436 tests (433 pass, 3 live tests skipped, 0 fail with OFFLINE=1), battery test 16 of 16, `swiftc -parse` on all 75 Swift files.
+
+Status: not yet run on a device (all lines below)
+
+**Install**
+1. Settings, About shows version 1.0.0 (208). The latest production update loads after two restarts (runtime 1.0.0). Upgrade over 207 keeps saved trips, starred stops, Home and Work, reminders and widget choices.
+
+**Widget layout (first in 208)**
+2. Medium trip widget: every row's time starts in the same column (T1, T4, M, 410, D400), the alert reads on up to 2 lines, title, rows and Start sit inside the rounded corners, "3 min late" never cut. With a long alert or a large text size it shows one row instead of cutting anything.
+3. Large trip widget: badges one size and times in one column; the alert in full on up to 3 lines; a sixth service row when there is room; nothing touches the edges.
+4. Small trip widget: the countdown big ("7 min") with "then 13 min" under it when it fits; the route line ("Kings Cross to Strathfield", no "Station") only when it fits on one line, else hidden; with an alert, the warning icon beside the status, and VoiceOver reads the alert in full.
+5. Stop board widget: times line up in one column on a bus stop with 410 and D400 rows; the stop number still shows.
+6. Largest Dynamic Type size and Bold Text on: every widget size still fits inside its margins, with fewer rows rather than cut words. Tinted and clear Home Screens and StandBy still readable.
+
+**Calendar leave by (first in 208)**
+7. Run items 2 to 9 of the Build 208 checklist: Calendar leave by, below.
+
+**Regression (unchanged from 207)**
+8. Watch app and complications (207 items 12 to 20), Speak alerts with Silent mode on (207 items 9 to 11), Live Activity and trip reminders (207 item 21).
+
 ## Build 208 checklist: Calendar leave by
 
 Native part of Calendar leave by ([CALENDAR-LEAVE-BY.md](CALENDAR-LEAVE-BY.md)). The JavaScript has been in the over the air updates since 25 Oct and stays hidden until the app is 208 or later on iPhone (or an Android build with the calendar module). What 208 adds: expo-calendar with `writeOnlyAccess` false, so the app carries `NSCalendarsFullAccessUsageDescription` (read access) next to `NSCalendarsWriteOnlyAccessUsageDescription` (Add to Calendar, unchanged), and `READ_CALENDAR` and `WRITE_CALENDAR` in the Android manifest (expo-calendar asks for both together). Run on a real iPhone on iOS 26 and iOS 27.1.
 
-1. Before building: `npx expo config --type introspect` in app/ lists `NSCalendarsFullAccessUsageDescription` ("Transport reads the time and place of your upcoming events to show when to leave for them, if you turn on Calendar leave by. Event names and notes stay on your iPhone.") and `NSCalendarsWriteOnlyAccessUsageDescription`, and `NSRemindersUsageDescription` is absent.
+1. Done 25 Oct before build 208 (and seen in the 208 IPA). Before building: `npx expo config --type introspect` in app/ lists `NSCalendarsFullAccessUsageDescription` ("Transport reads the time and place of your upcoming events to show when to leave for them, if you turn on Calendar leave by. Event names and notes stay on your iPhone.") and `NSCalendarsWriteOnlyAccessUsageDescription`, and `NSRemindersUsageDescription` is absent.
 2. After installing 208: More shows Calendar leave by, switched off. On 206 or 207 (TestFlight or App Store) it is not there at all.
 3. Switch it on: the iOS 17+ full access prompt shows the text above and the Allow Full Access choice. Don't Allow leaves the switch off and offers Open Settings; Allow turns it on.
 4. Add an event starting in 1 to 6 hours with the location "Barangaroo" (or "200 Barangaroo Ave"). Open Home: "Leave by 8:12am for Team meeting (Barangaroo)" with the line, arrive time and start time under it. An event with a Zoom or Teams link, no location, an all day event or one more than 6 hours away shows nothing. A location the search can't place (a room number only) shows nothing.

@@ -78,6 +78,18 @@ train,bus,ferry,metro,light rail,timetable,departures,trip planner,nsw,commute,w
 
 App Store: not shown for the first version (1.0.0).
 
+## TestFlight What to Test (build 208)
+
+Set on build 208 in App Store Connect (en-AU and en-US) on 25 Oct, exactly as below:
+
+```
+New in build 208:
+- Widgets: times line up in one column, alerts show on up to 2 lines (medium) or 3 (large), nothing runs into the rounded edges, and the small widget shows a big countdown with the next service under it.
+- Calendar leave by: turn it on in More > Calendar leave by. For an event in the next 6 hours that has a place, Home shows when to leave and the trip to get there. Event names and notes stay on your iPhone.
+Also in this build: everything in 207, and Arrive by on the trip screen opens the trip you would take.
+Please check: the small, medium and large trip widgets with a long alert and at a large text size (nothing cut off or touching the edges, times in one column); a stop board widget on a bus stop; Calendar leave by: the permission prompt text, the Leave by line on Home for an event with a place, and that tapping it opens the trip at Arrive by the event's start. Feedback: support@transportsydney.app
+```
+
 ## TestFlight What to Test (build 207)
 
 Set on build 207 in App Store Connect (en-AU and en-US) on 25 Oct, 6:17 PM, exactly as below:

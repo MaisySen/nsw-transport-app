@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### iPhone build 208 on TestFlight (25 Oct, 7:00 PM)
+* Widgets, from Bidur's build 206 screenshots: times line up in one column (trip and stop board widgets), the alert shows on up to 2 lines on medium and 3 on large, nothing runs into the rounded corners at any text size (each widget picks the first layout that fits), the status is never cut, and the small widget has a big countdown with "then 13 min" under it.
+* Calendar leave by lights up: 208 has full calendar read access with its own permission text, so More > Calendar leave by appears (off by default). Add to Calendar keeps its add only text.
+* Everything in 207 and every over the air update up to the 6:40 PM one is in the binary.
+* EAS build 94a11c72 from native-207 5a3e20e, App Store Connect build acf55ebc, VALID, Internal and Public groups, Beta App Review approved. Not yet seen on a device: Build 208 device checklist in [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
+
 ### Calendar leave by, ready for build 208 (over the air update for iPhone and Android, 25 Oct, 6:40 PM)
 * More > Calendar leave by, off by default. When on, Home shows "Leave by 7:44pm for Team meeting (Barangaroo)" for events in the next 6 hours that have a place, with the live trip from where your usual trip starts (the commute card's start, else your first trip). Tap it for the trip screen at Arrive by the event's start, with the trip you'd take open.
 * Read only and read on the phone, only while Home is open, at most every 5 minutes. Only the event's place (as a place search, once, then kept on the phone) and the trip query leave the phone, with no install ID, so neither goes into trip history. The event's name, notes and people never leave the phone. Online meetings, all day events and places that can't be found show nothing.

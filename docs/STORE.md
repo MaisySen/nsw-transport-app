@@ -2,7 +2,7 @@
 
 Where submission stands and what is waiting on Bidur. Updated 25 Oct 2026, 5:30 PM.
 
-Apple: the App Store Connect app 6826543653 exists, the iPhone app is the Expo app (builds 201 to 207 on TestFlight, public beta link https://testflight.apple.com/join/ZKZY7PKX), version 1.0.0 has not been submitted for review, and the plan is to submit with build 207. Google: at the last check (25 Oct, 8 AM) the app did not exist in Play Console yet. The item by item state, with what needs Bidur, is in [STORE_READINESS.md](STORE_READINESS.md) (25 Oct, 8 AM); builds are in [RELEASES.md](RELEASES.md). From "Status" down, this page is as it was on 24 Oct, 5 PM: its Apple column is out of date and it is kept for the Google steps.
+Apple: the App Store Connect app 6826543653 exists, the iPhone app is the Expo app (builds 201 to 208 on TestFlight, public beta link https://testflight.apple.com/join/ZKZY7PKX), version 1.0.0 has not been submitted for review, and the plan is to submit with build 207. Google: at the last check (25 Oct, 8 AM) the app did not exist in Play Console yet. The item by item state, with what needs Bidur, is in [STORE_READINESS.md](STORE_READINESS.md) (25 Oct, 8 AM); builds are in [RELEASES.md](RELEASES.md). From "Status" down, this page is as it was on 24 Oct, 5 PM: its Apple column is out of date and it is kept for the Google steps.
 
 * Step by step submission checklist: [SUBMIT.md](../SUBMIT.md)
 * Store pack (listing text, privacy answers, ratings, review notes, attribution, audit): [store/](../store/README.md)
@@ -17,7 +17,7 @@ Apple: the App Store Connect app 6826543653 exists, the iPhone app is the Expo a
 | Subtitle | Trains, buses, metro, ferries |
 | iPhone bundle id | `com.maisysen.nswtransport` (widget `com.maisysen.nswtransport.widget`, app group `group.com.maisysen.nswtransport`) |
 | Android application id | `com.maisysen.nswtransport` |
-| Version | iPhone 1.0.0, builds 201 to 207 (Expo, EAS Build; 207 on TestFlight 25 Oct, 6:15 PM). Android 1.0.0, versionCode 5. Both kept current by over the air updates (runtime 1.0.0) |
+| Version | iPhone 1.0.0, builds 201 to 208 (Expo, EAS Build; 207 on TestFlight 25 Oct, 6:15 PM, 208 on 25 Oct, 7:00 PM). Android 1.0.0, versionCode 5. Both kept current by over the air updates (runtime 1.0.0) |
 | Minimum OS | iOS 17.0, iPhone only. Android 7.0 (API 24), target API 36 |
 | Category | Navigation (Apple), Maps & Navigation (Play) |
 | Support URL | https://transportsydney.app/support/ |

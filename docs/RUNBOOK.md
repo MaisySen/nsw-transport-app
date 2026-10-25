@@ -69,7 +69,7 @@ A new native build is needed for native changes (widgets, permissions, new nativ
 
 ## 4. Build the iPhone app (EAS Build)
 
-The iPhone app is built from `app/` with EAS Build (builds 201 to 206 so far). There are only a few iOS builds a month on the Expo plan, so a build goes out only when all pending native work is merged and checked. Steps, signing and the app group: [RELEASES.md](RELEASES.md), iPhone (Expo); the watch targets' signing: [WATCH.md](WATCH.md).
+The iPhone app is built from `app/` with EAS Build (builds 201 to 208 so far). There are only a few iOS builds a month on the Expo plan, so a build goes out only when all pending native work is merged and checked. Steps, signing and the app group: [RELEASES.md](RELEASES.md), iPhone (Expo); the watch targets' signing: [WATCH.md](WATCH.md).
 
 1. Merge the native branch (for build 207: `native-207-bus` into `native-207`, then main) and bump only `ios.buildNumber` in `app/app.json`; `version` stays 1.0.0 so the runtime stays 1.0.0.
 2. Static checks: `npx tsc --noEmit`, `OFFLINE=1 node --test test/*.test.mjs`, and `swiftc -parse` on every changed Swift file under `app/targets/` and `app/modules/`.
