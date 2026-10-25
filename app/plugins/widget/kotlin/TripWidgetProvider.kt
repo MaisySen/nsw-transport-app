@@ -82,6 +82,13 @@ class TripWidgetProvider : AppWidgetProvider() {
                 v.setOnClickPendingIntent(R.id.refresh, refreshIntent(context, id))
                 val trips = result?.trips ?: emptyList()
                 val t = trips.firstOrNull()
+                // Start: opens the trip and starts the service leaving at t.leave (app builds from 206 read start=1).
+                if (t != null && medium && HAS_START) {
+                    v.setViewVisibility(R.id.start, View.VISIBLE)
+                    v.setOnClickPendingIntent(R.id.start, startTrip(context, id, choice, fromName, toName, t.leave))
+                } else if (HAS_START) {
+                    v.setViewVisibility(R.id.start, View.GONE)
+                }
                 if (t == null) {
                     message(v, if (result == null) "Live times will be back shortly." else "No trips soon.")
                     v.setTextViewText(R.id.next, "")
@@ -207,6 +214,16 @@ class TripWidgetProvider : AppWidgetProvider() {
             val uri = tripUri(choice, fromName, toName)
             val i = Intent(Intent.ACTION_VIEW, uri).setPackage(context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             return PendingIntent.getActivity(context, id, i, flags())
+        }
+
+        /** Both trip layouts carry the Start button. */
+        private const val HAS_START = true
+
+        private fun startTrip(context: Context, id: Int, choice: TransitApi.Choice, fromName: String, toName: String, leave: Long): PendingIntent {
+            val uri = tripUri(choice, fromName, toName).buildUpon()
+                .appendQueryParameter("at", (leave / 1000).toString()).appendQueryParameter("start", "1").build()
+            val i = Intent(Intent.ACTION_VIEW, uri).setPackage(context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            return PendingIntent.getActivity(context, 400_000 + id, i, flags())
         }
 
         private fun configIntent(context: Context, id: Int): PendingIntent {

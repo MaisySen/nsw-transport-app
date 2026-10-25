@@ -74,12 +74,20 @@ public enum WidgetText {
         return set.sorted()
     }
 
-    /// When to fetch fresh live data: about every 5 minutes, or when the next service leaves if
-    /// that comes first (never sooner than a minute).
-    public static func reloadDate(updated: Date, departures: [Date]) -> Date {
-        let five = updated.addingTimeInterval(300)
-        guard let first = departures.filter({ $0 > updated }).min() else { return five }
-        return min(five, max(first, updated.addingTimeInterval(60)))
+    /// When to fetch fresh live data. The timeline already has an entry a minute and one at each departure, so
+    /// a reload is only needed for fresh live times: every 15 minutes, or sooner (not before 5 minutes) when
+    /// the list is down to its last service. A trip in progress reloads every 5 minutes, or when its next
+    /// step is due if that comes first (never sooner than a minute). Fewer reloads, less battery.
+    public static func reloadDate(updated: Date, departures: [Date], live: Bool = false) -> Date {
+        let soon = updated.addingTimeInterval(300)
+        let later = updated.addingTimeInterval(900)
+        let ahead = departures.filter { $0 > updated }.sorted()
+        if live {
+            guard let first = ahead.first else { return soon }
+            return min(soon, max(first, updated.addingTimeInterval(60)))
+        }
+        guard ahead.count >= 2 else { return ahead.isEmpty ? later : soon }
+        return min(later, max(ahead[ahead.count - 2], soon))
     }
 
     /// Services still to come at `date`. A service is gone the moment it leaves.
@@ -112,6 +120,15 @@ public enum WidgetText {
                  URLQueryItem(name: "to", value: to), URLQueryItem(name: "toName", value: toName)]
         if let leave { q.append(URLQueryItem(name: "at", value: String(Int(leave.timeIntervalSince1970)))) }
         c.queryItems = q
+        return c.url
+    }
+
+    /// The link the Start button opens: the trip with start=1, so the app starts the service leaving
+    /// closest to `leave` (builds from 206; older app code just opens the trip).
+    public static func startURL(from: String, to: String, leave: Date, fromName: String = "", toName: String = "") -> URL? {
+        guard !from.isEmpty, !to.isEmpty, let u = tripURL(from: from, to: to, leave: leave, fromName: fromName, toName: toName),
+              var c = URLComponents(url: u, resolvingAgainstBaseURL: false) else { return nil }
+        c.queryItems = (c.queryItems ?? []) + [URLQueryItem(name: "start", value: "1")]
         return c.url
     }
 

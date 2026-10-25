@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { plural } from '@/lib/homeCore';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, StyleSheet, Switch, useColorScheme, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
@@ -28,6 +28,9 @@ import { arrOf, ServiceRow, tripCacheId, tripPkey, WarnLine } from '@/components
 import { cacheKey, offlineText } from '@/lib/offlineCore';
 import { planB, problemOf } from '@/lib/planBCore';
 import { busLegStatus, trafficLine } from '@/lib/busLiveCore';
+import { startIndex } from '../../platform/intentInboxCore';
+import { addToCalendar, hasCalendar } from '@/lib/nativeExtras';
+import { leaveByEvent } from '@/lib/leaveByCore';
 import { RemindLastButton } from '@/components/LastHome';
 import { canRemind, lastTonightIndex, modeOfLegs } from '@/lib/lastHomeCore';
 import { Button, Empty, Screen, Sep, T } from '@/components/ui';
@@ -217,11 +220,31 @@ function OpalFareCard({ j, mixed }: { j: Journey; mixed: boolean }) {
   );
 }
 
-function JourneyDetail({ j, now, from, to }: { j: Journey; now: number; from: Place; to: Place }) {
+function JourneyDetail({ j, now, from, to, autoStart }: { j: Journey; now: number; from: Place; to: Place; autoStart?: boolean }) {
   const c = usePalette();
   const st2 = useStore();
   const spec = tripSpec(j, from, to);
   const [busy, setBusy] = useState(false);
+  const calOK = hasCalendar();
+  const begin = () => {
+    const go = async () => {
+      setBusy(true);
+      try { await withTimeout(startLive(spec, j.fare), 5000, null); router.push('/go'); haptic.success(); }
+      catch (e: any) { Alert.alert("Couldn't start it", e.message); }
+      finally { setBusy(false); }
+    };
+    const cur = getLive();
+    if (cur) Alert.alert('End your current trip?', `${cur.title} is in progress. Starting this one ends it.`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Start this trip', onPress: go }]);
+    else go();
+  };
+  // Opened by a start link (the widget's Start button, Siri's "Start my commute", Control Center): start once.
+  const autoDone = useRef(false);
+  useEffect(() => {
+    if (!autoStart || autoDone.current || !spec.legs.length) return;
+    autoDone.current = true;
+    begin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, spec.legs.length]);
   const legs = j.legs;
   return (
     <View style={{ paddingBottom: 14 }}>
@@ -240,24 +263,22 @@ function JourneyDetail({ j, now, from, to }: { j: Journey; now: number; from: Pl
       <FareCard j={j} />
       <View style={{ paddingHorizontal: 16, marginTop: 12 }}>
         <Button title={busy ? 'Starting' : 'Start trip'} icon={I.nav} kind="filled" disabled={busy || !spec.legs.length}
-          onPress={() => {
-            const go = async () => {
-              setBusy(true);
-              try { await withTimeout(startLive(spec, j.fare), 5000, null); router.push('/go'); haptic.success(); }
-              catch (e: any) { Alert.alert("Couldn't start it", e.message); }
-              finally { setBusy(false); }
-            };
-            const cur = getLive();
-            if (cur) Alert.alert('End your current trip?', `${cur.title} is in progress. Starting this one ends it.`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Start this trip', onPress: go }]);
-            else go();
-          }} />
+          onPress={begin} />
+        {calOK ? (
+          <View style={{ marginTop: 8 }}>
+            <Button title="Add to Calendar" icon={I.clock} kind="tinted" onPress={() => {
+              const ev = leaveByEvent(j, to.name);
+              if (ev) addToCalendar(ev).catch(() => {});
+            }} />
+          </View>
+        ) : null}
       </View>
     </View>
   );
 }
 
 export default function TripScreen() {
-  const p = useLocalSearchParams<{ from: string; fromName: string; to: string; toName: string; pick?: string; via?: string; viaName?: string; conn?: string; name?: string; legs?: string; time?: string; arriveBy?: string }>();
+  const p = useLocalSearchParams<{ from: string; fromName: string; to: string; toName: string; pick?: string; via?: string; viaName?: string; conn?: string; name?: string; legs?: string; time?: string; arriveBy?: string; start?: string; at?: string }>();
   // Leave at or Arrive by from Plan (a Sydney clock time); without it the trip is from now.
   const when = whenFromParams(p.time, p.arriveBy);
   const whenQ = whenQuery(when);
@@ -322,6 +343,18 @@ export default function TripScreen() {
       setMore(0);
     }
   };
+  // A start link opens the service leaving closest to `at` and starts it, once.
+  const [autoStart, setAutoStart] = useState<number | null>(null);
+  const startDone = useRef(false);
+  useEffect(() => {
+    if (p.start !== '1' || startDone.current || !js.length) return;
+    startDone.current = true;
+    const i = startIndex(js.map(depMs), p.at ? Number(p.at) : null);
+    if (i < 0) return;
+    setOpen(i);
+    setAutoStart(i);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.start, p.at, js.length]);
   // Plan B: the chosen trip (the open one, else the first) has a cancelled service, a suspended line or a missed change.
   const chosen = js.length ? js[open != null && open < js.length ? open : 0] : null;
   const prob = problemOf(chosen);
@@ -448,7 +481,7 @@ export default function TripScreen() {
                 <WarnLine j={j} />
                 {!chain && i === lastIdx && canRemind(depMs(j), now) ? <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}><T kind="foot" tone="text2">Last service tonight</T><RemindLastButton hint={{ from, to, mode: modeOfLegs(j.legs) }} acc={accOn} /></View> : null}
                 {data?.accessible ? <JourneyAccessLine j={j} liftOn={liftOn} /> : null}
-                {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} /></View> : null}
+                {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} autoStart={autoStart === i} /></View> : null}
               </View>
             ))}
             <Sep inset={0} />

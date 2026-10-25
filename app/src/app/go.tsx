@@ -22,7 +22,7 @@ import TransitMap from '@/components/TransitMap';
 import { Icon, I } from '@/components/Icon';
 import { LineBadge } from '@/components/Transit';
 import { Button, Sep, T } from '@/components/ui';
-import { NextOption, WakeRow } from '@/components/Smart';
+import { NextOption, SpeakRow, WakeRow } from '@/components/Smart';
 import { shareLink } from '@/lib/server';
 
 const noun = (m?: string) => (m === 'bus' || m === 'coach' ? 'bus' : m === 'ferry' ? 'ferry' : m === 'lightrail' ? 'tram' : m === 'metro' ? 'metro' : 'train');
@@ -239,6 +239,7 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
       </View>
 
       <WakeRow g={g} st={st} />
+      <SpeakRow g={g} />
 
       {offline ? <Warn tone="grey" title={offline} body={ago != null ? `Last update ${ago < 90 ? `${ago} s` : `${Math.round(ago / 60)} min`} ago. Trying again.` : 'Trying again.'} /> : null}
       {!x.live && !offline ? <Warn tone="grey" title="No live data for this service" body="Times are from the timetable." /> : null}

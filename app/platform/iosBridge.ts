@@ -10,7 +10,7 @@
 //
 // This file only listens. It reads the saved trip ('liveTrip'), profile and store as the app writes them,
 // and the live service data the trip engine loads, so the screens need no iPhone specific code.
-import { AppState, Platform } from 'react-native';
+import { AppState, Linking, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { iosNative, type TripCardState } from '../modules/transport-ios';
 import { api } from '@/lib/api';
@@ -19,8 +19,11 @@ import type { LiveTrip } from '@/lib/live';
 import type { ServiceResp, WatchLeg } from '@/lib/types';
 import { boardTime, missedConn, missedPlanLegs, pickNextOption, sydHHMM } from '@/lib/smart';
 import { cardFor, shortName, staleAt, type CardAlt, type CardOpts } from './tripCard';
-import { homeWorkFor, liveCardFor } from './widgetShare';
+import { homeWorkFor, liveCardFor, type HomeWork, type LiveCardShare, type SharedStop } from './widgetShare';
+import { watchContextFor, watchContextJSON } from './watchShare';
+import { apiBase } from '@/lib/server';
 import { endActivityToken, sendActivityToken, sendDeviceToken } from './livePush';
+import { pendingOpenURL } from './intentInboxCore';
 import { startAppPoll } from '@/lib/activity';
 
 const ARRIVED_KEEP_S = 120;
@@ -129,10 +132,12 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   function shareLive(g: LiveTrip | null, card: TripCardState | null) {
     if (!g || !card) {
       if (liveKey) { liveKey = ''; iosNative.setJSON('liveCard', null); iosNative.reloadWidgets('NextTrip'); }
+      watchData.live = null; shareWatch();
       return;
     }
     const share = liveCardFor(g.title || `${shortName(g.origin?.name)} to ${shortName(g.to?.name)}`, card, ARRIVED_KEEP_S * 1000);
     iosNative.setJSON('liveCard', share);
+    watchData.live = share; shareWatch();
     const k = [card.phase, card.line, card.getOffAt, card.departs, card.legArrives, card.platform].join('|');
     if (k !== liveKey) { liveKey = k; iosNative.reloadWidgets('NextTrip'); }
   }
@@ -154,27 +159,51 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     dropToken();
   }
 
+  // Apple Watch (builds with the watch app): Home, Work, starred stops and the trip card, sent when they change.
+  const watchData: { profile: string | null; hw: HomeWork; starred: SharedStop[]; live: LiveCardShare | null } =
+    { profile: null, hw: homeWorkFor(null), starred: [], live: null };
+  let watchJSON = '';
+  let watchTimer: ReturnType<typeof setTimeout> | null = null;
+  // Sent at most once every 2 seconds, and only when the context differs from the last one sent.
+  function shareWatch() {
+    if (!iosNative.hasWatch() || watchTimer) return;
+    watchTimer = setTimeout(() => {
+      watchTimer = null;
+      const c = watchContextFor(apiBase(), watchData.profile, watchData.hw, watchData.starred, watchData.live);
+      if (!c) return;
+      const j = watchContextJSON(c);
+      if (j === watchJSON) return;
+      if (iosNative.sendWatch(j)) watchJSON = j;
+    }, 2000);
+  }
+
   // Widget data.
   async function shareWidgetData() {
     try {
       const [profile, store] = await Promise.all([AsyncStorage.getItem('profile'), AsyncStorage.getItem('store')]);
       if (profile) iosNative.setString('apiProfile', profile);
+      // The server the app uses now, so Siri and the widgets ask the same one.
+      iosNative.setString('apiBase.v1', apiBase());
       if (store) {
         const st = JSON.parse(store);
         const starred = Array.isArray(st?.starred) ? st.starred.filter((p: any) => p?.id).map((p: any) => ({ id: String(p.id), name: String(p.name || '') })) : [];
         iosNative.setJSON('starredStops', starred);
         if (st?.fareType) iosNative.setString('tb_fare', String(st.fareType));
         iosNative.setJSON('homeWork', homeWorkFor(st));
+        watchData.starred = starred; watchData.hw = homeWorkFor(st);
       } else {
         iosNative.setJSON('starredStops', []);
         iosNative.setJSON('homeWork', homeWorkFor(null));
+        watchData.starred = []; watchData.hw = homeWorkFor(null);
       }
+      watchData.profile = profile || null;
       iosNative.reloadWidgets();
+      shareWatch();
     } catch {}
   }
 
   // Follow the app's own writes.
-  const WATCH = new Set(['liveTrip', 'profile', 'store']);
+  const WATCH = new Set(['liveTrip', 'profile', 'store', 'apiBase']);
   let widgetTimer: ReturnType<typeof setTimeout> | null = null;
   const onWrite = (key: string, value: string | null) => {
     if (key === 'liveTrip') {
@@ -213,9 +242,20 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     sendDeviceToken();
   }
 
+  // "Start my commute" from Siri or Shortcuts (build 206 and later) leaves a link in the app group and opens
+  // the app. It is read when the app comes to the front, a moment later in case Siri writes it after that, and
+  // at once when the app was already open.
+  const takePending = () => {
+    const url = pendingOpenURL(iosNative.takeString('intentPendingOpen'), Date.now());
+    if (url) Linking.openURL(url).catch(() => {});
+  };
+  const checkPending = () => { takePending(); setTimeout(takePending, 800); setTimeout(takePending, 2500); };
+  iosNative.onIntentQueued(takePending);
+
   boot();
+  checkPending();
   // The card refresh runs only while a trip is on and the app is in front; in the background push moves the card.
   cardPoll.setEnabled(!!trip);
   // Going to the background: the last chance to say on the card when its live times are from.
-  AppState.addEventListener('change', (s) => { if (s === 'active') { shareWidgetData(); refreshCard(); sendDeviceToken(); } else if (s === 'background') refreshCard(true); });
+  AppState.addEventListener('change', (s) => { if (s === 'active') { checkPending(); shareWidgetData(); refreshCard(); sendDeviceToken(); } else if (s === 'background') refreshCard(true); });
 }

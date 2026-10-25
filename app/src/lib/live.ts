@@ -9,6 +9,8 @@ import type { Fare, Place, WatchLeg } from './types';
 import type { WatchSpec } from './watch';
 import { wakeId } from './smart';
 import { cancelWake } from './smartNotify';
+import { iosNative } from '../../modules/transport-ios';
+import { wantOngoing } from './leaveByCore';
 
 export type LiveShare = { id: string; key: string; url: string; pos: boolean };
 export type LiveTrip = {
@@ -18,6 +20,8 @@ export type LiveTrip = {
   rode?: Record<number, number>; arrivedAt?: number | null;
   /** Wake me before my stop: on, and when each leg's alarm is set for (leg index to time). */
   wake?: boolean; wakeSet?: Record<string, number>;
+  /** Say trip alerts out loud (builds with the speech module). */
+  speak?: boolean;
 };
 
 const KEY = 'liveTrip';
@@ -117,6 +121,8 @@ export async function setupLiveNotifications() {
 /** Shows or updates the ongoing notification. Only when notifications are allowed. */
 export async function showOngoing(title: string, body: string, color?: string | null) {
   try {
+    // An iPhone showing the trip's Live Activity needs no second copy in Notification Centre.
+    if (!wantOngoing(Platform.OS, iosNative.activitiesEnabled(), iosNative.activityIds().length)) { await clearOngoing(); return; }
     const p = await Notifications.getPermissionsAsync();
     if (!p.granted) return;
     await Notifications.scheduleNotificationAsync({

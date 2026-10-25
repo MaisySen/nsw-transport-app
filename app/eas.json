@@ -26,6 +26,17 @@
       "env": {
         "IOS_APP_GROUP": "1"
       }
+    },
+    "compilecheck": {
+      "distribution": "internal",
+      "channel": "preview",
+      "ios": {
+        "simulator": true,
+        "buildConfiguration": "Release"
+      },
+      "env": {
+        "IOS_APP_GROUP": "1"
+      }
     }
   },
   "submit": {
