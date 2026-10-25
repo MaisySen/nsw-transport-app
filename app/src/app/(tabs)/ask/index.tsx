@@ -1,8 +1,10 @@
-// Ask tab: chat about trips. Questions go to /api/ask; answers come back as a short reply
-// plus live cards (departures, trips, alerts) that open the stop board, trip or live map.
+// Ask tab: chat about trips. The phone reads the question first (lib/askBrain.ts: typos, short forms, time words,
+// home and work, follow ups) and either asks one short question with choices or sends a clear question to /api/ask.
+// Answers come back as a short reply plus live cards (departures, trips, alerts) that open the stop board, trip or
+// live map, with the actions under them (Open trip, Directions, Speak).
 import { spokenTime } from '@/lib/homeCore';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { router, Stack, useFocusEffect } from 'expo-router';
 import { TabBarSafe } from '@/components/TabBarSafe';
 import { useKeyboardPad } from '@/lib/keyboard';
@@ -26,13 +28,23 @@ import { RemindLastButton } from '@/components/LastHome';
 import { askLastHint, canRemind, type LastHomeHint } from '@/lib/lastHomeCore';
 import { shortPlace, statusOf, tripSummary, type AskFare } from '@/lib/askFormat';
 import { PlainAnswer, TripAnswer } from '@/components/AskAnswer';
+import { chipsFor, lastFresh, nextLast, sydMs, sydney, toAction, understand, type Choice, type Ctx, type Last } from '@/lib/askBrain';
+import { askPlaces, askPlacesNow } from '@/lib/askPlaces';
+import { actionsFor, depCardOf, depItemsFrom, directFirst, journeysFrom, shownTimes, tripCardOf, tripReply, type CardAction } from '@/lib/askAnswerCore';
+import { api, departuresAt } from '@/lib/api';
+import { hasSpeech, speak } from '@/lib/nativeExtras';
+import { departuresSentence, tripSentence } from '@/lib/voiceCore';
+import { takeVoicePrompt } from '@/lib/voiceHelp';
+
+// The one time Get a better voice prompt (same rule as the Speak buttons), loaded only when it shows.
+const VoiceHelp = lazy(() => import('@/components/VoiceHelp').then((m) => ({ default: m.VoiceHelp })));
 
 type Link = { kind?: string; label?: string; href?: string; id?: string; name?: string; from?: string; to?: string; fn?: string; tn?: string; [k: string]: any };
 type Dep = { line: string; color?: string; mode?: string; dest: string; platform?: string | null; planned: string; estimated?: string | null; realtime: boolean; delayMin: number; cancelled: boolean; link?: Link };
 type Leg = { kind: string; mode?: string; line?: string; color?: string; fromPlatform?: string | null; realtime: boolean; delayMin: number; cancelled: boolean; planned?: string; link?: Link | null };
 type Jny = { leave: string; arrive: string; durationMin: number; changes: number; legs: Leg[]; warn?: string | null; fare?: Fare | null };
 type Card = { type: 'departures' | 'trip' | 'alerts' | 'stops' | 'parking' | 'station' | string; station?: Station; title?: string; titleOnly?: boolean; link?: Link | null; items?: any[]; journeys?: Jny[]; from?: { id: string; name: string }; to?: { id: string; name: string } };
-type Msg = { id: string; role: 'me' | 'bot'; text: string; kind?: string | null; fare?: AskFare | null; cards?: Card[]; links?: Link[]; suggestions?: string[]; ask?: string | null; t: number; lastHome?: LastHomeHint | null };
+type Msg = { id: string; role: 'me' | 'bot'; text: string; heard?: string | null; choices?: Choice[]; kind?: string | null; fare?: AskFare | null; cards?: Card[]; links?: Link[]; suggestions?: string[]; ask?: string | null; t: number; lastHome?: LastHomeHint | null };
 
 function clock(t: string) {
   return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, (_m, p) => ' ' + p.toLowerCase());
@@ -176,6 +188,52 @@ function Chip({ label, onPress }: { label: string; onPress: () => void }) {
   );
 }
 
+
+const LOCATION_Q = '\u0000location';
+// Server links that the action buttons already offer.
+const ACT_LABELS = new Set(['Open trip', 'Open board', 'Directions']);
+const canSpeak = (() => { let v: boolean | null = null; return () => (v ??= hasSpeech()); })();
+/** What Speak reads: the next services from the card on screen, built at tap time from live data. */
+function sayFor(item: Msg, now: number): string {
+  const t = tripCardOf(item.cards as any);
+  if (t && (t.journeys || []).length) return tripSentence(t.journeys as any, now) || item.text;
+  const d = depCardOf(item.cards as any);
+  if (d && (d.items || []).length) return departuresSentence(d.items as any, now, { stop: d.title || null });
+  return item.text;
+}
+/** The buttons under an answer: Open trip or board, Directions, Speak. */
+function Actions({ item, now }: { item: Msg; now: number }) {
+  const c = usePalette();
+  const [help, setHelp] = useState(false);
+  const acts = actionsFor(item.cards as any, Platform.OS).filter((a) => a.kind !== 'speak' || canSpeak());
+  if (!acts.length) return null;
+  const go = (a: CardAction) => {
+    haptic.select();
+    if (a.kind === 'open') open(a.link);
+    else if (a.kind === 'directions' && a.url) { const u = safeUrl(a.url); if (u) Linking.openURL(u); }
+    else if (a.kind === 'speak') {
+      const words = sayFor(item, Date.now());
+      if (words) speak(words, { interrupt: true });
+      takeVoicePrompt().then((show) => { if (show) setHelp(true); }).catch(() => {});
+    }
+  };
+  return (
+    <View style={st.acts}>
+      {acts.map((a) => (
+        <Pressable key={a.kind + a.label} onPress={() => go(a)} accessibilityRole="button" accessibilityLabel={a.label}
+          accessibilityHint={a.kind === 'speak' ? 'Reads the next services out loud' : a.kind === 'directions' ? 'Opens directions in your maps app' : undefined}
+          style={({ pressed }) => [st.act, { backgroundColor: pressed ? c.fill : c.card, borderColor: c.sep }]}>
+          <Icon name={a.kind === 'speak' ? I.speaker : a.kind === 'directions' ? I.nav : a.label === 'Open trip' ? I.route : I.list} size={15} color={c.tint} />
+          <Text style={{ color: c.tint, fontSize: 15, fontWeight: '600' }}>{a.label}</Text>
+        </Pressable>
+      ))}
+      {help ? <Suspense fallback={null}><VoiceHelp visible start="prompt" onClose={() => setHelp(false)} /></Suspense> : null}
+    </View>
+  );
+}
+// The last answer, for follow ups ("and the one after", "what about by bus"). Kept for 30 minutes, in memory only.
+let brainLast: Last | null = null;
+
 /**
  * One message. Memoized and defined once, so typing, a countdown tick or a new answer does not rebuild every
  * card in the chat (they were made inside the screen and mounted again on every render).
@@ -186,13 +244,16 @@ const MsgRow = memo(function MsgRow({ item, last, now, onAsk, onLocation }: { it
     <View style={[st.bubble, st.me, { backgroundColor: c.tint }]}><Text style={st.meText}>{item.text}</Text></View>
   ) : (
     <View style={{ alignItems: 'flex-start', marginTop: 6 }}>
+      {item.heard ? <Text accessibilityRole="text" style={[st.heard, { color: c.text2 }]}>{item.heard}</Text> : null}
       {(() => { const sum = tripSummary(item, now); return sum ? <TripAnswer s={sum} /> : <PlainAnswer text={item.text} />; })()}
       {(item.cards || []).map((card, i) => <CardView key={i} card={card} now={now} />)}
       {item.lastHome && canRemind(Date.parse(item.lastHome.leave || item.lastHome.svc?.leave || ''), now) ? <RemindLastButton hint={item.lastHome} known={!item.lastHome.svc} acc={store.accOn()} /> : null}
-      {item.links && item.links.length ? <View style={st.chips}>{item.links.map((l, i) => <Chip key={i} label={l.label || 'Open'} onPress={() => open(l)} />)}</View> : null}
-      {last && (item.ask === 'location' || (item.suggestions || []).length) ? (
+      <Actions item={item} now={now} />
+      {item.links && item.links.length ? <View style={st.chips}>{item.links.filter((l) => !ACT_LABELS.has(String(l.label || ''))).map((l, i) => <Chip key={i} label={l.label || 'Open'} onPress={() => open(l)} />)}</View> : null}
+      {last && (item.ask === 'location' || (item.suggestions || []).length || (item.choices || []).length) ? (
         <View style={st.chips}>
           {item.ask === 'location' ? <Chip label="Use my location" onPress={onLocation} /> : null}
+          {(item.choices || []).map((ch) => <Chip key={'c' + ch.q} label={ch.label} onPress={() => (ch.q === LOCATION_Q ? onLocation() : onAsk(ch.q))} />)}
           {(item.suggestions || []).map((s) => <Chip key={s} label={s.replace(/ (Station|Light Rail|Wharf)\b/g, '')} onPress={() => onAsk(s)} />)}
         </View>
       ) : null}
@@ -215,22 +276,39 @@ export default function AskScreen() {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const list = useRef<FlatList<Msg>>(null);
-  const { places, recentTrips } = useStore();
-  // Suggestions come from your own trips only: your two most recent, and the last train home once home is set.
-  const nm = (n: string) => n.split(',')[0].replace(/ Station$/, '');
-  const starters = [
-    ...(recentTrips || []).slice(0, 2).map((r) => `Next train ${nm(r.from.name)} to ${nm(r.to.name)}`),
-    ...(places?.home ? ['Last train home'] : []),
-  ];
-
+  const { places, recentTrips, starred, myTrips } = useStore();
+  // What Ask knows about you, for home, work, follow ups and the chips: all from this phone, nothing fixed.
+  const brainCtx = useCallback((at: number, hasLocation: boolean): Ctx => ({
+    now: at, gaz: askPlacesNow(), last: lastFresh(brainLast, at) ? brainLast : null, places: places || {}, starred: starred || [], recentTrips: recentTrips || [],
+    usual: (myTrips || []).map((t) => ({ from: t.from, to: t.to, mode: t.legs?.[0]?.mode || t.modes?.[0] })), hasLocation,
+  }), [places, starred, recentTrips, myTrips]);
+  // Station and suburb names, kept on the phone after the first time (no wait: Ask works before they arrive).
+  useEffect(() => { askPlaces().catch(() => null); }, []);
+  // Chips come from your own trips only: usual and recent trips, home and work, starred stops.
+  const starters = chipsFor(brainCtx(now, false), sydney(now).h);
 
   const ask = useCallback(async (q: string, extra: Record<string, string> = {}) => {
     q = q.trim();
     if (!q || busy) return;
     setMsgs((m) => [...m, { id: 'u' + Date.now(), role: 'me', text: q, t: Date.now() }]);
     setText(''); setBusy(true);
+    const bot = (x: Partial<Msg>) => setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: '', t: Date.now(), ...x }]);
     try {
-      const p: Record<string, string> = { q, profile: PROFILE, device: await getDevice(), fare: store.fareType(), ...(store.accOn() ? { acc: '1' } : {}), ...extra };
+      let at = Date.now();
+      let u = understand(q, brainCtx(at, !!extra.lat));
+      // A trip with no start: use where you are if location is already allowed (no prompt, a recent fix only).
+      if (!extra.lat && (u.intent === 'trip' || u.intent === 'fare' || u.intent === 'nearby' || u.intent === 'departures') && !u.slots.from && (u.intent !== 'departures' || !u.slots.stop)) {
+        try {
+          const Location = require('expo-location');
+          const perm = await Location.getForegroundPermissionsAsync();
+          const pos = perm?.status === 'granted' ? await Location.getLastKnownPositionAsync({ maxAge: 300000 }) : null;
+          if (pos) { extra = { ...extra, lat: pos.coords.latitude.toFixed(5), lon: pos.coords.longitude.toFixed(5) }; at = Date.now(); u = understand(q, brainCtx(at, true)); }
+        } catch { /* no location module in this build, or no fix */ }
+      }
+      const bctx = brainCtx(at, !!extra.lat);
+      const a = toAction(u, bctx);
+      if (a.kind !== 'ask') { bot({ text: a.text, choices: a.choices || [] }); return; }
+      const p: Record<string, string> = { q: a.q, profile: PROFILE, device: await getDevice(), fare: store.fareType(), ...(store.accOn() ? { acc: '1' } : {}), ...(a.extra || {}), ...extra };
       if (places?.home?.id) p.home = `${places.home.id}|${places.home.name || ''}`;
       if (places?.work?.id) p.work = `${places.work.id}|${places.work.name || ''}`;
       const qs = Object.entries(p).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
@@ -243,12 +321,59 @@ export default function AskScreen() {
         if (!r.ok) throw Object.assign(new Error(String(r.status)), { http: r.status });
         d = await r.json();
       } finally { clearTimeout(timer); }
-      setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: d.reply || d.text || "Sorry, I didn't get that.", kind: typeof d.kind === 'string' ? d.kind : null, fare: d.fare || null, cards: d.cards || [], links: d.links || [], suggestions: d.suggestions || [], ask: d.ask || null, t: Date.now(), lastHome: askLastHint(d) }]);
+      let cards: Card[] = d.cards || [];
+      let reply: string = d.reply || d.text || "Sorry, I didn't get that.";
+      const rf = a.refine;
+      // Another day, a mode on another day, or no changes: the planner's own answer for exactly that.
+      const tc = tripCardOf(cards as any);
+      if (rf && tc && (rf.date || rf.direct)) {
+        try {
+          let journeys = (tc.journeys || []) as any[];
+          if (rf.date) {
+            const r = await api.trip({ id: tc.from!.id, name: tc.from!.name }, { id: tc.to!.id, name: tc.to!.name },
+              { count: 6, time: rf.time ? rf.time.replace(':', '') : undefined, arriveBy: !!rf.arriveBy, date: rf.date.replace(/-/g, ''), modes: rf.modes ? [rf.modes] : undefined });
+            journeys = journeysFrom(r);
+          }
+          let note: string | null = null;
+          if (rf.direct) ({ journeys, note } = directFirst(journeys));
+          const card = { ...tc, journeys };
+          cards = cards.map((x: any) => (x === tc ? card : x));
+          reply = tripReply(card as any, u.slots.day || null, Date.now()) + (note ? '\n' + note : '');
+        } catch (e: any) {
+          reply = `${e?.message || "Couldn't plan that day just now."} Showing the next trips instead.\n${reply}`;
+        }
+      }
+      const dc = depCardOf(cards as any);
+      const stopId = rf?.stop || (dc?.link?.kind === 'stop' ? dc.link.id : null);
+      if (rf && rf.board && dc && stopId && (rf.time || rf.date)) {
+        try {
+          const today = sydney(Date.now());
+          const day = rf.date || `${today.y}-${String(today.mo).padStart(2, '0')}-${String(today.d).padStart(2, '0')}`;
+          const r = await departuresAt(stopId, sydMs(day, rf.time || '00:00'));
+          const items = depItemsFrom(r).filter((i: any) => !u.slots.mode || i.mode === u.slots.mode || (u.slots.mode === 'bus' && i.mode === 'coach'));
+          cards = cards.map((x: any) => (x === dc ? { ...dc, items } : x));
+          reply = items.length ? `${a.heard}.` : `${a.heard}: nothing found for that time.`;
+        } catch (e: any) {
+          reply = `${e?.message || "Couldn't load that time just now."} Showing departures from now.\n${reply}`;
+        }
+      }
+      if (u.intent === 'fare') {
+        // Lead with the Opal estimate the trip answer carries; without one, say where to see it.
+        const lines = reply.split('\n');
+        const fl = lines.findIndex((x) => /\bfare\b/i.test(x) && /\$\d/.test(x));
+        reply = fl >= 0 ? [lines[fl], ...lines.filter((_x, i) => i !== fl)].join('\n') : `No fare estimate for this trip right now. Your Opal card's trip history shows what each trip cost.\n${reply}`;
+      }
+      const shown = shownTimes(cards as any);
+      // Follow up chips on a trip or a board: later (and earlier for trips), plus what the server suggests.
+      const canFollow = ['trip', 'departures', 'later', 'earlier', 'mybus'].includes(u.intent);
+      const follow: Choice[] = !canFollow ? [] : tripCardOf(cards as any) ? [{ label: 'Earlier', q: 'Earlier' }, { label: 'Later', q: 'Later' }] : dc ? [{ label: 'Later', q: 'Later' }] : [];
+      bot({ text: reply, heard: a.heard, kind: typeof d.kind === 'string' ? d.kind : null, fare: d.fare || null, cards, links: d.links || [], choices: follow, suggestions: (d.suggestions || []).slice(0, 3), ask: d.ask || null, lastHome: askLastHint(d) });
+      brainLast = nextLast(u, shown, Date.now());
     } catch (e: any) {
       const text = e?.http ? "Ask isn't answering right now. Try again in a minute." : 'No connection right now. Check your signal and try again.';
-      setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text, suggestions: [q], t: Date.now() }]);
+      bot({ text, suggestions: [q] });
     } finally { setBusy(false); }
-  }, [busy, places]);
+  }, [busy, places, brainCtx]);
 
   const askWithLocation = useCallback(async () => {
     const last = [...msgs].reverse().find((m) => m.role === 'me');
@@ -308,6 +433,8 @@ export default function AskScreen() {
         onScrollEndDrag={onUserScroll}
         onMomentumScrollEnd={onUserScroll}
         onContentSizeChange={() => { if (stick.current) list.current?.scrollToEnd({ animated: false }); }}
+        // The chips row under the list comes and goes with the answer: stay on the latest message when the list resizes.
+        onLayout={() => { if (stick.current) list.current?.scrollToEnd({ animated: false }); }}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
         contentInsetAdjustmentBehavior="automatic"
@@ -336,6 +463,12 @@ export default function AskScreen() {
         }
         ListFooterComponent={busy ? <View style={[st.bubble, st.bot, { backgroundColor: c.dark ? '#26252A' : '#E9E9EB', marginTop: 6 }]}><ActivityIndicator size="small" /></View> : undefined}
       />
+      {msgs.length && !text && !busy && starters.length ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ flexGrow: 0 }}
+          contentContainerStyle={{ gap: 8, paddingHorizontal: 12 + side.left, paddingVertical: 6 }}>
+          {starters.map((q) => <Chip key={'s' + q} label={q} onPress={() => ask(q)} />)}
+        </ScrollView>
+      ) : null}
       <View style={[st.bar, { backgroundColor: c.card, borderTopColor: c.sep, paddingLeft: 12 + side.left, paddingRight: 12 + side.right, paddingBottom: 8 }]}>
         <TextInput
           value={text}
@@ -359,6 +492,9 @@ export default function AskScreen() {
 }
 
 const st = StyleSheet.create({
+  heard: { fontSize: 13, lineHeight: 18, marginBottom: 4, marginLeft: 4 },
+  acts: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  act: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, paddingHorizontal: 14, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth },
   bubble: { maxWidth: '80%', paddingHorizontal: 13, paddingVertical: 8, borderRadius: 19 },
   me: { alignSelf: 'flex-end', borderBottomRightRadius: 6, marginTop: 6 },
   bot: { alignSelf: 'flex-start', borderBottomLeftRadius: 6 },
