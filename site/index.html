@@ -22,15 +22,51 @@
 <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
 <link rel="stylesheet" href="/site.css">
 <link rel="stylesheet" href="/home.css">
+<link rel="stylesheet" href="/extra-1.css">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "SoftwareApplication",
+   "@id": "https://transportsydney.app/#app",
+   "name": "Transport: Sydney Live",
+   "description": "Live departures, trip plans and alerts for Sydney and NSW trains, metro, buses, ferries and light rail.",
+   "url": "https://transportsydney.app/",
+   "image": "https://transportsydney.app/icon-512.png",
+   "screenshot": "https://transportsydney.app/img/app-home-light.webp",
+   "operatingSystem": "iOS, Android",
+   "applicationCategory": "TravelApplication",
+   "inLanguage": "en-AU",
+   "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "AUD"
+   },
+   "publisher": {
+    "@id": "https://fintex.au/#organization"
+   }
+  },
+  {
+   "@type": "Organization",
+   "@id": "https://fintex.au/#organization",
+   "name": "Fintex Australia Pty Ltd",
+   "url": "https://fintex.au",
+   "logo": "https://fintex.au/apple-touch-icon.png"
+  }
+ ]
+}
+</script>
 </head>
 <body class="home">
 <a class="skip" href="#main">Skip to content</a>
 
 <main id="main">
 <section class="hero">
-<img class="app-icon" src="/icon-512.png" alt="" width="96" height="96">
+<img class="app-icon" src="/icon-512.png" alt="Transport: Sydney Live app icon" width="96" height="96">
 <h1>Transport: <span class="nw">Sydney Live</span></h1>
 <p class="lede">Your next train, bus or ferry, live. <span class="nw">Made for Sydney.</span></p>
 <!-- Store links. TEMP until App Store release: the first link is the public iPhone beta on TestFlight.
@@ -53,7 +89,7 @@
 <div class="showcase">
 <picture class="phone">
 <source srcset="/img/app-home-dark.webp" media="(prefers-color-scheme: dark)">
-<img src="/img/app-home-light.webp" width="390" height="550" alt="The app's Home screen: your commute card with a large live countdown, the line badges and platform, then trip alerts folded into small chips.">
+<img src="/img/app-home-light.webp" width="390" height="550" fetchpriority="high" alt="The app's Home screen: your commute card with a large live countdown, the line badges and platform, then trip alerts folded into small chips.">
 </picture>
 <section class="highlights" aria-labelledby="hl-h">
 <h2 id="hl-h" class="visually-hidden">Highlights</h2>

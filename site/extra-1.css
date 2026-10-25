@@ -1,0 +1,7 @@
+/* Loaded after site.css (and home.css) on every page. New file name because the zone keeps
+   stylesheets at the edge for hours and the token cannot purge; site.css stays as it was for rollback. */
+/* Links inside running text are underlined, so they do not rely on colour alone (WCAG 1.4.1).
+   Buttons, store badges, the contents list and the footer menu keep their look. */
+.foot p a,
+main p a:not(.button):not(.store),
+main dd a { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
