@@ -5,6 +5,11 @@
 // be and the content pushed down, and only a scroll (which collapses the large title) showed the
 // normal header. The standard title is the state that renders correctly, so every launch and every
 // return to the app looks the same. Pure data so the unit tests can check it without React Native.
+//
+// Web preview only: expo-router draws the tabs there as a floating pill fixed 24 px from the top (40 px tall), over
+// the header, so the title read "Hor". The web header starts below the pill (WEB_PILL_CLEAR). On iPhone the tabs are
+// the system tab bar at the bottom and on Android the Material bar at the bottom, so neither is changed.
+export const WEB_PILL_CLEAR = 72;
 
 export type HeaderPalette = { tint: string; bg: string; text?: string };
 
@@ -18,6 +23,7 @@ export function tabHeaderOptions(os: string, c: HeaderPalette) {
     headerTintColor: c.tint,
     headerStyle: os === 'android' ? { backgroundColor: c.bg } : undefined,
     contentStyle: { backgroundColor: c.bg },
+    ...(os === 'web' ? { headerStatusBarHeight: WEB_PILL_CLEAR } : {}),
   };
 }
 

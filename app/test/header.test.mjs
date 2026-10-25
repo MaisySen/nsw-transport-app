@@ -44,6 +44,15 @@ test('iOS keeps the transparent blurred header, Android a solid one in the page 
   assert.deepEqual(android.contentStyle, { backgroundColor: palette.bg });
 });
 
+test('web preview header starts below the floating tab pill; iPhone and Android unchanged', async () => {
+  const { tabHeaderOptions, WEB_PILL_CLEAR } = await load();
+  // expo-router's web tabs: a pill fixed 24 px from the top, 40 px tall.
+  assert.ok(WEB_PILL_CLEAR >= 24 + 40);
+  assert.equal(tabHeaderOptions('web', palette).headerStatusBarHeight, WEB_PILL_CLEAR);
+  assert.equal('headerStatusBarHeight' in tabHeaderOptions('ios', palette), false);
+  assert.equal('headerStatusBarHeight' in tabHeaderOptions('android', palette), false);
+});
+
 test('stop screen header has no large title and no title text', async () => {
   const { stopHeaderOptions } = await load();
   const ios = stopHeaderOptions('ios');
