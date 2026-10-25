@@ -179,3 +179,43 @@ test('startup: the first screen asks for its times before the config, alerts and
   assert.doesNotMatch(l, /\n\s*pollNotes\(\);\n/);
   assert.match(l, /clearTimeout\(first\)/);
 });
+
+test('sharedOnce: calls while the first is loading share it; one id on a fresh install', async () => {
+  const store = new Map();
+  let made = 0;
+  const slow = (v) => new Promise((ok) => setTimeout(() => ok(v), 5));
+  const get = P.sharedOnce(async () => {
+    let id = await slow(store.get('device') || null);
+    if (!id) { id = 'app' + (++made); await slow(store.set('device', id)); }
+    return id;
+  });
+  const ids = await Promise.all([get(), get(), get()]);
+  assert.deepEqual(ids, ['app1', 'app1', 'app1']);
+  assert.equal(made, 1);
+  assert.equal(await get(), 'app1');
+  assert.equal(store.get('device'), 'app1');
+});
+
+test('sharedOnce: a failure is not kept, the next call tries again', async () => {
+  let n = 0;
+  const get = P.sharedOnce(async () => { n++; if (n === 1) throw new Error('storage busy'); return 'ok'; });
+  await assert.rejects(get(), /storage busy/);
+  assert.equal(await get(), 'ok');
+  assert.equal(n, 2);
+});
+
+test('getDevice goes through sharedOnce', () => {
+  const src = read('src/lib/device.ts');
+  assert.match(src, /sharedOnce\(/);
+});
+
+test('notesWaitMs: no push token and nothing watched asks once a minute; watching with no token every tick', () => {
+  assert.equal(P.notesWaitMs(true, true), 55000);
+  assert.equal(P.notesWaitMs(true, false), 55000);
+  assert.equal(P.notesWaitMs(false, false), 55000);
+  assert.equal(P.notesWaitMs(false, true), 0);
+  const push = read('src/lib/push.ts');
+  assert.match(push, /notesWaitMs\(!!tokenKnown, watching\)/);
+  assert.match(push, /watchingNow = Array\.isArray\(r\?\.items\)/);
+  assert.match(read('src/lib/api.ts'), /watchClock\.startedAt = Date\.now\(\)/);
+});

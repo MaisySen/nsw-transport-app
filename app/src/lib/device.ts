@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { bytesFromUuid, idFromBytes, isSharedProfile, tripsToUpload } from './profileMigrate';
+import { sharedOnce } from './pollCore';
 
 /**
  * The server profile that holds this install's saved trips, home and work.
@@ -67,8 +68,8 @@ export async function initProfile(): Promise<string> {
   return PROFILE;
 }
 
-export async function getDevice(): Promise<string> {
-  if (cached) return cached;
+// One read, and at most one new id, per launch: calls made while the first is loading share it (sharedOnce).
+const loadDevice = sharedOnce(async () => {
   let id = await AsyncStorage.getItem('device');
   if (!id) {
     id = randomId('app');
@@ -76,4 +77,8 @@ export async function getDevice(): Promise<string> {
   }
   cached = id;
   return id;
+});
+export async function getDevice(): Promise<string> {
+  if (cached) return cached;
+  return loadDevice();
 }

@@ -4,7 +4,8 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api } from './api';
+import { api, watchClock } from './api';
+import { notesWaitMs } from './pollCore';
 import { noteKey } from './liveCalc';
 import { allowPushTokens } from './forgetTokens';
 
@@ -81,12 +82,16 @@ let lastPollAt = 0;
  */
 export async function pollNotesTick(): Promise<boolean> {
   if (tokenKnown == null) { try { tokenKnown = !!(await AsyncStorage.getItem('expoPushToken')); } catch { tokenKnown = false; } }
-  if (tokenKnown && Date.now() - lastPollAt < 55000) return true;
+  // A watch started since the last ask counts as watching at once (api.watch stamps watchClock).
+  const watching = watchingNow || watchClock.startedAt >= lastPollAt;
+  if (Date.now() - lastPollAt < notesWaitMs(!!tokenKnown, watching)) return true;
   lastPollAt = Date.now();
   await pollNotes();
   return true;
 }
 
+/** Whether the server's last answer listed a watch for this phone (true until the first answer). */
+let watchingNow = true;
 /** Watches ended on this phone (a live trip that arrived): their late alerts are never shown. */
 export const endedWatches = new Set<string>();
 let lastId: number | null = null;
@@ -110,6 +115,7 @@ async function pollOnce() {
       if (saved) lastId = Number(saved);
     }
     const r = await api.watches(lastId || 0);
+    watchingNow = Array.isArray(r?.items) ? r.items.length > 0 : true;
     const notes = (r.notes || []).slice().sort((a, b) => a.id - b.id);
     if (lastId == null) {
       // First run on this phone: do not replay old alerts.

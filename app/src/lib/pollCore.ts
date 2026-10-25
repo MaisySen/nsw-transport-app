@@ -206,3 +206,31 @@ export function nextInMs(items: { planned?: string | null; estimated?: string | 
   }
   return best;
 }
+
+/**
+ * One value made once and shared: calls while the first is still loading wait for it instead of starting their own.
+ * A failure is not kept, so the next call tries again. getDevice (src/lib/device.ts) uses it: on a fresh install,
+ * Home's first board and trip asked for the device id at the same moment, each found none and made one, and the
+ * first requests went out under an id the phone then forgot (26 Oct 2026, item 2 audit).
+ */
+export function sharedOnce<T>(load: () => Promise<T>): () => Promise<T> {
+  let value: { v: T } | null = null;
+  let pending: Promise<T> | null = null;
+  return () => {
+    if (value) return Promise.resolve(value.v);
+    if (!pending) {
+      pending = load().then((v) => { value = { v }; pending = null; return v; }, (e) => { pending = null; throw e; });
+    }
+    return pending;
+  };
+}
+
+/**
+ * How long the app wide alerts timer (every 20 s, src/lib/push.ts) waits since its last ask. With a push token, push
+ * brings each alert, so once a minute catches a missed one. With no token and nothing watched on this phone, no alert
+ * needs the next 20 s either (the server writes its notes on a minute tick), so once a minute too. Watching with no
+ * token: every tick, as before.
+ */
+export function notesWaitMs(hasToken: boolean, watching: boolean): number {
+  return hasToken || !watching ? 55000 : 0;
+}
