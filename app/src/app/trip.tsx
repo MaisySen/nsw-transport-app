@@ -508,19 +508,21 @@ export default function TripScreen() {
   useEffect(() => { if (fromName && toName && !via) store.addRecentTrip({ id: from.id, name: fromName }, { id: to.id, name: toName }); }, [from.id, to.id, fromName, toName, via]);
   useEffect(() => { setExtra([]); }, [chain && allOn]);
 
-  // Save this trip as Home or Work (a trip through a via stop; others go through New trip's Confirm step).
+  // Save this trip: New trip's Confirm step (name, extend with a connection, change time), or straight in as Home or Work.
+  // A trip with legs has one way to save (New trip), so its star saves at once.
   const doSave = async (name: string) => {
     try { await api.saveTrip(name, from, to); haptic.success(); Alert.alert('Saved', `It's on your Home screen as "${name}". You can also text "${name}" to Tab.`); }
     catch (e: any) { Alert.alert("Couldn't save it", e.message); }
   };
-  const saveMenu: MenuSpec | null = via ? { title: 'Save this trip', message: 'Saved trips show live on Home.', items: menuOf([
-    { text: 'Home', sf: 'house', icon: 'home', onPress: () => doSave('home') },
-    { text: 'Work', sf: 'briefcase', icon: 'briefcase', onPress: () => doSave('work') },
+  const saveMenu: MenuSpec | null = !chain ? { title: 'Save this trip', message: 'Saved trips show live on Home.', items: menuOf([
+    { text: 'Save trip', sf: 'star', icon: 'starOpen', onPress: () => save() },
+    { text: 'Save as Home', sf: 'house', icon: 'home', onPress: () => doSave('home') },
+    { text: 'Save as Work', sf: 'briefcase', icon: 'briefcase', onPress: () => doSave('work') },
   ]) } : null;
   const save = () => {
     // Saving goes through New trip's Confirm step: name, extend with a connection, change time.
     if (chain) { router.push({ pathname: '/new-trip', params: { legs: JSON.stringify(tLegs(plan)), ...(p.name ? { name: String(p.name) } : {}) } }); return; }
-    if (!via) { router.push({ pathname: '/new-trip', params: { from: from.id, fromName, to: to.id, toName, mode: modes.length === 1 ? modes[0] : firstT(js[0] || ({ legs: [] } as any))?.mode || '' } }); return; }
+    router.push({ pathname: '/new-trip', params: { from: from.id, fromName, to: to.id, toName, mode: modes.length === 1 ? modes[0] : firstT(js[0] || ({ legs: [] } as any))?.mode || '' } });
   };
   // iPhone: Save this trip is a system bar button with its own UIMenu, dropping from the star (no Cancel row).
   const saveInBar = Platform.OS === 'ios' && !!saveMenu && !chain;
