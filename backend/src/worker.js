@@ -760,6 +760,86 @@ function legKind(t) {
 
 // "151.21070:-33.86760:EPSG:4326": a point (longitude:latitude) the Trip Planner takes with type coord.
 function isCoordId(id) { return /^-?\d{1,3}(\.\d+)?:-?\d{1,2}(\.\d+)?:EPSG:4326$/.test(String(id || "")); }
+// ---------- live traffic on bus legs ----------
+// Open incidents from Live Traffic NSW (crashes, breakdowns, hazards), read at most every 2 minutes, and matched to
+// the route of each bus or coach leg: within HAZ_NEAR_M of the line the bus drives. Nothing is made up: no
+// incident on the route means no note.
+const HAZ_TTL_MS = 120000;
+const HAZ_NEAR_M = 120;
+let hazMem = null; // { at, items, promise }
+function hazCat(s) {
+  const t = String(s || "").replace(/_/g, " ").trim().toLowerCase();
+  return t ? t[0].toUpperCase() + t.slice(1) : "Incident";
+}
+/** One Live Traffic feature in the words the app shows: "Crash on Victoria Road at Gladesville". */
+function hazardOut(f) {
+  if (!f || typeof f !== "object") return null;
+  const p = f.properties || {}, g = f.geometry || {};
+  if (p.ended === true || p.isEnded === true) return null;
+  const c = g.type === "Point" && Array.isArray(g.coordinates) ? g.coordinates : null;
+  const lon = c ? Number(c[0]) : NaN, lat = c ? Number(c[1]) : NaN;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  const road = (Array.isArray(p.roads) && p.roads[0]) || {};
+  const what = hazCat(p.mainCategory || p.displayName || p.subCategoryA);
+  const street = plainText(road.mainStreet || ""), suburb = plainText(road.suburb || "");
+  const text = street ? `${what} on ${street}${suburb ? ` at ${suburb}` : ""}` : `${what}${suburb ? ` at ${suburb}` : ""}`;
+  return { id: String(f.id != null ? f.id : p.id || `${lat},${lon}`), lat, lon, kind: what, text, major: !!p.isMajor, updated: p.lastUpdated || p.created || null };
+}
+async function trafficHazards(env) {
+  const now = Date.now();
+  if (hazMem && hazMem.items && now - hazMem.at < HAZ_TTL_MS) return hazMem.items;
+  if (hazMem && hazMem.promise) return hazMem.promise;
+  const promise = (async () => {
+    upstream.calls++;
+    const res = await fetch(API + "/v1/live/hazards/incident/open", { headers: { Authorization: "apikey " + apiKey(env) }, signal: AbortSignal.timeout(8000), cf: { cacheTtl: 120, cacheEverything: true } });
+    if (!res.ok) throw new Error(`Live Traffic answered ${res.status}`);
+    const data = await res.json();
+    const items = (Array.isArray(data && data.features) ? data.features : []).map(hazardOut).filter(Boolean);
+    hazMem = { at: Date.now(), items };
+    return items;
+  })();
+  hazMem = { ...(hazMem || {}), promise };
+  try { return await promise; }
+  catch (e) { const old = hazMem && hazMem.items; hazMem = old ? { at: Date.now() - HAZ_TTL_MS + 30000, items: old } : null; if (old) return old; throw e; }
+}
+/** Metres from point p to segment a-b, all [lat, lon], on a flat local projection (fine at these distances). */
+function segDistM(p, a, b) {
+  const k = 111320, kx = k * Math.cos((p[0] * Math.PI) / 180);
+  const ax = (a[1] - p[1]) * kx, ay = (a[0] - p[0]) * k, bx = (b[1] - p[1]) * kx, by = (b[0] - p[0]) * k;
+  const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+  const t = L ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L)) : 0;
+  const x = ax + t * dx, y = ay + t * dy;
+  return Math.sqrt(x * x + y * y);
+}
+/** The incident on this leg's route, or null: major ones first, then the nearest. path is [[lat, lon], ...]. */
+function hazardOnPath(path, hazards, nearM = HAZ_NEAR_M) {
+  if (!Array.isArray(path) || path.length < 2 || !hazards || !hazards.length) return null;
+  let s = 90, n = -90, w = 180, e = -180;
+  for (const [la, lo] of path) { if (la < s) s = la; if (la > n) n = la; if (lo < w) w = lo; if (lo > e) e = lo; }
+  const pad = 0.002;
+  let best = null;
+  for (const h of hazards) {
+    if (h.lat < s - pad || h.lat > n + pad || h.lon < w - pad || h.lon > e + pad) continue;
+    let d = Infinity;
+    for (let i = 1; i < path.length && d > nearM; i++) d = Math.min(d, segDistM([h.lat, h.lon], path[i - 1], path[i]));
+    if (d > nearM) continue;
+    if (!best || (h.major && !best.h.major) || (h.major === best.h.major && d < best.d)) best = { h, d };
+  }
+  return best ? best.h : null;
+}
+const TRAFFIC_MODES = new Set(["bus", "coach"]);
+/** Adds traffic: { text, kind, id } to bus and coach legs of trip answers that have an incident on their route. */
+async function addTraffic(env, d, hazardsFn = trafficHazards) {
+  const legs = ((d && d.journeys) || []).flatMap((j) => j.legs || []).filter((l) => l.kind === "transit" && TRAFFIC_MODES.has(l.mode) && Array.isArray(l.path) && l.path.length > 1);
+  if (!legs.length) return d;
+  const hz = await hazardsFn(env);
+  for (const l of legs) {
+    const h = hazardOnPath(l.path, hz);
+    if (h) l.traffic = { id: h.id, kind: h.kind, text: h.text, major: h.major };
+  }
+  return d;
+}
+
 // Long distance plans (Central to Albury or Dubbo) can take the Trip Planner up to about 30 s. The app asks
 // with long=1 for those; the answer is kept for LONG_TRIP_CACHE_S so the next refresh is instant.
 const LONG_TRIP_TIMEOUT_MS = 35000;
@@ -5965,6 +6045,11 @@ async function handleRequest(request, env, exec) {
           await afterAnswer(env, d, { profile, device: p.get("device"), exec });
           return asTxt ? textRes(await asText(env, d)) : json(d);
         }
+        case "/api/traffic": {
+          // Open Live Traffic incidents as the app words them (for bus legs and checks), at most 300.
+          const items = await trafficHazards(env);
+          return json({ items: items.slice(0, 300), count: items.length, at: hazMem && hazMem.at ? new Date(hazMem.at).toISOString() : null });
+        }
         case "/api/trip": {
           const acc = p.get("acc") === "1";
           const long = p.get("long") === "1";
@@ -5982,6 +6067,7 @@ async function handleRequest(request, env, exec) {
           const d = { kind: "trip", from: { id: p.get("from"), name: given("fromName") || tripEndName(r, "from") || p.get("from") }, to: { id: p.get("to"), name: given("toName") || tripEndName(r, "to") || p.get("to") }, ...r };
           pickFares(d, fareType(p));
           await addAccess(env, d, { accessible: acc }).catch(() => null);
+          await addTraffic(env, d).catch(() => null);
           if (liftAware) liftAwareRank(d, want);
           if (!(await serverOn(env, "occupancy"))) stripOccupancy(d);
           await afterAnswer(env, d, { profile, device: p.get("device"), exec, log: p.get("refresh") !== "1" });
@@ -6004,6 +6090,7 @@ async function handleRequest(request, env, exec) {
           const z = legs[legs.length - 1];
           pickFares(r, fareType(p));
           await addAccess(env, r, { accessible: acc }).catch(() => null);
+          await addTraffic(env, r).catch(() => null);
           if (liftAware) liftAwareRank(r, want);
           if (!(await serverOn(env, "occupancy"))) stripOccupancy(r);
           return json({ kind: "trip", from: { id: legs[0].f, name: legs[0].fn }, to: { id: z.t, name: z.tn }, stops: legs.slice(0, -1).map((l) => ({ id: l.t, name: l.tn })), ...r });

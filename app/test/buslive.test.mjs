@@ -31,3 +31,11 @@ test('nothing without live data, and nothing for trains, walks or other modes', 
   assert.equal(b.busLegStatus({ kind: 'walk', mode: 'bus' }), null);
   assert.doesNotMatch(src, /[\u2013\u2014]/);
 });
+
+test('a Live Traffic incident on the route reads as one line on bus legs only', () => {
+  assert.equal(b.trafficLine({ kind: 'transit', mode: 'bus', line: '501', traffic: { text: 'Crash on Victoria Road at Gladesville' } }), 'Crash on Victoria Road at Gladesville. Your 501 may run late.');
+  assert.equal(b.trafficLine({ kind: 'transit', mode: 'coach', traffic: { text: 'Breakdown at Ryde.' } }), 'Breakdown at Ryde. Your coach may run late.');
+  assert.equal(b.trafficLine({ kind: 'transit', mode: 'train', line: 'T1', traffic: { text: 'Crash' } }), null);
+  assert.equal(b.trafficLine({ kind: 'transit', mode: 'bus', line: '501' }), null);
+  assert.equal(b.trafficLine({ kind: 'transit', mode: 'bus', line: '501', cancelled: true, traffic: { text: 'Crash' } }), null);
+});

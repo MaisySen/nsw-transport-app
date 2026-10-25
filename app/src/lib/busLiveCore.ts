@@ -14,3 +14,15 @@ export function busLegStatus(l: { kind?: string; mode?: string; realtime?: boole
   if (d <= -2) return { text: `${noun} running ${-d} min early`, tone: 'late' };
   return { text: `${noun} on time, live`, tone: 'ok' };
 }
+
+/**
+ * A Live Traffic incident on the bus's route (from the new server only): "Crash on Victoria Road at Gladesville.
+ * Your 501 may run late." Null for other modes, or with no incident on the route.
+ */
+export function trafficLine(l: { kind?: string; mode?: string; line?: string; cancelled?: boolean; traffic?: { text?: string } | null }): string | null {
+  if (l.kind === 'walk' || (l.mode !== 'bus' && l.mode !== 'coach') || l.cancelled) return null;
+  const t = String(l.traffic?.text || '').replace(/[.\s]+$/, '').trim();
+  if (!t) return null;
+  const who = l.line ? `Your ${l.line}` : l.mode === 'coach' ? 'Your coach' : 'Your bus';
+  return `${t}. ${who} may run late.`;
+}

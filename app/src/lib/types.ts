@@ -28,6 +28,8 @@ export type Leg = {
   fromParent?: string; toParent?: string;
   /** Step free access and live lift outages at each end of a transit leg. */
   access?: import('./access').LegAccess | null;
+  /** Bus and coach legs: a Live Traffic incident on the route (new server only). */
+  traffic?: { id?: string; kind?: string; text: string; major?: boolean } | null;
 };
 
 export type Journey = {
