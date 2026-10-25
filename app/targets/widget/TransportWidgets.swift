@@ -263,17 +263,31 @@ struct WidgetLineBadge: View {
     var mode: String
     var large = false
 
+    /// fullColor on a normal Home Screen and in the Live Activity; accented on tinted and clear Home Screens
+    /// (iOS 18 and later, Liquid Glass on iOS 26 and 27), vibrant on the Lock Screen and in StandBy at night.
+    @Environment(\.widgetRenderingMode) private var renderingMode
+
     var body: some View {
         let c = RGB(hex: colorHex)
         let white = c?.prefersWhiteText ?? true
-        HStack(spacing: 2) {
+        let shape = RoundedRectangle(cornerRadius: large ? 6 : 5)
+        let label = HStack(spacing: 2) {
             Image(systemName: Mode(raw: mode).symbol).font(.system(size: large ? 12 : 9, weight: .bold))
             Text(line).font((large ? Font.subheadline : .caption).weight(.bold))
         }
-        .foregroundStyle(white ? Color.white : Color.black)
         .padding(.horizontal, large ? 7 : 5)
         .padding(.vertical, large ? 3 : 2)
-        .background(Color(red: c?.r ?? 0, green: c?.g ?? 0.6, blue: c?.b ?? 0.9), in: RoundedRectangle(cornerRadius: large ? 6 : 5))
+        Group {
+            if renderingMode == .fullColor {
+                label
+                    .foregroundStyle(white ? Color.white : Color.black)
+                    .background(Color(red: c?.r ?? 0, green: c?.g ?? 0.6, blue: c?.b ?? 0.9), in: shape)
+            } else {
+                // Accented and vibrant modes draw every colour as one tint, so white text on a filled badge
+                // disappears into the fill. An outlined badge keeps the line name readable.
+                label.overlay(shape.strokeBorder(lineWidth: 1))
+            }
+        }
         .widgetAccentable()
         .accessibilityLabel("\(Mode(raw: mode).title) \(line)")
     }

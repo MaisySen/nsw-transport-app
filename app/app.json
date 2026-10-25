@@ -10,6 +10,7 @@
     "ios": {
       "bundleIdentifier": "com.maisysen.nswtransport",
       "buildNumber": "206",
+      "icon": "./assets/transport.icon",
       "deploymentTarget": "17.0",
       "appleTeamId": "B85KQRQZW7",
       "supportsTablet": false,
