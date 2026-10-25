@@ -56,12 +56,12 @@ test("refresh=1 takes a copy up to 5 s old and skips an older one; a plain open 
   store.set(k, old());
   const n = assets;
   r = await call("/api/stations?mode=bus&refresh=1", "10.9.0.6");
-  assert.equal(r.headers.get("x-edge-cache"), null, "9 s old copy is skipped by a refresh");
+  assert.equal(r.headers.get("x-edge-cache"), "miss", "9 s old copy is skipped by a refresh");
   assert.equal(assets, n + 1, "asked again");
   const legacy = new Response(JSON.stringify({ kind: "stations", items: [] }), { headers: { "content-type": "application/json" } });
   store.set(k, legacy);
   r = await call("/api/stations?mode=bus&refresh=1", "10.9.0.7");
-  assert.equal(r.headers.get("x-edge-cache"), null, "a copy with no time is skipped by a refresh");
+  assert.equal(r.headers.get("x-edge-cache"), "miss", "a copy with no time is skipped by a refresh");
 });
 
 test("the departures copy inside the server is 5 s for a refresh, 12 s otherwise", () => {

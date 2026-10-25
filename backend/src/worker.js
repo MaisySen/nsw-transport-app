@@ -122,15 +122,57 @@ async function tp(env, endpoint, params, timeoutMs = 12000) {
     outputFormat: "rapidJSON", coordOutputFormat: "EPSG:4326", version: "10.2.1.42", ...params,
   });
   upstream.calls++;
+  upstreamNote();
   const res = await fetch(API + "/v1/tp/" + endpoint + "?" + qs.toString(), {
     headers: { Authorization: "apikey " + apiKey(env) },
     signal: AbortSignal.timeout(timeoutMs),
   });
+  upstreamHeaders(res);
   if (!res.ok) {
     const body = await res.text();
+    upstreamRefused(res.status, (res.headers && res.headers.get("x-error-detail")) || body);
     throw new Error(`Transport data answered ${res.status}: ${body.slice(0, 200)}`);
   }
   return res.json();
+}
+
+// ---------- upstream budget ----------
+// Transport for NSW Open Data, Bronze plan (the default; checked 26 Oct 2026 on opendata.transport.nsw.gov.au,
+// API basics): 60,000 calls a day and 5 a second for the whole key, shared by every copy of this worker. Over
+// either, the hub answers 403 with X-Error-Detail "Account Over Rate Limit" or "Account Over Quota Limit".
+// Each copy counts its own Trip Planner calls over the last 10 s. At UPSTREAM_PER_S or more (or for a while after
+// a 403 over the limit) it is busy: a live answer that already has a shared copy up to STALE_MAX_MS old is served
+// from that copy (it says how old it is in dataAt) instead of asking again, and a refused or failed upstream call
+// also serves the last copy instead of an error. A first answer for a stop with no copy still asks.
+const UPSTREAM_PER_S = 3;
+const UPSTREAM_WINDOW_MS = 10000;
+const STALE_MAX_MS = 60000;
+const budget = { calls: [], overUntil: 0, refused: 0, staleServed: 0, shared: 0, seen: {} };
+function upstreamTrim(now) { while (budget.calls.length && now - budget.calls[0] > UPSTREAM_WINDOW_MS) budget.calls.shift(); }
+function upstreamNote() { const now = Date.now(); budget.calls.push(now); upstreamTrim(now); }
+// A load test request (loadOk) counts as busy from 1 call a second, so a test leaves the key's room to real phones.
+function upstreamBusy(test = false) {
+  const now = Date.now();
+  if (now < budget.overUntil) return true;
+  upstreamTrim(now);
+  return budget.calls.length >= (test ? 1 : UPSTREAM_PER_S) * (UPSTREAM_WINDOW_MS / 1000);
+}
+function upstreamRefused(status, detail) {
+  if (status !== 403 && status !== 429) return;
+  const d = String(detail || "");
+  if (!/rate|quota/i.test(d)) return;
+  budget.refused++;
+  // Over the per second limit: back off 2 s. Over the day's quota: a minute at a time (the hub resets at midnight).
+  budget.overUntil = Date.now() + (/quota/i.test(d) ? 60000 : 2000);
+}
+// Any rate or quota header the hub sends back, kept so /api/health can show what the key is allowed.
+function upstreamHeaders(res) {
+  if (!res || !res.headers || typeof res.headers.forEach !== "function") return;
+  res.headers.forEach((v, k) => { if (/ratelimit|rate-limit|quota|x-error-detail/i.test(k)) budget.seen[k] = String(v).slice(0, 120); });
+}
+function budgetStats() {
+  const now = Date.now(); upstreamTrim(now);
+  return { perS: UPSTREAM_PER_S, last10s: budget.calls.length, busy: upstreamBusy(), refused: budget.refused, staleServed: budget.staleServed, shared: budget.shared, headers: budget.seen };
 }
 
 function modeOf(cls) {
@@ -473,7 +515,7 @@ async function loadFeed(env, path, kind) {
     const res = await fetch(API + path, { headers: { Authorization: "apikey " + apiKey(env) }, cf: { cacheEverything: true, cacheTtlByStatus: { "200-299": Math.round(FEED_TTL_MS / 1000), "300-599": 0 } } });
     const shared = res.headers && res.headers.get("cf-cache-status") === "HIT";
     if (shared) feedStats.edgeHits++; else { upstream.calls++; feedStats.fetched++; }
-    if (!res.ok) throw new Error(`Realtime feed ${path} answered ${res.status}`);
+    if (!res.ok) { upstreamRefused(res.status, res.headers && res.headers.get("x-error-detail")); throw new Error(`Realtime feed ${path} answered ${res.status}`); }
     const buf = new Uint8Array(await res.arrayBuffer());
     const age = shared ? Number(res.headers.get("age")) || 0 : 0;
     const at = Date.now() - Math.min(age, FEED_TTL_MS / 1000) * 1000;
@@ -6847,10 +6889,10 @@ async function handleRequest(request, env, exec) {
       if (LIST_PATHS.test(url.pathname)) { const h = new Headers(res.headers); h.set("access-control-allow-origin", "*"); return withSec(new Response(res.body, { status: res.status, headers: h }), false); }
       return withSec(res, false);
     }
-    if (!rateOk(request, url.pathname)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
+    if (!rateOk(request, url.pathname) && !loadOk(request, env)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
     const bad = badInput(url.searchParams);
     if (bad) return url.searchParams.get("format") === "text" ? textRes(bad) : json({ error: bad, text: bad }, 400);
-    if (!(await ipLimitOk(env, request, url.pathname))) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
+    if (!(await ipLimitOk(env, request, url.pathname)) && !loadOk(request, env)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
     if (/^\/api\/share(\/update)?$/.test(url.pathname)) {
       try { return await shareRoutes(request, env, url); }
       catch (e) { return json({ error: "Sharing is not available right now." }, 500); }
@@ -7366,7 +7408,7 @@ async function handleRequest(request, env, exec) {
         }
         case "/api/health":
           if (!adminOk(request)) return json({ error: "forbidden" }, 403);
-          return json({ ok: true, at: new Date().toISOString(), feeds: feedStats, cachedFeeds: [...feedMem.entries()].filter(([, v]) => v.buf).map(([k, v]) => ({ feed: k, ageS: Math.round((Date.now() - v.at) / 1000), trips: v.idx.size, bytes: v.buf.length })), storage: !!db(env) });
+          return json({ ok: true, at: new Date().toISOString(), feeds: feedStats, cachedFeeds: [...feedMem.entries()].filter(([, v]) => v.buf).map(([k, v]) => ({ feed: k, ageS: Math.round((Date.now() - v.at) / 1000), trips: v.idx.size, bytes: v.buf.length })), storage: !!db(env), upstream: budgetStats() });
         default:
           return json({ error: "not found" }, 404);
       }
@@ -7378,8 +7420,9 @@ async function handleRequest(request, env, exec) {
 }
 
 // ---------- edge cache, shared limits and input checks ----------
-// Shared live answers are cached at the edge for 15 seconds, keyed on the query without the
-// profile and device, so many phones looking at the same board cost one upstream call.
+// Shared live answers are cached at the edge, keyed on the query without the profile and device, so many phones
+// looking at the same board cost one upstream call. A plain open takes a copy up to 15 s old, a refresh up to 5 s;
+// copies are kept 120 s for a busy or failed upstream (see the upstream budget and fetch below).
 const EDGE_CACHE_RE = /^\/api\/(departures|trip|plan|service|status|alerts|stations|search|nearby|station|parking|topup|lifts)$/;
 const EDGE_CACHE_S = 15;
 // A refresh (refresh=1: the app's own polls and pull to refresh) takes a shared answer only while it is at most this
@@ -7399,7 +7442,7 @@ const memCacheMap = new Map();
 const memCache = {
   async match(req) {
     const e = memCacheMap.get(req.url);
-    if (!e || Date.now() - e.at > EDGE_CACHE_S * 1000) { if (e) memCacheMap.delete(req.url); return undefined; }
+    if (!e || Date.now() - e.at > EDGE_KEEP_S * 1000) { if (e) memCacheMap.delete(req.url); return undefined; }
     return new Response(e.body, { status: e.status, headers: e.headers });
   },
   async put(req, res) {
@@ -7468,42 +7511,86 @@ export default {
     applyEnv(env);
     const url = new URL(request.url);
     const cache = request.method === "GET" && EDGE_CACHE_RE.test(url.pathname) && !badInput(url.searchParams) ? edgeCache() : null;
-    if (cache) {
-      const key = edgeKey(url);
-      let hit = await cache.match(key).catch(() => null);
-      // When the copy was made (x-stored-at, set below). A refresh skips a copy older than REFRESH_MAX_AGE_MS.
-      const storedAt = hit ? Number(hit.headers.get("x-stored-at")) || 0 : 0;
-      if (hit && url.searchParams.get("refresh") === "1" && !(storedAt && Date.now() - storedAt <= REFRESH_MAX_AGE_MS)) hit = null;
-      if (hit) {
-        if (!rateOk(request, url.pathname)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
-        // A trip from the cache still counts toward commute memory.
-        const p = url.searchParams, profile = profileId(request.headers.get("x-profile") || p.get("profile"));
-        if (url.pathname === "/api/trip" && profile && p.get("refresh") !== "1" && /^\d{4,10}$/.test(p.get("from") || "") && /^\d{4,10}$/.test(p.get("to") || "") && !p.get("time")) {
-          const s = { profile, device: cleanId(p.get("device")) || null, from: { id: p.get("from"), name: p.get("fromName") || p.get("from") }, to: { id: p.get("to"), name: p.get("toName") || p.get("to") }, src: "search" };
-          if (exec && exec.waitUntil) exec.waitUntil(logSearch(env, s));
-        }
-        // Answers carry the server clock in "now" for the countdowns; a cached one gets the current time.
-        let body = await hit.text();
-        // The answer says when its times were read (dataAt), so the app's "Updated" line is honest about a cached copy.
-        if (/json/.test(hit.headers.get("content-type") || "")) {
-          body = body.replace(/"now":\d{13}/g, '"now":' + Date.now());
-          if (storedAt && /^\{\s*"/.test(body) && !/^\{"dataAt":/.test(body)) body = '{"dataAt":' + storedAt + "," + body.slice(1);
-        }
-        const r = new Response(body, hit);
-        r.headers.set("cache-control", "no-store");
-        r.headers.set("x-edge-cache", "hit");
-        return r;
-      }
-      const res = await handleRequest(request, env, exec);
-      if (res.status === 200) {
-        const copy = new Response(res.clone().body, res);
-        copy.headers.set("cache-control", `public, max-age=${EDGE_CACHE_S}`);
-        copy.headers.set("x-stored-at", String(Date.now()));
-        const put = cache.put(key, copy).catch(() => null);
-        if (exec && exec.waitUntil) exec.waitUntil(put);
-      }
-      return res;
+    if (!cache) return handleRequest(request, env, exec);
+    const key = edgeKey(url);
+    const refresh = url.searchParams.get("refresh") === "1";
+    const hit = await cache.match(key).catch(() => null);
+    // When the copy was made (x-stored-at). Copies are kept EDGE_KEEP_S, but a plain open takes one only up to
+    // EDGE_CACHE_S old and a refresh only up to REFRESH_MAX_AGE_MS; older ones are for a busy or failed upstream.
+    const storedAt = hit ? Number(hit.headers.get("x-stored-at")) || 0 : 0;
+    const age = storedAt ? Date.now() - storedAt : Infinity;
+    const fresh = !!hit && (storedAt ? age <= (refresh ? REFRESH_MAX_AGE_MS : EDGE_CACHE_S * 1000) : !refresh);
+    const usable = !!hit && !!storedAt && age <= STALE_MAX_MS;
+    if (fresh || (usable && !inFlight.has(key.url) && upstreamBusy(loadOk(request, env)))) {
+      if (!rateOk(request, url.pathname) && !loadOk(request, env)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
+      if (!fresh) budget.staleServed++;
+      cachedTripLog(env, url, request, exec);
+      return fromCopy(hit, storedAt, fresh ? "hit" : "stale");
     }
-    return handleRequest(request, env, exec);
+    // One upstream answer per key at a time in this copy of the worker: a burst of phones asking for the same stop
+    // while it is being fetched all wait for that one answer (shared), not one call each.
+    let flight = inFlight.get(key.url), leader = false;
+    if (!flight) {
+      leader = true;
+      flight = answerAndStore(request, env, exec, cache, key);
+      inFlight.set(key.url, flight);
+      if (inFlight.size > 2000) inFlight.delete(inFlight.keys().next().value);
+      flight.then(() => inFlight.delete(key.url), () => inFlight.delete(key.url));
+    } else {
+      if (!rateOk(request, url.pathname) && !loadOk(request, env)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
+      budget.shared++;
+    }
+    const out = await flight;
+    // Transport for NSW refused or failed (over its limit, down, slow): the last copy is better than an error.
+    if (out.status >= 500 && hit && storedAt && age <= EDGE_KEEP_S * 1000) {
+      budget.staleServed++;
+      return fromCopy(hit, storedAt, "stale");
+    }
+    if (!leader) cachedTripLog(env, url, request, exec);
+    const r = new Response(out.body, { status: out.status, headers: out.headers });
+    if (out.status === 200) r.headers.set("x-edge-cache", leader ? "miss" : "shared");
+    return r;
   },
 };
+
+// Copies are kept this long, for a busy or failed upstream only (see STALE_MAX_MS and the 5xx fallback above).
+const EDGE_KEEP_S = 120;
+const inFlight = new Map(); // edge key -> Promise<{ status, headers, body }>
+async function answerAndStore(request, env, exec, cache, key) {
+  const res = await handleRequest(request, env, exec);
+  const body = await res.text();
+  const headers = [...res.headers];
+  if (res.status === 200) {
+    const copy = new Response(body, { status: 200, headers });
+    copy.headers.set("cache-control", `public, max-age=${EDGE_KEEP_S}`);
+    copy.headers.set("x-stored-at", String(Date.now()));
+    const put = cache.put(key, copy).catch(() => null);
+    if (exec && exec.waitUntil) exec.waitUntil(put); else await put;
+  }
+  return { status: res.status, headers, body };
+}
+// A cached answer: "now" is the current time for the countdowns, and dataAt says when its times were read, so the
+// app's "Updated" line is honest about a copy.
+async function fromCopy(hit, storedAt, tag) {
+  let body = await hit.text();
+  if (/json/.test(hit.headers.get("content-type") || "")) {
+    body = body.replace(/"now":\d{13}/g, '"now":' + Date.now());
+    if (storedAt && /^\{\s*"/.test(body) && !/^\{"dataAt":/.test(body)) body = '{"dataAt":' + storedAt + "," + body.slice(1);
+  }
+  const r = new Response(body, hit);
+  r.headers.set("cache-control", "no-store");
+  r.headers.set("x-edge-cache", tag);
+  return r;
+}
+// A trip from a copy (cached or shared) still counts toward commute memory.
+function cachedTripLog(env, url, request, exec) {
+  const p = url.searchParams, profile = profileId(request.headers.get("x-profile") || p.get("profile"));
+  if (url.pathname === "/api/trip" && profile && p.get("refresh") !== "1" && /^\d{4,10}$/.test(p.get("from") || "") && /^\d{4,10}$/.test(p.get("to") || "") && !p.get("time")) {
+    const s = { profile, device: cleanId(p.get("device")) || null, from: { id: p.get("from"), name: p.get("fromName") || p.get("from") }, to: { id: p.get("to"), name: p.get("toName") || p.get("to") }, src: "search" };
+    if (exec && exec.waitUntil) exec.waitUntil(logSearch(env, s));
+  }
+}
+// Load tests only: a request carrying the LOAD_TEST_KEY secret in x-load-key is not turned away by the per address
+// limits (every simulated phone comes from one address), and is counted and handled like any other. With no
+// secret set nothing matches.
+function loadOk(request, env) { return !!env && safeEq(request.headers.get("x-load-key"), env.LOAD_TEST_KEY); }

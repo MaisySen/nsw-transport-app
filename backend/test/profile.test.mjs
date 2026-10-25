@@ -96,7 +96,7 @@ test("per address limits shared in D1 answer 429 over the limit, and fail open w
   assert.notEqual(r.status, 429);
 });
 
-test("shared answers are cached at the edge for 15 seconds, without profile or device in the key", async () => {
+test("shared answers are cached at the edge (kept 120 s, served 15 s), without profile or device in the key", async () => {
   const store = new Map();
   globalThis.caches = { default: {
     match: async (req) => { const r = store.get(req.url); return r ? r.clone() : undefined; },
@@ -114,14 +114,14 @@ test("shared answers are cached at the edge for 15 seconds, without profile or d
   store.set("https://t.example/api/stations?mode=train", Object.assign(ok, {}));
   const hit = await W.__default.fetch(new Request("https://t.example/api/stations?mode=train", { headers: { "cf-connecting-ip": "10.6.5.1" } }), env2, ex);
   assert.equal(hit.headers.get("x-edge-cache"), "hit");
-  // A miss that answers 200 is stored with a 15 second lifetime.
+  // A miss that answers 200 is stored with a 120 second lifetime (served as fresh for 15 s, older only when upstream is busy or failing).
   const env3 = { ...env, ASSETS: { fetch: async () => new Response(JSON.stringify([{ id: "200060", name: "Central" }]), { headers: { "content-type": "application/json" } }) } };
   const miss = await W.__default.fetch(new Request("https://t.example/api/stations?mode=metro&device=dx", { headers: { "cf-connecting-ip": "10.6.5.2" } }), env3, ex);
   assert.equal(miss.status, 200);
   await Promise.all(waits);
   const put = store.get("https://t.example/api/stations?mode=metro");
   assert.ok(put, "stored without the device");
-  assert.equal(put.headers.get("cache-control"), "public, max-age=15");
+  assert.equal(put.headers.get("cache-control"), "public, max-age=120");
   delete globalThis.caches;
 });
 
