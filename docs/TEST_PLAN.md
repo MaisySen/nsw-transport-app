@@ -134,9 +134,17 @@ Run with `cd app && npm test` (Node's own test runner; the TypeScript files are 
 
 Live labels (`liveLabelCore.ts`): Live with the age of the live time in 15 s steps, Timetable for services with no live time (a passed timetable time shows the time, never Gone or Left), Not tracking when the GPS position is over 3 min old, our copy is over 2 min old with the service due within 10 min, or a live time passed while the service is still listed; cancelled; the row redraw key; `stampSeen`. Recently departed (`recentCore.ts`): Left only when a live time tracked the service to its departure, Due and not tracked otherwise, nothing across a gap between reads, nothing for a service that dropped off early, cancelled rows skipped, newest first, aged out after 10 min. See [Live labels](LIVE-LABELS.md).
 
-### `app/test/stopboard.test.mjs`: 4 tests
+### `app/test/stopboard.test.mjs`: 7 tests, 7 pass (3 added 26 Oct, item 2)
 
-GET ON and GET OFF only when a service is opened from a trip or plan, the server's alight flag first, a get off stop before the get on stop not tagged; route chips filter the board and drop a route the board no longer runs.
+GET ON and GET OFF only when a service is opened from a trip or plan, the server's alight flag first, a get off stop before the get on stop not tagged; route chips filter the board and drop a route the board no longer runs. One mode boards (`boardAsk`): only at a stop with several modes and with a mode chip or a route chip on (a route chip asks for buses, the mode chip wins), never for another time or a mode the stop does not serve; a board for one mode is noted apart for Recently departed (`boardKey`); the modes a stop serves change only from a board for every mode (`modesServed`).
+
+### `backend/test/departures-mode.test.mjs`: 4 tests, 4 pass (added 26 Oct, item 2)
+`/api/departures` with no `mode` asks the planner for every mode as before; `mode=bus` leaves out classes 1, 2, 4 and 9 at the planner and keeps school buses; `mode=train` asks for trains only; an unknown mode asks for everything.
+
+### `app/test/race.test.mjs`: 4 more tests (26 Oct, item 2: battery and data)
+`sharedOnce`: three calls at once on a fresh install make one device id; a failure is not kept. `notesWaitMs`: no push token and nothing watched asks once a minute, watching with no token every tick; a watch started counts at once.
+
+Browser check (web export, 390x844, real data, 26 Oct 8:09am): Strathfield Station, Buses then route 415. Before: 2 rows for the 415 (Chiswick 8:10 and Campsie 8:16). After: 6 (Chiswick 8:10, Campsie 8:16, Five Dock Shops 8:23, Burwood 8:35, Campsie 8:48, Chiswick 8:51), one request to api.transportsydney.app with `mode=bus`. Device check still to do: on a phone at a station with trains and buses, tap Buses, then a route; the list reaches further ahead and All goes back to the mixed list.
 
 ### `app/test/whylate.test.mjs`: 9 tests
 
