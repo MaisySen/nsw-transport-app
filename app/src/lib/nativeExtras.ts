@@ -86,7 +86,7 @@ export function speechOptions(hasSession: boolean, done?: () => void) {
     : { language: 'en-AU', useApplicationAudioSession: false };
 }
 
-/** Says a trip alert out loud (in headphones when they are in). Replaces anything still being said. */
+/** Says a trip alert out loud (in headphones when they are in), after anything still being said. */
 export function speak(text: string) {
   const S = speechModule();
   if (!S || !text) return;
