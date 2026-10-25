@@ -5,6 +5,8 @@ import type { CarPark, Station, TopupItem } from './access';
 import { apiBase, NEW_API_BASE } from './server';
 import { placesGone, stopsAsPlaces, type PlaceItem } from './planCore';
 import { createReadCache } from './pollCore';
+import { stampSeen } from './liveLabelCore';
+import { noteBoard } from './recent';
 import { createKeep, isLongTrip, longGone, LONG_TRIP_KEEP_MS, LONG_TRIP_TIMEOUT_MS, plannerTooSlow } from './longTripCore';
 
 function qs(o: Record<string, any>) {
@@ -22,7 +24,8 @@ async function once<T>(path: string, init: RequestInit | undefined, timeoutMs: n
     const r = await fetch(apiBase() + path, { ...init, signal: ctl.signal, headers: { ...headers, ...((init?.headers as any) || {}) } });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw Object.assign(new Error((body && (body as any).error) || `Something went wrong (${r.status})`), { http: r.status });
-    return body as T;
+    // Rows and legs carry the moment they arrived, so a countdown can say how old its live time is.
+    return stampSeen(body as T, Date.now());
   } finally {
     clearTimeout(t);
   }
@@ -66,7 +69,12 @@ async function send<T>(path: string, init: RequestInit | undefined, timeoutMs: n
 export const api = {
   search: (q: string) => req<{ items: SearchItem[] }>(`/api/search?${qs({ q })}`),
   nearby: (lat: number, lon: number) => req<{ stops: (SearchItem & { distanceM?: number; dist?: number })[] }>(`/api/nearby?${qs({ lat: lat.toFixed(5), lon: lon.toFixed(5) })}`),
-  departures: async (stop: string, refresh = false) => req<DeparturesResp>(`/api/departures?${qs({ stop, device: await getDevice(), profile: PROFILE, refresh: refresh ? 1 : '' })}`),
+  departures: async (stop: string, refresh = false) => {
+    const r = await req<DeparturesResp>(`/api/departures?${qs({ stop, device: await getDevice(), profile: PROFILE, refresh: refresh ? 1 : '' })}`);
+    // Every board this phone reads (stop screens, Home cards) feeds Recently departed (recentCore.ts).
+    noteBoard(stop, r);
+    return r;
+  },
   trip: async (from: Place, to: Place, opts: { refresh?: boolean; count?: number; time?: string; arriveBy?: boolean } = {}): Promise<TripResp> => {
     const base = { from: from.id, to: to.id, fromName: from.name, toName: to.name, count: opts.count || 5, time: opts.time, arriveBy: opts.arriveBy ? 1 : '', fare: store.fareType(), acc: store.accOn() ? 1 : '' };
     const pair = `${from.id}>${to.id}`;
@@ -162,7 +170,7 @@ async function onNew<T>(path: string, timeoutMs: number): Promise<T> {
     const r = await fetch(`${NEW_API_BASE}${path}`, { signal: ctl.signal });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw Object.assign(new Error((body && (body as any).text) || (body && (body as any).error) || `Something went wrong (${r.status})`), { http: r.status });
-    return body as T;
+    return stampSeen(body as T, Date.now());
   } catch (e: any) {
     if (e?.http) throw e;
     throw Object.assign(new Error("No answer from the server. Check your connection."), { offline: true });

@@ -13,11 +13,13 @@ export type Departure = {
   planned: string; estimated?: string | null; realtime: boolean; delayMin?: number | null; cancelled?: boolean;
   wheelchair?: boolean; occupancy?: Occupancy; alerts?: (Alert | string)[]; vehicle?: Vehicle; stopsAway?: number | null;
   status?: { key: string; text: string }; pred?: Prediction;
+  /** When this phone received the answer (set by api.ts, liveLabelCore.stampSeen). */
+  seenAt?: number;
 };
 
 export type DeparturesResp = {
   kind: 'departures'; stop: { id: string; name: string; fullName?: string; exactName?: string };
-  items: Departure[]; modes?: any[]; alerts?: Alert[]; live?: { feedAt?: number; liveCount?: number; total?: number }; now: number;
+  items: Departure[]; modes?: any[]; alerts?: Alert[]; live?: { feedAt?: number; liveCount?: number; total?: number }; now: number; seenAt?: number;
 };
 
 export type Leg = {
@@ -32,6 +34,8 @@ export type Leg = {
   access?: import('./access').LegAccess | null;
   /** Bus and coach legs: a Live Traffic incident on the route (new server only). */
   traffic?: { id?: string; kind?: string; text: string; major?: boolean } | null;
+  /** When this phone received the answer (set by api.ts, liveLabelCore.stampSeen). */
+  seenAt?: number;
 };
 
 export type Journey = {
@@ -45,6 +49,7 @@ export type Journey = {
   warn?: string | null; segs?: number[];
   /** Opal fare estimate for the fare type in Settings. */
   fare?: Fare | null;
+  seenAt?: number;
 };
 
 export type FareLeg = { line?: string; mode?: string; km?: number; peak?: boolean; fare?: number | null; transferOff?: number; airportFee?: number; amount: number | null; joined?: boolean };
