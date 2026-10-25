@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Platform view hidden (over the air, 26 Oct, about 8:18 AM, group 9a46269a)
+Bidur at 7:57 AM: not to be used until it is reliable.
+* The platform button at the top of a train station and Platform view in the hold menu of train and metro rows are gone. The stop screen, the full screen board, the service screen and the trip list are unchanged.
+* The screen stays in the code behind one switch (`PLATFORM_VIEW` in `app/src/lib/features.ts`, off). A link straight to it opens Home.
+
 ### Speed and offline (over the air, 26 Oct, about 1:26 AM, group 2ed17e31)
 Item 1 of the plan Bidur approved at 12:04 AM.
 * Times for one stop, train, time or trip never show under another one. Every screen that loads live data now drops an answer that arrives for what it showed a moment before, and asks for the new one at once (the same kind of race put a wrong stop list on Platform view on 25 Oct). The trip list's extra services and Plan B, Simple mode's Earlier and Later, the walk stop search, the next way on after a missed change and the live trip follow the same rule.
