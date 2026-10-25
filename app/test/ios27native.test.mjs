@@ -34,6 +34,6 @@ test('widget line badges look the same everywhere: official colour, buses always
   const badge = s.slice(s.indexOf('struct WidgetLineBadge'), s.indexOf('struct WaitText'));
   assert.doesNotMatch(badge, /Image\(systemName/, 'no mode glyph inside the badge');
   assert.match(badge, /case \.bus, \.school: return Mode\.bus\.fallbackHex/, 'buses are bus blue even with no live data');
-  assert.match(badge, /grey \? m\.fallbackHex/, 'a grey colour from the server falls back to the mode colour');
+  assert.match(badge, /grey \? modeHex : hex/, 'a grey colour from the server falls back to the mode colour');
   assert.doesNotMatch(badge, /large \?/, 'one size');
 });

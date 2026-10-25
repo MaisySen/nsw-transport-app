@@ -268,17 +268,21 @@ struct WidgetLineBadge: View {
     /// (iOS 18 and later, Liquid Glass on iOS 26 and 27), vibrant on the Lock Screen and in StandBy at night.
     @Environment(\.widgetRenderingMode) private var renderingMode
 
-    /// One style for every badge, like the Opal app: the official colour (buses always the bus blue, never grey
-    /// because a service has no live data), the same size and corner radius, and no mode glyph inside.
+    /// One style for every badge, like the Opal app and the app's own badges (src/lib/lineStyle.ts): the official
+    /// colour (buses always the bus blue, never grey because a service has no live data), the same size and corner
+    /// radius, and no mode glyph inside.
     static func badgeHex(_ hex: String, mode: String) -> String {
         let m = Mode(raw: mode)
         switch m {
         case .bus, .school: return Mode.bus.fallbackHex
         case .walk: return m.fallbackHex
         default:
-            guard let c = RGB(hex: hex) else { return m.fallbackHex }
-            let grey = abs(c.r - c.g) < 0.06 && abs(c.g - c.b) < 0.06 && abs(c.r - c.b) < 0.06
-            return grey ? m.fallbackHex : hex
+            // Coaches are purple in the app (MODE_COLOR in lineStyle.ts), not bus blue.
+            let modeHex = m == .coach ? "#742282" : m.fallbackHex
+            guard let c = RGB(hex: hex) else { return modeHex }
+            // A neutral grey (the server's "#495054" for an unknown class) carries no line: the mode colour instead.
+            let grey = max(c.r, c.g, c.b) - min(c.r, c.g, c.b) < 24.0 / 255.0
+            return grey ? modeHex : hex
         }
     }
 
