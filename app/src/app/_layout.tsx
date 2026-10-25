@@ -11,7 +11,7 @@ import { finishProfileMove, initProfile } from '@/lib/device';
 import { loadCachedConfig, refreshConfig } from '@/lib/config';
 import { api } from '@/lib/api';
 import { usePalette } from '@/lib/theme';
-import { stopHeaderOptions } from '@/lib/headerOptions';
+import { sheetHeaderOptions, stopHeaderOptions } from '@/lib/headerOptions';
 import { LiftAlertSync } from '@/lib/liftAlerts';
 import { LiveTripEngine } from '@/lib/liveEngine';
 
@@ -67,8 +67,8 @@ export default function RootLayout() {
           <Stack.Screen name="go" options={{ headerShown: false, presentation: 'card' }} />
           <Stack.Screen name="topup" options={{ title: 'Opal machines' }} />
           <Stack.Screen name="parking" options={{ title: 'Park and Ride' }} />
-          <Stack.Screen name="new-trip" options={{ title: 'New trip', presentation: Platform.OS === 'ios' ? 'modal' : 'card' }} />
-          <Stack.Screen name="add-trip" options={{ title: 'Add a trip', presentation: Platform.OS === 'ios' ? 'modal' : 'card' }} />
+          <Stack.Screen name="new-trip" options={{ ...sheetHeaderOptions(Platform.OS, c), title: 'New trip', presentation: Platform.OS === 'ios' ? 'modal' : 'card' }} />
+          <Stack.Screen name="add-trip" options={{ ...sheetHeaderOptions(Platform.OS, c), title: 'Add a trip', presentation: Platform.OS === 'ios' ? 'modal' : 'card' }} />
           <Stack.Screen name="watching" options={{ title: 'Watching' }} />
           <Stack.Screen name="welcome" options={{ title: 'Set up' }} />
           <Stack.Screen name="morning" options={{ title: 'Check before I go' }} />
