@@ -121,6 +121,8 @@ export const store = {
   },
   /** Clear all in Your trips: the trips kept on the phone with these keys, and their place in your order. */
   removeMyTrips(keys: string[]) { const k = new Set(keys); state = { ...state, myTrips: (state.myTrips || []).filter((x) => !k.has(tripKeyOf(x))), tripOrder: (state.tripOrder || []).filter((x) => !k.has(x)) }; save(); },
+  /** Undo of a delete on Home: the list exactly as it was. */
+  setMyTrips(list: MyTrip[]) { state = { ...state, myTrips: list }; save(); },
   removeMyTrip(key: string) { state = { ...state, myTrips: (state.myTrips || []).filter((x) => tripKeyOf(x) !== key) }; save(); },
   getOrder: () => state.tripOrder || [],
   setTripOrder(keys: string[]) { state = { ...state, tripOrder: keys }; save(); },

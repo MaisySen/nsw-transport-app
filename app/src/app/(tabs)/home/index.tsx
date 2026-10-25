@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, PanResponder, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { ActionSheetIOS, Alert, AppState, PanResponder, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { CARD_SWIPE, SwipeRow, type SwipeAct } from '@/components/Swipe';
 import { haptic } from '@/lib/haptic';
 import { gripStep, type GripEvent, type GripState } from '@/lib/gesture';
-import { sameEnds } from '@/lib/homeCore';
+import { dragOrder, sameEnds, splitNext, toFront } from '@/lib/homeCore';
 import { clearAllWords } from '@/lib/planCore';
 import { router, Stack } from 'expo-router';
 import { api } from '@/lib/api';
@@ -16,7 +16,8 @@ import { shortName } from '@/lib/format';
 import type { Place } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
 import { watchLine } from '@/components/Cards';
-import { ActionRow, AlertBanner, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTag, PlaceBar, pullHome, StopBoard, TripBoard, TripItem, useNearby } from '@/components/Home';
+import { ActionRow, AlertBanner, AlertsLine, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTag, onTripDeleted, pullHome, StopBoard, TripBoard, TripItem, UNDO_MS, useNearby } from '@/components/Home';
+import { ActionSheet, type SheetAction } from '@/components/Sheet';
 import { LineBadge } from '@/components/Transit';
 import { TabBarSafe } from '@/components/TabBarSafe';
 import { useLiveTrip } from '@/lib/live';
@@ -103,8 +104,14 @@ export default function Home() {
   // Nearby leaves out stops already on Home as starred, and shows at most 3.
   const nearStops = (near.stops || []).filter((p: Place) => !starred.some((s) => s.id === p.id)).slice(0, 3);
   const g = useLiveTrip();
-  const [snack, setSnack] = useState<{ text: string; undo: () => void; id: number } | null>(null);
-  useEffect(() => { if (!snack) return; const t = setTimeout(() => setSnack(null), 5000); return () => clearTimeout(t); }, [snack]);
+  // Undo bar after a trip is deleted (swipe, hold menu or VoiceOver). A newer delete sends the older one to the server.
+  const [snack, setSnack] = useState<{ text: string; undo: () => void; commit: () => void; id: number } | null>(null);
+  const snackRef = useRef(snack);
+  snackRef.current = snack;
+  useEffect(() => onTripDeleted((u) => { snackRef.current?.commit(); setSnack({ ...u, id: Date.now() }); }), []);
+  useEffect(() => { if (!snack) return; const t = setTimeout(() => setSnack(null), UNDO_MS); return () => clearTimeout(t); }, [snack]);
+  // Going to the background ends the chance to undo, so the server delete is sent now rather than lost.
+  useEffect(() => { const sub = AppState.addEventListener('change', (a) => { if (a === 'background') { snackRef.current?.commit(); setSnack(null); } }); return () => sub.remove(); }, []);
   // Clear all: Your trips (not the commute card or Home and Work) and Starred stops, each after a confirm dialog.
   const clearable = sorted.filter((t) => t.kind === 'mine' || t.kind === 'saved' || t.kind === 'commute');
   const clearWord = Platform.OS === 'ios' ? 'Clear All' : 'Clear all';
@@ -140,9 +147,23 @@ export default function Home() {
     setPulling(false);
   };
 
+  // Next trip card on top (your commute, or the first trip in your order), every other trip as a compact row.
+  const { next, rest } = splitNext(commute, sorted);
+  const nextIsCommute = !!commute && next === commute;
+  const lead = next && !nextIsCommute && next.okey ? [next.okey] : [];
+  const allKeys = [...new Set(sorted.map((t) => t.okey!))];
+  const showFirst = (t: TripItem) => () => { store.setTripOrder(toFront(order, allKeys, t.okey!)); haptic.success(); };
+  const hasTrips = !!(next || rest.length);
+  const nextDel = next && (next.kind === 'mine' || next.kind === 'saved') ? delAct(next, c.red) : undefined;
+
   return (
     <>
-      <Stack.Screen options={{ title: 'Home', headerRight: () => <LiveTag /> }} />
+      <Stack.Screen options={{ title: 'Home', headerRight: () => (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <LiveTag />
+          <AddButton places={places} />
+        </View>
+      ) }} />
       <Screen scrollEnabled={scrollOn} refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} enabled={scrollOn} />}>
         {g ? <LiveBar title={g.title} line={g.legs[0]?.line} mode={g.legs[0]?.mode} color={g.legs[0]?.color} /> : null}
         <AlertBanner />
@@ -176,22 +197,40 @@ export default function Home() {
           </Section>
         ) : null}
 
+        <AlertsLine />
         <LastHomeCard />
         <TrackworkCard now={now} />
         <LineStatusStrip now={now} />
-        {commute ? (
-          <HomeSection title="Your commute">
-            <TripBoard trip={commute} now={now} aside={<SwapButton to={commute.tag === 'To work' ? 'To home' : 'To work'} onPress={() => { store.setCommuteFlip(flipped ? null : half); haptic.select(); }} />}
-              below={(js) => <><LeaveLine js={js} now={now} me={me} /><MorningLink from={commute.from} to={commute.to} dir={commute.tag === 'To work' ? 'toWork' : 'toHome'} /></>} />
+
+        {next ? (
+          <HomeSection title={nextIsCommute ? 'Your commute' : 'Next trip'}>
+            {nextIsCommute ? (
+              <TripBoard trip={next} now={now} look="hero"
+                aside={<SwapButton to={next.tag === 'To work' ? 'To home' : 'To work'} onPress={() => { store.setCommuteFlip(flipped ? null : half); haptic.select(); }} />}
+                below={(js) => <View style={{ paddingBottom: 4 }}><LeaveLine js={js} now={now} me={me} /><MorningLink from={next.from} to={next.to} dir={next.tag === 'To work' ? 'toWork' : 'toHome'} /></View>} />
+            ) : nextDel ? (
+              <SwipeRow act={nextDel} style={CARD_SWIPE}>
+                <TripBoard trip={next} now={now} look="hero" flush act={nextDel} />
+              </SwipeRow>
+            ) : <TripBoard trip={next} now={now} look="hero" />}
           </HomeSection>
         ) : null}
 
-        <HomeSection title="Your trips" action={{ title: 'Add', label: 'Add a trip', onPress: () => router.push('/new-trip') }}
-          {...(clearable.length ? { onClear: () => confirmClear('trips', clearable.length, () => clearAllTrips(clearable)), clearTitle: clearWord } : {})}>
-          <DragTrips trips={sorted} now={now} all={st.allServices || {}} onScroll={setScrollOn} />
-          {d && !trips.length ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 6 }}>{twin ? `${twin.name.charAt(0).toUpperCase() + twin.name.slice(1)} is the same trip as your commute, so it shows in the card above.` : 'Save the trips you take. They show here with live times.'}</T> : null}
-          <PlaceBar places={places} />
-        </HomeSection>
+        {rest.length ? (
+          <HomeSection title="Your trips" {...(clearable.length ? { onClear: () => confirmClear('trips', clearable.length, () => clearAllTrips(clearable)), clearTitle: clearWord } : {})}>
+            <DragTrips trips={rest} lead={lead} now={now} all={st.allServices || {}} onScroll={setScrollOn} onTop={showFirst} />
+          </HomeSection>
+        ) : null}
+        {d && twin && !sorted.length ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 10 }}>{`${twin.name.charAt(0).toUpperCase() + twin.name.slice(1)} is the same trip as your commute, so it shows in the card above.`}</T> : null}
+
+        {!hasTrips && d ? (
+          <View style={{ alignItems: 'center', marginTop: 48, marginHorizontal: 32 + Math.max(side.left, side.right) }}>
+            <Icon name={I.star} size={36} color={c.tint} />
+            <T kind="title3" style={{ marginTop: 12, textAlign: 'center' }} accessibilityRole="header">Save the trips you take</T>
+            <T kind="sub" tone="text2" style={{ marginTop: 6, textAlign: 'center' }}>They show here with live times, platforms and delays.</T>
+            <View style={{ marginTop: 18, alignSelf: 'stretch' }}><Button title="Add a trip" onPress={() => router.push('/new-trip')} /></View>
+          </View>
+        ) : null}
 
         {starred.length ? (
           <HomeSection title="Starred stops" onClear={() => confirmClear('stops', starred.length, () => { store.clearStarred(); haptic.success(); })} clearTitle={clearWord}>
@@ -258,7 +297,7 @@ function SwapButton({ to, onPress }: { to: string; onPress: () => void }) {
 }
 
 /** Trip cards that reorder by dragging the handle on each card. */
-function DragTrips({ trips, now, all, onScroll }: { trips: TripItem[]; now: number; all: Record<string, boolean>; onScroll: (on: boolean) => void }) {
+function DragTrips({ trips, lead, now, all, onScroll, onTop }: { trips: TripItem[]; lead: string[]; now: number; all: Record<string, boolean>; onScroll: (on: boolean) => void; onTop: (t: TripItem) => () => void }) {
   const c = usePalette();
   const lay = useRef<{ y: number; h: number }[]>([]);
   const [drag, setDrag] = useState<{ i: number; dy: number; target: number } | null>(null);
@@ -278,8 +317,8 @@ function DragTrips({ trips, now, all, onScroll }: { trips: TripItem[]; now: numb
     const d = dragRef.current;
     onScroll(true); setDrag(null);
     if (!d || d.target === d.i) return;
-    const arr = trips.slice(); const [m] = arr.splice(d.i, 1); arr.splice(d.target, 0, m);
-    store.setTripOrder([...new Set(arr.filter((t) => t === m || t.okey !== m.okey).map((t) => t.okey!))]);
+    // The Next trip card (lead) stays on top; the rows take the new order under it.
+    store.setTripOrder(dragOrder(lead, trips.map((t) => t.okey!), d.i, d.target));
   };
   return (
     <View>
@@ -297,14 +336,11 @@ function DragTrips({ trips, now, all, onScroll }: { trips: TripItem[]; now: numb
             style={{ transform: [{ translateY: ty }, { scale: lifted ? 1.02 : 1 }], zIndex: lifted ? 10 : 0, elevation: lifted ? 8 : 0, shadowColor: '#000', shadowOpacity: lifted ? 0.18 : 0, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } }}>
             {(() => {
               const grip = trips.length > 1 ? (open: () => void) => <Grip onStart={() => start(i)} onMove={move} onEnd={end} onTap={open} /> : undefined;
-              if (t.kind !== 'mine' && t.kind !== 'saved') return <TripBoard trip={t} now={now} allServices={!!all[t.key]} handle={grip} />;
-              const del: SwipeAct = { label: 'Delete', text: 'Delete', icon: I.trash, color: c.red, onPress: () => Alert.alert(t.name || 'Delete trip', 'Delete this saved trip? It is removed from this phone and the server.', [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Delete trip', style: 'destructive', onPress: () => deleteTrip(t) },
-              ]) };
+              if (t.kind !== 'mine' && t.kind !== 'saved') return <TripBoard trip={t} now={now} allServices={!!all[t.key]} handle={grip} onTop={onTop(t)} />;
+              const del = delAct(t, c.red);
               return (
                 <SwipeRow act={del} style={CARD_SWIPE}>
-                  <TripBoard trip={t} now={now} allServices={!!all[t.key]} handle={grip} flush act={del} />
+                  <TripBoard trip={t} now={now} allServices={!!all[t.key]} handle={grip} flush act={del} onTop={onTop(t)} />
                 </SwipeRow>
               );
             })()}
@@ -357,3 +393,40 @@ const hs = StyleSheet.create({
   live: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 10, paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius },
   snack: { marginTop: 'auto', marginBottom: 16, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderRadius: 8, elevation: 6, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
 });
+
+/** Swipe or VoiceOver Delete on a saved trip: it goes at once, with Undo above the tab bar for 5 seconds. */
+function delAct(t: TripItem, red: string): SwipeAct {
+  return { label: 'Delete', text: 'Delete', icon: I.trash, color: red, onPress: () => deleteTrip(t) };
+}
+
+/**
+ * The one Add on Home, in the navigation bar at the top right (HIG: a screen's main action goes in its toolbar;
+ * Material 3: a top app bar action). New trip, Star a stop, Set Home, Set Work. iPhone: the system action sheet;
+ * Android and the web: the app's bottom sheet, since an Android dialog shows at most 3 buttons. On iOS 26 and 27
+ * the system draws the glass round bar buttons, so this is a plain icon, as the star on the trip screen is.
+ */
+function AddButton({ places }: { places: { home?: Place; work?: Place } }) {
+  const c = usePalette();
+  const [open, setOpen] = useState(false);
+  const items: SheetAction[] = [
+    { text: 'New trip', icon: I.route, onPress: () => router.push('/new-trip') },
+    { text: 'Star a stop', icon: I.starOpen, onPress: () => router.push('/search') },
+    { text: places?.home ? 'Change Home' : 'Set Home', icon: I.home, onPress: () => router.push({ pathname: '/add-trip', params: { place: 'home' } }) },
+    { text: places?.work ? 'Change Work' : 'Set Work', icon: I.briefcase, onPress: () => router.push({ pathname: '/add-trip', params: { place: 'work' } }) },
+  ];
+  const show = () => {
+    haptic.tap();
+    if (Platform.OS === 'ios') ActionSheetIOS.showActionSheetWithOptions({ options: [...items.map((x) => x.text), 'Cancel'], cancelButtonIndex: items.length }, (i) => { if (i < items.length) items[i].onPress(); });
+    else setOpen(true);
+  };
+  return (
+    <>
+      <Pressable onPress={show} accessibilityRole="button" accessibilityLabel="Add" accessibilityHint="New trip, star a stop, or set Home or Work"
+        hitSlop={Platform.OS === 'ios' ? 13 : 4} android_ripple={{ color: c.fill, borderless: true, radius: 24 }}
+        style={({ pressed }) => ({ width: Platform.OS === 'ios' ? 30 : 48, height: Platform.OS === 'ios' ? 30 : 48, marginRight: Platform.OS === 'web' ? 8 : 0, alignItems: 'center', justifyContent: 'center', opacity: pressed && Platform.OS !== 'android' ? 0.5 : 1 })}>
+        <Icon name={I.plus} size={Platform.OS === 'ios' ? 22 : 24} color={Platform.OS === 'ios' ? c.tint : c.text} />
+      </Pressable>
+      {Platform.OS !== 'ios' ? <ActionSheet visible={open} title="Add" actions={items} onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
