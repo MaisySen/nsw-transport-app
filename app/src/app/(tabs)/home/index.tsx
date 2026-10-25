@@ -16,7 +16,7 @@ import { shortName } from '@/lib/format';
 import type { Place } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
 import { watchLine } from '@/components/Cards';
-import { ActionRow, AlertBanner, AlertsLine, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTag, onTripDeleted, pullHome, StopBoard, TripBoard, TripItem, UNDO_MS, useNearby } from '@/components/Home';
+import { ActionRow, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTag, onTripDeleted, pullHome, StopBoard, TripBoard, TripItem, UNDO_MS, useNearby } from '@/components/Home';
 import { ActionSheet, type SheetAction } from '@/components/Sheet';
 import { LineBadge } from '@/components/Transit';
 import { TabBarSafe } from '@/components/TabBarSafe';
@@ -25,8 +25,8 @@ import { radius } from '@/lib/theme';
 import { Button, Empty, Row, Section, Screen, Sep, T } from '@/components/ui';
 import { LeaveLine, MorningLink, useMyPos } from '@/components/Smart';
 import { LastHomeCard } from '@/components/LastHome';
-import { TrackworkCard } from '@/components/Trackwork';
-import { LineStatusStrip } from '@/components/LineStatus';
+import { Notices } from '@/components/Notices';
+import { topBar } from '@/lib/noticesCore';
 import { CalendarLeaveByCard } from '@/components/CalendarLeaveBy';
 import { pickOrigin } from '@/lib/calendarLeaveByCore';
 import { commuteDir, halfDayKey } from '@/lib/smart';
@@ -106,6 +106,8 @@ export default function Home() {
   // Nearby leaves out stops already on Home as starred, and shows at most 3.
   const nearStops = (near.stops || []).filter((p: Place) => !starred.some((s) => s.id === p.id)).slice(0, 3);
   const g = useLiveTrip();
+  // Trip in progress and Watching now share one bar; a watch of the live trip is not shown twice.
+  const bar = topBar(g, activeWatches as any[]);
   // Undo bar after a trip is deleted (swipe, hold menu or VoiceOver). A newer delete sends the older one to the server.
   const [snack, setSnack] = useState<{ text: string; undo: () => void; commit: () => void; id: number } | null>(null);
   const snackRef = useRef(snack);
@@ -169,19 +171,32 @@ export default function Home() {
         </View>
       ) }} />
       <Screen scrollEnabled={scrollOn} refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} enabled={scrollOn} />}>
-        {g ? <LiveBar title={g.title} line={g.legs[0]?.line} mode={g.legs[0]?.mode} color={g.legs[0]?.color} /> : null}
-        <AlertBanner />
+        {/* Above the commute card: one slim bar for the trip in progress (or a single watched trip), nothing else. */}
+        {g ? <LiveBar title={g.title} line={g.legs[0]?.line} mode={g.legs[0]?.mode} color={g.legs[0]?.color} />
+          : bar.watch ? <WatchBar title={bar.watch.title} sub={watchLine(bar.watch, now)} onPress={() => router.push({ pathname: '/watch/[id]', params: { id: bar.watch.id } })} /> : null}
 
-        {activeWatches.length ? (
-          <Section title="Watching now">
-            {activeWatches.map((w: any, i: number) => (
-              <View key={w.id}>
-                {i ? <Sep inset={57} /> : null}
-                <Row icon={I.bell} iconBg={c.indigo} title={w.title} subtitle={watchLine(w, now)} onPress={() => router.push({ pathname: '/watch/[id]', params: { id: w.id } })} />
-              </View>
-            ))}
-          </Section>
+        {next ? (
+          <HomeSection title={nextIsCommute ? 'Your commute' : 'Next trip'}>
+            {nextIsCommute ? (
+              <TripBoard trip={next} now={now} look="hero"
+                aside={<SwapButton to={next.tag === 'To work' ? 'To home' : 'To work'} onPress={() => { store.setCommuteFlip(flipped ? null : half); haptic.select(); }} />}
+                below={(js) => (
+                  // When to leave and Check before I go as small buttons in the card, not two full rows.
+                  <View style={hs.extras}>
+                    <LeaveLine compact js={js} now={now} me={me} />
+                    <MorningLink compact from={next.from} to={next.to} dir={next.tag === 'To work' ? 'toWork' : 'toHome'} />
+                  </View>
+                )} />
+            ) : nextDel ? (
+              <SwipeRow act={nextDel} style={CARD_SWIPE}>
+                <TripBoard trip={next} now={now} look="hero" flush act={nextDel} />
+              </SwipeRow>
+            ) : <TripBoard trip={next} now={now} look="hero" />}
+          </HomeSection>
         ) : null}
+
+        {/* Notifications: alerts, trackwork, line problems and other watched trips as chips, closed until tapped. */}
+        <Notices now={now} watches={bar.rest.map((w: any) => ({ id: w.id, title: w.title, sub: watchLine(w, now) }))} />
 
         {sugg ? (
           <Section>
@@ -201,25 +216,8 @@ export default function Home() {
           </Section>
         ) : null}
 
-        <AlertsLine />
         <CalendarLeaveByCard origin={calFrom} now={now} />
         <LastHomeCard />
-        <TrackworkCard now={now} />
-        <LineStatusStrip now={now} />
-
-        {next ? (
-          <HomeSection title={nextIsCommute ? 'Your commute' : 'Next trip'}>
-            {nextIsCommute ? (
-              <TripBoard trip={next} now={now} look="hero"
-                aside={<SwapButton to={next.tag === 'To work' ? 'To home' : 'To work'} onPress={() => { store.setCommuteFlip(flipped ? null : half); haptic.select(); }} />}
-                below={(js) => <View style={{ paddingBottom: 4 }}><LeaveLine js={js} now={now} me={me} /><MorningLink from={next.from} to={next.to} dir={next.tag === 'To work' ? 'toWork' : 'toHome'} /></View>} />
-            ) : nextDel ? (
-              <SwipeRow act={nextDel} style={CARD_SWIPE}>
-                <TripBoard trip={next} now={now} look="hero" flush act={nextDel} />
-              </SwipeRow>
-            ) : <TripBoard trip={next} now={now} look="hero" />}
-          </HomeSection>
-        ) : null}
 
         {rest.length ? (
           <HomeSection title="Your trips" {...(clearable.length ? { onClear: () => confirmClear('trips', clearable.length, () => clearAllTrips(clearable)), clearTitle: clearWord } : {})}>
@@ -273,19 +271,33 @@ export default function Home() {
   );
 }
 
-/** "Trip in progress" bar at the top of Home while a live trip is running. */
+/** "In transit \u00b7 Central to Strathfield \u00b7 T1" slim bar above the commute card while a live trip is running. */
 function LiveBar({ title, line, mode, color }: { title: string; line?: string; mode?: string; color?: string | null }) {
   const c = usePalette();
   return (
-    <Pressable onPress={() => router.push('/go')} accessibilityRole="button" accessibilityLabel={`Trip in progress, ${title}`} android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
+    <Pressable onPress={() => router.push('/go')} accessibilityRole="button" accessibilityLabel={`In transit, ${title}${line ? `, ${line}` : ''}`} accessibilityHint="Opens the live trip" android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
       style={({ pressed }) => [hs.live, { backgroundColor: c.liveBg, opacity: pressed ? 0.85 : 1 }]}>
-      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff', marginRight: 10 }} />
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Trip in progress</Text>
-        <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13 }} numberOfLines={1}>{title}</Text>
-      </View>
-      {line ? <LineBadge line={line} mode={mode} color={color} /> : null}
-      <Icon name={I.chevron} size={14} color="#fff" style={{ marginLeft: 8 }} />
+      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff', marginRight: 8 }} />
+      <Text style={{ color: '#fff', fontSize: 15, flex: 1 }} numberOfLines={2}>
+        <Text style={{ fontWeight: '700' }}>In transit</Text>{` \u00b7 ${title}`}
+      </Text>
+      {line ? <View style={{ marginLeft: 8 }}><LineBadge line={line} mode={mode} color={color} /></View> : null}
+      <Icon name={I.chevron} size={13} color="#fff" style={{ marginLeft: 8 }} />
+    </Pressable>
+  );
+}
+
+/** The same slim bar for one watched trip when no trip is in progress. More than one watch is a Notifications chip. */
+function WatchBar({ title, sub, onPress }: { title: string; sub: string; onPress: () => void }) {
+  const c = usePalette();
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`Watching, ${title}${sub ? `, ${sub}` : ''}`} accessibilityHint="Opens the watched trip" android_ripple={{ color: c.fill }}
+      style={({ pressed }) => [hs.live, { backgroundColor: c.card, opacity: pressed && Platform.OS !== 'android' ? 0.7 : 1 }]}>
+      <Icon name={I.bell} size={14} color={c.indigo} style={{ marginRight: 8 }} />
+      <T kind="sub" style={{ flex: 1 }} numberOfLines={2}>
+        <T kind="sub" style={{ fontWeight: '700' }}>Watching</T>{` \u00b7 ${title}`}{sub ? <T kind="sub" tone="text2">{` \u00b7 ${sub}`}</T> : null}
+      </T>
+      <Icon name={I.chevron} size={13} color={c.text3} style={{ marginLeft: 8 }} />
     </Pressable>
   );
 }
@@ -395,7 +407,8 @@ function Grip({ onStart, onMove, onEnd, onTap }: { onStart: () => void; onMove: 
 }
 
 const hs = StyleSheet.create({
-  live: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 10, paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius },
+  live: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 10, paddingHorizontal: 14, paddingVertical: 8, minHeight: 44, borderRadius: radius },
+  extras: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 14 },
   snack: { marginTop: 'auto', marginBottom: 16, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderRadius: 8, elevation: 6, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
 });
 

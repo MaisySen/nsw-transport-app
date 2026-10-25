@@ -15,7 +15,7 @@ import { canNotify, cancelLeave, cancelWake, scheduleLeave } from '@/lib/smartNo
 import { store, useStore } from '@/lib/store';
 import { androidLook, radius, usePalette } from '@/lib/theme';
 import type { Journey } from '@/lib/types';
-import { Icon, I } from './Icon';
+import { Icon, I, type IconName } from './Icon';
 import { LineBadge } from './Transit';
 import { T } from './ui';
 import { useFlag } from '@/lib/config';
@@ -65,12 +65,14 @@ export function useMyPos(): Pos {
  * Under the commute card: "Leave in 6 min, 9 min walk to Burwood" for the first service you can still make on foot,
  * and Remind me, which sets one alert on this phone at the leave time.
  */
-export function LeaveLine({ js, now, me }: { js: Journey[]; now: number; me: Pos }) {
+/** compact: on the commute card, a small "When to leave" button, or one line with a bell button (Home, 25 Oct 7 PM). */
+export function LeaveLine({ js, now, me, compact }: { js: Journey[]; now: number; me: Pos; compact?: boolean }) {
   const c = usePalette();
   const st = useStore();
   const rem = st.leaveReminder;
   useEffect(() => { if (rem && rem.at < now - 60000) store.setLeaveReminder(null); }, [rem, now]);
   if (me.phase === 'off' || me.phase === 'checking') return null;
+  if (me.phase === 'ask' && compact) return <MiniAction icon={I.walk} title="When to leave" label="Show when to leave. Uses your location on this phone." onPress={me.ask} />;
   if (me.phase === 'ask') {
     return (
       <Pressable onPress={me.ask} accessibilityRole="button" accessibilityLabel="Show when to leave. Uses your location on this phone." android_ripple={{ color: c.fill }}
@@ -96,6 +98,25 @@ export function LeaveLine({ js, now, me }: { js: Journey[]; now: number; me: Pos
   };
   const words = leaveWords(p);
   const urgent = p.inMin <= 2;
+  if (compact) {
+    const fg = set ? c.tint : androidLook && c.dark ? '#062E6F' : '#fff';
+    return (
+      <View style={s.leaveMini} accessibilityLiveRegion="polite">
+        <Icon name={I.walk} size={16} color={urgent ? c.red : c.tint} />
+        <T kind="sub" style={{ flex: 1, marginLeft: 8 }} accessible accessibilityLabel={`${words}, ${p.walk} minute walk to ${station}, for the ${label}${set ? `. Reminder at ${clock(rem!.at)}` : ''}`}>
+          <T kind="sub" style={{ fontWeight: '600', color: urgent ? c.redText : c.text }}>{words}</T>
+          <T kind="sub" tone="text2">{` \u00b7 ${p.walk} min walk${set ? ` \u00b7 reminder ${clock(rem!.at)}` : ''}`}</T>
+        </T>
+        {p.inMin > 0 ? (
+          <Pressable onPress={remind} accessibilityRole="button" accessibilityLabel={set ? `Cancel the reminder at ${clock(rem!.at)}` : `Remind me at ${clock(p.leaveAt)}`}
+            android_ripple={{ color: c.fill, borderless: true, radius: 22 }} hitSlop={4}
+            style={({ pressed }) => [s.bell, { backgroundColor: set ? c.fill : c.tint, opacity: pressed && Platform.OS !== 'android' ? 0.7 : 1 }]}>
+            <Icon name={set ? I.bellOff : I.bellPlus} size={16} color={fg} />
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  }
   return (
     <View style={s.leave} accessibilityLiveRegion="polite">
       <Icon name={I.walk} size={18} color={urgent ? c.red : c.tint} />
@@ -116,13 +137,17 @@ export function LeaveLine({ js, now, me }: { js: Journey[]; now: number; me: Pos
 }
 
 /** Under the commute card: the way into Check my trip before I go, or the check already set for this direction. */
-export function MorningLink({ from, to, dir }: { from: Place; to: Place; dir: 'toWork' | 'toHome' }) {
+export function MorningLink({ from, to, dir, compact }: { from: Place; to: Place; dir: 'toWork' | 'toHome'; compact?: boolean }) {
   const c = usePalette();
   const st = useStore();
   const on = useFlag('morningCheck');
   if (!on) return null;
   const m = (st.morning || []).find((x) => x.from.id === from.id && x.to.id === to.id);
   const words = m ? `Checked before you go: ${checkSubtitle(m).split('. ')[0]}` : 'Check my trip before I go';
+  if (compact) {
+    return <MiniAction icon={I.clock} title={m ? `Checked ${checkSubtitle(m).split('. ')[0]}` : 'Check before I go'} label={m ? `${words}. Opens your checks` : `${words}. One alert before your usual trip, only if something is wrong`}
+      onPress={() => { haptic.select(); router.push({ pathname: '/morning', params: { dir } }); }} />;
+  }
   return (
     <Pressable onPress={() => { haptic.select(); router.push({ pathname: '/morning', params: { dir } }); }} accessibilityRole="button"
       accessibilityLabel={m ? `${words}. Opens your checks` : `${words}. One alert before your usual trip, only if something is wrong`}
@@ -130,6 +155,18 @@ export function MorningLink({ from, to, dir }: { from: Place; to: Place; dir: 't
       <Icon name={I.clock} size={16} color={c.tint} />
       <T kind="sub" tone="tint" numberOfLines={2} style={{ marginLeft: 8, fontWeight: '600', flex: 1 }}>{words}</T>
       <Icon name={I.chevron} size={13} color={c.text3} />
+    </Pressable>
+  );
+}
+
+/** A small rounded button on the commute card (When to leave, Check before I go). */
+function MiniAction({ icon, title, label, onPress }: { icon: IconName; title: string; label: string; onPress: () => void }) {
+  const c = usePalette();
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} android_ripple={{ color: c.fill }} hitSlop={{ top: 4, bottom: 4 }}
+      style={({ pressed }) => [s.mini, { backgroundColor: c.tint + (c.dark ? '2E' : '1A'), opacity: pressed && Platform.OS !== 'android' ? 0.6 : 1 }]}>
+      <Icon name={icon} size={14} color={c.tint} />
+      <T kind="foot" tone="tint" numberOfLines={2} style={{ marginLeft: 6, fontWeight: '600', flexShrink: 1 }}>{title}</T>
     </Pressable>
   );
 }
@@ -305,6 +342,9 @@ export function NextOption({ g, st }: { g: LiveTrip; st: LiveState | null }) {
 const s = StyleSheet.create({
   leave: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, minHeight: 56 },
   pill: { flexDirection: 'row', alignItems: 'center', height: 48, paddingHorizontal: 14, borderRadius: 24, marginLeft: 8 },
+  leaveMini: { flexDirection: 'row', alignItems: 'center', minHeight: 44, flexBasis: '100%' },
+  bell: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
+  mini: { flexDirection: 'row', alignItems: 'center', minHeight: 36, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 18, overflow: 'hidden', maxWidth: '100%' },
   wake: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 10, minHeight: 64, borderRadius: radius, marginHorizontal: 16, marginTop: 12 },
   wakeIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   opt: { marginHorizontal: 16, marginTop: 12, padding: 16, borderRadius: radius, borderWidth: 1.5 },

@@ -11,7 +11,7 @@ import { LineBadge } from './Transit';
 import { Icon, I } from './Icon';
 import { Section, Sep, T } from './ui';
 
-function useRows(now: number, max: number): LineRow[] {
+export function useLineRows(now: number, max: number): LineRow[] {
   const mine = myLines(useTripLines(), max);
   const resp = useLineStatus(mine.map((m) => m.line), now);
   return lineRows(resp, mine);
@@ -24,7 +24,7 @@ const open = (r: LineRow) => { const u = safeUrl(r.url); if (u) Linking.openURL(
 /** Home: a row of chips, "T1 Good service", with a one line summary. */
 export function LineStatusStrip({ now }: { now: number }) {
   const c = usePalette();
-  const rows = useRows(now, 8);
+  const rows = useLineRows(now, 8);
   if (!rows.length) return null;
   return (
     <View style={{ marginHorizontal: 16, marginTop: 12 }}>
@@ -50,7 +50,7 @@ export function LineStatusStrip({ now }: { now: number }) {
 export function LineStatusSection() {
   const c = usePalette();
   const now = useNow(30000);
-  const rows = useRows(now, 12);
+  const rows = useLineRows(now, 12);
   if (!rows.length) return null;
   return (
     <Section title="Status of my lines" footer="The lines on your Home trips. From Transport for NSW service alerts.">
