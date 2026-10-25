@@ -23,7 +23,8 @@ import { journeyAccess, liftAwareNote } from '@/lib/stepFree';
 import { tripSpec } from '@/lib/watch';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { openService } from '@/components/Cards';
-import { LineBadge, OccupancyChip } from '@/components/Transit';
+import { LineBadge, OccupancyChip, StatusLine } from '@/components/Transit';
+import { liveState } from '@/lib/liveLabelCore';
 import { arrOf, ServiceRow, tripCacheId, tripPkey, WarnLine } from '@/components/Home';
 import { cacheKey, offlineText } from '@/lib/offlineCore';
 import { planB, problemOf } from '@/lib/planBCore';
@@ -76,7 +77,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
   const bus = busLegStatus(l);
   const traffic = trafficLine(l);
   return (
-    <Pressable accessibilityRole="button" onPress={() => openService({ tripId: l.tripId, feed: l.feed, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId, color: l.color, dest: l.towards, realtime: l.realtime, estimated: l.estimated, delayMin: l.delayMin })}
+    <Pressable accessibilityRole="button" onPress={() => openService({ tripId: l.tripId, feed: l.feed, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId, color: l.color, dest: l.towards, realtime: l.realtime, estimated: l.estimated, delayMin: l.delayMin, toStopId: l.toStopId })}
       style={({ pressed }) => [st.leg, pressed ? { opacity: 0.7 } : null]}>
       <View style={{ width: 36, alignItems: 'center' }}>
         <View style={[st.dotBig, { borderColor: color, backgroundColor: c.card }]} />
@@ -88,6 +89,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
           <View style={{ flex: 1 }}>
             <T kind="headline" numberOfLines={2}>{shortName(l.from)}</T>
             <T kind="foot" tone="text2">{[l.fromPlatform, stopLabel(l.stopId, l.mode), `${clock(dep)}`].filter(Boolean).join(' \u00b7 ')}</T>
+            <View style={{ marginTop: 2 }}><StatusLine realtime={l.realtime} delayMin={l.delayMin} cancelled={l.cancelled} state={liveState({ planned: l.planned, estimated: l.estimated, realtime: l.realtime, cancelled: l.cancelled, seenAt: l.seenAt }, now)} /></View>
           </View>
         </View>
         {l.platformChangedFrom ? <T kind="foot" style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }}>Platform changed from {l.platformChangedFrom}</T> : null}

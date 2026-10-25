@@ -123,7 +123,7 @@ export function Countdown({ planned, estimated, realtime, cancelled, now, align 
 }
 
 /** The live state of a departure row (its own answer's age and the vehicle's GPS age). */
-export const depState = (d: Departure, now: number) => liveState({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS }, now);
+export const depState = (d: { planned?: string; estimated?: string | null; realtime?: boolean; cancelled?: boolean; seenAt?: number; vehicle?: { ageS?: number; lat?: number } | null }, now: number) => liveState({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS }, now);
 const depKey = (d: Departure, now: number) => liveKey({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS }, now);
 
 export const DepartureRow = memo(DepartureRowView, sameDepartureRow);
@@ -191,6 +191,7 @@ export function JourneyCard({ j, now, onPress, best }: { j: Journey; now: number
   const leave = ms(j.leave);
   const mins = Math.round((leave - now) / 60000);
   const first = j.legs.find((l) => l.kind === 'transit');
+  const firstLive = first ? liveState({ planned: first.planned, estimated: first.estimated, realtime: first.realtime, cancelled: j.anyCancelled, seenAt: first.seenAt ?? j.seenAt }, now) : undefined;
   const leaveText = mins <= 0 ? 'Leave now' : mins < 60 ? `Leave in ${mins} min` : `Leave ${clock(leave)}`;
   return (
     <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }} style={({ pressed }) => [st.jRow, pressed && Platform.OS === 'ios' ? { backgroundColor: c.card2 } : null]}>
@@ -204,7 +205,7 @@ export function JourneyCard({ j, now, onPress, best }: { j: Journey; now: number
             {clock(ms(j.board))} to {clock(ms(j.arrive))} {'\u00b7'} {durText(j.durationMin)}{j.changes ? ` \u00b7 ${j.changes} change${j.changes > 1 ? 's' : ''}` : ''}
           </T>
         </View>
-        <StatusLine realtime={first?.realtime} delayMin={first?.delayMin} cancelled={j.anyCancelled} />
+        <StatusLine realtime={first?.realtime} delayMin={first?.delayMin} cancelled={j.anyCancelled} state={firstLive} />
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 10, gap: 5 }}>
         {j.legs.map((l, i) => (

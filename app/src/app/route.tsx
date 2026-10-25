@@ -16,7 +16,8 @@ import { haptic } from '@/lib/haptic';
 import { awayWords, busesOn, lineTimes, nextBusAt, pickDir, probeStops, routeDirs, type BoardItem, type RouteBus, type RouteDir, regionDirs } from '@/lib/busCore';
 import TransitMap from '@/components/TransitMap';
 import { Icon, I } from '@/components/Icon';
-import { LineBadge } from '@/components/Transit';
+import { depState, LineBadge } from '@/components/Transit';
+import { liveWords } from '@/lib/liveLabelCore';
 import { T } from '@/components/ui';
 
 export default function RouteScreen() {
@@ -158,12 +159,12 @@ export default function RouteScreen() {
                         {times[s.id] === null ? <T kind="sub" tone="text2">Can't load times for this stop.</T> : null}
                         {times[s.id] && !list.length ? <T kind="sub" tone="text2">No {line} due here in the next few hours.</T> : null}
                         {list.map((d) => {
-                          const t = ms((d.realtime && d.estimated) || d.planned);
+                          const k = depState(d, now);
                           return (
-                            <View key={(d.tripId || '') + d.planned} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                              <T kind="body" style={{ fontWeight: '600', color: d.realtime ? c.green : c.text, fontVariant: ['tabular-nums'], minWidth: 64 }}>{(() => { const k = countdown(t, now); return k.unit ? `${k.big} ${k.unit}` : k.big; })()}</T>
+                            <View key={(d.tripId || '') + d.planned} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }} accessibilityLabel={k.a11y}>
+                              <T kind="body" style={{ fontWeight: '600', color: k.kind === 'live' ? c.liveText : k.kind === 'stale' ? c.lateText : c.text2, fontVariant: ['tabular-nums'], minWidth: 64 }}>{k.unit ? `${k.big} ${k.unit}` : k.big}</T>
                               <T kind="sub" tone="text2" style={{ flex: 1 }} numberOfLines={2}>
-                                {clock(t)}{d.realtime ? (d.delayMin ? ` \u00b7 ${d.delayMin} min late` : ' \u00b7 On time') : ' \u00b7 Scheduled'}{d.dest ? ` \u00b7 to ${shortName(d.dest)}` : ''}
+                                {k.counting ? clock(k.t) : ''}{k.kind === 'live' ? `${k.counting ? ' \u00b7 ' : ''}${d.delayMin ? `${d.delayMin} min late` : 'On time'}, ${liveWords(k)}` : `${k.counting ? ' \u00b7 ' : ''}${k.label}`}{d.dest ? ` \u00b7 to ${shortName(d.dest)}` : ''}
                               </T>
                             </View>
                           );

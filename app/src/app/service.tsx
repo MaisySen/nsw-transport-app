@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
 import { goBack } from '@/lib/nav';
-import { Alert, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Alert, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSides } from '@/lib/layout';
@@ -15,11 +15,14 @@ import { svcSpec, toggleWatch, tripKey } from '@/lib/watch';
 import TransitMap from '@/components/TransitMap';
 import { Icon, I } from '@/components/Icon';
 import { LineBadge, LiveStamp, OccupancyChip, QuietChip, StatusLine } from '@/components/Transit';
-import { Button, T } from '@/components/ui';
+import { Button, font, T } from '@/components/ui';
 import { stopNumber } from '@/lib/busCore';
+import { boardAlight } from '@/lib/stopBoardCore';
+import { liveState } from '@/lib/liveLabelCore';
+import { onColor } from '@/lib/theme';
 
 export default function ServiceScreen() {
-  const p = useLocalSearchParams<{ trip: string; feed: string; line: string; stop: string; planned: string; mode: string; destId: string; color: string; dest: string; rt: string; est: string; delay: string }>();
+  const p = useLocalSearchParams<{ trip: string; feed: string; line: string; stop: string; planned: string; mode: string; destId: string; color: string; dest: string; rt: string; est: string; delay: string; to: string }>();
   const c = usePalette();
   const now = useNow();
   const insets = useSafeAreaInsets();
@@ -27,7 +30,7 @@ export default function ServiceScreen() {
   const { height } = useWindowDimensions();
   const st = useStore();
   const sheet = useRef<BottomSheet>(null);
-  const { data, error, updatedAt } = useLive(() => api.service({ trip: p.trip, feed: p.feed || undefined, line: p.line, stop: p.stop, planned: p.planned, mode: p.mode, destId: p.destId }), 15000, [p.trip, p.planned]);
+  const { data, error, updatedAt } = useLive(() => api.service({ trip: p.trip, feed: p.feed || undefined, line: p.line, stop: p.stop, planned: p.planned, mode: p.mode, destId: p.destId, to: p.to || undefined }), 15000, [p.trip, p.planned, p.to]);
   const color = badgeLook(p.line || data?.line, p.mode || data?.mode, data?.color || p.color).bg;
   const snaps = useMemo(() => ['38%', '62%', '92%'], []);
   const key = tripKey(p.trip, p.planned, p.line);
@@ -41,6 +44,10 @@ export default function ServiceScreen() {
   const mineEst = data?.mine?.estimated || (boardLive && p.est ? p.est : null);
   const busMode = String(p.mode || data?.mode || '');
   const busLike = (busMode === 'bus' || busMode === 'coach' || busMode === 'school') && !!(p.line || data?.line);
+  // Opened from a trip or a plan (`to` is the stop you get off at): GET ON and GET OFF tags on your two stops.
+  const tags = boardAlight(stops, p.stop, p.to);
+  const mineStop = stops.find((s) => s.mine);
+  const liveNow = liveState({ planned: mineStop?.planned || p.planned, estimated: mineEst || mineStop?.estimated, realtime: live, cancelled: data?.cancelled, seenAt: updatedAt, vehicleAgeS: data?.vehicle?.ageS }, now);
 
   const watch = () => {
     const mine = stops.find((s) => s.mine);
@@ -72,7 +79,7 @@ export default function ServiceScreen() {
               ) : null}
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
-              <StatusLine realtime={live} delayMin={delayMin} cancelled={data?.cancelled} />
+              <StatusLine realtime={live} delayMin={delayMin} cancelled={data?.cancelled} state={liveNow} />
               {data?.vehicle?.occupancy?.text ? <OccupancyChip o={data.vehicle.occupancy} style={{ marginLeft: 6 }} /> : null}
               <QuietChip v={data?.vehicle as any} style={{ marginLeft: 6 }} />
               {data && !data.vehicle ? <T kind="foot" tone="text2">{'\u00b7'} No GPS position yet</T> : null}
@@ -101,19 +108,25 @@ export default function ServiceScreen() {
               const est = s.estimated || (s.mine ? mineEst : null);
               const t = bestTime(s.planned, est);
               const changed = est && s.planned && Math.abs(ms(est) - ms(s.planned)) >= 60000;
-              const dim = s.passed;
+              const dim = s.passed || (tags.off >= 0 && i > tags.off);
+              const tag = i === tags.on ? 'GET ON' : i === tags.off ? 'GET OFF' : null;
               return (
-                <View key={s.id + i} style={{ flexDirection: 'row', minHeight: 44 }}>
+                <View key={s.id + i} style={{ flexDirection: 'row', minHeight: 44 }} accessibilityLabel={tag ? `${tag === 'GET ON' ? 'Get on' : 'Get off'} here: ${shortName(s.name)}` : undefined}>
                   <View style={{ width: 28, alignItems: 'center' }}>
                     <View style={{ position: 'absolute', top: i === 0 ? 22 : 0, bottom: i === stops.length - 1 ? 22 : 0, width: 4, backgroundColor: dim ? c.text3 : color, opacity: dim ? 0.5 : 1 }} />
-                    <View style={{ marginTop: 16, width: s.mine || isNext ? 14 : 10, height: s.mine || isNext ? 14 : 10, borderRadius: 7, backgroundColor: isNext ? color : c.card, borderWidth: 2.5, borderColor: dim ? c.text3 : color }} />
+                    <View style={{ marginTop: 16, width: s.mine || isNext || tag ? 14 : 10, height: s.mine || isNext || tag ? 14 : 10, borderRadius: 7, backgroundColor: isNext ? color : c.card, borderWidth: 2.5, borderColor: dim ? c.text3 : color }} />
                   </View>
                   <View style={{ flex: 1, paddingVertical: 11, paddingLeft: 8, flexDirection: 'row', alignItems: 'center' }}>
                     <View style={{ flex: 1 }}>
-                      <T kind={s.mine ? 'headline' : 'callout'} tone={dim ? 'text2' : 'text'} numberOfLines={2}>{shortName(s.name)}</T>
+                      <T kind={s.mine || tag ? 'headline' : 'callout'} tone={dim ? 'text2' : 'text'} numberOfLines={2}>{shortName(s.name)}</T>
                       {busLike && stopNumber(s.id) ? <T kind="caption" tone="text3">Stop {s.id}</T> : null}
-                      {isNext ? <T kind="caption" style={{ color, fontWeight: '700', marginTop: 1 }}>NEXT STOP</T> : null}
-                      {s.mine && !isNext ? <T kind="caption" tone="tint" style={{ fontWeight: '700', marginTop: 1 }}>YOUR STOP</T> : null}
+                      {tag || isNext ? (
+                        <View style={{ flexDirection: 'row', gap: 6, marginTop: 3 }}>
+                          {tag ? <StopTag text={tag} on={tag === 'GET ON'} color={color} /> : null}
+                          {isNext ? <T kind="caption" style={{ color, fontWeight: '700' }}>NEXT STOP</T> : null}
+                        </View>
+                      ) : null}
+                      {s.mine && !isNext && !tag ? <T kind="caption" tone="tint" style={{ fontWeight: '700', marginTop: 1 }}>YOUR STOP</T> : null}
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
                       <T kind="sub" tone={dim ? 'text3' : live ? 'text' : 'text2'} style={{ fontVariant: ['tabular-nums'], fontWeight: s.mine ? '600' : '400' }}>{clock(t)}</T>
@@ -128,6 +141,16 @@ export default function ServiceScreen() {
           </View>
         </BottomSheetScrollView>
       </BottomSheet>
+    </View>
+  );
+}
+
+/** Opal style tag on a stop in the list: GET ON filled in the line colour, GET OFF outlined. */
+function StopTag({ text, on, color }: { text: string; on: boolean; color: string }) {
+  const c = usePalette();
+  return (
+    <View style={{ borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1, backgroundColor: on ? color : 'transparent', borderWidth: 1.5, borderColor: color }}>
+      <Text maxFontSizeMultiplier={1.3} style={[font.caption, { fontWeight: '800', color: on ? onColor(color) : c.text, letterSpacing: 0.3 }]}>{text}</Text>
     </View>
   );
 }

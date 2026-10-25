@@ -25,6 +25,20 @@ import { LineBadge } from '@/components/Transit';
 import { Button, Sep, T } from '@/components/ui';
 import { NextOption, SpeakRow, WakeRow } from '@/components/Smart';
 import { boardWords, stopNumber } from '@/lib/busCore';
+import { ageText, liveState, liveWords, STALE_DATA_MS, STALE_GPS_S, type LiveState as LabelState } from '@/lib/liveLabelCore';
+
+/** The live trip's label for the current leg. Waiting: the departure time's state. Riding: Not tracking when the GPS or our copy is stale. */
+function liveKind(phase: 'wait' | 'ride', l: WatchLeg, x: { live: boolean; dep: number }, d: any, updated: number, now: number): LabelState {
+  const vehicleAgeS = d?.vehicle?.ageS ?? null;
+  if (phase === 'wait') {
+    return liveState({ planned: l.planned, estimated: x.live && Number.isFinite(x.dep) ? new Date(x.dep).toISOString() : null, realtime: x.live, seenAt: updated || null, vehicleAgeS }, now);
+  }
+  const base = liveState({ planned: l.planned, estimated: null, realtime: false }, now);
+  if (!x.live) return base;
+  const dataAge = updated ? Math.max(0, now - updated) : 0;
+  const stale = (vehicleAgeS != null && vehicleAgeS + dataAge / 1000 > STALE_GPS_S) || dataAge > STALE_DATA_MS;
+  return { ...base, kind: stale ? 'stale' : 'live', label: stale ? 'Not tracking' : 'Live', age: updated ? ageText(dataAge + (vehicleAgeS ?? 0) * 1000) : null };
+}
 import { shareLink } from '@/lib/server';
 
 const noun = (m?: string) => (m === 'bus' || m === 'coach' ? 'bus' : m === 'ferry' ? 'ferry' : m === 'lightrail' ? 'tram' : m === 'metro' ? 'metro' : 'train');
@@ -196,7 +210,9 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
   const l = legs[st.cur], x = st.L2[st.cur], d = x.d;
   const m = Math.max(0, Math.round((st.eta - now) / 60000));
   const late = Math.round(x.delay / 60000);
-  const badge = x.live ? (late >= 2 ? { t: `${late} min late`, bg: c.orange } : { t: 'Live', bg: c.green }) : { t: 'Scheduled', bg: c.text3 };
+  // Honest label (liveLabelCore.ts): waiting, the leg's live departure time; riding, the vehicle's GPS age and our copy's age.
+  const lk = liveKind(st.phase, l, x, d, updated, now);
+  const badge = lk.kind === 'stale' ? { t: 'Not tracking', bg: c.orange } : x.live ? (late >= 2 ? { t: `${late} min late`, bg: c.orange } : { t: 'Live', bg: c.green }) : { t: 'Timetable', bg: c.text3 };
   let now1 = '', now2 = '', now3 = '';
   if (x.missed) {
     // The live times say this leg left before you got to the change: no countdown to a train you cannot catch.
@@ -207,7 +223,7 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
     now1 = `${st.cur > 0 ? 'Change to' : 'Board'} the ${l.line} to ${short(l.towards || l.to)}`;
     // A bus: which stop and stand to wait at, with the number on the sign (stands at one stop can be across the road).
     if (stopNumber(l.stopId, l.mode)) now3 = `From ${boardWords(short(l.from), l.fromPlatform, l.stopId, l.mode)}`;
-    now2 = `${dm <= 0 ? 'Due now' : `Leaves in ${dm} min, ${clock(x.dep)}`}${l.fromPlatform && !now3 ? ' \u00b7 ' + plat(l.fromPlatform) : ''}${d && d.stopsAway != null && d.vehicle ? ` \u00b7 ${d.stopsAway === 0 ? 'arriving' : `${d.stopsAway} stop${d.stopsAway > 1 ? 's' : ''} away`}` : ''}`;
+    now2 = `${lk.kind === 'stale' ? `Not tracking, timetable ${clock(lk.t)}` : dm <= 0 ? (x.live ? 'Due now' : `Timetable ${clock(x.dep)}`) : `Leaves in ${dm} min, ${clock(x.dep)}${x.live ? '' : ', timetable'}`}${l.fromPlatform && !now3 ? ' \u00b7 ' + plat(l.fromPlatform) : ''}${d && d.stopsAway != null && d.vehicle ? ` \u00b7 ${d.stopsAway === 0 ? 'arriving' : `${d.stopsAway} stop${d.stopsAway > 1 ? 's' : ''} away`}` : ''}`;
   } else {
     const ns = d && st.nextIdx >= 0 ? d.stops[st.nextIdx] : null;
     const yours = !!d && st.nextIdx === d.alightIndex;
@@ -247,6 +263,7 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
       <WakeRow g={g} st={st} />
       <SpeakRow g={g} />
 
+      {!offline && lk.kind === 'live' && lk.age ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 6 }}>{liveWords(lk)}</T> : null}
       {offline ? <Warn tone="grey" title={offline} body={ago != null ? `Last update ${ago < 90 ? `${ago} s` : `${Math.round(ago / 60)} min`} ago. Trying again.` : 'Trying again.'} /> : null}
       {!x.live && !offline ? <Warn tone="grey" title="No live data for this service" body="Times are from the timetable." /> : null}
       {/* A change the live times say you will miss: the next way on, found at once, with Switch to this. */}

@@ -7,7 +7,10 @@ import { useLive, useNow } from '@/lib/hooks';
 import { useScreenPoll } from '@/lib/activity';
 import { cacheKey } from '@/lib/offlineCore';
 import { usePalette, radius } from '@/lib/theme';
-import { ms, shortName } from '@/lib/format';
+import { clock, ms, shortName } from '@/lib/format';
+import { byRoute, keepRoute } from '@/lib/stopBoardCore';
+import { departedWords } from '@/lib/recentCore';
+import { useRecentDeparted } from '@/lib/recent';
 import { rowNote, topAlerts } from '@/lib/stopAlertsCore';
 import { store, useStore } from '@/lib/store';
 import { svcSpec, toggleWatch, tripKey } from '@/lib/watch';
@@ -29,6 +32,7 @@ export default function StopScreen() {
   const now = useNow();
   const st = useStore();
   const [mode, setMode] = useState<string | null>(null);
+  const [pick, setPick] = useState<string | null>(null);
   const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => api.departures(String(id), r), 15000, [id], { cacheKey: cacheKey('dep', String(id)) });
   const title = shortName(data?.stop?.name || name || 'Stop');
   const starred = st.starred.some((s) => s.id === id);
@@ -57,14 +61,18 @@ export default function StopScreen() {
   // only when the top does not already show it.
   const top = useMemo(() => topAlerts(data?.alerts, mode ? (data?.items || []).filter((d) => d.mode === mode) : data?.items, 2, !!mode), [data, mode]);
   const noteFor = (d: any) => rowNote(d.alerts, data?.alerts, top);
-  const items = (data?.items || []).filter((d) => (!mode || d.mode === mode) && ms(d.realtime ? d.estimated : d.planned) > now - 60000);
+  const routes = useMemo(() => linesHere(data?.items), [data]);
+  // Route chips filter the board (Opal style); a route that has left the board drops the filter.
+  const route = keepRoute(pick, routes);
+  const items = byRoute((data?.items || []).filter((d) => (!mode || d.mode === mode) && ms(d.realtime ? d.estimated : d.planned) > now - 60000), route);
+  // Services that left in the last few minutes, from this phone's own reads of this board (recentCore.ts).
+  const gone = byRoute(useRecentDeparted(id ? String(id) : undefined, now).filter((g) => !mode || g.mode === mode), route).slice(0, 5);
   // A bus stop opened by its own number (2046100) shows the number on the sign; a station or a stop with several
   // stands shows each row's stop number instead.
   const all = data?.items || [];
   const busOnly = !!all.length && all.every((d) => d.mode === 'bus' || d.mode === 'coach' || d.mode === 'school');
   const signNo = busOnly || (!all.length && !!data) ? stopNumber(String(id)) : null;
   const stand = signNo ? String(data?.stop?.exactName || '').match(/\b(Stand|Side) [A-Z0-9]+\b/)?.[0] : undefined;
-  const routes = useMemo(() => linesHere(data?.items), [data]);
   const openRoute = (line: string) => {
     const d = (data?.items || []).find((x) => x.line === line);
     haptic.tap();
@@ -100,15 +108,29 @@ export default function StopScreen() {
 
         {routes.length ? (
           <View style={{ marginTop: 12 }}>
-            <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginBottom: 6 }}>Bus routes here. Tap one to see its stops and buses.</T>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
-              {routes.map((r) => (
-                <Pressable key={r.line} onPress={() => openRoute(r.line)} accessibilityRole="button" accessibilityLabel={`Route ${r.line}`} accessibilityHint="Opens the route" hitSlop={4}
-                  style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, minHeight: 44, justifyContent: 'center' })}>
-                  <LineBadge line={r.line} mode={r.mode} color={r.color} />
-                </Pressable>
-              ))}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16, alignItems: 'center' }}>
+              {routes.length > 1 ? <Chip label="All routes" on={!route} onPress={() => { haptic.select(); setPick(null); }} /> : null}
+              {routes.map((r) => {
+                const on = route === r.line;
+                return (
+                  <Pressable key={r.line} onPress={() => { haptic.select(); setPick(on ? null : r.line); }} accessibilityRole="button" accessibilityLabel={`Route ${r.line}`}
+                    accessibilityState={{ selected: on }} accessibilityHint={on ? 'Shows every route again' : 'Shows only this route'} hitSlop={4}
+                    style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, minHeight: 44, justifyContent: 'center' })}>
+                    <View style={{ padding: 2, borderRadius: 9, borderWidth: 2, borderColor: on ? c.tint : 'transparent' }}>
+                      <LineBadge line={r.line} mode={r.mode} color={r.color} />
+                    </View>
+                  </Pressable>
+                );
+              })}
             </ScrollView>
+            {route ? (
+              <Pressable onPress={() => openRoute(route)} accessibilityRole="button" accessibilityLabel={`Route ${route}, all stops and live buses`} hitSlop={6}
+                style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: 20, marginTop: 4, minHeight: 32, opacity: pressed ? 0.6 : 1 })}>
+                <Icon name={I.route} size={14} color={c.tint} />
+                <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Route {route}: all stops and live buses</T>
+                <Icon name={I.chevron} size={12} color={c.tint} />
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
 
@@ -141,9 +163,34 @@ export default function StopScreen() {
             })}
           </View>
         ) : null}
-        {data && !items.length ? <Empty icon={I.clock} title="No more services" body="Nothing is due from here in the next few hours." /> : null}
+        {data && !items.length ? <Empty icon={I.clock} title={route ? `No more ${route} services` : 'No more services'} body="Nothing is due from here in the next few hours." /> : null}
+        {gone.length ? (
+          <View style={{ marginTop: 18 }}>
+            <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginBottom: 6 }} accessibilityRole="header">RECENTLY DEPARTED</T>
+            <View style={{ marginHorizontal: 16, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
+              {gone.map((g, i) => {
+                const w = departedWords(g, clock);
+                return (
+                  <View key={g.key}>
+                    {i ? <Sep inset={82} /> : null}
+                    <Pressable accessibilityRole="button" accessibilityLabel={`${g.line} to ${shortName(g.dest)}. ${w.main}. ${w.sub}`} android_ripple={{ color: c.fill }}
+                      onPress={() => openService({ tripId: g.tripId || undefined, feed: g.feed, line: g.line, stopId: g.stopId, planned: g.planned, mode: g.mode, destId: g.destId || undefined, color: g.color, dest: g.dest })}
+                      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, minHeight: 56, backgroundColor: pressed && Platform.OS === 'ios' ? c.card2 : c.card })}>
+                      <View style={{ width: 66, alignItems: 'flex-start', opacity: 0.7 }}><LineBadge line={g.line} mode={g.mode} color={g.color} /></View>
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <T kind="callout" tone="text2" numberOfLines={1}>{shortName(g.dest)}</T>
+                        <T kind="foot" tone="text2">{w.sub}</T>
+                      </View>
+                      <T kind="sub" style={{ color: g.confirmed ? c.text : c.text2, fontWeight: '600', fontVariant: ['tabular-nums'] }}>{w.main}</T>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
         {!data && error ? <Empty icon={I.warn} title="Can't load this stop" body={error} /> : null}
-        {data ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>Touch and hold a service to watch it. Green times are live.</T> : null}
+        {data ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>Touch and hold a service to watch it. Live times show how old they are; grey times are from the timetable.</T> : null}
         {map ? (
           <Pressable onPress={() => { haptic.tap(); WebBrowser.openBrowserAsync(map.url).catch(() => {}); }} accessibilityRole="link" accessibilityLabel={`Station map, ${map.label}, from Transport for NSW`}
             android_ripple={{ color: c.fill }}
