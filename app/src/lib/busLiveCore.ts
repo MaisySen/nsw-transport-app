@@ -105,16 +105,19 @@ export function rowTraffic(d: { mode?: string; realtime?: boolean; cancelled?: b
   return slowInTraffic(d.ahead) ? TRAFFIC_TEXT : null;
 }
 
-/** Live words for a bus on the departures board: "4 min late, 3 stops away", "On time, at the stop", "Timetable only". */
-export function busBoardWords(d: { mode?: string; realtime?: boolean; cancelled?: boolean; delayMin?: number | null; stopsAway?: number | null; vehicle?: unknown }, live: boolean): string | null {
+/**
+ * Live words for a bus on the departures board: `status` ("4 min late", "On time", "Timetable only") and `away`
+ * ("3 stops away", "at the stop", or empty when the bus has no position or is far off). Null for other modes.
+ */
+export function busBoardWords(d: { mode?: string; realtime?: boolean; cancelled?: boolean; delayMin?: number | null; stopsAway?: number | null; vehicle?: unknown }, live: boolean): { status: string; away: string } | null {
   if (!d || (d.mode !== 'bus' && d.mode !== 'coach' && d.mode !== 'school')) return null;
   if (d.cancelled) return null;
-  if (!d.realtime || !live) return 'Timetable only';
+  if (!d.realtime || !live) return { status: 'Timetable only', away: '' };
   const m = finite(d.delayMin) ? Math.round(d.delayMin) : 0;
-  const late = m >= 2 ? `${m} min late` : m <= -2 ? `${-m} min early` : 'On time';
+  const status = m >= 2 ? `${m} min late` : m <= -2 ? `${-m} min early` : 'On time';
   const away = d.vehicle && finite(d.stopsAway) && d.stopsAway >= 0 && d.stopsAway <= 15
-    ? (d.stopsAway === 0 ? 'at the stop' : `${d.stopsAway} stop${d.stopsAway === 1 ? '' : 's'} away`) : '';
-  return away ? `${late}, ${away}` : late;
+    ? (d.stopsAway === 0 ? 'At the stop' : `${d.stopsAway} stop${d.stopsAway === 1 ? '' : 's'} away`) : '';
+  return { status, away };
 }
 
 /**

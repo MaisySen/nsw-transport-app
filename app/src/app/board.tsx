@@ -145,13 +145,14 @@ export default function Board() {
         // Buses say how they are running: "4 min late, 3 stops away", or "Timetable only" (busLiveCore.ts).
         const bus = dep && !r.cancelled && r.kind !== 'stale' ? busBoardWords(dep, r.kind === 'live') : null;
         const slow = dep && r.kind === 'live' ? rowTraffic(dep) : null;
-        const word = r.cancelled ? 'Cancelled' : bus || (r.kind === 'live' ? `Live${r.age ? `, ${r.age}` : ''}` : r.label);
+        const word = r.cancelled ? 'Cancelled' : bus ? bus.status : r.kind === 'live' ? `Live${r.age ? `, ${r.age}` : ''}` : r.label;
         const sub = [r.platform, word].filter(Boolean).join('  \u00b7  ');
-        const third = w ? w.text : slow || (stops ? `Stops: ${stops}` : '');
+        // The third line: why it's late, else slow traffic, else where the bus is, else the stops.
+        const third = w ? w.text : slow || bus?.away || (stops ? `Stops: ${stops}` : '');
         const warm = !!w || !!slow;
-        const subTone = bus && / late/.test(bus) ? c.lateText : tone;
+        const subTone = bus && / late$/.test(bus.status) ? c.lateText : tone;
         return (
-          <View key={r.key + i} accessible accessibilityLabel={[r.a11y, bus && bus !== 'Timetable only' ? bus : '', slow || '', stops && !r.pattern ? `stops at ${stops}` : '', w ? w.text : ''].filter(Boolean).join(', ')}
+          <View key={r.key + i} accessible accessibilityLabel={[r.a11y, bus && r.kind === 'live' ? bus.status : '', bus?.away || '', slow || '', stops && !r.pattern ? `stops at ${stops}` : '', w ? w.text : ''].filter(Boolean).join(', ')}
             style={[s.row, { minHeight: rowH, borderTopColor: c.sep, borderTopWidth: i ? StyleSheet.hairlineWidth : 0 }]}>
             <View style={[s.badge, { backgroundColor: bg, minWidth: big * 1.6, height: big * 1.05, borderRadius: big * 0.22 }]}>
               <Text numberOfLines={1} maxFontSizeMultiplier={1} style={{ color: fg, fontSize: big * 0.52, fontWeight: '800' }}>{r.line}</Text>

@@ -105,13 +105,13 @@ test('rows and trip legs use the server list of delays ahead, buses and coaches 
 });
 
 test('board words for buses: delay and where the bus is, or Timetable only', () => {
-  assert.equal(b.busBoardWords({ mode: 'bus', realtime: true, delayMin: 4, stopsAway: 3, vehicle: {} }, true), '4 min late, 3 stops away');
-  assert.equal(b.busBoardWords({ mode: 'bus', realtime: true, delayMin: 1, stopsAway: 1, vehicle: {} }, true), 'On time, 1 stop away');
-  assert.equal(b.busBoardWords({ mode: 'bus', realtime: true, delayMin: -2, stopsAway: 0, vehicle: {} }, true), '2 min early, at the stop');
-  assert.equal(b.busBoardWords({ mode: 'bus', realtime: true, delayMin: 0, stopsAway: 4 }, true), 'On time');
-  assert.equal(b.busBoardWords({ mode: 'bus', realtime: true, delayMin: 0, stopsAway: 30, vehicle: {} }, true), 'On time');
-  assert.equal(b.busBoardWords({ mode: 'bus', realtime: false }, false), 'Timetable only');
-  assert.equal(b.busBoardWords({ mode: 'bus', realtime: true, delayMin: 3 }, false), 'Timetable only');
+  assert.deepEqual(b.busBoardWords({ mode: 'bus', realtime: true, delayMin: 4, stopsAway: 3, vehicle: {} }, true), { status: '4 min late', away: '3 stops away' });
+  assert.deepEqual(b.busBoardWords({ mode: 'bus', realtime: true, delayMin: 1, stopsAway: 1, vehicle: {} }, true), { status: 'On time', away: '1 stop away' });
+  assert.deepEqual(b.busBoardWords({ mode: 'bus', realtime: true, delayMin: -2, stopsAway: 0, vehicle: {} }, true), { status: '2 min early', away: 'At the stop' });
+  assert.deepEqual(b.busBoardWords({ mode: 'bus', realtime: true, delayMin: 0, stopsAway: 4 }, true), { status: 'On time', away: '' });
+  assert.deepEqual(b.busBoardWords({ mode: 'bus', realtime: true, delayMin: 0, stopsAway: 30, vehicle: {} }, true), { status: 'On time', away: '' });
+  assert.deepEqual(b.busBoardWords({ mode: 'bus', realtime: false }, false), { status: 'Timetable only', away: '' });
+  assert.deepEqual(b.busBoardWords({ mode: 'bus', realtime: true, delayMin: 3 }, false), { status: 'Timetable only', away: '' });
   assert.equal(b.busBoardWords({ mode: 'bus', cancelled: true }, false), null);
   assert.equal(b.busBoardWords({ mode: 'train', realtime: true, delayMin: 3 }, true), null);
 });
