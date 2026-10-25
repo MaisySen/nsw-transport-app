@@ -8,6 +8,7 @@ import { pollNotes, pollNotesTick } from '@/lib/push';
 import { startAppPoll } from '@/lib/activity';
 import { endLive, setupLiveNotifications } from '@/lib/live';
 import { finishProfileMove, initProfile } from '@/lib/device';
+import { finishServerMove } from '@/lib/serverMove';
 import { loadCachedConfig, refreshConfig } from '@/lib/config';
 import { api } from '@/lib/api';
 import { morningTripParams } from '@/lib/morning';
@@ -40,7 +41,7 @@ export default function RootLayout() {
     let later: ReturnType<typeof setTimeout> | null = null;
     Promise.all([initProfile().catch(() => {}), loadCachedConfig()]).finally(() => {
       setReady(true);
-      later = setTimeout(() => { later = null; finishProfileMove(api); refreshConfig(true); }, STARTUP_DEFER_MS);
+      later = setTimeout(() => { later = null; finishProfileMove(api).then(() => finishServerMove()); refreshConfig(true); }, STARTUP_DEFER_MS);
     });
     const sub = AppState.addEventListener('change', (s) => { if (s === 'active') refreshConfig(); });
     return () => { sub.remove(); if (later) clearTimeout(later); };

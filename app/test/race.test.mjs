@@ -174,7 +174,7 @@ test('screens with kept copies label them, never as live', () => {
 test('startup: the first screen asks for its times before the config, alerts and Last way home rechecks', () => {
   const l = read('src/app/_layout.tsx');
   assert.match(l, /const STARTUP_DEFER_MS = \d+;/);
-  assert.match(l, /setTimeout\(\(\) => \{ later = null; finishProfileMove\(api\); refreshConfig\(true\); \}, STARTUP_DEFER_MS\)/);
+  assert.match(l, /setTimeout\(\(\) => \{ later = null; finishProfileMove\(api\)\.then\(\(\) => finishServerMove\(\)\); refreshConfig\(true\); \}, STARTUP_DEFER_MS\)/);
   assert.match(l, /setTimeout\(\(\) => \{ pollNotes\(\); recheckLastLocal\(\)/);
   assert.doesNotMatch(l, /\n\s*pollNotes\(\);\n/);
   assert.match(l, /clearTimeout\(first\)/);

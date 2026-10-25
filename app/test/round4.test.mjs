@@ -34,7 +34,9 @@ test('server: the default address and the allowlist', () => {
   assert.equal(server.SITE, 'https://transportsydney.app');
   assert.equal(server.PRIVACY_URL, 'https://transportsydney.app/privacy');
   assert.equal(server.SUPPORT_URL, 'https://transportsydney.app/support');
-  assert.deepEqual([...server.ALLOWED_DOMAINS], [server.DEFAULT_HOST, 'api.transportsydney.app']);
+  assert.equal(CUR, 'https://api.transportsydney.app', 'the app reads from the new server (26 Oct 2026)');
+  assert.equal(server.NEW_API_BASE, CUR);
+  assert.deepEqual([...server.ALLOWED_DOMAINS], ['api.transportsydney.app', server.LEGACY_HOST]);
   assert.equal(server.apiBase(), CUR);
 });
 

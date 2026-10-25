@@ -2,7 +2,7 @@ import type { Commute, DeparturesResp, MorningCheck, MorningInput, MorningListRe
 import { getDevice, PROFILE } from './device';
 import { store } from './store';
 import type { CarPark, Station, TopupItem } from './access';
-import { apiBase, NEW_API_BASE } from './server';
+import { apiBase, fallbackFor, fallbackWorthy, NEW_API_BASE, noteFallback, noteNewServerOk, readBase } from './server';
 import { placesGone, stopsAsPlaces, type PlaceItem } from './planCore';
 import { EARLIER_NEEDS_NEW, ymd } from './tripModesCore';
 import { BOARD_EARLIER_NEEDS_NEW, boardQuery, honoured } from './boardTimeCore';
@@ -19,19 +19,26 @@ function qs(o: Record<string, any>) {
     .join('&');
 }
 
-async function once<T>(path: string, init: RequestInit | undefined, timeoutMs: number): Promise<T> {
+async function once<T>(path: string, init: RequestInit | undefined, timeoutMs: number, base: string = apiBase()): Promise<T> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
     const headers: Record<string, string> = init?.body ? { 'content-type': 'application/json' } : {};
-    const r = await fetch(apiBase() + path, { ...init, signal: ctl.signal, headers: { ...headers, ...((init?.headers as any) || {}) } });
+    const r = await fetch(base + path, { ...init, signal: ctl.signal, headers: { ...headers, ...((init?.headers as any) || {}) } });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw Object.assign(new Error((body && (body as any).error) || `Something went wrong (${r.status})`), { http: r.status });
-    // Rows and legs carry the moment they arrived, so a countdown can say how old its live time is.
-    return stampSeen(body as T, Date.now());
+    // Rows and legs carry the moment they arrived, so a countdown can say how old its live time is. An answer the
+    // server took from its shared cache says when it was made (dataAt); the older of the two is the honest one.
+    return stampSeen(body as T, dataTime(body, Date.now()));
   } finally {
     clearTimeout(t);
   }
+}
+
+/** When an answer's times were read: the server's dataAt for a cached answer (never in the future, at most 2 min back), else now. */
+export function dataTime(body: any, now: number): number {
+  const d = body && typeof body === 'object' ? Number((body as any).dataAt) : NaN;
+  return Number.isFinite(d) && d <= now && now - d < 120000 ? d : now;
 }
 
 /** Network or timeout failure, as opposed to an answer from the server. Android reports an aborted fetch as "canceled". */
@@ -53,12 +60,35 @@ function req<T>(path: string, init?: RequestInit, timeoutMs = 20000): Promise<T>
 }
 
 async function send<T>(path: string, init: RequestInit | undefined, timeoutMs: number, read: boolean): Promise<T> {
+  // Reads go to the first server for a minute after the new one failed and the first one answered (server.ts).
+  const first = read ? readBase() : apiBase();
+  const t0 = Date.now();
   try {
-    return await once<T>(path, init, timeoutMs);
+    try {
+      const v = await once<T>(path, init, timeoutMs, first);
+      if (read && first === NEW_API_BASE) noteNewServerOk();
+      return v;
+    } catch (e: any) {
+      if (read && isNetErr(e)) {
+        // One quiet retry for reads: mobile networks drop the odd request. Not after a time out (that would double the wait).
+        if (e?.name === 'AbortError' || Date.now() - t0 > timeoutMs / 2) throw e;
+        return await once<T>(path, init, timeoutMs, first);
+      }
+      throw e;
+    }
   } catch (e: any) {
-    if (read && isNetErr(e)) {
-      // One quiet retry for reads: mobile networks drop the odd request.
-      try { return await once<T>(path, init, timeoutMs); } catch (e2: any) { e = e2; }
+    // Fallback: a read the new server did not answer (no connection to it, a time out, a 5xx) is asked of the first
+    // server once. A phone with no connection at all fails the same way there, as fast.
+    const alt = read ? fallbackFor(first) : null;
+    if (alt && fallbackWorthy(e)) {
+      try {
+        const v = await once<T>(path, init, Math.min(timeoutMs, 12000), alt);
+        noteFallback(true);
+        return v;
+      } catch (e2: any) {
+        noteFallback(false);
+        if (!e?.http) e = e2;
+      }
     }
     if (isNetErr(e)) {
       // offline marks a failure to reach the server, so screens can fall back to the copy kept on the phone.

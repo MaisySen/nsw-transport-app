@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSyncExternalStore } from 'react';
-import { apiBase, DEFAULT_BASE, nextBase, setApiBase } from './server';
+import { apiBase, DEFAULT_BASE, nextBase, setApiBase, startBase } from './server';
 import { cleanConfig, DEFAULTS, flagOn, type RemoteConfig } from './configCore';
 export { cleanConfig, flagOn };
 export type { RemoteConfig };
@@ -15,14 +15,18 @@ let inflight: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 const KEY = 'remoteConfig';
 const BASE_KEY = 'apiBase';
+/** Set once this install has started on the new server (server.ts startBase): a stored address is then used as it is. */
+const MOVED_KEY = 'apiBaseMoved';
 
 function emit() { listeners.forEach((l) => l()); }
 
 /** Loads the last good config and server address from the phone. Runs before the first request. */
 export async function loadCachedConfig() {
   try {
-    const [raw, b] = await Promise.all([AsyncStorage.getItem(KEY), AsyncStorage.getItem(BASE_KEY)]);
-    if (b) setApiBase(b);
+    const [raw, b, moved] = await Promise.all([AsyncStorage.getItem(KEY), AsyncStorage.getItem(BASE_KEY), AsyncStorage.getItem(MOVED_KEY)]);
+    // A build from before the move stored the first server; this update starts on the new one (once).
+    setApiBase(startBase(b, moved === '1'));
+    if (moved !== '1') await AsyncStorage.setItem(MOVED_KEY, '1');
     if (raw) { cfg = cleanConfig(JSON.parse(raw)); emit(); }
     // The home screen widgets read the address from the same key (plugins/widget/kotlin/TransitApi.kt).
     if (b !== apiBase()) await AsyncStorage.setItem(BASE_KEY, apiBase());

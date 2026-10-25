@@ -1,7 +1,7 @@
 import { api } from './api';
 import { bestTime, ms, shortName } from './format';
 import type { Fare, Journey, Leg, Place, TripResp } from './types';
-import { apiBase } from './server';
+import { getJson } from './server';
 import { dateNeeded, ymd } from './tripModesCore';
 
 /** One leg of a saved trip: mode, change time before it (legs after the first), all services, walk minutes. */
@@ -116,7 +116,8 @@ const mem = new Map<string, Promise<any>>();
 function get<T>(path: string): Promise<T> {
   let p = mem.get(path);
   if (!p) {
-    p = fetch(apiBase() + path).then((r) => { if (!r.ok) throw new Error('Could not load the list. Check your connection.'); return r.json(); });
+    // The station lists come from the server in use, or the first server when the new one does not answer (server.ts).
+    p = getJson(path, 25000).catch(() => { throw new Error('Could not load the list. Check your connection.'); });
     p.catch(() => mem.delete(path));
     mem.set(path, p);
   }
