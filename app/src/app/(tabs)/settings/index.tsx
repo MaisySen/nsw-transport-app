@@ -202,8 +202,8 @@ export default function Settings() {
     <>
       <Stack.Screen options={{ title: 'More' }} />
       <Screen>
-        <Section footer="Simple mode opens the app on one plain screen: From, To and your places, then a list of trips and big simple steps.">
-          <Row icon={I.list} iconBg={c.green} title="Simple mode" subtitle="One screen: from here to there" chevron={false}
+        <Section footer="Simple mode opens the app on one screen: the next departures near you, and your saved trips one swipe away.">
+          <Row icon={I.list} iconBg={c.green} title="Simple mode" subtitle="One screen, just the next services" chevron={false}
             right={sw(!!st.simple, (v) => { haptic.select(); store.setSimple(v); if (v) router.replace('/simple'); }, 'Simple mode')} />
         </Section>
 
@@ -218,7 +218,7 @@ export default function Settings() {
           <Sep inset={57} />
           <Row icon={I.bell} iconBg={c.indigo} title="Watching" right={data?.watching ? <T kind="body" tone="text2">{String(data.watching)}</T> : undefined} onPress={() => router.push('/watching')} />
           <Sep inset={57} />
-          <Row icon={I.car} iconBg="#0A84FF" title="Park and Ride" onPress={() => router.push('/parking')} />
+          <Row icon={I.car} iconBg="#0A84FF" title="Car parks" subtitle="Park and Ride, live spaces" onPress={() => router.push('/parking')} />
           <Sep inset={57} />
           <Row icon={I.fare} iconBg={c.indigo} title="Opal top up machines" onPress={() => router.push('/topup')} />
         </Section>

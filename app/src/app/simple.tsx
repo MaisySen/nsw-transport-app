@@ -1,359 +1,209 @@
-// Simple mode (More > Simple mode, off by default). Bidur, 25 Oct 9:37 PM: "User come. Look this to that place. They get
-// the list like this. Thats it. For someone minimalistic, slowpace, less tech friendly users. Not this swipe."
-// One plain screen, like the transportnsw.info trip planner: From and To, your places as big rows, a list of trips,
-// and big simple steps (with Speak) for the one you tap. No swiping, no tabs, no maps.
-// Battery (docs/PERFORMANCE.md): the list refreshes only while it is on view and the app is in front (useLive);
-// countdowns redraw at whole minutes; location is the low accuracy foreground fix, only when already allowed.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, BackHandler, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+// Simple mode (More > Simple mode, off by default; Bidur, 25 Oct: "like TripView Lite"). One screen: "Here" (the
+// stop or stand nearest you) and a page per saved trip, each a plain list of the next services. Swipe between pages.
+// Battery (docs/PERFORMANCE.md): only the page on view polls, adaptively; countdowns redraw at whole minutes;
+// location is the foreground position the app already uses, at low accuracy, and only when already allowed.
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, FlatList, Platform, Pressable, RefreshControl, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
 import { haptic } from '@/lib/haptic';
 import { useCountdownNow, useLive, useReportCountdowns } from '@/lib/hooks';
+import { adaptiveGapMs, nextInMs } from '@/lib/pollCore';
 import { cacheKey } from '@/lib/offlineCore';
-import { adaptiveGapMs } from '@/lib/pollCore';
-import { NOW, type When } from '@/lib/planCore';
-import { hasSpeech, speak, stopSpeaking } from '@/lib/nativeExtras';
-import { searchFieldProps } from '@/lib/pickerCore';
 import { store, useStore } from '@/lib/store';
-import { useStopSearch } from '@/lib/stopSearch';
 import { usePalette } from '@/lib/theme';
-import { dateNeeded, pickerDays, pinDay, queryAt, whenKeyOf, whenWords, ymd } from '@/lib/tripModesCore';
 import { planTrip } from '@/lib/trips';
-import { sayPlace } from '@/lib/voiceCore';
-import { buildSteps, earlierAt, fillTarget, hhmm, laterAt, nearPlace, shortPlace, simplePlaces, splitStopName, spokenSteps, tripRows,
-  type JourneyLike, type PlaceRow, type SimplePlace, type Step, type TripRow } from '@/lib/simpleCore';
-import type { Journey, TripResp } from '@/lib/types';
+import { countdownWords, defaultPage, depRows, hereChoices, chipLabel, splitStopName, tripRows, type HereChoice, type SimpleDepRow, type SimplePage, type SimpleTripRow } from '@/lib/simpleCore';
+import type { Departure } from '@/lib/types';
+import { openService } from '@/components/Cards';
 import { LineBadge } from '@/components/Transit';
-import { WhenPicker } from '@/components/WhenPicker';
-import { Icon, I, modeIconName } from '@/components/Icon';
-import { font } from '@/components/ui';
+import { Icon, I } from '@/components/Icon';
+import { font, T } from '@/components/ui';
 
-type Field = { loc: true } | { place: SimplePlace } | null;
-const BIG = 2; // Dynamic Type: big text grows up to twice its size, the layout wraps instead of clipping.
-const KINDS: { k: When['kind']; label: string }[] = [{ k: 'now', label: 'Now' }, { k: 'leave', label: 'Leave at' }];
+const short = (n?: string) => splitStopName(String(n || '')).place.replace(/ Station$/, '');
 
-const fieldName = (f: Field, near: SimplePlace | null) => (!f ? '' : 'loc' in f ? 'Current location' : shortPlace(f.place.name) || f.place.name);
-
-function useTone() {
+function Countdown({ at, now, tone }: { at: number; now: number; tone: string }) {
   const c = usePalette();
-  return (t: TripRow['tone']) => (t === 'red' ? c.redText : t === 'late' ? c.lateText : t === 'live' ? c.liveText : c.text2);
-}
-
-/** One big tappable row: an icon, a title and an optional line under it. At least 56 pt tall. */
-function BigRow({ icon, iconColor, title, sub, a11y, hint, onPress, last }: { icon: any; iconColor?: string; title: string; sub?: string; a11y: string; hint?: string; onPress: () => void; last?: boolean }) {
-  const c = usePalette();
+  const cd = countdownWords(at, now);
   return (
-    <Pressable onPress={() => { haptic.select(); onPress(); }} accessibilityRole="button" accessibilityLabel={a11y} accessibilityHint={hint} android_ripple={{ color: c.fill }}
-      style={({ pressed }) => [s.bigRow, { backgroundColor: pressed && Platform.OS === 'ios' ? c.fill : c.card }, !last && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.sep }]}>
-      <View style={[s.rowIcon, { backgroundColor: c.fill }]}><Icon name={icon} size={20} color={iconColor || c.tint} /></View>
-      <View style={{ flex: 1, marginLeft: 14 }}>
-        <Text maxFontSizeMultiplier={BIG} style={[font.title3, { color: c.text }]}>{title}</Text>
-        {sub ? <Text maxFontSizeMultiplier={BIG} style={[font.callout, { color: c.text2, marginTop: 2 }]}>{sub}</Text> : null}
-      </View>
-    </Pressable>
-  );
-}
-
-function Places({ rows, onPick }: { rows: PlaceRow[]; onPick: (p: PlaceRow) => void }) {
-  const c = usePalette();
-  if (!rows.length) {
-    return <Text maxFontSizeMultiplier={BIG} style={[font.body, { color: c.text2, marginHorizontal: 20, marginTop: 20 }]}>Places you search for will show here, so next time they are one tap away.</Text>;
-  }
-  return (
-    <View>
-      <Text accessibilityRole="header" maxFontSizeMultiplier={BIG} style={[font.headline, { color: c.text2, marginHorizontal: 20, marginTop: 22, marginBottom: 8 }]}>Your places</Text>
-      <View style={[s.group, { backgroundColor: c.card }]}>
-        {rows.map((p, i) => (
-          <BigRow key={p.key} last={i === rows.length - 1} icon={p.kind === 'home' ? I.home : p.kind === 'work' ? I.briefcase : p.kind === 'star' ? I.star : I.history}
-            iconColor={p.kind === 'star' ? c.orange : undefined} title={p.title} sub={p.sub} a11y={p.a11y} hint="Plans a trip" onPress={() => onPick(p)} />
-        ))}
-      </View>
+    <View style={{ alignItems: 'flex-end', minWidth: 64 }} accessible={false}>
+      <Text maxFontSizeMultiplier={1.6} style={[font.title2, { color: tone, fontVariant: ['tabular-nums'] }]}>{cd.big}</Text>
+      {cd.unit ? <Text maxFontSizeMultiplier={1.6} style={[font.foot, { color: c.text2 }]}>{cd.unit}</Text> : null}
     </View>
   );
 }
 
-/** The From and To fields with the swap button between them. */
-function Fields({ from, to, near, onEdit, onSwap, onClearTo }: { from: Field; to: Field; near: SimplePlace | null; onEdit: (w: 'from' | 'to') => void; onSwap: () => void; onClearTo: () => void }) {
+const DepRow = memo(function DepRow({ r, d, now }: { r: SimpleDepRow; d: Departure; now: number }) {
   const c = usePalette();
-  const one = (w: 'from' | 'to', f: Field) => {
-    const label = w === 'from' ? 'From' : 'To';
-    const val = fieldName(f, near);
-    const sub = f && 'loc' in f && near ? `Near ${shortPlace(near.name)}` : '';
-    return (
-      <Pressable onPress={() => { haptic.select(); onEdit(w); }} accessibilityRole="button" accessibilityLabel={`${label}, ${val || 'empty'}${sub ? ', ' + sub : ''}`} accessibilityHint={`Choose where you are going ${w === 'from' ? 'from' : 'to'}`}
-        android_ripple={{ color: c.fill }} style={({ pressed }) => [s.field, { backgroundColor: pressed && Platform.OS === 'ios' ? c.fill : 'transparent' }]}>
-        <Text maxFontSizeMultiplier={BIG} style={[font.sub, { color: c.text2, fontWeight: '600' }]}>{label}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-          {f && 'loc' in f ? <Icon name={I.location} size={17} color={c.tint} /> : null}
-          <Text maxFontSizeMultiplier={BIG} numberOfLines={2} style={[font.title3, { color: val ? c.text : c.text3, flexShrink: 1 }]}>{val || (w === 'from' ? 'Where from?' : 'Where to?')}</Text>
-        </View>
-        {sub ? <Text maxFontSizeMultiplier={BIG} style={[font.foot, { color: c.text2, marginTop: 2 }]}>{sub}</Text> : null}
-      </Pressable>
-    );
-  };
+  const tone = r.tone === 'red' ? c.redText : r.tone === 'late' ? c.lateText : r.tone === 'live' ? c.liveText : c.text2;
   return (
-    <View style={[s.group, { backgroundColor: c.card, flexDirection: 'row', alignItems: 'center', marginTop: 8 }]}>
+    <Pressable onPress={() => { haptic.select(); openService(d); }} accessibilityRole="button" accessibilityLabel={r.a11y} accessibilityHint="Opens the service"
+      android_ripple={{ color: c.fill }} style={({ pressed }) => [s.row, { borderBottomColor: c.sep, backgroundColor: pressed && Platform.OS === 'ios' ? c.fill : c.card }]}>
+      <LineBadge line={r.line} mode={r.mode} color={r.color} />
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <Text maxFontSizeMultiplier={1.6} numberOfLines={2} style={[font.headline, { color: r.tone === 'red' ? c.text3 : c.text, textDecorationLine: r.tone === 'red' ? 'line-through' : 'none' }]}>{r.dest}</Text>
+        <Text maxFontSizeMultiplier={1.6} style={[font.sub, { color: c.text2, marginTop: 2 }]}>
+          {r.sched}  <Text style={{ color: tone, fontWeight: '600' }}>{r.status}</Text>
+        </Text>
+      </View>
+      {r.tone === 'red' ? null : <Countdown at={r.at} now={now} tone={c.text} />}
+    </Pressable>
+  );
+}, (a, b) => a.r.key === b.r.key && a.r.status === b.r.status && a.r.at === b.r.at && Math.floor((a.r.at - a.now) / 60000) === Math.floor((b.r.at - b.now) / 60000));
+
+const TripRow = memo(function TripRow({ r, onPress, now }: { r: SimpleTripRow; onPress: () => void; now: number }) {
+  const c = usePalette();
+  const tone = r.tone === 'red' ? c.redText : r.tone === 'late' ? c.lateText : r.tone === 'live' ? c.liveText : c.text2;
+  return (
+    <Pressable onPress={() => { haptic.select(); onPress(); }} accessibilityRole="button" accessibilityLabel={r.a11y} accessibilityHint="Opens the trip"
+      android_ripple={{ color: c.fill }} style={({ pressed }) => [s.row, { borderBottomColor: c.sep, backgroundColor: pressed && Platform.OS === 'ios' ? c.fill : c.card }]}>
       <View style={{ flex: 1 }}>
-        {one('from', from)}
-        <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: c.sep, marginLeft: 16 }} />
-        {one('to', to)}
+        <Text maxFontSizeMultiplier={1.6} style={[font.headline, { color: c.text, fontVariant: ['tabular-nums'] }]}>{r.times}</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 4 }}>
+          {r.lines.map((l, i) => <LineBadge key={i} line={l.line} mode={l.mode} color={l.color} />)}
+          <Text maxFontSizeMultiplier={1.6} style={[font.sub, { color: c.text2 }]}>{r.sub}</Text>
+        </View>
+        <Text maxFontSizeMultiplier={1.6} style={[font.foot, { color: tone, fontWeight: '600', marginTop: 3 }]}>{r.status}</Text>
       </View>
-      <View style={{ paddingHorizontal: 8, gap: 4, alignItems: 'center' }}>
-        <Pressable onPress={() => { haptic.select(); onSwap(); }} accessibilityRole="button" accessibilityLabel="Swap From and To"
-          style={({ pressed }) => [s.round, { backgroundColor: c.fill, opacity: pressed ? 0.6 : 1 }]}>
-          <Icon name={I.swap} size={20} color={c.tint} />
-        </Pressable>
-        {to ? (
-          <Pressable onPress={() => { haptic.select(); onClearTo(); }} accessibilityRole="button" accessibilityLabel="Clear To" accessibilityHint="Shows your places again"
-            style={({ pressed }) => [s.round, { opacity: pressed ? 0.6 : 1 }]}>
-            <Icon name={I.close} size={18} color={c.text2} />
-          </Pressable>
-        ) : null}
-      </View>
-    </View>
-  );
-}
-
-/** Choosing From or To: Use my location, search, and your places while nothing is typed. */
-function Chooser({ which, places, canLoc, onPick, onLoc, onCancel }: { which: 'from' | 'to'; places: PlaceRow[]; canLoc: boolean; onPick: (p: SimplePlace) => void; onLoc: () => void; onCancel: () => void }) {
-  const c = usePalette();
-  const [q, setQ] = useState('');
-  const { items, loading } = useStopSearch(q);
-  return (
-    <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}>
-        <Text accessibilityRole="header" maxFontSizeMultiplier={BIG} style={[font.title2, { color: c.text, flex: 1 }]}>{which === 'from' ? 'From' : 'To'}</Text>
-        <Pressable onPress={() => { haptic.select(); onCancel(); }} accessibilityRole="button" style={{ minHeight: 44, minWidth: 44, justifyContent: 'center', alignItems: 'flex-end' }}>
-          <Text maxFontSizeMultiplier={BIG} style={[font.body, { color: c.tint }]}>Cancel</Text>
-        </Pressable>
-      </View>
-      <View style={[s.search, { backgroundColor: c.fill }]}>
-        <Icon name={I.search} size={20} color={c.text2} />
-        <TextInput {...searchFieldProps} autoFocus value={q} onChangeText={setQ} placeholder="Station, stop or wharf" placeholderTextColor={c.text3}
-          maxFontSizeMultiplier={BIG} accessibilityLabel={`Search ${which === 'from' ? 'From' : 'To'}`} style={[font.title3, { flex: 1, color: c.text, marginLeft: 10, paddingVertical: 12 }]} />
-      </View>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 40 }}>
-        {canLoc ? (
-          <View style={[s.group, { backgroundColor: c.card, marginTop: 12 }]}>
-            <BigRow last icon={I.location} title="Use my location" a11y="Use my location" hint="Plans from the stop nearest you" onPress={onLoc} />
-          </View>
-        ) : null}
-        {q.trim().length >= 2 ? (
-          <View style={[s.group, { backgroundColor: c.card, marginTop: 12 }]}>
-            {items.slice(0, 10).map((x, i, a) => {
-              const { place, stand } = splitStopName(x.name);
-              return <BigRow key={x.id} last={i === a.length - 1} icon={I.pin} title={place} sub={stand} a11y={stand ? `${place}, ${stand}` : place} onPress={() => onPick({ id: String(x.id), name: x.name })} />;
-            })}
-            {!items.length ? <Text maxFontSizeMultiplier={BIG} style={[font.body, { color: c.text2, padding: 16 }]}>{loading ? 'Searching' : 'Nothing found. Try another name.'}</Text> : null}
-          </View>
-        ) : <Places rows={places} onPick={(p) => onPick(p.place)} />}
-      </ScrollView>
-    </View>
-  );
-}
-
-function ResultRow({ r, onPress }: { r: TripRow; onPress: () => void }) {
-  const c = usePalette();
-  const tone = useTone();
-  const dim = r.gone || r.tone === 'red';
-  return (
-    <Pressable onPress={() => { haptic.select(); onPress(); }} accessible accessibilityRole="button" accessibilityLabel={r.a11y} accessibilityHint="Shows the steps"
-      android_ripple={{ color: c.fill }} style={({ pressed }) => [s.result, { borderBottomColor: c.sep, backgroundColor: pressed && Platform.OS === 'ios' ? c.fill : c.card }]}>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline' }}>
-        <Text maxFontSizeMultiplier={BIG} style={[font.title2, { color: dim ? c.text3 : c.text, fontVariant: ['tabular-nums'], textDecorationLine: r.tone === 'red' ? 'line-through' : 'none' }]}>{r.leave}</Text>
-        <Text maxFontSizeMultiplier={BIG} style={[font.title3, { color: c.text2, fontWeight: '400' }]}>{'  to  '}</Text>
-        <Text maxFontSizeMultiplier={BIG} style={[font.title2, { color: dim ? c.text3 : c.text, fontWeight: '400', fontVariant: ['tabular-nums'] }]}>{r.arrive}</Text>
-      </View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 6 }}>
-        {r.lines.map((l, i) => <LineBadge key={i} line={l.line} mode={l.mode} color={l.color} />)}
-        <Text maxFontSizeMultiplier={BIG} style={[font.callout, { color: c.text2 }]}>{`${r.dur}, ${r.changes.toLowerCase()}`}</Text>
-      </View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 12, marginTop: 6 }}>
-        <Text maxFontSizeMultiplier={BIG} style={[font.callout, { color: tone(r.tone), fontWeight: '600' }]}>{r.status}</Text>
-        {r.inText ? <Text maxFontSizeMultiplier={BIG} style={[font.callout, { color: c.text, fontWeight: '600' }]}>{r.inText}</Text> : null}
-      </View>
+      {r.tone === 'red' ? null : <Countdown at={r.dep} now={now} tone={c.text} />}
     </Pressable>
   );
+}, (a, b) => a.r.key === b.r.key && a.r.status === b.r.status && a.r.dep === b.r.dep && Math.floor((a.r.dep - a.now) / 60000) === Math.floor((b.r.dep - b.now) / 60000));
+
+function Note({ text }: { text: string }) {
+  return <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 18 }}>{text}</T>;
 }
 
-function ListButton({ title, busy, onPress, a11y }: { title: string; busy?: boolean; onPress: () => void; a11y: string }) {
+/** Here: the nearest stop or stand (or your saved stops when location is off), and its next departures. */
+function HerePage({ width, visible }: { width: number; visible: boolean }) {
   const c = usePalette();
-  return (
-    <Pressable onPress={() => { if (!busy) { haptic.select(); onPress(); } }} accessibilityRole="button" accessibilityLabel={a11y} accessibilityState={{ busy: !!busy }}
-      android_ripple={{ color: c.fill }} style={({ pressed }) => [s.listBtn, { backgroundColor: pressed && Platform.OS === 'ios' ? c.fill : c.card }]}>
-      {busy ? <ActivityIndicator color={c.tint} /> : <Text maxFontSizeMultiplier={BIG} style={[font.headline, { color: c.tint }]}>{title}</Text>}
-    </Pressable>
-  );
-}
-
-/** The trip as big plain steps, with Speak. */
-function Steps({ j, from, to, onBack, now }: { j: JourneyLike; from: string; to: string; onBack: () => void; now: number }) {
-  const c = usePalette();
-  const tone = useTone();
-  const row = useMemo(() => tripRows([j], now, { keepGone: true }).rows[0], [j, now]);
-  const steps = useMemo(() => buildSteps(j), [j]);
-  const [talking, setTalking] = useState(false);
-  const canSpeak = useMemo(() => hasSpeech(), []);
-  useEffect(() => () => stopSpeaking(), []);
-  const say = () => {
-    haptic.select();
-    if (talking) { stopSpeaking(); setTalking(false); return; }
-    const words = buildSteps(j, { name: sayPlace });
-    speak(`Your trip from ${sayPlace(from)} to ${sayPlace(to)}. ${spokenSteps(words)}`, { interrupt: true });
-    setTalking(true);
-  };
-  useEffect(() => { if (!talking) return; const t = setTimeout(() => setTalking(false), 4000 + steps.length * 3500); return () => clearTimeout(t); }, [talking, steps.length]);
-  return (
-    <ScrollView contentContainerStyle={{ paddingBottom: 48 }}>
-      <Pressable onPress={() => { haptic.select(); onBack(); }} accessibilityRole="button" accessibilityLabel="Back to trips"
-        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: 48, paddingHorizontal: 12, opacity: pressed ? 0.5 : 1, alignSelf: 'flex-start' })}>
-        <Icon name={I.back} size={22} color={c.tint} />
-        <Text maxFontSizeMultiplier={BIG} style={[font.body, { color: c.tint, marginLeft: 4 }]}>Trips</Text>
-      </Pressable>
-      <View accessible accessibilityRole="header" accessibilityLabel={row ? row.a11y : `${from} to ${to}`} style={{ marginHorizontal: 20, marginTop: 4 }}>
-        <Text maxFontSizeMultiplier={BIG} style={[font.title2, { color: c.text }]}>{`${shortPlace(from)} to ${shortPlace(to)}`}</Text>
-        {row ? <Text maxFontSizeMultiplier={BIG} style={[font.title3, { color: c.text, fontWeight: '400', marginTop: 4 }]}>{`${row.leave} to ${row.arrive}, ${row.dur}`}</Text> : null}
-        {row ? (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 12, marginTop: 4 }}>
-            <Text maxFontSizeMultiplier={BIG} style={[font.callout, { color: tone(row.tone), fontWeight: '600' }]}>{row.status}</Text>
-            {row.inText ? <Text maxFontSizeMultiplier={BIG} style={[font.callout, { color: c.text, fontWeight: '600' }]}>{row.inText}</Text> : null}
-          </View>
-        ) : null}
-      </View>
-      {canSpeak ? (
-        <Pressable onPress={say} accessibilityRole="button" accessibilityLabel={talking ? 'Stop speaking' : 'Speak'} accessibilityHint={talking ? undefined : 'Reads the steps out loud'}
-          style={({ pressed }) => [s.speak, { backgroundColor: c.tint, opacity: pressed ? 0.75 : 1 }]}>
-          <Icon name={talking ? I.speakerStop : I.speaker} size={22} color="#fff" />
-          <Text maxFontSizeMultiplier={BIG} style={[font.title3, { color: '#fff', marginLeft: 10 }]}>{talking ? 'Stop' : 'Speak'}</Text>
+  const st = useStore();
+  const [choices, setChoices] = useState<HereChoice[] | null>(null);
+  const [locOff, setLocOff] = useState(false);
+  const [pick, setPick] = useState<string | null>(null);
+  const saved = useMemo<HereChoice[]>(() => {
+    const list = [...(st.starred || []), ...(st.places?.home ? [st.places.home] : []), ...(st.places?.work ? [st.places.work] : [])];
+    return hereChoices(list.map((p) => ({ id: p.id, name: p.name })));
+  }, [st.starred, st.places]);
+  const findNear = useCallback(async (ask: boolean) => {
+    try {
+      let p = await Location.getForegroundPermissionsAsync();
+      if (!p.granted && ask && p.canAskAgain) p = await Location.requestForegroundPermissionsAsync();
+      if (!p.granted) { setLocOff(true); return; }
+      setLocOff(false);
+      // The phone's last fix if it is recent, else one low accuracy fix (no tracking, no background location).
+      let pos = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60000 }).catch(() => null);
+      if (!pos) pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+      const r = await api.nearby(pos.coords.latitude, pos.coords.longitude);
+      setChoices(hereChoices((r.stops || []).map((x) => ({ id: String(x.id), name: x.name, distance: Number((x as any).distance ?? x.distanceM ?? x.dist) }))));
+    } catch { setLocOff(true); }
+  }, []);
+  useEffect(() => { if (visible && choices == null) findNear(false); }, [visible, choices, findNear]);
+  const list = choices && choices.length ? choices : locOff ? saved : [];
+  const cur = list.find((x) => x.id === pick) || list[0] || null;
+  const now = useCountdownNow();
+  const live = useLive((r) => (cur ? api.departures(cur.id, r) : Promise.resolve(null)), (d) => adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), [cur?.id],
+    { cacheKey: cur ? cacheKey('dep', cur.id) : undefined, enabled: visible && !!cur });
+  const items = live.data?.items || [];
+  const rows = useMemo(() => depRows(items, now), [items, now]);
+  const byKey = useMemo(() => new Map(items.map((d) => [`${d.tripId || d.line}|${d.planned}`, d])), [items]);
+  useReportCountdowns('simple:here', visible ? rows.slice(0, 6).map((r) => r.at) : []);
+  const title = cur ? short(live.data?.stop?.name || cur.place) : 'Here';
+  const head = (
+    <View>
+      <Text accessibilityRole="header" maxFontSizeMultiplier={1.6} numberOfLines={2} style={[font.largeTitle, { color: c.text, marginHorizontal: 20, marginTop: 6 }]}>{title}</Text>
+      {list.length > 1 ? (
+        <FlatList horizontal data={list} keyExtractor={(x) => x.id} showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingVertical: 10 }}
+          renderItem={({ item }) => {
+            const on = item.id === cur?.id;
+            const label = choices && choices.length ? chipLabel(item) : short(item.place);
+            return (
+              <Pressable onPress={() => { haptic.select(); setPick(item.id); }} hitSlop={{ top: 6, bottom: 6 }} accessibilityRole="button" accessibilityState={{ selected: on }}
+                accessibilityLabel={`${short(item.place)}${item.stand ? ', ' + item.stand : ''}`}
+                style={[s.chip, { backgroundColor: on ? c.tint : c.card, borderColor: on ? c.tint : c.sep }]}>
+                <Text maxFontSizeMultiplier={1.4} style={[font.sub, { fontWeight: '600', color: on ? '#fff' : c.text }]}>{label}</Text>
+              </Pressable>
+            );
+          }} />
+      ) : cur?.stand ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 4, marginBottom: 8 }}>{cur.stand}</T> : <View style={{ height: 10 }} />}
+      {locOff && !(choices && choices.length) ? (
+        <Pressable onPress={() => findNear(true)} accessibilityRole="button" style={{ marginHorizontal: 20, marginBottom: 8, minHeight: 44, justifyContent: 'center' }}>
+          <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>{saved.length ? 'Showing your saved stops. Use my location' : 'Use my location to find the nearest stop'}</T>
         </Pressable>
       ) : null}
-      <View style={[s.group, { backgroundColor: c.card, marginTop: 16 }]}>
-        {steps.map((st: Step, i) => (
-          <View key={st.key} accessible accessibilityLabel={`Step ${i + 1}. ${st.say}`}
-            style={[s.step, i < steps.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.sep }]}>
-            <View style={[s.rowIcon, { backgroundColor: st.icon === 'ride' && st.color ? st.color : c.fill }]}>
-              <Icon name={st.icon === 'walk' ? I.walk : st.icon === 'end' ? I.pin : modeIconName(st.mode)} size={20} color={st.icon === 'ride' && st.color ? '#fff' : c.text} />
-            </View>
-            <View style={{ flex: 1, marginLeft: 14 }}>
-              <Text maxFontSizeMultiplier={BIG} style={[font.title3, { color: c.text }]}>{st.text}</Text>
-              {st.sub ? <Text maxFontSizeMultiplier={BIG} style={[font.callout, { color: c.text2, marginTop: 3 }]}>{st.sub}</Text> : null}
-            </View>
-          </View>
-        ))}
-      </View>
-    </ScrollView>
+    </View>
   );
+  return (
+    <View style={{ width }}>
+      <FlatList data={rows} keyExtractor={(r) => r.key} ListHeaderComponent={head}
+        renderItem={({ item }) => <DepRow r={item} d={byKey.get(item.key)!} now={now} />}
+        refreshControl={<RefreshControl refreshing={live.refreshing} onRefresh={() => { if (choices == null || locOff) findNear(false); return live.refresh(); }} />}
+        ListEmptyComponent={<Note text={!cur ? (choices == null && !locOff ? 'Finding the nearest stop' : 'No stops to show. Star a stop or set Home and Work.') : !live.data ? (live.error ? 'Live times unavailable right now, trying again' : 'Loading live times') : 'No more services right now'} />}
+        initialNumToRender={10} windowSize={5} removeClippedSubviews={Platform.OS === 'android'} contentContainerStyle={{ paddingBottom: 40 }} />
+    </View>
+  );
+}
+
+/** A saved trip: the next services, with depart and arrive times, duration and changes. */
+function TripPage({ page, width, visible }: { page: Extract<SimplePage, { kind: 'trip' }>; width: number; visible: boolean }) {
+  const c = usePalette();
+  const now = useCountdownNow();
+  const plan = useMemo(() => ({ from: page.from, to: page.to }), [page.from, page.to]);
+  const live = useLive((r) => planTrip(plan, { refresh: r, count: 8 }), (d) => adaptiveGapMs(20000, d ? Math.min(...tripRows(d.journeys as any, Date.now()).map((x) => x.dep)) - Date.now() : null),
+    [page.key], { cacheKey: cacheKey('trip', `simple|${page.key}`), enabled: visible });
+  const rows = useMemo(() => tripRows((live.data?.journeys || []) as any, now), [live.data, now]);
+  useReportCountdowns('simple:' + page.key, visible ? rows.slice(0, 6).map((r) => r.dep) : []);
+  const open = (i: number) => router.push({ pathname: '/trip', params: { from: page.from.id, fromName: page.from.name, to: page.to.id, toName: page.to.name, pick: String(i) } });
+  return (
+    <View style={{ width }}>
+      <FlatList data={rows} keyExtractor={(r) => r.key}
+        ListHeaderComponent={<View>
+          <Text accessibilityRole="header" maxFontSizeMultiplier={1.6} numberOfLines={2} style={[font.largeTitle, { color: c.text, marginHorizontal: 20, marginTop: 6 }]}>{page.title}</Text>
+          <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 2, marginBottom: 12 }}>{`${short(page.from.name)} to ${short(page.to.name)}`}</T>
+        </View>}
+        renderItem={({ item, index }) => <TripRow r={item} now={now} onPress={() => open(index)} />}
+        refreshControl={<RefreshControl refreshing={live.refreshing} onRefresh={live.refresh} />}
+        ListEmptyComponent={<Note text={!live.data ? (live.error ? 'Live times unavailable right now, trying again' : 'Loading live trips') : (live.data as any).error || 'No more services today'} />}
+        initialNumToRender={8} windowSize={5} contentContainerStyle={{ paddingBottom: 40 }} />
+    </View>
+  );
+}
+
+/** The pages: Here, then Home to Work and Work to Home when both are set, then the trips saved on this phone. */
+function simplePages(st: ReturnType<typeof useStore>): SimplePage[] {
+  const pages: SimplePage[] = [{ kind: 'here' }];
+  const seen = new Set<string>();
+  const add = (p: Extract<SimplePage, { kind: 'trip' }>) => { if (seen.has(p.key)) return; seen.add(p.key); pages.push(p); };
+  const { home, work } = st.places || {};
+  if (home && work) {
+    add({ kind: 'trip', key: `${home.id}>${work.id}`, from: home, to: work, title: 'To work', tag: 'toWork' });
+    add({ kind: 'trip', key: `${work.id}>${home.id}`, from: work, to: home, title: 'To home', tag: 'toHome' });
+  }
+  for (const t of st.myTrips || []) {
+    if (t.legs && t.legs.length > 1) continue;
+    add({ kind: 'trip', key: `${t.from.id}>${t.to.id}`, from: t.from, to: t.to, title: t.name ? t.name.charAt(0).toUpperCase() + t.name.slice(1) : `${short(t.from.name)} to ${short(t.to.name)}` });
+  }
+  return pages.slice(0, 10);
 }
 
 export default function Simple() {
   const c = usePalette();
   const st = useStore();
   const insets = useSafeAreaInsets();
-  const tone = useTone();
-  const [from, setFrom] = useState<Field>(null);
-  const [to, setTo] = useState<Field>(null);
-  const [near, setNear] = useState<SimplePlace | null>(null);
-  const [locAllowed, setLocAllowed] = useState<boolean | null>(null);
-  const [edit, setEdit] = useState<'from' | 'to' | null>(null);
-  const [when, setWhen] = useState<When>(NOW);
-  const [pickOpen, setPickOpen] = useState(false);
-  const [query, setQuery] = useState<{ from: SimplePlace; to: SimplePlace } | null>(null);
-  const [pick, setPick] = useState<{ key: string; j: JourneyLike } | null>(null);
-  const [extra, setExtra] = useState<Journey[]>([]);
-  const [keepGone, setKeepGone] = useState(false);
-  const [busy, setBusy] = useState<'earlier' | 'later' | null>(null);
-  const [note, setNote] = useState('');
-  const now = useCountdownNow();
-  const places = useMemo(() => simplePlaces({ home: st.places?.home, work: st.places?.work, recentTrips: st.recentTrips, starred: st.starred }), [st.places, st.recentTrips, st.starred]);
-
-  // Where you are, as the nearest station or stop: the phone's recent fix, else one low accuracy fix. No tracking.
-  const locate = useCallback(async (ask: boolean): Promise<SimplePlace | null> => {
-    try {
-      let p = await Location.getForegroundPermissionsAsync();
-      if (!p.granted && ask && p.canAskAgain) p = await Location.requestForegroundPermissionsAsync();
-      setLocAllowed(!!p.granted);
-      if (!p.granted) return null;
-      let pos = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60000 }).catch(() => null);
-      if (!pos) pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
-      const r = await api.nearby(pos.coords.latitude, pos.coords.longitude);
-      const list = [...(r.stops || [])].sort((a: any, b: any) => Number(a.distance ?? a.distanceM ?? a.dist ?? 1e9) - Number(b.distance ?? b.distanceM ?? b.dist ?? 1e9));
-      const first = list[0] ? { id: String(list[0].id), name: String(list[0].name || '') } : null;
-      if (!first) return null;
-      const found = await api.search(splitStopName(first.name).place).then((x) => x.items || []).catch(() => []);
-      const p2 = nearPlace(first, found.map((x) => ({ id: String(x.id), name: x.name })));
-      setNear(p2);
-      return p2;
-    } catch { return null; }
-  }, []);
-
-  // From is Current location only when location is already allowed; no prompt on launch.
-  useEffect(() => {
-    Location.getForegroundPermissionsAsync().then((p) => {
-      setLocAllowed(!!p.granted);
-      if (p.granted) { setFrom((f) => f || { loc: true }); locate(false); }
-    }).catch(() => setLocAllowed(false));
-  }, [locate]);
-
-  const resolve = useCallback(async (f: Field): Promise<SimplePlace | null> => (!f ? null : 'loc' in f ? near || (await locate(false)) : f.place), [near, locate]);
-  const go = useCallback(async (f: Field, t: Field) => {
-    if (!f || !t) return;
-    const [a, b] = await Promise.all([resolve(f), resolve(t)]);
-    if (!a || !b) { Alert.alert('Location not found', 'Choose a station or stop for From instead.'); return; }
-    if (a.id === b.id) { setNote('From and To are the same place.'); setQuery(null); return; }
-    setNote('');
-    setPick(null);
-    setQuery({ from: a, to: b });
-    store.addRecentTrip({ id: a.id, name: a.name }, { id: b.id, name: b.name });
-  }, [resolve]);
-
-  const set = (w: 'from' | 'to', v: Field) => {
-    const f = w === 'from' ? v : from, t = w === 'to' ? v : to;
-    if (w === 'from') setFrom(v); else setTo(v);
-    setEdit(null);
-    if (f && t) go(f, t); else if (!f) setEdit('from');
-  };
-  const onPlace = (p: PlaceRow) => set(fillTarget(from, to), { place: p.place });
-  const swap = () => { const f = from, t = to; setFrom(t); setTo(f); if (f && t) go(t, f); };
-
-  // The trips: one request now (or at the chosen time), refreshed only while on view.
-  const whenKey = whenKeyOf(when);
-  const qKey = query ? `${query.from.id}>${query.to.id}` : '';
-  const live = useLive<TripResp | null>((r) => (query ? planTrip(query, { refresh: r, count: 6, ...queryAt(when, Date.now()) }) : Promise.resolve(null)),
-    (d) => adaptiveGapMs(30000, d?.journeys?.length ? tripRows(d.journeys as any, Date.now()).rows[0]?.dep - Date.now() : null),
-    [qKey, whenKey], { cacheKey: query ? cacheKey('trip', `simple|${qKey}|${whenKey}`) : undefined, enabled: !!query && !edit });
-  useEffect(() => { setExtra([]); setKeepGone(false); }, [qKey, whenKey]);
-  const all = useMemo(() => [...((live.data?.journeys || []) as JourneyLike[]), ...(extra as JourneyLike[])], [live.data, extra]);
-  const { rows, byKey } = useMemo(() => tripRows(all, now, { keepGone }), [all, now, keepGone]);
-  useReportCountdowns('simple', rows.filter((r) => !r.gone).slice(0, 6).map((r) => r.dep));
-  const shownJ = pick ? (byKey.get(pick.key) || pick.j) : null;
-
-  const more = async (dir: 'earlier' | 'later') => {
-    if (!query || !rows.length) return;
-    const t = dir === 'earlier' ? earlierAt(rows[0].dep) : laterAt(rows[rows.length - 1].dep);
-    const hm = hhmm(t);
-    const day = dateNeeded(ymd(t), Number(hm.slice(0, 2)), Number(hm.slice(2)), Date.now());
-    setBusy(dir);
-    try {
-      const r = await planTrip(query, { time: hm, count: 6, refresh: true, ...(day ? { date: day } : {}) });
-      setExtra((e) => [...e, ...(r.journeys || [])]);
-      if (dir === 'earlier') setKeepGone(true);
-    } catch (e: any) { Alert.alert(dir === 'earlier' ? 'Could not load earlier trips' : 'Could not load later trips', String(e?.message || e)); }
-    finally { setBusy(null); }
-  };
-
-  // Android back: steps to list, chooser to the screen.
-  useEffect(() => {
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (pick) { setPick(null); return true; }
-      if (edit) { setEdit(null); return true; }
-      return false;
-    });
-    return () => sub.remove();
-  }, [pick, edit]);
-
+  const { width } = useWindowDimensions();
+  const pages = useMemo(() => simplePages(st), [st.places, st.myTrips]); // eslint-disable-line react-hooks/exhaustive-deps
+  const first = useRef(defaultPage(pages, Date.now(), st.recentTrips || [])).current;
+  const [page, setPage] = useState(Math.min(first, pages.length - 1));
+  const list = useRef<FlatList<SimplePage>>(null);
+  const go = (i: number) => { const k = Math.max(0, Math.min(pages.length - 1, i)); setPage(k); list.current?.scrollToIndex({ index: k, animated: true }); };
+  // The page on view (more than half of it showing) is the one that polls.
+  const onViewable = useRef(({ viewableItems }: { viewableItems: any[] }) => {
+    const i = viewableItems.find((v) => v.isViewable)?.index;
+    if (i != null) setPage((p) => (p === i ? p : (haptic.select(), i)));
+  }).current;
+  const viewCfg = useRef({ itemVisiblePercentThreshold: 60 }).current;
   const settings = () => {
     haptic.select();
     Alert.alert('Simple mode', 'Turn it off to see the full app with Home, Plan, Ask and More.', [
@@ -361,91 +211,31 @@ export default function Simple() {
       { text: 'Turn off Simple mode', onPress: () => { store.setSimple(false); router.replace('/home'); } },
     ]);
   };
-  const fromName = query?.from.name || '', toName = query?.to.name || '';
-
-  let body: React.ReactNode;
-  if (edit) {
-    body = <Chooser which={edit} places={places} canLoc={locAllowed !== null}
-      onCancel={() => setEdit(null)} onPick={(p) => set(edit, { place: p })}
-      onLoc={async () => { const p = await locate(true); if (p) set(edit, { loc: true }); else Alert.alert('Location is off', 'Allow location for this app in Settings, or search for a station or stop.'); }} />;
-  } else if (pick && shownJ) {
-    body = <Steps j={shownJ} from={fromName} to={toName} now={now} onBack={() => setPick(null)} />;
-  } else {
-    const hasList = !!query;
-    body = (
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 48 }}
-        refreshControl={hasList ? <RefreshControl refreshing={live.refreshing} onRefresh={live.refresh} /> : undefined}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 20, paddingRight: 8, minHeight: 52 }}>
-          <Text accessibilityRole="header" maxFontSizeMultiplier={1.6} style={[font.largeTitle, { color: c.text, flex: 1 }]}>Trip planner</Text>
-          <Pressable onPress={settings} hitSlop={8} accessibilityRole="button" accessibilityLabel="Settings" accessibilityHint="Turn off Simple mode"
-            style={({ pressed }) => ({ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.5 : 1 })}>
-            <Icon name={I.gear} size={24} color={c.text2} />
-          </Pressable>
-        </View>
-        <Fields from={from} to={to} near={near} onEdit={setEdit} onSwap={swap} onClearTo={() => { setTo(null); setQuery(null); setPick(null); }} />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginHorizontal: 16, marginTop: 12 }}>
-          <Pressable onPress={() => { haptic.select(); setPickOpen(true); }} accessibilityRole="button" accessibilityLabel={`${whenWords(when, now)}. Change the time`}
-            style={({ pressed }) => [s.pill, { backgroundColor: c.card, opacity: pressed ? 0.6 : 1 }]}>
-            <Icon name={I.clock} size={18} color={c.tint} />
-            <Text maxFontSizeMultiplier={BIG} style={[font.headline, { color: c.tint, marginHorizontal: 8 }]}>{when.kind === 'now' ? 'Leave now' : whenWords(when, now)}</Text>
-            <Icon name={I.down} size={14} color={c.tint} />
-          </Pressable>
-          {when.kind !== 'now' ? (
-            <Pressable onPress={() => { haptic.select(); setWhen(NOW); }} accessibilityRole="button" accessibilityLabel="Leave now"
-              style={({ pressed }) => [s.pill, { backgroundColor: c.card, opacity: pressed ? 0.6 : 1 }]}>
-              <Text maxFontSizeMultiplier={BIG} style={[font.headline, { color: c.tint }]}>Now</Text>
-            </Pressable>
-          ) : null}
-        </View>
-        {note ? <Text maxFontSizeMultiplier={BIG} style={[font.body, { color: c.text2, marginHorizontal: 20, marginTop: 16 }]}>{note}</Text> : null}
-        {!hasList ? <Places rows={places} onPick={onPlace} /> : (
-          <View style={{ marginTop: 18 }}>
-            {live.data?.tomorrow ? <Text maxFontSizeMultiplier={BIG} style={[font.callout, { color: c.text2, marginHorizontal: 20, marginBottom: 8 }]}>No more trips tonight. These are the first ones tomorrow.</Text> : null}
-            {rows.length ? (
-              <View style={[s.group, { backgroundColor: c.card }]}>
-                <ListButton title="Earlier" a11y="Earlier trips" busy={busy === 'earlier'} onPress={() => more('earlier')} />
-                {rows.map((r) => <ResultRow key={r.key} r={r} onPress={() => setPick({ key: r.key, j: byKey.get(r.key)! })} />)}
-                <ListButton title="Later" a11y="Later trips" busy={busy === 'later'} onPress={() => more('later')} />
-              </View>
-            ) : (
-              <View style={{ marginHorizontal: 20, marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                {!live.data && !live.error ? <ActivityIndicator color={c.text2} /> : null}
-                <Text maxFontSizeMultiplier={BIG} style={[font.body, { color: live.error && !live.data ? tone('red') : c.text2, flex: 1 }]}>
-                  {!live.data ? (live.error ? `${live.error} Pull down to try again.` : 'Finding trips') : live.data.error || 'No trips found. Try another time.'}
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
-      </ScrollView>
-    );
-  }
-
   return (
     <View style={{ flex: 1, backgroundColor: c.bg, paddingTop: insets.top }}>
       <Stack.Screen options={{ headerShown: false, gestureEnabled: false }} />
-      {body}
-      <WhenPicker visible={pickOpen} value={when} now={now} days={pickerDays(now, 8)} kinds={KINDS} onClose={() => setPickOpen(false)}
-        onDone={(w) => {
-          setPickOpen(false);
-          haptic.select();
-          setPick(null);
-          setWhen(w.kind === 'now' ? NOW : pinDay({ kind: 'leave', h: (w as any).h, m: (w as any).m, ...((w as any).day ? { day: (w as any).day } : {}) }, Date.now()));
-        }} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, minHeight: 48 }}>
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 8 }} accessible accessibilityRole="adjustable"
+          accessibilityLabel={`Page ${page + 1} of ${pages.length}`} accessibilityValue={{ text: pages[page]?.kind === 'here' ? 'Here' : (pages[page] as any)?.title }}
+          accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]} onAccessibilityAction={(e) => go(page + (e.nativeEvent.actionName === 'increment' ? 1 : -1))}>
+          {pages.map((p, i) => <View key={i} style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: i === page ? c.text : c.text3, opacity: i === page ? 1 : 0.5 }} />)}
+        </View>
+        <Pressable onPress={settings} hitSlop={8} accessibilityRole="button" accessibilityLabel="Settings" accessibilityHint="Turn off Simple mode"
+          style={({ pressed }) => ({ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.5 : 1 })}>
+          <Icon name={I.gear} size={22} color={c.text2} />
+        </Pressable>
+      </View>
+      <FlatList ref={list} data={pages} horizontal pagingEnabled showsHorizontalScrollIndicator={false} keyExtractor={(p) => (p.kind === 'here' ? 'here' : p.key)}
+        initialScrollIndex={page} getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })} onViewableItemsChanged={onViewable} viewabilityConfig={viewCfg}
+        extraData={page} windowSize={3} initialNumToRender={1} maxToRenderPerBatch={1}
+        renderItem={({ item, index }) => (item.kind === 'here'
+          ? <HerePage width={width} visible={index === page} />
+          : <TripPage page={item} width={width} visible={index === page} />)} />
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  group: { marginHorizontal: 16, borderRadius: Platform.OS === 'android' ? 16 : 12, overflow: 'hidden' },
-  bigRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, minHeight: 60 },
-  rowIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  field: { paddingHorizontal: 16, paddingVertical: 10, minHeight: 64, justifyContent: 'center' },
-  round: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  pill: { flexDirection: 'row', alignItems: 'center', minHeight: 44, paddingHorizontal: 16, borderRadius: 22 },
-  search: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, paddingHorizontal: 14, borderRadius: 12, minHeight: 52 },
-  result: { paddingHorizontal: 16, paddingVertical: 14, minHeight: 88, borderTopWidth: StyleSheet.hairlineWidth },
-  listBtn: { minHeight: 52, alignItems: 'center', justifyContent: 'center' },
-  speak: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginHorizontal: 16, marginTop: 18, minHeight: 56, borderRadius: 14 },
-  step: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, minHeight: 64 },
+  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, minHeight: 64, borderBottomWidth: StyleSheet.hairlineWidth },
+  chip: { paddingHorizontal: 14, minHeight: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth },
 });
