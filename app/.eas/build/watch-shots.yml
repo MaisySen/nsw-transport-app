@@ -1,0 +1,16 @@
+# Simulator compile check of the iPhone app with the watch app and complications, then screenshots of the watch
+# app on watch simulators (tools/watch-shots.sh). The screenshots never fail the build; they are uploaded as a
+# build artifact. Used by the "watchshots" profile in eas.json.
+build:
+  name: Compile check and Apple Watch screenshots
+  steps:
+    - eas/build
+    - run:
+        name: Apple Watch screenshots
+        command: bash tools/watch-shots.sh || true
+    - eas/upload_artifact:
+        name: Upload watch screenshots
+        if: ${ always() }
+        inputs:
+          type: build-artifact
+          path: watch-shots

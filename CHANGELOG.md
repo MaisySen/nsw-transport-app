@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Apple Watch app redesign (build 207, not built yet; branch native-207)
+* The watch app opens to your trips as cards: Home to Work (or back), then Your trips in the iPhone's order. Each card has the line colour bar, the route, a big countdown in whole minutes (green on time, amber or red when late), the platform, the lines and the next two ("Next: 16, 18 mins"). Scroll with the Digital Crown.
+* Tap a card for the next 6 services, tap a service for its legs and platforms. Swap direction and Refresh on the trip screen, pull to refresh, swipe a card to swap.
+* Opening shows the last times at once, then loads; it refreshes every 30 seconds only while on screen. With no signal it shows the times the iPhone last loaded.
+* Complications show the first trip's next service in whole minutes ("T1 2 min"), no seconds.
+* Empty: "Save a trip on your iPhone to see it here."
+
 ### Fits any window: iOS 27 and iPhone Duo (over the air update for iPhone and Android, 25 Oct, 12:49 PM)
 * On iPhone Duo and other resizable windows (iOS 27), screens keep clear of the status bar and bars when they sit on the right edge, and of the Dynamic Island in landscape.
 * On a wide window (iPhone Duo open, iPhone Mirroring, iPad) lists and cards stay at a comfortable reading width in the middle instead of stretching edge to edge. Sheets do the same.

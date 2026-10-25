@@ -1,10 +1,12 @@
 // Complications and Smart Stack widgets on Apple Watch: the next service for the trip in progress (from the
-// iPhone), else Home to Work or back by time of day, with its line, a live countdown and the platform.
-//   Rectangular: "T1 4:12, Plat 2" and what it is for. Circular: a countdown ring. Inline and corner: the countdown.
+// iPhone), else your first trip on the watch (Home to Work or back by time of day, else the first saved trip), with
+// its line, whole minutes to go ("T1 2 min") and the platform.
+//   Rectangular: "T1 2 min, Plat 2", the trip and the one after. Circular: the line over the minutes, with a ring
+//   that empties over the last 15 minutes. Inline and corner: "T1 2 min".
 //
-// Battery: the complications never load anything. They draw the times the watch app last loaded and the trip card
-// the iPhone sent, with system countdowns (Text style .timer, ProgressView timerInterval), so a timeline has one
-// entry per service instead of one a minute. The watch app reloads them only when what they show changes; on
+// Battery: the complications never load anything and never count seconds. They draw the times the watch app last
+// loaded (or the times the phone sent) and the trip card from the iPhone, as a timeline worked out in advance with
+// one entry per minute for the next hour at most. The watch app reloads them only when what they show changes; on
 // their own they reload at most every 15 minutes (every 5 while a trip runs).
 import SwiftUI
 import WidgetKit
@@ -25,51 +27,74 @@ struct NextTrainComplication: Widget {
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Next train")
-        .description("Your trip in progress, else Home to Work in the morning and back in the evening.")
+        .description("Your trip in progress, else your first trip: Home to Work in the morning and back in the evening, or your first saved trip.")
         .supportedFamilies([.accessoryRectangular, .accessoryCircular, .accessoryInline, .accessoryCorner])
     }
 }
 
 struct NextEntry: TimelineEntry {
-    enum Kind { case live, commute, empty }
+    enum Kind { case live, trip, empty }
     let date: Date
     let kind: Kind
     var line: String = ""
     var colorHex: String?
     var target: Date?
     var platform: String?
-    /// "To work", "Off at Redfern", or what to set on the iPhone when there is nothing to show.
+    var status: WStatus = .onTime
+    /// "To work", "Off at Redfern", the trip, or what to do on the iPhone when there is nothing to show.
     var title: String
-    /// "Strathfield to Kings Cross", "then 9:52am" or "Updated 9:41am".
+    /// "then 9:52am", "Next stop: Burwood" or "Updated 9:41am".
     var detail: String?
     var relevance: TimelineEntryRelevance?
 
     var plat: String? { WText.platform(platform) }
 
-    /// "T1 4:12, Plat 2", counting down by itself.
-    var countdownText: Text {
-        guard let t = target else { return Text(title) }
-        var s = Text(line.isEmpty ? "" : "\(line) ") + Text(t, style: .timer).monospacedDigit()
-        if let p = plat { s = s + Text(", \(p)") }
+    /// Whole minutes from this entry's moment: "Now", "2 min", or the time an hour or more away.
+    var minutesText: String {
+        guard let t = target else { return "" }
+        return Clock.countdown(t, from: date)
+    }
+
+    /// "T1 2 min, Plat 2"
+    var countdownText: String {
+        guard target != nil else { return title }
+        var s = line.isEmpty ? minutesText : "\(line) \(minutesText)"
+        if let p = plat { s += ", \(p)" }
         return s
     }
 
-    /// For VoiceOver: "T1 at 9:52am, Plat 2, To work".
+    /// For VoiceOver: "T1 in 2 minutes, Plat 2, To work".
     var spoken: String {
         guard let t = target else { return [title, detail].compactMap { $0 }.joined(separator: ". ") }
-        return [line.isEmpty ? nil : line, "at \(Clock.hhmm(t))", plat, title].compactMap { $0 }.joined(separator: ", ")
+        let when = status == .cancelled ? "cancelled" : "in \(WText.minsSpoken(t, now: date))"
+        return [line.isEmpty ? nil : line, when, plat, title].compactMap { $0 }.joined(separator: ", ")
     }
 
-    /// Where the ring starts: full until 15 minutes before, then it empties to the departure.
-    var ringRange: ClosedRange<Date>? {
-        guard let t = target, t > date else { return nil }
-        return max(date, t.addingTimeInterval(-15 * 60))...t
+    /// How full the ring is: full until 15 minutes before, then it empties a step each minute.
+    var ring: Double {
+        guard let t = target else { return 0 }
+        return min(1, max(0, t.timeIntervalSince(date) / (15 * 60)))
+    }
+
+    var tint: Color { status == .onTime ? Color(hexString: colorHex) : status.color }
+}
+
+extension WStatus {
+    var color: Color {
+        switch self {
+        case .onTime: return .green
+        case .slightlyLate: return .orange
+        case .late, .cancelled: return .red
+        }
     }
 }
 
 struct NextProvider: TimelineProvider {
+    /// At most this many minute entries in one timeline (an hour), so a timeline stays small.
+    static let maxEntries = 60
+
     func placeholder(in context: Context) -> NextEntry {
-        NextEntry(date: Date(), kind: .commute, target: Date().addingTimeInterval(240), title: "Next train")
+        NextEntry(date: Date(), kind: .trip, target: Date().addingTimeInterval(240), title: "Next train")
     }
 
     func getSnapshot(in context: Context, completion: @escaping (NextEntry) -> Void) {
@@ -85,46 +110,65 @@ struct NextProvider: TimelineProvider {
         completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(live ? 5 * 60 : 15 * 60))))
     }
 
-    /// One entry per service from what the watch keeps: each starts when the one before it leaves.
+    /// Minute entries counting down to each service in turn: every whole minute before `target`, from `start`.
+    static func minuteEntries(from start: Date, to target: Date, make: (Date) -> NextEntry, limit: Int) -> [NextEntry] {
+        var out: [NextEntry] = []
+        var at = start
+        while at < target, out.count < limit {
+            out.append(make(at))
+            // The next moment the whole minutes to go change.
+            let left = target.timeIntervalSince(at)
+            let step = left.truncatingRemainder(dividingBy: 60)
+            at = at.addingTimeInterval(step > 0.5 ? step : 60)
+        }
+        return out
+    }
+
     static func entries(now: Date, context: WatchContext?, snapshot: WatchSnapshot) -> [NextEntry] {
         guard let c = context else {
             return [NextEntry(date: now, kind: .empty, title: "Open Transport", detail: "on your iPhone")]
         }
         if let l = c.live, l.isActive(now: now) {
             let ride = l.phase == "ride"
-            let next: String? = ride ? l.nextStop.map { "Next: \(WText.short($0))" } : "Off at \(WText.short(l.getOffAt))"
-            let entry = NextEntry(date: now, kind: .live, line: l.line, colorHex: l.lineColorHex, target: l.target,
-                                  platform: ride ? nil : l.platform,
-                                  title: ride ? "Off at \(WText.short(l.getOffAt))" : "Your trip",
-                                  detail: l.warning ?? next,
-                                  relevance: TimelineEntryRelevance(score: 100))
-            var out = [entry]
-            if l.target > now {
-                out.append(NextEntry(date: l.target, kind: .live, line: l.line, colorHex: l.lineColorHex,
-                                     title: ride ? "Off at \(WText.short(l.getOffAt))" : "Your trip",
-                                     detail: ride ? "Get off now" : "Leaving now",
+            let title = ride ? "Off at \(WText.short(l.getOffAt))" : "Your trip"
+            let detail: String? = l.warning ?? (ride ? l.nextStop.map { "Next: \(WText.short($0))" } : "Off at \(WText.short(l.getOffAt))")
+            var out = minuteEntries(from: now, to: l.target, make: { d in
+                NextEntry(date: d, kind: .live, line: l.line, colorHex: l.lineColorHex, target: l.target,
+                          platform: ride ? nil : l.platform, status: l.isRisk ? .late : .onTime, title: title, detail: detail,
+                          relevance: TimelineEntryRelevance(score: 100))
+            }, limit: maxEntries)
+            if out.isEmpty || l.target > now {
+                out.append(NextEntry(date: max(now, l.target), kind: .live, line: l.line, colorHex: l.lineColorHex,
+                                     title: title, detail: ride ? "Get off now" : "Leaving now",
                                      relevance: TimelineEntryRelevance(score: 100)))
             }
             return out
         }
-        guard let m = c.commute(now: now) else {
-            return [NextEntry(date: now, kind: .empty, title: c.home == nil || c.work == nil ? "Set Home and Work" : "Change Home or Work", detail: "on your iPhone")]
+        guard let card = c.cards(now: now).first else {
+            return [NextEntry(date: now, kind: .empty, title: "Save a trip", detail: "on your iPhone")]
         }
-        let services = snapshot.commuteKey == m.key ? WatchSnapshot.upcoming(snapshot.commute, now: now).filter { !$0.cancelled } : []
-        let stale = snapshot.commuteAt.map { now.timeIntervalSince($0) > 5 * 60 } ?? true
-        let route = "\(WText.short(m.from.name)) to \(WText.short(m.to.name))"
+        let found = snapshot.services(for: card, context: c, now: now)
+        let services = found.list.filter { !$0.cancelled }
+        let stale = found.fromPhone || (found.at.map { now.timeIntervalSince($0) > 5 * 60 } ?? true)
+        let title = card.isCommute ? card.name : card.title
         var out: [NextEntry] = []
         var start = now
-        for (i, s) in services.enumerated() where s.time > now {
-            var detail = route
+        for (i, s) in services.enumerated() where s.time > start {
+            var detail: String? = card.isCommute ? card.title : nil
             if i + 1 < services.count { detail = "then \(Clock.hhmm(services[i + 1].time))" }
-            if stale, let at = snapshot.commuteAt { detail = "Updated \(Clock.hhmm(at))" }
-            let soon = s.time.timeIntervalSince(start) < 20 * 60
-            out.append(NextEntry(date: start, kind: .commute, line: s.line, colorHex: s.colorHex, target: s.time, platform: s.platform,
-                                 title: m.title, detail: detail, relevance: TimelineEntryRelevance(score: soon ? 50 : 10)))
+            if stale, let at = found.at { detail = "Updated \(Clock.hhmm(at))" }
+            let left = maxEntries - out.count
+            if left <= 0 { break }
+            out += minuteEntries(from: start, to: s.time, make: { d in
+                NextEntry(date: d, kind: .trip, line: s.line, colorHex: s.colorHex, target: s.time, platform: s.platform,
+                          status: s.status, title: title, detail: detail,
+                          relevance: TimelineEntryRelevance(score: s.time.timeIntervalSince(d) < 20 * 60 ? 50 : 10))
+            }, limit: left)
             start = s.time
         }
-        out.append(NextEntry(date: start, kind: .empty, title: m.title, detail: "Open Transport for times"))
+        if out.count < maxEntries {
+            out.append(NextEntry(date: start, kind: .empty, title: title, detail: "Open Transport for times"))
+        }
         return out
     }
 }
@@ -138,7 +182,7 @@ struct NextView: View {
         Group {
             switch family {
             case .accessoryCircular: circular
-            case .accessoryInline: entry.countdownText
+            case .accessoryInline: Text(entry.countdownText)
             case .accessoryCorner: corner
             default: rectangular
             }
@@ -147,7 +191,7 @@ struct NextView: View {
         .accessibilityLabel(entry.spoken)
     }
 
-    private var tint: Color { Color(hexString: entry.colorHex).opacity(dimmed ? 0.7 : 1) }
+    private var tint: Color { entry.tint.opacity(dimmed ? 0.7 : 1) }
 
     private var rectangular: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -155,7 +199,7 @@ struct NextView: View {
                 Text(entry.title).font(.headline).lineLimit(1)
                 if let d = entry.detail { Text(d).font(.caption2).foregroundStyle(.secondary).lineLimit(2) }
             } else {
-                entry.countdownText
+                Text(entry.countdownText)
                     .font(.headline)
                     .foregroundStyle(tint)
                     .widgetAccentable()
@@ -170,14 +214,14 @@ struct NextView: View {
 
     private var circular: some View {
         ZStack {
-            if let r = entry.ringRange, let t = entry.target {
-                ProgressView(timerInterval: r, countsDown: true, label: { EmptyView() }, currentValueLabel: { EmptyView() })
+            if entry.target != nil {
+                ProgressView(value: entry.ring)
                     .progressViewStyle(.circular)
                     .tint(tint)
                     .widgetAccentable()
                 VStack(spacing: 0) {
                     Text(entry.line).font(.system(size: 12, weight: .bold, design: .rounded))
-                    Text(t, style: .timer)
+                    Text(entry.minutesText)
                         .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
                         .multilineTextAlignment(.center)
                         .minimumScaleFactor(0.5)
@@ -192,8 +236,8 @@ struct NextView: View {
 
     private var corner: some View {
         Group {
-            if let t = entry.target {
-                Text(t, style: .timer)
+            if entry.target != nil {
+                Text(entry.minutesText)
                     .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
                     .widgetAccentable()
                     .widgetLabel { Text([entry.line, entry.plat].compactMap { $0 }.joined(separator: " ")) }

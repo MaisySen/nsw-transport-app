@@ -47,6 +47,9 @@ iOS 27.1 is the release iPhone Duo (the foldable, on sale 23 Oct 2026) runs. App
 1. Liquid Glass app icon (Icon Composer file).
 2. Widget line badges readable in accented and vibrant modes.
 3. Nothing else iOS 27 needs: SDK, scene life cycle, launch screen and deployment target (iOS 17) are already right in 206.
+4. Apple Watch app redesign (docs/WATCH.md): saved trips as cards with a big countdown, trip and service screens,
+   Swap direction, Refresh, complications in whole minutes from the first trip. The phone side (context version 2) is
+   on this branch too, so native-207 must be merged into main before the next over the air update after 207 ships.
 
 ## Sources
 

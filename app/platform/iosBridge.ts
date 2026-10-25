@@ -20,7 +20,7 @@ import type { ServiceResp, WatchLeg } from '@/lib/types';
 import { boardTime, missedConn, missedPlanLegs, pickNextOption, sydHHMM } from '@/lib/smart';
 import { cardFor, shortName, staleAt, type CardAlt, type CardOpts } from './tripCard';
 import { homeWorkFor, liveCardFor, type HomeWork, type LiveCardShare, type SharedStop } from './widgetShare';
-import { watchContextFor, watchContextJSON } from './watchShare';
+import { shouldTakeTimes, tripKeyOfCache, watchContextFor, watchContextJSON, watchNextFor, watchTripsFor, type HomeLists, type WatchTimes } from './watchShare';
 import { apiBase } from '@/lib/server';
 import { endActivityToken, sendActivityToken, sendDeviceToken } from './livePush';
 import { pendingOpenURL } from './intentInboxCore';
@@ -159,9 +159,37 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     dropToken();
   }
 
-  // Apple Watch (builds with the watch app): Home, Work, starred stops and the trip card, sent when they change.
-  const watchData: { profile: string | null; hw: HomeWork; starred: SharedStop[]; live: LiveCardShare | null } =
-    { profile: null, hw: homeWorkFor(null), starred: [], live: null };
+  // Apple Watch (builds with the watch app): Home, Work, starred stops, the trip card, the trips on Home and the
+  // last times Home loaded for them, sent when they change.
+  const watchData: { profile: string | null; hw: HomeWork; starred: SharedStop[]; live: LiveCardShare | null; st: any; lists: HomeLists; times: Record<string, WatchTimes> } =
+    { profile: null, hw: homeWorkFor(null), starred: [], live: null, st: null, lists: null, times: {} };
+  const HOME_LISTS = 'offline:home:lists';
+  // A kept answer Home or the trip screen wrote: the server lists of trips, or one trip's times.
+  const onKept = (key: string, value: string | null) => {
+    if (!iosNative.hasWatch()) return;
+    try {
+      const e = value ? JSON.parse(value) : null;
+      if (key === HOME_LISTS) { watchData.lists = e && e.data ? e.data : null; shareWatch(); return; }
+      const k = tripKeyOfCache(key);
+      if (!k || !e || !e.data) return;
+      const now = Date.now();
+      const next = watchNextFor(e.data, now);
+      if (!shouldTakeTimes(watchData.times[k], next, now)) return;
+      watchData.times = { ...watchData.times, [k]: { at: typeof e.at === 'number' ? e.at : now, next } };
+      shareWatch();
+    } catch {}
+  };
+  // At launch: the kept lists and trip times from the last run, so the watch gets its trips without Home loading.
+  async function loadKept() {
+    if (!iosNative.hasWatch()) return;
+    try {
+      const raw = await AsyncStorage.getItem('offline:index');
+      const keys: string[] = (raw ? JSON.parse(raw) : []).filter((k: unknown) => typeof k === 'string' && (k === HOME_LISTS || tripKeyOfCache(k)));
+      if (!keys.includes(HOME_LISTS)) keys.push(HOME_LISTS);
+      const pairs = await AsyncStorage.multiGet(keys);
+      for (const [k, v] of pairs) if (v) onKept(k, v);
+    } catch {}
+  }
   let watchJSON = '';
   let watchTimer: ReturnType<typeof setTimeout> | null = null;
   // Sent at most once every 2 seconds, and only when the context differs from the last one sent.
@@ -169,7 +197,9 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     if (!iosNative.hasWatch() || watchTimer) return;
     watchTimer = setTimeout(() => {
       watchTimer = null;
-      const c = watchContextFor(apiBase(), watchData.profile, watchData.hw, watchData.starred, watchData.live);
+      let trips: ReturnType<typeof watchTripsFor> = [];
+      try { trips = watchTripsFor(watchData.st, watchData.lists); } catch {}
+      const c = watchContextFor(apiBase(), watchData.profile, watchData.hw, watchData.starred, watchData.live, trips, watchData.times);
       if (!c) return;
       const j = watchContextJSON(c);
       if (j === watchJSON) return;
@@ -190,11 +220,11 @@ if (Platform.OS === 'ios' && iosNative.available()) {
         iosNative.setJSON('starredStops', starred);
         if (st?.fareType) iosNative.setString('tb_fare', String(st.fareType));
         iosNative.setJSON('homeWork', homeWorkFor(st));
-        watchData.starred = starred; watchData.hw = homeWorkFor(st);
+        watchData.starred = starred; watchData.hw = homeWorkFor(st); watchData.st = st;
       } else {
         iosNative.setJSON('starredStops', []);
         iosNative.setJSON('homeWork', homeWorkFor(null));
-        watchData.starred = []; watchData.hw = homeWorkFor(null);
+        watchData.starred = []; watchData.hw = homeWorkFor(null); watchData.st = null;
       }
       watchData.profile = profile || null;
       iosNative.reloadWidgets();
@@ -206,7 +236,9 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   const WATCH = new Set(['liveTrip', 'profile', 'store', 'apiBase']);
   let widgetTimer: ReturnType<typeof setTimeout> | null = null;
   const onWrite = (key: string, value: string | null) => {
-    if (key === 'liveTrip') {
+    if (key === HOME_LISTS || key.startsWith('offline:trip:')) {
+      onKept(key, value);
+    } else if (key === 'liveTrip') {
       let g: LiveTrip | null = null;
       try { g = value ? JSON.parse(value) : null; } catch {}
       onTrip(g);
@@ -219,7 +251,8 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   const removeItem = S.removeItem.bind(AsyncStorage);
   const multiRemove = S.multiRemove?.bind(AsyncStorage);
   const clear = S.clear?.bind(AsyncStorage);
-  S.setItem = async (k: string, v: string, cb?: any) => { const r = await setItem(k, v, cb); if (WATCH.has(k)) onWrite(k, v); return r; };
+  const followed = (k: string) => WATCH.has(k) || k === HOME_LISTS || (typeof k === 'string' && k.startsWith('offline:trip:'));
+  S.setItem = async (k: string, v: string, cb?: any) => { const r = await setItem(k, v, cb); if (followed(k)) onWrite(k, v); return r; };
   S.removeItem = async (k: string, cb?: any) => { const r = await removeItem(k, cb); if (WATCH.has(k)) onWrite(k, null); return r; };
   if (multiRemove) S.multiRemove = async (ks: string[], cb?: any) => { const r = await multiRemove(ks, cb); ks.filter((k) => WATCH.has(k)).forEach((k) => onWrite(k, null)); return r; };
   if (clear) S.clear = async (cb?: any) => { const r = await clear(cb); ['liveTrip', 'store'].forEach((k) => onWrite(k, null)); return r; };
@@ -238,6 +271,7 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     else if (!trip && ids.length) await iosNative.endTrip(null, null, 0);
     if (!trip) iosNative.setJSON('liveCard', null);
     shareWidgetData();
+    loadKept();
     refreshCard();
     sendDeviceToken();
   }

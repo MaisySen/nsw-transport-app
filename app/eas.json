@@ -37,6 +37,10 @@
       "env": {
         "IOS_APP_GROUP": "1"
       }
+    },
+    "watchshots": {
+      "extends": "compilecheck",
+      "config": "watch-shots.yml"
     }
   },
   "submit": {

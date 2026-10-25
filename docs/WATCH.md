@@ -2,34 +2,87 @@
 
 Branch `watch-app`, merged into the next iPhone build. watchOS 10 and later, companion to the iPhone app.
 
-## What it shows
+## What it shows (build 207)
 
-* Trip in progress (from the iPhone trip card): line, "Leaves in 4 min" and platform while you wait, "Get off at Redfern" with minutes while on board, next stop, and the warning on the card (a change at risk shows in red). The watch taps the wrist about a minute before the train gets to your stop, when the watch app is open (best effort; the iPhone "Wake me before my stop" alarm also reaches the watch when the phone is locked).
-* Commute: Home to Work before 12pm, Work to Home after, swapped when the commute card on the phone was swapped for this half day (same rule as the phone widget). The next 3 trips with line, minutes, platform and a Live or Timetable mark.
-* Starred stops (up to 8, in the app's order) with the next departure; tap one for the next 3.
-* "Updated 9:41am" under the times; "Offline. Updated 9:41am" when the last refresh could not reach the server. Times already gone are left out.
-* Empty states say what to do: open Transport on the iPhone once, or set Home and Work.
+The app opens straight to your trips, one card each, in a list you scroll with the Digital Crown (the next card peeks
+at the bottom), modelled on how TripView lays out a trip on the wrist:
 
-Complications and Smart Stack (watch face editor or Smart Stack, "Transport", "Next train"):
+* Order: Home to Work before 12pm and Work to Home after (swapped when the commute card on the phone was swapped for
+  this half day), then the trips under Your trips on the iPhone in the same order (active commutes, trips saved on the
+  phone, saved trips, then your own drag order). Nearest first is not done: it would need location on the watch.
+* Each card: a bar on the left in the line colour (one stripe per line when a trip uses several), the route ("Kings
+  Cross to Strathfield", two lines allowed), a big countdown in whole minutes ("Now" under a minute, "1 min", "2 mins",
+  "1 h 20 min"), the platform ("Platform 1"), the lines ("T4, T1 Lines", "Route 311") and the next two ("Next: 16,
+  18 mins"). The countdown is green on time, amber 2 to 4 minutes late and red 5 or more late or cancelled, from the
+  live delay; timetable times are green. A saved trip's own name shows small above the route when it says more.
+* Tap a card: the trip screen with the card on top and the next 6 services (time, countdown, lines, platform, "On
+  time", "3 min late", "Timetable" or "Cancelled"). Swap direction (bottom left) shows the same trip the other way at
+  once (a trip with changes is reversed leg by leg); Refresh (bottom right) loads again. Pull down to refresh too.
+* Tap a service: when it leaves and arrives, how late, and each leg with its line, platforms and times.
+* Swipe a card left for Swap direction. VoiceOver reads each card in one go ("Kings Cross to Strathfield, next train
+  in 2 minutes, platform 1, T4 and T1 lines, then 16 and 18 minutes") and offers Swap direction as an action.
+* The trip in progress from the iPhone stays on top while it runs; starred stops are under the trips (tap one for
+  its next 3). The wrist tap before your stop is unchanged.
+* The end of the list has Refresh with "Updated 2:41pm", "No connection. Updated 2:41pm" or "No connection. Times
+  from your iPhone."
+* Empty: "Save a trip on your iPhone to see it here." When the phone has never sent anything it adds "Then open
+  Transport on your iPhone once." and a Try Again button that asks the phone again.
+* Buttons that act in place (Refresh, Swap direction, Try Again) give a light click; moving between screens does not.
 
-* Rectangular: "T1 4:12, Plat 2" counting down, what it is for ("To work", "Your trip", "Off at Redfern") and the next service time, the get off stop, or "Updated h:mm" when the kept times are over 5 minutes old.
-* Circular: a ring that empties over the last 15 minutes, with the line and the countdown.
-* Inline: "T1 4:12, Plat 2".
-* Corner: the countdown with the line and platform.
+Complications and Smart Stack (watch face editor or Smart Stack, "Transport", "Next train"): the trip in progress,
+else the first card above (Home to Work or back, else your first saved trip):
+
+* Rectangular: "T1 2 min, Plat 2", what it is for ("To work", the route, "Off at Redfern") and the next service
+  time or "Updated h:mm" when the kept times are over 5 minutes old or came from the phone.
+* Circular: the line over the minutes, with a ring that empties over the last 15 minutes.
+* Inline: "T1 2 min, Plat 2". Corner: the minutes, with the line and platform.
+* The countdown is amber or red when the service runs late, like the app.
+
+## Why the 206 watch app felt static
+
+Bidur's words on 25 Oct with build 206 on his watch: "It's interactive. Our one isnt." In 206 the only things you could
+tap were starred stops. The commute rows were plain text, saved trips never reached the watch (the phone sent only
+Home, Work and starred stops), there was no refresh button or pull to refresh, and loading happened on a fixed minute
+timer. Without Home and Work set the screen was one line of text, "Set Home and Work in Transport on your iPhone".
+Build 207 sends every saved trip and makes every card, service and button do something.
 
 ## Battery
 
-* The complications never load anything. They draw the times the watch app last loaded and the trip card from the phone, with system countdowns (`Text` timer style, `ProgressView(timerInterval:)`), so a timeline has one entry per service, not one a minute. They reload on their own at most every 15 minutes (every 5 while a trip runs), and the watch app asks for a reload only when the service or trip they show changes.
-* The watch app loads live times only while it is on screen (on open, then at most once a minute), with 8 second timeouts; the kept times show when a load fails. No background refresh.
-* The phone sends the context at most every 2 seconds and only when it changed; the trip card goes without its progress fraction and with its load time to the minute, so a running trip does not resend every few seconds.
+* The complications never load anything and never count seconds. They draw the times the watch app last loaded (or
+  the times the phone sent) and the trip card from the phone, as a timeline worked out in advance with one entry per
+  minute for the next hour at most. They reload on their own at most every 15 minutes (every 5 while a trip runs),
+  and the watch app asks for a reload only when the service or trip they show changes.
+* The watch app loads live times only while it is on screen and in front: when it opens and when the wrist comes up
+  (scene phase active), then every 30 seconds, all trips and starred stops at the same time, with 8 second timeouts.
+  The loop stops as soon as the wrist goes down or the app leaves the screen. Countdowns move every 10 seconds while
+  on screen. No background refresh, no location on the watch.
+* The last times are kept, so opening shows them at once while the new ones load. With no signal the cards show the
+  times the phone last loaded (sent with the context, marked "From iPhone").
+* The phone sends the context at most every 2 seconds and only when it changed. A trip's phone times are replaced at
+  most every 5 minutes (sooner when there were none or they have all gone), so Home refreshing every 15 seconds does
+  not resend. The trip card goes without its progress fraction and with its load time to the minute.
 * One wrist tap per get off stop per trip, remembered across launches.
-* When the times the app loaded have all gone, the complications say "Open Transport for times"; the app loads 6 trips ahead for the commute so that is rarely before the next time it is opened.
 
 ## Data path
 
-* iPhone: `platform/iosBridge.ts` builds the context with `platform/watchShare.ts` (server address, profile, Home, Work, the commute swap, starred stops, trip card) whenever the widget data or the trip card changes, and calls `sendWatchContext` in `modules/transport-ios` (`WatchLink.swift`, WatchConnectivity application context, plus a direct message when the watch app is open). Builds without the function (201 to 205) skip it, so an update from main changes nothing there.
-* Watch: `targets/watch` reads the context, loads `/api/trip` (commute) and `/api/departures` (starred stops) from the server the phone named while it is on screen, and keeps the context and the last times in a keychain group shared with the complications (`targets/watch-widget`).
-* `WatchCore.swift` is the same file in both watch targets (test/watchshare.test.mjs checks it, and that the Swift fields match what the phone sends).
+* iPhone: `platform/iosBridge.ts` builds the context with `platform/watchShare.ts` whenever the store, the widget
+  data, the trip card or a kept answer changes, and calls `sendWatchContext` in `modules/transport-ios`
+  (`WatchLink.swift`, WatchConnectivity application context, plus a direct message when the watch app is open).
+  Builds without the function (201 to 205) skip it.
+* Context version 2 (build 207 watch app): `trips` (from `watchTripsFor`: the server lists Home keeps as
+  `offline:home:lists` and the store's trips and order; each trip has its key, name, ends and, for a trip with
+  changes, its legs as `/api/plan` takes them) and `times` (from `watchNextFor`: the next 3 services of the answers
+  Home and the trip screen keep as `offline:trip:<key>...`). The build 206 watch app reads the version 1 fields and
+  ignores these.
+* Watch: `targets/watch` reads the context, loads `/api/trip` (or `/api/plan` for a trip with changes, 7 journeys)
+  for each card and `/api/departures` for starred stops from the server the phone named, and keeps the context and
+  the last times in a keychain group shared with the complications (`targets/watch-widget`).
+* `WatchCore.swift` is the same file in both watch targets (test/watchshare.test.mjs checks it, that the Swift fields
+  match what the phone sends, that there is no seconds timer in the complications and no sample trips in shipping
+  code).
+* Screenshots: the `watchshots` EAS profile (`.eas/build/watch-shots.yml`) runs the simulator compile check, then
+  `tools/watch-shots.sh` installs the watch app on watch simulators, writes a context with three real trips where the
+  app reads it, lets the app load live times and takes screenshots (list, trip, service), uploaded as build artifacts.
 
 ## Signing
 
@@ -43,4 +96,4 @@ Complications and Smart Stack (watch face editor or Smart Stack, "Transport", "N
 
 ## Not checked on a real watch
 
-Pairing, WatchConnectivity delivery, the keychain group at run time, complications on a face and in the Smart Stack, and the wrist tap. Compiled in EAS simulator builds only (iPhone app with both watch targets, watchOS simulator SDK).
+Pairing, WatchConnectivity delivery (now with saved trips), the keychain group at run time, complications on a face and in the Smart Stack, the wrist tap, swipe actions and the bottom toolbar on a real watch, haptics, and how the cards read at each Dynamic Type size. Compiled in EAS simulator builds only (iPhone app with both watch targets, watchOS simulator SDK).
