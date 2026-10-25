@@ -71,9 +71,22 @@ What it does, in order: `node tools/schema.mjs --check`, all tests, dash check, 
 
 New tables need no new migration on the live database: the worker creates its tables on first use (`CREATE TABLE IF NOT EXISTS`), and `migrations/0001_init.sql` (regenerated with `node tools/schema.mjs`) is only for a fresh database. Example: `late_agg` (usual lateness) arrived on 25 Oct and was made by the first minute tick.
 
-**Usual lateness (`/api/usual`).** The minute tick folds one past day of `obs` into `late_agg` per tick (28 day backfill on the first runs, then yesterday from 1am), with the claim in `meta` key `late_day`. Free plan only: D1 and the Cron Trigger, no R2, no new binding. It needs live times in `obs`, which the new host records only for departures it serves, so answers fill in as the app uses this host (after the api_base switch). `obs` itself has no pruning yet; watch its size in the D1 dashboard.
+**Usual lateness (`/api/usual`).** The minute tick folds one past day of `obs` into `late_agg` per tick (28 day backfill on the first runs, then yesterday from 1am), with the claim in `meta` key `late_day`. Free plan only: D1 and the Cron Trigger, no R2, no new binding. It needs live times in `obs`, which the new host records only for departures it serves, so answers fill in as the app uses this host (after the api_base switch).
 
 Deploy log: 25 Oct 2026, 4:31 PM, from main cd4b8e7 (usual lateness, `/api/usual`). Checks above all passed.
+
+**Retention and D1 size (from 25 Oct 2026, 5:27 PM).** The hourly housekeeping (minute tick, at minute 7 of each Sydney hour) deletes, besides the rows listed in the privacy policy:
+
+* `obs` (raw recorded live times) older than `OBS_KEEP_DAYS` = 45 Sydney days. What reads `obs`: reliability (`REL_DAYS`, 42 days), predictions (28 days), the usual lateness fold (one day, the day after; `late_agg` keeps counts only) and the admin `/api/obs` view. At most `OBS_PRUNE_MAX` = 5000 rows per run, so a backlog is spread over several hours.
+* `live_activities` rows that ended, expired (10 min after `expires`) or are over 24 hours old; `POST /api/live-activity/end` deletes the row at once.
+* `apns_devices` rows the app has not sent for 30 days (it sends the token each time it opens).
+* `expo_tokens` and `push_subs` with no working push and no new sign up for 30 days, unless that install still has something that pushes (a live or recently changed watch, an active morning check, a lift alert, an open car park watch or a last way home reminder).
+
+Free plan budget (D1 Free: 5 million rows read and 100,000 rows written a day, 500 MB per database). Measured on 25 Oct: the database was 3.47 MB with 16,698 `obs` rows from 23 to 25 Oct (about 10,000 a day); D1 analytics showed 53,205 rows written and 257,458 read on 24 Oct (UTC), the first full day. A delete costs one row written per row and about four rows read (measured on a scratch copy of the table: 98 rows, 98 written, 392 read). So once `obs` reaches 45 days, pruning adds about 10,000 rows written and 40,000 read a day, and the table levels off at about 450,000 rows (an estimate from the bytes per row today: under 100 MB). If daily writes come near 100,000, lower `OBS_KEEP_DAYS` no further than `REL_DAYS` + 1, or record fewer stops in the sampler.
+
+To read the sizes: `GET /accounts/$CF_ACCOUNT_ID/d1/database` (`file_size`), and `SELECT day, COUNT(*) FROM obs GROUP BY day` through `POST /accounts/$CF_ACCOUNT_ID/d1/database/<uuid>/query` (D1 has no `dbstat`, so sizes per table are not available; count rows instead). Daily reads and writes: the GraphQL dataset `d1AnalyticsAdaptiveGroups` (`rowsRead`, `rowsWritten`).
+
+Deploy log: 25 Oct 2026, 5:27 PM, from main c5f81f5 (Delete all my data for push tokens, token and `obs` clean up), Worker version 0eaaf004-496f-49f3-9e57-480fa7f046bf. Checks above all passed, plus `POST /api/live-activity/forget` 200 (400 without a device).
 
 **APK download (optional).** R2 must be turned on in the account first (R2, Purchase R2 Plan; the free allowance covers this).
 

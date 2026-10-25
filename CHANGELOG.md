@@ -4,6 +4,17 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Delete all my data now really deletes everything, and the server tidies up after itself (25 Oct, 5:28 PM)
+* Delete all my data (More) also deletes the iPhone Lock Screen trip card and the phone's notification token from the server, straight away. Before, these two stayed behind. Works now on iPhone builds 205 and 206 after the update (close and reopen the app twice); earlier builds never sent them.
+* After Delete all my data the iPhone does not send its notification token again until you turn alerts back on.
+* The server deletes a trip card's token when the trip ends, and never keeps one longer than 24 hours. A phone's notification token the app has not sent for 30 days is deleted. Expo and web notification tokens that have not worked for 30 days are deleted when nothing you set up could still send an alert.
+* The server keeps recorded live times for 45 days (what Reliability and predictions read) and deletes older ones every hour, so its database stays small on the free plan.
+* Privacy policy on transportsydney.app updated to match.
+* Update group a8766080 (server version 0eaaf004, Pages ce0e84d3). Roll back the app to edf0b9e8 (the 5:25 PM update): `npx eas-cli update:republish --group edf0b9e8-1e1c-4ac1-8e7a-67ab8a0a03a6 --destination-branch production --message "Roll back" --non-interactive`. Roll back the server: `npx wrangler@4 rollback` in `backend/`.
+
+### App Store Connect text (25 Oct, 5:30 PM)
+* The en-AU description and promotional text (store/apple/listing.md) and the Notes for Review (docs/REVIEW-NOTES.md) were written to App Store Connect, version 1.0.0, through the API and read back. Nothing was submitted; build, price, availability and everything else were left as they were.
+
 ### Plan B on Home, Last way home on your current build, weekend trackwork now (over the air update for iPhone and Android, 25 Oct, 5:25 PM)
 * Plan B on Home: when the next service of a trip is cancelled, on a suspended line, will miss a change or uses replacement buses, a line under the trip says so and the best other way: "Plan B: T1 suspended. Try the 8:04am M1 from Epping, arrives 8:41am." Tap for the trip and its Plan B card. Works now.
 * Trackwork counts for Plan B: a trip with replacement buses gets a way without them when one arrives no more than 10 minutes later; otherwise the trip screen says the buses are still the quickest way. Works now.
