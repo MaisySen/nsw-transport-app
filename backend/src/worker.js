@@ -352,23 +352,33 @@ function readConsistCar(pb) {
   }
   return c;
 }
+/** The carriages of a vehicle in order from the front: the standard field when sent, else the TfNSW consist. */
+function carsOf(vp) {
+  if (!vp) return [];
+  if (vp._cars) return vp._cars;
+  const src = vp.carriages && vp.carriages.length ? vp.carriages : vp.consist || [];
+  // Metro sends position 0 for every car, in order: then the order sent is the order.
+  const allSeq = src.length && src.every((c) => c.seq > 0);
+  vp._cars = src.map((c, i) => ({ seq: allSeq ? c.seq : i + 1, status: c.status }));
+  return vp._cars;
+}
 /**
- * Where the train is quieter, from live carriage occupancy: "front", "middle" or "back", only when that third of the
- * train is at least one level emptier than the fullest third and the train has some crowding (standing room or
- * fuller somewhere). Null when there is no carriage data or nothing worth saying.
+ * Where the train is quieter, from live carriage occupancy: "front", "middle", "back" or "ends", only when that part
+ * is at least one level emptier than the fullest third and some of the train has only few seats or less. Null when
+ * there is no carriage data or nothing worth saying.
  */
 function quietHint(cars) {
   const ok = (cars || []).filter((c) => c && c.seq != null && c.status != null && c.status <= 6).sort((a, b) => a.seq - b.seq);
   if (ok.length < 3) return null;
   const lvl = (s) => (OCC_GTFS[s] || { level: 0 }).level;
-  const n = ok.length, parts = { front: ok.slice(0, Math.ceil(n / 3)), middle: ok.slice(Math.ceil(n / 3), n - Math.ceil(n / 3)), back: ok.slice(n - Math.ceil(n / 3)) };
+  const n = ok.length, k = Math.ceil(n / 3);
+  const parts = { front: ok.slice(0, k), middle: ok.slice(k, n - k), back: ok.slice(n - k) };
   const avg = (xs) => (xs.length ? xs.reduce((s, c) => s + lvl(c.status), 0) / xs.length : null);
-  const scores = Object.entries(parts).map(([k, xs]) => [k, avg(xs)]).filter(([, v]) => v != null);
-  const max = Math.max(...scores.map(([, v]) => v));
-  if (max < 3) return null;
-  scores.sort((a, b) => a[1] - b[1]);
-  const [where, low] = scores[0];
-  if (max - low < 1) return null;
+  const sc = Object.fromEntries(Object.entries(parts).map(([w, xs]) => [w, avg(xs)]).filter(([, v]) => v != null));
+  const vals = Object.values(sc), max = Math.max(...vals), min = Math.min(...vals);
+  if (max < 2 || max - min < 1) return null;
+  if (sc.middle === max && sc.front != null && sc.back != null && Math.abs(sc.front - sc.back) < 0.5) return { where: "ends", text: "Quieter at either end" };
+  const where = ["front", "back", "middle"].find((w) => sc[w] === min);
   return { where, text: `Quieter at the ${where}` };
 }
 
@@ -567,9 +577,8 @@ function vehicleOf(vp) {
     stopSeq: vp.stopSeq || null, stopId: vp.stopId || null, status: vp.status != null ? vp.status : null,
     occupancy: vp.occupancy != null ? OCC_GTFS[vp.occupancy] || null : null,
     label: (vp.vehicle && (vp.vehicle.label || null)) || null,
-    ...(vp.carriages && vp.carriages.length ? { cars: vp.carriages.length } : {}),
-    ...(vp.consist && vp.consist.length ? { consist: vp.consist.map((c) => ({ seq: c.seq, status: c.status, quiet: !!c.quiet, name: c.name || null })) } : {}),
-    ...(quietHint(vp.carriages) ? { quiet: quietHint(vp.carriages) } : {}),
+    ...(carsOf(vp).length ? { cars: carsOf(vp).length } : {}),
+    ...(quietHint(carsOf(vp)) ? { quiet: quietHint(carsOf(vp)) } : {}),
   };
 }
 

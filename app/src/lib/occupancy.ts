@@ -13,6 +13,8 @@ export const occBusy = (o: Occupancy | undefined) => !!o && Number(o.level) >= 3
 
 /** "Quieter at the back" when live carriage occupancy says so, or null (no carriage data, or crowding is off). */
 export function quietText(v: { quiet?: { where?: string; text?: string } | null } | null | undefined, on = true): string | null {
-  if (!on || !v || !v.quiet || !['front', 'middle', 'back'].includes(String(v.quiet.where))) return null;
-  return `Quieter at the ${v.quiet.where}`;
+  if (!on || !v || !v.quiet) return null;
+  const w = String(v.quiet.where);
+  if (w === 'ends') return 'Quieter at either end';
+  return ['front', 'middle', 'back'].includes(w) ? `Quieter at the ${w}` : null;
 }

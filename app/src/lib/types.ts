@@ -1,7 +1,7 @@
 export type Occupancy = { level: number; text: string } | null;
 export type Vehicle = { lat: number; lon: number; bearing?: number | null; speedKmh?: number | null; ageS?: number; occupancy?: Occupancy; label?: string;
   /** Live carriage occupancy (new server): where the train is emptier, and how many carriages report. */
-  quiet?: { where: 'front' | 'middle' | 'back'; text: string } | null; cars?: number } | null;
+  quiet?: { where: 'front' | 'middle' | 'back' | 'ends'; text: string } | null; cars?: number } | null;
 export type Alert = { id?: string; title: string; url?: string; priority?: string; body?: string; lines?: string[] };
 export type Prediction = { delayMin: number; n: number; days: number; text: string; short: string; basis: string; kind: 'prediction' } | null;
 

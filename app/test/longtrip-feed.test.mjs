@@ -129,6 +129,7 @@ test('quieter carriage hint only from live carriage data', async () => {
   assert.equal(O.quietText({ quiet: { where: 'back', text: 'Quieter at the back' } }), 'Quieter at the back');
   assert.equal(O.quietText({ quiet: { where: 'back' } }, false), null, 'crowding switched off');
   assert.equal(O.quietText({ quiet: { where: 'roof' } }), null);
+  assert.equal(O.quietText({ quiet: { where: 'ends' } }), 'Quieter at either end');
   assert.equal(O.quietText({}), null);
   assert.equal(O.quietText(null), null);
   assert.match(read('src/components/Transit.tsx'), /<QuietChip v=\{d\.vehicle\} \/>/);
