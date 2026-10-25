@@ -4,7 +4,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
-### Leave at a time that has passed shows the trains you missed (over the air update for iPhone and Android, 25 Oct)
+### Leave at a time that has passed shows the trains you missed (over the air update for iPhone and Android, 25 Oct, 7:42 PM, group a76b515a, the same update as the Home entry below)
 Bidur at 7:09 PM, on Kings Cross to Strathfield at 6:27pm with Leave 6:15pm: "I choose to see old trip but app still shows next trains. Not older ones."
 * Cause: the trip screen dropped every service that had left more than 2 minutes ago, whatever time was picked, so the server's 6:18 and 6:24 never showed. Earlier services also stopped half an hour before now. The server was fine: both servers return the services from the time asked, gone ones included (checked live on both).
 * Leave at or Arrive by a past time now lists the services from that time. Gone ones are greyed rows that say "Left 6:21 · 3 min late" (the live time it left at, where known) or "Left 6:18 · Scheduled", and the first service you can still take opens.
@@ -14,7 +14,7 @@ Bidur at 7:09 PM, on Kings Cross to Strathfield at 6:27pm with Leave 6:15pm: "I 
 * Plan B looks only at services you can still take.
 * Not yet seen on a device; checked in the web build with real data (files/trip-past-25oct) and app/test/trippast.test.mjs.
 
-### Home: your commute first, alerts as chips; Ask: long chats open fast, Clear chat (over the air update for iPhone and Android, 25 Oct, evening)
+### Home: your commute first, alerts as chips; Ask: long chats open fast, Clear chat (over the air update for iPhone and Android, 25 Oct, 7:42 PM)
 Bidur at 7:07 PM, with a mockup: "Yes commute should be main element here. Alerts should be minimized until open." and "Ours look too much". Also: "chat history gets slow when loaded. There should be option for clearing it too".
 * Home: the commute card (or Next trip card) is now the first card, right under the title. Above it there is at most one slim bar: "In transit · Central to Strathfield" with the line badge while a trip is live (tap for the live trip), or "Watching · ..." for a single watched trip. A watch of the live trip shows once, in that bar.
 * Notifications under the card: one row of small chips, closed until you tap one, for example "9 trip alerts", "Trackwork this weekend", "T4 Delays" (only lines with a problem), a high priority alert by its first words, and "Watching 2 trips" when more watches are running. A tap opens that chip's full text in place, with links to Transport for NSW's pages or the watched trip; a second tap closes it. They replace the orange alert banner, the Watching now list, "N alerts on your trips", the Trackwork this weekend card and the line status chips above the card. Lines with good service are no longer listed on Home (More > Status of my lines still lists every line). The Thursday trackwork heads up is unchanged.
@@ -23,6 +23,8 @@ Bidur at 7:07 PM, with a mockup: "Yes commute should be main element here. Alert
 * VoiceOver reads the card first, then the chips; each chip is a button whose label is the full alert text and which says whether it is open. Checked in the web build at 390 x 844 with Bidur's commute (Kings Cross to Strathfield, To home) and live data, with a trip in progress, its watch, 9 trip alerts and weekend trackwork all present: the card sits at 192 to 387 px of 844, nothing alert related above it. Screenshots: files/home-commute-hero-25oct/.
 * Ask: opens on the last 30 messages, with Load 30 earlier messages at the top (or scroll up to it). Messages are drawn once and not again on every key press or countdown tick (the cards inside were rebuilt on every change before). Up to 200 messages are kept on the phone (was 40), the oldest dropped. Measured in the web build with 200 messages: opening Ask 1465 ms before, 488 ms after (median of 5); typing 21 characters 1140 ms before, 154 ms after.
 * Clear chat: the trash button at the top right of Ask, and More > Privacy and data > Clear Ask chat, both ask first ("Clear chat?") with the system alert on iPhone and Android. The chat is only kept on the phone; the server keeps no Ask chat (trips searched from Ask count as trip history, which has its own delete in More). Delete all my data also clears the chat on screen.
+* Also carries the trip screen past-times fix (Leave at a past time shows the trains already gone as Left rows), commits 840d470 to bc79e56, and the Earlier services row (16a1504): see the entry above.
+* Group a76b515a (from main 6ee721d; preview group 62ac2636 checked first: manifests on both platforms, runtime 1.0.0, launch asset hashes equal to the built bundles). Roll back to f773ab8e (the 6:40 PM update): `npx eas-cli update:republish --group f773ab8e-7f99-4f06-851b-b5b810a7fd8b --destination-branch production --message "Roll back" --non-interactive`.
 * Not yet seen on a device.
 
 ### Expo access token rotated (25 Oct, 7:06 PM)
