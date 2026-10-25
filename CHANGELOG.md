@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Car parks and holding a departure (over the air, 25 Oct, about 9:55 PM, group a3a6ee75)
+Bidur: "Do everything. Keep building."
+* Car parks: a train station with a Park and Ride car park shows "Car park: N free of M" under its name, with when Transport for NSW read them. Tap for the car park: free spaces, how full, the address and Directions (Apple Maps on iPhone, Google Maps on Android). More > Car parks lists them all, closest first when location is already on, else A to Z. Only real counts: a car park without one says so, and a station without one shows nothing.
+* Holding a departure on a stop screen, the full board or a Home stop card now opens the iPhone menu under the row (Watch or Stop watching, Show stops), the Material 3 menu on Android. It used to start watching at once.
+* Simple mode is unchanged in this update. Roll back to group c39b687d (9:31 PM). Not yet seen on a device.
+
 ### Simple mode, a better voice and a lighter app (over the air, 25 Oct, about 9:31 PM, group c39b687d)
 Bidur at 8:57 PM: "A simple mode in setting... It just show what bus in this stand. What time. Same with train or anything. Like tripviewlite." And about the trip voice: it sounded robotic.
 * Simple mode: More > Simple mode (off by default) opens the app on one screen. Here shows the stop, stand or platform nearest you, with chips to switch (Stand D, Platform 4); with location off, your starred stops and Home and Work. Swipe for To work, To home and the trips saved on this phone: depart and arrive, duration, changes and platform. Each row has the line, destination, scheduled time, on time or late or cancelled, and the minutes to go. Tap for the service or trip, pull to refresh, the gear turns it off. It opens on To work in the morning and To home in the evening. Only the page on view refreshes.
