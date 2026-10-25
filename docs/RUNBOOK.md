@@ -32,7 +32,7 @@ Several workers may edit `src/worker.js`. Always pull `main` and reread the file
 
 Commit the generated station, bus route and stop data under `src/public/stations/` and `src/public/stops/` (rebuild them with `tools/build_stations.py` and `tools/build_stops.py`), so a clean clone passes every test. When a table changes in `src/worker.js`, run `node tools/schema.mjs` and commit `migrations/`. Never commit `.env`, `wrangler.toml` or an export file.
 
-**Rollback:** `npx wrangler@4 rollback` in `backend/` (the previous Worker version), or check out the previous commit of `backend/` and deploy again. For the site, Cloudflare Pages, project `transportsydney`, Deployments, Rollback.
+**Rollback:** `npx wrangler@4 rollback` in `backend/` (the previous Worker version), or check out the previous commit of `backend/` and deploy again. For the site, Cloudflare Pages, project `transportsydney`, Deployments, Rollback, or `POST /accounts/$CF_ACCOUNT_ID/pages/projects/transportsydney/deployments/<id>/rollback`; the deployment ids are in docs/RELEASES.md. The zone caches CSS at the edge for up to 4 hours and the token cannot purge it, so give a changed stylesheet a new file name (the home page uses `site/home.css` for this reason).
 
 **First address, until the switch.** It runs the build from before the move (`node build.mjs site` writes one folder with the secrets filled in). Do not redeploy it unless Bidur asks; `backend/` deployed there keeps its full behaviour for old app builds. Its address is in the credentials email.
 
