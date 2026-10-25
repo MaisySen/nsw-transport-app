@@ -4,6 +4,16 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Trip reminders and how late a route usually is (over the air update for iPhone and Android, 25 Oct, 4:44 PM)
+* Reminders on a saved trip: open it and scroll to Reminders. Add several, each with its own time and days (for example 7:30am on weekdays and 9:00am on Saturday). They ring on your phone with the app closed, and a tap opens the trip with live times.
+* Transport asks to send notifications only when you save your first reminder.
+* Deleting a trip removes its reminders (Undo keeps them).
+* Coming with the move to the new server: "Usually 3 min late on weekday mornings" for a route at your stop, on the stop board (choose a route), on the service screen and on each leg of a trip. It is hidden until then.
+* Group 003790dc. Roll back to 0b1d956d (the 4:34 PM update): `npx eas-cli update:republish --group 0b1d956d-ee83-4f92-81af-2677b2b82f4a --destination-branch production --message "Roll back" --non-interactive`.
+
+### Server: usual lateness (api.transportsydney.app, 25 Oct, 4:31 PM)
+* New `/api/usual` on the new address only, built once a day from the live times the server already records, kept as counts per route, stop, weekday or weekend and part of the day, with no trips, times or devices stored. Deployed from main cd4b8e7; the old address was not touched. Checks after deploy in docs/DEPLOY_CLOUDFLARE.md.
+
 ### A calmer Home (over the air update for iPhone and Android, 25 Oct, 4:34 PM)
 * Your next trip is the big card on top: the countdown, line badges, the platform (for a bus, the stand and stop number), whether it is live, leave and arrive, and the next two times ("Then 12, 19 min"). It is your commute when Home and Work are set, otherwise the first trip in your list.
 * Every other trip is one slim row with its next time. The star, seats, journey time, third service and alert counts moved off the rows; they are all on the trip screen, one tap away.
