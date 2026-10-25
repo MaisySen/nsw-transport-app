@@ -435,6 +435,8 @@ Checked 25 Oct 2026: TrainLink and North Coast bus trip ids in the planner match
 
 ## Long distance trips
 
+Past times on `/api/trip` (checked on both servers 25 Oct, 7:10 PM): with `time` the answer is the planner's list from that time, services that have already left included, on both servers; neither filters out departures before now (only an answer for Now drops services that boarded over a minute ago). A `time` more than 30 min before now with no `date` means tomorrow on both servers (`tomorrow: true`). For an earlier time today the app sends `date` set to today, which only api.transportsydney.app honours (it echoes `date`); the first server ignores `date` and plans tomorrow, so the app never sends those requests there (it asks the new server directly and says "Earlier trips need a newer server" if that fails). No server change was needed.
+
 The Trip Planner takes up to about 30 s for regional trips (Central to Albury or Dubbo). The first server gives up at 12 s (502 "Live data didn't answer"). The app treats a trip as long when a stop id's postcode (its first four digits) is outside Sydney, the Central Coast, Newcastle and the Hunter, the Illawarra, Macarthur and the Blue Mountains, or when the server in use answered 502 or not at all; it then asks `/api/trip?...&long=1` on api.transportsydney.app (45 s timeout, stops only when it answers 404). The server waits up to 35 s for the planner and keeps the answer in the Cache API for 120 s, keyed on from, to, time, arriveBy, count, acc and fare. The app keeps it 120 s too and refreshes the trip screen every 2 minutes for these trips.
 
 ## Feed on watched legs

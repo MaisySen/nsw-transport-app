@@ -4,6 +4,16 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Leave at a time that has passed shows the trains you missed (over the air update for iPhone and Android, 25 Oct)
+Bidur at 7:09 PM, on Kings Cross to Strathfield at 6:27pm with Leave 6:15pm: "I choose to see old trip but app still shows next trains. Not older ones."
+* Cause: the trip screen dropped every service that had left more than 2 minutes ago, whatever time was picked, so the server's 6:18 and 6:24 never showed. Earlier services also stopped half an hour before now. The server was fine: both servers return the services from the time asked, gone ones included (checked live on both).
+* Leave at or Arrive by a past time now lists the services from that time. Gone ones are greyed rows that say "Left 6:21 · 3 min late" (the live time it left at, where known) or "Left 6:18 · Scheduled", and the first service you can still take opens.
+* Pull down for earlier services goes back up to 2 hours before the chosen time (4 hours for Arrive by), into the past. Now is unchanged.
+* A picked time keeps its day: Leave 6:15pm picked at 6:27pm stays today's 6:15pm as the clock moves on (before, after 6:45pm it quietly became tomorrow's 6:15pm).
+* Times up to 30 min ago work on both servers. Older times today go to api.transportsydney.app with today's date (the first server plans them for tomorrow); if it doesn't answer, the screen says "Earlier trips need a newer server, which did not answer just now. Pull down to try again." The first server was not changed or redeployed. A trip with a change stop asks its second part with the date when needed too.
+* Plan B looks only at services you can still take.
+* Not yet seen on a device; checked in the web build with real data (files/trip-past-25oct) and app/test/trippast.test.mjs.
+
 ### Home: your commute first, alerts as chips; Ask: long chats open fast, Clear chat (over the air update for iPhone and Android, 25 Oct, evening)
 Bidur at 7:07 PM, with a mockup: "Yes commute should be main element here. Alerts should be minimized until open." and "Ours look too much". Also: "chat history gets slow when loaded. There should be option for clearing it too".
 * Home: the commute card (or Next trip card) is now the first card, right under the title. Above it there is at most one slim bar: "In transit · Central to Strathfield" with the line badge while a trip is live (tap for the live trip), or "Watching · ..." for a single watched trip. A watch of the live trip shows once, in that bar.
