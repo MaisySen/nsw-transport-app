@@ -7540,9 +7540,20 @@ export default {
       if (!rateOk(request, url.pathname) && !loadOk(request, env)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
       budget.shared++;
     }
-    const out = await flight;
+    const kept = !!hit && !!storedAt && age <= EDGE_KEEP_S * 1000;
+    // With a copy in hand a phone waits at most COPY_WAIT_MS for the new answer: a slow Trip Planner answer keeps
+    // going in the background and is stored for the next poll, and this phone gets the copy (dataAt says how old).
+    let out = null;
+    if (kept) {
+      out = await Promise.race([flight, new Promise((r) => setTimeout(() => r(null), COPY_WAIT_MS))]);
+      if (!out) {
+        if (exec && exec.waitUntil) exec.waitUntil(flight.catch(() => null));
+        budget.staleServed++;
+        return fromCopy(hit, storedAt, "stale");
+      }
+    } else out = await flight;
     // Transport for NSW refused or failed (over its limit, down, slow): the last copy is better than an error.
-    if (out.status >= 500 && hit && storedAt && age <= EDGE_KEEP_S * 1000) {
+    if (out.status >= 500 && kept) {
       budget.staleServed++;
       return fromCopy(hit, storedAt, "stale");
     }
@@ -7553,8 +7564,10 @@ export default {
   },
 };
 
-// Copies are kept this long, for a busy or failed upstream only (see STALE_MAX_MS and the 5xx fallback above).
+// Copies are kept this long, for a busy, slow or failed upstream only (see STALE_MAX_MS, COPY_WAIT_MS and the 5xx
+// fallback above).
 const EDGE_KEEP_S = 120;
+const COPY_WAIT_MS = 700;
 const inFlight = new Map(); // edge key -> Promise<{ status, headers, body }>
 async function answerAndStore(request, env, exec, cache, key) {
   const res = await handleRequest(request, env, exec);

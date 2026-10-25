@@ -141,3 +141,34 @@ test("the per address limit turns a phone away; the load test key is counted the
   const r2 = await W.__default.fetch(new Request("https://t.example/api/departures?stop=219952", { headers: { "cf-connecting-ip": "10.7.5.2", "x-load-key": "" } }), noSecret, ex);
   assert.equal(r2.status, 429, "no secret set: nothing matches");
 });
+
+test("with a copy in hand a slow upstream answer is waited for 700 ms at most, then the copy; the answer is stored for the next poll", async () => {
+  W.budget.calls.length = 0; W.budget.overUntil = 0;
+  const k = "https://t.example/api/departures?stop=219960";
+  putCopy(k, 30000);
+  let open; gate = new Promise((r) => { open = r; });
+  const n0 = waits.length;
+  const t0 = Date.now();
+  const r = await call("/api/departures?stop=219960&refresh=1", "10.7.6.1", L);
+  const took = Date.now() - t0;
+  assert.equal(r.headers.get("x-edge-cache"), "stale");
+  assert.ok(took >= 650 && took < 1500, "waited about 700 ms: " + took);
+  assert.equal((await r.json()).copy, true);
+  assert.ok(waits.length > n0, "the answer keeps going in the background");
+  open(); gate = null;
+  await Promise.all(waits); await new Promise((r) => setTimeout(r, 20)); await Promise.all(waits);
+  const stored = store.get(k);
+  const d = await stored.clone().json();
+  assert.equal(d.copy, undefined, "the new answer replaced the copy");
+  const r2 = await call("/api/departures?stop=219960&refresh=1", "10.7.6.2", L);
+  assert.equal(r2.headers.get("x-edge-cache"), "hit");
+});
+
+test("with no copy a phone waits for the answer however long it takes", async () => {
+  let open; gate = new Promise((r) => { open = r; });
+  setTimeout(() => { open(); gate = null; }, 900);
+  const t0 = Date.now();
+  const r = await call("/api/departures?stop=219970", "10.7.7.1", L);
+  assert.equal(r.headers.get("x-edge-cache"), "miss");
+  assert.ok(Date.now() - t0 >= 850);
+});
