@@ -4,7 +4,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
-### Commute card in Line glow, iPhone menus are the system action sheet (over the air update for iPhone and Android, 25 Oct, evening)
+### Commute card in Line glow, iPhone menus are the system action sheet (over the air update for iPhone and Android, 25 Oct, 8:34 PM, group c9a4913d)
 Bidur at 7:33 PM: "I think we need little shiny or metallic border and main card element here", at 7:43 PM of the + menu: "This looks vibe coded and bad", at 7:44 PM of the dark Home: "Still not distinguished", then "Ok whatever you choose best".
 * The commute card (or Next trip card) is drawn in look B, Line glow: a 2 pt ring that runs between the trip's line colours (T4 blue into T1 orange on Kings Cross to Strathfield, meeting in a light sheen; a one line trip runs from its colour into silver). In dark a glow in those colours sits behind the card and the card is lifted to #232326 above the other cards; in light it is white with a soft shadow. Every other card stays flat, so the commute stands out. The countdown is bigger and heavier in this look (64 pt).
 * With Reduce Transparency or Increase Contrast on (High contrast text on Android) the card has a solid 1.5 pt border in the line colour and no glow. Plain React Native styles: no native module, nothing animates.
@@ -13,7 +13,8 @@ Bidur at 7:33 PM: "I think we need little shiny or metallic border and main card
 * The big countdown uses the normal text colour and turns red only once the service has gone or is cancelled (it was red at 1 min, which read as an error). A late service keeps its orange status line.
 * The Trackwork chip is quiet like the alerts chip: plain text with a small orange icon, no red.
 * The "Home" title hidden behind the tabs ("Hor") was in the web preview only: there expo-router draws the tabs as a floating pill at the top. On iPhone and Android the tabs are at the bottom and the title was never covered. The web header now starts below the pill; the phones are unchanged (standard titles, large titles stay off since the 8:22 AM fix).
-* Commits df6b6d3 (menus, wording, countdown colour, chip, the three looks behind a development switch) and a11e094, 9e02c37, 3af96e4. Checked in the web build at 390 x 844, light and dark, both directions with live data: files/home-commute-hero-25oct/shipB/. Not yet seen on a device.
+* Commits df6b6d3 (menus, wording, countdown colour, chip, the three looks behind a development switch) and 1995ef2 (Line glow), 098661f (web header), 0221030 (Next now, 1 minute). Checked in the web build at 390 x 844, light and dark, both directions with live data: files/home-commute-hero-25oct/shipB/. Not yet seen on a device.
+* Group c9a4913d-b324-434c-9cb7-f4f17c1f53f5 (from main 8656464; iOS 01a17269-7ed0-7401-927e-d4da423e517d, Android 01a17269-7ed0-7d0b-aefa-62f66a596342). Preview group 3848db3b checked first: manifests on both platforms, runtime 1.0.0, launch asset hashes equal to the built bundles; the production manifests serve the same hashes. Roll back to a76b515a (the 7:42 PM update): `npx eas-cli update:republish --group a76b515a-17e5-4e05-8d84-21b83dfc294e --destination-branch production --message "Roll back" --non-interactive`.
 
 ### Leave at a time that has passed shows the trains you missed (over the air update for iPhone and Android, 25 Oct, 7:42 PM, group a76b515a, the same update as the Home entry below)
 Bidur at 7:09 PM, on Kings Cross to Strathfield at 6:27pm with Leave 6:15pm: "I choose to see old trip but app still shows next trains. Not older ones."

@@ -19,7 +19,7 @@ Checked in the web build at 390 x 844 (light and dark) with Kings Cross to Strat
 
 ## The card's look: Line glow (look B)
 
-Bidur, 25 Oct 7:33 PM: "I think we need little shiny or metallic border and main card element here", then at 7:44 PM, of the dark Home: "Still not distinguished", and "Ok whatever you choose best". Three looks were built behind a development switch (A Titanium, B Line glow, C Glass; `files/home-commute-hero-25oct/variants/`) and B ships (`SHIPPED_SKIN = 'line'` in src/lib/cardSkin.ts, the styles in `skinStyle` and `lineGlow` in src/lib/cardSkinCore.ts).
+Bidur, 25 Oct 7:33 PM: "I think we need little shiny or metallic border and main card element here", then at 7:44 PM, of the dark Home: "Still not distinguished", and "Ok whatever you choose best". Three looks were built behind a development switch (A Titanium, B Line glow, C Glass; `files/home-commute-hero-25oct/variants/`) and B ships in the over the air update of 25 Oct, 8:34 PM (group c9a4913d, docs/RELEASES.md) (`SHIPPED_SKIN = 'line'` in src/lib/cardSkin.ts, the styles in `skinStyle` and `lineGlow` in src/lib/cardSkinCore.ts).
 
 * Ring: 2 pt, running corner to corner between the next service's line colours in order, for example T4 blue into T1 orange, meeting in a light sheen so the middle is never a muddy mix. Three lines are three even stops; one line runs from its colour into silver; no known colour is silver only.
 * Dark: a glow behind the card tinted with those colours (the first up and to the left, the last down and to the right, a soft halo in the first), and the card's surface lifted to #232326 from the #1C1C1E of the other cards (Android: its card colour 3% towards white). A faint highlight runs along the inside top edge.
