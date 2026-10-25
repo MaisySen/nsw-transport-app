@@ -1500,9 +1500,38 @@ const PLANNER_LEG_FRESH_MS = 60000, PLANNER_LEG_KEEP_MS = 20 * 60000, PLANNER_LE
 const plannerLegMem = new Map();
 const plannerLegFlight = new Map();
 const pause = (n) => new Promise((r) => setTimeout(r, n));
+// A City Circle train runs into the city and round the loop back to Central, so the planner, asked from your stop to
+// Central, ends the list at its first call at Central (Liverpool T2s on 26 Oct), and from Central to Central has no
+// answer at all (City Circle trains at Central). Both halves are asked instead: your stop to Circular Quay (on the
+// loop whichever way it runs), then Circular Quay to Central on the same run, and the two lists are joined. Null when
+// either half has no answer for this run (a stop already past Circular Quay asks the usual way).
+const isCircleName = (n) => /^city circle\b/i.test(String(n || "").trim());
+async function circleLeg(env, q, tripId, line) {
+  if (!tripId) return null;
+  const map = await railDestMap(env);
+  const quay = map.get(railDestKey("Circular Quay")), central = map.get(railDestKey("Central"));
+  if (!quay || !central) return null;
+  const a = await plannerLeg(env, { ...q, destId: quay }, tripId, line);
+  const seqA = (a.leg && a.leg.stopSequence) || [];
+  const atQuay = seqA[seqA.length - 1];
+  const quayDep = atQuay && (atQuay.departureTimePlanned || atQuay.arrivalTimePlanned);
+  if (!a.leg || seqA.length < 2 || !quayDep) return null;
+  const b = await plannerLeg(env, { ...q, stop: atQuay.id, destId: central, planned: iso(quayDep) }, tripId, line);
+  const seqB = (b.leg && b.leg.stopSequence) || [];
+  if (!b.leg || seqB.length < 2) return null;
+  const leg = {
+    ...a.leg,
+    isRealtimeControlled: !!(a.leg.isRealtimeControlled && b.leg.isRealtimeControlled),
+    coords: [...(a.leg.coords || []), ...(b.leg.coords || [])],
+    stopSequence: [...seqA.slice(0, -1), { ...seqB[0], arrivalTimePlanned: atQuay.arrivalTimePlanned || seqB[0].arrivalTimePlanned, arrivalTimeEstimated: atQuay.arrivalTimeEstimated || seqB[0].arrivalTimeEstimated }, ...seqB.slice(1)],
+  };
+  const stale = a.stale || b.stale;
+  return { leg, status: stale ? "stale" : "ok", stale };
+}
 function plannerLegKey(q, tripId, line) { return [tripId || "", line || "", q.stop, q.destId, q.planned].join("|"); }
 async function plannerLeg(env, q, tripId, line, opts = {}) {
-  const key = plannerLegKey(q, tripId, line);
+  // opts.timetable: the timetable's run only (no live times), for the stops a live answer leaves out.
+  const key = plannerLegKey(q, tripId, line) + (opts.timetable ? "|tt" : "");
   const now = Date.now();
   const hit = plannerLegMem.get(key);
   if (hit && hit.leg && now - hit.at < PLANNER_LEG_FRESH_MS) return { leg: hit.leg, status: "ok", stale: false };
@@ -1540,9 +1569,9 @@ async function plannerLeg(env, q, tripId, line, opts = {}) {
     };
     // First with live times. A run the live planner leaves out (running late behind others, a faster service of
     // another mode, two trains in the same minute) is then looked for in the timetable, this mode only, six runs.
-    let data = await ask({ TfNSWTR: "true" });
+    let data = opts.timetable ? null : await ask({ TfNSWTR: "true" });
     let leg = data ? plannerPick(data, tripId, line, q.planned) : null;
-    if (!leg && tripId && data) {
+    if (!leg && tripId && (data || opts.timetable)) {
       const again = await ask({ calcNumberOfTrips: "6", ...(tripModesExclude(tripModesParse(q.mode)) || {}) });
       const l2 = again ? plannerPick(again, tripId, line, q.planned) : null;
       if (l2) { data = again; leg = l2; }
@@ -1644,8 +1673,14 @@ async function service(env, q) {
   const feedStops = stops;
   let plannerFrom = -1;
   if ((!stops.length || feedShort) && q.stop && q.destId && q.planned) {
-    // Fall back to the trip planner for the stop list from your stop onwards.
-    const got = await plannerLeg(env, q, tripId, line);
+    // Fall back to the trip planner for the stop list from your stop onwards; a City Circle run is asked in two halves
+    // (circleLeg), named by the app or by the planner's own answer.
+    let got = mode === "train" && isCircleName(q.dest) ? (await circleLeg(env, q, tripId, line)) : null;
+    if (!got || !got.leg) got = await plannerLeg(env, q, tripId, line);
+    if (got.leg && mode === "train" && !isCircleName(q.dest) && isCircleName(((got.leg.transportation || {}).destination || {}).name)) {
+      const c = await circleLeg(env, q, tripId, line);
+      if (c && c.leg) got = c;
+    }
     const leg = got.leg;
     if (leg || !feedStops.length) { source = "planner"; stopsStatus = got.status; stops = []; }
     if (leg) {
@@ -1658,6 +1693,22 @@ async function service(env, q) {
         estimated: leg.isRealtimeControlled && !got.stale ? iso(s.departureTimeEstimated || s.arrivalTimeEstimated) : null,
       })));
       if (k <= 0) path = (leg.coords || []).map((c) => [c[0], c[1]]);
+      // A train the feed marks as not stopping somewhere: the live planner leaves those stops out of its list (a T2 at
+      // Central on 26 Oct showed 11 of its 30 stops). The timetable's list is used then, with the stops the live list
+      // has kept as they are and the rest marked not stopping, so the run reads whole.
+      const lost = tu && tuLive && !got.stale ? tu.stus.filter((u) => u.rel === 1 && !stops.some((st) => st.id === u.stopId)).length : 0;
+      if (lost && mode === "train") {
+        const tt = await plannerLeg(env, q, tripId, line, { timetable: true });
+        const ttSeq = (tt.leg && tt.leg.stopSequence) || [];
+        const liveById = new Map(stops.slice(k > 0 ? k : 0).map((st) => [st.id, st]));
+        if (ttSeq.length > liveById.size) {
+          stops = (k > 0 ? feedStops.slice(0, k) : []).concat(ttSeq.map((x) => liveById.get(x.id) || {
+            id: x.id, name: seqStopName(x), lat: x.coord ? x.coord[0] : null, lon: x.coord ? x.coord[1] : null,
+            planned: iso(x.departureTimePlanned || x.arrivalTimePlanned), estimated: null, skipped: true,
+          }));
+          if (k <= 0 && Array.isArray(tt.leg.coords) && tt.leg.coords.length) path = tt.leg.coords.map((c) => [c[0], c[1]]);
+        }
+      }
       // Trains publish delays without clock times; apply them to the planned times.
       if (tu && tuLive) {
         for (const st of stops) {

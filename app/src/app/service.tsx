@@ -33,7 +33,7 @@ export default function ServiceScreen() {
   const { height } = useWindowDimensions();
   const st = useStore();
   const sheet = useRef<BottomSheet>(null);
-  const { data, error, updatedAt, offlineAt, staleAt } = useLive(() => api.service({ trip: p.trip, feed: p.feed || undefined, line: p.line, stop: p.stop, planned: p.planned, mode: p.mode, destId: p.destId, to: p.to || undefined }), 15000, [p.trip, p.planned, p.to],
+  const { data, error, updatedAt, offlineAt, staleAt } = useLive(() => api.service({ trip: p.trip, feed: p.feed || undefined, line: p.line, stop: p.stop, planned: p.planned, mode: p.mode, destId: p.destId, to: p.to || undefined, dest: p.dest || undefined }), 15000, [p.trip, p.planned, p.to],
     { cacheKey: p.trip ? cacheKey('svc', `${p.trip}|${p.planned || ''}|${p.stop || ''}|${p.to || ''}`) : undefined });
   const color = badgeLook(p.line || data?.line, p.mode || data?.mode, data?.color || p.color).bg;
   const snaps = useMemo(() => ['38%', '62%', '92%'], []);
@@ -123,10 +123,12 @@ export default function ServiceScreen() {
               const est = s.estimated || (s.mine ? mineEst : null);
               const t = bestTime(s.planned, est);
               const changed = est && s.planned && Math.abs(ms(est) - ms(s.planned)) >= 60000;
-              const dim = s.passed || (tags.off >= 0 && i > tags.off);
+              // A stop the service runs past today (the feed marks it skipped): kept in the list, greyed, "Not stopping".
+              const skip = !!s.skipped && !s.mine;
+              const dim = s.passed || skip || (tags.off >= 0 && i > tags.off);
               const tag = i === tags.on ? 'GET ON' : i === tags.off ? 'GET OFF' : null;
               return (
-                <View key={s.id + i} style={{ flexDirection: 'row', minHeight: 44 }} accessibilityLabel={tag ? `${tag === 'GET ON' ? 'Get on' : 'Get off'} here: ${shortName(s.name)}` : undefined}>
+                <View key={s.id + i} style={{ flexDirection: 'row', minHeight: 44 }} accessibilityLabel={tag ? `${tag === 'GET ON' ? 'Get on' : 'Get off'} here: ${shortName(s.name)}` : skip ? `${shortName(s.name)}, not stopping` : undefined}>
                   <View style={{ width: 28, alignItems: 'center' }}>
                     <View style={{ position: 'absolute', top: i === 0 ? 22 : 0, bottom: i === stops.length - 1 ? 22 : 0, width: 4, backgroundColor: dim ? c.text3 : color, opacity: dim ? 0.5 : 1 }} />
                     <View style={{ marginTop: 16, width: s.mine || isNext || tag ? 14 : 10, height: s.mine || isNext || tag ? 14 : 10, borderRadius: 7, backgroundColor: isNext ? color : c.card, borderWidth: 2.5, borderColor: dim ? c.text3 : color }} />
@@ -147,10 +149,11 @@ export default function ServiceScreen() {
                         </View>
                       ) : null}
                       {s.mine && !isNext && !tag ? <T kind="caption" tone="tint" style={{ fontWeight: '700', marginTop: 1 }}>YOUR STOP</T> : null}
+                      {skip ? <T kind="caption" style={{ color: c.lateText, fontWeight: '600', marginTop: 1 }}>Not stopping</T> : null}
                       {mk && mk.at && mk.index === i && !isNext ? <T kind="caption" style={{ color, fontWeight: '700', marginTop: 1 }}>BUS IS HERE</T> : null}
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
-                      <T kind="sub" tone={dim ? 'text3' : live ? 'text' : 'text2'} style={{ fontVariant: ['tabular-nums'], fontWeight: s.mine ? '600' : '400' }}>{clock(t)}</T>
+                      {skip ? null : <T kind="sub" tone={dim ? 'text3' : live ? 'text' : 'text2'} style={{ fontVariant: ['tabular-nums'], fontWeight: s.mine ? '600' : '400' }}>{clock(t)}</T>}
                       {changed && !dim ? <T kind="caption" tone="text3" style={{ textDecorationLine: 'line-through' }}>{clock(ms(s.planned))}</T> : null}
                     </View>
                   </View>
