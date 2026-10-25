@@ -91,8 +91,8 @@ test("when the planner is busy later, the kept list is used and marked stale", a
   assert.equal(r.leg.stopSequence.length, 3);
 });
 
-test("the planner answering without this run is notFound", async () => {
-  plan = [{ journeys: [] }];
+test("the planner answering without this run, live and from the timetable, is notFound", async () => {
+  plan = [{ journeys: [] }, { journeys: [] }];
   const r = await W.plannerLeg({}, q("trip-e"), "trip-e", "T4", { waitMs: 1 });
   assert.equal(r.status, "notFound");
 });

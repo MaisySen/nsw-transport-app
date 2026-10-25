@@ -1436,6 +1436,18 @@ async function railDestMap(env) {
   railDestMem = { at: Date.now(), map };
   return map;
 }
+/** Whether a train or metro's list from the live feed ends before the destination station (both known as stations). */
+async function feedEndsShort(env, q, mode, stops) {
+  if ((mode !== "train" && mode !== "metro") || !q.stop || !q.destId || !q.planned || stops.length < 2) return false;
+  const map = await railDestMap(env);
+  let want = q.dest ? railDestKey(q.dest) : null;
+  if (!want || !map.has(want)) { want = null; for (const [k, id] of map) if (id === String(q.destId)) { want = k; break; } }
+  if (!want) return false;
+  const last = stops[stops.length - 1];
+  const info = await stopInfo(env, [last.id]);
+  const name = info[last.id] && info[last.id].name;
+  return !!name && railDestKey(String(name).split(",")[0]) !== want;
+}
 /** The stop id to ask the trip planner for: the station named by the destination when we know it, else the id sent. */
 function railDestId(map, mode, name, id) {
   if (mode !== "train" && mode !== "metro") return id || null;
@@ -1469,26 +1481,37 @@ async function plannerLeg(env, q, tripId, line, opts = {}) {
     }
     const p = sydneyParts(new Date(ms(q.planned) - 60000));
     const tries = opts.tries || 4;
-    let data = null, failed = false;
-    for (let i = 0; i < tries; i++) {
-      try {
-        data = await tp(env, "trip", {
-          depArrMacro: "dep", itdDate: p.date, itdTime: p.time, type_origin: "any", name_origin: q.stop,
-          type_destination: "any", name_destination: q.destId, calcNumberOfTrips: "4", TfNSWTR: "true",
-          // Direct services only: the run asked for is one service, and with changes allowed the planner can prefer
-          // a faster pair of trains and leave this one out of its answer.
-          maxChanges: "0",
-        }, 8000);
-        failed = false;
-        break;
-      } catch (e) {
-        failed = true;
-        // Only a busy or failing answer is worth a second go; a timeout already used the wait.
-        if (!/answered (429|5\d\d)/.test(String(e && e.message))) break;
-        if (i < tries - 1) await pause((opts.waitMs != null ? opts.waitMs : 450) * (i + 1) + Math.floor(Math.random() * 400));
+    let failed = false;
+    const ask = async (extra) => {
+      for (let i = 0; i < tries; i++) {
+        try {
+          const d = await tp(env, "trip", {
+            depArrMacro: "dep", itdDate: p.date, itdTime: p.time, type_origin: "any", name_origin: q.stop,
+            type_destination: "any", name_destination: q.destId, calcNumberOfTrips: "4",
+            // Direct services only: the run asked for is one service, and with changes allowed the planner can prefer
+            // a faster pair of trains and leave this one out of its answer.
+            maxChanges: "0", ...extra,
+          }, 8000);
+          failed = false;
+          return d;
+        } catch (e) {
+          failed = true;
+          // Only a busy or failing answer is worth a second go; a timeout already used the wait.
+          if (!/answered (429|5\d\d)/.test(String(e && e.message))) return null;
+          if (i < tries - 1) await pause((opts.waitMs != null ? opts.waitMs : 450) * (i + 1) + Math.floor(Math.random() * 400));
+        }
       }
+      return null;
+    };
+    // First with live times. A run the live planner leaves out (running late behind others, a faster service of
+    // another mode, two trains in the same minute) is then looked for in the timetable, this mode only, six runs.
+    let data = await ask({ TfNSWTR: "true" });
+    let leg = data ? plannerPick(data, tripId, line, q.planned) : null;
+    if (!leg && tripId && data) {
+      const again = await ask({ calcNumberOfTrips: "6", ...(tripModesExclude(tripModesParse(q.mode)) || {}) });
+      const l2 = again ? plannerPick(again, tripId, line, q.planned) : null;
+      if (l2) { data = again; leg = l2; }
     }
-    const leg = data ? plannerPick(data, tripId, line, q.planned) : null;
     if (leg) {
       const slim = plannerSlim(leg);
       if (plannerLegMem.size >= PLANNER_LEG_MAX) plannerLegMem.delete(plannerLegMem.keys().next().value);
@@ -1533,12 +1556,16 @@ function plannerSlim(leg) {
   };
 }
 function plannerPick(data, tripId, line, planned) {
+  // With a run id, only that run: a guess by line and time can pick another train leaving in the same minute (two T1
+  // trains to Hornsby leave Blacktown at the same minute from platforms 1 and 5) and show its stops under this one.
+  // The guess stays for services the planner gives no id.
+  const ids = tripId && (data.journeys || []).some((j) => (j.legs || []).some((lg) => { const pr = (lg.transportation || {}).properties || {}; return pr.RealtimeTripId || pr.AVMSTripID; }));
   let leg = null;
   for (const j of data.journeys || []) {
     for (const lg of j.legs || []) {
       const t = lg.transportation || {};
       const id = t.properties && (t.properties.RealtimeTripId || t.properties.AVMSTripID);
-      if ((tripId && id === tripId) || (!leg && (t.disassembledName || t.number) === line && Math.abs(ms(lg.origin && lg.origin.departureTimePlanned) - ms(planned)) < 90000)) { leg = lg; break; }
+      if ((tripId && id === tripId) || (!ids && !leg && (t.disassembledName || t.number) === line && Math.abs(ms(lg.origin && lg.origin.departureTimePlanned) - ms(planned)) < 90000)) { leg = lg; break; }
     }
     if (leg && ((leg.transportation || {}).properties || {}).RealtimeTripId === tripId) break;
   }
@@ -1570,14 +1597,17 @@ async function service(env, q) {
       const planned = st.t != null ? st.t - (st.delay || 0) * 1000 : null;
       return { id: u.stopId, seq: u.seq, planned: iso(planned), estimated: live ? iso(st.t) : null, skipped: u.rel === 1 };
     });
-  } else if (q.stop && q.destId && q.planned) {
+  }
+  // An app that sends the destination's name gets the stop list to that station (railDestId).
+  if (q.dest && q.destId) q = { ...q, destId: railDestId(await railDestMap(env), mode, q.dest, q.destId) };
+  // A train's live feed can list only part of the run (on 26 Oct T1 trains to Hornsby were listed to Central): when
+  // its last stop is not the destination station, the planner's list is used, with the feed's live times on it.
+  const feedShort = stops.length ? await feedEndsShort(env, q, mode, stops) : false;
+  if ((!stops.length || feedShort) && q.stop && q.destId && q.planned) {
     // Fall back to the trip planner for the stop list from your stop onwards.
-    source = "planner";
-    // An app that sends the destination's name gets the stop list to that station (railDestId).
-    if (q.dest) q = { ...q, destId: railDestId(await railDestMap(env), mode, q.dest, q.destId) };
     const got = await plannerLeg(env, q, tripId, line);
-    stopsStatus = got.status;
     const leg = got.leg;
+    if (leg || !feedShort) { source = "planner"; stopsStatus = got.status; stops = []; }
     if (leg) {
       stops = (leg.stopSequence || []).map((s) => ({
         id: s.id, name: shortName(s.disassembledName || s.name), lat: s.coord ? s.coord[0] : null, lon: s.coord ? s.coord[1] : null,
@@ -1589,8 +1619,12 @@ async function service(env, q) {
       // Trains publish delays without clock times; apply them to the planned times.
       if (tu && tuLive) {
         for (const st of stops) {
-          if (st.estimated) continue;
           const u = tu.stus.find((x) => x.stopId === st.id);
+          if (u && u.rel === 1) st.skipped = true;
+          if (st.estimated) continue;
+          // A clock time from the feed where it has one (a list that replaced a short feed list), else its delay.
+          const at = u && u.rel !== 2 && feedShort ? stuTime(u) : null;
+          if (at && at.t != null) { st.estimated = iso(at.t); continue; }
           const ev = u && u.rel !== 2 && ((u.dep && u.dep.delay != null) ? u.dep : u.arr);
           if (ev && ev.delay != null && st.planned) st.estimated = iso(ms(st.planned) + ev.delay * 1000);
         }

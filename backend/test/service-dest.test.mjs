@@ -9,7 +9,7 @@ import fs from "node:fs";
 const root = new URL("..", import.meta.url).pathname;
 async function loadWorker() {
   let src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {");
-  src += "\nexport { service, departures, railDestKey, railDestId, railDestMap };\n";
+  src += "\nexport { service, departures, railDestKey, railDestId, railDestMap, feedEndsShort };\n";
   const tmp = `/tmp/service-dest-test-${process.pid}-${Date.now()}.mjs`;
   fs.writeFileSync(tmp, src);
   try { return await import(tmp); } finally { fs.unlinkSync(tmp); }
@@ -19,14 +19,30 @@ async function loadWorker() {
 const lists = {
   "/stations/train.json": [["207720", "Hornsby Station", -33.70347, 151.09836], ["200060", "Central Station", -33.88, 151.2], ["214810", "Blacktown Station", -33.77, 150.9], ["228810", "Newcastle Interchange", -32.92, 151.76]],
   "/stations/metro.json": [["2155384", "Tallawong Station", -33.69, 150.9]],
+  "/stops/200.json": { "2000323": ["Central Station, Platform 23", -33.88, 151.2] },
+  "/stops/207.json": { "2077211": ["Hornsby Station, Platform 1", -33.70, 151.09] },
 };
 const env = { ASSETS: { fetch: async (req) => { const p = new URL(req.url).pathname; return lists[p] ? new Response(JSON.stringify(lists[p]), { status: 200 }) : new Response("no", { status: 404 }); } } };
 
 const base = Date.now() + 10 * 60000;
 const at = (m) => new Date(base + m * 60000).toISOString();
 let tripAsked = [];
+let tripPlan = [];
+const leg = (id, line, t0) => ({
+  isRealtimeControlled: false,
+  transportation: { disassembledName: line, destination: { name: "Hornsby via Gordon" }, properties: { RealtimeTripId: id } },
+  origin: { departureTimePlanned: at(t0) },
+  stopSequence: [
+    { id: "2148535", name: "Blacktown Station, Platform 5", disassembledName: "Blacktown Station, Platform 5", coord: [-33.77, 150.9], departureTimePlanned: at(t0) },
+    { id: "2077211", name: "Hornsby Station, Platform 1", disassembledName: "Hornsby Station, Platform 1", coord: [-33.70, 151.09], arrivalTimePlanned: at(t0 + 70) },
+  ],
+});
 globalThis.fetch = async (u) => {
   const url = new URL(String(u));
+  if (url.pathname.endsWith("/tp/trip") && tripPlan.length) {
+    tripAsked.push(Object.fromEntries(url.searchParams));
+    return new Response(JSON.stringify(tripPlan.shift()), { status: 200 });
+  }
   if (url.pathname.endsWith("/tp/trip")) {
     tripAsked.push(Object.fromEntries(url.searchParams));
     return new Response(JSON.stringify({ journeys: [{ legs: [{
@@ -98,4 +114,38 @@ test("an app that sends no destination name still gets direct services only", as
   await W.service(env, { trip: "run-p1", mode: "train", line: "T1", stop: "2148531", destId: "207720", planned: at(1) });
   assert.equal(tripAsked[0].name_destination, "207720");
   assert.equal(tripAsked[0].maxChanges, "0");
+});
+
+test("a run the live planner leaves out is found in the timetable, this mode only; another train in the same minute is never used", async () => {
+  tripAsked = [];
+  // Live answer: only the other T1 leaving the same minute from platform 5. Timetable answer: this run.
+  tripPlan = [{ journeys: [{ legs: [leg("run-p5", "T1", 0)] }] }, { journeys: [{ legs: [leg("run-p5", "T1", 0)] }, { legs: [leg("run-x", "T1", 0)] }] }];
+  const d = await W.service(env, { trip: "run-x", mode: "train", line: "T1", stop: "2148535", destId: "207720", planned: at(2) });
+  assert.equal(tripAsked.length, 2);
+  assert.equal(tripAsked[0].TfNSWTR, "true");
+  assert.equal(tripAsked[1].TfNSWTR, undefined);
+  assert.equal(tripAsked[1].calcNumberOfTrips, "6");
+  assert.equal(tripAsked[1].excludedMeans, "checkbox");
+  assert.equal(tripAsked[1].exclMOT_2, "1");
+  assert.equal(tripAsked[1].exclMOT_1, undefined);
+  assert.equal(d.stopsStatus, "ok");
+  assert.equal(d.stops.length, 2);
+
+  // Neither answer has the run: no stop list, rather than the other train's.
+  tripAsked = [];
+  tripPlan = [{ journeys: [{ legs: [leg("run-p5", "T1", 0)] }] }, { journeys: [{ legs: [leg("run-p5", "T1", 0)] }] }];
+  const e = await W.service(env, { trip: "run-y", mode: "train", line: "T1", stop: "2148535", destId: "207720", planned: at(0) });
+  assert.equal(e.stops.length, 0);
+  assert.equal(e.stopsStatus, "notFound");
+});
+
+test("a train's live list that stops before its destination station is called short; one that reaches it, or an unknown end, is not", async () => {
+  const q = { stop: "2148535", destId: "207720", planned: at(0) };
+  const toCentral = [{ id: "2148535" }, { id: "2000323" }];
+  const toHornsby = [{ id: "2148535" }, { id: "2077211" }];
+  assert.equal(await W.feedEndsShort(env, q, "train", toCentral), true);
+  assert.equal(await W.feedEndsShort(env, q, "train", toHornsby), false);
+  assert.equal(await W.feedEndsShort(env, { ...q, dest: "Hornsby via Gordon", destId: "10101100" }, "train", toCentral), true);
+  assert.equal(await W.feedEndsShort(env, { ...q, destId: "999" }, "train", toCentral), false);
+  assert.equal(await W.feedEndsShort(env, q, "bus", toCentral), false);
 });
