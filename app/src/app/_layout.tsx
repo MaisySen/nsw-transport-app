@@ -10,6 +10,8 @@ import { endLive, setupLiveNotifications } from '@/lib/live';
 import { finishProfileMove, initProfile } from '@/lib/device';
 import { loadCachedConfig, refreshConfig } from '@/lib/config';
 import { api } from '@/lib/api';
+import { morningTripParams } from '@/lib/morning';
+import { store } from '@/lib/store';
 import { usePalette } from '@/lib/theme';
 import { sheetHeaderOptions, stopHeaderOptions } from '@/lib/headerOptions';
 import { LiftAlertSync } from '@/lib/liftAlerts';
@@ -43,8 +45,12 @@ export default function RootLayout() {
       if (d.go) { router.push('/go'); return; }
       // A trip reminder opens its saved trip with live times.
       if (d.tripOpen && typeof d.tripOpen === 'object') { router.push({ pathname: '/trip', params: d.tripOpen }); return; }
-      // A morning check alert (tag m<id>) opens the checks, where Check now shows the latest.
-      if (typeof d.tag === 'string' && /^m[A-Za-z0-9]/.test(d.tag)) { router.push('/morning'); return; }
+      // A morning check alert (tag m<id>) opens its trip with live times and Plan B; a check not on the phone opens the checks.
+      if (typeof d.tag === 'string' && /^m[A-Za-z0-9]/.test(d.tag)) {
+        const open = morningTripParams(d.tag, store.morningList());
+        if (open) router.push({ pathname: '/trip', params: open }); else router.push('/morning');
+        return;
+      }
       if (d.watch) router.push({ pathname: '/watch/[id]', params: { id: String(d.watch) } });
     });
     return () => { poll.remove(); sub.remove(); };

@@ -83,3 +83,52 @@ test('words have no long dashes', () => {
   const r = b.planB([bad, J(leg('M1', 8, 36))], bad, NOW);
   assert.doesNotMatch(r.label + r.why + b.problemOf(bad).text, /[\u2013\u2014]/);
 });
+
+test('trackwork: a replacement bus is a problem; Plan B avoids the buses only when it is not much slower', () => {
+  const bus = leg('45T1', 4, 20, { mode: 'bus', from: 'Pymble Station, Stand A', to: 'Gordon Station' });
+  const bad = J(bus, leg('T1', 24, 50, { from: 'Gordon Station' }));
+  const p = b.problemOf(bad);
+  assert.equal(p.kind, 'trackwork');
+  assert.equal(p.line, 'T1');
+  assert.equal(p.text, 'Buses replace T1 trains from Pymble to Gordon');
+  assert.ok(b.isReplacement({ mode: 'bus', line: '2AT9' }));
+  assert.ok(!b.isReplacement({ mode: 'bus', line: '410' }));
+  assert.ok(!b.isReplacement({ mode: 'train', line: 'T1' }));
+  assert.equal(b.replacedLine('2CN'), 'CCN');
+  const metro = J(leg('M1', 6, 55, { mode: 'metro', from: 'Chatswood Station' }));
+  const slow = J(leg('M1', 6, 70, { mode: 'metro' }));
+  const r = b.planB([bad, metro], bad, NOW);
+  assert.equal(r.j, metro);
+  assert.equal(r.why, 'No replacement buses');
+  assert.equal(b.planB([bad, slow], bad, NOW), null, 'over 10 min later is not offered');
+});
+
+test('replacement buses still count as a way round a cancelled service', () => {
+  const bad = J(leg('T1', 4, 30, { cancelled: true }));
+  const viaBus = J(leg('45T1', 6, 22, { mode: 'bus' }), leg('T1', 24, 33));
+  const r = b.planB([bad, viaBus], bad, NOW);
+  assert.equal(r.j, viaBus);
+});
+
+test('the Home and alert sentence', () => {
+  const susp = { title: 'T1 services are suspended between Hornsby and Chatswood', priority: 'high' };
+  const bad = J(leg('T1', 4, 30, { alerts: [susp] }));
+  const metro = J(leg('M1', 4, 41, { mode: 'metro', from: 'Epping Station, Platform 3' }));
+  const p = b.problemOf(bad);
+  assert.equal(b.planBLine(p, b.planB([bad, metro], bad, NOW)), 'T1 suspended. Try the 8:04am M1 from Epping, arrives 8:41am.');
+  assert.equal(b.planBLine(p, null), 'T1 suspended. Open the trip for Plan B.');
+  const c = J(leg('T1', 4, 30, { cancelled: true }));
+  assert.match(b.planBLine(b.problemOf(c), null), /^The 8:04am T1 is cancelled\. Open the trip/);
+  const tw = J(leg('45T1', 4, 20, { mode: 'bus', from: 'Pymble Station', to: 'Gordon Station' }));
+  assert.equal(b.planBLine(b.problemOf(tw), null), 'Buses replace T1 trains from Pymble to Gordon.');
+  assert.doesNotMatch(b.planBLine(p, null), /[\u2013\u2014]/);
+});
+
+test('a tapped morning check alert opens its trip, or the checks when the phone does not know it', async () => {
+  const m = await load('src/lib/morning.ts');
+  const list = [{ id: 'abc123', name: 'To work', from: { id: '213510', name: 'Strathfield Station' }, to: { id: '201110', name: 'Kings Cross Station' } }];
+  assert.deepEqual(m.morningTripParams('mabc123', list), { from: '213510', fromName: 'Strathfield Station', to: '201110', toName: 'Kings Cross Station', name: 'To work' });
+  assert.equal(m.morningTripParams('mzzz', list), null);
+  assert.equal(m.morningTripParams('w123', list), null);
+  assert.equal(m.morningTripParams(undefined, list), null);
+});

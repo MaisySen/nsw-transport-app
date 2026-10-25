@@ -494,7 +494,7 @@ export default function TripScreen() {
                 </Pressable>
               </>
             ) : (
-              <T kind="foot" tone="text2" style={{ marginTop: 8 }}>{pbAsked === probKey || offlineAt ? 'No other way found in the next services. Pull down to check again.' : 'Looking for another way'}</T>
+              <T kind="foot" tone="text2" style={{ marginTop: 8 }}>{pbAsked === probKey || offlineAt ? (prob.kind === 'trackwork' ? 'The replacement buses are still the quickest way. Pull down to check again.' : 'No other way found in the next services. Pull down to check again.') : 'Looking for another way'}</T>
             )}
           </View>
         ) : null}

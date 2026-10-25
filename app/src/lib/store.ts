@@ -127,6 +127,8 @@ export const store = {
   setCommuteFlip(key: string | null) { state = { ...state, commuteFlip: key }; save(); },
   setLeaveReminder(r: LeaveReminder | null) { state = { ...state, leaveReminder: r }; save(); },
   setMorning(list: import('./types').MorningCheck[]) { state = { ...state, morning: list }; save(); },
+  /** The morning checks last read from the server (More > Check my trip). */
+  morningList: () => state.morning || [],
   saveMyTrip(t: MyTrip) {
     const k = tripKeyOf(t);
     state = { ...state, myTrips: [t, ...(state.myTrips || []).filter((x) => tripKeyOf(x) !== k && x.name !== t.name)].slice(0, 12) };

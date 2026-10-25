@@ -26,6 +26,7 @@ import { useReliabilityText } from '@/lib/reliability';
 import { font, Sep, T } from './ui';
 import { LiveStatus } from './LiveLabel';
 import { liveState, liveWords } from '@/lib/liveLabelCore';
+import { planB, planBLine, problemOf } from '@/lib/planBCore';
 
 // ---------- shared refresh signals for every card on Home ----------
 
@@ -428,6 +429,12 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pkey, lineSig]);
   useEffect(() => () => reportTripLines(pkey, null), [pkey]);
+  // Plan B (docs/PLAN-B.md): the next service has a problem, so the card names it and the best other way from the
+  // services already fetched (no extra request). The trip screen asks the planner once more when none of them works.
+  const prob = js.length && !offlineAt ? problemOf(js[0]) : null;
+  const pbFound = prob ? planB((data?.journeys || []).filter((j) => depOf(j) > now - 30000), js[0], now) : null;
+  const pbText = prob ? planBLine(prob, pbFound) : '';
+  const pbTitle = prob && !pbFound && prob.kind === 'trackwork' ? 'Trackwork' : 'Plan B';
   const arrs = js.map(arrOf);
   const alerts = new Set<string>();
   js.forEach((j) => j.legs.forEach((l) => (l.alerts || []).forEach((a: any) => alerts.add(typeof a === 'string' ? a : a.title))));
@@ -468,8 +475,24 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
           <View style={{ position: 'absolute', top: 2, right: 2 }}>{aside}</View>
         </View>
       ) : glance}
+      {pbText ? <PlanBRow title={pbTitle} text={pbText} onPress={() => open()} /> : null}
       {below && js.length ? below(js) : null}
     </Card>
+  );
+}
+
+/** Under a trip card when its next service has a problem: what is wrong and the best other way. Opens the trip. */
+function PlanBRow({ title, text, onPress }: { title: string; text: string; onPress: () => void }) {
+  const c = usePalette();
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${title}. ${text}`} accessibilityHint="Opens the trip"
+      android_ripple={{ color: c.fill }}
+      style={({ pressed }) => [g.planB, { borderTopColor: c.sep }, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
+      <Icon name={I.warn} size={15} color={c.red} style={{ marginTop: 2 }} />
+      <T kind="sub" style={{ marginLeft: 8, flex: 1 }}>
+        <T kind="sub" style={{ fontWeight: '600', color: c.redText }}>{title}: </T>{text}
+      </T>
+    </Pressable>
   );
 }
 
@@ -566,6 +589,7 @@ function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPre
 
 const g = StyleSheet.create({
   hero: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 16 },
+  planB: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16, paddingVertical: 10, minHeight: 44, borderTopWidth: StyleSheet.hairlineWidth },
   row: { flexDirection: 'row', alignItems: 'center', paddingLeft: 16, paddingRight: 12, paddingVertical: 10, minHeight: 64 },
   chip: { minWidth: 52, minHeight: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 4 },
 });
