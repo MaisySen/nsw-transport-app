@@ -4,6 +4,17 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### A calmer Home (over the air update for iPhone and Android, 25 Oct, 4:34 PM)
+* Your next trip is the big card on top: the countdown, line badges, the platform (for a bus, the stand and stop number), whether it is live, leave and arrive, and the next two times ("Then 12, 19 min"). It is your commute when Home and Work are set, otherwise the first trip in your list.
+* Every other trip is one slim row with its next time. The star, seats, journey time, third service and alert counts moved off the rows; they are all on the trip screen, one tap away.
+* One + at the top right adds a trip, stars a stop, or sets Home or Work. No more Add button in the middle of the page.
+* Alerts on your trips are one line that opens in place.
+* No trips yet: one big Add a trip button.
+* Delete a trip (swipe, hold, or VoiceOver) and Undo shows above the tab bar for 5 seconds.
+* Hold a trip and choose Show first to make it the big card. Dragging trips keeps the card on top.
+* On Android, hold menus no longer lose a choice (Home and work lost Change home).
+* Group 0b1d956d. Roll back to eadd0cc6 (the 4:29 PM update): `npx eas-cli update:republish --group eadd0cc6-7c92-434a-a4e7-06684bac02e6 --destination-branch production --message "Roll back" --non-interactive`.
+
 ### Honest live times and cleaner bus stop boards (over the air update for iPhone and Android, 25 Oct, 4:29 PM)
 * Every countdown says where its time comes from: "Live, updated 15 s ago", "Timetable" (grey, no live data for that service) or "Not tracking".
 * No more ghost buses: when a bus's live position goes stale, the time shows the timetable time and "Not tracking" instead of counting down to Now and then saying it has gone. A timetable time that has passed shows the time, never "left".

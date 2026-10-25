@@ -1,6 +1,6 @@
 # Home redesign (shipped: Option A)
 
-Bidur, 25 Oct 3:09 PM: "Home page looks clustered. Add buttons in middle of screen. Hard to find. Plan something better." Two options were shown at 3:43 PM (screenshots in `files/home-redesign/`); Bidur asked for a recommendation at 4:04 PM and Option A was picked. Option A is Home on `main` from the over the air update of 25 Oct (see docs/RELEASES.md). Option B and the `?design=` switch are gone. Before and after screenshots: `files/home-a-ship/`.
+Bidur, 25 Oct 3:09 PM: "Home page looks clustered. Add buttons in middle of screen. Hard to find. Plan something better." Two options were shown at 3:43 PM (screenshots in `files/home-redesign/`); Bidur asked for a recommendation at 4:04 PM and Option A was picked. Option A is Home on `main` from the over the air update of 25 Oct, 4:34 PM (group 0b1d956d, docs/RELEASES.md). Option B and the `?design=` switch are gone. Before and after screenshots: `files/home-a-ship/`.
 
 ## Home now, top to bottom
 
