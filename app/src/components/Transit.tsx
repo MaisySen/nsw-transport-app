@@ -56,12 +56,13 @@ export function QuietChip({ v, style }: { v?: Vehicle; style?: any }) {
 /** The one line badge: "T1", "M1", "333" on the official line or mode colour (bus blue when the feed has no colour,
  *  live data or not), one size, radius and font everywhere. No mode glyph, like Opal and the station signs; only a
  *  badge with no line name shows the mode glyph so it is never empty. small is kept for callers and changes nothing. */
-export function LineBadge({ line, mode, color }: { line?: string | null; mode?: string | null; color?: string | null; small?: boolean }) {
-  const b = badgeLook(line, mode, color);
+/** kind: on a service's own row, a regional train or coach with only a route number shows Regional or Coach. */
+export function LineBadge({ line, mode, color, kind }: { line?: string | null; mode?: string | null; color?: string | null; small?: boolean; kind?: boolean }) {
+  const b = badgeLook(line, mode, color, { kind });
   return (
     <View style={[st.badge, { backgroundColor: b.bg }]} accessible accessibilityLabel={b.label}>
       {b.text
-        ? <Text maxFontSizeMultiplier={1.3} style={[st.badgeText, { color: b.fg }]} numberOfLines={1}>{b.text}</Text>
+        ? <Text maxFontSizeMultiplier={1.3} style={[st.badgeText, { color: b.fg }, b.word ? { fontSize: 11 } : null]} numberOfLines={1}>{b.text}</Text>
         : <Icon name={modeIconName(b.mode)} size={BADGE.glyph} color={b.fg} />}
     </View>
   );
@@ -200,7 +201,7 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
   const body = (
     <Pressable accessibilityRole="button" onPress={onPress} {...rowA11y(act, why)}
       android_ripple={{ color: c.fill }} style={({ pressed }) => [st.depRow, { backgroundColor: pressed && Platform.OS === 'ios' ? c.card2 : c.card }]}>
-      <View style={{ width: 66, alignItems: 'flex-start' }}><LineBadge line={d.line} mode={d.mode} color={d.color} /></View>
+      <View style={{ width: 66, alignItems: 'flex-start' }}><LineBadge line={d.line} mode={d.mode} color={d.color} kind /></View>
       <View style={{ flex: 1, marginRight: 8 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <T kind="headline" numberOfLines={2} style={{ flexShrink: 1 }}>{shortName(d.dest)}</T>

@@ -16,6 +16,8 @@ The iPhone and Android apps are one Expo app (`app/`). Anything below marked "ov
 
 ## Live times
 
+**Train stop lists and regional badges (26 Oct, about 8:45 AM).** The service screen's stop list for a train now runs from your stop to the real end of the line with every stop the train makes (server change, see docs/API.md): before, through trains to Hornsby, Berowra and North Sydney stopped at Central, some trains had no list, and Sydney Trains' feed left out stops it had no news for. On a service's own row, a regional train or coach that comes with only a route number shows Regional or Coach (the number stays in what VoiceOver and TalkBack read); route chips keep the number.
+
 * **Live labels** on every countdown (departures, trip screen, live trip, Home): "Live, updated 15 s ago", "Timetable" (grey, no live data for that service) or "Not tracking" (live data went stale, so the timetable time is shown instead of a countdown). A timetable time that has passed never says "left". See [LIVE-LABELS.md](LIVE-LABELS.md).
 * Departure boards refresh while open and pause in the background ([PERFORMANCE.md](PERFORMANCE.md)).
 * **Why it's late** (over the air): a late, cancelled or changed service shows one line with the reason from its own Transport for NSW alert ("Delayed: signal repairs at Redfern"); tap it for the full alert. Nothing is shown when the alert gives no reason. On departure rows, trip legs and services, Home trip cards and the live trip. See [WHY-LATE.md](WHY-LATE.md).

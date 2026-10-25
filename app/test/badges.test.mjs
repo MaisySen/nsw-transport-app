@@ -97,15 +97,26 @@ test('swipe rows: one shared component, action hidden at rest and clipped to the
 });
 
 test('regional trains and coaches with a route number show what they are, the number stays in the label', () => {
-  const x = L.badgeLook('427', 'train', '#495054');
+  const x = L.badgeLook('427', 'train', '#495054', { kind: true });
   assert.equal(x.text, 'Regional');
   assert.equal(x.label, 'Regional train 427');
   assert.equal(x.bg, '#F6891F');
-  assert.equal(L.badgeLook('590', 'coach', null).text, 'Coach');
-  assert.equal(L.badgeLook('590', 'coach', null).label, 'Coach 590');
+  assert.equal(L.badgeLook('590', 'coach', null, { kind: true }).text, 'Coach');
+  assert.equal(L.badgeLook('590', 'coach', null, { kind: true }).label, 'Coach 590');
+  // Route chips (no kind) keep the number so every route is told apart.
+  assert.equal(L.badgeLook('427', 'train', null).text, '427');
+  assert.equal(L.badgeLook('590', 'coach', null).text, '590');
   // Lines with letters and buses keep their name.
   assert.equal(L.badgeLook('T1', 'train', '#F99D1C').text, 'T1');
   assert.equal(L.badgeLook('CCN', 'train', null).text, 'CCN');
-  assert.equal(L.badgeLook('427', 'bus', null).text, '427');
+  assert.equal(L.badgeLook('427', 'bus', null, { kind: true }).text, '427');
   assert.equal(L.badgeLook('M1', 'metro', null).text, 'M1');
+});
+
+test('departure rows, recently departed and the service header ask for the kind word; route chips do not', () => {
+  const rd = (p) => fs.readFileSync(path.join(here, '..', 'src', p), 'utf8');
+  assert.match(rd('components/Transit.tsx'), /<LineBadge line=\{d\.line\} mode=\{d\.mode\} color=\{d\.color\} kind \/>/);
+  assert.match(rd('components/LeftRow.tsx'), /color=\{d\.color\} kind \/>/);
+  assert.match(rd('app/service.tsx'), /color=\{color\} kind \/>/);
+  assert.match(rd('app/stop/[id].tsx'), /<LineBadge line=\{r\.line\} mode=\{r\.mode\} color=\{r\.color\} \/>/);
 });

@@ -766,7 +766,7 @@ export function StopBoard({ stop, now, starred, distance, menu }: { stop: Place;
             <Sep inset={16} />
             <Pressable accessibilityRole="button" onPress={() => openService(d)} android_ripple={{ color: c.fill }} accessibilityLabel={`${d.line} to ${d.dest}, ${t.big} ${t.unit}${d.realtime ? ', live' : ', scheduled'}`}
               style={({ pressed }) => [s.dep, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
-              <LineBadge line={d.line} mode={d.mode} color={d.color} />
+              <LineBadge line={d.line} mode={d.mode} color={d.color} kind />
               <T kind="body" numberOfLines={1} style={{ flex: 1, marginLeft: 10 }}>{shortName(d.dest)}</T>
               <Text maxFontSizeMultiplier={1.4} style={[font.callout, { fontWeight: '600', color: d.realtime ? c.liveText : c.text, fontVariant: ['tabular-nums'], marginLeft: 8 }]}>
                 {t.big}{t.unit ? ` ${t.unit}` : ''}

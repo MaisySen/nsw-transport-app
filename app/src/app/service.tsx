@@ -75,7 +75,7 @@ export default function ServiceScreen() {
         <BottomSheetScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24, paddingLeft: side.left, paddingRight: side.right }}>
           <View style={{ paddingHorizontal: 20, paddingTop: 4 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <LineBadge line={p.line || data?.line} mode={p.mode || data?.mode} color={color} />
+              <LineBadge line={p.line || data?.line} mode={p.mode || data?.mode} color={color} kind />
               <T kind="title3" numberOfLines={2} style={{ flex: 1 }}>to {shortName(p.dest || data?.dest)}</T>
               {busLike ? (
                 <Pressable onPress={() => router.push({ pathname: '/route', params: { line: String(p.line || data?.line || ''), mode: busMode, stop: p.stop || '', towards: p.dest || data?.dest || '', color: data?.color || p.color || '' } })}

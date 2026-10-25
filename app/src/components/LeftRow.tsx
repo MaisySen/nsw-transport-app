@@ -58,7 +58,7 @@ export function LeftDepartureRow({ d, stopNo, onPress }: { d: Departure; stopNo?
     <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }}
       accessibilityLabel={`${d.line} to ${shortName(d.dest)}. ${words.replace(' \u00b7 ', ', ')}${extra.length ? `, ${extra.join(', ')}` : ''}. Already gone`}
       style={({ pressed }) => [s.depRow, { backgroundColor: pressed && Platform.OS === 'ios' ? c.card2 : c.card }]}>
-      <View style={{ width: 66, alignItems: 'flex-start', opacity: 0.5 }}><LineBadge line={d.line} mode={d.mode} color={d.color} /></View>
+      <View style={{ width: 66, alignItems: 'flex-start', opacity: 0.5 }}><LineBadge line={d.line} mode={d.mode} color={d.color} kind /></View>
       <View style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
         <T kind="headline" numberOfLines={2} style={{ color: c.text2, textDecorationLine: d.cancelled ? 'line-through' : 'none' }}>{shortName(d.dest)}</T>
         <T kind="foot" numberOfLines={2} style={{ marginTop: 3 }}>

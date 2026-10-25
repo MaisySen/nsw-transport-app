@@ -47,25 +47,25 @@ function lum(c: [number, number, number]) {
 }
 function ratio(a: number, b: number) { const [x, y] = a > b ? [a, b] : [b, a]; return (x + 0.05) / (y + 0.05); }
 
-export type BadgeLook = { bg: string; fg: string; mode: string; text: string; label: string };
+export type BadgeLook = { bg: string; fg: string; mode: string; text: string; label: string; word?: boolean };
 
 const NOUN: Record<string, string> = { train: 'Train', metro: 'Metro', bus: 'Bus', lightrail: 'Light rail', ferry: 'Ferry', coach: 'Coach' };
 
 // NSW TrainLink regional trains and coaches come with a route number for a line ("427" is the Dubbo train), which
-// reads as a bus number on a badge. A train or coach whose line is only digits shows what it is instead, and the
-// number stays in the spoken label.
+// reads as a bus number on a badge. On a service's own row (opts.kind) a train or coach whose line is only digits
+// shows what it is instead, and the number stays in the spoken label. Route chips keep the number, so they differ.
 const KIND: Record<string, { text: string; noun: string }> = { train: { text: 'Regional', noun: 'Regional train' }, coach: { text: 'Coach', noun: 'Coach' } };
 function kindOf(m: string, text: string) { return /^\d+$/.test(text) ? KIND[m] || null : null; }
 
 /** Colours and words for one badge. The live state of a service never changes its badge: "No live data" stays text. */
-export function badgeLook(line?: string | null, mode?: string | null, color?: string | null): BadgeLook {
+export function badgeLook(line?: string | null, mode?: string | null, color?: string | null, opts?: { kind?: boolean }): BadgeLook {
   const m = badgeMode(line, mode);
   const bg = !isNeutral(color) ? `#${rgb(color as string)!.map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase()}` : MODE_COLOR[m];
   const L = lum(rgb(bg)!);
   const fg = ratio(1, L) >= ratio(lum([17, 17, 17]), L) ? '#FFFFFF' : '#111111';
   const text = (line || '').trim();
-  const kind = kindOf(m, text);
-  if (kind) return { bg, fg, mode: m, text: kind.text, label: `${kind.noun} ${text}` };
+  const kind = opts && opts.kind ? kindOf(m, text) : null;
+  if (kind) return { bg, fg, mode: m, text: kind.text, label: `${kind.noun} ${text}`, word: true };
   return { bg, fg, mode: m, text, label: text ? `${NOUN[m]} ${text}` : NOUN[m] };
 }
 
