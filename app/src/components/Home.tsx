@@ -24,6 +24,8 @@ import { LineBadge, OccupancyChip } from './Transit';
 import { swipeA11y, type SwipeAct } from './Swipe';
 import { useReliabilityText } from '@/lib/reliability';
 import { font, Sep, T } from './ui';
+import { LiveStatus } from './LiveLabel';
+import { liveState, liveWords } from '@/lib/liveLabelCore';
 
 // ---------- shared refresh signals for every card on Home ----------
 
@@ -453,7 +455,7 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
 
   const note = !data ? (error ? 'Live times unavailable, trying again' : 'Loading live times') : !js.length ? (offlineAt ? 'No kept times left for today' : data.error || 'No more services today') : '';
   const glance = (
-    <TripGlance look={look} js={js} arrs={arrs} now={now} title={custom || route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint}
+    <TripGlance look={look} js={js} arrs={arrs} now={now} title={trip.kind === 'place' && custom ? `${custom}: ${route}` : custom || route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint}
       note={note} onPress={() => open()} onLongPress={menu} act={act} roomRight={aside ? 40 : 0}
       trailing={typeof handle === 'function' ? handle(() => open()) : handle} />
   );
@@ -482,14 +484,20 @@ function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPre
   const l = j ? firstLeg(j) : undefined;
   const dep = j ? depOf(j) : 0;
   const stt = j ? statusOf(j, now) : null;
-  const tone = !stt ? c.text2 : stt.tone === 'live' ? c.liveText : stt.tone === 'late' ? c.lateText : stt.tone === 'red' ? c.redText : c.text2;
+  // Honest live label (docs/LIVE-LABELS.md): a live time counts down, a timetable time is grey, a live time gone
+  // stale shows its timetable time and "Not tracking" instead of counting to Now.
+  const lsOf = (x: Journey) => { const fl = firstLeg(x); return fl?.planned ? liveState({ planned: fl.planned, estimated: fl.estimated, realtime: fl.realtime, cancelled: !!(x.anyCancelled || fl.cancelled), seenAt: fl.seenAt ?? x.seenAt }, now) : null; };
+  const ls = j ? lsOf(j) : null;
+  const honest = !!ls && ls.kind !== 'live' && ls.kind !== 'cancelled';
+  const tone = !stt ? c.text2 : ls?.kind === 'stale' ? c.lateText : honest ? c.text2 : stt.tone === 'live' ? c.liveText : stt.tone === 'late' ? c.lateText : stt.tone === 'red' ? c.redText : c.text2;
   const cancelled = stt?.tone === 'red';
-  const chip = j ? cdColor(dep, now, cancelled, c) : c.text3;
-  const t = j ? cd(dep, now) : { big: '', unit: '' };
+  const chip = !j ? c.text3 : honest ? '#8E8E93' : cdColor(dep, now, cancelled, c);
+  const t = ls ? { big: ls.big, unit: ls.unit } : j ? cd(dep, now) : { big: '', unit: '' };
+  const status = ls && honest ? ls.label : stt?.text;
   const badges: Leg[] = [];
   for (const x of j ? j.legs.filter((y) => y.kind === 'transit') : []) if (x.line && !badges.some((b) => b.line === x.line)) badges.push(x);
   const where = whereText(l?.fromPlatform, l?.stopId, l?.mode, look === 'hero');
-  const then = thenText(js.slice(1, 3).map((x) => cd(depOf(x), now)));
+  const then = thenText(js.slice(1, 3).map((x) => { const s = lsOf(x); return s ? { big: s.big, unit: s.unit } : cd(depOf(x), now); }));
   const head = (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       {glyph && glyph !== I.star && look === 'hero' ? <Icon name={glyph} size={15} color={glyphColor || c.tint} style={{ marginRight: 6 }} /> : null}
@@ -497,8 +505,9 @@ function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPre
     </View>
   );
   const spoken = (x: { big: string; unit: string }) => (x.unit ? `${x.big} ${x.unit === 'min' ? 'minutes' : x.unit}` : x.big);
+  const whereLong = whereText(l?.fromPlatform, l?.stopId, l?.mode, true);
   const a11y = j
-    ? `${title}. ${spoken(t)}, leaves ${hm(dep)}${where ? ` from ${where}` : ''}, ${stt?.text}, arrives ${hm(arrs[0])}${badges.length ? `, ${badges.map((b) => b.line).join(' and ')}` : ''}${then ? `. ${then}` : ''}`
+    ? `${title}. ${ls ? ls.a11y : spoken(t)}, leaves ${hm(dep)}${whereLong ? ` from ${whereLong}` : ''}, ${ls?.kind === 'live' ? `${stt?.text}, ${liveWords(ls)}` : status}, arrives ${hm(arrs[0])}${badges.length ? `, ${badges.map((b) => b.line).join(' and ')}` : ''}${then ? `. ${then}` : ''}`
     : `${title}. ${note}`;
   const press = ({ pressed }: { pressed: boolean }) => [pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null];
 
@@ -521,10 +530,8 @@ function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPre
                 {where ? <T kind="sub" numberOfLines={2} style={{ fontWeight: '600', textAlign: 'right' }}>{where}</T> : null}
               </View>
             </View>
-            <T kind="sub" numberOfLines={2}>
-              <T kind="sub" style={{ color: tone }}>{stt?.text}</T>
-              <T kind="sub" tone="text2">{` \u00b7 ${hm(dep)} \u2192 ${hm(arrs[0])} \u00b7 ${durText(j.durationMin)}`}</T>
-            </T>
+            {ls ? <LiveStatus state={ls} delayMin={l?.delayMin} /> : <T kind="foot" style={{ color: tone }}>{stt?.text}</T>}
+            <T kind="sub" tone="text2" numberOfLines={2} style={{ marginTop: 4 }}>{`${hm(dep)} \u2192 ${hm(arrs[0])} \u00b7 ${durText(j.durationMin)}`}</T>
             {then ? <T kind="sub" tone="text2" style={{ marginTop: 4 }}>{then}</T> : null}
           </>
         ) : <T kind="foot" tone="text2" style={{ marginTop: 8 }}>{note}</T>}
@@ -540,7 +547,7 @@ function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPre
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
           {badges.slice(0, 2).map((b, i) => <LineBadge key={`${b.line}${i}`} line={b.line} mode={b.mode} color={b.color} />)}
           <T kind="foot" numberOfLines={2} style={{ flexShrink: 1 }}>
-            {j ? <T kind="foot" style={{ color: tone }}>{stt?.text}</T> : <T kind="foot" tone="text2">{note}</T>}
+            {j ? <T kind="foot" style={{ color: tone, fontWeight: ls?.kind === 'stale' ? '600' : undefined }}>{status}</T> : <T kind="foot" tone="text2">{note}</T>}
             {where ? <T kind="foot" tone="text2">{` \u00b7 ${where}`}</T> : null}
           </T>
         </View>

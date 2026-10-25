@@ -119,3 +119,12 @@ test('hold menus fit Android dialogs (3 buttons at most)', () => {
   const menu = src.slice(src.indexOf('export function tripMenu'), src.indexOf('export function tripMenu') + 4000);
   assert.ok(!/Alert\.alert\(trip\.name/.test(menu), 'trip menus go through holdMenu');
 });
+
+test('Next trip card and rows use the shared live label', () => {
+  const src = read('src/components/Home.tsx');
+  const g = src.slice(src.indexOf('function TripGlance'), src.indexOf('const g = StyleSheet.create'));
+  assert.ok(/liveState\(/.test(g), 'countdown from liveState');
+  assert.ok(/<LiveStatus state=\{ls\}/.test(g), 'card label is LiveStatus');
+  assert.ok(/honest \? ls\.label/.test(g), 'rows say Timetable or Not tracking');
+  assert.ok(!/\bcd\(dep, now\) : \{ big/.test(g) || /ls \? \{ big: ls\.big/.test(g), 'the big number is the honest one');
+});
