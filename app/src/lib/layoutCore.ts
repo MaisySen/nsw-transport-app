@@ -22,3 +22,16 @@ export function sidePadding(width: number, insetLeft = 0, insetRight = 0, readab
 export function isWide(width: number, insetLeft = 0, insetRight = 0, readable = READABLE_WIDTH): boolean {
   return width - Math.max(0, insetLeft) - Math.max(0, insetRight) > readable;
 }
+
+/** Below this shortest side (points) the window is a phone's: screens stay upright. An open iPhone Duo, a fold's
+ *  inner screen, a tablet or a large resized window is wider, and there the screens turn and resize freely. */
+export const PHONE_SHORT_SIDE = 600;
+
+/** The screen orientation option for the window: upright on a phone sized window, any way on a wide one.
+ *  Decided by the window's size alone, never by the device type. */
+export function orientationFor(width: number, height: number): 'portrait_up' | 'all' {
+  const w = Number.isFinite(width) && width > 0 ? width : 0;
+  const h = Number.isFinite(height) && height > 0 ? height : 0;
+  if (!w || !h) return 'portrait_up';
+  return Math.min(w, h) < PHONE_SHORT_SIDE ? 'portrait_up' : 'all';
+}

@@ -31,6 +31,7 @@ import { LineBadge } from '@/components/Transit';
 import { WhenPicker } from '@/components/WhenPicker';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { font } from '@/components/ui';
+import { useSides } from '@/lib/layout';
 
 type Field = { loc: true } | { place: SimplePlace } | null;
 const BIG = 2; // Dynamic Type: big text grows up to twice its size, the layout wraps instead of clipping.
@@ -123,8 +124,10 @@ function Chooser({ which, places, canLoc, onPick, onLoc, onCancel }: { which: 'f
   const c = usePalette();
   const [q, setQ] = useState('');
   const { items, loading } = useStopSearch(q);
+  // Clear of the side safe areas and at a readable width on a wide window, the same as the other screens.
+  const side = useSides();
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, paddingLeft: side.left, paddingRight: side.right }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}>
         <Text accessibilityRole="header" maxFontSizeMultiplier={BIG} style={[font.title2, { color: c.text, flex: 1 }]}>{which === 'from' ? 'From' : 'To'}</Text>
         <Pressable onPress={() => { haptic.select(); onCancel(); }} accessibilityRole="button" style={{ minHeight: 44, minWidth: 44, justifyContent: 'center', alignItems: 'flex-end' }}>
@@ -203,6 +206,7 @@ function Steps({ j, from, to, onBack, now }: { j: JourneyLike; from: string; to:
   const [help, setHelp] = useState(false);
   const canSpeak = useMemo(() => hasSpeech(), []);
   useEffect(() => () => stopSpeaking(), []);
+  const side = useSides();
   const say = () => {
     haptic.select();
     if (talking) { stopSpeaking(); setTalking(false); return; }
@@ -214,7 +218,7 @@ function Steps({ j, from, to, onBack, now }: { j: JourneyLike; from: string; to:
   };
   useEffect(() => { if (!talking) return; const t = setTimeout(() => setTalking(false), 4000 + steps.length * 3500); return () => clearTimeout(t); }, [talking, steps.length]);
   return (
-    <ScrollView contentContainerStyle={{ paddingBottom: 48 }}>
+    <ScrollView contentContainerStyle={{ paddingBottom: 48, paddingLeft: side.left, paddingRight: side.right }}>
       <Pressable onPress={() => { haptic.select(); onBack(); }} accessibilityRole="button" accessibilityLabel="Back to trips"
         style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: 48, paddingHorizontal: 12, opacity: pressed ? 0.5 : 1, alignSelf: 'flex-start' })}>
         <Icon name={I.back} size={22} color={c.tint} />
@@ -260,6 +264,7 @@ export default function Simple() {
   const c = usePalette();
   const st = useStore();
   const insets = useSafeAreaInsets();
+  const side = useSides();
   const tone = useTone();
   const [from, setFrom] = useState<Field>(null);
   const [to, setTo] = useState<Field>(null);
@@ -381,7 +386,7 @@ export default function Simple() {
   } else {
     const hasList = !!query;
     body = (
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 48 }}
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 48, paddingLeft: side.left, paddingRight: side.right }}
         refreshControl={hasList ? <RefreshControl refreshing={live.refreshing} onRefresh={live.refresh} /> : undefined}>
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 20, paddingRight: 8, minHeight: 52 }}>
           <Text accessibilityRole="header" maxFontSizeMultiplier={1.6} style={[font.largeTitle, { color: c.text, flex: 1 }]}>Plan Your Trip</Text>

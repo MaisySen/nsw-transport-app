@@ -60,7 +60,7 @@ test('Home: the undo bar sits above the tab bar', () => {
 test('TabBarSafe pads by the native screen safe area on iPhone only', () => {
   const t = src('src/components/TabBarSafe.tsx');
   assert.match(t, /from 'react-native-screens\/experimental'/);
-  assert.match(t, /edges=\{\{ bottom: true \}\}/);
+  assert.match(t, /edges=\{\{ bottom: true, left: true, right: true \}\}/);
   assert.match(t, /Platform\.OS === 'ios'/);
   // The native view must exist in the builds this update reaches: same react-native-screens as the 206 lock file.
   const lock = JSON.parse(src('package-lock.json'));

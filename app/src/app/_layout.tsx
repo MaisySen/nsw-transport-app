@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AppState, Platform, useColorScheme } from 'react-native';
+import { AppState, Platform, useColorScheme, useWindowDimensions } from 'react-native';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -17,11 +17,17 @@ import { usePalette } from '@/lib/theme';
 import { sheetHeaderOptions, stopHeaderOptions } from '@/lib/headerOptions';
 import { LiftAlertSync } from '@/lib/liftAlerts';
 import { LiveTripEngine } from '@/lib/liveEngine';
+import { orientationFor } from '@/lib/layoutCore';
 
 export default function RootLayout() {
   const scheme = useColorScheme();
   const c = usePalette();
   const [ready, setReady] = useState(false);
+  // Upright on a phone sized window; on a wide one (an open iPhone Duo, a fold's inner screen, a tablet) screens turn
+  // and resize. The orientation screen option is already in every build on runtime 1.0.0 (the board uses it), so no
+  // new native call is made; the web ignores it.
+  const { width, height } = useWindowDimensions();
+  const orientation = orientationFor(width, height);
 
   // Every install has its own profile on the server; read or create it before the first request.
   useEffect(() => {
@@ -70,12 +76,14 @@ export default function RootLayout() {
         <StatusBar style="auto" />
         <LiftAlertSync />
         <LiveTripEngine />
-        {/* Every screen stays upright; only the departure board turns sideways (build 205 lets iPhone turn). */}
-        <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal', headerTintColor: c.tint, contentStyle: { backgroundColor: c.bg }, orientation: 'portrait_up' }}>
+        {/* On a phone sized window every screen stays upright and only the departure board turns sideways (build 205
+            lets iPhone turn); on a wide window every screen follows the window. */}
+        <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal', headerTintColor: c.tint, contentStyle: { backgroundColor: c.bg }, orientation }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="stop/[id]" options={stopHeaderOptions(Platform.OS)} />
           <Stack.Screen name="trip" options={{ title: 'Trips', headerLargeTitle: false }} />
           <Stack.Screen name="board" options={{ headerShown: false, presentation: Platform.OS === 'ios' ? 'fullScreenModal' : 'card', orientation: 'all' }} />
+          <Stack.Screen name="platform" options={{ headerShown: false, presentation: Platform.OS === 'ios' ? 'fullScreenModal' : 'card' }} />
           <Stack.Screen name="service" options={{ headerShown: false, presentation: 'card' }} />
           <Stack.Screen name="go" options={{ headerShown: false, presentation: 'card' }} />
           <Stack.Screen name="topup" options={{ title: 'Opal machines' }} />
