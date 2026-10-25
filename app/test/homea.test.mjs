@@ -34,6 +34,7 @@ test('then line: the next two countdowns, min only when all are minutes', () => 
   assert.equal(H.heroCountTone({ gone: false, cancelled: false }), 'text', 'one minute to go is not red');
   assert.equal(H.heroCountTone({ gone: true, cancelled: false }), 'red');
   assert.equal(H.heroCountTone({ gone: false, cancelled: true }), 'red');
+  assert.equal(H.thenText([{ big: 'Now', unit: '' }, { big: '13', unit: 'min' }]), 'Next now, 13 min');
   assert.equal(H.thenText([]), '');
   assert.equal(H.thenText([{ big: '', unit: '' }]), '');
 });
@@ -132,4 +133,12 @@ test('Next trip card and rows use the shared live label', () => {
   assert.ok(/<LiveStatus state=\{ls\}/.test(g), 'card label is LiveStatus');
   assert.ok(/honest \? ls\.label/.test(g), 'rows say Timetable or Not tracking');
   assert.ok(!/\bcd\(dep, now\) : \{ big/.test(g) || /ls \? \{ big: ls\.big/.test(g), 'the big number is the honest one');
+});
+
+test('spoken countdown: 1 minute, not 1 minutes', () => {
+  assert.equal(H.spokenTime({ big: '1', unit: 'min' }), '1 minute');
+  assert.equal(H.spokenTime({ big: '6', unit: 'min' }), '6 minutes');
+  assert.equal(H.spokenTime({ big: 'Now', unit: '' }), 'Now');
+  assert.equal(H.spokenTime({ big: '5:12', unit: '' }), '5:12');
+  assert.equal(H.spokenTime({ big: '2', unit: 'h' }), '2 h');
 });

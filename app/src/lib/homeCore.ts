@@ -87,7 +87,14 @@ export function whereText(platform?: string | null, stopId?: string | null, mode
 export function thenText(later: { big: string; unit: string }[]): string {
   const xs = later.filter((x) => x.big);
   if (!xs.length) return '';
-  return `Next ${xs.map((x) => (x.unit ? `${x.big} ${x.unit}` : x.big)).join(', ')}`;
+  return `Next ${xs.map((x) => (x.unit ? `${x.big} ${x.unit}` : x.big === 'Now' ? 'now' : x.big)).join(', ')}`;
+}
+
+/** A countdown as VoiceOver and TalkBack read it: "1 minute", "6 minutes", "Now", "5:12". */
+export function spokenTime(x: { big: string; unit: string }): string {
+  if (!x.unit) return x.big;
+  if (x.unit !== 'min') return `${x.big} ${x.unit}`;
+  return `${x.big} ${x.big === '1' ? 'minute' : 'minutes'}`;
 }
 
 /**
