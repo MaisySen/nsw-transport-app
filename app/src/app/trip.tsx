@@ -4,9 +4,12 @@ import { JourneyWhy, WhyLate, withWhyAction } from '@/components/WhyLate';
 import { useUsualText } from '@/lib/usual';
 import { TripReminders } from '@/components/TripReminders';
 import { plural } from '@/lib/homeCore';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, StyleSheet, Switch, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, useColorScheme, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { whenFromParams, whenLabel, whenQuery } from '@/lib/planCore';
+import { isTomorrow, NOW, whenFromParams, whenLabel, whenQuery, type When } from '@/lib/planCore';
+import { WhenPicker } from '@/components/WhenPicker';
+import { afterBatch, canLoadEarlier, canLoadLater, chipLabel, chipsToShow, dateNeeded, earlierFrom, emptyModes, filterModes, modesWords, MODE_CHIPS, nearEnd, normModes, PAGE0, PAGING, pickerDays, serviceDayEnd, sydneyTime, toggleMode, ymd, type ModeK, type PageState } from '@/lib/tripModesCore';
+import { useOnViewRef } from '@/lib/activity';
 import { haptic } from '@/lib/haptic';
 import { withTimeout } from '@/lib/gesture';
 import { api, isLongPair } from '@/lib/api';
@@ -306,11 +309,12 @@ function JourneyDetail({ j, now, from, to, autoStart }: { j: Journey; now: numbe
 }
 
 export default function TripScreen() {
-  const p = useLocalSearchParams<{ from: string; fromName: string; to: string; toName: string; pick?: string; via?: string; viaName?: string; conn?: string; name?: string; legs?: string; time?: string; arriveBy?: string; start?: string; at?: string }>();
-  // Leave at or Arrive by from Plan (a Sydney clock time); without it the trip is from now.
-  const when = whenFromParams(p.time, p.arriveBy);
+  const p = useLocalSearchParams<{ from: string; fromName: string; to: string; toName: string; pick?: string; via?: string; viaName?: string; conn?: string; name?: string; legs?: string; time?: string; arriveBy?: string; date?: string; start?: string; at?: string }>();
+  // Leave at or Arrive by from Plan (a Sydney clock time), changed here with the time chip; without it the trip is from now.
+  const [when, setWhen] = useState<When>(() => whenFromParams(p.time, p.arriveBy, p.date));
+  const [pickOpen, setPickOpen] = useState(false);
   const whenQ = whenQuery(when);
-  const whenKey = whenQ.time ? `${whenQ.time}${whenQ.arriveBy ? 'a' : 'l'}` : '';
+  const whenKey = whenQ.time ? `${whenQ.time}${whenQ.arriveBy ? 'a' : 'l'}${whenQ.date || ''}` : '';
   const from = { id: String(p.from), name: String(p.fromName || '') };
   const to = { id: String(p.to), name: String(p.toName || '') };
   const via = p.via ? { id: String(p.via), name: String(p.viaName || p.via) } : null;
@@ -324,18 +328,26 @@ export default function TripScreen() {
   const accOn = !!stNow.acc;
   const liftOn = useFlag('liftAwareRouting');
   const allOn = !!stAll[tkey];
+  // Mode chips (Any, Train, Metro, Bus, Light rail, Ferry), kept per trip on the phone. A to B trips only: trips with
+  // a change stop already have a mode per leg.
+  const modesOn = !chain && !via;
+  const modes: ModeK[] = modesOn ? normModes((stNow.tripModes || {})[tkey]) : [];
+  const modesKey = modes.join(',');
   // A saved trip (Your trips) can have reminders; they open it again with these params.
   const saved = (stNow.myTrips || []).find((t) => tripKeyOf(t) === tkey) || null;
   const openParams = Object.fromEntries(Object.entries(p).filter(([k, v]) => v != null && v !== '' && ['from', 'fromName', 'to', 'toName', 'via', 'viaName', 'conn', 'name', 'legs'].includes(k)).map(([k, v]) => [k, String(v)]));
   const c = usePalette();
   const now = useNow();
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
-  const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...whenQ }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey],
-    { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '')) });
+  const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...whenQ, modes }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : 20000, [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey],
+    { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '') + (modesKey ? `|m:${modesKey}` : '')) });
   const [extra, setExtra] = useState<Journey[]>([]);
-  // Step free on or off asks again; earlier and later trips loaded before would be the other kind.
-  useEffect(() => { setExtra([]); }, [accOn]);
-  const [more, setMore] = useState<number>(0);
+  // Step free on or off, another time or other modes ask again; batches loaded before would be the other kind.
+  const [later, setLater] = useState<PageState>(PAGE0);
+  const [earlier, setEarlier] = useState<PageState>(PAGE0);
+  useEffect(() => { setExtra([]); setLater(PAGE0); setEarlier(PAGE0); }, [accOn, whenKey, modesKey]);
+  // Modes seen in any answer for this trip, so Metro, Light rail or Ferry show only where they make sense.
+  const seenModes = useRef<Set<string>>(new Set());
   const [showTravel, setShowTravel] = useState(false);
   const dark = useColorScheme() === 'dark';
   const firstT = (j: Journey) => j.legs.find((l) => l.kind === 'transit');
@@ -346,6 +358,7 @@ export default function TripScreen() {
     const seen = new Set<string>();
     const out: Journey[] = [];
     for (const j of [...(data?.journeys || []).filter((x) => ms(x.leave) > now - 120000), ...extra.filter((x) => ms(x.leave) > now - 30 * 60000)]) {
+      for (const l of j.legs) if (l.kind !== 'walk' && l.mode) seenModes.current.add(l.mode);
       const k = jKey(j);
       if (seen.has(k)) continue;
       seen.add(k);
@@ -355,27 +368,56 @@ export default function TripScreen() {
     const withT = out.filter((j) => !!firstT(j));
     return (withT.length ? withT : out).sort((a, b) => depMs(a) - depMs(b));
   })();
-  const df = directFilter(jsAll, plan, allOn, (j) => j);
+  // The phone checks the modes too: the older server ignores them, and batches mix with the first answer.
+  const df = directFilter(filterModes(jsAll, modes), plan, allOn, (j) => j);
+  const chips = modesOn ? chipsToShow([...seenModes.current], modes) : [];
   const js = df.list;
   // A new reminder starts 15 min before the first service shown (phone time, as the reminder rings in phone time).
   const suggest = (() => { const j = js[0]; if (!j) return null; const t = new Date(depMs(j) - 15 * 60000); return { hour: t.getHours(), minute: Math.floor(t.getMinutes() / 5) * 5 }; })();
   // Last way home: the last service tonight, only when the list shows the night gap after it.
   const lastIdx = lastTonightIndex(js.map(depMs));
-  const loadMore = async (dir: -1 | 1) => {
-    if (!js.length || more) return;
-    haptic.select();
-    const t = dir < 0 ? Math.max(now - 25 * 60000, depMs(js[0]) - 40 * 60000) : depMs(js[js.length - 1]) + 60000;
-    setMore(dir);
+  // Endless list: the next batch loads by itself near the end of the list, earlier ones on a pull at the top. Capped
+  // per visit (PAGING), stopped at 4am (end of the service day) or when a batch brings nothing new, only while this
+  // screen is on view with the app in front, and never more than one batch at a time.
+  const onView = useOnViewRef();
+  const firstDep = js.length ? depMs(js[0]) : null;
+  const lastDep = js.length ? depMs(js[js.length - 1]) : null;
+  const anchor = when.kind === 'now' ? now : sydneyTime(when.day || (isTomorrow(when, now) ? pickerDays(now, 2)[1].day : ymd(now)), when.h, when.m);
+  const dayEnd = serviceDayEnd(data?.journeys?.length ? depMs(data.journeys[0]) : anchor);
+  const floor = when.kind === 'now' ? now - PAGING.earliestBeforeNowMs : Math.max(now - PAGING.earliestBeforeNowMs, anchor - 2 * 3600000);
+  const batch = async (t: number) => {
+    const day = dateNeeded(ymd(t), Number(hhmm(t).slice(0, 2)), Number(hhmm(t).slice(2)), now);
+    const r = await planTrip(plan, { time: hhmm(t), count: 6, refresh: true, all: chain && allOn, modes, ...(day ? { date: day } : {}) });
+    const have = new Set(jsAll.map(jKey));
+    const fresh = (r.journeys || []).filter((j) => !have.has(jKey(j)));
+    if (fresh.length) setExtra((e) => [...e, ...fresh]);
+    return fresh;
+  };
+  const loadLater = async () => {
+    if (!canLoadLater(later, lastDep, dayEnd, onView.current)) return;
+    setLater((x) => ({ ...x, busy: true }));
     try {
-      const r = await planTrip(plan, { time: hhmm(t), count: 5, refresh: true, all: chain && allOn });
-      setExtra((e) => [...e, ...(r.journeys || [])]);
-      if (dir < 0) setOpen(null);
-    } catch (e: any) {
-      Alert.alert("Couldn't load more services", String(e?.message || e));
-    } finally {
-      setMore(0);
+      const fresh = await batch(lastDep! + 60000);
+      const last = fresh.length ? Math.max(...fresh.map(depMs)) : lastDep;
+      setLater((x) => afterBatch(x, filterModes(fresh, modes).length ? fresh.length : 0, last, dayEnd));
+    } catch {
+      // No retry loop: the next scroll near the end tries once more.
+      setLater((x) => ({ ...x, busy: false, pages: x.pages + 1 }));
     }
   };
+  const loadEarlier = async () => {
+    if (!canLoadEarlier(earlier, firstDep, floor, onView.current)) return;
+    setEarlier((x) => ({ ...x, busy: true }));
+    try {
+      const fresh = await batch(earlierFrom(firstDep!, floor));
+      setEarlier((x) => afterBatch(x, fresh.filter((j) => depMs(j) < firstDep!).length, null, Infinity));
+      if (fresh.length) setOpen(null);
+    } catch {
+      setEarlier((x) => ({ ...x, busy: false, pages: x.pages + 1 }));
+    }
+  };
+  const pull = () => { refresh(); if (js.length) loadEarlier(); };
+  const [viewH, setViewH] = useState(0);
   // A start link opens the service leaving closest to `at` and starts it, once.
   const [autoStart, setAutoStart] = useState<number | null>(null);
   const startDone = useRef(false);
@@ -399,7 +441,7 @@ export default function TripScreen() {
     // Nothing in the results avoids it: ask the planner once for the services leaving from now.
     if (!probKey || pbShown || pbAll || pbAsked === probKey || offlineAt) return;
     setPbAsked(probKey);
-    planTrip(plan, { time: hhmm(now), count: 8, refresh: true, all: chain && allOn }).then((r) => setExtra((e) => [...e, ...(r.journeys || [])])).catch(() => {});
+    planTrip(plan, { time: hhmm(now), count: 8, refresh: true, all: chain && allOn, modes }).then((r) => setExtra((e) => [...e, ...(r.journeys || [])])).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [probKey, !!pbShown, !!pbAll, offlineAt]);
   const [showAlerts, setShowAlerts] = useState(false);
@@ -418,7 +460,7 @@ export default function TripScreen() {
   const save = () => {
     // Saving goes through New trip's Confirm step: name, extend with a connection, change time.
     if (chain) { router.push({ pathname: '/new-trip', params: { legs: JSON.stringify(tLegs(plan)), ...(p.name ? { name: String(p.name) } : {}) } }); return; }
-    if (!via) { router.push({ pathname: '/new-trip', params: { from: from.id, fromName, to: to.id, toName, mode: firstT(js[0] || ({ legs: [] } as any))?.mode || '' } }); return; }
+    if (!via) { router.push({ pathname: '/new-trip', params: { from: from.id, fromName, to: to.id, toName, mode: modes.length === 1 ? modes[0] : firstT(js[0] || ({ legs: [] } as any))?.mode || '' } }); return; }
     const doSave = async (name: string) => {
       try { await api.saveTrip(name, from, to); haptic.success(); Alert.alert('Saved', `It's on your Home screen as "${name}". You can also text "${name}" to Tab.`); }
       catch (e: any) { Alert.alert("Couldn't save it", e.message); }
@@ -437,7 +479,12 @@ export default function TripScreen() {
         headerBackTitle: chain ? 'Back' : undefined,
         headerRight: () => <Pressable accessibilityRole="button" accessibilityLabel="Save trip" hitSlop={13} onPress={save}><Icon name={I.starOpen} size={22} color={c.tint} /></Pressable>,
       }} />
-      <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
+      <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pull} />} scrollEventThrottle={250}
+        onLayout={(e) => setViewH(e.nativeEvent.layout.height)}
+        onScroll={(e) => { const n = e.nativeEvent; if (nearEnd({ layoutH: n.layoutMeasurement.height, offsetY: n.contentOffset.y, contentH: n.contentSize.height })) loadLater(); }}
+        // A short list that does not fill the screen cannot be scrolled to its end, so it asks for the next batch itself.
+        onContentSizeChange={(_, h) => { if (viewH && js.length && nearEnd({ layoutH: viewH, offsetY: 0, contentH: h })) loadLater(); }}>
+        <WhenBar when={when} now={now} onOpen={() => setPickOpen(true)} onNow={() => { haptic.select(); setWhen(NOW); }} />
         {alertList.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
             <Pressable accessibilityRole="button" accessibilityState={{ expanded: showAlerts }} onPress={() => setShowAlerts(!showAlerts)} android_ripple={{ color: c.fill }} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 }}>
@@ -463,12 +510,6 @@ export default function TripScreen() {
             <ParkGroup list={data.parking.carparks} title={`Park and Ride at ${stShort(data.parking.station?.name)}`} station={data.parking.station?.name} watch />
           </View>
         ) : null}
-        {whenQ.time ? (
-          <View style={{ marginHorizontal: 20, marginTop: 12, flexDirection: 'row', alignItems: 'center' }} accessibilityRole="text">
-            <Icon name={I.clock} size={14} color={c.text2} />
-            <T kind="sub" tone="text2" style={{ marginLeft: 6 }}>{whenLabel(when, now)}</T>
-          </View>
-        ) : null}
         <StepFreeBar on={accOn} data={data} empty={!!data && !js.length} liftOn={liftOn} />
         {chain ? <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 12 }}>{(() => { const L = tLegs(plan); return L.length === 2 && L[1].mode !== 'walk' ? `Via ${stName(shortName(L[0].to.name))}, ${L[1].conn ?? 5} min to change` : `${L.length} legs via ${viaText(plan)}`; })()}</T> : null}
         {jsAll.length ? (
@@ -480,6 +521,8 @@ export default function TripScreen() {
             <Switch value={allOn} onValueChange={(v) => { haptic.select(); store.setAllServices(tkey, v); }} accessibilityLabel="Include trips with a change" />
           </View>
         ) : null}
+        {chips.length ? <ModeChips chips={chips} modes={modes} onChange={(m) => { haptic.select(); store.setTripModes(tkey, m); setOpen(0); }} /> : null}
+        {modes.length && data?.modesBy === 'phone' && js.length ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>From the usual results only, so some {modesWords(modes).toLowerCase()} trips may be missing.</T> : null}
         {prob ? (
           <View accessibilityRole="summary" style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, padding: 16, borderLeftWidth: 4, borderLeftColor: c.red }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -506,7 +549,7 @@ export default function TripScreen() {
         ) : null}
         {js.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
-            <MoreButton title="Earlier services" busy={more === -1} onPress={() => loadMore(-1)} />
+            {earlier.busy ? <LoadingRow text="Loading earlier services" /> : null}
             {js.map((j, i) => (
               <View key={jKey(j) + i}>
                 <Sep inset={0} />
@@ -518,8 +561,15 @@ export default function TripScreen() {
                 {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} autoStart={autoStart === i} /></View> : null}
               </View>
             ))}
-            <Sep inset={0} />
-            <MoreButton title="Later services" busy={more === 1} onPress={() => loadMore(1)} />
+            {later.busy ? <><Sep inset={0} /><LoadingRow text="Loading later services" /></> : null}
+          </View>
+        ) : null}
+        {js.length && !later.busy && (later.done || later.pages >= PAGING.maxLater || (lastDep != null && lastDep >= dayEnd)) ? (
+          <View style={{ alignItems: 'center', marginTop: 12, marginHorizontal: 24 }}>
+            <T kind="foot" tone="text2" style={{ textAlign: 'center' }}>{later.done || (lastDep != null && lastDep >= dayEnd) ? 'No more services found for this day.' : 'For later services, pick a time.'}</T>
+            <Pressable accessibilityRole="button" onPress={() => setPickOpen(true)} hitSlop={8} style={({ pressed }) => ({ minHeight: 44, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
+              <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Choose a time</T>
+            </Pressable>
           </View>
         ) : null}
         {offlineAt ? (
@@ -529,13 +579,76 @@ export default function TripScreen() {
             {error ? `Offline. Live data updated ${hms(updatedAt)}` : `Live data updated ${hms(updatedAt)}`}
           </T>
         ) : null}
-        {data && !js.length ? <Empty icon={I.route} title="No trips found" body={data.error || 'Try a different time or nearby stop.'} /> : null}
+        {data && !js.length && modes.length ? (() => { const e = emptyModes(modes, data.modesBy === 'server'); return <Empty icon={I.route} title={e.title} body={e.body} action={<Button title="Any" kind="tinted" onPress={() => { haptic.select(); store.setTripModes(tkey, []); }} />} />; })() : null}
+        {data && !js.length && !modes.length ? <Empty icon={I.route} title="No trips found" body={data.error || 'Try a different time or nearby stop.'} /> : null}
         {!data && error ? <Empty icon={I.warn} title="Can't plan this trip" body={error} /> : null}
         {!data && !error ? <Searching key={`${from.id}>${to.id}|${whenKey}`} long={!chain && !via && isLongPair(from.id, to.id)} /> : null}
         {data?.tomorrow ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>No more trips tonight. These are the first ones tomorrow.</T> : null}
         {saved ? <TripReminders tripKey={tkey} name={saved.name} open={openParams} suggest={suggest} /> : null}
       </Screen>
+      <WhenPicker visible={pickOpen} value={when} now={now} days={pickerDays(now, 8)} onClose={() => setPickOpen(false)}
+        onDone={(w) => {
+          setPickOpen(false);
+          if (w.kind === 'now') { setWhen(NOW); return; }
+          const day = dateNeeded(w.day, w.h, w.m, now);
+          setWhen({ kind: w.kind, h: w.h, m: w.m, ...(day ? { day } : {}) });
+          setOpen(0);
+        }} />
     </>
+  );
+}
+
+/** "Leave now" as a chip that opens the time picker (any time, any day of the next week), and Now one tap back. */
+function WhenBar({ when, now, onOpen, onNow }: { when: When; now: number; onOpen: () => void; onNow: () => void }) {
+  const c = usePalette();
+  const label = whenLabel(when, now);
+  const ios = Platform.OS === 'ios';
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 12, gap: 8 }}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`${label}. Change time`} accessibilityHint="Opens Leave at and Arrive by, with any time and day" onPress={onOpen}
+        android_ripple={{ color: c.fill, borderless: false }}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: 44, paddingHorizontal: 14, borderRadius: ios ? 22 : 8, backgroundColor: c.card, borderWidth: ios ? 0 : 1, borderColor: c.sep, opacity: pressed ? 0.7 : 1, flexShrink: 1 })}>
+        <Icon name={I.clock} size={15} color={c.tint} />
+        <T kind="sub" numberOfLines={2} style={{ marginLeft: 6, fontWeight: '600', flexShrink: 1 }}>{label}</T>
+        <Icon name={I.chevron} size={11} color={c.text3} style={{ marginLeft: 6, transform: [{ rotate: '90deg' }] }} />
+      </Pressable>
+      {when.kind !== 'now' ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Leave now" onPress={onNow} android_ripple={{ color: c.fill }}
+          style={({ pressed }) => ({ minHeight: 44, paddingHorizontal: 14, borderRadius: ios ? 22 : 8, justifyContent: 'center', backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>
+          <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Now</T>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+/** Any, Train, Metro, Bus, Light rail, Ferry. Several can be on (Train and Bus); Any clears them. */
+function ModeChips({ chips, modes, onChange }: { chips: ModeK[]; modes: ModeK[]; onChange: (m: ModeK[]) => void }) {
+  const c = usePalette();
+  const ios = Platform.OS === 'ios';
+  const chip = (key: string, name: string, on: boolean, press: () => void, mode?: ModeK) => (
+    <Pressable key={key} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={chipLabel(name, on)} onPress={press}
+      android_ripple={{ color: c.fill }}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: 36, paddingHorizontal: 12, borderRadius: ios ? 18 : 8, marginVertical: 4,
+        backgroundColor: on ? c.tint : c.card, borderWidth: on || ios ? 0 : 1, borderColor: c.sep, opacity: pressed ? 0.75 : 1 })}>
+      {mode ? <Icon name={modeIconName(mode)} size={14} color={on ? '#FFFFFF' : modeColor[mode] || c.text2} /> : null}
+      <T kind="sub" style={{ marginLeft: mode ? 5 : 0, color: on ? '#FFFFFF' : c.text, fontWeight: on ? '600' : '400' }}>{name}</T>
+    </Pressable>
+  );
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }} accessibilityLabel="Modes">
+      {chip('any', 'Any', !modes.length, () => onChange([]))}
+      {chips.map((k) => chip(k, MODE_CHIPS.find((x) => x.k === k)!.name, modes.includes(k), () => onChange(toggleMode(modes, k, chips)), k))}
+    </ScrollView>
+  );
+}
+
+function LoadingRow({ text }: { text: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: 48, gap: 8 }} accessibilityLiveRegion="polite" accessibilityLabel={text}>
+      <ActivityIndicator size="small" />
+      <T kind="foot" tone="text2">{text}</T>
+    </View>
   );
 }
 
@@ -602,15 +715,6 @@ function JourneyAccessLine({ j, liftOn }: { j: Journey; liftOn: boolean }) {
   );
 }
 
-function MoreButton({ title, busy, onPress }: { title: string; busy: boolean; onPress: () => void }) {
-  const c = usePalette();
-  return (
-    <Pressable onPress={onPress} disabled={busy} accessibilityRole="button" android_ripple={{ color: c.fill }}
-      style={({ pressed }) => [st.more, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
-      {busy ? <ActivityIndicator size="small" color={c.tint} /> : <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>{title}</T>}
-    </Pressable>
-  );
-}
 
 const st = StyleSheet.create({
   pill: { flexDirection: 'row', alignItems: 'center', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },

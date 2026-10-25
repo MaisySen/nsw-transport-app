@@ -25,6 +25,8 @@ type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; wa
   morning?: import('./types').MorningCheck[];
   /** More > Weekend trackwork heads up: one notification on Thursday 6pm when work this weekend touches a trip. */
   twHeadsUp?: boolean;
+  /** Trip screen mode chips per trip (tripKey to modes, empty means Any). Kept apart from myTrips, which widgets read. */
+  tripModes?: Record<string, string[]>;
 };
 export type LeaveReminder = { at: number; dep: number; label: string };
 const EMPTY: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {}, places: {}, myTrips: [], tripOrder: [], allServices: {}, fareType: 'adult' };
@@ -144,6 +146,16 @@ export const store = {
   removeMyTrip(key: string) { dropReminders([key]); state = { ...state, myTrips: (state.myTrips || []).filter((x) => tripKeyOf(x) !== key) }; save(); },
   getOrder: () => state.tripOrder || [],
   setTripOrder(keys: string[]) { state = { ...state, tripOrder: keys }; save(); },
+  setTripModes(key: string, modes: string[]) {
+    const a = { ...(state.tripModes || {}) };
+    delete a[key];
+    if (modes.length) a[key] = modes;
+    // The newest 100 trips are kept; an old pair falls back to Any.
+    const keys = Object.keys(a);
+    for (const k of keys.slice(0, Math.max(0, keys.length - 100))) delete a[k];
+    state = { ...state, tripModes: a };
+    save();
+  },
   setAllServices(key: string, on: boolean) {
     const a = { ...(state.allServices || {}) };
     if (on) a[key] = true; else delete a[key];

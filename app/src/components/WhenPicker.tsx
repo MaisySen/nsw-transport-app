@@ -48,7 +48,8 @@ export function Wheel({ values, value, onChange, text, label, width }: { values:
   );
 }
 
-export function WhenPicker({ visible, value, now, onDone, onClose }: { visible: boolean; value: When; now: number; onDone: (w: When) => void; onClose: () => void }) {
+/** `days`: the trip screen's day row (Today, Tomorrow, then dates); without it the day follows from the time. */
+export function WhenPicker({ visible, value, now, onDone, onClose, days }: { visible: boolean; value: When; now: number; onDone: (w: When) => void; onClose: () => void; days?: { day: string; label: string; a11y: string }[] }) {
   const c = usePalette();
   const ins = useSafeAreaInsets();
   const side = useSides();
@@ -56,11 +57,13 @@ export function WhenPicker({ visible, value, now, onDone, onClose }: { visible: 
   const [kind, setKind] = useState<When['kind']>(value.kind);
   const [h, setH] = useState(0);
   const [m, setM] = useState(0);
+  const [day, setDay] = useState<string>('');
   // Each opening starts from the chosen time, or the next 5 minutes when leaving now.
   useEffect(() => {
     if (!visible) return;
     const start = value.kind === 'now' ? defaultClock(now) : { h: value.h, m: snapMinute(value.m) };
     setKind(value.kind); setH(start.h); setM(start.m);
+    if (days?.length) setDay(value.kind !== 'now' && value.day ? value.day : value.kind !== 'now' && isTomorrow(value, now) && days[1] ? days[1].day : days[0].day);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
   // Arrive by starts half an hour out, the soonest arrival most trips can make.
@@ -70,8 +73,8 @@ export function WhenPicker({ visible, value, now, onDone, onClose }: { visible: 
     setKind(k);
   };
   const { h12, pm } = to12(h);
-  const pick: When = kind === 'now' ? NOW : { kind, h, m };
-  const day = kind === 'now' ? '' : isTomorrow(pick, now) ? 'Tomorrow' : 'Today';
+  const pick: When = kind === 'now' ? NOW : { kind, h, m, ...(days?.length && day ? { day } : {}) };
+  const dayText = kind === 'now' || days?.length ? '' : isTomorrow(pick, now) ? 'Tomorrow' : 'Today';
   const done = () => { haptic.select(); onDone(pick); };
   const wheels = kind === 'now' ? (
     <T kind="sub" tone="text2" style={{ textAlign: 'center', marginVertical: 24 }}>Trips leaving from now, with live times.</T>
@@ -87,7 +90,21 @@ export function WhenPicker({ visible, value, now, onDone, onClose }: { visible: 
         <Wheel label="Minute" width={72} values={MINUTES} value={m} text={(v) => String(v).padStart(2, '0')} onChange={setM} />
         <Wheel label="Morning or afternoon" width={72} values={HALVES} value={pm ? 1 : 0} text={(v) => (v ? 'pm' : 'am')} onChange={(v) => setH(from12(h12, !!v))} />
       </View>
-      <T kind="foot" tone="text2" style={{ marginTop: 6 }} accessibilityLiveRegion="polite">{day}</T>
+      {dayText ? <T kind="foot" tone="text2" style={{ marginTop: 6 }} accessibilityLiveRegion="polite">{dayText}</T> : null}
+      {days?.length ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ alignSelf: 'stretch', marginTop: 10 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }} accessibilityLabel="Day">
+          {days.map((d) => {
+            const on = d.day === day;
+            return (
+              <Pressable key={d.day} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={d.a11y} onPress={() => { haptic.select(); setDay(d.day); }}
+                android_ripple={{ color: c.fill }}
+                style={({ pressed }) => ({ minHeight: 40, paddingHorizontal: 14, borderRadius: ios ? 20 : 8, justifyContent: 'center', backgroundColor: on ? c.tint : c.fill, borderWidth: ios ? 0 : on ? 0 : 1, borderColor: c.sep, opacity: pressed ? 0.8 : 1 })}>
+                <T kind="sub" style={{ color: on ? '#FFFFFF' : c.text, fontWeight: on ? '600' : '400' }}>{d.label}</T>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      ) : null}
     </View>
   );
   return (

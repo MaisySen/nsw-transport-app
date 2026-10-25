@@ -75,9 +75,10 @@ export const api = {
     noteBoard(stop, r);
     return r;
   },
-  trip: async (from: Place, to: Place, opts: { refresh?: boolean; count?: number; time?: string; arriveBy?: boolean } = {}): Promise<TripResp> => {
+  trip: async (from: Place, to: Place, opts: { refresh?: boolean; count?: number; time?: string; arriveBy?: boolean; modes?: string[]; date?: string } = {}): Promise<TripResp> => {
     const base = { from: from.id, to: to.id, fromName: from.name, toName: to.name, count: opts.count || 5, time: opts.time, arriveBy: opts.arriveBy ? 1 : '', fare: store.fareType(), acc: store.accOn() ? 1 : '' };
     const pair = `${from.id}>${to.id}`;
+    if ((opts.modes && opts.modes.length) || opts.date) return tripPicked(base, pair, opts.modes || [], opts.date || '');
     if (isLongTrip(from.id, to.id) || longPairs.has(pair)) return tripLong(base, opts.refresh);
     try {
       return await req<TripResp>(`/api/trip?${qs({ ...base, device: await getDevice(), profile: PROFILE, refresh: opts.refresh ? 1 : '' })}`);
@@ -160,6 +161,28 @@ async function tripLong(base: Record<string, any>, refresh?: boolean): Promise<T
   })();
   longOut.set(path, p);
   try { return await p; } finally { longOut.delete(path); }
+}
+
+// Mode chips (Bus only, Train and bus) and another day: only the new server takes `modes` and `date` (it asks the
+// planner for those modes and echoes them back). Until the app moves there these trips go to it directly, with no
+// profile or device. If it does not answer, modes fall back to the server in use with the phone filtering its usual
+// answer (`modesBy: 'phone'`, the screen says so honestly); a day cannot be planned there, so that is an error.
+async function tripPicked(base: Record<string, any>, pair: string, modes: string[], date: string): Promise<TripResp> {
+  const long = isLongTrip(base.from, base.to) || longPairs.has(pair);
+  const extra = { modes: modes.join(','), date, long: long ? 1 : '', count: Math.max(6, Number(base.count) || 6) };
+  const path = `/api/trip?${qs({ ...base, ...extra })}`;
+  const wait = long ? LONG_TRIP_TIMEOUT_MS : 20000;
+  let r: TripResp;
+  try {
+    r = apiBase() === NEW_API_BASE ? await req<TripResp>(`${path}&${qs({ device: await getDevice(), profile: PROFILE })}`, undefined, wait) : await onNew<TripResp>(path, wait);
+  } catch (e: any) {
+    if (date) throw Object.assign(new Error("Planning for another day didn't work just now. Pull down to try again, or pick a time today."), { http: e?.http, offline: e?.offline });
+    r = await req<TripResp>(`/api/trip?${qs({ ...base, count: 8, device: await getDevice(), profile: PROFILE })}`);
+    return { ...r, modesBy: 'phone' } as TripResp;
+  }
+  const echoed = Array.isArray((r as any).modes);
+  if (date && (r as any).date !== date) throw new Error("Planning for another day didn't work just now. Pull down to try again, or pick a time today.");
+  return { ...r, modesBy: modes.length ? (echoed ? 'server' : 'phone') : undefined } as TripResp;
 }
 
 /** One GET to the new server (before the app has moved there), with a timeout; errors carry http like req. */

@@ -62,7 +62,11 @@ export type TripResp = { kind: 'trip'; from: { id: string; name: string }; to: {
   /** acc=1 with lift aware trips: trips left out for a lift outage, or allAffected when every trip meets one. */
   liftAware?: { avoided: number; allAffected: boolean; stations: string[] } | null;
   /** Car parks when the first leg starts at a Park and Ride station. */
-  parking?: { station: Place; carparks: import('./access').CarPark[] } | null };
+  parking?: { station: Place; carparks: import('./access').CarPark[] } | null;
+  /** Mode chips: 'server' when the planner was asked for those modes only, 'phone' when the phone filtered the usual answer. */
+  modesBy?: 'server' | 'phone';
+  /** The modes and day the server honoured (only the new server echoes them). */
+  modes?: string[]; date?: string };
 
 export type ServiceStop = { id: string; name: string; lat?: number; lon?: number; planned?: string; estimated?: string; passed?: boolean; mine?: boolean; alight?: boolean; skipped?: boolean; platform?: string };
 export type ServiceResp = {
