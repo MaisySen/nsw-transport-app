@@ -51,7 +51,7 @@ export function StopCard({ stop }: { stop: Place }) {
         return (
           <View key={key + i}>
             <Sep inset={16} />
-            <DepartureRow d={d} now={now} alertText={rowAlert(d.alerts, data?.alerts)} why={whyOf(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />
+            <DepartureRow d={d} now={now} station={stop.id} alertText={rowAlert(d.alerts, data?.alerts)} why={whyOf(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />
           </View>
         );
       })}

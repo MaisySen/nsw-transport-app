@@ -33,18 +33,21 @@ const ICONS: [RegExp, string, string][] = [
   [/^stop watching\b/i, 'bell.slash', 'bellOff'],
   [/^watch\b/i, 'bell', 'bell'],
   [/^show stops\b/i, 'list.bullet', 'list'],
+  [/^platform view\b/i, 'train.side.front.car', 'platform'],
 ];
 
 /**
  * Tap and hold on a departure (stop screen, board, Home stop cards): Watch or Stop watching (the same words as the
- * row's swipe, so VoiceOver lists the action once), then Show stops. The title is the service, from live data.
+ * row's swipe, so VoiceOver lists the action once), then Show stops, then Platform view on a train or metro row
+ * (when the caller passes it). The title is the service, from live data.
  */
-export function departureMenu(d: { line?: string | null; dest?: string | null }, watched: boolean, act: { watch?: (() => void) | null; open: () => void }): MenuSpec {
+export function departureMenu(d: { line?: string | null; dest?: string | null }, watched: boolean, act: { watch?: (() => void) | null; open: () => void; platform?: (() => void) | null }): MenuSpec {
   const dest = String(d.dest || '').split(',')[0].replace(/ Station$/, '').trim();
   const title = [String(d.line || '').trim(), dest].filter(Boolean).join(' to ');
   const items: MenuAction[] = [];
   if (act.watch) items.push({ text: watched ? 'Stop watching' : 'Watch', ...iconsFor(watched ? 'Stop watching' : 'Watch'), destructive: false, onPress: act.watch });
   items.push({ text: 'Show stops', ...iconsFor('Show stops'), destructive: false, onPress: act.open });
+  if (act.platform) items.push({ text: 'Platform view', ...iconsFor('Platform view'), destructive: false, onPress: act.platform });
   return { title: title || undefined, items };
 }
 

@@ -60,6 +60,8 @@ export const I = {
   calendar: { ios: 'calendar', android: 'event' },
   download: { ios: 'arrow.down.circle', android: 'download' },
   sparkle: { ios: 'sparkles', android: 'auto_awesome' },
+  platform: { ios: 'train.side.front.car', android: 'directions_railway' },
+  plane: { ios: 'airplane', android: 'flight' },
 } satisfies Record<string, IconName>;
 
 export function modeIconName(mode?: string): IconName {

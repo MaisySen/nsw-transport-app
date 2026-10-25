@@ -6,6 +6,7 @@ import { WhyLate, withWhyAction } from './WhyLate';
 import { SwipeRow, swipeA11y, type SwipeAct } from './Swipe';
 import { HoldMenu } from './HoldMenu';
 import { departureMenu } from '@/lib/menuCore';
+import { openPlatform } from '@/lib/platform';
 import { usePalette } from '@/lib/theme';
 import { BADGE, badgeLook } from '@/lib/lineStyle';
 import { clock, delayWords, durText, ms, shortName } from '@/lib/format';
@@ -143,18 +144,20 @@ const rowA11y = (act: SwipeAct | null, why?: Why | null) => withWhyAction(swipeA
 
 type DepartureRowProps = { d: Departure; now: number; onPress: () => void; onWatch?: () => void; watched?: boolean; showStop?: boolean; alertText?: string | null; stopNo?: boolean;
   /** Why it's late: the reason from this service's own linked alert (whyLateCore.ts); shown instead of alertText. */
-  why?: Why | null };
+  why?: Why | null;
+  /** The station this row is listed at (stop screen, Home stop card): Platform view in the hold menu opens there. */
+  station?: string };
 
 /**
  * A row redraws when its departure, watch state, note or the countdown it shows changes; not on every clock tick.
  * Callers pass fresh arrow functions each render that only close over `d` and `watched`, which are compared here.
  */
 function sameDepartureRow(a: DepartureRowProps, b: DepartureRowProps) {
-  return a.d === b.d && a.watched === b.watched && a.showStop === b.showStop && a.stopNo === b.stopNo && a.alertText === b.alertText && (a.why?.text || '') === (b.why?.text || '') && !!a.onWatch === !!b.onWatch
+  return a.d === b.d && a.watched === b.watched && a.station === b.station && a.showStop === b.showStop && a.stopNo === b.stopNo && a.alertText === b.alertText && (a.why?.text || '') === (b.why?.text || '') && !!a.onWatch === !!b.onWatch
     && depKey(a.d, a.now) === depKey(b.d, b.now);
 }
 
-function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertText, stopNo, why }: DepartureRowProps) {
+function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertText, stopNo, why, station }: DepartureRowProps) {
   const c = usePalette();
   const live = depState(d, now);
   // Buses: "Running slow in traffic" when the live delays ahead grow (busLiveCore.ts); live rows only.
@@ -201,9 +204,11 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
       <LiveCountdown state={live} planned={d.planned} />
     </Pressable>
   );
-  // Tap and hold: the system context menu on iPhone (Watch or Stop watching, Show stops), the Material 3 menu on
-  // Android, the old sheet on an iPhone build without the native view (components/HoldMenu.tsx, lib/menuCore.ts).
-  const held = <HoldMenu menu={departureMenu(d, !!watched, { watch: onWatch, open: onPress })} surface={c.card}>{body}</HoldMenu>;
+  // Tap and hold: the system context menu on iPhone (Watch or Stop watching, Show stops, and Platform view on a train
+  // or metro), the Material 3 menu on Android, the old sheet on an iPhone build without the native view
+  // (components/HoldMenu.tsx, lib/menuCore.ts). A tap on the row still opens the service.
+  const platform = d.mode === 'train' || d.mode === 'metro' ? () => openPlatform({ stop: station || d.stopId || '', trip: d.tripId, planned: d.planned, line: d.line }) : null;
+  const held = <HoldMenu menu={departureMenu(d, !!watched, { watch: onWatch, open: onPress, platform })} surface={c.card}>{body}</HoldMenu>;
   if (!act) return held;
   return <SwipeRow act={act}>{held}</SwipeRow>;
 }

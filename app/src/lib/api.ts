@@ -276,3 +276,15 @@ export async function departuresAt(stop: string, t: number): Promise<DeparturesR
   }
   return r;
 }
+
+// Platform view's board: carriages (vehicle.cars) are sent only by api.transportsydney.app. Until the app moves there,
+// this one screen asks it directly (no device or profile) and falls back to the server in use on any failure, so a
+// board always shows; cars simply stay hidden when the answer came from a server without them.
+export async function platformDepartures(stop: string, refresh = false): Promise<DeparturesResp> {
+  if (apiBase() === NEW_API_BASE) return api.departures(stop, refresh);
+  try {
+    const r = await onNew<DeparturesResp>(`/api/departures?${qs({ stop, refresh: refresh ? 1 : '' })}`, 8000);
+    if (r && Array.isArray((r as any).items)) return r;
+  } catch { /* the server in use answers instead */ }
+  return api.departures(stop, refresh);
+}
