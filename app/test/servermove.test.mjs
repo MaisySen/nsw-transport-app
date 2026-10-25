@@ -102,7 +102,7 @@ test('api.ts reads fall back, writes do not; one retry never after a time out', 
 test('honest "Updated": a cached answer keeps the time it was read', async () => {
   const now = Date.parse('2026-10-26T08:00:00Z');
   const a = read('src/lib/api.ts');
-  assert.match(a, /stampSeen\(body as T, dataTime\(body, Date\.now\(\)\)\)/);
+  assert.match(a, /stampSeen\((?:cleanAlertTexts\()?body as T\)?, dataTime\(body, Date\.now\(\)\)\)/);
   assert.equal(L.answerTime({ seenAt: now - 9000 }, now), now - 9000);
   assert.equal(L.answerTime({ seenAt: now + 9000 }, now), now, 'never in the future');
   assert.equal(L.answerTime({ seenAt: now - 600000 }, now), now, 'nothing older than 2 minutes is believed');
