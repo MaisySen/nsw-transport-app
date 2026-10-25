@@ -126,15 +126,17 @@ export default function PlatformView() {
     );
   };
 
-  // Above the board: close, the station, Speak.
+  // Above the board: close, the station, Speak. The station's name is sized to fit between them (no cut off names).
+  const titleW = width - insets.left - insets.right - 24 - 44 - 20 - (main && canSpeak ? 110 : 44);
   const top = (
     <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 50, paddingHorizontal: 12 }}>
       <Pressable onPress={close} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close Platform view"
         style={({ pressed }) => ({ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: B.btn, opacity: pressed ? 0.6 : 1 })}>
         <Icon name={I.close} size={17} color="#FFFFFF" />
       </Pressable>
-      <Text accessibilityRole="header" numberOfLines={1} maxFontSizeMultiplier={1.4} style={{ flex: 1, textAlign: 'center', color: '#C4C4C9', fontSize: 16, fontWeight: '600', marginHorizontal: 10 }}>
-        {stationName ? `${stationName}, Platform view` : 'Platform view'}
+      <Text accessibilityRole="header" accessibilityLabel={stationName ? `${stationName}, Platform view` : 'Platform view'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1.4}
+        style={{ flex: 1, textAlign: 'center', color: '#C4C4C9', fontSize: fitSize(stationName || 'Platform view', 17, titleW, Math.min(fs, 1.4)), fontWeight: '600', marginHorizontal: 10 }}>
+        {stationName || 'Platform view'}
       </Text>
       {main && canSpeak ? <SpeakPill say={() => saidRef.current} bg={B.btn} /> : <View style={{ width: 44 }} />}
     </View>
