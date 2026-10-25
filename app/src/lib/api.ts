@@ -69,6 +69,9 @@ async function send<T>(path: string, init: RequestInit | undefined, timeoutMs: n
   }
 }
 
+/** When this phone last started a watch: the alerts timer asks every tick again at once (push.ts, notesWaitMs). */
+export const watchClock = { startedAt: 0 };
+
 export const api = {
   search: (q: string) => req<{ items: SearchItem[] }>(`/api/search?${qs({ q })}`),
   nearby: (lat: number, lon: number) => req<{ stops: (SearchItem & { distanceM?: number; dist?: number })[] }>(`/api/nearby?${qs({ lat: lat.toFixed(5), lon: lon.toFixed(5) })}`),
@@ -108,7 +111,11 @@ export const api = {
   deleteCommute: (id: string) => req<{ ok: boolean }>(`/api/commutes?${qs({ profile: PROFILE, id })}`, { method: 'DELETE' }),
   dismissSuggestion: (key: string) => req<{ ok: boolean }>(`/api/commutes/dismiss?${qs({ profile: PROFILE })}`, { method: 'POST', body: JSON.stringify({ key }) }),
   watches: async (since = 0) => req<WatchesResp>(`/api/watches?${qs({ device: await getDevice(), profile: PROFILE, since })}`),
-  watch: async (body: any) => req<{ ok: boolean; watch: { id: string } }>(`/api/watch`, { method: 'POST', body: JSON.stringify({ device: await getDevice(), profile: PROFILE, ...body }) }),
+  watch: async (body: any) => {
+    const r = await req<{ ok: boolean; watch: { id: string } }>(`/api/watch`, { method: 'POST', body: JSON.stringify({ device: await getDevice(), profile: PROFILE, ...body }) });
+    watchClock.startedAt = Date.now();
+    return r;
+  },
   watchDetail: (id: string) => req<{ watch: Watch; notes: any[]; now: number }>(`/api/watch?${qs({ id })}`),
   stopWatch: async (id: string) => req<{ ok: boolean }>(`/api/watch?${qs({ id, device: await getDevice() })}`, { method: 'DELETE' }),
   registerExpo: async (token: string, platform: string, welcome = false) =>
@@ -277,6 +284,23 @@ export async function departuresAt(stop: string, t: number): Promise<DeparturesR
     throw Object.assign(new Error('This server shows departures from now only.'), { unsupported: true });
   }
   return r;
+}
+
+// A stop's board for one mode (the stop screen's mode or route chip at a stop with several modes). Only
+// api.transportsydney.app asks the Trip Planner for that mode alone, so its 40 services reach further ahead (buses at
+// Strathfield: about 50 minutes, where the buses in a mixed board of 40 cover about 15). Until the app moves there,
+// this request goes to it directly (no device or profile) and falls back to the server in use on any failure, which
+// filters its mixed board as before.
+export async function departuresFor(stop: string, mode: string, refresh = false): Promise<DeparturesResp> {
+  if (apiBase() === NEW_API_BASE) return api.departures(stop, refresh, mode);
+  let r: DeparturesResp | null = null;
+  try {
+    const x = await onNew<DeparturesResp>(`/api/departures?${qs({ stop, mode, refresh: refresh ? 1 : '' })}`, 8000);
+    if (x && Array.isArray((x as any).items)) r = x;
+  } catch { /* the server in use answers instead */ }
+  if (!r) return api.departures(stop, refresh, mode);
+  noteBoard(boardKey(stop, mode), r);
+  return { ...r, askedMode: mode };
 }
 
 // Platform view's board: carriages (vehicle.cars) are sent only by api.transportsydney.app. Until the app moves there,

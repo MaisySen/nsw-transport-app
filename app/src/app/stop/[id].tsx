@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
-import { api, boardTimeSupported, departuresAt } from '@/lib/api';
+import { api, boardTimeSupported, departuresAt, departuresFor } from '@/lib/api';
 import { useCountdownNow, useLive, useReportCountdowns } from '@/lib/hooks';
 import { adaptiveGapMs, nextInMs } from '@/lib/pollCore';
 import { bestTime } from '@/lib/format';
@@ -62,7 +62,7 @@ export default function StopScreen() {
   // the server for that mode alone, so the board reaches further ahead than a mixed list of 40 (boardAsk).
   const [served, setServed] = useState<string[]>([]);
   const ask = boardAsk(served, mode, pick, at);
-  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => (at == null ? api.departures(String(id), r, ask || undefined) : departuresAt(String(id), at)),
+  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => (at != null ? departuresAt(String(id), at) : ask ? departuresFor(String(id), ask, r) : api.departures(String(id), r)),
     // Adaptive: every 15 s while the next service is 5 minutes away or less, slower when it is further off.
     (d) => adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), [id, at, ask], { cacheKey: at == null ? cacheKey('dep', boardKey(String(id), ask)) : undefined });
   useEffect(() => { setServed((p) => modesServed(p, data)); }, [data]);
