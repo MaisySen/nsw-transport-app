@@ -9,6 +9,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * EAS simulator build 70dd1762 (watchshots profile, commit 375e6c8): the app, widget, watch app and complications all compiled, with no warnings in our code. Inside the built app: version 1.0.0 (207) on all four, no background modes.
 * Screenshots now come from the simulator check: the watch app (list, trip, service) on a Series 12 46 mm and an Ultra 4 watch simulator, and the complications (rectangular, circular, inline, a face) drawn from their own SwiftUI views with live times. The iPhone widget step compiled the widget views but found no iPhone simulator to run on; fixed in tools/widget-shots.sh for the next build.
 * The production profile no longer adds one to the build number on its own (`autoIncrement` false), so 207 builds as 207.
+* Watch trip screen: Swap direction and Refresh are now rows at the end of the list instead of bottom bar buttons, so nothing covers the first card ("8 min late", "Next: 5, 16 mins" were hidden in the simulator check until you scrolled). Pull to refresh is unchanged. Swift parse checked only; first compiled by the production 207 build.
 
 ### Apple Watch app redesign and matching widget badges (build 207, not built yet; branch native-207)
 * The watch app opens to your trips as a list you scroll with the Digital Crown: line colour bar and the route, like TripView. Home to Work (or back) first, then Your trips in the iPhone's order.

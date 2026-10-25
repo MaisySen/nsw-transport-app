@@ -18,8 +18,9 @@ Laid out the way TripView shows trips on the wrist (Bidur's photos, 25 Oct):
   "1 h 20 min"), "Platform 4", "T4, T9 Lines", "11:56 to 12:18" (leave and arrive) and, when late, "26 min late".
   The countdown and the late line are green on time, amber 2 to 4 minutes late, red 5 or more or cancelled, from the
   live delay; timetable times are green. The top card also says "To Strathfield" and "Next: 7, 12 mins".
-* Swap direction (bottom left) shows the same trip the other way at once (a trip with changes is reversed leg by
-  leg); Refresh (bottom right) loads again; pull down to refresh too. Swipe a row on the list for Swap direction.
+* Swap direction (a row at the end of the trip screen) shows the same trip the other way at once (a trip with changes
+  is reversed leg by leg); Refresh (the row under it) loads again; pull down to refresh too. Swipe a row on the list
+  for Swap direction. They are list rows, not bottom bar buttons, because bottom bar buttons float over the first card.
 * Tap a service card: when it leaves and arrives, how late, and each leg with its line, platforms and times.
 * VoiceOver reads each row and card in one go ("Town Hall to Strathfield, next train in 4 minutes, platform 4, T4 and
   T9 lines, then 7 and 12 minutes") and offers Swap direction as an action on a row.

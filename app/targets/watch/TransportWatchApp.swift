@@ -582,8 +582,8 @@ struct ServiceCardView: View {
     }
 }
 
-/// A trip's next 6 services as cards, titled with the stop you leave from, with Swap direction and Refresh at the
-/// bottom.
+/// A trip's next 6 services as cards, titled with the stop you leave from, with Swap direction and Refresh as rows
+/// at the end of the list.
 struct TripDetailView: View {
     @EnvironmentObject var model: WatchModel
     @State private var shown: WCard
@@ -622,31 +622,28 @@ struct TripDetailView: View {
                     .foregroundStyle(.secondary)
                     .listRowBackground(Color.clear)
             }
-        }
-        .navigationTitle(WText.short(shown.from.name))
-        .refreshable { await reload() }
-        .toolbar {
-            ToolbarItemGroup(placement: .bottomBar) {
+            // In the list, not a bottom bar: bottom bar buttons float over the first card.
+            Section {
                 Button {
                     Haptic.click()
                     let old = shown
                     shown = shown.reversed()
                     model.close(old)
                 } label: {
-                    Image(systemName: "arrow.left.arrow.right")
+                    Label("Swap direction", systemImage: "arrow.left.arrow.right")
                 }
-                .accessibilityLabel("Swap direction")
-                Spacer()
                 Button {
                     Haptic.click()
                     Task { await reload() }
                 } label: {
-                    Image(systemName: "arrow.clockwise")
+                    Label(model.loading ? "Updating" : "Refresh", systemImage: "arrow.clockwise")
                 }
                 .disabled(model.loading)
-                .accessibilityLabel("Refresh")
+                .accessibilityHint("Loads the latest times")
             }
         }
+        .navigationTitle(WText.short(shown.from.name))
+        .refreshable { await reload() }
         .task(id: shown.key) { await model.show(shown) }
         .onDisappear { model.close(shown) }
     }

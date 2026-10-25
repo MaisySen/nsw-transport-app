@@ -207,16 +207,17 @@ Run on a real iPhone (iOS 26 and iOS 27.1) and a real Apple Watch paired with it
 
 **Apple Watch**
 12. The watch app installs with 207 and opens to the saved trips list (Home to Work first when set), scrolled with the Digital Crown.
-13. Tap a trip: the next 6 services as cards with a big countdown in whole minutes, platform, lines and "11:56 to 12:18"; amber or red when late. Tap a card for its legs. In the simulator check the Swap and Refresh buttons in the bottom bar cover the lower lines of the first card ("8 min late", "Next: 5, 16 mins") until you scroll: check how it reads on the wrist.
-14. Swap direction, Refresh and pull to refresh respond at once with a haptic; swipe a row to swap.
-15. Times refresh every 30 seconds only while the app is on screen; with the wrist down nothing loads (check with Low Power Mode off and on).
-16. No signal (Airplane Mode on the watch, phone away): the times the iPhone last sent show, marked with when they were updated.
-17. Complications on a face (Modular, Infograph) and in the Smart Stack: rectangular "T1 Strathfield 2, 16, 18 min", inline, circular and corner; whole minutes; a tap opens that trip, also from a cold start.
-18. A new or reordered saved trip on the phone reaches the watch within a minute while both are awake.
-19. VoiceOver on the watch reads each card as one element; the largest Dynamic Type size wraps without cutting the countdown.
+13. Tap a trip: the next 6 services as cards with a big countdown in whole minutes, platform, lines and "11:56 to 12:18"; amber or red when late. Tap a card for its legs.
+14. watch trip screen: first card fully visible above Swap and Refresh. Nothing floats over the cards: Swap direction and Refresh are rows at the end of the list (the simulator check 70dd1762 had them as bottom bar buttons over "8 min late" and "Next: 5, 16 mins"). Check on a 42 mm or 41 mm watch and at the largest text size too.
+15. Swap direction, Refresh and pull to refresh respond at once with a haptic; swipe a row to swap.
+16. Times refresh every 30 seconds only while the app is on screen; with the wrist down nothing loads (check with Low Power Mode off and on).
+17. No signal (Airplane Mode on the watch, phone away): the times the iPhone last sent show, marked with when they were updated.
+18. Complications on a face (Modular, Infograph) and in the Smart Stack: rectangular "T1 Strathfield 2, 16, 18 min", inline, circular and corner; whole minutes; a tap opens that trip, also from a cold start.
+19. A new or reordered saved trip on the phone reaches the watch within a minute while both are awake.
+20. VoiceOver on the watch reads each card as one element; the largest Dynamic Type size wraps without cutting the countdown.
 
 **Unchanged in 207 (regression)**
-20. Live Activity and Dynamic Island on a trip, trip reminders ringing with the app closed, last train home reminder, notifications permission asked only on the first reminder, location asked only when in use (no Always prompt).
+21. Live Activity and Dynamic Island on a trip, trip reminders ringing with the app closed, last train home reminder, notifications permission asked only on the first reminder, location asked only when in use (no Always prompt).
 
 ## Before a release
 
