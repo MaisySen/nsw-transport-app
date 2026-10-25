@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Animated, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SHEET_RADIUS, SheetGrabber, useSheetDrag } from './EditorSheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSides } from '@/lib/layout';
 import { haptic } from '@/lib/haptic';
@@ -58,6 +59,8 @@ export function WhenPicker({ visible, value, now, onDone, onClose, days, kinds =
   const ins = useSafeAreaInsets();
   const side = useSides();
   const ios = Platform.OS === 'ios';
+  // A drag down on the grabber or the title bar closes the sheet, as a native sheet does.
+  const drag = useSheetDrag(onClose);
   const [kind, setKind] = useState<When['kind']>(value.kind);
   const [h, setH] = useState(0);
   const [m, setM] = useState(0);
@@ -116,15 +119,18 @@ export function WhenPicker({ visible, value, now, onDone, onClose, days, kinds =
       <View style={[s.wrap, !ios && { justifyContent: 'center' }]}>
         <Pressable accessibilityRole="button" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.32)' }]} onPress={onClose} accessibilityLabel="Close" />
         {ios ? (
-          <View style={[s.sheet, { marginLeft: side.left, marginRight: side.right, backgroundColor: c.card, paddingBottom: Math.max(ins.bottom, 16) }]}>
-            <View style={s.bar}>
-              <Pressable accessibilityRole="button" onPress={onClose} hitSlop={10}><T kind="body" tone="tint">Cancel</T></Pressable>
-              <T kind="headline" accessibilityRole="header">When</T>
-              <Pressable accessibilityRole="button" onPress={done} hitSlop={10}><T kind="body" tone="tint" style={{ fontWeight: '600' }}>Done</T></Pressable>
+          <Animated.View style={[s.sheet, { marginLeft: side.left, marginRight: side.right, backgroundColor: c.card, paddingBottom: Math.max(ins.bottom, 16) }, drag.style]}>
+            <View {...drag.handlers}>
+              <SheetGrabber onClose={onClose} />
+              <View style={s.bar}>
+                <Pressable accessibilityRole="button" onPress={onClose} hitSlop={10}><T kind="body" tone="tint">Cancel</T></Pressable>
+                <T kind="headline" accessibilityRole="header">When</T>
+                <Pressable accessibilityRole="button" onPress={done} hitSlop={10}><T kind="body" tone="tint" style={{ fontWeight: '600' }}>Done</T></Pressable>
+              </View>
             </View>
             <Segmented value={kind} onChange={choose} options={kinds} />
             {wheels}
-          </View>
+          </Animated.View>
         ) : (
           <View style={[s.dialog, { backgroundColor: c.dark ? '#22262E' : '#F3F5FA' }]}>
             <T kind="title3" accessibilityRole="header" style={{ fontSize: 24, marginHorizontal: 24, marginTop: 24 }}>When</T>
@@ -143,7 +149,7 @@ export function WhenPicker({ visible, value, now, onDone, onClose, days, kinds =
 
 const s = StyleSheet.create({
   wrap: { flex: 1, justifyContent: 'flex-end' },
-  sheet: { borderTopLeftRadius: 14, borderTopRightRadius: 14, paddingBottom: 16 },
+  sheet: { borderTopLeftRadius: SHEET_RADIUS, borderTopRightRadius: SHEET_RADIUS, paddingBottom: 16 },
   bar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, minHeight: 52 },
   dialog: { marginHorizontal: 24, borderRadius: 28, paddingBottom: 8, overflow: 'hidden' },
   actions: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 12, paddingTop: 8 },

@@ -2,7 +2,8 @@
 // (weekly local notifications, reminders.ts) and open the trip with live times. Asks for notifications only
 // when the first reminder is saved.
 import { useEffect, useState } from 'react';
-import { Alert, Linking, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Alert, Linking, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { SHEET_RADIUS, SheetGrabber, useSheetDrag } from './EditorSheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSides } from '@/lib/layout';
 import { haptic } from '@/lib/haptic';
@@ -80,6 +81,8 @@ function ReminderSheet({ value, isNew, onClose, onSave, onDelete }: { value: Rem
   const ins = useSafeAreaInsets();
   const side = useSides();
   const ios = Platform.OS === 'ios';
+  // A drag down on the grabber or the title bar closes the sheet, as a native sheet does.
+  const drag = useSheetDrag(onClose);
   const [h, setH] = useState(7);
   const [m, setM] = useState(30);
   const [days, setDays] = useState<number[]>([]);
@@ -128,14 +131,17 @@ function ReminderSheet({ value, isNew, onClose, onSave, onDelete }: { value: Rem
       <View style={[st.wrap, !ios && { justifyContent: 'center' }]}>
         <Pressable accessibilityRole="button" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.32)' }]} onPress={onClose} accessibilityLabel="Close" />
         {ios ? (
-          <View style={[st.sheet, { marginLeft: side.left, marginRight: side.right, backgroundColor: c.card, paddingBottom: Math.max(ins.bottom, 16) }]}>
-            <View style={st.bar}>
-              <Pressable accessibilityRole="button" onPress={onClose} hitSlop={10}><T kind="body" tone="tint">Cancel</T></Pressable>
-              <T kind="headline" accessibilityRole="header">{isNew ? 'New reminder' : 'Reminder'}</T>
-              <Pressable accessibilityRole="button" accessibilityState={{ disabled: !days.length }} onPress={done} hitSlop={10}><T kind="body" tone={days.length ? 'tint' : 'text3'} style={{ fontWeight: '600' }}>Save</T></Pressable>
+          <Animated.View style={[st.sheet, { marginLeft: side.left, marginRight: side.right, backgroundColor: c.card, paddingBottom: Math.max(ins.bottom, 16) }, drag.style]}>
+            <View {...drag.handlers}>
+              <SheetGrabber onClose={onClose} />
+              <View style={st.bar}>
+                <Pressable accessibilityRole="button" onPress={onClose} hitSlop={10}><T kind="body" tone="tint">Cancel</T></Pressable>
+                <T kind="headline" accessibilityRole="header">{isNew ? 'New reminder' : 'Reminder'}</T>
+                <Pressable accessibilityRole="button" accessibilityState={{ disabled: !days.length }} onPress={done} hitSlop={10}><T kind="body" tone={days.length ? 'tint' : 'text3'} style={{ fontWeight: '600' }}>Save</T></Pressable>
+              </View>
             </View>
             {body}
-          </View>
+          </Animated.View>
         ) : (
           <View style={[st.dialog, { backgroundColor: c.dark ? '#22262E' : '#F3F5FA' }]}>
             <T kind="title3" accessibilityRole="header" style={{ fontSize: 24, marginHorizontal: 24, marginTop: 24 }}>{isNew ? 'New reminder' : 'Reminder'}</T>
@@ -155,7 +161,7 @@ const st = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 56, paddingVertical: 8 },
   day: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   wrap: { flex: 1, justifyContent: 'flex-end' },
-  sheet: { borderTopLeftRadius: 14, borderTopRightRadius: 14, paddingBottom: 16 },
+  sheet: { borderTopLeftRadius: SHEET_RADIUS, borderTopRightRadius: SHEET_RADIUS, paddingBottom: 16 },
   bar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, minHeight: 52 },
   dialog: { marginHorizontal: 24, borderRadius: 28, paddingBottom: 8, overflow: 'hidden' },
   actions: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 12, paddingTop: 8 },
