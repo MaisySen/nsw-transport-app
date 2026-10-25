@@ -28,6 +28,7 @@ import { checkSubtitle, checkTitle } from '@/lib/morning';
 import { clearLastHomeLocal, localLastSupported } from '@/lib/lastHome';
 import { setTrackworkHeadsUp } from '@/lib/trackwork';
 import { forgetPushTokens, PUSH_FORGOTTEN_KEY } from '@/lib/forgetTokens';
+import { askCalendarRead, calendarReadSupported } from '@/lib/calendarLeaveBy';
 
 /** "1.0.0 (204) · update 01a16ff7": the build on the phone and the update it runs, for support. */
 function versionText() {
@@ -166,6 +167,21 @@ export default function Settings() {
     const ok = await setTrackworkHeadsUp(v);
     if (!ok) Alert.alert('Notifications are off', 'Open Settings, find Transport, and allow notifications.', [{ text: 'Not now', style: 'cancel' }, { text: 'Open Settings', onPress: () => Linking.openSettings() }]);
   };
+  // Calendar leave by: hidden on builds that can't read the calendar (iPhone before 208, Android before the
+  // calendar module), and off until switched on here (docs/CALENDAR-LEAVE-BY.md).
+  const calFlag = useFlag('calendarLeaveBy');
+  const [calSupported] = useState(() => calendarReadSupported());
+  const calOn = calFlag && calSupported;
+  const setCal = async (v: boolean) => {
+    haptic.select();
+    if (!v) { store.setCalLeaveBy(false); return; }
+    const r = await askCalendarRead();
+    if (r.granted) { store.setCalLeaveBy(true); haptic.success(); return; }
+    Alert.alert('Calendar access is off', Platform.OS === 'ios'
+      ? 'To see when to leave for your events, open Settings, tap Calendars under Transport, and choose Full Access. Events are read on this phone only.'
+      : 'To see when to leave for your events, open Settings and allow Calendar for Transport. Events are read on this phone only.',
+      [{ text: 'Not now', style: 'cancel' }, { text: 'Open Settings', onPress: () => Linking.openSettings() }]);
+  };
   const mList = st.morning || [];
   const morningSub = mList.length === 1 ? `${checkTitle(mList[0])}, ${checkSubtitle(mList[0]).split('. ')[0]}` : mList.length ? `${mList.length} checks` : 'One alert before your usual trip, only if something is wrong';
   const pl = st.places || {};
@@ -222,6 +238,13 @@ export default function Settings() {
               <Sep inset={57} />
               <Row icon={I.warn} iconBg={c.orange} title="Weekend trackwork heads up" subtitle="Thursday 6pm, only when work touches your trips" chevron={false}
                 right={sw(!!st.twHeadsUp, setTw, 'Weekend trackwork heads up')} />
+            </>
+          ) : null}
+          {calOn ? (
+            <>
+              <Sep inset={57} />
+              <Row icon={I.calendar} iconBg={c.red} title="Calendar leave by" subtitle="When to leave for events with a place. Read on this phone only" chevron={false}
+                right={sw(!!st.calLeaveBy, setCal, 'Calendar leave by')} />
             </>
           ) : null}
           <Sep inset={57} />

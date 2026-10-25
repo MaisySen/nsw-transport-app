@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import type { Place } from './types';
+import { rememberPlace, type CalPlace, type CalPlaceCache } from './calendarLeaveByCore';
 
 export type RecentTrip = { from: Place; to: Place; at: number };
 export type Places = { home?: Place; work?: Place };
@@ -27,6 +28,10 @@ type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; wa
   twHeadsUp?: boolean;
   /** Trip screen mode chips per trip (tripKey to modes, empty means Any). Kept apart from myTrips, which widgets read. */
   tripModes?: Record<string, string[]>;
+  /** More > Calendar leave by (off by default): leave times on Home for calendar events with a place. */
+  calLeaveBy?: boolean;
+  /** Places found for calendar event locations, kept on this phone only (calendarLeaveByCore.ts). */
+  calPlaces?: CalPlaceCache;
 };
 export type LeaveReminder = { at: number; dep: number; label: string };
 const EMPTY: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {}, places: {}, myTrips: [], tripOrder: [], allServices: {}, fareType: 'adult' };
@@ -134,6 +139,10 @@ export const store = {
   /** The morning checks last read from the server (More > Check my trip). */
   morningList: () => state.morning || [],
   setTwHeadsUp(on: boolean) { state = { ...state, twHeadsUp: on }; save(); },
+  /** Calendar leave by on or off. Off also forgets the places found for event locations. */
+  setCalLeaveBy(on: boolean) { state = { ...state, calLeaveBy: on, ...(on ? {} : { calPlaces: {} }) }; save(); },
+  calPlaces: (): CalPlaceCache => state.calPlaces || {},
+  rememberCalPlace(loc: string, p: CalPlace | null) { state = { ...state, calPlaces: rememberPlace(state.calPlaces, loc, p, Date.now()) }; save(); },
   saveMyTrip(t: MyTrip) {
     const k = tripKeyOf(t);
     state = { ...state, myTrips: [t, ...(state.myTrips || []).filter((x) => tripKeyOf(x) !== k && x.name !== t.name)].slice(0, 12) };

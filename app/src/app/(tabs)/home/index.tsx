@@ -27,6 +27,8 @@ import { LeaveLine, MorningLink, useMyPos } from '@/components/Smart';
 import { LastHomeCard } from '@/components/LastHome';
 import { TrackworkCard } from '@/components/Trackwork';
 import { LineStatusStrip } from '@/components/LineStatus';
+import { CalendarLeaveByCard } from '@/components/CalendarLeaveBy';
+import { pickOrigin } from '@/lib/calendarLeaveByCore';
 import { commuteDir, halfDayKey } from '@/lib/smart';
 import { useLoaded } from '@/lib/store';
 
@@ -154,6 +156,8 @@ export default function Home() {
   const allKeys = [...new Set(sorted.map((t) => t.okey!))];
   const showFirst = (t: TripItem) => () => { store.setTripOrder(toFront(order, allKeys, t.okey!)); haptic.success(); };
   const hasTrips = !!(next || rest.length);
+  // Calendar leave by starts where your usual trip starts: the commute card's start, else your first trip's.
+  const calFrom = pickOrigin(commute?.from, sorted[0]?.from, places);
   const nextDel = next && (next.kind === 'mine' || next.kind === 'saved') ? delAct(next, c.red) : undefined;
 
   return (
@@ -198,6 +202,7 @@ export default function Home() {
         ) : null}
 
         <AlertsLine />
+        <CalendarLeaveByCard origin={calFrom} now={now} />
         <LastHomeCard />
         <TrackworkCard now={now} />
         <LineStatusStrip now={now} />
