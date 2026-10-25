@@ -4,7 +4,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
-### Item 3: fares Did you mean, Simple mode statuses, alert text, airport names, more stop lists (server 26 Oct, 10:05 AM, transport-api 6ad9d3a5; over the air, see docs/RELEASES.md)
+### Item 3: fares Did you mean, Simple mode statuses, alert text, airport names, more stop lists (server 26 Oct, 10:05 AM, transport-api 6ad9d3a5; over the air 10:12 AM, group fd6a8763)
 * Fares, Did you mean: a fare question in Ask (typed or dictated) checks each station name against our own station and suburb lists, which the phone keeps, so it works offline. A clear slip is used ("Strathfeild", "Parramtta"). A name that matches several places gets up to 5 real stops, best first, each with its modes ("Kings Cross, Train", "Kingsford, Light rail"), one tap each. A suburb with no station offers its nearest stations and the suburb itself. Nothing is guessed between close names and nothing is made up. 49 messy names from all over NSW checked, all as expected.
 * Simple mode (Bidur's 8:50 AM screenshot, Strathfield to Five Dock Shops): the 27 and 22 min late were real (T1 and T2 delays from overhead wiring repairs at Homebush). A big delay now also says the timetable time ("27 min late, was due 10:04am"), and the arrive time counts a live delay once. The D400 is a Bridj on demand bus you book ahead; it showed as Timetable and now shows "On demand, book ahead", once per list. A trip with a change that gets there no sooner than a direct one leaving within 20 minutes goes under it; it is still shown.
 * Alerts: no web code in any alert (tags, encoded tags, cut off tags, entities), on the server and again on the phone, also for copies kept offline.
