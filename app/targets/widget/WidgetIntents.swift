@@ -100,7 +100,13 @@ struct StopChoice: AppEntity, Hashable {
     var stopID: String
     var name: String
 
-    var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(Naming.compact(name))") }
+    /// Shown under the name for a starred bus stop ("Stop 2046100 · 438X, 492"); not part of the saved choice.
+    var subtitle: String? = nil
+
+    var displayRepresentation: DisplayRepresentation {
+        if let s = subtitle { return DisplayRepresentation(title: "\(Naming.compact(name))", subtitle: "\(s)") }
+        return DisplayRepresentation(title: "\(Naming.compact(name))")
+    }
 
     init(_ s: StopRef) {
         stopID = s.id
@@ -116,11 +122,20 @@ struct StopChoice: AppEntity, Hashable {
 
     var ref: StopRef { StopRef(id: stopID, name: name) }
 
-    /// Your starred stops, shared by the app through the app group. Nothing is suggested for you.
+    // The same stop whether or not it carries a subtitle.
+    static func == (a: StopChoice, b: StopChoice) -> Bool { a.id == b.id }
+    func hash(into h: inout Hasher) { h.combine(id) }
+
+    /// Your starred stops, shared by the app through the app group. Nothing is suggested for you. Bus stops show
+    /// their stop number and routes under the name in Edit Widget (the app shares them from its OTA of 25 Oct).
     static var starred: [StopChoice] {
         guard let d = AppIdentity.groupDefaults.data(forKey: "starredStops"),
-              let list = try? JSONDecoder().decode([StopRef].self, from: d) else { return [] }
-        return list.map { StopChoice($0) }
+              let list = try? JSONDecoder().decode([SharedStarred].self, from: d) else { return [] }
+        return list.map { s in
+            var c = StopChoice(StopRef(id: s.id, name: s.name))
+            c.subtitle = s.subtitle
+            return c
+        }
     }
 }
 
@@ -371,5 +386,22 @@ struct SharedLiveCard: Decodable {
     var target: Date {
         let ms: Double = (phase == "wait" ? departs : legArrives) ?? arrival
         return Date(timeIntervalSince1970: ms / 1000)
+    }
+}
+
+
+/// A starred stop as the app shares it (platform/widgetShare.ts starredFor): id and name, and for a bus stop the
+/// number on its sign, the mode and up to 6 routes. Older apps share id and name only.
+struct SharedStarred: Decodable {
+    var id: String
+    var name: String
+    var code: String?
+    var mode: String?
+    var lines: [String]?
+
+    var subtitle: String? {
+        guard let c = code, !c.isEmpty else { return nil }
+        let l = (lines ?? []).prefix(4).joined(separator: ", ")
+        return l.isEmpty ? "Stop \(c)" : "Stop \(c) · \(l)"
     }
 }

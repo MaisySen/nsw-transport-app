@@ -24,6 +24,9 @@ type Native = {
   sendWatchContext?: (json: string) => boolean;
   /** From build 206: reads a string from the app group and removes it (links left by Siri). */
   takeSharedString?: (key: string) => string | null;
+  /** From build 207: the app's own spoken audio session for Speak alerts (playback, voice prompt, ducks music). */
+  startSpeechAudio?: () => boolean;
+  endSpeechAudio?: () => void;
 };
 
 const native: Native | null = Platform.OS === 'ios' ? requireOptionalNativeModule<Native>('TransportIOS') : null;

@@ -663,6 +663,8 @@ struct StopBoardEntry: TimelineEntry {
     var message: String?
     var notice: WidgetNotice?
     var updated: Date = .now
+    /// "Stop 2046100" for a bus stop: the number on its sign. Nil for stations and wharves.
+    var stopNo: String? = nil
 
     static let sample = StopBoardEntry(
         date: .now, stopID: "200060", stopName: "Central", filter: nil,
@@ -723,7 +725,15 @@ struct StopBoardProvider: AppIntentTimelineProvider {
                               stopName: (resolved?.allSatisfy(\.isNumber) == false ? resolved : nil) ?? name,
                               filter: wanted.isEmpty ? nil : wanted.sorted().joined(separator: ", "),
                               rows: Array(rows.prefix(10)), message: rows.isEmpty ? "No departures soon." : nil,
-                              notice: serious?.title.map { WidgetNotice(text: $0, level: .severe) }, updated: now)
+                              notice: serious?.title.map { WidgetNotice(text: $0, level: .severe) }, updated: now,
+                              stopNo: Self.stopNumber(stop.id, modes: r.items.map { $0.mode ?? "bus" }))
+    }
+
+    /// A bus stop's id is the number on its sign (6 or 7 digits); stations and wharves have ids that are not.
+    static func stopNumber(_ id: String, modes: [String]) -> String? {
+        guard (6...7).contains(id.count), id.allSatisfy(\.isNumber), !modes.isEmpty,
+              modes.allSatisfy({ ["bus", "coach", "school"].contains($0) }) else { return nil }
+        return "Stop \(id)"
     }
 }
 
@@ -767,6 +777,7 @@ struct StopBoardView: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(entry.stopName).font(.headline).lineLimit(1)
                 if let f = entry.filter, !compact { Text(f).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                else if let n = entry.stopNo, !compact { Text(n).font(.caption).foregroundStyle(.secondary).lineLimit(1).monospacedDigit() }
                 Spacer(minLength: 0)
             }
             if entry.rows.isEmpty {

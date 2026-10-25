@@ -1,6 +1,7 @@
 import ExpoModulesCore
 import Foundation
 import WidgetKit
+import AVFoundation
 #if canImport(ActivityKit)
 import ActivityKit
 #endif
@@ -81,6 +82,26 @@ public class TransportIOSModule: Module {
         for a in Activity<LiveTripAttributes>.activities where a.activityState == .active { self.follow(a) }
       }
       #endif
+    }
+
+    /// From build 207: Speak alerts get the app's own spoken audio session. Playback, so the Ring/Silent switch does not
+    /// mute it (build 206 used the system speech session, which Silent mode silences); voice prompt mode, so it is
+    /// mixed like navigation directions; other audio (music, podcasts) is lowered while a line is read, and a podcast
+    /// is paused. JavaScript checks for this function before using it (src/lib/nativeExtras.ts speechAudio).
+    Function("startSpeechAudio") { () -> Bool in
+      do {
+        let s = AVAudioSession.sharedInstance()
+        try s.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
+        try s.setActive(true)
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    /// Ends the spoken session once the queue is read, so music comes back to full volume.
+    Function("endSpeechAudio") { () -> Void in
+      _ = try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     /// From the build with the Apple Watch app: the watch's context (JSON from platform/watchShare.ts). False when

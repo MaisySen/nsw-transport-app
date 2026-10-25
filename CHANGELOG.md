@@ -12,6 +12,8 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * Watch face and Smart Stack: the first trip's next three services, "T1 Strathfield 2, 16, 18 min", with the platform; tap to open that trip on the watch. Whole minutes, no seconds.
 * Empty: "Save a trip on your iPhone to see it here."
 * iPhone widgets, Lock Screen and Live Activity: every line badge is one style, official colours (buses always bus blue, never grey), one size, no glyph inside.
+* Stop board widget on a bus stop shows its stop number ("Stop 2046100"); in Edit Widget your starred bus stops show the stop number and routes under the name (branch native-207-bus).
+* Speak alerts get their own audio session: the Ring/Silent switch no longer mutes them, music is lowered while a line is read and comes back after (branch native-207-bus).
 
 ### Ask and the floating tab bar (over the air update for iPhone and Android, 25 Oct, 3:26 PM)
 * Ask: the field where you type is no longer hidden behind the tab bar on iPhone. It sits above the bar, and when the keyboard opens it moves up and sits right on top of the keyboard.
