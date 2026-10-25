@@ -53,7 +53,7 @@ export default function CarParkScreen() {
   const { data, error, refreshing, refresh } = useLive<{ carparks: CarPark[] } | null>(
     () => (id ? api.carpark(id).then((r) => ({ carparks: r.carpark ? [r.carpark] : [] })) : stop ? api.parking(stop) : Promise.resolve(null)), 120000, [id, stop]);
   const list = useMemo(() => data?.carparks || [], [data]);
-  const title = list.length === 1 ? parkName(list[0], station) : station ? `${stShort(station)} car parks` : 'Car parks';
+  const title = list.length === 1 ? 'Car park' : station ? `${stShort(station)} car parks` : 'Car parks';
   const stationId = list[0]?.station;
   return (
     <>
