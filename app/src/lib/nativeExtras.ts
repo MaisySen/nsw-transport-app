@@ -115,6 +115,12 @@ export function loadVoices(): Promise<VoiceInfo[]> {
   return voiceLoad;
 }
 
+/** Reads the installed voices again (back from Settings, where a voice may have been downloaded). */
+export function reloadVoices(): Promise<VoiceInfo[]> {
+  voiceList = null;
+  return loadVoices();
+}
+
 /** English voices installed on this phone, best first (voiceCore.rankVoices). */
 export async function englishVoices(): Promise<RankedVoice[]> { return rankVoices(await loadVoices()); }
 

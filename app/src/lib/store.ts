@@ -18,6 +18,8 @@ type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; wa
   speak?: boolean;
   /** More > Voice: the voice picked (an installed voice's identifier); unset means the best installed one. */
   voiceId?: string | null;
+  /** The one time Get a better voice prompt on a Speak button was shown (never shown again). */
+  voiceHelpSeen?: boolean;
   /** More > Simple mode (off by default): the app opens to one screen of departures, TripView Lite style. */
   simple?: boolean;
   /** The two question setup (home and work) was finished or skipped. */
@@ -112,6 +114,8 @@ export const store = {
   setSpeak(on: boolean) { state = { ...state, speak: on }; save(); },
   voiceId: (): string | null => state.voiceId || null,
   setVoiceId(id: string | null) { state = { ...state, voiceId: id }; save(); },
+  voiceHelpSeen: (): boolean => !!state.voiceHelpSeen,
+  setVoiceHelpSeen() { state = { ...state, voiceHelpSeen: true }; save(); },
   simpleOn: (): boolean => !!state.simple,
   setSimple(on: boolean) { state = { ...state, simple: on }; save(); },
   liftAlertsOn: (): boolean => !!state.liftAlerts,
