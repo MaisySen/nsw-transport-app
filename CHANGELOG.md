@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Speak alerts and buses (over the air update for iPhone and Android, 25 Oct, 3:15 PM)
+* Speak alerts now talk during a trip. Before, nothing was said once notifications were on. You hear short lines once each: "Your bus leaves in 2 minutes from stand X1", "Redfern is next. Change here for the T4", "Five Dock Shops is next. Get off here", a platform or stand change, running late, a tight change and "You've arrived". Music is lowered, not stopped. The switch stays on for your next trip. Speech needs the app open; on build 206 Silent mode mutes the speaker (headphones still work).
+* Bus routes: tap Route on a bus, on a bus leg in a trip, or a route badge on a bus stop, or search a route number (410, M90) in Plan. You see every stop in order with its stop number, where the buses are now, the next times at a stop you tap, the other direction and a map.
+* Stop numbers: search the number on a bus stop sign (for example 2046100) to find that stop. Bus stops, departure rows, Home stop cards and bus legs show "Stop 2046100".
+* Bus legs say where to wait: the stop, stand and stop number, on the walk to the stop and on the live trip.
+* Widgets get the stop number and routes of starred bus stops and the modes of saved trips (shown by a later widget build).
+
 ### Station picker and search fields (over the air update for iPhone and Android, 25 Oct, 3:06 PM)
 * New trip, choosing where you get on or off: the Back button and the From or To title no longer sit on top of the screen on iPhone. The question is now in the search field ("Where do you get on?", "Kings Cross to where?"), the search field sits above A to Z, By distance and By map, stations fill the full width with the A to Z letters clear of the names, and the list ends above the home indicator. Same for train, metro, ferry, light rail and bus.
 * Search fields no longer switch on capitals (the bus search used caps lock), autocorrect or spell check, and the keyboard shows a Search key: station picker, bus search, Add a trip, Plan and Set up.
