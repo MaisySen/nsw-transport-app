@@ -80,18 +80,17 @@ Ask opens on the latest message and its field sits above the tab bar and the key
 
 Measured: `app/test/ask-corpus.test.mjs`, 309 questions from all over Sydney and NSW (every region and mode, at most 5% on one commute): 192 of 309 (62%) read right by the old path (the question as typed, the server's rules, exact names), 309 of 309 (100%) by the new one. A second batch of 60, written after the first passed, scored 58 of 60 (97%) on its first run before fixes.
 
-## Platform view (over the air, 25 Oct, about 11:17 PM)
+## Platform view (over the air, 25 Oct, about 11:17 PM; station board look about 12:20 AM 26 Oct)
 
-One train or metro at a station, full screen and readable from a distance. Open it with the platform button at the top of a train or metro station's screen, or hold a train or metro departure and choose **Platform view** (the row's tap still opens the service). It shows:
-* The line badge and destination (a plane mark when it runs via the airport stations).
-* The platform, or Platform not given yet when the departure has none.
-* How many carriages, only when the live feed reports them (Sydney Trains, intercity and Metro send it on the new server; this screen asks api.transportsydney.app first and falls back to the server in use, which has no carriage count).
-* Minutes until it leaves in whole minutes, with Live or Timetable; a stale live time shows Not tracking and the timetable time, the same rule as every other countdown.
-* The stops after this station from the service's stop list, skipped stops left out and listed under Not stopping at. Stops sent with no name (Domestic and International Airport) are named from the station list the server publishes, by place. A list that does not include this station shows Stops not available rather than a wrong list.
-* Limited Stops or All stops only when the service's own description says so (none does tonight, so it is not shown).
-* The next two train or metro services at the station, any platform, with platform, carriages and minutes.
+One train or metro at a station, full screen and readable from a distance, laid out like the departure screens on station platforms (Bidur's photo of the real screen, approved mock 25 Oct 11:31 PM; our own build with system fonts and no logos). Open it with the platform button at the top of a train or metro station's screen, or hold a train or metro departure and choose **Platform view** (the row's tap still opens the service). Above the board: close, the station name, and **Speak**. The board:
+* A white board (dark in dark mode) with an orange bar: Next train (or Next metro) and Time now.
+* The line badge and the destination in large type, with "via ..." under it and a plane mark when it runs via the airport stations.
+* The stops after this station in large bold type down the left, in their own scrolling list with a soft fade at the bottom when it is longer than the space. Everything else stays still. Skipped stops are left out and listed under Not stopping at. Stops sent with no name (Domestic and International Airport) are named from the station list the server publishes, by place. When the list is empty or does not include this station (for example a train still shown at a station it will not start from during a closure), the board shows the destination and "Full stop list not available yet"; a cancelled service says so.
+* On the right: Platform with the number large in orange and a grey "N cars" pill, only when the live feed reports carriages (Platform not given yet without one), then Departs with the minutes large in orange and Live or Timetable with the clock time; a stale live time shows Not tracking and the timetable time, the same rule as every other countdown.
+* A grey Limited Stops or All stops pill only when the service's own description says so.
+* A Next service, Platform, Departs table with the next two train or metro services at the station, any platform.
 * **Speak** reads the line, destination, platform, carriages, time and stops, with the one time Get a better voice offer.
-Works at every train and metro station; nothing is written in for a station. Two columns (the board left, next services and stops right) once the window is 720 pt wide or more, by width alone. Dynamic Type, dark mode, Reduce Motion (no transition) and VoiceOver and TalkBack ("Platform 23, 8 cars, departs in 4 minutes, stops at ...").
+Works at every train and metro station; nothing is written in for a station. From 720 pt wide (an open iPhone Duo, a fold, a tablet), by width alone, two columns: destination and stops on the left, departs, platform and next services on the right. Dynamic Type (with very large text or a short window the whole board scrolls instead of only the stop list), dark mode, Reduce Motion (no transition), VoiceOver and TalkBack ("Platform 23, 8 cars, departs in 4 minutes, stops at ...").
 
 ## Wide windows (over the air, 25 Oct, about 11:17 PM)
 
