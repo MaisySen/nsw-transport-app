@@ -81,6 +81,7 @@ export default function RootLayout() {
           <Stack.Screen name="topup" options={{ title: 'Opal machines' }} />
           <Stack.Screen name="parking" options={{ title: 'Park and Ride' }} />
           <Stack.Screen name="voice" options={{ title: 'Voice' }} />
+          <Stack.Screen name="simple" options={{ headerShown: false, gestureEnabled: false, animation: 'fade' }} />
           <Stack.Screen name="new-trip" options={{ ...sheetHeaderOptions(Platform.OS, c), title: 'New trip', presentation: Platform.OS === 'ios' ? 'modal' : 'card' }} />
           <Stack.Screen name="add-trip" options={{ ...sheetHeaderOptions(Platform.OS, c), title: 'Add a trip', presentation: Platform.OS === 'ios' ? 'modal' : 'card' }} />
           <Stack.Screen name="watching" options={{ title: 'Watching' }} />

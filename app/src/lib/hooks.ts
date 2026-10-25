@@ -12,7 +12,7 @@ export { useCountdownNow, useNow, useReportCountdowns };
  * screen yet (a fresh start with no signal), the kept copy is shown with the services already gone taken out.
  * `offlineAt` is the time the shown times are from while the app is offline, else null.
  */
-export function useLive<T>(load: (refresh: boolean) => Promise<T>, intervalMs: number | ((data: T | null) => number) = 15000, deps: any[] = [], opts: { cacheKey?: string } = {}) {
+export function useLive<T>(load: (refresh: boolean) => Promise<T>, intervalMs: number | ((data: T | null) => number) = 15000, deps: any[] = [], opts: { cacheKey?: string; enabled?: boolean } = {}) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
@@ -91,7 +91,8 @@ export function useLive<T>(load: (refresh: boolean) => Promise<T>, intervalMs: n
   // A gap given as a function of the data on screen is read before each wait (adaptive polling, pollCore.adaptiveGapMs).
   const ivRef = useRef(intervalMs);
   ivRef.current = intervalMs;
-  const runNow = useScreenPoll(() => run(true), typeof intervalMs === 'function' ? () => { const f = ivRef.current; return typeof f === 'function' ? f(dataRef.current) : f; } : intervalMs);
+  // enabled false (a Simple mode page that is not the one on view): nothing polls.
+  const runNow = useScreenPoll(() => run(true), typeof intervalMs === 'function' ? () => { const f = ivRef.current; return typeof f === 'function' ? f(dataRef.current) : f; } : intervalMs, { enabled: opts.enabled ?? true });
 
   const refresh = useCallback(async () => {
     setRefreshing(true);

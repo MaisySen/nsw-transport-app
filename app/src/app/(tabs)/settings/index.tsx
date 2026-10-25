@@ -202,6 +202,11 @@ export default function Settings() {
     <>
       <Stack.Screen options={{ title: 'More' }} />
       <Screen>
+        <Section footer="Simple mode opens the app on one screen: the next departures near you, and your saved trips one swipe away.">
+          <Row icon={I.list} iconBg={c.green} title="Simple mode" subtitle="One screen, just the next services" chevron={false}
+            right={sw(!!st.simple, (v) => { haptic.select(); store.setSimple(v); if (v) router.replace('/simple'); }, 'Simple mode')} />
+        </Section>
+
         <Section>
           <Row icon={I.home} iconBg={c.tint} title="Home and work" subtitle={homeWork} onPress={() => router.push({ pathname: '/welcome', params: { edit: '1' } })} />
           {morningOn ? (
