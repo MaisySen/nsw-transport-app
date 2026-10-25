@@ -120,6 +120,8 @@ export const api = {
   // Station access, Park and Ride and Opal machines.
   station: (id: string) => req<Station>(`/api/station?${qs({ id })}`),
   parking: (stop?: string) => req<{ carparks: CarPark[]; station?: string; source?: string }>(`/api/parking?${qs({ stop })}`, undefined, 30000),
+  /** One car park, live (the same /api/parking, by facility id). */
+  carpark: (id: string) => req<{ carpark: CarPark; source?: string }>(`/api/parking?${qs({ id })}`, undefined, 30000),
   topup: (lat?: number, lon?: number, limit = 40) => req<{ items: TopupItem[]; source?: string }>(`/api/topup?${qs({ lat: lat != null ? lat.toFixed(5) : '', lon: lon != null ? lon.toFixed(5) : '', limit: lat != null ? limit : '' })}`),
   parkingWatch: async (facility: string) => req<{ ok: boolean; watch?: { name: string }; now?: { status: string } }>(`/api/parking/watch`, { method: 'POST', body: JSON.stringify({ device: await getDevice(), profile: PROFILE, facility }) }),
   liftAlerts: async (on: boolean, stations: string[] = []) => req<{ ok: boolean; now?: { title: string; url?: string }[] }>(`/api/lifts/alerts`, { method: 'POST', body: JSON.stringify(on ? { device: await getDevice(), profile: PROFILE, on: true, stations } : { device: await getDevice(), on: false }) }),

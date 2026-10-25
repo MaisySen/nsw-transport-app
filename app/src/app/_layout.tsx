@@ -79,7 +79,8 @@ export default function RootLayout() {
           <Stack.Screen name="service" options={{ headerShown: false, presentation: 'card' }} />
           <Stack.Screen name="go" options={{ headerShown: false, presentation: 'card' }} />
           <Stack.Screen name="topup" options={{ title: 'Opal machines' }} />
-          <Stack.Screen name="parking" options={{ title: 'Park and Ride' }} />
+          <Stack.Screen name="parking" options={{ title: 'Car parks' }} />
+          <Stack.Screen name="carpark" options={{ title: 'Car park', presentation: Platform.OS === 'ios' ? 'formSheet' : 'card', sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true }} />
           <Stack.Screen name="voice" options={{ title: 'Voice' }} />
           <Stack.Screen name="simple" options={{ headerShown: false, gestureEnabled: false, animation: 'fade' }} />
           <Stack.Screen name="new-trip" options={{ ...sheetHeaderOptions(Platform.OS, c), title: 'New trip', presentation: Platform.OS === 'ios' ? 'modal' : 'card' }} />

@@ -218,7 +218,7 @@ export default function Settings() {
           <Sep inset={57} />
           <Row icon={I.bell} iconBg={c.indigo} title="Watching" right={data?.watching ? <T kind="body" tone="text2">{String(data.watching)}</T> : undefined} onPress={() => router.push('/watching')} />
           <Sep inset={57} />
-          <Row icon={I.car} iconBg="#0A84FF" title="Park and Ride" onPress={() => router.push('/parking')} />
+          <Row icon={I.car} iconBg="#0A84FF" title="Car parks" subtitle="Park and Ride, live spaces" onPress={() => router.push('/parking')} />
           <Sep inset={57} />
           <Row icon={I.fare} iconBg={c.indigo} title="Opal top up machines" onPress={() => router.push('/topup')} />
         </Section>

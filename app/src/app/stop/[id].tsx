@@ -30,6 +30,7 @@ import type { When } from '@/lib/planCore';
 import type { Departure } from '@/lib/types';
 import { Chip, Empty, Screen, Sep, T } from '@/components/ui';
 import { StationInfo } from '@/components/Access';
+import { CarParkRow } from '@/components/CarParkRow';
 import * as WebBrowser from 'expo-web-browser';
 import { useStationMap } from '@/lib/stationMap';
 import type { Station } from '@/lib/access';
@@ -227,6 +228,9 @@ export default function StopScreen() {
             ) : null}
           </View>
         ) : null}
+
+        {/* A Park and Ride car park at this station: one row with the live count (components/CarParkRow.tsx). */}
+        <CarParkRow list={station?.parking} stop={String(id)} station={station?.name} />
 
         {modes.length > 1 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingTop: 14 }}>
