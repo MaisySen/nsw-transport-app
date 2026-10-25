@@ -57,6 +57,8 @@ export const I = {
   ticket: { ios: 'ticket', android: 'confirmation_number' },
   noLive: { ios: 'location.slash', android: 'location_off' },
   calendar: { ios: 'calendar', android: 'event' },
+  download: { ios: 'arrow.down.circle', android: 'download' },
+  sparkle: { ios: 'sparkles', android: 'auto_awesome' },
 } satisfies Record<string, IconName>;
 
 export function modeIconName(mode?: string): IconName {

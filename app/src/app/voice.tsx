@@ -8,9 +8,12 @@ import { haptic } from '@/lib/haptic';
 import { englishVoices, speak, stopSpeaking } from '@/lib/nativeExtras';
 import { store, useStore } from '@/lib/store';
 import { usePalette } from '@/lib/theme';
-import { onlyCompact, sampleSentence, voiceLabel, type RankedVoice } from '@/lib/voiceCore';
+import { sampleSentence, voiceLabel, type RankedVoice } from '@/lib/voiceCore';
+import { voiceQuality, voiceRowSub } from '@/lib/voiceHelpCore';
+import { englishVoicesFresh, openVoiceDownload, openVoiceSettings, playFound, useVoiceReturn } from '@/lib/voiceHelp';
 import { Icon, I } from '@/components/Icon';
-import { Button, Screen, Section, Sep, T } from '@/components/ui';
+import { VoiceHelp } from '@/components/VoiceHelp';
+import { Button, Row, Screen, Section, Sep, T } from '@/components/ui';
 
 function Pick({ title, sub, on, onPress }: { title: string; sub?: string; on: boolean; onPress: () => void }) {
   const c = usePalette();
@@ -28,9 +31,21 @@ function Pick({ title, sub, on, onPress }: { title: string; sub?: string; on: bo
 
 export default function VoiceScreen() {
   const st = useStore();
+  const c = usePalette();
   const [list, setList] = useState<RankedVoice[] | null>(null);
   const [all, setAll] = useState(false);
+  const [help, setHelp] = useState(false);
   useEffect(() => { englishVoices().then(setList).catch(() => setList([])); }, []);
+  // Android opens its voice settings straight from the row; back here, a new voice plays a sample.
+  const stopForSample = st.places?.home || st.starred?.[0] || null;
+  const back = useVoiceReturn((v) => { haptic.success(); englishVoicesFresh().then(setList).catch(() => {}); playFound(v, stopForSample).catch(() => {}); });
+  const android = Platform.OS === 'android';
+  const better = async (download = false) => {
+    haptic.select();
+    if (!android) { setHelp(true); return; }
+    await back.arm();
+    if (download) await openVoiceDownload(); else await openVoiceSettings();
+  };
   const chosen = st.voiceId && list?.some((v) => v.identifier === st.voiceId) ? st.voiceId : null;
   const best = list?.[0] || null;
   const shown = all ? list || [] : (list || []).slice(0, 8);
@@ -48,11 +63,9 @@ export default function VoiceScreen() {
   };
   const choose = (id: string | null) => { haptic.select(); store.setVoiceId(id); };
 
-  const tip = list && onlyCompact(list)
-    ? Platform.OS === 'ios'
-      ? 'For a more natural voice, download an Enhanced or Premium voice in iPhone Settings > Accessibility > Spoken Content > Voices.'
-      : 'For a more natural voice, download a voice in your phone Settings > Text to speech.'
-    : undefined;
+  const quality = list ? voiceQuality(list) : null;
+  const foundLine = back.found ? `Better voice found: ${voiceLabel(back.found)}. It is used from now on.`
+    : back.missed ? 'No new voice yet. A download can take a few minutes, and the app uses it as soon as it is ready.' : undefined;
 
   return (
     <>
@@ -64,7 +77,18 @@ export default function VoiceScreen() {
         <View style={{ marginHorizontal: 16, marginTop: 14 }}>
           <Button title="Play sample" icon={I.speaker} kind="tinted" onPress={sample} />
         </View>
-        <Section title="Voice" footer={tip}>
+        <Section title="Better voice" footer={foundLine}>
+          <Row title="Get a better voice" subtitle={voiceRowSub(quality, Platform.OS)} icon={I.download} iconBg={c.tint}
+            onPress={() => better(false)} accessibilityHint={android ? 'Opens your phone\'s text to speech settings' : 'Shows three steps to download a natural voice'} />
+          {android ? (
+            <>
+              <Sep />
+              <Row title="Download voice data" subtitle="Opens the speech engine's voice downloads." icon={I.download} iconBg={c.tint}
+                onPress={() => better(true)} accessibilityHint="Opens the voice downloads of your phone's speech engine" />
+            </>
+          ) : null}
+        </Section>
+        <Section title="Voice">
           <Pick title="Automatic" sub={best ? `Best on this phone: ${voiceLabel(best)}` : list ? 'The phone\'s own voice' : 'Finding voices'} on={!chosen} onPress={() => choose(null)} />
           {shown.map((v) => (
             <View key={v.identifier}>
@@ -80,6 +104,7 @@ export default function VoiceScreen() {
           ) : null}
         </Section>
       </Screen>
+      {help ? <VoiceHelp visible onClose={() => { setHelp(false); englishVoicesFresh().then(setList).catch(() => {}); }} stop={stopForSample} /> : null}
     </>
   );
 }
