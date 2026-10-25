@@ -19,7 +19,7 @@ import type { Fare } from '@/lib/types';
 import { ACC_LABEL, accessKit, outageText, parkBadge, safeUrl, ticketText, type CarPark, type Station } from '@/lib/access';
 import { LineBadge } from '@/components/Transit';
 import { RemindLastButton } from '@/components/LastHome';
-import { canRemind, type LastHomeHint } from '@/lib/lastHomeCore';
+import { askLastHint, canRemind, type LastHomeHint } from '@/lib/lastHomeCore';
 import { shortPlace, statusOf, tripSummary, type AskFare } from '@/lib/askFormat';
 import { PlainAnswer, TripAnswer } from '@/components/AskAnswer';
 
@@ -94,7 +94,7 @@ export default function AskScreen() {
         if (!r.ok) throw Object.assign(new Error(String(r.status)), { http: r.status });
         d = await r.json();
       } finally { clearTimeout(timer); }
-      setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: d.reply || d.text || "Sorry, I didn't get that.", kind: typeof d.kind === 'string' ? d.kind : null, fare: d.fare || null, cards: d.cards || [], links: d.links || [], suggestions: d.suggestions || [], ask: d.ask || null, t: Date.now(), lastHome: d.lastHome && d.lastHome.from && d.lastHome.to ? d.lastHome : null }]);
+      setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: d.reply || d.text || "Sorry, I didn't get that.", kind: typeof d.kind === 'string' ? d.kind : null, fare: d.fare || null, cards: d.cards || [], links: d.links || [], suggestions: d.suggestions || [], ask: d.ask || null, t: Date.now(), lastHome: askLastHint(d) }]);
     } catch (e: any) {
       const text = e?.http ? "Ask isn't answering right now. Try again in a minute." : 'No connection right now. Check your signal and try again.';
       setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text, suggestions: [q], t: Date.now() }]);
@@ -241,7 +241,7 @@ export default function AskScreen() {
     <View style={{ alignItems: 'flex-start', marginTop: 6 }}>
       {(() => { const sum = tripSummary(item, now); return sum ? <TripAnswer s={sum} /> : <PlainAnswer text={item.text} />; })()}
       {(item.cards || []).map((card, i) => <CardView key={i} card={card} />)}
-      {item.lastHome && canRemind(Date.parse(item.lastHome.leave || ''), now) ? <RemindLastButton hint={item.lastHome} known acc={store.accOn()} /> : null}
+      {item.lastHome && canRemind(Date.parse(item.lastHome.leave || item.lastHome.svc?.leave || ''), now) ? <RemindLastButton hint={item.lastHome} known={!item.lastHome.svc} acc={store.accOn()} /> : null}
       {item.links && item.links.length ? <View style={st.chips}>{item.links.map((l, i) => <Chip key={i} label={l.label || 'Open'} onPress={() => open(l)} />)}</View> : null}
       {index === msgs.length - 1 && (item.ask === 'location' || (item.suggestions || []).length) ? (
         <View style={st.chips}>

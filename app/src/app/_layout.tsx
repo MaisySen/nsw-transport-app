@@ -12,6 +12,7 @@ import { loadCachedConfig, refreshConfig } from '@/lib/config';
 import { api } from '@/lib/api';
 import { morningTripParams } from '@/lib/morning';
 import { store } from '@/lib/store';
+import { recheckLastLocal } from '@/lib/lastHome';
 import { usePalette } from '@/lib/theme';
 import { sheetHeaderOptions, stopHeaderOptions } from '@/lib/headerOptions';
 import { LiftAlertSync } from '@/lib/liftAlerts';
@@ -35,6 +36,8 @@ export default function RootLayout() {
     if (!ready) return;
     // Only while the app is in front (activity.ts); with a push token the server is asked once a minute (push.ts).
     const poll = startAppPoll(pollNotesTick, 20000, { runAtStart: false });
+    // The phone's own Last way home reminder looks at live times again while the app is open (and on opening it).
+    const lastPoll = startAppPoll(() => recheckLastLocal(), 60000, { runAtStart: true });
     pollNotes();
     setupLiveNotifications();
     const sub = Notifications.addNotificationResponseReceivedListener((r) => {
@@ -53,7 +56,7 @@ export default function RootLayout() {
       }
       if (d.watch) router.push({ pathname: '/watch/[id]', params: { id: String(d.watch) } });
     });
-    return () => { poll.remove(); sub.remove(); };
+    return () => { poll.remove(); lastPoll.remove(); sub.remove(); };
   }, [ready]);
 
   const base = scheme === 'dark' ? DarkTheme : DefaultTheme;

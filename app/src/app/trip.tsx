@@ -35,7 +35,7 @@ import { startIndex } from '../../platform/intentInboxCore';
 import { addToCalendar, hasCalendar } from '@/lib/nativeExtras';
 import { leaveByEvent } from '@/lib/leaveByCore';
 import { RemindLastButton } from '@/components/LastHome';
-import { canRemind, lastTonightIndex, modeOfLegs } from '@/lib/lastHomeCore';
+import { canRemind, lastTonightIndex, modeOfLegs, slimLast } from '@/lib/lastHomeCore';
 import { Button, Empty, Screen, Sep, T } from '@/components/ui';
 import { boardWords, stopLabel, stopNumber } from '@/lib/busCore';
 
@@ -506,7 +506,7 @@ export default function TripScreen() {
                 <Sep inset={0} />
                 <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />
                 <WarnLine j={j} />
-                {!chain && i === lastIdx && canRemind(depMs(j), now) ? <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}><T kind="foot" tone="text2">Last service tonight</T><RemindLastButton hint={{ from, to, mode: modeOfLegs(j.legs) }} acc={accOn} /></View> : null}
+                {!chain && i === lastIdx && canRemind(depMs(j), now) ? <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}><T kind="foot" tone="text2">Last service tonight</T><RemindLastButton hint={{ from, to, mode: modeOfLegs(j.legs), svc: slimLast(j) }} acc={accOn} /></View> : null}
                 {data?.accessible ? <JourneyAccessLine j={j} liftOn={liftOn} /> : null}
                 {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} autoStart={autoStart === i} /></View> : null}
               </View>
