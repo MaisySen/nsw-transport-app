@@ -205,15 +205,81 @@ export function tripAlerts(legs: WatchLeg[], s: LiveState, alerted: Record<strin
   return out;
 }
 
+/** A stop name as it should be heard: the part before the comma, with the sign abbreviations spelt out. */
+export function sayName(n?: string | null): string {
+  const words: [RegExp, string][] = [[/\bStn\b/g, 'Station'], [/\bRd\b/g, 'Road'], [/\bSt\b(?!\.)/g, 'Street'], [/\bAve?\b/g, 'Avenue'], [/\bPde\b/g, 'Parade'],
+    [/\bHwy\b/g, 'Highway'], [/\bDr\b/g, 'Drive'], [/\bPl\b/g, 'Place'], [/\bCres\b/g, 'Crescent'], [/\bBvd\b/g, 'Boulevard'], [/\bNr\b/g, 'near'], [/\bOpp\b/g, 'opposite'], [/\bAt\b/g, 'at'], [/\bBefore\b/g, 'before'], [/\bAfter\b/g, 'after']];
+  let v = String(n || '').split(',')[0].replace(/ Station$/, '').trim();
+  for (const [re, w] of words) v = v.replace(re, w);
+  return v;
+}
+const NOUN: Record<string, string> = { train: 'train', metro: 'metro', bus: 'bus', school: 'bus', coach: 'coach', ferry: 'ferry', lightrail: 'light rail' };
+/** "platform 1", "stand X1", "wharf 2": lower case, as said in the middle of a sentence. */
+const sayPlat = (p?: string | null) => {
+  const v = String(p || '').trim();
+  if (!v) return '';
+  return /^(platform|stand|wharf|side)\b/i.test(v) ? v.charAt(0).toLowerCase() + v.slice(1) : /^\d+$/.test(v) ? `platform ${v}` : v;
+};
+
+/**
+ * What Speak alerts reads out, each once per trip (by key). Short, natural lines, no chime, in the en-AU voice:
+ * "Your train leaves in 2 minutes from platform 1", "Redfern is next. Change here for the T4",
+ * "Five Dock Shops is next. Get off here", a platform or stand change, running late (at 3, 5, 10 and 15 minutes),
+ * a tight or missed change, and "You've arrived at Strathfield". Keys match tripAlerts, so one moment is one line.
+ */
+export function speechCues(legs: WatchLeg[], s: LiveState, now: number, f: Fmt): { key: string; text: string }[] {
+  const out: { key: string; text: string }[] = [];
+  const last = legs.length - 1;
+  if (s.done) { out.push({ key: 'arrived', text: `You've arrived at ${sayName(legs[last]?.to)}.` }); return out; }
+  const i = s.cur, l = legs[i], x = s.L2[i];
+  if (!l || !x) return out;
+  const noun = NOUN[l.mode] || 'service';
+  if (s.phase === 'ride') {
+    const d = x.d;
+    if (d && (d.alightIndex ?? -1) > 0 && s.nextIdx === d.alightIndex) {
+      if (i === last) out.push({ key: 'off' + i, text: `${sayName(l.to)} is next. Get off here.` });
+      else { const n = legs[i + 1]; out.push({ key: 'off' + i, text: `${sayName(l.to)} is next. Change here for the ${n.line}${NOUN[n.mode] === 'bus' ? ' bus' : ''}.` }); }
+    }
+  }
+  for (const cn of s.conns) {
+    const nl = `${cn.next.line}${NOUN[cn.next.mode] === 'bus' ? ' bus' : ''}`;
+    if (cn.risk === 'miss') out.push({ key: 'conn' + cn.i, text: `You'll likely miss the ${nl} at ${sayName(cn.at)}.` });
+    else if (cn.risk === 'tight') { const m = Math.max(0, cn.spare); out.push({ key: 'conn' + cn.i, text: `Tight change at ${sayName(cn.at)}. ${m} minute${m === 1 ? '' : 's'} to catch the ${nl}.` }); }
+  }
+  if (s.phase !== 'wait' || x.missed || !Number.isFinite(x.dep)) return out;
+  const d = x.d, mi = idx(d?.mineIndex);
+  const livePlat = d && mi >= 0 ? String(d.stops[mi]?.platform || '').trim() : '';
+  const norm = (p?: string | null) => String(p || '').toLowerCase().replace(/^(platform|stand|wharf|side)\s*/, '').trim();
+  const plat = livePlat || l.fromPlatform || '';
+  if (livePlat && l.fromPlatform && norm(livePlat) !== norm(l.fromPlatform)) {
+    const kind = /^stand/i.test(livePlat) ? 'Stand' : 'Platform';
+    out.push({ key: `plat${i}:${norm(livePlat)}`, text: `${kind} change. Your ${noun} now leaves from ${sayPlat(livePlat)}.` });
+  }
+  const late = Math.round(x.delay / 60000);
+  if (x.live && late >= 3) {
+    const step = late >= 15 ? 15 : late >= 10 ? 10 : late >= 5 ? 5 : 3;
+    out.push({ key: `late${i}:${step}`, text: `Your ${noun} is running ${late} minutes late. It now leaves at ${f.clock(x.dep)}.` });
+  }
+  const dm = (x.dep - now) / 60000;
+  if (dm <= 2.5 && dm > -0.5) {
+    const m = Math.round(dm);
+    out.push({ key: `soon${i}`, text: `Your ${noun} leaves ${m <= 0 ? 'now' : `in ${m} minute${m === 1 ? '' : 's'}`}${plat ? ` from ${sayPlat(plat)}` : ''}.` });
+  }
+  return out;
+}
+
 export type LiveTripLike = {
   id: string; legs: WatchLeg[]; alerted: Record<string, 1>; watchId: string | null; share: { id: string; key: string; pos: boolean } | null;
   rode?: Record<number, number>; arrivedAt?: number | null;
   /** Wake me before my stop is on: its alarm replaces the plain "Next stop" alert for each leg. */
   wake?: boolean;
+  /** Speak alerts is on, and the alerts already read out (their own memory, apart from the notifications). */
+  speak?: boolean; spoken?: Record<string, 1>;
 };
 export type LiveAction =
   | { t: 'ongoing'; title: string; body: string; leg: number }
   | { t: 'alert'; id: string; key: string; title: string; body: string }
+  | { t: 'say'; key: string; text: string }
   | { t: 'clearOngoing' }
   | { t: 'stopWatch'; id: string }
   | { t: 'share'; prog: any }
@@ -260,6 +326,17 @@ export function stepLive(g: LiveTripLike, svc: (ServiceResp | null | undefined)[
     const alerted = { ...(n.alerted || {}) };
     for (const a of list) { alerted[a.key] = 1; actions.push({ t: 'alert', id: `trip-${g.id}-${a.key}`, key: a.key, title: a.title, body: a.body }); }
     n = { ...n, alerted };
+  }
+  // Speak alerts reads out the same moments on its own: also when the server sends the notifications (the phone
+  // then shows none, so before this nothing was ever said) and when the wake alarm stands in for "Next stop".
+  if (g.speak) {
+    const said = n.spoken || {};
+    const say = speechCues(g.legs, s, now, f).filter((a) => !said[a.key]);
+    if (say.length) {
+      const spoken = { ...said };
+      for (const a of say) { spoken[a.key] = 1; actions.push({ t: 'say', key: a.key, text: a.text }); }
+      n = { ...n, spoken };
+    }
   }
   if (s.done) {
     if (!n.arrivedAt) {

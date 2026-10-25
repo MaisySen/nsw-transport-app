@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { useLive } from '@/lib/hooks';
 import { cacheKey, offlineText } from '@/lib/offlineCore';
 import { foldNear, type NearPick } from '@/lib/nearCore';
+import { stopNumber } from '@/lib/busCore';
 import { chipTime, makeDeletedNames } from '@/lib/homeCore';
 import { radius, usePalette } from '@/lib/theme';
 import { bestTime, clock, durText, liveStamp, ms, shortName } from '@/lib/format';
@@ -487,9 +488,13 @@ export function StopBoard({ stop, now, starred, distance, onLongPress }: { stop:
   const { data, error, offlineAt } = useHomeLive((r) => api.departures(stop.id, r), [stop.id], cacheKey('dep', stop.id));
   const groups = groupDepartures(data?.items || [], now);
   const name = shortName(data?.stop?.name || stop.name);
+  // A bus stop shows the number on its sign, as the Opal app does.
+  const busOnly = !!data?.items?.length && data.items.every((d) => d.mode === 'bus' || d.mode === 'coach' || d.mode === 'school');
+  const sign = busOnly ? stopNumber(stop.id) : null;
+  const right = [sign ? `Stop ${sign}` : '', distText(distance) || ''].filter(Boolean).join(' \u00b7 ') || undefined;
   return (
     <Card>
-      <CardHeader title={name} glyph={starred ? I.star : undefined} glyphColor={c.yellow} right={distText(distance)} onLongPress={onLongPress}
+      <CardHeader title={name} glyph={starred ? I.star : undefined} glyphColor={c.yellow} right={right} onLongPress={onLongPress}
         onPress={() => router.push({ pathname: '/stop/[id]', params: { id: stop.id, name: data?.stop?.name || stop.name } })} />
       {!data ? <T kind="foot" tone="text2" style={s.note}>{error ? 'Live times unavailable right now, trying again' : 'Loading live times'}</T> : null}
       {offlineAt ? <OfflineNote at={offlineAt} now={now} /> : null}

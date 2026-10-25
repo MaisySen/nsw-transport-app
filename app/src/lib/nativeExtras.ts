@@ -65,9 +65,38 @@ export async function addToCalendar(ev: LeaveByEvent): Promise<boolean> {
   }
 }
 
+/** From build 207: a spoken audio session (plays in Silent mode, lowers music while it talks). Absent before. */
+function speechAudio(): { start?: () => boolean; end?: () => void } | null {
+  if (Platform.OS !== 'ios') return null;
+  try {
+    const m: any = requireOptionalNativeModule('TransportIOS');
+    return m && typeof m.startSpeechAudio === 'function' ? { start: () => !!m.startSpeechAudio(), end: () => { try { m.endSpeechAudio?.(); } catch {} } } : null;
+  } catch { return null; }
+}
+
+/** True on builds with the app's own spoken audio session (207 and later). */
+export function hasSpeechSession(): boolean { return !!speechAudio(); }
+
+/** How speak() asks for audio: the app's own spoken session on builds that have one, else a session the system runs. */
+export function speechOptions(hasSession: boolean, done?: () => void) {
+  // Builds 206 and earlier have no audio session of their own (the default one stops music and goes quiet in
+  // Silent mode), so the system's own speech session is used: it mixes with music and lowers it while talking.
+  return hasSession
+    ? { language: 'en-AU', useApplicationAudioSession: true, onDone: done, onStopped: done, onError: done }
+    : { language: 'en-AU', useApplicationAudioSession: false };
+}
+
 /** Says a trip alert out loud (in headphones when they are in). Replaces anything still being said. */
 export function speak(text: string) {
   const S = speechModule();
   if (!S || !text) return;
-  try { S.stop?.(); S.speak(text, { language: 'en-AU' }); } catch {}
+  try {
+    // Queued after anything still being said (two moments in one refresh are both heard). The app's own audio
+    // session, where there is one, is let go only when the last queued alert is done.
+    const a = speechAudio();
+    const own = !!a?.start?.();
+    if (own) pending++;
+    S.speak(text, speechOptions(own, own ? () => { pending = Math.max(0, pending - 1); if (!pending) a?.end?.(); } : undefined));
+  } catch {}
 }
+let pending = 0;

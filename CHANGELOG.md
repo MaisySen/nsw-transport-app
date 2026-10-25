@@ -13,6 +13,23 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * Empty: "Save a trip on your iPhone to see it here."
 * iPhone widgets, Lock Screen and Live Activity: every line badge is one style, official colours (buses always bus blue, never grey), one size, no glyph inside.
 
+### Ask and the floating tab bar (over the air update for iPhone and Android, 25 Oct, 3:26 PM)
+* Ask: the field where you type is no longer hidden behind the tab bar on iPhone. It sits above the bar, and when the keyboard opens it moves up and sits right on top of the keyboard.
+* Ask opens on your latest message every time you switch to it, and stays at the newest message as answers come in, unless you have scrolled up to read.
+* Home: the Undo bar after deleting a trip or stop shows above the tab bar instead of behind it.
+* Lists and search results leave room for the keyboard, so the last results stay reachable.
+
+### Speak alerts and buses (over the air update for iPhone and Android, 25 Oct, 3:15 PM)
+* Speak alerts now talk during a trip. Before, nothing was said once notifications were on. You hear short lines once each: "Your bus leaves in 2 minutes from stand X1", "Redfern is next. Change here for the T4", "Five Dock Shops is next. Get off here", a platform or stand change, running late, a tight change and "You've arrived". Music is lowered, not stopped. The switch stays on for your next trip. Speech needs the app open; on build 206 Silent mode mutes the speaker (headphones still work).
+* Bus routes: tap Route on a bus, on a bus leg in a trip, or a route badge on a bus stop, or search a route number (410, M90) in Plan. You see every stop in order with its stop number, where the buses are now, the next times at a stop you tap, the other direction and a map.
+* Stop numbers: search the number on a bus stop sign (for example 2046100) to find that stop. Bus stops, departure rows, Home stop cards and bus legs show "Stop 2046100".
+* Bus legs say where to wait: the stop, stand and stop number, on the walk to the stop and on the live trip.
+* Widgets get the stop number and routes of starred bus stops and the modes of saved trips (shown by a later widget build).
+
+### Station picker and search fields (over the air update for iPhone and Android, 25 Oct, 3:06 PM)
+* New trip, choosing where you get on or off: the Back button and the From or To title no longer sit on top of the screen on iPhone. The question is now in the search field ("Where do you get on?", "Kings Cross to where?"), the search field sits above A to Z, By distance and By map, stations fill the full width with the A to Z letters clear of the names, and the list ends above the home indicator. Same for train, metro, ferry, light rail and bus.
+* Search fields no longer switch on capitals (the bus search used caps lock), autocorrect or spell check, and the keyboard shows a Search key: station picker, bus search, Add a trip, Plan and Set up.
+
 ### Swipe to delete and line badges (over the air update for iPhone and Android, 25 Oct, 2:48 PM)
 * Home: the red Delete button no longer peeks out beside a saved trip. It shows only when you swipe the trip left, sits inside the card's rounded corners, and swiping back hides it. Opening one trip's Delete closes any other. VoiceOver offers Delete as an action on the trip.
 * Line badges look the same everywhere in the app (Home, Plan results, departures, trip details, live trip, Ask, line status): the official line or mode colour, always (buses are blue even without live data; "No live data" stays as text), one size and shape, line name only.

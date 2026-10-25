@@ -34,6 +34,7 @@ import { leaveByEvent } from '@/lib/leaveByCore';
 import { RemindLastButton } from '@/components/LastHome';
 import { canRemind, lastTonightIndex, modeOfLegs } from '@/lib/lastHomeCore';
 import { Button, Empty, Screen, Sep, T } from '@/components/ui';
+import { boardWords, stopLabel, stopNumber } from '@/lib/busCore';
 
 /** "0745" for the trip API's time parameter, Sydney time. */
 function hhmm(t: number) {
@@ -51,13 +52,21 @@ function hms(t: number) {
   catch { return new Date(t).toLocaleTimeString(); }
 }
 
+const isBus = (m?: string | null) => m === 'bus' || m === 'coach' || m === 'school';
+
+/** " to Strathfield Station, Stand G, Stop 213516": where a walk ends, with the stand and stop number of the bus you walk to. */
+function walkTo(l: Leg, next?: Leg) {
+  if (next && next.kind !== 'walk' && stopNumber(next.stopId, next.mode)) return ` to ${boardWords(shortName(next.from || l.to), next.fromPlatform, next.stopId, next.mode)}`;
+  return l.to ? ` to ${shortName(l.to)}` : '';
+}
+
 function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
   const c = usePalette();
   if (l.kind === 'walk') {
     return (
       <View style={st.walk}>
         <View style={{ width: 36, alignItems: 'center' }}><Icon name={I.walk} size={18} color={c.text2} /></View>
-        <T kind="sub" tone="text2">Walk {l.durationMin} min{l.distanceM ? ` (${Math.round(l.distanceM)} m)` : ''}{l.to ? ` to ${shortName(l.to)}` : ''}</T>
+        <T kind="sub" tone="text2" style={{ flex: 1 }}>Walk {l.durationMin} min{l.distanceM ? ` (${Math.round(l.distanceM)} m)` : ''}{walkTo(l, next)}</T>
       </View>
     );
   }
@@ -78,14 +87,14 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
         <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
           <View style={{ flex: 1 }}>
             <T kind="headline" numberOfLines={2}>{shortName(l.from)}</T>
-            <T kind="foot" tone="text2">{[l.fromPlatform, `${clock(dep)}`].filter(Boolean).join(' \u00b7 ')}</T>
+            <T kind="foot" tone="text2">{[l.fromPlatform, stopLabel(l.stopId, l.mode), `${clock(dep)}`].filter(Boolean).join(' \u00b7 ')}</T>
           </View>
         </View>
         {l.platformChangedFrom ? <T kind="foot" style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }}>Platform changed from {l.platformChangedFrom}</T> : null}
         <View style={[st.ride, { backgroundColor: c.bg }]}>
           <LineBadge line={l.line} mode={l.mode} color={l.color} />
           <View style={{ flex: 1, minWidth: 0, marginLeft: 8, marginRight: 8 }}>
-            <T kind="sub" numberOfLines={1}>Towards {shortName(l.towards)}</T>
+            <T kind="sub" numberOfLines={2}>Towards {shortName(l.towards)}</T>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
               <T kind="foot" tone="text2">{durText(l.durationMin)}{l.stops ? `, ${plural(l.stops, 'stop')}` : ''}</T>
               <OccupancyChip o={l.occupancy} />
@@ -96,6 +105,13 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
             <Icon name={I.chevron} size={12} color={c.tint} />
           </View>
         </View>
+        {isBus(l.mode) && l.line ? (
+          <Pressable onPress={() => router.push({ pathname: '/route', params: { line: l.line!, mode: l.mode || 'bus', stop: l.stopId || '', towards: l.towards || '', color: l.color || '' } })}
+            accessibilityRole="button" accessibilityLabel={`Route ${l.line}, all stops and live buses`} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8, minHeight: 28 }}>
+            <Icon name={I.route} size={13} color={c.tint} />
+            <T kind="foot" tone="tint" style={{ fontWeight: '600' }}>Route {l.line}: all stops and live buses</T>
+          </Pressable>
+        ) : null}
         {bus ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }} accessibilityLabel={bus.text}>
             <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: bus.tone === 'ok' ? c.green : bus.tone === 'red' ? c.red : c.orange }} />
@@ -117,7 +133,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
         <LegAccessChips access={l.access} from={l.from} to={l.to} />
         <View style={{ marginTop: 10 }}>
           <T kind="headline" numberOfLines={2}>{shortName(l.to)}</T>
-          <T kind="foot" tone="text2">{[l.toPlatform, `Arrive ${clock(arr)}`].filter(Boolean).join(' \u00b7 ')}</T>
+          <T kind="foot" tone="text2">{[l.toPlatform, stopLabel(l.toStopId, l.mode), `Arrive ${clock(arr)}`].filter(Boolean).join(' \u00b7 ')}</T>
         </View>
       </View>
     </Pressable>
@@ -255,7 +271,7 @@ function JourneyDetail({ j, now, from, to, autoStart }: { j: Journey; now: numbe
           return (
             <View key={i}>
               {l.kind === 'transit' && prevT && (legs[i - 1]?.kind === 'transit' || (l as any).transfer?.chain) ? <Transfer a={prevT} b={l} /> : null}
-              <LegView l={l} now={now} />
+              <LegView l={l} next={legs[i + 1]} now={now} />
             </View>
           );
         })}

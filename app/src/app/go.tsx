@@ -24,6 +24,7 @@ import { Icon, I } from '@/components/Icon';
 import { LineBadge } from '@/components/Transit';
 import { Button, Sep, T } from '@/components/ui';
 import { NextOption, SpeakRow, WakeRow } from '@/components/Smart';
+import { boardWords, stopNumber } from '@/lib/busCore';
 import { shareLink } from '@/lib/server';
 
 const noun = (m?: string) => (m === 'bus' || m === 'coach' ? 'bus' : m === 'ferry' ? 'ferry' : m === 'lightrail' ? 'tram' : m === 'metro' ? 'metro' : 'train');
@@ -196,7 +197,7 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
   const m = Math.max(0, Math.round((st.eta - now) / 60000));
   const late = Math.round(x.delay / 60000);
   const badge = x.live ? (late >= 2 ? { t: `${late} min late`, bg: c.orange } : { t: 'Live', bg: c.green }) : { t: 'Scheduled', bg: c.text3 };
-  let now1 = '', now2 = '';
+  let now1 = '', now2 = '', now3 = '';
   if (x.missed) {
     // The live times say this leg left before you got to the change: no countdown to a train you cannot catch.
     now1 = `Change at risk: the ${x.was ? clock(x.was) + ' ' : ''}${l.line} has likely left`;
@@ -204,7 +205,9 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
   } else if (st.phase === 'wait') {
     const dm = Math.round((x.dep - now) / 60000);
     now1 = `${st.cur > 0 ? 'Change to' : 'Board'} the ${l.line} to ${short(l.towards || l.to)}`;
-    now2 = `${dm <= 0 ? 'Due now' : `Leaves in ${dm} min, ${clock(x.dep)}`}${l.fromPlatform ? ' \u00b7 ' + plat(l.fromPlatform) : ''}${d && d.stopsAway != null && d.vehicle ? ` \u00b7 ${d.stopsAway === 0 ? 'arriving' : `${d.stopsAway} stop${d.stopsAway > 1 ? 's' : ''} away`}` : ''}`;
+    // A bus: which stop and stand to wait at, with the number on the sign (stands at one stop can be across the road).
+    if (stopNumber(l.stopId, l.mode)) now3 = `From ${boardWords(short(l.from), l.fromPlatform, l.stopId, l.mode)}`;
+    now2 = `${dm <= 0 ? 'Due now' : `Leaves in ${dm} min, ${clock(x.dep)}`}${l.fromPlatform && !now3 ? ' \u00b7 ' + plat(l.fromPlatform) : ''}${d && d.stopsAway != null && d.vehicle ? ` \u00b7 ${d.stopsAway === 0 ? 'arriving' : `${d.stopsAway} stop${d.stopsAway > 1 ? 's' : ''} away`}` : ''}`;
   } else {
     const ns = d && st.nextIdx >= 0 ? d.stops[st.nextIdx] : null;
     const yours = !!d && st.nextIdx === d.alightIndex;
@@ -237,6 +240,7 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
         <View style={{ flex: 1, marginLeft: 12 }}>
           <T kind="headline">{now1}</T>
           <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{now2}</T>
+          {now3 ? <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{now3}</T> : null}
         </View>
       </View>
 

@@ -16,6 +16,7 @@ import TransitMap from '@/components/TransitMap';
 import { Icon, I } from '@/components/Icon';
 import { LineBadge, LiveStamp, OccupancyChip, QuietChip, StatusLine } from '@/components/Transit';
 import { Button, T } from '@/components/ui';
+import { stopNumber } from '@/lib/busCore';
 
 export default function ServiceScreen() {
   const p = useLocalSearchParams<{ trip: string; feed: string; line: string; stop: string; planned: string; mode: string; destId: string; color: string; dest: string; rt: string; est: string; delay: string }>();
@@ -38,6 +39,8 @@ export default function ServiceScreen() {
   const live = boardLive || !!data?.live;
   const delayMin = data?.live && data?.delayMin != null ? data.delayMin : boardLive && p.delay ? Number(p.delay) : data?.delayMin;
   const mineEst = data?.mine?.estimated || (boardLive && p.est ? p.est : null);
+  const busMode = String(p.mode || data?.mode || '');
+  const busLike = (busMode === 'bus' || busMode === 'coach' || busMode === 'school') && !!(p.line || data?.line);
 
   const watch = () => {
     const mine = stops.find((s) => s.mine);
@@ -58,7 +61,15 @@ export default function ServiceScreen() {
           <View style={{ paddingHorizontal: 20, paddingTop: 4 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <LineBadge line={p.line || data?.line} mode={p.mode || data?.mode} color={color} />
-              <T kind="title3" numberOfLines={1} style={{ flex: 1 }}>to {shortName(p.dest || data?.dest)}</T>
+              <T kind="title3" numberOfLines={2} style={{ flex: 1 }}>to {shortName(p.dest || data?.dest)}</T>
+              {busLike ? (
+                <Pressable onPress={() => router.push({ pathname: '/route', params: { line: String(p.line || data?.line || ''), mode: busMode, stop: p.stop || '', towards: p.dest || data?.dest || '', color: data?.color || p.color || '' } })}
+                  accessibilityRole="button" accessibilityLabel={`Route ${p.line || data?.line}, all stops`} hitSlop={8}
+                  style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 16, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>
+                  <Icon name={I.route} size={14} color={c.tint} />
+                  <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Route</T>
+                </Pressable>
+              ) : null}
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
               <StatusLine realtime={live} delayMin={delayMin} cancelled={data?.cancelled} />
@@ -99,7 +110,8 @@ export default function ServiceScreen() {
                   </View>
                   <View style={{ flex: 1, paddingVertical: 11, paddingLeft: 8, flexDirection: 'row', alignItems: 'center' }}>
                     <View style={{ flex: 1 }}>
-                      <T kind={s.mine ? 'headline' : 'callout'} tone={dim ? 'text2' : 'text'} numberOfLines={1}>{shortName(s.name)}</T>
+                      <T kind={s.mine ? 'headline' : 'callout'} tone={dim ? 'text2' : 'text'} numberOfLines={2}>{shortName(s.name)}</T>
+                      {busLike && stopNumber(s.id) ? <T kind="caption" tone="text3">Stop {s.id}</T> : null}
                       {isNext ? <T kind="caption" style={{ color, fontWeight: '700', marginTop: 1 }}>NEXT STOP</T> : null}
                       {s.mine && !isNext ? <T kind="caption" tone="tint" style={{ fontWeight: '700', marginTop: 1 }}>YOUR STOP</T> : null}
                     </View>

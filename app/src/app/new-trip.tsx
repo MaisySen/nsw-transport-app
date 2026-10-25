@@ -8,7 +8,7 @@ import { api } from '@/lib/api';
 import { androidLook, modeColor, radius, usePalette } from '@/lib/theme';
 import { LineBadge } from '@/components/Transit';
 import { shortName } from '@/lib/format';
-import { store } from '@/lib/store';
+import { store, useStore } from '@/lib/store';
 import type { Place, SearchItem } from '@/lib/types';
 import { BusDir, MODES, ModeKey, Station, busRoute, busRoutes, geoDist, modeName, natCmp, stName, stationsFor, wireLegs } from '@/lib/trips';
 import { Icon, I, modeIconName } from '@/components/Icon';
@@ -19,6 +19,10 @@ import { useSides } from '@/lib/layout';
 import { HeaderHeightContext } from 'expo-router/react-navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pickerPlaceholder, searchFieldProps } from '@/lib/pickerCore';
+import { busGroup, matchRoutes, regionDirs, routeCmp, routeEnds, stopLabel, stopNumber, type BusGroup } from '@/lib/busCore';
+import { REGIONAL_ROUTES, SYDNEY_TO } from '@/lib/busGroups.gen';
+import { useBusLookup } from '@/lib/busSearch';
+import { myPosition } from '@/lib/where';
 
 type Leg = { mode: string; from: Place; to: Place; conn?: number; any?: boolean; walk?: number };
 type Dest = { mode: string; to: Place; conn?: number; any?: boolean; walk?: number };
@@ -344,7 +348,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
 
   const choose = (x: Station) => onPick({ id: x[0], name: x[1] });
   // The question is the search field's placeholder; the navigation bar carries the title ("From" or "To").
-  const placeholder = isBus ? 'Route number or stop name' : pickerPlaceholder(which, which === 'to' ? stName(shortName(from?.name)) : undefined);
+  const placeholder = isBus ? 'Route, stop or stop number' : pickerPlaceholder(which, which === 'to' ? stName(shortName(from?.name)) : undefined);
 
   // iPhone: the sheet's navigation bar is transparent (src/lib/headerOptions.ts), so this screen starts under
   // it and moves its own top edge down by the measured bar height. Elsewhere the bar is solid and this is 0.
@@ -393,7 +397,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
       <View style={box}>
         {head}
         {!coords ? <T kind="sub" tone="text2" style={s.note}>{locErr || 'Finding where you are'}</T> : (
-          <FlatList data={near} keyExtractor={(o) => o.x[0]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingBottom: bottomPad }}
+          <FlatList data={near} keyExtractor={(o) => o.x[0]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets contentContainerStyle={{ paddingBottom: bottomPad }}
             renderItem={({ item }) => stationRow(item.x, item.d < 1000 ? `${Math.round(item.d / 10) * 10} m` : `${(item.d / 1000).toFixed(1)} km`)} />
         )}
       </View>
@@ -419,7 +423,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
     <View style={box}>
       {head}
       <View style={{ flex: 1 }}>
-        <FlatList ref={listRef} data={rows} keyExtractor={(r, i) => (r.t === 'h' ? 'h' + r.k : r.s[0]) + i} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
+        <FlatList ref={listRef} data={rows} keyExtractor={(r, i) => (r.t === 'h' ? 'h' + r.k : r.s[0]) + i} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets
           stickyHeaderIndices={headerIdx} initialNumToRender={30} contentContainerStyle={{ paddingBottom: bottomPad }}
           getItemLayout={(_, i) => ({ length: rows[i]?.t === 'h' ? HEAD_H : ROW_H, offset: offsets[i] || 0, index: i })}
           ListEmptyComponent={<T kind="sub" tone="text2" style={s.note}>No {modeName(mode).toLowerCase()} stations match that</T>}
@@ -436,31 +440,72 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
   );
 }
 
+type BusRow =
+  | { t: 'h'; k: string }
+  | { t: 'g'; g: BusGroup; k: string; n: number; open: boolean }
+  | { t: 'r'; r: string; g: BusGroup }
+  | { t: 's'; id: string; name: string; sub: string }
+  | { t: 'ask' };
+
+const GROUP_TITLE: Record<BusGroup, string> = { sydney: 'Sydney routes', replacement: 'Trackwork buses', school: 'School buses', regional: 'Regional and coaches' };
+
+/**
+ * Where you get on the bus: stops near you (only when location is already allowed, else a button to allow it),
+ * saved and recent bus stops, then Sydney routes in number order. Trackwork, school and regional routes sit in
+ * their own sections, closed until tapped. Typing finds a stop number (2046100), a route (410, M90) or a stop by name.
+ */
 function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pick) => void }) {
   const c = usePalette();
   const [routes, setRoutes] = useState<Record<string, string> | null>(null);
   const [route, setRoute] = useState<{ r: string; dirs: BusDir[] } | null>(null);
   const [dir, setDir] = useState<{ r: string; d: BusDir; start: number } | null>(from?.ctx ? { r: from.ctx.route, d: from.ctx.dir, start: from.ctx.at } : null);
   const [stops, setStops] = useState<SearchItem[]>([]);
+  const [near, setNear] = useState<{ id: string; name: string; m: number }[] | null>(null);
+  const [canNear, setCanNear] = useState<boolean | null>(null);
+  const [open, setOpen] = useState<Partial<Record<BusGroup, boolean>>>({});
   const [err, setErr] = useState<string | null>(null);
+  const { stop: numHit } = useBusLookup(q);
   const color = modeColor.bus;
   useEffect(() => { busRoutes().then(setRoutes).catch((e) => setErr(String(e.message || e))); }, []);
   useEffect(() => { if (q) { setRoute(null); setDir(null); } }, [q]);
   useEffect(() => {
-    if (q.trim().length < 2 || !/[a-z]/i.test(q)) { setStops([]); return; }
+    if (q.trim().length < 3 || !/[a-z]{3}/i.test(q)) { setStops([]); return; }
     let live = true;
-    const t = setTimeout(() => api.search(q.trim()).then((r) => live && setStops((r.items || []).slice(0, 8))).catch(() => {}), 220);
+    const t = setTimeout(() => api.search(q.trim()).then((r) => live && setStops((r.items || []).filter((x) => x.id).slice(0, 8))).catch(() => {}), 220);
     return () => { live = false; clearTimeout(t); };
   }, [q]);
+  const loadNear = async (ask: boolean) => {
+    const pos = await myPosition(ask);
+    setCanNear(!!pos);
+    if (!pos) return;
+    const r = await api.nearby(pos.lat, pos.lon).catch(() => null);
+    setNear((r?.stops || []).filter((x: any) => stopNumber(String(x.id))).slice(0, 6).map((x: any) => ({ id: String(x.id), name: String(x.name || ''), m: Math.round(Number(x.distance ?? x.distanceM ?? x.dist ?? 0)) })));
+  };
+  // Nearby only when location is already allowed; otherwise a row offers it. Never asks on its own.
+  useEffect(() => { Location.getForegroundPermissionsAsync().then((p) => { if (p.granted) loadNear(false); else setCanNear(false); }).catch(() => setCanNear(false)); }, []);
 
   const openRoute = async (r: string) => {
     haptic.select();
     try {
-      const dirs = await busRoute(r);
+      const dirs = regionDirs(await busRoute(r));
       if (dirs.length === 1) setDir({ r, d: dirs[0], start: -1 }); else setRoute({ r, dirs });
     } catch (e: any) { Alert.alert("Couldn't load that route", String(e?.message || e)); }
   };
   const badge = (r: string) => <View style={s.badge}><LineBadge line={r} mode="bus" /></View>;
+
+  const st0 = useStore();
+  const mine = useMemo(() => {
+    const saved = (st0.starred || []).filter((p: any) => p.mode === 'bus' || stopNumber(String(p.id))).slice(0, 5);
+    const seen = new Set(saved.map((p) => p.id));
+    const recent = (st0.recents || []).filter((p) => stopNumber(String(p.id)) && !seen.has(p.id)).slice(0, 5);
+    return { saved, recent };
+  }, [st0.starred, st0.recents]);
+  const groups = useMemo(() => {
+    const g: Record<BusGroup, string[]> = { sydney: [], replacement: [], school: [], regional: [] };
+    for (const r of Object.keys(routes || {})) g[busGroup(r, routes![r], REGIONAL_ROUTES)].push(r);
+    for (const k of Object.keys(g) as BusGroup[]) g[k].sort(routeCmp);
+    return g;
+  }, [routes]);
 
   if (err) return <T kind="sub" tone="text2" style={s.note}>{err}</T>;
   if (dir) {
@@ -475,7 +520,10 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
               <View style={{ position: 'absolute', top: index === 0 ? '50%' : 0, bottom: index === st.length - 1 ? '50%' : 0, width: 4, backgroundColor: color }} />
               <View style={{ marginTop: 'auto', marginBottom: 'auto', width: 14, height: 14, borderRadius: 7, borderWidth: 3, borderColor: color, backgroundColor: c.card }} />
             </View>
-            <T kind="body" numberOfLines={1} style={{ flex: 1, marginLeft: 10 }}>{item[1]}</T>
+            <View style={{ flex: 1, marginLeft: 10, paddingVertical: 6 }}>
+              <T kind="body" numberOfLines={2}>{item[1]}</T>
+              {stopNumber(item[0]) ? <T kind="foot" tone="text2">{stopLabel(item[0])}</T> : null}
+            </View>
           </Pressable>
         )} />
     );
@@ -490,8 +538,8 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
               <Pressable accessibilityRole="button" onPress={() => { haptic.select(); setDir({ r: route.r, d, start: -1 }); }} android_ripple={{ color: c.fill }} style={s.routeRow}>
                 {badge(route.r)}
                 <View style={{ flex: 1 }}>
-                  <T kind="body" numberOfLines={1}>To {shortName(d.to)}</T>
-                  <T kind="foot" tone="text2" numberOfLines={1}>{d.stops.length} stops, from {shortName(d.stops[0]?.[1] || '')}</T>
+                  <T kind="body" numberOfLines={2}>To {shortName(d.to)}</T>
+                  <T kind="foot" tone="text2" numberOfLines={2}>{d.stops.length} stops, from {shortName(d.stops[0]?.[1] || '')}</T>
                 </View>
                 <Icon name={I.chevron} size={14} color={c.text3} />
               </Pressable>
@@ -502,27 +550,71 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
     );
   }
   if (!routes) return <ActivityIndicator style={{ marginTop: 30 }} color={c.tint} />;
-  const keys = Object.keys(routes).sort(natCmp);
-  const up = q.trim().toUpperCase(), lo = q.trim().toLowerCase();
-  const byNum = up ? keys.filter((r) => r.toUpperCase().startsWith(up)) : keys;
-  const byName = up && /[a-z]{3}/i.test(q) ? keys.filter((r) => !byNum.includes(r) && routes[r].toLowerCase().includes(lo)).slice(0, 12) : [];
-  const rk = [...byNum, ...byName].slice(0, up ? 40 : 400);
-  const data: ({ t: 'r'; r: string } | { t: 's'; s: SearchItem } | { t: 'h'; k: string })[] = [
-    ...(rk.length ? [{ t: 'h' as const, k: up ? 'Routes' : 'All routes' }] : []), ...rk.map((r) => ({ t: 'r' as const, r })),
-    ...(stops.length ? [{ t: 'h' as const, k: 'Stops' }] : []), ...stops.map((x) => ({ t: 's' as const, s: x })),
-  ];
+
+  const query = q.trim();
+  const data: BusRow[] = [];
+  const stopRow = (id: string, name: string, extra?: string): BusRow => ({ t: 's', id, name, sub: [stopLabel(id), extra].filter(Boolean).join(' · ') });
+  if (query) {
+    if (numHit) data.push({ t: 'h', k: 'Stop number' }, stopRow(numHit.id, numHit.name, numHit.stand || undefined));
+    const rk = matchRoutes(routes, query, REGIONAL_ROUTES);
+    if (rk.length) data.push({ t: 'h', k: 'Routes' }, ...rk.map((r) => ({ t: 'r' as const, r, g: busGroup(r, routes[r], REGIONAL_ROUTES) })));
+    const st = stops.filter((x) => x.id !== numHit?.id);
+    if (st.length) data.push({ t: 'h', k: 'Stops' }, ...st.map((x) => stopRow(String(x.id), String(x.name))));
+  } else {
+    if (near && near.length) data.push({ t: 'h', k: 'Near you' }, ...near.map((x) => stopRow(x.id, x.name, x.m ? (x.m < 1000 ? `${x.m} m` : `${(x.m / 1000).toFixed(1)} km`) : undefined)));
+    else if (canNear === false) data.push({ t: 'h', k: 'Near you' }, { t: 'ask' });
+    if (mine.saved.length) data.push({ t: 'h', k: 'Saved' }, ...mine.saved.map((p) => stopRow(String(p.id), p.name)));
+    if (mine.recent.length) data.push({ t: 'h', k: 'Recent' }, ...mine.recent.map((p) => stopRow(String(p.id), p.name)));
+    data.push({ t: 'h', k: GROUP_TITLE.sydney }, ...groups.sydney.map((r) => ({ t: 'r' as const, r, g: 'sydney' as BusGroup })));
+    for (const g of ['replacement', 'school', 'regional'] as BusGroup[]) {
+      if (!groups[g].length) continue;
+      data.push({ t: 'g', g, k: GROUP_TITLE[g], n: groups[g].length, open: !!open[g] });
+      if (open[g]) data.push(...groups[g].map((r) => ({ t: 'r' as const, r, g })));
+    }
+  }
+  const rowStyle = [s.routeRow, { backgroundColor: c.card, marginHorizontal: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.sep }];
+  const head = (k: string) => <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 14, marginBottom: 7, textTransform: Platform.OS === 'ios' ? 'uppercase' : 'none' }}>{k}</T>;
   return (
-    <FlatList data={data} keyExtractor={(x, i) => x.t + i} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingBottom: 40 }} initialNumToRender={24}
-      ListEmptyComponent={<T kind="sub" tone="text2" style={s.note}>No routes or stops match that</T>}
-      renderItem={({ item }) => item.t === 'h'
-        ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 14, marginBottom: 7, textTransform: Platform.OS === 'ios' ? 'uppercase' : 'none' }}>{item.k}</T>
-        : item.t === 'r'
-          ? <Pressable accessibilityRole="button" onPress={() => openRoute(item.r)} android_ripple={{ color: c.fill }} style={[s.routeRow, { backgroundColor: c.card, marginHorizontal: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.sep }]}>
-              {badge(item.r)}<T kind="sub" numberOfLines={1} style={{ flex: 1 }}>{routes[item.r]}</T><Icon name={I.chevron} size={14} color={c.text3} />
+    <FlatList data={data} keyExtractor={(x, i) => x.t + i} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets contentContainerStyle={{ paddingBottom: 40 }} initialNumToRender={20}
+      ListEmptyComponent={<T kind="sub" tone="text2" style={s.note}>No routes or stops match that. Try a route (410), a stop number from the sign (2046100) or a street.</T>}
+      renderItem={({ item }) => {
+        if (item.t === 'h') return head(item.k);
+        if (item.t === 'g') return (
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: item.open }} accessibilityLabel={`${item.k}, ${item.n} routes`}
+            onPress={() => { haptic.select(); setOpen({ ...open, [item.g]: !item.open }); }} style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 32, marginTop: 18, marginBottom: 7, minHeight: 28 }}>
+            <T kind="foot" tone="text2" style={{ flex: 1, textTransform: Platform.OS === 'ios' ? 'uppercase' : 'none' }}>{`${item.k} (${item.n})`}</T>
+            <T kind="foot" style={{ color: c.tint }}>{item.open ? 'Hide' : 'Show'}</T>
+          </Pressable>
+        );
+        if (item.t === 'ask') return (
+          <Pressable accessibilityRole="button" onPress={() => { haptic.select(); loadNear(true); }} android_ripple={{ color: c.fill }} style={[...rowStyle, { borderRadius: radius, borderBottomWidth: 0 }]}>
+            <Icon name={I.pin} size={20} color={c.tint} /><T kind="body" style={{ flex: 1, color: c.tint }}>Show bus stops near me</T>
+          </Pressable>
+        );
+        if (item.t === 'r') {
+          const e = routeEnds(routes[item.r], SYDNEY_TO[item.r]);
+          return (
+            <Pressable accessibilityRole="button" accessibilityLabel={`Route ${item.r}${e.from ? `, from ${e.from}` : ''}${e.to ? ` to ${e.to}` : ''}`} onPress={() => openRoute(item.r)} android_ripple={{ color: c.fill }} style={rowStyle}>
+              {badge(item.r)}
+              <View style={{ flex: 1 }}>
+                {e.from ? <T kind="sub" numberOfLines={2}>{e.from}</T> : null}
+                <T kind={e.from ? 'foot' : 'sub'} tone={e.from ? 'text2' : undefined} numberOfLines={2}>{e.to ? (e.from ? `to ${e.to}` : e.to) : `Route ${item.r}`}</T>
+                {query && item.g !== 'sydney' ? <T kind="foot" tone="text3">{GROUP_TITLE[item.g]}</T> : null}
+              </View>
+              <Icon name={I.chevron} size={14} color={c.text3} />
             </Pressable>
-          : <Pressable accessibilityRole="button" onPress={() => onPick({ id: item.s.id, name: item.s.name })} android_ripple={{ color: c.fill }} style={[s.routeRow, { backgroundColor: c.card, marginHorizontal: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.sep }]}>
-              <Icon name={I.pin} size={20} color={c.tint} /><T kind="body" numberOfLines={1} style={{ flex: 1 }}>{shortName(item.s.name)}</T>
-            </Pressable>} />
+          );
+        }
+        return (
+          <Pressable accessibilityRole="button" onPress={() => onPick({ id: item.id, name: item.name })} android_ripple={{ color: c.fill }} style={rowStyle}>
+            <Icon name={I.pin} size={20} color={c.tint} />
+            <View style={{ flex: 1 }}>
+              <T kind="body" numberOfLines={2}>{shortName(item.name)}</T>
+              {item.sub ? <T kind="foot" tone="text2">{item.sub}</T> : null}
+            </View>
+          </Pressable>
+        );
+      }} />
   );
 }
 

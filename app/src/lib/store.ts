@@ -13,6 +13,8 @@ type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; wa
   myTrips: MyTrip[]; tripOrder: string[]; allServices: Record<string, boolean>; fareType: FareType;
   /** Settings > Accessibility: step free trips only, and lift outage alerts for stations on saved trips. */
   acc?: boolean; liftAlerts?: boolean;
+  /** Speak alerts on the live trip: the last choice, so the next trip starts with it. */
+  speak?: boolean;
   /** The two question setup (home and work) was finished or skipped. */
   onboarded?: boolean;
   /** The commute card was swapped for this half day ("2026-10-24 pm"); it flips back at the next 12. */
@@ -56,7 +58,8 @@ export const store = {
   /** The watch on a trip right now (read at tap time, so a memoised row never acts on an old value). */
   watchedId: (key: string) => state.watchedTrips[key],
   isStarred: (id: string) => state.starred.some((s) => s.id === id),
-  toggleStar(p: Place) {
+  /** Bus stops keep their mode and routes, so the widgets can show the stop number and lines. */
+  toggleStar(p: Place & { mode?: string; lines?: string[] }) {
     const has = state.starred.some((s) => s.id === p.id);
     state = { ...state, starred: has ? state.starred.filter((s) => s.id !== p.id) : [...state.starred, p] };
     save();
@@ -79,6 +82,8 @@ export const store = {
   /** Accessible trips: acc=1 on trip, plan and Ask calls. */
   accOn: (): boolean => !!state.acc,
   setAcc(on: boolean) { state = { ...state, acc: on }; save(); },
+  speakOn: (): boolean => !!state.speak,
+  setSpeak(on: boolean) { state = { ...state, speak: on }; save(); },
   liftAlertsOn: (): boolean => !!state.liftAlerts,
   setLiftAlerts(on: boolean) { state = { ...state, liftAlerts: on }; save(); },
   /** Saved trips on this phone, for lift outage alerts. */

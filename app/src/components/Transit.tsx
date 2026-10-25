@@ -8,6 +8,7 @@ import { BADGE, badgeLook } from '@/lib/lineStyle';
 import { bestTime, clock, countdown, countdownKey, delayWords, durText, ms, shortName } from '@/lib/format';
 import type { Departure, Journey, Leg } from '@/lib/types';
 import { Icon, I, modeIconName } from './Icon';
+import { stopLabel } from '@/lib/busCore';
 import { font, T } from './ui';
 import { useFlag } from '@/lib/config';
 import { occBusy, occText, quietText } from '@/lib/occupancy';
@@ -131,21 +132,23 @@ export function Countdown({ planned, estimated, realtime, cancelled, now, align 
 
 export const DepartureRow = memo(DepartureRowView, sameDepartureRow);
 
-type DepartureRowProps = { d: Departure; now: number; onPress: () => void; onWatch?: () => void; watched?: boolean; showStop?: boolean; alertText?: string | null };
+type DepartureRowProps = { d: Departure; now: number; onPress: () => void; onWatch?: () => void; watched?: boolean; showStop?: boolean; alertText?: string | null; stopNo?: boolean };
 
 /**
  * A row redraws when its departure, watch state, note or the countdown it shows changes; not on every clock tick.
  * Callers pass fresh arrow functions each render that only close over `d` and `watched`, which are compared here.
  */
 function sameDepartureRow(a: DepartureRowProps, b: DepartureRowProps) {
-  return a.d === b.d && a.watched === b.watched && a.showStop === b.showStop && a.alertText === b.alertText && !!a.onWatch === !!b.onWatch
+  return a.d === b.d && a.watched === b.watched && a.showStop === b.showStop && a.stopNo === b.stopNo && a.alertText === b.alertText && !!a.onWatch === !!b.onWatch
     && countdownKey(a.d.planned, a.d.estimated, a.d.realtime, a.now) === countdownKey(b.d.planned, b.d.estimated, b.d.realtime, b.now);
 }
 
-function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertText }: { d: Departure; now: number; onPress: () => void; onWatch?: () => void; watched?: boolean; showStop?: boolean; alertText?: string | null }) {
+function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertText, stopNo }: DepartureRowProps) {
   const c = usePalette();
   const extra: string[] = [];
   if (d.platform) extra.push(d.platform.replace(/^Platform /, 'Plat. '));
+  // The number on the bus stop sign, unless the screen is that one stop (its number is in the header).
+  if (stopNo !== false) { const n = stopLabel(d.stopId, d.mode); if (n) extra.push(n); }
   if (d.stopsAway != null && d.realtime && d.stopsAway >= 0 && d.stopsAway <= 15) extra.push(d.stopsAway === 0 ? 'At the stop' : `${d.stopsAway} stop${d.stopsAway === 1 ? '' : 's'} away`);
   const act: SwipeAct | null = onWatch
     ? { label: watched ? 'Stop watching' : 'Watch', text: watched ? 'Stop' : 'Watch', icon: watched ? I.bellOff : I.bell, color: watched ? c.text2 : c.indigo, onPress: onWatch }
@@ -156,13 +159,13 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
       <View style={{ width: 66, alignItems: 'flex-start' }}><LineBadge line={d.line} mode={d.mode} color={d.color} /></View>
       <View style={{ flex: 1, marginRight: 8 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <T kind="headline" numberOfLines={1} style={{ flexShrink: 1 }}>{shortName(d.dest)}</T>
+          <T kind="headline" numberOfLines={2} style={{ flexShrink: 1 }}>{shortName(d.dest)}</T>
           {watched ? <Icon name={I.bell} size={13} color={c.indigo} style={{ marginLeft: 5 }} /> : null}
         </View>
         {showStop && d.stopName ? <T kind="foot" tone="text2" numberOfLines={1}>{shortName(d.stopName)}</T> : null}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3, flexWrap: 'wrap', gap: 6 }}>
           <StatusLine realtime={d.realtime} delayMin={d.delayMin} cancelled={d.cancelled} />
-          {extra.length ? <T kind="foot" tone="text2" numberOfLines={1}>{extra.join(' \u00b7 ')}</T> : null}
+          {extra.length ? <T kind="foot" tone="text2" numberOfLines={2}>{extra.join(' \u00b7 ')}</T> : null}
           <OccupancyChip o={d.occupancy} />
           <QuietChip v={d.vehicle} />
         </View>

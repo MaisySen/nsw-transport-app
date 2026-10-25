@@ -13,7 +13,8 @@ import { store, useStore } from '@/lib/store';
 import { svcSpec, toggleWatch, tripKey } from '@/lib/watch';
 import { Icon, I } from '@/components/Icon';
 import { openService } from '@/components/Cards';
-import { DepartureRow, LiveStamp } from '@/components/Transit';
+import { DepartureRow, LineBadge, LiveStamp } from '@/components/Transit';
+import { linesHere, stopNumber } from '@/lib/busCore';
 import { Chip, Empty, Screen, Sep, T } from '@/components/ui';
 import { StationInfo } from '@/components/Access';
 import * as WebBrowser from 'expo-web-browser';
@@ -57,13 +58,25 @@ export default function StopScreen() {
   const top = useMemo(() => topAlerts(data?.alerts, mode ? (data?.items || []).filter((d) => d.mode === mode) : data?.items, 2, !!mode), [data, mode]);
   const noteFor = (d: any) => rowNote(d.alerts, data?.alerts, top);
   const items = (data?.items || []).filter((d) => (!mode || d.mode === mode) && ms(d.realtime ? d.estimated : d.planned) > now - 60000);
+  // A bus stop opened by its own number (2046100) shows the number on the sign; a station or a stop with several
+  // stands shows each row's stop number instead.
+  const all = data?.items || [];
+  const busOnly = !!all.length && all.every((d) => d.mode === 'bus' || d.mode === 'coach' || d.mode === 'school');
+  const signNo = busOnly || (!all.length && !!data) ? stopNumber(String(id)) : null;
+  const stand = signNo ? String(data?.stop?.exactName || '').match(/\b(Stand|Side) [A-Z0-9]+\b/)?.[0] : undefined;
+  const routes = useMemo(() => linesHere(data?.items), [data]);
+  const openRoute = (line: string) => {
+    const d = (data?.items || []).find((x) => x.line === line);
+    haptic.tap();
+    router.push({ pathname: '/route', params: { line, mode: d?.mode || 'bus', stop: d?.stopId || String(id), towards: d?.dest || '', color: d?.color || '' } });
+  };
 
   return (
     <>
       <Stack.Screen options={{
         title,
         headerRight: () => (
-          <Pressable accessibilityRole="button" accessibilityLabel={starred ? 'Remove from Starred stops' : 'Add to Starred stops'} accessibilityState={{ selected: !!starred }} hitSlop={13} onPress={() => { haptic.select(); store.toggleStar({ id: String(id), name: data?.stop?.name || String(name || title) }); }}>
+          <Pressable accessibilityRole="button" accessibilityLabel={starred ? 'Remove from Starred stops' : 'Add to Starred stops'} accessibilityState={{ selected: !!starred }} hitSlop={13} onPress={() => { haptic.select(); store.toggleStar({ id: String(id), name: data?.stop?.name || String(name || title), ...(busOnly ? { mode: 'bus', lines: routes.map((r) => r.line).slice(0, 6) } : {}) }); }}>
             <Icon name={starred ? I.star : I.starOpen} size={22} color={starred ? c.yellow : c.tint} />
           </Pressable>
         ),
@@ -78,6 +91,26 @@ export default function StopScreen() {
             <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Board</T>
           </Pressable>
         </View>
+
+        {signNo ? (
+          <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }} accessibilityLabel={`Stop number ${signNo.split('').join(' ')}${stand ? ', ' + stand : ''}`}>
+            Stop {signNo}{stand ? ` \u00b7 ${stand}` : ''}
+          </T>
+        ) : null}
+
+        {routes.length ? (
+          <View style={{ marginTop: 12 }}>
+            <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginBottom: 6 }}>Bus routes here. Tap one to see its stops and buses.</T>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
+              {routes.map((r) => (
+                <Pressable key={r.line} onPress={() => openRoute(r.line)} accessibilityRole="button" accessibilityLabel={`Route ${r.line}`} accessibilityHint="Opens the route" hitSlop={4}
+                  style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, minHeight: 44, justifyContent: 'center' })}>
+                  <LineBadge line={r.line} mode={r.mode} color={r.color} />
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
 
         {modes.length > 1 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingTop: 14 }}>
@@ -102,7 +135,7 @@ export default function StopScreen() {
               return (
                 <View key={key + i}>
                   {i ? <Sep inset={82} /> : null}
-                  <DepartureRow d={d} now={now} alertText={noteFor(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />
+                  <DepartureRow d={d} now={now} stopNo={!signNo} alertText={noteFor(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />
                 </View>
               );
             })}
