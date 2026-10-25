@@ -1390,6 +1390,78 @@ async function planChain(env, legs, opts = {}) {
 
 // ---------- service view (live vehicle tracking) ----------
 
+// The planner's stop list for one service. The data service answers 429 when too many questions arrive in the same
+// second (several people opening boards at once), which used to leave an empty stop list. So: a short retry, one
+// question at a time per service in this isolate, a stop list kept for a minute, and when the planner still cannot
+// answer, the last stop list seen for that service in the past 20 minutes (its planned times only).
+// status: "ok", "stale" (kept list), "busy" (planner unavailable, nothing kept), "notFound" (the planner had no such run).
+const PLANNER_LEG_FRESH_MS = 60000, PLANNER_LEG_KEEP_MS = 20 * 60000, PLANNER_LEG_MAX = 150;
+const plannerLegMem = new Map();
+const plannerLegFlight = new Map();
+const pause = (n) => new Promise((r) => setTimeout(r, n));
+function plannerLegKey(q, tripId, line) { return [tripId || "", line || "", q.stop, q.destId, q.planned].join("|"); }
+async function plannerLeg(env, q, tripId, line, opts = {}) {
+  const key = plannerLegKey(q, tripId, line);
+  const now = Date.now();
+  const hit = plannerLegMem.get(key);
+  if (hit && hit.leg && now - hit.at < PLANNER_LEG_FRESH_MS) return { leg: hit.leg, status: "ok", stale: false };
+  if (plannerLegFlight.has(key)) return plannerLegFlight.get(key);
+  const run = (async () => {
+    const p = sydneyParts(new Date(ms(q.planned) - 60000));
+    const tries = opts.tries || 3;
+    let data = null, failed = false;
+    for (let i = 0; i < tries; i++) {
+      try {
+        data = await tp(env, "trip", {
+          depArrMacro: "dep", itdDate: p.date, itdTime: p.time, type_origin: "any", name_origin: q.stop,
+          type_destination: "any", name_destination: q.destId, calcNumberOfTrips: "4", TfNSWTR: "true",
+        }, 8000);
+        failed = false;
+        break;
+      } catch (e) {
+        failed = true;
+        // Only a busy or failing answer is worth a second go; a timeout already used the wait.
+        if (!/answered (429|5\d\d)/.test(String(e && e.message))) break;
+        if (i < tries - 1) await pause((opts.waitMs != null ? opts.waitMs : 400) * (i + 1) + Math.floor(Math.random() * 250));
+      }
+    }
+    const leg = data ? plannerPick(data, tripId, line, q.planned) : null;
+    if (leg) {
+      const slim = plannerSlim(leg);
+      if (plannerLegMem.size >= PLANNER_LEG_MAX) plannerLegMem.delete(plannerLegMem.keys().next().value);
+      plannerLegMem.set(key, { leg: slim, at: Date.now() });
+      return { leg, status: "ok", stale: false };
+    }
+    if (hit && hit.leg && Date.now() - hit.at < PLANNER_LEG_KEEP_MS) return { leg: hit.leg, status: "stale", stale: true };
+    return { leg: null, status: failed ? "busy" : "notFound", stale: false };
+  })();
+  plannerLegFlight.set(key, run);
+  try { return await run; } finally { plannerLegFlight.delete(key); }
+}
+// Only the parts the service view reads, so a kept list stays small.
+function plannerSlim(leg) {
+  const t = leg.transportation || {};
+  return {
+    isRealtimeControlled: !!leg.isRealtimeControlled,
+    coords: Array.isArray(leg.coords) ? leg.coords : [],
+    transportation: { destination: { name: (t.destination && t.destination.name) || "" }, properties: { RealtimeTripId: (t.properties || {}).RealtimeTripId || null } },
+    stopSequence: (leg.stopSequence || []).map((s) => ({ id: s.id, name: s.name, disassembledName: s.disassembledName, coord: s.coord,
+      departureTimePlanned: s.departureTimePlanned, arrivalTimePlanned: s.arrivalTimePlanned, departureTimeEstimated: s.departureTimeEstimated, arrivalTimeEstimated: s.arrivalTimeEstimated })),
+  };
+}
+function plannerPick(data, tripId, line, planned) {
+  let leg = null;
+  for (const j of data.journeys || []) {
+    for (const lg of j.legs || []) {
+      const t = lg.transportation || {};
+      const id = t.properties && (t.properties.RealtimeTripId || t.properties.AVMSTripID);
+      if ((tripId && id === tripId) || (!leg && (t.disassembledName || t.number) === line && Math.abs(ms(lg.origin && lg.origin.departureTimePlanned) - ms(planned)) < 90000)) { leg = lg; break; }
+    }
+    if (leg && ((leg.transportation || {}).properties || {}).RealtimeTripId === tripId) break;
+  }
+  return leg;
+}
+
 function distM(aLat, aLon, bLat, bLon) {
   const R = 6371000, toR = Math.PI / 180;
   const dLat = (bLat - aLat) * toR, dLon = (bLon - aLon) * toR;
@@ -1405,7 +1477,7 @@ async function service(env, q) {
   const tu = tripId ? rt.tu(mode, line, tripId, feed) : null;
   const veh = tripId ? vehicleOf(rt.vp(mode, line, tripId, feed)) : null;
   const now = Date.now();
-  let stops = [], path = [], source = "feed", dest = q.dest || "";
+  let stops = [], path = [], source = "feed", dest = q.dest || "", stopsStatus = "ok";
   const tuLive = !!(tu && tu.ts && tu.rel !== 3);
 
   if (tu && tu.stus.length >= 2 && hasTimes(tu)) {
@@ -1418,40 +1490,28 @@ async function service(env, q) {
   } else if (q.stop && q.destId && q.planned) {
     // Fall back to the trip planner for the stop list from your stop onwards.
     source = "planner";
-    const p = sydneyParts(new Date(ms(q.planned) - 60000));
-    try {
-      const data = await tp(env, "trip", {
-        depArrMacro: "dep", itdDate: p.date, itdTime: p.time, type_origin: "any", name_origin: q.stop,
-        type_destination: "any", name_destination: q.destId, calcNumberOfTrips: "4", TfNSWTR: "true",
-      });
-      let leg = null;
-      for (const j of data.journeys || []) {
-        for (const lg of j.legs || []) {
-          const t = lg.transportation || {};
-          const id = t.properties && (t.properties.RealtimeTripId || t.properties.AVMSTripID);
-          if ((tripId && id === tripId) || (!leg && (t.disassembledName || t.number) === line && Math.abs(ms(lg.origin && lg.origin.departureTimePlanned) - ms(q.planned)) < 90000)) { leg = lg; break; }
+    const got = await plannerLeg(env, q, tripId, line);
+    stopsStatus = got.status;
+    const leg = got.leg;
+    if (leg) {
+      stops = (leg.stopSequence || []).map((s) => ({
+        id: s.id, name: shortName(s.disassembledName || s.name), lat: s.coord ? s.coord[0] : null, lon: s.coord ? s.coord[1] : null,
+        planned: iso(s.departureTimePlanned || s.arrivalTimePlanned),
+        // A stop list kept from an earlier answer has its own planned times; live times come from the feed below.
+        estimated: leg.isRealtimeControlled && !got.stale ? iso(s.departureTimeEstimated || s.arrivalTimeEstimated) : null,
+      }));
+      path = (leg.coords || []).map((c) => [c[0], c[1]]);
+      // Trains publish delays without clock times; apply them to the planned times.
+      if (tu && tuLive) {
+        for (const st of stops) {
+          if (st.estimated) continue;
+          const u = tu.stus.find((x) => x.stopId === st.id);
+          const ev = u && u.rel !== 2 && ((u.dep && u.dep.delay != null) ? u.dep : u.arr);
+          if (ev && ev.delay != null && st.planned) st.estimated = iso(ms(st.planned) + ev.delay * 1000);
         }
-        if (leg && (leg.transportation.properties || {}).RealtimeTripId === tripId) break;
       }
-      if (leg) {
-        stops = (leg.stopSequence || []).map((s) => ({
-          id: s.id, name: shortName(s.disassembledName || s.name), lat: s.coord ? s.coord[0] : null, lon: s.coord ? s.coord[1] : null,
-          planned: iso(s.departureTimePlanned || s.arrivalTimePlanned),
-          estimated: leg.isRealtimeControlled ? iso(s.departureTimeEstimated || s.arrivalTimeEstimated) : null,
-        }));
-        path = (leg.coords || []).map((c) => [c[0], c[1]]);
-        // Trains publish delays without clock times; apply them to the planned times.
-        if (tu && tuLive) {
-          for (const st of stops) {
-            if (st.estimated) continue;
-            const u = tu.stus.find((x) => x.stopId === st.id);
-            const ev = u && u.rel !== 2 && ((u.dep && u.dep.delay != null) ? u.dep : u.arr);
-            if (ev && ev.delay != null && st.planned) st.estimated = iso(ms(st.planned) + ev.delay * 1000);
-          }
-        }
-        dest = dest || (leg.transportation.destination && leg.transportation.destination.name) || "";
-      }
-    } catch (e) { /* stop list unavailable */ }
+      dest = dest || (leg.transportation && leg.transportation.destination && leg.transportation.destination.name) || "";
+    }
   }
 
   const missing = stops.filter((s) => s.lat == null).map((s) => s.id);
@@ -1519,7 +1579,7 @@ async function service(env, q) {
     nextIndex: nextIdx, mineIndex: mine, alightIndex: alight, stopsAway,
     mine: mineStop ? { name: mineStop.name, planned: mineStop.planned, estimated: mineStop.estimated, passed: mineStop.passed } : null,
     stops: stops.map((s) => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, planned: s.planned, estimated: s.estimated, passed: s.passed, mine: !!s.mine, alight: !!s.alight, skipped: !!s.skipped })),
-    path, source, feedAt: rt.fetchedAt(), now,
+    path, source, stopsStatus: stops.length ? stopsStatus : tu && tu.rel === 3 ? "cancelled" : stopsStatus === "ok" ? "none" : stopsStatus, feedAt: rt.fetchedAt(), now,
   };
 }
 
