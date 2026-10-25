@@ -1,9 +1,10 @@
 // Weekend trackwork card on Home: from Thursday 6pm to Sunday, only when planned work this weekend
-// touches Home and Work or a saved trip. Each row opens Transport for NSW's page for that work.
+// touches Home and Work or a saved trip. Each row opens Transport for NSW's page for that work. With the heads up
+// switched on (More), the same check sets one notification for Thursday 6pm (docs/TRACKWORK.md).
 import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { usePalette, radius } from '@/lib/theme';
 import { useTripLines } from '@/lib/myLines';
-import { useTrackwork } from '@/lib/trackwork';
+import { useTrackwork, useTrackworkHeadsUp } from '@/lib/trackwork';
 import { trackworkRows } from '@/lib/trackworkCore';
 import { safeUrl } from '@/lib/access';
 import { Icon, I } from './Icon';
@@ -13,6 +14,7 @@ export function TrackworkCard({ now }: { now: number }) {
   const c = usePalette();
   const trips = useTripLines();
   const resp = useTrackwork(trips, now);
+  useTrackworkHeadsUp(trips, now);
   const rows = trackworkRows(resp, trips);
   if (!rows.length) return null;
   return (

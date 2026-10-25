@@ -23,6 +23,8 @@ type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; wa
   leaveReminder?: LeaveReminder | null;
   /** Morning checks this phone has on the server, as last read (the server is the record). */
   morning?: import('./types').MorningCheck[];
+  /** More > Weekend trackwork heads up: one notification on Thursday 6pm when work this weekend touches a trip. */
+  twHeadsUp?: boolean;
 };
 export type LeaveReminder = { at: number; dep: number; label: string };
 const EMPTY: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {}, places: {}, myTrips: [], tripOrder: [], allServices: {}, fareType: 'adult' };
@@ -129,6 +131,7 @@ export const store = {
   setMorning(list: import('./types').MorningCheck[]) { state = { ...state, morning: list }; save(); },
   /** The morning checks last read from the server (More > Check my trip). */
   morningList: () => state.morning || [],
+  setTwHeadsUp(on: boolean) { state = { ...state, twHeadsUp: on }; save(); },
   saveMyTrip(t: MyTrip) {
     const k = tripKeyOf(t);
     state = { ...state, myTrips: [t, ...(state.myTrips || []).filter((x) => tripKeyOf(x) !== k && x.name !== t.name)].slice(0, 12) };

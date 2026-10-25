@@ -25,7 +25,8 @@ import { COMPANY } from '@/lib/company';
 import { PRIVACY_URL, SUPPORT_URL } from '@/lib/server';
 import { useFlag } from '@/lib/config';
 import { checkSubtitle, checkTitle } from '@/lib/morning';
-import { clearLastHomeLocal } from '@/lib/lastHome';
+import { clearLastHomeLocal, localLastSupported } from '@/lib/lastHome';
+import { setTrackworkHeadsUp } from '@/lib/trackwork';
 
 /** "1.0.0 (204) · update 01a16ff7": the build on the phone and the update it runs, for support. */
 function versionText() {
@@ -74,6 +75,7 @@ export default function Settings() {
       await disablePush().catch(() => {});
       await syncLiftAlerts(false).catch(() => {});
       clearLastHomeLocal();
+      setTrackworkHeadsUp(false).catch(() => {});
       store.resetAll();
       // Everything this app keeps on the phone goes, except the install's private id, device id, and the server
       // address and switches (not personal data; the widgets read the address).
@@ -152,6 +154,13 @@ export default function Settings() {
   );
 
   const morningOn = useFlag('morningCheck');
+  // One local notification, set from Home while it is open (docs/TRACKWORK.md). Needs the DATE trigger (201 to 206).
+  const twOn = useFlag('weekendTrackwork') && localLastSupported();
+  const setTw = async (v: boolean) => {
+    haptic.select();
+    const ok = await setTrackworkHeadsUp(v);
+    if (!ok) Alert.alert('Notifications are off', 'Open Settings, find Transport, and allow notifications.', [{ text: 'Not now', style: 'cancel' }, { text: 'Open Settings', onPress: () => Linking.openSettings() }]);
+  };
   const mList = st.morning || [];
   const morningSub = mList.length === 1 ? `${checkTitle(mList[0])}, ${checkSubtitle(mList[0]).split('. ')[0]}` : mList.length ? `${mList.length} checks` : 'One alert before your usual trip, only if something is wrong';
   const pl = st.places || {};
@@ -203,6 +212,13 @@ export default function Settings() {
           <Sep inset={57} />
           <Row icon={I.bell} iconBg={c.orange} title="Lift outage alerts" subtitle="Stations on your saved trips" chevron={false}
             right={liftBusy ? <ActivityIndicator size="small" color={c.tint} /> : sw(!!st.liftAlerts, setLift, 'Lift outage alerts')} />
+          {twOn ? (
+            <>
+              <Sep inset={57} />
+              <Row icon={I.warn} iconBg={c.orange} title="Weekend trackwork heads up" subtitle="Thursday 6pm, only when work touches your trips" chevron={false}
+                right={sw(!!st.twHeadsUp, setTw, 'Weekend trackwork heads up')} />
+            </>
+          ) : null}
           <Sep inset={57} />
           <Row icon={I.fare} iconBg={c.green} title="Opal fare type" right={<T kind="body" tone="text2">{fareName}</T>} onPress={pickFare} />
           <Sep inset={57} />

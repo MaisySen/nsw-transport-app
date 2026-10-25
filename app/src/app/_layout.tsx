@@ -48,6 +48,8 @@ export default function RootLayout() {
       if (d.go) { router.push('/go'); return; }
       // A trip reminder opens its saved trip with live times.
       if (d.tripOpen && typeof d.tripOpen === 'object') { router.push({ pathname: '/trip', params: d.tripOpen }); return; }
+      // The weekend trackwork heads up and a Last way home reminder from a spot on the map open Home, where their cards are.
+      if (d.trackwork || d.lastHome) { router.navigate('/home'); return; }
       // A morning check alert (tag m<id>) opens its trip with live times and Plan B; a check not on the phone opens the checks.
       if (typeof d.tag === 'string' && /^m[A-Za-z0-9]/.test(d.tag)) {
         const open = morningTripParams(d.tag, store.morningList());
