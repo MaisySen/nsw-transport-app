@@ -4,6 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Platform view, and the app on wide screens (over the air, 25 Oct, about 11:17 PM, group 6789f5bf)
+Bidur approved the mock at 10:50 PM.
+* Platform view: tap the new platform button at the top of a train or metro station, or hold a train departure and choose Platform view. One train, full screen: line and destination, the platform, how many carriages when the live feed reports them, minutes until it leaves (or Not tracking with the timetable time), the stops it calls at after this station, and the next two services. Stops it runs through are listed as Not stopping at. Speak reads it all out.
+* The Domestic and International Airport stops, which come with no name in the stop list, are named from the station list.
+* Large text, dark mode, Reduce Motion, VoiceOver and TalkBack ("Platform 23, 8 cars, departs in 4 minutes, stops at ..."). On a wide window it uses two columns.
+* Nothing else moved: tapping a departure still opens the service.
+* Wide screens (an open iPhone Duo, a fold, a tablet): screens now turn and resize; a phone stays upright as before. The Ask field and the undo bar keep clear of a side tab bar, and Simple mode keeps clear of the side edges. Simple mode's heading stays Plan Your Trip.
+* Production group 6789f5bf-efa9-44a3-81b8-ccba08e8ecd4 from main 2f97e1f (preview 1a25656b); roll back to group 62b97fcd (10:45 PM). No server change. Not yet seen on a device, an iPhone Duo or a fold.
+
 ### Ask understands far more (over the air, 25 Oct, about 10:45 PM, group 62b97fcd)
 Bidur: "We need to work to make ask screen and tab more smarter. Really smart", then "cant do it with only this suburb".
 * Type it any way: typos and short forms ("strathfeild to kings x", "katomba", "cq", "parra", "stn") are matched against every station, wharf, light rail stop and NSW suburb. Landmarks and streets go to the place search as typed.

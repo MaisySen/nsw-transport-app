@@ -80,6 +80,23 @@ Ask opens on the latest message and its field sits above the tab bar and the key
 
 Measured: `app/test/ask-corpus.test.mjs`, 309 questions from all over Sydney and NSW (every region and mode, at most 5% on one commute): 192 of 309 (62%) read right by the old path (the question as typed, the server's rules, exact names), 309 of 309 (100%) by the new one. A second batch of 60, written after the first passed, scored 58 of 60 (97%) on its first run before fixes.
 
+## Platform view (over the air, 25 Oct, about 11:17 PM)
+
+One train or metro at a station, full screen and readable from a distance. Open it with the platform button at the top of a train or metro station's screen, or hold a train or metro departure and choose **Platform view** (the row's tap still opens the service). It shows:
+* The line badge and destination (a plane mark when it runs via the airport stations).
+* The platform, or Platform not given yet when the departure has none.
+* How many carriages, only when the live feed reports them (Sydney Trains, intercity and Metro send it on the new server; this screen asks api.transportsydney.app first and falls back to the server in use, which has no carriage count).
+* Minutes until it leaves in whole minutes, with Live or Timetable; a stale live time shows Not tracking and the timetable time, the same rule as every other countdown.
+* The stops after this station from the service's stop list, skipped stops left out and listed under Not stopping at. Stops sent with no name (Domestic and International Airport) are named from the station list the server publishes, by place. A list that does not include this station shows Stops not available rather than a wrong list.
+* Limited Stops or All stops only when the service's own description says so (none does tonight, so it is not shown).
+* The next two train or metro services at the station, any platform, with platform, carriages and minutes.
+* **Speak** reads the line, destination, platform, carriages, time and stops, with the one time Get a better voice offer.
+Works at every train and metro station; nothing is written in for a station. Two columns (the board left, next services and stops right) once the window is 720 pt wide or more, by width alone. Dynamic Type, dark mode, Reduce Motion (no transition) and VoiceOver and TalkBack ("Platform 23, 8 cars, departs in 4 minutes, stops at ...").
+
+## Wide windows (over the air, 25 Oct, about 11:17 PM)
+
+On an open iPhone Duo, a fold's inner screen or a tablet, screens turn and resize with the window; on a phone sized window (shortest side under 600 pt) they stay upright as before and only the departure board turns. Pinned bottom content in tabs (the Ask field, the Home undo bar) keeps clear of a tab bar standing on a side edge, and Simple mode keeps clear of the side safe areas and sits at a readable width in the middle.
+
 ## Simple mode
 
 More > Simple mode (off by default) opens the app on one plain screen headed **Plan Your Trip**, for anyone who wants less on screen. **From** is Current location when location is already allowed (low accuracy, never asked on launch); otherwise tap it for Use my location or search. **To** is empty until you pick a place, with a swap button between the two. **Your places** are big rows (Home, Work, recent places, starred stops); one tap fills To (or From) and searches at once. **Leave now** or Leave at opens the time picker. The trips come as a plain list: leave and arrive times, duration, changes, line badges, on time or late or cancelled, and the whole minutes to go, with **Earlier** and **Later** at the ends. Tap a trip for big simple steps from its real legs (Walk to the platform, Take the line to a station with the stop count, Change at a station and platform, Get off) and a **Speak** button that reads them aloud. No swiping, no chips, no maps. The list refreshes only while it is on view. The gear turns Simple mode off, after a confirm. VoiceOver reads each trip as one sentence.

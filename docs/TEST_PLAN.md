@@ -75,6 +75,12 @@ Usual lateness on the server: a day folds into late_agg with the right minute co
 
 ## Android app logic tests
 
+### `app/test/platform.test.mjs`: 13 tests, 13 pass (added 25 Oct, 11:17 PM)
+
+Platform view and the wide window fixes. Which service shows (the next train or metro, or the held one while it is still on the board) and the next two on any platform; platform numbers and Platform not given yet; carriages only for a sensible live count; Limited Stops or All stops only from the service's own words; the stops after this station from a real T8 stop list read at Central (its two airport stops came back with no name and are named from the station list; skipped stops left out and said); a stop list without this station gives no list; the screen reader and Speak lines; two columns by width; the portrait lock only on a phone sized window; Platform view in the hold menu only for rows that pass it; the header button only at a station with trains or metro; side safe areas in TabBarSafe and Simple mode.
+
+Device checks (not done yet): on iPhone and Android open a train station, tap the platform button, then hold a train row and choose Platform view; check the carriages, the minutes against the stop screen, Speak, VoiceOver reading the card, the largest text size and dark mode. On an iPhone Duo (or its simulator, Xcode 27.1) and a Galaxy or Pixel fold: open and close it on Platform view, Home, Ask and Simple mode; rotate when open; check the tab bar on the side does not cover the Ask field.
+
 ### `app/test/ask-corpus.test.mjs`: 2 tests, 2 pass (added 25 Oct, 10:45 PM)
 
 309 real world questions with their intent and slots, across the CBD, inner west and south, eastern suburbs, north shore and northern beaches, west, south west, St George and the Shire, the Hills and north west, and regional NSW (Blue Mountains, Central Coast, Newcastle and the Hunter, Illawarra and South Coast, Southern Highlands, country towns), every mode (train, metro, light rail, ferry, bus, coach). Typos, lower case, no punctuation, slang and short forms. At most 5% may name one commute. Run against `askBrain.ts` with the station and suburb lists from `backend/src/public/stations`, a fixed clock (Monday 26 Oct 2026, 7:30 am) and saved places. Prints the pass rate by region, by mode and by batch, and the old path's rate for comparison; fails under 90%. On 25 Oct: before 192/309 (62%), after 309/309 (100%); by region and mode all 100% after. Set `ASK_CORPUS_JSON=<file>` to write the full result.
