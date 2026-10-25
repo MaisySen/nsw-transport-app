@@ -38,6 +38,32 @@ Written 25 Oct 2026 after the battery, smoothness and iOS audit (report: files/q
    out. Any write empties the cache. Every request has a timeout (20 s default); reads get one quiet retry on a
    network error, writes never retry on their own.
 
+9. **Adaptive polling (25 Oct, 9:40 PM update).** Screens with departures ask again every 15 s while the next service
+   is within 5 minutes, every 30 s up to 15 minutes and once a minute beyond that, or when nothing is coming
+   (`adaptiveGapMs` in src/lib/pollCore.ts; Home card, stop screen, full screen board, Simple mode). Home's lists
+   (saved trips, watches, commutes) read once a minute, not every 15 s.
+10. **Countdowns redraw at whole minutes.** `useCountdownNow()` (src/lib/activity.ts) wakes only when a countdown
+    the screen reported (`useReportCountdowns`) changes its whole minute, or at the next clock minute. No 5 s tick on
+    Home, the stop screen, the board or Simple mode.
+11. **Kept copy first.** `useLive` shows the copy kept on the phone at once on a fresh start ("Updating, from
+    8:51pm") while the live answer loads.
+12. **Simple mode** polls only the page on view; the pages beside it read once when drawn. Location there is the
+    phone's last fix (up to 5 minutes old) or one `Accuracy.Low` fix, only when location is already allowed.
+
+### Before and after (25 Oct, web export at 390 x 844, Home with Strathfield and Kings Cross set)
+
+| Measure | Before (main a6b98ca) | After (main a1d7581) |
+|---|---|---|
+| Home card on screen, fresh start | 4615 ms | 4427 ms |
+| Home card on screen, second open (kept copy) | 2123 ms | 211 ms |
+| Requests while Home sits idle for 90 s | 27 (trip 6, commutes 6, saved 6, watches 9) | 7 (trip 1, commutes 1, saved 1, watches 4) |
+| Screen changes while Home sits idle for 90 s | 31 | 19 |
+| Stop board scroll, Strathfield | 60 fps, 1 frame over 20 ms, worst 50 ms | 60 fps, 0 frames over 20 ms, worst 17 ms |
+| iPhone bundle (Hermes) | 5,636,021 bytes | 5,673,156 bytes (the Voice screen and speech; maps now load after the screen's first frame) |
+| Android bundle (Hermes) | 5,907,791 bytes | 5,945,386 bytes |
+
+Measured with a browser on the web export; a phone will differ. Not yet measured on a device.
+
 ## Smoothness
 
 1. Long lists use `FlatList` (Ask, new trip). Short fixed lists inside a ScrollView (departures, up to about 40

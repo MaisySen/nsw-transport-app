@@ -43,6 +43,14 @@ How: menus are data (`src/lib/menuCore.ts`: no Cancel row, destructive rows red 
 
 Confirmations stay native alerts (Delete trip, Clear All, Delete all my data). The time picker and the reminder editor stay sheets: attached to the bottom edge, the system grabber, 16 pt corners, and a drag down on the grabber or the title bar closes them.
 
+## Build 209 (1 Nov)
+
+Native work left from the 25 Oct comfort, voice and performance pass (the JavaScript shipped over the air; these need a build):
+* Speak only with headphones: build 208 has no audio route API (`TransportIOS.startSpeechAudio` sets the spoken audio session with duck others, so ducking already works). Add an `AVAudioSession.currentRoute` read and a route change event, then a Voice setting "Only with headphones".
+* Voice download prompt: iOS has no API to download a Premium voice; the Voice screen's tip sends people to Settings > Accessibility > Spoken Content. Check `AVSpeechSynthesisVoice.speechVoices()` quality on iOS 27 again on a device.
+* Simple mode as the app's home on a Lock Screen widget (the Here stand), using the widget extension already in the build.
+* A native list (FlashList or SwiftUI List) for the stop board was not needed: scroll held 60 fps with 0 slow frames on the web export after this pass. Check on a device first.
+
 ## Other iOS 27 changes checked
 
 * **Live Activities (ActivityKit):** nothing in the iOS 27 release notes that changes our use. Expo SDK 58 adds `staleDate` for its own Live Activity API; ours is a native module.

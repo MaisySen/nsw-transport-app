@@ -57,6 +57,18 @@ The iPhone and Android apps are one Expo app (`app/`). Anything below marked "ov
 
 Type "next train Burwood to Central", "is the T1 late" or "last train home". Answers come from live data with fixed rules; there is no generative AI. Ask opens on the latest message and its field sits above the tab bar and the keyboard. It shows the last 30 messages, with Load earlier at the top; up to 200 are kept on the phone. **Clear chat** is the trash button at the top right of Ask and in More > Privacy and data, and asks first. The chat is only kept on the phone.
 
+## Simple mode
+
+More > Simple mode (off by default) opens the app on one screen, like TripView Lite. **Here** is the stop, stand or platform nearest you, with chips to switch (Stand D, Platform 4); with location off it shows your starred stops and Home and Work. Swipe for **To work**, **To home** and trips saved on this phone: depart and arrive times, duration, changes and platform. Each row: line, destination, scheduled time, on time or late or cancelled, and the minutes to go. Tap for the service or trip, pull to refresh. It opens on To work in the morning (5 to 11am) and To home in the afternoon and evening (2 to 9pm). The gear turns it off. VoiceOver reads each row as one sentence.
+
+## Voice
+
+Spoken trip guidance and Speak departures (Home commute card, stop screen, full screen board) use the best voice already on the phone: Premium, then Enhanced, then the default, Australian English first, then British, then American; novelty voices left out. Nothing to download. More > Voice lists the English voices with Play sample, read from your stop's live times, and a tip on downloading a better voice only when the phone has nothing but compact voices. Guidance reads like a station announcement: "Your train to Redfern leaves in 3 minutes, from platform 1." "Next stop, Redfern. Change here for the T4 line."
+
+## Comfort (quiet defaults)
+
+Reduce Motion stops the live dot pulsing. One light tap (haptic) when it's time to leave and on arrival on a followed trip. Countdowns read as "4 minutes", not "4 min".
+
 ## iPhone only (in build 206)
 
 Home Screen, Lock Screen and StandBy widgets; Siri, Spotlight and Shortcuts ("Next train home in Transport", "Start my commute in Transport"); Control Center buttons (iOS 18); Apple Watch app and complications ([WATCH.md](WATCH.md)); Add to Calendar.
