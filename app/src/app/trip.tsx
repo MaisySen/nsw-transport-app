@@ -38,6 +38,7 @@ import { liveState } from '@/lib/liveLabelCore';
 import { arrOf, ServiceRow, tripCacheId, tripPkey, WarnLine } from '@/components/Home';
 import { cacheKey } from '@/lib/offlineCore';
 import { firstLeaveInMs, tripGapMs } from '@/lib/pollCore';
+import { rankTrips } from '@/lib/rankCore';
 import { planB, problemOf } from '@/lib/planBCore';
 import { busLegStatus, rowTraffic, trafficLine } from '@/lib/busLiveCore';
 import { startIndex } from '../../platform/intentInboxCore';
@@ -381,7 +382,9 @@ export default function TripScreen() {
     }
     // A walk only option would open first with nothing to start; it is left out when there is a service.
     const withT = out.filter((j) => !!firstT(j));
-    return (withT.length ? withT : out).sort((a, b) => depMs(a) - depMs(b));
+    // Soonest first; a trip with a change that gets there no sooner than a direct one goes under it, and an on demand
+    // service shows once (rankTrips).
+    return rankTrips(withT.length ? withT : out, depMs, arrOf);
   })();
   // The phone checks the modes too: the older server ignores them, and batches mix with the first answer.
   const df = directFilter(filterModes(jsAll, modes), plan, allOn, (j) => j);
@@ -395,8 +398,9 @@ export default function TripScreen() {
   // per visit (PAGING), stopped at 4am (end of the service day) or when a batch brings nothing new, only while this
   // screen is on view with the app in front, and never more than one batch at a time.
   const onView = useOnViewRef();
-  const firstDep = js.length ? depMs(js[0]) : null;
-  const lastDep = js.length ? depMs(js[js.length - 1]) : null;
+  // The list is not strictly in time order (rankTrips), so the ends are the earliest and latest times in it.
+  const firstDep = js.length ? Math.min(...js.map(depMs)) : null;
+  const lastDep = js.length ? Math.max(...js.map(depMs)) : null;
   const dayEnd = serviceDayEnd(data?.journeys?.length ? depMs(data.journeys[0]) : anchor);
   // Earlier services reach back from the chosen time too, into the past (earlierFloor).
   const floor = earlierFloor(when, anchor, now);

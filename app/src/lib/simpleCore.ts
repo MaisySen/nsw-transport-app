@@ -1,7 +1,9 @@
 // Simple mode (More > Simple mode, off by default). Bidur, 25 Oct 9:37 PM: "User come. Look this to that place. They get
 // the list like this. Thats it. For someone minimalistic, slowpace, less tech friendly users." One screen: From and
 // To, your places as big rows, a plain list of trips, and big simple steps for the one you tap.
-// Pure logic, no imports, unit tested in Node (test/simple.test.mjs).
+// Pure logic, unit tested in Node (test/simple.test.mjs); its one import (rankCore) is pure too.
+
+import { rankTrips } from './rankCore';
 
 export type SimplePlace = { id: string; name: string };
 
@@ -105,7 +107,7 @@ export function leavesIn(t: number, now: number): { text: string; spoken: string
 
 export type LegLike = { kind?: string; line?: string; mode?: string; color?: string; towards?: string; from?: string; to?: string; fromPlatform?: string; toPlatform?: string;
   fromParent?: string; toParent?: string; planned?: string; estimated?: string; arrPlanned?: string; arrEstimated?: string; realtime?: boolean; cancelled?: boolean;
-  delayMin?: number | null; durationMin?: number; stops?: number; tripId?: string };
+  delayMin?: number | null; durationMin?: number; stops?: number; tripId?: string; onDemand?: boolean; booking?: boolean; operator?: string };
 export type JourneyLike = { leave?: string; arrive?: string; durationMin?: number; changes?: number; legs: LegLike[] };
 export type Tone = 'live' | 'late' | 'red' | 'plain' | 'gone';
 export type TripRow = { key: string; dep: number; arr: number; leave: string; arrive: string; dur: string; changes: string; lines: { line: string; mode: string; color?: string }[];
@@ -119,17 +121,22 @@ export function journeyKey(j: JourneyLike): string {
   return r.length ? r.map((l) => `${l.tripId || l.line || ''}@${l.planned || ''}`).join('|') : `${j.leave}|${j.arrive}`;
 }
 
-function arriveOf(j: JourneyLike): number {
+export function arriveOf(j: JourneyLike): number {
+  const legs = j.legs || [];
   const r = rides(j);
   const last = r[r.length - 1];
-  let a = ms(j.arrive);
-  // The planner's arrival is the timetable one: move it by the last service's live delay.
-  if (last?.realtime && last.arrEstimated && last.arrPlanned) {
-    const shift = ms(last.arrEstimated) - ms(last.arrPlanned);
-    if (Number.isFinite(shift)) a = Number.isFinite(a) ? a + shift : ms(last.arrEstimated);
+  // The last service's own arrival (live when there is one) plus the walk after it. The server's "arrive" already
+  // carries the live time, so moving it again by the delay counted the delay twice (a bus 3 min late arrived 6 late).
+  const a = ms(last?.realtime && last.arrEstimated ? last.arrEstimated : last?.arrPlanned);
+  if (Number.isFinite(a)) {
+    const after = legs.slice(legs.lastIndexOf(last as LegLike) + 1).reduce((s, l) => s + (l.kind === 'walk' ? Math.round(l.durationMin || 0) : 0), 0);
+    return a + after * 60000;
   }
-  return Number.isFinite(a) ? a : ms(last?.arrEstimated || last?.arrPlanned);
+  return ms(j.arrive);
 }
+
+/** From this delay on, the row also says the timetable time ("27 min late, due 8:23am"). */
+export const LATE_DUE_MIN = 5;
 
 /** One row of the list: leave, arrive, how long, changes, lines, live status and "Leaves in N min". */
 export function tripRow(j: JourneyLike, now: number): TripRow {
@@ -143,26 +150,30 @@ export function tripRow(j: JourneyLike, now: number): TripRow {
   const dur = mins >= 60 ? `${Math.floor(mins / 60)} hr ${mins % 60} min` : `${mins} min`;
   const changes = n ? `${n} change${n === 1 ? '' : 's'}` : 'No changes';
   const cancelled = r.some((l) => l.cancelled);
+  const demand = !!f?.onDemand;
+  // The trip's status is its first service's own: its live time against its own timetable time, nothing from a later leg.
   const late = f?.realtime ? Math.round(f.delayMin ?? (dep - planned) / 60000) : 0;
   const lin = leavesIn(dep, now);
   const gone = !cancelled && lin.text === 'Left';
-  const status = cancelled ? 'Cancelled' : gone ? 'Left' : !f?.realtime ? 'Timetable' : late >= 1 ? `${late} min late` : 'On time';
+  // A big delay names the timetable time too, so "27 min late" next to a time that is already the live one reads right.
+  const due = late >= LATE_DUE_MIN && Number.isFinite(planned) ? `, due ${clock(planned)}` : '';
+  const status = cancelled ? 'Cancelled' : gone ? 'Left' : demand ? (f?.booking === false ? 'On demand' : 'On demand, book ahead') : !f?.realtime ? 'Timetable' : late >= 1 ? `${late} min late${due}` : 'On time';
   const tone: Tone = cancelled ? 'red' : gone ? 'gone' : !f?.realtime ? 'plain' : late >= 2 ? 'late' : 'live';
-  const said = status === 'Timetable' ? 'timetable time, no live data' : status.replace(/^(\d+) min /, (_, m) => `${minutesWord(Number(m))} `).toLowerCase();
+  const said = status === 'Timetable' ? 'timetable time, no live data' : demand && !cancelled && !gone ? `on demand service${f?.booking === false ? '' : ', booking needed'}` : status.replace(/^(\d+) min /, (_, m) => `${minutesWord(Number(m))} `).toLowerCase();
   const lines = r.filter((l) => l.line).map((l) => ({ line: String(l.line), mode: String(l.mode || ''), color: l.color }));
   const a11y = `Leaves ${clock(dep)}, arrives ${clock(arr)}, ${mins} minutes, ${n ? changes : 'no changes'}${lines.length ? `, ${lines.map((l) => l.line).join(' then ')}` : ''}, ${said}${cancelled || gone ? '' : `, ${lin.spoken}`}.`;
   return { key: journeyKey(j), dep, arr, leave: clock(dep), arrive: clock(arr), dur, changes, lines, status, tone, inText: cancelled || gone ? '' : lin.text, gone, a11y };
 }
 
 /**
- * The trips to show, soonest first, each once. Trips that already left are dropped unless `keepGone` (the person
+ * The trips to show, soonest first (with a trip that changes for nothing under the direct one, rankTrips), each once. Trips that already left are dropped unless `keepGone` (the person
  * tapped Earlier); then they stay, marked Left.
  */
 export function tripRows(js: JourneyLike[] | null | undefined, now: number, opts: { keepGone?: boolean; max?: number } = {}): { rows: TripRow[]; byKey: Map<string, JourneyLike> } {
   const byKey = new Map<string, JourneyLike>();
   for (const j of js || []) if (j && Array.isArray(j.legs)) { const k = journeyKey(j); if (!byKey.has(k)) byKey.set(k, j); }
-  const rows = [...byKey.values()].map((j) => tripRow(j, now)).filter((r) => Number.isFinite(r.dep) && (opts.keepGone || !r.gone))
-    .sort((a, b) => a.dep - b.dep).slice(0, opts.max ?? 40);
+  const made = [...byKey.values()].map((j) => ({ j, r: tripRow(j, now) })).filter((x) => Number.isFinite(x.r.dep) && (opts.keepGone || !x.r.gone));
+  const rows = rankTrips(made.map((x) => ({ ...x, legs: x.j.legs })), (x) => x.r.dep, (x) => x.r.arr).map((x) => x.r).slice(0, opts.max ?? 40);
   return { rows, byKey };
 }
 
@@ -179,7 +190,7 @@ const NOUN: Record<string, string> = { bus: 'bus', school: 'bus', coach: 'coach'
 /** "T1", "bus 410", "ferry F1", "light rail L1". */
 export function lineWords(l: LegLike): string {
   const line = String(l.line || '').trim();
-  const noun = NOUN[String(l.mode || '')] || (l.mode === 'metro' ? 'metro' : l.mode === 'train' ? 'train' : '');
+  const noun = l.onDemand ? 'on demand' : NOUN[String(l.mode || '')] || (l.mode === 'metro' ? 'metro' : l.mode === 'train' ? 'train' : '');
   if (!line) return noun ? `the ${noun}` : 'the service';
   if (l.mode === 'train' || l.mode === 'metro') return line;
   return noun ? `${noun} ${line}` : line;
@@ -221,17 +232,19 @@ export function buildSteps(j: JourneyLike, opts: { name?: (n?: string | null) =>
     const towards = l.towards ? `towards ${name(l.towards)}` : '';
     const cancelled = l.cancelled ? 'Cancelled' : '';
     const late = !l.cancelled && l.realtime && (l.delayMin || 0) >= 1 ? `${l.delayMin} min late` : '';
+    // An on demand service runs when it is booked: the step says so, with the operator the planner names.
+    const book = l.onDemand && l.booking !== false ? (l.operator ? `Book with ${l.operator} before you go` : 'Book before you go') : '';
     const walkSub = walkMin ? `${walkMin} min walk` : '';
     if (!prev) {
       // Getting to the first service: the platform or stand when the planner names it, else the stop.
       if (plat || walkMin) push({ icon: 'walk', text: `Walk to ${plat || name(l.from)}`, sub: [plat ? name(l.from) : '', walkSub].filter(Boolean).join(', ') });
-      push({ icon: 'ride', text: `Take ${lineWords(l)} to ${name(l.to)}${stopsWords(l.stops) ? `, ${stopsWords(l.stops)}` : ''}`, sub: [leaves, towards, late, cancelled].filter(Boolean).join(', '), mode: l.mode, line: l.line, color: l.color });
+      push({ icon: 'ride', text: `Take ${lineWords(l)} to ${name(l.to)}${stopsWords(l.stops) ? `, ${stopsWords(l.stops)}` : ''}`, sub: [leaves, towards, late, cancelled, book].filter(Boolean).join(', '), mode: l.mode, line: l.line, color: l.color });
     } else if (samePlace(prev, l)) {
       push({ icon: 'ride', text: `Change to ${lineWords(l)} at ${name(l.from)}${plat ? `, ${plat}` : ''}`,
-        sub: [leaves, stopsWords(l.stops) ? `${stopsWords(l.stops)} to ${name(l.to)}` : `to ${name(l.to)}`, walkSub, late, cancelled].filter(Boolean).join(', '), mode: l.mode, line: l.line, color: l.color });
+        sub: [leaves, stopsWords(l.stops) ? `${stopsWords(l.stops)} to ${name(l.to)}` : `to ${name(l.to)}`, walkSub, late, cancelled, book].filter(Boolean).join(', '), mode: l.mode, line: l.line, color: l.color });
     } else {
       push({ icon: 'walk', text: `Walk to ${name(l.from)}${plat ? `, ${plat}` : ''}`, sub: walkSub });
-      push({ icon: 'ride', text: `Take ${lineWords(l)} to ${name(l.to)}${stopsWords(l.stops) ? `, ${stopsWords(l.stops)}` : ''}`, sub: [leaves, towards, late, cancelled].filter(Boolean).join(', '), mode: l.mode, line: l.line, color: l.color });
+      push({ icon: 'ride', text: `Take ${lineWords(l)} to ${name(l.to)}${stopsWords(l.stops) ? `, ${stopsWords(l.stops)}` : ''}`, sub: [leaves, towards, late, cancelled, book].filter(Boolean).join(', '), mode: l.mode, line: l.line, color: l.color });
     }
     prev = l;
     walkMin = 0;

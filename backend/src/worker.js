@@ -894,6 +894,15 @@ function stopName(p) {
   // Some platforms carry only ", Platform 2" as their short name; fall back to the full name then.
   return (p && (strip(p.disassembledName) || strip(p.name) || strip(p.parent && p.parent.name))) || "";
 }
+// An on demand service (product class 10, the D400 in the Inner West run by Bridj): it runs when booked, so the
+// planner's times every few minutes are not timetabled departures. The app labels it "On demand, book ahead".
+function onDemandOf(t) {
+  const cls = t && t.product ? t.product.class : null;
+  const attrs = (t && t.properties && t.properties.attributes) || [];
+  if (cls !== 10 && !attrs.includes("AREA_ON_DEMAND")) return {};
+  const op = t.operator && t.operator.name ? String(t.operator.name) : "";
+  return { onDemand: true, booking: attrs.includes("BOOKINGREQUIRED") || cls === 10, ...(op ? { operator: op } : {}), modeName: "On demand" };
+}
 function legKind(t) {
   const cls = t && t.product ? t.product.class : null;
   if (cls === 99 || cls === 100 || cls === 107) return "walk";
@@ -1074,6 +1083,7 @@ async function trip(env, fromId, toId, opts = {}) {
         destId: (t.destination && t.destination.id) || null,
         tripId: (t.properties && (t.properties.RealtimeTripId || t.properties.AVMSTripID)) || null,
         ...(kind !== "walk" && feedHint(cls, t) ? { feed: feedHint(cls, t) } : {}),
+        ...(kind !== "walk" ? onDemandOf(t) : {}),
         stopId: o.id || null, toStopId: d.id || null, fromParent: (o.parent && o.parent.id) || null, toParent: (d.parent && d.parent.id) || null,
         from: stopName(o), fromPlatform: platformLabel(o.properties, cls),
         to: stopName(d), toPlatform: platformLabel(d.properties, cls),

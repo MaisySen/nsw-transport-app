@@ -32,6 +32,8 @@ export type DeparturesResp = {
 
 export type Leg = {
   kind: 'transit' | 'walk'; mode?: string; modeName?: string; line?: string; color?: string; towards?: string; destId?: string; tripId?: string; feed?: string;
+  /** An on demand service (planner product class 10): runs when booked, `booking` when it must be booked ahead, `operator` who runs it. */
+  onDemand?: boolean; booking?: boolean; operator?: string;
   stopId?: string; toStopId?: string; from?: string; fromPlatform?: string; to?: string; toPlatform?: string;
   planned?: string; estimated?: string; arrPlanned?: string; arrEstimated?: string; realtime?: boolean; delayMin?: number | null;
   durationMin: number; stops?: number; cancelled?: boolean; occupancy?: Occupancy; platformChangedFrom?: string | null; alerts?: Alert[];

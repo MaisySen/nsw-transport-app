@@ -332,6 +332,8 @@ function statusOf(j: Journey, now: number): Status {
   const l = firstLeg(j);
   if (j.anyCancelled || l?.cancelled) return { text: 'Cancelled', tone: 'red' };
   if (!l) return { text: 'Scheduled', tone: 'grey' };
+  // An on demand service (the D400 in the Inner West) runs when booked: no timetable departure to be late for.
+  if (l.onDemand) return { text: l.booking === false ? 'On demand' : 'On demand, book ahead', tone: 'grey' };
   if (l.realtime) {
     const d = l.delayMin || 0;
     return { text: lateWords(d), tone: d > 0 ? 'late' : 'live' };

@@ -13,12 +13,13 @@ const require = createRequire(import.meta.url);
 const ts = require(path.join(here, '..', 'node_modules', 'typescript'));
 const out = fs.mkdtempSync(path.join(os.tmpdir(), 'nswapp-simple-'));
 async function load(rel) {
-  const src = fs.readFileSync(path.join(here, '..', rel), 'utf8');
+  const src = fs.readFileSync(path.join(here, '..', rel), 'utf8').replace(/from '\.\/(\w+)'/g, "from './$1.mjs'");
   const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
   const f = path.join(out, path.basename(rel).replace(/\.ts$/, '.mjs'));
   fs.writeFileSync(f, js);
   return import(pathToFileURL(f).href);
 }
+await load('src/lib/rankCore.ts');
 const s = await load('src/lib/simpleCore.ts');
 const read = (rel) => fs.readFileSync(path.join(here, '..', rel), 'utf8');
 
@@ -179,4 +180,71 @@ test('the screen is headed Plan Your Trip, and its words name no other app or si
   // The words are built from parts so a search of the repo for them finds only real uses.
   const words = (src + core).toLowerCase();
   for (const w of ['trip ' + 'planner', 'transport' + 'nsw', 'trip' + 'view']) assert.ok(!words.includes(w), `Simple mode does not say ${w}`);
+});
+
+// Bidur's 8:50 AM screenshot, 26 Oct: Strathfield to Five Dock Shops in the morning peak. A T2 then a bus with the
+// train's own live delay, the direct 415, and the D400 on demand service the planner offers every 5 minutes.
+const fd = (o) => ({ kind: 'transit', mode: 'bus', line: '415', from: 'Strathfield Station, Albert Rd', to: 'Five Dock Shops, Great North Rd, Five Dock', realtime: true, delayMin: 0, ...o });
+function t2bus(depMin, { trainLate = 0, busLate = 0, bus = '530', arrMin = 25 } = {}) {
+  const dep = NOW + depMin * min, planned = dep - trainLate * min;
+  return {
+    leave: iso(dep), arrive: iso(dep + arrMin * min), changes: 1,
+    legs: [
+      { kind: 'transit', mode: 'train', line: 'T2', from: 'Strathfield Station', to: 'Burwood Station', planned: iso(planned), estimated: iso(dep), arrPlanned: iso(planned + 2 * min), arrEstimated: iso(dep + 2 * min), realtime: true, delayMin: trainLate, tripId: `t2-${depMin}` },
+      { kind: 'walk', durationMin: 3 },
+      fd({ line: bus, from: 'Burwood Station, Burwood Rd', planned: iso(dep + 8 * min - busLate * min), estimated: iso(dep + 8 * min), arrPlanned: iso(dep + (arrMin - busLate) * min), arrEstimated: iso(dep + arrMin * min), delayMin: busLate, tripId: `b-${depMin}` }),
+    ],
+  };
+}
+function direct415(depMin, rideMin = 18) {
+  const dep = NOW + depMin * min;
+  return { leave: iso(dep), arrive: iso(dep + rideMin * min), changes: 0, legs: [fd({ planned: iso(dep), estimated: iso(dep), arrPlanned: iso(dep + rideMin * min), arrEstimated: iso(dep + rideMin * min), tripId: `415-${depMin}` })] };
+}
+function d400(depMin) {
+  const dep = NOW + depMin * min;
+  return { leave: iso(dep), arrive: iso(dep + 10 * min), changes: 0, legs: [{ kind: 'transit', mode: 'other', line: 'D400', onDemand: true, booking: true, operator: 'Bridj', from: 'Strathfield Station', to: 'Five Dock Shops, Great North Rd, Five Dock', planned: iso(dep), arrPlanned: iso(dep + 10 * min), realtime: false, delayMin: null }] };
+}
+
+test('trip status is the first service\'s own delay; a big one names the timetable time (Bidur, 8:50 AM)', () => {
+  const r = s.tripRow(t2bus(1, { trainLate: 27 }), NOW);
+  assert.equal(r.status, `27 min late, due ${s.clock(NOW - 26 * min)}`);
+  assert.equal(r.tone, 'late');
+  assert.match(r.a11y, /27 minutes late, due /);
+  // A late bus later in the trip does not make the trip's start late.
+  const busLate = s.tripRow(t2bus(4, { busLate: 22 }), NOW);
+  assert.equal(busLate.status, 'On time');
+  assert.equal(s.tripRow(t2bus(4, { trainLate: 3 }), NOW).status, '3 min late', 'small delays stay short');
+});
+
+test('arrive time: the live arrival of the last service plus the walk after it, counted once', () => {
+  const j = direct415(10);
+  j.legs[0].arrPlanned = iso(NOW + 26 * min); j.legs[0].arrEstimated = iso(NOW + 29 * min); j.legs[0].delayMin = 3;
+  j.arrive = iso(NOW + 29 * min); // the server's arrive is already the live one
+  j.legs.push({ kind: 'walk', durationMin: 4 });
+  assert.equal(s.tripRow(j, NOW).arr, NOW + 33 * min);
+  j.legs[0].realtime = false;
+  assert.equal(s.tripRow(j, NOW).arr, NOW + 30 * min, 'no live time: the timetable arrival');
+});
+
+test('on demand services: labelled book ahead, listed once, never a timetable departure', () => {
+  const r = s.tripRow(d400(1), NOW);
+  assert.equal(r.status, 'On demand, book ahead');
+  assert.equal(r.tone, 'plain');
+  assert.match(r.a11y, /on demand service, booking needed/);
+  const { rows } = s.tripRows([d400(1), d400(6), d400(11), direct415(7)], NOW);
+  assert.equal(rows.filter((x) => x.status.startsWith('On demand')).length, 1);
+  assert.equal(rows.length, 2);
+  const steps = s.buildSteps(d400(1));
+  assert.match(steps.map((x) => x.sub).join(' '), /Book with Bridj/);
+});
+
+test('ranking: a train then a bus that gets there no sooner goes under the direct 415, and stays in the list', () => {
+  const js = [t2bus(1, { trainLate: 27, arrMin: 25 }), t2bus(4, { trainLate: 22, bus: '415', arrMin: 22 }), direct415(7, 18), direct415(30, 18), d400(2)];
+  const { rows } = s.tripRows(js, NOW);
+  assert.deepEqual(rows.map((r) => r.lines.map((l) => l.line).join('+')), ['D400', '415', 'T2+530', 'T2+415', '415']);
+  // A change that really gets there sooner keeps its place.
+  const quick = t2bus(1, { arrMin: 15 });
+  assert.deepEqual(s.tripRows([direct415(7, 18), quick], NOW).rows.map((r) => r.lines.length), [2, 1]);
+  // A direct trip leaving more than 20 min later does not move it.
+  assert.deepEqual(s.tripRows([t2bus(1, { arrMin: 45 }), direct415(25, 18)], NOW).rows.map((r) => r.lines.length), [2, 1]);
 });
