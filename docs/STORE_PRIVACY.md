@@ -1,10 +1,10 @@
 # Store privacy answers (App Store App Privacy and Play Data safety)
 
-Written 25 Oct 2026 from the code on main (app/ Expo app for iPhone and Android, backend/ server at api.transportsydney.app and the first address). Re-check whenever the app or server starts keeping something new.
+Written 25 Oct 2026 from the code on main (app/ Expo app for iPhone and Android, backend/ server at api.transportsydney.app and the first address). Rows for the iPhone trip card tokens and phone only reminders added at 5:25 PM the same day. Re-check whenever the app or server starts keeping something new.
 
 ## What the code does
 
-Kept only on the phone (never sent): home and work stations, starred and recent stops, the fare type, Ask chat history, settings.
+Kept only on the phone (never sent): home and work stations, starred and recent stops, the fare type, Ask chat history, trip reminders (local notifications, 25 Oct), the Speak alerts switch, settings. Speak alerts use the phone's own speech.
 
 Sent to the server and kept, keyed by a random install ID and a random profile ID that the app makes on first launch (not the advertising ID, not the vendor ID, no name, email or phone number):
 
@@ -19,9 +19,13 @@ Sent to the server and kept, keyed by a random install ID and a random profile I
 | Last way home reminder | last_home | 12 hours after the service | The reminder push |
 | Car parks and stations chosen for alerts | park_watches, lift_alerts | Until deleted | Nearly full and lift alerts |
 | Push token (iPhone, Expo push) | expo_tokens | Until the app unregisters or Apple says it is invalid | Sending alerts |
+| iPhone trip card (Live Activity) push token, the trip and its legs (build 205 and later) | live_activities | Marked ended when the trip ends; the row is not deleted yet and Delete all my data does not remove it (see Roadmap) | Updating the Lock Screen card while the phone is locked |
+| iPhone device push token (build 205 and later) | apns_devices | Not deleted yet, and Delete all my data does not remove it (see Roadmap); nothing is sent to it yet | Alerts later |
 | Shared trip, with the latest position only if the user taps Include my location | shares | Deleted when the trip ends or sharing stops, otherwise 30 min after arrival, never longer than 6 hours | The Share trip link |
 
 Sent for one request and not kept: the position for nearby stops, Opal machines, Park and Ride distances and trip from where you are; Ask questions.
+
+Not user data: "Usually N min late" (`/api/usual`, new server only) is counted from the public live feed per route, stop, day type and part of the day; no trips, devices or times of any person are kept for it.
 
 Kept for 5 minutes only: request counters per IP address for rate limiting (ip_rate), deleted by the minute cron.
 
