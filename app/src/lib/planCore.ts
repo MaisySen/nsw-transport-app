@@ -33,7 +33,9 @@ export function noPlaceText(text: string, loading: boolean, count: number, faile
 // ---- Leave now, Leave at, Arrive by ----
 
 /** When to travel. h and m are a Sydney clock time (24 hour); the server takes it as today, or tomorrow once it has passed. */
-export type When = { kind: 'now' } | { kind: 'leave' | 'arrive'; h: number; m: number };
+/** Leave now, or Leave at / Arrive by a Sydney clock time. `day` (YYYYMMDD) only when the time alone does not say the day
+ * (set by the trip screen's picker; see dateNeeded in tripModesCore.ts). */
+export type When = { kind: 'now' } | { kind: 'leave' | 'arrive'; h: number; m: number; day?: string };
 export const NOW: When = { kind: 'now' };
 
 /** Hour and minute now in Sydney, whatever the phone is set to. */
@@ -67,7 +69,7 @@ export function clock12(h: number, m: number): string {
 
 /** Same rule as the server: a time more than 30 minutes before now is tomorrow. */
 export function isTomorrow(w: When, now: number): boolean {
-  if (w.kind === 'now') return false;
+  if (w.kind === 'now' || w.day) return false;
   const c = sydneyClock(now);
   return w.h * 60 + w.m < c.h * 60 + c.m - 30;
 }
@@ -75,29 +77,37 @@ export function isTomorrow(w: When, now: number): boolean {
 /** "Leave now", "Leave 9:05am", "Arrive by 5:30pm tomorrow". */
 export function whenLabel(w: When, now: number): string {
   if (w.kind === 'now') return 'Leave now';
-  const t = clock12(w.h, w.m) + (isTomorrow(w, now) ? ' tomorrow' : '');
+  const t = clock12(w.h, w.m) + (w.day ? ` ${dayShort(w.day)}` : isTomorrow(w, now) ? ' tomorrow' : '');
   return w.kind === 'arrive' ? `Arrive by ${t}` : `Leave ${t}`;
 }
 
 /** The trip request's time ("0905") and arrive by flag. Nothing for now. */
-export function whenQuery(w: When): { time?: string; arriveBy?: boolean } {
+export function whenQuery(w: When): { time?: string; arriveBy?: boolean; date?: string } {
   if (w.kind === 'now') return {};
-  return { time: `${String(w.h).padStart(2, '0')}${String(w.m).padStart(2, '0')}`, ...(w.kind === 'arrive' ? { arriveBy: true } : {}) };
+  return { time: `${String(w.h).padStart(2, '0')}${String(w.m).padStart(2, '0')}`, ...(w.kind === 'arrive' ? { arriveBy: true } : {}), ...(w.day ? { date: w.day } : {}) };
+}
+
+/** "Tue 27 Oct" for a YYYYMMDD day. */
+export function dayShort(day: string): string {
+  const y = +day.slice(0, 4), mo = +day.slice(4, 6), d = +day.slice(6, 8);
+  const dow = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
+  return `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dow]} ${d} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][mo - 1]}`;
 }
 
 /** Route params for the trip screen, as strings. */
-export function whenParams(w: When): { time?: string; arriveBy?: string } {
+export function whenParams(w: When): { time?: string; arriveBy?: string; date?: string } {
   const q = whenQuery(w);
-  return q.time ? { time: q.time, ...(q.arriveBy ? { arriveBy: '1' } : {}) } : {};
+  return q.time ? { time: q.time, ...(q.arriveBy ? { arriveBy: '1' } : {}), ...(q.date ? { date: q.date } : {}) } : {};
 }
 
 /** Back from route params; anything that is not HHMM is now. */
-export function whenFromParams(time?: string | string[], arriveBy?: string | string[]): When {
+export function whenFromParams(time?: string | string[], arriveBy?: string | string[], date?: string | string[]): When {
   const t = Array.isArray(time) ? time[0] : time;
   const m = /^([01]\d|2[0-3])([0-5]\d)$/.exec(String(t || ''));
   if (!m) return NOW;
   const a = Array.isArray(arriveBy) ? arriveBy[0] : arriveBy;
-  return { kind: a === '1' || a === 'true' ? 'arrive' : 'leave', h: Number(m[1]), m: Number(m[2]) };
+  const d = String((Array.isArray(date) ? date[0] : date) || '');
+  return { kind: a === '1' || a === 'true' ? 'arrive' : 'leave', h: Number(m[1]), m: Number(m[2]), ...(/^20\d{6}$/.test(d) ? { day: d } : {}) };
 }
 
 /** One step of a picker column, wrapping around (hour 12 then 1, minute 55 then 0). */

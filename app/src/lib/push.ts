@@ -6,6 +6,7 @@ import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
 import { noteKey } from './liveCalc';
+import { allowPushTokens } from './forgetTokens';
 
 Notifications.setNotificationHandler({
   // The ongoing trip notification updates quietly; every other alert shows as a banner with sound.
@@ -51,6 +52,7 @@ export async function enablePush(welcome = true): Promise<PushState> {
     const { data } = tok;
     await api.registerExpo(data, Platform.OS, welcome);
     await AsyncStorage.setItem('expoPushToken', data);
+    await allowPushTokens();
     tokenKnown = true;
     return { status: 'on' };
   } catch (e: any) {

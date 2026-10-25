@@ -10,6 +10,9 @@ import { endLive, setupLiveNotifications } from '@/lib/live';
 import { finishProfileMove, initProfile } from '@/lib/device';
 import { loadCachedConfig, refreshConfig } from '@/lib/config';
 import { api } from '@/lib/api';
+import { morningTripParams } from '@/lib/morning';
+import { store } from '@/lib/store';
+import { recheckLastLocal } from '@/lib/lastHome';
 import { usePalette } from '@/lib/theme';
 import { sheetHeaderOptions, stopHeaderOptions } from '@/lib/headerOptions';
 import { LiftAlertSync } from '@/lib/liftAlerts';
@@ -33,6 +36,8 @@ export default function RootLayout() {
     if (!ready) return;
     // Only while the app is in front (activity.ts); with a push token the server is asked once a minute (push.ts).
     const poll = startAppPoll(pollNotesTick, 20000, { runAtStart: false });
+    // The phone's own Last way home reminder looks at live times again while the app is open (and on opening it).
+    const lastPoll = startAppPoll(() => recheckLastLocal(), 60000, { runAtStart: true });
     pollNotes();
     setupLiveNotifications();
     const sub = Notifications.addNotificationResponseReceivedListener((r) => {
@@ -43,11 +48,17 @@ export default function RootLayout() {
       if (d.go) { router.push('/go'); return; }
       // A trip reminder opens its saved trip with live times.
       if (d.tripOpen && typeof d.tripOpen === 'object') { router.push({ pathname: '/trip', params: d.tripOpen }); return; }
-      // A morning check alert (tag m<id>) opens the checks, where Check now shows the latest.
-      if (typeof d.tag === 'string' && /^m[A-Za-z0-9]/.test(d.tag)) { router.push('/morning'); return; }
+      // The weekend trackwork heads up and a Last way home reminder from a spot on the map open Home, where their cards are.
+      if (d.trackwork || d.lastHome) { router.navigate('/home'); return; }
+      // A morning check alert (tag m<id>) opens its trip with live times and Plan B; a check not on the phone opens the checks.
+      if (typeof d.tag === 'string' && /^m[A-Za-z0-9]/.test(d.tag)) {
+        const open = morningTripParams(d.tag, store.morningList());
+        if (open) router.push({ pathname: '/trip', params: open }); else router.push('/morning');
+        return;
+      }
       if (d.watch) router.push({ pathname: '/watch/[id]', params: { id: String(d.watch) } });
     });
-    return () => { poll.remove(); sub.remove(); };
+    return () => { poll.remove(); lastPoll.remove(); sub.remove(); };
   }, [ready]);
 
   const base = scheme === 'dark' ? DarkTheme : DefaultTheme;

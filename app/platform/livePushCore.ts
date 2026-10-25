@@ -61,3 +61,27 @@ export function activityPushOf(native: PushNative): boolean {
 export function pushTokenOf(native: PushNative, id: string): string | null {
   try { return native && typeof native.tripActivityPushToken === 'function' ? cleanToken(native.tripActivityPushToken(id)) : null; } catch { return null; }
 }
+
+/** Delete all my data: the route on the push server that deletes this phone's trip card and push tokens. */
+export const FORGET_PATH = '/api/live-activity/forget';
+/** AsyncStorage key: set by Delete all my data so the phone push token is not sent again until alerts are turned on. */
+export const PUSH_FORGOTTEN_KEY = 'pushTokensForgotten';
+
+export type ForgetOutcome = 'deleted' | 'not_needed' | 'unavailable' | 'failed';
+/**
+ * What the answer to the forget call means. 'not_needed': the app already uses the push server, so Delete all my
+ * data deleted the tokens there. 'unavailable': the server has no such route (404, 405), nothing to show.
+ * 'failed': no answer or a server error; the server's own clean up removes them later (24 h, 30 days).
+ */
+export function forgetOutcome(status: number | null, sameServer = false): ForgetOutcome {
+  if (sameServer) return 'not_needed';
+  if (status === null) return 'failed';
+  if (status >= 200 && status < 300) return 'deleted';
+  if (status === 404 || status === 405) return 'unavailable';
+  return 'failed';
+}
+
+/** A phone push token is sent only with notifications allowed and when Delete all my data has not turned it off since. */
+export function shouldSendDeviceToken(granted: boolean, forgotten: string | null): boolean {
+  return granted && !forgotten;
+}

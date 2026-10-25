@@ -5,7 +5,8 @@ import { Platform } from 'react-native';
 import { getDevice } from '@/lib/device';
 import { iosNative } from '../modules/transport-ios';
 import type { LiveTrip } from '@/lib/live';
-import { cleanToken, PUSH_BASE, pushKey, pushTrip } from './livePushCore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { cleanToken, PUSH_BASE, PUSH_FORGOTTEN_KEY, pushKey, pushTrip, shouldSendDeviceToken } from './livePushCore';
 
 async function post(path: string, body: unknown): Promise<boolean> {
   const ctl = new AbortController();
@@ -49,7 +50,7 @@ export async function endActivityToken(token: string | null) {
 let deviceSent = false;
 /**
  * Saves this phone's push token on the server for alerts later. Only when notifications are already allowed,
- * so it never asks for permission on its own.
+ * so it never asks for permission on its own, and not after Delete all my data until alerts are turned on again.
  */
 export async function sendDeviceToken() {
   if (Platform.OS !== 'ios' || deviceSent || !iosNative.activityPush()) return;
@@ -57,7 +58,9 @@ export async function sendDeviceToken() {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const N = require('expo-notifications');
     const p = await N.getPermissionsAsync();
-    if (!p?.granted) return;
+    // Not after Delete all my data, until alerts are turned on again (push.ts enablePush clears the mark).
+    const forgotten = await AsyncStorage.getItem(PUSH_FORGOTTEN_KEY).catch(() => null);
+    if (!shouldSendDeviceToken(!!p?.granted, forgotten)) return;
     const t = await N.getDevicePushTokenAsync();
     const tok = cleanToken(t?.data);
     if (!tok) return;

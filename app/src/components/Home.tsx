@@ -26,6 +26,8 @@ import { useReliabilityText } from '@/lib/reliability';
 import { font, Sep, T } from './ui';
 import { LiveStatus } from './LiveLabel';
 import { liveState, liveWords } from '@/lib/liveLabelCore';
+import { planB, planBLine, problemOf } from '@/lib/planBCore';
+import { useJourneyWhy, WhyLate, withWhyAction } from './WhyLate';
 
 // ---------- shared refresh signals for every card on Home ----------
 
@@ -428,6 +430,12 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pkey, lineSig]);
   useEffect(() => () => reportTripLines(pkey, null), [pkey]);
+  // Plan B (docs/PLAN-B.md): the next service has a problem, so the card names it and the best other way from the
+  // services already fetched (no extra request). The trip screen asks the planner once more when none of them works.
+  const prob = js.length && !offlineAt ? problemOf(js[0]) : null;
+  const pbFound = prob ? planB((data?.journeys || []).filter((j) => depOf(j) > now - 30000), js[0], now) : null;
+  const pbText = prob ? planBLine(prob, pbFound) : '';
+  const pbTitle = prob && !pbFound && prob.kind === 'trackwork' ? 'Trackwork' : 'Plan B';
   const arrs = js.map(arrOf);
   const alerts = new Set<string>();
   js.forEach((j) => j.legs.forEach((l) => (l.alerts || []).forEach((a: any) => alerts.add(typeof a === 'string' ? a : a.title))));
@@ -468,8 +476,24 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
           <View style={{ position: 'absolute', top: 2, right: 2 }}>{aside}</View>
         </View>
       ) : glance}
+      {pbText ? <PlanBRow title={pbTitle} text={pbText} onPress={() => open()} /> : null}
       {below && js.length ? below(js) : null}
     </Card>
+  );
+}
+
+/** Under a trip card when its next service has a problem: what is wrong and the best other way. Opens the trip. */
+function PlanBRow({ title, text, onPress }: { title: string; text: string; onPress: () => void }) {
+  const c = usePalette();
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${title}. ${text}`} accessibilityHint="Opens the trip"
+      android_ripple={{ color: c.fill }}
+      style={({ pressed }) => [g.planB, { borderTopColor: c.sep }, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
+      <Icon name={I.warn} size={15} color={c.red} style={{ marginTop: 2 }} />
+      <T kind="sub" style={{ marginLeft: 8, flex: 1 }}>
+        <T kind="sub" style={{ fontWeight: '600', color: c.redText }}>{title}: </T>{text}
+      </T>
+    </Pressable>
   );
 }
 
@@ -510,10 +534,13 @@ function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPre
     ? `${title}. ${ls ? ls.a11y : spoken(t)}, leaves ${hm(dep)}${whereLong ? ` from ${whereLong}` : ''}, ${ls?.kind === 'live' ? `${stt?.text}, ${liveWords(ls)}` : status}, arrives ${hm(arrs[0])}${badges.length ? `, ${badges.map((b) => b.line).join(' and ')}` : ''}${then ? `. ${then}` : ''}`
     : `${title}. ${note}`;
   const press = ({ pressed }: { pressed: boolean }) => [pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null];
+  // Why it's late: the next service's own linked reason, one line (components/WhyLate.tsx).
+  const why = useJourneyWhy(j);
+  const label = why ? `${a11y}. ${why.text}` : a11y;
 
   if (look === 'hero') {
     return (
-      <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" accessibilityLabel={a11y} accessibilityHint="Opens the trip with every service" android_ripple={{ color: c.fill }} {...swipeA11y(act)} style={(p) => [g.hero, ...press(p)]}>
+      <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" accessibilityLabel={label} accessibilityHint="Opens the trip with every service" android_ripple={{ color: c.fill }} {...withWhyAction(swipeA11y(act) as any, why)} style={(p) => [g.hero, ...press(p)]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingRight: roomRight }}>
           <View style={{ flex: 1 }}>{head}</View>
           {trailing || (roomRight ? null : <Icon name={I.chevron} size={13} color={c.text3} style={{ marginLeft: 6 }} />)}
@@ -531,6 +558,7 @@ function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPre
               </View>
             </View>
             {ls ? <LiveStatus state={ls} delayMin={l?.delayMin} /> : <T kind="foot" style={{ color: tone }}>{stt?.text}</T>}
+            <WhyLate why={why} style={{ marginTop: 4 }} />
             <T kind="sub" tone="text2" numberOfLines={2} style={{ marginTop: 4 }}>{`${hm(dep)} \u2192 ${hm(arrs[0])} \u00b7 ${durText(j.durationMin)}`}</T>
             {then ? <T kind="sub" tone="text2" style={{ marginTop: 4 }}>{then}</T> : null}
           </>
@@ -541,7 +569,7 @@ function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPre
 
   // 'row': two or three short lines per trip, the next countdown at the right edge.
   return (
-    <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" accessibilityLabel={a11y} android_ripple={{ color: c.fill }} {...swipeA11y(act)} style={(p) => [g.row, ...press(p)]}>
+    <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" accessibilityLabel={label} android_ripple={{ color: c.fill }} {...withWhyAction(swipeA11y(act) as any, why)} style={(p) => [g.row, ...press(p)]}>
       <View style={{ flex: 1, minWidth: 0 }}>
         {head}
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
@@ -552,6 +580,7 @@ function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPre
           </T>
         </View>
         {then ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{then}</T> : null}
+        <WhyLate why={why} style={{ marginTop: 2 }} />
       </View>
       {j ? (
         <View style={[g.chip, { marginLeft: 10, backgroundColor: chip + (c.dark ? '33' : '1F') }]}>
@@ -566,6 +595,7 @@ function TripGlance({ look, js, arrs, now, title, glyph, glyphColor, note, onPre
 
 const g = StyleSheet.create({
   hero: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 16 },
+  planB: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16, paddingVertical: 10, minHeight: 44, borderTopWidth: StyleSheet.hairlineWidth },
   row: { flexDirection: 'row', alignItems: 'center', paddingLeft: 16, paddingRight: 12, paddingVertical: 10, minHeight: 64 },
   chip: { minWidth: 52, minHeight: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 4 },
 });

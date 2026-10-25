@@ -912,16 +912,51 @@ async function addTraffic(env, d, hazardsFn = trafficHazards) {
 const LONG_TRIP_TIMEOUT_MS = 35000;
 const LONG_TRIP_CACHE_S = 120;
 function longTripCacheKey(p) {
-  const keep = ["from", "to", "time", "arriveBy", "count", "acc", "fare"];
+  const keep = ["from", "to", "time", "date", "modes", "arriveBy", "count", "acc", "fare"];
   const u = new URL("https://cache.internal/long-trip");
   for (const k of keep) { const v = p.get(k); if (v) u.searchParams.set(k, v); }
   return u.toString();
 }
 
+// Mode chips on the trip screen (modes=bus,train): which planner product classes to keep, the rest left out
+// with excludedMeans=checkbox and exclMOT_n (Trip Planner manual), then every journey checked again here.
+const TRIP_MODE_CLASSES = { train: [1], metro: [2], lightrail: [4], bus: [5, 7, 11], coach: [7], ferry: [9] };
+function tripModesParse(raw) {
+  const out = [];
+  for (const m of String(raw || "").toLowerCase().split(",").map((x) => x.trim())) if (TRIP_MODE_CLASSES[m] && !out.includes(m)) out.push(m);
+  return out.sort();
+}
+function tripModesExclude(modes) {
+  if (!modes.length) return null;
+  const keep = new Set(modes.flatMap((m) => TRIP_MODE_CLASSES[m]));
+  const ex = { excludedMeans: "checkbox" };
+  for (const c of [1, 2, 4, 5, 7, 9, 11]) if (!keep.has(c)) ex["exclMOT_" + c] = "1";
+  return ex;
+}
+function tripModesKeep(journeys, modes) {
+  if (!modes.length) return journeys;
+  const ok = new Set(modes.flatMap((m) => (m === "bus" ? ["bus", "coach"] : [m])));
+  return (journeys || []).filter((j) => {
+    const tl = (j.legs || []).filter((l) => l.kind === "transit");
+    return tl.length > 0 && tl.every((l) => ok.has(l.mode));
+  });
+}
+// A day for the planner: YYYYMMDD from today to 14 days ahead (Sydney), else null.
+function tripDate(raw, now = Date.now()) {
+  const v = String(raw || "");
+  if (!/^\d{8}$/.test(v)) return null;
+  const today = sydneyParts(new Date(now)).date, last = sydneyParts(new Date(now + 14 * 86400000)).date;
+  return v >= today && v <= last ? v : null;
+}
+
 async function trip(env, fromId, toId, opts = {}) {
   let { date, time } = sydneyParts();
   let tomorrow = false;
-  if (opts.time) {
+  if (opts.date) {
+    // A chosen day (trip screen time picker): that day at the given time, or from midnight.
+    date = opts.date;
+    time = opts.time || "0000";
+  } else if (opts.time) {
     const toMin = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(2));
     if (toMin(opts.time) < toMin(time) - 30) { date = sydneyParts(new Date(Date.now() + 86400000)).date; tomorrow = true; }
     time = opts.time;
@@ -2642,7 +2677,7 @@ const RATE_RULES = [
   [/^\/api\/push\/test$/, "pushtest", 5, 600000],
   [/^\/api\/watch$/, "watch", 30, 600000, "POST"],
   [/^\/api\/(saved|commutes|commutes\/dismiss|push\/subscribe|push\/expo|push\/expo\/unregister|push\/unsubscribe)$/, "write", 60, 600000, "POST"],
-  [/^\/api\/history\/delete$/, "delete", 10, 600000],
+  [/^\/api\/(history\/delete|live-activity\/forget)$/, "delete", 10, 600000],
   [/^\/api\/hit$/, "hit", 120, 600000],
   [/^\/api\/share$/, "share", 20, 600000, "POST"],
   [/^\/api\/share\/update$/, "shareup", 240, 600000],
@@ -3691,6 +3726,21 @@ const REL_DAYS = 42;
 const REL_BATCH = 8;
 const relMem = new Map();
 function relDayType(t) { return sydneyNow(new Date(t)).dow >= 6 ? "weekend" : "weekday"; }
+// Raw recorded live times (obs) are kept only as long as something reads them: reliability looks back REL_DAYS
+// (42), predictions 28 days, and usual lateness folds each day into late_agg the day after. So rows older than
+// OBS_KEEP_DAYS Sydney days are deleted by the hourly housekeeping, at most OBS_PRUNE_MAX rows a run so a backlog
+// never spends the Free plan's daily row writes in one go (about 10,000 rows are recorded a day).
+const OBS_KEEP_DAYS = REL_DAYS + 3;
+const OBS_PRUNE_MAX = 5000;
+/** Pure: the first Sydney day ("YYYYMMDD") still kept. */
+function obsKeepFrom(now = Date.now()) { return sydneyNow(new Date(now - OBS_KEEP_DAYS * 86400000)).day; }
+async function pruneObs(env, now = Date.now()) {
+  const d = db(env);
+  if (!d) return { skipped: "no database" };
+  const from = obsKeepFrom(now);
+  const r = await d.prepare("DELETE FROM obs WHERE rowid IN (SELECT rowid FROM obs WHERE day < ?1 LIMIT ?2)").bind(from, OBS_PRUNE_MAX).run();
+  return { keepFrom: from, deleted: (r && r.meta && r.meta.changes) || 0 };
+}
 /** Pure: the summary from obs rows for one service, or null. rows: {day, planned, delay_s, last_seen}. */
 function reliabilityOf(rows, plannedMs) {
   const want = todOfMs(plannedMs).tod;
@@ -4973,6 +5023,10 @@ async function runTick(env, opts = {}) {
     await db(env).prepare("DELETE FROM shares WHERE expires < ?1").bind(now).run().catch(() => null);
     // Contact form messages: deleted within 12 months, as the privacy policy says.
     await db(env).prepare("DELETE FROM feedback WHERE at < ?1").bind(now - 365 * 86400000).run().catch(() => null);
+    // Push tokens: trip card tokens once the trip ends (24 h at most), phone push tokens unused for 30 days.
+    out.tokens = await prunePushTokens(env, now).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+    // Raw recorded live times older than anything reads.
+    out.obs = await pruneObs(env, now).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   }
   if (!opts.device) await db(env).prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('last_tick', ?1)").bind(String(now)).run().catch(() => null);
   const calls = upstream.calls - c0;
@@ -5600,15 +5654,68 @@ async function tickLiveActivities(env, now = Date.now()) {
   return { sent: out.length, items: out.map(({ contentState, ...x }) => x) };
 }
 
-/** POST /api/live-activity, /api/live-activity/end and /api/apns/device. */
+/**
+ * Delete all my data for one device: its trip card tokens (live_activities) and its phone push token
+ * (apns_devices). Used by /api/history/delete (scope all) and POST /api/live-activity/forget, which the app calls
+ * on this server whichever address the rest of the app uses. Returns the rows deleted.
+ */
+async function forgetDeviceTokens(env, device) {
+  const dev = cleanId(device);
+  const out = { liveActivities: 0, apnsDevices: 0 };
+  if (!dev || !(await ensureLiveActivities(env).catch(() => false))) return out;
+  const d = db(env);
+  const a = await d.prepare("DELETE FROM live_activities WHERE device = ?1").bind(dev).run();
+  const b = await d.prepare("DELETE FROM apns_devices WHERE device = ?1").bind(dev).run();
+  out.liveActivities = (a && a.meta && a.meta.changes) || 0;
+  out.apnsDevices = (b && b.meta && b.meta.changes) || 0;
+  return out;
+}
+
+// Push token clean up, run by the hourly housekeeping. A trip card token goes once the trip has ended (the card
+// ended, or past its expiry) and in any case 24 h after it was first sent. A phone push token (apns_devices) goes
+// when the phone has not sent it again for 30 days (the app sends it each time it opens). An Expo or web push
+// token goes when no push to it worked for 30 days and nothing on this server can still push to that device
+// (no live watch, morning check, lift alert, car park watch or last way home).
+const TOKEN_IDLE_MS = 30 * 86400000;
+const LA_KEEP_MS = 24 * 3600000;
+async function prunePushTokens(env, now = Date.now()) {
+  const d = db(env);
+  const out = {};
+  if (!d) return out;
+  const run = async (k, sql, ...a) => {
+    try { const r = await d.prepare(sql).bind(...a).run(); out[k] = (out[k] || 0) + ((r && r.meta && r.meta.changes) || 0); }
+    catch (e) { /* table not made on this server yet */ }
+  };
+  if (await ensureLiveActivities(env).catch(() => false)) {
+    await run("liveActivities", "DELETE FROM live_activities WHERE active = 0 OR expires < ?1 OR created < ?2", now - 600000, now - LA_KEEP_MS);
+    await run("apnsDevices", "DELETE FROM apns_devices WHERE COALESCE(updated, created, 0) < ?1", now - TOKEN_IDLE_MS);
+  }
+  // A NULL device in a list would make NOT IN unknown and keep every token, so each list leaves NULLs out.
+  const standing = `COALESCE(device, '') IN (SELECT device FROM watches WHERE device IS NOT NULL AND (active = 1 OR updated >= ?2))
+    OR COALESCE(device, '') IN (SELECT device FROM morning_checks WHERE device IS NOT NULL AND active = 1)
+    OR COALESCE(device, '') IN (SELECT device FROM lift_alerts WHERE device IS NOT NULL)
+    OR COALESCE(device, '') IN (SELECT device FROM park_watches WHERE device IS NOT NULL AND done = 0 AND expires >= ?3)
+    OR COALESCE(device, '') IN (SELECT device FROM last_home WHERE device IS NOT NULL)`;
+  for (const [k, t] of [["expoTokens", "expo_tokens"], ["pushSubs", "push_subs"]]) {
+    await run(k, `DELETE FROM ${t} WHERE COALESCE(created, 0) < ?1 AND COALESCE(last_ok, 0) < ?1 AND NOT (${standing})`, now - TOKEN_IDLE_MS, now - TOKEN_IDLE_MS, now);
+  }
+  return out;
+}
+
+/** POST /api/live-activity, /api/live-activity/end, /api/live-activity/forget and /api/apns/device. */
 async function liveActivityRoute(env, request, path, now = Date.now()) {
   if (request.method !== "POST") return json({ error: "POST only" }, 405);
   if (!(await ensureLiveActivities(env))) return json({ error: "no database" }, 503);
   const b = await request.json().catch(() => ({}));
+  if (path === "/api/live-activity/forget") {
+    if (!cleanId(b && b.device)) return json({ error: "device needed" }, 400);
+    return json({ ok: true, deleted: await forgetDeviceTokens(env, b.device) });
+  }
   const token = String(b && b.token || "").trim().toLowerCase();
   if (!LA_TOKEN_RE.test(token)) return json({ error: "bad token" }, 400);
   if (path === "/api/live-activity/end") {
-    await db(env).prepare("UPDATE live_activities SET active = 0, updated = ?2 WHERE token = ?1").bind(token, now).run();
+    // The trip ended on the phone: the token is not needed any more, so it is deleted, not kept.
+    await db(env).prepare("DELETE FROM live_activities WHERE token = ?1").bind(token).run();
     return json({ ok: true });
   }
   if (path === "/api/apns/device") {
@@ -6426,7 +6533,12 @@ async function handleRequest(request, env, exec) {
           const want = Math.max(1, Math.min(8, Number(p.get("count") || 5) || 5));
           const liftAware = acc && (await serverOn(env, "liftAwareRouting"));
           // Lift aware: ask for a few more trips so one that avoids a lift outage can be found.
-          const r = await trip(env, p.get("from"), p.get("to"), { time: p.get("time") || null, arriveBy: p.get("arriveBy") === "1", count: liftAware ? Math.min(8, want + 3) : want, accessible: acc, long });
+          const modes = tripModesParse(p.get("modes"));
+          const day = tripDate(p.get("date"));
+          const r = await trip(env, p.get("from"), p.get("to"), { time: p.get("time") || null, date: day, arriveBy: p.get("arriveBy") === "1", count: liftAware ? Math.min(8, want + 3) : want, accessible: acc, long, exclude: tripModesExclude(modes) });
+          // modes and date are echoed so the app knows this server honoured them (an older server does not).
+          if (modes.length) { r.journeys = tripModesKeep(r.journeys, modes); r.modes = modes; }
+          if (day) r.date = day;
           // A link with stop ids and no names takes the names from the first trip found.
           const given = (k) => { const v = (p.get(k) || "").trim(); return v && !/^\d+$/.test(v) ? v : null; };
           const d = { kind: "trip", from: { id: p.get("from"), name: given("fromName") || tripEndName(r, "from") || p.get("from") }, to: { id: p.get("to"), name: given("toName") || tripEndName(r, "to") || p.get("to") }, ...r };
@@ -6613,6 +6725,7 @@ async function handleRequest(request, env, exec) {
         }
         case "/api/live-activity":
         case "/api/live-activity/end":
+        case "/api/live-activity/forget":
         case "/api/apns/device":
           return await liveActivityRoute(env, request, url.pathname);
         case "/api/admin/live-activity": {
@@ -6727,8 +6840,8 @@ async function handleRequest(request, env, exec) {
         case "/api/history/delete": {
           // Deletes what the server stored for one profile. scope "history": trip searches and
           // dismissed commute suggestions (suggestions are worked out from the searches, so they go
-          // too). scope "all": also saved trips, commutes, watches, alerts, push sign ups and live
-          // trip shares for this device. A valid profile id is required, and searches this
+          // too). scope "all": also saved trips, commutes, watches, alerts, push sign ups, live
+          // trip shares, iPhone trip card tokens and the phone push token for this device. A valid profile id is required, and searches this
           // device made under any older profile id are deleted too.
           if (request.method !== "POST") return json({ error: "method" }, 405);
           await ensureSchema3(env);
@@ -6764,6 +6877,9 @@ async function handleRequest(request, env, exec) {
                 await del("alerts", "DELETE FROM lift_alerts WHERE device = ?1", dev);
                 await del("watches", "DELETE FROM park_watches WHERE device = ?1", dev);
               }
+              // iPhone trip card tokens and the phone push token (build 205 and later).
+              const t = await forgetDeviceTokens(env, dev).catch(() => null);
+              if (t) { n.liveActivities = t.liveActivities; n.push = (n.push || 0) + t.apnsDevices; }
             }
           }
           return json({ ok: true, scope, deleted: n });
@@ -6926,7 +7042,7 @@ function badInput(p) {
 // nothing, so it is not counted). If D1 does not answer, the per copy limits above still apply.
 const IP_LIMITS = [
   [/^\/api\/(ask|trip|plan|departures|service|status|next|search|nearby|alerts|station|parking|topup|lifts)$/, "up", 120, "GET"],
-  [/^\/api\/(saved|commutes|commutes\/dismiss|watch|push\/subscribe|push\/expo|push\/expo\/unregister|push\/unsubscribe|push\/test|share|share\/update|history\/delete|lifts\/alerts|parking\/watch|feedback)$/, "w", 60, null],
+  [/^\/api\/(saved|commutes|commutes\/dismiss|watch|push\/subscribe|push\/expo|push\/expo\/unregister|push\/unsubscribe|push\/test|share|share\/update|history\/delete|live-activity\/forget|lifts\/alerts|parking\/watch|feedback)$/, "w", 60, null],
 ];
 let ipSchemaOk = false;
 async function ipLimitOk(env, request, pathname) {

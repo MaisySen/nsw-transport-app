@@ -13,6 +13,7 @@ import { useUsualText } from '@/lib/usual';
 import { departedWords } from '@/lib/recentCore';
 import { useRecentDeparted } from '@/lib/recent';
 import { rowNote, topAlerts } from '@/lib/stopAlertsCore';
+import { useWhyLate } from '@/lib/whyLate';
 import { store, useStore } from '@/lib/store';
 import { svcSpec, toggleWatch, tripKey } from '@/lib/watch';
 import { Icon, I } from '@/components/Icon';
@@ -63,6 +64,8 @@ export default function StopScreen() {
   // only when the top does not already show it.
   const top = useMemo(() => topAlerts(data?.alerts, mode ? (data?.items || []).filter((d) => d.mode === mode) : data?.items, 2, !!mode), [data, mode]);
   const noteFor = (d: any) => rowNote(d.alerts, data?.alerts, top);
+  // Why it's late: a delayed or changed service names its reason from its own linked alert (whyLateCore.ts).
+  const whyOf = useWhyLate(data?.items, data?.alerts);
   const routes = useMemo(() => linesHere(data?.items), [data]);
   // Route chips filter the board (Opal style); a route that has left the board drops the filter.
   const route = keepRoute(pick, routes);
@@ -197,7 +200,7 @@ export default function StopScreen() {
               return (
                 <View key={key + i}>
                   {i ? <Sep inset={82} /> : null}
-                  <DepartureRow d={d} now={now} stopNo={!signNo} alertText={noteFor(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />
+                  <DepartureRow d={d} now={now} stopNo={!signNo} alertText={noteFor(d)} why={whyOf(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />
                 </View>
               );
             })}

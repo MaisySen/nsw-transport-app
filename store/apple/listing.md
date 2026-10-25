@@ -1,6 +1,6 @@
 # App Store listing (App Store Connect)
 
-Set in App Store Connect through the API on 25 Oct 2026 (app 6826543653, version 1.0.0 with build 201). This file is the source; if you change a text here, change it there too. The description and promotional text were updated here at 5:20 PM on 25 Oct for the app after that day's updates and are not yet in App Store Connect.
+Set in App Store Connect through the API on 25 Oct 2026 (app 6826543653, version 1.0.0 with build 201). This file is the source; if you change a text here, change it there too. The description and promotional text were updated here at 5:20 PM on 25 Oct for the app after that day's updates and written to App Store Connect (en-AU, the only localization) through the API at 5:30 PM the same day, then read back: they match this file.
 
 ## App information
 

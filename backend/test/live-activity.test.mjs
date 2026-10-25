@@ -149,7 +149,7 @@ test("register, tick, skip within 50 s, end on arrival", async () => {
   assert.deepEqual({ ...row }, { active: 0, pushes: 3, last_status: 200 });
 });
 
-test("a token Apple no longer takes stops the card; ended on the phone stops it too", async () => {
+test("a token Apple no longer takes stops the card; ended on the phone deletes it", async () => {
   const env = makeEnv();
   sent = [];
   await W.liveActivityRoute(env, post("/api/live-activity", { token: TOKEN, trip: trip() }), "/api/live-activity", NOW);
@@ -161,7 +161,8 @@ test("a token Apple no longer takes stops the card; ended on the phone stops it 
   await W.liveActivityRoute(env, post("/api/live-activity", { token: TOKEN, trip: trip() }), "/api/live-activity", NOW + 1000);
   assert.equal(env.DB.sql.prepare("SELECT active FROM live_activities").get().active, 1);
   await W.liveActivityRoute(env, post("/api/live-activity/end", { token: TOKEN }), "/api/live-activity/end", NOW + 2000);
-  assert.equal(env.DB.sql.prepare("SELECT active FROM live_activities").get().active, 0);
+  // Ended on the phone: the token is deleted, not kept (privacy, 25 Oct).
+  assert.equal(env.DB.sql.prepare("SELECT COUNT(*) AS n FROM live_activities").get().n, 0);
   assert.equal((await W.tickLiveActivities(env, NOW + 120000)).sent, 0);
 });
 

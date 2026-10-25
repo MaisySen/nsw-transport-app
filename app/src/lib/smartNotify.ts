@@ -74,6 +74,19 @@ export async function cancelWake(id: string) {
   try { await Notifications.cancelScheduledNotificationAsync(id); } catch {}
 }
 
+/**
+ * One local notification at a time, on the leave now channel (Last way home on the phone, the weekend trackwork
+ * heads up). `data` says what a tap opens. A time already past is not scheduled.
+ */
+export async function scheduleLocalAlert(id: string, at: number, title: string, body: string, data: Record<string, any>) {
+  if (!Number.isFinite(at) || at <= Date.now()) return false;
+  return schedule(id, at, title, body, LEAVE_CHANNEL, data);
+}
+export async function cancelLocalAlert(id: string) {
+  if (Platform.OS === 'web') { (globalThis as any).__alarmLog?.({ id, cancel: 1 }); return; }
+  try { await Notifications.cancelScheduledNotificationAsync(id); } catch {}
+}
+
 /** Remind me: one leave now alert at the leave time. A new reminder replaces the old one. */
 export const scheduleLeave = (at: number, title: string, body: string) => schedule(LEAVE_ID, at, title, body, LEAVE_CHANNEL, { home: 1 });
 export async function cancelLeave() {

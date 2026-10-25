@@ -1,6 +1,6 @@
 # Store privacy answers (App Store App Privacy and Play Data safety)
 
-Written 25 Oct 2026 from the code on main (app/ Expo app for iPhone and Android, backend/ server at api.transportsydney.app and the first address). Rows for the iPhone trip card tokens and phone only reminders added at 5:25 PM the same day. Re-check whenever the app or server starts keeping something new.
+Written 25 Oct 2026 from the code on main (app/ Expo app for iPhone and Android, backend/ server at api.transportsydney.app and the first address). Rows for the iPhone trip card tokens and phone only reminders added at 5:25 PM the same day; their deletion and clean up at 5:28 PM. Re-check whenever the app or server starts keeping something new.
 
 ## What the code does
 
@@ -18,9 +18,9 @@ Sent to the server and kept, keyed by a random install ID and a random profile I
 | Check my trip before I go settings | morning_checks, morning_sent | Until deleted | The morning check |
 | Last way home reminder | last_home | 12 hours after the service | The reminder push |
 | Car parks and stations chosen for alerts | park_watches, lift_alerts | Until deleted | Nearly full and lift alerts |
-| Push token (iPhone, Expo push) | expo_tokens | Until the app unregisters or Apple says it is invalid | Sending alerts |
-| iPhone trip card (Live Activity) push token, the trip and its legs (build 205 and later) | live_activities | Marked ended when the trip ends; the row is not deleted yet and Delete all my data does not remove it (see Roadmap) | Updating the Lock Screen card while the phone is locked |
-| iPhone device push token (build 205 and later) | apns_devices | Not deleted yet, and Delete all my data does not remove it (see Roadmap); nothing is sent to it yet | Alerts later |
+| Push token (iPhone, Expo push) | expo_tokens | Until the app unregisters (alerts off, Delete all my data) or Apple says it is invalid. On api.transportsydney.app also deleted after 30 days with no working push when nothing on the server can still push to that install (no live watch, morning check, lift alert, car park watch or last way home) | Sending alerts |
+| iPhone trip card (Live Activity) push token, the trip and its legs (build 205 and later) | live_activities | Deleted when the trip ends on the phone; otherwise by the hourly clean up once the card has ended or expired, and never kept longer than 24 hours. Delete all my data deletes it at once (25 Oct, 5:28 PM) | Updating the Lock Screen card while the phone is locked |
+| iPhone device push token (build 205 and later) | apns_devices | The app sends it each time it opens; deleted when it has not been sent for 30 days. Delete all my data deletes it at once and the app does not send it again until alerts are turned on (25 Oct, 5:28 PM). Nothing is sent to it yet | Alerts later |
 | Shared trip, with the latest position only if the user taps Include my location | shares | Deleted when the trip ends or sharing stops, otherwise 30 min after arrival, never longer than 6 hours | The Share trip link |
 
 Sent for one request and not kept: the position for nearby stops, Opal machines, Park and Ride distances and trip from where you are; Ask questions.
@@ -31,7 +31,7 @@ Kept for 5 minutes only: request counters per IP address for rate limiting (ip_r
 
 Not in the app: accounts or login, name, email, phone number, contacts, photos, microphone, camera, health, payments, ads, analytics or crash SDKs, advertising ID, tracking across apps or sites. No ad or analytics library is in app/package.json.
 
-Delete all my data (More) asks the server to delete everything above for this install (POST /api/history/delete with scope all) and resets the phone. By email: privacy@transportsydney.app (forwards to contact@fintex.au). Web: https://transportsydney.app/support/
+Delete all my data (More) asks the server to delete everything above for this install (POST /api/history/delete with scope all) and resets the phone. The iPhone trip card and phone push tokens are kept on api.transportsydney.app whichever address the app uses, so the app also calls POST /api/live-activity/forget there (from the 25 Oct, 5:28 PM update; skipped when the app already uses that address, quiet if the route is missing). A phone still on an older update is covered by the clean up above (24 hours, 30 days). By email: privacy@transportsydney.app (forwards to contact@fintex.au). Web: https://transportsydney.app/support/
 
 Service providers that see a request: Apple (APNs, MapKit maps on iPhone), Expo (push relay and over the air updates; sees the push token, the alert text and the IP address), OpenFreeMap (map tiles on Android; sees the IP address), Cloudflare (hosting). Transport for NSW receives only the server's own data requests, with no user data.
 

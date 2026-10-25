@@ -43,6 +43,19 @@ export function useScreenPoll(run: () => Promise<boolean | void> | boolean | voi
   return useCallback(() => poller.current?.runNow() ?? Promise.resolve(), []);
 }
 
+/** A ref that is true only while this screen is on view with the app in front: one-off loads (the trip list's next
+ * batch) check it, so nothing is fetched for a screen nobody is looking at. */
+export function useOnViewRef() {
+  const on = useRef(false);
+  const focused = useRef(false);
+  useFocusEffect(useCallback(() => { focused.current = true; on.current = appActive(); return () => { focused.current = false; on.current = false; }; }, []));
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => { on.current = focused.current && appActive(s); });
+    return () => sub.remove();
+  }, []);
+  return on;
+}
+
 /**
  * The time, ticking every `ms` on whole multiples of the clock (a 5 second tick lands exactly on each minute), only
  * while the app is in front and this screen is on view. Countdowns show whole minutes, so 5 seconds is enough;

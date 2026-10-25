@@ -1,7 +1,8 @@
-// Plan B on the trip screen: when the chosen trip has a cancelled service, a suspended line or a change the live
-// times say you will miss, the best other way from the planner results. Pure logic; the card is in app/trip.tsx.
+// Plan B on the trip screen and on Home: when the chosen trip has a cancelled service, a suspended line, a change the
+// live times say you will miss, or buses replacing trains (trackwork), the best other way from the planner results.
+// Pure logic; the cards are in app/trip.tsx and components/Home.tsx (docs/PLAN-B.md).
 
-export type Problem = { kind: 'cancelled' | 'suspended' | 'missed'; line?: string; mode?: string; tripId?: string; text: string };
+export type Problem = { kind: 'cancelled' | 'suspended' | 'missed' | 'trackwork'; line?: string; mode?: string; tripId?: string; text: string };
 
 const t = (s?: string | null) => (s ? new Date(s).getTime() : NaN);
 const best = (p?: string | null, e?: string | null, live?: boolean) => { const x = live === false ? NaN : t(e); return Number.isFinite(x) ? x : t(p); };
@@ -13,6 +14,23 @@ const clock = (ms: number) => {
 
 /** Alert words that mean the line is not running, as opposed to trackwork with buses for some trains. */
 export const SUSPENDED = /\bsuspended\b|\bnot running\b|\bno (?:train|metro|ferry|light rail|bus)s? (?:services|running|between|are running)\b|\bno services\b/i;
+
+/**
+ * A rail replacement bus: the route carries the line it replaces after the number (45T1, 2AT9, 1L1, 10HU, 3SH), the
+ * same rule as the bus picker's Trackwork section (busCore.ts busGroup).
+ */
+export function isReplacement(l: any): boolean {
+  if (!l || l.mode !== 'bus') return false;
+  const c = String(l.line || '').toUpperCase();
+  return /^\d+[A-Z]?(T\d|L\d|HU|SH|CN|SCO|BMT)$/.test(c) || /^\d+A(T\d|HU)$/.test(c);
+}
+/** The line a replacement bus stands in for: "T1" from "45T1", "CCN" from "2CN" (CN is the Central Coast and Newcastle Line). */
+export function replacedLine(code: string): string {
+  const m = /(T\d|L\d|HU|SH|CN|SCO|BMT)$/.exec(String(code || '').toUpperCase());
+  if (!m) return '';
+  return m[1] === 'CN' ? 'CCN' : m[1];
+}
+const stopShort = (n?: string | null) => String(n || '').replace(/,.*$/, '').replace(/ (Station|Wharf|Light Rail)$/, '').trim();
 
 /** When a journey leaves: first leg, live time first. */
 export function leavesAt(j: any): number {
@@ -45,15 +63,28 @@ export function problemOf(j: any): Problem | null {
     const next = miss && miss.line ? `the ${clock(best(miss.planned, miss.estimated, miss.realtime))} ${miss.line}` : 'the next service';
     return { kind: 'missed', line: miss?.line, mode: miss?.mode, text: `Delays mean you will likely miss ${next}${at ? ` at ${String(at).replace(/ Station$/, '')}` : ''}` };
   }
+  const rep = (j.legs || []).find(isReplacement);
+  if (rep) {
+    const line = replacedLine(rep.line);
+    const span = rep.from && rep.to ? ` from ${stopShort(rep.from)} to ${stopShort(rep.to)}` : '';
+    return { kind: 'trackwork', line, mode: 'bus', text: `Buses replace ${line ? line + ' ' : ''}trains${span}` };
+  }
   return null;
 }
 
+/** How much later than the replacement bus trip a Plan B may arrive and still be worth offering. */
+export const TRACKWORK_SLACK_MIN = 10;
+
 /** True when this journey avoids the problem: not the cancelled service, not the suspended line, and its own changes work. */
 export function avoids(j: any, p: Problem): boolean {
-  if (!j || j.anyCancelled || problemOf(j)) return false;
+  if (!j || j.anyCancelled) return false;
+  // Replacement buses are a fine way round a cancelled or suspended service; only other problems rule a way out.
+  const own = problemOf(j);
+  if (own && own.kind !== 'trackwork') return false;
   const ls = transit(j);
   if (p.kind === 'cancelled') return !ls.some((l) => (p.tripId && l.tripId === p.tripId) || l.cancelled);
   if (p.kind === 'suspended') return !ls.some((l) => l.line === p.line);
+  if (p.kind === 'trackwork') return !ls.some(isReplacement);
   return true;
 }
 
@@ -71,10 +102,31 @@ export function planB(journeys: any[], chosen: any, now: number): PlanB | null {
   if (!p) return null;
   const key = (j: any) => JSON.stringify(transit(j).map((l) => [l.tripId || l.line, l.planned]));
   const ck = key(chosen);
-  const pool = (journeys || []).filter((j) => j && key(j) !== ck && leavesAt(j) >= now + 60000 && Number.isFinite(arrivesAt(j)) && avoids(j, p));
+  // Around trackwork the replacement bus trip still runs, so another way counts only when it is not much slower.
+  const latest = p.kind === 'trackwork' ? arrivesAt(chosen) + TRACKWORK_SLACK_MIN * 60000 : Infinity;
+  const pool = (journeys || []).filter((j) => j && key(j) !== ck && leavesAt(j) >= now + 60000 && Number.isFinite(arrivesAt(j)) && arrivesAt(j) <= latest && avoids(j, p));
   pool.sort((a, b) => arrivesAt(a) - arrivesAt(b) || leavesAt(a) - leavesAt(b));
   const j = pool[0];
   if (!j) return null;
-  const why = p.kind === 'suspended' ? `Avoids the ${p.line}` : p.kind === 'cancelled' ? 'Next way that is running' : 'Next way you can make';
+  const why = p.kind === 'suspended' ? `Avoids the ${p.line}` : p.kind === 'cancelled' ? 'Next way that is running' : p.kind === 'trackwork' ? 'No replacement buses' : 'Next way you can make';
   return { j, leaves: leavesAt(j), arrives: arrivesAt(j), label: `${linesOf(j)}, leave ${clock(leavesAt(j))}, arrive ${clock(arrivesAt(j))}`, why };
+}
+
+/** The problem in a few words, for Home: "T1 suspended", "The 8:04am T1 is cancelled", "Buses replace T1 trains from Pymble to Gordon". */
+export function problemShort(p: Problem): string {
+  if (p.kind === 'suspended') return p.line ? `${p.line} suspended` : 'Line suspended';
+  return p.text;
+}
+
+/**
+ * One sentence for Home and alerts: "T1 suspended. Try the 8:04am M1 from Epping, arrives 8:41am." Without a Plan B
+ * in the services already fetched it points to the trip screen, which asks the planner once more.
+ */
+export function planBLine(p: Problem, pb: PlanB | null): string {
+  const head = problemShort(p).replace(/\.$/, '');
+  if (!pb) return p.kind === 'trackwork' ? `${head}.` : `${head}. Open the trip for Plan B.`;
+  const first = transit(pb.j)[0];
+  const from = first?.from ? ` from ${stopShort(first.from)}` : '';
+  const dep = first ? best(first.planned, first.estimated, first.realtime) : pb.leaves;
+  return `${head}. Try the ${clock(Number.isFinite(dep) ? dep : pb.leaves)} ${first?.line || linesOf(pb.j)}${from}, arrives ${clock(pb.arrives)}.`;
 }

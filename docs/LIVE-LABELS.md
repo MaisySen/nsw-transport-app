@@ -14,7 +14,7 @@ Cancelled services say Cancelled. The age is our copy's age plus the GPS positio
 
 Code: `app/src/lib/liveLabelCore.ts` (`liveState`, `liveKey`, `liveWords`, `stampSeen`, unit tests in `app/test/livelabel.test.mjs`) and `app/src/components/LiveLabel.tsx` (`LiveStatus`, `LiveCountdown`, `LivePill`). Every answer read through `app/src/lib/api.ts` is stamped with `seenAt` (the moment this phone received it) on each departure row and each trip leg, so a copy kept for offline use keeps its true age.
 
-Where it shows: departure rows (stop screens, Home stop cards, the board), Plan results and the trip screen (each leg), the service screen and the live trip.
+Where it shows: departure rows (stop screens, Home stop cards, the full screen board, where each row says Live with its age, Timetable, Not tracking with the timetable time instead of a countdown, or Cancelled; `boardCore.ts` `boardRows` uses `liveState`), Plan results and the trip screen (each leg), the service screen and the live trip.
 
 ## Recently departed
 

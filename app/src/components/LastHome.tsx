@@ -1,5 +1,6 @@
 // Last way home: "Remind me 15 min before" on the last service home (Ask and trip results), and the Home card
-// for a reminder that is set. The server finds the service, looks again live and sends one push (iPhone).
+// for a reminder that is set. On the new server and iPhone the server sends one push; everywhere else the phone
+// schedules its own notification and looks at live times again while the app is open (docs/LAST-WAY-HOME.md).
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { haptic } from '@/lib/haptic';
@@ -7,8 +8,8 @@ import { radius, usePalette } from '@/lib/theme';
 import { useFlag } from '@/lib/config';
 import { apiBase } from '@/lib/server';
 import { getPushState, enablePush } from '@/lib/push';
-import { cancelLastHome, refreshLastHome, remindLastHome, useLastHome } from '@/lib/lastHome';
-import { cardWords, LAST_HOME_LEAD, setNote, type LastHomeHint } from '@/lib/lastHomeCore';
+import { cancelLastHome, cancelLastLocal, localLastSupported, recheckLastLocal, refreshLastHome, remindLastHome, remindLastLocal, useLastHome } from '@/lib/lastHome';
+import { cardWords, chooseLastPath, LAST_HOME_LEAD, setNote, setNoteLocal, type LastHomeHint } from '@/lib/lastHomeCore';
 import { useNow } from '@/lib/hooks';
 import { Icon, I } from './Icon';
 import { T } from './ui';
@@ -33,14 +34,29 @@ export function RemindLastButton({ hint, known = false, acc = false }: { hint: L
   const [busy, setBusy] = useState(false);
   const [note, setNoteText] = useState<string | null>(null);
   const [gone, setGone] = useState(false);
-  const mine = s.item && s.item.status === 'waiting' && s.item.from.id === hint.from.id && s.item.to.id === hint.to.id ? s.item : null;
-  const show = flag && !gone && (known ? !(s.base === apiBase() && s.available === false) : probed);
+  // Server push where it exists (new server, iPhone), else the phone's own notification (docs/LAST-WAY-HOME.md).
+  const serverKnown = known || (s.base === apiBase() && s.available !== null);
+  const server = known ? !(s.base === apiBase() && s.available === false) : probed;
+  const path = chooseLastPath(Platform.OS, server, localLastSupported() && !!hint.svc);
+  const match = (x: { status: string; from: { id: string }; to: { id: string } } | null) => !!x && x.status === 'waiting' && x.from.id === hint.from.id && x.to.id === hint.to.id;
+  const mine = path === 'local' ? (match(s.local) ? s.local : null) : match(s.item) ? s.item : null;
+  const show = flag && !gone && serverKnown && !!path;
   if (!show) return null;
 
   const set = async () => {
     if (busy) return;
     setBusy(true); setNoteText(null);
     try {
+      if (path === 'local') {
+        const r = await remindLastLocal(hint, acc);
+        if (r.ok) { haptic.success(); setNoteText(setNoteLocal(r.item)); }
+        else if (r.denied) {
+          setNoteText(r.error);
+          Alert.alert('Notifications are off', 'The reminder comes as a notification. Allow notifications for Transport in Settings.', [
+            { text: 'Open Settings', onPress: () => Linking.openSettings() }, { text: 'OK', style: 'cancel' }]);
+        } else setNoteText(r.error);
+        return;
+      }
       if (Platform.OS === 'ios') {
         // The reminder is a push from the server. With notifications off it can only show on Home, so ask once.
         const ps = await getPushState().catch(() => null);
@@ -60,7 +76,7 @@ export function RemindLastButton({ hint, known = false, acc = false }: { hint: L
   };
   const cancel = async () => {
     setBusy(true);
-    const ok = await cancelLastHome();
+    const ok = path === 'local' ? (await cancelLastLocal(), true) : await cancelLastHome();
     setBusy(false);
     setNoteText(ok ? 'Reminder cancelled.' : "Couldn't cancel it. Check your connection and try again.");
     if (ok) haptic.select();
@@ -70,7 +86,7 @@ export function RemindLastButton({ hint, known = false, acc = false }: { hint: L
   return (
     <View style={{ marginTop: 6 }}>
       <Pressable onPress={mine ? cancel : set} disabled={busy} accessibilityRole="button"
-        accessibilityLabel={mine ? `Reminder set for ${mine.remindText}. Double tap to cancel it` : `Remind me ${LAST_HOME_LEAD} minutes before the last service home. One notification, checked against live times first`}
+        accessibilityLabel={mine ? `Reminder set for ${mine.remindText}. Double tap to cancel it` : `Remind me ${LAST_HOME_LEAD} minutes before the last service home. One notification${path === 'server' ? ', checked against live times first' : ''}`}
         accessibilityState={{ busy, disabled: busy }}
         android_ripple={{ color: c.fill }}
         style={({ pressed }) => [st.btn, { borderColor: c.sep, backgroundColor: pressed && Platform.OS !== 'android' ? c.fill : c.card }]}>
@@ -89,26 +105,33 @@ export function LastHomeCard() {
   const s = useLastHome();
   const now = useNow(15000);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (on) refreshLastHome(); }, [on, Math.floor(now / 60000)]);
-  const w = on ? cardWords(s.item, now) : null;
+  const minute = Math.floor(now / 60000);
+  useEffect(() => { if (on) refreshLastHome(); }, [on, minute]);
+  // The phone's own reminder looks at live times again while Home is open (throttled in recheckDue).
+  useEffect(() => { recheckLastLocal(); }, [minute]);
+  const serverW = on ? cardWords(s.item, now) : null;
+  const localW = serverW ? null : cardWords(s.local, now);
+  const w = serverW || localW;
   if (!w) return null;
+  const isLocal = !serverW;
+  const status = isLocal ? s.local?.status : s.item?.status;
   const cancel = () => Alert.alert('Cancel the reminder?', 'No notification for your last service home tonight.', [
     { text: 'Keep it', style: 'cancel' },
-    { text: 'Cancel reminder', style: 'destructive', onPress: async () => { setBusy(true); await cancelLastHome(); setBusy(false); haptic.select(); } },
+    { text: 'Cancel reminder', style: 'destructive', onPress: async () => { setBusy(true); if (isLocal) await cancelLastLocal(); else await cancelLastHome(); setBusy(false); haptic.select(); } },
   ]);
   return (
     <View accessible accessibilityLabel={`${w.title}. ${w.line}`} style={[st.card, { backgroundColor: c.card, borderLeftColor: w.go ? c.orange : c.tint }]}>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         <Icon name={I.bell} size={15} color={w.go ? c.orange : c.tint} />
         <T kind="body" style={{ marginLeft: 8, fontWeight: '600', flex: 1 }} numberOfLines={1}>{w.title}</T>
-        {s.item?.status === 'waiting' ? (
+        {status === 'waiting' ? (
           <Pressable onPress={cancel} disabled={busy} hitSlop={8} accessibilityRole="button" accessibilityLabel="Cancel the reminder" style={st.x}>
             {busy ? <ActivityIndicator size="small" color={c.text2} /> : <Icon name={I.close} size={14} color={c.text2} />}
           </Pressable>
         ) : null}
       </View>
       <T kind="sub" tone="text2" style={{ marginTop: 4 }}>{w.line}</T>
-      {Platform.OS === 'android' && !w.go ? <T kind="foot" tone="text3" style={{ marginTop: 4 }}>Shown here, not as a notification: this Android version can't get notifications from the server yet.</T> : null}
+      {!isLocal && Platform.OS === 'android' && !w.go ? <T kind="foot" tone="text3" style={{ marginTop: 4 }}>Shown here, not as a notification: this Android version can't get notifications from the server yet.</T> : null}
     </View>
   );
 }

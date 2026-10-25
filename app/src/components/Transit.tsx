@@ -1,6 +1,8 @@
 import { memo, useEffect, useRef } from 'react';
 import { offlineText } from '@/lib/offlineCore';
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import type { Why } from '@/lib/whyLateCore';
+import { WhyLate, withWhyAction } from './WhyLate';
 import { SwipeRow, swipeA11y, type SwipeAct } from './Swipe';
 import { haptic } from '@/lib/haptic';
 import { usePalette } from '@/lib/theme';
@@ -128,18 +130,23 @@ const depKey = (d: Departure, now: number) => liveKey({ planned: d.planned, esti
 
 export const DepartureRow = memo(DepartureRowView, sameDepartureRow);
 
-type DepartureRowProps = { d: Departure; now: number; onPress: () => void; onWatch?: () => void; watched?: boolean; showStop?: boolean; alertText?: string | null; stopNo?: boolean };
+/** The row's swipe action, plus "Why it's late" for VoiceOver and TalkBack when the row has a reason (the line itself sits inside the row). */
+const rowA11y = (act: SwipeAct | null, why?: Why | null) => withWhyAction(swipeA11y(act) as any, why);
+
+type DepartureRowProps = { d: Departure; now: number; onPress: () => void; onWatch?: () => void; watched?: boolean; showStop?: boolean; alertText?: string | null; stopNo?: boolean;
+  /** Why it's late: the reason from this service's own linked alert (whyLateCore.ts); shown instead of alertText. */
+  why?: Why | null };
 
 /**
  * A row redraws when its departure, watch state, note or the countdown it shows changes; not on every clock tick.
  * Callers pass fresh arrow functions each render that only close over `d` and `watched`, which are compared here.
  */
 function sameDepartureRow(a: DepartureRowProps, b: DepartureRowProps) {
-  return a.d === b.d && a.watched === b.watched && a.showStop === b.showStop && a.stopNo === b.stopNo && a.alertText === b.alertText && !!a.onWatch === !!b.onWatch
+  return a.d === b.d && a.watched === b.watched && a.showStop === b.showStop && a.stopNo === b.stopNo && a.alertText === b.alertText && (a.why?.text || '') === (b.why?.text || '') && !!a.onWatch === !!b.onWatch
     && depKey(a.d, a.now) === depKey(b.d, b.now);
 }
 
-function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertText, stopNo }: DepartureRowProps) {
+function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertText, stopNo, why }: DepartureRowProps) {
   const c = usePalette();
   const live = depState(d, now);
   const extra: string[] = [];
@@ -151,7 +158,7 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
     ? { label: watched ? 'Stop watching' : 'Watch', text: watched ? 'Stop' : 'Watch', icon: watched ? I.bellOff : I.bell, color: watched ? c.text2 : c.indigo, onPress: onWatch }
     : null;
   const body = (
-    <Pressable accessibilityRole="button" onPress={onPress} onLongPress={onWatch ? () => { haptic.tap(); onWatch(); } : undefined} {...swipeA11y(act)}
+    <Pressable accessibilityRole="button" onPress={onPress} onLongPress={onWatch ? () => { haptic.tap(); onWatch(); } : undefined} {...rowA11y(act, why)}
       android_ripple={{ color: c.fill }} style={({ pressed }) => [st.depRow, { backgroundColor: pressed && Platform.OS === 'ios' ? c.card2 : c.card }]}>
       <View style={{ width: 66, alignItems: 'flex-start' }}><LineBadge line={d.line} mode={d.mode} color={d.color} /></View>
       <View style={{ flex: 1, marginRight: 8 }}>
@@ -168,7 +175,7 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
         </View>
         {d.platformChangedFrom ? <T kind="foot" style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }}>Platform changed from {d.platformChangedFrom}</T> : null}
         {d.pred && live.kind !== 'live' ? <T kind="caption" tone="text2" style={{ marginTop: 2 }}>Prediction: {d.pred.short || d.pred.text} ({d.pred.n} trips)</T> : null}
-        {alertText ? (
+        {why ? <WhyLate why={why} style={{ marginTop: 3 }} /> : alertText ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
             <Icon name={I.warn} size={12} color={c.orange} />
             <T kind="foot" numberOfLines={1} style={{ color: c.lateText, marginLeft: 4, flex: 1 }}>{alertText}</T>

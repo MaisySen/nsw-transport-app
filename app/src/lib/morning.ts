@@ -76,3 +76,14 @@ export function previewWords(p: MorningPreview, clock: (t: number) => string): {
   const live = !s.realtime ? 'with no live data yet' : late >= 1 ? `${late} min late` : 'on time';
   return { tone: 'ok', title: 'All fine right now', lines: [`The ${what || 'service'} runs ${live}${plat}. Nothing would be sent.`] };
 }
+
+/**
+ * A tapped morning check alert (push tag m<id>) opens that check's trip, where the trip screen shows the live times
+ * and Plan B (docs/PLAN-B.md). Null when the check is not on the phone, and the alert opens the checks instead.
+ */
+export function morningTripParams(tag: unknown, list: MorningCheck[] | null | undefined): Record<string, string> | null {
+  if (typeof tag !== 'string' || !/^m[A-Za-z0-9]/.test(tag)) return null;
+  const c = (list || []).find((x) => x && x.id === tag.slice(1));
+  if (!c || !c.from?.id || !c.to?.id) return null;
+  return { from: c.from.id, fromName: c.from.name || '', to: c.to.id, toName: c.to.name || '', ...(c.name ? { name: c.name } : {}) };
+}
