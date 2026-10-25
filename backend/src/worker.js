@@ -6821,9 +6821,11 @@ function apiOnly(env, url) {
 }
 const LIVE_PATHS = /^\/(live\/|live\/live\.js|style\.css|vendor\/leaflet\.(js|css)|favicon(-16|-32)?\.(png|ico)|apple-touch-icon\.png|icon-(192|512)\.png|badge-96\.png|og\.png)$/;
 const SITE_PATHS = /^\/(privacy|support|terms)(\/.*)?$/;
+// The station and suburb lists the app keeps for Ask (askPlaces.ts) and its offline "Did you mean": static files, read by phones.
+const LIST_PATHS = /^\/stations\/(train|metro|lightrail|ferry|places|bus-routes)\.json$/;
 function apiOnlyRoute(request, env, url) {
   const p = url.pathname;
-  if (p.startsWith("/api/") || /^\/download\/[A-Za-z0-9._-]+\.apk$/.test(p) || LIVE_PATHS.test(p)) return null;
+  if (p.startsWith("/api/") || /^\/download\/[A-Za-z0-9._-]+\.apk$/.test(p) || LIVE_PATHS.test(p) || LIST_PATHS.test(p)) return null;
   const go = (to) => new Response(null, { status: 301, headers: { location: to, "cache-control": "public, max-age=3600", ...API_SEC_HEADERS } });
   if (p === "/" || p === "/index.html" || /^\/download(\/.*)?$/.test(p)) return go(siteUrl(env) + "/");
   if (SITE_PATHS.test(p)) return go(siteUrl(env) + "/" + p.split("/")[1] + "/");
@@ -6842,6 +6844,7 @@ async function handleRequest(request, env, exec) {
       if (url.pathname !== "/404.html") { const page = servePage(request, url); if (page) return page; }
       const res = await env.ASSETS.fetch(request);
       if (res.status === 404) { const nf = notFoundPage(request); if (nf) return nf; }
+      if (LIST_PATHS.test(url.pathname)) { const h = new Headers(res.headers); h.set("access-control-allow-origin", "*"); return withSec(new Response(res.body, { status: res.status, headers: h }), false); }
       return withSec(res, false);
     }
     if (!rateOk(request, url.pathname)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);

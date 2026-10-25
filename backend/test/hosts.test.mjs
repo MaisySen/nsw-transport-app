@@ -51,9 +51,19 @@ test("API host: home and site pages redirect to transportsydney.app", async () =
   }
 });
 
+test("API host: the station and suburb lists the app keeps for Ask are served, with open CORS", async () => {
+  for (const n of ["train", "metro", "lightrail", "ferry", "places"]) {
+    assetsSeen.length = 0;
+    const r = await call(API + `/stations/${n}.json`);
+    assert.equal(r.status, 200, n);
+    assert.equal(r.headers.get("access-control-allow-origin"), "*", n);
+    assert.deepEqual(assetsSeen, [`/stations/${n}.json`]);
+  }
+});
+
 test("API host: the old web app and data files are not served", async () => {
   assetsSeen.length = 0;
-  for (const p of ["/app.js", "/ask.js", "/sw.js", "/manifest.webmanifest", "/stations/train.json", "/stops/103.json", "/data/facilities.json", "/img/ask-dark.webp", "/nope", "/worker.mjs"]) {
+  for (const p of ["/app.js", "/ask.js", "/sw.js", "/manifest.webmanifest", "/stations/bus/33.json", "/stops/103.json", "/data/facilities.json", "/img/ask-dark.webp", "/nope", "/worker.mjs"]) {
     const r = await call(API + p);
     assert.equal(r.status, 404, p);
     assert.match(r.headers.get("content-type"), /json/, p);

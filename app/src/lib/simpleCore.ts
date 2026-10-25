@@ -135,7 +135,7 @@ export function arriveOf(j: JourneyLike): number {
   return ms(j.arrive);
 }
 
-/** From this delay on, the row also says the timetable time ("27 min late, due 8:23am"). */
+/** From this delay on, the row also says the timetable time ("27 min late, was due 8:23am"). */
 export const LATE_DUE_MIN = 5;
 
 /** One row of the list: leave, arrive, how long, changes, lines, live status and "Leaves in N min". */
@@ -156,7 +156,7 @@ export function tripRow(j: JourneyLike, now: number): TripRow {
   const lin = leavesIn(dep, now);
   const gone = !cancelled && lin.text === 'Left';
   // A big delay names the timetable time too, so "27 min late" next to a time that is already the live one reads right.
-  const due = late >= LATE_DUE_MIN && Number.isFinite(planned) ? `, due ${clock(planned)}` : '';
+  const due = late >= LATE_DUE_MIN && Number.isFinite(planned) ? `, was due ${clock(planned)}` : '';
   const status = cancelled ? 'Cancelled' : gone ? 'Left' : demand ? (f?.booking === false ? 'On demand' : 'On demand, book ahead') : !f?.realtime ? 'Timetable' : late >= 1 ? `${late} min late${due}` : 'On time';
   const tone: Tone = cancelled ? 'red' : gone ? 'gone' : !f?.realtime ? 'plain' : late >= 2 ? 'late' : 'live';
   const said = status === 'Timetable' ? 'timetable time, no live data' : demand && !cancelled && !gone ? `on demand service${f?.booking === false ? '' : ', booking needed'}` : status.replace(/^(\d+) min /, (_, m) => `${minutesWord(Number(m))} `).toLowerCase();

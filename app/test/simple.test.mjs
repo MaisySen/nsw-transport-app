@@ -207,9 +207,9 @@ function d400(depMin) {
 
 test('trip status is the first service\'s own delay; a big one names the timetable time (Bidur, 8:50 AM)', () => {
   const r = s.tripRow(t2bus(1, { trainLate: 27 }), NOW);
-  assert.equal(r.status, `27 min late, due ${s.clock(NOW - 26 * min)}`);
+  assert.equal(r.status, `27 min late, was due ${s.clock(NOW - 26 * min)}`);
   assert.equal(r.tone, 'late');
-  assert.match(r.a11y, /27 minutes late, due /);
+  assert.match(r.a11y, /27 minutes late, was due /);
   // A late bus later in the trip does not make the trip's start late.
   const busLate = s.tripRow(t2bus(4, { busLate: 22 }), NOW);
   assert.equal(busLate.status, 'On time');
