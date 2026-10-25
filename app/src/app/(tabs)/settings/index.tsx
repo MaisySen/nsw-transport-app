@@ -18,6 +18,8 @@ import { endLive } from '@/lib/live';
 import { I } from '@/components/Icon';
 import { Row, Screen, Section, Sep, T } from '@/components/ui';
 import { ActionSheet, type SheetAction } from '@/components/Sheet';
+import { RowMenu } from '@/components/RowMenu';
+import { menuOf, type MenuSpec } from '@/lib/menuCore';
 import { LineStatusSection } from '@/components/LineStatus';
 import { syncLiftAlerts } from '@/lib/liftAlerts';
 import type { Commute } from '@/lib/types';
@@ -120,12 +122,14 @@ export default function Settings() {
       { text: 'Delete', icon: I.trash, destructive: true, onPress: () => api.deleteCommute(cm.id).then(refresh).catch((e: any) => Alert.alert("Couldn't delete it", e.message)) },
     ];
   };
-  const editCommute = (cm: Commute) => setSheet({ title: cm.name, message: `${shortName(cm.from.name)} to ${shortName(cm.to.name)}, ${daysText(cm.days)} around ${cm.todText}`, actions: commuteActions(cm) });
+  // iPhone: these rows open the system pull-down menu from the row (RowMenu); Android: the Material 3 menu under it.
+  const commuteMenu = (cm: Commute): MenuSpec => ({ title: cm.name, message: `${shortName(cm.from.name)} to ${shortName(cm.to.name)}, ${daysText(cm.days)} around ${cm.todText}`,
+    items: menuOf(commuteActions(cm).map((a) => ({ text: a.text, destructive: a.destructive, onPress: a.onPress }))) });
   const fareName = (FARE_TYPES.find((f) => f.k === (st.fareType || 'adult')) || FARE_TYPES[0]).name;
-  const pickFare = () => setSheet({ title: 'Opal fare type', message: 'Trips show an Opal fare estimate for this fare type. It is not your card\'s charge.',
-    actions: FARE_TYPES.map((f) => ({ text: f.name + ((st.fareType || 'adult') === f.k ? ' (current)' : ''), onPress: () => { haptic.select(); store.setFareType(f.k); } })) });
+  const fareMenu = (): MenuSpec => ({ title: 'Opal fare type', message: 'Trips show an Opal fare estimate for this fare type. It is not your card\'s charge.',
+    items: menuOf(FARE_TYPES.map((f) => { const on = (st.fareType || 'adult') === f.k; return { text: f.name + (on ? ' (current)' : ''), sf: on ? 'checkmark' : '', icon: on ? 'check' : 'fare', onPress: () => { haptic.select(); store.setFareType(f.k); } }; })) });
   const n = (k: number) => (k ? ` (${k})` : '');
-  const dataMenu = () => setSheet({ title: 'Privacy and data', message: 'Recent stops and trips are kept on this phone. The server keeps trips you search for 90 days, under this app\'s private id, to suggest commutes.',
+  const dataSheet = () => ({ title: 'Privacy and data', message: 'Recent stops and trips are kept on this phone. The server keeps trips you search for 90 days, under this app\'s private id, to suggest commutes.',
     actions: [
       ...(nStops ? [{ text: `Clear recent stops${n(nStops)}`, onPress: () => { store.clearRecents(); haptic.select(); } }] : []),
       ...(nTrips ? [{ text: `Clear recent trips${n(nTrips)}`, onPress: () => { store.clearRecentTrips(); haptic.select(); } }] : []),
@@ -135,6 +139,7 @@ export default function Settings() {
       { text: 'Delete my trip history on server', icon: I.trash, destructive: true, onPress: deleteServerHistory },
       { text: 'Delete all my data', icon: I.trash, destructive: true, onPress: deleteAll },
     ] });
+  const dataMenu = (): MenuSpec => { const d = dataSheet(); return { title: d.title, message: d.message, items: menuOf(d.actions.map((a: SheetAction) => ({ text: a.text, destructive: a.destructive, onPress: a.onPress }))) }; };
 
   // Accessibility: step free trips and lift outage alerts for stations on saved trips.
   const [liftBusy, setLiftBusy] = useState(false);
@@ -220,8 +225,7 @@ export default function Settings() {
             {data.commutes.map((cm, i) => (
               <View key={cm.id}>
                 {i ? <Sep inset={57} /> : null}
-                <Row icon={I.clock} iconBg={c.indigo} title={cm.name} subtitle={`${daysText(cm.days)}, ${cm.todText}`}
-                  onPress={() => editCommute(cm)} chevron={false}
+                <RowMenu icon={I.clock} sf="clock" iconBg={c.indigo} title={cm.name} subtitle={`${daysText(cm.days)}, ${cm.todText}`} menu={commuteMenu(cm)}
                   right={<Switch value={cm.active} onValueChange={(v) => api.saveCommute({ ...cm, active: v }).then(refresh)} accessibilityLabel={`${cm.name} alerts`} />} />
               </View>
             ))}
@@ -258,9 +262,9 @@ export default function Settings() {
             </>
           ) : null}
           <Sep inset={57} />
-          <Row icon={I.fare} iconBg={c.green} title="Opal fare type" right={<T kind="body" tone="text2">{fareName}</T>} onPress={pickFare} />
+          <RowMenu icon={I.fare} sf="creditcard" iconBg={c.green} title="Opal fare type" value={fareName} menu={fareMenu()} />
           <Sep inset={57} />
-          <Row icon={I.trash} iconBg={c.text2} title="Privacy and data" onPress={dataMenu} />
+          <RowMenu icon={I.trash} sf="trash" iconBg={c.text2} title="Privacy and data" menu={dataMenu()} />
         </Section>
 
         <Section title="About" footer={`Transport: Sydney Live is made by Fintex Australia Pty Ltd. Data from Transport for NSW (CC BY 4.0) and OpenStreetMap contributors. Not made or endorsed by Transport for NSW.\n\u00A9 ${new Date().getFullYear()} Fintex Australia Pty Ltd`}>
