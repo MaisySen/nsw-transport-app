@@ -4,6 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 25 Oct 2026
 
+### Live bus status (over the air, 25 Oct, about 10:25 PM, group d5346636)
+Bidur: "live bus traffic on 410/D400", then "cant do it with only this suburb".
+* Every bus with live data, anywhere in NSW: bus rows say how late or early the bus is and where it is ("4 min late", "3 stops away", "At the stop"). With no live data a row says "Timetable only" and nothing more.
+* The departures board shows a bus's delay beside its stand and where it is on the line under it.
+* Tap a bus: its trip screen draws the bus on the line of stops, at the stop it is at or just before the next one.
+* "Running slow in traffic" shows only when the live times say the bus is losing time on the road ahead: the predicted delay grows by 3 minutes or more over the stops ahead and the bus ends that stretch at least 3 minutes late. It works the same for any route. Bus legs of a trip get the same line.
+* Simple mode: the first Speak on a phone with only its basic voice offers Get a better voice, once ever. Its heading stays Plan Your Trip.
+* Server: transport-api 0c748a01 sends the delays ahead with live bus rows (`ahead`); roll back to 60316eaa. App: preview group 272f2bda, production group d5346636-3945-4785-bc31-3b2a10794007 from main 703a204; roll back to group 30e7648e (10:05 PM). Not yet seen on a device.
+
 ### Get a better voice (over the air, 25 Oct, about 10:05 PM, group 30e7648e)
 Bidur: "Can we set the direct button to that audio setting in phone from our app??"
 * More > Voice has a Get a better voice row. On iPhone it shows three short steps to download a Premium or Enhanced voice (Settings, Accessibility, Read & Speak, Voices, English) and an Open Settings button. Apple has no public link to the voice list, so the button opens the app's page in Settings; no private settings link is used.

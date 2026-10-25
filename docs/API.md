@@ -451,6 +451,9 @@ When the morning check finds a cancellation, a delay over 5 min, a change that w
 
 ## Live traffic on bus legs
 
+**Delays ahead (`ahead`, 25 Oct 2026).** Live bus, coach and school bus rows of `/api/departures` and bus legs of `/api/trip` and `/api/plan` carry `ahead`: the live predicted delays in minutes (one decimal) at each stop from the bus's next stop to this stop, in stop order, from the GTFS realtime trip update (null where a stop has no live time). Only when the vehicle has a position and the stop is ahead of it (the same rows that carry `stopsAway`), at least 3 stops have a live delay, and at most 24 values (the first two and last two always kept, the stops between sampled evenly). The app reads it for "Running slow in traffic" (`app/src/lib/busLiveCore.ts`, `slowInTraffic`: the smaller of the last two values minus the smaller of the first two is 3 or more, and the smaller of the last two is 3 or more). `/api/service` needs nothing new: its `stops` already carry `planned` and `estimated` from the bus's next stop on.
+
+
 Bus and coach legs of `/api/trip` and `/api/plan` answers carry `traffic: {id, kind, text, major}` when an open Live Traffic NSW incident (`/v1/live/hazards/incident/open`) sits within 120 m of the leg's path. 4WD only tracks and notices not updated for 12 hours are left out unless marked major. The app shows "Crash on Victoria Road at Gladesville. Your 501 may run late."
 
 ## Quieter carriage
