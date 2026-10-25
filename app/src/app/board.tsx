@@ -3,23 +3,26 @@
 // label (docs/LIVE-LABELS.md). Dark by default with a light option, high contrast, sized by Dynamic Type.
 // Battery (docs/PERFORMANCE.md): live times through useLive, which polls only while this screen is on view with
 // the app in front; the screen is kept awake only while the board is on view, on builds that have the module.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { goBack } from '@/lib/nav';
 import { Platform, Pressable, StatusBar, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import { api } from '@/lib/api';
-import { useLive, useNow } from '@/lib/hooks';
+import { useCountdownNow, useLive, useReportCountdowns } from '@/lib/hooks';
+import { adaptiveGapMs, nextInMs } from '@/lib/pollCore';
 import { cacheKey, offlineText } from '@/lib/offlineCore';
 import { boardRows, boardScale, rowsThatFit, stopsSummary, type BoardRow } from '@/lib/boardCore';
 import { androidLook, palettes } from '@/lib/theme';
 import { badgeLook } from '@/lib/lineStyle';
-import { clock, shortName } from '@/lib/format';
+import { bestTime, clock, shortName } from '@/lib/format';
 import { haptic } from '@/lib/haptic';
 import { useWhyLate } from '@/lib/whyLate';
 import type { Departure } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
+import { SpeakButton } from '@/components/SpeakButton';
+import { departuresSentence } from '@/lib/voiceCore';
 
 const TAG = 'departure-board';
 
@@ -83,12 +86,14 @@ export default function Board() {
   const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
   const [light, setLight] = useState(lightChosen);
   const c = boardColours(light);
-  const now = useNow();
+  const now = useCountdownNow();
   const insets = useSafeAreaInsets();
   const { width, height, fontScale } = useWindowDimensions();
   const wide = width > height;
   useStayAwake();
-  const { data, error, offlineAt } = useLive((r) => api.departures(String(id), r), 15000, [id], { cacheKey: cacheKey('dep', String(id)) });
+  const { data, error, offlineAt } = useLive((r) => api.departures(String(id), r), (d) => adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), [id], { cacheKey: cacheKey('dep', String(id)) });
+  const dataRef = useRef(data);
+  dataRef.current = data;
   // Dynamic Type: the board grows with the text size setting, within what still fits a few rows.
   const big = boardScale(width, height, fontScale);
   const rowH = big * 1.75;
@@ -96,12 +101,13 @@ export default function Board() {
   const fit = rowsThatFit(height - insets.top - insets.bottom - 16, rowH, headH + big * 0.6);
   const rows = boardRows(data?.items || [], now, fit);
   const stopsOf = useStops(data?.items || [], rows);
+  useReportCountdowns('board:' + id, (data?.items || []).slice(0, fit).map((d) => bestTime(d.planned, d.realtime ? d.estimated : null)));
   const whyOf = useWhyLate(data?.items, data?.alerts);
   const why = useMemo(() => new Map((data?.items || []).map((d) => [`${d.tripId || d.line}|${d.planned}`, whyOf(d)])), [data, whyOf]);
   const title = shortName(data?.stop?.name || (name ? String(name) : 'Departures')).replace(/ Station$/, '');
   const close = () => { haptic.tap(); goBack({ pathname: '/stop/[id]', params: { id: String(id), name: name ? String(name) : '' } } as any); };
   const flip = () => { haptic.select(); lightChosen = !light; setLight(!light); };
-  const status = offlineAt ? offlineText(offlineAt, now) : !data ? (error ? 'Live times unavailable right now, trying again' : 'Loading live times') : 'Live and timetable times, updated every 15 seconds';
+  const status = offlineAt ? offlineText(offlineAt, now) : !data ? (error ? 'Live times unavailable right now, trying again' : 'Loading live times') : 'Live and timetable times, updated often while a service is close';
   const small = Math.max(15, big * 0.34);
 
   return (
@@ -115,6 +121,9 @@ export default function Board() {
         </Pressable>
         <Text accessibilityRole="header" numberOfLines={1} maxFontSizeMultiplier={1} style={{ flex: 1, marginLeft: 14, color: c.text, fontSize: big * 0.62, fontWeight: '700' }}>{title}</Text>
         <Text maxFontSizeMultiplier={1} accessibilityLabel={`Time now ${clock(now)}`} style={{ color: c.text, fontSize: big * 0.52, fontWeight: '600', fontVariant: ['tabular-nums'], marginLeft: 10 }}>{clock(now)}</Text>
+        <View style={{ marginLeft: 12 }}>
+          <SpeakButton look="round" color={c.text} bg={c.close} border={c.text3} say={() => departuresSentence(dataRef.current?.items, Date.now(), { stop: dataRef.current?.stop?.name })} />
+        </View>
         <Pressable onPress={flip} hitSlop={10} accessibilityRole="button" accessibilityLabel={light ? 'Dark board' : 'Light board'}
           style={({ pressed }) => [s.round, { marginLeft: 12, backgroundColor: c.close, borderColor: c.text3, opacity: pressed ? 0.6 : 1 }]}>
           <Icon name={light ? I.moon : I.sun} size={19} color={c.text} />

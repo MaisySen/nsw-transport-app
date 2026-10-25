@@ -1,12 +1,16 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { reportTripLines, tripLinesOf } from '@/lib/myLines';
 import { ActivityIndicator, Alert, type AlertButton, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { haptic } from '@/lib/haptic';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
-import { useLive } from '@/lib/hooks';
-import { cacheKey, offlineText } from '@/lib/offlineCore';
+import { useLive, useReportCountdowns } from '@/lib/hooks';
+import { adaptiveGapMs } from '@/lib/pollCore';
+
+/** The first departure still ahead (or NaN). */
+const nextDep = (ts: number[]) => { const n = Date.now() - 30000; let b = NaN; for (const t of ts) if (t > n && !(t >= b)) b = t; return b; };
+import { cacheKey, offlineText, stampText } from '@/lib/offlineCore';
 import { foldNear, type NearPick } from '@/lib/nearCore';
 import { stopNumber } from '@/lib/busCore';
 import { nativeMenu } from './Sheet';
@@ -17,7 +21,7 @@ import { bestTime, clock, durText, liveStamp, ms, shortName } from '@/lib/format
 import { clearAllPlan } from '@/lib/planCore';
 import type { Departure, Journey, Leg, Place } from '@/lib/types';
 import { store, tripKeyOf } from '@/lib/store';
-import { directFilter, isChain, planTrip, tLegs, tripKey, viaText } from '@/lib/trips';
+import { directFilter, isChain, planTrip, tLegs, tripKey } from '@/lib/trips';
 import type { TripLeg } from '@/lib/trips';
 import { Icon, I, IconName } from './Icon';
 import { safeUrl } from '@/lib/access';
@@ -30,6 +34,8 @@ import { LiveStatus } from './LiveLabel';
 import { liveState, liveWords } from '@/lib/liveLabelCore';
 import { planB, planBLine, problemOf } from '@/lib/planBCore';
 import { useJourneyWhy, WhyLate, withWhyAction } from './WhyLate';
+import { SpeakButton } from './SpeakButton';
+import { tripSentence } from '@/lib/voiceCore';
 
 // ---------- shared refresh signals for every card on Home ----------
 
@@ -64,10 +70,17 @@ function useOfflineSince() {
   return useSyncExternalStore((l) => { liveSubs.add(l); return () => { liveSubs.delete(l); }; }, () => offlineSnap, () => offlineSnap);
 }
 
-/** useLive at Home's 15 s pace, joined to pull to refresh and the Live stamp. Answers are kept on the phone under `key`. */
-function useHomeLive<T>(load: (refresh: boolean) => Promise<T>, deps: any[], key?: string) {
-  const live = useLive(load, 15000, deps, { cacheKey: key });
-  const { updatedAt, refresh, offlineAt } = live;
+/**
+ * useLive for Home's cards, joined to pull to refresh and the Live stamp. Answers are kept on the phone under `key`,
+ * and a fresh start shows that kept copy at once (stale, with its time in the header) while the live answer loads.
+ * Adaptive (docs/PERFORMANCE.md): every 15 s while the next service is 5 minutes away or less, 30 s up to 15
+ * minutes, once a minute beyond. `nextOf` gives the next departure in the data.
+ */
+function useHomeLive<T>(load: (refresh: boolean) => Promise<T>, deps: any[], key?: string, nextOf?: (d: T) => number) {
+  const nextRef = useRef(nextOf);
+  nextRef.current = nextOf;
+  const live = useLive(load, (d) => adaptiveGapMs(15000, d && nextRef.current ? nextRef.current(d) - Date.now() : null), deps, { cacheKey: key });
+  const { updatedAt, refresh, offlineAt, staleAt } = live;
   useEffect(() => { if (updatedAt) markLive(); }, [updatedAt]);
   useEffect(() => {
     if (!key) return;
@@ -75,10 +88,29 @@ function useHomeLive<T>(load: (refresh: boolean) => Promise<T>, deps: any[], key
     return () => reportOffline(key, null);
   }, [key, offlineAt]);
   useEffect(() => {
+    if (!key) return;
+    reportStale(key, staleAt);
+    return () => reportStale(key, null);
+  }, [key, staleAt]);
+  useEffect(() => {
     pullers.add(refresh);
     return () => { pullers.delete(refresh); };
   }, [refresh]);
   return live;
+}
+
+// Cards showing the kept copy while their first live answer loads (a fresh start), for "Updating" in the header.
+const staleCards = new Map<string, number>();
+let staleSnap = 0;
+function reportStale(key: string, at: number | null) {
+  if (at) staleCards.set(key, at); else staleCards.delete(key);
+  const next = staleCards.size ? Math.min(...staleCards.values()) : 0;
+  if (next === staleSnap) return;
+  staleSnap = next;
+  liveSubs.forEach((f) => f());
+}
+function useStaleSince() {
+  return useSyncExternalStore((l) => { liveSubs.add(l); return () => { liveSubs.delete(l); }; }, () => staleSnap, () => staleSnap);
 }
 
 // ---------- high priority alerts reported by the trip cards ----------
@@ -429,7 +461,8 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
   const plan = { from, to, via, conn: trip.conn, legs: trip.legs, modes: trip.modes };
   const chain = isChain(plan);
   const pkey = tripPkey(plan);
-  const { data, error, offlineAt } = useHomeLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && !!allServices }), [pkey, chain && !!allServices], cacheKey('trip', tripCacheId(pkey, chain && !!allServices)));
+  const { data, error, offlineAt } = useHomeLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && !!allServices }), [pkey, chain && !!allServices], cacheKey('trip', tripCacheId(pkey, chain && !!allServices)),
+    (d) => nextDep((d?.journeys || []).map(depOf)));
 
   // Remember each live reading for the hold.
   useEffect(() => {
@@ -441,6 +474,10 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
   }, [data]);
 
   const js = directFilter((data?.journeys || []).filter((j) => depOf(j) > now - 30000), plan, !!allServices, (j) => j).list.slice(0, 3);
+  const jsRef = useRef(js);
+  jsRef.current = js;
+  // The countdowns this card shows, so Home redraws when one of them changes its minute (activity.useCountdownNow).
+  useReportCountdowns('trip:' + trip.key, js.map(depOf));
   // The lines this trip uses, for the weekend trackwork card and line status (Home and Work, commutes, saved trips).
   const lineSig = js.map((j) => j.legs.map((l) => (l.kind === 'walk' ? '' : l.line || '')).join('.')).join('|');
   useEffect(() => {
@@ -502,6 +539,7 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
         </View>
       ) : glance}
       {pbText ? <PlanBRow title={pbTitle} text={pbText} onPress={() => open()} /> : null}
+      {look === 'hero' && js.length ? <SpeakButton say={() => tripSentence(jsRef.current, Date.now())} /> : null}
       {below && js.length ? below(js) : null}
     </Wrap>
   );
@@ -639,7 +677,6 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
   const t = showTravel ? (j.durationMin >= 60 ? { big: `${Math.floor(j.durationMin / 60)}h ${j.durationMin % 60}`, unit: 'min' } : { big: String(j.durationMin), unit: 'min' }) : cd(dep, now);
   const toneText = stt.tone === 'live' ? c.liveText : stt.tone === 'late' ? c.lateText : stt.tone === 'red' ? c.redText : c.text2;
   const legs = j.legs.filter((x) => x.kind === 'transit');
-  const last = legs[legs.length - 1];
   const cancelled = stt.tone === 'red';
   const rel = cancelled ? null : relRaw;
   const chip = showTravel ? (cancelled ? c.text3 : '#8E8E93') : cdColor(dep, now, cancelled, c);
@@ -697,8 +734,10 @@ function groupDepartures(items: Departure[], now: number): Group[] {
 
 export function StopBoard({ stop, now, starred, distance, onLongPress }: { stop: Place; now: number; starred?: boolean; distance?: number; onLongPress?: () => void }) {
   const c = usePalette();
-  const { data, error, offlineAt } = useHomeLive((r) => api.departures(stop.id, r), [stop.id], cacheKey('dep', stop.id));
+  const { data, error, offlineAt } = useHomeLive((r) => api.departures(stop.id, r), [stop.id], cacheKey('dep', stop.id),
+    (d) => nextDep((d?.items || []).map((x) => bestTime(x.planned, x.realtime ? x.estimated : null))));
   const groups = groupDepartures(data?.items || [], now);
+  useReportCountdowns('stop:' + stop.id, (data?.items || []).slice(0, 4).map((x) => bestTime(x.planned, x.realtime ? x.estimated : null)));
   const name = shortName(data?.stop?.name || stop.name);
   // A bus stop shows the number on its sign, as the Opal app does.
   const busOnly = !!data?.items?.length && data.items.every((d) => d.mode === 'bus' || d.mode === 'coach' || d.mode === 'school');
@@ -877,6 +916,16 @@ export function LiveTag() {
   const c = usePalette();
   const t = useLastLive();
   const off = useOfflineSince();
+  const stale = useStaleSince();
+  if (!off && stale && !t) {
+    // A fresh start: the kept copy is on screen while the live answer loads.
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel={`Updating, showing times from ${stampText(stale, Date.now())}`}>
+        <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: c.text3, marginRight: 5 }} />
+        <T kind="foot" tone="text2" style={{ fontVariant: ['tabular-nums'] }}>Updating, from {stampText(stale, Date.now())}</T>
+      </View>
+    );
+  }
   if (off) {
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel={offlineText(off, Date.now())}>

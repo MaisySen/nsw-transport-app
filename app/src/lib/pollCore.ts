@@ -34,7 +34,7 @@ export type Poller = {
  * each failure in a row doubles the wait (backoffMs). Back on view, it runs at once only when the last run is at
  * least `staleMs` old (default half the gap); else it waits out the rest of the gap.
  */
-export function createPoller(run: () => Promise<boolean | void> | boolean | void, everyMs: number, timers: PollTimers, opts: { active?: boolean; enabled?: boolean; staleMs?: number; runAtStart?: boolean } = {}): Poller {
+export function createPoller(run: () => Promise<boolean | void> | boolean | void, everyMs: number | (() => number), timers: PollTimers, opts: { active?: boolean; enabled?: boolean; staleMs?: number; runAtStart?: boolean } = {}): Poller {
   let active = opts.active ?? true;
   let enabled = opts.enabled ?? true;
   let handle: any = null;
@@ -42,11 +42,13 @@ export function createPoller(run: () => Promise<boolean | void> | boolean | void
   let failures = 0;
   let running = false;
   let stopped = false;
-  const staleMs = opts.staleMs ?? everyMs / 2;
+  // A gap can be a function, read before each wait (adaptive polling: slower while the next service is far off).
+  const every = () => { const v = typeof everyMs === 'function' ? everyMs() : everyMs; return Number.isFinite(v) && v > 0 ? v : 15000; };
+  const staleMs = opts.staleMs ?? every() / 2;
 
   const clear = () => { if (handle != null) { timers.clear(handle); handle = null; } };
   const wanted = () => active && enabled && !stopped;
-  const gap = () => backoffMs(everyMs, failures);
+  const gap = () => backoffMs(every(), failures);
 
   const schedule = (delay: number) => {
     clear();
@@ -110,4 +112,48 @@ export function createReadCache(ttlMs: number, now: () => number = Date.now, max
     clear() { gen++; kept.clear(); inflight.clear(); },
     size: () => kept.size,
   };
+}
+
+/**
+ * Adaptive polling (docs/PERFORMANCE.md): the screen's normal gap while the next service is 5 minutes away or less,
+ * 30 seconds from 5 to 15 minutes, and once a minute beyond 15 minutes (or with nothing to wait for today). A gap
+ * longer than these is kept.
+ */
+export function adaptiveGapMs(baseMs: number, nextInMs: number | null | undefined): number {
+  if (nextInMs == null || !Number.isFinite(nextInMs)) return Math.max(baseMs, 60000);
+  const m = nextInMs / 60000;
+  if (m > 15) return Math.max(baseMs, 60000);
+  if (m > 5) return Math.max(baseMs, 30000);
+  return baseMs;
+}
+
+/**
+ * Milliseconds until any countdown on screen shows a different value. Countdowns show whole minutes (format.countdown:
+ * the minutes left, rounded down; "Now" in the last minute; "Gone" a minute after), so each time changes at a whole
+ * minute before its departure. With nothing to count to, the next minute on the clock. Never under 1 second.
+ */
+export function nextChangeMs(now: number, times: Iterable<number>): number {
+  let best = 60000 - (now % 60000);
+  for (const t of times) {
+    if (!Number.isFinite(t)) continue;
+    const d = t - now;
+    if (d < -60000) continue;
+    // The next whole minute boundary of (t - now) below the current one, i.e. when floor((t - now) / 60000) changes.
+    const r = ((d % 60000) + 60000) % 60000;
+    const wait = r === 0 ? 60000 : r;
+    if (wait < best) best = wait;
+  }
+  return Math.max(1000, best + 50);
+}
+
+/** Milliseconds from `now` to the next service still ahead on a board (live time where there is one), or null. */
+export function nextInMs(items: { planned?: string | null; estimated?: string | null; realtime?: boolean; departed?: boolean; cancelled?: boolean }[] | null | undefined, now: number): number | null {
+  let best: number | null = null;
+  for (const d of items || []) {
+    if (d.departed || d.cancelled) continue;
+    const e = d.realtime && d.estimated ? Date.parse(d.estimated) : NaN;
+    const t = (Number.isFinite(e) ? e : Date.parse(String(d.planned || ''))) - now;
+    if (Number.isFinite(t) && t > -30000 && (best == null || t < best)) best = t;
+  }
+  return best;
 }

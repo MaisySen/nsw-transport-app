@@ -10,7 +10,7 @@ import { haptic } from '@/lib/haptic';
 import { getLive, liveWatch, setLive, type LiveTrip } from '@/lib/live';
 import { resetLiveCache, tickLive } from '@/lib/liveEngine';
 import type { LiveState } from '@/lib/liveCalc';
-import { boardTime, leavePlan, leaveWords, legsOf, missedConn, missedPlanLegs, pickNextOption, switchLegs, sydHHMM, wakeId, type LatLon, type LeavePlan, type Missed } from '@/lib/smart';
+import { boardTime, leavePlan, leaveWords, legsOf, missedConn, missedPlanLegs, pickNextOption, switchLegs, sydHHMM, wakeId, type LatLon, type Missed } from '@/lib/smart';
 import { canNotify, cancelLeave, cancelWake, scheduleLeave } from '@/lib/smartNotify';
 import { store, useStore } from '@/lib/store';
 import { androidLook, radius, usePalette } from '@/lib/theme';

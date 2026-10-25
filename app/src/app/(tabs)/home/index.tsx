@@ -7,7 +7,7 @@ import { dragOrder, sameEnds, splitNext, toFront } from '@/lib/homeCore';
 import { clearAllWords } from '@/lib/planCore';
 import { router, Stack } from 'expo-router';
 import { api } from '@/lib/api';
-import { useLive, useNow } from '@/lib/hooks';
+import { useCountdownNow, useLive } from '@/lib/hooks';
 import { cacheKey } from '@/lib/offlineCore';
 import { usePalette } from '@/lib/theme';
 import { useSides } from '@/lib/layout';
@@ -23,7 +23,7 @@ import { LineBadge } from '@/components/Transit';
 import { TabBarSafe } from '@/components/TabBarSafe';
 import { useLiveTrip } from '@/lib/live';
 import { radius } from '@/lib/theme';
-import { Button, Empty, Row, Section, Screen, Sep, T } from '@/components/ui';
+import { Button, Empty, Section, Screen, T } from '@/components/ui';
 import { LeaveLine, MorningLink, useMyPos } from '@/components/Smart';
 import { LastHomeCard } from '@/components/LastHome';
 import { Notices } from '@/components/Notices';
@@ -37,7 +37,8 @@ import { useLoaded } from '@/lib/store';
 export default function Home() {
   const c = usePalette();
   const side = useSides();
-  const now = useNow();
+  // Redraws when a countdown on Home changes its minute (each card reports its times), not every 5 seconds.
+  const now = useCountdownNow();
   const st = useStore();
   const near = useNearby();
   const [busy, setBusy] = useState(false);
@@ -54,7 +55,9 @@ export default function Home() {
     // No signal: fail so the saved trips list kept on the phone is shown instead of an empty one.
     if (offline) throw offline;
     return { commutes, saved, watches };
-  }, 15000, [], { cacheKey: cacheKey('home', 'lists') });
+    // Commutes, saved trips and watches change when you change them (each write empties the read cache and this
+    // reloads on view), so once a minute is enough; it was every 15 seconds.
+  }, 60000, [], { cacheKey: cacheKey('home', 'lists') });
   const d = live.data;
   const activeWatches = (d?.watches.items || []).filter((w: any) => w.active);
   const sugg: any = d?.commutes.suggestion;

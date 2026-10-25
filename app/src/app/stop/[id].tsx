@@ -3,11 +3,13 @@ import { ActivityIndicator, Platform, Pressable, RefreshControl, ScrollView, Vie
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import { api, boardTimeSupported, departuresAt } from '@/lib/api';
-import { useLive, useNow } from '@/lib/hooks';
+import { useCountdownNow, useLive, useReportCountdowns } from '@/lib/hooks';
+import { adaptiveGapMs, nextInMs } from '@/lib/pollCore';
+import { bestTime } from '@/lib/format';
 import { useScreenPoll } from '@/lib/activity';
 import { cacheKey } from '@/lib/offlineCore';
 import { usePalette, radius } from '@/lib/theme';
-import { clock, ms, shortName } from '@/lib/format';
+import { clock, shortName } from '@/lib/format';
 import { byRoute, keepRoute } from '@/lib/stopBoardCore';
 import { useUsualText } from '@/lib/usual';
 import { departedWords } from '@/lib/recentCore';
@@ -31,6 +33,11 @@ import { StationInfo } from '@/components/Access';
 import * as WebBrowser from 'expo-web-browser';
 import { useStationMap } from '@/lib/stationMap';
 import type { Station } from '@/lib/access';
+import { hasSpeech, speak } from '@/lib/nativeExtras';
+import { departuresSentence } from '@/lib/voiceCore';
+
+const canSpeak = hasSpeech();
+
 
 const MODE_LABEL: Record<string, string> = { train: 'Trains', metro: 'Metro', bus: 'Buses', lightrail: 'Light rail', ferry: 'Ferries', coach: 'Coaches', school: 'School buses' };
 
@@ -38,7 +45,7 @@ export default function StopScreen() {
   // `time` (HHMM, optional): a link can open the board from that time in the service day, like the chip.
   const { id, name, time } = useLocalSearchParams<{ id: string; name?: string; time?: string }>();
   const c = usePalette();
-  const now = useNow();
+  const now = useCountdownNow();
   const st = useStore();
   const [mode, setMode] = useState<string | null>(null);
   const [pick, setPick] = useState<string | null>(null);
@@ -48,7 +55,9 @@ export default function StopScreen() {
   const [at, setAt] = useState<number | null>(() => { const t = /^([01]\d|2[0-3])[0-5]\d$/.test(String(time || '')) ? String(time) : ''; return t && boardTimeSupported() ? boardMoment(+t.slice(0, 2), +t.slice(2), Date.now()) : null; });
   const [pickOpen, setPickOpen] = useState(false);
   const [timeOk, setTimeOk] = useState(boardTimeSupported());
-  const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => (at == null ? api.departures(String(id), r) : departuresAt(String(id), at)), 15000, [id, at], { cacheKey: at == null ? cacheKey('dep', String(id)) : undefined });
+  const { data, error, updatedAt, offlineAt, refreshing, refresh } = useLive((r) => (at == null ? api.departures(String(id), r) : departuresAt(String(id), at)),
+    // Adaptive: every 15 s while the next service is 5 minutes away or less, slower when it is further off.
+    (d) => adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), [id, at], { cacheKey: at == null ? cacheKey('dep', String(id)) : undefined });
   // A server without earlier times (no echo): the chip and the row go for the session and the board goes back to now.
   useEffect(() => { if (!boardTimeSupported()) { setTimeOk(false); setAt(null); } }, [error]);
   const title = shortName(data?.stop?.name || name || 'Stop');
@@ -127,6 +136,9 @@ export default function StopScreen() {
   // Pull down: refresh as before, and try Earlier departures again when they did not load.
   const pull = () => { refresh(); if (earlierNote) loadEarlier(); };
   const items = byRoute(board.filter((d) => !mode || d.mode === mode), route);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  useReportCountdowns('stopscreen:' + id, items.slice(0, 6).map((d) => bestTime(d.planned, d.realtime ? d.estimated : null)));
   // Services that left in the last few minutes, from this phone's own reads of this board (recentCore.ts).
   const next = items.find((d) => !isGone(d, now));
   const usual = useUsualText(route && next ? { kind: 'transit', line: route, stopId: next.stopId || String(id), planned: next.planned } : null);
@@ -158,6 +170,15 @@ export default function StopScreen() {
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pull} />}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 4 }}>
           <LiveStamp updatedAt={updatedAt} error={error} offlineAt={offlineAt} />
+          <View style={{ flex: 1 }} />
+          {canSpeak && at == null ? (
+            <Pressable onPress={() => { haptic.select(); speak(departuresSentence(itemsRef.current, Date.now(), { stop: stopName }), { interrupt: true }); }} hitSlop={8}
+              accessibilityRole="button" accessibilityLabel="Speak departures" accessibilityHint="Reads the next two services out loud"
+              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 16, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1, marginRight: 8 })}>
+              <Icon name={I.speaker} size={14} color={c.tint} />
+              <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Speak</T>
+            </Pressable>
+          ) : null}
           <Pressable onPress={() => { haptic.tap(); router.push({ pathname: '/board', params: { id: String(id), name: stopName } }); }} hitSlop={8}
             accessibilityRole="button" accessibilityLabel="Open departure board, full screen"
             style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 16, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>

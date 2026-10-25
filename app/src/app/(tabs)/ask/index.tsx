@@ -1,5 +1,6 @@
 // Ask tab: chat about trips. Questions go to /api/ask; answers come back as a short reply
 // plus live cards (departures, trips, alerts) that open the stop board, trip or live map.
+import { spokenTime } from '@/lib/homeCore';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { router, Stack, useFocusEffect } from 'expo-router';
@@ -67,7 +68,8 @@ function Count({ t, live, now }: { t: string; live?: boolean; now: number }) {
     const c = usePalette();
     const x = cd(t, now);
     return (
-      <View style={st.cd}>
+      // Read as "4 minutes", not "4, min" (VoiceOver and TalkBack).
+      <View style={st.cd} accessible accessibilityLabel={spokenTime(x)}>
         <Text style={[x.unit || x.big === 'Now' ? st.cdBig : st.cdClock, { color: live ? c.liveText : c.text }]}>{x.big}</Text>
         {x.unit ? <Text style={[st.cdUnit, { color: c.text2 }]}>{x.unit}</Text> : null}
       </View>

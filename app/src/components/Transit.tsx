@@ -15,6 +15,7 @@ import { font, T } from './ui';
 import { LiveCountdown, LiveStatus } from './LiveLabel';
 import { liveKey, liveState, type LiveState } from '@/lib/liveLabelCore';
 import { useFlag } from '@/lib/config';
+import { useReduceMotion } from '@/lib/motion';
 import { occBusy, occText, quietText } from '@/lib/occupancy';
 import type { Vehicle } from '@/lib/types';
 import type { Occupancy } from '@/lib/types';
@@ -62,14 +63,16 @@ export function LineBadge({ line, mode, color }: { line?: string | null; mode?: 
   );
 }
 
-/** Pulsing green dot, iOS style, that beats once on each refresh. */
+/** Pulsing green dot, iOS style, that beats once on each refresh. Still under Reduce Motion. */
 export function LiveDot({ beat, size = 7, color }: { beat?: any; size?: number; color?: string }) {
   const c = usePalette();
-  const a = useRef(new Animated.Value(0)).current;
+  const still = useReduceMotion();
+  const a = useRef(new Animated.Value(still ? 1 : 0)).current;
   useEffect(() => {
+    if (still) { a.setValue(1); return; }
     a.setValue(0);
-    Animated.timing(a, { toValue: 1, duration: 1200, useNativeDriver: true }).start();
-  }, [beat, a]);
+    Animated.timing(a, { toValue: 1, duration: 1200, useNativeDriver: Platform.OS !== 'web' }).start();
+  }, [beat, a, still]);
   const col = color || c.green;
   return (
     <View style={{ width: size * 2.4, height: size * 2.4, alignItems: 'center', justifyContent: 'center' }}>

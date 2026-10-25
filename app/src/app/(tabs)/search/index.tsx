@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Keyboard, Platform, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, Keyboard, Platform, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { searchFieldProps } from '@/lib/pickerCore';
 import { nativeMenu } from '@/components/Sheet';
 import { router, Stack, useLocalSearchParams } from 'expo-router';

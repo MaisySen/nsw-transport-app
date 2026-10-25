@@ -9,7 +9,10 @@ import * as Haptics from 'expo-haptics';
 import { api } from './api';
 import { clock, shortName } from './format';
 import { clearOngoing, endLive, getLive, liveAlert, setLive, showOngoing, useLiveTrip } from './live';
-import { LiveState, progOf as progOfCalc, stepLive } from './liveCalc';
+import { LiveState, progOf as progOfCalc, stepLive, tapMoments } from './liveCalc';
+import { haptic } from './haptic';
+
+const tapped = new Set<string>();
 import { wakeStep } from './smart';
 import { speak } from './nativeExtras';
 import { cancelWake, scheduleWake, wakeNow } from './smartNotify';
@@ -105,6 +108,8 @@ export async function tickLive() {
       else if (a.t === 'wakeDue') await wakeNow(a.id, a.title, a.body);
       else if (a.t === 'wakeCancel') await cancelWake(a.id);
     }
+    // One light tap at "leave now" and on arrival, once each per trip (expo-haptics is in every build).
+    for (const k of tapMoments(r.s, now)) { const id = `${g.id}:${k}`; if (!tapped.has(id)) { tapped.add(id); haptic.light(); } }
     let buzzed = false;
     for (const a of r.actions) {
       // The web preview logs every action, so a browser replay can check each alert and the end of the trip.

@@ -1,6 +1,6 @@
 import { Alert, View } from 'react-native';
 import { goBack } from '@/lib/nav';
-import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { usePalette } from '@/lib/theme';

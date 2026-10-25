@@ -19,7 +19,7 @@ import { legColor, plat, progOf, setEnginePos, short, tickLive, useLiveEngineSta
 import { cutPath, LiveState, minsWords, timed, tOf } from '@/lib/liveCalc';
 import { enablePush, getPushState } from '@/lib/push';
 import type { WatchLeg } from '@/lib/types';
-import TransitMap from '@/components/TransitMap';
+import TransitMap from '@/components/LazyTransitMap';
 import { Icon, I } from '@/components/Icon';
 import { LineBadge } from '@/components/Transit';
 import { WhyLate } from '@/components/WhyLate';

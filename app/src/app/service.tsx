@@ -12,7 +12,7 @@ import { badgeLook } from '@/lib/lineStyle';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
 import { useStore } from '@/lib/store';
 import { svcSpec, toggleWatch, tripKey } from '@/lib/watch';
-import TransitMap from '@/components/TransitMap';
+import TransitMap from '@/components/LazyTransitMap';
 import { Icon, I } from '@/components/Icon';
 import { useUsualText } from '@/lib/usual';
 import { LineBadge, LiveStamp, OccupancyChip, QuietChip, StatusLine } from '@/components/Transit';

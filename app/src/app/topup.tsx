@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import { radius, usePalette } from '@/lib/theme';
 import { distText, stShort, TICKET, type TopupItem } from '@/lib/access';
 import { myPosition } from '@/lib/where';
-import TransitMap from '@/components/TransitMap';
+import TransitMap from '@/components/LazyTransitMap';
 import { Segmented } from '@/components/Segmented';
 import { MapCard } from '@/components/MapCard';
 import { I } from '@/components/Icon';
