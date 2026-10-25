@@ -4,6 +4,8 @@
 import { Platform } from 'react-native';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import type { LeaveByEvent } from './leaveByCore';
+import { store } from './store';
+import { pickVoice, rankVoices, speechPace, type RankedVoice, type VoiceInfo } from './voiceCore';
 
 export function hasCalendar(): boolean {
   if (Platform.OS === 'web') return false;
@@ -11,7 +13,8 @@ export function hasCalendar(): boolean {
 }
 
 export function hasSpeech(): boolean {
-  if (Platform.OS === 'web') return false;
+  // The web preview speaks through the browser's own speech (expo-speech's web side), where there is one.
+  if (Platform.OS === 'web') return typeof window !== 'undefined' && !!(window as any).speechSynthesis;
   try { return !!requireOptionalNativeModule('ExpoSpeech'); } catch { return false; }
 }
 
@@ -78,25 +81,74 @@ function speechAudio(): { start?: () => boolean; end?: () => void } | null {
 export function hasSpeechSession(): boolean { return !!speechAudio(); }
 
 /** How speak() asks for audio: the app's own spoken session on builds that have one, else a session the system runs. */
-export function speechOptions(hasSession: boolean, done?: () => void) {
+export function speechOptions(hasSession: boolean, done?: () => void, voice?: string | null, os: string = Platform.OS) {
   // Builds 206 and earlier have no audio session of their own (the default one stops music and goes quiet in
   // Silent mode), so the system's own speech session is used: it mixes with music and lowers it while talking.
+  // Every call names the voice (the best installed one, or the one picked in More > Voice) and a natural pace;
+  // without a voice the system falls back to its compact voice, which is the robotic one.
+  const pace = speechPace(os);
+  const base = { language: 'en-AU', rate: pace.rate, pitch: pace.pitch, ...(voice ? { voice } : {}) };
   return hasSession
-    ? { language: 'en-AU', useApplicationAudioSession: true, onDone: done, onStopped: done, onError: done }
-    : { language: 'en-AU', useApplicationAudioSession: false };
+    ? { ...base, useApplicationAudioSession: true, onDone: done, onStopped: done, onError: done }
+    : { ...base, useApplicationAudioSession: false };
 }
 
-/** Says a trip alert out loud (in headphones when they are in), after anything still being said. */
-export function speak(text: string) {
+// ---------- the installed voices (read once per app run) ----------
+
+let voiceList: VoiceInfo[] | null = null;
+let voiceLoad: Promise<VoiceInfo[]> | null = null;
+
+/** The installed voices. iOS can answer an empty list on the very first ask, so an empty answer is asked once more. */
+export function loadVoices(): Promise<VoiceInfo[]> {
+  if (voiceList && voiceList.length) return Promise.resolve(voiceList);
+  if (voiceLoad) return voiceLoad;
+  const S = speechModule();
+  if (!S || typeof S.getAvailableVoicesAsync !== 'function') return Promise.resolve([]);
+  const ask = async (): Promise<VoiceInfo[]> => { try { return ((await S.getAvailableVoicesAsync()) || []) as VoiceInfo[]; } catch { return []; } };
+  voiceLoad = (async () => {
+    let v = await ask();
+    if (!v.length) { await new Promise((r) => setTimeout(r, 400)); v = await ask(); }
+    voiceList = v;
+    voiceLoad = null;
+    return v;
+  })();
+  return voiceLoad;
+}
+
+/** English voices installed on this phone, best first (voiceCore.rankVoices). */
+export async function englishVoices(): Promise<RankedVoice[]> { return rankVoices(await loadVoices()); }
+
+/** The voice every speech call uses: the one picked in More > Voice if still installed, else the best installed
+ * one (Premium, Enhanced, Default; en-AU, en-GB, en-US). */
+export async function currentVoice(): Promise<RankedVoice | null> {
+  let chosen: string | null = null;
+  try { chosen = store.voiceId(); } catch {}
+  return pickVoice(await loadVoices(), chosen);
+}
+
+/**
+ * The one way the app speaks: trip alerts, trip guidance, Speak departures and the Voice sample all come here, so
+ * each uses the same best voice and pace. Queued after anything still being said unless `interrupt` (a button the
+ * person pressed: what they asked for now replaces what was being said).
+ */
+export async function speak(text: string, opts: { interrupt?: boolean; voice?: string | null } = {}) {
   const S = speechModule();
   if (!S || !text) return;
+  let voice: string | null = null;
+  try { voice = opts.voice || (await currentVoice())?.identifier || null; } catch {}
   try {
+    if (opts.interrupt) { try { S.stop(); } catch {} }
     // Queued after anything still being said (two moments in one refresh are both heard). The app's own audio
     // session, where there is one, is let go only when the last queued alert is done.
     const a = speechAudio();
     const own = !!a?.start?.();
     if (own) pending++;
-    S.speak(text, speechOptions(own, own ? () => { pending = Math.max(0, pending - 1); if (!pending) a?.end?.(); } : undefined));
+    const done = own ? () => { pending = Math.max(0, pending - 1); if (!pending) a?.end?.(); } : undefined;
+    try { S.speak(text, speechOptions(own, done, voice)); }
+    catch { if (voice) S.speak(text, speechOptions(own, done, null)); else throw new Error('speak'); }
   } catch {}
 }
 let pending = 0;
+
+/** Stops anything being said (the Speak departures button pressed again). */
+export function stopSpeaking() { try { speechModule()?.stop(); } catch {} }

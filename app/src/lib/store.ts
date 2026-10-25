@@ -16,6 +16,10 @@ type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; wa
   acc?: boolean; liftAlerts?: boolean;
   /** Speak alerts on the live trip: the last choice, so the next trip starts with it. */
   speak?: boolean;
+  /** More > Voice: the voice picked (an installed voice's identifier); unset means the best installed one. */
+  voiceId?: string | null;
+  /** More > Simple mode (off by default): the app opens to one screen of departures, TripView Lite style. */
+  simple?: boolean;
   /** The two question setup (home and work) was finished or skipped. */
   onboarded?: boolean;
   /** The commute card was swapped for this half day ("2026-10-24 pm"); it flips back at the next 12. */
@@ -106,6 +110,10 @@ export const store = {
   setAcc(on: boolean) { state = { ...state, acc: on }; save(); },
   speakOn: (): boolean => !!state.speak,
   setSpeak(on: boolean) { state = { ...state, speak: on }; save(); },
+  voiceId: (): string | null => state.voiceId || null,
+  setVoiceId(id: string | null) { state = { ...state, voiceId: id }; save(); },
+  simpleOn: (): boolean => !!state.simple,
+  setSimple(on: boolean) { state = { ...state, simple: on }; save(); },
   liftAlertsOn: (): boolean => !!state.liftAlerts,
   setLiftAlerts(on: boolean) { state = { ...state, liftAlerts: on }; save(); },
   /** Saved trips on this phone, for lift outage alerts. */

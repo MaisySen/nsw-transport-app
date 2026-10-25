@@ -10,6 +10,8 @@ export const I = {
   bell: { ios: 'bell.fill', android: 'notifications' },
   bellOff: { ios: 'bell.slash', android: 'notifications_off' },
   gear: { ios: 'gearshape.fill', android: 'settings' },
+  speaker: { ios: 'speaker.wave.2.fill', android: 'volume_up' },
+  speakerStop: { ios: 'stop.fill', android: 'stop' },
   star: { ios: 'star.fill', android: 'star' },
   starOpen: { ios: 'star', android: 'star_outline' },
   chevron: { ios: 'chevron.right', android: 'chevron_right' },

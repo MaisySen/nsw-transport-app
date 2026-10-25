@@ -221,11 +221,21 @@ const sayPlat = (p?: string | null) => {
   return /^(platform|stand|wharf|side)\b/i.test(v) ? v.charAt(0).toLowerCase() + v.slice(1) : /^\d+$/.test(v) ? `platform ${v}` : v;
 };
 
+/** "the T4 line", "the 410 bus", "the F1 ferry", "the L2 light rail": a line as an announcer says it. */
+export function sayLineName(line?: string | null, mode?: string | null): string {
+  const l = String(line || '').trim();
+  const noun = NOUN[String(mode || '')] || '';
+  if (!l) return noun ? `the ${noun}` : 'the next service';
+  if (noun === 'train' || noun === 'metro') return `the ${l} line`;
+  return noun ? `the ${l} ${noun}` : `the ${l}`;
+}
+
 /**
- * What Speak alerts reads out, each once per trip (by key). Short, natural lines, no chime, in the en-AU voice:
- * "Your train leaves in 2 minutes from platform 1", "Redfern is next. Change here for the T4",
- * "Five Dock Shops is next. Get off here", a platform or stand change, running late (at 3, 5, 10 and 15 minutes),
- * a tight or missed change, and "You've arrived at Strathfield". Keys match tripAlerts, so one moment is one line.
+ * What trip guidance (Speak alerts) reads out, each once per trip (by key). Short announcer style sentences, in the
+ * best installed voice (nativeExtras.speak), modelled on Sydney Trains and the newer buses:
+ * "Your train to Redfern leaves in 3 minutes, from platform 1.", "Next stop, Redfern. Change here for the T4 line.",
+ * "Your stop is next. Five Dock Shops.", a platform or stand change, running late (at 3, 5, 10 and 15 minutes),
+ * a tight or missed change, and "You've arrived at Kings Cross." Keys match tripAlerts, so one moment is one line.
  */
 export function speechCues(legs: WatchLeg[], s: LiveState, now: number, f: Fmt): { key: string; text: string }[] {
   const out: { key: string; text: string }[] = [];
@@ -237,14 +247,14 @@ export function speechCues(legs: WatchLeg[], s: LiveState, now: number, f: Fmt):
   if (s.phase === 'ride') {
     const d = x.d;
     if (d && (d.alightIndex ?? -1) > 0 && s.nextIdx === d.alightIndex) {
-      if (i === last) out.push({ key: 'off' + i, text: `${sayName(l.to)} is next. Get off here.` });
-      else { const n = legs[i + 1]; out.push({ key: 'off' + i, text: `${sayName(l.to)} is next. Change here for the ${n.line}${NOUN[n.mode] === 'bus' ? ' bus' : ''}.` }); }
+      if (i === last) out.push({ key: 'off' + i, text: `Your stop is next. ${sayName(l.to)}.` });
+      else { const n = legs[i + 1]; out.push({ key: 'off' + i, text: `Next stop, ${sayName(l.to)}. Change here for ${sayLineName(n.line, n.mode)}.` }); }
     }
   }
   for (const cn of s.conns) {
-    const nl = `${cn.next.line}${NOUN[cn.next.mode] === 'bus' ? ' bus' : ''}`;
-    if (cn.risk === 'miss') out.push({ key: 'conn' + cn.i, text: `You'll likely miss the ${nl} at ${sayName(cn.at)}.` });
-    else if (cn.risk === 'tight') { const m = Math.max(0, cn.spare); out.push({ key: 'conn' + cn.i, text: `Tight change at ${sayName(cn.at)}. ${m} minute${m === 1 ? '' : 's'} to catch the ${nl}.` }); }
+    const nl = sayLineName(cn.next.line, cn.next.mode);
+    if (cn.risk === 'miss') out.push({ key: 'conn' + cn.i, text: `You may miss ${nl} at ${sayName(cn.at)}.` });
+    else if (cn.risk === 'tight') { const m = Math.max(0, cn.spare); out.push({ key: 'conn' + cn.i, text: `Tight change at ${sayName(cn.at)}. ${m} minute${m === 1 ? '' : 's'} to catch ${nl}.` }); }
   }
   if (s.phase !== 'wait' || x.missed || !Number.isFinite(x.dep)) return out;
   const d = x.d, mi = idx(d?.mineIndex);
@@ -261,11 +271,25 @@ export function speechCues(legs: WatchLeg[], s: LiveState, now: number, f: Fmt):
     out.push({ key: `late${i}:${step}`, text: `Your ${noun} is running ${late} minutes late. It now leaves at ${f.clock(x.dep)}.` });
   }
   const dm = (x.dep - now) / 60000;
-  if (dm <= 2.5 && dm > -0.5) {
+  if (dm <= 3.5 && dm > -0.5) {
     const m = Math.round(dm);
-    out.push({ key: `soon${i}`, text: `Your ${noun} leaves ${m <= 0 ? 'now' : `in ${m} minute${m === 1 ? '' : 's'}`}${plat ? ` from ${sayPlat(plat)}` : ''}.` });
+    const to = sayName(l.to);
+    const where = plat ? `, from ${sayPlat(plat)}` : '';
+    out.push({ key: `soon${i}`, text: m <= 0 ? `Your ${noun} to ${to} is leaving now${where}.` : `Your ${noun} to ${to} leaves in ${m} minute${m === 1 ? '' : 's'}${where}.` });
   }
   return out;
+}
+
+/**
+ * The two moments that get one light haptic tap on a live trip: "leave now" (the service you are waiting for leaves
+ * within a minute) and arrival. Keys, so each is felt once per trip.
+ */
+export function tapMoments(s: LiveState, now: number): string[] {
+  if (s.done) return ['arrived'];
+  const x = s.L2[s.cur];
+  if (s.phase !== 'wait' || !x || x.missed || !Number.isFinite(x.dep)) return [];
+  const left = x.dep - now;
+  return left <= 60000 && left > -30000 ? ['leave' + s.cur] : [];
 }
 
 export type LiveTripLike = {

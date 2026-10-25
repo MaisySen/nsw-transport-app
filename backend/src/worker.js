@@ -5297,6 +5297,15 @@ const LIVECARD = (() => {
           return '';
       return /^(platform|stand|wharf|side)\b/i.test(v) ? v.charAt(0).toLowerCase() + v.slice(1) : /^\d+$/.test(v) ? `platform ${v}` : v;
   };
+  function sayLineName(line, mode) {
+      const l = String(line || '').trim();
+      const noun = NOUN[String(mode || '')] || '';
+      if (!l)
+          return noun ? `the ${noun}` : 'the next service';
+      if (noun === 'train' || noun === 'metro')
+          return `the ${l} line`;
+      return noun ? `the ${l} ${noun}` : `the ${l}`;
+  }
   function speechCues(legs, s, now, f) {
       const out = [];
       const last = legs.length - 1;
@@ -5312,20 +5321,20 @@ const LIVECARD = (() => {
           const d = x.d;
           if (d && (d.alightIndex ?? -1) > 0 && s.nextIdx === d.alightIndex) {
               if (i === last)
-                  out.push({ key: 'off' + i, text: `${sayName(l.to)} is next. Get off here.` });
+                  out.push({ key: 'off' + i, text: `Your stop is next. ${sayName(l.to)}.` });
               else {
                   const n = legs[i + 1];
-                  out.push({ key: 'off' + i, text: `${sayName(l.to)} is next. Change here for the ${n.line}${NOUN[n.mode] === 'bus' ? ' bus' : ''}.` });
+                  out.push({ key: 'off' + i, text: `Next stop, ${sayName(l.to)}. Change here for ${sayLineName(n.line, n.mode)}.` });
               }
           }
       }
       for (const cn of s.conns) {
-          const nl = `${cn.next.line}${NOUN[cn.next.mode] === 'bus' ? ' bus' : ''}`;
+          const nl = sayLineName(cn.next.line, cn.next.mode);
           if (cn.risk === 'miss')
-              out.push({ key: 'conn' + cn.i, text: `You'll likely miss the ${nl} at ${sayName(cn.at)}.` });
+              out.push({ key: 'conn' + cn.i, text: `You may miss ${nl} at ${sayName(cn.at)}.` });
           else if (cn.risk === 'tight') {
               const m = Math.max(0, cn.spare);
-              out.push({ key: 'conn' + cn.i, text: `Tight change at ${sayName(cn.at)}. ${m} minute${m === 1 ? '' : 's'} to catch the ${nl}.` });
+              out.push({ key: 'conn' + cn.i, text: `Tight change at ${sayName(cn.at)}. ${m} minute${m === 1 ? '' : 's'} to catch ${nl}.` });
           }
       }
       if (s.phase !== 'wait' || x.missed || !Number.isFinite(x.dep))
@@ -5344,11 +5353,22 @@ const LIVECARD = (() => {
           out.push({ key: `late${i}:${step}`, text: `Your ${noun} is running ${late} minutes late. It now leaves at ${f.clock(x.dep)}.` });
       }
       const dm = (x.dep - now) / 60000;
-      if (dm <= 2.5 && dm > -0.5) {
+      if (dm <= 3.5 && dm > -0.5) {
           const m = Math.round(dm);
-          out.push({ key: `soon${i}`, text: `Your ${noun} leaves ${m <= 0 ? 'now' : `in ${m} minute${m === 1 ? '' : 's'}`}${plat ? ` from ${sayPlat(plat)}` : ''}.` });
+          const to = sayName(l.to);
+          const where = plat ? `, from ${sayPlat(plat)}` : '';
+          out.push({ key: `soon${i}`, text: m <= 0 ? `Your ${noun} to ${to} is leaving now${where}.` : `Your ${noun} to ${to} leaves in ${m} minute${m === 1 ? '' : 's'}${where}.` });
       }
       return out;
+  }
+  function tapMoments(s, now) {
+      if (s.done)
+          return ['arrived'];
+      const x = s.L2[s.cur];
+      if (s.phase !== 'wait' || !x || x.missed || !Number.isFinite(x.dep))
+          return [];
+      const left = x.dep - now;
+      return left <= 60000 && left > -30000 ? ['leave' + s.cur] : [];
   }
   function progOf(s, f) {
       if (!s || s.done)

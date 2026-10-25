@@ -15,7 +15,7 @@ import { haptic } from '@/lib/haptic';
 import { store, useStore } from '@/lib/store';
 import { FARE_TYPES } from '@/lib/fare';
 import { endLive } from '@/lib/live';
-import { Icon, I } from '@/components/Icon';
+import { I } from '@/components/Icon';
 import { Row, Screen, Section, Sep, T } from '@/components/ui';
 import { ActionSheet, type SheetAction } from '@/components/Sheet';
 import { LineStatusSection } from '@/components/LineStatus';
@@ -30,6 +30,7 @@ import { clearLastHomeLocal, localLastSupported } from '@/lib/lastHome';
 import { setTrackworkHeadsUp } from '@/lib/trackwork';
 import { forgetPushTokens, PUSH_FORGOTTEN_KEY } from '@/lib/forgetTokens';
 import { askCalendarRead, calendarReadSupported } from '@/lib/calendarLeaveBy';
+import { hasSpeech } from '@/lib/nativeExtras';
 
 /** "1.0.0 (204) · update 01a16ff7": the build on the phone and the update it runs, for support. */
 function versionText() {
@@ -54,7 +55,6 @@ export default function Settings() {
   const { msgs: askMsgs } = useAskChat();
   const askCount = askMsgs.length;
   const nStops = (st.recents || []).length, nTrips = (st.recentTrips || []).length;
-  const count = (n: number) => <T kind="body" tone="text2">{n ? String(n) : 'None'}</T>;
 
   const deleteServerHistory = () => Alert.alert('Delete your trip history?', 'This deletes the trips you searched for that the server keeps, and the commute suggestions made from them. Saved trips, commutes and watches stay. This cannot be undone.', [
     { text: 'Cancel', style: 'cancel' },
@@ -162,6 +162,7 @@ export default function Settings() {
     <Switch value={v} onValueChange={onChange} disabled={disabled} accessibilityLabel={label} trackColor={Platform.OS === 'android' ? { true: c.tint, false: c.fill } : undefined} thumbColor={Platform.OS === 'android' ? (v ? (c.dark ? '#062E6F' : '#fff') : c.text3) : undefined} />
   );
 
+  const [canSpeak] = useState(() => hasSpeech());
   const morningOn = useFlag('morningCheck');
   // One local notification, set from Home while it is open (docs/TRACKWORK.md). Needs the DATE trigger (201 to 206).
   const twOn = useFlag('weekendTrackwork') && localLastSupported();
@@ -230,6 +231,12 @@ export default function Settings() {
         <Section title="Settings" footer={push?.status === 'local' ? 'Alerts show while Transport is open.' : push?.status === 'denied' ? 'Turn on notifications for Transport in your phone settings.' : undefined}>
           <Row icon={I.bell} iconBg={c.red} title={busy ? 'Turning on' : 'Notifications'} right={<T kind="body" tone="text2">{pushWord}</T>}
             onPress={pushOff ? (push?.status === 'denied' ? () => Linking.openSettings() : turnOn) : push?.status === 'on' ? test : undefined} chevron={pushOff} />
+          {canSpeak ? (
+            <>
+              <Sep inset={57} />
+              <Row icon={I.speaker} iconBg={c.indigo} title="Voice" subtitle="For trip guidance and Speak departures" right={<T kind="body" tone="text2">{st.voiceId ? 'Chosen' : 'Automatic'}</T>} onPress={() => router.push('/voice')} />
+            </>
+          ) : null}
           <Sep inset={57} />
           <Row icon={I.access} iconBg={c.tint} title="Accessible trips" subtitle="Step free trips only" chevron={false}
             right={sw(!!st.acc, (v) => { store.setAcc(v); haptic.select(); }, 'Accessible trips')} />
