@@ -1,5 +1,5 @@
 # Transport privacy policy
-Updated 24 October 2026. This policy covers the Transport: Sydney Live app for iPhone and Android, the website at transportsydney.app and the server the apps use.
+Updated 25 October 2026. The website at transportsydney.app/privacy/ is the published version. This policy covers the Transport: Sydney Live app for iPhone and Android, the website at transportsydney.app and the server the apps use.
 
 Transport: Sydney Live is provided by Fintex Australia Pty Ltd (ABN 60 688 406 108), New South Wales, Australia. Contact: privacy@transportsydney.app. In this policy, "we" and "us" mean Fintex Australia Pty Ltd.
 
@@ -15,7 +15,9 @@ Transport has no accounts. It does not ask for your name, email or phone number,
 
 * Trips you plan or watch, with the time of day, so Transport can offer to make a repeated trip your commute. These are deleted after 90 days.
 
-* A notification token (Android and web) if you turn on alerts, so the server can send them. The iPhone app uses notifications made on the phone and sends no token.
+* A notification token if you allow notifications, so the server can send alerts to your phone. It is deleted when you turn alerts off or delete all your data. On the iPhone the app also sends the phone's own notification token each time it opens; it is deleted when the app has not sent it for 30 days.
+
+* The trip card on the iPhone Lock Screen: during a trip, the card's push token and the trip, so the server can keep the card up to date while your phone is locked. Both are deleted when the trip ends, and never kept longer than 24 hours.
 
 ## What stays on your phone
 

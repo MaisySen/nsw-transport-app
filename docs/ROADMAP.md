@@ -15,6 +15,7 @@ Open items, in the order they are planned. Updated 25 Oct 2026, 5:15 PM. What th
 | Trip reminders: several per saved trip, by weekday, asked for notifications only on the first one | 4:44 PM |
 | "Usually N min late": in the app and on the new server (`/api/usual`, deployed 4:31 PM); hidden until the server move | 4:44 PM |
 | Website: feature list, screens from the current app, support and privacy brought up to date | 5:10 PM |
+| Delete all my data also deletes the iPhone trip card and phone push tokens; stale push tokens cleaned up hourly (trip cards within 24 h, phone tokens after 30 days unused); raw live times (obs) kept 45 days | 5:45 PM (server and over the air) |
 
 Release ids and rollback commands: [RELEASES.md](RELEASES.md).
 
@@ -35,7 +36,6 @@ Release ids and rollback commands: [RELEASES.md](RELEASES.md).
 | Google Play | Internal, closed test, then review ([STORE.md](STORE.md)) |
 | Android push when the app is closed | Needs a Firebase project (google-services.json, FCM key uploaded to Expo) |
 | Google Assistant shortcut | The Android match for the Siri shortcuts |
-| Delete all my data: trip card tokens | `live_activities` and `apns_devices` rows are not removed by Delete all my data and have no clean up yet. Add both to `/api/history/delete` and the minute clean up, then add them to the privacy policy's delete list |
 
 ## Known gaps
 
