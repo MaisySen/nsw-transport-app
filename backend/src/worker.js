@@ -4997,7 +4997,7 @@ async function serverOn(env, flag) {
 // Owner's rule (26 Oct): US$5 a month, no overage, for up to 1,000 people. The included amounts of the Workers Paid
 // plan, read on Cloudflare's pricing pages on 26 Oct 2026 (docs/COSTS.md has the links). Every hour the minute tick
 // reads this billing cycle's usage from Cloudflare's GraphQL analytics (a read only Account Analytics token, the
-// CF_ANALYTICS_TOKEN secret) and works out the month end at the last 6 hours' rate. Projected over BUDGET_HOLD_PCT
+// CF_ANALYTICS_TOKEN secret) and works out the month end at the last 48 hours' rate. Projected over BUDGET_HOLD_PCT
 // of any included amount (or used over it): the hold. The costly switches go off for the rest of the billing cycle
 // (BUDGET_HOLD_FLAGS, budgetHeld), load test keys stop working and an email goes to the owner. Over BUDGET_WARN_PCT:
 // one warning email a cycle. The hold lifts by itself under BUDGET_LIFT_PCT; an admin can clear it (POST
@@ -5007,7 +5007,7 @@ const BUDGET_INCLUDED = {
   d1RowsRead: 25e9, d1RowsWritten: 50e6, logEvents: 20e6,
 };
 const BUDGET_HOLD_PCT = 80, BUDGET_WARN_PCT = 50, BUDGET_LIFT_PCT = 60;
-const BUDGET_RATE_MS = 6 * 3600000;
+const BUDGET_RATE_MS = 48 * 3600000;
 const BUDGET_HOLD_FLAGS = ["ENGINE_BOARDS", "ENGINE_PUSH", "LIVE_PUSH", "OWN_PLANNER", "ENGINE_LEARN", "LOAD_TESTS"];
 // Whether the budget guard holds a switch off now (sync: from the copy serverConfig keeps, refreshed once a minute).
 function budgetHeld(flag) {
@@ -5086,7 +5086,7 @@ async function budgetMail(env, subject, text) {
   if (!env || !env.ALERT_EMAIL) return "no email binding";
   const from = env.ALERT_FROM || "budget@transportsydney.app";
   const to = env.ALERT_TO || "contact@fintex.au";
-  const raw = ["From: Transport: Sydney Live <" + from + ">", "To: " + to, "Subject: " + subject, "Date: " + new Date().toUTCString(),
+  const raw = ['From: "Transport Sydney Live" <' + from + ">", "To: " + to, "Subject: " + subject, "Date: " + new Date().toUTCString(),
     "Message-ID: <" + crypto.randomUUID() + "@transportsydney.app>", "MIME-Version: 1.0", "Content-Type: text/plain; charset=utf-8", "", text].join("\r\n");
   const EmailMessage = await budgetEmailClass();
   if (!EmailMessage) return "no email module";
@@ -5107,13 +5107,14 @@ async function budgetCheck(env, now = Date.now(), opts = {}) {
   const prev = (await budgetLoad(env)) || {};
   const day = Number(env.BILLING_DAY) || null;
   const cycle = budgetCycle(now, day);
-  // The rate is the last 6 hours' (a runaway is caught within hours; a burst that has ended stops counting toward
-  // the rate but stays in what was used), as a day's worth, never from less than an hour.
-  const from6 = Math.max(cycle.start, now - BUDGET_RATE_MS);
-  const [used, last6] = await Promise.all([budgetUsage(env, cycle.start, now), budgetUsage(env, from6, now)]);
-  const span = Math.max(3600000, now - from6);
+  // The rate is the last 48 hours' as a day's worth, counted over at least a day: it smooths the daily rhythm and the
+  // engine timetable load every second night, while a load test (100,000 object requests in two hours) still projects
+  // far past the line at once. A burst that has ended stays in what was used.
+  const fromR = Math.max(cycle.start, now - BUDGET_RATE_MS);
+  const [used, lastR] = await Promise.all([budgetUsage(env, cycle.start, now), budgetUsage(env, fromR, now)]);
+  const span = Math.max(86400000, now - fromR);
   const perDay = {};
-  for (const k of Object.keys(last6)) perDay[k] = last6[k] * (86400000 / span);
+  for (const k of Object.keys(lastR)) perDay[k] = lastR[k] * (86400000 / span);
   const pr = budgetProject(used, perDay, now, cycle);
   const sameCycle = prev.cycle === cycle.start;
   const b = { at: now, cycle: cycle.start, cycleEnd: cycle.end, billingDay: day, meters: pr.meters, worst: pr.worst, daysLeft: pr.daysLeft,
@@ -5131,11 +5132,11 @@ async function budgetCheck(env, now = Date.now(), opts = {}) {
     const wasOn = BUDGET_HOLD_FLAGS.filter((k) => String(env[k] || "").toLowerCase() === "on");
     const what = wasOn.length ? `switched off ${wasOn.join(", ")}` : `holds ${BUDGET_HOLD_FLAGS.join(", ")} off (none of them was on, so the app does not change)`;
     b.mail = await budgetMail(env, "Sydney Live: Cloudflare usage would pass the included amount this month",
-      `At the last 6 hours' rate, ${b.holdReason}. The budget guard ${what} until the billing cycle ends (${new Date(cycle.end).toUTCString()}) or usage falls back under ${BUDGET_LIFT_PCT}%. Nothing has been charged beyond the US$5 plan by this reading.\n\n${budgetText(b)}\n\nThe app keeps working on the Trip Planner path. Admins can clear it with POST /api/budget/clear.`).catch((e) => "mail failed: " + String((e && e.message) || e).slice(0, 120));
+      `At the last 48 hours' rate, ${b.holdReason}. The budget guard ${what} until the billing cycle ends (${new Date(cycle.end).toUTCString()}) or usage falls back under ${BUDGET_LIFT_PCT}%. Nothing has been charged beyond the US$5 plan by this reading.\n\n${budgetText(b)}\n\nThe app keeps working on the Trip Planner path. Admins can clear it with POST /api/budget/clear.`).catch((e) => "mail failed: " + String((e && e.message) || e).slice(0, 120));
   } else if (!over && pr.worst.projectedPct >= BUDGET_WARN_PCT && b.warnedCycle !== cycle.start && !opts.dry) {
     b.warnedCycle = cycle.start;
     b.mail = await budgetMail(env, "Sydney Live: Cloudflare usage past half of the included amount",
-      `At the last 6 hours' rate, ${pr.worst.meter} reaches ${pr.worst.projectedPct}% of the Workers Paid included amount by the end of this billing cycle. Nothing is switched off yet; the guard does that at ${BUDGET_HOLD_PCT}%.\n\n${budgetText(b)}`).catch((e) => "mail failed: " + String((e && e.message) || e).slice(0, 120));
+      `At the last 48 hours' rate, ${pr.worst.meter} reaches ${pr.worst.projectedPct}% of the Workers Paid included amount by the end of this billing cycle. Nothing is switched off yet; the guard does that at ${BUDGET_HOLD_PCT}%.\n\n${budgetText(b)}`).catch((e) => "mail failed: " + String((e && e.message) || e).slice(0, 120));
   }
   if (!opts.dry) await budgetSave(env, b);
   return b;

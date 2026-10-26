@@ -100,7 +100,9 @@ not billed separately (duration is always 128 MB).
 ## Budget guard
 
 Every hour (minute 17) the cron reads this cycle's usage with a read only Account Analytics token (Worker secret
-`CF_ANALYTICS_TOKEN`) and works out the month end: used so far plus the last 6 hours' rate times the days left.
+`CF_ANALYTICS_TOKEN`) and works out the month end: used so far plus the last 48 hours' rate (counted over at least a
+day) times the days left. 48 hours smooths the daily rhythm and the timetable load every second night; a load test
+(about 100,000 object requests in two hours) still projects far past the line at once.
 * Over 50% projected on any meter: one email a cycle to contact@fintex.au (Email Routing, `ALERT_EMAIL`).
 * Over 80% projected, or 80% already used: the hold. `ENGINE_BOARDS`, `ENGINE_PUSH`, `LIVE_PUSH`, `OWN_PLANNER`,
   `ENGINE_LEARN` and `LOAD_TESTS` act as off whatever their vars say, and an email says why. The app keeps working on
@@ -110,6 +112,10 @@ Every hour (minute 17) the cron reads this cycle's usage with a read only Accoun
 * `GET /api/budget` (admin key) shows the last reading, the hold and each switch; `POST /api/budget/check` runs it now
   (`?dry=1` reads without changing anything or emailing).
 * Log events are not in the analytics API: the guard estimates them as 2 per sampled invocation.
+* First run in production, 26 Oct 05:17 UTC: it read every meter and held (Durable Object requests projected 1,363% at
+  the 6 hour rate it used then, all from the morning's load tests). Nothing changed for phones: every held switch was
+  already off. The email failed on a header bug (fixed, 48 hour rate since). The hold lifts by itself once the load
+  test days pass out of the 48 hour window and the month end is under 60%, expected on 28 Oct.
 * What it cannot stop: the timetable load itself (stopping it would leave the engine without today). Its rows are
   counted, and the email says so.
 

@@ -12,7 +12,7 @@ const tmp = `/tmp/budget-test-${process.pid}-${Date.now()}.mjs`;
 fs.writeFileSync(tmp, src);
 const W = await import(tmp); fs.unlinkSync(tmp);
 
-// GraphQL answers: the cycle so far and the last 24 hours, by the time span asked.
+// GraphQL answers: the cycle so far and the last 48 hours, by the time span asked.
 let usage = null;
 let asked = [];
 globalThis.fetch = async (url, init) => {
@@ -20,7 +20,7 @@ globalThis.fetch = async (url, init) => {
     const v = JSON.parse(init.body).variables;
     asked.push(v);
     const span = Date.parse(v.e) - Date.parse(v.s);
-    const u = span > 86400000 ? usage.cycle : usage.day;
+    const u = span === 48 * 3600000 ? usage.day : usage.cycle; // the 48 hour rate window, else the cycle so far
     return Response.json({ data: { viewer: { accounts: [{
       w: [{ sum: { requests: u.wr, cpuTimeUs: u.cpu * 1000 } }], o: [{ sum: { requests: u.dor } }],
       p: [{ sum: { duration: u.gbs, rowsRead: 0, rowsWritten: 0, inboundWebsocketMsgCount: 0 } }], d: [{ sum: { rowsRead: 0, rowsWritten: 0 } }],
@@ -71,13 +71,13 @@ test("under 50%: nothing switched off, no email; the reading is saved", async ()
 test("past 80% projected: the hold switches the costly flags and load keys off, one email; it lifts under 60%", async () => {
   const d1 = makeD1(); mails.length = 0;
   const env = mkEnv(d1);
-  // A load test: 120,000 object requests in the last 6 hours, 30 days left.
+  // A load test day: 120,000 object requests on the cycle's first day, 29 days left.
   usage = { cycle: { wr: 250000, cpu: 800000, dor: 120000, gbs: 2900 }, day: { wr: 250000, cpu: 800000, dor: 120000, gbs: 2900 } };
   const b = await W.budgetCheck(env, Date.UTC(2026, 9, 26, 22));
   assert.equal(b.hold, true); assert.equal(b.worst.meter, "doRequests");
   assert.match(b.holdReason, /doRequests/);
   assert.equal(mails.length, 1); assert.equal(b.mail, "sent");
-  assert.equal(mails[0].to, "contact@fintex.au"); assert.match(mails[0].raw, /Subject: Sydney Live: Cloudflare usage would pass/); assert.match(mails[0].raw, /switched off ENGINE_BOARDS, LOAD_TESTS/);
+  assert.equal(mails[0].to, "contact@fintex.au"); assert.match(mails[0].raw, /^From: "Transport Sydney Live" <budget@transportsydney.app>\r\n/); assert.match(mails[0].raw, /Subject: Sydney Live: Cloudflare usage would pass/); assert.match(mails[0].raw, /switched off ENGINE_BOARDS, LOAD_TESTS/);
   assert.equal(W.budgetHeld("ENGINE_BOARDS"), true);
   assert.equal(W.flagOn(env, "ENGINE_BOARDS"), false);
   assert.equal(W.flagOn(env, "OWN_PLANNER"), false);
@@ -88,7 +88,7 @@ test("past 80% projected: the hold switches the costly flags and load keys off, 
   assert.equal(b2.hold, true); assert.equal(mails.length, 1);
   // The test ends: the rate falls and 20% is used, so the hold lifts by itself.
   usage = { cycle: { wr: 250000, cpu: 800000, dor: 200000, gbs: 2900 }, day: { wr: 1000, cpu: 3000, dor: 100, gbs: 2 } };
-  const b3 = await W.budgetCheck(env, Date.UTC(2026, 9, 27, 6));
+  const b3 = await W.budgetCheck(env, Date.UTC(2026, 9, 29, 6));
   assert.equal(b3.hold, false); assert.ok(b3.liftedAt);
   assert.equal(W.flagOn(env, "ENGINE_BOARDS"), true);
   // An admin's clear.
