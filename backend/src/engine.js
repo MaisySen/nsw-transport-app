@@ -32,6 +32,15 @@ const ENGINE_VP_FEEDS = /^(bus|train|metro|ferry|lr_)/; // vehicle positions (oc
 const ENG_DAYFMT = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney", year: "numeric", month: "2-digit", day: "2-digit" });
 function engDayKey(t) { return ENG_DAYFMT.format(new Date(t)).replace(/-/g, ""); }
 
+// Whether a trip update is for this timetable row's run of the trip. The timetable keeps a trip that starts after
+// midnight on the day before (a time past 24:00), while the Sydney buses feed gives the calendar date it starts on
+// (27 Oct, 00:35 AM: 281 of 294 bus trip updates said 20261027 for runs the timetable has on 20261026), so a bus
+// after midnight never got its live time. The next day's date counts when this row is on that date too.
+function engSameRun(tu, c) {
+  if (!tu || !tu.startDate || tu.startDate === c.day) return true;
+  return tu.startDate > c.day && tu.startDate === engDayKey(c.planned) && engDayKey(c.planned - 86400000) === c.day;
+}
+
 function engPlatform(name, code, cls) {
   const m = String(name || "").match(/(Platform \w+|Stand \w+|Wharf \d\w*(?:, Side \w)?)/i);
   if (m) return m[1];
@@ -210,7 +219,7 @@ function engBuildBoard(src, stopId, opts = {}) {
     if (opts.mode && !(modeOf(route[1]).key === opts.mode || (opts.mode === "bus" && modeOf(route[1]).key === "coach"))) continue;
     feedsUsed.add(feed);
     const tu = src.tu(feed, c.tripId);
-    if (tu && tu.startDate && tu.startDate !== c.day) { items.push(mk(c, route, null)); continue; }
+    if (tu && !engSameRun(tu, c)) { items.push(mk(c, route, null)); continue; }
     const live = engLive(tu, c, (s) => { const m = src.tripSeq(feed, c.tripId); return m ? m.get(s) : null; }, engArrFirst(feed));
     if (live && live.gone) continue;
     seen.add(c.tripId + "|" + c.day);

@@ -108,6 +108,22 @@ test("cancelled trip, skipped stop, platform change, and another day's update ig
   assert.equal(by("B-2").realtime, false);
 });
 
+test("a bus after midnight: the timetable keeps it on the day before, the feed gives the calendar date", () => {
+  // The run is on yesterday's timetable at a time past 24:00; the Sydney buses feed says today's date for it.
+  const prev = W.engDayKey((base - 43200) * 1000), next = W.engDayKey((base + 86400 + 43200) * 1000);
+  const late = { "N-1": [[sec(4) + 86400, "N-1", 1, 1, 3]], "N-2": [[sec(9) + 86400, "N-2", 1, 1, 3]] };
+  const src = (live) => ({ ...fakeSrc(live), rows: (id, d) => (d === prev && id === "B" ? [...late["N-1"], ...late["N-2"]] : d === day ? [] : null), days: () => ({ [prev]: base - 86400, [day]: base }) });
+  const b = W.engBuildBoard(src({
+    "N-1": { tripId: "N-1", ts: 1, startDate: day, stus: [{ seq: 3, stopId: "B", dep: { delay: 180 } }] },
+    "N-2": { tripId: "N-2", ts: 1, startDate: next, stus: [{ seq: 3, stopId: "B", dep: { delay: 300 } }] },
+  }), "P");
+  const by = (id) => b.items.find((i) => i.tripId === id);
+  assert.equal(by("N-1").realtime, true); assert.equal(by("N-1").delayMin, 3);
+  assert.equal(by("N-2").realtime, false, "two days on is another run");
+  const same = W.engBuildBoard(src({ "N-1": { tripId: "N-1", ts: 1, startDate: prev, stus: [{ seq: 3, stopId: "B", dep: { delay: 60 } }] } }), "P");
+  assert.equal(same.items.find((i) => i.tripId === "N-1").delayMin, 1, "the timetable's own date still counts");
+});
+
 test("a replacement timetable that calls before and after this stop but not here drops the row", () => {
   const live = { "T-A": { tripId: "T-A", ts: 1, rel: 5, stus: [{ stopId: "Up", dep: { time: nowS + 60 } }, { stopId: "Z", arr: { time: nowS + 900 } }] } };
   assert.ok(!W.engBuildBoard(fakeSrc(live), "P1").items.some((i) => i.tripId === "T-A"));
