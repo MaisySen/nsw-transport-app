@@ -20,6 +20,13 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 | Lighthouse (mobile) | Landing, support, privacy and web app | After site changes. Last run: 100 in all four categories on landing, support and privacy; web app 100, 100, 100 and 96 for accessibility |
 | Writing style check | grep in every test file and before every push | No em dashes, no en dashes, no filler words |
 
+### `app/test/speed10.test.mjs`: 4 tests, 4 pass (26 Oct, speed (g10), app side)
+* Quick ask: 2000 ms for an answer whose dataAt is 21 or 45 s old, null at 20 s or newer, null once done, null with no dataAt or a dataAt ahead of the phone.
+* `Poller.soon`: one run 2 s later, then the 15 s gap again; nothing while the screen is off view.
+* `prefetchDue`: the same stop at most once every 10 s; the map stays at 30 entries or fewer.
+* Wiring: `prefetchStop` exported and called on press in (Ask, route stops, Opal machines), `useLive` asks again once per opening, the trip list uses `useCountdownNow`, the window background is set through a feature detected `expo-system-ui`.
+* On a device (not done yet): open a stop that nobody has opened for a minute, see "Updated N s ago" then fresh times within about 3 s; touch and hold a stop row in Ask, release, the stop screen opens with departures and no spinner; trip list "1 min" turns to "Now" on the minute; dark mode, push and pop a stop, no white strip.
+
 ## Backend unit tests
 
 ### `backend/test/shared-fetch.test.mjs`: 13 tests, 13 pass (26 Oct, shared fetching for many phones)

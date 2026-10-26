@@ -79,6 +79,13 @@ Written 25 Oct 2026 after the battery, smoothness and iOS audit (report: files/q
     chip or a route chip asks for that mode alone (`boardAsk` in src/lib/stopBoardCore.ts, `departuresFor` in
     src/lib/api.ts): one request when the chip is tapped, then the same adaptive gap. All is unchanged.
 
+### 26 Oct, speed (g10): app side
+* Quick ask after a saved copy: `pollCore.quickReaskMs(body, now, done)` returns 2000 when the answer's `dataAt` is more than 20 s old and no quick ask has run since the screen opened, else null. `useLive` passes it to `useScreenPoll` as `soon`, which calls `Poller.soon(ms)`: one run after `ms`, then the normal gap. Nothing runs while the app is away or the screen is off view. One extra request per opening at most.
+* Prefetch on press in: `prefetchStop(id, mode?)` in `src/lib/prefetch.ts`. It goes through the shared read cache in api.ts (a stop screen opened while it is out joins it; a good answer is reused for 4 s) and keeps the answer under `cacheKey('dep', id)`, which `useLive` reads with `peekOffline` on the first frame. The same stop is asked at most once every 10 s (`prefetchCore.prefetchDue`), so scrolling over rows costs at most one request per stop.
+* Trip list countdowns: `useCountdownNow` with `useReportCountdowns('trip', ...)` for the first 6 trips, in place of `useNow()` (5 s). Wakes at each shown countdown's minute change instead of 12 times a minute.
+* Window background: `expo-system-ui` `setBackgroundColorAsync(c.bg)` on each theme change, loaded with a guarded `require` so a build without the module skips it.
+* Not measured on a device or in the web export in this pass (see the report): tap to content numbers for the quick ask and prefetch are still to take.
+
 ### Many phones (26 Oct, 10:14 to 10:48 AM, load test)
 
 100 and 1,000 simulated phones against the new server: p95 783 ms and 678 ms, server CPU about 1 ms a request. The limit is Transport for NSW's 5 calls a second, not the server. Every number and the plan: [SCALING.md](SCALING.md).

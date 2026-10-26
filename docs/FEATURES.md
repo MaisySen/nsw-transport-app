@@ -24,6 +24,12 @@ The iPhone and Android apps are one Expo app (`app/`). Anything below marked "ov
 * **Hold a departure** (over the air, 25 Oct, about 10:00 PM): on a stop screen, the full board's list rows and Home stop cards, tap and hold opens the system context menu on iPhone (Watch or Stop watching, Show stops, SF Symbols, no Cancel), the Material 3 menu on Android; VoiceOver lists both as actions. A swipe still watches in one move.
 * **Departure board** (over the air): Board at the top right of a station or stop opens a full screen board like the platform screens: line, destination, platform or stand, where trains stop after this station, minutes and Live, Timetable or Not tracking on every row. Dark, with a Light board button; grows with the text size setting; works in portrait and landscape; keeps the screen on only while it is open.
 
+### 26 Oct, speed (g10): app side
+* Stop and trip screens that open on a copy the server saved earlier ask for fresh times about 2 s later, once, so live times arrive within seconds of opening.
+* Touching a stop row starts loading that stop before the tap ends, so the stop screen opens on its departures.
+* Countdowns on the trip list change exactly when the minute changes.
+* No white flash behind screens in dark mode.
+
 ## Car parks (over the air, 25 Oct, about 10:00 PM)
 
 * **Car park row on a station:** a train station with a Transport Park and Ride car park shows one row under its name, "Car park: 218 free of 228" (or "Car parks" with the free spaces across a station's car parks) and when Transport for NSW read it ("Updated 9:40pm, 3 min ago"). A car park without a live count says "no live count right now"; a station without one shows nothing. Tap opens the car park.
