@@ -87,10 +87,13 @@ for (const [name, path] of SCREENS) {
           const now = await list();
           let k = -1; for (let i = 0, n = -1; i < now.length; i++) if (now[i] === label && ++n === nth) { k = i; break; }
           if (k < 0) { t.effect = "gone"; row.taps.push(t); continue; }
-          const el = page.locator(`[data-sweep="${k}"]`);
-          await el.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
+          // Tap where a finger would: the centre of the control, after scrolling it into view. A live screen redraws
+          // its rows on each refresh, so a handle on the element itself can go stale between finding it and tapping.
+          const at = await page.evaluate((k) => { const e = document.querySelector(`[data-sweep="${k}"]`); if (!e) return null; e.scrollIntoView({ block: "center" }); const r = e.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + r.height / 2; const top = document.elementFromPoint(x, y); return { x, y, covered: !!top && !e.contains(top) && !top.contains(e) ? (top.getAttribute("aria-label") || top.innerText || top.tagName).slice(0, 40) : "" }; }, k);
+          if (!at) { t.effect = "gone"; row.taps.push(t); continue; }
+          if (at.covered) t.covered = at.covered;
           const s0 = await state();
-          await el.click({ timeout: 3000 });
+          await page.mouse.click(at.x, at.y);
           await page.waitForTimeout(1300);
           const s1 = await state();
           t.effect = s1.url !== s0.url ? "opens " + s1.url.slice(0, 80) : s1.dlg && !s0.dlg ? "dialog" : s1.opened > s0.opened ? "link" : s1.shared > s0.shared ? "share" : s1.html !== s0.html ? "changes" : "none";
