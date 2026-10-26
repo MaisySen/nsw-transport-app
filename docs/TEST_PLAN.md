@@ -424,6 +424,12 @@ On a phone (not done yet): with NSW refusing, the Home commute card shows timeta
 stops; Ask answers with the timetable note; flight mode shows "Offline" and "check your signal"; after NSW is back
 (after 1 AM) cards show live times again with no note, and the trip screen's first open of a saved trip is instant.
 
+## Live trip follows realtime and location (26 Oct, Bidur's Strathfield to Bondi Junction trip)
+
+Automated: `app/test/livetrack.test.mjs` (21 tests: a T8 9 minutes late whose stop off has no live time, the planned change flagged as missed at once, "change here" only when the train is really due, a missed change after you get off, a late ferry into an L2 change, a 610X with no realtime that never ends or says "You've arrived" by the clock, no service answer at all, your tap, GPS arrival on the M1 and GPS before your stop holding the leg, stale or rough fixes ignored, the vehicle over the clock, a server saying its next stop is only the timetable, the delay on the notification and card, carried delays, rode only from live data, and the owner's case). `backend/test/service-progress.test.mjs` (3 tests: a delay carried to your stop off, the vehicle 2 stops behind the clock wins, no live data gives `progress: timetable` and the watch's one stop check says nothing). 18 of the 21 app tests and all 3 server tests fail on the code before this change.
+
+On a phone (not done yet; needs the NSW key, after 1 AM, and the over the air update): start a trip on a train that is running late; the trip screen and the Live Activity should show "N min late" on the leg and an arrival that moves with it; the change alert should come only as the train nears the change station. With location allowed, walk off at the change: the trip moves on within 15 s of the screen being open. Turn on flight mode on a bus trip with no live data: the screen says "Not live, running to timetable" and shows I'm at; tap it and the trip moves on.
+
 ## Own trip planner (26 Oct, OWN_PLANNER off)
 
 Automated: `backend/test/raptor.test.mjs` (direct trips, changes and change time, walks, boarding rules, arrive by, stations and points, the planner object's load and commit, no Trip Planner call with the flag on, RAPTOR against a brute force search on 300 random networks). On the full NSW timetable (26 Oct pack): RAPTOR and an independent Connection Scan search agree on the earliest arrival for 400 of 400 random station pairs.
