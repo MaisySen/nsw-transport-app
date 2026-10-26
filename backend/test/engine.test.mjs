@@ -191,6 +191,8 @@ test("feed calls depend on feeds, not on phones or stops: 200 reads of 3 boards 
   const st = E.status();
   assert.equal(st.hotBoards, 3);
   assert.ok(st.feeds.bus && st.feeds.train);
+  // 200 waits on the same fetches cost the bucket the fetches, not the waits.
+  assert.ok(st.tokens >= -4, "bucket after a crowd of first reads: " + st.tokens);
 });
 
 test("the timetable pack for the phone: rows, routes and headsigns for the asked stops only", async () => {

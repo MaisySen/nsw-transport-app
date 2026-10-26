@@ -385,7 +385,7 @@ class BoardEngine {
     // feeds in use. Due trip updates go first, the feeds most boards use first; vehicle positions (Sydney feeds only)
     // after. A feed that misses its turn keeps its last copy and goes first next tick.
     const perMin = Number(this.env.ENGINE_PER_MIN) || ENGINE_PER_MIN;
-    this.tokens = Math.min(perMin / 3, (this.tokens == null ? perMin / 6 : this.tokens) + ((t0 - (this.tokenAt || t0)) / 60000) * perMin);
+    this.tokens = Math.max(-perMin / 6, Math.min(perMin / 3, (this.tokens == null ? perMin / 6 : this.tokens) + ((t0 - (this.tokenAt || t0)) / 60000) * perMin));
     this.tokenAt = t0;
     const k = this.stretch(t0);
     const due = [];
@@ -451,7 +451,11 @@ class BoardEngine {
     if (!probe) { this.boards.set(bk, { at: now, body: null }); return null; }
     const cold = probe.engine.feeds.filter((f) => { const x = this.feeds.get(f); return !x || !x.tu; });
     if (cold.length) {
-      this.tokens = (this.tokens == null ? 0 : this.tokens) - cold.length;
+      // Only a feed nobody is already fetching costs a call: after a restart hundreds of first reads wait on the
+      // same few fetches, and counting each wait put the bucket minutes into debt (26 Oct, 1,000 phone test).
+      const perMin = Number(this.env.ENGINE_PER_MIN) || ENGINE_PER_MIN;
+      const starting = cold.filter((f) => { const x = this.feeds.get(f); return !(x && x.pending); }).length;
+      if (starting) this.tokens = Math.max(-perMin / 6, (this.tokens == null ? 0 : this.tokens) - starting);
       await Promise.race([Promise.all(cold.map((f) => this.refreshFeed(f, this.want(f), now, true))), new Promise((r) => setTimeout(r, 3000))]);
       src = this.source();
     }
