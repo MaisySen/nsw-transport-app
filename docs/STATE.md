@@ -42,6 +42,7 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 
 | Since | Bug | Status |
 | --- | --- | --- |
+| 27 Oct, 8:35 AM (owner) | Home commute card "Live trips unavailable right now" and header "No live times" (Strathfield to Kings Cross), and Home felt slow | Cause found: the phone gives up on a trip at 10 s, the server waited up to 12 s plus a retry for a slow Trip Planner on a cold pair (no copy), and the planner call was dropped with the phone's request. Server fix (TRIP_QUICK, timetable stand in at 6.5 s, planner answer kept for the next poll) deployed, see RELEASES. No app update needed |
 | 26 Oct, 3:43 PM (owner) | Trip tracking followed the timetable, not the delayed train: on the 8:46 Strathfield T1 the app said he was at Town Hall and should change while he was not yet at Redfern; ETA 9:15 never moved; the change was treated as made | Cause found (Town Hall had no live time, the leg ended on the clock). Server fix live (`544279b4`). App fix (`225e7b9`) shipped in the 11:35 PM update (`27efc6bd`). Not tried on a real phone |
 | 26 Oct | During the NSW outage: trips ending at a service's last stop (for example F1 Circular Quay to Manly) get no timetable fallback; no walking between stops in the fallback | Known gap, not scheduled |
 | 26 Oct | Outage fixes (`fa0017d8`), live push code and the 11:35 PM update (`27efc6bd`: get off alert timing on a locked phone, live busy hour, real notifications) are not yet tried on a real phone | Device check after 1 AM ([TEST_PLAN.md](TEST_PLAN.md), "Outage mode checks") |

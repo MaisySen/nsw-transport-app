@@ -621,7 +621,12 @@ services today", Nearby said "Something went wrong (502)" and Ask said "Check yo
   label it). No `fare`: Opal fares need the distance along the route. Never kept as a copy (`x-stand-in: timetable`).
   Not for timed trips with step free on (`acc=1`), the last service or the server's own checks (morning check, push
   alerts), which keep the error.
-* No timetable trip found: `503 { kind: "error", unavailable: true, upstream: true, error, text }` with
+* **Slow Trip Planner (27 Oct):** a plain trip from now (no time, date, arriveBy, acc, modes, long or page) with no edge
+  or saved copy waits at most 6.5 s for the planner. Then it answers with the same timetable trips as above but
+  `fallback: "planner-slow"` and header `x-edge-cache: stand-in` (never stored), so the app has an answer inside its 10 s
+  trip deadline. A refresh with a saved live copy gets that copy instead. The planner call carries on and its live answer
+  becomes the copy for the next ask. `TRIP_QUICK=off` turns this off.
+  * No timetable trip found: `503 { kind: "error", unavailable: true, upstream: true, error, text }` with
   "Live trips are unavailable right now because Transport for NSW isn't answering. Try again soon." Never an empty
   list. A Trip Planner time out with nothing found is `504` (the app's long trip path).
 * Known gaps: the timetable keeps no row for a trip's last stop (nobody boards there), so a trip that ends at the

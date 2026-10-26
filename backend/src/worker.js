@@ -1389,6 +1389,14 @@ function tripLegsOf(data) {
   return journeys;
 }
 
+// Trips from our own timetable in the trip answer's shape, labelled (ttplan.js), or null.
+async function tripTimetableStandIn(env, fromId, toId, opts, date, time) {
+  if (opts.accessible || typeof timetableTrip !== "function") return null;
+  return await timetableTrip(env, fromId, toId, { date, time: opts.time || opts.date ? time : null, arriveBy: !!opts.arriveBy, count: opts.count || 5, accessible: !!opts.accessible, exclude: opts.exclude }).catch(() => null)
+    // Our own planner's timetable (raptor.js) where the board engine's has none: a trip to a service's last stop (the
+    // engine keeps no row for it), more than one change, a walk between nearby stops, or a point to start from.
+    || (typeof ownTimetableTrip === "function" ? await ownTimetableTrip(env, fromId, toId, { date, time, arriveBy: !!opts.arriveBy, count: opts.count || 5, exclude: opts.exclude }).catch(() => null) : null);
+}
 async function trip(env, fromId, toId, opts = {}) {
   let { date, time } = sydneyParts();
   let tomorrow = false;
@@ -1422,15 +1430,19 @@ async function trip(env, fromId, toId, opts = {}) {
   const win = opts.win && !own ? tripWinKey(fromId, toId, date, time, opts) : null;
   const kept = win ? await tripWinGet(win) : null;
   if (own || kept) data = { journeys: [] };
+  else if (opts.ttOnly) {
+    // A phone's trip while the Trip Planner is slow (TRIP_QUICK_MS, the edge layer): timetable trips only, no planner
+    // call; the planner answer keeps going in the request that asked it and is stored for the phone's next poll.
+    const tt = await tripTimetableStandIn(env, fromId, toId, opts, date, time).catch(() => null);
+    if (tt) return { ...tt, fallback: "planner-slow", tomorrow };
+    throw Object.assign(new Error("No timetable trips to stand in"), { tripsUnavailable: true });
+  }
   else try { data = await tpCall(); }
   catch (e) {
     // Outage fallback (ttplan.js): the Trip Planner refused, failed or timed out, so trips from our own timetable,
     // labelled. Background checks (push alerts, morning check, rescue) pass timetable: false and keep the error.
     if (opts.timetable === false || opts.accessible || typeof timetableTrip !== "function" || !ttUpstreamDown(e)) throw e;
-    const tt = await timetableTrip(env, fromId, toId, { date, time: opts.time || opts.date ? time : null, arriveBy: !!opts.arriveBy, count: opts.count || 5, accessible: !!opts.accessible, exclude: opts.exclude }).catch(() => null)
-      // Our own planner's timetable (raptor.js) where the board engine's has none: a trip to a service's last stop (the
-      // engine keeps no row for it), more than one change, a walk between nearby stops, or a point to start from.
-      || (typeof ownTimetableTrip === "function" ? await ownTimetableTrip(env, fromId, toId, { date, time, arriveBy: !!opts.arriveBy, count: opts.count || 5, exclude: opts.exclude }).catch(() => null) : null);
+    const tt = await tripTimetableStandIn(env, fromId, toId, opts, date, time);
     if (tt) return { ...tt, tomorrow };
     throw Object.assign(e, { tripsUnavailable: true });
   }
@@ -7840,6 +7852,8 @@ async function handleRequest(request, env, exec) {
           const modes = tripModesParse(p.get("modes"));
           const day = tripDate(p.get("date"));
           const tbase = { time: p.get("time") || null, date: day, arriveBy: p.get("arriveBy") === "1", count: liftAware ? Math.min(8, want + 3) : want, accessible: acc, long, exclude: tripModesExclude(modes) };
+          const ttOnly = TT_ONLY.has(request);
+          if (ttOnly) tbase.ttOnly = true;
           // A page of the trip list's endless scroll (tripPage): more trips per answer, cursors for the next pages.
           const pq = tripPageQuery(p);
           // A whole day of trips from our own planner (daylist.js) for a phone that sends days=1, when the planner is
@@ -7859,7 +7873,8 @@ async function handleRequest(request, env, exec) {
           if (liftAware) liftAwareRank(d, pq ? pq.n || TRIP_PAGE_N : want);
           if (!(await serverOn(env, "occupancy"))) stripOccupancy(d);
           // A later or earlier page is the same search scrolled, so it is not logged again.
-          await afterAnswer(env, d, { profile, device: p.get("device"), exec, log: p.get("refresh") !== "1" && !(pq && (pq.after != null || pq.before != null)) && !(dq && dq.more) });
+          // A stand in while the planner is slow is the same search the planner request already logs.
+          await afterAnswer(env, d, { profile, device: p.get("device"), exec, log: !ttOnly && p.get("refresh") !== "1" && !(pq && (pq.after != null || pq.before != null)) && !(dq && dq.more) });
           if (longKey && (d.journeys || []).length && d.source !== "timetable") {
             const put = caches.default.put(longKey, new Response(JSON.stringify(d), { headers: { "content-type": "application/json", "cache-control": `max-age=${LONG_TRIP_CACHE_S}` } })).catch(() => null);
             if (exec && exec.waitUntil) exec.waitUntil(put); else await put;
@@ -8700,7 +8715,26 @@ async function edgeFetch(request, env, exec) {
         budget.staleServed++;
         return kept ? fromCopy(hit, storedAt, "stale") : fromSaved(saved);
       }
-    } else out = leader ? await job.promise : await joinJob(job, SHARED_WAIT_MS);
+    } else {
+      // The upstream answer is finished and stored even when this phone stops waiting (the app gives up on a trip at
+      // 10 s, an incident on 27 Oct 8:35 AM): without this the runtime dropped it with the request and every retry
+      // started cold again.
+      if (leader && exec && exec.waitUntil) exec.waitUntil(job.promise.catch(() => null));
+      const quick = bk && bk.stop === "trip" && tripQuickOn(env) ? TRIP_QUICK_MS : 0;
+      if (quick) {
+        if (leader) out = await Promise.race([job.promise, new Promise((r) => setTimeout(() => r(null), quick))]);
+        else out = (await waitJob(job, quick)) ? await joinJob(job) : null;
+        if (!out) {
+          // The Trip Planner is slow: a saved live copy if there is one, else labelled timetable trips, so the phone
+          // has an answer before its own deadline. Neither is stored; the planner's answer replaces them on the next poll.
+          budget.tripQuick = (budget.tripQuick || 0) + 1;
+          if (saved) { budget.staleServed++; return fromSaved(saved); }
+          const fb = await tripStandIn(request, env, exec).catch(() => null);
+          if (fb) return fb;
+          out = leader ? await job.promise : await joinJob(job, SHARED_WAIT_MS);
+        }
+      } else out = leader ? await job.promise : await joinJob(job, SHARED_WAIT_MS);
+    }
     // Transport for NSW refused or failed (over its limit, down, slow): the last copy is better than an error.
     if (out.status >= 500 && kept) {
       budget.staleServed++;
@@ -8770,6 +8804,24 @@ function extInstant(url, request) {
 // fallback above).
 const EDGE_KEEP_S = 120;
 const COPY_WAIT_MS = 700;
+// A plain trip from now with no copy waits at most TRIP_QUICK_MS for the Trip Planner, then gets timetable trips
+// (labelled, built in at most TRIP_STANDIN_MS), so the answer always lands inside the app's 10 s trip deadline
+// (TRIP_MS in app/src/lib/netErrCore.ts). The Trip Planner call itself may take 12 s and a retry. TRIP_QUICK=off
+// turns it off. 27 Oct, after the 8:35 AM incident (docs/STATE.md).
+const TRIP_QUICK_MS = 6500;
+const TRIP_STANDIN_MS = 2000;
+const TT_ONLY = new WeakSet(); // internal requests that answer from the timetable only (tripStandIn)
+function tripQuickOn(env) { return String((env && env.TRIP_QUICK) || "").toLowerCase() !== "off"; }
+async function tripStandIn(request, env, exec) {
+  const r2 = new Request(request.url, { method: "GET", headers: request.headers });
+  TT_ONLY.add(r2);
+  const res = await Promise.race([handleRequest(r2, env, exec), new Promise((r) => setTimeout(() => r(null), TRIP_STANDIN_MS))]);
+  if (!res || res.status !== 200 || res.headers.get("x-stand-in") !== "timetable") return null;
+  const out = new Response(res.body, res);
+  out.headers.set("cache-control", "no-store");
+  out.headers.set("x-edge-cache", "stand-in");
+  return out;
+}
 const inFlight = new Map(); // edge key -> sharedJob of { status, headers, body }
 // A request that joins another one's answer (no copy to fall back on) waits at most this long for it: the Trip
 // Planner call times out at 12 s and is asked again for up to about 5 s more.
