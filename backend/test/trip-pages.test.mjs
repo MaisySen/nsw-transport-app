@@ -169,6 +169,15 @@ test("cursors must be times in ms, and a page asks nothing more than 7 days back
   assert.equal(old.body.page.dir, "first", "a cursor out of range is a first page");
 });
 
+test("n= asks the planner for that many trips a page (4 to 20), anything else is the default", async () => {
+  fresh();
+  const r = await get(`${P}&fromName=n${tag}&n=8`);
+  assert.equal(calls[0].get("calcNumberOfTrips"), "8");
+  assert.equal(r.body.page.n, 8);
+  await get(`${P}&fromName=n${tag}&n=99`);
+  assert.equal(calls[1].get("calcNumberOfTrips"), "20");
+});
+
 test("a plain trip request is as before (count, no page)", async () => {
   fresh();
   const r = await get(`/api/trip?from=213410&to=200060&count=6&fromName=l${tag}`);

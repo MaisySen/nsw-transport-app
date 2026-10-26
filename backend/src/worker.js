@@ -1292,7 +1292,9 @@ function tripPageQuery(p, now = Date.now()) {
   const num = (k) => { const v = p.get(k); return v && /^\d{13}$/.test(v) ? Number(v) : null; };
   const lo = now - TRIP_PAGE_BACK_MS, hi = now + TRIP_PAGE_AHEAD_MS;
   const inRange = (t) => (t != null && t >= lo && t <= hi ? t : null);
-  return { after: inRange(num("after")), before: inRange(num("before")), arr: inRange(num("arr")) };
+  // n: trips asked of the planner for this page (4 to 20, else TRIP_PAGE_N), for checking what the planner gives.
+  const n = /^\d{1,2}$/.test(p.get("n") || "") && +p.get("n") >= 4 && +p.get("n") <= 20 ? +p.get("n") : null;
+  return { after: inRange(num("after")), before: inRange(num("before")), arr: inRange(num("arr")), n };
 }
 // One page: later (after: trips leaving at or after it), earlier (before and arr: the trips that get there by the
 // earliest arrival the phone has, so the page ends right where the list starts, with no gap and no guess of how
@@ -1300,7 +1302,8 @@ function tripPageQuery(p, now = Date.now()) {
 // opening the same pair in the same 5 minutes share one planner answer).
 async function tripPage(env, fromId, toId, q, base) {
   const now = Date.now();
-  const at = (t, arriveBy) => { const s = sydneyParts(new Date(t)); return trip(env, fromId, toId, { ...base, date: s.date, time: s.time, arriveBy, count: TRIP_PAGE_N, win: true }); };
+  const N = q.n || TRIP_PAGE_N;
+  const at = (t, arriveBy) => { const s = sydneyParts(new Date(t)); return trip(env, fromId, toId, { ...base, date: s.date, time: s.time, arriveBy, count: N, win: true }); };
   let r, dir;
   if (q.after != null) {
     dir = "later";
@@ -1319,7 +1322,7 @@ async function tripPage(env, fromId, toId, q, base) {
   } else {
     dir = "first";
     const chosen = base.time || base.date;
-    if (chosen) r = await trip(env, fromId, toId, { ...base, count: TRIP_PAGE_N, win: true });
+    if (chosen) r = await trip(env, fromId, toId, { ...base, count: N, win: true });
     else {
       r = await at(Math.floor(now / 300000) * 300000, false);
       r.journeys = r.journeys.filter((j) => ms(j.board) >= now - 60000);
@@ -1329,7 +1332,7 @@ async function tripPage(env, fromId, toId, q, base) {
   const deps = r.journeys.map(tripPlannedDep).filter(Number.isFinite);
   const arrs = r.journeys.map(tripPlannedArr).filter(Number.isFinite);
   r.page = {
-    dir, n: TRIP_PAGE_N,
+    dir, n: N,
     // The next page later starts at this page's last departure (the same minute again, trips seen twice are the same
     // trip ids); the next page earlier ends before this page's first departure and arrival.
     next: deps.length ? Math.max(...deps) : null,
@@ -7846,7 +7849,7 @@ async function handleRequest(request, env, exec) {
           pickFares(d, fareType(p));
           await addAccess(env, d, { accessible: acc }).catch(() => null);
           await addTraffic(env, d).catch(() => null);
-          if (liftAware) liftAwareRank(d, pq ? TRIP_PAGE_N : want);
+          if (liftAware) liftAwareRank(d, pq ? pq.n || TRIP_PAGE_N : want);
           if (!(await serverOn(env, "occupancy"))) stripOccupancy(d);
           // A later or earlier page is the same search scrolled, so it is not logged again.
           await afterAnswer(env, d, { profile, device: p.get("device"), exec, log: p.get("refresh") !== "1" && !(pq && (pq.after != null || pq.before != null)) });
