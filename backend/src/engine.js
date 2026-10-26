@@ -903,6 +903,7 @@ class BoardEngine {
       if (p === "/meta") { const m = this.loadMeta(); return Response.json(m ? { ver: m.ver, days: m.days, routes: m.routes, heads: m.heads, routeIds: m.routeIds, builtAt: m.builtAt } : { error: "no timetable" }, { status: m ? 200 : 503 }); }
       if (p === "/live" && req.method === "POST") return Response.json(await this.live(await req.json()));
       if (p === "/timetable") return Response.json(this.timetable(u.searchParams.get("stops") || "", Number(u.searchParams.get("days")) || 2));
+      if (p === "/trip") return Response.json(this.tripRun(u.searchParams.get("trip") || ""));
       if (p === "/status") return Response.json(this.status());
       if (p === "/learn" && req.method === "POST") {
         // Names from a planner board the worker read (engineLearn): [[stop, label]] (older workers) or engLabels'
@@ -1072,6 +1073,32 @@ class BoardEngine {
   }
   // The on phone timetable pack (/api/timetable): the timetable rows for some stops and their platforms, today and
   // the next day(s), with only the routes and headsigns they use. No live data: the app lays the board's live times on top.
+  // One train trip's stops in order from the timetable: stop id, stop sequence, planned time (ms, the day nearest now),
+  // name, parent and position. For the service screen's quick answer and /api/trip/live when the planner object is off
+  // or held (worker.js engineTrip): the train feed sends stops without sequences and often delays without clock times.
+  tripRun(tripId) {
+    const m = this.loadMeta();
+    if (!m) return { error: "no timetable" };
+    if (!/^[A-Za-z0-9._:-]{1,80}$/.test(tripId)) return { error: "trip" };
+    const src = this.source();
+    const seq = src.tripSeq("train", tripId);
+    if (!seq || !seq.size) return { v: 1, trip: tripId, stops: [] };
+    const now = Date.now(), today = engDayKey(now), keys = Object.keys(m.days).sort();
+    const prev = keys.filter((d) => d < today).pop();
+    const days = (prev ? [prev] : []).concat(keys.filter((d) => d >= today).slice(0, 1));
+    const stops = [];
+    for (const [id, sq] of [...seq.entries()].sort((a, b) => a[1] - b[1])) {
+      let planned = null;
+      for (const d of days) for (const r of src.rows(id, d) || []) {
+        if (r[1] !== tripId) continue;
+        const t = (m.days[d] + r[0]) * 1000;
+        if (planned == null || Math.abs(t - now) < Math.abs(planned - now)) planned = t;
+      }
+      const s = src.stop(id);
+      stops.push({ id, seq: sq, planned, name: s ? s[0] : null, parent: s ? s[1] || null : null, plat: s ? s[2] || null : null, lat: s ? s[3] : null, lon: s ? s[4] : null });
+    }
+    return { v: 1, trip: tripId, stops };
+  }
   timetable(stopsParam, ndays) {
     const m = this.loadMeta();
     if (!m) return { error: "no timetable" };
@@ -1093,7 +1120,9 @@ class BoardEngine {
       const days = {};
       for (const d of prev ? [prev, ...keys] : keys) {
         const rows = [];
-        for (const k of kids) for (const r of src.rows(k, d) || []) if (d !== prev || r[0] >= 86400) rows.push([r[0], r[1], ri(r[2]), hi(r[3]), k === id ? 0 : kids.indexOf(k)]);
+        // The 6th value is the trip's stop sequence there (for /api/trip/live, worker.js tripLive: where a stop falls among
+        // the feed's stop updates). The phones read /api/pack, not this list.
+        for (const k of kids) for (const r of src.rows(k, d) || []) if (d !== prev || r[0] >= 86400) rows.push([r[0], r[1], ri(r[2]), hi(r[3]), k === id ? 0 : kids.indexOf(k), r[4] != null ? r[4] : null]);
         rows.sort((a, b) => a[0] - b[0]);
         days[d] = { start: m.days[d], rows };
       }

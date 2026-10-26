@@ -225,6 +225,21 @@ test("the timetable pack for the phone: rows, routes and headsigns for the asked
   assert.ok(t.stops.P.stops.includes("P1"));
 });
 
+test("a train trip's stops from the timetable in order, with sequences and planned times (/trip)", async () => {
+  const E = await loaded([]);
+  const t = await (await E.fetch(new Request("https://engine/trip?trip=T-A"))).json();
+  assert.deepEqual(t.stops.map((s) => [s.id, s.seq]), [["Up", 8], ["P1", 10], ["Z", 20]]);
+  assert.equal(t.stops[1].planned, (base + sec(5)) * 1000);
+  assert.equal(t.stops[1].name, "Testville Station Platform 1");
+  assert.equal(t.stops[1].parent, "P");
+  assert.equal(t.stops[0].planned, null, "a stop with no departure row there has no planned time");
+  assert.deepEqual((await (await E.fetch(new Request("https://engine/trip?trip=nope"))).json()).stops, []);
+  assert.equal((await (await E.fetch(new Request("https://engine/trip?trip=" + encodeURIComponent("a b")))).json()).error, "trip");
+  // The timetable list carries the stop sequence as its 6th value.
+  const tt = await (await E.fetch(new Request("https://engine/timetable?stops=P1&days=1"))).json();
+  assert.equal(tt.stops.P1.days[day].rows[0][5], 10);
+});
+
 test("platform names learnt from Trip Planner boards replace the timetable's", async () => {
   const E = await loaded([]);
   await E.fetch(new Request("https://engine/learn", { method: "POST", body: JSON.stringify([["B", "Stand X1"], ["P1", "<b>x</b>"]]) }));

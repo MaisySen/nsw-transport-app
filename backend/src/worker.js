@@ -2034,6 +2034,20 @@ async function service(env, q) {
   // answer that follows has the whole list.
   const useRun = !!(run && (run.reached || mode !== "train" || q.quick));
   if (useRun) { stops = runList; source = "own"; }
+  // The quick answer for a train with no run (the planner object off or held by the budget guard): the trip's stop list
+  // from the board engine's timetable with the feed's delays by the engine's rules (engLive). No planner object read,
+  // no Transport for NSW call (27 Oct, step C). The full answer that follows has the whole run.
+  if (!useRun && q.quick && mode === "train" && tripId && !(tu && tu.rel === 3)) {
+    const et = await engineTrip(env, null, tripId).catch(() => null);
+    if (et) {
+      stops = et.stops.map((x) => {
+        const lv = tu ? engineTripLive(tu, et, x.id, false) : null;
+        return { id: x.id, seq: x.seq, name: x.name ? x.name : undefined, lat: x.lat != null ? x.lat : null, lon: x.lon != null ? x.lon : null,
+          planned: iso(x.planned), estimated: lv && Number.isFinite(lv.est) ? iso(lv.est) : null, skipped: !!(lv && lv.skipped) };
+      });
+      source = "timetable";
+    }
+  }
   // q.quick (the quick first answer, SERVICE_QUICK_MS): the feed's own list only, no Trip Planner call.
   const feedShort = stops.length && !useRun && !q.quick ? (mode === "train" || await feedEndsShort(env, q, mode, stops)) : false;
   const feedStops = stops;
@@ -7752,7 +7766,7 @@ async function handleRequest(request, env, exec) {
           if (!servesOn(env, "TRIP_LIVE", "tripLive")) return json({ error: "not found" }, 404);
           const q = tripLiveParse(p.get("legs"));
           if (q.error) return json({ error: q.error }, 400);
-          return json(await tripLive(env, q.legs));
+          return json(await tripLive(env, q.legs, exec));
         }
         case "/api/departures": {
           const at = boardAt(p.get("time"), p.get("date"));
@@ -9050,6 +9064,7 @@ function inmMatches(inm, etag) {
 // Station list files (/stations/*.json): their tag per path, worked out once per copy of the worker (the files change
 // only with a deploy, which starts new copies).
 const listTags = new Map();
+const ETAG_API = /^\/api\/(stations|pack)$/;
 // Workers Cache (docs/PERFORMANCE.md "Workers Cache"): WORKERS_CACHE "on" adds an edge only cdn-cache-control header on
 // shared answers (phones still get no-store). It does nothing unless [cache] enabled = true is also set in
 // wrangler.toml, and both are off: a cache hit does not run the worker, so it writes no request log line and no trip
@@ -9084,6 +9099,11 @@ async function finishAnswer(request, env, res) {
       out = new Response(buf, out);
     }
     out.headers.set("etag", tag);
+  } else if (api && get && out.status === 200 && ETAG_API.test(url.pathname) && !out.headers.get("etag")) {
+    // A copy kept before tags existed (station lists are kept 6 hours): tagged here from the bytes going out.
+    const buf = await out.arrayBuffer();
+    out = new Response(buf, out);
+    out.headers.set("etag", await etagOf(buf));
   }
   const etag = out.headers.get("etag");
   const words = api ? servesWords(env) : "";
@@ -9125,69 +9145,107 @@ function platformWord(name) {
   return m ? `${m[1]} ${m[2]}` : null;
 }
 const stationPart = (name) => String(name || "").replace(/,?\s+(Platform|Stand|Wharf|Bay)\s+[A-Za-z0-9]+.*$/, "").trim();
-async function tripLive(env, legs) {
+// One train trip's stops in order from the board engine's timetable (engine.js tripRun: stop, sequence, planned ms, name,
+// position; no Transport for NSW call), kept in Cloudflare's cache 30 minutes per data centre; only a list is kept.
+async function engineTrip(env, exec, tripId) {
+  if (typeof engineCall !== "function" || !env || !env.ENGINE || !tripId || !/^[A-Za-z0-9._:-]{1,80}$/.test(tripId)) return null;
+  const ck = new Request("https://engine-cache.transportsydney.app/trip?trip=" + encodeURIComponent(tripId));
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const hit = cache ? await cache.match(ck).catch(() => null) : null;
+  if (hit) { const d = await hit.json().catch(() => null); if (d && Array.isArray(d.stops) && d.stops.length >= 2) return d; }
+  const r = await Promise.race([engineCall(env, "/trip?trip=" + encodeURIComponent(tripId)), new Promise((res) => setTimeout(() => res(null), 2500))]).catch(() => null);
+  if (!r || r.status !== 200) return null;
+  const body = await r.text();
+  let d = null; try { d = JSON.parse(body); } catch (e) { return null; }
+  if (!d || d.error || !Array.isArray(d.stops) || d.stops.length < 2) return null;
+  const put = cache ? cache.put(ck, new Response(body, { headers: { "content-type": "application/json", "cache-control": "public, max-age=1800" } })).catch(() => null) : null;
+  if (put) { if (exec && exec.waitUntil) exec.waitUntil(put); else await put; }
+  return d;
+}
+// The live time at one stop of a train trip from the engine's list, by the engine's rules (engLive): the published delay
+// on the planned time, carried from the last listed stop before it. seqOf gives the trip's sequence at a stop id.
+function engineTripLive(tu, trip, stopId, arrFirst) {
+  if (!trip || typeof engLive !== "function") return null;
+  const seqs = new Map(trip.stops.map((x) => [x.id, x.seq]));
+  const me = trip.stops.find((x) => x.id === stopId);
+  if (!me || me.planned == null) return null;
+  return engLive(tu, { planned: me.planned, seq: me.seq, stopId }, (id) => (seqs.has(id) ? seqs.get(id) : null), arrFirst);
+}
+// Planned times and stop sequences for trip-live come from the board engine's timetable (/timetable, the engine core's
+// SQLite copy of the NSW timetable; no Transport for NSW call). One ask per leg's stop pair, shared through Cloudflare's
+// cache for 30 minutes per data centre (the same key /api/timetable uses); only a good answer is kept.
+async function tripLiveTimetable(env, exec, ids) {
+  if (typeof engineCall !== "function" || !env || !env.ENGINE) return null;
+  const list = [...new Set(ids.filter((x) => /^[A-Za-z0-9_-]{1,20}$/.test(x)))].sort().slice(0, 40);
+  if (!list.length) return null;
+  const ck = new Request("https://engine-cache.transportsydney.app/timetable?stops=" + list.join(",") + "&days=1");
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const hit = cache ? await cache.match(ck).catch(() => null) : null;
+  if (hit) { const d = await hit.json().catch(() => null); if (d && d.stops) return d; }
+  const r = await Promise.race([engineCall(env, "/timetable?stops=" + encodeURIComponent(list.join(",")) + "&days=1"), new Promise((res) => setTimeout(() => res(null), 2500))]).catch(() => null);
+  if (!r || r.status !== 200) return null;
+  const body = await r.text();
+  let d = null; try { d = JSON.parse(body); } catch (e) { return null; }
+  if (!d || d.error || !d.stops) return null;
+  const put = cache ? cache.put(ck, new Response(body, { headers: { "content-type": "application/json", "cache-control": "public, max-age=1800" } })).catch(() => null) : null;
+  if (put) { if (exec && exec.waitUntil) exec.waitUntil(put); else await put; }
+  return d;
+}
+// The planned time (ms) and stop sequence of a trip at a stop from that timetable: the day nearest now.
+function tripLivePlanned(tt, stopId, tripId, now) {
+  const s = tt && tt.stops && tt.stops[stopId];
+  if (!s || !s.days) return null;
+  let best = null;
+  for (const day of Object.values(s.days)) {
+    for (const r of day.rows || []) {
+      if (r[1] !== tripId) continue;
+      const planned = (day.start + r[0]) * 1000;
+      if (!best || Math.abs(planned - now) < Math.abs(best.planned - now)) best = { planned, seq: r[5] != null ? r[5] : null };
+    }
+  }
+  return best;
+}
+async function tripLive(env, legs, exec) {
   const rt = await realtimeFor(env, legs.map((l) => [l.mode, l.line, null]));
   const now = Date.now();
   const occ = await serverOn(env, "occupancy");
   const tus = legs.map((l) => rt.tu(l.mode, l.line, l.tripId, null));
-  // News from the feed for a trip: a trip update that is not cancelled. Sydney
-  // Trains often sends delays with no clock time and only the stops it has news for, so a leg whose boarding stop has
-  // no clock time is laid on the trip's run from our own timetable (ownRun, the planner object, no Transport for NSW
-  // call; kept 10 min per data centre), with the delays carried on stop by stop, as the service screen does.
-  // A trip update with no timestamp is no data yet (as on boards and the service screen).
-  const news = (tu) => !!tu && tu.rel !== 3 && !!tu.ts;
-  const clockAt = (tu, id) => { const f = feedAtStop(tu, id); return f && f.est ? f : null; };
-  const slot = Math.floor(now / 1800000) * 1800000;
-  const runs = await Promise.all(legs.map((l, i) => {
-    const tu = tus[i];
-    if (!news(tu) || typeof ownRun !== "function") return null;
-    if (clockAt(tu, l.stopId) && (!l.toStopId || clockAt(tu, l.toStopId))) return null;
-    return ownRun(env, l.tripId, l.stopId, slot).catch(() => null);
-  }));
-  // Stop names (asset shards, no upstream call) for platform words and a trip the feed shows at another platform.
+  // The engine's rules (engine.js engLive, checked against the Trip Planner on 26 Oct): a trip update that is not
+  // cancelled is news; at a stop the published delay on the planned time wins over the update's clock time; a stop the
+  // update does not list takes the delay of the last listed stop before it (Sydney Trains lists only stops it has news
+  // for, often with delays and no clock times).
+  const news = (tu) => !!tu && tu.rel !== 3;
+  // Trains: the trip's own list (its stops carry sequences; the train feed's do not). Other modes: the stop pair's rows.
+  const trips = await Promise.all(legs.map((l, i) => (news(tus[i]) && l.mode === "train" ? engineTrip(env, exec, l.tripId).catch(() => null) : null)));
+  const pairs = legs.map((l, i) => (news(tus[i]) && !trips[i] ? [l.stopId, l.toStopId].filter(Boolean) : []));
+  const tts = await Promise.all(pairs.map((p) => (p.length ? tripLiveTimetable(env, exec, p).catch(() => null) : null)));
+  // Stop names (asset shards, no upstream call) for platform words.
   const ids = new Set();
-  legs.forEach((l, i) => { ids.add(l.stopId); if (tus[i] && !tus[i].stus.some((u) => u.stopId === l.stopId)) for (const u of tus[i].stus) ids.add(u.stopId); });
+  legs.forEach((l, i) => { ids.add(l.stopId); for (const u of (tus[i] && tus[i].stus) || []) if (u.stopId) ids.add(u.stopId); });
   const names = await stopInfo(env, [...ids]).catch(() => ({}));
+  const word = (id) => platformWord(names[id] && names[id].name);
+  const liveAt = (tu, p, stopId, arrFirst) => {
+    if (p && typeof engLive === "function") return engLive(tu, { planned: p.planned, seq: p.seq, stopId }, null, arrFirst);
+    // No planned time: the update's own clock time at this stop, if it gives one.
+    const u = tu.stus.find((x) => x.stopId === stopId);
+    if (!u) return null;
+    if (u.rel === 1) return { skipped: true };
+    const st = u.rel === 2 ? null : stuTime(u);
+    return st ? { est: st.t, delay: st.delay } : null;
+  };
   const out = legs.map((l, i) => {
     const tu = tus[i];
     const veh = vehicleOf(rt.vp(l.mode, l.line, l.tripId, null));
     const base = { tripId: l.tripId, stopId: l.stopId, toStopId: l.toStopId };
-    const none = { ...base, realtime: false, estimated: null, arrEstimated: null, delayMin: null, cancelled: !!(tu && tu.rel === 3), skipped: false, platform: null, vehicle: null, stopsAway: null };
-    if (!news(tu)) return none;
-    const nm = names[l.stopId] && names[l.stopId].name;
-    // The feed lists the trip at another platform of the same station: that platform and its times.
-    let at = l.stopId, platform = platformWord(nm);
-    if (!tu.stus.some((u) => u.stopId === l.stopId) && nm) {
-      const st = stationPart(nm);
-      const alt = tu.stus.find((u) => names[u.stopId] && platformWord(names[u.stopId].name) && stationPart(names[u.stopId].name) === st);
-      if (alt) { at = alt.stopId; platform = platformWord(names[alt.stopId].name); }
-    }
-    const u0 = tu.stus.find((u) => u.stopId === at);
-    const skipped = !!(u0 && u0.rel === 1);
-    let est = null, arr = null, delayMin = null;
-    const f = clockAt(tu, at), fa = l.toStopId ? clockAt(tu, l.toStopId) : null;
-    if (f) { est = f.est; if (f.delay != null) delayMin = Math.round(f.delay / 60); }
-    if (fa) arr = fa.est;
-    // The run from our timetable with the feed laid on (planned times, the feed's times and its delays carried on).
-    const run = runs[i];
-    if (run && (!est || (l.toStopId && !arr))) {
-      const st = carryDelays(runStops(run, (t) => (t === l.tripId ? tu : rt.tu(l.mode, l.line, t, null)), l.tripId, true), true);
-      if (st) {
-        const parentOf = new Map();
-        for (const [p, kids] of Object.entries(run.alt || {})) for (const k of kids) parentOf.set(k, p);
-        const find = (id) => { const pid = parentOf.get(id) || id; return run.stops.findIndex((x) => x.id === id || (x.parent || parentOf.get(x.id) || x.id) === pid); };
-        const withDelay = (k) => {
-          if (k < 0 || !st[k] || st[k].skipped) return null;
-          if (st[k].estimated) return ms(st[k].estimated);
-          return tu.delay != null && st[k].planned ? ms(st[k].planned) + tu.delay * 1000 : null;
-        };
-        const k = find(l.stopId);
-        if (!est) { est = withDelay(k); if (est && st[k].planned) delayMin = Math.round((est - ms(st[k].planned)) / 60000); }
-        else if (delayMin == null && k >= 0 && st[k].planned) delayMin = Math.round((est - ms(st[k].planned)) / 60000);
-        if (l.toStopId && !arr) arr = withDelay(find(l.toStopId));
-      }
-    }
-    const realtime = !skipped && Number.isFinite(est) && est > 0;
+    if (!news(tu)) return { ...base, realtime: false, estimated: null, arrEstimated: null, delayMin: null, cancelled: !!(tu && tu.rel === 3), skipped: false, platform: null, vehicle: null, stopsAway: null };
+    const tt = tts[i];
+    const pFrom = tripLivePlanned(tt, l.stopId, l.tripId, now);
+    const pTo = l.toStopId ? tripLivePlanned(tt, l.toStopId, l.tripId, now) : null;
+    const tr = trips[i];
+    const a = (tr ? engineTripLive(tu, tr, l.stopId, false) : null) || liveAt(tu, pFrom, l.stopId, false) || {};
+    const z = l.toStopId ? (tr ? engineTripLive(tu, tr, l.toStopId, true) : null) || liveAt(tu, pTo, l.toStopId, true) || {} : {};
+    const realtime = !a.skipped && !a.cancelled && Number.isFinite(a.est) && a.est > 0;
+    const at = a.stopId || l.stopId;
     let stopsAway = null;
     if (veh && realtime) {
       const mine = tu.stus.findIndex((u) => u.stopId === at);
@@ -9198,10 +9256,12 @@ async function tripLive(env, legs) {
     if (vehicle && !occ) { delete vehicle.occupancy; delete vehicle.quiet; }
     return {
       ...base, realtime,
-      estimated: realtime ? iso(est) : null,
-      arrEstimated: realtime && Number.isFinite(arr) && arr > 0 ? iso(arr) : null,
-      delayMin: realtime ? delayMin : null,
-      cancelled: false, skipped, platform: platform || null, vehicle, stopsAway,
+      estimated: realtime ? iso(a.est) : null,
+      arrEstimated: realtime && Number.isFinite(z.est) && z.est > 0 ? iso(z.est) : null,
+      delayMin: realtime && a.delay != null ? Math.round(a.delay / 60) : null,
+      cancelled: !!a.cancelled, skipped: !!a.skipped,
+      // The platform the feed shows the trip at when it moved (a stop update at another platform), else the planned one.
+      platform: word(at) || null, vehicle, stopsAway,
     };
   });
   return { kind: "triplive", now, dataAt: rt.fetchedAt() || null, legs: out };
