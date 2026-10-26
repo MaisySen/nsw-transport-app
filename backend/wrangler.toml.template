@@ -25,6 +25,7 @@ run_worker_first = true
 
 [vars]
 API_ONLY = "1"
+ENGINE_BOARDS = "off"
 API_HOST = "api.transportsydney.app"
 SITE_URL = "https://transportsydney.app"
 VAPID_SUBJECT = "mailto:hello@transportsydney.app"
@@ -32,6 +33,17 @@ VAPID_SUBJECT = "mailto:hello@transportsydney.app"
 APNS_BUNDLE = "com.maisysen.nswtransport"
 APNS_KEY_ID = "69AK74573Z"
 APNS_TEAM_ID = "B85KQRQZW7"
+
+# Board engine (src/engine.js, docs/ENGINE.md): one Durable Object with the GTFS timetable in its SQLite storage
+# builds every stop's board from the network realtime feeds every 10 s. ENGINE_BOARDS "on" serves /api/departures
+# from it; "off" keeps the Trip Planner path (engine=1 on a request still asks the engine, for checks).
+[[durable_objects.bindings]]
+name = "ENGINE"
+class_name = "BoardEngine"
+
+[[migrations]]
+tag = "engine-v1"
+new_sqlite_classes = ["BoardEngine"]
 
 [[d1_databases]]
 binding = "DB"

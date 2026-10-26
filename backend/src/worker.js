@@ -6931,6 +6931,13 @@ async function handleRequest(request, env, exec) {
       try { const s = await siteRoutes(request, env, url, exec); if (s) return s; }
       catch (e) { return json({ ok: false, error: "server", errors: { form: "We could not save that right now. Please email contact@fintex.au instead." } }, 500); }
     }
+    // Loading the engine's timetable (tools/load_timetable.mjs): admin key only.
+    if (url.pathname.startsWith("/api/engine/load/") && request.method === "POST") {
+      if (!adminOk(request) && !(env.ENGINE_LOAD_KEY && keyOk(request, null, env.ENGINE_LOAD_KEY))) return json({ error: "forbidden" }, 403);
+      if (typeof engineCall !== "function") return json({ error: "engine not built in" }, 503);
+      const r = await engineCall(env, url.pathname.slice("/api/engine".length), { method: "POST", body: await request.arrayBuffer() });
+      return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json" } });
+    }
     feedStats.requests++;
     const p = url.searchParams;
     const asTxt = p.get("format") === "text";
@@ -6968,6 +6975,18 @@ async function handleRequest(request, env, exec) {
         }
         case "/api/departures": {
           const at = boardAt(p.get("time"), p.get("date"));
+          // Board engine (src/engine.js, docs/ENGINE.md): a board it has already made, when ENGINE_BOARDS is on or the
+          // request says engine=1. A stop it has no timetable for falls through to the Trip Planner below.
+          if (!at && typeof engineBoard === "function" && engineWanted(env, url)) {
+            const et = await engineBoard(env, exec, p.get("stop") || "", p.get("mode") || "").catch(() => null);
+            if (et) {
+              const eb = JSON.parse(et);
+              const d = { kind: "departures", dataAt: (eb.live && eb.live.feedAt) || (eb.engine && eb.engine.builtAt) || Date.now(), ...eb, now: Date.now() };
+              if (!(await serverOn(env, "occupancy"))) { d.items = d.items.map((x) => ({ ...x, vehicle: x.vehicle ? { ...x.vehicle } : x.vehicle })); stripOccupancy(d); }
+              await afterAnswer(env, d, { profile, device: p.get("device"), exec });
+              return asTxt ? textRes(await asText(env, d)) : json(d);
+            }
+          }
           const depKey = (p.get("stop") || "") + "|" + (p.get("mode") || "") + (at ? "|" + at.date + at.time : "");
           const depHit = depMem.get(depKey);
           let r;
@@ -6977,11 +6996,33 @@ async function handleRequest(request, env, exec) {
             depMem.set(depKey, { at: Date.now(), p: pr });
             if (depMem.size > 300) depMem.delete(depMem.keys().next().value);
             try { r = await pr; } catch (e) { depMem.delete(depKey); throw e; }
+            if (!at && typeof engineLearn === "function") engineLearn(env, exec, r);
           }
           const d = { kind: "departures", ...r };
           if (!(await serverOn(env, "occupancy"))) { d.items = d.items.map((x) => ({ ...x, vehicle: x.vehicle ? { ...x.vehicle } : x.vehicle })); stripOccupancy(d); }
           await afterAnswer(env, d, { profile, device: p.get("device"), exec });
           return asTxt ? textRes(await asText(env, d)) : json(d);
+        }
+        case "/api/engine/status": {
+          if (typeof engineCall !== "function") return json({ error: "engine not built in" }, 503);
+          const r = await engineCall(env, "/status");
+          return json(await r.json(), r.status);
+        }
+        case "/api/timetable": {
+          // The on phone timetable pack: timetable rows for up to 40 stops (and their platforms) for today and the next
+          // day, routes and headsigns included. Shared through Cloudflare's cache for 30 minutes per stop list.
+          if (typeof engineCall !== "function") return json({ error: "engine not built in" }, 503);
+          const ids = [...new Set((p.get("stops") || "").split(",").map((s) => s.trim()).filter((s) => /^[A-Za-z0-9_-]{1,20}$/.test(s)))].slice(0, 40).sort();
+          if (!ids.length) return json({ error: "Give stops=id,id" }, 400);
+          const days = Math.max(1, Math.min(3, Number(p.get("days")) || 2));
+          const ck = new Request("https://engine-cache.transportsydney.app/timetable?stops=" + ids.join(",") + "&days=" + days);
+          const hit = await caches.default.match(ck).catch(() => null);
+          if (hit) return new Response(hit.body, { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=1800", "access-control-allow-origin": "*", "x-edge-cache": "hit", ...API_SEC_HEADERS } });
+          const r = await engineCall(env, "/timetable?stops=" + encodeURIComponent(ids.join(",")) + "&days=" + days);
+          const body = await r.text();
+          if (r.status !== 200 || /"error"/.test(body.slice(0, 40))) return json({ error: "No timetable right now." }, 503);
+          exec.waitUntil(caches.default.put(ck, new Response(body, { headers: { "content-type": "application/json", "cache-control": "public, max-age=1800" } })).catch(() => {}));
+          return new Response(body, { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=1800", "access-control-allow-origin": "*", ...API_SEC_HEADERS } });
         }
         case "/api/traffic": {
           // Open Live Traffic incidents as the app words them (for bus legs and checks), at most 300.
@@ -7743,6 +7784,8 @@ export default {
   async fetch(request, env, exec) {
     applyEnv(env);
     const url = new URL(request.url);
+    // Engine boards skip the copy layer below: the engine makes each board every 10 s and keeps its own 4 s copies.
+    if (request.method === "GET" && url.pathname === "/api/departures" && !url.searchParams.get("time") && !url.searchParams.get("date") && typeof engineWanted === "function" && env.ENGINE && engineWanted(env, url)) return handleRequest(request, env, exec);
     const cache = request.method === "GET" && EDGE_CACHE_RE.test(url.pathname) && !badInput(url.searchParams) ? edgeCache() : null;
     if (!cache) return handleRequest(request, env, exec);
     const key = edgeKey(url);

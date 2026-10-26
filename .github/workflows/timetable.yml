@@ -1,0 +1,40 @@
+name: timetable
+# Daily board engine timetable (docs/ENGINE.md): GTFS schedule bundles from Transport for NSW, built into one row per
+# stop and service day, loaded into the engine at api.transportsydney.app. Yesterday, today and the next 2 days.
+on:
+  schedule:
+    - cron: "40 15 * * *"   # 2:40 AM Sydney in summer time, 1:40 AM in winter
+  workflow_dispatch:
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download GTFS
+        env:
+          KEY: ${{ secrets.TFNSW_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p gtfs
+          get() { for i in 1 2 3; do curl -sfL -H "Authorization: apikey $KEY" -o "gtfs/$1.zip" "https://api.transport.nsw.gov.au$2" && return 0; sleep 5; done; return 1; }
+          get buses /v1/gtfs/schedule/buses
+          get sydneytrains /v1/gtfs/schedule/sydneytrains
+          get metro /v2/gtfs/schedule/metro
+          get ferry /v1/gtfs/schedule/ferries/sydneyferries
+          get ferry_mff /v1/gtfs/schedule/ferries/MFF
+          get lr_cse /v1/gtfs/schedule/lightrail/cbdandsoutheast
+          get lr_iw /v1/gtfs/schedule/lightrail/innerwest
+          get lr_par /v1/gtfs/schedule/lightrail/parramatta
+          get lr_new /v1/gtfs/schedule/lightrail/newcastle
+          get nswtrains /v1/gtfs/schedule/nswtrains
+          for n in northcoast northcoast2 northcoast3 centralwestandorana centralwestandorana2 riverinamurray riverinamurray2 southeasttablelands southeasttablelands2 newenglandnorthwest newcastlehunter farwest sydneysurrounds; do get "rb_$n" "/v1/gtfs/schedule/regionbuses/$n"; sleep 1; done
+          curl -sfL -H "Authorization: apikey $KEY" -o complete.zip https://api.transport.nsw.gov.au/v1/publictransport/timetables/complete/gtfs
+          unzip -p complete.zip stops.txt > gtfs/stops_complete.txt
+          rm complete.zip
+      - name: Build
+        run: python3 backend/tools/build_timetable.py gtfs tt
+      - name: Load
+        env:
+          ENGINE_LOAD_KEY: ${{ secrets.ENGINE_LOAD_KEY }}
+        run: node backend/tools/load_timetable.mjs tt

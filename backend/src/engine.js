@@ -309,7 +309,13 @@ class BoardEngine {
     const { idx, headerTs } = indexFeed(buf, kind);
     return { at: Date.now(), buf, idx, headerTs, kind, cache: new Map() };
   }
-  async refreshFeed(key, f, now, force) {
+  // One refresh per feed at a time: a crowd of first reads waits for the same fetch.
+  refreshFeed(key, f, now, force) {
+    if (f.pending) return f.pending;
+    f.pending = this.refreshFeedNow(key, f, now, force).finally(() => { f.pending = null; });
+    return f.pending;
+  }
+  async refreshFeedNow(key, f, now, force) {
     const def = FEEDS[key];
     if (!def) return;
     const k = this.stretch(now);
