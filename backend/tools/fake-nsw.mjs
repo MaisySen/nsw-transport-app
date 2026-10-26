@@ -1,10 +1,13 @@
 // Fake Transport for NSW Open Data for local runs: no key, no network, no NSW calls (docs/REVERSE_ENGINEERING.md, g28).
 // node backend/tools/fake-nsw.mjs 8799. Upstream behaviour via GET /__mode?set=NAME: ok, 429, 403quota, 500, 502html,
-// empty, malformed, nulljson, huge, slow, slowfeed, weird. GET /__mode also shows the last 20 calls the worker made.
+// empty, malformed, nulljson, huge, slow, slowfeed, weird, trains. GET /__mode also shows the last 20 calls the worker made.
+// trains: the Sydney Trains trip update feed is a synthetic network (tools/fake-feed.mjs), sized by the same call:
+// /__mode?set=trains&trips=1500&unknown=30&empty=0 (unknown: trips the engine's timetable lacks).
 // backend/tools/local-dev.mjs builds a worker that talks to this and runs it under wrangler dev.
 import http from "node:http";
+import { trainNetwork } from "./fake-feed.mjs";
 const PORT = +process.argv[2] || 8799;
-let mode = "ok"; const hits = [];
+let mode = "ok"; const hits = []; let net = {};
 const STOPS = [["200060","Central Station"],["2000338","Central Station, Platform 16"],["200070","Town Hall Station"],["213510","Strathfield Station"],["2150106","Parramatta Station"],["10101100","Manly Wharf"],["10101101","Circular Quay"],["2067141","Chatswood Station"],["2022100","Bondi Junction Station"],["2000441","Wynyard Station"]];
 const nameOf = (id) => (STOPS.find((s) => s[0] === String(id)) || [String(id), "Stop " + id])[1];
 const iso = (t) => new Date(t).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -46,7 +49,9 @@ function body(path, q) {
 }
 http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
-  if (u.pathname === "/__mode") { if (u.searchParams.get("set")) mode = u.searchParams.get("set"); res.end(JSON.stringify({ mode, hits: hits.length, last: hits.slice(-20) })); return; }
+  if (u.pathname === "/__mode") {
+    if (u.searchParams.get("set")) { mode = u.searchParams.get("set"); net = {}; for (const k of ["trips", "stations", "perTrip", "unknown", "empty"]) if (u.searchParams.get(k)) net[k] = +u.searchParams.get(k); }
+    res.end(JSON.stringify({ mode, hits: hits.length, last: hits.slice(-20) })); return; }
   hits.push({ t: Date.now(), p: u.pathname, auth: req.headers.authorization ? "apikey set" : "none", mode });
   const isFeed = u.pathname.includes("/gtfs/");
   const send = (code, b, type = "application/json", h = {}) => { res.writeHead(code, { "content-type": type, ...h }); res.end(b); };
@@ -56,6 +61,7 @@ http.createServer((req, res) => {
   if (mode === "502html") return send(200, "<html><body>Bad gateway maintenance</body></html>", "text/html");
   if (mode === "slowfeed" && isFeed) { setTimeout(() => send(200, Buffer.alloc(0), "application/x-google-protobuf"), 8000); return; }
   if (mode === "slow") { setTimeout(() => send(200, JSON.stringify(body(u.pathname, u.searchParams) || {})), 20000); return; }
+  if (mode === "trains" && isFeed) return send(200, u.pathname.endsWith("/realtime/sydneytrains") ? Buffer.from(trainNetwork(net).tu) : Buffer.alloc(0), "application/x-google-protobuf");
   if (isFeed) return send(200, mode === "malformed" ? Buffer.from([0x0a, 0xff, 0xff, 0xff, 0x0f, 1, 2]) : Buffer.alloc(0), "application/x-google-protobuf");
   if (mode === "empty") return send(200, "{}");
   if (mode === "nulljson") return send(200, "null");

@@ -144,7 +144,23 @@ function engCands(src, stopId, from, to) {
   return covered ? cand : null;
 }
 // Trains run with no passengers are in the timetable with the headsign "Empty Train" but on no planner board.
+// Some trips with that headsign do run for passengers: on 27 Oct, 12:37 to 12:54 AM, 13 of the 14 "Empty Train" rows
+// due at the matched train stations were on the Trip Planner's board with live times (late night T1, T4, CCN and BMT
+// runs), and they were every train the engine missed (the 14th had a new trip id, listed as added below). Such a row
+// stays on the board when the train feed gives it a live time here; with no live time it stays off.
+// ENGINE_EMPTY_LIVE "off" (wrangler var) leaves every Empty Train off again.
 const ENGINE_NOT_IN_SERVICE = /^(empty train|not in service)$/i;
+function engEmptyLive(env) { return String((env && env.ENGINE_EMPTY_LIVE) || "on").toLowerCase() !== "off"; }
+// Where a trip update says the trip ends: its last stop (the core object sets dest on the trimmed updates it sends).
+function engTuDest(src, tu) {
+  if (!tu) return "";
+  if (tu.dest != null) return tu.dest;
+  const l = tu.stus && tu.stus[tu.stus.length - 1];
+  const s = l && src.stop(l.stopId);
+  return s ? engPlaceName(s[0]) : "";
+}
+// A Sydney Trains run: the trip id up to the first dot ("158T" in "158T.1324.165.4.A.8.92001745").
+function engRun(tripId) { const s = String(tripId || ""); const i = s.indexOf("."); return i > 0 ? s.slice(0, i) : ""; }
 
 function engBuildBoard(src, stopId, opts = {}) {
   const now = opts.now || Date.now();
@@ -214,33 +230,68 @@ function engBuildBoard(src, stopId, opts = {}) {
   for (const c of cand) {
     const route = src.route(c.ri);
     if (!route) continue;
-    if (ENGINE_NOT_IN_SERVICE.test(src.head(c.hi) || "")) continue;
+    const empty = ENGINE_NOT_IN_SERVICE.test(src.head(c.hi) || "");
+    if (empty && opts.emptyLive === false) continue;
     const feed = route[3];
     if (opts.mode && !(modeOf(route[1]).key === opts.mode || (opts.mode === "bus" && modeOf(route[1]).key === "coach"))) continue;
     feedsUsed.add(feed);
     const tu = src.tu(feed, c.tripId);
+    if (empty && (!tu || tu.rel === 3 || !engSameRun(tu, c))) continue;
     if (tu && !engSameRun(tu, c)) { items.push(mk(c, route, null)); continue; }
     const live = engLive(tu, c, (s) => { const m = src.tripSeq(feed, c.tripId); return m ? m.get(s) : null; }, engArrFirst(feed));
     if (live && live.gone) continue;
+    if (empty) {
+      if (!live || !live.est || live.skipped) continue;
+      c.dest = engTuDest(src, tu);
+    }
     seen.add(c.tripId + "|" + c.day);
     items.push(mk(c, route, live));
   }
-  // Services added on the day (not in the timetable) that call here, from the trip update feeds already in use.
+  // Services added on the day (not in the timetable) that call here, from the trip update feeds already in use, and
+  // trains the feed has that the timetable does not (tu.unk: a trip id published after our timetable load, such as a
+  // trackwork change; the core object lists them, engAsAdded).
+  const unkRows = [];
   for (const feed of feedsUsed) {
     for (const tu of src.added(feed) || []) {
       const u = (tu.stus || []).find((x) => idSet.has(x.stopId) && x.rel !== 1);
       if (!u) continue;
       const t = engTime(u);
       if (!t || t < from || t > to) continue;
-      const d = engDelay(u) || 0;
       const ri = src.routeOf(feed, tu.routeId);
       if (ri < 0) continue;
+      const route = src.route(ri);
+      if (!route) continue;
+      if (opts.mode && !(modeOf(route[1]).key === opts.mode || (opts.mode === "bus" && modeOf(route[1]).key === "coach"))) continue;
+      if (tu.unk) {
+        // As for timetable rows: the planned time in whole minutes and the live time that minute plus the delay.
+        const dl = engDelay(u);
+        const p0 = dl != null ? t - dl * 1000 : t;
+        const planned = p0 - (p0 % 60000);
+        const est = dl != null ? planned + dl * 1000 : t;
+        const c = { planned, tripId: tu.tripId, ri, hi: -1, seq: u.seq || 0, stopId: u.stopId, day: engDayKey(planned), dest: tu.destName || "" };
+        const it = mk(c, route, { est, delay: dl != null ? dl : Math.round((est - planned) / 1000) });
+        items.push(it); unkRows.push(it);
+        continue;
+      }
+      const d = engDelay(u) || 0;
       const lastU = tu.stus[tu.stus.length - 1];
       const last = lastU && src.stop(lastU.stopId);
       const c = { planned: t - d * 1000, tripId: tu.tripId, ri, hi: -1, seq: u.seq || 0, stopId: u.stopId, day: engDayKey(t), dest: last ? engPlaceName(last[0]) : (tu.destName || "") };
-      items.push(mk(c, src.route(ri), { est: t, delay: d }));
+      items.push(mk(c, route, { est: t, delay: d }));
     }
   }
+  // A train the timetable has under an older trip id of the same run (no live data under that id) and the feed has
+  // under the new id: one row, the live one.
+  const dropOld = new Set();
+  for (const r of unkRows) {
+    const run = engRun(r.tripId);
+    if (!run) continue;
+    for (const i of items) {
+      if (i.realtime || i.mode !== r.mode || i.line !== r.line || i.tripId === r.tripId || engRun(i.tripId) !== run) continue;
+      if (Math.abs(Date.parse(i.planned) - Date.parse(r.planned)) <= 10 * 60000) dropOld.add(i);
+    }
+  }
+  if (dropOld.size) for (let k = items.length - 1; k >= 0; k--) if (dropOld.has(items[k])) items.splice(k, 1);
   const t0 = (i) => Date.parse(i.estimated || i.planned);
   // The same service from two timetables (NSW TrainLink trips are in both the train and the regional bundle): one row,
   // the one with live data.
@@ -265,6 +316,23 @@ function engBuildBoard(src, stopId, opts = {}) {
     now,
     engine: { builtAt: now, feeds: [...feedsUsed] },
   };
+}
+
+// A train the feed has and the timetable does not, as an added service: its stop sequence is the order of the update's
+// stops, and only the stops due between 10 minutes ago and the board horizon (plus 15 minutes) are kept, so the copy
+// sent to every shard stays small; destName is the update's last stop. null when no stop is due in that span.
+function engAsAdded(tu, now, src) {
+  const lastU = tu.stus && tu.stus[tu.stus.length - 1];
+  if (!lastU) return null;
+  const lo = now - 10 * 60000, hi = now + ENGINE_HORIZON_MS + 15 * 60000;
+  const stus = [];
+  for (let i = 0; i < tu.stus.length; i++) {
+    const u = tu.stus[i], t = engTime(u);
+    if (t && t >= lo && t <= hi && u.rel !== 1) stus.push({ ...u, seq: u.seq != null ? u.seq : i + 1 });
+  }
+  if (!stus.length) return null;
+  const s = src.stop(lastU.stopId);
+  return { tripId: tu.tripId, routeId: tu.routeId, rel: tu.rel, startDate: tu.startDate, unk: 1, stus, destName: s ? engPlaceName(s[0]) : "" };
 }
 
 // The parts of a trip update that boards need for some stops of the trip (their stop sequences): the update at each
@@ -292,6 +360,11 @@ function engTrim(tu, seqs) {
 
 // Feeds without a stop sequence on their updates: the timetable's stop order is loaded to carry delays on.
 const ENGINE_NO_SEQ = new Set(["train"]);
+// Feeds whose trips missing from the timetable are listed as added services (engAsAdded): the timetable's trips table
+// has every trip of these feeds for the loaded days, so a trip id not in it is one published after the load.
+// ENGINE_ADD_UNKNOWN "off" (wrangler var) stops it.
+const ENGINE_ADD_UNKNOWN = new Set(["train"]);
+function engAddUnknownOn(env) { return String((env && env.ENGINE_ADD_UNKNOWN) || "on").toLowerCase() !== "off"; }
 
 class BoardEngine {
   constructor(state, env) {
@@ -327,7 +400,25 @@ class BoardEngine {
     if (!this.stats.dayCallsLoaded) { const c = JSON.parse(this.kvGet("calls") || "{}"); if (c.day === this.stats.day) this.stats.dayCalls = c.n || 0; this.stats.dayCallsLoaded = true; }
     return this.meta;
   }
-  dropMem() { this.meta = null; this.stopMem.clear(); this.kidsMem.clear(); this.rowMem.clear(); this.seqMem.clear(); this.candMem.clear(); this.boards.clear(); }
+  dropMem() { this.meta = null; this.stopMem.clear(); this.kidsMem.clear(); this.rowMem.clear(); this.seqMem.clear(); this.candMem.clear(); this.boards.clear(); this.knownMem = null; }
+  // Whether the loaded timetable has this trip (trips table: feeds in ENGINE_NO_SEQ), kept per version; false when the
+  // version has no trips at all, so nothing is taken for unknown then.
+  tripKnown(tripId) {
+    const m = this.loadMeta();
+    if (!m) return true;
+    if (!this.knownMem || this.knownVer !== m.ver) {
+      this.knownMem = new Map(); this.knownVer = m.ver;
+      this.tripsAny = this.sql.exec("SELECT 1 AS x FROM trips WHERE ver = ? LIMIT 1", m.ver).toArray().length > 0;
+    }
+    if (!this.tripsAny) return true;
+    let v = this.knownMem.get(tripId);
+    if (v === undefined) {
+      v = this.sql.exec("SELECT 1 AS x FROM trips WHERE ver = ? AND trip = ? LIMIT 1", m.ver, tripId).toArray().length > 0;
+      if (this.knownMem.size > 20000) this.knownMem.clear();
+      this.knownMem.set(tripId, v);
+    }
+    return v;
+  }
   source() {
     const m = this.loadMeta(), sql = this.sql, self = this;
     return {
@@ -468,9 +559,24 @@ class BoardEngine {
         }
         engNotePublish(f, e.headerTs);
         f.tu = e;
-        // Added services are few: decode them once per copy so boards can list them.
-        const added = [];
-        if (e.idx.size < 2500) for (const id of e.idx.keys()) { const tu = decodeFrom(e, id); if (tu && tu.rel === 1) added.push(tu); }
+        // Added services are few: decode them once per copy so boards can list them. For feeds in ENGINE_ADD_UNKNOWN,
+        // also the trips the timetable does not have (a lookup per trip id not seen before in this timetable version).
+        const added = [], unk = [];
+        const look = ENGINE_ADD_UNKNOWN.has(key) && engAddUnknownOn(this.env) && !!this.loadMeta();
+        const c0 = Date.now();
+        if (e.idx.size < 2500) for (const id of e.idx.keys()) {
+          const tu = decodeFrom(e, id);
+          if (!tu) continue;
+          if (tu.rel === 1) added.push(tu);
+          else if (look && tu.rel !== 3 && !this.tripKnown(id)) unk.push(tu);
+        }
+        // Most of a copy unknown means the timetable and the feed disagree on trip ids (another version): list none.
+        f.unknown = unk.length; f.unknownListed = 0;
+        if (unk.length && unk.length <= Math.max(5, e.idx.size * 0.4)) {
+          const src = this.source(), t = Date.now();
+          for (const tu of unk) { const a = engAsAdded(tu, t, src); if (a) { added.push(a); f.unknownListed++; } }
+        }
+        f.addMs = Date.now() - c0;
         f.added = added;
       }).catch(() => { f.fails++; f.tuAt = 0; }));
     }
@@ -535,7 +641,7 @@ class BoardEngine {
   }
   build(src, bk) {
     const [stop, mode] = bk.split("|");
-    const b = engBuildBoard(src, stop, { mode: mode || null, candCache: this.candMem });
+    const b = engBuildBoard(src, stop, { mode: mode || null, candCache: this.candMem, emptyLive: engEmptyLive(this.env) });
     const body = b ? JSON.stringify(b) : null;
     this.boards.set(bk, { at: Date.now(), body });
     this.stats.built++;
@@ -568,7 +674,7 @@ class BoardEngine {
     if (have && now - have.at < ENGINE_TICK_MS + 2000) { this.stats.cacheHits++; return have.body; }
     let src = this.source();
     // First read of a feed (a cold object): fetch the feeds this board needs before answering, at most 3 s.
-    const probe = engBuildBoard(src, stop, { mode: mode || null, candCache: this.candMem });
+    const probe = engBuildBoard(src, stop, { mode: mode || null, candCache: this.candMem, emptyLive: engEmptyLive(this.env) });
     if (!probe) { this.boards.set(bk, { at: now, body: null }); return null; }
     const cold = probe.engine.feeds.filter((f) => { const x = this.feeds.get(f); return !x || !x.tu; });
     if (cold.length) {
@@ -585,7 +691,7 @@ class BoardEngine {
   status() {
     const m = this.loadMeta(), now = Date.now();
     const feeds = {};
-    for (const [k, f] of this.feeds) feeds[k] = { tuAgeS: f.tu ? Math.round((now - f.tu.at) / 1000) : null, vpAgeS: f.vp ? Math.round((now - f.vp.at) / 1000) : null, trips: f.tu ? f.tu.idx.size : 0, added: (f.added || []).length, hot: now - f.wantAt < ENGINE_FEED_HOT_MS, fails: f.fails, periodS: f.period ? f.period / 1000 : null, same: f.same || 0, madeAgoS: f.hdrs && f.hdrs.length ? Math.round(now / 1000 - f.hdrs[f.hdrs.length - 1]) : null, nextInS: f.nextAt ? Math.round((f.nextAt - now) / 1000) : null };
+    for (const [k, f] of this.feeds) feeds[k] = { tuAgeS: f.tu ? Math.round((now - f.tu.at) / 1000) : null, vpAgeS: f.vp ? Math.round((now - f.vp.at) / 1000) : null, trips: f.tu ? f.tu.idx.size : 0, added: (f.added || []).length, unknown: f.unknown || 0, unknownListed: f.unknownListed || 0, addMs: f.addMs || 0, hot: now - f.wantAt < ENGINE_FEED_HOT_MS, fails: f.fails, periodS: f.period ? f.period / 1000 : null, same: f.same || 0, madeAgoS: f.hdrs && f.hdrs.length ? Math.round(now / 1000 - f.hdrs[f.hdrs.length - 1]) : null, nextInS: f.nextAt ? Math.round((f.nextAt - now) / 1000) : null };
     return { role: "core", boots: this.boots, bootAt: this.bootAt, ver: m ? m.ver : 0, builtAt: m ? m.builtAt : null, days: m ? Object.keys(m.days) : [], hotBoards: this.hot.size, stretch: Math.round(this.stretch(now) * 100) / 100, budget: this.budget(), perMin: Number(this.env.ENGINE_PER_MIN) || ENGINE_PER_MIN, tokens: Math.round((this.tokens || 0) * 10) / 10, gaps: this.gaps ? [...this.gaps].slice(0, 50).map(([s, g]) => [s, g.lines]) : [], pausedUntil: this.pauseUntil || null, ...this.stats, feeds };
   }
   async fetch(req) {
@@ -705,12 +811,13 @@ class BoardEngine {
           const tu = readTripUpdate(new PB(f.tu.buf, loc[0], loc[1]));
           if (fill) { const sm = src.tripSeq(feed, tripId); if (sm) for (const u of tu.stus) if (u.seq == null && sm.has(u.stopId)) u.seq = sm.get(u.stopId); }
           tus[tripId] = engTrim(tu, seqs);
+          if (fill) tus[tripId].dest = engTuDest(src, tu);
         }
         const vl = f.vp && f.vp.idx.get(tripId);
         if (vl) { const v = vehicleOf(readVehiclePosition(new PB(f.vp.buf, vl[0], vl[1]))); if (v) vehs[tripId] = v; }
       }
       out.tu[feed] = tus; out.veh[feed] = vehs;
-      out.added[feed] = (f.added || []).map((tu) => { const lastU = tu.stus[tu.stus.length - 1]; const last = lastU && src.stop(lastU.stopId); return { ...tu, destName: last ? engPlaceName(last[0]) : "" }; });
+      out.added[feed] = (f.added || []).map((tu) => { if (tu.unk) return tu; const lastU = tu.stus[tu.stus.length - 1]; const last = lastU && src.stop(lastU.stopId); return { ...tu, destName: last ? engPlaceName(last[0]) : "" }; });
     }
     this.stats.liveCalls++; this.stats.liveMs += Date.now() - t0;
     return out;
@@ -998,7 +1105,7 @@ class BoardShard {
   }
   build(src, bk, now, first) {
     const [stop, mode] = bk.split("|");
-    const b = engBuildBoard(src, stop, { mode: mode || null, now });
+    const b = engBuildBoard(src, stop, { mode: mode || null, now, emptyLive: engEmptyLive(this.env) });
     if (b) b.engine.shard = this.name;
     const w = this.win.get(stop);
     if (b && w && w.gap) b.engine.gap = w.gap;

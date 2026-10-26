@@ -9,7 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 const root = new URL("..", import.meta.url).pathname;
 const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {") + "\n" +
   fs.readFileSync(root + "src/engine.js", "utf8").replace(/\nexport \{ BoardEngine, BoardShard \};\s*$/, "\n") +
-  "\nexport { __default, engBuildBoard, engLive, engDayKey, engPlatform, BoardEngine, BoardShard, engineWanted, engTrim, engShardOf, engNotePublish, engNextPublish, engPushKey, engineSocket };\n";
+  "\nexport { __default, engBuildBoard, engLive, engDayKey, engPlatform, BoardEngine, BoardShard, engineWanted, engTrim, engShardOf, engNotePublish, engNextPublish, engPushKey, engineSocket, engEmptyLive, engAsAdded, engRun };\n";
 const tmp = `/tmp/engine-test-${process.pid}-${Date.now()}.mjs`;
 fs.writeFileSync(tmp, src);
 const W = await import(tmp); fs.unlinkSync(tmp);
@@ -387,4 +387,83 @@ test("push: /api/live is 404 unless ENGINE_PUSH is on, and needs a WebSocket upg
   const up = { headers: { upgrade: "websocket" } };
   assert.equal((await W.engineSocket(new Request(u("stop=a%20b"), up), env, u("stop=a%20b"))).status, 400);
   assert.equal((await W.engineSocket(new Request(u("stop=200060"), up), env, u("stop=200060"))).status, 200);
+});
+
+// ---- g14, 27 Oct night match: Empty Train runs with live times, and trains the timetable does not have ----
+test("an Empty Train run the train feed gives a live time here is listed (to the update's last stop); without one, cancelled, or with ENGINE_EMPTY_LIVE off it is not", () => {
+  const save = rows.P1;
+  meta.heads.push("Empty Train");
+  rows.P1 = [...save, [sec(20), "T-E", 0, meta.heads.length - 1, 10]];
+  tripSeq["T-E"] = new Map([["P1", 10], ["Z", 20]]);
+  try {
+    const liveE = { "T-E": { tripId: "T-E", rel: 0, stus: [{ stopId: "P1", dep: { delay: 120, time: nowS + 1320 } }, { stopId: "Z", arr: { delay: 120, time: nowS + 1800 } }] } };
+    const b = W.engBuildBoard(fakeSrc(liveE), "P");
+    const e = b.items.find((i) => i.tripId === "T-E");
+    assert.ok(e, "listed"); assert.equal(e.realtime, true); assert.equal(e.delayMin, 2); assert.equal(e.dest, "Endtown Station"); assert.equal(e.line, "T1");
+    assert.ok(!W.engBuildBoard(fakeSrc(liveE), "P", { emptyLive: false }).items.some((i) => i.tripId === "T-E"), "off by the var");
+    assert.ok(!W.engBuildBoard(fakeSrc(), "P").items.some((i) => i.tripId === "T-E"), "no update: off");
+    const cancelled = { "T-E": { ...liveE["T-E"], rel: 3 } };
+    assert.ok(!W.engBuildBoard(fakeSrc(cancelled), "P").items.some((i) => i.tripId === "T-E"), "cancelled: off");
+    const noData = { "T-E": { tripId: "T-E", rel: 0, stus: [{ stopId: "P1", rel: 2 }] } };
+    assert.ok(!W.engBuildBoard(fakeSrc(noData), "P").items.some((i) => i.tripId === "T-E"), "no live time: off");
+    assert.equal(W.engEmptyLive({ ENGINE_EMPTY_LIVE: "off" }), false); assert.equal(W.engEmptyLive({}), true);
+  } finally { rows.P1 = save; meta.heads.pop(); delete tripSeq["T-E"]; }
+});
+
+test("a train the timetable does not have (listed by the core as unk): whole minute planned time plus the delay, its platform, only on train boards, and an older trip id of the same run with no live data dropped", () => {
+  const save = rows.P1;
+  rows.P1 = [...save, [sec(30), "77X.1324.165.4.A.8.1", 0, 0, 10]];
+  try {
+    const t = (nowS + 30 * 60 + 25) * 1000; // 25 s past a minute
+    const unk = W.engAsAdded({ tripId: "77X.1324.165.8.A.8.2", routeId: "NSN_1a", rel: 0, stus: [
+      { stopId: "Far", dep: { time: nowS - 3 * 3600, delay: 60 } }, { stopId: "P2", dep: { time: t / 1000 + 60, delay: 60 } }, { stopId: "Z", arr: { time: t / 1000 + 900, delay: 60 } }] }, Date.now(), fakeSrc());
+    assert.deepEqual(unk.stus.map((u) => [u.stopId, u.seq]), [["P2", 2], ["Z", 3]], "stops long gone are not kept; the sequence is the update's order");
+    assert.equal(unk.destName, "Endtown Station");
+    const b = W.engBuildBoard(fakeSrc({}, { train: [unk] }), "P");
+    const a = b.items.find((i) => i.tripId === "77X.1324.165.8.A.8.2");
+    assert.ok(a); assert.equal(a.line, "T1"); assert.equal(a.platform, "Platform 2"); assert.equal(a.dest, "Endtown Station");
+    assert.equal(Date.parse(a.planned) % 60000, 0);
+    assert.equal(Date.parse(a.estimated) - Date.parse(a.planned), 60000);
+    assert.equal(a.planned, new Date(t - (t % 60000)).toISOString());
+    assert.ok(!b.items.some((i) => i.tripId === "77X.1324.165.4.A.8.1"), "the old trip id of run 77X is dropped");
+    assert.ok(b.items.some((i) => i.tripId === "T-A"), "other trains stay");
+    assert.ok(!W.engBuildBoard(fakeSrc({}, { train: [unk] }), "P", { mode: "bus" }).items.some((i) => i.mode === "train"), "a bus board has no trains");
+    assert.equal(W.engRun("158T.1324.165.4.A.8.92001745"), "158T"); assert.equal(W.engRun("2554197"), "");
+  } finally { rows.P1 = save; }
+});
+
+test("the core lists a train feed trip the timetable lacks once per copy, through shards too; a copy that is mostly unknown lists none; ENGINE_ADD_UNKNOWN off lists none", async () => {
+  const mk = (env, trips) => {
+    globalThis.fetch = async (u) => new Response(feed(/vehiclepos/.test(String(u)) ? [] : trips));
+    return env;
+  };
+  const known = [{ tripId: "T-A", rel: 0, stus: [{ stopId: "P1", dep: { delay: 60 } }] }, { tripId: "T-B", rel: 0, stus: [{ stopId: "P1", dep: { delay: 0 } }] }];
+  const fresh = { tripId: "NEW-1", routeId: "NSN_1a", rel: 0, stus: [{ stopId: "P2", dep: { time: nowS + 900, delay: 120 } }, { stopId: "Z", arr: { time: nowS + 1500, delay: 120 } }] };
+  const gone = { tripId: "NEW-X", routeId: "NSN_1a", rel: 3, stus: [{ stopId: "P2", dep: { time: nowS + 600 } }] };
+  const E = await loaded([]);
+  mk({}, [...known, fresh, gone]);
+  const b = await (await E.fetch(new Request("https://engine/board?stop=P"))).json();
+  const a = b.items.find((i) => i.tripId === "NEW-1");
+  assert.ok(a, "listed"); assert.equal(a.delayMin, 2); assert.equal(a.platform, "Platform 2"); assert.equal(a.dest, "Endtown Station");
+  assert.ok(!b.items.some((i) => i.tripId === "NEW-X"), "a cancelled unknown trip is not listed");
+  const st = E.status().feeds.train;
+  assert.equal(st.unknown, 1); assert.equal(st.unknownListed, 1);
+  // Through a shard: the same row from the core's copy.
+  const core = { fetch: (u, init) => E.fetch(new Request(u, init)) };
+  const S = new W.BoardShard(fakeState(), { ENGINE: { idFromName: () => "core", get: () => core } });
+  const sb = await (await S.fetch(new Request("https://engine/board?stop=P&name=nsw-2-s1"))).json();
+  const sa = sb.items.find((i) => i.tripId === "NEW-1");
+  assert.ok(sa); assert.equal(sa.estimated, a.estimated); assert.equal(sa.dest, "Endtown Station");
+  // A copy where most trips are unknown (another timetable version): none listed.
+  const E2 = await loaded([]);
+  mk({}, Array.from({ length: 12 }, (_, i) => ({ ...fresh, tripId: "V2-" + i })));
+  const b2 = await (await E2.fetch(new Request("https://engine/board?stop=P"))).json();
+  assert.ok(!b2.items.some((i) => /^V2-/.test(i.tripId)));
+  assert.equal(E2.status().feeds.train.unknownListed, 0);
+  // Switched off.
+  const E3 = await loaded([]);
+  E3.env.ENGINE_ADD_UNKNOWN = "off";
+  mk({}, [...known, fresh]);
+  const b3 = await (await E3.fetch(new Request("https://engine/board?stop=P"))).json();
+  assert.ok(!b3.items.some((i) => i.tripId === "NEW-1"));
 });
