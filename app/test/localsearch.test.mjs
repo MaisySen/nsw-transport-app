@@ -28,7 +28,7 @@ const first = (q) => (C.localSearch(q, idx)[0] || {}).name;
 
 test('messy names from all over NSW find the right stop first', () => {
   const cases = [
-    ['wollongong stn', 'Wollongong Station'], ['newcastle interch', 'Newcastle Interchange'], ['katoomba', 'Katoomba Station'],
+    ['wollongong stn', 'Wollongong Station'], ['newcastle interch', 'Newcastle Interchange'], ['newcastle interchnge', 'Newcastle Interchange'], ['wolongong', 'Wollongong Station'], ['katoomba', 'Katoomba Station'],
     ['albury', 'Albury Station'], ['wagga wagga', 'Wagga Wagga Station'], ['strathfeild', 'Strathfield Station'],
     ['parra', 'Parramatta Station'], ['kings x', 'Kings Cross Station'], ['manly wharf', 'Manly Wharf'], ['tallawong', 'Tallawong Station'],
     ['bondi jnct', 'Bondi Junction Station'], ['circular quay', 'Circular Quay'], ['gosf', 'Gosford Station'],
@@ -47,6 +47,10 @@ test('every mode is covered: light rail, ferry, metro and bus stops', () => {
   const central = C.localSearch('central station', idx)[0];
   assert.deepEqual(central.modes.slice().sort(), [1, 2, 4].filter((m) => central.modes.includes(m)).sort());
   assert.ok(central.modes.includes(1));
+});
+
+test('a whole word typed comes first: kings is Kings Cross before Kingswood', () => {
+  assert.equal(first('kings'), 'Kings Cross Station');
 });
 
 test('bus stands never crowd out stations', () => {

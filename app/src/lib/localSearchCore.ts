@@ -59,6 +59,8 @@ export function searchKey(q: string): string {
 
 function wordScore(s: LocalStop, k: string, words: string[]): number {
   if (s.key === k || s.base === k) return 0;
+  // A whole word typed ("kings" in Kings Cross) beats the start of a longer word (Kingswood).
+  if (s.base.startsWith(k + ' ') || s.key.startsWith(k + ' ')) return 0.9 + (s.key.length - k.length) / 200;
   if (s.base.startsWith(k) || s.key.startsWith(k)) return 1 + (s.key.length - k.length) / 200;
   if (!s.key.includes(words[0].slice(0, 2))) return Infinity;
   const kw = s.key.split(' ');
@@ -89,8 +91,9 @@ export function localSearch(q: string, idx: LocalIndex | null | undefined, max =
     // A slip ("strathfeild", "wolongong"): stations only, when nothing starts with what was typed.
     if (!out.length && k.length >= 4) {
       const cap = k.length <= 6 ? 1 : 2;
+      const kb = baseOf(k);
       for (const s of idx.stations) {
-        const whole = Math.abs(s.base.length - k.length) <= cap ? edits(k, s.base, cap) : Infinity;
+        const whole = Math.min(Math.abs(s.base.length - kb.length) <= cap ? edits(kb, s.base, cap) : Infinity, Math.abs(s.key.length - k.length) <= cap ? edits(k, s.key, cap) : Infinity);
         const head = s.base.length > k.length ? edits(k, s.base.slice(0, k.length), cap) + 0.5 : Infinity;
         const d = Math.min(whole, head);
         if (d <= cap) out.push({ s, sc: 3 + d });
