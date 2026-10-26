@@ -20,7 +20,7 @@ type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; wa
   voiceId?: string | null;
   /** The one time Get a better voice prompt on a Speak button was shown (never shown again). */
   voiceHelpSeen?: boolean;
-  /** More > Simple mode (off by default): the app opens to one screen of departures, TripView Lite style. */
+  /** More > Simple mode (off by default): the app opens to one plain screen of departures. */
   simple?: boolean;
   /** The two question setup (home and work) was finished or skipped. */
   onboarded?: boolean;

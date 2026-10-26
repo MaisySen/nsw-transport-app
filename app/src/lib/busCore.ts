@@ -1,6 +1,6 @@
 // Buses: stop numbers, route numbers and where the buses on a route are. Pure, so it is unit tested.
 //
-// Stop numbers: Transport for NSW prints a 6 or 7 digit number on every bus stop sign (and the Opal app shows it).
+// Stop numbers: Transport for NSW prints a 6 or 7 digit number on every bus stop sign.
 // It is the stop's own id in the timetable data, so /api/departures?stop=2046100 answers for it directly.
 // Route view: /api/stations?mode=bus&route=410 gives each direction's stops in order. Where the buses are comes
 // from the departure boards of a few stops along the route: each upcoming 410 there says how many stops away it

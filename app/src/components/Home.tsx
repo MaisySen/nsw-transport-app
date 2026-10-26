@@ -314,7 +314,7 @@ function CardHeader({ title, glyph, glyphColor, right, sub, onPress, menu, href,
   );
 }
 
-// ---------- Your trips: TripView style card with the next 3 services ----------
+// ---------- Your trips: a card with the next 3 services ----------
 
 type Hold = { delay: number; at: number };
 /** Last live reading per service, so a feed gap shows "Last reported" for 10 minutes instead of flipping to Scheduled. */
@@ -684,7 +684,7 @@ const g = StyleSheet.create({
   chip: { minWidth: 52, minHeight: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 4 },
 });
 
-/** TripView style service row: countdown chip coloured by time left, leave time and status, arrive time with line badges. */
+/** Service row: countdown chip coloured by time left, leave time and status, arrive time with line badges. */
 export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j: Journey; now: number; arrive: number; beaten?: boolean; onPress: () => void; showTravel?: boolean }) {
   const c = usePalette();
   const l = firstLeg(j);
@@ -758,7 +758,7 @@ export function StopBoard({ stop, now, starred, distance, menu }: { stop: Place;
   const groups = groupDepartures(data?.items || [], now);
   useReportCountdowns('stop:' + stop.id, (data?.items || []).slice(0, 4).map((x) => bestTime(x.planned, x.realtime ? x.estimated : null)));
   const name = shortName(data?.stop?.name || stop.name);
-  // A bus stop shows the number on its sign, as the Opal app does.
+  // A bus stop shows the number printed on its sign.
   const busOnly = !!data?.items?.length && data.items.every((d) => d.mode === 'bus' || d.mode === 'coach' || d.mode === 'school');
   const sign = busOnly ? stopNumber(stop.id) : null;
   const right = [sign ? `Stop ${sign}` : '', distText(distance) || ''].filter(Boolean).join(' \u00b7 ') || undefined;
