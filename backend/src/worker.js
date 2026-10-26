@@ -7886,6 +7886,11 @@ export default {
       budget.staleServed++;
       return fromSaved(saved);
     }
+    // No copy and the Trip Planner refused or failed: the engine's timetable board, labelled (engineOutage).
+    if (out.status >= 500 && url.pathname === "/api/departures") {
+      const fb = await engineOutage(request, env, exec, url).catch(() => null);
+      if (fb) return fb;
+    }
     if (!leader) cachedTripLog(env, url, request, exec);
     const r = new Response(out.body, { status: out.status, headers: out.headers });
     if (out.status === 200) r.headers.set("x-edge-cache", leader ? "miss" : "shared");
@@ -7959,4 +7964,33 @@ function cachedTripLog(env, url, request, exec) {
 // Load tests only: a request carrying the LOAD_TEST_KEY secret in x-load-key is not turned away by the per address
 // limits (every simulated phone comes from one address), and is counted and handled like any other. With no
 // secret set nothing matches.
+// Outage fallback (root's decision, 26 Oct 1:58 PM, while the NSW key was over its limit): when the Trip Planner
+// refuses or fails and no copy of the board is kept or saved, the board engine's board is served instead of an error,
+// whatever ENGINE_BOARDS says. Every row is a timetable row (realtime false, status Scheduled) unless the engine's feed
+// copy is under 60 s old, when a live row keeps its time and says liveSource "feed". The answer says source
+// "timetable" and leads its alerts with "Live times unavailable, showing timetable times" (the stop screen shows the top
+// alerts, so phones label it with no app update). Never stored as a copy, so the first planner answer replaces it.
+async function engineOutage(request, env, exec, url) {
+  const p = url.searchParams;
+  if (typeof engineBoard !== "function" || !env.ENGINE || p.get("time") || p.get("date")) return null;
+  const et = await engineBoard(env, exec, p.get("stop") || "", p.get("mode") || "");
+  const eb = et ? JSON.parse(et) : null;
+  if (!eb || !Array.isArray(eb.items)) return null;
+  const feedAt = (eb.live && eb.live.feedAt) || 0;
+  const liveOk = feedAt && Date.now() - feedAt <= ENGINE_STALE_MS;
+  const items = eb.items.map((x) => {
+    if (liveOk && x.realtime) return { ...x, liveSource: "feed" };
+    return { ...x, estimated: null, realtime: false, delayMin: null, vehicle: null, occupancy: null, source: "timetable", status: { key: "scheduled", text: "Scheduled" } };
+  });
+  const note = { id: "timetable-fallback", title: "Live times unavailable, showing timetable times", url: null, priority: "high", lines: [] };
+  const d = { ...eb, kind: "departures", items, alerts: [note, ...(eb.alerts || [])], source: "timetable", fallback: "planner-unavailable", dataAt: liveOk ? feedAt : Date.now(), now: Date.now() };
+  delete d.live;
+  if (!liveOk) d.live = { feedAt: null, liveCount: 0, total: items.length };
+  budget.engineFallback = (budget.engineFallback || 0) + 1;
+  const fmt = p.get("format") === "text";
+  if (fmt) return textRes(await asText(env, d));
+  const res = json(d);
+  res.headers.set("cache-control", "no-store");
+  return res;
+}
 function loadOk(request, env) { return !!env && safeEq(request.headers.get("x-load-key"), env.LOAD_TEST_KEY); }
