@@ -4,7 +4,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
-### When Transport for NSW refuses: timetable trips, Nearby and honest messages (server 26 Oct, 3:08 to 3:23 PM, transport-api fc40734e, aba3c74d, 7b2f4c7b; over the air OTA_LINE)
+### When Transport for NSW refuses: timetable trips, Nearby and honest messages (server 26 Oct, 3:08 to 3:23 PM, transport-api fc40734e, aba3c74d, 7b2f4c7b; over the air 26 Oct, 3:39 PM, group fa0017d8, roll back to 1f117d04)
 Bidur's screenshots at 2:52 PM, with the NSW key over its daily limit: the commute card said "No more services today", Nearby said "Something went wrong (502)", Ask said "Check your signal" on 5G.
 * Trips: when the Trip Planner refuses, fails or times out, `/api/trip` answers with timetable trips from our own timetable, direct or with one change (Kings Cross to Strathfield: T4 then T1, T9 or CCN at Central), labelled "Live trips unavailable, showing timetable times". With nothing found it says live trips are unavailable, never an empty list. Phones already in the field show these with no update.
 * Nearby comes from our own stop list, with no Trip Planner call at all.
