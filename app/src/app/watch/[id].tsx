@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { Alert, View } from 'react-native';
 import { goBack } from '@/lib/nav';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { usePalette } from '@/lib/theme';
@@ -8,19 +9,26 @@ import { clock, ms, shortName } from '@/lib/format';
 import { stopWatch } from '@/lib/watch';
 import { watchLine, openService } from '@/components/Cards';
 import { LineBadge, LiveStamp } from '@/components/Transit';
-import { Button, Row, Screen, Section, Sep, T } from '@/components/ui';
+import { I } from '@/components/Icon';
+import { Button, Empty, Row, Screen, Section, Sep, T } from '@/components/ui';
 
 export default function WatchDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const c = usePalette();
   const now = useNow();
-  const { data, error, updatedAt } = useLive(() => api.watchDetail(String(id)), 15000, [id]);
-  const w = data?.watch;
+  // A watch the server no longer has (stopped, ended and cleared, or a mistyped link) answers 404: say so once and stop
+  // asking, instead of "Live times unavailable, trying again" over an empty screen every 15 seconds.
+  const [gone, setGone] = useState(false);
+  const { data, error, updatedAt } = useLive(() => api.watchDetail(String(id)).catch((e: any) => { if (e?.http === 404) setGone(true); throw e; }), 15000, [id], { enabled: !gone });
+  const w = gone ? null : data?.watch;
   return (
     <>
       <Stack.Screen options={{ title: w?.title || 'Watching' }} />
       <Screen>
-        <View style={{ paddingHorizontal: 20, paddingTop: 12 }}><LiveStamp updatedAt={updatedAt} error={error} /></View>
+        {gone ? (
+          <Empty icon={I.route} title="This watch has ended" body="It was stopped or its trip is over. Watches you have on now are in Watching."
+            action={<Button title="Show Watching" onPress={() => router.replace('/watching')} />} />
+        ) : <View style={{ paddingHorizontal: 20, paddingTop: 12 }}><LiveStamp updatedAt={updatedAt} error={error} /></View>}
         {w ? (
           <>
             <T kind="title3" style={{ marginHorizontal: 20, marginTop: 10 }}>{watchLine(w, now)}</T>
