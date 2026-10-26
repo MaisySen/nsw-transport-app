@@ -37,7 +37,29 @@ function journeys(from, to) {
   for (let k = 0; k < 4; k++) { const d = now + (5 + k * 10) * 60000; out.push({ legs: [leg(from, "200060", d, 9, "T1", 1), leg("200060", to, d + 14 * 60000, 12, "T4", 1)] }); }
   return { journeys: out };
 }
+// Mode planner (/__mode?set=planner), for timing the trip pages: trips honour the asked day, time, leave or arrive
+// (depArrMacro) and calcNumberOfTrips, a direct train every 10 minutes, 20 minutes long, each answer after
+// FAKE_PLANNER_LAT_MS (environment, default 0) to stand in for the real planner's wait.
+const PLANNER_LAT_MS = +process.env.FAKE_PLANNER_LAT_MS || 0;
+function sydMs(d, t) {
+  const guess = Date.UTC(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8), +t.slice(0, 2), +t.slice(2, 4));
+  for (const off of [10, 11]) {
+    const x = guess - off * 3600000;
+    const f = new Intl.DateTimeFormat("en-GB", { timeZone: "Australia/Sydney", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(x)).replace(":", "");
+    if (f === t) return x;
+  }
+  return guess - 11 * 3600000;
+}
+function plannerJourneys(q) {
+  const EVERY = 600000, RIDE = 20, n = Math.max(1, Math.min(50, +q.get("calcNumberOfTrips") || 5));
+  const at = q.get("itdDate") && q.get("itdTime") ? sydMs(q.get("itdDate"), q.get("itdTime")) : Date.now();
+  const deps = [];
+  if (q.get("depArrMacro") === "arr") { let d = Math.floor((at - RIDE * 60000) / EVERY) * EVERY; for (let i = 0; i < n; i++, d -= EVERY) deps.unshift(d); }
+  else { let d = Math.ceil(at / EVERY) * EVERY; for (let i = 0; i < n; i++, d += EVERY) deps.push(d); }
+  return { journeys: deps.map((d) => ({ legs: [leg(q.get("name_origin"), q.get("name_destination"), d, RIDE, "T1", 1)] })) };
+}
 function body(path, q) {
+  if (mode === "planner" && path.includes("/tp/trip")) return plannerJourneys(q);
   if (path.includes("/tp/stop_finder")) { const s = (q.get("name_sf") || "").toLowerCase(); return { locations: STOPS.filter((x) => x[1].toLowerCase().includes(s.split(" ")[0] || "")).map(([id, name], i) => ({ id, name, disassembledName: name, type: "stop", matchQuality: 900 - i, isBest: i === 0, productClasses: [1], coord: [-33.88, 151.2], parent: { name: "Sydney", type: "locality" } })) }; }
   if (path.includes("/tp/departure_mon")) { const id = q.get("name_dm"); return { locations: [{ id, name: nameOf(id), type: "stop" }], stopEvents: stopEvents(id, 12) }; }
   if (path.includes("/tp/trip")) return journeys(q.get("name_origin"), q.get("name_destination"));
@@ -60,6 +82,7 @@ http.createServer((req, res) => {
   if (mode === "500") return send(500, "Internal Server Error", "text/plain");
   if (mode === "502html") return send(200, "<html><body>Bad gateway maintenance</body></html>", "text/html");
   if (mode === "slowfeed" && isFeed) { setTimeout(() => send(200, Buffer.alloc(0), "application/x-google-protobuf"), 8000); return; }
+  if (mode === "planner" && u.pathname.includes("/tp/trip") && PLANNER_LAT_MS) { setTimeout(() => send(200, JSON.stringify(body(u.pathname, u.searchParams) || {})), PLANNER_LAT_MS); return; }
   if (mode === "slow") { setTimeout(() => send(200, JSON.stringify(body(u.pathname, u.searchParams) || {})), 20000); return; }
   if (mode === "trains" && isFeed) return send(200, u.pathname.endsWith("/realtime/sydneytrains") ? Buffer.from(trainNetwork(net).tu) : Buffer.alloc(0), "application/x-google-protobuf");
   if (isFeed) return send(200, mode === "malformed" ? Buffer.from([0x0a, 0xff, 0xff, 0xff, 0x0f, 1, 2]) : Buffer.alloc(0), "application/x-google-protobuf");

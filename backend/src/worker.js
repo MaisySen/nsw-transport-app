@@ -1214,47 +1214,135 @@ function tripDate(raw, now = Date.now()) {
   return v >= today && v <= last ? v : null;
 }
 
-async function trip(env, fromId, toId, opts = {}) {
-  let { date, time } = sydneyParts();
-  let tomorrow = false;
-  if (opts.date) {
-    // A chosen day (trip screen time picker): that day at the given time, or from midnight.
-    date = opts.date;
-    time = opts.time || "0000";
-  } else if (opts.time) {
-    const toMin = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(2));
-    if (toMin(opts.time) < toMin(time) - 30) { date = sydneyParts(new Date(Date.now() + 86400000)).date; tomorrow = true; }
-    time = opts.time;
+// ---------- trip pages (the trip list's endless scroll) ----------
+// GET /api/trip?page=1 answers a page of up to TRIP_PAGE_N trips (as many as one Trip Planner call gives), and
+// after=<ms> or before=<ms> (with arr=<ms>, the earliest arrival the phone has) ask for the next page later or
+// earlier. One planner call per page. Each planner answer (the timetable part: the trips and their legs) is kept and
+// shared by every phone for TRIP_WIN_KEEP_S per pair, day, minute and options (tripWinKey); the live part is never
+// kept longer than the 15 s live rule: an answer older than that has the planner's live times taken off and the
+// feeds' current ones put back (tripLegUnlive, enrich), and the whole page answer goes through the usual 15 s edge
+// copy. Nothing is written to D1 or KV for a page.
+const TRIP_PAGE_N = 20;
+const TRIP_WIN_KEEP_S = 600;
+const TRIP_WIN_LIVE_MS = FEED_TTL_MS;
+// Pages reach 7 days back and 14 days ahead of now (the planner's own range for a chosen day).
+const TRIP_PAGE_BACK_MS = 7 * 86400000;
+const TRIP_PAGE_AHEAD_MS = 14 * 86400000;
+const tripWinMem = new Map(); // key -> { at, text }
+const TRIP_WIN_MEM_MAX = 80;
+function tripWinKey(fromId, toId, date, time, o) {
+  const u = new URL("https://cache.internal/trip-win");
+  const v = { f: fromId, t: toId, d: date, h: time, a: o.arriveBy ? "1" : "", n: String(o.count || 5), acc: o.accessible ? "1" : "", x: o.exclude ? JSON.stringify(o.exclude) : "", l: o.long ? "1" : "" };
+  for (const k of Object.keys(v)) if (v[k]) u.searchParams.set(k, v[k]);
+  return u.toString();
+}
+async function tripWinGet(key) {
+  const m = tripWinMem.get(key);
+  if (m && Date.now() - m.at <= TRIP_WIN_KEEP_S * 1000) { budget.tripWinHits = (budget.tripWinHits || 0) + 1; return { at: m.at, journeys: JSON.parse(m.text) }; }
+  if (m) tripWinMem.delete(key);
+  try {
+    const edge = typeof caches !== "undefined" && caches.default ? caches.default : null;
+    const hit = edge ? await edge.match(new Request(key)) : null;
+    if (!hit) return null;
+    const at = Number(hit.headers.get("x-stored-at")) || 0;
+    if (!at || Date.now() - at > TRIP_WIN_KEEP_S * 1000) return null;
+    const text = await hit.text();
+    tripWinRemember(key, at, text);
+    budget.tripWinHits = (budget.tripWinHits || 0) + 1;
+    return { at, journeys: JSON.parse(text) };
+  } catch (e) { return null; }
+}
+function tripWinRemember(key, at, text) {
+  if (text.length > 1024 * 1024) return;
+  tripWinMem.delete(key);
+  tripWinMem.set(key, { at, text });
+  while (tripWinMem.size > TRIP_WIN_MEM_MAX) tripWinMem.delete(tripWinMem.keys().next().value);
+}
+function tripWinPut(key, journeys) {
+  const at = Date.now(), text = JSON.stringify(journeys);
+  tripWinRemember(key, at, text);
+  budget.tripWinPuts = (budget.tripWinPuts || 0) + 1;
+  try {
+    const edge = typeof caches !== "undefined" && caches.default ? caches.default : null;
+    if (!edge) return;
+    const put = edge.put(new Request(key), new Response(text, { headers: { "content-type": "application/json", "cache-control": `public, max-age=${TRIP_WIN_KEEP_S}`, "x-stored-at": String(at) } })).catch(() => null);
+    reqKeep(put);
+  } catch (e) { /* the memory copy stands */ }
+}
+// A kept leg back to its timetable part (the feeds add the live part again).
+function tripLegUnlive(l) {
+  l.estimated = null; l.arrEstimated = null; l.realtime = false; l.delayMin = null; l.occupancy = null;
+  delete l.source; delete l.vehicle; delete l.stopsAway; delete l.ahead;
+}
+const floorMin = (t) => Math.floor(t / 60000) * 60000;
+// When a journey's first service leaves by the timetable (the page cursors are timetable times, so a late service
+// does not move a page's edge), and when it gets there.
+function tripPlannedDep(j) {
+  const l = (j.legs || []).find((x) => x.kind === "transit");
+  return ms((l && l.planned) || j.board || j.leave);
+}
+function tripPlannedArr(j) {
+  const tl = (j.legs || []).filter((x) => x.kind === "transit");
+  const l = tl[tl.length - 1];
+  return ms((l && l.arrPlanned) || j.arrive);
+}
+/** The page query of /api/trip, or null when the request is not a page (page, after, before, arr). */
+function tripPageQuery(p, now = Date.now()) {
+  if (p.get("page") !== "1") return null;
+  const num = (k) => { const v = p.get(k); return v && /^\d{13}$/.test(v) ? Number(v) : null; };
+  const lo = now - TRIP_PAGE_BACK_MS, hi = now + TRIP_PAGE_AHEAD_MS;
+  const inRange = (t) => (t != null && t >= lo && t <= hi ? t : null);
+  return { after: inRange(num("after")), before: inRange(num("before")), arr: inRange(num("arr")) };
+}
+// One page: later (after: trips leaving at or after it), earlier (before and arr: the trips that get there by the
+// earliest arrival the phone has, so the page ends right where the list starts, with no gap and no guess of how
+// often the service runs), or the first page (the chosen time, or now from the start of the 5 minutes so phones
+// opening the same pair in the same 5 minutes share one planner answer).
+async function tripPage(env, fromId, toId, q, base) {
+  const now = Date.now();
+  const at = (t, arriveBy) => { const s = sydneyParts(new Date(t)); return trip(env, fromId, toId, { ...base, date: s.date, time: s.time, arriveBy, count: TRIP_PAGE_N, win: true }); };
+  let r, dir;
+  if (q.after != null) {
+    dir = "later";
+    r = await at(floorMin(q.after), false);
+    r.journeys = r.journeys.filter((j) => tripPlannedDep(j) >= q.after);
+  } else if (q.before != null) {
+    dir = "earlier";
+    r = await at(floorMin(q.arr != null ? q.arr : q.before), true);
+    r.journeys = r.journeys.filter((j) => tripPlannedDep(j) < q.before);
+    // Nothing that leaves earlier among the trips that get there first (a faster trip leaving later): the trips that
+    // get there by the cursor itself leave before it, so ask once more for those.
+    if (!r.journeys.length && q.arr != null && q.arr > q.before) {
+      r = await at(floorMin(q.before), true);
+      r.journeys = r.journeys.filter((j) => tripPlannedDep(j) < q.before);
+    }
+  } else {
+    dir = "first";
+    const chosen = base.time || base.date;
+    if (chosen) r = await trip(env, fromId, toId, { ...base, count: TRIP_PAGE_N, win: true });
+    else {
+      r = await at(Math.floor(now / 300000) * 300000, false);
+      r.journeys = r.journeys.filter((j) => ms(j.board) >= now - 60000);
+    }
   }
-  const tpCall = () => tp(env, "trip", {
-    depArrMacro: opts.arriveBy ? "arr" : "dep", itdDate: date, itdTime: time,
-    type_origin: opts.fromType || (isCoordId(fromId) ? "coord" : "any"), name_origin: fromId,
-    type_destination: opts.toType || (isCoordId(toId) ? "coord" : "any"), name_destination: toId,
-    calcNumberOfTrips: String(opts.count || 5), TfNSWTR: "true",
-    ...(opts.via ? { type_via: opts.viaType || "any", name_via: opts.via } : {}),
-    // Step free trips only (Settings > Accessible trips): the Trip Planner's wheelchair option.
-    ...(opts.accessible ? { wheelchair: "on" } : {}),
-    // Plan B: leave out the means of transport that is disrupted (exclMOT_n, Trip Planner manual).
-    ...(opts.exclude || {}),
-  }, opts.long ? LONG_TRIP_TIMEOUT_MS : 12000);
-  let data;
-  // Our own planner (raptor.js, OWN_PLANNER): answered from our timetable, so no Transport for NSW call; the legs go
-  // through the same live times below. No answer (another day, a stop it does not know) asks the Trip Planner as before.
-  const own = typeof ownPlannerWanted === "function" && ownPlannerWanted(env, opts)
-    ? await ownTripLegs(env, fromId, toId, { date, time, arriveBy: !!opts.arriveBy, count: opts.count || 5 }).catch(() => null) : null;
-  if (own) data = { journeys: [] };
-  else try { data = await tpCall(); }
-  catch (e) {
-    // Outage fallback (ttplan.js): the Trip Planner refused, failed or timed out, so trips from our own timetable,
-    // labelled. Background checks (push alerts, morning check, rescue) pass timetable: false and keep the error.
-    if (opts.timetable === false || opts.accessible || typeof timetableTrip !== "function" || !ttUpstreamDown(e)) throw e;
-    const tt = await timetableTrip(env, fromId, toId, { date, time: opts.time || opts.date ? time : null, arriveBy: !!opts.arriveBy, count: opts.count || 5, accessible: !!opts.accessible, exclude: opts.exclude }).catch(() => null)
-      // Our own planner's timetable (raptor.js) where the board engine's has none: a trip to a service's last stop (the
-      // engine keeps no row for it), more than one change, a walk between nearby stops, or a point to start from.
-      || (typeof ownTimetableTrip === "function" ? await ownTimetableTrip(env, fromId, toId, { date, time, arriveBy: !!opts.arriveBy, count: opts.count || 5, exclude: opts.exclude }).catch(() => null) : null);
-    if (tt) return { ...tt, tomorrow };
-    throw Object.assign(e, { tripsUnavailable: true });
-  }
+  r.journeys.sort((a, b) => tripPlannedDep(a) - tripPlannedDep(b));
+  const deps = r.journeys.map(tripPlannedDep).filter(Number.isFinite);
+  const arrs = r.journeys.map(tripPlannedArr).filter(Number.isFinite);
+  r.page = {
+    dir, n: TRIP_PAGE_N,
+    // The next page later starts at this page's last departure (the same minute again, trips seen twice are the same
+    // trip ids); the next page earlier ends before this page's first departure and arrival.
+    next: deps.length ? Math.max(...deps) : null,
+    prev: deps.length ? Math.min(...deps) : null,
+    prevArr: arrs.length ? Math.min(...arrs) : null,
+    // No more trips that way: an earlier page that found nothing before the cursor, or a later one with nothing new.
+    end: !r.journeys.length,
+  };
+  return r;
+}
+
+// The planner's journeys as our legs (before any live times from the feeds are added).
+function tripLegsOf(data) {
   const journeys = [];
   for (const j of data.journeys || []) {
     const legs = (j.legs || []).map((lg) => {
@@ -1293,7 +1381,59 @@ async function trip(env, fromId, toId, opts = {}) {
     });
     if (legs.length) journeys.push(legs);
   }
-  if (own) journeys.push(...own);
+  return journeys;
+}
+
+async function trip(env, fromId, toId, opts = {}) {
+  let { date, time } = sydneyParts();
+  let tomorrow = false;
+  if (opts.date) {
+    // A chosen day (trip screen time picker): that day at the given time, or from midnight.
+    date = opts.date;
+    time = opts.time || "0000";
+  } else if (opts.time) {
+    const toMin = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(2));
+    if (toMin(opts.time) < toMin(time) - 30) { date = sydneyParts(new Date(Date.now() + 86400000)).date; tomorrow = true; }
+    time = opts.time;
+  }
+  const tpCall = () => tp(env, "trip", {
+    depArrMacro: opts.arriveBy ? "arr" : "dep", itdDate: date, itdTime: time,
+    type_origin: opts.fromType || (isCoordId(fromId) ? "coord" : "any"), name_origin: fromId,
+    type_destination: opts.toType || (isCoordId(toId) ? "coord" : "any"), name_destination: toId,
+    calcNumberOfTrips: String(opts.count || 5), TfNSWTR: "true",
+    ...(opts.via ? { type_via: opts.viaType || "any", name_via: opts.via } : {}),
+    // Step free trips only (Settings > Accessible trips): the Trip Planner's wheelchair option.
+    ...(opts.accessible ? { wheelchair: "on" } : {}),
+    // Plan B: leave out the means of transport that is disrupted (exclMOT_n, Trip Planner manual).
+    ...(opts.exclude || {}),
+  }, opts.long ? LONG_TRIP_TIMEOUT_MS : 12000);
+  let data;
+  // Our own planner (raptor.js, OWN_PLANNER): answered from our timetable, so no Transport for NSW call; the legs go
+  // through the same live times below. No answer (another day, a stop it does not know) asks the Trip Planner as before.
+  const own = typeof ownPlannerWanted === "function" && ownPlannerWanted(env, opts)
+    ? await ownTripLegs(env, fromId, toId, { date, time, arriveBy: !!opts.arriveBy, count: opts.count || 5 }).catch(() => null) : null;
+  // Trip pages (opts.win): the planner's answer for this pair, time and options is kept and shared (tripWinGet).
+  const win = opts.win && !own ? tripWinKey(fromId, toId, date, time, opts) : null;
+  const kept = win ? await tripWinGet(win) : null;
+  if (own || kept) data = { journeys: [] };
+  else try { data = await tpCall(); }
+  catch (e) {
+    // Outage fallback (ttplan.js): the Trip Planner refused, failed or timed out, so trips from our own timetable,
+    // labelled. Background checks (push alerts, morning check, rescue) pass timetable: false and keep the error.
+    if (opts.timetable === false || opts.accessible || typeof timetableTrip !== "function" || !ttUpstreamDown(e)) throw e;
+    const tt = await timetableTrip(env, fromId, toId, { date, time: opts.time || opts.date ? time : null, arriveBy: !!opts.arriveBy, count: opts.count || 5, accessible: !!opts.accessible, exclude: opts.exclude }).catch(() => null)
+      // Our own planner's timetable (raptor.js) where the board engine's has none: a trip to a service's last stop (the
+      // engine keeps no row for it), more than one change, a walk between nearby stops, or a point to start from.
+      || (typeof ownTimetableTrip === "function" ? await ownTimetableTrip(env, fromId, toId, { date, time, arriveBy: !!opts.arriveBy, count: opts.count || 5, exclude: opts.exclude }).catch(() => null) : null);
+    if (tt) return { ...tt, tomorrow };
+    throw Object.assign(e, { tripsUnavailable: true });
+  }
+  let journeys = kept ? kept.journeys : tripLegsOf(data);
+  if (win && !own && !kept && journeys.length) tripWinPut(win, journeys);
+  // A kept window older than the live rule (15 s) keeps its timetable part only: the planner's own live times and
+  // occupancy are taken off, and the feeds below put the current ones back.
+  if (kept && Date.now() - kept.at > TRIP_WIN_LIVE_MS) for (const legs of journeys) for (const l of legs) if (l.kind === "transit") tripLegUnlive(l);
+  if (own) journeys = journeys.concat(own);
   const transitLegs = journeys.flat().filter((l) => l.kind === "transit");
   // A train or metro's stop id for its destination, from the destination's own name (railDestId).
   if (transitLegs.some((l) => l.mode === "train" || l.mode === "metro")) {
@@ -7693,7 +7833,10 @@ async function handleRequest(request, env, exec) {
           // Lift aware: ask for a few more trips so one that avoids a lift outage can be found.
           const modes = tripModesParse(p.get("modes"));
           const day = tripDate(p.get("date"));
-          const r = await trip(env, p.get("from"), p.get("to"), { time: p.get("time") || null, date: day, arriveBy: p.get("arriveBy") === "1", count: liftAware ? Math.min(8, want + 3) : want, accessible: acc, long, exclude: tripModesExclude(modes) });
+          const tbase = { time: p.get("time") || null, date: day, arriveBy: p.get("arriveBy") === "1", count: liftAware ? Math.min(8, want + 3) : want, accessible: acc, long, exclude: tripModesExclude(modes) };
+          // A page of the trip list's endless scroll (tripPage): more trips per answer, cursors for the next pages.
+          const pq = tripPageQuery(p);
+          const r = pq ? await tripPage(env, p.get("from"), p.get("to"), pq, tbase) : await trip(env, p.get("from"), p.get("to"), tbase);
           // modes and date are echoed so the app knows this server honoured them (an older server does not).
           if (modes.length) { r.journeys = tripModesKeep(r.journeys, modes); r.modes = modes; }
           if (day) r.date = day;
@@ -7703,9 +7846,10 @@ async function handleRequest(request, env, exec) {
           pickFares(d, fareType(p));
           await addAccess(env, d, { accessible: acc }).catch(() => null);
           await addTraffic(env, d).catch(() => null);
-          if (liftAware) liftAwareRank(d, want);
+          if (liftAware) liftAwareRank(d, pq ? TRIP_PAGE_N : want);
           if (!(await serverOn(env, "occupancy"))) stripOccupancy(d);
-          await afterAnswer(env, d, { profile, device: p.get("device"), exec, log: p.get("refresh") !== "1" });
+          // A later or earlier page is the same search scrolled, so it is not logged again.
+          await afterAnswer(env, d, { profile, device: p.get("device"), exec, log: p.get("refresh") !== "1" && !(pq && (pq.after != null || pq.before != null)) });
           if (longKey && (d.journeys || []).length && d.source !== "timetable") {
             const put = caches.default.put(longKey, new Response(JSON.stringify(d), { headers: { "content-type": "application/json", "cache-control": `max-age=${LONG_TRIP_CACHE_S}` } })).catch(() => null);
             if (exec && exec.waitUntil) exec.waitUntil(put); else await put;
@@ -8297,7 +8441,7 @@ function boardKey(url) {
 // warmed by the minute tick; served only while at least 2 of its trips are still to leave.
 function tripCopyKey(url) {
   const p = url.searchParams;
-  for (const k of ["time", "date", "arriveBy", "acc", "modes", "long", "via"]) if (p.get(k)) return null;
+  for (const k of ["time", "date", "arriveBy", "acc", "modes", "long", "via", "page", "after", "before"]) if (p.get(k)) return null;
   const from = p.get("from") || "", to = p.get("to") || "";
   if (!/^[A-Za-z0-9_-]{3,20}$/.test(from) || !/^[A-Za-z0-9_-]{3,20}$/.test(to) || from === to) return null;
   return { k: "trip:" + from + ">" + to, stop: "trip" };
@@ -8440,6 +8584,8 @@ function badInput(p) {
   if (c != null && c !== "" && !(/^\d{1,2}$/.test(c) && Number(c) >= 1 && Number(c) <= 8)) return "count must be 1 to 8";
   const t = p.get("time");
   if (t != null && t !== "" && !/^([01]\d|2[0-3])[0-5]\d$/.test(t)) return "time must be HHMM";
+  // Trip pages (page=1): the cursors are times in ms. Other routes use after= for their own paging (rowids).
+  if (p.get("page") === "1") for (const k of ["after", "before", "arr"]) { const v = p.get(k); if (v != null && v !== "" && !/^\d{13}$/.test(v)) return `${k} must be a time in ms`; }
   const legs = p.get("legs");
   if (legs != null && legs.length > 4000) return "legs is too long";
   for (const k of ["lat", "lon"]) { const v = p.get(k); if (v != null && v !== "" && !/^-?\d{1,3}(\.\d{1,8})?$/.test(v)) return `${k} must be a number`; }
