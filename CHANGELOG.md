@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Car parks answer at once (server, 27 Oct, about 9:30 AM; no app update needed)
+* Before: More > Car parks (`/api/parking`) took 11.5 to 13.6 s on a cold open, because about 40 car parks are read four at a time under the open data rate limit.
+* Now the last answer with at least one live count is saved (one row per query: all, a station, or one car park) and a cold open gets it at once, labelled with when its counts were read (`dataAt`), while the fresh counts are read behind it and saved for the next open. Copies are used up to 30 minutes old; a car park reading over 30 minutes old is marked stale ("No live count") on the way out, the same rule as a live answer. An answer with no live count is never saved or kept at the edge.
+* Test: backend/test/park-swr.test.mjs.
+
 ### Home cold open: kept trips marked Updating, quick asks again, commute first (app, on main 27 Oct, ships with tonight's over the air update)
 * Why: at 8:35 AM the commute card's first trip request hit the app's 10 s trip deadline on a slow Trip Planner morning, and Home switched at once to "No live times" and "Live trips unavailable right now", then went live a few seconds later. One failed first request is not an outage: since transport-api 99887568 the server keeps the planner call going and saves its live answer.
 * Home cards (useHomeLive, `src/lib/coldOpenCore.ts`): a timeout, a 5xx or 429, or a slow answer keeps what the card shows and asks again after 1.5 s, then 4 s; only the third failure in a row shows the failure (no connection at all: the second). The quick asks are plain reads, so the server answers them from its saved live copy. They do not count towards the poller's back off, and nothing runs while the app is away or the screen is off view. A live answer on screen more than a minute old is not kept through a quick ask.

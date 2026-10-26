@@ -7244,7 +7244,7 @@ async function parkingAll(env) {
     if (i && fresh) await new Promise((r) => setTimeout(r, 900));
     v.push(...(await Promise.all(list.slice(i, i + 4).map((c) => carparkLive(env, c)))));
   }
-  if (v.some((p) => p.free != null)) { parkAllMem.v = v; parkAllMem.at = Date.now() - (v.some((p) => p.free == null) ? 420000 : 0); }
+  if (v.some((p) => p.free != null)) { parkAllMem.v = v; parkAllMem.readAt = Date.now(); parkAllMem.at = Date.now() - (v.some((p) => p.free == null) ? 420000 : 0); }
   return v;
 }
 function parkSentence(p) {
@@ -7570,7 +7570,9 @@ async function facRoutes(request, env, url) {
       return cache({ station: id, carparks: await withUsual(env, await parkingFor(env, id)), source: FAC_SRC.parking }, 60);
     }
     const items = await withUsual(env, p.get("live") === "0" ? (await carparkList(env)).map((c) => parkOut(c, null)) : await parkingAll(env));
-    return cache({ carparks: items, source: FAC_SRC.parking }, p.get("live") === "0" ? 86400 : 120);
+    // Counts this copy of the worker read over a minute ago say when (dataAt), so a copy of them is labelled honestly.
+    const readAt = p.get("live") === "0" ? 0 : Number(parkAllMem.readAt) || 0;
+    return cache({ ...(readAt && Date.now() - readAt > 60000 ? { dataAt: readAt } : {}), carparks: items, source: FAC_SRC.parking }, p.get("live") === "0" ? 86400 : 120);
   }
   if (path === "/api/topup") {
     const lim = Math.max(1, Math.min(40, Math.floor(Number(p.get("limit") || 12)) || 12));
@@ -8452,6 +8454,7 @@ async function boardDb(env) {
 /** The saved board key for a live board request (now, one stop, optional mode); null for anything else. */
 function boardKey(url) {
   if (url.pathname === "/api/trip") return tripCopyKey(url);
+  if (url.pathname === "/api/parking") return parkCopyKey(url);
   if (url.pathname !== "/api/departures") return null;
   const p = url.searchParams;
   if (p.get("time") || p.get("date")) return null;
@@ -8479,6 +8482,43 @@ function tripCopyOk(body) {
     return d.journeys.filter((j) => Date.parse(j.board || j.leave || "") >= cut).length >= 2;
   } catch (e) { return false; }
 }
+// Car park copies (27 Oct, the owner's "This is still slow": /api/parking took 11.5 s cold, about 40 car parks read four at a
+// time under the open data rate limit). The last answer with at least one live count is saved like a board (key
+// "park:all", "park:stop:ID" or "park:id:ID"), and an open with no edge copy gets it at once while the fresh one is read
+// behind (stale while revalidate). A saved copy is served up to PARK_SAVED_MAX_MS old (counts move over minutes, and
+// the parking screen polls every 2 minutes, so the next poll has the fresh one); each car park keeps its own reading
+// time (updated), and on the way out a reading over 30 minutes old is marked stale and "No live count" again, the
+// same rule as a live answer (parkOut). An answer with no live count at all is never saved or kept at the edge.
+const PARK_SAVED_MAX_MS = 30 * 60000;
+function parkCopyKey(url) {
+  const p = url.searchParams;
+  if (p.get("live") === "0") return null;
+  const id = p.get("id") || "", stop = p.get("stop") || "";
+  if (id) return /^[A-Za-z0-9_-]{1,12}$/.test(id) ? { k: "park:id:" + id, stop: "park" } : null;
+  if (stop) return /^[A-Za-z0-9_-]{3,12}$/.test(stop) ? { k: "park:stop:" + stop, stop: "park" } : null;
+  return { k: "park:all", stop: "park" };
+}
+function parkCopyOk(body) {
+  try {
+    const d = JSON.parse(body);
+    const list = d && (Array.isArray(d.carparks) ? d.carparks : d.carpark ? [d.carpark] : null);
+    if (!list || !list.length || !list.some((c) => c && c.free != null)) return false;
+    // The counts' own age (dataAt, when the server answered from its in memory copy) counts too.
+    return !(Number(d.dataAt) && Date.now() - Number(d.dataAt) > PARK_SAVED_MAX_MS);
+  } catch (e) { return false; }
+}
+// A saved car park answer on its way out: every reading over 30 minutes old is stale again (parkOut's rule).
+function parkRestale(d) {
+  const fix = (c) => {
+    if (!c || !c.updated) return c;
+    const at = Date.parse(c.updated);
+    if (!(at && Date.now() - at > 30 * 60000) || c.stale) return c;
+    return { ...c, stale: true, status: "unknown", label: PARK_LABEL.unknown };
+  };
+  if (Array.isArray(d.carparks)) d.carparks = d.carparks.map(fix);
+  if (d.carpark) d.carpark = fix(d.carpark);
+  return d;
+}
 const b64 = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
 const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 async function gzipText(t) { return b64(new Uint8Array(await new Response(new Blob([t]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer())); }
@@ -8487,9 +8527,10 @@ async function boardSaved(env, bk) {
   const d = await boardDb(env).catch(() => null);
   if (!d || !bk) return null;
   const r = await d.prepare("SELECT at, body FROM board_copies WHERE k = ?1").bind(bk.k).first().catch(() => null);
-  if (!r || !r.body || !(Date.now() - r.at <= SAVED_MAX_MS)) return null;
+  if (!r || !r.body || !(Date.now() - r.at <= (bk.stop === "park" ? PARK_SAVED_MAX_MS : SAVED_MAX_MS))) return null;
   const body = await gunzipText(r.body);
   if (bk.stop === "trip" && !tripCopyOk(body)) return null;
+  if (bk.stop === "park" && !parkCopyOk(body)) return null;
   return { at: Number(r.at), body };
 }
 async function boardSave(env, bk, body, opened) {
@@ -8505,6 +8546,8 @@ async function boardSave(env, bk, body, opened) {
     ON CONFLICT (k) DO UPDATE SET at = ?3, body = ?5, opened = MAX(COALESCE(opened, 0), ?4)`)
     .bind(bk.k, bk.stop, now, opened ? now : 0, await gzipText(body)).run().catch(() => null);
 }
+// A saved copy key that is a departures board ("STOP|mode"), not a trip ("trip:") or car park ("park:") copy.
+function isBoardCopyKey(k) { k = String(k || ""); return k.includes("|") && !k.startsWith("trip:") && !k.startsWith("park:"); }
 async function warmHubIds(env) {
   const lists = await Promise.all(["train", "metro", "lightrail", "ferry"].map((m) => askAsset(env, null, `/stations/${m}.json`)));
   const byName = new Map();
@@ -8520,7 +8563,7 @@ async function warmBoards(env, exec, use, sn) {
   const now = Date.now();
   const rows = (await d.prepare("SELECT k, stop, at, opened FROM board_copies WHERE at > ?1 OR opened > ?2").bind(now - 3600000, now - WARM_RECENT_MS).all().catch(() => ({ results: [] }))).results || [];
   const at = new Map(rows.map((r) => [r.k, Number(r.at) || 0]));
-  const recent = rows.filter((r) => Number(r.opened) > now - WARM_RECENT_MS && !String(r.k).startsWith("trip:")).map((r) => r.k);
+  const recent = rows.filter((r) => Number(r.opened) > now - WARM_RECENT_MS && isBoardCopyKey(r.k)).map((r) => r.k);
   const hubs = (await warmHubIds(env)).map((id) => id + "|");
   const due = [...new Set([...hubs, ...recent])].filter((k) => now - (at.get(k) || 0) >= WARM_EVERY_MS).sort((a, b) => (at.get(a) || 0) - (at.get(b) || 0)).slice(0, WARM_PER_TICK);
   const host = (env && env.API_HOST) || "api.transportsydney.app";
@@ -8831,13 +8874,15 @@ async function answerAndStore(request, env, exec, cache, key, opts = {}) {
   const body = await res.text();
   const headers = [...res.headers];
   // A timetable stand in (no-store) is never kept as a copy, so the first live answer replaces it.
-  if (res.status === 200 && res.headers.get("x-stand-in") !== "timetable") {
-    const url = new URL(request.url);
+  const url0 = new URL(request.url);
+  const emptyPark = url0.pathname === "/api/parking" && parkCopyKey(url0) && !parkCopyOk(body);
+  if (res.status === 200 && res.headers.get("x-stand-in") !== "timetable" && !emptyPark) {
+    const url = url0;
     const copy = new Response(body, { status: 200, headers });
     copy.headers.set("cache-control", `public, max-age=${LONG_CACHE_RE.test(url.pathname) ? LONG_CACHE_S : EDGE_KEEP_S}`);
     // A live board is also saved for first opens anywhere (boardSave); a phone's own open marks the stop as opened.
     const bk = boardKey(url);
-    if (bk && (bk.stop === "trip" ? tripCopyOk(body) : /"items":\[/.test(body))) {
+    if (bk && (bk.stop === "trip" ? tripCopyOk(body) : bk.stop === "park" ? parkCopyOk(body) : /"items":\[/.test(body))) {
       const save = boardSave(env, bk, body, !opts.warm).catch(() => null);
       if (exec && exec.waitUntil) exec.waitUntil(save); else await save;
     }
@@ -8863,6 +8908,7 @@ function fromSaved(saved) {
       d.journeys = d.journeys.filter((j) => Date.parse((j && (j.board || j.leave)) || "") >= cut);
       text = JSON.stringify(d);
     }
+    if (d && (Array.isArray(d.carparks) || d.carpark)) text = JSON.stringify(parkRestale(d));
     if (d && Array.isArray(d.items)) {
       const cut = Date.now() - 60000;
       d.items = d.items.filter((x) => { const t = Date.parse((x && (x.estimated || x.planned)) || ""); return !Number.isFinite(t) || t >= cut; });
