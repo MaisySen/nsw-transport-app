@@ -44,7 +44,9 @@ Code: `backend/src/engine.js` (appended to `worker.js` by `build.mjs`, same modu
    time is that minute plus the delay. Light rail and metro clock times in the feeds run 30 to 75 s after
    planned plus delay, which is why the delay comes first (26 Oct: on 319 services live in both, the delay agreed with
    the planner within 60 s on 298, the update's time on 237). Non revenue runs ("Empty Train", "Not In Service")
-   are left off.
+   are left off, except an Empty Train run the train feed gives a live time at the stop (since 27 Oct: some late
+   night runs with that headsign carry passengers). Sydney Trains trips the timetable lacks (a trip id published after
+   the load) are listed from the feed as added services.
 6. **Platform names and missing services.** Where the Trip Planner's platform names differ from the timetable's (bus
    stands such as "Stand X1", some light rail platforms), the engine uses the planner's, learnt from planner boards
    (`/learn`). A shard asks the worker for one planner board of a stop on its first read (once in 6 hours when rows
@@ -92,6 +94,50 @@ ENGINE_LOAD_KEY=... node tools/load_timetable.mjs <out>
 The GTFS zips come from `/v1/gtfs/schedule/<feed>` (one call each, about 26) and `stops_complete.txt` from the complete
 bundle. A stop with no rows for today falls back to the Trip Planner, so a missed refresh degrades to today's speed,
 it does not show wrong boards. The daily refresh is the GitHub workflow `.github/workflows/timetable.yml`.
+
+## Night trains and trackwork trips (27 Oct, about 2 AM, g14)
+
+* **The train misses were Empty Train runs that carry passengers.** Every train the engine missed in the night match
+  (12:37 to 12:54 AM: 2 at 12:37, 8 at 12:49, 4 at 12:54) was a late night run (T1 to Penrith, T4, CCN, BMT) that the
+  timetable has with the headsign "Empty Train", which the engine left off every board. The Trip Planner listed 13 of
+  the 14 such rows due at the matched stations, all with live times. Checked against the timetable the engine holds
+  (`/api/timetable`), not a guess: their trip ids are in it, so they were never "trips the timetable lacks".
+  * Now an Empty Train row stays on the board when the train feed gives that trip a live time at this stop (not
+    cancelled, not skipped); with no live time it stays off as before. Its destination is the update's last stop, not
+    "Empty Train". `ENGINE_EMPTY_LIVE` "off" (wrangler var, not set) leaves every Empty Train off again.
+  * Not checked in the day: the 133 Empty Train runs a day at Strathfield that the planner does not list. If the train
+    feed carries those with live times, they would now show. The match script counts engine rows the planner does not
+    list, so a day match shows it; the var turns it off without a deploy of code.
+* **Trips the timetable lacks, listed from the feed.** The 14th row was a new trip id for the same run (W795 under
+  `.165.8.` where the timetable has `.165.4.`): a trackwork change published after the load. For the Sydney Trains feed
+  (`ENGINE_ADD_UNKNOWN`), the core object looks up each trip id of a feed copy in the timetable's trips table (once per
+  id per timetable version, kept in memory) and lists the trips it does not have as added services: the stop sequence
+  is the order of the update's stops, the planned time is the update's time less its delay in whole minutes, the live
+  time that minute plus the delay. Only the stops due from 10 minutes ago to the horizon are kept, so the copy sent to
+  shards stays small. A copy where more than 40% of trips are unknown (another timetable version) lists none. A
+  timetable row of the same run (trip id up to the first dot) within 10 minutes with no live data is dropped for the
+  live one. Added rows now follow a board's mode filter too (a bus board had trains). `ENGINE_ADD_UNKNOWN` "off" stops
+  it. `/api/engine/status` shows per feed `unknown`, `unknownListed` and `addMs`.
+  No nightly load: the trips table already has every train trip of the loaded days.
+* **Temporary stands (Stand X1 to X4): no code change.** The timetable's stops carry no stand for them: their names and
+  their parents' are plain (for example 220314 "Old Canterbury Rd at Rosedale St", parent 220320 "Waratah Mills Light
+  Rail"), so nothing can be read from them, and a guess would be wrong data. The engine learns them from the Trip
+  Planner (`/learn`, the first read of a board with a service that has no stand, at most 2 stops a minute per shard):
+  at 1:01 AM three engine reads of Waratah Mills, Marion and Dunmore St each started a learn, and at 1:03 AM all three
+  showed Stand X1 to X4 like the planner. The night misses were stops read before their learn had run.
+* **CPU, local only** (`tools/engine-cpu.mjs` against `tools/fake-nsw.mjs` mode `trains`: a synthetic Sydney Trains feed
+  of 1,500 trips, 20 stops each, 966 KB; Node on the shared box, so an order of size):
+  * Core object, per feed copy: 25 to 39 ms median CPU before and after (fetch, index, decode). The decode and unknown
+    trip step was 10 to 12 ms with the feature off and on (the decode of every trip per copy was already there; the
+    lookups are only for trip ids not seen before in this timetable version).
+  * A board build: 3 to 6 ms median, p95 under 10 ms. A shard's tick: the same before and after (70 to 97 ms on this
+    dense synthetic network). The core's answer to a shard grew from 900 KB to 923 KB with 30 unknown trips and 964 KB
+    with 150.
+  * Under wrangler dev (`tools/local-dev.mjs`, the same synthetic feed, 30 unknown trips): `addMs` 7 to 15 ms a copy,
+    30 of 30 listed, shard ticks 2 to 4 ms; `tools/local-burst.mjs` 40 of 40 answers 200.
+  * Cost: no new Worker requests, no new object requests, no rows written. Rows read: one per new trip id per timetable
+    version (a few thousand a day against 25 billion included). Object duration: a few ms more per copy in an object
+    that is awake anyway. Inside the US$5 plan, no overage; a request stays far under the plan's CPU limit.
 
 ## Status on 27 Oct, 1 AM (night match, g14)
 

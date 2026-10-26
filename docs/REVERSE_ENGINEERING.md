@@ -14,7 +14,10 @@ transport-api deploy (see "Needs a deploy" below), and there is no app change.
 * `backend/tools/fake-nsw.mjs`: stop finder, departure monitor, trip, coord, add info and empty GTFS realtime feeds.
   `GET /__mode?set=NAME` switches it to `429`, `403quota`, `500`, `502html` (a 200 HTML page), `empty`, `nulljson`,
   `malformed` (cut off JSON), `weird` (null entries), `huge` (5,000 departures, 300 journeys), `slow` (20 s),
-  `slowfeed` (8 s realtime feeds); `GET /__mode` also lists the last 20 calls the worker made.
+  `slowfeed` (8 s realtime feeds), `trains` (a synthetic Sydney Trains trip update feed from `tools/fake-feed.mjs`,
+  sized by the same call: `&trips=1500&unknown=30&empty=0`); `GET /__mode` also lists the last 20 calls the worker made.
+* `TZ=Australia/Sydney node backend/tools/engine-cpu.mjs`: the board engine's CPU per train feed copy, per board and per
+  shard tick against the fake (mode `trains`), with the g14 unknown trip step off and on (docs/ENGINE.md).
 * `node backend/tools/local-burst.mjs http://127.0.0.1:8787 10`: 10 identical first opens of a board, a trip, nearby and
   alerts at once; exits 1 on anything but 200. Refuses any host but 127.0.0.1 or localhost.
 
