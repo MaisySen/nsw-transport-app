@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { askListsNow, askPlaces } from './askPlaces';
 import { NEW_API_BASE } from './server';
+import { cleanTag, condHeaders } from './etagCore';
 import { buildLocalIndex, type LocalIndex } from './localSearchCore';
 
 const BUS_KEY = 'search:bus:v1';
@@ -25,37 +26,45 @@ function rebuild() {
   subs.forEach((f) => f(idx));
 }
 
-async function keptBus(): Promise<{ at: number; rows: any[] } | null> {
+async function keptBus(): Promise<{ at: number; rows: any[]; etag?: string } | null> {
   try {
     const meta = JSON.parse((await AsyncStorage.getItem(BUS_KEY)) || 'null');
     if (!meta || !Number.isFinite(meta.parts) || meta.parts < 1) return null;
     const got = await AsyncStorage.multiGet(Array.from({ length: meta.parts }, (_, i) => `${BUS_KEY}:${i}`));
     const rows: any[] = [];
     for (const [, v] of got) { const part = JSON.parse(v || 'null'); if (!Array.isArray(part)) return null; rows.push(...part); }
-    return { at: meta.at, rows };
+    return { at: meta.at, rows, etag: typeof meta.etag === 'string' ? meta.etag : undefined };
   } catch { return null; }
 }
 
-async function fetchBus(): Promise<any[] | null> {
+async function fetchBus(tag?: string): Promise<{ rows: any[]; etag?: string } | 'same' | null> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 30000);
   try {
-    const r = await fetch(`${NEW_API_BASE}/stations/bus-stops.json`, { signal: ctl.signal });
+    // The kept list's version tag rides along (etagCore.ts): 304 means the phone's list is still the server's.
+    const r = await fetch(`${NEW_API_BASE}/stations/bus-stops.json`, { signal: ctl.signal, headers: condHeaders(tag) });
+    if (r.status === 304 && tag) return 'same';
     const body = r.ok ? await r.json() : null;
-    return Array.isArray(body) && body.length ? body : null;
+    return Array.isArray(body) && body.length ? { rows: body, etag: cleanTag(r.headers?.get?.('etag')) || undefined } : null;
   } catch { return null; } finally { clearTimeout(t); }
 }
 
 async function loadBus() {
   const kept = await keptBus();
   if (kept) { busRows = kept.rows; rebuild(); if (Date.now() - kept.at < KEEP_MS) return; }
-  const rows = await fetchBus();
-  if (!rows) return;
+  const got = await fetchBus(kept?.etag);
+  if (!got) return;
+  if (got === 'same') {
+    // Only the date moves: the parts on the phone are the server's list.
+    AsyncStorage.getItem(BUS_KEY).then((raw) => { const meta = JSON.parse(raw || 'null'); if (meta) return AsyncStorage.setItem(BUS_KEY, JSON.stringify({ ...meta, at: Date.now() })); }).catch(() => {});
+    return;
+  }
+  const rows = got.rows;
   busRows = rows;
   rebuild();
   const parts: [string, string][] = [];
   for (let i = 0; i * PART_ROWS < rows.length; i++) parts.push([`${BUS_KEY}:${i}`, JSON.stringify(rows.slice(i * PART_ROWS, (i + 1) * PART_ROWS))]);
-  AsyncStorage.multiSet(parts).then(() => AsyncStorage.setItem(BUS_KEY, JSON.stringify({ at: Date.now(), parts: parts.length }))).catch(() => {});
+  AsyncStorage.multiSet(parts).then(() => AsyncStorage.setItem(BUS_KEY, JSON.stringify({ at: Date.now(), parts: parts.length, ...(got.etag ? { etag: got.etag } : {}) }))).catch(() => {});
 }
 
 /** Starts reading the lists (once); safe to call on every search screen open. */

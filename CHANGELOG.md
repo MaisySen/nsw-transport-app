@@ -4,12 +4,20 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Speed pass part 2: shared edge copies, live refresh without planning, version tags (app, on main 27 Oct, ships with tonight's over the air update)
+* Device and profile ids move from the departures and trip addresses into x-device and x-profile headers, so every phone asks the same address and an edge copy serves them all. Only when the server says it reads them there (x-serves id-headers, or app config copy.serves); otherwise the addresses stay as they were.
+* Trip and commute refreshes re-time the trips already on screen through /api/trip/live?legs= when the server says it serves trip-live: no Trip Planner call. A leg the feed has no news for shows its timetable time; a cancelled or skipped leg, a broken change, a gone first trip or a plan over 10 minutes old is planned again. Otherwise the trip call is as before.
+* Station lists, bus stop and place lists and timetable packs keep the server's version tag and send it back (If-None-Match); a 304 keeps the phone's copy, nothing downloaded.
+* Trips via a stop: neither part forces a fresh Trip Planner call any more, so the server's saved copy can answer (a copy over 15 minutes old shows timetable times, never live). For a trip from now the second part is asked at the same time as the first, and used only when it has a connection for every first part.
+* Home reads the top card's trip screen a moment after it is on screen with its lists, once per time the app comes to the front, within the press in limits. Nothing runs in the background.
+
 ### Every screen answers from a copy at once, and the copies people use are kept warm (server, 27 Oct, about 9:45 AM; no app update needed)
 * Service detail (stop list, vehicle, map): a train's stop list waited on the Trip Planner, 18 s cold on production at 9:22 AM. Now a service not ready in 0.8 s is answered from the realtime feed alone (its stops with live times and the vehicle, marked partial, never stored) while the full list finishes behind it for the next poll (SERVICE_QUICK, on).
 * Boards, trips and service: a plain open with a kept copy under a minute old gets it at once, labelled with its age, while the fresh one is fetched; polls still wait up to 0.7 s for fresh times, so live times on screen stay as fresh as before (15 s).
 * Pre-warm: the minute tick keeps the trip pairs, boards and car parks people actually used in the last 7 days fresh, only in the hours they use them (from 30 minutes before each usual hour), so the first open of the day gets a copy at most 4 minutes old and the fresh one a moment later. At most 3 fetches a minute and 1,200 Transport for NSW calls a day; about 1,800 storage rows a day at the most; nothing hard coded (PREWARM, on).
 * Tests: backend/test/prewarm.test.mjs, backend/test/service-quick.test.mjs, reqlog.test.mjs updated.
 * Measured from a US test machine (adds about 0.2 to 0.4 s of distance per request against Sydney), before (9:09 AM) and after (9:40 AM), first ask then repeat: commute trip 0.45/0.10 s to 0.44/0.23 s (saved copy, pre-warmed), Strathfield board 0.69/0.40 to 0.40/0.24 s, a bus stand board cold 3.09 s (root, 9:05 AM) to 0.23/0.07 s, car parks 11.7/13.6 s to 0.53/0.63 s, a service detail cold 17.9 s to 2.1 s (another trip; its feed list was too short for the quick answer). commutes, saved and watches (0.2 to 1.4 s from the US) read the database in Oceania once each and are not changed.
+
 ### Speed pass: every screen paints at once (app, on main 27 Oct, ships with tonight's over the air update)
 * Why: "It's bad everywhere" (9:11 AM); the service screen sat on "Loading live times" and "Finding the vehicle".
 * Service detail opens on what the tapped row showed: line, destination, live delay, your stop and its time (from a trip, also where you get off), with "Updated just now, refreshing" and "Loading every stop" until the server answers. The row's /api/service read starts on press in (each service once per 20 s, 8 a minute, held in memory only), and a big board's next stops reads are held for it too.

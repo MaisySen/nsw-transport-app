@@ -122,17 +122,23 @@ export const fallbackHeld = (now: number = Date.now()) => base === NEW_API_BASE 
  * GET `path` from the server in use, with the same fallback as api.ts reads. For the few screens that fetch on their
  * own (trip lists, Ask). Throws the first server's error when both fail.
  */
-export async function getJson<T = any>(path: string, timeoutMs = 15000, signal?: AbortSignal): Promise<T> {
+/** getJson's answer when the phone sent a version tag (If-None-Match) and the server said its copy is the same (304). */
+export const NOT_MODIFIED: any = Object.freeze({ notModified: true });
+
+export async function getJson<T = any>(path: string, timeoutMs = 15000, signal?: AbortSignal, cond?: { tag?: string | null; onTag?: (etag: string | null) => void }): Promise<T> {
   const ask = async (b: string): Promise<T> => {
     const ctl = new AbortController();
     const stop = () => ctl.abort();
     signal?.addEventListener('abort', stop);
     const t = setTimeout(stop, timeoutMs);
     try {
-      const r = await fetch(b + path, { signal: ctl.signal });
+      // Static data (etag.ts): the kept copy's version tag rides along, and 304 means keep using it.
+      const r = await fetch(b + path, cond?.tag ? { signal: ctl.signal, headers: { 'if-none-match': cond.tag } } : { signal: ctl.signal });
+      if (r.status === 304 && cond?.tag) { words.reach(); return NOT_MODIFIED as T; }
       const body = await r.json().catch(() => ({}));
       words.reach();
       if (!r.ok) throw words.http(r.status, body);
+      try { cond?.onTag?.(r.headers?.get?.('etag') ?? null); } catch { /* no headers */ }
       return body as T;
     } finally { clearTimeout(t); signal?.removeEventListener('abort', stop); }
   };

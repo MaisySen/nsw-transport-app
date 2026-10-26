@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState, PanResponder, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { CARD_SWIPE, SwipeRow, type SwipeAct } from '@/components/Swipe';
 import { haptic } from '@/lib/haptic';
 import { gripStep, type GripEvent, type GripState } from '@/lib/gesture';
 import { dragOrder, sameEnds, splitNext, toFront } from '@/lib/homeCore';
 import { clearAllWords } from '@/lib/planCore';
-import { router, Stack } from 'expo-router';
+import { router, Stack, useFocusEffect } from 'expo-router';
 import { GetMeHome } from '@/components/GetMeHome';
 import { api } from '@/lib/api';
 import { useCountdownNow, useLive } from '@/lib/hooks';
@@ -17,7 +17,10 @@ import { shortName } from '@/lib/format';
 import type { Place } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
 import { watchLine } from '@/components/Cards';
-import { ActionRow, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTag, onTripDeleted, pullHome, StopBoard, TripBoard, TripItem, UNDO_MS, useNearby } from '@/components/Home';
+import { ActionRow, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTag, onTripDeleted, pullHome, StopBoard, TripBoard, TripItem, UNDO_MS, useNearby, tripCacheId, tripPkey } from '@/components/Home';
+import { homeForeground, prefetchTripScreen } from '@/lib/prefetch';
+import { HOME_IDLE_MS, mayReadAhead, nextTripPlan } from '@/lib/homePrefetchCore';
+import { readWalkPref } from '@/lib/walkPrefCore';
 import { menuFrom, type MenuSpec } from '@/lib/menuCore';
 import { AnchoredMenu, type MenuItem, type Rect } from '@/components/AnchoredMenu';
 import { LineBadge } from '@/components/Transit';
@@ -166,6 +169,25 @@ export default function Home() {
   // Calendar leave by starts where your usual trip starts: the commute card's start, else your first trip's.
   const calFrom = pickOrigin(commute?.from, sorted[0]?.from, places);
   const nextDel = next && (next.kind === 'mine' || next.kind === 'saved') ? delAct(next, c.red) : undefined;
+
+  // Read ahead (homePrefetchCore.ts): a moment after Home is on screen with its lists, the top card's trip screen is
+  // read and kept, once per foreground, within the press in limits; never with the app in the background.
+  const [fg, setFg] = useState(0);
+  useEffect(() => { const sub = AppState.addEventListener('change', (a) => { if (a === 'active') { homeForeground(); setFg((n) => n + 1); } }); return () => sub.remove(); }, []);
+  const aheadPlan = nextTripPlan(next, next ? ((st as any).tripModes || {})[`${next.from.id}>${next.to.id}`] : null);
+  const aheadKey = aheadPlan ? cacheKey('trip', tripCacheId(tripPkey(aheadPlan), false)) : '';
+  useFocusEffect(useCallback(() => {
+    if (!aheadPlan || !mayReadAhead({ focused: true, appState: AppState.currentState, hasLists: !!d })) return;
+    let idle: any = null;
+    const g: any = globalThis as any;
+    const t = setTimeout(() => {
+      const go = () => prefetchTripScreen(aheadPlan, aheadKey, readWalkPref(store.snapshot().walkPref), AppState.currentState);
+      // Feature detected: an idle callback where the runtime has one, else at once (the timer already waited).
+      idle = typeof g.requestIdleCallback === 'function' ? g.requestIdleCallback(go, { timeout: 2000 }) : (go(), null);
+    }, HOME_IDLE_MS);
+    return () => { clearTimeout(t); if (idle != null && typeof g.cancelIdleCallback === 'function') g.cancelIdleCallback(idle); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aheadKey, !!d, fg]));
 
   return (
     <>

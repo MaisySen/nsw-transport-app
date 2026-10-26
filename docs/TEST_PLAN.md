@@ -547,6 +547,10 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 * On a phone after tonight's update: open a stop, tap a train you have not opened before; the line, destination, delay and your stop show at once with "Loading every stop", then the full list. Open Nearby twice in the same spot; the second shows its stops at once. More > Car parks opens on the last list with its age.
 * Results 27 Oct: app 729 tests, 726 pass, 3 skipped (OFFLINE=1), battery 17 of 17, tsc clean.
 
+## Speed pass part 2 (27 Oct)
+
+* `TZ=Australia/Sydney OFFLINE=1 node --test test/speed27b.test.mjs` in `app/`: x-serves words per server and rollback, ids placed per server, the trip live legs on the wire and in requests of 12, live times laid over a held plan (timetable when the feed has no news), when it plans again, which answers are held, version tags (caps, 304 hands back the kept list), via trips with no forced refresh and the early second part, Home read ahead (plain trips, once per foreground, on screen and in front only).
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).

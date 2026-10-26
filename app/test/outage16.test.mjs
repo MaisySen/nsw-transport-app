@@ -95,6 +95,6 @@ test('the old server only when the new one cannot be reached; a refusal is not "
   assert.ok(N.READ_MS_WITH_COPY <= 8000 && N.READ_MS_EMPTY <= 15000);
   const a = read('src/lib/api.ts');
   assert.match(a, /if \(alt && legacyWorthy\(e\)\) \{/);
-  assert.match(a, /undefined, TRIP_MS\);/);
+  assert.match(a, /(undefined|await withIds\(\)), TRIP_MS\);/);
   assert.doesNotMatch(a, /return tripLong\(base, opts\.refresh\);\n    \}\n  \},/, 'no 45 s second ask after a failed trip search');
 });

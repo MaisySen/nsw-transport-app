@@ -86,6 +86,11 @@ Example (Central to Chatswood by metro): `/api/plan?legs=[{"f":"200060","fn":"Ce
 | `/api/push/expo/unregister` | POST | `{device, token}` | `ok` |
 | `/api/push/test` | POST or GET | `device` | Sends a test alert |
 
+### What the app expects from the server (speed pass part 2, 27 Oct)
+* `x-serves` response header on /api answers: comma list. `id-headers`: the server reads `x-device` and `x-profile` on `/api/departures` and `/api/trip` (and lists `x-device` in CORS allow headers). `trip-live`: the endpoint below exists.
+* `GET /api/trip/live?legs=L1,L2` (at most 12), each `tripId@fromStopId@toStopId@mode@line`, each part URI encoded. Answer `{ kind: "triplive", now, dataAt, legs: [{ tripId, stopId, toStopId, realtime, estimated, arrEstimated, delayMin, cancelled, skipped, platform, vehicle, stopsAway }] }` in the same order. `realtime: false` when the feed has no news for the leg. No Trip Planner call.
+* ETag on `/api/pack`, `/api/stations` and `/stations/*.json`; 304 to a matching `If-None-Match`.
+
 ## Live trips (shared)
 
 A shared live trip is a link someone else can open to follow a trip. No account. Rows are deleted when the owner ends the trip or stops sharing, otherwise 30 minutes after the live arrival, and never kept longer than 6 hours.

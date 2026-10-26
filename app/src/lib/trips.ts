@@ -1,7 +1,7 @@
 import { api } from './api';
 import { bestTime, ms, shortName } from './format';
 import type { Fare, Journey, Leg, Place, TripResp } from './types';
-import { getJson } from './server';
+import { getJsonTagged } from './etag';
 import { dateNeeded, ymd } from './tripModesCore';
 
 /** One leg of a saved trip: mode, change time before it (legs after the first), all services, walk minutes. */
@@ -81,14 +81,30 @@ export async function planTrip(t: PlanTrip, opts: { refresh?: boolean; count?: n
   // Pages are for plain A to B trips; a via trip pages the old way (batches from a time).
   opts = { ...opts, page: false, after: undefined, before: undefined, arr: undefined, days: false, day: undefined };
   const conn = Math.max(0, t.conn ?? 5) * 60000;
-  const d1 = await api.trip(t.from, t.via, { ...opts, arriveBy: false, refresh: true });
+  // Speed pass part 2 (27 Oct): neither part forces a fresh planner call any more, so the server's saved copy can answer
+  // (labelled with its age, refreshed behind; a copy too old to be live shows timetable times, viaFresh). For a trip from
+  // now the second part is asked at the same time as the first, from the earliest time the first could arrive
+  // (viaEarly); it is used only when it covers every first part, else it is asked again from the real arrival as before.
+  const key = tripKey(t);
+  const early = !opts.time && !opts.date && !opts.arriveBy ? viaEarly(t.via, t.to, Date.now() + conn, (viaArr.get(key) || 0) + conn) : null;
+  const d1 = viaFresh(await api.trip(t.from, t.via, { ...opts, arriveBy: false, refresh: false }), Date.now());
   const j1 = (d1.journeys || []).filter((j) => isDirect(j));
   if (!j1.length) return { ...d1, to: { id: t.to.id, name: t.to.name }, journeys: [] };
   const firstArr = Math.min(...j1.map(arrOf));
-  // The second part's time can be over 30 min ago (a chosen time in the past): it then needs today's date too.
-  const t2 = hhmmSydney(firstArr + conn);
-  const day2 = dateNeeded(ymd(firstArr + conn), Number(t2.slice(0, 2)), Number(t2.slice(2)), Date.now());
-  const d2 = await api.trip(t.via, t.to, { refresh: true, count: 8, time: t2, ...(day2 ? { date: day2 } : {}) });
+  viaArr.set(key, firstArr);
+  while (viaArr.size > 16) viaArr.delete(viaArr.keys().next().value as string);
+  let d2: TripResp | null = null;
+  if (early && early.at <= firstArr + conn) {
+    const e = await early.p.catch(() => null);
+    if (e && viaCovers(j1, (e.journeys || []).filter((j) => isDirect(j)), conn)) d2 = e;
+  }
+  if (!d2) {
+    // The second part's time can be over 30 min ago (a chosen time in the past): it then needs today's date too.
+    const t2 = hhmmSydney(firstArr + conn);
+    const day2 = dateNeeded(ymd(firstArr + conn), Number(t2.slice(0, 2)), Number(t2.slice(2)), Date.now());
+    d2 = await api.trip(t.via, t.to, { count: 8, time: t2, ...(day2 ? { date: day2 } : {}) });
+  }
+  d2 = viaFresh(d2, Date.now());
   const j2 = (d2.journeys || []).filter((j) => isDirect(j)).map((j) => ({ j, ...leaveOf(j) })).sort((a, b) => a.leave - b.leave);
   const journeys: Journey[] = [];
   for (const a of j1) {
@@ -102,6 +118,35 @@ export async function planTrip(t: PlanTrip, opts: { refresh?: boolean; count?: n
     journeys.push({ ...a, legs: [...a.legs, ...legs2], changes: ((a as any).changes || 0) + ((b.j as any).changes || 0) + 1, arrive: b.j.arrive, fare: addFares(a.fare, b.j.fare) } as Journey);
   }
   return { ...d1, to: d2.to || { id: t.to.id, name: t.to.name }, journeys };
+}
+
+// The earliest first part arrival seen per via trip this session: the next refresh asks the second part from there.
+const viaArr = new Map<string, number>();
+
+/** The second part of a via trip asked early: from `at`, the later of now plus the change time and the last arrival
+ * seen plus the change time (never before the first part could arrive). */
+function viaEarly(via: Place, to: Place, nowConn: number, lastConn: number): { at: number; p: Promise<TripResp> } {
+  const at = Math.max(nowConn, lastConn);
+  const t2 = hhmmSydney(at);
+  const day2 = dateNeeded(ymd(at), Number(t2.slice(0, 2)), Number(t2.slice(2)), Date.now());
+  const p = api.trip(via, to, { count: 8, time: t2, ...(day2 ? { date: day2 } : {}) });
+  p.catch(() => {});
+  return { at, p };
+}
+
+/** True when every first part has a second part leaving at least the change time after it arrives. */
+export function viaCovers(j1: Journey[], j2: Journey[], conn: number): boolean {
+  const leaves = j2.map((j) => leaveOf(j).leave);
+  return j1.every((a) => leaves.some((l) => l >= arrOf(a) + conn));
+}
+
+/** Server copies older than this are shown as timetable times, never as live (api.dataTime trusts 15 min at most). */
+export const VIA_LIVE_MAX_MS = 15 * 60000;
+/** A part answered from a server copy too old to be live: its legs keep their timetable times only. */
+export function viaFresh(r: TripResp, now: number): TripResp {
+  const at = Number((r as any)?.dataAt);
+  if (!Number.isFinite(at) || now - at <= VIA_LIVE_MAX_MS) return r;
+  return { ...r, journeys: (r.journeys || []).map((j) => ({ ...j, live: false, legs: j.legs.map((l) => ({ ...l, realtime: false, estimated: undefined, arrEstimated: undefined, delayMin: null, vehicle: undefined })) })) };
 }
 
 /** Two separately planned parts of a via trip: their fares added up (a little high when a transfer discount would apply). */
@@ -119,7 +164,8 @@ function get<T>(path: string): Promise<T> {
   let p = mem.get(path);
   if (!p) {
     // The station lists come from the server in use, or the first server when the new one does not answer (server.ts).
-    p = getJson(path, 25000).catch(() => { throw new Error('Could not load the list. Check your connection.'); });
+    // Kept on the phone with the server's version tag (etag.ts): a later start asks with it and a 304 reuses the copy.
+    p = getJsonTagged(path, 25000).catch(() => { throw new Error('Could not load the list. Check your connection.'); });
     p.catch(() => mem.delete(path));
     mem.set(path, p);
   }

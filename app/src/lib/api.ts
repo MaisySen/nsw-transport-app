@@ -17,6 +17,9 @@ import { createKeep, isLongTrip, longGone, LONG_TRIP_KEEP_MS, LONG_TRIP_TIMEOUT_
 import { httpError, isNetErr as netErr, legacyWorthy, noAnswerError, noteReach, onFailWhy, READ_MS_EMPTY, READ_MS_WITH_COPY, TRIP_MS } from './netErrCore';
 import { setOfflineWhy } from './offlineCore';
 import { slowMakesLong } from './coldOpenCore';
+import { loadServes, noteServes, serves } from './serves';
+import { ID_HEADERS, placeIds, SERVES_HEADER, TRIP_LIVE } from './servesCore';
+import { keepAsPlan, liveRequests, overlayLive, planFresh, type LiveResp } from './tripLiveCore';
 
 // Kept times say why they are on screen: the phone offline, or the live data down (netErrCore.ts).
 onFailWhy(setOfflineWhy);
@@ -29,13 +32,27 @@ function qs(o: Record<string, any>) {
     .join('&');
 }
 
-async function once<T>(path: string, init: RequestInit | undefined, timeoutMs: number, base: string = apiBase()): Promise<T> {
+/** A request's init, plus this phone's device and profile ids: placed per server (servesCore.placeIds). */
+type ApiInit = RequestInit & { ids?: { device: string; profile?: string } };
+
+/** Device and profile for a read: headers when the server in use reads them there (x-serves id-headers), else in
+ * the address as before. The choice is made per server address in once(), so a fallback server gets the old form. */
+async function withIds(profile = true): Promise<ApiInit> {
+  const [device] = await Promise.all([getDevice(), loadServes()]);
+  return { ids: { device, profile: profile ? PROFILE : undefined } };
+}
+
+async function once<T>(path: string, init: ApiInit | undefined, timeoutMs: number, base: string = apiBase()): Promise<T> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const headers: Record<string, string> = init?.body ? { 'content-type': 'application/json' } : {};
-    const r = await fetch(base + path, { ...init, signal: ctl.signal, headers: { ...headers, ...((init?.headers as any) || {}) } });
+    const { ids, ...rest } = init || {};
+    const placed = placeIds(path, ids, !!ids && serves(ID_HEADERS, base));
+    const headers: Record<string, string> = rest.body ? { 'content-type': 'application/json' } : {};
+    const r = await fetch(base + placed.path, { ...rest, signal: ctl.signal, headers: { ...headers, ...placed.headers, ...((rest.headers as any) || {}) } });
     noteReach();
+    // What this server says it can do (servesCore.ts): read from every /api answer.
+    try { noteServes(base, path, r.status, r.headers?.get?.(SERVES_HEADER)); } catch { /* no headers on this answer */ }
     const body = await r.json().catch(() => ({}));
     // The server's own words, never a bare status (netErrCore.ts); a 5xx or 429 is marked server (live data's fault).
     if (!r.ok) throw httpError(r.status, body);
@@ -65,14 +82,14 @@ function isNetErr(e: any) {
 // Any write empties the cache, so a read after a save never shows the old list.
 const reads = createReadCache(4000);
 
-function req<T>(path: string, init?: RequestInit, timeoutMs = READ_MS_EMPTY): Promise<T> {
+function req<T>(path: string, init?: ApiInit, timeoutMs = READ_MS_EMPTY): Promise<T> {
   const read = !init?.method || init.method === 'GET';
   if (!read) { reads.clear(); return send<T>(path, init, timeoutMs, false).finally(() => reads.clear()); }
   const key = `${apiBase()}${path}|${init?.headers ? JSON.stringify(init.headers) : ''}`;
   return reads.get<T>(key, () => send<T>(path, init, timeoutMs, true), { fresh: /[?&]refresh=1(&|$)/.test(path) });
 }
 
-async function send<T>(path: string, init: RequestInit | undefined, timeoutMs: number, read: boolean): Promise<T> {
+async function send<T>(path: string, init: ApiInit | undefined, timeoutMs: number, read: boolean): Promise<T> {
   // Reads go to the first server for a minute after the new one failed and the first one answered (server.ts).
   const first = read ? readBase() : apiBase();
   const t0 = Date.now();
@@ -119,7 +136,8 @@ export const api = {
   nearby: (lat: number, lon: number) => req<{ stops: (SearchItem & { distanceM?: number; dist?: number })[] }>(`/api/nearby?${qs({ lat: lat.toFixed(5), lon: lon.toFixed(5) })}`),
   departures: async (stop: string, refresh = false, mode?: string) => {
     // A refresh has the board on screen already, so it waits less (netErrCore.ts read deadlines).
-    const r = await req<DeparturesResp>(`/api/departures?${qs({ stop, mode: mode || '', device: await getDevice(), profile: PROFILE, refresh: refresh ? 1 : '' })}`, undefined, refresh ? READ_MS_WITH_COPY : READ_MS_EMPTY);
+    // device and profile ride as headers when the server reads them there (shared edge cache keys), else as before.
+    const r = await req<DeparturesResp>(`/api/departures?${qs({ stop, mode: mode || '', refresh: refresh ? 1 : '' })}`, await withIds(), refresh ? READ_MS_WITH_COPY : READ_MS_EMPTY);
     // Every board this phone reads (stop screens, Home cards) feeds Recently departed (recentCore.ts). A board for one
     // mode is kept apart, so trains missing from a bus board never read as departed.
     noteBoard(boardKey(stop, mode), r);
@@ -139,11 +157,23 @@ export const api = {
     const pair = `${from.id}>${to.id}`;
     if ((opts.modes && opts.modes.length) || opts.date) return tripPicked(base, pair, opts.modes || [], opts.date || '');
     if (isLongTrip(from.id, to.id) || longPairs.has(pair)) return tripLong(base, opts.refresh);
+    // A refresh of a plain trip from now re-times the trips the phone holds (tripLiveCore.ts) when the server serves
+    // trip-live: no planner call. Anything it cannot re-time is planned again below, as before.
+    const plainNow = !opts.time && !opts.arriveBy && !opts.days && !(opts.page && (opts.after != null || opts.before != null));
+    const planKey = `${apiBase()}/api/trip?${qs(base)}`;
+    if (opts.refresh && plainNow && serves(TRIP_LIVE, apiBase())) {
+      const kept = plans.get(planKey);
+      if (kept && planFresh(kept.at, Date.now())) {
+        const re = await retime(kept.r).catch(() => null);
+        if (re) { slowPairs.delete(pair); return re; }
+      }
+    }
     try {
       // One deadline for a trip search (docs/DIAGNOSIS_LAG.md item 3). The server answers a refused Trip Planner with
       // timetable trips or a plain error, so an error answer is never read as "too slow" and never asked again here.
-      const r = await req<TripResp>(`/api/trip?${qs({ ...base, device: await getDevice(), profile: PROFILE, refresh: opts.refresh ? 1 : '' })}`, undefined, TRIP_MS);
+      const r = await req<TripResp>(`/api/trip?${qs({ ...base, refresh: opts.refresh ? 1 : '' })}`, await withIds(), TRIP_MS);
       slowPairs.delete(pair);
+      if (plainNow) keepPlan(planKey, r);
       return r;
     } catch (e: any) {
       // No answer in time twice while the server is reachable: the next search of this pair goes the long way (no
@@ -209,6 +239,27 @@ export const api = {
 const longPairs = new Set<string>();
 // Timed out plain trips per pair this session, reset by an answer (coldOpenCore.slowMakesLong).
 const slowPairs = new Map<string, number>();
+// Plans the phone can re-time (tripLiveCore.ts): the last full answer per trip query, at most 8, for PLAN_MAX_MS.
+const plans = new Map<string, { at: number; r: TripResp }>();
+function keepPlan(key: string, r: TripResp) {
+  if (!keepAsPlan(r)) { plans.delete(key); return; }
+  // A saved server copy counts from when its times were read (stampSeen), not from now.
+  const seen = Number((r as any).seenAt);
+  plans.delete(key);
+  plans.set(key, { at: Number.isFinite(seen) ? Math.min(seen, Date.now()) : Date.now(), r });
+  while (plans.size > 8) plans.delete(plans.keys().next().value as string);
+}
+/** The kept plan with the feed's live times laid over it, or null when it must be planned again. */
+async function retime(plan: TripResp): Promise<TripResp | null> {
+  const lr = liveRequests(plan);
+  if (!lr) return null;
+  const answers = await Promise.all(lr.params.map((legs) => req<LiveResp & { seenAt?: number }>(`/api/trip/live?${qs({ legs })}`, undefined, 4000)));
+  if (answers.some((a) => !a || (a as any).kind !== 'triplive')) return null;
+  const now = Date.now();
+  const dataAt = Math.min(...answers.map((a) => (Number.isFinite(Number(a.seenAt)) ? Number(a.seenAt) : now)));
+  const o = overlayLive(plan, lr.refs, answers, now, dataAt);
+  return o.replan ? null : o.resp;
+}
 const longKeep = createKeep<TripResp>(LONG_TRIP_KEEP_MS);
 const longOut = new Map<string, Promise<TripResp>>();
 let longOff = false;
@@ -221,7 +272,7 @@ async function tripLong(base: Record<string, any>, refresh?: boolean): Promise<T
   const p = (async () => {
     let r: TripResp;
     if (apiBase() === NEW_API_BASE || longOff) {
-      r = await req<TripResp>(apiBase() === NEW_API_BASE ? `${path}&${qs({ device: await getDevice(), profile: PROFILE })}` : path, undefined, LONG_TRIP_TIMEOUT_MS);
+      r = await req<TripResp>(path, apiBase() === NEW_API_BASE ? await withIds() : undefined, LONG_TRIP_TIMEOUT_MS);
     } else {
       try {
         r = await onNew<TripResp>(path, LONG_TRIP_TIMEOUT_MS);
@@ -254,10 +305,10 @@ async function tripPicked(base: Record<string, any>, pair: string, modes: string
   const wait = long ? LONG_TRIP_TIMEOUT_MS : TRIP_MS;
   let r: TripResp;
   try {
-    r = apiBase() === NEW_API_BASE ? await req<TripResp>(`${path}&${qs({ device: await getDevice(), profile: PROFILE })}`, undefined, wait) : await onNew<TripResp>(path, wait);
+    r = apiBase() === NEW_API_BASE ? await req<TripResp>(path, await withIds(), wait) : await onNew<TripResp>(path, wait);
   } catch (e: any) {
     if (date) throw Object.assign(new Error(dayMiss(date)), { http: e?.http, offline: e?.offline });
-    r = await req<TripResp>(`/api/trip?${qs({ ...base, count: 8, device: await getDevice(), profile: PROFILE })}`);
+    r = await req<TripResp>(`/api/trip?${qs({ ...base, count: 8 })}`, await withIds());
     return { ...r, modesBy: 'phone' } as TripResp;
   }
   const echoed = Array.isArray((r as any).modes);
@@ -341,7 +392,7 @@ export async function departuresAt(stop: string, t: number): Promise<DeparturesR
   const path = `/api/departures?${qs({ stop, time: q.time, date: q.date })}`;
   let r: DeparturesResp;
   try {
-    r = apiBase() === NEW_API_BASE ? await req<DeparturesResp>(`${path}&${qs({ device: await getDevice(), profile: PROFILE })}`, undefined, 15000) : await onNew<DeparturesResp>(path, 15000);
+    r = apiBase() === NEW_API_BASE ? await req<DeparturesResp>(path, await withIds(), 15000) : await onNew<DeparturesResp>(path, 15000);
   } catch (e: any) {
     throw Object.assign(new Error(BOARD_EARLIER_NEEDS_NEW), { http: e?.http, offline: e?.offline, needsNew: true });
   }

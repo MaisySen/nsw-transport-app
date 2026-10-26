@@ -304,6 +304,14 @@ What changed (src/lib/speedCore.ts, test/speed27.test.mjs):
 Not changed: via trips still ask the planner twice, the second after the first (it needs the first's arrival time),
 both with refresh=1; Ask, search, alerts and settings were already not blocking.
 
+### Speed pass part 2 (27 Oct, app, ships with tonight's over the air update)
+* Server words: every /api answer may carry `x-serves` (comma list). The app reads `id-headers` and `trip-live` per server address, kept on the phone (`serves:v1`), or from app config `copy.serves`. A good /api answer without the header turns them off (a rolled back server is followed). `src/lib/servesCore.ts`.
+* Ids in headers (`id-headers`): `/api/departures` and `/api/trip` (also the long trip, mode and day, and Earlier departures paths) send `x-device` and `x-profile` instead of `device=` and `profile=`, decided per server address in `api.ts once()`, so a fallback server still gets the old form.
+* Live refresh (`trip-live`, `src/lib/tripLiveCore.ts`): the last full trip answer per query is held (8 at most) for 10 minutes. A refresh of a plain trip from now sends its legs as `tripId@fromStopId@toStopId@mode@line` (each part encoded), at most 12 legs a request and 3 requests, side by side, 4 s deadline. Planned again on a cancelled or skipped leg, a change that no longer connects, a first trip gone over 60 s, an answer that does not match, or any failure. A slow planner stand in is never held as a plan.
+* Version tags (`src/lib/etagCore.ts`, `etag.ts`): `/api/stations` lists kept with their tag (16 copies, 256k characters each, 1.5M in all); packs keep `etag` in their kept copy; Ask's place lists and the bus stop list keep theirs. 304 keeps the copy; a 304 never revives an expired pack.
+* Trips via a stop (`trips.ts`): no `refresh: true` on either part; the second part from now is asked at the later of now plus the change time and the last first part arrival seen plus the change time, and used only when `viaCovers`; otherwise asked from the real arrival as before (a read cache hit when the time is the same).
+* Home read ahead (`src/lib/homePrefetchCore.ts`): 1.5 s after Home is focused with its lists, in an idle callback where the runtime has one, the top card's trip screen first page (plain trips with no mode chips) is read and kept under the trip screen's key. Once per foreground, through the press in gate (20 s per key, 8 a minute), cleared on blur, never with the app in the background.
+
 ## Smoothness
 
 1. Long lists use `FlatList` (Ask, new trip). Short fixed lists inside a ScrollView (departures, up to about 40

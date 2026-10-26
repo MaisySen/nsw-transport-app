@@ -87,7 +87,8 @@ test('api.ts reads fall back, writes do not; one retry never after a time out', 
   assert.match(a, /const first = read \? readBase\(\) : apiBase\(\);/);
   assert.match(a, /const alt = read \? fallbackFor\(first\) : null;/);
   assert.match(a, /if \(e\?\.name === 'AbortError' \|\| Date\.now\(\) - t0 > timeoutMs \/ 2\) throw e;/);
-  assert.match(read('src/lib/trips.ts'), /getJson\(path, 25000\)/);
+  assert.match(read('src/lib/trips.ts'), /getJsonTagged\(path, 25000\)/);
+  assert.match(read('src/lib/etag.ts'), /getJson<T>\(path, timeoutMs, undefined, \{ tag:/);
   // The address is written in server.ts only.
   assert.doesNotMatch(a, /sites\.tab\.bot/);
 });

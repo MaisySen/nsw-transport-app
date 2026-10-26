@@ -110,7 +110,7 @@ test('when to the trip request and back', () => {
   assert.ok(trip.includes("(whenKey ? `|${whenKey}` : '')"), 'kept answers are per time');
   const trips = read('src/lib/trips.ts');
   assert.ok(trips.includes('arriveBy?: boolean'), 'planTrip passes arrive by');
-  assert.ok(trips.includes('{ ...opts, arriveBy: false, refresh: true }'), 'a via trip never plans its first leg as arrive by');
+  assert.ok(trips.includes('{ ...opts, arriveBy: false, refresh: false }'), 'a via trip never plans its first leg as arrive by');
 });
 
 test('the time picker is JS only, no new native module', () => {

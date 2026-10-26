@@ -20,7 +20,8 @@ export type Pack = {
 };
 
 /** A kept pack: the pack and when this phone fetched it. */
-export type KeptPack = { at: number; pack: Pack };
+/** etag: the server's version tag for this pack (speed pass part 2), sent back as If-None-Match; 304 keeps it. */
+export type KeptPack = { at: number; pack: Pack; etag?: string };
 
 /** How many stops keep a pack, and the largest pack kept (characters of JSON). Central, the biggest, is about 90k. */
 export const PACK_MAX_STOPS = 24;

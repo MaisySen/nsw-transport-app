@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState } from 'react-native';
 import { NEW_API_BASE } from './server';
 import { store } from './store';
+import { cleanTag, condHeaders } from './etagCore';
 import { PACK_MAX_CHARS, packBoard, packDue, packStops, packValid, type KeptPack, type PackBoard } from './timetablePackCore';
 
 const INDEX = 'tt:index';
@@ -61,7 +62,17 @@ async function fetchPack(stop: string): Promise<'ok' | 'none' | 'fail'> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 15000);
   try {
-    const r = await fetch(`${NEW_API_BASE}/api/pack?stop=${encodeURIComponent(stop)}`, { signal: ctl.signal });
+    // The kept pack's version tag rides along (etagCore.ts): 304 means the kept pack is still the server's.
+    const old = mem.get(stop);
+    const r = await fetch(`${NEW_API_BASE}/api/pack?stop=${encodeURIComponent(stop)}`, { signal: ctl.signal, headers: condHeaders(old?.etag) });
+    if (r.status === 304 && old && old.etag) {
+      const now = Date.now();
+      if (!packValid(old.pack, now)) return 'fail';
+      const e: KeptPack = { ...old, at: now };
+      mem.set(stop, e);
+      await AsyncStorage.setItem(keyOf(stop), JSON.stringify(e));
+      return 'ok';
+    }
     if (r.status === 404) return 'none';
     if (!r.ok) return 'fail';
     const text = await r.text();
@@ -69,7 +80,8 @@ async function fetchPack(stop: string): Promise<'ok' | 'none' | 'fail'> {
     const pack = JSON.parse(text);
     const now = Date.now();
     if (!packValid(pack, now)) return 'fail';
-    const e: KeptPack = { at: now, pack };
+    const tag = cleanTag(r.headers?.get?.('etag'));
+    const e: KeptPack = tag ? { at: now, pack, etag: tag } : { at: now, pack };
     mem.set(stop, e);
     await AsyncStorage.setItem(keyOf(stop), JSON.stringify(e));
     return 'ok';

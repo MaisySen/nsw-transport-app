@@ -3,6 +3,9 @@
 // first load joins the same request while it is out (or reuses its answer for 4 s), and the answer is also put in the
 // kept copies (offline.ts), so a stop screen that opens after it landed paints it on the first frame with its age.
 import { api, departuresFor } from './api';
+import { planTrip } from './trips';
+import { createForegroundOnce, mayReadAhead } from './homePrefetchCore';
+import type { WalkPref } from './walkPrefCore';
 import { keepMem, keepOffline, memAt } from './offline';
 import { cacheKey } from './offlineCore';
 import { boardKey } from './stopBoardCore';
@@ -48,4 +51,20 @@ export function pressService(d: SvcRow) {
 /** The car park the list showed, held for the car park screen's first frame (with the list's age). */
 export function holdPark(p: { id: string }, at?: number | null) {
   if (p && p.id) keepMem(cacheKey('park', `cp:${p.id}`), { carparks: [p] }, at ?? Date.now());
+}
+
+// Home's read ahead (homePrefetchCore.ts): the top card's trip screen, once per foreground, through the same limits.
+const homeOnce = createForegroundOnce();
+/** The app came to the front: Home may read ahead once more. */
+export function homeForeground() { homeOnce.foreground(); }
+
+/** Reads the trip screen's first page for a plain A to B trip and keeps it under that screen's key, so the screen
+ * paints it on its first frame (with its age) and its first request joins this one while it is out. */
+export function prefetchTripScreen(plan: { from: { id: string; name: string }; to: { id: string; name: string } }, keepKey: string, walk: WalkPref | undefined, appState: string | null | undefined) {
+  // The caller passes the app's state: never with the app in the background.
+  if (!mayReadAhead({ focused: true, appState, hasLists: true })) return;
+  if (!homeOnce.take(keepKey)) return;
+  if (!gate.allow(keepKey, Date.now(), memAt(keepKey))) return;
+  // The trip screen's own first request for a plain trip from now (trip.tsx): 6 trips, pages, day lists when served.
+  planTrip(plan, { count: 6, walk, page: true, days: true }).then((r) => keepOffline(keepKey, r)).catch(() => {});
 }
