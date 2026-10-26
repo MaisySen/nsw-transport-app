@@ -163,9 +163,12 @@ function ttNearby(sql, ver, lat, lon, radius = 800, max = 8) {
     if (!s.lat && !s.lon) continue;
     const d = Math.round(ttKm(lat, lon, s.lat, s.lon) * 1000);
     if (d > radius) continue;
-    const id = s.parent || s.id;
-    const g = groups.get(id);
-    if (!g || d < g.distance) groups.set(id, { id, distance: d, name: s.parent ? null : s.name });
+    // A station's platforms and stands count as the station. "G" parents are stop pairs the Trip Planner does not
+    // know by that id, so each stop stands for itself there (the nearest of the pair is kept).
+    const grouped = s.parent && !/^G/.test(s.parent);
+    const id = grouped ? s.parent : s.id, gk = s.parent || s.id;
+    const g = groups.get(gk);
+    if (!g || d < g.distance) groups.set(gk, { id, distance: d, name: grouped ? null : s.name });
   }
   const out = [...groups.values()].sort((a, b) => a.distance - b.distance).slice(0, max);
   for (const g of out) {

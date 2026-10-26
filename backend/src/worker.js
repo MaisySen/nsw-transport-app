@@ -7123,11 +7123,15 @@ async function handleRequest(request, env, exec) {
           if (liftAware) liftAwareRank(d, want);
           if (!(await serverOn(env, "occupancy"))) stripOccupancy(d);
           await afterAnswer(env, d, { profile, device: p.get("device"), exec, log: p.get("refresh") !== "1" });
-          if (longKey && (d.journeys || []).length) {
+          if (longKey && (d.journeys || []).length && d.source !== "timetable") {
             const put = caches.default.put(longKey, new Response(JSON.stringify(d), { headers: { "content-type": "application/json", "cache-control": `max-age=${LONG_TRIP_CACHE_S}` } })).catch(() => null);
             if (exec && exec.waitUntil) exec.waitUntil(put); else await put;
           }
-          return asTxt ? textRes(await asText(env, d)) : json(d);
+          if (asTxt) return textRes(await asText(env, d));
+          const res = json(d);
+          // Timetable trips stand in for a refused Trip Planner: never kept, so the first live answer replaces them.
+          if (d.source === "timetable") res.headers.set("x-stand-in", "timetable");
+          return res;
         }
         case "/api/plan": {
           // A trip with any number of legs: legs=[{f, fn, t, tn, m, c, a, w}] (from, to, mode, change minutes, all services, walk minutes).
@@ -7689,6 +7693,7 @@ async function boardDb(env) {
 }
 /** The saved board key for a live board request (now, one stop, optional mode); null for anything else. */
 function boardKey(url) {
+  if (url.pathname === "/api/trip") return tripCopyKey(url);
   if (url.pathname !== "/api/departures") return null;
   const p = url.searchParams;
   if (p.get("time") || p.get("date")) return null;
@@ -7696,6 +7701,25 @@ function boardKey(url) {
   const mode = p.get("mode") || "";
   if (!/^[A-Za-z0-9:_-]{3,24}$/.test(stop) || !/^[a-z]{0,12}$/.test(mode)) return null;
   return { k: stop + "|" + mode, stop };
+}
+// Trip copies (docs/DIAGNOSIS_LAG.md item 3, 26 Oct): the last live trip answer of a from and to pair is saved like a
+// board (board_copies, key "trip:FROM>TO") and a first open gets it at once with its age while the fresh one loads.
+// Only plain trips from now (no time, day, arrive by, step free, modes or long trips); never a timetable answer; never
+// warmed by the minute tick; served only while at least 2 of its trips are still to leave.
+function tripCopyKey(url) {
+  const p = url.searchParams;
+  for (const k of ["time", "date", "arriveBy", "acc", "modes", "long", "via"]) if (p.get(k)) return null;
+  const from = p.get("from") || "", to = p.get("to") || "";
+  if (!/^[A-Za-z0-9_-]{3,20}$/.test(from) || !/^[A-Za-z0-9_-]{3,20}$/.test(to) || from === to) return null;
+  return { k: "trip:" + from + ">" + to, stop: "trip" };
+}
+function tripCopyOk(body) {
+  try {
+    const d = JSON.parse(body);
+    if (!d || d.source === "timetable" || !Array.isArray(d.journeys)) return false;
+    const cut = Date.now() - 60000;
+    return d.journeys.filter((j) => Date.parse(j.board || j.leave || "") >= cut).length >= 2;
+  } catch (e) { return false; }
 }
 const b64 = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
 const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -7706,7 +7730,9 @@ async function boardSaved(env, bk) {
   if (!d || !bk) return null;
   const r = await d.prepare("SELECT at, body FROM board_copies WHERE k = ?1").bind(bk.k).first().catch(() => null);
   if (!r || !r.body || !(Date.now() - r.at <= SAVED_MAX_MS)) return null;
-  return { at: Number(r.at), body: await gunzipText(r.body) };
+  const body = await gunzipText(r.body);
+  if (bk.stop === "trip" && !tripCopyOk(body)) return null;
+  return { at: Number(r.at), body };
 }
 async function boardSave(env, bk, body, opened) {
   const now = Date.now();
@@ -7736,7 +7762,7 @@ async function warmBoards(env, exec, use, sn) {
   const now = Date.now();
   const rows = (await d.prepare("SELECT k, stop, at, opened FROM board_copies WHERE at > ?1 OR opened > ?2").bind(now - 3600000, now - WARM_RECENT_MS).all().catch(() => ({ results: [] }))).results || [];
   const at = new Map(rows.map((r) => [r.k, Number(r.at) || 0]));
-  const recent = rows.filter((r) => Number(r.opened) > now - WARM_RECENT_MS).map((r) => r.k);
+  const recent = rows.filter((r) => Number(r.opened) > now - WARM_RECENT_MS && !String(r.k).startsWith("trip:")).map((r) => r.k);
   const hubs = (await warmHubIds(env)).map((id) => id + "|");
   const due = [...new Set([...hubs, ...recent])].filter((k) => now - (at.get(k) || 0) >= WARM_EVERY_MS).sort((a, b) => (at.get(a) || 0) - (at.get(b) || 0)).slice(0, WARM_PER_TICK);
   const host = (env && env.API_HOST) || "api.transportsydney.app";
@@ -7947,13 +7973,14 @@ async function answerAndStore(request, env, exec, cache, key, opts = {}) {
   const res = await handleRequest(request, env, exec);
   const body = await res.text();
   const headers = [...res.headers];
-  if (res.status === 200) {
+  // A timetable stand in (no-store) is never kept as a copy, so the first live answer replaces it.
+  if (res.status === 200 && res.headers.get("x-stand-in") !== "timetable") {
     const url = new URL(request.url);
     const copy = new Response(body, { status: 200, headers });
     copy.headers.set("cache-control", `public, max-age=${LONG_CACHE_RE.test(url.pathname) ? LONG_CACHE_S : EDGE_KEEP_S}`);
     // A live board is also saved for first opens anywhere (boardSave); a phone's own open marks the stop as opened.
     const bk = boardKey(url);
-    if (bk && /"items":\[/.test(body)) {
+    if (bk && (bk.stop === "trip" ? tripCopyOk(body) : /"items":\[/.test(body))) {
       const save = boardSave(env, bk, body, !opts.warm).catch(() => null);
       if (exec && exec.waitUntil) exec.waitUntil(save); else await save;
     }
@@ -7974,6 +8001,11 @@ function fromSaved(saved) {
   let text = saved.body;
   try {
     const d = JSON.parse(text);
+    if (d && Array.isArray(d.journeys)) {
+      const cut = Date.now() - 60000;
+      d.journeys = d.journeys.filter((j) => Date.parse((j && (j.board || j.leave)) || "") >= cut);
+      text = JSON.stringify(d);
+    }
     if (d && Array.isArray(d.items)) {
       const cut = Date.now() - 60000;
       d.items = d.items.filter((x) => { const t = Date.parse((x && (x.estimated || x.planned)) || ""); return !Number.isFinite(t) || t >= cut; });
