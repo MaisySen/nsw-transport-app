@@ -11,6 +11,10 @@ workers_dev = false
 preview_urls = false
 # Smaller script: less to parse and compile in each fresh isolate (most requests start one).
 minify = true
+# Smart Placement: Cloudflare runs the worker near what it calls most (the Transport for NSW hub and D1, both in
+# Sydney) when that is faster than running it near the phone.
+[placement]
+mode = "smart"
 
 # The static files the API reads (stations, stops, facilities) and the shared live trip page.
 # The worker runs first so the API host never serves anything it does not route.

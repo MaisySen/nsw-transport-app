@@ -121,7 +121,7 @@ test("shared answers are cached at the edge (kept 120 s, served 15 s), without p
   await Promise.all(waits);
   const put = store.get("https://t.example/api/stations?mode=metro");
   assert.ok(put, "stored without the device");
-  assert.equal(put.headers.get("cache-control"), "public, max-age=120");
+  assert.equal(put.headers.get("cache-control"), "public, max-age=21600", "station lists and search are kept 6 hours");
   delete globalThis.caches;
 });
 

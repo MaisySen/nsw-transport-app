@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS shares (id TEXT PRIMARY KEY, okey TEXT, device TEXT, 
 CREATE TABLE IF NOT EXISTS lift_alerts (device TEXT PRIMARY KEY, profile TEXT, stations TEXT, seen TEXT, created INTEGER, updated INTEGER);
 CREATE TABLE IF NOT EXISTS park_watches (id TEXT PRIMARY KEY, device TEXT, profile TEXT, facility TEXT, name TEXT, station TEXT, created INTEGER, expires INTEGER, done INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS park_full (facility TEXT NOT NULL, day TEXT NOT NULL, first_tod INTEGER, full_tod INTEGER, PRIMARY KEY (facility, day));
+CREATE TABLE IF NOT EXISTS board_copies (k TEXT PRIMARY KEY, stop TEXT, at INTEGER, opened INTEGER, body TEXT);
 CREATE TABLE IF NOT EXISTS ip_rate (k TEXT PRIMARY KEY, win INTEGER, n INTEGER);
 ALTER TABLE morning_checks ADD COLUMN mode TEXT;
 CREATE INDEX IF NOT EXISTS obs_route ON obs (route, stop_id, planned);
@@ -37,3 +38,4 @@ CREATE INDEX IF NOT EXISTS expo_tokens_dev ON expo_tokens (device);
 CREATE INDEX IF NOT EXISTS morning_checks_dev ON morning_checks (device);
 CREATE INDEX IF NOT EXISTS last_home_dev ON last_home (device);
 CREATE INDEX IF NOT EXISTS last_home_due ON last_home (status, leave);
+CREATE INDEX IF NOT EXISTS board_copies_opened ON board_copies (opened);

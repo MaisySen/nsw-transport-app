@@ -33,6 +33,17 @@ for (const k of need) {
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 fs.cpSync(path.join(root, "src/public"), pub, { recursive: true });
+// Every bus and coach stop as [id, name], once each, from the route files (stations/bus/*.json): the stop search
+// index the server answers from and the list the app keeps for search as you type (app/src/lib/localSearch.ts).
+{
+  const dir = path.join(pub, "stations", "bus");
+  const seen = new Map();
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".json")).sort()) {
+    const d = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
+    for (const dirs of Object.values(d)) for (const one of Array.isArray(dirs) ? dirs : [dirs]) for (const s of (one && one.stops) || []) if (s && s[0] && s[1] && !seen.has(String(s[0]))) seen.set(String(s[0]), [String(s[0]), String(s[1])]);
+  }
+  fs.writeFileSync(path.join(pub, "stations", "bus-stops.json"), JSON.stringify([...seen.values()]));
+}
 let worker = fs.readFileSync(path.join(root, "src/worker.js"), "utf8");
 if (!cf) for (const k of need) worker = worker.split(`__${k}__`).join(vals[k]);
 // The Content Security Policy allows only this site's own scripts plus the exact inline

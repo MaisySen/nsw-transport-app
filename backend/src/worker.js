@@ -5467,6 +5467,9 @@ async function runTick(env, opts = {}) {
     // Raw recorded live times older than anything reads.
     out.obs = await pruneObs(env, now).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   }
+  // Saved boards for first opens: the busiest stops and every stop opened in the last 30 min (warmBoards).
+  if (!opts.device && !opts.noWarm) out.warm = await warmBoards(env, opts.exec || null, use, sn).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+  if (!opts.device && sn.tod % 60 === 7) await db(env).prepare("DELETE FROM board_copies WHERE at < ?1").bind(now - 86400000).run().catch(() => null);
   if (!opts.device) await db(env).prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('last_tick', ?1)").bind(String(now)).run().catch(() => null);
   const calls = upstream.calls - c0;
   upstream.flushed = Math.max(upstream.flushed || 0, upstream.calls);
@@ -6891,7 +6894,7 @@ function apiOnly(env, url) {
 const LIVE_PATHS = /^\/(live\/|live\/live\.js|style\.css|vendor\/leaflet\.(js|css)|favicon(-16|-32)?\.(png|ico)|apple-touch-icon\.png|icon-(192|512)\.png|badge-96\.png|og\.png)$/;
 const SITE_PATHS = /^\/(privacy|support|terms)(\/.*)?$/;
 // The station and suburb lists the app keeps for Ask (askPlaces.ts) and its offline "Did you mean": static files, read by phones.
-const LIST_PATHS = /^\/stations\/(train|metro|lightrail|ferry|places|bus-routes)\.json$/;
+const LIST_PATHS = /^\/stations\/(train|metro|lightrail|ferry|places|bus-routes|bus-stops)\.json$/;
 function apiOnlyRoute(request, env, url) {
   const p = url.pathname;
   if (p.startsWith("/api/") || /^\/download\/[A-Za-z0-9._-]+\.apk$/.test(p) || LIVE_PATHS.test(p) || LIST_PATHS.test(p)) return null;
@@ -7106,8 +7109,21 @@ async function handleRequest(request, env, exec) {
         case "/api/search": {
           const q = (p.get("q") || "").trim();
           if (q.length < 2) return json({ items: [] });
-          const { stops } = await findStops(env, q);
-          return json({ items: stops.slice(0, 8).map((s) => ({ id: s.id, name: shortName(s.name), modes: s.modes })) });
+          // Our own stop index first; the Trip Planner only when the index has no clear answer, and its extras
+          // after the index's stops. If the Trip Planner fails, the index's answer stands.
+          const idx = await stopIndex(env, url.origin).catch(() => null);
+          const own = idx ? indexSearch(idx, q, 8) : { items: [], clear: false };
+          if (own.clear) return json({ items: own.items, source: "index" });
+          let stops = [];
+          try { stops = (await findStops(env, q)).stops; } catch (e) { if (own.items.length) return json({ items: own.items, source: "index" }); throw e; }
+          const items = own.items.slice();
+          for (const s of stops) {
+            if (items.length >= 8) break;
+            const name = shortName(s.name);
+            if (items.some((x) => x.id === String(s.id) || idxBase(askNorm(x.name)) === idxBase(askNorm(name)))) continue;
+            items.push({ id: s.id, name, modes: s.modes });
+          }
+          return json({ items });
         }
         case "/api/nearby": {
           const d = { kind: "nearby", stops: await nearby(env, p.get("lat"), p.get("lon")) };
@@ -7446,12 +7462,196 @@ async function handleRequest(request, env, exec) {
     }
 }
 
+// ---------- search from our own stop index ----------
+// Stop search answers from the stop lists this server publishes (every train, metro, light rail and ferry stop, and
+// every bus and coach stop in stations/bus-stops.json, built by build.mjs), with no Trip Planner call when the lists
+// have a clear answer. The app runs the same matching on the phone (app/src/lib/localSearchCore.ts).
+const IDX_CODE = { train: 1, metro: 2, lightrail: 4, ferry: 9 };
+const IDX_RANK = { 1: 0, 2: 1, 4: 2, 9: 3, 7: 4, 5: 5 };
+const IDX_SUFFIX = /\s+(railway station|train station|metro station|light rail station|light rail stop|light rail|ferry wharf|wharf|station|stn|interchange)$/;
+const IDX_ABBR = { nth: "north", sth: "south", pt: "point", jn: "junction", jct: "junction", jnct: "junction", junc: "junction", hts: "heights", pk: "park", hosp: "hospital", bch: "beach", hbr: "harbour", sq: "square", uni: "university", ctr: "centre", center: "centre", stn: "station" };
+const IDX_ALIAS = { "kings x": "kings cross", kx: "kings cross", cq: "circular quay", quay: "circular quay", "circ quay": "circular quay", parra: "parramatta", "bondi j": "bondi junction", bj: "bondi junction", chatty: "chatswood", newy: "newcastle", gong: "wollongong", "the gong": "wollongong", penno: "penrith", "macq uni": "macquarie university", "mq uni": "macquarie university" };
+let stopIdxMem = null;
+const idxBase = (k) => { let b = k; for (let i = 0; i < 2; i++) b = b.replace(IDX_SUFFIX, "").trim(); return b.replace(/^the\s+/, ""); };
+async function stopIndex(env, origin) {
+  if (stopIdxMem && Date.now() - stopIdxMem.at < 86400000) return stopIdxMem;
+  const [bus, ...lists] = await Promise.all([askAsset(env, origin, "/stations/bus-stops.json"), ...Object.keys(IDX_CODE).map((m) => askAsset(env, origin, `/stations/${m}.json`))]);
+  const byId = new Map(), stations = [], buses = [];
+  Object.keys(IDX_CODE).forEach((m, i) => {
+    for (const row of Array.isArray(lists[i]) ? lists[i] : []) {
+      if (!Array.isArray(row) || !row[0] || !row[1]) continue;
+      const id = String(row[0]), had = byId.get(id), code = IDX_CODE[m];
+      if (had) { if (!had.modes.includes(code)) { had.modes.push(code); had.rank = Math.min(had.rank, IDX_RANK[code]); } continue; }
+      const key = askNorm(row[1]);
+      const s = { id, name: String(row[1]), modes: [code], key, base: idxBase(key), rank: IDX_RANK[code] };
+      byId.set(id, s); stations.push(s);
+    }
+  });
+  for (const row of Array.isArray(bus) ? bus : []) {
+    if (!Array.isArray(row) || !row[0] || !row[1] || byId.has(String(row[0]))) continue;
+    const key = askNorm(row[1]);
+    const s = { id: String(row[0]), name: String(row[1]), modes: [5], key, base: idxBase(key), rank: 5 };
+    byId.set(s.id, s); buses.push(s);
+  }
+  stopIdxMem = { at: Date.now(), stations, buses, byId };
+  return stopIdxMem;
+}
+function idxKey(q) {
+  let k = askNorm(q).replace(/:/g, " ").replace(/\s+/g, " ").trim();
+  if (IDX_ALIAS[k]) return IDX_ALIAS[k];
+  k = k.split(" ").map((w) => (Object.prototype.hasOwnProperty.call(IDX_ABBR, w) ? IDX_ABBR[w] : w)).join(" ");
+  return IDX_ALIAS[k] || k;
+}
+function idxScore(s, k, words) {
+  if (s.key === k || s.base === k) return 0;
+  if (s.base.startsWith(k) || s.key.startsWith(k)) return 1 + (s.key.length - k.length) / 200;
+  if (!s.key.includes(words[0].slice(0, 2))) return Infinity;
+  const kw = s.key.split(" ");
+  if (!words.every((w) => kw.some((t) => t.startsWith(w)))) return Infinity;
+  return (kw[0].startsWith(words[0]) ? 2 : 2.5) + (s.key.length - k.length) / 200;
+}
+/** Stops from our own index, best first, and whether the answer is clear enough to skip the Trip Planner. */
+function indexSearch(idx, q, max = 8) {
+  const raw = String(q || "").trim();
+  const out = [];
+  if (/^\d{3,}$/.test(raw)) {
+    for (const s of idx.stations.concat(idx.buses)) if (s.id.startsWith(raw)) out.push({ s, sc: s.id.length - raw.length });
+  } else {
+    const k = idxKey(raw);
+    if (!k) return { items: [], clear: false };
+    const words = k.split(" ").filter(Boolean);
+    for (const s of idx.stations) { const sc = idxScore(s, k, words); if (Number.isFinite(sc)) out.push({ s, sc }); }
+    let n = 0;
+    for (const s of idx.buses) { const sc = idxScore(s, k, words); if (Number.isFinite(sc)) { out.push({ s, sc: sc + 0.3 }); if (++n > 400) break; } }
+  }
+  out.sort((a, b) => a.sc - b.sc || a.s.rank - b.s.rank || a.s.name.length - b.s.name.length);
+  const others = out.filter((x) => x.s.rank < 5).length;
+  const items = [];
+  let buses = 0;
+  for (const x of out) {
+    if (items.length >= max) break;
+    if (x.s.rank === 5) { if (others && buses >= Math.max(2, max - Math.min(others, max - 2))) continue; buses++; }
+    items.push({ id: x.s.id, name: x.s.name, modes: x.s.modes.slice() });
+  }
+  // Clear: a stop number, or a station named (or started) by what was typed, or three or more stops at all.
+  const clear = /^\d{5,}$/.test(raw) ? items.length > 0 : out.some((x) => x.sc < 2 && x.s.rank < 5) || out.length >= 3;
+  return { items, clear };
+}
+// ---------- saved boards (stale while revalidate) and warming ----------
+// A live board fetched for anyone is also saved in D1 (gzip, one row per stop and mode), so a first open of a stop
+// with no edge copy gets the saved board at once with its real age (dataAt) while the fresh one is fetched; the app
+// asks again a moment later and swaps the fresh times in. Live freshness is unchanged: the edge copy is still 15 s
+// and every open still starts a fresh fetch. The minute tick keeps the busiest stops and every stop opened in the
+// last 30 minutes saved, at most WARM_PER_TICK Trip Planner calls a minute, and none at night, when the key is busy
+// or when the day's count passes WARM_DAY_CAP.
+const SAVED_MAX_MS = 15 * 60000;
+const SAVED_WAIT_MS = 300;
+const SAVED_WRITE_GAP_MS = 20000;
+const WARM_EVERY_MS = 6 * 60000;
+const WARM_RECENT_MS = 30 * 60000;
+const WARM_PER_TICK = 8;
+const WARM_DAY_CAP = 40000;
+// The busiest interchanges across the network (train, metro, light rail, ferry), by name in our own station lists.
+const WARM_HUBS = ["Central Station", "Town Hall Station", "Wynyard Station", "Circular Quay", "Martin Place Station", "Museum Station", "St James Station", "Redfern Station", "Parramatta Station", "Strathfield Station", "Chatswood Station", "North Sydney Station", "Bondi Junction Station", "Kings Cross Station", "Hornsby Station", "Epping Station", "Burwood Station", "Hurstville Station", "Sutherland Station", "Wolli Creek Station", "Sydenham Station", "Liverpool Station", "Blacktown Station", "Penrith Station", "Lidcombe Station", "Granville Station", "Campbelltown Station", "Glenfield Station", "Macquarie University Station", "Macquarie Park Station", "Tallawong Station", "Rouse Hill Station", "Castle Hill Station", "Norwest Station", "Crows Nest Station", "Victoria Cross Station", "Barangaroo Station", "Gadigal Station", "Waterloo Station", "International Airport Station", "Domestic Airport Station", "Mascot Station", "Green Square Station", "Rhodes Station", "Olympic Park Station", "Wollongong Station", "Gosford Station", "Newcastle Interchange", "Manly Wharf", "Randwick Light Rail"];
+const savedWrites = new Map();
+let boardSchemaOk = false;
+async function boardDb(env) {
+  const d = db(env);
+  if (!d) return null;
+  if (!boardSchemaOk) {
+    await d.batch([
+      d.prepare("CREATE TABLE IF NOT EXISTS board_copies (k TEXT PRIMARY KEY, stop TEXT, at INTEGER, opened INTEGER, body TEXT)"),
+      d.prepare("CREATE INDEX IF NOT EXISTS board_copies_opened ON board_copies (opened)"),
+    ]);
+    boardSchemaOk = true;
+  }
+  return d;
+}
+/** The saved board key for a live board request (now, one stop, optional mode); null for anything else. */
+function boardKey(url) {
+  if (url.pathname !== "/api/departures") return null;
+  const p = url.searchParams;
+  if (p.get("time") || p.get("date")) return null;
+  const stop = p.get("stop") || "";
+  const mode = p.get("mode") || "";
+  if (!/^[A-Za-z0-9:_-]{3,24}$/.test(stop) || !/^[a-z]{0,12}$/.test(mode)) return null;
+  return { k: stop + "|" + mode, stop };
+}
+const b64 = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+async function gzipText(t) { return b64(new Uint8Array(await new Response(new Blob([t]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer())); }
+async function gunzipText(s) { return await new Response(new Blob([unb64(s)]).stream().pipeThrough(new DecompressionStream("gzip"))).text(); }
+async function boardSaved(env, bk) {
+  const d = await boardDb(env).catch(() => null);
+  if (!d || !bk) return null;
+  const r = await d.prepare("SELECT at, body FROM board_copies WHERE k = ?1").bind(bk.k).first().catch(() => null);
+  if (!r || !r.body || !(Date.now() - r.at <= SAVED_MAX_MS)) return null;
+  return { at: Number(r.at), body: await gunzipText(r.body) };
+}
+async function boardSave(env, bk, body, opened) {
+  const now = Date.now();
+  const last = savedWrites.get(bk.k) || 0;
+  if (now - last < SAVED_WRITE_GAP_MS && !opened) return;
+  if (now - last < 5000) return;
+  savedWrites.set(bk.k, now);
+  if (savedWrites.size > 3000) savedWrites.delete(savedWrites.keys().next().value);
+  const d = await boardDb(env).catch(() => null);
+  if (!d) return;
+  await d.prepare(`INSERT INTO board_copies (k, stop, at, opened, body) VALUES (?1, ?2, ?3, ?4, ?5)
+    ON CONFLICT (k) DO UPDATE SET at = ?3, body = ?5, opened = MAX(COALESCE(opened, 0), ?4)`)
+    .bind(bk.k, bk.stop, now, opened ? now : 0, await gzipText(body)).run().catch(() => null);
+}
+async function warmHubIds(env) {
+  const lists = await Promise.all(["train", "metro", "lightrail", "ferry"].map((m) => askAsset(env, null, `/stations/${m}.json`)));
+  const byName = new Map();
+  for (const l of lists) for (const row of Array.isArray(l) ? l : []) if (Array.isArray(row) && !byName.has(row[1])) byName.set(row[1], String(row[0]));
+  return [...new Set(WARM_HUBS.map((n) => byName.get(n)).filter(Boolean))];
+}
+async function warmBoards(env, exec, use, sn) {
+  if (use.calls >= WARM_DAY_CAP) return { skipped: "day count", calls: use.calls };
+  if (sn.tod >= 60 && sn.tod < 270) return { skipped: "night" };
+  if (upstreamBusy()) return { skipped: "busy" };
+  const d = await boardDb(env).catch(() => null);
+  if (!d) return { skipped: "storage" };
+  const now = Date.now();
+  const rows = (await d.prepare("SELECT k, stop, at, opened FROM board_copies WHERE at > ?1 OR opened > ?2").bind(now - 3600000, now - WARM_RECENT_MS).all().catch(() => ({ results: [] }))).results || [];
+  const at = new Map(rows.map((r) => [r.k, Number(r.at) || 0]));
+  const recent = rows.filter((r) => Number(r.opened) > now - WARM_RECENT_MS).map((r) => r.k);
+  const hubs = (await warmHubIds(env)).map((id) => id + "|");
+  const due = [...new Set([...hubs, ...recent])].filter((k) => now - (at.get(k) || 0) >= WARM_EVERY_MS).sort((a, b) => (at.get(a) || 0) - (at.get(b) || 0)).slice(0, WARM_PER_TICK);
+  const host = (env && env.API_HOST) || "api.transportsydney.app";
+  const cache = edgeCache();
+  let ok = 0;
+  for (let i = 0; i < due.length; i += 4) {
+    const part = due.slice(i, i + 4).map(async (k) => {
+      const [stop, mode] = k.split("|");
+      const url = new URL(`https://${host}/api/departures`);
+      url.searchParams.set("stop", stop);
+      if (mode) url.searchParams.set("mode", mode);
+      const key = edgeKey(url);
+      if (inFlight.has(key.url)) return;
+      const flight = answerAndStore(new Request(url.toString()), env, exec, cache, key, { warm: true });
+      inFlight.set(key.url, flight);
+      flight.then(() => inFlight.delete(key.url), () => inFlight.delete(key.url));
+      const r = await flight.catch(() => null);
+      if (r && r.status === 200) ok++;
+    });
+    await Promise.all(part);
+    if (upstreamBusy()) break;
+  }
+  return { due: due.length, warmed: ok, hubs: hubs.length, recent: recent.length };
+}
+
 // ---------- edge cache, shared limits and input checks ----------
 // Shared live answers are cached at the edge, keyed on the query without the profile and device, so many phones
 // looking at the same board cost one upstream call. A plain open takes a copy up to 15 s old, a refresh up to 5 s;
 // copies are kept 120 s for a busy or failed upstream (see the upstream budget and fetch below).
-const EDGE_CACHE_RE = /^\/api\/(departures|trip|plan|service|status|alerts|stations|search|nearby|station|parking|topup|lifts)$/;
+const EDGE_CACHE_RE = /^\/api\/(departures|trip|plan|service|status|alerts|stations|search|places|nearby|station|parking|topup|lifts)$/;
 const EDGE_CACHE_S = 15;
+// Stop and place search and the station lists change only with the timetable: copies are kept and taken for 6 hours,
+// keyed on the query in lower case with single spaces ("Kings  Cross" and "kings cross" are one copy).
+const LONG_CACHE_RE = /^\/api\/(search|places|stations)$/;
+const LONG_CACHE_S = 6 * 3600;
 // A refresh (refresh=1: the app's own polls and pull to refresh) takes a shared answer only while it is at most this
 // old, so a realtime change reaches a polling phone within seconds instead of up to 30 (edge copy plus the departures
 // copy below). Everyone at the same stop in a data centre still shares one Trip Planner call per 5 s. Measured
@@ -7460,7 +7660,11 @@ const REFRESH_MAX_AGE_MS = 5000;
 const EDGE_SKIP = new Set(["profile", "device", "refresh", "_"]);
 function edgeKey(url) {
   const u = new URL(url.origin + url.pathname);
-  for (const k of [...new Set(url.searchParams.keys())].filter((k) => !EDGE_SKIP.has(k)).sort()) u.searchParams.append(k, url.searchParams.get(k));
+  const long = LONG_CACHE_RE.test(url.pathname);
+  for (const k of [...new Set(url.searchParams.keys())].filter((k) => !EDGE_SKIP.has(k)).sort()) {
+    const v = url.searchParams.get(k);
+    u.searchParams.append(k, long && k === "q" ? String(v).toLowerCase().replace(/\s+/g, " ").trim() : v);
+  }
   return new Request(u.toString(), { method: "GET" });
 }
 // The Cache API is not available on every host (it does nothing on some), so each copy of the
@@ -7469,13 +7673,14 @@ const memCacheMap = new Map();
 const memCache = {
   async match(req) {
     const e = memCacheMap.get(req.url);
-    if (!e || Date.now() - e.at > EDGE_KEEP_S * 1000) { if (e) memCacheMap.delete(req.url); return undefined; }
+    if (!e || Date.now() - e.at > (e.keepS || EDGE_KEEP_S) * 1000) { if (e) memCacheMap.delete(req.url); return undefined; }
     return new Response(e.body, { status: e.status, headers: e.headers });
   },
   async put(req, res) {
     const body = await res.arrayBuffer();
     if (body.byteLength > 512 * 1024) return;
-    memCacheMap.set(req.url, { at: Date.now(), body, status: res.status, headers: [...res.headers] });
+    const keepS = Number((/max-age=(\d+)/.exec(res.headers.get("cache-control") || "") || [])[1]) || EDGE_KEEP_S;
+    memCacheMap.set(req.url, { at: Date.now(), keepS, body, status: res.status, headers: [...res.headers] });
     if (memCacheMap.size > 300) memCacheMap.delete(memCacheMap.keys().next().value);
   },
 };
@@ -7531,7 +7736,7 @@ export default {
   // Cloudflare Cron Trigger (wrangler.toml): the minute tick, the same work as GET /api/tick.
   async scheduled(event, env, exec) {
     applyEnv(env);
-    const run = runTick(env, {}).catch(() => null);
+    const run = runTick(env, { exec }).catch(() => null);
     if (exec && exec.waitUntil) exec.waitUntil(run); else await run;
   },
   async fetch(request, env, exec) {
@@ -7546,7 +7751,8 @@ export default {
     // EDGE_CACHE_S old and a refresh only up to REFRESH_MAX_AGE_MS; older ones are for a busy or failed upstream.
     const storedAt = hit ? Number(hit.headers.get("x-stored-at")) || 0 : 0;
     const age = storedAt ? Date.now() - storedAt : Infinity;
-    const fresh = !!hit && (storedAt ? age <= (refresh ? REFRESH_MAX_AGE_MS : EDGE_CACHE_S * 1000) : !refresh);
+    const long = LONG_CACHE_RE.test(url.pathname);
+    const fresh = !!hit && (storedAt ? age <= (refresh ? REFRESH_MAX_AGE_MS : long ? LONG_CACHE_S * 1000 : EDGE_CACHE_S * 1000) : !refresh);
     const usable = !!hit && !!storedAt && age <= STALE_MAX_MS;
     if (fresh || (usable && !inFlight.has(key.url) && upstreamBusy(loadOk(request, env)))) {
       if (!rateOk(request, url.pathname) && !loadOk(request, env)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
@@ -7568,21 +7774,30 @@ export default {
       budget.shared++;
     }
     const kept = !!hit && !!storedAt && age <= EDGE_KEEP_S * 1000;
+    // No edge copy: a live board saved in the last SAVED_MAX_MS (any server copy, any location) stands in. A first
+    // open waits SAVED_WAIT_MS for the fresh board, then gets the saved one with its real age while the fresh one
+    // finishes and is stored; a refresh (the app's polls) takes the saved board only if the fresh one fails.
+    const bk = kept ? null : boardKey(url);
+    const saved = bk ? await boardSaved(env, bk).catch(() => null) : null;
     // With a copy in hand a phone waits at most COPY_WAIT_MS for the new answer: a slow Trip Planner answer keeps
     // going in the background and is stored for the next poll, and this phone gets the copy (dataAt says how old).
     let out = null;
-    if (kept) {
-      out = await Promise.race([flight, new Promise((r) => setTimeout(() => r(null), COPY_WAIT_MS))]);
+    if (kept || (saved && !refresh)) {
+      out = await Promise.race([flight, new Promise((r) => setTimeout(() => r(null), kept ? COPY_WAIT_MS : SAVED_WAIT_MS))]);
       if (!out) {
         if (exec && exec.waitUntil) exec.waitUntil(flight.catch(() => null));
         budget.staleServed++;
-        return fromCopy(hit, storedAt, "stale");
+        return kept ? fromCopy(hit, storedAt, "stale") : fromSaved(saved);
       }
     } else out = await flight;
     // Transport for NSW refused or failed (over its limit, down, slow): the last copy is better than an error.
     if (out.status >= 500 && kept) {
       budget.staleServed++;
       return fromCopy(hit, storedAt, "stale");
+    }
+    if (out.status >= 500 && saved) {
+      budget.staleServed++;
+      return fromSaved(saved);
     }
     if (!leader) cachedTripLog(env, url, request, exec);
     const r = new Response(out.body, { status: out.status, headers: out.headers });
@@ -7596,13 +7811,20 @@ export default {
 const EDGE_KEEP_S = 120;
 const COPY_WAIT_MS = 700;
 const inFlight = new Map(); // edge key -> Promise<{ status, headers, body }>
-async function answerAndStore(request, env, exec, cache, key) {
+async function answerAndStore(request, env, exec, cache, key, opts = {}) {
   const res = await handleRequest(request, env, exec);
   const body = await res.text();
   const headers = [...res.headers];
   if (res.status === 200) {
+    const url = new URL(request.url);
     const copy = new Response(body, { status: 200, headers });
-    copy.headers.set("cache-control", `public, max-age=${EDGE_KEEP_S}`);
+    copy.headers.set("cache-control", `public, max-age=${LONG_CACHE_RE.test(url.pathname) ? LONG_CACHE_S : EDGE_KEEP_S}`);
+    // A live board is also saved for first opens anywhere (boardSave); a phone's own open marks the stop as opened.
+    const bk = boardKey(url);
+    if (bk && /"items":\[/.test(body)) {
+      const save = boardSave(env, bk, body, !opts.warm).catch(() => null);
+      if (exec && exec.waitUntil) exec.waitUntil(save); else await save;
+    }
     copy.headers.set("x-stored-at", String(Date.now()));
     const put = cache.put(key, copy).catch(() => null);
     if (exec && exec.waitUntil) exec.waitUntil(put); else await put;
@@ -7612,7 +7834,24 @@ async function answerAndStore(request, env, exec, cache, key) {
 // A cached answer: "now" is the current time for the countdowns, and dataAt says when its times were read, so the
 // app's "Updated" line is honest about a copy.
 async function fromCopy(hit, storedAt, tag) {
-  let body = await hit.text();
+  return copyResponse(await hit.text(), hit, storedAt, tag);
+}
+// A board saved in D1 (boardSaved): the same shape as an edge copy, dataAt when it was fetched, tagged "saved".
+// Services that have already left (more than a minute ago) are taken out.
+function fromSaved(saved) {
+  let text = saved.body;
+  try {
+    const d = JSON.parse(text);
+    if (d && Array.isArray(d.items)) {
+      const cut = Date.now() - 60000;
+      d.items = d.items.filter((x) => { const t = Date.parse((x && (x.estimated || x.planned)) || ""); return !Number.isFinite(t) || t >= cut; });
+      text = JSON.stringify(d);
+    }
+  } catch (e) { /* the saved text as it is */ }
+  return copyResponse(text, new Response(null, { headers: { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*" } }), saved.at, "saved");
+}
+function copyResponse(text, hit, storedAt, tag) {
+  let body = text;
   if (/json/.test(hit.headers.get("content-type") || "")) {
     body = body.replace(/"now":\d{13}/g, '"now":' + Date.now());
     if (storedAt && /^\{\s*"/.test(body) && !/^\{"dataAt":/.test(body)) body = '{"dataAt":' + storedAt + "," + body.slice(1);
