@@ -8610,7 +8610,8 @@ async function warmBoards(env, exec, use, sn) {
 //   opened in the last 7 days (an opens history kept in one meta row, read every 10 minutes from board_copies.opened),
 //   and the board of each warmed pair's first stop. Nothing hard coded.
 // * When: a key's usual hour is an hour of the day it was asked for on at least PREWARM_MIN_DAYS different days of the
-//   last 7; it is kept warm from PREWARM_LEAD_MIN before that hour to its end, never 1 AM to 4:30 AM.
+//   last 7 (counting the hours either side), or any hour it was asked in when it was asked on PREWARM_MIN_TOTAL days
+//   in all; it is kept warm from PREWARM_LEAD_MIN before that hour to its end, never 1 AM to 4:30 AM.
 // * How often: a trip or board copy is fetched again once it is PREWARM_EVERY_MS old (car parks PREWARM_PARK_EVERY_MS),
 //   so a first open gets a copy at most that old (labelled dataAt) and the fresh one a moment later.
 // * Cost: at most PREWARM_PER_TICK fetches a minute and PREWARM_DAY_CAP Transport for NSW calls a day, counted in a meta
@@ -8622,6 +8623,7 @@ const PREWARM_PER_TICK = 3;
 const PREWARM_EVERY_MS = 4 * 60000;
 const PREWARM_PARK_EVERY_MS = 20 * 60000;
 const PREWARM_MIN_DAYS = 2;
+const PREWARM_MIN_TOTAL = 3;
 const PREWARM_LEAD_MIN = 30;
 const PREWARM_MAX_KEYS = 30;
 const PREWARM_HIST_MAX = 300;
@@ -8656,11 +8658,16 @@ function prewarmPick(maps, tod) {
   const best = new Map();
   for (const map of maps) {
     for (const [k, hours] of Object.entries(map || {})) {
+      const all = new Set(Object.values(hours).flat());
       for (const [h, days] of Object.entries(hours)) {
         const start = Number(h) * 60 - PREWARM_LEAD_MIN, end = Number(h) * 60 + 60;
         const inWin = (tod >= start && tod < end) || (start < 0 && tod >= 1440 + start);
-        if (!inWin || days.length < PREWARM_MIN_DAYS) continue;
-        best.set(k, Math.max(best.get(k) || 0, days.length));
+        if (!inWin) continue;
+        // Usual: asked on PREWARM_MIN_DAYS days in this hour or the hours either side, or asked in this hour by a key
+        // asked on PREWARM_MIN_TOTAL days in all (a pair someone uses every day, at a time that moves a little).
+        const hh = Number(h), near = new Set([...(hours[hh - 1] || []), ...days, ...(hours[hh + 1] || [])]);
+        if (near.size < PREWARM_MIN_DAYS && all.size < PREWARM_MIN_TOTAL) continue;
+        best.set(k, Math.max(best.get(k) || 0, Math.max(near.size, Math.min(all.size, PREWARM_MIN_DAYS))));
       }
     }
   }

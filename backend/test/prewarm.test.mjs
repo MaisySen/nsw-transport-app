@@ -43,6 +43,13 @@ test("usual hours: a key asked on 2 of the last 7 days in an hour is warm from 3
   assert.deepEqual(W.prewarmPick([map], 23 * 60 + 10).map((x) => x.k), ["5|"]);
   assert.deepEqual(W.prewarmPick([{ "6|": { 2: ["20261026", "20261027"] } }], 2 * 60 + 10), [], "never 1 AM to 4:30 AM");
   assert.deepEqual(W.prewarmPick([{ "7|": { 0: ["20261026", "20261027"] } }], 23 * 60 + 40).map((x) => x.k), ["7|"], "the lead time wraps past midnight");
+  // The hours either side count: 8 AM one day and 9 AM the next makes both usual.
+  assert.deepEqual(W.prewarmPick([{ "8|": { 8: ["20261026"], 9: ["20261027"] } }], 8 * 60 + 10).map((x) => x.k), ["8|"]);
+  assert.deepEqual(W.prewarmPick([{ "8|": { 8: ["20261026"], 11: ["20261027"] } }], 8 * 60 + 10).map((x) => x.k), []);
+  // A pair used on 3 days in all is warm in each hour it was asked in, even once.
+  const daily = { "trip:9>10": { 8: ["20261027"], 12: ["20261026"], 18: ["20261025"] } };
+  assert.deepEqual(W.prewarmPick([daily], 8 * 60 + 5).map((x) => x.k), ["trip:9>10", "9|"]);
+  assert.deepEqual(W.prewarmPick([daily], 15 * 60), []);
 });
 
 test("history keeps 7 days and a bounded number of keys; the refresh request for each kind of key", () => {
