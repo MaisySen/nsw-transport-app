@@ -70,7 +70,10 @@ function engLive(tu, row, seqOf, arrFirst) {
   let exact = null, before = null, beforeSeq = -1, after = false;
   for (const u of stus) {
     const sq = u.seq != null ? u.seq : (seqOf ? seqOf(u.stopId) : null);
-    if (u.stopId === row.stopId || (sq != null && sq === row.seq)) { exact = u; break; }
+    // A stop sequence on both sides decides (a loop service calls at its first stop again at the end); the stop id
+    // decides only when either side has none.
+    if (sq != null && row.seq) { if (sq === row.seq) { exact = u; break; } }
+    else if (u.stopId === row.stopId) { exact = u; break; }
     if (sq != null && sq < row.seq && sq > beforeSeq) { before = u; beforeSeq = sq; }
     if (sq != null && sq > row.seq) after = true;
   }
@@ -201,7 +204,16 @@ function engBuildBoard(src, stopId, opts = {}) {
     }
   }
   const t0 = (i) => Date.parse(i.estimated || i.planned);
-  let list = items.filter((i) => t0(i) >= now - 45000 && Date.parse(i.planned) <= to);
+  // The same service from two timetables (NSW TrainLink trips are in both the train and the regional bundle): one row,
+  // the one with live data.
+  const byKey = new Map();
+  for (const i of items) {
+    const k = i.line + "|" + i.planned + "|" + i.stopId;
+    const o = byKey.get(k);
+    if (!o || (!o.realtime && i.realtime)) byKey.set(k, i);
+  }
+  const uniq = new Set(byKey.values());
+  let list = items.filter((i) => uniq.has(i)).filter((i) => t0(i) >= now - 45000 && Date.parse(i.planned) <= to);
   list.sort((a, b) => t0(a) - t0(b));
   const modes = [...new Set(list.map((i) => i.mode))];
   list = list.slice(0, opts.n || ENGINE_MAX_ROWS);

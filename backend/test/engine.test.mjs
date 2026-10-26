@@ -212,3 +212,13 @@ test("platform names learnt from Trip Planner boards replace the timetable's", a
   assert.equal(b.items.find((i) => i.tripId === "B-1").platform, "Stand X1");
   assert.equal(b.items.find((i) => i.tripId === "T-A").platform, "Platform 1");
 });
+
+test("a loop service: the update for its first call does not land on its last call at the same stop", () => {
+  const p = 1792980000000;
+  const tu = { rel: 0, stus: [{ seq: 1, stopId: "S", dep: { time: (p - 1800000) / 1000 + 120, delay: 120 } }, { seq: 15, stopId: "M", arr: { delay: 60, time: (p - 900000) / 1000 + 60 } }] };
+  const last = W.engLive(tu, { planned: p, stopId: "S", seq: 30 }, null, false);
+  assert.equal(last.delay, 60);
+  assert.equal(last.est, p + 60000);
+  const first = W.engLive(tu, { planned: p - 1800000, stopId: "S", seq: 1 }, null, false);
+  assert.equal(first.delay, 120);
+});
