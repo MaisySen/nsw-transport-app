@@ -1186,7 +1186,12 @@ async function trip(env, fromId, toId, opts = {}) {
     ...(opts.exclude || {}),
   }, opts.long ? LONG_TRIP_TIMEOUT_MS : 12000);
   let data;
-  try { data = await tpCall(); }
+  // Our own planner (raptor.js, OWN_PLANNER): answered from our timetable, so no Transport for NSW call; the legs go
+  // through the same live times below. No answer (another day, a stop it does not know) asks the Trip Planner as before.
+  const own = typeof ownPlannerWanted === "function" && ownPlannerWanted(env, opts)
+    ? await ownTripLegs(env, fromId, toId, { date, time, arriveBy: !!opts.arriveBy, count: opts.count || 5 }).catch(() => null) : null;
+  if (own) data = { journeys: [] };
+  else try { data = await tpCall(); }
   catch (e) {
     // Outage fallback (ttplan.js): the Trip Planner refused, failed or timed out, so trips from our own timetable,
     // labelled. Background checks (push alerts, morning check, rescue) pass timetable: false and keep the error.
@@ -1233,6 +1238,7 @@ async function trip(env, fromId, toId, opts = {}) {
     });
     if (legs.length) journeys.push(legs);
   }
+  if (own) journeys.push(...own);
   const transitLegs = journeys.flat().filter((l) => l.kind === "transit");
   // A train or metro's stop id for its destination, from the destination's own name (railDestId).
   if (transitLegs.some((l) => l.mode === "train" || l.mode === "metro")) {
@@ -6977,6 +6983,8 @@ async function handleRequest(request, env, exec) {
       try { const s = await siteRoutes(request, env, url, exec); if (s) return s; }
       catch (e) { return json({ ok: false, error: "server", errors: { form: "We could not save that right now. Please email contact@fintex.au instead." } }, 500); }
     }
+    // Our own trip planner (raptor.js): loading and checks, engine load key or admin key.
+    if (url.pathname.startsWith("/api/raptor/") && typeof plannerRoutes === "function") return withSec(await plannerRoutes(request, env, url), false);
     // Loading the engine's timetable (tools/load_timetable.mjs): admin key only.
     if (url.pathname.startsWith("/api/engine/load/") && request.method === "POST") {
       if (!adminOk(request) && !(env.ENGINE_LOAD_KEY && keyOk(request, null, env.ENGINE_LOAD_KEY))) return json({ error: "forbidden" }, 403);

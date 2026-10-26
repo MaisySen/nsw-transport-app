@@ -38,6 +38,10 @@ ENGINE_SHARDS = "16"
 LIVE_PUSH = "off"
 # One JSON line per /api request (src/worker.js reqLog, docs/API.md "Request numbers"); "off" stops it.
 REQ_LOG = "on"
+# Our own trip planner (src/raptor.js, docs/SCALE_1M.md): "on" answers trip searches from our timetable, no Transport for
+# NSW call; REPLICAS objects share the searches (each copies the pack from the first).
+OWN_PLANNER = "off"
+OWN_PLANNER_REPLICAS = "1"
 API_HOST = "api.transportsydney.app"
 SITE_URL = "https://transportsydney.app"
 VAPID_SUBJECT = "mailto:hello@transportsydney.app"
@@ -64,6 +68,12 @@ class_name = "BoardShard"
 name = "LIVE"
 class_name = "LiveHub"
 
+# Our own trip planner (src/raptor.js, docs/SCALE_1M.md): the timetable pack in SQLite, searched with RAPTOR in memory.
+# OWN_PLANNER "on" answers trip searches from it (no Transport for NSW call); "off" keeps the Trip Planner.
+[[durable_objects.bindings]]
+name = "PLANNER"
+class_name = "TripPlanner"
+
 [[migrations]]
 tag = "engine-v1"
 new_sqlite_classes = ["BoardEngine"]
@@ -75,6 +85,10 @@ new_sqlite_classes = ["BoardShard"]
 [[migrations]]
 tag = "live-v1"
 new_sqlite_classes = ["LiveHub"]
+
+[[migrations]]
+tag = "planner-v1"
+new_sqlite_classes = ["TripPlanner"]
 
 [[d1_databases]]
 binding = "DB"
