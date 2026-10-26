@@ -189,7 +189,7 @@ export default function Home() {
                 below={(js) => (
                   // When to leave and Check before I go as small buttons in the card, not two full rows.
                   <View style={hs.extras}>
-                    <LeaveLine compact js={js} now={now} me={me} />
+                    <LeaveLine compact js={js} now={now} me={me} ends={{ from: next.from.id, to: next.to.id }} />
                     <MorningLink compact from={next.from} to={next.to} dir={next.tag === 'To work' ? 'toWork' : 'toHome'} />
                   </View>
                 )} />

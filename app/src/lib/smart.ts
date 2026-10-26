@@ -105,6 +105,21 @@ export function leavePlan(js: Journey[], now: number, me: LatLon | null): LeaveP
   return null;
 }
 
+/**
+ * Every service the card has loaded leaves before you could walk to it (trains a few minutes apart in the peak,
+ * or a long walk), so leavePlan finds none: the moment from which you could board, so the card can ask for
+ * services from then. Null when a loaded service is reachable, the walk is over MAX_WALK, or there is nothing to go on.
+ */
+export function reachFrom(js: Journey[], now: number, me: LatLon | null): number | null {
+  if (!me || !js.length || leavePlan(js, now, me)) return null;
+  const j = js.find((x) => boardPoint(x) && x.legs.some((l) => l.kind === 'transit' && !l.cancelled));
+  const at = j ? boardPoint(j) : null;
+  if (!at) return null;
+  const walk = walkMin(me, at);
+  if (walk > MAX_WALK) return null;
+  return now + (walk + PLATFORM_MIN) * 60000;
+}
+
 /** "Leave now", "Leave in 6 min", "Leave in 1 h 5 min". */
 export function leaveWords(p: LeavePlan) {
   if (p.inMin <= 0) return 'Leave now';

@@ -4,13 +4,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Platform, Pressable, StyleSheet, Switch, View } from 'react-native';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import { api } from '@/lib/api';
+import { api, tripForCalendar } from '@/lib/api';
 import { clock, shortName } from '@/lib/format';
 import { haptic } from '@/lib/haptic';
 import { getLive, liveWatch, setLive, type LiveTrip } from '@/lib/live';
 import { resetLiveCache, tickLive } from '@/lib/liveEngine';
 import type { LiveState } from '@/lib/liveCalc';
-import { boardTime, leavePlan, leaveWords, legsOf, missedConn, missedPlanLegs, pickNextOption, switchLegs, sydHHMM, wakeId, type LatLon, type Missed } from '@/lib/smart';
+import { boardTime, leavePlan, leaveWords, legsOf, reachFrom, missedConn, missedPlanLegs, pickNextOption, switchLegs, sydHHMM, wakeId, type LatLon, type Missed } from '@/lib/smart';
 import { canNotify, cancelLeave, cancelWake, scheduleLeave } from '@/lib/smartNotify';
 import { store, useStore } from '@/lib/store';
 import { androidLook, radius, usePalette } from '@/lib/theme';
@@ -21,6 +21,7 @@ import { T } from './ui';
 import { useFlag } from '@/lib/config';
 import { hasSpeech, hasSpeechSession, speak } from '@/lib/nativeExtras';
 import { checkSubtitle } from '@/lib/morning';
+import { ymdSyd } from '@/lib/calendarLeaveByCore';
 import { useScreenPoll } from '@/lib/activity';
 import type { Place } from '@/lib/types';
 
@@ -65,12 +66,34 @@ export function useMyPos(): Pos {
  * Under the commute card: "Leave in 6 min, 9 min walk to Burwood" for the first service you can still make on foot,
  * and Remind me, which sets one alert on this phone at the leave time.
  */
+/**
+ * When every service the card loaded leaves before you could walk there (reachFrom), one more trip ask for services
+ * from the time you could reach the stop, so the leave time still shows. Asked again only when that time moves to
+ * the next 5 minutes; no history or install id goes with it (tripForCalendar). Nothing is polled.
+ */
+function useReachable(js: Journey[], now: number, me: LatLon | null, ends?: { from: string; to: string }): Journey[] {
+  const [got, setGot] = useState<{ key: string; js: Journey[] }>({ key: '', js: [] });
+  const from = ends && me ? reachFrom(js, now, me) : null;
+  const key = ends && from != null ? `${ends.from}|${ends.to}|${Math.floor(from / 300000)}` : '';
+  useEffect(() => {
+    if (!key || !ends || from == null) return;
+    let on = true;
+    const day = ymdSyd(from);
+    tripForCalendar(ends.from, ends.to, { time: sydHHMM(from), arriveBy: false, ...(day !== ymdSyd(Date.now()) ? { date: day } : {}) })
+      .then((r) => { if (on) setGot({ key, js: r.journeys || [] }); })
+      .catch(() => { if (on) setGot({ key, js: [] }); });
+    return () => { on = false; };
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  return key && got.key === key ? got.js : [];
+}
+
 /** compact: on the commute card, a small "When to leave" button, or one line with a bell button (Home, 25 Oct 7 PM). */
-export function LeaveLine({ js, now, me, compact }: { js: Journey[]; now: number; me: Pos; compact?: boolean }) {
+export function LeaveLine({ js, now, me, compact, ends }: { js: Journey[]; now: number; me: Pos; compact?: boolean; ends?: { from: string; to: string } }) {
   const c = usePalette();
   const st = useStore();
   const rem = st.leaveReminder;
   useEffect(() => { if (rem && rem.at < now - 60000) store.setLeaveReminder(null); }, [rem, now]);
+  const later = useReachable(js, now, me.phase === 'on' ? me.pos : null, ends);
   if (me.phase === 'off' || me.phase === 'checking') return null;
   if (me.phase === 'ask' && compact) return <MiniAction icon={I.walk} title="When to leave" label="Show when to leave. Uses your location on this phone." onPress={me.ask} />;
   if (me.phase === 'ask') {
@@ -82,7 +105,7 @@ export function LeaveLine({ js, now, me, compact }: { js: Journey[]; now: number
       </Pressable>
     );
   }
-  const p = leavePlan(js, now, me.pos);
+  const p = leavePlan(later.length ? [...js, ...later] : js, now, me.pos);
   if (!p) return null;
   const station = short(p.leg.from);
   const label = `${clock(p.dep)} ${p.leg.line || ''}`.trim();

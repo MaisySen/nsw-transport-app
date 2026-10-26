@@ -97,6 +97,22 @@ test('Leave line hides when location is not known, the walk is over 25 min, or n
   assert.equal(smart.leavePlan([jny(15, { path: null })], at(0), south(500)), null);
 });
 
+test('busy hour: every loaded service leaves before you could walk there, so the card asks again from when you could board', () => {
+  // Trains 2 minutes apart, a 9 minute walk: none of the next three is reachable, and leavePlan alone shows nothing.
+  const js = [jny(2), jny(4), jny(6)];
+  assert.equal(smart.leavePlan(js, at(0), south(750)), null);
+  assert.equal(smart.reachFrom(js, at(0), south(750)), at(10), 'walk 9 plus a minute for the platform');
+  // With the later answer added, the leave line shows the first one you can make.
+  const p = smart.leavePlan([...js, jny(10), jny(12)], at(0), south(750));
+  assert.equal(p.dep, at(10));
+  assert.equal(smart.leaveWords(p), 'Leave now');
+  // No second ask when a loaded service is reachable, the walk is too long, or the location is unknown.
+  assert.equal(smart.reachFrom([jny(2), jny(15)], at(0), south(750)), null);
+  assert.equal(smart.reachFrom(js, at(0), south(5000)), null);
+  assert.equal(smart.reachFrom(js, at(0), null), null);
+  assert.equal(smart.reachFrom([], at(0), south(750)), null);
+});
+
 // ---------- 4: Wake me before my stop ----------
 
 // Live feed for a run of stops: timetable minutes from T0, a delay, and the next stop not yet reached.
