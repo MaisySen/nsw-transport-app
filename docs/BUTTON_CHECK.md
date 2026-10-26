@@ -128,4 +128,4 @@ Asked by the owner at 5:36 PM. While hidden (8:30 AM to its removal) it made no 
 
 * App: `src/components/Smart.tsx`, `src/lib/smart.ts` (leave line), `src/app/watch/[id].tsx` (ended watch), `src/app/parking.tsx` (empty list), `src/app/+not-found.tsx` (new), Platform view removal (see CHANGELOG).
 * Tests: `test/smart.test.mjs`, `test/features.test.mjs`, `test/buttoncheck.test.mjs` (new), `test/e2e/buttons.mjs`, `test/e2e/mockapi.mjs` (new), `test/e2e/sweep.mjs` (new).
-* Results: app tests 655 pass, 3 skipped offline (`OFFLINE=1`, includes battery), `npx tsc --noEmit` clean, backend 396 pass.
+* Results: app tests 655 pass, 3 skipped offline (`OFFLINE=1`, includes battery), `npx tsc --noEmit` clean, backend 430 pass (after rebasing on main `2b61fd5`).
