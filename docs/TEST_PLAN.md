@@ -491,6 +491,15 @@ Before switching it on:
 * Before submission: an Apple Watch screenshot set exists; the version has the newest build; the iPhone screenshots are a reshoot without the owner's stations or the owner kept the old set (store/README.md).
 * Not verified: the store screenshot script's new defaults (Parramatta, Wynyard, Chatswood to Bondi Junction) have not been run; they need live data (after about 1 AM).
 
+## Break it pass (g28, 26 Oct)
+
+Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/tsl-local` (the API under wrangler dev against `backend/tools/fake-nsw.mjs`), then:
+* `node backend/tools/local-burst.mjs`: 10 identical first opens of a board, a trip, nearby and alerts all answer 200 (before the fix 9 of 10 boards answered 500).
+* `curl 127.0.0.1:8799/__mode?set=502html` (then `nulljson`, `malformed`, `429`, `500`): boards and trips answer 503 with `upstream: true` and Transport for NSW named, or the kept copy; never 500, never "our side".
+* Hostile input: `/api/search?q=constructor` 200, `/api/service?mode=__proto__` not 5xx, `/api/predict?planned=garbage` 400.
+* Tests: backend `cross-request.test.mjs`, `feed-lost.test.mjs`, `proto-keys.test.mjs`, `upstream-not-json.test.mjs`. Results 26 Oct: backend 430 pass, app 653 pass with 3 skipped (OFFLINE=1), tsc clean, battery test passes.
+* After the next transport-api deploy: open one stop on two phones at once (both show the board), and `/api/health` with the admin key shows feed ages under a minute an hour later.
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).

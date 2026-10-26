@@ -181,7 +181,7 @@ The app reads from api.transportsydney.app. Since the 26 Oct, 3:39 PM update a r
 
 Fresh times: boards refresh every 15 s while the next service is 10 minutes away or less and 15 s after opening; trip lists, Simple mode and Home trip cards every 15 s while the first service leaves within 10 minutes. "Live, updated" shows when the times were read on the server ([PERFORMANCE.md](PERFORMANCE.md)).
 
-Many phones (server, 26 Oct, 10:44 AM): phones at the same stop share one copy and one Transport for NSW call; a burst for one stop waits for that one answer; a slow answer is waited for at most 700 ms when a copy exists; when Transport for NSW is busy or refuses us, phones get the last copy (its "Updated" time says how old) instead of an error. Load tested at 100 and 1,000 phones ([SCALING.md](SCALING.md)).
+Many phones (server, 26 Oct, 10:44 AM): phones at the same stop share one copy and one Transport for NSW call; a burst for one stop waits for that one answer (each request checks for it on its own timers, 26 Oct, g28); a slow answer is waited for at most 700 ms when a copy exists; when Transport for NSW is busy or refuses us, phones get the last copy (its "Updated" time says how old) instead of an error. Load tested at 100 and 1,000 phones ([SCALING.md](SCALING.md)).
 
 ## Privacy on the server (26 Oct, transport-api 3e88773d)
 
@@ -208,6 +208,8 @@ Every stop board in NSW built ahead of time on the server from the network feeds
 * Trip searches wait 10 s at most and are not asked again for 45 s after a refusal; boards wait 8 s when a kept copy
   is on screen, 15 s with nothing. The old server is asked only when the new one cannot be reached at all.
 * The server keeps the last live answer of each trip for 15 minutes and gives it at once on a first open, with its age.
+
+A Transport for NSW answer that is not JSON (an HTML maintenance page, `null`, a cut off body) counts as Transport for NSW being down (26 Oct, g28, on main, not deployed): the same timetable board, kept copy and words as a refusal, never "Something went wrong on our side".
 
 ## Our own trip planner (server, behind a flag, 26 Oct)
 

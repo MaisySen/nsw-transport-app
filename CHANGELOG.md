@@ -4,6 +4,16 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Break it pass on our own app and server (g28; server fixes on main, not deployed, no app change)
+The app and server run locally against a fake Transport for NSW, 20,984 hostile requests over all 68 routes, every broken upstream answer, the shipped bundle read for secrets. Full write up: [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md).
+* Server: phones opening the same stop at the same moment could get a 500 (a request waited on another request's fetch, which Workers cancels; 9 of 10 identical first opens failed on wrangler dev). Now 10 of 10 answer.
+* Server: one slow realtime feed fetch could leave a server copy with no fresh realtime for that feed and 2.5 s added to every board after it. Now the fetch is kept alive and asked again if lost.
+* Server: a Transport for NSW maintenance page (a 200 that is not JSON) now gets the outage path (timetable board, kept copy, "Transport for NSW isn't available") instead of "Something went wrong on our side".
+* Server: `q=constructor`, `mode=__proto__` and a `planned` that is not a time no longer answer 502.
+* Local harness: `backend/tools/fake-nsw.mjs`, `local-dev.mjs`, `local-burst.mjs`.
+* Bundle and logs checked: no keys, admin routes, owner number or install IDs in the bundle; no install ID, position or Ask text in the request log.
+* Tests: backend `cross-request`, `feed-lost`, `proto-keys`, `upstream-not-json` (20 new).
+
 ### Stop lists from the timetable run, and outage trips to a service's last stop (g24, server; deployed 8:24 PM)
 * Wrong stop lists (a T5 from Parramatta shown to Blacktown with the wrong stops, T9 runs to Hornsby labelled "via Strathfield", a T1 that ends at Gordon): one cause for all of them. The list from your stop onwards came from the Trip Planner's answer to a trip search, which offers the fastest service rather than the run you tapped, and Sydney Trains splits one train's run into several trip ids (at Central, for example), so the feed's own list stopped short. Now the service screen's list comes from our own timetable pack: the trip's own stops plus the trips that carry on the same vehicle's run (same GTFS block, same day, from the station where it ends, within 30 minutes) as far as the station its headsign names, with each trip's live feed times laid on by stop. All modes, NSW wide, no Transport for NSW call. A train whose run carries on under another destination (a City Circle run, a set that leaves Central as another service) keeps the old way. A "via" station already passed is dropped from the destination.
 * `backend/tools/build_planner.py` writes `tripNext` into the planner pack; `raptor.js` `rpRun` and the planner object's `/run`; `worker.js` `ownRun` (edge cache 10 minutes per trip), `runStops`, `runDest`, used in `service()`. `source` is `own` when the list came from the run. `OWN_RUNS=off` turns it off; it also stands down while the budget guard holds `OWN_PLANNER`.
