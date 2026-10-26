@@ -32,6 +32,7 @@ Updated 26 Oct 2026, 4:30 PM.
 
 | Date | Decision | Why | Where it lives |
 | --- | --- | --- | --- |
+| 27 Oct 2026, 1:30 AM (owner approved 26 Oct, 5:34 PM) | Git history rewritten once to take a personal phone number out of every old commit, branch and tag (the one owner approved exception to never force push). Every clone made before 27 Oct 2026 must be deleted and cloned fresh. Never merge, rebase or push from an old clone: it would bring the old history back. | The repo is public and old commits still held the number. Commit ids from 25 Oct onward changed. | [RUNBOOK.md](RUNBOOK.md) section 0 |
 | 26 Oct, 3:08 PM (rule after the lag diagnosis) | At most one over the air update a day, published overnight (after 10 PM), preview first. | 52 updates in 2 days, each a 6 MB download and a slower start. | [RUNBOOK.md](RUNBOOK.md) section 3 |
 | 26 Oct, 5:36 PM (owner) | Platform view removed from the app, not just hidden. | He does not use it and did not want it costing requests. | Deleted in main `e33c2fe` (g23); old `/platform` links get the not found screen (`app/src/app/+not-found.tsx`). |
 | 26 Oct, 7:57 AM (owner) | Platform view hidden until it is reliable and the owner agrees. | His iPhone showed glitches on the board ("Board have full glitches", 11:59 PM). | `PLATFORM_VIEW=false` in `app/src/lib/features.ts` |

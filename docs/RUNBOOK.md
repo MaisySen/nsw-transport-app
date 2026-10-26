@@ -32,6 +32,7 @@ export ADMIN_KEY="$(grep ^ADMIN_KEY= ~/nsw-backend/.env | cut -d= -f2-)"
 ## 0. Rules for every operation
 
 * Pull first: `git pull --rebase origin main`. Other workers push all day. Never force push, never write back an older copy of a file.
+* History was rewritten on 27 Oct 2026 (about 1:30 AM Sydney) to take a personal phone number out of all old commits. Every clone made before then must be deleted and cloned fresh. Never merge, rebase or push from an old clone, or the old history comes back. Old commit ids from 25 Oct onward no longer exist.
 * Tests green before anything ships: backend `node --test test/*.test.mjs`, app `npx tsc --noEmit` and `OFFLINE=1 node --test test/*.test.mjs` (includes `test/battery.test.mjs`).
 * Wrap long commands in `timeout -k 5 <seconds>` so a stuck child is killed.
 * One over the air update a day, overnight (after 10 PM). No EAS build before 1 Nov. No D1 migration without asking. No load test on production or with the production NSW key. No NSW calls for tests during the day (tests only 11 PM to 5 AM, capped).
