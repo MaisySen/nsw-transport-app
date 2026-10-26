@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Speed: search as you type and saved boards (server 26 Oct, 11:38 and 11:47 AM, transport-api 670c8952 then 863d521d; over the air in the g10 update)
+Bidur at 11:20 AM: "app still slow as hell right now. Keep loading in every search".
+* Search shows stops as you type, from lists kept on the phone: every train, metro, light rail, ferry, bus and coach stop in NSW. 19 to 41 ms to results on screen in the web build, no spinner; before, every search waited for the server (453 ms median for a first search from the US build box, up to 1.4 s) plus a 220 ms pause. The server is still asked after 280 ms and adds addresses, places and anything not in the lists; a newer keystroke cancels it.
+* The server answers stop search from its own index (no Trip Planner call when the answer is clear) and keeps search copies 6 hours: a first search 239 ms median from the US box, was 453 ms.
+* A stop's first open gets the server's saved board at once with its real age, then fresh times about 2 s later: 207 ms median (469 ms at the 90th percentile) from the US box for a stop opened in the last 15 minutes or one of 50 busy interchanges, was 1,255 ms (1,547 ms). Live times are still 15 s at most once fresh.
+* The server keeps the 50 busiest interchanges and every stop opened in the last 30 minutes saved: at most 8 Transport for NSW calls a minute, none at night, none when busy, none past 40,000 a day.
+* A finger on a stop result or recent stop starts its board. Smart Placement is on (Cloudflare was still deciding at 11:50 AM, so not yet in the numbers).
+
 ### Many phones: shared fetching and the load test (server 26 Oct, 10:11 to 10:44 AM, transport-api 2592d738)
 * Phones looking at the same stop, trip or service share one copy and one Transport for NSW call, and a burst for one stop waits for that one answer instead of asking again. No copy holds anything about a person.
 * With a copy in hand a phone waits at most 700 ms for a new answer; a slow answer finishes in the background for the next poll. The "Updated" time says how old the copy is.

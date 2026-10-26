@@ -20,6 +20,23 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 | Lighthouse (mobile) | Landing, support, privacy and web app | After site changes. Last run: 100 in all four categories on landing, support and privacy; web app 100, 100, 100 and 96 for accessibility |
 | Writing style check | grep in every test file and before every push | No em dashes, no en dashes, no filler words |
 
+### `app/test/localsearch.test.mjs`: 6 tests, 6 pass (26 Oct, speed (g10), search as you type)
+* 15 messy names from all over NSW find the right stop first (wollongong stn, newcastle interch, newcastle interchnge, wolongong, katoomba, albury, wagga wagga, strathfeild, parra, kings x, manly wharf, tallawong, bondi jnct, circular quay, gosf).
+* Every mode: light rail (randwick light), ferry (manly wharf), metro (tallawong), a bus stop by street (warnervale rd), a stop number (213516); Central carries train, metro and light rail.
+* A whole word first: "kings" is Kings Cross Station.
+* Bus stands never crowd out stations ("wynyard": Wynyard Station first).
+* Speed: under 30 ms a keystroke over all 35,000 stops (about 2 ms measured).
+* Merge: the local answer stays on top, the server adds only new stops and places (by id and by name); spinner only with nothing shown; the server pause is 250 to 300 ms.
+* On a device (not done yet): Plan, Departures, type "kat": Katoomba Station shows with no spinner, in airplane mode too once the lists are kept; type "12 george st" in Trip: stops first, then the server's street and address rows.
+
+### `backend/test/speed.test.mjs`: 6 tests, 6 pass (26 Oct, speed (g10), server)
+* Stop search from our own index without a Trip Planner call (wollongong stn, katoomba, kings x, parra, manly wharf, 213516; albury stn through the route with no upstream call); an unknown name is not clear.
+* Search copies: one per query in lower case with single spaces, only `q` on search routes folded, 6 hours; live boards stay at 15 s.
+* Saved board keys: a live board for now (with mode) is saved, a board at another time or a trip is not.
+* A first open with no edge copy gets the saved board at once with its real `dataAt`, services that left taken out, the fresh board still fetched in the background.
+* Warming limits: 50 hubs, all real names in our station lists, at most 8 calls a minute, a day cap under 45,000, none at night, none while busy.
+* Smart Placement in `wrangler.toml.template`.
+
 ### `app/test/speed10.test.mjs`: 4 tests, 4 pass (26 Oct, speed (g10), app side)
 * Quick ask: 2000 ms for an answer whose dataAt is 21 or 45 s old, null at 20 s or newer, null once done, null with no dataAt or a dataAt ahead of the phone.
 * `Poller.soon`: one run 2 s later, then the 15 s gap again; nothing while the screen is off view.

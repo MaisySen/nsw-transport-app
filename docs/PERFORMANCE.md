@@ -79,6 +79,23 @@ Written 25 Oct 2026 after the battery, smoothness and iOS audit (report: files/q
     chip or a route chip asks for that mode alone (`boardAsk` in src/lib/stopBoardCore.ts, `departuresFor` in
     src/lib/api.ts): one request when the chip is tapped, then the same adaptive gap. All is unchanged.
 
+### 26 Oct, speed (g10): search and server (11:21 AM to 11:50 AM, live data, from this build box in the US west)
+
+Bidur at 11:20 AM: "app still slow as hell right now. Keep loading in every search". Measured with `meas.mjs` (task folder, not shipped): 10 messy NSW names (wollongong stn, newcastle interchnge, katoomba station, byron bay, albury stn, coffs harbour, port macquarie, wagga wagga, orange station, tamworth stn; no Sydney commute names) and 10 stops across NSW (Wollongong, Newcastle Interchange, Gosford, Katoomba, Albury, Wagga Wagga, Manly Wharf, Randwick Light Rail, Tallawong, Strathfield Stand G), 5 runs 20 s apart. Cold is the first request for a query or stop with a new cache key (`cb=`), warm the same request again at once. The box is in the US, so every answer also pays about 150 ms each way across the Pacific; Sydney phones see less.
+
+| Request | Before (transport-api 6021d6aa) p50 / p90 / max | After (863d521d) p50 / p90 / max |
+|---|---|---|
+| Search, cold | 453 / 883 / 1,364 ms | 239 / 749 / 1,029 ms (server answers clear names from its own index, no Trip Planner call) |
+| Search, warm | 38 / 58 / 401 ms | 37 / 77 / 732 ms (copies now kept 6 h, not 15 s) |
+| Search on the phone, as you type (web export, 390 x 844) | server answer plus a 220 ms pause, spinner meanwhile | 19 to 41 ms for 9 of 10 names from the lists kept on the phone, no spinner; 748 ms for the slip "newcastle interchnge" before the fix in f9dc27e (now local too) |
+| Stop board, first open with no copy anywhere | 1,255 / 1,547 / 2,502 ms | 634 to 2,891 ms (unchanged: nobody had opened these stops in 15 min) |
+| Stop board, first open of a stop opened or warmed in the last 15 min | same as above | 207 / 469 / 671 ms (saved board at once, `x-edge-cache: saved`, real age shown; fresh board 1 to 3 s later) |
+| Stop board, repeat at once | 22 / 51 / 58 ms (edge hit) | 194 / 224 / 684 ms while the fresh board is still being fetched (saved again); an edge hit (about 20 to 40 ms) once it lands, 4 s later in a spot check |
+
+Warming: the minute tick saved the 50 busy interchanges within 8 minutes of the deploy (54 boards saved by 11:47 AM, 11 of them opened by a phone). It adds at most 8 Trip Planner calls a minute (0.13 a second, under 10,000 a day; the key allows 5 a second and 60,000 a day; the day's count was 18,660 at 11:46 AM), none from 1:00 to 4:30 AM, none while a server copy is busy and none past 40,000 for the day.
+
+Smart Placement is on but Cloudflare was still deciding at 11:50 AM (`cf-placement: local-SEA` from the US box), so it is not in these numbers. Phones in Sydney already run next to the hub and D1; the change helps phones elsewhere once it is applied. To check later: the `cf-placement` header and the same script.
+
 ### 26 Oct, speed (g10): app side
 * Quick ask after a saved copy: `pollCore.quickReaskMs(body, now, done)` returns 2000 when the answer's `dataAt` is more than 20 s old and no quick ask has run since the screen opened, else null. `useLive` passes it to `useScreenPoll` as `soon`, which calls `Poller.soon(ms)`: one run after `ms`, then the normal gap. Nothing runs while the app is away or the screen is off view. One extra request per opening at most.
 * Prefetch on press in: `prefetchStop(id, mode?)` in `src/lib/prefetch.ts`. It goes through the shared read cache in api.ts (a stop screen opened while it is out joins it; a good answer is reused for 4 s) and keeps the answer under `cacheKey('dep', id)`, which `useLive` reads with `peekOffline` on the first frame. The same stop is asked at most once every 10 s (`prefetchCore.prefetchDue`), so scrolling over rows costs at most one request per stop.
