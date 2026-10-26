@@ -12,6 +12,24 @@ await ctx.addInitScript(() => {
   navigator.share = async () => {};
   window.__opened = []; window.open = (u) => { window.__opened.push(String(u)); return null; };
 });
+// MOCK_API=<port>: every call to our API goes to a local copy of the server with a fake Transport for NSW
+// (test/e2e/mockapi.mjs), so the check makes no Transport for NSW call and runs at any hour.
+// AT=<ISO time>: the browser and that local server both start at this moment, so time of day checks can be run
+// for the morning, midday, evening and night on purpose (BUTTON_CHECK.md).
+const MOCK = process.env.MOCK_API;
+if (MOCK) {
+  if (process.env.AT) await fetch(`http://127.0.0.1:${MOCK}/__clock`, { method: "POST", body: JSON.stringify({ t: Date.parse(process.env.AT), mode: process.env.NSW_MODE || "ok", headway: process.env.HEADWAY || 10, latency: process.env.LATENCY || 0 }) });
+  await ctx.route(/^https:\/\/(api\.transportsydney\.app|[a-z0-9-]+\.sites\.tab\.bot)\//, async (route) => {
+    const q = route.request(); const u = new URL(q.url());
+    if (q.method() === "OPTIONS") return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET,POST,DELETE,PUT" } });
+    try {
+      const r = await fetch(`http://127.0.0.1:${MOCK}${u.pathname}${u.search}`, { method: q.method(), headers: { "content-type": q.headers()["content-type"] || "application/json", ...(q.headers()["x-share-key"] ? { "x-share-key": q.headers()["x-share-key"] } : {}) }, body: ["GET", "HEAD"].includes(q.method()) ? undefined : q.postDataBuffer() || undefined });
+      const h = Object.fromEntries(r.headers); delete h["content-encoding"]; delete h["content-length"];
+      await route.fulfill({ status: r.status, headers: { ...h, "access-control-allow-origin": "*" }, body: Buffer.from(await r.arrayBuffer()) });
+    } catch (e) { await route.abort(); }
+  });
+}
+if (process.env.AT) await ctx.clock.install({ time: new Date(process.env.AT) });
 const page = await ctx.newPage();
 const base = "http://127.0.0.1:" + port;
 const res = [];
@@ -24,9 +42,10 @@ await check("Setup: pick home Burwood", async () => { await vis(page.getByLabel(
 await check("Setup: pick work Strathfield", async () => { await vis(page.getByLabel("Work station")).fill("Strathfield"); await page.waitForTimeout(3500); await vis(page.getByText(/^Strathfield( Station)?$/)).click({ timeout: 5000 }); }, async () => page.url().endsWith("/home"));
 const commuteTitle = async () => (await page.getByText(/^To (work|home): /).locator("visible=true").first().textContent({ timeout: 8000 }).catch(() => "")) || "";
 let t0 = "";
-await check("Home: commute card on top, direction by time of day", async () => { await page.waitForTimeout(5000); t0 = await commuteTitle(); }, async () => { const h = Number(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hour12: false, timeZone: "Australia/Sydney" }).format(new Date())) % 24; return h < 12 ? t0 === "To work: Burwood to Strathfield" : t0 === "To home: Strathfield to Burwood"; });
+await check("Home: commute card on top, direction by time of day", async () => { await page.waitForTimeout(5000); t0 = await commuteTitle(); }, async () => { const h = await page.evaluate(() => Number(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hour12: false, timeZone: "Australia/Sydney" }).format(new Date())) % 24); return h < 12 ? t0 === "To work: Burwood to Strathfield" : t0 === "To home: Strathfield to Burwood"; });
 await check("Home: swap flips the commute", () => vis(page.getByRole("button", { name: /^Swap direction/ })).click({ timeout: 5000 }), async () => { await page.waitForTimeout(3000); const t1 = await commuteTitle(); return page.url().endsWith("/home") && !!t1 && t1 !== t0; });
-// After the swap at night the card is To work, Burwood to Strathfield; the browser stands at Burwood.
+// The browser stands at Burwood. After the swap the card starts at Burwood at night and at Strathfield (a 14 minute
+// walk) by day; the leave line shows either way, from the first service you can still walk to.
 await check("Home: Leave in N min from your location", async () => { await page.waitForTimeout(6000); }, async () => (await page.getByText(/^Leave (now|in \d+ (min|h))/).locator("visible=true").count()) >= 1);
 // Remind me shows while there is at least a minute before you have to leave; wait for one if it is Leave now.
 for (let k = 0; k < 6 && (await page.getByRole("button", { name: /^Remind me at / }).locator("visible=true").count()) === 0; k++) await page.waitForTimeout(15000);
@@ -37,18 +56,23 @@ for (let k = 0; k < 6 && (await page.getByRole("button", { name: /^Remind me at 
 await check("Home: swap back", () => vis(page.getByRole("button", { name: /^Swap direction/ })).click({ timeout: 5000 }), async () => { await page.waitForTimeout(2500); return page.url().endsWith("/home") && (await commuteTitle()) === t0; });
 // Check my trip before I go: from the commute card, set one up, Check now, edit, delete.
 const mText = async (re) => (await page.getByText(re).locator("visible=true").count()) > 0;
-await check("Home: Check my trip before I go opens the checks", () => vis(page.getByRole("button", { name: /^Check my trip before I go/ })).click({ timeout: 5000 }), async () => page.url().includes("/morning") && (await mText(/^Turn on check$/)));
+// The check made from the card is for the card's direction: Burwood to Strathfield before 12pm, the other way after.
+const chk = t0.startsWith("To work") ? "Burwood to Strathfield" : "Strathfield to Burwood";
+await check("Home: Check my trip before I go opens the checks", () => vis(page.getByRole("button", { name: /^Check my trip before I go/ })).click({ timeout: 5000 }), async () => { await page.getByText("Turn on check", { exact: true }).locator("visible=true").first().waitFor({ timeout: 10000 }).catch(() => {}); return page.url().includes("/morning") && (await mText(/^Turn on check$/)); });
 let tm0 = "";
 await check("Morning: 5 minutes later moves the time", async () => { tm0 = (await vis(page.getByLabel(/^Usual leave time, /)).getAttribute("aria-label")) || ""; await vis(page.getByRole("button", { name: "5 minutes later" })).click({ timeout: 5000 }); }, async () => { const t1 = (await vis(page.getByLabel(/^Usual leave time, /)).getAttribute("aria-label")) || ""; return !!t1 && t1 !== tm0; });
 // React Native Web drops aria-selected on buttons (TalkBack reads the selected state on Android), so the chip colour is read.
-const chipOn = async (name) => (await vis(page.getByRole("button", { name, exact: true })).evaluate((e) => getComputedStyle(e).backgroundColor)) === "rgb(26, 95, 207)";
+// A chip that is on is filled with its own border colour (the accent of whichever look the export has, Android or
+// iPhone, light or dark); one that is off has the card colour inside a separator border. The test used to compare
+// with the Android light accent, so a web export without EXPO_PUBLIC_LOOK=android failed both chip checks.
+const chipOn = async (name) => vis(page.getByRole("button", { name, exact: true })).evaluate((e) => { const s = getComputedStyle(e); return s.backgroundColor === s.borderTopColor && s.backgroundColor !== "rgba(0, 0, 0, 0)"; });
 await check("Morning: Saturday on, then off again", async () => { await vis(page.getByRole("button", { name: "Sat", exact: true })).click({ timeout: 5000 }); await page.waitForTimeout(500); }, async () => { const on = await chipOn("Sat"); await vis(page.getByRole("button", { name: "Sat", exact: true })).click({ timeout: 5000 }); await page.waitForTimeout(500); return on && !(await chipOn("Sat")) && (await chipOn("Mon")); });
 await check("Morning: lead 10 min", () => vis(page.getByRole("button", { name: "10 min", exact: true })).click({ timeout: 5000 }), async () => (await chipOn("10 min")) && !(await chipOn("15 min")));
-await check("Morning: Turn on check saves it", () => vis(page.getByText("Turn on check", { exact: true })).click({ timeout: 5000 }), async () => { await page.waitForTimeout(3000); return (await mText(/^Saved\./)) && (await mText(/^Burwood to Strathfield$/)) && (await mText(/Checks 10 min before\./)); });
+await check("Morning: Turn on check saves it", () => vis(page.getByText("Turn on check", { exact: true })).click({ timeout: 5000 }), async () => { await page.waitForTimeout(3000); return (await mText(/^Saved\./)) && (await mText(new RegExp(`^${chk}$`))) && (await mText(/Checks 10 min before\./)); });
 await check("Morning: Check now shows what it would say", () => vis(page.getByRole("button", { name: /^Check now, / })).click({ timeout: 5000 }), async () => { await page.waitForTimeout(5000); return mText(/^(All fine right now|One problem right now|\d problems right now|No service found near .*)$/); });
-await check("Morning: Edit opens the check", () => vis(page.getByRole("button", { name: /^Edit Burwood to Strathfield/ })).click({ timeout: 5000 }), async () => mText(/^Save changes$/));
+await check("Morning: Edit opens the check", () => vis(page.getByRole("button", { name: new RegExp(`^Edit ${chk}`) })).click({ timeout: 5000 }), async () => mText(/^Save changes$/));
 await check("Morning: Cancel closes the edit", () => vis(page.getByText("Cancel", { exact: true })).click({ timeout: 5000 }), async () => !(await mText(/^Save changes$/)));
-await check("Morning: Delete asks", () => vis(page.getByRole("button", { name: /^Delete Burwood to Strathfield/ })).click({ timeout: 5000 }), async () => (await page.locator("#__dlg").count()) === 1);
+await check("Morning: Delete asks", () => vis(page.getByRole("button", { name: new RegExp(`^Delete ${chk}`) })).click({ timeout: 5000 }), async () => (await page.locator("#__dlg").count()) === 1);
 await check("Morning: Delete removes it", () => page.locator("#__dlg button", { hasText: "Delete" }).click({ timeout: 5000 }), async () => { await page.waitForTimeout(3000); return (await mText(/^Deleted\.$/)) && (await page.getByRole("button", { name: /^Check now, / }).count()) === 0; });
 await page.goto(base + "/home"); await page.waitForTimeout(5000);
 for (const [tab, path] of [["Plan", "/search"], ["Ask", "/ask"], ["More", "/settings"], ["Home", "/home"]]) {
