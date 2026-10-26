@@ -11,7 +11,7 @@ import { adaptiveGapMs } from '@/lib/pollCore';
 /** The first departure still ahead (or NaN). */
 const nextDep = (ts: number[]) => { const n = Date.now() - 30000; let b = NaN; for (const t of ts) if (t > n && !(t >= b)) b = t; return b; };
 import { cacheKey, offlineText, offlineWord, staleText } from '@/lib/offlineCore';
-import { boardNote, failWhy, TIMETABLE_TRIPS_NOTE, tripNote } from '@/lib/netErrCore';
+import { boardNote, failWhy, TIMETABLE_BOARD_NOTE, TIMETABLE_TRIPS_NOTE, tripNote } from '@/lib/netErrCore';
 import { packStampText, packTarget } from '@/lib/timetablePackCore';
 import { foldNear, type NearPick } from '@/lib/nearCore';
 import { stopNumber } from '@/lib/busCore';
@@ -86,7 +86,9 @@ function useHomeLive<T>(load: (refresh: boolean) => Promise<T>, deps: any[], key
   // A stop card (a departures key) paints its timetable pack first when no recent copy is kept (timetablePack.ts).
   const live = useLive(load, (d) => adaptiveGapMs(15000, d && nextRef.current ? nextRef.current(d) - Date.now() : null), deps, { cacheKey: key, pack: packTarget(key) });
   const { updatedAt, refresh, offlineAt, staleAt } = live;
-  useEffect(() => { if (updatedAt) markLive(); }, [updatedAt]);
+  // A timetable stand in (the server's answer while Transport for NSW refuses) is not live: the header's Live stamp stays.
+  const standIn = (live.data as any)?.source === 'timetable';
+  useEffect(() => { if (updatedAt && !standIn) markLive(); }, [updatedAt, standIn]);
   useEffect(() => {
     if (!key) return;
     reportOffline(key, offlineAt);
@@ -767,6 +769,7 @@ export function StopBoard({ stop, now, starred, distance, menu }: { stop: Place;
       {!data ? <T kind="foot" tone="text2" style={s.note}>{error ? 'Live times unavailable right now, trying again' : 'Loading live times'}</T> : null}
       {offlineAt ? <OfflineNote at={offlineAt} now={now} /> : null}
       {packAt && !offlineAt ? <T kind="foot" tone="text2" style={s.note}>{packStampText(!!error)}</T> : null}
+      {(data as any)?.source === 'timetable' && !packAt && !offlineAt && groups.length ? <T kind="foot" tone="text2" style={s.note}>{TIMETABLE_BOARD_NOTE}</T> : null}
       {data && !groups.length ? <T kind="foot" tone="text2" style={s.note}>{boardNote({ offlineAt, error, staleAt, why: failWhy() })}</T> : null}
       {withKeys(groups, (g) => `${g.d.line}|${g.d.dest}`).map(({ v: { d, next }, k: rowKey }) => {
         const t = cd(bestTime(d.planned, d.realtime ? d.estimated : null), now);

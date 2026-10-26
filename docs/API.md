@@ -589,3 +589,41 @@ old) at once instead of waiting up to 700 ms for the fresh answer, which is stor
 (DIAGNOSIS_LAG.md item 4, server part). The Watch's trip reuses the phone's recent answer for the same from and to
 through the trip copies (g16, `trip:FROM>TO`).
 
+## When Transport for NSW refuses: timetable trips, nearby and honest errors (26 Oct 2026, g16)
+
+Written after Bidur's screenshots at 2:52 PM, with the NSW key over its daily limit: Home's commute card said "No more
+services today", Nearby said "Something went wrong (502)" and Ask said "Check your signal" on 5G. Code:
+`backend/src/ttplan.js` (appended to worker.js after pack.js), tests `backend/test/outage-trips.test.mjs`.
+
+* `GET /api/trip` when the Trip Planner refuses (403, 429), fails (5xx) or times out: trips from the board engine's
+  timetable, direct on one service or with one change at a station both services call at (trains use the timetable's
+  stop order; other modes try the big interchanges nearest the straight line). 200 with the usual trip shape plus
+  `source: "timetable"`, `fallback: "planner-unavailable"` and `alerts: [{ title: "Live trips unavailable, showing
+  timetable times", priority: "high" }]`; every leg `realtime: false`, `estimated: null`, `status.key: "scheduled"`,
+  `source: "timetable"`, and the first leg of each trip carries the same alert (so phones that show only leg alerts
+  label it). No `fare`: Opal fares need the distance along the route. Never kept as a copy (`x-stand-in: timetable`).
+  Not for timed trips with step free on (`acc=1`), the last service or the server's own checks (morning check, push
+  alerts), which keep the error.
+* No timetable trip found: `503 { kind: "error", unavailable: true, upstream: true, error, text }` with
+  "Live trips are unavailable right now because Transport for NSW isn't answering. Try again soon." Never an empty
+  list. A Trip Planner time out with nothing found is `504` (the app's long trip path).
+* Known gaps: the timetable keeps no row for a trip's last stop (nobody boards there), so a trip that ends at the
+  destination (Manly Wharf on the F1, a bus terminus) is found only with a change before it; walks between two
+  different stops are not planned.
+* Every error: `{ kind: "error", text, error, upstream, unavailable }`, `error` and `text` the same words. An upstream
+  failure (status 503) says Transport for NSW's live data is not available; our own failure (502) says so. No bare
+  status codes.
+* `GET /api/nearby?lat&lon`: from the timetable's stop list in the engine (no Trip Planner call), stops within 800 m,
+  platforms and stands as their station, stop pairs ("G" parents) as their own stops, nearest first, 8 at most:
+  `{ kind: "nearby", stops: [{ id, name, distance }] }`. The Trip Planner only when the engine is not there.
+* `GET /api/departures?format=text` when the Trip Planner fails: the same labelled timetable board as the JSON answer.
+* `GET /api/ask`: trips and boards as above when the Trip Planner is down, stop names from our own index; the reply
+  starts "Live times are unavailable right now because Transport for NSW isn't answering, so these are timetable
+  times." An answer that cannot be given says "Transport for NSW's live data isn't answering right now ... It's not your
+  connection."
+* Trip copies (DIAGNOSIS_LAG.md item 3): the last live answer of a plain trip (no time, day, arrive by, step free,
+  modes or long) is saved per from and to pair in `board_copies` (key `trip:FROM>TO`, gzip, up to 15 minutes, only
+  while 2 of its trips are still to leave, never a timetable answer, never warmed by the minute tick). A first open
+  gets it at once with its age (`dataAt`, `x-edge-cache: saved`) while the fresh answer loads behind it.
+* Engine object paths (worker only): `GET /ttplan?from&to&count[&at | &day&time][&arriveBy=1]` and
+  `GET /nearby?lat&lon[&radius]`. After a deploy, `POST /api/engine/load/restart` so the object runs the new code.

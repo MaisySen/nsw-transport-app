@@ -4,6 +4,16 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### When Transport for NSW refuses: timetable trips, Nearby and honest messages (server 26 Oct, 3:08 to 3:23 PM, transport-api fc40734e, aba3c74d, 7b2f4c7b; over the air OTA_LINE)
+Bidur's screenshots at 2:52 PM, with the NSW key over its daily limit: the commute card said "No more services today", Nearby said "Something went wrong (502)", Ask said "Check your signal" on 5G.
+* Trips: when the Trip Planner refuses, fails or times out, `/api/trip` answers with timetable trips from our own timetable, direct or with one change (Kings Cross to Strathfield: T4 then T1, T9 or CCN at Central), labelled "Live trips unavailable, showing timetable times". With nothing found it says live trips are unavailable, never an empty list. Phones already in the field show these with no update.
+* Nearby comes from our own stop list, with no Trip Planner call at all.
+* Ask answers trips and departures from the timetable when the Trip Planner is down and says so first; when it cannot answer it says Transport for NSW isn't answering and that it is not your connection.
+* Every error says what failed in words, never a status code.
+* The server keeps the last live answer of each trip for 15 minutes and gives it at once on a first open, with its age (DIAGNOSIS_LAG.md item 3).
+* App (over the air): the commute card and stop cards never say "No more services" from an old copy while the live answer failed; timetable trips and boards carry "Timetable times. Live ... are unavailable right now." and do not light the Live stamp; "Check your signal" only when the phone has no connection, otherwise "Live times unavailable" or "Live times are slow right now"; a server error shows the times kept on the phone or the timetable instead of an error (item 7); the old server only when the new one cannot be reached at all, with no one minute hold (item 5); trip searches wait 10 s at most and a refusal is not asked again the 45 s way (item 3); boards wait 8 s with a copy on screen, 15 s with nothing (item 6).
+* Known gap: a trip that ends at the last stop of its service (Manly Wharf on the F1) has no timetable trip yet and says live trips are unavailable.
+
 ### Fastest live data, part A (server 26 Oct, 3:23 PM, transport-api 2e7a550e from main 9016eeb, roll back to 7b2f4c7b; push and data age off; no app update)
 Bidur at 2:50 PM: "How else can we go crazy fast and fastest live data here."
 * The board push (g14, ENGINE_PUSH) now also covers stops on the Trip Planner path: `LIVE_PUSH` sends the open stop screen the board the server already has, when it changes, about every 15 s, at the cost of one polling phone per stop however many phones are on it.

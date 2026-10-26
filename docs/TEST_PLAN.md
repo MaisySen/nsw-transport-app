@@ -405,6 +405,25 @@ From docs/DIAGNOSIS_LAG.md, 26 Oct. Nothing in that plan has been measured on a 
 6. Stop board widget with Airplane mode on, then off: does it go empty ("Live times will be back shortly") or keep its rows.
 7. While a watch opens, run `wrangler tail transport-api` and record the User-Agent of the watch's and the widget's requests (needed for fix 4).
 
+
+## Outage mode checks (g16, 26 Oct)
+
+Automated: `backend/test/outage-trips.test.mjs` (timetable trips direct and with one change, train to metro through a
+hub, no made up trips, Empty Train never offered, honest 503 with no list, nearby from our stop list with no NSW call,
+timetable answers never kept, trip copies) and `app/test/outage16.test.mjs` (trip card and board notes, no status
+codes in any message, Ask's words, slow vs offline, kept times on a 5xx or 429, old server only when unreachable,
+10 s trip deadline).
+
+Checked against production with the NSW key refused (26 Oct, 3:10 to 3:30 PM): Kings Cross to Strathfield (T4 then
+T1 or T9 at Central), Flemington to Campsie (T2 then the 420 at Burwood), North Sydney to Strathfield (T1 or T9 then
+T2 at Wynyard), Circular Quay to Bondi Junction (333), Circular Quay to Drummoyne Wharf (F3), Nearby at Martin Place,
+Parramatta and Manly Wharf, Ask "Kings Cross to Strathfield", "departures Central", "next bus from Circular Quay to
+Bondi Junction". Circular Quay to Manly has no timetable trip (terminus gap) and says live trips are unavailable.
+
+On a phone (not done yet): with NSW refusing, the Home commute card shows timetable trips with the note; Nearby lists
+stops; Ask answers with the timetable note; flight mode shows "Offline" and "check your signal"; after NSW is back
+(after 1 AM) cards show live times again with no note, and the trip screen's first open of a saved trip is instant.
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).

@@ -95,6 +95,8 @@ export function askFailText(e: any): string {
 
 /** Under a Home trip card that shows timetable trips (the server's stand in while the Trip Planner is refused). */
 export const TIMETABLE_TRIPS_NOTE = 'Timetable times. Live trips are unavailable right now.';
+/** Under a Home stop card that shows the server's timetable board. */
+export const TIMETABLE_BOARD_NOTE = 'Timetable times. Live times are unavailable right now.';
 
 /**
  * The line on a Home trip card with nothing to show. "No more services today" only when a live answer truly had none:

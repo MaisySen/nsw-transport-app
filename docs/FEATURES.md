@@ -185,6 +185,20 @@ Every stop board in NSW built ahead of time on the server from the network feeds
 
 **Timetable times when live data is down** (server, 26 Oct, 1:58 PM): when the Trip Planner refuses or fails and no copy of a stop's board is kept, the stop board shows the engine's timetable times instead of an error, every row marked Scheduled, with the alert "Live times unavailable, showing timetable times" on top. The next live answer replaces it. No app update needed.
 
+
+## When Transport for NSW is down (26 Oct, g16)
+
+* Trip cards, the trip screen and Ask show timetable trips (direct, or one change) labelled "Timetable times. Live
+  trips are unavailable right now." instead of an error, and never "No more services today" unless a live answer
+  truly had none. Nearby comes from our own stop list and works with no Trip Planner at all.
+* Messages say where the fault is: "check your signal" only when the phone has no connection; otherwise Transport for
+  NSW's live data is unavailable or slow. No status codes anywhere.
+* A server error or slow answer shows the times kept on the phone (or the timetable pack) instead of an error,
+  labelled "Live times unavailable, showing times from ..." (header tag "No live times"), not "Offline".
+* Trip searches wait 10 s at most and are not asked again for 45 s after a refusal; boards wait 8 s when a kept copy
+  is on screen, 15 s with nothing. The old server is asked only when the new one cannot be reached at all.
+* The server keeps the last live answer of each trip for 15 minutes and gives it at once on a first open, with its age.
+
 ## Not in the app
 
 No accounts or login, no ads, no analytics or tracking, no Opal card balance. Privacy details: [STORE_PRIVACY.md](STORE_PRIVACY.md) and https://transportsydney.app/privacy/.
