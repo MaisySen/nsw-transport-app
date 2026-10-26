@@ -65,14 +65,14 @@ export function Sep({ inset = 16 }: { inset?: number }) {
   return <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: c.sep, marginLeft: inset }} />;
 }
 
-export function Row({ title, subtitle, icon, iconBg, right, onPress, chevron = !!onPress, destructive, onLongPress, accessibilityHint, accessibilityActions, onAccessibilityAction, ref }: {
-  title: string; subtitle?: string; icon?: IconName; iconBg?: string; right?: ReactNode; onPress?: () => void; chevron?: boolean; destructive?: boolean; onLongPress?: () => void; accessibilityHint?: string;
+export function Row({ title, subtitle, icon, iconBg, right, onPress, onPressIn, chevron = !!onPress, destructive, onLongPress, accessibilityHint, accessibilityActions, onAccessibilityAction, ref }: {
+  title: string; subtitle?: string; icon?: IconName; iconBg?: string; right?: ReactNode; onPress?: () => void; /** A finger landed (prefetch.ts starts the next screen's data). */ onPressIn?: () => void; chevron?: boolean; destructive?: boolean; onLongPress?: () => void; accessibilityHint?: string;
   /** Passed through for a hold menu (components/HoldMenu.tsx): its rows as VoiceOver actions, and the row to drop the menu from. */
   accessibilityActions?: { name: string; label: string }[]; onAccessibilityAction?: (e: any) => void; ref?: any;
 }) {
   const c = usePalette();
   return (
-    <Pressable ref={ref} onPress={onPress} onLongPress={onLongPress} accessibilityActions={accessibilityActions} onAccessibilityAction={onAccessibilityAction} android_ripple={onPress ? { color: c.fill } : undefined}
+    <Pressable ref={ref} onPress={onPress} onPressIn={onPressIn} onLongPress={onLongPress} accessibilityActions={accessibilityActions} onAccessibilityAction={onAccessibilityAction} android_ripple={onPress ? { color: c.fill } : undefined}
       accessibilityRole={onPress ? 'button' : undefined} accessibilityHint={accessibilityHint} style={({ pressed }) => [s.row, pressed && Platform.OS === 'ios' && onPress ? { backgroundColor: c.fill } : null]}>
       {icon ? (
         <View style={[s.iconBox, { backgroundColor: iconBg || c.tint }]}>

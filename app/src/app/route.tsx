@@ -6,6 +6,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { goBack } from '@/lib/nav';
+import { prefetchStop } from '@/lib/prefetch';
 import { useSides } from '@/lib/layout';
 import { api } from '@/lib/api';
 import { useScreenPoll, useNow } from '@/lib/activity';
@@ -169,7 +170,7 @@ export default function RouteScreen() {
                             </View>
                           );
                         })}
-                        <Pressable onPress={() => router.push({ pathname: '/stop/[id]', params: { id: s.id, name: s.name } })} accessibilityRole="link" hitSlop={6}>
+                        <Pressable onPressIn={() => prefetchStop(s.id)} onPress={() => router.push({ pathname: '/stop/[id]', params: { id: s.id, name: s.name } })} accessibilityRole="link" hitSlop={6}>
                           <T kind="sub" tone="tint" style={{ fontWeight: '600', marginTop: 2 }}>All departures from this stop</T>
                         </Pressable>
                       </View>

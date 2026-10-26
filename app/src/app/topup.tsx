@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { api } from '@/lib/api';
+import { prefetchStop } from '@/lib/prefetch';
 import { radius, usePalette } from '@/lib/theme';
 import { distText, stShort, TICKET, type TopupItem } from '@/lib/access';
 import { myPosition } from '@/lib/where';
@@ -73,7 +74,7 @@ export default function TopupScreen() {
                   {i ? <Sep inset={57} /> : null}
                   <Row icon={I.fare} iconBg={k[2]} title={stShort(r.name)} subtitle={`${k[1]}${r.kind === 'topup' ? ' \u00b7 top up only' : ''}`}
                     right={r.distance != null ? <T kind="body" tone="text2" style={{ fontVariant: ['tabular-nums'] }}>{distText(r.distance)}</T> : undefined}
-                    onPress={() => open(r)} />
+                    onPressIn={() => prefetchStop(r.id)} onPress={() => open(r)} />
                 </View>
               );
             })}

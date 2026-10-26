@@ -3,6 +3,7 @@
 // Answers come back as a short reply plus live cards (departures, trips, alerts) that open the stop board, trip or
 // live map, with the actions under them (Open trip, Directions, Speak).
 import { spokenTime } from '@/lib/homeCore';
+import { prefetchStop } from '@/lib/prefetch';
 import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { router, Stack, useFocusEffect } from 'expo-router';
@@ -70,10 +71,10 @@ function open(l?: Link | null) {
   if (u) Linking.openURL(u);
 }
 
-function Row({ onPress, children, dim }: { onPress?: () => void; children: any; dim?: boolean }) {
+function Row({ onPress, onPressIn, children, dim }: { onPress?: () => void; onPressIn?: () => void; children: any; dim?: boolean }) {
   const c = usePalette();
   return (
-    <Pressable onPress={onPress} disabled={!onPress} accessibilityRole={onPress ? 'button' : undefined} style={({ pressed }) => [st.row, { borderTopColor: c.sep, opacity: dim ? 0.45 : 1, backgroundColor: pressed ? c.fill : 'transparent' }]}>{children}</Pressable>
+    <Pressable onPress={onPress} onPressIn={onPressIn} disabled={!onPress} accessibilityRole={onPress ? 'button' : undefined} style={({ pressed }) => [st.row, { borderTopColor: c.sep, opacity: dim ? 0.45 : 1, backgroundColor: pressed ? c.fill : 'transparent' }]}>{children}</Pressable>
   );
 }
 function Count({ t, live, now }: { t: string; live?: boolean; now: number }) {
@@ -141,7 +142,7 @@ function CardView({ card, now }: { card: Card; now: number }) {
       {card.type === 'parking' && (card.items || []).map((p: CarPark, i: number) => {
         const b = parkBadge(p);
         return (
-          <Row key={i} onPress={() => p.station && router.push({ pathname: '/stop/[id]', params: { id: p.station, name: '' } })}>
+          <Row key={i} onPressIn={() => { if (p.station) prefetchStop(p.station); }} onPress={() => p.station && router.push({ pathname: '/stop/[id]', params: { id: p.station, name: '' } })}>
             <View style={st.mid}>
               <Text style={[st.t1, { color: c.text }]}>{p.name}</Text>
               <Text style={[st.t2, { color: b.tone === 'green' ? c.liveText : b.tone === 'orange' ? c.lateText : b.tone === 'red' ? c.redText : c.text2, fontWeight: '600' }]}>
@@ -156,7 +157,7 @@ function CardView({ card, now }: { card: Card; now: number }) {
         const tk = ticketText(sx.ticket);
         return (
           <>
-            <Row onPress={() => router.push({ pathname: '/stop/[id]', params: { id: sx.id, name: sx.name } })}>
+            <Row onPressIn={() => prefetchStop(sx.id)} onPress={() => router.push({ pathname: '/stop/[id]', params: { id: sx.id, name: sx.name } })}>
               <View style={st.mid}>
                 <Text style={[st.t1, { color: c.text }]}>{sx.access?.label || ACC_LABEL[sx.access?.level || 'unknown']}</Text>
                 <Text style={[st.t2, { color: c.text2 }]}>{accessKit(sx.access) || tk.title}</Text>
@@ -170,7 +171,7 @@ function CardView({ card, now }: { card: Card; now: number }) {
                 </View>
               </Row>
             ))}
-            <Row onPress={() => router.push({ pathname: '/stop/[id]', params: { id: sx.id, name: sx.name } })}>
+            <Row onPressIn={() => prefetchStop(sx.id)} onPress={() => router.push({ pathname: '/stop/[id]', params: { id: sx.id, name: sx.name } })}>
               <View style={st.mid}><Text style={[st.t1, { color: c.text }]}>{tk.title}</Text><Text style={[st.t2, { color: c.text2 }]}>{tk.sub}</Text></View>
             </Row>
           </>
