@@ -1196,7 +1196,10 @@ async function trip(env, fromId, toId, opts = {}) {
     // Outage fallback (ttplan.js): the Trip Planner refused, failed or timed out, so trips from our own timetable,
     // labelled. Background checks (push alerts, morning check, rescue) pass timetable: false and keep the error.
     if (opts.timetable === false || opts.accessible || typeof timetableTrip !== "function" || !ttUpstreamDown(e)) throw e;
-    const tt = await timetableTrip(env, fromId, toId, { date, time: opts.time || opts.date ? time : null, arriveBy: !!opts.arriveBy, count: opts.count || 5, accessible: !!opts.accessible, exclude: opts.exclude }).catch(() => null);
+    const tt = await timetableTrip(env, fromId, toId, { date, time: opts.time || opts.date ? time : null, arriveBy: !!opts.arriveBy, count: opts.count || 5, accessible: !!opts.accessible, exclude: opts.exclude }).catch(() => null)
+      // Our own planner's timetable (raptor.js) where the board engine's has none: a trip to a service's last stop (the
+      // engine keeps no row for it), more than one change, a walk between nearby stops, or a point to start from.
+      || (typeof ownTimetableTrip === "function" ? await ownTimetableTrip(env, fromId, toId, { date, time, arriveBy: !!opts.arriveBy, count: opts.count || 5, exclude: opts.exclude }).catch(() => null) : null);
     if (tt) return { ...tt, tomorrow };
     throw Object.assign(e, { tripsUnavailable: true });
   }
@@ -1805,10 +1808,25 @@ async function service(env, q) {
   // Sydney Trains' feed lists only the stops it has news for (on 26 Oct an all stops South Coast train had 9 of its
   // 41 stops), so a train's stops from your stop onwards always come from the planner when it can be asked; the feed's
   // stops before yours stay, so where the train is and how many stops away still read as before.
-  const feedShort = stops.length ? (mode === "train" || await feedEndsShort(env, q, mode, stops)) : false;
+  // The trip's whole run from our own timetable (raptor.js ownRun/rpRun), every mode: the stops of this trip and of the
+  // trips that carry on the same train's run to the station its headsign names (Sydney Trains splits a run into trip
+  // ids at Central), with the feed's live times laid on by stop. No Transport for NSW call. The Trip Planner's list was
+  // the list of whatever service its trip search offered, so a slower train (a T5 from Parramatta to Blacktown, T9 runs
+  // to Hornsby) came back as another train or not at all (26 Oct 2026). When the run continues under another
+  // destination (reached false) a train keeps the old way and the run is used only if that finds nothing.
+  let run = null, runList = null;
+  if (tripId && q.stop && typeof ownRun === "function") {
+    const r = await ownRun(env, tripId, q.stop, q.planned ? ms(q.planned) : null).catch(() => null);
+    const list = r ? runStops(r, (t) => (t === tripId ? tu : rt.tu(mode, line, t, feed)), tripId, tuLive) : null;
+    if (list) { run = r; runList = list; }
+  }
+  const useRun = !!(run && (run.reached || mode !== "train"));
+  if (useRun) { stops = runList; source = "own"; }
+  const feedShort = stops.length && !useRun ? (mode === "train" || await feedEndsShort(env, q, mode, stops)) : false;
   const feedStops = stops;
   let plannerFrom = -1;
-  if ((!stops.length || feedShort) && q.stop && q.destId && q.planned) {
+  if (run && useRun) plannerFrom = run.mine;
+  if ((!stops.length || feedShort) && !useRun && q.stop && q.destId && q.planned) {
     // Fall back to the trip planner for the stop list from your stop onwards; a City Circle run is asked in two halves
     // (circleLeg), named by the app or by the planner's own answer.
     let got = mode === "train" && isCircleName(q.dest) ? (await circleLeg(env, q, tripId, line, q.dest)) : null;
@@ -1870,6 +1888,11 @@ async function service(env, q) {
     }
   }
 
+  // The old way found no list for a train whose run carries on under another destination: the run to the end of
+  // this trip id, from the timetable.
+  if (run && !useRun && (source !== "planner" || !stops.length)) { stops = runList; source = "own"; stopsStatus = "ok"; plannerFrom = run.mine; }
+  if (run && source === "own") dest = runDest(q.dest || dest || run.head, stops, plannerFrom);
+
   // A feed's delay carries on to later stops it does not list (GTFS realtime). Sydney Trains lists only the stops it
   // has news for, and a train's trip can end at Central and carry on to Town Hall under another trip id (the 8:46 T1
   // from Strathfield, 26 Oct 2026): without this the stop you get off at kept its timetable time while the train ran
@@ -1918,6 +1941,8 @@ async function service(env, q) {
   stops.forEach((s, i) => { s.passed = i < nextIdx; });
 
   let mine = q.stop ? stops.findIndex((s) => s.id === q.stop) : -1;
+  // On a run the stop asked about is the visit nearest the planned time (a loop calls at a stop twice).
+  if (source === "own" && plannerFrom >= 0 && stops[plannerFrom] && (mine < 0 || stops[plannerFrom].id === q.stop)) mine = plannerFrom;
   if (mine < 0 && q.stopName) mine = stops.findIndex((s) => baseName(s.name) === baseName(q.stopName));
   // The planner's run starts where it was asked from: your stop, even when it names another platform of the station
   // (a platform change, or a City Circle run asked from Central to Central).
@@ -4399,6 +4424,52 @@ async function liveLegs(env, spec, now, opts = {}) {
   return out;
 }
 
+// A run's stops (ownRun) in the service answer's shape, with each trip's live feed laid on by stop: a feed stop at
+// another platform of the same station is a platform change (its id is kept), a skipped stop is marked. tuOf(trip)
+// gives a trip update for each trip of the run. null when the feed of the trip asked about lists a stop the run does
+// not have (a changed trip): the caller keeps the old way.
+function runStops(run, tuOf, tripId, live) {
+  if (!run || !Array.isArray(run.stops) || run.stops.length < 2) return null;
+  const parentOf = new Map();
+  for (const [p, kids] of Object.entries(run.alt || {})) for (const k of kids) parentOf.set(k, p);
+  const st = run.stops.map((s) => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, planned: iso(s.dep || s.arr), estimated: null, skipped: false }));
+  for (const t of run.trips || [tripId]) {
+    const tu = tuOf(t);
+    if (!tu || !Array.isArray(tu.stus) || !tu.stus.length) continue;
+    const tuLive = t === tripId ? live : !!(tu.ts && tu.rel !== 3);
+    let from = 0, unmatched = 0;
+    for (const u of tu.stus) {
+      const stn = parentOf.get(u.stopId) || u.stopId;
+      let k = -1;
+      for (let i = from; i < st.length; i++) {
+        const s = run.stops[i];
+        // A stop where one trip hands over to the next carries the next trip's id; the first trip's feed lists it too.
+        if (s.trip !== t && !(i > 0 && run.stops[i - 1].trip === t)) continue;
+        if (s.id === u.stopId || (s.parent || s.id) === stn) { k = i; break; }
+      }
+      if (k < 0) { if (u.rel !== 1) unmatched++; continue; }
+      from = k + 1;
+      const s = st[k];
+      if (u.stopId !== s.id) s.id = u.stopId;
+      if (u.rel === 1) { s.skipped = true; continue; }
+      if (!tuLive || u.rel === 2) continue;
+      const tm = stuTime(u);
+      if (tm && tm.t != null) { s.estimated = iso(tm.t); continue; }
+      const ev = u.dep && u.dep.delay != null ? u.dep : u.arr && u.arr.delay != null ? u.arr : null;
+      if (ev && s.planned) s.estimated = iso(ms(s.planned) + ev.delay * 1000);
+    }
+    if (unmatched && t === tripId) return null;
+  }
+  return st;
+}
+// The destination with its "via" dropped once the train is at or past the station it names ("Hornsby via
+// Strathfield" seen from Strathfield or Rhodes is a train to Hornsby).
+function runDest(dest, stops, mine) {
+  const m = /^(.*?)\s+via\s+(.+)$/i.exec(String(dest || ""));
+  if (!m || mine < 0) return dest || "";
+  const via = railDestKey(m[2]);
+  return stops.slice(mine + 1).some((s) => railDestKey(s.name) === via) ? dest : m[1].trim();
+}
 // Carries a run's latest live delay on to later stops that have no live time of their own (GTFS realtime: a delay holds
 // for the stops after it until the feed says otherwise). Stops before the first live time are left as they are.
 function carryDelays(stops, on) {

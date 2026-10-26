@@ -1,0 +1,13 @@
+route_id,agency_id,route_short_name,route_long_name,route_type,route_color
+11-400-1-sj2-1,2501,4001,Penrith Station to McCarthy College,712,00B5EF
+14-98T-1-sj2-1,7057,98T1,"Wynyard, Chatswood, then all stations to Hornsby",714,00B5EF
+2-T1-N-sj2-1,x0001,T1,T1 North Shore and Western Line,2,F99D1C
+2-T1-W-sj2-1,x0001,T1,T1 North Shore and Western Line,2,F99D1C
+2-T2-sj2-1,x0001,T2,T2 Leppington and Inner West Line,2,0098CD
+2-T5-sj2-1,x0001,T5,T5 Cumberland Line,2,C4258F
+2-T8-sj2-1,x0001,T8,T8 Airport and South Line,2,00954C
+2-T9-sj2-1,x0001,T9,T9 Northern Line,2,D11F2F
+3-M1-sj2-1,SMNW,M1,M1 Metro North West and Bankstown Line,401,168388
+30-333-sj2-1,2509,333,City Circular Quay to North Bondi via Bondi Junction,700,00B5EF
+78-L2-sj2-1,SLR,L2,L2 Randwick Line,900,DD1E25
+9-F1-sj2-1,SF,F1,F1 Manly,4,00774B

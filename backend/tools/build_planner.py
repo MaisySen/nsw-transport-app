@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Builds our own trip planner's timetable pack (RAPTOR) from a Transport for NSW GTFS bundle (standard library only).
 
-  python3 tools/build_planner.py <complete GTFS zip, or a dir of mode zips> <out file> [service day YYYYMMDD]
+  python3 tools/build_planner.py <complete GTFS zip, a dir of mode zips, or a dir of GTFS txt files> <out file> [service day YYYYMMDD]
 
 The pack holds one Sydney service day as times in seconds after that day's start (noon minus 12 h, as the board
 engine counts), plus the trips of the day before that run past midnight and the next morning's trips up to 08:00
@@ -14,6 +14,8 @@ Layout (all numbers little endian, read by backend/src/raptor.js):
   RAPTOR needs; trips also share their boarding rules within a pattern (see below), so the earliest trip is the
   one to take. Footpaths: between the stops of one station, and between stops up to WALK_MAX_M apart (at most
   WALK_MAX_N per stop), at WALK_MPS with a detour factor, plus a fixed time to find the stop.
+tripNext: for each trip, the trip that carries on the same vehicle's run (same block, same day, from the station
+where it ends, within RUN_GAP_S), or -1; the service screen's stop list follows it (raptor.js rpRun).
 Rows where nobody may board (pickup_type 1) or get off (drop_off_type 1) carry a flag, so the planner never boards or
 leaves a service where the timetable says it cannot.
 """
@@ -31,6 +33,7 @@ DETOUR = 1.3           # streets are not straight lines
 FIND_S = 60            # time to find the next stop or platform
 STATION_MIN_S = 120    # least time between two platforms or stands of one station
 NEXT_MORNING_S = 8 * 3600
+RUN_GAP_S = 30 * 60     # a run that carries on under another trip id leaves within this long of arriving
 NOT_IN_SERVICE = ("empty train", "not in service")
 
 
@@ -55,11 +58,20 @@ def cls_of(route_type, agency=""):
     return 5
 
 
+class Folder:
+    """The few zipfile.ZipFile calls Source makes, over a folder of GTFS txt files."""
+    def __init__(self, path): self.path = path
+    def namelist(self): return os.listdir(self.path)
+    def open(self, name): return open(os.path.join(self.path, name), "rb")
+
+
 class Source:
     """One complete bundle zip, or a dir of zips (the engine's mode bundles); ids are prefixed per zip in a dir."""
     def __init__(self, path):
         self.zips = []
-        if os.path.isdir(path):
+        if os.path.isdir(path) and os.path.exists(os.path.join(path, "stops.txt")):
+            self.zips.append(("", Folder(path)))  # an unzipped bundle (the test fixtures)
+        elif os.path.isdir(path):
             for fn in sorted(os.listdir(path)):
                 if fn.endswith(".zip"): self.zips.append((fn[:-4], zipfile.ZipFile(os.path.join(path, fn))))
         else:
@@ -108,6 +120,7 @@ def main():
     heads, head_idx = [], {}
     trips = {}   # trip id -> (route idx, head idx, [day offsets])
     named_lim = set()   # trips whose own timetable name says Limited stops or Express (limited_stops.py)
+    block_of = {}  # trip id -> block id (one vehicle's run, split into several trips at some stations)
     for tag, x in src.rows("trips.txt"):
         sv = tag + x["service_id"]
         offs = [k for k in days if sv in run[k]]
@@ -118,6 +131,7 @@ def main():
         trips[tag + x["trip_id"]] = (rmap.get(tag + x["route_id"], 0), head_idx[h], offs)
         if name_says_limited(x.get("route_direction", ""), routes[trips[tag + x["trip_id"]][0]][3] if routes else ""):
             named_lim.add(tag + x["trip_id"])
+        if x.get("block_id"): block_of[tag + x["trip_id"]] = tag + x["block_id"]
     print("trips active", len(trips), flush=True)
     st = collections.defaultdict(list)
     for tag, x in src.rows("stop_times.txt"):
@@ -150,7 +164,7 @@ def main():
             ts = [(r[2] + sh, r[3] + sh, r[4]) for r in rows_]
             if k == -1 and ts[-1][0] < 0: continue
             if k == 1 and ts[0][1] > 86400 + NEXT_MORNING_S: continue
-            pats[key].append((ts[0][1], tid, hi, ts))
+            pats[key].append((ts[0][1], tid, hi, ts, k))
     used = set()
     for (ri, sids, _) in pats: used.update(sids)
     sid_list = sorted(used)
@@ -207,10 +221,12 @@ def main():
     tripRoute = array.array("i"); tripHead = array.array("i"); tripPat = array.array("i"); trip_ids = []
     tripLim = array.array("B")
     arr = array.array("i"); dep = array.array("i"); flags = array.array("B")
+    inst = []    # per trip instance: (trip id, day offset, first stop index, last stop index, first departure, last arrival)
     for p in range(P):
         ri, g = P_trips[p]
         patStops.extend(P_stops[p]); patStopOff.append(len(patStops))
-        for (_, tid, hi, ts) in g:
+        for (_, tid, hi, ts, k) in g:
+            inst.append((tid, k, P_stops[p][0], P_stops[p][-1], ts[0][1], ts[-1][0]))
             trip_ids.append(tid); tripRoute.append(ri); tripHead.append(hi); tripPat.append(p)
             tripLim.append(1 if (P_lim[p] or tid in named_lim) else 0)
             for (a, d, fl) in ts: arr.append(a); dep.append(d); flags.append(fl)
@@ -227,6 +243,21 @@ def main():
     for s in sid_list:
         n, p, pc, la, lo = stops_all.get(s, ("", "", "", 0.0, 0.0))
         lat.append(la); lon.append(lo); parent.append(sidx.get(p, -1)); names.append(n); plats.append(pc)
+    # The trip that carries on a trip's run (tripNext, -1 for none). Sydney Trains splits one train's run into several
+    # trips (a T1 from Penrith to Hornsby via Gordon is one trip to Central and another from Central), so a stop list
+    # taken from one trip id stops short. The next trip of the same block, on the same day, that starts at the station
+    # where this one ends within RUN_GAP_S of its arrival continues it.
+    station = lambda i: parent[i] if parent[i] >= 0 else i
+    tripNext = array.array("i", [-1]) * len(inst)
+    by_block = collections.defaultdict(list)
+    for n, (tid, k, _, _, d0, _) in enumerate(inst):
+        b = block_of.get(tid)
+        if b: by_block[(b, k)].append((d0, n))
+    for runs in by_block.values():
+        runs.sort()
+        for (_, a), (_, b) in zip(runs, runs[1:]):
+            ta, tb = inst[a], inst[b]
+            if station(ta[3]) == station(tb[2]) and 0 <= tb[4] - ta[5] <= RUN_GAP_S: tripNext[a] = b
     # Footpaths.
     xf = [dict() for _ in range(S)]
     kids = collections.defaultdict(list)
@@ -267,7 +298,8 @@ def main():
               ("tripPat", "i32", tripPat), ("arr", "i32", arr), ("dep", "i32", dep), ("flags", "u8", flags),
               ("stopPatOff", "i32", stopPatOff), ("stopPat", "i32", stopPat), ("stopPatIdx", "i32", stopPatIdx),
               ("xferOff", "i32", xferOff), ("xferTo", "i32", xferTo), ("xferSec", "i32", xferSec),
-              ("tripLim", "u8", tripLim)]
+              ("tripLim", "u8", tripLim),
+              ("tripNext", "i32", tripNext)]
     head = {"v": 1, "day": dkey[0], "dayStart": day_start(day), "builtAt": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
             "counts": {"stops": S, "patterns": P, "trips": len(trip_ids), "events": len(arr), "footpaths": len(xferTo), "limited": sum(tripLim)},
             "walk": {"mps": WALK_MPS, "detour": DETOUR, "findS": FIND_S, "stationMinS": STATION_MIN_S, "maxM": WALK_MAX_M},

@@ -240,29 +240,52 @@ async function timetableTrip(env, fromId, toId, o = {}) {
     if (cache) await cache.put(ck, new Response(JSON.stringify(d), { headers: { "content-type": "application/json", "cache-control": "public, max-age=" + TT_EDGE_S } })).catch(() => null);
   }
   if (!Array.isArray(d.journeys) || !d.journeys.length) return null;
+  if (typeof budget === "object" && budget) budget.ttTrips = (budget.ttTrips || 0) + 1;
+  return ttAnswer(d.journeys);
+}
+// Timetable journeys (each a list of legs in the trip answer's shape) labelled as timetable times, in the trip
+// answer's shape. A walk between two services counts against the time to change.
+function ttAnswer(list) {
   const note = { title: TT_NOTE, url: null, priority: "high" };
   const t = (x) => new Date(x).getTime();
-  const journeys = d.journeys.map((legs) => {
+  const journeys = list.map((legs) => {
     const tl = legs.filter((l) => l.kind === "transit");
     // The label rides on the first leg too, so a phone that only shows leg alerts still says these are timetable times.
-    tl[0].alerts = [note, ...(tl[0].alerts || [])];
+    tl[0].alerts = [note, ...(tl[0].alerts || []).filter((a) => a && a.title !== TT_NOTE)];
     for (const l of tl) l.status = { key: "scheduled", text: "Scheduled" };
     for (let i = 1; i < tl.length; i++) {
       const gap = Math.round((t(tl[i].planned) - t(tl[i - 1].arrPlanned)) / 60000);
-      tl[i].transfer = { minutes: gap, walkMin: 0, spare: gap, at: tl[i - 1].to, risk: gap < 2 ? "tight" : "ok" };
+      const walk = legs.slice(legs.indexOf(tl[i - 1]) + 1, legs.indexOf(tl[i])).reduce((s, x) => s + (x.kind === "walk" ? x.durationMin || 0 : 0), 0);
+      tl[i].transfer = { minutes: gap, walkMin: walk, spare: gap - walk, at: tl[i - 1].to, risk: gap - walk < 0 ? "miss" : gap - walk < 2 ? "tight" : "ok" };
     }
-    const board = t(tl[0].planned), arrive = t(tl[tl.length - 1].arrPlanned);
+    const first = legs[0], last = legs[legs.length - 1];
+    const board = t(tl[0].planned), leave = t(first.planned), arrive = t(last.arrPlanned);
     return {
-      leave: new Date(board).toISOString(), board: new Date(board).toISOString(), arrive: new Date(arrive).toISOString(),
-      durationMin: Math.round((arrive - board) / 60000), changes: Math.max(0, tl.length - 1), live: false, anyCancelled: false,
-      risk: tl.some((l) => l.transfer && l.transfer.risk === "tight") ? "tight" : "ok", legs,
+      leave: new Date(leave).toISOString(), board: new Date(board).toISOString(), arrive: new Date(arrive).toISOString(),
+      durationMin: Math.round((arrive - leave) / 60000), changes: Math.max(0, tl.length - 1), live: false, anyCancelled: false,
+      risk: tl.some((l) => l.transfer && l.transfer.risk === "miss") ? "miss" : tl.some((l) => l.transfer && l.transfer.risk === "tight") ? "tight" : "ok", legs,
       // No fare: Opal fares need the distance along the route, which a timetable leg does not carry.
       source: "timetable",
     };
-  });
+  }).filter((j) => j.legs.some((l) => l.kind === "transit"));
+  if (!journeys.length) return null;
   for (const j of journeys) j.beaten = journeys.some((x) => x !== j && t(x.leave) > t(j.leave) && t(x.arrive) < t(j.arrive));
-  if (typeof budget === "object" && budget) budget.ttTrips = (budget.ttTrips || 0) + 1;
   return { journeys, live: { feedAt: null }, now: Date.now(), source: "timetable", fallback: "planner-unavailable", alerts: [note] };
+}
+// Outage trips from our own planner's timetable pack (raptor.js), whatever OWN_PLANNER says (these are labelled
+// timetable answers, not a stand in for live trips): used when the board engine's timetable has none. It reaches a
+// service's last stop (the engine keeps no row there, so Circular Quay to Manly on the F1 had no answer), changes
+// more than once and walks up to 400 m between nearby stops. Not while the budget guard holds OWN_PLANNER, and not
+// for a trip that leaves out a mode. o = { date (YYYYMMDD), time (HHMM), arriveBy, count, exclude }.
+async function ownTimetableTrip(env, fromId, toId, o = {}) {
+  if (typeof ownTripLegs !== "function" || !env || !env.PLANNER) return null;
+  if (typeof budgetHeld === "function" && budgetHeld("OWN_PLANNER")) return null;
+  if (o.exclude && Object.keys(o.exclude).length) return null;
+  const legs = await ownTripLegs(env, fromId, toId, { date: o.date, time: o.time, arriveBy: !!o.arriveBy, count: o.count || 5 });
+  if (!legs || !legs.length) return null;
+  const out = ttAnswer(legs.filter((l) => Array.isArray(l) && l.length));
+  if (out && typeof budget === "object" && budget) budget.ttOwnTrips = (budget.ttOwnTrips || 0) + 1;
+  return out;
 }
 // Nearby stops from our own timetable's stop list (no Transport for NSW call), or null with no engine.
 async function ttNearbyStops(env, lat, lon) {

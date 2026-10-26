@@ -33,6 +33,7 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 | Budget guard hold | `/api/budget` | **on** at 4:23 PM: the last hourly reading (made before the 4:21 PM change to a 48 hour rate) projected Durable Object requests at 1,363% of the month (11.3% used), driven by the morning load tests | Engine, push, own planner, learn and load keys act as off; all are off anyway. The next hourly check (minute 17) reads again; it lifts by itself when the projection is back under 60%, or with `POST /api/budget/clear` |
 | Remote config flags | `/api/app/config` | all 16 on, `kill` empty, `livePush` absent (off) | |
 | `LIMITED_STOPS` | Worker var (g22, not deployed) | not set (on once deployed) | `limited: true` on departures and trip legs from the planner pack's `tripLim`; `off` turns it off |
+| `OWN_RUNS` | Worker var (g24) | not set (on) | Service stop lists from the planner pack's run (`tripNext`); `off` turns it off; stands down while the budget guard holds `OWN_PLANNER`. Needs a pack with `tripNext` (nightly from main) |
 | `tripAlerts` | Remote config (g22, not deployed) | default true once deployed | Server matches alerts to phones' trips every 10 min; the app's More switch shows only when this is true |
 | `PLATFORM_VIEW` | `app/src/lib/features.ts` | false | Platform view hidden (owner) |
 | `LIVE_DATA_AGE` | `app/src/lib/features.ts` | false | Live age counted from receipt, not from `liveAt` |

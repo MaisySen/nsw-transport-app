@@ -1,0 +1,8 @@
+agency_id,agency_name,agency_url,agency_timezone
+2501,Busways R1,http://transportnsw.info,Australia/Sydney
+7057,CDC NSW R4,http://transportnsw.info,Australia/Sydney
+x0001,Sydney Trains,http://transportnsw.info,Australia/Sydney
+SMNW,Sydney Metro,http://transportnsw.info,Australia/Sydney
+2509,Transdev John Holland Buses,http://transportnsw.info,Australia/Sydney
+SLR,Sydney Light Rail,http://transportnsw.info,Australia/Sydney
+SF,Sydney Ferries,http://transportnsw.info,Australia/Sydney

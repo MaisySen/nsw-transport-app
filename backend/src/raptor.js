@@ -38,7 +38,23 @@ function rpOpen(parts) {
   const lines = (s) => { const o = [0]; for (let i = s.indexOf("\n"); i >= 0; i = s.indexOf("\n", i + 1)) o.push(i + 1); return o; };
   const pk = { h, ...A, S: h.counts.stops, P: h.counts.patterns, T: h.counts.trips, dayStart: h.dayStart, day: h.day };
   // One string per list, read by line offset (holding 160,000 small strings would cost far more memory).
-  const list = (s) => { const off = lines(s); return { n: off.length, at: (i) => (i < 0 || i >= off.length ? "" : s.slice(off[i], i + 1 < off.length ? off[i + 1] - 1 : s.length)) }; };
+  const list = (s) => {
+    const off = lines(s);
+    const at = (i) => (i < 0 || i >= off.length ? "" : s.slice(off[i], i + 1 < off.length ? off[i + 1] - 1 : s.length));
+    // Every entry equal to v, by searching the one string (no map of 160,000 trip ids held in memory).
+    const find = (v) => {
+      const out = [];
+      if (!v) return out;
+      for (let p = s.indexOf(v); p >= 0; p = s.indexOf(v, p + 1)) {
+        if ((p > 0 && s.charCodeAt(p - 1) !== 10) || (p + v.length < s.length && s.charCodeAt(p + v.length) !== 10)) continue;
+        let lo = 0, hi = off.length - 1;
+        while (lo < hi) { const m = (lo + hi + 1) >> 1; if (off[m] <= p) lo = m; else hi = m - 1; }
+        out.push(lo);
+      }
+      return out;
+    };
+    return { n: off.length, at, find };
+  };
   pk.stopId = list(h.stopIds); pk.name = list(h.names); pk.plat = list(h.plats); pk.tripId = list(h.tripIds);
   pk.idx = new Map();
   for (let i = 0; i < pk.stopId.n; i++) pk.idx.set(pk.stopId.at(i), i);
@@ -308,6 +324,124 @@ function rpPlan(pk, q) {
   return { journeys: list, searches };
 }
 
+// ---- one trip's whole run (the service screen's stop list) ----
+// The stops of a trip in order with their timetable times, followed through the trips that carry on the same
+// vehicle's run (tripNext, from the GTFS block) and back through the ones before it. Written 26 Oct 2026 for the stop
+// lists that were wrong (a T5 from Parramatta to Blacktown, T9 runs to Hornsby, a T1 that ends at Gordon): the list
+// from your stop onwards used to come from the Trip Planner's answer to a trip search, which offers the fastest
+// service rather than the one you are looking at, and Sydney Trains splits one train's run into several trip ids (at
+// Central, for example), so the feed's own list stopped short. q = { trip, stop (a stop or station id, optional),
+// at (seconds after the pack's day start: the planned time at that stop, or now) }. Returns null when the pack does
+// not hold the trip (another day, an added trip) or the stop is not on it.
+const RP_RUN_BACK = 2, RP_RUN_ON = 3;
+function rpTripRow(pk, ti) {
+  const p = pk.tripPat[ti], s0 = pk.patStopOff[p], ns = pk.patStopOff[p + 1] - s0;
+  return { p, s0, ns, ev: pk.patEvOff[p] + (ti - pk.patTripOff[p]) * ns };
+}
+// A headsign's destination ("Hornsby" for "Hornsby Via Gordon") and a stop's place name, compared without case.
+function rpHeadDest(h) { return String(h || "").split(/\s+via\s+/i)[0].trim().toLowerCase(); }
+function rpPlaceKey(n) { return String(n || "").replace(/\s+(station|wharf|interchange|light rail)$/i, "").split(",")[0].trim().toLowerCase(); }
+function rpRun(pk, q) {
+  const cands = pk.tripId.find(String(q.trip || ""));
+  if (!cands.length) return null;
+  const station = (i) => (pk.parent[i] >= 0 ? pk.parent[i] : i);
+  const want = q.stop != null && q.stop !== "" ? pk.idx.get(String(q.stop)) : null;
+  if (q.stop != null && q.stop !== "" && want == null) return null;
+  const at = Number.isFinite(Number(q.at)) ? Number(q.at) : null;
+  const next = pk.tripNext || null;
+  // The trip instance (the same trip id runs on several days in the pack) whose time at the stop is nearest.
+  let best = null;
+  for (const ti of cands) {
+    const r = rpTripRow(pk, ti);
+    for (let i = 0; i < r.ns; i++) {
+      const s = pk.patStops[r.s0 + i];
+      if (want != null && s !== want && station(s) !== station(want)) continue;
+      const score = at == null ? 0 : Math.abs(pk.dep[r.ev + i] - at);
+      if (!best || score < best.score) best = { ti, i, score };
+      if (want == null) break;
+    }
+  }
+  if (!best) return null;
+  const headOf = (ti) => pk.h.heads[pk.tripHead[ti]] || "";
+  const dest = rpHeadDest(headOf(best.ti));
+  const placeKey = (s) => rpPlaceKey(rpStopPlace(pk, s));
+  // The run is followed only as far as the service you are looking at goes: on to the station its headsign names
+  // (a T9 "Hornsby Via Central" from Gordon is one trip to Central and the next on to Hornsby), and back through
+  // trips with the same destination (for where the train is now). A train that becomes another service (a City
+  // Circle run, or a set that leaves Central under another destination) is not followed.
+  const chain = [best.ti];
+  const lastPlace = (ti) => { const r = rpTripRow(pk, ti); return placeKey(pk.patStops[r.s0 + r.ns - 1]); };
+  let reached = !dest || lastPlace(best.ti) === dest || (() => {
+    const r = rpTripRow(pk, best.ti);
+    for (let i = best.i + 1; i < r.ns; i++) if (placeKey(pk.patStops[r.s0 + i]) === dest) return true;
+    return false;
+  })();
+  if (next) {
+    for (let k = 0; k < RP_RUN_BACK; k++) {
+      const head = chain[0];
+      let prev = -1;
+      for (let x = 0; x < next.length; x++) if (next[x] === head) { prev = x; break; }
+      if (prev < 0 || rpHeadDest(headOf(prev)) !== dest) break;
+      chain.unshift(prev);
+    }
+    const ahead = [];
+    let found = reached;
+    for (let k = 0; k < RP_RUN_ON && !found; k++) {
+      const n = next[ahead.length ? ahead[ahead.length - 1] : best.ti];
+      if (n == null || n < 0 || chain.includes(n) || ahead.includes(n)) break;
+      ahead.push(n);
+      const r = rpTripRow(pk, n);
+      for (let i = 0; i < r.ns; i++) if (placeKey(pk.patStops[r.s0 + i]) === dest) { found = true; break; }
+    }
+    if (found && !reached) { chain.push(...ahead); reached = true; }
+    // No trip carries on: this trip is the whole run, wherever its headsign points (a bus headsign names a suburb).
+    if (!reached && !ahead.length) reached = true;
+  }
+  // A pack built before tripNext (26 Oct 2026) cannot follow a run: a train whose trip stops short of its headsign's
+  // station stays reached false, so the service screen keeps the old way for it.
+  const stops = [];
+  let mine = -1, cut = false;
+  const after = chain.indexOf(best.ti);
+  for (let c = 0; c < chain.length && !cut; c++) {
+    const ti = chain[c];
+    const r = rpTripRow(pk, ti), tid = pk.tripId.at(ti);
+    for (let i = 0; i < r.ns; i++) {
+      const s = pk.patStops[r.s0 + i], e = r.ev + i, fl = pk.flags[e];
+      const last = stops[stops.length - 1];
+      // Where one trip hands over to the next at the same station: one stop, arriving on the first, leaving on the next.
+      if (i === 0 && last && last.trip !== tid && station(last.i) === station(s)) {
+        last.id = pk.stopId.at(s); last.i = s; last.dep = pk.dep[e]; last.board = !(fl & 1); last.trip = tid;
+        if (ti === best.ti && best.i === 0) mine = stops.length - 1;
+        continue;
+      }
+      if (ti === best.ti && i === best.i) mine = stops.length;
+      stops.push({ i: s, id: pk.stopId.at(s), arr: pk.arr[e], dep: pk.dep[e], board: !(fl & 1), alight: !(fl & 2), trip: tid });
+      // Past your stop, the list ends at the headsign's station when a later trip of the run carries on beyond it.
+      if (c > after && dest && placeKey(s) === dest) { cut = true; break; }
+    }
+  }
+  const base = pk.dayStart * 1000;
+  const alt = {};
+  const out = stops.map((x) => {
+    const p = pk.parent[x.i];
+    if (p >= 0 && !alt[pk.stopId.at(p)]) {
+      const kids = [];
+      for (let e = pk.kidOff[p]; e < pk.kidOff[p + 1]; e++) kids.push(pk.stopId.at(pk.kid[e]));
+      alt[pk.stopId.at(p)] = kids;
+    }
+    return {
+      id: x.id, parent: p >= 0 ? pk.stopId.at(p) : null, name: rpStopPlace(pk, x.i), plat: pk.plat.at(x.i) || "",
+      lat: Math.round(pk.lat[x.i] * 1e6) / 1e6, lon: Math.round(pk.lon[x.i] * 1e6) / 1e6,
+      arr: base + x.arr * 1000, dep: base + x.dep * 1000, board: x.board, alight: x.alight, trip: x.trip,
+    };
+  });
+  const r = pk.h.routes[pk.tripRoute[best.ti]] || ["", 5, "", "", ""];
+  return {
+    day: pk.day, trip: pk.tripId.at(best.ti), trips: chain.map((ti) => pk.tripId.at(ti)), line: r[0], cls: r[1],
+    head: headOf(best.ti), lastHead: headOf(chain[chain.length - 1]), reached, mine, stops: out, alt,
+  };
+}
+
 // ---- answer shape (the trip answer's legs, as worker.js trip() and ttplan.js make them) ----
 function rpStopPlace(pk, i) {
   const p = pk.parent[i] >= 0 ? pk.parent[i] : i;
@@ -479,6 +613,17 @@ class TripPlanner {
         if (!pk) return Response.json({ error: "no pack" }, { status: 503 });
         return Response.json({ day: pk.day, ver: pk.ver, marked: !!pk.tripLim, ids: rpLimitedIds(pk) });
       }
+      if (u.pathname === "/run") {
+        const pk = await this.open(name);
+        if (!pk) return Response.json({ error: "no pack" }, { status: 503 });
+        // at: the planned time at the stop, epoch ms (now when absent). The pack holds its own day, the day before's
+        // trips past midnight and the next morning.
+        const atMs = /^\d{10,14}$/.test(q.at || "") ? Number(q.at) : Date.now();
+        const at = Math.round(atMs / 1000) - pk.dayStart;
+        if (at < -6 * 3600 || at > 86400 + 10 * 3600) return Response.json({ error: "day", day: pk.day });
+        const run = rpRun(pk, { trip: q.trip, stop: q.stop || null, at });
+        return Response.json(run ? { ver: pk.ver, ...run } : { error: "trip", day: pk.day });
+      }
       if (u.pathname === "/status") {
         const pk = q.open === "1" ? await this.open(name) : this.pk;
         return Response.json({ name, ver: Number(this.kv("cur") || 0), loaded: !!pk, day: pk ? pk.day : null, builtAt: pk ? pk.h.builtAt : null, counts: pk ? pk.h.counts : null, stats: this.stats });
@@ -599,6 +744,38 @@ async function markLimited(env, d, exec) {
     if ((r.tripId && set && set.has(r.tripId)) || LIM_WORDS.test(r.description || "")) { r.limited = true; n++; }
   }
   return n;
+      }
+// One trip's whole run from our own timetable pack (rpRun), for the service screen's stop list: no Transport for NSW
+// call. Kept at the edge for 10 minutes (a timetable run does not change), so a screen polling the service asks the
+// planner object at most once per trip in that time. null with no planner, the budget guard holding OWN_PLANNER,
+// OWN_RUNS "off", a pack that does not hold the trip, or no answer in 2.5 s: the caller keeps the old way.
+const RP_RUN_EDGE_S = 600;
+async function ownRun(env, tripId, stopId, plannedMs) {
+  if (!env || !env.PLANNER || String(env.OWN_RUNS || "").toLowerCase() === "off") return null;
+  if (typeof budgetHeld === "function" && budgetHeld("OWN_PLANNER")) return null;
+  if (!/^[A-Za-z0-9_.:+-]{1,80}$/.test(String(tripId || "")) || !/^[A-Za-z0-9_.:-]{1,40}$/.test(String(stopId || ""))) return null;
+  const at = Math.floor((Number.isFinite(plannedMs) && plannedMs > 0 ? plannedMs : Date.now()) / 60000) * 60000;
+  const qs = new URLSearchParams({ trip: String(tripId), stop: String(stopId), at: String(at) });
+  const ck = new Request("https://planner-cache.transportsydney.app/run?" + qs.toString());
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const hit = cache ? await cache.match(ck).catch(() => null) : null;
+  let d = hit ? await hit.json().catch(() => null) : null;
+  if (!d) {
+    let h = 2166136261; for (const c of String(tripId)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+    const name = rpReplicaName(h % rpReplicas(env));
+    const stub = rpStub(env, name);
+    if (!stub) return null;
+    qs.set("name", name);
+    const r = await Promise.race([stub.fetch("https://planner/run?" + qs.toString()), new Promise((res) => setTimeout(() => res(null), 2500))]).catch(() => null);
+    if (!r || r.status !== 200) return null;
+    d = await r.json().catch(() => null);
+    if (!d) return null;
+    // A trip the pack does not hold is kept for a minute too, so a polling screen does not ask again each time.
+    if (cache) await cache.put(ck, new Response(JSON.stringify(d), { headers: { "content-type": "application/json", "cache-control": "public, max-age=" + (d.error ? 60 : RP_RUN_EDGE_S) } })).catch(() => null);
+  }
+  if (d.error || !Array.isArray(d.stops) || d.stops.length < 2) return null;
+  if (typeof budget === "object" && budget) budget.ownRuns = (budget.ownRuns || 0) + 1;
+  return d;
 }
 // /api/raptor: loading (tools/load_planner.mjs) and checks, engine load key or admin key.
 //   POST /api/raptor/load/{begin,part,commit}?ver=N[&part=&i=]   GET /api/raptor/status   POST /api/raptor/replicas
