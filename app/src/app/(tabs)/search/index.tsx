@@ -14,6 +14,7 @@ import { isStopItem, noPlaceText, NOW, placeSubtitle, stopsAsPlaces, whenLabel, 
 import { WhenPicker } from '@/components/WhenPicker';
 import { useBusLookup } from '@/lib/busSearch';
 import { useLocalIndex } from '@/lib/localSearch';
+import { prefetchStop } from '@/lib/prefetch';
 import { localSearch, mergeSearch, searchBusy, searchKey, SEARCH_DEBOUNCE_MS } from '@/lib/localSearchCore';
 import { badgeLook } from '@/lib/lineStyle';
 import { useNow } from '@/lib/hooks';
@@ -231,7 +232,7 @@ export default function Search() {
                 <View key={`${it.kind || 'stop'}:${it.id}`}>
                   {i ? <Sep inset={57} /> : null}
                   <Row icon={stop ? modeIconName(modes[0]) : KIND_ICON[it.kind as keyof typeof KIND_ICON] || I.pin} iconBg={stop ? c.text2 : c.tint} title={shortName(it.name)}
-                    subtitle={stop ? (it.name !== shortName(it.name) ? it.name : undefined) : placeSubtitle(it)} onPress={() => pick(it)} />
+                    subtitle={stop ? (it.name !== shortName(it.name) ? it.name : undefined) : placeSubtitle(it)} onPressIn={stop && mode === 'stop' ? () => prefetchStop(it.id) : undefined} onPress={() => pick(it)} />
                 </View>
               );
             })}
@@ -265,7 +266,7 @@ export default function Search() {
             {recentStops.map((it, i) => (
               <View key={it.id}>
                 {i ? <Sep inset={57} /> : null}
-                <HoldMenu menu={stopRowMenu(it)} surface={c.card}><Row icon={I.clock} iconBg={c.text3} title={shortName(it.name)} onPress={() => pick(it)} /></HoldMenu>
+                <HoldMenu menu={stopRowMenu(it)} surface={c.card}><Row icon={I.clock} iconBg={c.text3} title={shortName(it.name)} onPressIn={() => prefetchStop(it.id)} onPress={() => pick(it)} /></HoldMenu>
               </View>
             ))}
           </Section>

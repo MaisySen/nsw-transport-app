@@ -9,6 +9,7 @@ import { startAppPoll } from '@/lib/activity';
 import { endLive, setupLiveNotifications } from '@/lib/live';
 import { finishProfileMove, initProfile } from '@/lib/device';
 import { finishServerMove } from '@/lib/serverMove';
+import { warmLocalSearch } from '@/lib/localSearch';
 import { loadCachedConfig, refreshConfig } from '@/lib/config';
 import { api } from '@/lib/api';
 import { morningTripParams } from '@/lib/morning';
@@ -44,12 +45,15 @@ export default function RootLayout() {
     // The fresh config is asked a moment after the first screen has asked for its own times, so the first board is
     // not queued behind it on a slow connection (docs/PERFORMANCE.md, startup). The cached one is already in use.
     let later: ReturnType<typeof setTimeout> | null = null;
+    let search: ReturnType<typeof setTimeout> | null = null;
     Promise.all([initProfile().catch(() => {}), loadCachedConfig()]).finally(() => {
       setReady(true);
       later = setTimeout(() => { later = null; finishProfileMove(api).then(() => finishServerMove()); refreshConfig(true); }, STARTUP_DEFER_MS);
+      // The stop lists for search as you type are read (or fetched once) well after the first screen has its times.
+      search = setTimeout(() => { search = null; warmLocalSearch(); }, STARTUP_DEFER_MS * 4);
     });
     const sub = AppState.addEventListener('change', (s) => { if (s === 'active') refreshConfig(); });
-    return () => { sub.remove(); if (later) clearTimeout(later); };
+    return () => { sub.remove(); if (later) clearTimeout(later); if (search) clearTimeout(search); };
   }, []);
 
   // Keep alerts coming while the app is open, and open the right screen when an alert is tapped.
