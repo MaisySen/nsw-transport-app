@@ -135,18 +135,20 @@ or return to the code inside the binary: `npx eas-cli update:roll-back-to-embedd
 
 There are three kinds. `node tools/orient.mjs` prints all three.
 
-**Server variables** (`[vars]` in `backend/wrangler.toml.template`, live values on the Worker). A variable not set counts as off.
+**Server variables** (`[vars]` in `backend/wrangler.toml.template`, live values on the Worker). A variable not set counts as off. While the budget guard holds (section 6), `ENGINE_BOARDS`, `ENGINE_PUSH`, `LIVE_PUSH`, `OWN_PLANNER`, `ENGINE_LEARN` and `LOAD_TESTS` act as off whatever they say.
 
 | Variable | Now | What on does | Who may turn it on |
 | --- | --- | --- | --- |
 | `ENGINE_BOARDS` | off | Boards come from our board engine instead of the Trip Planner | Only after the 95% match gate passes and the owner agrees |
 | `ENGINE_PUSH` | not set (off) | Engine boards pushed over a socket at `/api/live` | After a device test |
 | `ENGINE_FEED_TIMING` | not set (off) | Engine fetches each feed just after it publishes, with If-None-Match | After NSW answers are measured (after 1 AM) |
-| `ENGINE_SHARDS` | 16 (the cost guard work lowers it to 4) | How many shard objects build boards | Cost guard, [COSTS.md](COSTS.md) |
+| `ENGINE_SHARDS` | 4 in the template since the budget mode commit (the Worker read 16 at 4:10 PM, until the next deploy) | How many shard objects build boards | Cost guard, [COSTS.md](COSTS.md) |
+| `ENGINE_IDLE_MIN` | 5 | An idle engine object stops its alarm after this many minutes with no reads | Keep |
+| `ENGINE_LEARN` | off | Platform names and missing lines sent to the engine from Trip Planner boards | Only while the engine serves boards |
 | `LIVE_PUSH` | off | Trip Planner boards pushed over a socket | After a device test, and the app flag below |
 | `OWN_PLANNER` | off | Trip searches answered by our own planner, no NSW call | After `tools/planner_match.mjs` passes 90% (3 to 6 AM) |
 | `REQ_LOG` | on | One log line per request | Turn off if Workers Logs costs grow |
-| `LOAD_TESTS` | off (cost guard work) | Load test keys accepted | Never on production |
+| `LOAD_TESTS` | off | Load test keys accepted | Never on production |
 | `API_ONLY` | 1 | API host serves only `/api`, `/live/` and the APK | Keep |
 
 Change one: edit the value in `backend/wrangler.toml.template`, commit with the reason, then deploy (section 1). The template is the source of truth: a value changed only in the Cloudflare dashboard is overwritten by the next deploy. To roll back, set it back and deploy, or roll back the version (section 2).
@@ -196,14 +198,26 @@ node tools/orient.mjs        # "Cloudflare usage this cycle": each meter, share 
 
 It uses the read only analytics token (`CF_ANALYTICS_TOKEN`, operator file `~/.nsw-secrets/cloudflare-analytics.json`, permission Account Analytics Read only). The bill itself: Cloudflare dashboard, Manage Account, Billing, Billable Usage ("All usage is within included tier limits" and projected cost US$0.00). Cloudflare also emails a spend alert at US$10 to the Fintex mailbox.
 
-If a meter is pacing over 80%: turn off the feature that drives it (engine, push, own planner: section 4), lower `ENGINE_SHARDS`, confirm `LOAD_TESTS` is off, check for a runaway alarm in `/api/engine/status` (`--engine` in orient). The budget guard from the cost guard work switches engine, push and own planner off on its own when the month would pass 80%; [COSTS.md](COSTS.md) says how to read and reset it. Never upgrade a plan or add a paid product without the owner.
+The budget guard (`budgetCheck` in `src/worker.js`, [COSTS.md](COSTS.md), "Budget guard") runs every hour at minute 17 with the Worker secret `CF_ANALYTICS_TOKEN`: over 50% projected on any meter it emails the Fintex mailbox once a cycle; over 80% projected, or 80% used, it holds the engine, push, own planner, engine learn and load keys off and emails why. The app keeps working on the Trip Planner path.
+
+```bash
+A=https://api.transportsydney.app
+curl -s -H "x-admin-key: $ADMIN_KEY" $A/api/budget                       # last reading, hold, each switch
+curl -s -X POST -H "x-admin-key: $ADMIN_KEY" "$A/api/budget/check?dry=1"  # read now, change nothing, no email
+curl -s -X POST -H "x-admin-key: $ADMIN_KEY" $A/api/budget/clear           # lift a hold (no new hold for 6 h unless a meter is at 95%)
+```
+
+If a meter is pacing over 80%: find what drives it (orient's table, then the dashboard), turn that feature off (section 4), confirm `LOAD_TESTS` is off, look for a runaway alarm (`node tools/orient.mjs --engine`). Lift a hold only after the cause is gone. Never upgrade a plan or add a paid product without the owner.
 
 ## 7. Daily timetable and planner packs
 
-GitHub Actions workflow `timetable` (`.github/workflows/timetable.yml`) runs every day at 2:40 AM Sydney in summer time (15:40 UTC). It downloads the NSW GTFS bundles once (a few dozen calls on `TFNSW_API_KEY`, a repo secret), builds the engine timetable (`backend/tools/build_timetable.py`) and loads it (`backend/tools/load_timetable.mjs`, repo secret `ENGINE_LOAD_KEY`), then builds and loads the planner pack (`build_planner.py`, `load_planner.mjs`; a failure there keeps yesterday's pack and does not fail the job).
+GitHub Actions workflow `timetable` (`.github/workflows/timetable.yml`) runs every night at 2:40 AM Sydney in summer time (15:40 UTC).
 
-* Check it ran: GitHub, Actions, timetable, the latest run is green. `curl -s https://api.transportsydney.app/api/engine/status | head -c 300` shows `builtAt` from this morning and `days` from yesterday to 3 days ahead (this read wakes the engine; do it once).
-* Run it by hand: Actions, timetable, Run workflow (or `POST /repos/MaisySen/nsw-transport-app/actions/workflows/timetable.yml/dispatches` with `{"ref":"main"}`). Not during the day if the NSW quota is tight.
+* **Engine timetable, every second night** (budget mode): it first reads `/api/engine/status`; when the engine already holds today and tomorrow it skips the engine load. Otherwise it downloads the NSW GTFS bundles (a few dozen calls on `TFNSW_API_KEY`, a repo secret), builds 4 days (yesterday to 2 days ahead, `backend/tools/build_timetable.py`) and loads them (`backend/tools/load_timetable.mjs`, repo secret `ENGINE_LOAD_KEY`). Each load writes about 1.3 million rows, which is why it is not nightly.
+* **Planner pack, every night**: today's pack from the complete GTFS bundle (`build_planner.py`, `load_planner.mjs`). A failure keeps yesterday's pack and does not fail the job; searches for a day without a pack go to the Trip Planner.
+
+* Check it ran: GitHub, Actions, timetable, the latest run is green. `curl -s https://api.transportsydney.app/api/engine/status | head -c 300` shows `days` covering today and tomorrow and a recent `builtAt` (this read wakes the engine; do it once). A run that skipped the engine load says "no engine load tonight" in the step log: that is normal every second night.
+* Run it by hand (a manual run always loads the engine): Actions, timetable, Run workflow (or `POST /repos/MaisySen/nsw-transport-app/actions/workflows/timetable.yml/dispatches` with `{"ref":"main"}`). Not during the day if the NSW quota is tight.
 * If it fails: open the failed step. Download errors are usually the NSW quota (section 5): rerun after 1 AM. A load error with 401 means `ENGINE_LOAD_KEY` in the repo secrets no longer matches the Worker secret (section 11). The engine keeps the last loaded days, so one missed night is not an outage; boards for a day with no timetable fall back to the Trip Planner.
 * Phone timetable packs (`/api/pack`, [TIMETABLE_PACKS.md](TIMETABLE_PACKS.md)) come from the same engine data; nothing else to run.
 
@@ -291,7 +305,7 @@ Names and places only, never values. The operator machine is the build box the w
 | `APNS_KEY` (Key ID 69AK74573Z) | Trip card pushes | Worker secret; `.p8` in `~/.nsw-secrets/` | Table below |
 | `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY` | Web Push | Worker secrets; `backend/.env` | Table below |
 | Cloudflare API token (deploy) | wrangler deploys, DNS, Pages | `~/.nsw-secrets/cloudflare.json` (`api_token`, with `account_id`, `zone_id`); `CLOUDFLARE_API_TOKEN` in the deploy environment | Dashboard, My Profile, API Tokens, Roll |
-| Cloudflare analytics token (read only) | Usage checks, budget guard | `~/.nsw-secrets/cloudflare-analytics.json` (`api_token`; scope Account Analytics Read; made 26 Oct) | Same place: Roll, then update the file |
+| Cloudflare analytics token (read only) | Usage checks (`tools/orient.mjs`), the budget guard | Worker secret `CF_ANALYTICS_TOKEN`; `~/.nsw-secrets/cloudflare-analytics.json` (`api_token`; scope Account Analytics Read only; made 26 Oct) | Dashboard, My Profile, API Tokens, Roll; then `wrangler secret put CF_ANALYTICS_TOKEN` and the file |
 | Cloudflare dashboard login and 2FA | Billing and settings | Operator vault login; TOTP seed in `~/.nsw-secrets/cloudflare-2fa.json` | Dashboard, My Profile, Authentication |
 | Expo robot token | `eas update`, `eas build`, `eas submit` | `~/.nsw-secrets/expo.json` (`access_token`) | "Expo token rotation" below |
 | App Store Connect API key | Builds, TestFlight, metadata | `~/.nsw-secrets/asc.json` and its `.p8` beside it; GitHub Actions secrets `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`, `APPLE_TEAM_ID` | App Store Connect, Users and Access, Integrations: revoke and generate; update both places |

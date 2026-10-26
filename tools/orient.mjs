@@ -149,6 +149,9 @@ if (ADMIN) {
   if (u && u.today) {
     line(`NSW calls today (day ${u.today.day}, resets midnight AEST = 1 AM AEDT): ${u.today.calls} of ${u.budget}` +
       (u.today.calls >= u.budget * 0.93 ? "  NEAR OR OVER THE DAILY LIMIT: expect refusals, see RUNBOOK 'NSW quota'" : ""));
+    const b = parse((await get(API + "/api/budget", { "x-admin-key": ADMIN })).text);
+    if (b && b.last) line(`budget guard: hold ${b.last.hold ? "ON (" + (b.last.holdReason || "") + ")" : "off"}, worst meter ${JSON.stringify(b.last.worst || "").slice(0, 120)}`);
+    else line("budget guard: no reading yet (not deployed, or no CF_ANALYTICS_TOKEN secret on the Worker)");
     line("last minute tick: " + u.lastTick + (Date.now() - Date.parse(u.lastTick) > 180000 ? "  STALE (more than 3 min)" : ""));
   }
 } else line("skipped admin checks: no ADMIN_KEY (operator copy is backend/.env of the deploy checkout)");
