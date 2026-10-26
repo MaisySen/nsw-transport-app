@@ -17,7 +17,7 @@ import { haptic } from '@/lib/haptic';
 import { withTimeout } from '@/lib/gesture';
 import { api, isLongPair } from '@/lib/api';
 import { LONG_TRIP_KEEP_MS, STILL_SEARCHING_MS } from '@/lib/longTripCore';
-import { useLive, useNow, useStamp } from '@/lib/hooks';
+import { useCountdownNow, useLive, useReportCountdowns, useStamp } from '@/lib/hooks';
 import { usePalette, radius, modeColor } from '@/lib/theme';
 import { bestTime, clock, durText, ms, shortName } from '@/lib/format';
 import { plainText } from '@/lib/htmlTextCore';
@@ -345,10 +345,12 @@ export default function TripScreen() {
   const saved = (stNow.myTrips || []).find((t) => tripKeyOf(t) === tkey) || null;
   const openParams = Object.fromEntries(Object.entries(p).filter(([k, v]) => v != null && v !== '' && ['from', 'fromName', 'to', 'toName', 'via', 'viaName', 'conn', 'name', 'legs'].includes(k)).map(([k, v]) => [k, String(v)]));
   const c = usePalette();
-  const now = useNow();
+  // Redraws when a shown countdown changes its minute (activity.useCountdownNow), not every 5 s (g10, 26 Oct).
+  const now = useCountdownNow();
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
   const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : (d: TripResp | null) => tripGapMs(firstLeaveInMs(d?.journeys, Date.now())), [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey],
     { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '') + (modesKey ? `|m:${modesKey}` : '')) });
+  useReportCountdowns('trip', (data?.journeys || []).slice(0, 6).map((j) => Date.parse(String(j.board || j.leave || ''))));
   const [extra, setExtra] = useState<Journey[]>([]);
   // Step free on or off, another time or other modes ask again; batches loaded before would be the other kind.
   const [later, setLater] = useState<PageState>(PAGE0);

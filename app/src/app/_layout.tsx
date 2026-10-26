@@ -23,6 +23,11 @@ import { orientationFor } from '@/lib/layoutCore';
 /** Startup work that is not the first screen's own data waits this long after the app is ready. */
 const STARTUP_DEFER_MS = 1500;
 
+// Feature detected: a build without the native module skips it instead of failing at import.
+function systemUI(): any {
+  try { return require('expo-system-ui'); } catch { return null; }
+}
+
 export default function RootLayout() {
   const scheme = useColorScheme();
   const c = usePalette();
@@ -78,6 +83,11 @@ export default function RootLayout() {
     return () => { poll.remove(); lastPoll.remove(); sub.remove(); clearTimeout(first); };
   }, [ready]);
 
+  // The window behind every screen takes the theme's background (expo-system-ui, in every build), so a push, a
+  // sheet or the keyboard never shows a white strip in dark mode or before the first screen draws (g10, 26 Oct).
+  useEffect(() => {
+    try { const p: any = systemUI()?.setBackgroundColorAsync?.(c.bg); if (p && typeof p.catch === 'function') p.catch(() => {}); } catch {}
+  }, [c.bg]);
   const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
   if (!ready) return null;
   const theme = { ...base, colors: { ...base.colors, primary: c.tint, background: c.bg, card: c.card, text: c.text, border: c.sep } };
