@@ -31,10 +31,18 @@ jobs:
           for n in northcoast northcoast2 northcoast3 centralwestandorana centralwestandorana2 riverinamurray riverinamurray2 southeasttablelands southeasttablelands2 newenglandnorthwest newcastlehunter farwest sydneysurrounds; do get "rb_$n" "/v1/gtfs/schedule/regionbuses/$n"; sleep 1; done
           curl -sfL -H "Authorization: apikey $KEY" -o complete.zip https://api.transport.nsw.gov.au/v1/publictransport/timetables/complete/gtfs
           unzip -p complete.zip stops.txt > gtfs/stops_complete.txt
-          rm complete.zip
       - name: Build
         run: python3 backend/tools/build_timetable.py gtfs tt
       - name: Load
         env:
           ENGINE_LOAD_KEY: ${{ secrets.ENGINE_LOAD_KEY }}
         run: node backend/tools/load_timetable.mjs tt
+      # Our own trip planner (docs/SCALE_1M.md): today's pack from the same complete bundle, no extra NSW call. A failure
+      # here leaves yesterday's pack in place (searches for today then go to the Trip Planner), so it does not fail the job.
+      - name: Planner pack
+        continue-on-error: true
+        env:
+          ENGINE_LOAD_KEY: ${{ secrets.ENGINE_LOAD_KEY }}
+        run: |
+          python3 backend/tools/build_planner.py complete.zip planner.bin
+          node backend/tools/load_planner.mjs planner.bin

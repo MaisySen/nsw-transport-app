@@ -424,6 +424,16 @@ On a phone (not done yet): with NSW refusing, the Home commute card shows timeta
 stops; Ask answers with the timetable note; flight mode shows "Offline" and "check your signal"; after NSW is back
 (after 1 AM) cards show live times again with no note, and the trip screen's first open of a saved trip is instant.
 
+## Own trip planner (26 Oct, OWN_PLANNER off)
+
+Automated: `backend/test/raptor.test.mjs` (direct trips, changes and change time, walks, boarding rules, arrive by, stations and points, the planner object's load and commit, no Trip Planner call with the flag on, RAPTOR against a brute force search on 300 random networks). On the full NSW timetable (26 Oct pack): RAPTOR and an independent Connection Scan search agree on the earliest arrival for 400 of 400 random station pairs.
+
+Before switching it on:
+1. After 1 AM, off peak, capped: record NSW planner answers for 300 pairs (real searches from the `searches` table plus commutes), same departure times. Compare with `/api/raptor/plan`: first trip leaves within 2 minutes and uses the same lines in at least 90%; write down every miss and why.
+2. A delayed train: the trip's legs show the live time (the same feed step as NSW legs).
+3. On a phone with `OWN_PLANNER` on in a test deploy: search Home to Work at 8 AM and at 11:30 PM (late night, next morning's first services), a trip from your position, and arrive by; compare with Trip Planner screenshots.
+4. `/api/raptor/status`: every replica loaded the same pack day; after the daily load, replicas pulled the new one.
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).

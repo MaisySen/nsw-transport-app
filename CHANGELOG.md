@@ -4,7 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
-### When Transport for NSW refuses: timetable trips, Nearby and honest messages (server 26 Oct, 3:08 to 3:23 PM, transport-api fc40734e, aba3c74d, 7b2f4c7b; over the air 26 Oct, 3:39 PM, group fa0017d8, roll back to 1f117d04)
+### Scale to a million at once, and our own trip planner (server, behind a flag, no release)
+Bidur at 3:09 PM: "Plan entire infra in scale properly ... as if we have million users ... in many devices. Live works."
+* docs/SCALE_1M.md: the design for 1,000,000 people with the app open at the same moment, capacity per layer (edge, board shards, push hubs, trip planner replicas), Cloudflare limits, cost a month at 10,000 / 100,000 / 1,000,000 (about 90 / 550 / 4,770 US dollars, estimates), Transport for NSW calls flat under 40,000 a day at every size, what breaks first, build order, what needs build 209.
+* Our own trip planner (backend/src/raptor.js): RAPTOR over the NSW GTFS timetable, so trip searches need no Transport for NSW call. Pack from tools/build_planner.py, loaded with tools/load_planner.mjs into a new TripPlanner object (with replicas). `/api/trip` uses it only with `OWN_PLANNER` on (off). Checked: 400 of 400 random NSW pairs agree with an independent search, 34 ms a search, 114 ms for a list of 5. Not yet checked against NSW's own planner (no NSW calls before 1 AM).
+
+### When Transport for NSW refuses: timetable trips, Nearby and honest messages (server 26 Oct, 3:08 to 3:23 PM, transport-api fc40734e, aba3c74d, 7b2f4c7b; over the air OTA_LINE)
 Bidur's screenshots at 2:52 PM, with the NSW key over its daily limit: the commute card said "No more services today", Nearby said "Something went wrong (502)", Ask said "Check your signal" on 5G.
 * Trips: when the Trip Planner refuses, fails or times out, `/api/trip` answers with timetable trips from our own timetable, direct or with one change (Kings Cross to Strathfield: T4 then T1, T9 or CCN at Central), labelled "Live trips unavailable, showing timetable times". With nothing found it says live trips are unavailable, never an empty list. Phones already in the field show these with no update.
 * Nearby comes from our own stop list, with no Trip Planner call at all.

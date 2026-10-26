@@ -53,6 +53,7 @@ Bidur asked for a button straight to the voice download in iPhone Settings. iPho
 ## Build 209 (1 Nov)
 
 * Widgets and Watch read first, network second (shared board file in the App Group, timetable fallback, widget push, Watch transfer from the phone): steps and files in docs/WIDGET_WATCH_SPEED.md. Not built.
+* One fetch per person at a million users (docs/SCALE_1M.md, 26 Oct): widgets, the Watch and Live Activities read the phone's boards and trips from the App Group (WatchConnectivity for the Watch) instead of asking the server each, and widget and Live Activity updates come by APNs push, not their own timeline fetches. The server side needs nothing new: the same answer is one cached copy. Not built.
 
 Native work left from the 25 Oct comfort, voice and performance pass (the JavaScript shipped over the air; these need a build):
 * Speak only with headphones: build 208 has no audio route API (`TransportIOS.startSpeechAudio` sets the spoken audio session with duck others, so ducking already works). Add an `AVAudioSession.currentRoute` read and a route change event, then a Voice setting "Only with headphones".

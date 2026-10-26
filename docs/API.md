@@ -627,3 +627,24 @@ services today", Nearby said "Something went wrong (502)" and Ask said "Check yo
   gets it at once with its age (`dataAt`, `x-edge-cache: saved`) while the fresh answer loads behind it.
 * Engine object paths (worker only): `GET /ttplan?from&to&count[&at | &day&time][&arriveBy=1]` and
   `GET /nearby?lat&lon[&radius]`. After a deploy, `POST /api/engine/load/restart` so the object runs the new code.
+
+## Our own trip planner `/api/raptor` (26 Oct 2026, g18, OWN_PLANNER off)
+
+All with `x-admin-key` set to the engine load key (or the admin key); 403 otherwise, 503 when the PLANNER object is not
+bound.
+
+* `GET /api/raptor/plan?from=ID&to=ID[&day=YYYYMMDD&time=HHMM][&arriveBy=1][&count=1..8]` our planner's answer:
+  `{ day, ver, searches, ms, error, journeys: [{ leave, board, arrive, durationMin, changes, risk, legs, source: "own" }] }`.
+  `from` and `to` are stop ids (a station means all its platforms and stands) or points `lon:lat:EPSG:4326`. Legs are
+  in the `/api/trip` leg shape with `source: "own"`, `realtime: false` (live times are added by `/api/trip`). Without
+  day and time: now in Sydney. A day the loaded pack does not hold answers `journeys: []` and `error: "day"`.
+* `GET /api/raptor/status[?open=1]` the flag and each replica's pack (`ver`, `day`, `builtAt`, `counts`, searches and
+  their total ms).
+* `POST /api/raptor/load/begin?ver=N`, `POST /api/raptor/load/part?ver=N&part=NAME&i=K` (body: up to 1 MB of the part),
+  `POST /api/raptor/load/commit?ver=N` load a pack into the first object; commit checks every part and switches in one
+  step (a broken pack is refused and the old one stays). `tools/load_planner.mjs` does all of it.
+* `POST /api/raptor/replicas` makes replicas 1..`OWN_PLANNER_REPLICAS`-1 copy the pack from the first object.
+
+`/api/trip` with `OWN_PLANNER` = `on` asks our planner first (not for step free trips, via, leaving out modes or long
+trips) and, when it has trips, answers from them with no Trip Planner call; legs get live times from the feeds as
+before. No answer (another day, an unknown stop, over 4 s) asks the Trip Planner as before.

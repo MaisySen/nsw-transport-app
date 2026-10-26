@@ -199,6 +199,10 @@ Every stop board in NSW built ahead of time on the server from the network feeds
   is on screen, 15 s with nothing. The old server is asked only when the new one cannot be reached at all.
 * The server keeps the last live answer of each trip for 15 minutes and gives it at once on a first open, with its age.
 
+## Our own trip planner (server, behind a flag, 26 Oct)
+
+Trip searches answered from our own copy of the NSW timetable with RAPTOR, so a search makes no Transport for NSW call and searches stop growing NSW calls with users (docs/SCALE_1M.md). Same answer shape as before, live times added to the legs the same way. Changes at stations and walks between nearby stops (up to 400 m), walks to and from your position (up to 1 km), stops where nobody may board or get off respected. Off for phones (`OWN_PLANNER`) until its trips match NSW's planner on a recorded sample after the key resets; step free trips, trips via a stop and trips leaving out a mode stay on NSW's planner for now. Checks: `/api/raptor/plan` (engine load key).
+
 ## Not in the app
 
 No accounts or login, no ads, no analytics or tracking, no Opal card balance. Privacy details: [STORE_PRIVACY.md](STORE_PRIVACY.md) and https://transportsydney.app/privacy/.
