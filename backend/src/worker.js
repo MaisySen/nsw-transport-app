@@ -3145,6 +3145,8 @@ const RATE_RULES = [
   [/^\/api\/morning-check$/, "write", 60, 600000, "POST"],
   [/^\/api\/morning-check$/, "write", 60, 600000, "DELETE"],
   [/^\/api\/morning-check\/preview$/, "mpreview", 20, 600000],
+  // Live sockets (/api/live): opening one is a handful a minute per phone (a screen, a renewal every 10 minutes).
+  [/^\/api\/live$/, "live", 30, 60000],
   [/^\/api\/(ask|trip|plan|departures|service|status|next|search|nearby|alerts|predict|obs|stations|station|parking|topup|lifts|usual)$/, "read", 600, 60000],
 ];
 function rateOk(request, pathname) {
@@ -7891,6 +7893,8 @@ export default {
     // Live board pushes (ENGINE_PUSH on): a WebSocket to the board's shard, which sends a diff each time it rebuilds it.
     if (url.pathname === "/api/live" && typeof engineSocket === "function") {
       if (!rateOk(request, url.pathname)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
+      // Boards on the Trip Planner path (LIVE_PUSH on, src/livehub.js): the stop's LiveHub.
+      if (typeof liveHubWanted === "function" && liveHubWanted(env, url)) return liveHubSocket(request, env, url);
       return engineSocket(request, env, url);
     }
     // Engine boards skip the copy layer below: the engine makes each board every 10 s and keeps its own 4 s copies.

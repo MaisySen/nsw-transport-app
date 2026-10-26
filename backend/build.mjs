@@ -52,6 +52,8 @@ worker += "\n" + fs.readFileSync(path.join(root, "src/engine.js"), "utf8");
 worker += "\n" + fs.readFileSync(path.join(root, "src/pack.js"), "utf8");
 // Timetable trips and nearby stops for when the Trip Planner is refused (src/ttplan.js, docs/API.md), after pack.js.
 worker += "\n" + fs.readFileSync(path.join(root, "src/ttplan.js"), "utf8");
+// Live push for Trip Planner boards and the socket limits the board shards share (src/livehub.js), last.
+worker += "\n" + fs.readFileSync(path.join(root, "src/livehub.js"), "utf8");
 if (!cf) for (const k of need) worker = worker.split(`__${k}__`).join(vals[k]);
 // The Content Security Policy allows only this site's own scripts plus the exact inline
 // scripts in the built pages, hashed here at build time so later page edits stay covered.

@@ -848,13 +848,17 @@ class BoardShard {
     if ((req.headers.get("upgrade") || "").toLowerCase() !== "websocket") return new Response('{"error":"websocket only"}', { status: 426, headers: { "content-type": "application/json" } });
     const stop = u.searchParams.get("stop") || "", mode = u.searchParams.get("mode") || "";
     const bk = stop + "|" + mode;
+    // Sockets per address and per object (liveLimit, src/livehub.js): over the limit the phone keeps polling.
+    const lim = typeof liveLimit === "function" ? liveLimit(this.state, req) : { tag: null, res: null };
+    if (lim.res) return lim.res;
     await this.ensureAlarm();
     let body = await this.board(stop, mode);
     if (!body) return new Response('{"error":"no timetable for this stop"}', { status: 404, headers: { "content-type": "application/json" } });
     body = body.replace(',"learn":true', "");
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
-    this.state.acceptWebSocket(server, [bk]);
+    this.state.acceptWebSocket(server, lim.tag ? [bk, lim.tag] : [bk]);
+    try { server.serializeAttachment({ at: Date.now() }); } catch (e) { /* attachments not on this host */ }
     this.stats.sockets++;
     this.pushBoard(bk, body, server);
     server.send('{"type":"board","board":' + body + "}");
@@ -1019,9 +1023,11 @@ class BoardShard {
     this.stats.ticks++;
     // A board with phones on its socket is being read (also after the object woke from hibernation).
     let open = [];
+    // Sockets open over 10 minutes are closed ("renew", liveSweep in src/livehub.js); a phone still on view reopens.
+    if (typeof liveSweep === "function") liveSweep(this.state, t0);
     try { open = this.state.getWebSockets(); } catch (e) { /* no sockets */ }
     // After a wake from hibernation nothing is known of what those phones hold (null): they get the whole board next.
-    for (const w of open) for (const t of this.state.getTags(w) || []) { this.mark(t, t0); if (!this.pushed.has(t)) this.pushed.set(t, null); }
+    for (const w of open) for (const t of (this.state.getTags(w) || []).filter((x) => !x.startsWith("ip:"))) { this.mark(t, t0); if (!this.pushed.has(t)) this.pushed.set(t, null); }
     for (const bk of this.pushed.keys()) if (!this.sockets(bk).length) this.pushed.delete(bk);
     for (const [bk, at] of this.hot) if (t0 - at > ENGINE_BOARD_HOT_MS) { this.hot.delete(bk); this.boards.delete(bk); }
     if (!this.hot.size) return;

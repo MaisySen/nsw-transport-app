@@ -27,6 +27,9 @@ run_worker_first = true
 API_ONLY = "1"
 ENGINE_BOARDS = "off"
 ENGINE_SHARDS = "16"
+# Live push for boards on the Trip Planner path (src/livehub.js, docs/API.md "GET /api/live"): "on" opens the LIVE
+# objects' sockets; "off" answers /api/live with 404 unless the engine pushes the stop (ENGINE_PUSH), and phones poll.
+LIVE_PUSH = "off"
 API_HOST = "api.transportsydney.app"
 SITE_URL = "https://transportsydney.app"
 VAPID_SUBJECT = "mailto:hello@transportsydney.app"
@@ -48,6 +51,11 @@ class_name = "BoardEngine"
 name = "SHARDS"
 class_name = "BoardShard"
 
+# Live push (src/livehub.js): one object per stop and mode with the phones' sockets on that stop's screen.
+[[durable_objects.bindings]]
+name = "LIVE"
+class_name = "LiveHub"
+
 [[migrations]]
 tag = "engine-v1"
 new_sqlite_classes = ["BoardEngine"]
@@ -55,6 +63,10 @@ new_sqlite_classes = ["BoardEngine"]
 [[migrations]]
 tag = "engine-v2"
 new_sqlite_classes = ["BoardShard"]
+
+[[migrations]]
+tag = "live-v1"
+new_sqlite_classes = ["LiveHub"]
 
 [[d1_databases]]
 binding = "DB"
