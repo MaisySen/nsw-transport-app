@@ -13,7 +13,7 @@ import { arriveByIndex, NOW, whenFromParams, type When } from '@/lib/planCore';
 import { WhenPicker } from '@/components/WhenPicker';
 import { afterBatch, canLoadEarlier, canLoadLater, chipLabel, chipsToShow, dateNeeded, earlierFloor, earlierSteps, emptyModes, filterModes, hasLeft, keepFrom, modesWords, MODE_CHIPS, nearEnd, normModes, PAGE0, PAGING, pickerDays, pinDay, queryAt, serviceDayEnd, toggleMode, whenAt, whenKeyOf, whenWords, ymd, type ModeK, type PageState } from '@/lib/tripModesCore';
 import { LeftRow } from '@/components/LeftRow';
-import { afterPage, canPage, cursorsOf, DIR0, isPaged, nearBottom, nearTop, PAGE_REACH_MS, plannedDep, type PageDir } from '@/lib/tripPagesCore';
+import { afterPage, canPage, cursorsOf, dayPageOf, dayPrefetchPx, DAY_REVEAL_ROWS, DIR0, earlierSource, isPaged, laterSource, nearBottom, nearTop, PAGE_REACH_MS, plannedDep, type DayInfo, type PageDir } from '@/lib/tripPagesCore';
 import { SkeletonRows } from '@/components/SkeletonRows';
 import { useOnViewRef } from '@/lib/activity';
 import { haptic } from '@/lib/haptic';
@@ -364,7 +364,7 @@ export default function TripScreen() {
   // Redraws when a shown countdown changes its minute (activity.useCountdownNow), not every 5 s (g10, 26 Oct).
   const now = useCountdownNow();
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
-  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes, walk: wp, ...(pageable ? { page: true } : {}) }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : (d: TripResp | null) => tripGapMs(firstLeaveInMs(d?.journeys, Date.now())), [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey],
+  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes, walk: wp, ...(pageable ? { page: true, days: true } : {}) }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : (d: TripResp | null) => tripGapMs(firstLeaveInMs(d?.journeys, Date.now())), [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey],
     { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '') + (modesKey ? `|m:${modesKey}` : '')) });
   useReportCountdowns('trip', (data?.journeys || []).slice(0, 6).map((j) => Date.parse(String(j.board || j.leave || ''))));
   const [extra, setExtra] = useState<Journey[]>([]);
@@ -384,7 +384,13 @@ export default function TripScreen() {
   // and the batches already added for the old ones go.
   const listKey = [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey].join('|');
   const stamp = useStamp(listKey);
-  useEffect(() => { setExtra([]); setLater(PAGE0); setEarlier(PAGE0); setPgL(DIR0); setPgE(DIR0); }, [listKey]);
+  // Whole days from the server's own planner (tripPagesCore.ts dayPageOf): the earliest and latest day loaded, the
+  // earlier trips loaded and not yet shown (the days before, and today's trips before now), and how many of them show.
+  const [dayLo, setDayLo] = useState<DayInfo | null>(null);
+  const [dayHi, setDayHi] = useState<DayInfo | null>(null);
+  const [heldDays, setHeldDays] = useState<Journey[]>([]);
+  const [revealN, setRevealN] = useState(0);
+  useEffect(() => { setExtra([]); setLater(PAGE0); setEarlier(PAGE0); setPgL(DIR0); setPgE(DIR0); setDayLo(null); setDayHi(null); setHeldDays([]); setRevealN(0); }, [listKey]);
   // Modes seen in any answer for this trip, so Metro, Light rail or Ferry show only where they make sense.
   const seenModes = useRef<Set<string>>(new Set());
   const [showTravel, setShowTravel] = useState(false);
@@ -399,10 +405,17 @@ export default function TripScreen() {
   const keep0 = keepFrom(when, anchor, now);
   // Pages go back 7 days (tripPagesCore.ts), and the trips loaded earlier stay, shown as Left.
   const keep = pageable && isPaged(data) ? { ...keep0, extra: anchor - PAGE_REACH_MS } : keep0;
+  // A whole day answers the first page: its trips before the list's start wait above, shown a block at a time on a
+  // scroll up, with the days before loaded the same way.
+  const day0 = pageable ? dayPageOf(data) : null;
+  // The list still opens at its time (now, or the chosen Leave at): a day's trips before it wait above.
+  const mainCut = day0 ? Math.max(keep.main, anchor - 120000) : keep.main;
+  const hiddenPool = day0 ? [...heldDays, ...(data?.journeys || []).filter((x) => ms(x.leave) <= mainCut)].sort((a, b) => plannedDep(a) - plannedDep(b)) : [];
+  const shownBack = hiddenPool.slice(Math.max(0, hiddenPool.length - revealN));
   const jsAll = (() => {
     const seen = new Set<string>();
     const out: Journey[] = [];
-    for (const j of [...(data?.journeys || []).filter((x) => ms(x.leave) > keep.main), ...extra.filter((x) => ms(x.leave) > keep.extra)]) {
+    for (const j of [...(data?.journeys || []).filter((x) => ms(x.leave) > mainCut), ...extra.filter((x) => ms(x.leave) > keep.extra), ...shownBack.filter((x) => ms(x.leave) > keep.extra)]) {
       for (const l of j.legs) if (l.kind !== 'walk' && l.mode) seenModes.current.add(l.mode);
       const k = jKey(j);
       if (seen.has(k)) continue;
@@ -459,21 +472,43 @@ export default function TripScreen() {
   const reachLo = anchor - PAGE_REACH_MS, reachHi = anchor + PAGE_REACH_MS;
   // Every trip loaded counts for the cursors, also ones left out on the phone (walking, modes), so a page that the
   // phone filters to nothing still moves on.
-  const cur = cursorsOf([...(data?.journeys || []), ...extra]);
+  const cur = cursorsOf([...(data?.journeys || []), ...extra, ...heldDays]);
+  const lo = dayLo || day0, hi = dayHi || day0;
+  const hiddenRows = hiddenPool.length - shownBack.length;
   const loadPage = async (fwd: boolean) => {
     const st = fwd ? pgL : pgE;
     const set = fwd ? setPgL : setPgE;
     const edge = fwd ? cur.after : cur.before;
     if (!canPage(st, edge, fwd ? reachHi : reachLo, fwd, onView.current)) return;
+    // Earlier trips already loaded: shown at once, no network.
+    const src = day0 ? (fwd ? laterSource(hi) : earlierSource(hiddenRows, lo)) : 'pages';
+    if (src === 'reveal') {
+      setAnchorOn(true);
+      setRevealN((n) => n + DAY_REVEAL_ROWS);
+      setOpen(null);
+      const still = stamp();
+      setTimeout(() => { if (still()) setAnchorOn(false); }, 400);
+      return;
+    }
     set((x) => ({ ...x, busy: true }));
     if (!fwd) setAnchorOn(true);
     const still = stamp();
     try {
-      const r = await planTrip(plan, { page: true, modes, walk: wp, ...(fwd ? { after: cur.after! } : { before: cur.before!, arr: cur.arr ?? undefined }) });
+      const want = src === 'day' ? (fwd ? hi!.nextDay! : lo!.prevDay!) : null;
+      const r = await planTrip(plan, { page: true, modes, walk: wp, ...(want ? { days: true, day: want } : fwd ? { after: cur.after! } : { before: cur.before!, arr: cur.arr ?? undefined }) });
       if (!still()) return;
-      const have = new Set(jsAll.map(jKey));
+      const have = new Set([...jsAll, ...hiddenPool].map(jKey));
       const fresh = (r.journeys || []).filter((j) => !have.has(jKey(j)));
-      if (fresh.length) setExtra((e) => [...e, ...fresh]);
+      const got = want ? dayPageOf(r) : null;
+      if (want && !fwd) {
+        // The day before goes above, shown a block at a time like the rest.
+        if (fresh.length) setHeldDays((e) => [...fresh, ...e]);
+        setRevealN((n) => n + DAY_REVEAL_ROWS);
+        setDayLo(got || { day: want, prevDay: null, nextDay: null, windowStart: NaN, windowEnd: NaN });
+      } else {
+        if (fresh.length) setExtra((e) => [...e, ...fresh]);
+        if (want) setDayHi(got || { day: want, prevDay: null, nextDay: null, windowStart: NaN, windowEnd: NaN });
+      }
       // Rows put above shift the row numbers, so an open trip closes (as Earlier services always did).
       if (!fwd && fresh.length) setOpen(null);
       const all = [...(r.journeys || [])].map(plannedDep).filter(Number.isFinite);
@@ -646,8 +681,10 @@ export default function TripScreen() {
           // The web has no drag start for a wheel or a trackpad, and its scroll events only come from the reader.
           if (up && Platform.OS === 'web') dragged.current = true;
           const at = { layoutH: n.layoutMeasurement.height, offsetY: y, contentH: n.contentSize.height };
-          if (paged ? nearBottom(at) : nearEnd(at)) loadLater();
-          if (paged && dragged.current && nearTop(at, rowsTop, up)) loadEarlier();
+          // Whole days: the next day is asked for about 50 rows from either end (tripPagesCore.ts dayPrefetchPx).
+          const dpx = day0 ? dayPrefetchPx(at.contentH - rowsTop, js.length, 700) : 700;
+          if (paged ? nearBottom(at, dpx) : nearEnd(at)) loadLater();
+          if (paged && dragged.current && nearTop(at, rowsTop, up, day0 ? dpx : 400)) loadEarlier();
         }}
         // Rows put above the ones on screen keep the reader's place: the first trip on screen (child 1, after the top
         // part) stays where it is while an earlier page goes in.

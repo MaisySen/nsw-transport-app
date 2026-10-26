@@ -1415,7 +1415,8 @@ async function trip(env, fromId, toId, opts = {}) {
   let data;
   // Our own planner (raptor.js, OWN_PLANNER): answered from our timetable, so no Transport for NSW call; the legs go
   // through the same live times below. No answer (another day, a stop it does not know) asks the Trip Planner as before.
-  const own = typeof ownPlannerWanted === "function" && ownPlannerWanted(env, opts)
+  // A day of trips from our planner (daylist.js tripDayPage) comes in made: the same live times below.
+  const own = opts.ownJourneys ? opts.ownJourneys : typeof ownPlannerWanted === "function" && ownPlannerWanted(env, opts)
     ? await ownTripLegs(env, fromId, toId, { date, time, arriveBy: !!opts.arriveBy, count: opts.count || 5 }).catch(() => null) : null;
   // Trip pages (opts.win): the planner's answer for this pair, time and options is kept and shared (tripWinGet).
   const win = opts.win && !own ? tripWinKey(fromId, toId, date, time, opts) : null;
@@ -1491,7 +1492,7 @@ async function trip(env, fromId, toId, opts = {}) {
     });
   }
   const now = Date.now();
-  const list = out.filter((j) => ms(j.board) >= now - 60000 || opts.time);
+  const list = out.filter((j) => ms(j.board) >= now - 60000 || opts.time || opts.ownJourneys);
   for (const j of list) j.beaten = list.some((o) => o !== j && ms(o.leave) > ms(j.leave) && ms(o.arrive) < ms(j.arrive));
   return { journeys: list, tomorrow, live: { feedAt: rt.fetchedAt() }, now };
 }
@@ -7841,7 +7842,11 @@ async function handleRequest(request, env, exec) {
           const tbase = { time: p.get("time") || null, date: day, arriveBy: p.get("arriveBy") === "1", count: liftAware ? Math.min(8, want + 3) : want, accessible: acc, long, exclude: tripModesExclude(modes) };
           // A page of the trip list's endless scroll (tripPage): more trips per answer, cursors for the next pages.
           const pq = tripPageQuery(p);
-          const r = pq ? await tripPage(env, p.get("from"), p.get("to"), pq, tbase) : await trip(env, p.get("from"), p.get("to"), tbase);
+          // A whole day of trips from our own planner (daylist.js) for a phone that sends days=1, when the planner is
+          // on and holds that day; otherwise the Trip Planner page as before.
+          const dq = typeof tripDayQuery === "function" ? tripDayQuery(p, env, request, tbase) : null;
+          const r = (dq ? await tripDayPage(env, p.get("from"), p.get("to"), dq, tbase).catch(() => null) : null)
+            || (pq ? await tripPage(env, p.get("from"), p.get("to"), pq, tbase) : await trip(env, p.get("from"), p.get("to"), tbase));
           // modes and date are echoed so the app knows this server honoured them (an older server does not).
           if (modes.length) { r.journeys = tripModesKeep(r.journeys, modes); r.modes = modes; }
           if (day) r.date = day;
@@ -7854,7 +7859,7 @@ async function handleRequest(request, env, exec) {
           if (liftAware) liftAwareRank(d, pq ? pq.n || TRIP_PAGE_N : want);
           if (!(await serverOn(env, "occupancy"))) stripOccupancy(d);
           // A later or earlier page is the same search scrolled, so it is not logged again.
-          await afterAnswer(env, d, { profile, device: p.get("device"), exec, log: p.get("refresh") !== "1" && !(pq && (pq.after != null || pq.before != null)) });
+          await afterAnswer(env, d, { profile, device: p.get("device"), exec, log: p.get("refresh") !== "1" && !(pq && (pq.after != null || pq.before != null)) && !(dq && dq.more) });
           if (longKey && (d.journeys || []).length && d.source !== "timetable") {
             const put = caches.default.put(longKey, new Response(JSON.stringify(d), { headers: { "content-type": "application/json", "cache-control": `max-age=${LONG_TRIP_CACHE_S}` } })).catch(() => null);
             if (exec && exec.waitUntil) exec.waitUntil(put); else await put;

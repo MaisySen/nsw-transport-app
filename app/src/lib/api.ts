@@ -124,7 +124,7 @@ export const api = {
     noteBoard(boardKey(stop, mode), r);
     return mode ? { ...r, askedMode: mode } : r;
   },
-  trip: async (from: Place, to: Place, opts: { refresh?: boolean; count?: number; time?: string; arriveBy?: boolean; modes?: string[]; date?: string; walk?: WalkPref; page?: boolean; after?: number; before?: number; arr?: number } = {}): Promise<TripResp> => {
+  trip: async (from: Place, to: Place, opts: { refresh?: boolean; count?: number; time?: string; arriveBy?: boolean; modes?: string[]; date?: string; walk?: WalkPref; page?: boolean; after?: number; before?: number; arr?: number; days?: boolean; day?: string } = {}): Promise<TripResp> => {
     // The trip screen's Walking choice (opts.walk, only that screen sends it) rides along (maxWalk, lessWalk) for a server that takes it; the phone filters
     // either way (walkPrefCore.ts), so with a limit it asks for the most trips the server gives (8).
     const wp = readWalkPref(opts.walk);
@@ -132,6 +132,9 @@ export const api = {
     // The trip list's endless scroll (tripPagesCore.ts): page=1 asks for a page of about 10 trips, after= or before=
     // (with arr=) for the next one later or earlier. A server that does not page answers as before (no page).
     if (opts.page) Object.assign(base, { page: 1, after: opts.after ?? '', before: opts.before ?? '', arr: opts.arr ?? '' });
+    // days=1: this phone takes a whole day of trips when the server's own planner is on (page.mode "day"); day= asks
+    // for another day it listed. A server without it answers the plain page.
+    if (opts.page && opts.days) Object.assign(base, { days: 1, day: opts.day ?? '' });
     const pair = `${from.id}>${to.id}`;
     if ((opts.modes && opts.modes.length) || opts.date) return tripPicked(base, pair, opts.modes || [], opts.date || '');
     if (isLongTrip(from.id, to.id) || longPairs.has(pair)) return tripLong(base, opts.refresh);

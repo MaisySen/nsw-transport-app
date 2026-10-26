@@ -75,11 +75,11 @@ export function hhmmSydney(t: number) {
  * Plans a trip. With a via stop each first leg is paired with the first second leg
  * that leaves at least the connection time after it arrives.
  */
-export async function planTrip(t: PlanTrip, opts: { refresh?: boolean; count?: number; time?: string; all?: boolean; arriveBy?: boolean; modes?: string[]; date?: string; walk?: import('./walkPrefCore').WalkPref; page?: boolean; after?: number; before?: number; arr?: number } = {}): Promise<TripResp> {
+export async function planTrip(t: PlanTrip, opts: { refresh?: boolean; count?: number; time?: string; all?: boolean; arriveBy?: boolean; modes?: string[]; date?: string; walk?: import('./walkPrefCore').WalkPref; page?: boolean; after?: number; before?: number; arr?: number; days?: boolean; day?: string } = {}): Promise<TripResp> {
   if (isChain(t)) return api.plan(wireLegs(t), { count: opts.count, time: opts.time, all: opts.all });
   if (!t.via) return api.trip(t.from, t.to, opts);
   // Pages are for plain A to B trips; a via trip pages the old way (batches from a time).
-  opts = { ...opts, page: false, after: undefined, before: undefined, arr: undefined };
+  opts = { ...opts, page: false, after: undefined, before: undefined, arr: undefined, days: false, day: undefined };
   const conn = Math.max(0, t.conn ?? 5) * 60000;
   const d1 = await api.trip(t.from, t.via, { ...opts, arriveBy: false, refresh: true });
   const j1 = (d1.journeys || []).filter((j) => isDirect(j));

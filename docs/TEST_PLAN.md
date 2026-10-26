@@ -496,6 +496,13 @@ Before switching it on:
 3. On a phone with `OWN_PLANNER` on in a test deploy: search Home to Work at 8 AM and at 11:30 PM (late night, next morning's first services), a trip from your position, and arrive by; compare with Trip Planner screenshots.
 4. `/api/raptor/status`: every replica loaded the same pack day; after the daily load, replicas pulled the new one.
 
+## Trip lists a day at a time (27 Oct, OWN_PLANNER off)
+
+1. `cd backend && TZ=Australia/Sydney node --test test/trip-days.test.mjs test/trips-compare.test.mjs`: whole day scan (every connection, not only where RAPTOR looked), trips nobody would pick dropped, days held from `tripDays` and `daysHeld`, the 3 AM edge, the build script's new arrays, the planner object's `/day` (templates once per pair, no storage rows read), `/api/trip` with `days=1` (a day only with the planner on or `own=1` with the key; Trip Planner pages otherwise and for cursor pages), added trains from the train feed; the compare sample (owner stops at most 5%), the match rule and the 40 call cap.
+2. `cd app && node --test test/tripdays.test.mjs test/trippages.test.mjs`: the day page read, the next day about 50 rows from either end, earlier rows shown a block at a time with no request, Trip Planner pages past the planner's days.
+3. Locally (`tools/local-dev.mjs`, fake NSW): build a pack (`python3 tools/build_planner.py <gtfs dir> pack.bin`), load it (`ADMIN_KEY=local-admin-key node tools/load_planner.mjs pack.bin http://127.0.0.1:<port>`), then `/api/trip?page=1&days=1&own=1&from=&to=` with `x-admin-key: local-admin-key` gives `page.mode` "day"; `node tools/trips-compare.mjs --dry --base http://127.0.0.1:<port> --gen 10` runs the compare against the fake planner.
+4. Tonight (11 PM to 5 AM): `ENGINE_LOAD_KEY=... OWNER_NAMES=... node tools/trips-compare.mjs --gen 40 --live 40 --out compare.json`; record matched of counted. On a phone with a test deploy where `OWN_PLANNER` is on: open a trip at 8 AM and 11:30 PM, scroll a day both ways, check the list keeps up and the day after the planner's last day carries on.
+
 ## Budget mode checks (g20, 26 Oct)
 
 1. `node --test test/budget.test.mjs` in `backend/`: billing cycle from `BILLING_DAY`, month end projection, no action

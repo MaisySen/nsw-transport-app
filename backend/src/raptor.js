@@ -608,6 +608,8 @@ class TripPlanner {
         this.stats.plans++; this.stats.ms += ms;
         return Response.json({ day: pk.day, ver: pk.ver, searches: plan.searches, ms, error: plan.error || null, journeys: rpAnswer(pk, plan) });
       }
+      // One day's trip list for a pair (daylist.js), for the trip list a day at a time.
+      if (u.pathname === "/day" && typeof dlRoute === "function") return await dlRoute(this, q, name);
       if (u.pathname === "/limited") {
         const pk = await this.open(name);
         if (!pk) return Response.json({ error: "no pack" }, { status: 503 });
@@ -780,6 +782,7 @@ async function ownRun(env, tripId, stopId, plannedMs) {
 // /api/raptor: loading (tools/load_planner.mjs) and checks, engine load key or admin key.
 //   POST /api/raptor/load/{begin,part,commit}?ver=N[&part=&i=]   GET /api/raptor/status   POST /api/raptor/replicas
 //   GET /api/raptor/plan?from=&to=&day=YYYYMMDD&time=HHMM[&arriveBy=1][&count=]   our planner's own answer
+//   GET /api/raptor/day?from=&to=[&day=YYYYMMDD]   one day's trip list (daylist.js), timetable times
 async function plannerRoutes(request, env, url) {
   const keyed = (typeof adminOk === "function" && adminOk(request)) || (env.ENGINE_LOAD_KEY && typeof keyOk === "function" && keyOk(request, null, env.ENGINE_LOAD_KEY));
   if (!keyed) return Response.json({ error: "forbidden" }, { status: 403 });
@@ -797,6 +800,13 @@ async function plannerRoutes(request, env, url) {
     const n = rpReplicas(env);
     const all = await Promise.all(Array.from({ length: n }, (_, i) => fwd(rpReplicaName(i), "/status" + (url.searchParams.get("open") === "1" ? "?open=1" : "")).then((r) => r.json(), (e) => ({ error: String(e) }))));
     return Response.json({ flag: env.OWN_PLANNER === "on" ? "on" : "off", replicas: all });
+  }
+  // One day's trip list as the planner makes it (daylist.js), before live times: for checks and tools/trips-compare.mjs.
+  if (sub === "/day") {
+    const p = url.searchParams;
+    const qs = new URLSearchParams({ from: p.get("from") || "", to: p.get("to") || "" });
+    if (/^\d{8}$/.test(p.get("day") || "")) qs.set("day", p.get("day"));
+    return pass(await fwd(RP_PRIMARY, "/day?" + qs.toString()));
   }
   if (sub === "/plan") {
     const p = url.searchParams;

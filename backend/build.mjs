@@ -54,6 +54,8 @@ worker += "\n" + fs.readFileSync(path.join(root, "src/pack.js"), "utf8");
 worker += "\n" + fs.readFileSync(path.join(root, "src/ttplan.js"), "utf8");
 // Our own trip planner, RAPTOR over the timetable (src/raptor.js, docs/SCALE_1M.md), behind OWN_PLANNER; after ttplan.js.
 worker += "\n" + fs.readFileSync(path.join(root, "src/raptor.js"), "utf8");
+// Trip lists a day at a time from that planner (src/daylist.js, docs/API.md), after raptor.js.
+worker += "\n" + fs.readFileSync(path.join(root, "src/daylist.js"), "utf8");
 // Saved trip alerts (src/tripalerts.js, docs/API.md): the minute tick matches service alerts to the phones' trips.
 worker += "\n" + fs.readFileSync(path.join(root, "src/tripalerts.js"), "utf8");
 // Live push for Trip Planner boards and the socket limits the board shards share (src/livehub.js), last.

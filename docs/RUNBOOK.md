@@ -147,7 +147,7 @@ There are three kinds. `node tools/orient.mjs` prints all three.
 | `ENGINE_IDLE_MIN` | 5 | An idle engine object stops its alarm after this many minutes with no reads | Keep |
 | `ENGINE_LEARN` | off | Platform names and missing lines sent to the engine from Trip Planner boards | Only while the engine serves boards |
 | `LIVE_PUSH` | off | Trip Planner boards pushed over a socket | After a device test, and the app flag below |
-| `OWN_PLANNER` | off | Trip searches answered by our own planner, no NSW call | After `tools/planner_match.mjs` passes 90% (3 to 6 AM) |
+| `OWN_PLANNER` | off | Trip searches answered by our own planner, no NSW call; also whole day trip lists for phones that send `days=1` (src/daylist.js) | After `tools/planner_match.mjs` passes 90% (3 to 6 AM) and, for the day lists, `tools/trips-compare.mjs` passes 95% (11 PM to 5 AM, at most 40 Trip Planner calls; root and the owner decide) |
 | `REQ_LOG` | on | One log line per request | Turn off if Workers Logs costs grow |
 | `LOAD_TESTS` | off | Load test keys accepted | Never on production |
 | `API_ONLY` | 1 | API host serves only `/api`, `/live/` and the APK | Keep |

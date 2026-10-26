@@ -14,6 +14,11 @@ Layout (all numbers little endian, read by backend/src/raptor.js):
   RAPTOR needs; trips also share their boarding rules within a pattern (see below), so the earliest trip is the
   one to take. Footpaths: between the stops of one station, and between stops up to WALK_MAX_M apart (at most
   WALK_MAX_N per stop), at WALK_MPS with a detour factor, plus a fixed time to find the stop.
+tripDays and tripOff (27 Oct): tripOff is each trip instance's day (0 the day before, 1 the pack's day, 2 the next
+morning); tripDays has bit k+1 set when the instance's trip runs on day k (k from -1 to 7) by the calendar. The
+header's daysHeld lists the days every trip of which is in the pack as a trip of the pack's own day (that day's services
+are all among the pack day's), with each day's start: the trip list a day at a time (backend/src/daylist.js) reads
+those days from the pack without a bigger pack or another load.
 tripNext: for each trip, the trip that carries on the same vehicle's run (same block, same day, from the station
 where it ends, within RUN_GAP_S), or -1; the service screen's stop list follows it (raptor.js rpRun).
 Rows where nobody may board (pickup_type 1) or get off (drop_off_type 1) carry a flag, so the planner never boards or
@@ -108,6 +113,19 @@ def main():
             if c["date"] == dkey[k]:
                 if c["exception_type"] == "1": run[k].add(tag + c["service_id"])
                 elif c["exception_type"] == "2": run[k].discard(tag + c["service_id"])
+    # The week ahead (and the day before) for the trip list a day at a time: which of those days each trip runs on.
+    wide = {k: set() for k in range(-1, 8)}
+    wdays = {k: day + datetime.timedelta(days=k) for k in wide}
+    wkey = {k: d.strftime("%Y%m%d") for k, d in wdays.items()}
+    for tag, c in src.rows("calendar.txt"):
+        for k, d in wdays.items():
+            if c["start_date"] <= wkey[k] <= c["end_date"] and c[WEEK[d.weekday()]] == "1": wide[k].add(tag + c["service_id"])
+    for tag, c in src.rows("calendar_dates.txt"):
+        for k in wide:
+            if c["date"] == wkey[k]:
+                if c["exception_type"] == "1": wide[k].add(tag + c["service_id"])
+                elif c["exception_type"] == "2": wide[k].discard(tag + c["service_id"])
+    lacking = set()   # days with a service in service that the pack's day does not run
     agency = {tag + a.get("agency_id", ""): a.get("agency_name", "") for tag, a in src.rows("agency.txt")}
     routes, route_idx, rmap = [], {}, {}
     for tag, x in src.rows("routes.txt"):
@@ -121,14 +139,19 @@ def main():
     trips = {}   # trip id -> (route idx, head idx, [day offsets])
     named_lim = set()   # trips whose own timetable name says Limited stops or Express (limited_stops.py)
     block_of = {}  # trip id -> block id (one vehicle's run, split into several trips at some stations)
+    mask_of = {}   # trip id -> bit k+1 for each day k from -1 to 7 it runs on
     for tag, x in src.rows("trips.txt"):
         sv = tag + x["service_id"]
-        offs = [k for k in days if sv in run[k]]
-        if not offs: continue
         h = x.get("trip_headsign", "")
         if h.strip().lower() in NOT_IN_SERVICE: continue
+        if sv not in run[0]:
+            for k in wide:
+                if sv in wide[k]: lacking.add(k)
+        offs = [k for k in days if sv in run[k]]
+        if not offs: continue
         if h not in head_idx: head_idx[h] = len(heads); heads.append(h)
         trips[tag + x["trip_id"]] = (rmap.get(tag + x["route_id"], 0), head_idx[h], offs)
+        mask_of[tag + x["trip_id"]] = sum(1 << (k + 1) for k in wide if sv in wide[k])
         if name_says_limited(x.get("route_direction", ""), routes[trips[tag + x["trip_id"]][0]][3] if routes else ""):
             named_lim.add(tag + x["trip_id"])
         if x.get("block_id"): block_of[tag + x["trip_id"]] = tag + x["block_id"]
@@ -220,6 +243,7 @@ def main():
     patTripOff = array.array("i", [0]); patEvOff = array.array("i", [0])
     tripRoute = array.array("i"); tripHead = array.array("i"); tripPat = array.array("i"); trip_ids = []
     tripLim = array.array("B")
+    tripDays = array.array("i"); tripOff = array.array("B")
     arr = array.array("i"); dep = array.array("i"); flags = array.array("B")
     inst = []    # per trip instance: (trip id, day offset, first stop index, last stop index, first departure, last arrival)
     for p in range(P):
@@ -229,6 +253,7 @@ def main():
             inst.append((tid, k, P_stops[p][0], P_stops[p][-1], ts[0][1], ts[-1][0]))
             trip_ids.append(tid); tripRoute.append(ri); tripHead.append(hi); tripPat.append(p)
             tripLim.append(1 if (P_lim[p] or tid in named_lim) else 0)
+            tripDays.append(mask_of.get(tid, 0)); tripOff.append(k + 1)
             for (a, d, fl) in ts: arr.append(a); dep.append(d); flags.append(fl)
         patTripOff.append(len(trip_ids)); patEvOff.append(len(arr))
     # Stop -> patterns serving it (with the position in the pattern).
@@ -299,11 +324,14 @@ def main():
               ("stopPatOff", "i32", stopPatOff), ("stopPat", "i32", stopPat), ("stopPatIdx", "i32", stopPatIdx),
               ("xferOff", "i32", xferOff), ("xferTo", "i32", xferTo), ("xferSec", "i32", xferSec),
               ("tripLim", "u8", tripLim),
-              ("tripNext", "i32", tripNext)]
+              ("tripNext", "i32", tripNext),
+              ("tripDays", "i32", tripDays), ("tripOff", "u8", tripOff)]
+    days_held = [{"day": wkey[k], "off": k, "dayStart": day_start(wdays[k])} for k in sorted(wide) if k == 0 or k not in lacking]
+    print("days held", [d["day"] for d in days_held], flush=True)
     head = {"v": 1, "day": dkey[0], "dayStart": day_start(day), "builtAt": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
             "counts": {"stops": S, "patterns": P, "trips": len(trip_ids), "events": len(arr), "footpaths": len(xferTo), "limited": sum(tripLim)},
             "walk": {"mps": WALK_MPS, "detour": DETOUR, "findS": FIND_S, "stationMinS": STATION_MIN_S, "maxM": WALK_MAX_M},
-            "routes": routes, "heads": heads, "arrays": [],
+            "routes": routes, "heads": heads, "arrays": [], "daysHeld": days_held,
             # Long lists as one string each, one entry a line (fewer objects for the reader to hold).
             "stopIds": "\n".join(sid_list), "names": "\n".join(n.replace("\n", " ") for n in names),
             "plats": "\n".join(plats), "tripIds": "\n".join(trip_ids)}

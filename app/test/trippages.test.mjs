@@ -96,8 +96,8 @@ test('the trip list has no Earlier or Later buttons: pages load by themselves wi
   assert.match(t, /<SkeletonRows count=\{3\} label="Loading earlier services" \/>/);
   assert.match(t, /<SkeletonRows count=\{3\} label="Loading later services" \/>/);
   // Prefetch both ways, earlier only after the reader scrolls, the reader's place kept when rows go in above.
-  assert.match(t, /nearBottom\(at\)/);
-  assert.match(t, /dragged\.current && nearTop\(at, rowsTop, up\)/);
+  assert.match(t, /nearBottom\(at, dpx\)/);
+  assert.match(t, /dragged\.current && nearTop\(at, rowsTop, up, day0 \? dpx : 400\)/);
   assert.match(t, /maintainVisibleContentPosition=\{anchorOn \? \{ minIndexForVisible: 1 \} : undefined\}/);
   // Pages only on view (onView), from the cursors, never in a loop.
   assert.match(t, /canPage\(st, edge, fwd \? reachHi : reachLo, fwd, onView\.current\)/);
@@ -116,5 +116,5 @@ test('the server is asked for pages with cursors (api.trip), and a via trip page
   const a = read('src/lib/api.ts');
   assert.match(a, /if \(opts\.page\) Object\.assign\(base, \{ page: 1, after: opts\.after \?\? '', before: opts\.before \?\? '', arr: opts\.arr \?\? '' \}\);/);
   const tr = read('src/lib/trips.ts');
-  assert.match(tr, /opts = \{ \.\.\.opts, page: false, after: undefined, before: undefined, arr: undefined \};/);
+  assert.match(tr, /opts = \{ \.\.\.opts, page: false, after: undefined, before: undefined, arr: undefined, days: false, day: undefined \};/);
 });

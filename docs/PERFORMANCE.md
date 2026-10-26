@@ -247,6 +247,10 @@ need a build; the maps already load after the first frame.
 
 Measured with a browser on the web export; a phone will differ. Not yet measured on a device.
 
+### Trip lists a day at a time (27 Oct, local, OWN_PLANNER off)
+
+Local wrangler dev with the fake NSW (planner answers at 0 ms, so the Trip Planner page time is our overhead only; the live planner adds 3 to 5 s for a new pair). Synthetic pack: 3,621 stops, 324 patterns, 28,674 trips, 590,100 stop events. First page of a new pair: Trip Planner mode 26 to 128 ms (10 trips, one outlier 535 ms); our planner's whole day 45 to 57 ms (70 to 114 trips, planner object 11 to 18 ms with the pair's lines worked out, live step 4 to 12 ms), the same day again 27 to 39 ms, the next day 31 to 37 ms. In Node on the same pack: 18 to 26 ms for the lines (14 RAPTOR searches) and 0 to 3 ms for a day's scan. On the real network one RAPTOR search is about 34 ms (SCALE_1M.md), so a new pair's lines are about 0.5 s once per pair and pack, and every day after that a few ms. A day's answer is 100 to 240 KB of JSON before compression. Storage rows read per day request: none once the pack is in memory (the pack's parts once when an object starts).
+
 ## Smoothness
 
 1. Long lists use `FlatList` (Ask, new trip). Short fixed lists inside a ScrollView (departures, up to about 40

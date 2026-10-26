@@ -28,7 +28,7 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 | `ENGINE_LEARN` | Worker var | off | No learn calls into the engine while it is off |
 | `ENGINE_LEARN_CORE`, `ENGINE_LEARN_MOVED` | Worker var | not set (on, since 27 Oct 8:37 AM) | The engine core reads planner boards for stand names itself (at most 30 a minute, 2,000 a day); moved stands kept 36 h. "off" restores the old rule / keeps no moved stand |
 | `LIVE_PUSH` | Worker var | off | No socket push for Trip Planner boards |
-| `OWN_PLANNER` | Worker var | off | Trip searches still go to the Trip Planner |
+| `OWN_PLANNER` | Worker var | off | Trip searches still go to the Trip Planner. With it on, a phone that sends `days=1` also gets trip lists a whole day at a time from our planner (src/daylist.js, 27 Oct); off, those phones get Trip Planner pages as before |
 | `LOAD_TESTS` | Worker var | off | Load test keys refused |
 | `REQ_LOG` | Worker var | on | One log line per request, 1 in 10 kept |
 | Budget guard hold | `/api/budget` | **on** at 4:23 PM: the last hourly reading (made before the 4:21 PM change to a 48 hour rate) projected Durable Object requests at 1,363% of the month (11.3% used), driven by the morning load tests | Engine, push, own planner, learn and load keys act as off; all are off anyway. The next hourly check (minute 17) reads again; it lifts by itself when the projection is back under 60%, or with `POST /api/budget/clear` |

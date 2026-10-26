@@ -67,5 +67,38 @@ export function nearTop(e: { layoutH: number; offsetY: number }, topOfRows: numb
 /** True when the answer is a page from a server that pages (an older one ignores page=1 and has no page). */
 export const isPaged = (r: unknown): boolean => !!(r && typeof r === 'object' && (r as any).page && typeof (r as any).page === 'object');
 
+// ---- whole days from our own planner (server page.mode "day", 27 Oct) ----
+// When the server's own planner is on it answers a phone that sends days=1 with a whole day of trips (3 AM to 3 AM),
+// the days before and after it that it can list the same way (prevDay, nextDay), and the window's bounds. The next day
+// is asked for while the reader is about DAY_PREFETCH_ROWS rows from either end; past the planner's days the list
+// carries on with Trip Planner pages from the last trip it has. Earlier rows already loaded are shown a block at a time
+// as the reader scrolls up (no network), so the list still opens at now.
+export const DAY_PREFETCH_ROWS = 50;
+/** Rows of earlier trips put above the list at a time, from a day already loaded. */
+export const DAY_REVEAL_ROWS = 30;
+export type DayInfo = { day: string; prevDay: string | null; nextDay: string | null; windowStart: number; windowEnd: number };
+const dayStr = (v: unknown): string | null => (typeof v === 'string' && /^\d{8}$/.test(v) ? v : null);
+/** The day page of an answer, or null (a Trip Planner page, or a server without the planner's days). */
+export function dayPageOf(r: unknown): DayInfo | null {
+  const p = r && typeof r === 'object' ? (r as any).page : null;
+  if (!p || typeof p !== 'object' || p.mode !== 'day' || !dayStr(p.day)) return null;
+  const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : NaN);
+  return { day: p.day, prevDay: dayStr(p.prevDay), nextDay: dayStr(p.nextDay), windowStart: n(p.windowStart), windowEnd: n(p.windowEnd) };
+}
+/** How near an end (in pixels) the next day is asked for: DAY_PREFETCH_ROWS rows at the list's average row height,
+ * never less than the plain pages' own distance (`minPx`). */
+export function dayPrefetchPx(contentH: number, rows: number, minPx: number): number {
+  if (!(rows > 0) || !(contentH > 0)) return minPx;
+  return Math.max(minPx, Math.round((contentH / rows) * DAY_PREFETCH_ROWS));
+}
+/** Which way the next earlier rows come from: rows already loaded and not yet shown, the planner's day before, or
+ * Trip Planner pages (none of the planner's days left that way). */
+export function earlierSource(hiddenRows: number, lo: DayInfo | null): 'reveal' | 'day' | 'pages' {
+  if (hiddenRows > 0) return 'reveal';
+  return lo && lo.prevDay ? 'day' : 'pages';
+}
+/** And the next later rows: the planner's next day, or Trip Planner pages. */
+export const laterSource = (hi: DayInfo | null): 'day' | 'pages' => (hi && hi.nextDay ? 'day' : 'pages');
+
 /** Skeleton rows shown while a page loads: enough to fill what the reader sees of it, never more than 4. */
 export const skeletonCount = (busy: boolean) => (busy ? 3 : 0);
