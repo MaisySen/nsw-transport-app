@@ -68,7 +68,8 @@ test("a slow planner: the feed's stops and live times come first, marked partial
   globalThis.__trip = "run-a"; plannerDelay = 4000; plannerCalls = 0;
   const r = await get(path("run-a"));
   assert.equal(r.status, 200);
-  assert.ok(r.ms < W.SERVICE_QUICK_MS + 1500, `answered in ${r.ms} ms`);
+  // Part 2 (27 Oct): the feed answer is worked out beside the full one from the start, so it lands under 1 s.
+  assert.ok(r.ms < 1000, `answered in ${r.ms} ms`);
   assert.equal(r.tag, "quick");
   assert.equal(r.cc, "no-store");
   assert.equal(r.body.partial, true);

@@ -11,6 +11,8 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * Station lists, station files and timetable packs carry a version tag (strong ETag); a phone that sends it back gets a 304 and downloads nothing.
 * A cold trip from now: timetable trips are worked out beside the planner call, so when the planner is slow the phone gets labelled timetable trips at about 1.5 s (was 6.5 s); live times follow on the next poll. The longest wait is unchanged (8.5 s, inside the app's 13 s). TRIP_QUICK_TT=off goes back to the 6.5 s wait.
 * No error answer is kept in any cache any more (a planner run error was kept 60 s, a pack 404 and a failed trackwork look up for hours, an engine board 404 for seconds).
+* Service detail, cold: the quick answer (our timetable's stop list for the trip with the realtime feed's live times and vehicle, no Trip Planner call) is worked out beside the full one from the start and answers at 0.6 s when the full list is slow (was 0.8 s wait plus up to 1.5 s); the full list still finishes behind it for the next poll.
+* /api/trip/live lays a delay with no clock time (Sydney Trains) on our timetable's run, so train legs are live too.
 * Workers Cache: built behind WORKERS_CACHE, left off (docs/PERFORMANCE.md "Workers Cache" says why).
 * Tests: backend/test/speed-part2.test.mjs (9), trip-quick.test.mjs (2 new, 1 updated).
 

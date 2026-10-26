@@ -7,7 +7,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const root = new URL("..", import.meta.url).pathname;
-const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {") +
+const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {") + "\n" +
+  fs.readFileSync(root + "src/raptor.js", "utf8") +
   "\nexport { __default, edgeKey, reqDevice, tripLiveParse, inmMatches, etagOf, TRIP_LIVE_MAX, workersCacheHeader, errorBody, serverCfg };\n";
 const tmp = `/tmp/speed-part2-test-${process.pid}-${Date.now()}.mjs`;
 fs.writeFileSync(tmp, src);
@@ -23,12 +24,23 @@ const feed = (entities) => new Uint8Array([...bytes(1, [...str(1, "2.0"), ...vin
 const tripUpdate = (tripId, stus, rel) => [...str(1, tripId), ...bytes(3, [...bytes(1, [...str(1, tripId), ...(rel ? vint(4, rel) : [])]), ...vint(4, Math.floor(Date.now() / 1000)),
   ...stus.flatMap(([seq, stopId, depS, delay]) => bytes(2, [...vint(1, seq), ...str(4, stopId), ...bytes(3, [...vint(1, delay), ...vint(2, depS)])]))])];
 
+// A trip update with delays only (no clock times), as Sydney Trains often sends, and only the stops it has news for.
+const delayOnly = (tripId, stus) => [...str(1, tripId), ...bytes(3, [...bytes(1, str(1, tripId)), ...vint(4, Math.floor(Date.now() / 1000)),
+  ...stus.flatMap(([seq, stopId, delay]) => bytes(2, [...vint(1, seq), ...str(4, stopId), ...bytes(3, vint(1, delay))]))])];
 const MIN = 60000;
 const nowS = Math.floor(Date.now() / 1000);
 const stops = { "/stops/213.json": { "2135113": ["Strathfield Station, Platform 3", -33.87, 151.09], "2135114": ["Strathfield Station, Platform 4", -33.87, 151.09] },
   "/stops/200.json": { "2000331": ["Central Station, Platform 17", -33.88, 151.2] }, "/stops/201.json": { "2011104": ["Kings Cross Station, Platform 1", -33.87, 151.22] } };
 const lists = { "/stations/train.json": [["200060", "Central Station", -33.88, 151.2], ["213510", "Strathfield Station", -33.87, 151.09]] };
-const env = { TFNSW_API_KEY: "t", ASSETS: { fetch: async (req) => { const p = new URL(req.url).pathname; const v = stops[p] || lists[p]; return v ? new Response(JSON.stringify(v), { headers: { "content-type": "application/json" } }) : new Response("no", { status: 404 }); } } };
+// Our own timetable's run for t1-delay (the planner object): Lidcombe, Strathfield P3, Central P17, planned times.
+const runPlanned = { lid: Date.now() + 2 * MIN, str: Date.now() + 8 * MIN, cen: Date.now() + 24 * MIN };
+let runAsks = 0;
+const PLANNER = { idFromName: (n) => n, get: () => ({ fetch: async (u) => { runAsks++; const q = new URL(u).searchParams; if (q.get("trip") !== "t1-delay") return Response.json({ error: "trip" });
+  return Response.json({ ver: 1, trip: "t1-delay", trips: ["t1-delay"], reached: true, mine: 1, alt: { "213510": ["2135113", "2135114"] }, stops: [
+    { id: "2135101", parent: null, arr: runPlanned.lid, dep: runPlanned.lid, trip: "t1-delay" },
+    { id: "2135113", parent: "213510", arr: runPlanned.str, dep: runPlanned.str, trip: "t1-delay" },
+    { id: "2000331", parent: null, arr: runPlanned.cen, dep: runPlanned.cen, trip: "t1-delay" }] }); } }) };
+const env = { TFNSW_API_KEY: "t", PLANNER, ASSETS: { fetch: async (req) => { const p = new URL(req.url).pathname; const v = stops[p] || lists[p]; return v ? new Response(JSON.stringify(v), { headers: { "content-type": "application/json" } }) : new Response("no", { status: 404 }); } } };
 let plannerCalls = 0, feedCalls = 0;
 globalThis.fetch = async (u) => {
   const url = new URL(String(u.url || u));
@@ -39,6 +51,7 @@ globalThis.fetch = async (u) => {
       // The feed shows this train at platform 4 instead of the planned 3.
       tripUpdate("t1-moved", [[5, "2135114", nowS + 7 * 60, 60], [9, "2000331", nowS + 23 * 60, 60]]),
       tripUpdate("t1-gone", [], 3),
+      delayOnly("t1-delay", [[2, "2135101", 180]]),
     ]));
   }
   if (url.pathname.endsWith("/tp/trip") || url.pathname.endsWith("/tp/departure_mon")) { plannerCalls++; return new Response("{}", { status: 503 }); }
@@ -181,4 +194,19 @@ test("Workers Cache stays off by default; on, only shared answers get an edge on
   assert.equal(W.workersCacheHeader(on, g("/api/departures?stop=1"), u("/api/departures?stop=1"), new Response("{}", { status: 503 })), null);
   const tpl = fs.readFileSync(root + "wrangler.toml.template", "utf8");
   assert.doesNotMatch(tpl, /^\[cache\]/m, "the wrangler cache block stays off");
+});
+
+test("trip-live: a delay with no clock time is laid on our timetable's run and carried to the boarding and get off stops", async () => {
+  plannerCalls = 0; runAsks = 0;
+  const r = await call("/api/trip/live?legs=" + leg("t1-delay", "2135113", "2000331", "train", "T1"));
+  const x = r.body.legs[0];
+  assert.equal(x.realtime, true);
+  assert.equal(Date.parse(x.estimated), runPlanned.str + 180000, "planned plus the carried 3 min delay");
+  assert.equal(Date.parse(x.arrEstimated), runPlanned.cen + 180000);
+  assert.equal(x.delayMin, 3);
+  assert.equal(runAsks, 1, "one planner object ask for the run");
+  assert.equal(plannerCalls, 0, "no Trip Planner call");
+  // A second ask in the same half hour reads the kept run.
+  await call("/api/trip/live?legs=" + leg("t1-delay", "2135113", "2000331", "train", "T1"));
+  assert.equal(runAsks, 1);
 });

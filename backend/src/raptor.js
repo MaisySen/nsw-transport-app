@@ -760,6 +760,19 @@ async function ownRun(env, tripId, stopId, plannedMs) {
   const qs = new URLSearchParams({ trip: String(tripId), stop: String(stopId), at: String(at) });
   const ck = new Request("https://planner-cache.transportsydney.app/run?" + qs.toString());
   const cache = typeof caches !== "undefined" ? caches.default : null;
+  // The quick and the full service answer ask for the same run at the same time (27 Oct, part 2): one object request.
+  // A request never awaits another request's promise in Workers: a second asker waits on its own timers (joinJob).
+  const busy = ownRunJobs.get(ck.url);
+  if (busy && typeof joinJob === "function") return joinJob(busy, 3000).catch(() => null);
+  const run = ownRunFetch(env, tripId, ck, cache, qs);
+  if (typeof sharedJob === "function") {
+    ownRunJobs.set(ck.url, sharedJob(run));
+    if (ownRunJobs.size > 200) ownRunJobs.delete(ownRunJobs.keys().next().value);
+  }
+  try { return await run; } finally { ownRunJobs.delete(ck.url); }
+}
+const ownRunJobs = new Map();
+async function ownRunFetch(env, tripId, ck, cache, qs) {
   const hit = cache ? await cache.match(ck).catch(() => null) : null;
   let d = hit ? await hit.json().catch(() => null) : null;
   if (!d) {

@@ -2030,7 +2030,9 @@ async function service(env, q) {
     const list = r ? runStops(r, (t) => (t === tripId ? tu : rt.tu(mode, line, t, feed)), tripId, tuLive) : null;
     if (list) { run = r; runList = list; }
   }
-  const useRun = !!(run && (run.reached || mode !== "train"));
+  // The quick answer (q.quick) takes the timetable run as it is, reached or not: it is marked partial, and the full
+  // answer that follows has the whole list.
+  const useRun = !!(run && (run.reached || mode !== "train" || q.quick));
   if (useRun) { stops = runList; source = "own"; }
   // q.quick (the quick first answer, SERVICE_QUICK_MS): the feed's own list only, no Trip Planner call.
   const feedShort = stops.length && !useRun && !q.quick ? (mode === "train" || await feedEndsShort(env, q, mode, stops)) : false;
@@ -8948,11 +8950,21 @@ async function edgeFetchInner(request, env, exec) {
       const svcQuick = url.pathname === "/api/service" && serviceQuickOn(env) ? SERVICE_QUICK_MS : 0;
       const quick = bk && bk.stop === "trip" && tripQuickOn(env) ? TRIP_QUICK_MS : svcQuick;
       if (svcQuick) {
-        if (leader) out = await Promise.race([job.promise, new Promise((r) => setTimeout(() => r(null), svcQuick))]);
-        else out = (await waitJob(job, svcQuick)) ? await joinJob(job) : null;
+        // The feed and timetable answer (serviceStandIn: no Trip Planner call) is worked out beside the full one from the
+        // start (27 Oct, part 2), so a cold open has an answer by SERVICE_QUICK_MS instead of after it.
+        const t0 = Date.now();
+        let sb = null, sbDone = false;
+        const sbP = serviceStandIn(request, env, exec).catch(() => null).then((r) => { sb = r; sbDone = true; return r; });
+        const take = async () => (leader ? await job.promise : await joinJob(job));
+        while (!out) {
+          if (await waitJob(job, 20)) { out = await take(); break; }
+          const tms = Date.now() - t0;
+          if (sbDone && (sb ? tms >= svcQuick : true)) break;
+          if (tms > svcQuick + SERVICE_STANDIN_MS) break;
+        }
         if (!out) {
           budget.serviceQuick = (budget.serviceQuick || 0) + 1;
-          const fb = await serviceStandIn(request, env, exec).catch(() => null);
+          const fb = await sbP;
           if (fb) return fb;
           out = leader ? await job.promise : await joinJob(job, SHARED_WAIT_MS);
         }
@@ -9118,6 +9130,20 @@ async function tripLive(env, legs) {
   const now = Date.now();
   const occ = await serverOn(env, "occupancy");
   const tus = legs.map((l) => rt.tu(l.mode, l.line, l.tripId, null));
+  // News from the feed for a trip: a trip update that is not cancelled. Sydney
+  // Trains often sends delays with no clock time and only the stops it has news for, so a leg whose boarding stop has
+  // no clock time is laid on the trip's run from our own timetable (ownRun, the planner object, no Transport for NSW
+  // call; kept 10 min per data centre), with the delays carried on stop by stop, as the service screen does.
+  // A trip update with no timestamp is no data yet (as on boards and the service screen).
+  const news = (tu) => !!tu && tu.rel !== 3 && !!tu.ts;
+  const clockAt = (tu, id) => { const f = feedAtStop(tu, id); return f && f.est ? f : null; };
+  const slot = Math.floor(now / 1800000) * 1800000;
+  const runs = await Promise.all(legs.map((l, i) => {
+    const tu = tus[i];
+    if (!news(tu) || typeof ownRun !== "function") return null;
+    if (clockAt(tu, l.stopId) && (!l.toStopId || clockAt(tu, l.toStopId))) return null;
+    return ownRun(env, l.tripId, l.stopId, slot).catch(() => null);
+  }));
   // Stop names (asset shards, no upstream call) for platform words and a trip the feed shows at another platform.
   const ids = new Set();
   legs.forEach((l, i) => { ids.add(l.stopId); if (tus[i] && !tus[i].stus.some((u) => u.stopId === l.stopId)) for (const u of tus[i].stus) ids.add(u.stopId); });
@@ -9126,9 +9152,8 @@ async function tripLive(env, legs) {
     const tu = tus[i];
     const veh = vehicleOf(rt.vp(l.mode, l.line, l.tripId, null));
     const base = { tripId: l.tripId, stopId: l.stopId, toStopId: l.toStopId };
-    if (!tu || !tu.ts) {
-      return { ...base, realtime: false, estimated: null, arrEstimated: null, delayMin: null, cancelled: !!(tu && tu.rel === 3), skipped: false, platform: null, vehicle: null, stopsAway: null };
-    }
+    const none = { ...base, realtime: false, estimated: null, arrEstimated: null, delayMin: null, cancelled: !!(tu && tu.rel === 3), skipped: false, platform: null, vehicle: null, stopsAway: null };
+    if (!news(tu)) return none;
     const nm = names[l.stopId] && names[l.stopId].name;
     // The feed lists the trip at another platform of the same station: that platform and its times.
     let at = l.stopId, platform = platformWord(nm);
@@ -9137,24 +9162,46 @@ async function tripLive(env, legs) {
       const alt = tu.stus.find((u) => names[u.stopId] && platformWord(names[u.stopId].name) && stationPart(names[u.stopId].name) === st);
       if (alt) { at = alt.stopId; platform = platformWord(names[alt.stopId].name); }
     }
-    const f = feedAtStop(tu, at);
-    const fa = l.toStopId ? feedAtStop(tu, l.toStopId) : null;
-    const cancelled = tu.rel === 3;
-    const realtime = !cancelled && !!(f && f.est);
+    const u0 = tu.stus.find((u) => u.stopId === at);
+    const skipped = !!(u0 && u0.rel === 1);
+    let est = null, arr = null, delayMin = null;
+    const f = clockAt(tu, at), fa = l.toStopId ? clockAt(tu, l.toStopId) : null;
+    if (f) { est = f.est; if (f.delay != null) delayMin = Math.round(f.delay / 60); }
+    if (fa) arr = fa.est;
+    // The run from our timetable with the feed laid on (planned times, the feed's times and its delays carried on).
+    const run = runs[i];
+    if (run && (!est || (l.toStopId && !arr))) {
+      const st = carryDelays(runStops(run, (t) => (t === l.tripId ? tu : rt.tu(l.mode, l.line, t, null)), l.tripId, true), true);
+      if (st) {
+        const parentOf = new Map();
+        for (const [p, kids] of Object.entries(run.alt || {})) for (const k of kids) parentOf.set(k, p);
+        const find = (id) => { const pid = parentOf.get(id) || id; return run.stops.findIndex((x) => x.id === id || (x.parent || parentOf.get(x.id) || x.id) === pid); };
+        const withDelay = (k) => {
+          if (k < 0 || !st[k] || st[k].skipped) return null;
+          if (st[k].estimated) return ms(st[k].estimated);
+          return tu.delay != null && st[k].planned ? ms(st[k].planned) + tu.delay * 1000 : null;
+        };
+        const k = find(l.stopId);
+        if (!est) { est = withDelay(k); if (est && st[k].planned) delayMin = Math.round((est - ms(st[k].planned)) / 60000); }
+        else if (delayMin == null && k >= 0 && st[k].planned) delayMin = Math.round((est - ms(st[k].planned)) / 60000);
+        if (l.toStopId && !arr) arr = withDelay(find(l.toStopId));
+      }
+    }
+    const realtime = !skipped && Number.isFinite(est) && est > 0;
     let stopsAway = null;
     if (veh && realtime) {
       const mine = tu.stus.findIndex((u) => u.stopId === at);
       const nxt = nextStopIndex(tu, veh, now);
       if (mine >= 0 && nxt >= 0 && mine >= nxt) stopsAway = mine - nxt;
     }
-    let vehicle = veh ? { ...veh } : null;
+    const vehicle = veh ? { ...veh } : null;
     if (vehicle && !occ) { delete vehicle.occupancy; delete vehicle.quiet; }
     return {
       ...base, realtime,
-      estimated: realtime ? iso(f.est) : null,
-      arrEstimated: realtime && fa && fa.est ? iso(fa.est) : null,
-      delayMin: realtime && f.delay != null ? Math.round(f.delay / 60) : null,
-      cancelled, skipped: !!(f && f.skipped), platform: platform || null, vehicle, stopsAway,
+      estimated: realtime ? iso(est) : null,
+      arrEstimated: realtime && Number.isFinite(arr) && arr > 0 ? iso(arr) : null,
+      delayMin: realtime ? delayMin : null,
+      cancelled: false, skipped, platform: platform || null, vehicle, stopsAway,
     };
   });
   return { kind: "triplive", now, dataAt: rt.fetchedAt() || null, legs: out };
@@ -9240,7 +9287,7 @@ async function tripStandIn(request, env, exec) {
 // stop list from the planner, which took 18 s on 27 Oct at 9:22 AM with four 8 s tries) finishes behind it and is the
 // copy the next poll gets. Only when the feed has at least 2 stops for the trip; otherwise the full answer as before.
 // SERVICE_QUICK=off turns it off.
-const SERVICE_QUICK_MS = 800;
+const SERVICE_QUICK_MS = 600;
 const SERVICE_STANDIN_MS = 1500;
 const FEED_ONLY = new WeakSet(); // internal requests that answer from the realtime feed only (serviceStandIn)
 function serviceQuickOn(env) { return String((env && env.SERVICE_QUICK) || "").toLowerCase() !== "off"; }
