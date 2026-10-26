@@ -825,9 +825,52 @@ class BoardShard {
     this.hot = new Map();     // board key -> last read or touch
     this.live = new Map();    // feed -> { at, vpAt, trips: Set, tu: Map, veh: Map, added: [] }
     this.lastRead = 0; this.alarmSet = false; this.lastBuild = 0; this.name = ""; this.platVer = null; this.learnAsked = new Map();
-    this.stats = { ticks: 0, built: 0, served: 0, cacheHits: 0, puts: 0, putErrors: 0, liveCalls: 0, liveSame: 0, windows: 0, tickMs: 0, liveMs: 0, buildMs: 0, coreErrors: 0 };
+    this.pushed = new Map();  // board key -> what the phones on its sockets hold (engPushState)
+    this.stats = { ticks: 0, built: 0, served: 0, cacheHits: 0, puts: 0, putErrors: 0, liveCalls: 0, liveSame: 0, windows: 0, tickMs: 0, liveMs: 0, buildMs: 0, coreErrors: 0, sockets: 0, pushes: 0, pushBytes: 0 };
   }
   core() { return engineStub(this.env); }
+  // ---- push (ENGINE_PUSH, /api/live): phones on a board's WebSocket get a diff the moment the shard rebuilds it ----
+  sockets(bk) { try { return this.state.getWebSockets(bk); } catch (e) { return []; } }
+  // Sends the change from what the board's sockets hold to this body (except to `skip`, a phone just sent the whole
+  // board), and keeps this body as what they hold.
+  pushBoard(bk, body, skip) {
+    const socks = this.sockets(bk).filter((w) => w !== skip);
+    let board;
+    try { board = JSON.parse(body); } catch (e) { return; }
+    const prev = this.pushed.get(bk);
+    const { state, msg } = engPushDiff(prev, board);
+    this.pushed.set(bk, state);
+    if (!socks.length || (!msg && prev !== null)) return;
+    const text = prev === null ? '{"type":"board","board":' + body + "}" : JSON.stringify(msg);
+    for (const w of socks) { try { w.send(text); this.stats.pushes++; this.stats.pushBytes += text.length; } catch (e) { /* closed */ } }
+  }
+  async openSocket(req, u) {
+    if ((req.headers.get("upgrade") || "").toLowerCase() !== "websocket") return new Response('{"error":"websocket only"}', { status: 426, headers: { "content-type": "application/json" } });
+    const stop = u.searchParams.get("stop") || "", mode = u.searchParams.get("mode") || "";
+    const bk = stop + "|" + mode;
+    await this.ensureAlarm();
+    let body = await this.board(stop, mode);
+    if (!body) return new Response('{"error":"no timetable for this stop"}', { status: 404, headers: { "content-type": "application/json" } });
+    body = body.replace(',"learn":true', "");
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+    this.state.acceptWebSocket(server, [bk]);
+    this.stats.sockets++;
+    this.pushBoard(bk, body, server);
+    server.send('{"type":"board","board":' + body + "}");
+    return new Response(null, { status: 101, webSocket: client });
+  }
+  async webSocketMessage(ws, msg) {
+    const bk = (this.state.getTags(ws) || [])[0] || "";
+    if (msg === "ping") { ws.send("pong"); return; }
+    if (msg === "full" && bk) {
+      const [stop, mode] = bk.split("|");
+      const body = await this.board(stop, mode);
+      if (body) ws.send('{"type":"board","board":' + body.replace(',"learn":true', "") + "}");
+    }
+  }
+  async webSocketClose(ws, code) { try { ws.close(code === 1005 ? 1000 : code, "closed"); } catch (e) { /* already closed */ } }
+  async webSocketError() { /* the phone falls back to polling */ }
   async coreJson(path, body) {
     const r = await this.core().fetch("https://engine" + path, body ? { method: "POST", body: JSON.stringify(body) } : undefined);
     if (r.status !== 200) { this.stats.coreErrors++; throw new Error("core " + path + " " + r.status); }
@@ -974,6 +1017,12 @@ class BoardShard {
   async tick() {
     const t0 = Date.now();
     this.stats.ticks++;
+    // A board with phones on its socket is being read (also after the object woke from hibernation).
+    let open = [];
+    try { open = this.state.getWebSockets(); } catch (e) { /* no sockets */ }
+    // After a wake from hibernation nothing is known of what those phones hold (null): they get the whole board next.
+    for (const w of open) for (const t of this.state.getTags(w) || []) { this.mark(t, t0); if (!this.pushed.has(t)) this.pushed.set(t, null); }
+    for (const bk of this.pushed.keys()) if (!this.sockets(bk).length) this.pushed.delete(bk);
     for (const [bk, at] of this.hot) if (t0 - at > ENGINE_BOARD_HOT_MS) { this.hot.delete(bk); this.boards.delete(bk); }
     if (!this.hot.size) return;
     await this.ensureMeta();
@@ -989,6 +1038,7 @@ class BoardShard {
     for (const bk of [...this.hot.keys()].sort((a, b) => this.hot.get(b) - this.hot.get(a))) {
       const body = this.build(src, bk, b0);
       if (body && put.length < ENGINE_SHARD_PUTS) put.push([bk, body]);
+      if (body && this.pushed.has(bk)) this.pushBoard(bk, body.replace(',"learn":true', ""));
       if (++n % 20 === 0) await new Promise((r) => setTimeout(r, 0)); // let waiting reads in between builds
     }
     this.lastBuild = b0;
@@ -1060,7 +1110,8 @@ class BoardShard {
         this.mark((u.searchParams.get("stop") || "") + "|" + (u.searchParams.get("mode") || ""), Date.now());
         return new Response(null, { status: 204 });
       }
-      if (u.pathname === "/status") return Response.json(this.status());
+      if (u.pathname === "/ws") return await this.openSocket(req, u);
+      if (u.pathname === "/status") return Response.json({ ...this.status(), openSockets: (() => { try { return this.state.getWebSockets().length; } catch (e) { return 0; } })() });
       if (u.pathname === "/restart" && req.method === "POST") {
         setTimeout(() => { try { this.state.abort("restart"); } catch (e) { /* not available */ } }, 50);
         return Response.json({ restarting: true, name: this.name });
@@ -1070,6 +1121,28 @@ class BoardShard {
       return Response.json({ error: String((e && e.message) || e) }, { status: 500 });
     }
   }
+}
+
+// Push diffs (ENGINE_PUSH): a board's rows keyed by service (trip, stop, planned time). What the phones hold is
+// { builtAt, rows: key -> row JSON, order }; a diff names the builtAt it applies to (base), the rows that changed or are
+// new, the keys gone, the new order when it changed, and the board without its rows (head). A phone whose board is not
+// at base sends "full" and gets the whole board.
+function engPushKey(it) { return (it.tripId || it.line) + "|" + it.stopId + "|" + it.planned; }
+function engPushDiff(prev, board) {
+  const rows = new Map(), order = [];
+  for (const it of board.items || []) { const k = engPushKey(it); if (rows.has(k)) continue; rows.set(k, JSON.stringify(it)); order.push(k); }
+  const state = { builtAt: (board.engine && board.engine.builtAt) || 0, rows, order };
+  if (!prev) return { state, msg: null };
+  const changed = {};
+  let n = 0;
+  for (const [k, j] of rows) if (prev.rows.get(k) !== j) { changed[k] = JSON.parse(j); n++; }
+  const gone = [];
+  for (const k of prev.rows.keys()) if (!rows.has(k)) gone.push(k);
+  const sameOrder = order.length === prev.order.length && order.every((k, i) => k === prev.order[i]);
+  if (!n && !gone.length && sameOrder) { state.builtAt = prev.builtAt; return { state, msg: null }; }
+  const head = { ...board };
+  delete head.items;
+  return { state, msg: { type: "diff", base: prev.builtAt, builtAt: state.builtAt, head, rows: changed, gone, ...(sameOrder ? {} : { order }) } };
 }
 
 // Feed timing (26 Oct, g14, root's steer): each feed's copies carry the time NSW made them (the GTFS realtime header
@@ -1198,6 +1271,19 @@ function engineLearn(env, ctx, board) {
   if (!pairs.length && !lines) return;
   const p = stub.fetch("https://engine/learn", { method: "POST", body: JSON.stringify(lines ? { pairs, lines: { stop, lines } } : pairs) }).catch(() => null);
   if (ctx && ctx.waitUntil) ctx.waitUntil(p);
+}
+// GET /api/live?stop=ID[&mode=] with Upgrade: websocket (ENGINE_PUSH "on", else 404): the board's shard answers the
+// upgrade, sends the whole board, then a diff (engPushDiff) each time it rebuilds the board. The HTTP board stays the
+// fallback; a phone sends "full" for the whole board again and "ping" to check the line.
+async function engineSocket(request, env, url) {
+  const hdr = { "content-type": "application/json", "access-control-allow-origin": "*" };
+  if (String((env && env.ENGINE_PUSH) || "").toLowerCase() !== "on") return new Response('{"error":"not available"}', { status: 404, headers: hdr });
+  if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") return new Response('{"error":"websocket only"}', { status: 426, headers: hdr });
+  const stop = url.searchParams.get("stop") || "", mode = url.searchParams.get("mode") || "";
+  if (!/^[A-Za-z0-9_-]{1,20}$/.test(stop) || (mode && !/^[a-z]{1,12}$/.test(mode))) return new Response('{"error":"bad stop"}', { status: 400, headers: hdr });
+  const sh = engineShardStub(env, stop);
+  if (!sh) return new Response('{"error":"not available"}', { status: 404, headers: hdr });
+  return sh.stub.fetch("https://engine/ws?stop=" + encodeURIComponent(stop) + "&mode=" + encodeURIComponent(mode) + "&name=" + sh.name, request);
 }
 async function engineCall(env, path, init) {
   const stub = engineStub(env);

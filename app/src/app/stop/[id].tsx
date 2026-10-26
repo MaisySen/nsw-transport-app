@@ -4,6 +4,8 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import { api, boardTimeSupported, departuresAt, departuresFor } from '@/lib/api';
 import { useCountdownNow, useLive, useReportCountdowns } from '@/lib/hooks';
+import { useBoardPush } from '@/lib/boardPush';
+import { pollGapWithPush } from '@/lib/boardPushCore';
 import { adaptiveGapMs, nextInMs } from '@/lib/pollCore';
 import { bestTime } from '@/lib/format';
 import { useScreenPoll } from '@/lib/activity';
@@ -66,9 +68,13 @@ export default function StopScreen() {
   const ask = boardAsk(served, mode, pick, at);
   // Now only: the stop's timetable pack (timetablePack.ts) paints the first frame when no copy of the live board from
   // the last 10 minutes is kept, labelled as timetable times until the live board replaces it.
-  const { data, error, updatedAt, offlineAt, staleAt, packAt, refreshing, refresh } = useLive((r) => (at != null ? departuresAt(String(id), at) : ask ? departuresFor(String(id), ask, r) : api.departures(String(id), r)),
+  // With a live push socket open (useBoardPush, off unless remote config turns livePush on) the poll is a once a
+  // minute safety net.
+  const pushLive = useRef(false);
+  const { data, error, updatedAt, offlineAt, staleAt, packAt, refreshing, refresh, pushed } = useLive((r) => (at != null ? departuresAt(String(id), at) : ask ? departuresFor(String(id), ask, r) : api.departures(String(id), r)),
     // Adaptive: every 15 s while the next service is 10 minutes away or less, slower when it is further off.
-    (d) => adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), [id, at, ask], { cacheKey: at == null ? cacheKey('dep', boardKey(String(id), ask)) : undefined, pack: at == null && id ? { stop: String(id), mode: ask } : null });
+    (d) => pollGapWithPush(adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), pushLive.current), [id, at, ask], { cacheKey: at == null ? cacheKey('dep', boardKey(String(id), ask)) : undefined, pack: at == null && id ? { stop: String(id), mode: ask } : null });
+  pushLive.current = useBoardPush(at == null && id ? String(id) : null, at == null && typeof ask === 'string' ? ask : null, pushed).live;
   // A stop opened is a recent stop: it gets its own pack (once a day) a moment after the screen has its times.
   useEffect(() => { if (!id) return; const t = setTimeout(() => packWanted(String(id)), 4000); return () => clearTimeout(t); }, [id]);
   useEffect(() => { setServed((p) => modesServed(p, data)); }, [data]);

@@ -11,6 +11,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import { api } from '@/lib/api';
 import { useCountdownNow, useLive, useReportCountdowns } from '@/lib/hooks';
+import { useBoardPush } from '@/lib/boardPush';
+import { pollGapWithPush } from '@/lib/boardPushCore';
 import { adaptiveGapMs, nextInMs } from '@/lib/pollCore';
 import { cacheKey, offlineText, staleText } from '@/lib/offlineCore';
 import { packStampText } from '@/lib/timetablePackCore';
@@ -94,7 +96,10 @@ export default function Board() {
   const { width, height, fontScale } = useWindowDimensions();
   const wide = width > height;
   useStayAwake();
-  const { data, error, offlineAt, staleAt, packAt } = useLive((r) => api.departures(String(id), r), (d) => adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), [id], { cacheKey: cacheKey('dep', String(id)), pack: id ? { stop: String(id) } : null });
+  // With a live push socket open (useBoardPush, off unless remote config turns livePush on) the poll is once a minute.
+  const pushLive = useRef(false);
+  const { data, error, offlineAt, staleAt, packAt, pushed } = useLive((r) => api.departures(String(id), r), (d) => pollGapWithPush(adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), pushLive.current), [id], { cacheKey: cacheKey('dep', String(id)), pack: id ? { stop: String(id) } : null });
+  pushLive.current = useBoardPush(id ? String(id) : null, null, pushed).live;
   const dataRef = useRef(data);
   dataRef.current = data;
   // Dynamic Type: the board grows with the text size setting, within what still fits a few rows.

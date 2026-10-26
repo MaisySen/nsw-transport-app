@@ -164,7 +164,22 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
     try { await runNow(); } finally { setRefreshing(false); }
   }, [runNow]);
 
-  return { data, error, updatedAt, offlineAt, staleAt, packAt, refreshing, refresh, setData };
+  // A board the server pushed (boardPush.ts): shown like a fresh answer; kept on the phone at most every 30 s.
+  const keptAt = useRef(0);
+  const pushed = useCallback((d: T) => {
+    const now = Date.now();
+    setData(d);
+    setError(null);
+    setUpdatedAt(answerTime(d, now));
+    setOfflineAt(null);
+    setStaleAt(null);
+    setPackAt(null);
+    shown.current = { live: true, at: now };
+    const key = keyRef.current;
+    if (key && now - keptAt.current > 30000) { keptAt.current = now; keepOffline(key, d); }
+  }, []);
+
+  return { data, error, updatedAt, offlineAt, staleAt, packAt, refreshing, refresh, setData, pushed };
 }
 
 /**

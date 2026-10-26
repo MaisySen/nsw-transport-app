@@ -9,7 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 const root = new URL("..", import.meta.url).pathname;
 const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {") + "\n" +
   fs.readFileSync(root + "src/engine.js", "utf8").replace(/\nexport \{ BoardEngine, BoardShard \};\s*$/, "\n") +
-  "\nexport { __default, engBuildBoard, engLive, engDayKey, engPlatform, BoardEngine, BoardShard, engineWanted, engTrim, engShardOf, engNotePublish, engNextPublish };\n";
+  "\nexport { __default, engBuildBoard, engLive, engDayKey, engPlatform, BoardEngine, BoardShard, engineWanted, engTrim, engShardOf, engNotePublish, engNextPublish, engPushKey, engineSocket };\n";
 const tmp = `/tmp/engine-test-${process.pid}-${Date.now()}.mjs`;
 fs.writeFileSync(tmp, src);
 const W = await import(tmp); fs.unlinkSync(tmp);
@@ -313,4 +313,62 @@ test("a live row says when its live time was read (liveAt, the feed copy's time)
     assert.ok(Math.abs(live.liveAt - src.feedAt("bus")) < 100);
     assert.equal(tt.liveAt, null);
   } finally { rows.B = save; }
+});
+
+test("push: a phone's socket gets the whole board, then only the rows that changed; the board stays hot while it is open", async () => {
+  const E = await loaded([]);
+  const core = { fetch: (u, init) => E.fetch(new Request(u, init)) };
+  const env = { ENGINE: { idFromName: () => "core", get: () => core } };
+  const st = fakeState();
+  const socks = [];
+  st.acceptWebSocket = (ws, tags) => { ws.tags = tags; socks.push(ws); };
+  st.getWebSockets = (tag) => socks.filter((w) => !tag || w.tags.includes(tag));
+  st.getTags = (ws) => ws.tags;
+  const mkSock = () => ({ sent: [], send(t) { this.sent.push(t); }, close() {} });
+  const RealResponse = globalThis.Response, RealPair = globalThis.WebSocketPair;
+  // Node's Response refuses status 101; the Workers runtime takes it with the client end of the pair.
+  globalThis.Response = class extends RealResponse { constructor(b, i = {}) { super(b, i.status === 101 ? { ...i, status: 200 } : i); this.ws = i.webSocket; this.s101 = i.status === 101; } get status() { return this.s101 ? 101 : super.status; } };
+  globalThis.WebSocketPair = function () { return { 0: mkSock(), 1: mkSock() }; };
+  try {
+    const S = new W.BoardShard(st, env);
+    assert.equal((await S.fetch(new Request("https://engine/ws?stop=P&name=nsw-2-b1"))).status, 426);
+    const r = await S.fetch(new Request("https://engine/ws?stop=P&name=nsw-2-b1", { headers: { upgrade: "websocket" } }));
+    assert.equal(r.status, 101);
+    const server = socks[0];
+    const first = JSON.parse(server.sent[0]);
+    assert.equal(first.type, "board");
+    assert.ok(first.board.items.length >= 4);
+    // The same board again: nothing sent. One row later: a diff with that row only.
+    const body = JSON.stringify(first.board);
+    S.pushBoard("P|", body);
+    assert.equal(server.sent.length, 1);
+    const b2 = JSON.parse(body);
+    b2.engine.builtAt += 5000;
+    b2.items[0] = { ...b2.items[0], estimated: new Date(Date.parse(b2.items[0].planned) + 120000).toISOString(), realtime: true };
+    S.pushBoard("P|", JSON.stringify(b2));
+    const d = JSON.parse(server.sent[1]);
+    assert.equal(d.type, "diff");
+    assert.equal(d.base, first.board.engine.builtAt);
+    assert.deepEqual(Object.keys(d.rows), [W.engPushKey(b2.items[0])]);
+    assert.equal(d.order, undefined);
+    // A phone asking for the whole board gets it.
+    await S.webSocketMessage(server, "full");
+    assert.equal(JSON.parse(server.sent[2]).type, "board");
+    await S.webSocketMessage(server, "ping");
+    assert.equal(server.sent[3], "pong");
+    // Open sockets keep the board hot through a tick, even with no reads for longer than the hot window.
+    S.hot.set("P|", Date.now() - 3600000);
+    await S.tick();
+    assert.ok(Date.now() - S.hot.get("P|") < 5000);
+  } finally { globalThis.Response = RealResponse; globalThis.WebSocketPair = RealPair; }
+});
+
+test("push: /api/live is 404 unless ENGINE_PUSH is on, and needs a WebSocket upgrade and a stop id", async () => {
+  const u = (q) => new URL("https://api.transportsydney.app/api/live?" + q);
+  assert.equal((await W.engineSocket(new Request(u("stop=200060")), {}, u("stop=200060"))).status, 404);
+  const env = { ENGINE_PUSH: "on", SHARDS: { idFromName: (n) => n, get: () => ({ fetch: async () => new Response("ok") }) } };
+  assert.equal((await W.engineSocket(new Request(u("stop=200060")), env, u("stop=200060"))).status, 426);
+  const up = { headers: { upgrade: "websocket" } };
+  assert.equal((await W.engineSocket(new Request(u("stop=a%20b"), up), env, u("stop=a%20b"))).status, 400);
+  assert.equal((await W.engineSocket(new Request(u("stop=200060"), up), env, u("stop=200060"))).status, 200);
 });

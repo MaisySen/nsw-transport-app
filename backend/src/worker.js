@@ -7836,6 +7836,11 @@ export default {
   async fetch(request, env, exec) {
     applyEnv(env);
     const url = new URL(request.url);
+    // Live board pushes (ENGINE_PUSH on): a WebSocket to the board's shard, which sends a diff each time it rebuilds it.
+    if (url.pathname === "/api/live" && typeof engineSocket === "function") {
+      if (!rateOk(request, url.pathname)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
+      return engineSocket(request, env, url);
+    }
     // Engine boards skip the copy layer below: the engine makes each board every 10 s and keeps its own 4 s copies.
     if (request.method === "GET" && url.pathname === "/api/departures" && !url.searchParams.get("time") && !url.searchParams.get("date") && typeof engineWanted === "function" && env.ENGINE && engineWanted(env, url)) return handleRequest(request, env, exec);
     const cache = request.method === "GET" && EDGE_CACHE_RE.test(url.pathname) && !badInput(url.searchParams) ? edgeCache() : null;
