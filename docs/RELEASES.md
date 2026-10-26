@@ -241,3 +241,15 @@ Behind `ENGINE_BOARDS` (off). Each deploy passed the post deploy checks (/api/li
 | 12:40 PM | fefbc66f | c9ffcac | Smaller in memory caches |
 
 Roll back the engine changes: `npx wrangler@4 rollback 2ef1ad9f-ee39-4b85-ac38-f74c04471191 --name transport-api` (g12's timetable pack deploy at 12:20 PM, the last one before these). Before the engine existed: 863d521d.
+
+### Our own trip planner (server, 26 Oct, g18, OWN_PLANNER off)
+
+| Time (Sydney) | transport-api version | Main | What |
+|---|---|---|---|
+| 3:52 PM | fb242627-67c8-4df1-bc9f-4ca65a3e7af2 | 1d10f75 | New TripPlanner object (migration planner-v1, no D1 change), `/api/raptor` (engine load key), `trip()` asks it only with `OWN_PLANNER` on (off). Pack for 26 Oct (from the 23 Oct GTFS bundle, 45 MB) loaded at 3:53 PM with tools/load_planner.mjs in 39 s. |
+
+Post deploy checks passed: /api/lines, /api/trackwork, /api/health 403 without key, /api/usual, a shared link made, opened
+and ended, `/api/raptor/status` 403 without key, `/api/raptor/plan` answers (Central to Parramatta, Bondi Junction to
+Chatswood, Penrith to Bondi Junction, a point in the city to Chatswood). Roll back:
+`npx wrangler@4 rollback 2e7a550e-f5d9-4c09-9b4d-3e84af3ba18e --name transport-api` (g17's deploy at 3:23 PM, the last
+one before this). The TripPlanner object stays defined after a roll back and is unused.
