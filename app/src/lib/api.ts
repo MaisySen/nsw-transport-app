@@ -16,6 +16,7 @@ import { boardKey } from './stopBoardCore';
 import { createKeep, isLongTrip, longGone, LONG_TRIP_KEEP_MS, LONG_TRIP_TIMEOUT_MS } from './longTripCore';
 import { httpError, isNetErr as netErr, legacyWorthy, noAnswerError, noteReach, onFailWhy, READ_MS_EMPTY, READ_MS_WITH_COPY, TRIP_MS } from './netErrCore';
 import { setOfflineWhy } from './offlineCore';
+import { slowMakesLong } from './coldOpenCore';
 
 // Kept times say why they are on screen: the phone offline, or the live data down (netErrCore.ts).
 onFailWhy(setOfflineWhy);
@@ -141,11 +142,15 @@ export const api = {
     try {
       // One deadline for a trip search (docs/DIAGNOSIS_LAG.md item 3). The server answers a refused Trip Planner with
       // timetable trips or a plain error, so an error answer is never read as "too slow" and never asked again here.
-      return await req<TripResp>(`/api/trip?${qs({ ...base, device: await getDevice(), profile: PROFILE, refresh: opts.refresh ? 1 : '' })}`, undefined, TRIP_MS);
+      const r = await req<TripResp>(`/api/trip?${qs({ ...base, device: await getDevice(), profile: PROFILE, refresh: opts.refresh ? 1 : '' })}`, undefined, TRIP_MS);
+      slowPairs.delete(pair);
+      return r;
     } catch (e: any) {
-      // No answer in time while the server is reachable: the next search of this pair goes the long way (no second
-      // wait now). A server that timed out on the planner itself (504) is the same.
-      if (e?.slow || e?.http === 504) longPairs.add(pair);
+      // No answer in time twice while the server is reachable: the next search of this pair goes the long way (no
+      // second wait now). A server that timed out on the planner itself (504) is the same at once. One slow answer is
+      // a slow moment (27 Oct): the quick ask again stays on the plain path, which gets the server's saved live copy.
+      if (e?.slow) slowPairs.set(pair, (slowPairs.get(pair) || 0) + 1);
+      if (slowMakesLong(slowPairs.get(pair) || 0, e?.http === 504)) longPairs.add(pair);
       throw e;
     }
   },
@@ -202,6 +207,8 @@ export const api = {
 // 2 minutes; the app keeps it 2 minutes too, so the trip screen and Home do not ask the planner again on every
 // refresh. Until the app moves there, a 404 means the server in use, with a longer wait, for the session.
 const longPairs = new Set<string>();
+// Timed out plain trips per pair this session, reset by an answer (coldOpenCore.slowMakesLong).
+const slowPairs = new Map<string, number>();
 const longKeep = createKeep<TripResp>(LONG_TRIP_KEEP_MS);
 const longOut = new Map<string, Promise<TripResp>>();
 let longOff = false;

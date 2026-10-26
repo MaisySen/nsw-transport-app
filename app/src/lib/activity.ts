@@ -21,7 +21,7 @@ export function startAppPoll(run: () => Promise<boolean | void> | boolean | void
  * A job for one screen: runs every `everyMs` while the app is in front AND this screen is on view.
  * `run` returns false for a failure, and the wait doubles after each one (up to 5 minutes).
  */
-export function useScreenPoll(run: () => Promise<boolean | void> | boolean | void, everyMs: number | (() => number), opts: { enabled?: boolean; runAtStart?: boolean; staleMs?: number; retimeKey?: unknown; soon?: { key: unknown; ms: number } | null } = {}) {
+export function useScreenPoll(run: () => Promise<boolean | void> | boolean | void, everyMs: number | (() => number), opts: { enabled?: boolean; runAtStart?: boolean; staleMs?: number; retimeKey?: unknown; soon?: { key: unknown; ms: number } | null; nextMs?: () => number | null } = {}) {
   const runRef = useRef(run);
   runRef.current = run;
   // A gap given as a function is read before each wait (adaptive polling) without restarting the poller.
@@ -35,7 +35,8 @@ export function useScreenPoll(run: () => Promise<boolean | void> | boolean | voi
   useEffect(() => {
     if (!enabled) return;
     const gap = dynamic ? () => { const e = everyRef.current; return typeof e === 'function' ? e() : e; } : fixed;
-    const p = createPoller(() => runRef.current(), gap, timers, { active: appActive(), enabled: focused.current, runAtStart: opts.runAtStart ?? false, staleMs: opts.staleMs });
+    const nextRef = opts.nextMs;
+    const p = createPoller(() => runRef.current(), gap, timers, { active: appActive(), enabled: focused.current, runAtStart: opts.runAtStart ?? false, staleMs: opts.staleMs, nextMs: nextRef ? () => nextRef() : undefined });
     poller.current = p;
     const sub = AppState.addEventListener('change', (s) => p.setActive(appActive(s)));
     return () => { sub.remove(); p.stop(); if (poller.current === p) poller.current = null; };

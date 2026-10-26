@@ -15,6 +15,10 @@ Written 25 Oct 2026 after the battery, smoothness and iOS audit (report: files/q
      multiples of the clock. Default 5 s (countdowns show whole minutes). Do not pass 1000.
 2. **Back off on failure.** A poll job returns `false` (or throws) when it failed; the wait then doubles each time,
    up to 5 minutes, and resets after a success or a pull to refresh. Never retry in a tight loop.
+   The one exception is bounded (27 Oct, cold open, `src/lib/coldOpenCore.ts`): a Home card's failed read asks again
+   after 1.5 s and then 4 s, at most 2 quick asks per failure run, and a slow planner stand in is asked again after 6 s
+   and 10 s, at most twice per opening. They go through the same poller (its `nextMs`), so nothing runs while the app
+   is away or the screen is off view, and they do not count towards the back off.
 3. **Catch up once.** Coming back to the app or the screen runs a stale job once at once, never once per missed tick.
 4. **Gaps in use today:** trip list pages (27 Oct: about 10 trips a page, asked for a screen and a half before either end, one at a time each way, up to 7 days either way, never while the screen is off view; a trip via a stop still loads batches at the end, at most 8 a visit, stopped at 4am), departures and trip results 15 to 20 s, live trip engine 15 s, iPhone trip card 30 s,
    alerts poll 20 s (60 s when the phone has a push token, since push brings the alert), station info and walking

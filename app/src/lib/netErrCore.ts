@@ -19,7 +19,14 @@ export const MSG = {
 /** Read deadlines (docs/DIAGNOSIS_LAG.md item 6): shorter with a kept copy or pack on screen. Trips have one deadline. */
 export const READ_MS_WITH_COPY = 8000;
 export const READ_MS_EMPTY = 15000;
-export const TRIP_MS = 10000;
+/**
+ * The trip deadline. From 27 Oct the server answers a plain trip within its quick wait (TRIP_QUICK_MS, 6.5 s) plus at
+ * most 2 s to build timetable trips, so 13 s leaves room for a slow mobile network on top. It was 10 s, which a slow
+ * Trip Planner morning beat (27 Oct 8:35 AM: the phone gave up at 9.9 s).
+ */
+export const TRIP_MS = 13000;
+/** The server's own longest wait for a plain trip before it answers (its quick wait plus building timetable trips). */
+export const SERVER_TRIP_ANSWER_MS = 6500 + 2000;
 /** A server answer this recent means the phone is online. */
 export const REACH_FRESH_MS = 120000;
 

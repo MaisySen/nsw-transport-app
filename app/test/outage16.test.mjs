@@ -89,7 +89,9 @@ test('the old server only when the new one cannot be reached; a refusal is not "
   assert.equal(N.legacyWorthy({ http: 502 }), false);
   assert.equal(L.plannerTooSlow({ http: 502 }), false);
   assert.equal(L.plannerTooSlow({ http: 429 }), false);
-  assert.equal(N.TRIP_MS, 10000);
+  // 13 s from 27 Oct: comfortably past the server's own longest wait for a plain trip (coldopen.test.mjs checks both).
+  assert.equal(N.TRIP_MS, 13000);
+  assert.ok(N.TRIP_MS >= N.SERVER_TRIP_ANSWER_MS + 4000);
   assert.ok(N.READ_MS_WITH_COPY <= 8000 && N.READ_MS_EMPTY <= 15000);
   const a = read('src/lib/api.ts');
   assert.match(a, /if \(alt && legacyWorthy\(e\)\) \{/);

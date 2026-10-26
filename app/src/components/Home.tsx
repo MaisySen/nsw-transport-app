@@ -10,7 +10,8 @@ import { adaptiveGapMs } from '@/lib/pollCore';
 
 /** The first departure still ahead (or NaN). */
 const nextDep = (ts: number[]) => { const n = Date.now() - 30000; let b = NaN; for (const t of ts) if (t > n && !(t >= b)) b = t; return b; };
-import { cacheKey, offlineText, offlineWord, staleText } from '@/lib/offlineCore';
+import { cacheKey, offlineText, offlineWord, stampText, staleText } from '@/lib/offlineCore';
+import { homeHeader, STAND_IN_UPDATING_NOTE, UPDATING_WORD, updatingText } from '@/lib/coldOpenCore';
 import { boardNote, failWhy, TIMETABLE_BOARD_NOTE, TIMETABLE_TRIPS_NOTE, tripNote } from '@/lib/netErrCore';
 import { packStampText, packTarget } from '@/lib/timetablePackCore';
 import { foldNear, type NearPick } from '@/lib/nearCore';
@@ -86,8 +87,9 @@ function useHomeLive<T>(load: (refresh: boolean) => Promise<T>, deps: any[], key
   const nextRef = useRef(nextOf);
   nextRef.current = nextOf;
   // A stop card (a departures key) paints its timetable pack first when no recent copy is kept (timetablePack.ts).
-  const live = useLive(load, (d) => adaptiveGapMs(15000, d && nextRef.current ? nextRef.current(d) - Date.now() : null), deps, { cacheKey: key, pack: packTarget(key) });
-  const { updatedAt, refresh, offlineAt, staleAt } = live;
+  // quick (coldOpenCore.ts): a failed first read keeps the card's kept times, marked Updating, and asks again in a moment.
+  const live = useLive(load, (d) => adaptiveGapMs(15000, d && nextRef.current ? nextRef.current(d) - Date.now() : null), deps, { cacheKey: key, pack: packTarget(key), quick: true });
+  const { updatedAt, refresh, offlineAt, staleAt, pending, retrying } = live;
   // A timetable stand in (the server's answer while Transport for NSW refuses) is not live: the header's Live stamp stays.
   const standIn = (live.data as any)?.source === 'timetable';
   useEffect(() => { if (updatedAt && !standIn) markLive(); }, [updatedAt, standIn]);
@@ -101,6 +103,12 @@ function useHomeLive<T>(load: (refresh: boolean) => Promise<T>, deps: any[], key
     reportStale(key, staleAt);
     return () => reportStale(key, null);
   }, [key, staleAt]);
+  useEffect(() => {
+    if (!key) return;
+    // Also while a quick ask again waits (a slow planner's timetable stand in on screen): the header says Updating.
+    reportPending(key, pending || retrying);
+    return () => reportPending(key, false);
+  }, [key, pending, retrying]);
   useEffect(() => {
     pullers.add(refresh);
     return () => { pullers.delete(refresh); };
@@ -120,6 +128,20 @@ function reportStale(key: string, at: number | null) {
 }
 function useStaleSince() {
   return useSyncExternalStore((l) => { liveSubs.add(l); return () => { liveSubs.delete(l); }; }, () => staleSnap, () => staleSnap);
+}
+
+// Cards whose first live answer of this opening is still on its way (a request out or a quick ask again waiting), so
+// the header says Updating, never "No live times", until each has had its answer or its failures in a row.
+const pendingCards = new Set<string>();
+let pendingSnap = 0;
+function reportPending(key: string, on: boolean) {
+  if (on) pendingCards.add(key); else pendingCards.delete(key);
+  if (pendingCards.size === pendingSnap) return;
+  pendingSnap = pendingCards.size;
+  liveSubs.forEach((f) => f());
+}
+function usePendingCount() {
+  return useSyncExternalStore((l) => { liveSubs.add(l); return () => { liveSubs.delete(l); }; }, () => pendingSnap, () => pendingSnap);
 }
 
 // ---------- high priority alerts reported by the trip cards ----------
@@ -471,7 +493,7 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
   const plan = { from, to, via, conn: trip.conn, legs: trip.legs, modes: trip.modes };
   const chain = isChain(plan);
   const pkey = tripPkey(plan);
-  const { data, error, offlineAt, staleAt } = useHomeLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && !!allServices }), [pkey, chain && !!allServices], cacheKey('trip', tripCacheId(pkey, chain && !!allServices)),
+  const { data, error, offlineAt, staleAt, retrying } = useHomeLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && !!allServices }), [pkey, chain && !!allServices], cacheKey('trip', tripCacheId(pkey, chain && !!allServices)),
     (d) => nextDep((d?.journeys || []).map(depOf)));
 
   // Remember each live reading for the hold.
@@ -552,7 +574,8 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
         </View>
       ) : glance}
       {offlineAt && js.length ? <OfflineNote at={offlineAt} now={now} /> : null}
-      {(data as any)?.source === 'timetable' && js.length && !offlineAt ? <T kind="foot" tone="text2" style={s.note}>{TIMETABLE_TRIPS_NOTE}</T> : null}
+      {staleAt && js.length && !offlineAt ? <T kind="foot" tone="text2" style={s.note}>{updatingText(stampText(staleAt, now))}</T> : null}
+      {(data as any)?.source === 'timetable' && js.length && !offlineAt && !staleAt ? <T kind="foot" tone="text2" style={s.note}>{retrying ? STAND_IN_UPDATING_NOTE : TIMETABLE_TRIPS_NOTE}</T> : null}
       {pbText ? <PlanBRow title={pbTitle} text={pbText} onPress={() => open()} /> : null}
       {look === 'hero' && js.length ? <SpeakButton say={() => tripSentence(jsRef.current, Date.now())} /> : null}
       {below && js.length ? below(js) : null}
@@ -949,16 +972,20 @@ export function LiveTag() {
   const t = useLastLive();
   const off = useOfflineSince();
   const stale = useStaleSince();
-  if (!off && stale && !t) {
-    // A fresh start: the kept copy is on screen while the live answer loads.
+  const pending = usePendingCount();
+  // coldOpenCore.homeHeader: Updating while the first live answers are on their way (the kept copy on screen or not),
+  // "No live times" only after a card's failures in a row, never while a first request is still out.
+  const kind = homeHeader({ live: t, off, stale, pending });
+  if (kind === 'updating') {
+    const label = stale ? staleText(stale, Date.now()) : 'Updating live times';
     return (
-      <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel={staleText(stale, Date.now())}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel={label}>
         <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: c.text3, marginRight: 5 }} />
-        <T kind="foot" tone="text2" style={{ fontVariant: ['tabular-nums'] }}>{staleText(stale, Date.now())}</T>
+        <T kind="foot" tone="text2">{UPDATING_WORD}</T>
       </View>
     );
   }
-  if (off) {
+  if (kind === 'offline') {
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel={offlineText(off, Date.now())}>
         <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: c.orange, marginRight: 5 }} />
@@ -966,7 +993,7 @@ export function LiveTag() {
       </View>
     );
   }
-  if (!t) return null;
+  if (kind !== 'live') return null;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel={`Live, updated ${clock(t)}`}>
       <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: c.green, marginRight: 5 }} />

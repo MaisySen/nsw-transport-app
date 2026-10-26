@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { showsKept } from './netErrCore';
 import { keepOffline, peekOffline, readOffline } from './offline';
 import { createLatest, createStamp, quickReaskMs } from './pollCore';
+import { phoneOffline, quickRetryMs, standInReaskMs } from './coldOpenCore';
 import { answerTime } from './liveLabelCore';
 import { useCountdownNow, useNow, useReportCountdowns, useScreenPoll } from './activity';
 import { peekPackBoard, readPackBoard } from './timetablePack';
@@ -26,7 +27,10 @@ export { useCountdownNow, useNow, useReportCountdowns };
  * the new round asks at once instead of waiting for the old request. `load` gets an AbortSignal that is aborted when
  * its round is over.
  */
-export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Promise<T>, intervalMs: number | ((data: T | null) => number) = 15000, deps: any[] = [], opts: { cacheKey?: string; enabled?: boolean; pack?: { stop: string; mode?: string | null } | null } = {}) {
+export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Promise<T>, intervalMs: number | ((data: T | null) => number) = 15000, deps: any[] = [], opts: { cacheKey?: string; enabled?: boolean; pack?: { stop: string; mode?: string | null } | null;
+  /** Home cards (coldOpenCore.ts): a failed read keeps what is on screen and asks again quickly, a slow planner stand in is
+   * asked again soon for live trips, and only failures in a row show the failure. `pending` and `retrying` say so. */
+  quick?: boolean } = {}) {
   // A copy kept in memory this session shows on the first frame (a screen opened again, Home after a tab change),
   // or the stop's timetable pack when that copy is missing or more than 10 minutes old (firstPaint).
   const first = useRef<{ at: number; data: T; pack: boolean } | null | undefined>(undefined);
@@ -64,15 +68,39 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
   // again with refresh after about 2 s, once per opening, then the normal gap.
   const reasked = useRef(false);
   const [soon, setSoon] = useState<{ key: number; ms: number } | null>(null);
+  // The quick ask again (opts.quick, coldOpenCore.ts): failures in a row, the wait the next poll takes instead of the
+  // gap, whether that ask is a plain one (the server's saved live copy, not a refresh), and stand in re-asks so far.
+  const quickRef = useRef(!!opts.quick);
+  quickRef.current = !!opts.quick;
+  const fails = useRef(0);
+  const nextQuick = useRef<number | null>(null);
+  const plainNext = useRef(false);
+  const standAsked = useRef(0);
+  // pending: the first live answer of this opening is still on its way (a request out or a quick ask waiting).
+  // retrying: a quick ask again is waiting (Home's header and cards say Updating, never unavailable, meanwhile).
+  const [pending, setPending] = useState(true);
+  const [retrying, setRetrying] = useState(false);
+  const quickAgain = useCallback((ms: number) => {
+    nextQuick.current = ms;
+    plainNext.current = true;
+    setRetrying(true);
+    setSoon({ key: Date.now() + Math.random(), ms });
+  }, []);
 
   const run = useCallback(async (refresh: boolean): Promise<boolean> => {
     const L = latest.current!;
     const round = L.begin();
     if (!round) return true;
     const key = keyRef.current;
+    nextQuick.current = null;
     try {
       const d = await loadRef.current(refresh, round.signal);
       if (!round.current()) return true;
+      fails.current = 0;
+      setPending(false);
+      // A slow planner's timetable stand in: live trips asked for again soon (the server saves them when they come).
+      const sw = quickRef.current ? standInReaskMs(d, standAsked.current) : null;
+      if (sw != null) { standAsked.current += 1; quickAgain(sw); } else setRetrying(false);
       // When the times were read (a cached answer from the server says so), not just when they arrived (honest "Updated").
       const at = answerTime(d, Date.now());
       setData(d);
@@ -83,11 +111,21 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
       setPackAt(null);
       shown.current = { live: true, at };
       if (key) keepOffline(key, d);
-      const q = quickReaskMs(d, Date.now(), reasked.current);
+      const q = sw == null ? quickReaskMs(d, Date.now(), reasked.current) : null;
       if (q != null) { reasked.current = true; setSoon({ key: Date.now(), ms: q }); }
       return true;
     } catch (e: any) {
       if (!round.current()) return true;
+      fails.current += 1;
+      if (quickRef.current) {
+        // A first failure is not an outage (27 Oct 8:35 AM): what is on screen stays, marked Updating, and the same
+        // read goes again in a moment. Only failures in a row (or a live answer on screen gone old) show the failure.
+        const liveAge = shown.current.live && shown.current.at != null ? Date.now() - shown.current.at : null;
+        const w = quickRetryMs({ fails: fails.current, offline: phoneOffline(e), liveAgeMs: liveAge });
+        if (w != null) { quickAgain(w); return false; }
+      }
+      setPending(false);
+      setRetrying(false);
       setError(String(e?.message || e));
       // No connection, slow live data, or a server error (5xx, 429): the copy or timetable on the phone stands in, and
       // its label says which (netErrCore.ts failWhy), never an error screen while the phone holds times.
@@ -136,6 +174,12 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
     }
     mounted.current = true;
     reasked.current = false;
+    fails.current = 0;
+    standAsked.current = 0;
+    nextQuick.current = null;
+    plainNext.current = false;
+    setPending(true);
+    setRetrying(false);
     // The kept copy or the pack first (a read from the phone, a few milliseconds), then the live answer replaces it.
     // A pack on screen still gives way to a copy of the live board from the last 10 minutes.
     const pk = packRef.current;
@@ -160,9 +204,12 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
   ivRef.current = intervalMs;
   // enabled false (a Simple mode page that is not the one on view): nothing polls.
   // updatedAt (each answer) re-reads an adaptive gap: the first wait is set before the first answer has arrived.
-  const runNow = useScreenPoll(() => run(true), typeof intervalMs === 'function' ? () => { const f = ivRef.current; return typeof f === 'function' ? f(dataRef.current) : f; } : intervalMs, { enabled: opts.enabled ?? true, retimeKey: updatedAt, soon });
+  // A quick ask again is a plain read (plainNext): the server answers it from the live copy it saved a moment ago.
+  const nextMs = useRef(() => { const n = nextQuick.current; nextQuick.current = null; return n; }).current;
+  const runNow = useScreenPoll(() => { const plain = plainNext.current; plainNext.current = false; return run(!plain); }, typeof intervalMs === 'function' ? () => { const f = ivRef.current; return typeof f === 'function' ? f(dataRef.current) : f; } : intervalMs, { enabled: opts.enabled ?? true, retimeKey: updatedAt, soon, nextMs });
 
   const refresh = useCallback(async () => {
+    plainNext.current = false;
     setRefreshing(true);
     try { await runNow(); } finally { setRefreshing(false); }
   }, [runNow]);
@@ -171,6 +218,8 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
   const keptAt = useRef(0);
   const pushed = useCallback((d: T) => {
     const now = Date.now();
+    fails.current = 0;
+    setPending(false);
     setData(d);
     setError(null);
     setUpdatedAt(answerTime(d, now));
@@ -182,7 +231,7 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
     if (key && now - keptAt.current > 30000) { keptAt.current = now; keepOffline(key, d); }
   }, []);
 
-  return { data, error, updatedAt, offlineAt, staleAt, packAt, refreshing, refresh, setData, pushed };
+  return { data, error, updatedAt, offlineAt, staleAt, packAt, refreshing, refresh, setData, pushed, pending, retrying };
 }
 
 /**

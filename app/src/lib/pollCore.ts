@@ -45,7 +45,7 @@ export type Poller = {
  * each failure in a row doubles the wait (backoffMs). Back on view, it runs at once only when the last run is at
  * least `staleMs` old (default half the gap); else it waits out the rest of the gap.
  */
-export function createPoller(run: () => Promise<boolean | void> | boolean | void, everyMs: number | (() => number), timers: PollTimers, opts: { active?: boolean; enabled?: boolean; staleMs?: number; runAtStart?: boolean } = {}): Poller {
+export function createPoller(run: () => Promise<boolean | void> | boolean | void, everyMs: number | (() => number), timers: PollTimers, opts: { active?: boolean; enabled?: boolean; staleMs?: number; runAtStart?: boolean; nextMs?: () => number | null } = {}): Poller {
   let active = opts.active ?? true;
   let enabled = opts.enabled ?? true;
   let handle: any = null;
@@ -74,8 +74,12 @@ export function createPoller(run: () => Promise<boolean | void> | boolean | void
     try { ok = (await run()) !== false; } catch { ok = false; }
     running = false;
     last = timers.now();
-    failures = ok ? 0 : failures + 1;
-    schedule(gap());
+    // A run can ask for its own next wait (useLive's quick ask again on a cold open, coldOpenCore.ts); else the gap.
+    // A failure that asked for a quick ask again does not count towards the back off: the asks are already bounded.
+    const n = opts.nextMs ? opts.nextMs() : null;
+    const own = n != null && Number.isFinite(n) && n >= 0;
+    failures = ok ? 0 : own ? failures : failures + 1;
+    schedule(own ? (n as number) : gap());
   }
 
   const resume = () => {
