@@ -19,7 +19,7 @@ const ENGINE_HORIZON_MS = 90 * 60000;  // boards cover the next 90 minutes
 const ENGINE_LOOKBACK_MS = 120 * 60000; // a service planned up to 2 hours ago can still be running late
 const ENGINE_MAX_ROWS = 60;
 const ENGINE_DAILY_BUDGET = 30000;     // feed calls a day the engine aims to stay under (ENGINE_BUDGET overrides)
-const ENGINE_HOT_MAX = 3000;
+const ENGINE_HOT_MAX = 1500;           // boards kept built; the object restarted at 500 and 990 with bigger caches (26 Oct)
 const ENGINE_GAP_MS = 300;
 const ENGINE_PER_MIN = 24;             // feed calls a minute at most (ENGINE_PER_MIN overrides): 34,560 a day if never idle
 const ENGINE_VP_FEEDS = /^(bus|train|metro|ferry|lr_)/; // vehicle positions (occupancy, stops away) for Sydney feeds only
@@ -134,7 +134,7 @@ function engBuildBoard(src, stopId, opts = {}) {
       }
     }
     hit = { from, to: wTo, cand: covered ? cand : null };
-    if (cc) { if (cc.size > 4000) cc.clear(); cc.set(ck, hit); }
+    if (cc) { if (cc.size > 2000) cc.clear(); cc.set(ck, hit); }
   }
   if (!hit.cand) return null; // no timetable for this stop: the caller asks the Trip Planner instead
   const cand = hit.cand.filter((c) => c.planned >= from && c.planned <= to);
@@ -284,7 +284,7 @@ class BoardEngine {
         if (self.rowMem.has(k)) return self.rowMem.get(k);
         const r = sql.exec("SELECT data FROM dep WHERE ver = ? AND stop = ? AND day = ?", m.ver, id, day).toArray();
         const v = r.length ? JSON.parse(r[0].data) : null;
-        if (self.rowMem.size > 3000) self.rowMem.clear();
+        if (self.rowMem.size > 200) self.rowMem.clear(); // whole stop days are big; the window rows live in candMem
         self.rowMem.set(k, v); return v;
       },
       days() { return m.days; },
