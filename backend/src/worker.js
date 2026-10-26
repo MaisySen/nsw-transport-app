@@ -6983,12 +6983,13 @@ async function handleRequest(request, env, exec) {
           const at = boardAt(p.get("time"), p.get("date"));
           // Board engine (src/engine.js, docs/ENGINE.md): a board it has already made, when ENGINE_BOARDS is on or the
           // request says engine=1. A stop it has no timetable for falls through to the Trip Planner below.
+          let staleEngine = null;
           if (!at && typeof engineBoard === "function" && engineWanted(env, url)) {
             const et = await engineBoard(env, exec, p.get("stop") || "", p.get("mode") || "").catch(() => null);
             const eb = et ? JSON.parse(et) : null;
             // A board built more than 60 s ago, or from a feed copy more than 60 s old, goes to the Trip Planner instead.
             const engAge = eb ? Date.now() - Math.min((eb.engine && eb.engine.builtAt) || 0, (eb.live && eb.live.feedAt) || Infinity) : Infinity;
-            if (eb && engAge <= ENGINE_STALE_MS) {
+            const serveEngine = async () => {
               // Same board as the phone already holds (If-None-Match): 304, no body.
               const etag = 'W/"e' + ((eb.engine && eb.engine.builtAt) || 0) + "-" + et.length + '"';
               if (!asTxt && request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: { etag, "cache-control": "no-store", "access-control-allow-origin": "*", ...API_SEC_HEADERS } });
@@ -7005,17 +7006,24 @@ async function handleRequest(request, env, exec) {
               const res = json(d);
               res.headers.set("etag", etag);
               return res;
-            }
+            };
+            if (eb && engAge <= ENGINE_STALE_MS) return await serveEngine();
+            // Stale (over 60 s): the Trip Planner answers instead. If it is refusing us or does not answer, the engine's
+            // board is still served, with its own dataAt, up to 10 minutes old (26 Oct, g14: in a 1,000 phone test every
+            // stale board went to the Trip Planner at once and it answered 502).
+            if (eb && engAge <= ENGINE_HOLD_MS) staleEngine = serveEngine;
           }
           const depKey = (p.get("stop") || "") + "|" + (p.get("mode") || "") + (at ? "|" + at.date + at.time : "");
           const depHit = depMem.get(depKey);
           let r;
-          if (depHit && Date.now() - depHit.at < (p.get("refresh") === "1" ? REFRESH_MAX_AGE_MS : 12000)) r = await depHit.p;
-          else {
+          if (depHit && Date.now() - depHit.at < (p.get("refresh") === "1" ? REFRESH_MAX_AGE_MS : 12000)) {
+            try { r = await depHit.p; } catch (e) { if (staleEngine) return await staleEngine(); throw e; }
+          } else {
+            if (staleEngine && upstreamBusy(false)) return await staleEngine();
             const pr = departures(env, p.get("stop"), { mode: p.get("mode") || null, ctx: exec, ...(at ? { at } : {}) });
             depMem.set(depKey, { at: Date.now(), p: pr });
             if (depMem.size > 300) depMem.delete(depMem.keys().next().value);
-            try { r = await pr; } catch (e) { depMem.delete(depKey); throw e; }
+            try { r = await pr; } catch (e) { depMem.delete(depKey); if (staleEngine) return await staleEngine(); throw e; }
             if (!at && typeof engineLearn === "function") engineLearn(env, exec, r);
           }
           const d = { kind: "departures", ...r };

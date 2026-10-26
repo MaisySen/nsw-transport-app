@@ -11,18 +11,18 @@
 
 const ENGINE_TICK_MS = 10000;          // feeds and hot boards refresh this often
 const ENGINE_VP_MS = 30000;            // vehicle positions (occupancy, stops away) this often
-const ENGINE_SLOW_FEED_MS = 30000;     // regional bus feeds
+const ENGINE_SLOW_FEED_MS = 45000;     // regional bus feeds
 const ENGINE_FEED_HOT_MS = 5 * 60000;  // a feed is fetched while a board needed it this recently
 const ENGINE_BOARD_HOT_MS = 5 * 60000; // a board is rebuilt every tick while read this recently
 const ENGINE_IDLE_MS = 15 * 60000;     // no reads for this long: the alarm stops until the next read
 const ENGINE_HORIZON_MS = 90 * 60000;  // boards cover the next 90 minutes
 const ENGINE_LOOKBACK_MS = 120 * 60000; // a service planned up to 2 hours ago can still be running late
 const ENGINE_MAX_ROWS = 60;
-const ENGINE_DAILY_BUDGET = 30000;     // feed calls a day the engine aims to stay under (ENGINE_BUDGET overrides)
+const ENGINE_DAILY_BUDGET = 40000;     // feed calls a day the engine aims to stay under (ENGINE_BUDGET overrides)
 const ENGINE_HOT_MAX = 1500;           // boards kept built; the object restarted at 500 and 990 with bigger caches (26 Oct)
 const ENGINE_GAP_MS = 300;
 const ENGINE_OPEN = 5;                 // open connections to Transport for NSW at a time
-const ENGINE_PER_MIN = 30;             // feed calls a minute at most (ENGINE_PER_MIN overrides): 43,200 a day if never idle
+const ENGINE_PER_MIN = 45;             // feed calls a minute at most (ENGINE_PER_MIN overrides); the daily budget stretches the gaps
 const ENGINE_VP_FEEDS = /^(bus|train|metro|ferry|lr_)/; // vehicle positions (occupancy, stops away) for Sydney feeds only
 
 // Sydney date key (YYYYMMDD) for a moment.
@@ -451,7 +451,8 @@ class BoardEngine {
     const due = [];
     // Every wanted feed gets its turn (26 Oct, g14: ranked by use, the four busiest feeds took every call and light
     // rail and ferry copies went 3 minutes old). The busiest feeds aim for a copy every 10 s, the others every 20 s
-    // (regional buses 30 s); the most overdue for its aim goes first, trip updates before vehicle positions.
+    // (regional buses 45 s); the most overdue for its aim goes first, trip updates before vehicle positions. With
+    // 1,000 stops across NSW watched, 19 trip update feeds were wanted at once (26 Oct).
     let maxUses = 0;
     for (const f of this.feeds.values()) maxUses = Math.max(maxUses, f.uses || 0);
     for (const [key, f] of this.feeds) {
@@ -1027,6 +1028,7 @@ const engTouched = new Map(); // board key -> when this isolate last told the sh
 // request to the engine every few seconds per Cloudflare location.
 const ENGINE_EDGE_S = 4;
 const ENGINE_STALE_MS = 60000; // older engine boards fall back to the Trip Planner
+const ENGINE_HOLD_MS = 10 * 60000; // ...but are still served when the Trip Planner refuses or fails, up to this old
 async function engineBoard(env, ctx, stop, mode) {
   if (!/^[A-Za-z0-9_-]{1,20}$/.test(stop || "")) return null;
   const sh = engineShardStub(env, stop);
