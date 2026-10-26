@@ -20,6 +20,8 @@ export type LiveTrip = {
   alerted: Record<string, 1>; share: LiveShare | null; watchId: string | null; loc?: boolean;
   /** Arrival time of each leg while it was being ridden, and when the trip arrived. See LiveMemo. */
   rode?: Record<number, number>; arrivedAt?: number | null;
+  /** When you got off each leg, by your tap or your location (LiveMemo.here). */
+  here?: Record<number, number>;
   /** Wake me before my stop: on, and when each leg's alarm is set for (leg index to time). */
   wake?: boolean; wakeSet?: Record<string, number>;
   /** Say trip alerts out loud (builds with the speech module), and the alerts already read out. */

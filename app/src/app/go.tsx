@@ -15,7 +15,7 @@ import { appActive } from '@/lib/activity';
 import { onColor, radius, usePalette } from '@/lib/theme';
 import { clock } from '@/lib/format';
 import { endLive, getLive, liveWatch, setLive, useLiveTrip } from '@/lib/live';
-import { legColor, plat, progOf, setEnginePos, short, tickLive, useLiveEngineState } from '@/lib/liveEngine';
+import { legColor, markHere, plat, progOf, setEnginePos, short, tickLive, useLiveEngineState } from '@/lib/liveEngine';
 import { cutPath, LiveState, minsWords, timed, tOf } from '@/lib/liveCalc';
 import { enablePush, getPushState } from '@/lib/push';
 import type { WatchLeg } from '@/lib/types';
@@ -59,7 +59,7 @@ export default function LiveTripScreen() {
   const st = live?.st || null;
   const offline = live?.offline || null;
   const updated = live?.updated || 0;
-  const [me, setMe] = useState<{ lat: number; lon: number; acc?: number } | null>(null);
+  const [me, setMe] = useState<{ lat: number; lon: number; acc?: number; at?: number } | null>(null);
   const [locDenied, setLocDenied] = useState(false);
   const [push, setPush] = useState<string>('on');
   const snaps = useMemo(() => ['34%', '60%', '92%'], []);
@@ -86,7 +86,7 @@ export default function LiveTripScreen() {
       // cell towers, and a fix only every 10 s or 30 m. The watch runs only while this screen is on view with the
       // app in front (below); in the background nothing reads location.
       const sub = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, timeInterval: 10000, distanceInterval: 30 },
-        (l) => setMe({ lat: l.coords.latitude, lon: l.coords.longitude, acc: l.coords.accuracy ?? undefined }));
+        (l) => setMe({ lat: l.coords.latitude, lon: l.coords.longitude, acc: l.coords.accuracy ?? undefined, at: l.timestamp || Date.now() }));
       if (!geoWanted.current) { sub.remove(); return; }
       geo.current?.remove();
       geo.current = sub;
@@ -211,10 +211,14 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
   const last = legs.length - 1;
   const l = legs[st.cur], x = st.L2[st.cur], d = x.d;
   const m = Math.max(0, Math.round((st.eta - now) / 60000));
-  const late = Math.round(x.delay / 60000);
+  // How late now: at your stop off while riding, at your stop while waiting, from live data only.
+  const late = st.delayMin ?? Math.round(x.delay / 60000);
+  const notLive = st.track === 'timetable';
   // Honest label (liveLabelCore.ts): waiting, the leg's live departure time; riding, the vehicle's GPS age and our copy's age.
   const lk = liveKind(st.phase, l, x, d, updated, now);
-  const badge = lk.kind === 'stale' ? { t: 'Not tracking', bg: c.orange } : x.live ? (late >= 2 ? { t: `${late} min late`, bg: c.orange } : { t: 'Live', bg: c.green }) : { t: 'Timetable', bg: c.text3 };
+  const badge = notLive ? { t: 'Timetable', bg: c.text3 } : lk.kind === 'stale' ? { t: 'Not tracking', bg: c.orange } : x.live || st.delayMin != null ? (late >= 2 ? { t: `${late} min late`, bg: c.orange } : { t: 'Live', bg: c.green }) : { t: 'Timetable', bg: c.text3 };
+  // You can say you are there: always when the leg has no live data, and when its live arrival is 2 minutes past.
+  const canMark = st.phase === 'ride' && !x.missed && (notLive || now > x.arr + 120000);
   let now1 = '', now2 = '', now3 = '';
   if (x.missed) {
     // The live times say this leg left before you got to the change: no countdown to a train you cannot catch.
@@ -226,15 +230,19 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
     // A bus: which stop and stand to wait at, with the number on the sign (stands at one stop can be across the road).
     if (stopNumber(l.stopId, l.mode)) now3 = `From ${boardWords(short(l.from), l.fromPlatform, l.stopId, l.mode)}`;
     now2 = `${lk.kind === 'stale' ? `Not tracking, timetable ${clock(lk.t)}` : dm <= 0 ? (x.live ? 'Due now' : `Timetable ${clock(x.dep)}`) : `Leaves in ${dm} min, ${clock(x.dep)}${x.live ? '' : ', timetable'}`}${l.fromPlatform && !now3 ? ' \u00b7 ' + plat(l.fromPlatform) : ''}${d && d.stopsAway != null && d.vehicle ? ` \u00b7 ${d.stopsAway === 0 ? 'arriving' : `${d.stopsAway} stop${d.stopsAway > 1 ? 's' : ''} away`}` : ''}`;
+  } else if (notLive) {
+    // No live data: no next stop from the clock, the timetable time named as such, and the trip waits for you.
+    now1 = `On the ${l.line} to ${short(l.towards || l.to)}`;
+    now2 = `Not live, running to timetable \u00b7 due at ${short(l.to)} ${clock(x.arr)}`;
   } else {
     const ns = d && st.nextIdx >= 0 ? d.stops[st.nextIdx] : null;
     const yours = !!d && st.nextIdx === d.alightIndex;
     now1 = yours ? 'Get off at the next stop' : ns ? `Next stop: ${short(ns.name)}` : `On the ${l.line} to ${short(l.towards || l.to)}`;
-    now2 = `${st.stopsLeft != null ? `${st.stopsLeft} stop${st.stopsLeft === 1 ? '' : 's'} to ${short(l.to)}` : `To ${short(l.to)}`} \u00b7 ${st.cur < last ? 'change' : 'arrive'} ${clock(x.arr)}`;
+    now2 = `${st.stopsLeft != null ? `${st.stopsLeft} stop${st.stopsLeft === 1 ? '' : 's'} to ${short(l.to)}` : `To ${short(l.to)}`} \u00b7 ${st.cur < last ? 'change' : 'arrive'} ${clock(x.arr)}${late >= 2 ? ` \u00b7 ${late} min late` : ''}`;
   }
   // Remaining stops on this leg, from the next one to yours. Long lists fold in the middle.
   const list = d && st.phase === 'ride' && (d.alightIndex ?? -1) >= 0
-    ? d.stops.slice(Math.max(d.mineIndex ?? 0, Math.min(st.nextIdx, d.alightIndex!)), d.alightIndex! + 1).filter(timed) : [];
+    ? d.stops.slice(Math.max(d.mineIndex ?? 0, notLive ? (d.mineIndex ?? 0) + 1 : Math.min(st.nextIdx, d.alightIndex!)), d.alightIndex! + 1).filter(timed) : [];
   const show: (typeof list[number] | null)[] = list.length > 7 ? [...list.slice(0, 5), null, list[list.length - 1]] : list;
   const ago = updated ? Math.round((now - updated) / 1000) : null;
   // Why it's late: the reason from this service's own linked alert (the live service answer, else the planned leg).
@@ -271,7 +279,12 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
 
       {!offline && lk.kind === 'live' && lk.age ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 6 }}>{liveWords(lk)}</T> : null}
       {offline ? <Warn tone="grey" title={offline} body={ago != null ? `Last update ${ago < 90 ? `${ago} s` : `${Math.round(ago / 60)} min`} ago. Trying again.` : 'Trying again.'} /> : null}
-      {!x.live && !offline ? <Warn tone="grey" title="No live data for this service" body="Times are from the timetable." /> : null}
+      {(notLive || !x.live) && !offline && !(x.arrLive && st.phase === 'ride') ? <Warn tone="grey" title="No live data for this service" body={st.phase === 'ride' ? `Running to timetable, not live. The trip moves on when ${me ? 'your location shows you at' : 'you tap that you are at'} ${short(l.to)}.` : 'Times are from the timetable.'} /> : null}
+      {canMark ? (
+        <View style={{ marginHorizontal: 20, marginTop: 10 }}>
+          <Button kind="tinted" title={st.cur < last ? `I'm at ${short(l.to)}` : `I've arrived at ${short(l.to)}`} onPress={() => { haptic.select(); markHere(st.cur).catch(() => {}); }} />
+        </View>
+      ) : null}
       {/* A change the live times say you will miss: the next way on, found at once, with Switch to this. */}
       <NextOption g={g} st={st} />
       {st.conns.filter((cn) => cn.risk === 'tight').map((cn) => (

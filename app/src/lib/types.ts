@@ -80,10 +80,12 @@ export type TripResp = { kind: 'trip'; from: { id: string; name: string }; to: {
   /** The modes and day the server honoured (only the new server echoes them). */
   modes?: string[]; date?: string };
 
-export type ServiceStop = { id: string; name: string; lat?: number; lon?: number; planned?: string; estimated?: string; passed?: boolean; mine?: boolean; alight?: boolean; skipped?: boolean; platform?: string };
+export type ServiceStop = { id: string; name: string; lat?: number; lon?: number; planned?: string; estimated?: string; passed?: boolean; mine?: boolean; alight?: boolean; skipped?: boolean; platform?: string;
+  /** The live time is the run's latest delay carried on from an earlier stop (the feed had no news for this one). */ carried?: boolean };
 export type ServiceResp = {
   kind: 'service'; tripId?: string; mode?: string; line?: string; color?: string; dest?: string; live?: boolean; delayMin?: number | null; cancelled?: boolean;
   vehicle?: Vehicle; where?: { text?: string; near?: string; next?: string } | null; nextIndex?: number; mineIndex?: number; alightIndex?: number; stopsAway?: number | null;
+  /** What nextIndex rests on (api.transportsydney.app): the vehicle, live times, or only the timetable clock. */ progress?: 'vehicle' | 'live' | 'timetable';
   mine?: { name: string; planned?: string; estimated?: string; passed?: boolean } | null; stops: ServiceStop[]; path?: [number, number][]; alerts?: Alert[]; pred?: Prediction; error?: string;
 };
 

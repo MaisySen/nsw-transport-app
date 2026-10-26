@@ -57,7 +57,8 @@ test('waiting for the first leg: board details, no timer text', () => {
   assert.equal(c.platform, 'Platform 3');
   assert.equal(c.departs, at(0));
   assert.equal(c.destination, 'Kings Cross');
-  assert.equal(c.warning, null);
+  // No live data in this card: it says so rather than reading as on time.
+  assert.equal(c.warning, 'Timetable times, not live');
 });
 
 test('on board: ride phase with progress between 0 and 1', () => {
@@ -82,10 +83,21 @@ test('a change that cannot be made names the service you will miss', () => {
 });
 
 test('second leg after the change', () => {
-  const c = cardAt(trip(), at(20));
+  // You got off at Redfern (your tap or your location): the card moves on to the T4.
+  const c = cardAt(trip(), at(20), { here: { 0: at(13) } });
   checkShape(c);
   assert.equal(c.line, 'T4');
   assert.equal(c.getOffAt, 'Kings Cross');
+});
+
+test('no live data and nothing from you: the card stays on the leg you are on, never at the change by the clock', () => {
+  const c = cardAt(trip(), at(20));
+  checkShape(c);
+  assert.equal(c.line, 'T2');
+  assert.equal(c.phase, 'ride');
+  assert.equal(c.nextStop, null);
+  assert.equal(c.warning, 'Timetable times, not live');
+  assert.ok(c.progress <= 0.9);
 });
 
 test('arrived: one final card, nothing after', () => {

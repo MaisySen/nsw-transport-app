@@ -9,7 +9,7 @@ import * as Haptics from 'expo-haptics';
 import { api } from './api';
 import { clock, shortName } from './format';
 import { clearOngoing, endLive, getLive, liveAlert, setLive, showOngoing, useLiveTrip } from './live';
-import { LiveState, progOf as progOfCalc, stepLive, tapMoments } from './liveCalc';
+import { LiveState, Pos, progOf as progOfCalc, stepLive, tapMoments } from './liveCalc';
 import { haptic } from './haptic';
 
 const tapped = new Set<string>();
@@ -39,9 +39,23 @@ export function useLiveEngineState() {
   return useSyncExternalStore((l) => { subs.add(l); return () => { subs.delete(l); }; }, () => state, () => state);
 }
 
-let pos: { lat: number; lon: number } | null = null;
-/** Your position from the live trip screen, sent with a share link that includes your location. */
-export function setEnginePos(p: { lat: number; lon: number } | null) { pos = p; }
+let pos: Pos | null = null;
+/**
+ * Your position from the live trip screen (only with permission, only while it is on view): it moves the trip on when
+ * you are at your stop and holds it while you are still before it, and goes with a share link that includes it.
+ */
+export function setEnginePos(p: Pos | null) { pos = p; }
+
+/**
+ * "I'm at Town Hall": you say you got off the leg you are on. It ends that leg now and the trip carries on from there
+ * (with a missed change checked against the next leg's live times). Used when there is no live data or location.
+ */
+export async function markHere(leg: number) {
+  const g = getLive();
+  if (!g || g.arrivedAt) return;
+  setLive({ ...g, here: { ...(g.here || {}), [leg]: Date.now() } });
+  await tickLive();
+}
 
 let busy = false;
 let lastFull = 0;
@@ -104,11 +118,11 @@ export async function tickLive() {
     const g = getLive();
     if (!g || g.id !== cur.id) return;
     const now = Date.now();
-    const r = stepLive(g, svcCache, now, fmt);
+    const r = stepLive(g, svcCache, now, fmt, pos);
     // Wake me before my stop: one alarm per leg, set on the phone and moved with the live times.
     const w = wakeStep({ id: g.id, legs: g.legs, wake: g.wake, wakeSet: g.wakeSet, alerted: r.g.alerted }, r.s, now, fmt);
     put({ svc: svcCache.slice(), st: r.s, offline: failed ? 'Connection lost. Showing the last live times.' : null, ...(failed ? {} : { updated: now }) });
-    if (r.g !== g || w.g.alerted !== r.g.alerted || w.g.wakeSet !== g.wakeSet) setLive({ ...g, alerted: w.g.alerted, watchId: r.g.watchId, rode: r.g.rode, arrivedAt: r.g.arrivedAt, wakeSet: w.g.wakeSet, spoken: r.g.spoken });
+    if (r.g !== g || w.g.alerted !== r.g.alerted || w.g.wakeSet !== g.wakeSet) setLive({ ...g, alerted: w.g.alerted, watchId: r.g.watchId, rode: r.g.rode, here: r.g.here, arrivedAt: r.g.arrivedAt, wakeSet: w.g.wakeSet, spoken: r.g.spoken });
     for (const a of w.actions) {
       if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, ...(a.t === 'wakeSchedule' ? { alarmAt: a.at } : {}), at: now });
       if (a.t === 'wakeSchedule') await scheduleWake(a.id, a.at, a.title, a.body);
@@ -127,7 +141,7 @@ export async function tickLive() {
       else if (a.t === 'clearOngoing') await clearOngoing();
       else if (a.t === 'stopWatch') { endedWatches.add(a.id); api.stopWatch(a.id).catch(() => {}); }
       else if (a.t === 'share' && g.share) {
-        const p = g.share.pos && pos && !r.s.done ? pos : null;
+        const p = g.share.pos && pos && !r.s.done ? { lat: pos.lat, lon: pos.lon, ...(pos.acc != null ? { acc: pos.acc } : {}) } : null;
         api.shareUpdate({ id: g.share.id, key: g.share.key, pos: p, prog: a.prog }).catch((e: any) => { if (/not found/i.test(String(e?.message))) { const c3 = getLive(); if (c3) setLive({ ...c3, share: null }); } });
       } else if (a.t === 'end') await endLive();
     }

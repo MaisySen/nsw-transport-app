@@ -9,6 +9,8 @@ export const PUSH_BASE = 'https://api.transportsydney.app';
 export type PushTrip = {
   id: string; title: string; origin: { id?: string; name?: string } | null; to: { id?: string; name?: string } | null;
   legs: WatchLeg[]; rode: Record<number, number>; arrivedAt: number | null;
+  /** When you got off each leg by your tap or location, so the locked card moves on with you (only when there is one). */
+  here?: Record<number, number>;
 };
 
 const LEG_KEYS: (keyof WatchLeg)[] = ['mode', 'line', 'tripId', 'stopId', 'toStopId', 'from', 'to', 'planned', 'arrPlanned', 'estimated',
@@ -30,13 +32,14 @@ export function pushTrip(g: LiveTrip): PushTrip {
     }),
     rode: { ...(g.rode || {}) },
     arrivedAt: g.arrivedAt ?? null,
+    ...(g.here && Object.keys(g.here).length ? { here: { ...g.here } } : {}),
   };
 }
 
 /** Changes when the server should hear about the trip again: a new token, a leg ridden, a replan or arrival. */
 export function pushKey(token: string, g: LiveTrip): string {
   const t = pushTrip(g);
-  return JSON.stringify([token, t.id, t.legs.map((l) => [l.tripId, l.stopId, l.planned]), t.rode, t.arrivedAt]);
+  return JSON.stringify([token, t.id, t.legs.map((l) => [l.tripId, l.stopId, l.planned]), t.rode, t.arrivedAt, ...(t.here ? [t.here] : [])]);
 }
 
 /** A hex APNs token, or null. */

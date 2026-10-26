@@ -52,13 +52,17 @@ export function cardFor(g: TripLike, s: LiveState, now = Date.now(), o: CardOpts
   if (s.phase === 'ride') {
     const span = x.arr - x.dep;
     progress = span > 0 ? Math.min(1, Math.max(0, (now - x.dep) / span)) : 0;
+    // Without live data the bar never reaches your stop on the clock alone.
+    if (s.track === 'timetable') progress = Math.min(progress, 0.9);
   }
   const c = s.conns.find((k) => k.i === s.cur) || s.conns[0];
   const alt = c && c.risk === 'miss' ? o.alt || null : null;
-  const warning = cardWarning(c, alt, o.asOf ?? null);
+  // No change warning: say when the leg has no live data, or how late it is, so the card never reads as on time.
+  const legNote = s.track === 'timetable' ? 'Timetable times, not live' : s.delayMin != null && s.delayMin >= 2 ? `${s.delayMin} min late` : null;
+  const warning = cardWarning(c, alt, o.asOf ?? null, legNote);
   return {
     line: l.line, lineColorHex: colorOf(l), mode: l.mode,
-    nextStop: s.phase === 'wait' ? shortName(l.from) || null : next ? shortName(next.name) : null,
+    nextStop: s.phase === 'wait' ? shortName(l.from) || null : next && s.track !== 'timetable' ? shortName(next.name) : null,
     stopsLeft: s.stopsLeft, getOffAt: shortName(l.to), arrival: alt && Number.isFinite(alt.arr) ? alt.arr : s.eta, phase: s.phase, warning, progress,
     towards: shortName(l.towards || d?.dest) || null, platform: platText(l.fromPlatform),
     // A missed change counts down to the next service when one was found, and to no made up time when not.
@@ -73,10 +77,11 @@ export function cardFor(g: TripLike, s: LiveState, now = Date.now(), o: CardOpts
  * risk. Next T4 8:31am"); a change under 2 minutes is "Tight change at Redfern". asOf adds when the times are from,
  * because a card the app can no longer refresh must not read as live.
  */
-export function cardWarning(c: LiveStateConn | null | undefined, alt: CardAlt | null, asOf: number | null): string | null {
+export function cardWarning(c: LiveStateConn | null | undefined, alt: CardAlt | null, asOf: number | null, legNote: string | null = null): string | null {
   let w: string | null = null;
   if (c && c.risk === 'miss') w = alt ? `Change at risk. Next ${alt.line} ${hhmm(alt.dep)}` : `You'll likely miss the ${hhmm(c.nextDep)} ${c.next.line}`;
   else if (c && c.risk === 'tight') w = `Tight change at ${shortName(c.at)}`;
+  else if (legNote) w = legNote;
   if (asOf == null) return w;
   return w ? `${w}. Updated ${hhmm(asOf)}` : `Updated ${hhmm(asOf)}. Open the app for live times`;
 }
