@@ -7007,7 +7007,9 @@ async function handleRequest(request, env, exec) {
               res.headers.set("etag", etag);
               return res;
             };
-            if (eb && engAge <= ENGINE_STALE_MS) return await serveEngine();
+            // A stop where the Trip Planner lists services our bundles do not have (engine.gap): the planner's board.
+            const gap = eb && eb.engine && eb.engine.gap;
+            if (eb && !gap && engAge <= ENGINE_STALE_MS) return await serveEngine();
             // Stale (over 60 s): the Trip Planner answers instead. If it is refusing us or does not answer, the engine's
             // board is still served, with its own dataAt, up to 10 minutes old (26 Oct, g14: in a 1,000 phone test every
             // stale board went to the Trip Planner at once and it answered 502).

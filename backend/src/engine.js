@@ -544,7 +544,7 @@ class BoardEngine {
     const m = this.loadMeta(), now = Date.now();
     const feeds = {};
     for (const [k, f] of this.feeds) feeds[k] = { tuAgeS: f.tu ? Math.round((now - f.tu.at) / 1000) : null, vpAgeS: f.vp ? Math.round((now - f.vp.at) / 1000) : null, trips: f.tu ? f.tu.idx.size : 0, added: (f.added || []).length, hot: now - f.wantAt < ENGINE_FEED_HOT_MS, fails: f.fails };
-    return { role: "core", boots: this.boots, bootAt: this.bootAt, ver: m ? m.ver : 0, builtAt: m ? m.builtAt : null, days: m ? Object.keys(m.days) : [], hotBoards: this.hot.size, stretch: Math.round(this.stretch(now) * 100) / 100, budget: this.budget(), perMin: Number(this.env.ENGINE_PER_MIN) || ENGINE_PER_MIN, tokens: Math.round((this.tokens || 0) * 10) / 10, ...this.stats, feeds };
+    return { role: "core", boots: this.boots, bootAt: this.bootAt, ver: m ? m.ver : 0, builtAt: m ? m.builtAt : null, days: m ? Object.keys(m.days) : [], hotBoards: this.hot.size, stretch: Math.round(this.stretch(now) * 100) / 100, budget: this.budget(), perMin: Number(this.env.ENGINE_PER_MIN) || ENGINE_PER_MIN, tokens: Math.round((this.tokens || 0) * 10) / 10, gaps: this.gaps ? [...this.gaps].slice(0, 50).map(([s, g]) => [s, g.lines]) : [], pausedUntil: this.pauseUntil || null, ...this.stats, feeds };
   }
   async fetch(req) {
     const u = new URL(req.url);
@@ -564,7 +564,9 @@ class BoardEngine {
       if (p === "/timetable") return Response.json(this.timetable(u.searchParams.get("stops") || "", Number(u.searchParams.get("days")) || 2));
       if (p === "/status") return Response.json(this.status());
       if (p === "/learn" && req.method === "POST") {
-        const pairs = await req.json(); let n = 0;
+        const q = await req.json(); let n = 0;
+        const pairs = Array.isArray(q) ? q : (q && q.pairs) || [];
+        if (q && q.lines && typeof q.lines.stop === "string") this.checkGap(q.lines.stop, q.lines.lines);
         if (!this.platMem) this.source().plat("");
         for (const [stop, label] of Array.isArray(pairs) ? pairs.slice(0, 200) : []) {
           if (typeof stop !== "string" || typeof label !== "string" || !/^(Platform|Stand|Wharf) [A-Za-z0-9]{1,4}(, Side \w)?$/.test(label)) continue;
@@ -572,13 +574,38 @@ class BoardEngine {
           this.sql.exec("INSERT OR REPLACE INTO plat VALUES (?, ?, ?)", stop, label, Date.now()); this.platMem.set(stop, label); n++;
         }
         if (n) { this.boards.clear(); this.platVer = (this.platVer || 0) + 1; }
-        return Response.json({ n });
+        return Response.json({ n, gap: this.gapOf(q && q.lines && q.lines.stop) });
       }
       if (req.method !== "POST") return new Response("not found", { status: 404 });
       return await this.load(p, req);
     } catch (e) {
       return Response.json({ error: String(e && e.message || e) }, { status: 500 });
     }
+  }
+  // Services the Trip Planner lists at a stop that our GTFS bundles do not have (26 Oct: the private Watsons Bay ferry,
+  // coach 855 and SH100 at Goulburn, 700-1 at Bomaderry). The worker sends the lines of the next 90 minutes of a planner
+  // board; a line with no timetable row at the stop in that time marks the stop for 6 hours, and its boards then come
+  // from the Trip Planner (the board says engine.gap). The next planner board with every line known clears it.
+  checkGap(stop, lines) {
+    if (!/^[A-Za-z0-9_-]{1,20}$/.test(stop) || !Array.isArray(lines)) return;
+    const m = this.loadMeta(), src = m && this.source();
+    if (!src || !src.stop(stop)) return;
+    const now = Date.now();
+    const have = new Set();
+    for (const a of engCands(src, stop, now - ENGINE_LOOKBACK_MS, now + ENGINE_HORIZON_MS + 30 * 60000)) { const r = m.routes[a[2]]; if (r) have.add(String(r[0]).toUpperCase()); }
+    const missing = [...new Set(lines.map((l) => String(l).slice(0, 12).toUpperCase()))].filter((l) => l && !have.has(l)).slice(0, 10);
+    if (!this.gaps) this.gaps = new Map();
+    const was = this.gaps.get(stop);
+    if (missing.length) this.gaps.set(stop, { at: now, lines: missing });
+    else this.gaps.delete(stop);
+    if (this.gaps.size > 2000) this.gaps.delete(this.gaps.keys().next().value);
+    if (!!was !== !!missing.length) { this.boards.clear(); this.platVer = (this.platVer || 0) + 1; }
+  }
+  gapOf(stop) {
+    const g = stop && this.gaps && this.gaps.get(stop);
+    if (!g) return null;
+    if (Date.now() - g.at > 6 * 3600000) { this.gaps.delete(stop); return null; }
+    return g.lines;
   }
   // A shard's window: the timetable rows of one stop and its platforms and stands between two moments, with the stop
   // names a board needs (the stop, its platforms and stands, the other platforms of its station).
@@ -597,7 +624,7 @@ class BoardEngine {
     for (const id of ids) { const s = src.stop(id); if (s) info[id] = [s[0], s[1], s[2], s[3], s[4], src.plat(id) || ""]; }
     const now = Date.now();
     const from = Number(q.from) || now - ENGINE_LOOKBACK_MS, to = Number(q.to) || now + ENGINE_HORIZON_MS;
-    return { ver: m.ver, me, kids, info, from, to, cand: engCands(src, stop, from, to) };
+    return { ver: m.ver, me, kids, info, from, to, gap: this.gapOf(stop), cand: engCands(src, stop, from, to) };
   }
   // Live data for a shard: the trimmed trip update and the vehicle of each asked trip, per feed, from the copy in use.
   // q = { feeds: { feed: [[tripId, [stop sequences]]] }, have: { feed: [tu copy ms, vp copy ms] } }; a feed the shard
@@ -881,9 +908,16 @@ class BoardShard {
     const [stop, mode] = bk.split("|");
     const b = engBuildBoard(src, stop, { mode: mode || null, now });
     if (b) b.engine.shard = this.name;
-    // A first read of a board with services that have no platform or stand name: ask the worker (once in 6 hours per
-    // stop) to read the Trip Planner's board, whose names the core object learns (/learn).
-    if (b && first && b.items.some((i) => !i.platform) && now - (this.learnAsked.get(stop) || 0) > 6 * 3600000) {
+    const w = this.win.get(stop);
+    if (b && w && w.gap) b.engine.gap = w.gap;
+    // A first read of a board: ask the worker to read the Trip Planner's board once, whose platform and stand names
+    // and lines the core object learns (/learn): once in 6 hours for a stop with services that have no platform name,
+    // else once a day, at most 2 stops a minute per shard so a crowd of first reads does not become planner calls.
+    const last = this.learnAsked.get(stop) || 0;
+    const due = now - last > (b && b.items.some((i) => !i.platform) ? 6 : 24) * 3600000;
+    if (now - (this.learnMin || 0) > 60000) { this.learnMin = now; this.learnN = 0; }
+    if (b && first && due && this.learnN < 2) {
+      this.learnN++;
       this.learnAsked.set(stop, now);
       if (this.learnAsked.size > 5000) this.learnAsked.clear();
       b.engine.learn = true;
@@ -1097,8 +1131,16 @@ function engineLearn(env, ctx, board) {
     engLearnt.set(k, now); pairs.push([String(it.stopId), String(it.platform)]);
   }
   if (engLearnt.size > 5000) engLearnt.clear();
-  if (!pairs.length) return;
-  const p = stub.fetch("https://engine/learn", { method: "POST", body: JSON.stringify(pairs) }).catch(() => null);
+  // The lines of the next 90 minutes, once in 10 minutes per stop from this isolate, so the engine can tell a stop
+  // with services missing from our bundles (checkGap).
+  const stop = board.stop && board.stop.id ? String(board.stop.id) : "";
+  let lines = null;
+  if (stop && now - (engLearnt.get("lines|" + stop) || 0) > 600000) {
+    engLearnt.set("lines|" + stop, now);
+    lines = [...new Set(board.items.filter((i) => i.line && !i.cancelled && Date.parse(i.planned) < now + ENGINE_HORIZON_MS).map((i) => String(i.line)))];
+  }
+  if (!pairs.length && !lines) return;
+  const p = stub.fetch("https://engine/learn", { method: "POST", body: JSON.stringify(lines ? { pairs, lines: { stop, lines } } : pairs) }).catch(() => null);
   if (ctx && ctx.waitUntil) ctx.waitUntil(p);
 }
 async function engineCall(env, path, init) {

@@ -126,3 +126,15 @@ test("/api/pack: 400 without a stop, the pack with cache headers, 404 passed on,
   const down = { ENGINE: { idFromName: (n) => n, get: () => ({ fetch: async () => new Response("x", { status: 500 }) }) } };
   assert.equal((await W.packAnswer(down, ctx, new URL("https://x/api/pack?stop=P"), {})).status, 503);
 });
+
+test("a stop where the Trip Planner lists a line our timetable lacks is marked (engine.gap) until a planner board has every line", async () => {
+  const E = await loaded();
+  const learn = async (lines) => (await (await E.fetch(new Request("https://engine/learn", { method: "POST", body: JSON.stringify({ pairs: [], lines: { stop: "P", lines } }) }))).json()).gap;
+  assert.deepEqual(await learn(["T1", "SH100"]), ["SH100"]);
+  const w = await (await E.fetch(new Request("https://engine/window", { method: "POST", body: JSON.stringify({ stop: "P" }) }))).json();
+  assert.deepEqual(w.gap, ["SH100"]);
+  assert.equal(await learn(["T1", "400"]), null);
+  // The old array form (platform names only) still works.
+  const r = await (await E.fetch(new Request("https://engine/learn", { method: "POST", body: JSON.stringify([["B", "Stand X1"]]) }))).json();
+  assert.equal(r.n, 1);
+});
