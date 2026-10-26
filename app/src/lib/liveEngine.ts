@@ -14,7 +14,10 @@ import { haptic } from './haptic';
 
 const tapped = new Set<string>();
 import { wakeStep } from './smart';
-import { speak } from './nativeExtras';
+import { hasSpeech, speak } from './nativeExtras';
+import { getOffStep, readGetOff } from './getOffCore';
+import { cancelGetOff, getOffNow, scheduleGetOff } from './getOffNotify';
+import { store } from './store';
 import { cancelWake, scheduleWake, wakeNow } from './smartNotify';
 import { endedWatches } from './push';
 import { badgeLook } from './lineStyle';
@@ -121,8 +124,19 @@ export async function tickLive() {
     const r = stepLive(g, svcCache, now, fmt, pos);
     // Wake me before my stop: one alarm per leg, set on the phone and moved with the live times.
     const w = wakeStep({ id: g.id, legs: g.legs, wake: g.wake, wakeSet: g.wakeSet, alerted: r.g.alerted }, r.s, now, fmt);
+    // Get off alert (More stops before, Get off now): set on the phone beside the trip's own alerts (getOffCore.ts).
+    const o = getOffStep({ id: g.id, legs: g.legs, alerted: w.g.alerted, offSet: g.offSet, speak: g.speak && hasSpeech(), spoken: r.g.spoken }, readGetOff(store.getOff()), r.s, now, fmt);
     put({ svc: svcCache.slice(), st: r.s, offline: failed ? 'Connection lost. Showing the last live times.' : null, ...(failed ? {} : { updated: now }) });
-    if (r.g !== g || w.g.alerted !== r.g.alerted || w.g.wakeSet !== g.wakeSet) setLive({ ...g, alerted: w.g.alerted, watchId: r.g.watchId, rode: r.g.rode, here: r.g.here, arrivedAt: r.g.arrivedAt, wakeSet: w.g.wakeSet, spoken: r.g.spoken });
+    if (r.g !== g || w.g.alerted !== r.g.alerted || w.g.wakeSet !== g.wakeSet || o.g.offSet !== g.offSet || o.g.alerted !== w.g.alerted || o.g.spoken !== r.g.spoken) {
+      setLive({ ...g, alerted: o.g.alerted, watchId: r.g.watchId, rode: r.g.rode, here: r.g.here, arrivedAt: r.g.arrivedAt, wakeSet: w.g.wakeSet, spoken: o.g.spoken, offSet: o.g.offSet });
+    }
+    for (const a of o.actions) {
+      if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, at: now });
+      if (a.t === 'offSchedule') await scheduleGetOff(a.id, a.at, a.title, a.body);
+      else if (a.t === 'offDue') { if (await getOffNow(a.id, a.title, a.body)) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); }
+      else if (a.t === 'offCancel') await cancelGetOff(a.id);
+      else if (a.t === 'say') speak(a.text);
+    }
     for (const a of w.actions) {
       if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, ...(a.t === 'wakeSchedule' ? { alarmAt: a.at } : {}), at: now });
       if (a.t === 'wakeSchedule') await scheduleWake(a.id, a.at, a.title, a.body);

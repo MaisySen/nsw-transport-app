@@ -260,14 +260,14 @@ export function legsOf(j: Journey, short: (n?: string | null) => string): WatchL
  * The trip after you switch to the next option: legs up to the change stay, the rest are the new journey's. Alerts
  * and alarms for the replaced legs are cleared so they can ring for the new ones.
  */
-export function switchLegs<T extends { legs: WatchLeg[]; alerted: Record<string, 1>; wakeSet?: Record<string, number>; rode?: Record<number, number> }>(g: T, m: Missed, next: WatchLeg[]): T {
+export function switchLegs<T extends { legs: WatchLeg[]; alerted: Record<string, 1>; wakeSet?: Record<string, number>; rode?: Record<number, number>; offSet?: Record<string, number> }>(g: T, m: Missed, next: WatchLeg[]): T {
   const keep = g.legs.slice(0, m.i + 1);
   if (next.length && keep.length) next = [{ ...next[0], walkBefore: next[0].walkBefore || g.legs[m.i + 1]?.walkBefore || 0 }, ...next.slice(1)];
   const legs = [...keep, ...next].slice(0, 6);
   // Alerts about the missed change and anything after it can fire again for the new legs.
   const alerted: Record<string, 1> = {};
   for (const [k, v] of Object.entries(g.alerted || {})) {
-    const mm = /^(off|conn|wake)(\d+)$/.exec(k);
+    const mm = /^(off|conn|wake|early|gnow)(\d+)$/.exec(k);
     if (mm && (mm[1] === 'conn' ? Number(mm[2]) >= m.i : Number(mm[2]) > m.i)) continue;
     alerted[k] = v;
   }
@@ -275,5 +275,8 @@ export function switchLegs<T extends { legs: WatchLeg[]; alerted: Record<string,
   for (const [k, v] of Object.entries(g.wakeSet || {})) if (Number(k) <= m.i) wakeSet[k] = v;
   const rode: Record<number, number> = {};
   for (const [k, v] of Object.entries(g.rode || {})) if (Number(k) <= m.i) rode[Number(k)] = v;
-  return { ...g, legs, alerted, wakeSet, rode };
+  // Get off alerts set for the legs that are replaced are dropped (the caller takes them off the phone).
+  const offSet: Record<string, number> = {};
+  for (const [k, v] of Object.entries(g.offSet || {})) { const mm = /(\d+)$/.exec(k); if (mm && Number(mm[1]) <= m.i) offSet[k] = v; }
+  return { ...g, legs, alerted, wakeSet, rode, ...(g.offSet ? { offSet } : {}) };
 }

@@ -12,6 +12,8 @@ import { resetLiveCache, tickLive } from '@/lib/liveEngine';
 import type { LiveState } from '@/lib/liveCalc';
 import { boardTime, leavePlan, leaveWords, legsOf, reachFrom, missedConn, missedPlanLegs, pickNextOption, switchLegs, sydHHMM, wakeId, type LatLon, type Missed } from '@/lib/smart';
 import { canNotify, cancelLeave, cancelWake, scheduleLeave } from '@/lib/smartNotify';
+import { getOffId } from '@/lib/getOffCore';
+import { cancelGetOff } from '@/lib/getOffNotify';
 import { store, useStore } from '@/lib/store';
 import { androidLook, radius, usePalette } from '@/lib/theme';
 import type { Journey } from '@/lib/types';
@@ -314,6 +316,7 @@ export function NextOption({ g, st }: { g: LiveTrip; st: LiveState | null }) {
     const next = legsOf(j, short);
     if (!next.length) return;
     for (const [k2, at] of Object.entries(cur.wakeSet || {})) if (Number(k2) > m.i && at > Date.now()) cancelWake(wakeId(cur.id, Number(k2))).catch(() => {});
+    for (const [k2, at] of Object.entries(cur.offSet || {})) if (Number(/(\d+)$/.exec(k2)?.[1] ?? -1) > m.i && at > Date.now()) cancelGetOff(getOffId(cur.id, k2)).catch(() => {});
     const n = switchLegs(cur, m, next);
     const oldWatch = n.watchId;
     setLive({ ...n, watchId: null });

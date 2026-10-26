@@ -8,6 +8,8 @@ import { enablePush, getPushState } from './push';
 import type { Fare, Place, WatchLeg } from './types';
 import type { WatchSpec } from './watch';
 import { wakeId } from './smart';
+import { getOffId } from './getOffCore';
+import { cancelGetOff } from './getOffNotify';
 import { cancelWake } from './smartNotify';
 import { iosNative } from '../../modules/transport-ios';
 import { wantOngoing } from './leaveByCore';
@@ -24,6 +26,8 @@ export type LiveTrip = {
   here?: Record<number, number>;
   /** Wake me before my stop: on, and when each leg's alarm is set for (leg index to time). */
   wake?: boolean; wakeSet?: Record<string, number>;
+  /** Get off alerts (getOffCore.ts) set on the phone: alert key to the time it is set for. */
+  offSet?: Record<string, number>;
   /** Say trip alerts out loud (builds with the speech module), and the alerts already read out. */
   speak?: boolean; spoken?: Record<string, 1>;
 };
@@ -100,6 +104,7 @@ export async function endLive() {
   if (g.watchId) api.stopWatch(g.watchId).catch(() => {});
   // Wake alarms still set for this trip never ring after it ends.
   for (const k of Object.keys(g.wakeSet || {})) cancelWake(wakeId(g.id, Number(k))).catch(() => {});
+  for (const k of Object.keys(g.offSet || {})) cancelGetOff(getOffId(g.id, k)).catch(() => {});
   setLive(null);
   await clearOngoing();
   return g;
