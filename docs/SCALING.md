@@ -135,3 +135,69 @@ a board and refreshes it every 15 s, with a 5% chance of another stop per refres
   Planner path.
 * CPU per request was not read from Cloudflare's analytics for these runs.
 * All from the US: every request crossed the Pacific to the object near Sydney (about 150 ms each way). Sydney phones skip that.
+
+## Board engine part 2: builders apart from servers (26 Oct, g14)
+
+Root's steer (26 Oct, 12:48 PM): use Cloudflare's own design for this kind of service where it fits. Builders write
+boards to the Cache API, the Worker reads the cache first and calls an object only on a miss, 10 to 20 builder
+shards with a router, batches of about 100 cache writes per alarm (the limit is 1,000 per invocation), R2 only for
+static slices if needed, at most 6 outgoing connections per invocation, ETag and 304 on boards, Smart Placement.
+Not done on purpose: D1 read replication, a live board TTL over 15 s, phones polling every 30 s.
+
+**Chosen (transport-api 8dc80fab onward, code in backend/src/engine.js):**
+
+```
+phone -> Worker (/api/departures)
+           1. a copy in this Worker instance, up to 2 s old
+           2. caches.default (this location), up to 15 s old      <- builders write here
+           3. the board's shard object (miss only)
+                 |
+   16 builder shards (BoardShard, "nsw-2-b0".."b15", stop id hash, near Sydney)
+       5 s alarm: rebuild a board when its live data changed, at least every 15 s;
+       write up to 400 boards a tick to caches.default in batches of 50
+                 |  timetable windows (/window), live data trimmed to their trips (/live), names learnt (/learn)
+   1 core object (BoardEngine, "nsw-2"): the timetable (SQLite) and one copy of each NSW feed,
+       feed calls capped by a token bucket (45 a minute, 40,000 a day budget), 5 connections at most
+```
+
+* **Router:** `engShardOf(stop)` is an FNV hash of the stop id over `ENGINE_SHARDS` (16). A stop's board always comes
+  from the same shard, so one shard holds a board's timetable window and live trips, and no object holds every
+  board (the single object of part 1 restarted once in every load test).
+* **Builder and server apart:** a shard writes each board it rebuilds to `caches.default` under
+  `https://engine-cache.transportsydney.app/board?stop=&mode=` with a 15 s lifetime. The Worker reads that first; a
+  shard is called only on a miss, and a Worker that answers from the cache tells the shard once a minute that the
+  board is still being read (`/touch`), so it keeps building it. A shard stops after 15 minutes with no reads.
+* **Batches:** at most 400 cache writes a tick in batches of 50 (Cloudflare allows 1,000 subrequests per
+  invocation).
+* **Connections:** the core opens at most 5 connections to Transport for NSW at a time (Workers allow 6 per
+  invocation).
+* **ETag:** an engine board carries `W/"e<builtAt>-<length>"`; a phone sending it in If-None-Match gets 304 with no
+  body.
+* **Smart Placement:** already in `wrangler.toml.template` (`[placement] mode = "smart"`).
+* **R2:** not needed. Timetable windows come from the core's SQLite (a window is read once per 20 minutes per
+  stop); nothing to switch on in the dashboard.
+* **Fresh code after a deploy:** a busy object keeps the code it started with across a deploy (seen 26 Oct: a shard
+  kept its 2:06 PM code after the 2:20 PM deploy). After each deploy: `POST /api/engine/load/restart` (core) and
+  `POST /api/engine/load/restart-shards`, both with the engine load key. `/api/engine/status` shows every shard's
+  start time and code generation.
+
+**Feed calls (the scarce thing).** Each feed copy now aims for an age: the busiest feeds 10 s, other Sydney feeds 20 s,
+regional bus feeds 45 s, the most overdue first. Part 1 ranked feeds by use, and with 1,000 stops NSW wide watched
+the four busiest took every call while light rail and ferry copies went 3 minutes old. A board whose feed copy is over
+60 s old goes to the Trip Planner; if the planner refuses, fails or is busy, the engine's board is served as it is
+(up to 10 minutes old, with its real `dataAt`). After a refused feed call the core makes no feed calls for 30 s,
+doubling to 10 minutes while refusals go on.
+
+**What went wrong on 26 Oct, 1:24 PM:** the NSW key ran out of its daily quota (60,000; D1 counted 51,444 Trip Planner
+calls that day plus about 3,000 engine calls). During my 1,000 phone soak test the engine's light rail and regional
+feed copies went over 60 s old (the feed scheduling above was not yet deployed), every stale board fell back to the
+Trip Planner at once, and the planner calls of the day ran out. Since then: the stale rule only uses the planner when
+it answers, feed copies are scheduled by age, the core backs off on refusals, and when the planner fails with no copy
+kept, phones get the engine's timetable board labelled "Live times unavailable, showing timetable times" (outage
+fallback, root's decision 1:58 PM; not the switch on).
+
+**Cost of 16 shards (Workers Paid published rates, estimates, not bills):** an object awake is billed 128 MB for its
+wall time. A shard is awake while its boards are read; 17 objects awake 18 hours a day is about 150,000 GB-s a day,
+4.5 million a month, about 51 US dollars a month over the 400,000 included (12.50 dollars a million). Alarms and calls
+between objects add about 8 million requests a month, about 1 dollar. `ENGINE_SHARDS` (a wrangler var) sets the count:
+10 shards cuts the duration cost by about a third.
