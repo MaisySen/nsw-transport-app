@@ -3,6 +3,8 @@
 // (trip updates and vehicle positions) so that every time shown is either truly live
 // or clearly marked as scheduled. The API key stays on the server side.
 
+import { AsyncLocalStorage } from "node:async_hooks";
+
 const API = "https://api.transport.nsw.gov.au";
 const TZ = "Australia/Sydney";
 const API_KEY_PLACEHOLDER = "__TFNSW_API_KEY__";
@@ -129,10 +131,11 @@ async function tp(env, endpoint, params, timeoutMs = 12000) {
     await upstreamSlot();
     upstream.calls++;
     upstreamNote();
+    const t0 = Date.now();
     const res = await fetch(API + "/v1/tp/" + endpoint + "?" + qs.toString(), {
       headers: { Authorization: "apikey " + apiKey(env) },
       signal: AbortSignal.timeout(timeoutMs),
-    });
+    }).finally(() => reqUpstream(Date.now() - t0));
     upstreamHeaders(res);
     if (res.ok) { budget.lastOkAt = Date.now(); return res.json(); }
     const body = await res.text();
@@ -539,7 +542,8 @@ async function loadFeed(env, path, kind) {
     // sharing the Cache API gave, but the copy is stored outside this isolate, so it costs no CPU here.
     // Putting a 2.3 MB feed into the Cache API took about 25 ms of CPU on every fresh fetch, and most
     // requests run in a fresh isolate. A copy from that cache says how old it is in Age.
-    const res = await fetch(API + path, { headers: { Authorization: "apikey " + apiKey(env) }, cf: { cacheEverything: true, cacheTtlByStatus: { "200-299": Math.round(FEED_TTL_MS / 1000), "300-599": 0 } } });
+    const f0 = Date.now();
+    const res = await fetch(API + path, { headers: { Authorization: "apikey " + apiKey(env) }, cf: { cacheEverything: true, cacheTtlByStatus: { "200-299": Math.round(FEED_TTL_MS / 1000), "300-599": 0 } } }).finally(() => reqUpstream(Date.now() - f0));
     const shared = res.headers && res.headers.get("cf-cache-status") === "HIT";
     if (shared) feedStats.edgeHits++; else { upstream.calls++; feedStats.fetched++; }
     if (!res.ok) { upstreamRefused(res.status, res.headers && res.headers.get("x-error-detail")); throw new Error(`Realtime feed ${path} answered ${res.status}`); }
@@ -7911,7 +7915,10 @@ export default {
     const run = runTick(env, { exec }).catch(() => null);
     if (exec && exec.waitUntil) exec.waitUntil(run); else await run;
   },
-  async fetch(request, env, exec) {
+  fetch(request, env, exec) { return reqLogged(request, env, exec, edgeFetch); },
+};
+// The worker's answer to every request (the copy layer, then handleRequest); reqLogged times it.
+async function edgeFetch(request, env, exec) {
     applyEnv(env);
     const url = new URL(request.url);
     // Live board pushes (ENGINE_PUSH on): a WebSocket to the board's shard, which sends a diff each time it rebuilds it.
@@ -7964,7 +7971,8 @@ export default {
     // going in the background and is stored for the next poll, and this phone gets the copy (dataAt says how old).
     let out = null;
     if (kept || (saved && !refresh)) {
-      out = await Promise.race([flight, new Promise((r) => setTimeout(() => r(null), kept ? COPY_WAIT_MS : SAVED_WAIT_MS))]);
+      // Watch and widget requests (no profile, docs/DIAGNOSIS_LAG.md item 4) take a kept copy at once, no wait.
+      out = await Promise.race([flight, new Promise((r) => setTimeout(() => r(null), kept ? (extInstant(url, request) ? 0 : COPY_WAIT_MS) : SAVED_WAIT_MS))]);
       if (!out) {
         if (exec && exec.waitUntil) exec.waitUntil(flight.catch(() => null));
         budget.staleServed++;
@@ -7989,8 +7997,48 @@ export default {
     const r = new Response(out.body, { status: out.status, headers: out.headers });
     if (out.status === 200) r.headers.set("x-edge-cache", leader ? "miss" : "shared");
     return r;
-  },
-};
+}
+
+// Request numbers (docs/DIAGNOSIS_LAG.md item 10, 26 Oct, g17): one JSON line per /api request in the Worker's logs
+// ([observability] in wrangler.toml, sampled there), so p50/p95 and error rates per endpoint can be read:
+// {"t":"req","p":path,"m":method,"s":status,"ms":time to the answer,"up":ms spent on NSW calls,"un":NSW calls,
+// "c":copy tag (hit, stale, miss, shared, saved, or -),"k":"app" (has a profile) or "ext" (watch, widget, web),
+// "colo":data centre,"test":1 for load test traffic}. Only the path, never the query (stop ids, profile ids) or an
+// address. REQ_LOG "off" stops it.
+const reqStore = new AsyncLocalStorage();
+function reqUpstream(ms) { const s = reqStore.getStore(); if (s) { s.up += ms; s.n++; } }
+async function reqLogged(request, env, exec, inner) {
+  const t0 = Date.now(), st = { up: 0, n: 0 };
+  let res = null;
+  try {
+    res = await reqStore.run(st, () => inner(request, env, exec));
+    return res;
+  } finally {
+    reqLog(request, env, res, Date.now() - t0, st);
+  }
+}
+function reqLine(request, env, res, ms, st) {
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith("/api/")) return null;
+  const line = { t: "req", p: url.pathname, m: request.method, s: res ? res.status : 500, ms, up: st.up, un: st.n, c: (res && res.headers.get("x-edge-cache")) || "-",
+    k: url.searchParams.get("profile") || request.headers.get("x-profile") ? "app" : "ext", colo: (request.cf && request.cf.colo) || null };
+  if (loadOk(request, env)) line.test = 1;
+  return line;
+}
+function reqLog(request, env, res, ms, st) {
+  try {
+    if (String((env && env.REQ_LOG) || "").toLowerCase() === "off") return;
+    const line = reqLine(request, env, res, ms, st);
+    if (line) console.log(JSON.stringify(line));
+  } catch (e) { /* never in the way of an answer */ }
+}
+// A board or trip asked for by the watch or a widget (no profile, not a refresh): a kept copy is served at once and the
+// fresh answer is stored behind it for the next ask. The phone app always sends its profile.
+function extInstant(url, request) {
+  if (url.pathname !== "/api/departures" && url.pathname !== "/api/trip") return false;
+  const p = url.searchParams;
+  return !p.get("profile") && !request.headers.get("x-profile") && p.get("refresh") !== "1";
+}
 
 // Copies are kept this long, for a busy, slow or failed upstream only (see STALE_MAX_MS, COPY_WAIT_MS and the 5xx
 // fallback above).

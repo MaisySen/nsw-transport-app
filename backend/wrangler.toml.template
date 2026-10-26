@@ -16,6 +16,12 @@ minify = true
 [placement]
 mode = "smart"
 
+# Workers Logs (docs/DIAGNOSIS_LAG.md item 10): the request lines (reqLog) and errors, kept 3 days. One request in 10
+# is kept, which stays under the free plan's daily log events at today's traffic and still gives p95 per endpoint.
+[observability]
+enabled = true
+head_sampling_rate = 0.1
+
 # The static files the API reads (stations, stops, facilities) and the shared live trip page.
 # The worker runs first so the API host never serves anything it does not route.
 [assets]
@@ -30,6 +36,8 @@ ENGINE_SHARDS = "16"
 # Live push for boards on the Trip Planner path (src/livehub.js, docs/API.md "GET /api/live"): "on" opens the LIVE
 # objects' sockets; "off" answers /api/live with 404 unless the engine pushes the stop (ENGINE_PUSH), and phones poll.
 LIVE_PUSH = "off"
+# One JSON line per /api request (src/worker.js reqLog, docs/API.md "Request numbers"); "off" stops it.
+REQ_LOG = "on"
 API_HOST = "api.transportsydney.app"
 SITE_URL = "https://transportsydney.app"
 VAPID_SUBJECT = "mailto:hello@transportsydney.app"
