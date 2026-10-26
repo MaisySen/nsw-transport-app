@@ -970,6 +970,9 @@ async function departures(env, stopId, opts = {}) {
   const exactName = first && first.properties && first.properties.platformName ? first.properties.platformName : null;
   // Delay samples are live times read close to departure: a board for another moment records none.
   if (opts.log !== false && !opts.at) logObservations(env, opts.ctx, items, stopId);
+  // When each live row's time was read: the realtime feed copy for rows filled from it, else this answer.
+  const feedRead = rt.fetchedAt() || now;
+  for (const it of items) it.liveAt = it.realtime ? (it.source === "feed" ? feedRead : now) : null;
   return {
     stop: { id: stopId, name: (loc.disassembledName || loc.name) ? seqStopName(loc) : stopId, fullName: loc.name || "", exactName },
     items, modes,

@@ -183,6 +183,8 @@ function engBuildBoard(src, stopId, opts = {}) {
       delayMin: est ? Math.round((est - c.planned) / 60000) : null,
       cancelled: !!(live && live.cancelled), wheelchair: false, occupancy: null, alerts: [],
       source: est ? "feed" : null,
+      // When this row's live time was read (the feed copy's time), so a phone can say "live 12 s ago" per row.
+      liveAt: est ? (src.feedAt(feed) || null) : null,
       ...(live && live.skipped ? { skipped: true } : {}),
       ...(feed === "ferry_mff" || feed === "nswtrains" || /^rb_/.test(feed) ? { feed } : {}),
     };
@@ -392,19 +394,28 @@ class BoardEngine {
     this.open++;
     try { return await fn(); } finally { this.open--; const w = this.openWait.shift(); if (w) w(); }
   }
-  async fetchFeed(path, kind, again = true) {
+  async fetchFeed(path, kind, again = true, prev = null) {
     if (Date.now() < (this.pauseUntil || 0)) throw new Error("feed calls paused after refusals");
     await this.slot();
+    // With feed timing on, the copy held is named (If-None-Match / If-Modified-Since) so an unchanged feed can answer
+    // 304 with no body.
+    const headers = { Authorization: "apikey " + apiKey(this.env) };
+    if (prev && engTimingOn(this.env)) {
+      if (prev.etag) headers["If-None-Match"] = prev.etag;
+      else if (prev.lastMod) headers["If-Modified-Since"] = prev.lastMod;
+    }
     const res = await this.conn(async () => {
-      const r = await fetch(API + path, { headers: { Authorization: "apikey " + apiKey(this.env) }, signal: AbortSignal.timeout(8000) });
-      return r.ok ? { ok: true, status: r.status, buf: new Uint8Array(await r.arrayBuffer()) } : { ok: false, status: r.status };
+      const r = await fetch(API + path, { headers, signal: AbortSignal.timeout(8000) });
+      if (r.status === 304) return { ok: true, status: 304 };
+      return r.ok ? { ok: true, status: r.status, buf: new Uint8Array(await r.arrayBuffer()), etag: r.headers.get("etag"), lastMod: r.headers.get("last-modified") } : { ok: false, status: r.status };
     });
     this.stats.calls++; this.stats.dayCalls++;
     if ((res.status === 429 || res.status === 403) && again) {
       this.stats.refused++;
       await new Promise((r) => setTimeout(r, 1500));
-      return this.fetchFeed(path, kind, false);
+      return this.fetchFeed(path, kind, false, prev);
     }
+    if (res.status === 304) { this.stats.notModified = (this.stats.notModified || 0) + 1; this.refusedRun = 0; return { notModified: true }; }
     if (!res.ok) {
       this.stats.refused++; this.stats.lastRefusal = res.status + " " + path;
       // Refused twice running (the key over its rate or daily quota): no feed calls for 30 s, doubling to 10 minutes
@@ -419,7 +430,7 @@ class BoardEngine {
     this.refusedRun = 0;
     const buf = res.buf;
     const { idx, headerTs } = indexFeed(buf, kind);
-    return { at: Date.now(), buf, idx, headerTs, kind, cache: new Map() };
+    return { at: Date.now(), buf, idx, headerTs, kind, cache: new Map(), etag: res.etag || null, lastMod: res.lastMod || null };
   }
   // One refresh per feed at a time: a crowd of first reads waits for the same fetch.
   refreshFeed(key, f, now, force) {
@@ -435,8 +446,16 @@ class BoardEngine {
     const jobs = [];
     if (only !== "vp" && (force || now - f.tuAt >= tuEvery - 1500)) {
       f.tuAt = now;
-      jobs.push(this.fetchFeed(def.tu, "tu").then((e) => {
-        f.tu = e; f.fails = 0;
+      jobs.push(this.fetchFeed(def.tu, "tu", true, f.tu).then((e) => {
+        f.fails = 0;
+        // Unchanged (304, or the same header time): the copy held is still the feed's latest, as of now.
+        if (e.notModified || (f.tu && e.headerTs && e.headerTs === f.tu.headerTs)) {
+          f.same = (f.same || 0) + 1;
+          if (f.tu) f.tu.at = Date.now();
+          if (e.notModified) return;
+        }
+        engNotePublish(f, e.headerTs);
+        f.tu = e;
         // Added services are few: decode them once per copy so boards can list them.
         const added = [];
         if (e.idx.size < 2500) for (const id of e.idx.keys()) { const tu = decodeFrom(e, id); if (tu && tu.rel === 1) added.push(tu); }
@@ -465,13 +484,21 @@ class BoardEngine {
     // rail and ferry copies went 3 minutes old). The busiest feeds aim for a copy every 10 s, the others every 20 s
     // (regional buses 45 s); the most overdue for its aim goes first, trip updates before vehicle positions. With
     // 1,000 stops across NSW watched, 19 trip update feeds were wanted at once (26 Oct).
-    let maxUses = 0;
+    let maxUses = 0, soonest = Infinity;
+    const timing = engTimingOn(this.env);
     for (const f of this.feeds.values()) maxUses = Math.max(maxUses, f.uses || 0);
     for (const [key, f] of this.feeds) {
       if (t0 - f.wantAt >= ENGINE_FEED_HOT_MS || f.pending || !FEEDS[key]) continue;
       const aim = (/^rb_/.test(key) ? ENGINE_SLOW_FEED_MS : (f.uses || 0) >= maxUses / 4 ? ENGINE_TICK_MS : 2 * ENGINE_TICK_MS) * k;
       const age = t0 - f.tuAt;
-      if (age >= aim - 1500) due.push({ key, f, kind: "tu", rank: age > ENGINE_STALE_MS * 0.75 ? -1 : 0, over: age / aim });
+      // Feed timing (ENGINE_FEED_TIMING on): a feed whose publish rhythm is known is asked just after its next copy is
+      // expected (header time + its period + ENGINE_PUBLISH_LAG_MS), not on a fixed beat; a late copy is asked again
+      // at the aim at most twice its period later.
+      const next = timing ? engNextPublish(f) : null;
+      const at = next ? Math.max(f.tuAt + Math.min(aim, 5000), next) : f.tuAt + aim - 1500;
+      f.nextAt = at;
+      if (t0 >= at || (next && age >= Math.max(aim, 2 * f.period))) due.push({ key, f, kind: "tu", rank: age > ENGINE_STALE_MS * 0.75 ? -1 : 0, over: age / aim });
+      else if (timing) soonest = Math.min(soonest, at);
       if (ENGINE_VP_FEEDS.test(key) && t0 - f.vpAt >= ENGINE_VP_MS * k - 1500) due.push({ key, f, kind: "vp", rank: 1, over: (t0 - f.vpAt) / (ENGINE_VP_MS * k) });
       f.uses = (f.uses || 0) / 2;
     }
@@ -491,6 +518,7 @@ class BoardEngine {
       if (++n % 25 === 0) await new Promise((r) => setTimeout(r, 0));
     }
     this.kvSet("calls", JSON.stringify({ day: this.stats.day, n: this.stats.dayCalls }));
+    this.nextDue = soonest;
     this.stats.tickMs = Date.now() - t0;
   }
   build(src, bk) {
@@ -511,7 +539,9 @@ class BoardEngine {
     this.alarmSet = true;
     const t0 = Date.now();
     try { if (this.loadMeta()) await this.tick(); } finally {
-      if (Date.now() - this.lastRead < ENGINE_IDLE_MS) await this.state.storage.setAlarm(Math.max(Date.now() + 1000, t0 + ENGINE_TICK_MS));
+      // With feed timing, the next beat is when the next feed copy is expected (1 to 10 s away).
+      const at = Math.min(t0 + ENGINE_TICK_MS, Number.isFinite(this.nextDue) ? this.nextDue : Infinity);
+      if (Date.now() - this.lastRead < ENGINE_IDLE_MS) await this.state.storage.setAlarm(Math.max(Date.now() + 1000, at));
       else this.alarmSet = false;
     }
   }
@@ -543,7 +573,7 @@ class BoardEngine {
   status() {
     const m = this.loadMeta(), now = Date.now();
     const feeds = {};
-    for (const [k, f] of this.feeds) feeds[k] = { tuAgeS: f.tu ? Math.round((now - f.tu.at) / 1000) : null, vpAgeS: f.vp ? Math.round((now - f.vp.at) / 1000) : null, trips: f.tu ? f.tu.idx.size : 0, added: (f.added || []).length, hot: now - f.wantAt < ENGINE_FEED_HOT_MS, fails: f.fails };
+    for (const [k, f] of this.feeds) feeds[k] = { tuAgeS: f.tu ? Math.round((now - f.tu.at) / 1000) : null, vpAgeS: f.vp ? Math.round((now - f.vp.at) / 1000) : null, trips: f.tu ? f.tu.idx.size : 0, added: (f.added || []).length, hot: now - f.wantAt < ENGINE_FEED_HOT_MS, fails: f.fails, periodS: f.period ? f.period / 1000 : null, same: f.same || 0, madeAgoS: f.hdrs && f.hdrs.length ? Math.round(now / 1000 - f.hdrs[f.hdrs.length - 1]) : null, nextInS: f.nextAt ? Math.round((f.nextAt - now) / 1000) : null };
     return { role: "core", boots: this.boots, bootAt: this.bootAt, ver: m ? m.ver : 0, builtAt: m ? m.builtAt : null, days: m ? Object.keys(m.days) : [], hotBoards: this.hot.size, stretch: Math.round(this.stretch(now) * 100) / 100, budget: this.budget(), perMin: Number(this.env.ENGINE_PER_MIN) || ENGINE_PER_MIN, tokens: Math.round((this.tokens || 0) * 10) / 10, gaps: this.gaps ? [...this.gaps].slice(0, 50).map(([s, g]) => [s, g.lines]) : [], pausedUntil: this.pauseUntil || null, ...this.stats, feeds };
   }
   async fetch(req) {
@@ -646,7 +676,9 @@ class BoardEngine {
       await Promise.race([Promise.all(cold.map((f) => this.refreshFeed(f, this.feeds.get(f), t0, true))), new Promise((r) => setTimeout(r, 3000))]);
     }
     const src = this.source();
-    const out = { ver: m.ver, platVer: (this.bootAt % 100000) * 1000 + (this.platVer || 0), at: {}, vpAt: {}, same: [], tu: {}, veh: {}, added: {} };
+    const out = { ver: m.ver, platVer: (this.bootAt % 100000) * 1000 + (this.platVer || 0), at: {}, vpAt: {}, same: [], tu: {}, veh: {}, added: {}, next: {} };
+    // When each asked feed's next copy is expected here (feed timing), so a shard can ask just after it.
+    if (engTimingOn(this.env)) for (const feed of asked) { const f = this.feeds.get(feed); const n = f && engNextPublish(f); if (n) out.next[feed] = n + 1500; }
     for (const feed of asked) {
       const f = this.feeds.get(feed);
       if (!f || !f.tu) continue;
@@ -866,6 +898,7 @@ class BoardShard {
     this.stats.liveCalls++; this.stats.liveMs += Date.now() - t0;
     if (r.error) return false;
     if (this.meta && r.ver !== this.meta.ver) { await this.ensureMeta(r.ver); return true; }
+    if (!merge) this.nextCopy = Object.values(r.next || {}).reduce((a, b) => Math.min(a, b), Infinity);
     // Platform names learnt from the Trip Planner since the windows were read: read the windows again.
     if (this.platVer != null && r.platVer !== this.platVer) { this.win.clear(); this.info.clear(); }
     this.platVer = r.platVer;
@@ -1000,7 +1033,9 @@ class BoardShard {
     this.alarmSet = true;
     const t0 = Date.now();
     try { await this.tick(); } catch (e) { this.stats.lastError = String((e && e.message) || e); } finally {
-      if (Date.now() - this.lastRead < ENGINE_IDLE_MS) await this.state.storage.setAlarm(Math.max(Date.now() + 1000, t0 + ENGINE_SHARD_TICK_MS));
+      // With feed timing, the next beat is just after the core expects its next feed copy (1 to 5 s away).
+      const next = Number.isFinite(this.nextCopy) && this.nextCopy > Date.now() ? this.nextCopy : Infinity;
+      if (Date.now() - this.lastRead < ENGINE_IDLE_MS) await this.state.storage.setAlarm(Math.max(Date.now() + 1000, Math.min(t0 + ENGINE_SHARD_TICK_MS, next)));
       else this.alarmSet = false;
     }
   }
@@ -1035,6 +1070,27 @@ class BoardShard {
       return Response.json({ error: String((e && e.message) || e) }, { status: 500 });
     }
   }
+}
+
+// Feed timing (26 Oct, g14, root's steer): each feed's copies carry the time NSW made them (the GTFS realtime header
+// timestamp). The last 8 distinct header times give the feed's period (the median gap, 5 to 120 s); the next copy is
+// expected one period after the last, and is asked for ENGINE_PUBLISH_LAG_MS after that. Off unless
+// ENGINE_FEED_TIMING is "on".
+const ENGINE_PUBLISH_LAG_MS = 2000;
+function engTimingOn(env) { return String((env && env.ENGINE_FEED_TIMING) || "").toLowerCase() === "on"; }
+function engNotePublish(f, headerTs) {
+  if (!headerTs) return;
+  if (!f.hdrs) f.hdrs = [];
+  if (f.hdrs[f.hdrs.length - 1] === headerTs) return;
+  f.hdrs.push(headerTs);
+  if (f.hdrs.length > 8) f.hdrs.shift();
+  const gaps = [];
+  for (let i = 1; i < f.hdrs.length; i++) { const g = f.hdrs[i] - f.hdrs[i - 1]; if (g > 0) gaps.push(g); }
+  if (gaps.length >= 3) { gaps.sort((a, b) => a - b); f.period = Math.min(120, Math.max(5, gaps[Math.floor(gaps.length / 2)])) * 1000; }
+}
+function engNextPublish(f) {
+  if (!f.period || !f.hdrs || !f.hdrs.length) return null;
+  return f.hdrs[f.hdrs.length - 1] * 1000 + f.period + ENGINE_PUBLISH_LAG_MS;
 }
 
 // ---------- worker side ----------

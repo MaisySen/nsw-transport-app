@@ -9,7 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 const root = new URL("..", import.meta.url).pathname;
 const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {") + "\n" +
   fs.readFileSync(root + "src/engine.js", "utf8").replace(/\nexport \{ BoardEngine, BoardShard \};\s*$/, "\n") +
-  "\nexport { __default, engBuildBoard, engLive, engDayKey, engPlatform, BoardEngine, BoardShard, engineWanted, engTrim, engShardOf };\n";
+  "\nexport { __default, engBuildBoard, engLive, engDayKey, engPlatform, BoardEngine, BoardShard, engineWanted, engTrim, engShardOf, engNotePublish, engNextPublish };\n";
 const tmp = `/tmp/engine-test-${process.pid}-${Date.now()}.mjs`;
 fs.writeFileSync(tmp, src);
 const W = await import(tmp); fs.unlinkSync(tmp);
@@ -290,5 +290,27 @@ test("planned times are whole minutes as the Trip Planner gives them, and the li
     const p = Date.parse(it.planned);
     assert.equal(p % 60000, 0);
     assert.equal(Date.parse(it.estimated) - p, 60000);
+  } finally { rows.B = save; }
+});
+
+test("feed timing: the period is the median gap of the feed's header times, the next copy is asked just after it", () => {
+  const f = {};
+  for (const t of [1000, 1015, 1015, 1030, 1046, 1060]) W.engNotePublish(f, t);
+  assert.equal(f.period, 15000);
+  assert.equal(W.engNextPublish(f), (1060 + 15) * 1000 + 2000);
+  const g = {};
+  W.engNotePublish(g, 1000); W.engNotePublish(g, 1010);
+  assert.equal(W.engNextPublish(g), null, "not enough copies to know the rhythm");
+});
+
+test("a live row says when its live time was read (liveAt, the feed copy's time); a timetable row has none", () => {
+  const save = rows.B;
+  rows.B = [[sec(4), "B-at", 1, 1, 7], [sec(6), "B-tt", 1, 1, 7]];
+  try {
+    const src = fakeSrc({ "B-at": { stus: [{ seq: 7, stopId: "B", dep: { delay: 60 } }] } });
+    const b = W.engBuildBoard(src, "B");
+    const live = b.items.find((i) => i.tripId === "B-at"), tt = b.items.find((i) => i.tripId === "B-tt");
+    assert.ok(Math.abs(live.liveAt - src.feedAt("bus")) < 100);
+    assert.equal(tt.liveAt, null);
   } finally { rows.B = save; }
 });
