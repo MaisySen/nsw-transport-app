@@ -280,3 +280,15 @@ test("a shard builds the same board as the core object, from the core's one copy
   const st = S.status();
   assert.equal(st.role, "shard"); assert.equal(st.boots, 1); assert.equal(st.hotBoards, 2);
 });
+
+test("planned times are whole minutes as the Trip Planner gives them, and the live time is that minute plus the delay", () => {
+  const save = rows.B;
+  rows.B = [[sec(4) + 35, "B-sec", 1, 1, 7]];
+  try {
+    const b = W.engBuildBoard(fakeSrc({ "B-sec": { stus: [{ seq: 7, stopId: "B", dep: { delay: 60 } }] } }), "B");
+    const it = b.items.find((i) => i.tripId === "B-sec");
+    const p = Date.parse(it.planned);
+    assert.equal(p % 60000, 0);
+    assert.equal(Date.parse(it.estimated) - p, 60000);
+  } finally { rows.B = save; }
+});

@@ -78,11 +78,12 @@ test("a station's pack holds every platform and stand in time order, without tri
   assert.equal(d.find((x) => x.line === "400").platform, "Stand A");
 });
 
-test("every timetable row on the engine's board is in the pack at the same second, line, headsign and platform", async () => {
+test("every timetable row on the engine's board is in the pack at the same minute, line, headsign and platform", async () => {
   const E = await loaded();
   const p = await (await E.fetch(new Request("https://engine/pack?stop=P"))).json();
   const b = await (await E.fetch(new Request("https://engine/board?stop=P"))).json();
-  const key = (x) => [x.planned, x.line, x.dest, x.platform].join("|");
+  // Boards give planned times in whole minutes as the Trip Planner does; the pack keeps the timetable's seconds.
+  const key = (x) => [x.planned - (x.planned % 60000), x.line, x.dest, x.platform].join("|");
   const inPack = new Set(decode(p).map(key));
   assert.ok(b.items.length >= 4);
   for (const it of b.items) assert.ok(inPack.has(key({ ...it, planned: Date.parse(it.planned) })), "missing " + it.tripId);

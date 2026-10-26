@@ -156,7 +156,10 @@ function engBuildBoard(src, stopId, opts = {}) {
   }
   if (!hit || !hit.cand) return null; // no timetable for this stop: the caller asks the Trip Planner instead
   const cand = [];
-  for (const a of hit.cand) if (a[0] >= from && a[0] <= to) cand.push({ planned: a[0], tripId: a[1], ri: a[2], hi: a[3], seq: a[4], stopId: a[5], day: a[6] });
+  // Planned times in whole minutes, as the Trip Planner gives them (it drops the seconds of the GTFS time: 02:16:35 is
+  // 02:16, and its live time is that minute plus the delay). With the seconds kept, light rail and metro boards came out
+  // up to 59 s later than the planner's (26 Oct, g14).
+  for (const a of hit.cand) if (a[0] >= from && a[0] <= to) cand.push({ planned: a[0] - (a[0] % 60000), tripId: a[1], ri: a[2], hi: a[3], seq: a[4], stopId: a[5], day: a[6] });
   const feedsUsed = new Set();
   const items = [];
   const seen = new Set();
