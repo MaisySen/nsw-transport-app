@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Handover docs: a new worker starts without asking (docs only, no release)
+Bidur at 4:02 PM: "Keep making runbook very strong and better ... It would just start working fully straight away."
+* docs/START_HERE.md: the one page entry point (what the product is, owner and publisher, builds 201 to 208, runtime 1.0.0, channels, the production group and how to read it, server, what is live and what is behind flags, the standing rules, the first 10 commands, every doc).
+* docs/RUNBOOK.md rewritten: copy and paste steps with expected output, checks and rollback for a server deploy, over the air updates (preview, manifest check, production, rollback), flags, the NSW quota running out, the US$5 Cloudflare budget and guard, the nightly packs, build 209 and Android, owner only store steps, incident playbooks (live data down, 5xx, 429 or 403, wrong times, a bad update, stale Watch or widget, trip card) and every credential by name and place with the credentials email rule.
+* docs/DECISIONS.md (every owner decision with date and reason), docs/STATE.md (live table with a last verified time, open bugs, what waits on the owner, what is next), docs/WORKER_GUIDE.md (clones, rebase, areas, tests, screen checks, style).
+* tools/orient.mjs prints the live state in one go, read only: git, the production update group from the manifest the phones read, the last 3 deploys, flags on the Worker and in the template, remote config and app switches, health, NSW calls today, the budget guard and Cloudflare usage against the included amounts. tools/verify-deploy.mjs checks the API after a deploy (no NSW call unless `--live`). Neither prints a secret.
+* Fixed stale docs: build 208 is in the field (it was only on branch native-207; RELEASES.md now has its row), health is `/api/health`, the old server fallback has no hold, Workers Paid since 26 Oct, the Cloudflare cron (not cron-job.org) ticks the API, the security inventory, the owner's mobile number taken out of three public docs, and other apps' names taken out of five code comments.
+
 ### Budget mode: US$5 a month, no overage, up to 1,000 people (server, SERVER_LINE)
 Bidur at 3:47 PM: "Can't pay 90. We stay at 5 right now. Max users we may get currently is 1k."
 * docs/COSTS.md: this cycle's real usage against the Workers Paid included amounts (no overage: Cloudflare shows US$0.00
