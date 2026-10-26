@@ -643,6 +643,8 @@ export default function TripScreen() {
         onScroll={(e) => {
           const n = e.nativeEvent, y = n.contentOffset.y, up = y < lastY.current;
           lastY.current = y;
+          // The web has no drag start for a wheel or a trackpad, and its scroll events only come from the reader.
+          if (up && Platform.OS === 'web') dragged.current = true;
           const at = { layoutH: n.layoutMeasurement.height, offsetY: y, contentH: n.contentSize.height };
           if (paged ? nearBottom(at) : nearEnd(at)) loadLater();
           if (paged && dragged.current && nearTop(at, rowsTop, up)) loadEarlier();

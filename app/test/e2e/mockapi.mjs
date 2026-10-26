@@ -68,7 +68,7 @@ function trip(p) {
   const o = resolve(p.get("name_origin") || ""), d = resolve(p.get("name_destination") || "");
   if (!o || !d) return { journeys: [], systemMessages: [{ type: "error", code: -8011, text: "no stop" }] };
   const at = p.get("itdDate") && p.get("itdTime") ? sydParse(p.get("itdDate"), p.get("itdTime")) : FakeDate.now();
-  const arrBy = p.get("itdTripDateTimeDepArr") === "arr";
+  const arrBy = p.get("itdTripDateTimeDepArr") === "arr" || p.get("depArrMacro") === "arr";
   const km = dist([S[o][1], S[o][2]], [S[d][1], S[d][2]]);
   const train = isStation(o) && isStation(d);
   const min = Math.max(3, Math.round(km * (train ? 1.4 : 3)));
