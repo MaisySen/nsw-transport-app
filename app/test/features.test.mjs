@@ -1,28 +1,19 @@
-// Feature switches (src/lib/features.ts): Platform view stays off until the owner asks for it back.
+// Platform view was removed on 26 Oct 2026 (Bidur, 5:36 PM): no screen, no entry point, no switch, no fetch left.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 
-const read = (p) => readFileSync(new URL(`../src/${p}`, import.meta.url), 'utf8');
+const src = new URL('../src/', import.meta.url).pathname;
+const walk = (d) => readdirSync(d).flatMap((n) => { const p = d + n; return statSync(p).isDirectory() ? walk(p + '/') : [p]; });
 
-test('Platform view switch is off', () => {
-  assert.match(read('lib/features.ts'), /export const PLATFORM_VIEW = false;/);
+test('Platform view screen and its helpers are gone', () => {
+  for (const f of ['app/platform.tsx', 'lib/platform.ts', 'lib/platformCore.ts']) assert.equal(existsSync(src + f), false, f);
 });
 
-test('every way into Platform view checks the switch', () => {
-  assert.match(read('lib/platform.ts'), /if \(!PLATFORM_VIEW\) return;/);
-  assert.match(read('components/Transit.tsx'), /const platform = PLATFORM_VIEW && /);
-  assert.match(read('app/stop/[id].tsx'), /\{PLATFORM_VIEW && railHere \?/);
-  assert.match(read('app/platform.tsx'), /PLATFORM_VIEW \? <PlatformView \/> : <Redirect href="\/" \/>/);
-});
-
-test('nothing else calls openPlatform or pushes /platform', () => {
-  const allowed = new Set(['lib/platform.ts', 'lib/features.ts', 'components/Transit.tsx', 'app/stop/[id].tsx']);
-  const root = new URL('../src/', import.meta.url).pathname;
-  const walk = (d) => readdirSync(d).flatMap((n) => { const p = d + n; return statSync(p).isDirectory() ? walk(p + '/') : [p]; });
-  for (const p of walk(root).filter((p) => /\.tsx?$/.test(p))) {
-    const rel = p.slice(root.length);
+test('no switch, entry point, menu item or fetch for Platform view is left', () => {
+  for (const p of walk(src).filter((p) => /\.tsx?$/.test(p))) {
+    const rel = p.slice(src.length);
     const s = readFileSync(p, 'utf8');
-    if (/openPlatform\(|pathname: '\/platform'/.test(s)) assert.ok(allowed.has(rel), `${rel} opens Platform view`);
+    assert.doesNotMatch(s, /PLATFORM_VIEW|openPlatform|platformDepartures|platformService|stationRows|pathname: '\/platform'|'Platform view'/, rel);
   }
 });

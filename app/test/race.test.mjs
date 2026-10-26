@@ -163,7 +163,7 @@ test('one off loads on the trip list, Simple mode, walk search, next option and 
 });
 
 test('screens with kept copies label them, never as live', () => {
-  for (const f of ['src/app/stop/[id].tsx', 'src/app/board.tsx', 'src/app/platform.tsx', 'src/app/trip.tsx', 'src/app/simple.tsx', 'src/app/service.tsx']) {
+  for (const f of ['src/app/stop/[id].tsx', 'src/app/board.tsx', 'src/app/trip.tsx', 'src/app/simple.tsx', 'src/app/service.tsx']) {
     const s = read(f);
     assert.match(s, /staleAt/, f);
   }

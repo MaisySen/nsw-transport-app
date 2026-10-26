@@ -39,8 +39,6 @@ import { useStationMap } from '@/lib/stationMap';
 import type { Station } from '@/lib/access';
 import { hasSpeech, speak } from '@/lib/nativeExtras';
 import { departuresSentence } from '@/lib/voiceCore';
-import { openPlatform } from '@/lib/platform';
-import { PLATFORM_VIEW } from '@/lib/features';
 import { withKeys } from '@/lib/rowKeysCore';
 
 const canSpeak = hasSpeech();
@@ -83,7 +81,6 @@ export default function StopScreen() {
   const title = shortName(data?.stop?.name || name || 'Stop');
   const starred = st.starred.some((s) => s.id === id);
   const modes = useMemo(() => (served.length ? served : Array.from(new Set((data?.items || []).map((d) => d.mode)))), [data, served]);
-  const railHere = modes.includes('train') || modes.includes('metro');
   const stopName = data?.stop?.name || (name ? String(name) : '');
   // Remember opened stops for Home's Recent stops.
   useEffect(() => { if (id && stopName) store.addRecent({ id: String(id), name: stopName }); }, [id, stopName]);
@@ -186,13 +183,6 @@ export default function StopScreen() {
         title,
         headerRight: () => (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-          {/* Platform view: only at a station with trains or metro, and only while the switch in lib/features.ts is on. */}
-          {PLATFORM_VIEW && railHere ? (
-            <Pressable accessibilityRole="button" accessibilityLabel="Platform view" accessibilityHint="Shows the next train full screen with its platform and stops" hitSlop={9}
-              onPress={() => { haptic.tap(); openPlatform({ stop: String(id), name: stopName }); }}>
-              <Icon name={I.platform} size={22} color={c.tint} />
-            </Pressable>
-          ) : null}
           <Pressable accessibilityRole="button" accessibilityLabel={starred ? 'Remove from Starred stops' : 'Add to Starred stops'} accessibilityState={{ selected: !!starred }} hitSlop={13} onPress={() => { haptic.select(); store.toggleStar({ id: String(id), name: data?.stop?.name || String(name || title), ...(busOnly ? { mode: 'bus', lines: routes.map((r) => r.line).slice(0, 6) } : {}) }); }}>
             <Icon name={starred ? I.star : I.starOpen} size={22} color={starred ? c.yellow : c.tint} />
           </Pressable>
@@ -340,7 +330,7 @@ export default function StopScreen() {
                   {top ? null : <Sep inset={i ? 82 : 0} />}
                   {isGone(d, now)
                     ? <LeftDepartureRow d={d} stopNo={signNo ? null : stopLabel(d.stopId, d.mode) || null} onPress={() => openService(d)} />
-                    : <DepartureRow d={d} now={now} station={String(id)} stopNo={!signNo} alertText={noteFor(d)} why={whyOf(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />}
+                    : <DepartureRow d={d} now={now} stopNo={!signNo} alertText={noteFor(d)} why={whyOf(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />}
                 </View>
               );
             })}

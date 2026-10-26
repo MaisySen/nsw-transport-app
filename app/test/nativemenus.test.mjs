@@ -156,7 +156,7 @@ test('departure row menu: Watch or Stop watching, then Show stops, bell symbols,
 
 test('the departure row holds through HoldMenu, with no direct long press and no ActionSheetIOS', () => {
   const src = read('src/components/Transit.tsx');
-  assert.match(src, /<HoldMenu menu=\{departureMenu\(d, !!watched, \{ watch: onWatch, open: onPress, platform \}\)\}/);
+  assert.match(src, /<HoldMenu menu=\{departureMenu\(d, !!watched, \{ watch: onWatch, open: onPress \}\)\}/);
   assert.doesNotMatch(src, /onLongPress=/);
   assert.doesNotMatch(src, /ActionSheetIOS|nativeMenu\(/);
 });
