@@ -8,7 +8,7 @@ When notification permission is asked (checked in the code: `canNotify(true)` an
 
 Before submitting:
 * If api_base has moved to api.transportsydney.app by then (remote config, src/lib/server.ts), delete the sentence starting "The app reads its server address", so the notes match what the reviewer sees.
-* The text describes build 206 and later (Siri, Control Center, widget buttons, Apple Watch, Add to Calendar, Speak alerts). The plan is to submit with build 207; select it on the version page.
+* The text describes build 206 and later (Siri, Control Center, widget buttons, Apple Watch, Add to Calendar, Speak alerts). Submit only with the owner's written OK, with the newest build on the version page (208 today, 209 from 1 Nov).
 * Features added after 25 Oct 2026 go in the notes too.
 
 ## Notes

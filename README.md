@@ -4,6 +4,8 @@ Transport: Sydney Live shows live departures with honest live labels (Live, Time
 
 What it does today, feature by feature: [docs/FEATURES.md](docs/FEATURES.md).
 
+**New here? Start with [docs/START_HERE.md](docs/START_HERE.md)**, then run `node tools/orient.mjs` and read [docs/STATE.md](docs/STATE.md).
+
 Owner: Bidur. Repository: https://github.com/MaisySen/nsw-transport-app (public).
 
 ## Live links
@@ -15,7 +17,7 @@ Owner: Bidur. Repository: https://github.com/MaisySen/nsw-transport-app (public)
 | Support | https://transportsydney.app/support/ (support@transportsydney.app) |
 | Privacy policy | https://transportsydney.app/privacy/ |
 | Terms | https://transportsydney.app/terms/ |
-| API | https://api.transportsydney.app (health: `/api/status`) |
+| API | https://api.transportsydney.app (health: `/api/health`, 403 without the admin key; full check: `node tools/verify-deploy.mjs`) |
 | Android APK (direct) | https://api.transportsydney.app/download/transport.apk |
 | Expo project | https://expo.dev/accounts/bidurtab/projects/nsw-transport |
 
@@ -38,14 +40,19 @@ Publisher: Fintex Australia Pty Ltd (ABN 60 688 406 108), https://fintex.au.
 
 | Document | What it covers |
 | --- | --- |
-| [Features](docs/FEATURES.md) | What the app does today, where to find it, what needs build 207 and what waits for the server move |
+| [Start here](docs/START_HERE.md) | The one page entry point: state, standing rules, first commands, every doc |
+| [State](docs/STATE.md) | What is live now, flags, open bugs, what waits on the owner, what is next |
+| [Decisions](docs/DECISIONS.md) | Every owner decision with its date and reason |
+| [Worker guide](docs/WORKER_GUIDE.md) | How parallel workers share the repo: clones, rebase, areas, tests, style |
+| [Features](docs/FEATURES.md) | What the app does today, where to find it, what needs build 208 or 209 |
 | [Requirements](docs/REQUIREMENTS.md) | Every feature by version, with status per platform |
 | [Architecture](docs/ARCHITECTURE.md) | How the parts fit: backend, data sources, clients, CI, hosting |
 | [API](docs/API.md) | Every `/api` endpoint with parameters and examples |
 | [Test plan](docs/TEST_PLAN.md) | Unit tests, browser checks, device checks and known failures |
 | [Releases](docs/RELEASES.md) | iPhone builds, Android versions, over the air updates and web publishes, with rollback commands |
 | [Changelog](CHANGELOG.md) | What changed, newest first |
-| [Runbook](docs/RUNBOOK.md) | How to deploy, build, update and look after each part |
+| [Runbook](docs/RUNBOOK.md) | Every routine operation and incident, as copy and paste steps with checks and rollback |
+| [Costs](docs/COSTS.md) | The US$5 a month budget, usage against the included amounts, the budget guard |
 | [Deploy on Cloudflare](docs/DEPLOY_CLOUDFLARE.md) | The API Worker, the public site on Pages, DNS, email, checks after each deploy |
 | [Performance](docs/PERFORMANCE.md) | Battery rules for polling, location, widgets and the watch |
 | [iOS 26 and 27](docs/IOS27.md) | Liquid Glass, the floating tab bar and resizable windows |
@@ -55,6 +62,7 @@ Publisher: Fintex Australia Pty Ltd (ABN 60 688 406 108), https://fintex.au.
 | [Review notes](docs/REVIEW-NOTES.md) | The App Review notes text and when to change it |
 | [Roadmap](docs/ROADMAP.md) | Done today, open items and what comes next |
 | [Security](docs/SECURITY.md) | Where secrets live (by name only) and how to rotate them |
+| [Engine](docs/ENGINE.md), [Scaling](docs/SCALING.md), [Scale to 1M](docs/SCALE_1M.md), [Lag diagnosis](docs/DIAGNOSIS_LAG.md), [Timetable packs](docs/TIMETABLE_PACKS.md), [Widget and Watch speed](docs/WIDGET_WATCH_SPEED.md) | The board engine, limits, the million user plan (paper only), why the app lagged on 26 Oct, timetables on the phone |
 
 ## Run each part
 

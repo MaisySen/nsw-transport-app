@@ -1,14 +1,14 @@
 # Security
 
-Where every secret lives, by name only, and the rules that keep them out of the code. No secret value appears in this repository. Updated 24 Oct 2026.
+Where every secret lives, by name only, and the rules that keep them out of the code. No secret value appears in this repository. Updated 24 Oct 2026; inventory brought up to date 26 Oct, 4:30 PM (the full list with rotation steps is [RUNBOOK.md](RUNBOOK.md) section 11).
 
 ## Rules
 
 1. No secret in git, commit messages, issues, screenshots or logs. The repo is public.
 2. The backend source holds placeholders (`__TFNSW_API_KEY__` and so on). `backend/build.mjs` fills them in at build time from `backend/.env`, which is ignored by git.
 3. Values only ever go into the server side `worker.mjs`. The web app, the Android app and the iPhone app hold no secrets. `backend/test/site.test.mjs` checks that no API key is in the public files or the source.
-4. Owner credentials are sent to Bidur by email at contact@fintex.au, organised by service, and resent in full whenever one changes.
-5. Rotate a secret the moment it may have leaked. Steps per secret: [Runbook, section 7](RUNBOOK.md#7-rotate-keys).
+4. Owner credentials are sent to Bidur by email at the owner's ops email (the address is in the operator notes, not here), organised by service, and resent in full whenever one is created, changed or revoked.
+5. Rotate a secret the moment it may have leaked. Steps per secret: [Runbook, section 11](RUNBOOK.md#11-credentials-list-where-each-lives-rotation).
 
 ## Secret inventory
 
@@ -24,11 +24,14 @@ Where every secret lives, by name only, and the rules that keep them out of the 
 | cron-job.org login and API key | The minute scheduler job | Credentials email; build box secrets folder |
 | Android upload keystore (`nsw-transport-release.jks`, alias `nswtransport`) and its passwords | Signs every Android APK and AAB. Losing it means a Play upload key reset | `~/.nsw-secrets/` on the build box (`nsw-transport-release.jks`, `android-keystore.json`); a copy was emailed to Bidur |
 | Appetize login and API token | Android emulator previews in the browser (free minutes used up) | Credentials email; `~/.nsw-secrets/appetize.json` |
-| `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`, `APPLE_TEAM_ID` | App Store Connect API key for signing and TestFlight upload | Not created yet. Will be GitHub Actions repository secrets, never files in the repo |
-| Play service account key | Command line Play uploads (`store/play-upload.mjs`) | Not created yet. Will stay on the build machine |
+| `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`, `APPLE_TEAM_ID` | App Store Connect API key for builds, TestFlight upload and metadata | GitHub Actions repository secrets; operator copy in `~/.nsw-secrets/` (`asc.json` and the `.p8`) |
+| Play service account key | Command line Play uploads (`store/play-upload.mjs`) | `~/.nsw-secrets/play-service-account.json` on the build machine (the Play app itself does not exist yet) |
 | GitHub | Repository access | Bidur's own account `MaisySen`, connected to the build machine by authorization. No password or token stored in the project |
 | contact@fintex.au | Fintex mailbox for sign ups, resets and store invites; support@, privacy@ and hello@transportsydney.app forward to it | Fintex's own mailbox |
-| Cloudflare | Fintex Australia account: API Worker, D1, Pages, DNS, Email Routing | API token in the deploying machine environment only (`CLOUDFLARE_API_TOKEN`), never in the repo |
+| Cloudflare | Fintex Australia account: API Worker, D1, Pages, DNS, Email Routing | Deploy token in `~/.nsw-secrets/cloudflare.json`, passed as `CLOUDFLARE_API_TOKEN`; dashboard login with TOTP 2FA (seed in `~/.nsw-secrets/cloudflare-2fa.json`); never in the repo |
+| Cloudflare analytics token | Read only usage (Account Analytics Read): `tools/orient.mjs` and the budget guard | Worker secret `CF_ANALYTICS_TOKEN`; `~/.nsw-secrets/cloudflare-analytics.json` |
+| `ENGINE_LOAD_KEY` | Loads timetable and planner packs into the engine | Worker secret; GitHub Actions secret `ENGINE_LOAD_KEY` |
+| `TFNSW_API_KEY` (repo secret) | The nightly timetable workflow | GitHub Actions secret, same value as the Worker secret |
 
 Admin and scheduler keys go in an `x-admin-key` header. The cron-job.org job sends `TICK_KEY` that way since 24 Oct 2026, so the key is no longer part of its URL. The older `?key=` query form still works; treat any URL that contains one as a secret and do not share it or paste it into a chat.
 

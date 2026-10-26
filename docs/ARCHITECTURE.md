@@ -2,6 +2,8 @@
 
 One backend does all the work. The iPhone and Android apps (one Expo app in `app/`) and the web app are thin clients that call its `/api` endpoints. Updated 25 Oct 2026: since build 201 the iPhone app is the Expo app; the SwiftUI app in `ios-native/` is no longer shipped. The public site at transportsydney.app is plain files in `site/` on Cloudflare Pages.
 
+**Current shape (26 Oct 2026).** Phones read `api.transportsydney.app`: Worker `transport-api` on the Fintex Cloudflare account, with D1 (`transport`), a Cloudflare Cron Trigger every minute (cron-job.org now ticks only the first address, `nsw-transport-bot.sites.tab.bot`, for old builds), Worker secrets set with `wrangler secret put`, live answers shared at the edge for up to 15 s, and Durable Objects: `BoardEngine` and `BoardShard` (our board engine from the GTFS feeds, `ENGINE_BOARDS` off), `LiveHub` (socket push, `LIVE_PUSH` off), `TripPlanner` (our own RAPTOR planner, `OWN_PLANNER` off). Boards and trips for phones still come from the Transport for NSW Trip Planner, with a timetable fallback when it refuses. Flags and what is live: [STATE.md](STATE.md). The diagram and sections below describe the first design and are kept for history where they differ.
+
 ```
  Transport for NSW Open Data                 cron-job.org (every minute)
  (trip planner, GTFS realtime,                        |
@@ -100,10 +102,10 @@ The repo is public, so GitHub's macOS runners are free. Android builds and web p
 
 | Part | Where |
 | --- | --- |
-| API | Cloudflare (Fintex Australia account), `api.transportsydney.app`: Worker, D1, Cron Trigger, optional R2. Workers Paid plan recommended |
+| API | Cloudflare (Fintex Australia account), `api.transportsydney.app`: Worker, D1, Durable Objects (board engine, shards, live hubs, trip planner), Cron Trigger, optional R2. Workers Paid (US$5 a month) since 26 Oct, with no overage allowed ([COSTS.md](COSTS.md)) |
 | Public site | Cloudflare Pages, `transportsydney.app` and `www` |
 | Android APK | R2 bucket `FILES`, served at `/download/transport.apk` with range support |
-| Android over the air updates | Expo (EAS Update), account `bidurtab` |
-| iPhone builds | GitHub Releases on this repo |
-| Scheduler | cron-job.org, free plan |
+| Over the air updates (iPhone and Android) | Expo (EAS Update), account `bidurtab`, channel `production` |
+| iPhone builds | EAS Build (Expo account `bidurtab`), uploaded to TestFlight; the old SwiftUI builds were GitHub Releases |
+| Scheduler | Cloudflare Cron Trigger every minute on `transport-api`; cron-job.org (free plan, job 8707266) only for the first address until it retires |
 | Source | GitHub, `MaisySen/nsw-transport-app` (an older copy of the backend is in a separate private repo of the same account) |

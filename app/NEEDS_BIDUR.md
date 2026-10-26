@@ -1,5 +1,7 @@
 # What needs Bidur personally
 
+Status 26 Oct 2026: the Apple Developer Program, the App Store Connect API key and TestFlight are done (builds 201 to 208 on TestFlight). Still open: submitting for App Store review (his OK), Google Play (create the app) and Firebase for Android alerts. The live list is [docs/STATE.md](../docs/STATE.md), "Waiting on the owner". The sections below are kept for the steps.
+
 Everything else is built and ready. These steps need your own identity or payment, so Tab cannot do them for you.
 
 ## iPhone: TestFlight and the App Store

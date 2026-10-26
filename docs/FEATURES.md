@@ -2,7 +2,7 @@
 
 What Transport: Sydney Live does today, where to find each thing, and what is still to come. Written for testers, support and App Review. Updated 25 Oct 2026, 7:45 PM Sydney time.
 
-The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches iPhone builds 201 to 206 and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
+The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
 ## Home
 
@@ -164,13 +164,15 @@ Native changes, so they need a new build (branches `native-207` and `native-207-
 * Speak alerts heard with Silent mode on (spoken audio session that lowers other audio).
 * Liquid Glass app icon for iOS 26.
 
-## Coming in build 208 (not built yet)
+## Build 208 (built 25 Oct, 6:48 PM, on TestFlight)
 
-* Calendar leave by: the calendar read access it needs (full access text on iPhone, READ_CALENDAR on Android) is on branch `native-207` for build 208; the JavaScript is already in the over the air update and stays hidden until then ([CALENDAR-LEAVE-BY.md](CALENDAR-LEAVE-BY.md)).
+* Calendar leave by: build 208 carries the calendar read access it needs (full access text on iPhone), so More > Calendar leave by shows on 208 and later; builds 201 to 207 keep it hidden. Android needs a build with READ_CALENDAR (versionCode 6). See [CALENDAR-LEAVE-BY.md](CALENDAR-LEAVE-BY.md).
+* Widget layout fixes: times in one column, alerts on 2 or 3 lines, nothing in the rounded corners, a bigger countdown on the small widget.
+* Not yet seen on a real iPhone. The next build is 209 on 1 Nov ([IOS27.md](IOS27.md), "Build 209").
 
 ## The new server (over the air, 26 Oct)
 
-The app reads from api.transportsydney.app. A read it cannot get there (no answer, or a 5xx) is asked of the first server once, and reads stay there for a minute; saves always go to the new server. The first launch on this update carries the phone's saved trips, push token and morning checks over. These now show for everyone on the update ([API.md](API.md), [REVIEW-NOTES.md](REVIEW-NOTES.md)):
+The app reads from api.transportsydney.app. Since the 26 Oct, 3:39 PM update a read goes to the first server only when the new one cannot be reached at all (no answer), with no hold; a 5xx or 429 shows the copy kept on the phone or the timetable instead. Saves always go to the new server. The first launch on this update carries the phone's saved trips, push token and morning checks over. These now show for everyone on the update ([API.md](API.md), [REVIEW-NOTES.md](REVIEW-NOTES.md)):
 
 * "Usually 3 min late on weekday mornings" on stop boards (with a route chosen), the service screen and trip legs. Real answers need a few weeks of live times on the new server.
 * Weekend trackwork card, Status of my lines, Plan B in the morning check, reliability lines, last way home reminder, Park and Ride "usually full by", live traffic on bus legs, carriage occupancy, and live times for NSW TrainLink, regional coach and Manly Fast Ferry services.

@@ -12,7 +12,7 @@ On the API address everything that is not the API, `/live/` or the APK answers a
 
 ## 1. Before you start
 
-* **Plan.** Workers Paid (5 USD a month, Workers & Pages, Plans) is strongly recommended. The free plan allows 10 ms of CPU per request and per cron run; decoding the live train feeds needs more, so the minute tick and live boards would fail some of the time. D1 and Pages free limits are fine.
+* **Plan.** Workers Paid (5 USD a month, Workers & Pages, Plans): bought 26 Oct 2026, 9:06 AM; the owner's rule is US$5 a month with no overage ([COSTS.md](COSTS.md)). The free plan allows 10 ms of CPU per request and per cron run; decoding the live train feeds needs more, so the minute tick and live boards would fail some of the time. D1 and Pages free limits are fine.
 * **API token** (My Profile, API Tokens, Create Custom Token). Account permissions: Workers Scripts Edit, D1 Edit, Cloudflare Pages Edit, Workers R2 Storage Edit (only for the APK), Account Settings Read. Account permission for email: Email Routing Addresses Edit. Zone permissions for `transportsydney.app`: Zone Read, DNS Edit, Workers Routes Edit, Single Redirect Edit, Email Routing Rules Edit, Zone Settings Edit.
 * **workers.dev subdomain.** Cron Triggers need the account to have one, even though the Worker is not served on it (`workers_dev = false`). Opening Workers & Pages once in the dashboard creates it; the API call is `PUT /accounts/$CF_ACCOUNT_ID/workers/subdomain` with `{"subdomain": "transportsydney"}`. A new schedule can take a few minutes before its first run.
 * **Values** in the environment of the machine that deploys, never in the repo:

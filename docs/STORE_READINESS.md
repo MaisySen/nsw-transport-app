@@ -1,6 +1,6 @@
 # Store readiness: App Store and Google Play
 
-State on 25 Oct 2026, 8 AM Sydney. Legend: DONE, BIDUR (needs Bidur's own login, identity or decision), BUILD (needs a new native build; an over the air update cannot do it).
+State on 25 Oct 2026, 8 AM Sydney. Since then: App Privacy was published (25 Oct, 10:54 AM), builds up to 208 are on TestFlight, and nothing has been submitted for review. What still waits on the owner: [STATE.md](STATE.md). Legend: DONE, BIDUR (needs Bidur's own login, identity or decision), BUILD (needs a new native build; an over the air update cannot do it).
 
 Listing texts: store/apple/listing.md, store/google/listing.md. Privacy answers: docs/STORE_PRIVACY.md. Screenshots: store/screenshots/.
 

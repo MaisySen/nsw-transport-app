@@ -47,6 +47,8 @@ Written 26 Oct 2026, 3:15 PM, for Bidur's 2:52 PM message: "Our own app lags, co
 
 ### Plan limits (needs a check in the dashboard)
 
+Update 26 Oct, 4 PM: the account has been on Workers Paid since 26 Oct 9:06 AM, so the free plan limits below never applied to today's traffic; the dashboard shows no usage charge ([COSTS.md](COSTS.md)). The original note follows.
+
 The docs say the account is on the free Workers plan. If so, today's tests went past every daily free allowance: Worker requests 205,475 (free: 100,000 a day), D1 rows read 13.4 million (free: 5 million), D1 rows written 221,446 (free: 100,000; 25 Oct was 158,095 too). Cloudflare's documented behaviour on Free is errors (Worker error 1027, D1 errors) until 00:00 UTC, which is 11 AM Sydney. The server was still answering at 3:05 PM, so either the account is on Workers Paid or the limit is not enforced yet. Real phones alone use about 1% of these allowances; only our tests reach them. If the account is Free, a test day can make every phone fail to load until 11 AM the next day.
 
 ### Outage (1:25 PM on), separate
@@ -135,7 +137,7 @@ Startup requests already go out together (7 at about 930 ms on web); Home's firs
 | 8 | OTA churn | 52 production OTAs in 2 days; 6 MB each, fetched on start and every foreground | One release train: at most one OTA a day, batched, published off peak (after 8 PM) | process | fewer cold first starts and background downloads during the morning | none |
 | 9 | Stop board widget keeps nothing | empty on any failure | Build 209: App Group board file and timetable entries (WIDGET_WATCH_SPEED.md steps 1 and 2); keep the last rows on failure | build 209 | widget never empty while times exist | medium |
 | 10 | No per endpoint numbers | no logs, token lacks zone analytics | Turn on Workers Logs (`[observability]` in wrangler.toml) and give the token zone analytics and Workers Observability read; or write one Analytics Engine data point per request (path, status, ms, copy tag, upstream ms); tag test traffic so it is left out | server | the next diagnosis per endpoint, with 5xx rates | small |
-| 11 | Free plan limits, if the account is Free | 205k requests, 13.4M D1 reads, 221k D1 writes on 26 Oct | Check the plan in the dashboard; if Free, item 1 keeps us under; if load tests must run at scale, Workers Paid | dashboard | removes a hidden "everything fails until 11 AM" risk | small |
+| 11 | Free plan limits, if the account is Free (closed: Workers Paid since 9:06 AM, [COSTS.md](COSTS.md)) | 205k requests, 13.4M D1 reads, 221k D1 writes on 26 Oct | Check the plan in the dashboard; if Free, item 1 keeps us under; if load tests must run at scale, Workers Paid | dashboard | removes a hidden "everything fails until 11 AM" risk | small |
 | 12 | Unknown on device cost | every number above for the app is from the web build | Measure 208 with the production bundle on an iPhone: cold start, first times on Home, frame drops while a stop screen refreshes; then decide on `inlineRequires` (Metro, JS only, but untested on device) | device check | tells us whether JS work is part of "lags" at all | small |
 
 Safe now, server only: items 1 (process and test key) and 10 (logging). Nothing else here should ship without the gates in each item.
