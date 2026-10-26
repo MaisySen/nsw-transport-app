@@ -93,6 +93,21 @@ The GTFS zips come from `/v1/gtfs/schedule/<feed>` (one call each, about 26) and
 bundle. A stop with no rows for today falls back to the Trip Planner, so a missed refresh degrades to today's speed,
 it does not show wrong boards. The daily refresh is the GitHub workflow `.github/workflows/timetable.yml`.
 
+## Status on 27 Oct, 1 AM (night match, g14)
+
+* **Still behind the flag.** `ENGINE_BOARDS` off, budget guard untouched. Gate: 95% match, budget guard clear and the owner's go.
+* **Night match** (`match_api.mjs` in the task folder: `/api/departures?engine=1` against `engine=0&refresh=1` for the same stop in the same seconds; services in the next 90 minutes, times within 60 s, platforms where given; boards warmed first, feeds 5 to 15 s old):
+  * 12:37 AM, 30 stops NSW wide (1 owner stop): 95 of 126, 75.4%. Train 14 of 16, bus 59 of 88, light rail 18 of 18, metro 4 of 4. 20 of the 31 misses were buses on timetable times: fixed (33fb001, below).
+  * 12:49 AM, a fresh 25 stops (no owner stop), after the fix: 62 of 74, 83.8%. Train 10 of 18, bus 32 of 36, light rail 16 of 16, metro 4 of 4.
+  * 12:54 AM, 6 stops recheck: 47 of 51, 92.2%; 47 engine rows inside the planner's span and none of them missing from the planner.
+* **Fixed tonight:** buses after midnight. The timetable keeps a run that starts after midnight on the day before (past 24:00); the Sydney buses feed gives the calendar date it starts on, so every bus update after midnight was dropped as another day's. The next day's date now counts when the row is on that date too (`engSameRun`).
+* **Left:**
+  * Trains the timetable does not have (every train miss after the fix: 8 at 12:49 AM, 4 at 12:54 AM). Their trip ids are in the Sydney Trains feed as scheduled trips but not in the engine's load from 26 Oct, 11:50 AM; budget mode loads every second day, so trackwork changes published later are missing until the next load. Options: load every night (about 1.3 million rows a load, about 39 million a month of the 50 million included), or list live trips the timetable does not know (train feed) as added services (a timetable lookup per new trip id in the core; measure on the local fake NSW first).
+  * Temporary stands with no name in the timetable (`Stand X1` to `X4` for replacement buses: 8 misses at 12:37 AM, 3 at 12:49 AM): the engine shows no stand where the planner names one.
+  * Ferries: no ferry feed copy when a ferry stop is first asked, so those boards go to the Trip Planner (not counted; no ferries were due).
+* **Calls:** at most 129 Trip Planner calls for all of it (the cap was 150), plus about 700 feed calls by the engine and 3 feed reads to diagnose. No load test.
+* Tests: `node --test test/*.test.mjs` in `backend/` needs `TZ=Australia/Sydney` (14 engine tests fail on a UTC machine, before and after this change).
+
 ## Status on 26 Oct, 12:45 PM
 
 * **Behind the flag.** `ENGINE_BOARDS` is off; phones get the Trip Planner path. `engine=1` on a request asks the engine.

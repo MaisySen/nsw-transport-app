@@ -2,6 +2,13 @@
 
 What changed in Transport, newest first. Times are Sydney time. Build numbers, update ids and links are in [docs/RELEASES.md](docs/RELEASES.md).
 
+## 27 Oct 2026
+
+### Board engine: buses after midnight live, night match check (g14; server only, 27 Oct, 12:45 AM, transport-api 48d649f1, roll back to d76e91a8)
+* After midnight the engine showed every bus on timetable times. The timetable keeps a run that starts after midnight on the day before (past 24:00); the Sydney buses feed gives the calendar date it starts on (12:35 AM: 281 of 294 bus trip updates), and the engine threw the update away as another day's. The next day's date now counts when the row is on that date too (`engSameRun` in `backend/src/engine.js`, test in `backend/test/engine.test.mjs`). Trains carry no date in their feed and were not affected.
+* Night match with the Trip Planner (same services, times within 60 s, platforms where given): 75.4% before the fix (95 of 126, 30 stops NSW wide), 83.8% after it on a fresh 25 stop sample (62 of 74), 92.2% on a 6 stop recheck (47 of 51, no engine rows the planner does not list). Below the 95% gate: `ENGINE_BOARDS` stays off. What is left is in [ENGINE.md](docs/ENGINE.md).
+* No app change, no D1 migration, no new setting, secret or flag.
+
 ## 26 Oct 2026
 
 ### Overnight over the air update: g19, g22, g23b, g31, g32 (both platforms, 26 Oct, 11:35 PM, group 27efc6bd, roll back to fa0017d8)
