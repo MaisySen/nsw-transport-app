@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Four rider wins (g31; app only, on main, not in an over the air update yet)
+* Where the bus is: Home trip cards and trip rows show "3 stops away · 4 min late" from the live position the server already sends on ride legs, only while the row is Live. Nothing on timetable rows.
+* Walking on the trip screen: Any, up to 5, 10, 15 or 20 min, and Prefer a bus; kept on the phone. Trips with a longer walk are left out on the phone (never all of them); the request carries `maxWalk` and `lessWalk`, which the server ignores today.
+* Get me home on Home: one tap plans from where you are to your saved Home (asks once to set Home). A trip from your position is not kept in recent trips and cannot be saved.
+* Exact stand pin above each ride leg of an open trip: the stand's own point on a small map, "Walk there in Maps", and an across the road hint for buses when the data shows it.
+* Files: new `app/src/lib/whereNowCore.ts`, `walkPrefCore.ts`, `goHomeCore.ts`, `standPinCore.ts`, `app/src/components/WhereNow.tsx`, `WalkChoice.tsx`, `GetMeHome.tsx`, `StandPin.tsx`, `app/test/riderwins.test.mjs` (13 tests), `app/test/e2e/riderwins.mjs`; changed `components/Home.tsx`, `app/trip.tsx`, `app/(tabs)/home/index.tsx`, `lib/api.ts`, `lib/trips.ts`, `lib/store.ts`, `lib/types.ts` (`vehicle` and `stopsAway` on `Leg`), `test/plan.test.mjs`.
+* No new native module, no server change, no OTA. Rollback: revert the g31 commits.
 ### Button and screen check; Platform view removed (g23, roadmap item 5; on main, not released, ships in the next over the air update)
 * Full results in [docs/BUTTON_CHECK.md](docs/BUTTON_CHECK.md): 54 button checks on the main path pass at 1:00 AM, 8:10 AM (busy hour, trains 2 minutes apart, a slow server), 12:48 PM and 5:30 PM, on the Android and iPhone looks, plus a sweep of 27 screens (screenshots at 390 x 844 and 430 x 932, light and dark) that taps every visible control.
 * The 5 to 7 time of day failures (the "Morning" buttons) had three causes. One was the app: in the busy hour the commute card's leave line (Leave in N min, Remind me) disappeared, because it only looked at the 6 services already loaded and all of them left before you could walk to the station. The card now asks once for services from the moment you could board (`reachFrom` in `src/lib/smart.ts`, no polling). The other two were the check itself: it compared chip colours with one fixed colour, and after 12pm it expected the morning direction.
