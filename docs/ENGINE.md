@@ -24,30 +24,53 @@ Code: `backend/src/engine.js` (appended to `worker.js` by `build.mjs`, same modu
    boards never mix two timetables. R2 is not available on the account, and KV would bill a write per board every
    10 s, so SQLite in the object it is.
 3. **Live data.** An alarm every 10 s fetches the trip update feeds that boards have needed in the last 5 minutes
-   (regional bus feeds every 30 s, vehicle positions every 30 s) and rebuilds every board read in the last 5 minutes.
+   and keeps one copy of each. Each feed aims for an age (the busiest 10 s, other Sydney feeds 20 s, regional bus
+   feeds 45 s, vehicle positions 30 s) and the most overdue goes first; at most 45 calls a minute (`ENGINE_PER_MIN`).
+   After a refused call (429 or 403) no feed calls for 30 s, doubling to 10 minutes while refusals go on.
    A Durable Object alarm is the only Workers timer that fires every 10 s (cron triggers are once a minute), and one
    object means one copy of each feed for all of Australia, so calls stay flat. The alarm stops after 15 minutes with
    no reads and starts again on the next read.
-4. **Joining.** For each timetabled departure in the next 90 minutes (and up to 2 hours back, for late services) the
-   trip's update gives the live time: the update at the stop (a live time first, then the delay), else the last
+4. **Shards (since 26 Oct, g14).** Boards are built by 16 shard objects (`BoardShard`, binding `SHARDS`, stop id
+   hash, `ENGINE_SHARDS`), not by the core. A shard reads a stop's timetable window from the core (`/window`, kept 20
+   minutes), the live trips of its boards (`/live`, trimmed to those trips), and every 5 s rebuilds a board whose live
+   data changed (at least every 15 s), writing it to `caches.default` for 15 s. Design and reasons in SCALING.md.
+5. **Joining.** For each timetabled departure in the next 90 minutes (and up to 2 hours back, for late services) the
+   trip's update gives the live time: the update at the stop (the delay first, added to the planned time; the
+   update's own time only when it has no delay), else the last
    update before the stop carries on down the line (the GTFS realtime rule). A cancelled trip, a skipped stop, a
    platform change (the update names another platform of the station), a replacement timetable that no longer calls
    at the stop, and services added on the day (not in the timetable) are all handled. An update for another service
-   day is ignored.
-5. **Platform names.** Where the Trip Planner's platform names differ from the timetable's (bus stands such as
-   "Stand X1", some light rail platforms), the engine uses the planner's, learnt from the planner boards the worker
-   still asks for (`/learn`).
-6. **Serving.** `/api/departures` asks the engine when `ENGINE_BOARDS` is `on` (or `engine=1` on the request). Boards
-   are shared through Cloudflare's cache for 4 s per location and 2 s in each worker copy, so 10,000 phones at one
-   stop make one request to the engine every few seconds per location. A stop with no timetable falls back to the
-   Trip Planner. `dataAt` is the time the feed copy was fetched, so the app's "Updated" line stays honest.
-7. **Budget.** The engine counts its feed calls per day. If the day's count runs ahead of `ENGINE_BUDGET` (default
-   30,000), intervals stretch, up to 6 times.
+   day is ignored. Planned times are whole minutes, as the Trip Planner gives them (02:16:35 is 02:16), and the live
+   time is that minute plus the delay. Light rail and metro clock times in the feeds run 30 to 75 s after
+   planned plus delay, which is why the delay comes first (26 Oct: on 319 services live in both, the delay agreed with
+   the planner within 60 s on 298, the update's time on 237). Non revenue runs ("Empty Train", "Not In Service")
+   are left off.
+6. **Platform names and missing services.** Where the Trip Planner's platform names differ from the timetable's (bus
+   stands such as "Stand X1", some light rail platforms), the engine uses the planner's, learnt from planner boards
+   (`/learn`). A shard asks the worker for one planner board of a stop on its first read (once in 6 hours when rows
+   have no platform name, else once a day, at most 2 stops a minute per shard). The same board's lines tell the core
+   when the planner lists a line our bundles do not have at that stop (the private Watsons Bay ferry, coach 855 and
+   SH100 at Goulburn, 700-1): the stop is marked for 6 hours (`engine.gap`) and its boards come from the Trip Planner.
+7. **Serving.** `/api/departures` asks the engine when `ENGINE_BOARDS` is `on` (or `engine=1` on the request). Boards
+   are read from Cloudflare's cache (written by the shards, 15 s) and a 2 s copy in each worker instance; a shard is
+   asked only on a miss. A stop with no timetable falls back to the Trip Planner, and so does a board over 60 s old
+   (built or feed copy) unless the planner refuses, fails or is busy, when the engine's board is served as it is.
+   `dataAt` is the time the feed copy was fetched, so the app's "Updated" line stays honest. Boards carry a weak ETag
+   (304 on If-None-Match).
+   **Outage fallback** (root's decision, 26 Oct 1:58 PM): whatever `ENGINE_BOARDS` says, when the Trip Planner fails
+   and no copy is kept or saved, `/api/departures` answers with the engine's board as timetable times (rows realtime
+   false, `source: "timetable"`, a first alert "Live times unavailable, showing timetable times"), never stored as a
+   copy. Not the switch on.
+8. **Budget.** The engine counts its feed calls per day. If the day's count runs ahead of `ENGINE_BUDGET` (default
+   40,000), intervals stretch, up to 6 times.
 
 ## Endpoints
 
 * `GET /api/departures?stop=ID[&mode=][&engine=1]` same answer shape as before, plus `engine.builtAt`.
-* `GET /api/engine/status` timetable version, days loaded, feed ages, calls today, hot boards.
+* `GET /api/engine/status` timetable version, days loaded, feed ages, calls today, hot boards, refusals and pause,
+  stops marked with missing lines (`gaps`), and every shard's starts (`boots`, `bootAt`), boards, cache writes.
+* `POST /api/engine/load/restart` and `/api/engine/load/restart-shards` (engine load key) restart the objects so they
+  run newly deployed code.
 * `GET /api/timetable?stops=ID,ID[&days=2]` the on phone timetable pack (up to 40 stops, today and the next days).
 * `POST /api/engine/load/{begin,stops,days,trips,commit}` loading, `x-admin-key` with `ENGINE_LOAD_KEY` or the
   admin key.

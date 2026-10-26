@@ -175,7 +175,9 @@ Many phones (server, 26 Oct, 10:44 AM): phones at the same stop share one copy a
 
 ## Board engine (server, behind a flag, 26 Oct)
 
-Every stop board in NSW built ahead of time on the server from the network feeds every 10 s, so a board is a cache hit and Transport for NSW calls stay flat whatever the number of phones. Off for phones until it matches the Trip Planner on 95% of services (91 to 93% on 26 Oct). docs/ENGINE.md, docs/SCALING.md.
+Every stop board in NSW built ahead of time on the server from the network feeds, so a board is a cache hit and Transport for NSW calls stay flat whatever the number of phones. Since 26 Oct (g14) boards are built by 16 shard objects that write them to Cloudflare's cache, and the worker reads the cache first. Off for phones until it matches the Trip Planner on 95% of services on a fresh sample, with no object restarts and 0 errors at 1,000 phones. docs/ENGINE.md, docs/SCALING.md.
+
+**Timetable times when live data is down** (server, 26 Oct, 1:58 PM): when the Trip Planner refuses or fails and no copy of a stop's board is kept, the stop board shows the engine's timetable times instead of an error, every row marked Scheduled, with the alert "Live times unavailable, showing timetable times" on top. The next live answer replaces it. No app update needed.
 
 ## Not in the app
 

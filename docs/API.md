@@ -533,3 +533,16 @@ the moment it opens, with no signal too, and lay the live board on top when it a
   404 when the timetable has no such stop (some private ferries and coaches): the app keeps no pack and uses the live
   board as before. 503 when the timetable is not loaded. 400 without a valid `stop`.
 
+## Board engine answers on `/api/departures` (26 Oct 2026, g14)
+
+* `engine=1` asks the board engine (docs/ENGINE.md); `ENGINE_BOARDS=on` would do it for every request (off).
+  An engine board carries `engine: { builtAt, feeds, shard }`, `live: { feedAt, liveCount, total }` and a weak
+  `ETag`; sending it back in `If-None-Match` answers 304 with no body.
+* A stop where the Trip Planner lists lines our timetable lacks (`engine.gap` inside the engine) is answered by the
+  Trip Planner.
+* **Outage fallback:** when the Trip Planner refuses or fails and no copy is kept or saved, the answer is the engine's
+  board as timetable times: `source: "timetable"`, `fallback: "planner-unavailable"`, every row `realtime: false`,
+  `estimated: null`, `status.key: "scheduled"` (a row may stay live only from a feed copy under 60 s old, marked
+  `liveSource: "feed"`), and the first alert is "Live times unavailable, showing timetable times". `cache-control:
+  no-store`; never kept as a copy, so the next planner answer replaces it. Not for `time`/`date` boards or
+  `format=text` (which still says the live data didn't answer).
