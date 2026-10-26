@@ -53,9 +53,19 @@ mode at stops with several) was looked for in the planner's board at the same mi
   When the live board lands the row takes the planner's name.
 * Coffs Harbour had no departure in the window.
 
-## Measured (web build 390x844 on this box, before and after)
+## Measured (web build 390x844, 26 Oct 12:31 to 12:38 PM, before: main 639608f, the app of the 11:58 AM update; after: this change)
 
-See CHANGELOG.md for the numbers of the release.
+Strathfield starred, its pack kept, no live copy kept, a cold start, 5 runs each. The time is from navigation to the
+first departure row on screen, so it includes the web build loading its JavaScript (about 0.85 s on this box).
+
+| | Before | After |
+| --- | --- | --- |
+| Stop screen, signal | 1.22 s (1.18 to 1.72, 3 of 5; 2 never loaded while a load test ran from the same box) | 0.88 s (0.87 to 0.90, 5 of 5) |
+| Stop screen, no signal | "Can't load this stop", 0 of 5 | 0.90 s, timetable rows, 5 of 5 |
+| Home starred card, signal | 1.61 s (0.98 to 1.63, 4 of 5) | 0.90 s, 5 of 5 |
+| Home starred card, no signal | never, 0 of 5 | 0.91 s, 5 of 5 |
+
+Screens (light and dark, 390x844 and 430x932, with and without signal): `stop-strathfield-*.png` in the task's files.
 
 ## Not done here
 

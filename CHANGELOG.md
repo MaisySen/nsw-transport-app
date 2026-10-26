@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Timetable on the phone (server 26 Oct, 12:20 PM, transport-api 2ef1ad9f; over the air 26 Oct, OTA_TIME, group OTA_GROUP, roll back to ROLLBACK_GROUP)
+* Stops you use (starred, on saved trips, home and work, opened lately; 24 at most) keep their timetable for today and tomorrow on the phone: `/api/pack`, built by the board engine from the timetable it holds, 0.7 KB (Katoomba) to 14 KB (Central) gzipped. Fetched once a day, at start or when the app comes back to the front, one stop at a time. No timers added.
+* The stop screen, Home's starred stop cards and the full screen board show those departures in the first frame, with no signal too, marked "Timetable times, getting live times" ("Live times unavailable, showing timetable times" when the live board could not be had); each row says Timetable in grey. The live board replaces them when it lands. A live copy from the last 10 minutes still goes first.
+* Web build 390x844 on the US box, Strathfield starred, cold start, 5 runs each: first departures on screen 0.88 s median (0.87 to 0.90, all 5) after, against 1.22 s (1.18 to 1.72, 3 of 5; 2 never loaded while another worker's load test ran from the same box) before. No signal: 0.90 s with timetable rows after, against "Can't load this stop" in all 5 before. Home's starred card: 0.90 s after with or without signal; before 1.6 s with signal and never without. The 0.9 s is the web build loading its JavaScript; the rows come in the first frame after it.
+* Checked against the Trip Planner at 20 stops NSW wide (12:23 PM): 370 of 370 timetable rows found at the same minute and mode; 362 with the same line name (8 NSW TrainLink trains the timetable names by route, the planner by train number).
+* Trains run with no passengers ("Empty Train", 133 a day at Strathfield) are left out on the phone and in the pack.
+* Not done: refresh on Wi-Fi only (no network type API in builds 201 to 208), widgets and the Watch reading packs. Both under Build 209 in docs/IOS27.md.
 ### Board engine, still behind its flag (server 26 Oct, 12:25 to 12:41 PM, transport-api 49480881, 9e9220dc, fefbc66f; no app update)
 Bidur at 11:24 AM: "How can we make it faster like really crazy faster. Everywhere."
 * The engine builds every NSW stop board from the network feeds every 10 s (docs/ENGINE.md). It is not switched on for phones: it matches the Trip Planner on 91 to 93% of services (30 stops NSW wide), under the 95% gate.
