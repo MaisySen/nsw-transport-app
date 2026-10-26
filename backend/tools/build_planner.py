@@ -19,6 +19,8 @@ leaves a service where the timetable says it cannot.
 """
 import sys, os, io, csv, json, zipfile, datetime, collections, struct, math, array
 from zoneinfo import ZoneInfo
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from limited_stops import limited_patterns, is_limited, name_says_limited
 
 SYD = ZoneInfo("Australia/Sydney")
 WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -105,6 +107,7 @@ def main():
         rmap[tag + x["route_id"]] = route_idx[key]
     heads, head_idx = [], {}
     trips = {}   # trip id -> (route idx, head idx, [day offsets])
+    named_lim = set()   # trips whose own timetable name says Limited stops or Express (limited_stops.py)
     for tag, x in src.rows("trips.txt"):
         sv = tag + x["service_id"]
         offs = [k for k in days if sv in run[k]]
@@ -113,6 +116,8 @@ def main():
         if h.strip().lower() in NOT_IN_SERVICE: continue
         if h not in head_idx: head_idx[h] = len(heads); heads.append(h)
         trips[tag + x["trip_id"]] = (rmap.get(tag + x["route_id"], 0), head_idx[h], offs)
+        if name_says_limited(x.get("route_direction", ""), routes[trips[tag + x["trip_id"]][0]][3] if routes else ""):
+            named_lim.add(tag + x["trip_id"])
     print("trips active", len(trips), flush=True)
     st = collections.defaultdict(list)
     for tag, x in src.rows("stop_times.txt"):
@@ -153,9 +158,36 @@ def main():
     sid_list += parents
     sidx = {s: i for i, s in enumerate(sid_list)}
     S = len(sid_list)
+    # Limited Stops (limited_stops.py): patterns that run past stations their own line normally serves.
+    station = lambda s: (stops_all.get(s) or ("", ""))[1] or s
+    lim_in, lim_keys = [], list(pats.keys())
+    for (ri, sids, fls) in lim_keys:
+        seq = []
+        for s_, fl in zip(sids, fls):
+            if fl == 3: continue   # nobody boards or gets off: a passing point, not a stop
+            st_ = station(s_)
+            if not seq or seq[-1] != st_: seq.append(st_)
+        r = routes[ri]
+        lim_in.append(((r[0], r[1], r[4]), r[1], seq, len({t[1] for t in pats[(ri, sids, fls)]})))
+    skips = limited_patterns(lim_in)
+    lim_set = {lim_keys[i] for i, (n, g, sv) in skips.items() if is_limited(lim_in[i][1], n, g, sv)}
+    rep = os.environ.get("LIMITED_REPORT")
+    if rep:
+        byline = collections.defaultdict(lambda: {"patterns": 0, "limited": 0, "trips": 0, "limitedTrips": 0, "examples": []})
+        for i, k in enumerate(lim_keys):
+            lk, cls, seq, n = lim_in[i]
+            b = byline["%s|%s|%s" % lk]
+            b["patterns"] += 1; b["trips"] += n
+            if k in lim_set:
+                b["limited"] += 1; b["limitedTrips"] += n
+                if len(b["examples"]) < 3:
+                    b["examples"].append({"stops": [stops_all.get(x, ("",))[0] for x in seq], "skipped": skips[i][0], "gaps": skips[i][1], "trips": n})
+        with open(rep, "w") as f: json.dump(byline, f, indent=1, ensure_ascii=False)
+    print("limited patterns", len(lim_set), "of", len(lim_keys), "named trips", len(named_lim), flush=True)
     # Split patterns so trips never overtake.
-    P_stops, P_trips = [], []
+    P_stops, P_trips, P_lim = [], [], []
     for (ri, sids, _), tl in pats.items():
+        pat_lim = (ri, sids, _) in lim_set
         tl.sort(key=lambda t: (t[0], t[3][-1][0]))
         groups = []
         for t in tl:
@@ -168,16 +200,19 @@ def main():
         for g in groups:
             P_stops.append([sidx[s] for s in sids])
             P_trips.append((ri, g))
+            P_lim.append(pat_lim)
     P = len(P_stops)
     patStopOff = array.array("i", [0]); patStops = array.array("i")
     patTripOff = array.array("i", [0]); patEvOff = array.array("i", [0])
     tripRoute = array.array("i"); tripHead = array.array("i"); tripPat = array.array("i"); trip_ids = []
+    tripLim = array.array("B")
     arr = array.array("i"); dep = array.array("i"); flags = array.array("B")
     for p in range(P):
         ri, g = P_trips[p]
         patStops.extend(P_stops[p]); patStopOff.append(len(patStops))
         for (_, tid, hi, ts) in g:
             trip_ids.append(tid); tripRoute.append(ri); tripHead.append(hi); tripPat.append(p)
+            tripLim.append(1 if (P_lim[p] or tid in named_lim) else 0)
             for (a, d, fl) in ts: arr.append(a); dep.append(d); flags.append(fl)
         patTripOff.append(len(trip_ids)); patEvOff.append(len(arr))
     # Stop -> patterns serving it (with the position in the pattern).
@@ -231,9 +266,10 @@ def main():
               ("patEvOff", "i32", patEvOff), ("tripRoute", "i32", tripRoute), ("tripHead", "i32", tripHead),
               ("tripPat", "i32", tripPat), ("arr", "i32", arr), ("dep", "i32", dep), ("flags", "u8", flags),
               ("stopPatOff", "i32", stopPatOff), ("stopPat", "i32", stopPat), ("stopPatIdx", "i32", stopPatIdx),
-              ("xferOff", "i32", xferOff), ("xferTo", "i32", xferTo), ("xferSec", "i32", xferSec)]
+              ("xferOff", "i32", xferOff), ("xferTo", "i32", xferTo), ("xferSec", "i32", xferSec),
+              ("tripLim", "u8", tripLim)]
     head = {"v": 1, "day": dkey[0], "dayStart": day_start(day), "builtAt": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
-            "counts": {"stops": S, "patterns": P, "trips": len(trip_ids), "events": len(arr), "footpaths": len(xferTo)},
+            "counts": {"stops": S, "patterns": P, "trips": len(trip_ids), "events": len(arr), "footpaths": len(xferTo), "limited": sum(tripLim)},
             "walk": {"mps": WALK_MPS, "detour": DETOUR, "findS": FIND_S, "stationMinS": STATION_MIN_S, "maxM": WALK_MAX_M},
             "routes": routes, "heads": heads, "arrays": [],
             # Long lists as one string each, one entry a line (fewer objects for the reader to hold).

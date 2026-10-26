@@ -341,6 +341,7 @@ function rpLegs(pk, j) {
       towards: pk.h.heads[pk.tripHead[l.trip]] || "", destId: null, tripId: pk.tripId.at(l.trip),
       // The live feed to read when it is not the mode's own (worker.js feedHint does the same from the planner's names).
       ...(/manly fast ferr/i.test(r[4] || "") ? { feed: "ferry_mff" } : /nsw trainlink/i.test(r[4] || "") ? { feed: "nswtrains" } : {}),
+      ...(pk.tripLim && pk.tripLim[l.trip] ? { limited: true } : {}),
       stopId: pk.stopId.at(l.from), toStopId: pk.stopId.at(l.to),
       fromParent: pk.parent[l.from] >= 0 ? pk.stopId.at(pk.parent[l.from]) : null, toParent: pk.parent[l.to] >= 0 ? pk.stopId.at(pk.parent[l.to]) : null,
       from: rpStopPlace(pk, l.from), fromPlatform: plat(l.from), to: rpStopPlace(pk, l.to), toPlatform: plat(l.to),
@@ -351,6 +352,15 @@ function rpLegs(pk, j) {
     clock = l.arr;
   }
   return legs;
+}
+// Limited Stops (tools/limited_stops.py): the trip ids the pack marks as running past stops their line normally
+// serves. A pack built before 27 Oct has no tripLim and gives none.
+function rpLimitedIds(pk) {
+  if (pk.limitedIds) return pk.limitedIds;
+  const out = [];
+  if (pk.tripLim) for (let i = 0; i < pk.T; i++) if (pk.tripLim[i]) out.push(pk.tripId.at(i));
+  pk.limitedIds = out;
+  return out;
 }
 // Journeys in the trip answer's shape ({ leave, board, arrive, durationMin, changes, legs, ... }).
 function rpAnswer(pk, plan) {
@@ -464,6 +474,11 @@ class TripPlanner {
         this.stats.plans++; this.stats.ms += ms;
         return Response.json({ day: pk.day, ver: pk.ver, searches: plan.searches, ms, error: plan.error || null, journeys: rpAnswer(pk, plan) });
       }
+      if (u.pathname === "/limited") {
+        const pk = await this.open(name);
+        if (!pk) return Response.json({ error: "no pack" }, { status: 503 });
+        return Response.json({ day: pk.day, ver: pk.ver, marked: !!pk.tripLim, ids: rpLimitedIds(pk) });
+      }
       if (u.pathname === "/status") {
         const pk = q.open === "1" ? await this.open(name) : this.pk;
         return Response.json({ name, ver: Number(this.kv("cur") || 0), loaded: !!pk, day: pk ? pk.day : null, builtAt: pk ? pk.h.builtAt : null, counts: pk ? pk.h.counts : null, stats: this.stats });
@@ -538,6 +553,52 @@ async function ownTripLegs(env, fromId, toId, o = {}) {
   if (!d || !Array.isArray(d.journeys) || !d.journeys.length) return null;
   if (typeof budget === "object" && budget) budget.ownTrips = (budget.ownTrips || 0) + 1;
   return d.journeys.map((j) => j.legs);
+}
+// ---- Limited Stops on boards and trips (docs/API.md, "limited") ----
+// The pack marks each trip that runs past stops its own line normally serves (tools/limited_stops.py). Boards and
+// trips carry the trip id the realtime feeds use, which is the timetable's trip id, so a row is marked by looking its
+// trip id up in the day's list. The list comes from the planner object once per colo and day (Cloudflare's cache,
+// then this isolate's memory); a request never waits for the object: on a miss the list is fetched in the background
+// and the next answer has it. LIMITED_STOPS = "off" turns it off. A Transport for NSW description that says
+// "Limited stops" marks the row too.
+const LIM = { day: null, at: 0, set: null, loading: null };
+const LIM_FRESH_MS = 3 * 3600000;
+function limitedCacheKey(day) { return new Request("https://limited.transportsydney.app/v1/" + day); }
+async function limitedSet(env, exec) {
+  if (!env || !env.PLANNER || String(env.LIMITED_STOPS || "").toLowerCase() === "off") return null;
+  const today = sydneyParts().date;
+  if (LIM.set && LIM.day === today && Date.now() - LIM.at < LIM_FRESH_MS) return LIM.set;
+  const cache = typeof caches !== "undefined" && caches.default ? caches.default : null;
+  const hit = cache ? await cache.match(limitedCacheKey(today)).catch(() => null) : null;
+  const d = hit ? await hit.json().catch(() => null) : null;
+  if (d && Array.isArray(d.ids)) { LIM.set = new Set(d.ids); LIM.day = today; LIM.at = Date.now(); return LIM.set; }
+  if (!LIM.loading && exec && exec.waitUntil) {
+    LIM.loading = (async () => {
+      const stub = rpStub(env, RP_PRIMARY);
+      const r = stub ? await Promise.race([stub.fetch("https://planner/limited?name=" + RP_PRIMARY), new Promise((res) => setTimeout(() => res(null), 8000))]).catch(() => null) : null;
+      const got = r && r.status === 200 ? await r.json().catch(() => null) : null;
+      if (!got || !Array.isArray(got.ids)) return;
+      LIM.set = new Set(got.ids); LIM.day = today; LIM.at = Date.now();
+      // A pack for another day (the new one is not loaded yet) is kept 10 minutes, today's pack 6 hours.
+      const age = got.day === today ? 21600 : 600;
+      if (cache) await cache.put(limitedCacheKey(today), new Response(JSON.stringify({ day: got.day, ids: got.ids }), { headers: { "content-type": "application/json", "cache-control": "public, max-age=" + age } })).catch(() => null);
+    })().finally(() => { LIM.loading = null; });
+    exec.waitUntil(LIM.loading);
+  }
+  return LIM.day === today ? LIM.set : null;
+}
+const LIM_WORDS = /\blimited stops\b/i;
+/** Sets limited: true on board rows (d.items) and trip legs (d.journeys) the timetable marks; returns how many. */
+async function markLimited(env, d, exec) {
+  if (!d) return 0;
+  const rows = d.kind === "departures" ? d.items || [] : (d.journeys || []).flatMap((j) => (j.legs || []).filter((l) => l.kind === "transit"));
+  if (!rows.length) return 0;
+  const set = await limitedSet(env, exec).catch(() => null);
+  let n = 0;
+  for (const r of rows) {
+    if ((r.tripId && set && set.has(r.tripId)) || LIM_WORDS.test(r.description || "")) { r.limited = true; n++; }
+  }
+  return n;
 }
 // /api/raptor: loading (tools/load_planner.mjs) and checks, engine load key or admin key.
 //   POST /api/raptor/load/{begin,part,commit}?ver=N[&part=&i=]   GET /api/raptor/status   POST /api/raptor/replicas

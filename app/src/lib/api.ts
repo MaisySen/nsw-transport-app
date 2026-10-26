@@ -176,6 +176,8 @@ export const api = {
   carpark: (id: string) => req<{ carpark: CarPark; source?: string }>(`/api/parking?${qs({ id })}`, undefined, 30000),
   topup: (lat?: number, lon?: number, limit = 40) => req<{ items: TopupItem[]; source?: string }>(`/api/topup?${qs({ lat: lat != null ? lat.toFixed(5) : '', lon: lon != null ? lon.toFixed(5) : '', limit: lat != null ? limit : '' })}`),
   parkingWatch: async (facility: string) => req<{ ok: boolean; watch?: { name: string }; now?: { status: string } }>(`/api/parking/watch`, { method: 'POST', body: JSON.stringify({ device: await getDevice(), profile: PROFILE, facility }) }),
+  /** Saved trip alerts (backend/src/tripalerts.js): this phone's trips; off deletes them on the server. */
+  tripAlerts: async (on: boolean, trips: import('./tripAlertsCore').AlertTrip[] = []) => req<{ ok: boolean; on: boolean; enabled?: boolean; trips?: number; now?: { trip: string; title: string; url?: string | null; planned?: boolean }[] }>(`/api/trip-alerts`, { method: 'POST', body: JSON.stringify(on ? { device: await getDevice(), profile: PROFILE, on: true, trips } : { device: await getDevice(), on: false }) }),
   liftAlerts: async (on: boolean, stations: string[] = []) => req<{ ok: boolean; now?: { title: string; url?: string }[] }>(`/api/lifts/alerts`, { method: 'POST', body: JSON.stringify(on ? { device: await getDevice(), profile: PROFILE, on: true, stations } : { device: await getDevice(), on: false }) }),
   // Morning check: one alert before the usual trip, only when something is wrong. Keyed by the same device id as push.
   morningList: async () => req<MorningListResp>(`/api/morning-check?${qs({ device: await getDevice() })}`),

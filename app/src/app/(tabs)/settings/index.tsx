@@ -26,7 +26,8 @@ import type { Commute } from '@/lib/types';
 import { COMPANY } from '@/lib/company';
 import { PRIVACY_URL, SUPPORT_URL } from '@/lib/server';
 import { clearAskChat, confirmClearChat, useAskChat } from '@/lib/askChat';
-import { useFlag } from '@/lib/config';
+import { useConfig, useFlag } from '@/lib/config';
+import { setTripAlerts } from '@/lib/tripAlerts';
 import { checkSubtitle, checkTitle } from '@/lib/morning';
 import { clearLastHomeLocal, localLastSupported } from '@/lib/lastHome';
 import { setTrackworkHeadsUp } from '@/lib/trackwork';
@@ -176,6 +177,18 @@ export default function Settings() {
     const ok = await setTrackworkHeadsUp(v);
     if (!ok) Alert.alert('Notifications are off', 'Open Settings, find Transport, and allow notifications.', [{ text: 'Not now', style: 'cancel' }, { text: 'Open Settings', onPress: () => Linking.openSettings() }]);
   };
+  // Alerts for my trips (lib/tripAlerts.ts): shown only when the server says it matches them (flags.tripAlerts true).
+  const taOn = useConfig().flags.tripAlerts === true;
+  const [taBusy, setTaBusy] = useState(false);
+  const setTa = async (v: boolean) => {
+    haptic.select();
+    setTaBusy(true);
+    const r = await setTripAlerts(v).finally(() => setTaBusy(false));
+    if (!r.ok && r.reason === 'denied') Alert.alert('Notifications are off', 'Open Settings, find Transport, and allow notifications.', [{ text: 'Not now', style: 'cancel' }, { text: 'Open Settings', onPress: () => Linking.openSettings() }]);
+    else if (!r.ok) Alert.alert('Not turned on', 'The server did not answer. Try again in a minute.');
+    else if (v && r.noTrips) Alert.alert('Alerts for my trips is on', 'Add a trip on Home and its alerts start from then.');
+    else if (v && r.now.length) Alert.alert('Already on your trips', r.now.slice(0, 3).map((x) => `${x.trip}: ${x.title}`).join('\n\n'));
+  };
   // Calendar leave by: hidden on builds that can't read the calendar (iPhone before 208, Android before the
   // calendar module), and off until switched on here (docs/CALENDAR-LEAVE-BY.md).
   const calFlag = useFlag('calendarLeaveBy');
@@ -257,6 +270,13 @@ export default function Settings() {
               <Sep inset={57} />
               <Row icon={I.warn} iconBg={c.orange} title="Weekend trackwork heads up" subtitle="Thursday 6pm, only when work touches your trips" chevron={false}
                 right={sw(!!st.twHeadsUp, setTw, 'Weekend trackwork heads up')} />
+            </>
+          ) : null}
+          {taOn ? (
+            <>
+              <Sep inset={57} />
+              <Row icon={I.warn} iconBg={c.red} title="Alerts for my trips" subtitle="Only delays and work on the trips on Home, near when you travel" chevron={false}
+                right={taBusy ? <ActivityIndicator size="small" color={c.tint} /> : sw(!!st.tripAlerts, setTa, 'Alerts for my trips')} />
             </>
           ) : null}
           {calOn ? (

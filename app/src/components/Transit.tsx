@@ -4,6 +4,7 @@ import { packStampText } from '@/lib/timetablePackCore';
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Why } from '@/lib/whyLateCore';
 import { WhyLate, withWhyAction } from './WhyLate';
+import { LimitedTag } from './LimitedTag';
 import { SwipeRow, swipeA11y, type SwipeAct } from './Swipe';
 import { HoldMenu } from './HoldMenu';
 import { departureMenu } from '@/lib/menuCore';
@@ -221,6 +222,7 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3, flexWrap: 'wrap', gap: 6 }}>
           <StatusLine realtime={d.realtime} delayMin={d.delayMin} cancelled={d.cancelled} state={live} compact timetableText={isBusMode(d.mode) ? 'Timetable only' : undefined} />
           {extra.length ? <T kind="foot" tone="text2" numberOfLines={2}>{extra.join(' \u00b7 ')}</T> : null}
+          <LimitedTag x={d} />
           <OccupancyChip o={d.occupancy} />
           <QuietChip v={d.vehicle} />
         </View>

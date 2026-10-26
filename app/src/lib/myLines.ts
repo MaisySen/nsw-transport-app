@@ -16,6 +16,8 @@ export function reportTripLines(key: string, v: TripLines | null) {
   subs.forEach((f) => f());
 }
 export { tripLinesOf };
+/** The trips on Home right now (saved trip alerts read them when the switch is turned on). */
+export const tripLinesNow = (): TripLines[] => snap;
 
 export function useTripLines(): TripLines[] {
   return useSyncExternalStore((l) => { subs.add(l); return () => { subs.delete(l); }; }, () => snap, () => snap);

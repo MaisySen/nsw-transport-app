@@ -3188,7 +3188,7 @@ const RATE_RULES = [
   [/^\/api\/share$/, "share", 20, 600000, "POST"],
   [/^\/api\/share\/update$/, "shareup", 240, 600000],
   [/^\/api\/share$/, "read", 600, 60000],
-  [/^\/api\/(lifts\/alerts|parking\/watch)$/, "write", 60, 600000, "POST"],
+  [/^\/api\/(lifts\/alerts|parking\/watch|trip-alerts)$/, "write", 60, 600000, "POST"],
   [/^\/api\/morning-check$/, "write", 60, 600000, "POST"],
   [/^\/api\/morning-check$/, "write", 60, 600000, "DELETE"],
   [/^\/api\/morning-check\/preview$/, "mpreview", 20, 600000],
@@ -4470,7 +4470,9 @@ async function rescuePlan(env, spec, i, live, now) {
 const APP_CONFIG_DEFAULTS = {
   version: 1,
   flags: { ask: true, parkRide: true, opalMachines: true, liveTrip: true, shareTrip: true, weekdayReminder: true, nearby: true,
-    morningCheck: true, platformAlerts: true, occupancy: true, liftAwareRouting: true, reliabilityPick: true, lastWayHome: true, weekendTrackwork: true, lineStatus: true, usualLate: true },
+    morningCheck: true, platformAlerts: true, occupancy: true, liftAwareRouting: true, reliabilityPick: true, lastWayHome: true, weekendTrackwork: true, lineStatus: true, usualLate: true,
+    // Saved trip alerts (src/tripalerts.js): the More switch shows only when the server says it has them.
+    tripAlerts: true },
   kill: {},
   copy: {},
   tabs: ["home", "plan", "watching", "more"],
@@ -5712,6 +5714,10 @@ async function runTick(env, opts = {}) {
   if (!opts.device) out.late = await lateTick(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   // Service alerts digest for the trackwork card and line status, every ALERT_EVERY_MIN minutes
   if (!opts.device && (sn.tod % ALERT_EVERY_MIN === 3 || opts.force)) out.alerts = await refreshAlertDigest(env, now).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+  // Saved trip alerts (src/tripalerts.js): the minute after the digest, every phone's trips against it; no NSW call.
+  if (!opts.device && typeof processTripAlerts === "function" && sn.tod % ALERT_EVERY_MIN === 4 && (await serverOn(env, "tripAlerts"))) {
+    out.tripAlerts = await processTripAlerts(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+  }
   // Budget guard (docs/COSTS.md): this billing cycle's Cloudflare usage once an hour; past 80% of an included amount
   // at month end, the costly switches go off and the owner gets an email.
   if (!opts.device && sn.tod % 60 === 17) {
@@ -5760,6 +5766,8 @@ function q0(p, k) { return !!p.get(k); }
 // Adds predictions to boards and trips, and remembers trip searches for commute memory.
 async function afterAnswer(env, d, o) {
   if (!d) return;
+  // Limited Stops from our timetable (raptor.js markLimited): a set lookup, never a wait on the planner object.
+  if (typeof markLimited === "function") await markLimited(env, d, o.exec).catch(() => 0);
   try {
     if (d.kind === "departures" && d.items) await predictions(env, d.items);
     if (d.kind === "trip" && d.journeys) {
@@ -7911,6 +7919,7 @@ async function handleRequest(request, env, exec) {
               await del("shares", "DELETE FROM shares WHERE device = ?1", dev);
               await del("morningCheckLog", "DELETE FROM morning_sent WHERE check_id IN (SELECT id FROM morning_checks WHERE device = ?1)", dev);
               await del("morningChecks", "DELETE FROM morning_checks WHERE device = ?1", dev);
+              await del("tripAlerts", "DELETE FROM meta WHERE k = ?1", "ta:" + dev);
               if (await lastHomeSchema(env).catch(() => false)) await del("lastHome", "DELETE FROM last_home WHERE device = ?1", dev);
               if (await facSchema(env).catch(() => false)) {
                 await del("alerts", "DELETE FROM lift_alerts WHERE device = ?1", dev);
@@ -7930,6 +7939,10 @@ async function handleRequest(request, env, exec) {
         case "/api/lifts":
         case "/api/lifts/alerts":
           return await facRoutes(request, env, url);
+        case "/api/trip-alerts":
+          // Saved trip alerts (src/tripalerts.js): this phone's trips, matched to service alerts by the minute tick.
+          if (typeof tripAlertsRoute !== "function") return json({ error: "not found" }, 404);
+          return await tripAlertsRoute(request, env, url);
         case "/api/predict": {
           const it = { line: p.get("line"), stopId: p.get("stop"), planned: p.get("planned") || new Date().toISOString() };
           await predictions(env, [it]);

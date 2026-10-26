@@ -32,6 +32,8 @@ type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; wa
   morning?: import('./types').MorningCheck[];
   /** More > Weekend trackwork heads up: one notification on Thursday 6pm when work this weekend touches a trip. */
   twHeadsUp?: boolean;
+  /** More > Alerts for my trips: the server pushes disruptions on the trips on Home, near when they are travelled. */
+  tripAlerts?: boolean;
   /** Trip screen mode chips per trip (tripKey to modes, empty means Any). Kept apart from myTrips, which widgets read. */
   tripModes?: Record<string, string[]>;
   /** More > Calendar leave by (off by default): leave times on Home for calendar events with a place. */
@@ -157,6 +159,7 @@ export const store = {
   /** The morning checks last read from the server (More > Check my trip). */
   morningList: () => state.morning || [],
   setTwHeadsUp(on: boolean) { state = { ...state, twHeadsUp: on }; save(); },
+  setTripAlerts(on: boolean) { state = { ...state, tripAlerts: on }; save(); },
   /** Calendar leave by on or off. Off also forgets the places found for event locations. */
   setCalLeaveBy(on: boolean) { state = { ...state, calLeaveBy: on, ...(on ? {} : { calPlaces: {} }) }; save(); },
   calPlaces: (): CalPlaceCache => state.calPlaces || {},

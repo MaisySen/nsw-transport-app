@@ -64,7 +64,9 @@ test("all scope also deletes saved trips, commutes, watches, alerts and this dev
   assert.equal(r.status, 200);
   const qs = runs.map((x) => x.q).join("\n");
   for (const t of ["searches", "dismissed", "saved", "saved_legs", "commutes", "watches", "notes", "push_subs", "expo_tokens", "shares"]) assert.match(qs, new RegExp("DELETE FROM " + t + " WHERE"), t);
-  for (const x of runs) assert.ok(x.args[0] === "wprofileabc123" || x.args[0] === "dDev1", x.q);
+  // Saved trip alerts (src/tripalerts.js) keep this device's trips in one meta row, "ta:<device>".
+  assert.match(qs, /DELETE FROM meta WHERE k = \?1/);
+  for (const x of runs) assert.ok(x.args[0] === "wprofileabc123" || x.args[0] === "dDev1" || x.args[0] === "ta:dDev1", x.q);
   assert.ok(!runs.some((x) => /WHERE 1|WHERE profile IS|without/.test(x.q)));
 });
 

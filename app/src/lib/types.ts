@@ -11,6 +11,8 @@ export type Departure = {
   /** Which non-Sydney realtime feed carries this service (regional, TrainLink, Manly Fast Ferry); passed back to /api/service. */
   feed?: string;
   planned: string; estimated?: string | null; realtime: boolean; delayMin?: number | null; cancelled?: boolean;
+  /** Runs past stops its line normally serves, from the timetable (server, lib/limitedCore.ts). */
+  limited?: boolean;
   wheelchair?: boolean; occupancy?: Occupancy; alerts?: (Alert | string)[]; vehicle?: Vehicle; stopsAway?: number | null;
   /** Buses: live delays (min) from the bus's next stop to this stop (new server), for busLiveCore.rowTraffic. */
   ahead?: (number | null)[] | null;
@@ -34,6 +36,8 @@ export type Leg = {
   kind: 'transit' | 'walk'; mode?: string; modeName?: string; line?: string; color?: string; towards?: string; destId?: string; tripId?: string; feed?: string;
   /** An on demand service (planner product class 10): runs when booked, `booking` when it must be booked ahead, `operator` who runs it. */
   onDemand?: boolean; booking?: boolean; operator?: string;
+  /** Runs past stops its line normally serves, from the timetable (server, lib/limitedCore.ts). */
+  limited?: boolean;
   stopId?: string; toStopId?: string; from?: string; fromPlatform?: string; to?: string; toPlatform?: string;
   planned?: string; estimated?: string; arrPlanned?: string; arrEstimated?: string; realtime?: boolean; delayMin?: number | null;
   durationMin: number; stops?: number; cancelled?: boolean; occupancy?: Occupancy; platformChangedFrom?: string | null; alerts?: Alert[];

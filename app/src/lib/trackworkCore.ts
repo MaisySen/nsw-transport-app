@@ -5,7 +5,9 @@ export type TripLines = { key: string; f: string; t: string; lines: string[]; na
   /** Where the trip boards and gets off each service (short names), to tell which planned work is on its path. */
   stops?: string[];
   /** Mode and colour per line, for the line badges in line status. */
-  marks?: Record<string, { mode?: string; color?: string }> };
+  marks?: Record<string, { mode?: string; color?: string }>;
+  /** Line, mode and where each service boards and gets off (station ids when known), for saved trip alerts (tripAlertsCore.ts). */
+  legs?: { l: string; m: string; f: string; t: string }[] };
 export type TwItem = { id: string; title: string; url?: string | null; lines: string[]; days: string };
 export type TwTrip = { f: string; t: string; affected: boolean; items: TwItem[]; addedMin: number | null; buses: { from: string; to: string } | null };
 export type TwResp = { enabled?: boolean; weekend?: { sat: string; sun: string }; trips?: TwTrip[] };
@@ -31,16 +33,20 @@ export function inWindow(t: number): boolean {
 }
 
 /** A trip card's report: the lines of the services it shows (no walking legs), up to 8. */
-export function tripLinesOf(key: string, f: string, t: string, name: string, journeys: { legs: { kind?: string; line?: string; mode?: string; color?: string; from?: string; to?: string }[] }[], h: number): TripLines {
+export function tripLinesOf(key: string, f: string, t: string, name: string, journeys: { legs: { kind?: string; line?: string; mode?: string; color?: string; from?: string; to?: string;
+  stopId?: string; toStopId?: string; fromParent?: string | null; toParent?: string | null }[] }[], h: number): TripLines {
   const lines: string[] = [];
   const stops: string[] = [];
   const marks: Record<string, { mode?: string; color?: string }> = {};
+  const legs: { l: string; m: string; f: string; t: string }[] = [];
   for (const j of journeys.slice(0, 3)) for (const l of j.legs || []) {
     if (l.kind === 'walk' || !l.line) continue;
     if (!lines.includes(l.line) && lines.length < 8) { lines.push(l.line); marks[l.line] = { mode: l.mode, color: l.color }; }
     for (const s of [l.from, l.to]) { const n = placeKey(s); if (n && !stops.includes(n) && stops.length < 12) stops.push(n); }
+    const lf = l.fromParent || l.stopId || '', lt = l.toParent || l.toStopId || '';
+    if (lf && lt && legs.length < 8 && !legs.some((x) => x.l === l.line && x.f === lf && x.t === lt)) legs.push({ l: l.line, m: l.mode || '', f: lf, t: lt });
   }
-  return { key, f, t, lines, name, h, marks, stops };
+  return { key, f, t, lines, name, h, marks, stops, ...(legs.length ? { legs } : {}) };
 }
 
 /** Query string for GET /api/trackwork: t=FROM~TO~LINE.LINE~HOUR, one per trip, at most 6, each trip once. */

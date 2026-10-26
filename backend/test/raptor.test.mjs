@@ -12,7 +12,7 @@ const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export defa
   fs.readFileSync(root + "src/engine.js", "utf8").replace(/\nexport \{ BoardEngine[^}]*\};\s*$/, "\n") + "\n" +
   fs.readFileSync(root + "src/ttplan.js", "utf8") + "\n" +
   fs.readFileSync(root + "src/raptor.js", "utf8").replace(/\nexport \{ TripPlanner \};\s*$/, "\n") +
-  "\nexport { __default, rpOpen, rpSearch, rpPlan, rpEnds, rpAnswer, rpTimes, TripPlanner, ownPlannerWanted, sydneyParts };\n";
+  "\nexport { __default, rpOpen, rpSearch, rpPlan, rpEnds, rpAnswer, rpTimes, TripPlanner, ownPlannerWanted, sydneyParts, rpLimitedIds, markLimited, LIM };\n";
 const tmp = `/tmp/raptor-test-${process.pid}-${Date.now()}.mjs`;
 fs.writeFileSync(tmp, src);
 const W = await import(tmp); fs.unlinkSync(tmp);
@@ -317,4 +317,66 @@ test("OWN_PLANNER: off by default; on, a trip search makes no Trip Planner call"
     const od = await off.json();
     assert.ok(!(od.journeys || []).some((j) => j.legs.some((l) => l.source === "own")), "flag off never answers from our planner");
   } finally { globalThis.fetch = realFetch; }
+});
+
+// ---- Limited Stops (tools/limited_stops.py marks trips in the pack; boards and trips carry limited: true) ----
+function withLim(pack, ids) {
+  const set = new Set(ids);
+  const all = pack.header.tripIds.split("\n");
+  pack.arrays.tripLim = Uint8Array.from(all.map((t) => (set.has(t) ? 1 : 0)));
+  pack.header.arrays.push({ name: "tripLim", type: "u8", length: all.length });
+  return pack;
+}
+test("limited: trip legs from a marked pack say so, an unmarked pack gives none", () => {
+  const pk = W.rpOpen(withLim(net(), ["slow"]));
+  const plan = W.rpPlan(pk, { from: "A", to: "B", at: 8 * H, count: 2 });
+  const legs = W.rpAnswer(pk, plan).flatMap((j) => j.legs.filter((l) => l.kind === "transit"));
+  assert.ok(legs.some((l) => l.tripId === "slow" && l.limited === true));
+  assert.ok(legs.filter((l) => l.tripId !== "slow").every((l) => !l.limited));
+  assert.deepEqual(W.rpLimitedIds(pk), ["slow"]);
+  const old = W.rpOpen(net());
+  assert.deepEqual(W.rpLimitedIds(old), []);
+});
+test("limited: the planner object lists the day's limited trips, and boards and trips are marked without waiting", async () => {
+  const obj = new W.TripPlanner(fakeState(), {});
+  await loadInto(obj, withLim(net(), ["slow"]));
+  const d = await (await obj.fetch(new Request("https://planner/limited"))).json();
+  assert.equal(d.marked, true);
+  assert.deepEqual(d.ids, ["slow"]);
+  // The worker side: the first answer starts the fetch in the background and is not held up; the next one is marked.
+  if (W.LIM.loading) await W.LIM.loading;   // an earlier test's trip search may have started one
+  W.LIM.set = null; W.LIM.day = null; W.LIM.at = 0;
+  const kept = new Map();
+  const oldCaches = globalThis.caches;
+  globalThis.caches = { default: { match: async (r) => kept.get(r.url), put: async (r, res) => { kept.set(r.url, res); } } };
+  let calls = 0;
+  const env = { PLANNER: { idFromName: (n) => n, get: () => ({ fetch: (u) => { calls++; return obj.fetch(new Request(u)); } }) } };
+  const waits = [];
+  const exec = { waitUntil: (p) => waits.push(p) };
+  const board = () => ({ kind: "departures", items: [{ tripId: "slow", line: "T1" }, { tripId: "x9", line: "T1" }, { tripId: null, line: "333", description: "Limited Stops via Main Rd" }] });
+  const b1 = board();
+  await W.markLimited(env, b1, exec);
+  assert.equal(b1.items[0].limited, undefined, "nothing waited for on the first answer");
+  assert.equal(b1.items[2].limited, true, "the service's own description still counts");
+  await Promise.all(waits);
+  const b2 = board();
+  assert.equal(await W.markLimited(env, b2, exec), 2);
+  assert.equal(b2.items[0].limited, true);
+  assert.equal(b2.items[1].limited, undefined);
+  const t = { kind: "trip", journeys: [{ legs: [{ kind: "walk" }, { kind: "transit", tripId: "slow" }] }] };
+  await W.markLimited(env, t, exec);
+  assert.equal(t.journeys[0].legs[1].limited, true);
+  assert.equal(calls, 1, "one fetch from the planner object, then memory");
+  // Off switch.
+  const b3 = board();
+  W.LIM.set = null; W.LIM.day = null;
+  await W.markLimited({ ...env, LIMITED_STOPS: "off" }, b3, exec);
+  assert.equal(b3.items[0].limited, undefined);
+  // Another isolate in the same colo reads the list from the cache, with no planner object request.
+  W.LIM.set = null; W.LIM.day = null;
+  const b4 = board();
+  await W.markLimited(env, b4, exec);
+  assert.equal(b4.items[0].limited, true);
+  assert.equal(calls, 1);
+  globalThis.caches = oldCaches;
 });

@@ -20,6 +20,7 @@ import { recheckLastLocal } from '@/lib/lastHome';
 import { usePalette } from '@/lib/theme';
 import { sheetHeaderOptions, stopHeaderOptions } from '@/lib/headerOptions';
 import { LiftAlertSync } from '@/lib/liftAlerts';
+import { TripAlertSync } from '@/lib/tripAlerts';
 import { LiveTripEngine } from '@/lib/liveEngine';
 import { orientationFor } from '@/lib/layoutCore';
 
@@ -110,6 +111,7 @@ export default function RootLayout() {
       <ThemeProvider value={theme}>
         <StatusBar style="auto" />
         <LiftAlertSync />
+        <TripAlertSync />
         <LiveTripEngine />
         {/* On a phone sized window every screen stays upright and only the departure board turns sideways (build 205
             lets iPhone turn); on a wide window every screen follows the window. */}

@@ -125,6 +125,17 @@ export async function dropTripReminders(keys: string[] | null) {
   if (changed) save();
 }
 
+/** Every trip's reminders by trip key (saved trip alerts send their times to the server). */
+export async function allTripReminders(): Promise<Record<string, Reminder[]>> {
+  await load();
+  return Object.fromEntries(Object.entries(all).map(([k, e]) => [k, e.list]));
+}
+/** Changes when any reminder changes (for a sync that follows them). */
+export function useRemindersVersion(): Record<string, Entry> {
+  useEffect(() => { load(); }, []);
+  return useSyncExternalStore((l) => { listeners.add(l); return () => listeners.delete(l); }, () => all, () => all);
+}
+
 /** The reminders on one trip, kept up to date. */
 export function useTripReminders(tripKey: string): Reminder[] {
   useEffect(() => { load(); }, []);

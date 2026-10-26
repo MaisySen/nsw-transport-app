@@ -36,6 +36,7 @@ import { tripSpec } from '@/lib/watch';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { openService } from '@/components/Cards';
 import { KeptBanner, LineBadge, OccupancyChip, StatusLine } from '@/components/Transit';
+import { LimitedTag } from '@/components/LimitedTag';
 import { liveState } from '@/lib/liveLabelCore';
 import { arrOf, ServiceRow, tripCacheId, tripPkey, WarnLine } from '@/components/Home';
 import { cacheKey } from '@/lib/offlineCore';
@@ -121,6 +122,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
             <T kind="sub" numberOfLines={2}>Towards {shortName(l.towards)}</T>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
               <T kind="foot" tone="text2">{durText(l.durationMin)}{l.stops ? `, ${plural(l.stops, 'stop')}` : ''}</T>
+              <LimitedTag x={l} />
               <OccupancyChip o={l.occupancy} />
             </View>
           </View>
