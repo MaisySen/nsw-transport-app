@@ -2,7 +2,7 @@
 
 What is live and what is open, by hand, with when each line was last checked. Run `node tools/orient.mjs` for the live numbers; it reads the same sources. Update this file whenever something live changes (a deploy, an update, a flag, a build, an owner answer).
 
-**Last verified: Mon 26 Oct 2026, 4:18 PM Sydney (05:18 UTC)**, with `tools/orient.mjs` and `tools/verify-deploy.mjs` (all checks ok).
+**Last verified: Mon 26 Oct 2026, 4:23 PM Sydney (05:23 UTC)**, with `tools/orient.mjs` and `tools/verify-deploy.mjs` (all checks ok).
 
 ## Live now
 
@@ -10,12 +10,12 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 | --- | --- | --- |
 | Production over the air group | `fa0017d8-4ffe-49e7-91da-3b415254943f` (3:39 PM, outage honesty; iOS `01a17680-b011-7faf-8316-b658423cff0e`, Android `01a17680-b011-7caf-9da9-c4d39cd16f3b`), runtime 1.0.0, from main `4835561` | `1f117d04-ee6c-4149-b153-b32fe8f1db79` |
 | Updates published today | 1 production update since 3:39 PM is today's; the next is tonight's overnight update | |
-| Server (`transport-api`) | Version `a8fbe352` (4:14 PM, no message: a secret or settings change on top of `3f5e63d3`). `3f5e63d3` (4:13 PM) is budget mode from main `ae182e8`. `544279b4` (4:10 PM) is live trip follows the real train, from main `dd2641a` | Before budget mode: `544279b4`. Before trip tracking: `fb242627` |
+| Server (`transport-api`) | Version `ffc1a25b` (4:21 PM, budget guard with a 48 hour rate, main `e93ff84`). Before it: `a8fbe352` (4:14 PM, no message, a secret or settings change), `3f5e63d3` (4:13 PM, budget mode, main `ae182e8`), `544279b4` (4:10 PM, live trip follows the real train, main `dd2641a`) | One step: `a8fbe352`. Before budget mode: `544279b4`. Before trip tracking: `fb242627` |
 | iPhone builds in the field | 201 to 208 (208: 25 Oct 6:48 PM, TestFlight Internal and Public) | |
 | Android | versionCode 2 to 5 (APK on the download page) | |
 | Public site | Pages deployment `6a797b2c` (25 Oct, 9 PM) | `564bc47c` |
 | Cloudflare plan | Workers Paid since 26 Oct 9:06 AM; cycle 25 Oct to 25 Nov; invoice US$5.00 paid; usage charges US$0.00 (dashboard, 4 PM) | |
-| NSW calls today | 51,580 of 60,000 at 4:18 PM; refusals since about 1:25 PM. Resets at 1 AM AEDT | |
+| NSW calls today | 51,580 of 60,000 at 4:23 PM; refusals since about 1:25 PM. Resets at 1 AM AEDT | |
 
 ## Flags (4:18 PM)
 
@@ -30,7 +30,7 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 | `OWN_PLANNER` | Worker var | off | Trip searches still go to the Trip Planner |
 | `LOAD_TESTS` | Worker var | off | Load test keys refused |
 | `REQ_LOG` | Worker var | on | One log line per request, 1 in 10 kept |
-| Budget guard hold | `/api/budget` | **on** at 4:18 PM: Durable Object requests projected at 1,363% of the month (11.3% used), because the last 6 hours include the morning load tests | Engine, push, own planner, learn and load keys act as off. All are off anyway. It lifts by itself when the projection is back under 60% |
+| Budget guard hold | `/api/budget` | **on** at 4:23 PM: the last hourly reading (made before the 4:21 PM change to a 48 hour rate) projected Durable Object requests at 1,363% of the month (11.3% used), driven by the morning load tests | Engine, push, own planner, learn and load keys act as off; all are off anyway. The next hourly check (minute 17) reads again; it lifts by itself when the projection is back under 60%, or with `POST /api/budget/clear` |
 | Remote config flags | `/api/app/config` | all 16 on, `kill` empty, `livePush` absent (off) | |
 | `PLATFORM_VIEW` | `app/src/lib/features.ts` | false | Platform view hidden (owner) |
 | `LIVE_DATA_AGE` | `app/src/lib/features.ts` | false | Live age counted from receipt, not from `liveAt` |

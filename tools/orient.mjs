@@ -192,7 +192,7 @@ if (AN_TOKEN && CF_ACCOUNT) {
       const pace = used / Math.max(days, 0.5) * 30;
       line(`${n.padEnd(26)} ${String(used).padStart(12)} of ${inc >= 1e9 ? inc / 1e9 + "B" : inc / 1e6 + "M"} = ${(used / inc * 100).toFixed(2)}%  month pace ${(pace / inc * 100).toFixed(1)}%` + (pace > inc * 0.8 ? "  OVER 80% PACE" : ""));
     }
-    line("Durable Object duration and storage: dashboard, Billing, Billable usage (or docs/COSTS.md).");
+    line("These are Cloudflare analytics (sampled, and older rows can roll off), so they are a guide; the bill is the dashboard, Billing, Billable usage. Durable Object duration and storage are only there (or docs/COSTS.md).");
   } else line("analytics query failed" + (out && out.errors ? ": " + JSON.stringify(out.errors).slice(0, 200) : ""));
 } else line("skipped: no CF_ANALYTICS_TOKEN (operator file ~/.nsw-secrets/cloudflare-analytics.json not found)");
 
