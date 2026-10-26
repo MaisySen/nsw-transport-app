@@ -4,14 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
-### Fastest live data, part A (server, all off; no app update)
+### Fastest live data, part A (server 26 Oct, 3:23 PM, transport-api 2e7a550e from main 9016eeb, roll back to 7b2f4c7b; push and data age off; no app update)
 Bidur at 2:50 PM: "How else can we go crazy fast and fastest live data here."
 * The board push (g14, ENGINE_PUSH) now also covers stops on the Trip Planner path: `LIVE_PUSH` sends the open stop screen the board the server already has, when it changes, about every 15 s, at the cost of one polling phone per stop however many phones are on it.
 * Socket limits for every push: 30 opens a minute and 4 sockets per address, 2,000 per stop or shard, renewal every 10 minutes.
 * "Live 30 s ago" can count from when each row's time was read upstream, with the phone's clock corrected (`LIVE_DATA_AGE`, off). Pushed boards now carry their ages too.
 * Watch and widgets get a board or trip at once from the server's kept copy (up to 2 minutes old) instead of waiting for the Trip Planner; the fresh one is stored for their next ask (DIAGNOSIS_LAG.md item 4, server part; on).
 * Request numbers: one log line per request (path, status, time, NSW time and calls, copy tag, app or watch/widget), Workers Logs on with 1 in 10 kept (item 10; on).
-* Feed timing and per row `liveAt` are in the g14 entry (a81237c8). Nothing is on for phones; tested once the NSW key is back after 1 AM.
+* Feed timing and per row `liveAt` are in the g14 entry (a81237c8). Push and data age are off for phones; they get tested once the NSW key is back after 1 AM. Checked after the deploy: /api/lines 200, /api/health 403, /api/live 404 (both pushes off), a shared trip page 200, request lines in the logs. /api/trackwork was not called, so no NSW call was made.
 
 ### Diagnosis: lag, slow Watch and failed loads (docs only, no release)
 Bidur at 2:52 PM: "Our own app lags, connected apple watches slow and loads. Sometime it just fail to load."
