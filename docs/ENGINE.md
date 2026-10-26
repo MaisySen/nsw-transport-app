@@ -95,7 +95,7 @@ The GTFS zips come from `/v1/gtfs/schedule/<feed>` (one call each, about 26) and
 bundle. A stop with no rows for today falls back to the Trip Planner, so a missed refresh degrades to today's speed,
 it does not show wrong boards. The daily refresh is the GitHub workflow `.github/workflows/timetable.yml`.
 
-## Night trains and trackwork trips (27 Oct, about 2 AM, g14)
+## Night trains and trackwork trips (27 Oct, 2 to 4 AM, g14)
 
 * **The train misses were Empty Train runs that carry passengers.** Every train the engine missed in the night match
   (12:37 to 12:54 AM: 2 at 12:37, 8 at 12:49, 4 at 12:54) was a late night run (T1 to Penrith, T4, CCN, BMT) that the
@@ -119,6 +119,23 @@ it does not show wrong boards. The daily refresh is the GitHub workflow `.github
   live one. Added rows now follow a board's mode filter too (a bus board had trains). `ENGINE_ADD_UNKNOWN` "off" stops
   it. `/api/engine/status` shows per feed `unknown`, `unknownListed` and `addMs`.
   No nightly load: the trips table already has every train trip of the loaded days.
+* **Match after the change** (27 Oct, 4:08 AM, the first trains of the day; `match_x.mjs` in the task folder, now
+  leaving out boards the engine did not make; 22 fresh stops NSW wide, no owner stop: 12 train stations, 2 metro, 3 light
+  rail, 5 bus stops; boards warmed at 3:58 AM): **353 of 379, 93.1%**. Train 153 of 158, bus 155 of 176, metro 28 of 28,
+  light rail 17 of 17. 3 engine rows inside the planner's span were not on the planner (a scheduled bus 17 at Gosford and
+  one scheduled M1 run at Epping and Crows Nest); no Empty Train row among them. Below the 95% gate: `ENGINE_BOARDS` stays off.
+  * 20 of the 26 misses: temporary stands not learnt yet (Stand X1 and X2 at Dulwich Grove 9, Dee Why 9, Rouse Hill 2).
+    The engine shows no stand, the planner names one. The warm read 22 stops at once and learning takes at most 2 first
+    reads a minute per shard, so these stops had not had their planner read.
+  * 3: first trains of the morning with the Empty Train headsign (T9 at Epping, T4 at Hurstville, T3 at Lidcombe, 5:13 to
+    5:35 AM) that the planner lists with timetable times, before the feed had them live. 2 more Empty Train runs (SCO at
+    Sutherland and Hurstville) were live and matched. Over the night 18 of 18 Empty Train rows seen at matched stations
+    were on the planner (13 live at 12:37 to 12:54 AM, 2 live and 3 scheduled at 4:08 AM). If a day check shows the same,
+    the next step is to list Empty Train rows like any other row; not done tonight (no day evidence, and the 133 a day at
+    Strathfield are said to be on no planner board).
+  * 2: trains due 90.5 minutes out (Katoomba, Lidcombe, 5:38 AM), past the engine's 90 minute horizon when it built the
+    board and inside the script's window a few seconds later. 1: a bus 61 s apart.
+  * Planner calls for the night's work: at most 49 (warm and learn 22, match 22, 5 earlier checks).
 * **Temporary stands (Stand X1 to X4): no code change.** The timetable's stops carry no stand for them: their names and
   their parents' are plain (for example 220314 "Old Canterbury Rd at Rosedale St", parent 220320 "Waratah Mills Light
   Rail"), so nothing can be read from them, and a guess would be wrong data. The engine learns them from the Trip
