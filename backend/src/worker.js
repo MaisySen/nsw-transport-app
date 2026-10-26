@@ -66,6 +66,10 @@ for (const [, names] of REGION_FEEDS) {
 }
 // Which non-Sydney feed carries this service, from the planner's transportation object, or null
 // (the mode's usual feed).
+// A key from a request (mode, feed, a typed word) looked up in a plain table: own entries only, so "__proto__" or
+// "constructor" is not found instead of reading Object.prototype (26 Oct, g28: /api/search?q=constructor and
+// /api/service?mode=__proto__ answered 502).
+function own(o, k) { return k != null && Object.prototype.hasOwnProperty.call(o, k); }
 function feedHint(cls, t) {
   if (!t) return null;
   const op = (t.operator && t.operator.name) || "", net = (t.product && t.product.name) || "", id = String(t.id || "");
@@ -82,12 +86,12 @@ function feedKey(mode, line) {
     if (/^NLR|newcastle/i.test(line || "")) return "lr_new";
     return "lr_cse";
   }
-  return FEEDS[mode] ? mode : null;
+  return own(FEEDS, mode) ? mode : null;
 }
 // The feed keys to read for a service: its hinted feed (or group) when known, else the mode's feed.
 function feedKeys(mode, line, feed) {
-  if (feed && FEED_GROUPS[feed]) return FEED_GROUPS[feed];
-  if (feed && FEEDS[feed]) return [feed];
+  if (feed && own(FEED_GROUPS, feed)) return FEED_GROUPS[feed];
+  if (feed && own(FEEDS, feed)) return [feed];
   const k = feedKey(mode, line);
   return k ? [k] : [];
 }
@@ -1172,7 +1176,7 @@ function longTripCacheKey(p) {
 const TRIP_MODE_CLASSES = { train: [1], metro: [2], lightrail: [4], bus: [5, 7, 11], coach: [7], ferry: [9] };
 function tripModesParse(raw) {
   const out = [];
-  for (const m of String(raw || "").toLowerCase().split(",").map((x) => x.trim())) if (TRIP_MODE_CLASSES[m] && !out.includes(m)) out.push(m);
+  for (const m of String(raw || "").toLowerCase().split(",").map((x) => x.trim())) if (own(TRIP_MODE_CLASSES, m) && !out.includes(m)) out.push(m);
   return out.sort();
 }
 function tripModesExclude(modes) {
@@ -1821,7 +1825,7 @@ function baseName(n) { return String(n || "").split(",")[0].trim().toLowerCase()
 
 async function service(env, q) {
   const mode = q.mode || "bus", line = q.line || "", tripId = q.trip || null;
-  const feed = q.feed && (FEEDS[q.feed] || FEED_GROUPS[q.feed]) ? q.feed : null;
+  const feed = q.feed && (own(FEEDS, q.feed) || own(FEED_GROUPS, q.feed)) ? q.feed : null;
   const rt = await realtimeFor(env, [[mode, line, feed]]);
   const tu = tripId ? rt.tu(mode, line, tripId, feed) : null;
   const veh = tripId ? vehicleOf(rt.vp(mode, line, tripId, feed)) : null;
@@ -4863,7 +4867,7 @@ function legFromInput(l) {
 function cleanFeed(v) {
   if (v === "") return "";
   if (typeof v !== "string") return undefined;
-  return FEEDS[v] || FEED_GROUPS[v] ? v : undefined;
+  return own(FEEDS, v) || own(FEED_GROUPS, v) ? v : undefined;
 }
 
 // Modes whose services can sit in a non-Sydney feed (TrainLink, regional buses and coaches, Manly Fast Ferry).
@@ -8056,6 +8060,7 @@ async function handleRequest(request, env, exec) {
           if (typeof tripAlertsRoute !== "function") return json({ error: "not found" }, 404);
           return await tripAlertsRoute(request, env, url);
         case "/api/predict": {
+          if (p.get("planned") && !Number.isFinite(Date.parse(p.get("planned")))) return json({ error: "planned must be a date and time" }, 400);
           const it = { line: p.get("line"), stopId: p.get("stop"), planned: p.get("planned") || new Date().toISOString() };
           await predictions(env, [it]);
           return json({ prediction: it.pred || null });
@@ -8193,9 +8198,9 @@ async function stopIndex(env, origin) {
 }
 function idxKey(q) {
   let k = askNorm(q).replace(/:/g, " ").replace(/\s+/g, " ").trim();
-  if (IDX_ALIAS[k]) return IDX_ALIAS[k];
-  k = k.split(" ").map((w) => (Object.prototype.hasOwnProperty.call(IDX_ABBR, w) ? IDX_ABBR[w] : w)).join(" ");
-  return IDX_ALIAS[k] || k;
+  if (own(IDX_ALIAS, k)) return IDX_ALIAS[k];
+  k = k.split(" ").map((w) => (own(IDX_ABBR, w) ? IDX_ABBR[w] : w)).join(" ");
+  return own(IDX_ALIAS, k) ? IDX_ALIAS[k] : k;
 }
 function idxScore(s, k, words) {
   if (s.key === k || s.base === k) return 0;
