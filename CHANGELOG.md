@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Store screenshots reshot with live data, build 208 on the 1.0.0 version (App Store Connect drafts, 27 Oct, 4:33 to 4:50 AM; nothing submitted)
+* iPhone 6.9 inch (1320 x 2868) and 6.5 inch (1284 x 2778) sets reshot from main 108a512 against production with live data, light mode: Home (Parramatta to Wynyard), Town Hall train departures, Parramatta to Bondi Junction trip, Ask, Check my trip before I go. No owner stations. Uploaded to the 1.0.0 en-AU sets in place of the 25 Oct ones, and kept in [store/apple/screenshots/](store/apple/screenshots/); the old copies in store/screenshots/apple-6.9 and apple-6.5 are removed.
+* `test/e2e/store-shots.mjs`: the phone's place defaults to Parramatta (it was Burwood) and takes GEO_LAT and GEO_LON; BOARD sets the departures stop and BOARD_FILTER taps a mode filter.
+* Build 208 attached to version 1.0.0 in place of 206 (still Prepare for Submission). The iPhone Duo set still shows the 25 Oct screens.
+
 ### Trip list pages: endless scroll both ways, shared planner answers (server deployed 27 Oct, 2:15 AM, transport-api 4760793d, roll back to 405251e9; app part on main, not yet over the air)
 * Server: `/api/trip?page=1` answers a page of up to 10 trips from one Trip Planner call, with cursors: `after=` for the next page later, `before=` with `arr=` for the next page earlier (an Arrive by query at the earliest arrival shown, so no gap at any frequency), up to 7 days back and 14 ahead. The live planner gives at most 10 trips a call (asked for 8 or 10 it gave 8 or 10; for 12, 14 or 20 its default 4 or 5; 2 AM checks), so a page is 10. `n=4` to `20` sets the number asked, for such checks. Plain `/api/trip` requests are unchanged.
 * Each planner answer for a page is kept 10 minutes per pair, day, minute and options (Cache API plus memory), shared by every phone; after 15 s the planner's live times are taken off and the feeds' put back, so live times are never older than the feeds. Pages are not logged or saved as trip copies: no new D1 or KV writes. Not kept for the own planner. A first page for Now uses the minute rounded down to 5.

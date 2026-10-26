@@ -1,11 +1,15 @@
 # Store screenshots
 
+## Status (27 Oct 2026, 4:50 AM)
+
+The iPhone 6.9 and 6.5 inch sets were reshot on 27 Oct with live data and no owner stations, uploaded to App Store Connect in place of the 25 Oct sets, and moved to [../apple/screenshots/](../apple/screenshots/). The iPhone Duo and Play sets below are still the 25 Oct ones.
+
 ## Status (26 Oct 2026, 5:50 PM, g25)
 
 | Set | Required | State |
 | --- | --- | --- |
-| iPhone 6.9 inch, 1320 x 2868 (`APP_IPHONE_67` in App Store Connect) | Yes | 5 uploaded, light, live data, 25 Oct |
-| iPhone 6.5 inch, 1284 x 2778 (`APP_IPHONE_65`) | Only used if 6.9 is missing; kept anyway | 5 uploaded, light, 25 Oct |
+| iPhone 6.9 inch, 1320 x 2868 (`APP_IPHONE_67` in App Store Connect) | Yes | 5 uploaded, light, live data, reshot 27 Oct without owner stations: [../apple/screenshots/](../apple/screenshots/) |
+| iPhone 6.5 inch, 1284 x 2778 (`APP_IPHONE_65`) | Only used if 6.9 is missing; kept anyway | 5 uploaded, light, reshot 27 Oct: [../apple/screenshots/](../apple/screenshots/) |
 | iPhone Duo (`APP_IPHONE_DUO`) | From April 2027 | 10 uploaded, 25 Oct |
 | iPad | No: `supportsTablet` false, iPhone only | none |
 | Apple Watch | **Yes**, builds 206 and later carry the Watch app | **None yet.** App Store Connect will not take the submission without at least one |
@@ -25,8 +29,8 @@ Made on 25 Oct 2026 from the Expo app (main at 7bc7ac3) with live data, light mo
 
 | Folder | Size | Look | Store |
 | --- | --- | --- | --- |
-| apple-6.9 | 1320 x 2868 | iPhone | App Store, iPhone 6.9 inch (uploaded) |
-| apple-6.5 | 1284 x 2778 | iPhone | App Store, iPhone 6.5 inch (uploaded) |
+| ../apple/screenshots/iphone-6.9 | 1320 x 2868 | iPhone | App Store, iPhone 6.9 inch (uploaded 27 Oct) |
+| ../apple/screenshots/iphone-6.5 | 1284 x 2778 | iPhone | App Store, iPhone 6.5 inch (uploaded 27 Oct) |
 | apple-duo-inner | 2007 x 2853 | iPhone Duo, open (inner display) | App Store, iPhone Duo (uploaded 25 Oct 2026, first five in the set) |
 | apple-duo-outer | 1398 x 2034 | iPhone Duo, closed (outer display) | App Store, iPhone Duo (uploaded 25 Oct 2026, last five in the set) |
 | play | 1080 x 2160 | Android | Google Play phone screenshots, plus feature-graphic.png (1024 x 500) and icon-512.png |

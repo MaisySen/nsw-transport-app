@@ -8,7 +8,7 @@ const exe = process.env.CHROME || undefined;
 const b = await chromium.launch({ executablePath: exe });
 const ua = look === "android" ? "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36" : "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
 const ctx = await b.newContext({ viewport: { width: +W, height: +H }, deviceScaleFactor: +DSF, colorScheme: scheme, isMobile: true, hasTouch: true, userAgent: ua, locale: "en-AU", timezoneId: "Australia/Sydney",
-  geolocation: { latitude: -33.8773, longitude: 151.1040 }, permissions: ["geolocation", "notifications"] });
+  geolocation: { latitude: +(process.env.GEO_LAT || -33.8170), longitude: +(process.env.GEO_LON || 151.0034) }, permissions: ["geolocation", "notifications"] });
 await ctx.addInitScript(() => { document.addEventListener("DOMContentLoaded", () => { const st = document.createElement("style"); st.textContent = '[class*="navigationMenuRoot"]{display:none!important}'; document.head.appendChild(st); }); });
 const page = await ctx.newPage();
 const errs = []; page.on("pageerror", (e) => errs.push(String(e)));
@@ -28,7 +28,7 @@ if (page.url().includes("/welcome")) {
 for (const s of steps) {
   try {
     if (s === "home") { await page.goto(base + "/home"); await page.waitForTimeout(9000); await snap("01-home"); }
-    if (s === "board") { await page.goto(base + "/stop/200060?name=Central%20Station"); await page.waitForTimeout(9000); await snap("02-departures"); }
+    if (s === "board") { await page.goto(base + (process.env.BOARD || "/stop/200060?name=Central%20Station")); await page.waitForTimeout(9000); if (process.env.BOARD_FILTER) { await vis(page.getByText(process.env.BOARD_FILTER, { exact: true })).click(); await page.waitForTimeout(2500); } await snap("02-departures"); }
     if (s === "trip") { await page.goto(base + "" + (process.env.TRIP || "/trip?from=206710&fromName=Chatswood+Station&to=202210&toName=Bondi+Junction+Station") + ""); await page.waitForTimeout(10000); await snap("03-trip"); }
     if (s === "ask") { await page.goto(base + "/ask"); await page.waitForTimeout(4000);
       const box = vis(page.getByRole("textbox")); await box.fill(ASKQ); await box.press("Enter"); await page.waitForTimeout(9000);
