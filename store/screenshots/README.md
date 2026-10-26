@@ -1,5 +1,9 @@
 # Store screenshots
 
+## Status (27 Oct 2026, 5:00 AM)
+
+The iPhone Duo set (inner and outer) was reshot on 27 Oct with the same settings, uploaded to App Store Connect in place of the 25 Oct files, and moved to [../apple/screenshots/iphone-duo/](../apple/screenshots/iphone-duo/); apple-duo-inner and apple-duo-outer are removed. Only the Play set below is still the 25 Oct one.
+
 ## Status (27 Oct 2026, 4:50 AM)
 
 The iPhone 6.9 and 6.5 inch sets were reshot on 27 Oct with live data and no owner stations, uploaded to App Store Connect in place of the 25 Oct sets, and moved to [../apple/screenshots/](../apple/screenshots/). The iPhone Duo and Play sets below are still the 25 Oct ones.
@@ -10,7 +14,7 @@ The iPhone 6.9 and 6.5 inch sets were reshot on 27 Oct with live data and no own
 | --- | --- | --- |
 | iPhone 6.9 inch, 1320 x 2868 (`APP_IPHONE_67` in App Store Connect) | Yes | 5 uploaded, light, live data, reshot 27 Oct without owner stations: [../apple/screenshots/](../apple/screenshots/) |
 | iPhone 6.5 inch, 1284 x 2778 (`APP_IPHONE_65`) | Only used if 6.9 is missing; kept anyway | 5 uploaded, light, reshot 27 Oct: [../apple/screenshots/](../apple/screenshots/) |
-| iPhone Duo (`APP_IPHONE_DUO`) | From April 2027 | 10 uploaded, 25 Oct |
+| iPhone Duo (`APP_IPHONE_DUO`) | From April 2027 | 10 uploaded, reshot 27 Oct without owner stations: [../apple/screenshots/iphone-duo/](../apple/screenshots/iphone-duo/) |
 | iPad | No: `supportsTablet` false, iPhone only | none |
 | Apple Watch | **Yes**, builds 206 and later carry the Watch app | **None yet.** App Store Connect will not take the submission without at least one |
 
@@ -31,8 +35,8 @@ Made on 25 Oct 2026 from the Expo app (main at 7bc7ac3) with live data, light mo
 | --- | --- | --- | --- |
 | ../apple/screenshots/iphone-6.9 | 1320 x 2868 | iPhone | App Store, iPhone 6.9 inch (uploaded 27 Oct) |
 | ../apple/screenshots/iphone-6.5 | 1284 x 2778 | iPhone | App Store, iPhone 6.5 inch (uploaded 27 Oct) |
-| apple-duo-inner | 2007 x 2853 | iPhone Duo, open (inner display) | App Store, iPhone Duo (uploaded 25 Oct 2026, first five in the set) |
-| apple-duo-outer | 1398 x 2034 | iPhone Duo, closed (outer display) | App Store, iPhone Duo (uploaded 25 Oct 2026, last five in the set) |
+| ../apple/screenshots/iphone-duo (inner-*) | 2007 x 2853 | iPhone Duo, open (inner display) | App Store, iPhone Duo (uploaded 27 Oct, first five in the set) |
+| ../apple/screenshots/iphone-duo (outer-*) | 1398 x 2034 | iPhone Duo, closed (outer display) | App Store, iPhone Duo (uploaded 27 Oct, last five in the set) |
 | play | 1080 x 2160 | Android | Google Play phone screenshots, plus feature-graphic.png (1024 x 500) and icon-512.png |
 
 Screens in the uploaded set (25 Oct): 01 Home with the commute card (home Burwood, work Strathfield), 02 Central departures, 03 Central to Parramatta trip, 04 Ask "next train Strathfield to Kings Cross", 05 Check my trip before I go. A reshoot with today's script gives: 01 Home (home Parramatta, work Wynyard), 02 Central departures, 03 Chatswood to Bondi Junction, 04 Ask "next train Parramatta to Central", 05 Check my trip before I go. Set HOME_Q, WORK_Q, TRIP or ASKQ to change them. On the iPhone shots of screen 05 the web only note about notifications is hidden, because an iPhone with notifications on does not show it; the Android shot keeps its note, which is true for versionCode 5.

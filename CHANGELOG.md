@@ -4,6 +4,9 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### iPhone Duo store screenshots reshot (App Store Connect draft, 27 Oct, 4:52 to 5:00 AM; nothing submitted)
+* The iPhone Duo set (APP_IPHONE_DUO, en-AU, 1.0.0) reshot from main e8c6ff3 against production with live data, light mode, same five screens and settings as the 6.9 and 6.5 inch sets: 5 at 2007 x 2853 (inner display) and 5 at 1398 x 2034 (outer display). Uploaded in place of the 25 Oct files, which showed the owner's stations, and kept in [store/apple/screenshots/iphone-duo/](store/apple/screenshots/iphone-duo/); store/screenshots/apple-duo-inner and apple-duo-outer are removed. The 6.9 and 6.5 inch sets and build 208 are unchanged.
+
 ### Store screenshots reshot with live data, build 208 on the 1.0.0 version (App Store Connect drafts, 27 Oct, 4:33 to 4:50 AM; nothing submitted)
 * iPhone 6.9 inch (1320 x 2868) and 6.5 inch (1284 x 2778) sets reshot from main 108a512 against production with live data, light mode: Home (Parramatta to Wynyard), Town Hall train departures, Parramatta to Bondi Junction trip, Ask, Check my trip before I go. No owner stations. Uploaded to the 1.0.0 en-AU sets in place of the 25 Oct ones, and kept in [store/apple/screenshots/](store/apple/screenshots/); the old copies in store/screenshots/apple-6.9 and apple-6.5 are removed.
 * `test/e2e/store-shots.mjs`: the phone's place defaults to Parramatta (it was Burwood) and takes GEO_LAT and GEO_LON; BOARD sets the departures stop and BOARD_FILTER taps a mode filter.
