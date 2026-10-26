@@ -37,7 +37,7 @@ const stops = {
   C2: ["Central Station Platform 16", "200060", "16", -33.88402, 151.2062], C3: ["Central Station Platform 26", "200060", "26", -33.88402, 151.2062],
   S: ["Strathfield Station", "", "", -33.87167, 151.09429], S1: ["Strathfield Station Platform 3", "S", "3", -33.87167, 151.09429],
   M: ["Campsie Station", "", "", -33.9105, 151.1035], M1: ["Campsie Station Platform 1", "M", "1", -33.9105, 151.1035],
-  B1: ["Oxford St at Taylor Sq", "", "", -33.8812, 151.2163], B2: ["Bondi Rd at Wellington St", "", "", -33.8915, 151.2620],
+  B1: ["Oxford St at Taylor Sq", "", "", -33.8812, 151.2163], G9: ["Pitt St", "", "", -33.8841, 151.2061], "2009191": ["Pitt St Stand A", "G9", "", -33.8842, 151.2062], B2: ["Bondi Rd at Wellington St", "", "", -33.8915, 151.2620],
 };
 const rows = {
   // T4 Kings Cross to Central (and on), every 10 minutes; one empty train that must never be offered.
@@ -153,6 +153,7 @@ test("/api/nearby answers from our own stop list, stations grouped, nearest firs
   assert.ok(r.body.stops[0].distance < 50);
   assert.equal(r.body.stops.filter((s) => s.id === "200060").length, 1, "platforms grouped as their station");
   assert.equal(nswCalls, before, "no Transport for NSW call");
+  assert.ok(r.body.stops.some((s) => s.id === "2009191") && !r.body.stops.some((s) => s.id === "G9"), "a stop pair lists its stop, not its G centre");
 });
 
 test("errors never carry a bare status, and an upstream failure does not blame the phone", async () => {

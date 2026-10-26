@@ -160,7 +160,7 @@ function ttNearby(sql, ver, lat, lon, radius = 800, max = 8) {
     ver, lat - dLat, lat + dLat, lon - dLon, lon + dLon).toArray();
   const groups = new Map();
   for (const s of rows) {
-    if (!s.lat && !s.lon) continue;
+    if ((!s.lat && !s.lon) || /^G/.test(s.id)) continue; // a "G" row is a stop pair's centre, its stops are listed
     const d = Math.round(ttKm(lat, lon, s.lat, s.lon) * 1000);
     if (d > radius) continue;
     // A station's platforms and stands count as the station. "G" parents are stop pairs the Trip Planner does not
@@ -256,7 +256,8 @@ async function timetableTrip(env, fromId, toId, o = {}) {
       leave: new Date(board).toISOString(), board: new Date(board).toISOString(), arrive: new Date(arrive).toISOString(),
       durationMin: Math.round((arrive - board) / 60000), changes: Math.max(0, tl.length - 1), live: false, anyCancelled: false,
       risk: tl.some((l) => l.transfer && l.transfer.risk === "tight") ? "tight" : "ok", legs,
-      fares: typeof faresAll === "function" ? faresAll(legs) : undefined, source: "timetable",
+      // No fare: Opal fares need the distance along the route, which a timetable leg does not carry.
+      source: "timetable",
     };
   });
   for (const j of journeys) j.beaten = journeys.some((x) => x !== j && t(x.leave) > t(j.leave) && t(x.arrive) < t(j.arrive));
@@ -272,4 +273,20 @@ async function ttNearbyStops(env, lat, lon) {
   if (!r || r.status !== 200) return null;
   const d = await r.json().catch(() => null);
   return d && Array.isArray(d.stops) ? d.stops.map((s) => ({ ...s, name: typeof shortName === "function" ? shortName(s.name) : s.name })) : null;
+}
+// A stop's board from the engine as timetable times (the same rows /api/departures serves in an outage), for the
+// worker's own departures() callers (Ask, text answers) when the Trip Planner is down. Null without the engine.
+async function ttBoard(env, ctx, stopId, mode) {
+  if (typeof engineBoard !== "function" || !env || !env.ENGINE) return null;
+  const et = await engineBoard(env, ctx, String(stopId || ""), mode || "");
+  const eb = et ? JSON.parse(et) : null;
+  if (!eb || !Array.isArray(eb.items)) return null;
+  const feedAt = (eb.live && eb.live.feedAt) || 0;
+  const liveOk = feedAt && Date.now() - feedAt <= ENGINE_STALE_MS;
+  const items = eb.items.map((x) => (liveOk && x.realtime ? { ...x, liveSource: "feed" }
+    : { ...x, estimated: null, realtime: false, delayMin: null, vehicle: null, occupancy: null, source: "timetable", status: { key: "scheduled", text: "Scheduled" } }));
+  const note = { id: "timetable-fallback", title: "Live times unavailable, showing timetable times", url: null, priority: "high", lines: [] };
+  const d = { ...eb, items, alerts: [note, ...(eb.alerts || [])], source: "timetable", fallback: "planner-unavailable", now: Date.now() };
+  delete d.live; delete d.engine;
+  return d;
 }

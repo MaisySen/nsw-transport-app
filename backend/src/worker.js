@@ -784,7 +784,17 @@ async function findLocations(env, q, max = 20) {
 }
 function isNswStop(l) { return !/South Australia|Victoria|Queensland|\bACT\b/.test(l.name); }
 async function findStops(env, q) {
-  const all = await findLocations(env, q);
+  let all;
+  try { all = await findLocations(env, q); }
+  catch (e) {
+    // Trip Planner down (ttplan.js): stops from our own index, so Ask can still name a stop.
+    if (typeof ttUpstreamDown !== "function" || !ttUpstreamDown(e)) throw e;
+    const idx = await stopIndex(env, null).catch(() => null);
+    const own = idx ? indexSearch(idx, q, 8).items : [];
+    if (!own.length) throw e;
+    const stops = own.map((x, i) => ({ id: x.id, name: x.name, type: "stop", modes: x.modes, quality: 1000 - i }));
+    return { stops, all: stops };
+  }
   const stops = all.filter((l) => (l.type === "stop" || l.type === "platform") && isNswStop(l));
   stops.sort((a, b) => b.quality - a.quality);
   return { stops, all };
@@ -894,12 +904,22 @@ function modeOnly(mode) {
 async function departures(env, stopId, opts = {}) {
   // opts.at (boardAt): the board from that moment, services that have already left included.
   const { date, time } = opts.at ? { date: opts.at.date, time: opts.at.time } : sydneyParts();
-  const data = await tp(env, "departure_mon", {
-    mode: "direct", type_dm: "stop", name_dm: stopId,
-    departureMonitorMacro: "true", TfNSWDM: "true", itdDate: date, itdTime: time,
-    ...modeOnly(opts.mode),
-    ...(opts.extra || {}),
-  });
+  let data;
+  try {
+    data = await tp(env, "departure_mon", {
+      mode: "direct", type_dm: "stop", name_dm: stopId,
+      departureMonitorMacro: "true", TfNSWDM: "true", itdDate: date, itdTime: time,
+      ...modeOnly(opts.mode),
+      ...(opts.extra || {}),
+    });
+  } catch (e) {
+    // Trip Planner down: the engine's timetable board, labelled (ttplan.js), for Ask and the text answers. Background
+    // checks pass timetable: false and keep the error.
+    if (opts.at || opts.extra || opts.timetable === false || typeof ttBoard !== "function" || !ttUpstreamDown(e)) throw e;
+    const b = await ttBoard(env, opts.ctx, stopId, opts.mode).catch(() => null);
+    if (b) return b;
+    throw e;
+  }
   const now = Date.now();
   const loc = (data.locations || [])[0] || {};
   const alerts = new Map();
@@ -4323,7 +4343,7 @@ async function liveLegs(env, spec, now, opts = {}) {
   if (bi >= 0 && out[bi].dep - now < 45 * 60000 && opts.board !== false) {
     const l = legs[bi];
     try {
-      const b = await departures(env, l.stopId, { log: false });
+      const b = await departures(env, l.stopId, { log: false, timetable: false });
       const m = b.items.find((x) => (l.tripId && x.tripId === l.tripId) || (x.line === l.line && Math.abs(ms(x.planned) - ms(l.planned)) < 90000));
       if (m) {
         if (m.realtime && m.estimated) {
@@ -5395,7 +5415,7 @@ async function sampleStops(env, sn, budgetOk) {
   const done = [];
   for (const stop of mine) {
     try {
-      const r = await departures(env, stop, { log: false, sampleOnly: true });
+      const r = await departures(env, stop, { log: false, sampleOnly: true, timetable: false });
       const now = Date.now();
       const keep = r.items.filter((i) => i.realtime && i.tripId && i.estimated && ms(i.estimated) - now < 6 * 60000 && ms(i.estimated) > now - 30000);
       if (keep.length) {
@@ -6997,7 +7017,11 @@ async function handleRequest(request, env, exec) {
           // A fare question leads with the fare.
           if (fs && d.reply) { d.reply = d.fareAsked ? fs + "\n" + d.reply : d.reply + "\n" + fs; d.fare = fj.fare; }
           else if (d.fareAsked && d.reply && d.kind === "trip") d.reply = "I couldn't work out an Opal fare for this trip.\n" + d.reply;
-          if (asTxt) { const tx = await askText(env, d); return textRes(fs && !tx.includes(fs) ? tx + "\n" + fs : tx); }
+          // Timetable stand ins (Trip Planner down) say so first, and that the phone is not the problem.
+          const ttNote = "Live times are unavailable right now because Transport for NSW isn't answering, so these are timetable times.";
+          const isTt = d.source === "timetable" || (d.journeys || []).some((j) => (j.legs || []).some((l) => l.source === "timetable")) || (d.items || []).some((i) => i.source === "timetable");
+          if (isTt && d.reply) d.reply = ttNote + "\n" + d.reply;
+          if (asTxt) { let tx = await askText(env, d); if (isTt && !tx.includes(ttNote)) tx = ttNote + "\n" + tx; return textRes(fs && !tx.includes(fs) ? tx + "\n" + fs : tx); }
           return json(askSlim(d));
         }
         case "/api/departures": {
