@@ -77,19 +77,29 @@ export function startBase(stored: string | null | undefined, movedBefore: boolea
   return validBase(stored, DEFAULT_BASE) || DEFAULT_BASE;
 }
 
-// Fallback for reads: when the new server gives no answer (no connection to it, a time out) or a 5xx, the same read is
-// asked of the first server once. After a fallback that worked, reads go straight to the first server for a minute,
-// so a server that is down does not cost every request a wait first. Writes never fall back: saves stay in one place.
-export const FALLBACK_HOLD_MS = 60000;
+// Fallback for reads (docs/DIAGNOSIS_LAG.md item 5, 26 Oct): only when the new server cannot be reached at all (no
+// route, DNS, TLS) is the same read asked of the first server, once. Never after a time out or an error answer: those
+// come from Transport for NSW's live data, which the first server waits on too, so a fallback only doubled the wait.
+// No hold: the next read asks the new server again. Writes never fall back: saves stay in one place.
+export const FALLBACK_HOLD_MS = 0;
 let newDownUntil = 0;
 
-/** True for a failure the first server may answer: no answer at all, or a 5xx. Never for a 4xx (a real answer). */
+/** True only for a failure to reach the new server at all. Never an answer (any status) and never a time out. */
 export function fallbackWorthy(e: any): boolean {
-  if (!e) return false;
-  const http = Number(e.http);
-  if (http) return http >= 500 && http <= 599;
-  return true;
+  if (!e || e.http || e.name === 'AbortError') return false;
+  const m = String(e.message || '');
+  if (/timed? ?out|cancel/i.test(m)) return false;
+  return /network request failed|failed to fetch|fetch failed/i.test(m);
 }
+
+// How getJson words a failure: api.ts passes netErrCore.ts's (setErrorWords), so this file stays free of imports for
+// the tests that load it alone. The defaults never show a status code either.
+let words: { http: (status: number, body: any) => Error; noAnswer: (e: any) => Error; reach: () => void } = {
+  http: (status, body) => Object.assign(new Error((body && (body.error || body.text)) || "Live data isn't available right now. Try again soon."), { http: status }),
+  noAnswer: (e) => e,
+  reach: () => {},
+};
+export function setErrorWords(w: typeof words) { words = w; }
 
 /** Where a read goes first: the first server while a recent fallback holds, else the address in use. */
 export function readBase(now: number = Date.now()): string {
@@ -112,7 +122,7 @@ export const fallbackHeld = (now: number = Date.now()) => base === NEW_API_BASE 
  * GET `path` from the server in use, with the same fallback as api.ts reads. For the few screens that fetch on their
  * own (trip lists, Ask). Throws the first server's error when both fail.
  */
-export async function getJson<T = any>(path: string, timeoutMs = 20000, signal?: AbortSignal): Promise<T> {
+export async function getJson<T = any>(path: string, timeoutMs = 15000, signal?: AbortSignal): Promise<T> {
   const ask = async (b: string): Promise<T> => {
     const ctl = new AbortController();
     const stop = () => ctl.abort();
@@ -121,18 +131,25 @@ export async function getJson<T = any>(path: string, timeoutMs = 20000, signal?:
     try {
       const r = await fetch(b + path, { signal: ctl.signal });
       const body = await r.json().catch(() => ({}));
-      if (!r.ok) throw Object.assign(new Error((body && (body as any).error) || `Something went wrong (${r.status})`), { http: r.status });
+      words.reach();
+      if (!r.ok) throw words.http(r.status, body);
       return body as T;
     } finally { clearTimeout(t); signal?.removeEventListener('abort', stop); }
   };
   const first = readBase();
   try {
-    const v = await ask(first);
-    if (first === NEW_API_BASE) noteNewServerOk();
-    return v;
+    try {
+      const v = await ask(first);
+      if (first === NEW_API_BASE) noteNewServerOk();
+      return v;
+    } catch (e: any) {
+      const alt = fallbackFor(first);
+      if (!alt || signal?.aborted || !fallbackWorthy(e)) throw e;
+      try { const v = await ask(alt); noteFallback(true); return v; } catch (e2) { noteFallback(false); throw e2; }
+    }
   } catch (e: any) {
-    const alt = fallbackFor(first);
-    if (!alt || signal?.aborted || !fallbackWorthy(e)) throw e;
-    try { const v = await ask(alt); noteFallback(true); return v; } catch (e2) { noteFallback(false); throw e2; }
+    // No answer: offline or slow, in words that say which (netErrCore.ts). A cancel by the caller stays as it is.
+    if (!signal?.aborted && !e?.http) throw words.noAnswer(e);
+    throw e;
   }
 }

@@ -2,7 +2,7 @@ import type { Commute, DeparturesResp, MorningCheck, MorningInput, MorningListRe
 import { getDevice, PROFILE } from './device';
 import { store } from './store';
 import type { CarPark, Station, TopupItem } from './access';
-import { apiBase, fallbackFor, fallbackWorthy, NEW_API_BASE, noteFallback, noteNewServerOk, readBase } from './server';
+import { apiBase, fallbackFor, NEW_API_BASE, noteFallback, noteNewServerOk, readBase, setErrorWords } from './server';
 import { placesGone, stopsAsPlaces, type PlaceItem } from './planCore';
 import { EARLIER_NEEDS_NEW, ymd } from './tripModesCore';
 import { BOARD_EARLIER_NEEDS_NEW, boardQuery, honoured } from './boardTimeCore';
@@ -12,7 +12,13 @@ import { LIVE_DATA_AGE } from './features';
 import { cleanAlertTexts } from './htmlTextCore';
 import { noteBoard } from './recent';
 import { boardKey } from './stopBoardCore';
-import { createKeep, isLongTrip, longGone, LONG_TRIP_KEEP_MS, LONG_TRIP_TIMEOUT_MS, plannerTooSlow } from './longTripCore';
+import { createKeep, isLongTrip, longGone, LONG_TRIP_KEEP_MS, LONG_TRIP_TIMEOUT_MS } from './longTripCore';
+import { httpError, isNetErr as netErr, legacyWorthy, noAnswerError, noteReach, onFailWhy, READ_MS_EMPTY, READ_MS_WITH_COPY, TRIP_MS } from './netErrCore';
+import { setOfflineWhy } from './offlineCore';
+
+// Kept times say why they are on screen: the phone offline, or the live data down (netErrCore.ts).
+onFailWhy(setOfflineWhy);
+setErrorWords({ http: httpError, noAnswer: (e: any) => (netErr(e) ? noAnswerError(e) : e), reach: noteReach });
 
 function qs(o: Record<string, any>) {
   return Object.entries(o)
@@ -27,8 +33,10 @@ async function once<T>(path: string, init: RequestInit | undefined, timeoutMs: n
   try {
     const headers: Record<string, string> = init?.body ? { 'content-type': 'application/json' } : {};
     const r = await fetch(base + path, { ...init, signal: ctl.signal, headers: { ...headers, ...((init?.headers as any) || {}) } });
+    noteReach();
     const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw Object.assign(new Error((body && (body as any).error) || `Something went wrong (${r.status})`), { http: r.status });
+    // The server's own words, never a bare status (netErrCore.ts); a 5xx or 429 is marked server (live data's fault).
+    if (!r.ok) throw httpError(r.status, body);
     // Rows and legs carry the moment they arrived, so a countdown can say how old its live time is. An answer the
     // server took from its shared cache says when it was made (dataAt); the older of the two is the honest one.
     // LIVE_DATA_AGE (features.ts): each live row's age counts from when its time was read upstream (the row's liveAt).
@@ -47,8 +55,7 @@ export function dataTime(body: any, now: number): number {
 
 /** Network or timeout failure, as opposed to an answer from the server. Android reports an aborted fetch as "canceled". */
 function isNetErr(e: any) {
-  const m = String(e?.message || '');
-  return !e?.http && (e?.name === 'AbortError' || /cancel|network request failed|timed? ?out|fetch failed|failed to fetch/i.test(m));
+  return netErr(e);
 }
 
 // Reads are shared (pollCore.ts): two screens or timers asking for the same thing while a request is out get that
@@ -56,7 +63,7 @@ function isNetErr(e: any) {
 // Any write empties the cache, so a read after a save never shows the old list.
 const reads = createReadCache(4000);
 
-function req<T>(path: string, init?: RequestInit, timeoutMs = 20000): Promise<T> {
+function req<T>(path: string, init?: RequestInit, timeoutMs = READ_MS_EMPTY): Promise<T> {
   const read = !init?.method || init.method === 'GET';
   if (!read) { reads.clear(); return send<T>(path, init, timeoutMs, false).finally(() => reads.clear()); }
   const key = `${apiBase()}${path}|${init?.headers ? JSON.stringify(init.headers) : ''}`;
@@ -81,10 +88,11 @@ async function send<T>(path: string, init: RequestInit | undefined, timeoutMs: n
       throw e;
     }
   } catch (e: any) {
-    // Fallback: a read the new server did not answer (no connection to it, a time out, a 5xx) is asked of the first
-    // server once. A phone with no connection at all fails the same way there, as fast.
+    // Fallback (docs/DIAGNOSIS_LAG.md item 5): a read is asked of the first server once only when the new server could
+    // not be reached at all, never after a time out or an error answer (those are the live data's, and the first
+    // server would wait on the same Transport for NSW key). A phone with no connection fails the same way there, as fast.
     const alt = read ? fallbackFor(first) : null;
-    if (alt && fallbackWorthy(e)) {
+    if (alt && legacyWorthy(e)) {
       try {
         const v = await once<T>(path, init, Math.min(timeoutMs, 12000), alt);
         noteFallback(true);
@@ -94,11 +102,9 @@ async function send<T>(path: string, init: RequestInit | undefined, timeoutMs: n
         if (!e?.http) e = e2;
       }
     }
-    if (isNetErr(e)) {
-      // offline marks a failure to reach the server, so screens can fall back to the copy kept on the phone.
-      if (/network request failed|failed to fetch/i.test(String(e?.message || ''))) throw Object.assign(new Error("You're offline. Check your connection."), { offline: true });
-      throw Object.assign(new Error('No answer from the server. Check your connection.'), { offline: true });
-    }
+    // offline (no connection) or slow (the server answered other requests lately): either way screens fall back to
+    // the copy kept on the phone, and the words say which it is.
+    if (isNetErr(e)) throw noAnswerError(e);
     throw e;
   }
 }
@@ -110,7 +116,8 @@ export const api = {
   search: (q: string) => req<{ items: SearchItem[] }>(`/api/search?${qs({ q })}`),
   nearby: (lat: number, lon: number) => req<{ stops: (SearchItem & { distanceM?: number; dist?: number })[] }>(`/api/nearby?${qs({ lat: lat.toFixed(5), lon: lon.toFixed(5) })}`),
   departures: async (stop: string, refresh = false, mode?: string) => {
-    const r = await req<DeparturesResp>(`/api/departures?${qs({ stop, mode: mode || '', device: await getDevice(), profile: PROFILE, refresh: refresh ? 1 : '' })}`);
+    // A refresh has the board on screen already, so it waits less (netErrCore.ts read deadlines).
+    const r = await req<DeparturesResp>(`/api/departures?${qs({ stop, mode: mode || '', device: await getDevice(), profile: PROFILE, refresh: refresh ? 1 : '' })}`, undefined, refresh ? READ_MS_WITH_COPY : READ_MS_EMPTY);
     // Every board this phone reads (stop screens, Home cards) feeds Recently departed (recentCore.ts). A board for one
     // mode is kept apart, so trains missing from a bus board never read as departed.
     noteBoard(boardKey(stop, mode), r);
@@ -122,12 +129,14 @@ export const api = {
     if ((opts.modes && opts.modes.length) || opts.date) return tripPicked(base, pair, opts.modes || [], opts.date || '');
     if (isLongTrip(from.id, to.id) || longPairs.has(pair)) return tripLong(base, opts.refresh);
     try {
-      return await req<TripResp>(`/api/trip?${qs({ ...base, device: await getDevice(), profile: PROFILE, refresh: opts.refresh ? 1 : '' })}`);
+      // One deadline for a trip search (docs/DIAGNOSIS_LAG.md item 3). The server answers a refused Trip Planner with
+      // timetable trips or a plain error, so an error answer is never read as "too slow" and never asked again here.
+      return await req<TripResp>(`/api/trip?${qs({ ...base, device: await getDevice(), profile: PROFILE, refresh: opts.refresh ? 1 : '' })}`, undefined, TRIP_MS);
     } catch (e: any) {
-      // The planner took longer than the server waits: ask again the long way, and from now on for this pair.
-      if (!plannerTooSlow(e)) throw e;
-      longPairs.add(pair);
-      return tripLong(base, opts.refresh);
+      // No answer in time while the server is reachable: the next search of this pair goes the long way (no second
+      // wait now). A server that timed out on the planner itself (504) is the same.
+      if (e?.slow || e?.http === 504) longPairs.add(pair);
+      throw e;
     }
   },
   plan: (legs: any[], opts: { count?: number; time?: string; all?: boolean } = {}) =>
@@ -223,7 +232,7 @@ async function tripPicked(base: Record<string, any>, pair: string, modes: string
   const long = isLongTrip(base.from, base.to) || longPairs.has(pair);
   const extra = { modes: modes.join(','), date, long: long ? 1 : '', count: Math.max(6, Number(base.count) || 6) };
   const path = `/api/trip?${qs({ ...base, ...extra })}`;
-  const wait = long ? LONG_TRIP_TIMEOUT_MS : 20000;
+  const wait = long ? LONG_TRIP_TIMEOUT_MS : TRIP_MS;
   let r: TripResp;
   try {
     r = apiBase() === NEW_API_BASE ? await req<TripResp>(`${path}&${qs({ device: await getDevice(), profile: PROFILE })}`, undefined, wait) : await onNew<TripResp>(path, wait);
@@ -261,11 +270,12 @@ async function onNew<T>(path: string, timeoutMs: number): Promise<T> {
   try {
     const r = await fetch(`${NEW_API_BASE}${path}`, { signal: ctl.signal });
     const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw Object.assign(new Error((body && (body as any).text) || (body && (body as any).error) || `Something went wrong (${r.status})`), { http: r.status });
+    noteReach();
+    if (!r.ok) throw httpError(r.status, body);
     return stampSeen(cleanAlertTexts(body as T), Date.now());
   } catch (e: any) {
     if (e?.http) throw e;
-    throw Object.assign(new Error("No answer from the server. Check your connection."), { offline: true });
+    throw noAnswerError(e);
   } finally {
     clearTimeout(t);
   }
@@ -286,7 +296,7 @@ export async function searchPlaces(q: string, signal?: AbortSignal): Promise<{ i
     if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener('abort', () => ctl.abort()); }
     try {
       const r = await fetch(`${NEW_API_BASE}/api/places?${qs({ q })}`, { signal: ctl.signal });
-      if (!r.ok) throw Object.assign(new Error(`Something went wrong (${r.status})`), { http: r.status });
+      if (!r.ok) throw httpError(r.status, {});
       const body = await r.json();
       if (Array.isArray(body?.items)) return { items: body.items as PlaceItem[], places: true };
     } catch (e: any) {

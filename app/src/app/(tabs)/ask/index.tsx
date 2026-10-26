@@ -2,6 +2,7 @@
 // home and work, follow ups) and either asks one short question with choices or sends a clear question to /api/ask.
 // Answers come back as a short reply plus live cards (departures, trips, alerts) that open the stop board, trip or
 // live map, with the actions under them (Open trip, Directions, Speak).
+import { askFailText, httpError, isNetErr, noAnswerError, noteReach, READ_MS_EMPTY } from '@/lib/netErrCore';
 import { spokenTime } from '@/lib/homeCore';
 import { prefetchStop } from '@/lib/prefetch';
 import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react';
@@ -313,14 +314,18 @@ export default function AskScreen() {
       if (places?.home?.id) p.home = `${places.home.id}|${places.home.name || ''}`;
       if (places?.work?.id) p.work = `${places.work.id}|${places.work.name || ''}`;
       const qs = Object.entries(p).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-      // A slow answer ends after 25 s like a dropped one, so the chat never waits on a spinner for good.
+      // A slow answer ends after 15 s (netErrCore.ts read deadline), so the chat never waits on a spinner for good. The
+      // failure says whether it was the phone's connection or the live data (askFailText below).
       const ctl = new AbortController();
-      const timer = setTimeout(() => ctl.abort(), 25000);
+      const timer = setTimeout(() => ctl.abort(), READ_MS_EMPTY);
       let d: any;
       try {
         const r = await fetch(`${apiBase()}/api/ask?${qs}`, { signal: ctl.signal });
-        if (!r.ok) throw Object.assign(new Error(String(r.status)), { http: r.status });
+        noteReach();
+        if (!r.ok) throw httpError(r.status, await r.json().catch(() => ({})));
         d = await r.json();
+      } catch (e: any) {
+        throw isNetErr(e) ? noAnswerError(e) : e;
       } finally { clearTimeout(timer); }
       let cards: Card[] = d.cards || [];
       let reply: string = d.reply || d.text || "Sorry, I didn't get that.";
@@ -371,7 +376,8 @@ export default function AskScreen() {
       bot({ text: reply, heard: a.heard, kind: typeof d.kind === 'string' ? d.kind : null, fare: d.fare || null, cards, links: d.links || [], choices: follow, suggestions: (d.suggestions || []).slice(0, 3), ask: d.ask || null, lastHome: askLastHint(d) });
       brainLast = nextLast(u, shown, Date.now());
     } catch (e: any) {
-      const text = e?.http ? "Ask isn't answering right now. Try again in a minute." : 'No connection right now. Check your signal and try again.';
+      // Honest about where the fault is (g16): "check your signal" only when the phone has no connection.
+      const text = askFailText(e);
       bot({ text, suggestions: [q] });
     } finally { setBusy(false); }
   }, [busy, places, brainCtx]);

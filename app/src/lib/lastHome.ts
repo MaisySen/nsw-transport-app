@@ -1,6 +1,7 @@
 // Last way home reminder on the phone: the current reminder, set and cancel. Two ways (docs/LAST-WAY-HOME.md): the
 // server push (the new server, iPhone), or the phone's own local notification, rechecked live whenever the app is
 // open (the current server, and Android). A server without /api/last-home (404) uses the phone's own.
+import { httpMessage, MSG, noAnswerError } from './netErrCore';
 import { useSyncExternalStore } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -71,11 +72,11 @@ export async function remindLastHome(from: { id: string; name: string }, to: { i
   try {
     const r = await call('/api/last-home', { method: 'POST', body: JSON.stringify({ device: await getDevice(), from, to, mode, acc }) });
     if (r.status === 404) { set({ base, available: false }); return { ok: false, missing: true, error: 'Reminders are not available yet.' }; }
-    if (r.status >= 400 || !r.body?.item) return { ok: false, error: r.body?.error || `Something went wrong (${r.status})` };
+    if (r.status >= 400 || !r.body?.item) return { ok: false, error: r.body?.error ? httpMessage(r.status, r.body) : r.status >= 400 ? httpMessage(r.status, r.body) : MSG.failed };
     set({ base, available: true, item: r.body.item, push: r.body.push || null, at: Date.now() });
     return { ok: true, item: r.body.item, push: r.body.push || { web: 0, expo: 0 } };
-  } catch {
-    return { ok: false, error: 'No answer from the server. Check your connection.' };
+  } catch (e: any) {
+    return { ok: false, error: noAnswerError(e).message };
   }
 }
 

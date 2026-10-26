@@ -1,3 +1,4 @@
+import { failWhy, TIMETABLE_TRIPS_NOTE } from '@/lib/netErrCore';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWhyLate } from '@/lib/whyLate';
 import { JourneyWhy, WhyLate, withWhyAction } from '@/components/WhyLate';
@@ -677,11 +678,14 @@ export default function TripScreen() {
         ) : null}
         {offlineAt ? null : updatedAt ? (
           <T kind="foot" tone={error ? 'lateText' : 'text2'} style={{ textAlign: 'center', marginTop: 14, fontVariant: ['tabular-nums'] }}>
-            {error ? `Offline. Live data updated ${hms(updatedAt)}` : `Live data updated ${hms(updatedAt)}`}
+            {error ? `${failWhy() === 'server' ? 'Live data unavailable right now' : 'Offline'}. Live data updated ${hms(updatedAt)}` : (data as any)?.source === 'timetable' ? TIMETABLE_TRIPS_NOTE : `Live data updated ${hms(updatedAt)}`}
           </T>
         ) : null}
         {data && !js.length && modes.length ? (() => { const e = emptyModes(modes, data.modesBy === 'server'); return <Empty icon={I.route} title={e.title} body={e.body} action={<Button title="Any" kind="tinted" onPress={() => { haptic.select(); store.setTripModes(tkey, []); }} />} />; })() : null}
-        {data && !js.length && !modes.length ? <Empty icon={I.route} title="No trips found" body={data.error || 'Try a different time or nearby stop.'} /> : null}
+        {data && !js.length && !modes.length ? (error || offlineAt || (staleAt && !updatedAt)
+          // A kept copy whose trips have all left while the live answer failed (g16): never "No trips found".
+          ? <Empty icon={I.warn} title={error || offlineAt ? "Can't plan this trip right now" : 'Loading live trips'} body={error || (offlineAt ? (failWhy() === 'server' ? 'Live trips are unavailable right now.' : "You're offline. Check your connection.") : 'One moment.')} />
+          : <Empty icon={I.route} title="No trips found" body={data.error || 'Try a different time or nearby stop.'} />) : null}
         {!data && error ? <Empty icon={I.warn} title="Can't plan this trip" body={error} /> : null}
         {!data && !error ? <Searching key={`${from.id}>${to.id}|${whenKey}`} long={!chain && !via && isLongPair(from.id, to.id)} /> : null}
         {data?.tomorrow ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>No more trips tonight. These are the first ones tomorrow.</T> : null}

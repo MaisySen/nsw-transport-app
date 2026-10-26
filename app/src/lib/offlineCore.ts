@@ -74,8 +74,17 @@ export function stampText(at: number, now: number): string {
 }
 
 /** The line shown with stored times: "Offline, showing times from 8:05am". */
+// Why the kept times are on screen: the phone is offline, or the live data is down (a server error or slow answers
+// while the phone is online). Set by api.ts from netErrCore.ts, so the label never blames the phone's signal for an
+// outage of Transport for NSW's live data (g16).
+let offWhy: 'phone' | 'server' = 'phone';
+export function setOfflineWhy(w: 'phone' | 'server') { offWhy = w; }
 export function offlineText(at: number, now: number): string {
-  return `Offline, showing times from ${stampText(at, now)}`;
+  return offWhy === 'server' ? `Live times unavailable, showing times from ${stampText(at, now)}` : `Offline, showing times from ${stampText(at, now)}`;
+}
+/** The one word tag for Home's header while kept times are on screen. */
+export function offlineWord(): string {
+  return offWhy === 'server' ? 'No live times' : 'Offline';
 }
 
 /** How old a kept copy is, in words: "just now", "4 min ago", "1 h 5 min ago", or its time when older than 3 hours. */

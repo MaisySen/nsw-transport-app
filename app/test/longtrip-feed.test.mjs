@@ -41,9 +41,11 @@ test('long distance: regional NSW is long, Sydney, Newcastle and Wollongong are 
 });
 
 test('planner too slow: 502, 504 and timeouts, not 404 or a plain error', () => {
-  assert.equal(L.plannerTooSlow({ http: 502, message: "Live data didn't answer just now. Try again in a moment." }), true);
+  assert.equal(L.plannerTooSlow({ http: 502, message: "Live data didn't answer just now. Try again in a moment." }), false, 'a 502 is not slow (g16)');
+  assert.equal(L.plannerTooSlow({ http: 429 }), false, 'a refusal is not slow');
   assert.equal(L.plannerTooSlow({ http: 504 }), true);
-  assert.equal(L.plannerTooSlow({ message: 'No answer from the server. Check your connection.', offline: true }), true);
+  assert.equal(L.plannerTooSlow({ message: 'Live times are slow right now. Try again in a moment.', slow: true, server: true }), true);
+  assert.equal(L.plannerTooSlow({ message: 'No answer from the server. Check your connection.', offline: true }), false, 'no connection is not slow');
   assert.equal(L.plannerTooSlow({ http: 404, message: 'Not found' }), false);
   assert.equal(L.plannerTooSlow({ http: 400, message: 'count must be 1 to 8' }), false);
   assert.equal(L.plannerTooSlow(null), false);

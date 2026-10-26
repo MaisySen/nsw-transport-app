@@ -10,7 +10,8 @@ import { adaptiveGapMs } from '@/lib/pollCore';
 
 /** The first departure still ahead (or NaN). */
 const nextDep = (ts: number[]) => { const n = Date.now() - 30000; let b = NaN; for (const t of ts) if (t > n && !(t >= b)) b = t; return b; };
-import { cacheKey, offlineText, staleText } from '@/lib/offlineCore';
+import { cacheKey, offlineText, offlineWord, staleText } from '@/lib/offlineCore';
+import { boardNote, failWhy, TIMETABLE_TRIPS_NOTE, tripNote } from '@/lib/netErrCore';
 import { packStampText, packTarget } from '@/lib/timetablePackCore';
 import { foldNear, type NearPick } from '@/lib/nearCore';
 import { stopNumber } from '@/lib/busCore';
@@ -466,7 +467,7 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
   const plan = { from, to, via, conn: trip.conn, legs: trip.legs, modes: trip.modes };
   const chain = isChain(plan);
   const pkey = tripPkey(plan);
-  const { data, error, offlineAt } = useHomeLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && !!allServices }), [pkey, chain && !!allServices], cacheKey('trip', tripCacheId(pkey, chain && !!allServices)),
+  const { data, error, offlineAt, staleAt } = useHomeLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && !!allServices }), [pkey, chain && !!allServices], cacheKey('trip', tripCacheId(pkey, chain && !!allServices)),
     (d) => nextDep((d?.journeys || []).map(depOf)));
 
   // Remember each live reading for the hold.
@@ -528,7 +529,9 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
   // Every line of the next service, in order (T4 then T1), so Line glow runs between their colours.
   const lineColors = (js[0]?.legs || []).filter((x) => x.kind === 'transit').map((x: any) => x.color as string | undefined);
   const sk = skinStyle(skin, { dark: c.dark, line: lineColors[0] || null, lines: lineColors, solid, cardColor: c.card, text3: c.text3 });
-  const note = !data ? (error ? 'Live times unavailable, trying again' : 'Loading live times') : !js.length ? (offlineAt ? 'No kept times left for today' : data.error || 'No more services today') : '';
+  // "No more services today" only from a live answer that truly had none (g16): a kept copy whose trips have all left
+  // while the live answer failed or is still loading never says so (tripNote, homeCore.ts).
+  const note = tripNote({ data: !!data, error, offlineAt, staleAt, count: js.length, serverNote: (data as any)?.error || null, why: failWhy() });
   const glance = (
     <TripGlance look={look} js={js} arrs={arrs} now={now} count={sk.count} title={trip.kind === 'place' && custom ? `${custom}: ${route}` : custom || route} glyph={glyph} glyphColor={trip.kind === 'saved' || trip.kind === 'mine' ? c.yellow : c.tint}
       note={note} onPress={() => open()} menu={menu} href={menuHref} surface={sk.surface || c.card} act={act} roomRight={aside ? 40 : 0}
@@ -545,6 +548,7 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
         </View>
       ) : glance}
       {offlineAt && js.length ? <OfflineNote at={offlineAt} now={now} /> : null}
+      {(data as any)?.source === 'timetable' && js.length && !offlineAt ? <T kind="foot" tone="text2" style={s.note}>{TIMETABLE_TRIPS_NOTE}</T> : null}
       {pbText ? <PlanBRow title={pbTitle} text={pbText} onPress={() => open()} /> : null}
       {look === 'hero' && js.length ? <SpeakButton say={() => tripSentence(jsRef.current, Date.now())} /> : null}
       {below && js.length ? below(js) : null}
@@ -747,7 +751,7 @@ export function StopBoard({ stop, now, starred, distance, menu }: { stop: Place;
   /** Tap and hold on the stop's name: its actions (components/HoldMenu.tsx). */
   menu?: MenuSpec | null }) {
   const c = usePalette();
-  const { data, error, offlineAt, packAt } = useHomeLive((r) => api.departures(stop.id, r), [stop.id], cacheKey('dep', stop.id),
+  const { data, error, offlineAt, packAt, staleAt } = useHomeLive((r) => api.departures(stop.id, r), [stop.id], cacheKey('dep', stop.id),
     (d) => nextDep((d?.items || []).map((x) => bestTime(x.planned, x.realtime ? x.estimated : null))));
   const groups = groupDepartures(data?.items || [], now);
   useReportCountdowns('stop:' + stop.id, (data?.items || []).slice(0, 4).map((x) => bestTime(x.planned, x.realtime ? x.estimated : null)));
@@ -763,7 +767,7 @@ export function StopBoard({ stop, now, starred, distance, menu }: { stop: Place;
       {!data ? <T kind="foot" tone="text2" style={s.note}>{error ? 'Live times unavailable right now, trying again' : 'Loading live times'}</T> : null}
       {offlineAt ? <OfflineNote at={offlineAt} now={now} /> : null}
       {packAt && !offlineAt ? <T kind="foot" tone="text2" style={s.note}>{packStampText(!!error)}</T> : null}
-      {data && !groups.length ? <T kind="foot" tone="text2" style={s.note}>{offlineAt ? 'No kept times left' : 'No more services right now'}</T> : null}
+      {data && !groups.length ? <T kind="foot" tone="text2" style={s.note}>{boardNote({ offlineAt, error, staleAt, why: failWhy() })}</T> : null}
       {withKeys(groups, (g) => `${g.d.line}|${g.d.dest}`).map(({ v: { d, next }, k: rowKey }) => {
         const t = cd(bestTime(d.planned, d.realtime ? d.estimated : null), now);
         const n = next ? cd(bestTime(next.planned, next.realtime ? next.estimated : null), now) : null;
@@ -944,7 +948,7 @@ export function LiveTag() {
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel={offlineText(off, Date.now())}>
         <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: c.orange, marginRight: 5 }} />
-        <T kind="foot" tone="text2">Offline</T>
+        <T kind="foot" tone="text2">{offlineWord()}</T>
       </View>
     );
   }

@@ -15,7 +15,7 @@ const ts = require(path.join(root, 'node_modules', 'typescript'));
 const out = fs.mkdtempSync(path.join(os.tmpdir(), 'nswapp-move-'));
 async function load(rel) {
   const src = fs.readFileSync(path.join(root, rel), 'utf8');
-  const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText.replace(/from '\.\/(\w+)'/g, "from './$1.mjs'");
   const f = path.join(out, path.basename(rel).replace(/\.ts$/, '.mjs'));
   fs.writeFileSync(f, js);
   return import(pathToFileURL(f).href);
@@ -43,44 +43,37 @@ test('startBase: a stored first server is replaced once, then a stored address i
   assert.equal(S.startBase('https://evil.example', true), NEW, 'a stored value off the list is ignored');
 });
 
-test('fallback: only no answer or a 5xx, never a 4xx', () => {
-  assert.equal(S.fallbackWorthy({ http: 500 }), true);
-  assert.equal(S.fallbackWorthy({ http: 503 }), true);
+test('fallback (g16): only when the new server cannot be reached at all, never after an answer or a time out', () => {
+  assert.equal(S.fallbackWorthy({ http: 500 }), false);
+  assert.equal(S.fallbackWorthy({ http: 503 }), false);
   assert.equal(S.fallbackWorthy({ http: 404 }), false);
   assert.equal(S.fallbackWorthy({ http: 429 }), false);
-  assert.equal(S.fallbackWorthy({ name: 'AbortError' }), true);
+  assert.equal(S.fallbackWorthy({ name: 'AbortError' }), false, 'a time out is slow live data, not a missing server');
   assert.equal(S.fallbackWorthy(new TypeError('Network request failed')), true);
   assert.equal(S.fallbackFor(NEW), OLD);
   assert.equal(S.fallbackFor(OLD), null, 'the first server has nothing behind it');
 });
 
-test('fallback hold: after a fallback that worked, reads go to the first server for a minute', () => {
+test('no fallback hold: the next read asks the new server again', () => {
   const t = 1_000_000;
   S.noteFallback(true, t);
-  assert.equal(S.readBase(t + 1000), OLD);
-  assert.equal(S.fallbackHeld(t + 1000), true);
-  assert.equal(S.readBase(t + S.FALLBACK_HOLD_MS + 1), NEW, 'then the new server is asked again');
-  S.noteFallback(true, Date.now());
-  S.noteNewServerOk();
-  assert.equal(S.readBase(), NEW, 'an answer from the new server ends the hold');
+  assert.equal(S.FALLBACK_HOLD_MS, 0);
+  assert.equal(S.readBase(t + 1), NEW);
   S.noteFallback(false);
   assert.equal(S.readBase(), NEW);
 });
 
-test('getJson: asks the new server, then the first one on a 5xx or no answer, never on a 4xx', async () => {
+test('getJson: asks the first server only when the new one cannot be reached, never on an error answer', async () => {
   const real = globalThis.fetch;
   const asked = [];
   try {
-    globalThis.fetch = async (url) => { asked.push(String(url)); return String(url).startsWith(NEW) ? new Response('{}', { status: 502 }) : new Response('[1]', { status: 200 }); };
-    assert.deepEqual(await S.getJson('/api/stations?mode=train'), [1]);
-    assert.deepEqual(asked, [NEW + '/api/stations?mode=train', OLD + '/api/stations?mode=train']);
-    asked.length = 0;
-    assert.deepEqual(await S.getJson('/api/stations?mode=metro'), [1]);
-    assert.deepEqual(asked, [OLD + '/api/stations?mode=metro'], 'held on the first server for a minute');
-    S.noteNewServerOk();
+    globalThis.fetch = async (url) => { asked.push(String(url)); return String(url).startsWith(NEW) ? new Response('{"kind":"error","text":"x"}', { status: 502 }) : new Response('[1]', { status: 200 }); };
+    await assert.rejects(S.getJson('/api/stations?mode=train'), (e) => e.http === 502 && !/\(502\)/.test(e.message));
+    assert.deepEqual(asked, [NEW + '/api/stations?mode=train'], 'a 5xx is the answer: no second wait on the first server');
     asked.length = 0;
     globalThis.fetch = async (url) => { asked.push(String(url)); if (String(url).startsWith(NEW)) throw new TypeError('Network request failed'); return new Response('[2]'); };
     assert.deepEqual(await S.getJson('/api/stations?mode=bus'), [2]);
+    assert.deepEqual(asked, [NEW + '/api/stations?mode=bus', OLD + '/api/stations?mode=bus']);
     S.noteNewServerOk();
     asked.length = 0;
     globalThis.fetch = async (url) => { asked.push(String(url)); return new Response('{"error":"not found"}', { status: 404 }); };

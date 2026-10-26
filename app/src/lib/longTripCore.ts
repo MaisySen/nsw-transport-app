@@ -20,12 +20,14 @@ export function isLongTrip(fromId: string | null | undefined, toId: string | nul
   return (a != null && !near(a)) || (b != null && !near(b));
 }
 
-/** The planner was too slow for the first server: a 502 or 504 answer, or no answer in time. */
+/**
+ * The planner was too slow (the next search of the pair goes the long way): the server timed out on it (504) or the
+ * server was reachable and no answer came in time (slow). A 502, 503 or 429 is a refusal or failure, not slowness
+ * (docs/DIAGNOSIS_LAG.md item 3), and a phone with no connection is not slow either.
+ */
 export function plannerTooSlow(e: any): boolean {
   if (!e) return false;
-  if (e.http === 502 || e.http === 504) return true;
-  const m = String(e.message || '');
-  return /didn't answer|did not answer|no answer from the server|timed? ?out/i.test(m);
+  return e.http === 504 || (!!e.slow && !e.http);
 }
 
 /** A 404 from the new server's /api/trip with long=1: not there yet, so plan on the server in use. */

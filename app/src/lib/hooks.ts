@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { showsKept } from './netErrCore';
 import { keepOffline, peekOffline, readOffline } from './offline';
 import { createLatest, createStamp, quickReaskMs } from './pollCore';
 import { answerTime } from './liveLabelCore';
@@ -88,7 +89,9 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
     } catch (e: any) {
       if (!round.current()) return true;
       setError(String(e?.message || e));
-      if (e?.offline) {
+      // No connection, slow live data, or a server error (5xx, 429): the copy or timetable on the phone stands in, and
+      // its label says which (netErrCore.ts failWhy), never an error screen while the phone holds times.
+      if (showsKept(e)) {
         if (shown.current.live) setOfflineAt(shown.current.at);
         else if (shown.current.pack) { /* timetable times stay, labelled offline by packAt with error */ }
         else if (key || packRef.current) {
