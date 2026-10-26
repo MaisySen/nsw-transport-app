@@ -140,6 +140,8 @@ Startup requests already go out together (7 at about 930 ms on web); Home's firs
 
 Safe now, server only: items 1 (process and test key) and 10 (logging). Nothing else here should ship without the gates in each item.
 
+Done 26 Oct (g17, server): item 10 (one log line per request, Workers Logs 1 in 10, API.md "Request numbers") and the server part of item 4 (watch and widget asks take a kept copy at once; the trip copies from g16 give the watch the phone's recent trip). Build 209 part of item 4 not started.
+
 ## What a person feels, mapped to the causes
 
 * "Lags": items 2, 3, 6 (spinners and late times while the server waits on NSW), 8 (update downloads and cold first starts), 12 (not yet known).

@@ -282,6 +282,7 @@ On a device: put the phone in airplane mode, kill the app, open a starred stop: 
 
 ### `backend/test/livehub.test.mjs`: 10 tests (26 Oct, g17, live push for Trip Planner boards)
 The board the HTTP path has, with dataAt and no data call when the copy is under 5 s; a changed board to every phone and the same rows at a new moment to none; 4 sockets per address then 429, 503 at the object's limit; renewal after 10 minutes; no asks with nobody on the stop; no socket when the Trip Planner refuses and nothing is kept, two hubs on one stop cost one; `full` once in 10 s; the route between hub and shards; 404 with both pushes off and 30 opens a minute; the shards share the limits.
+`backend/test/reqlog.test.mjs`: 5 tests: one line per /api request with no query in it, `app` or `ext`, NSW calls timed in the request that made them, `REQ_LOG` off, a watch ask takes a kept copy at once while the phone app waits up to 700 ms, Workers Logs on and sampled.
 `app/test/livelabel.test.mjs`: data age from `liveAt` on the phone's clock (server 40 s ahead), clamps, and the old behaviour without the flag.
 
 Device checks after 1 AM (NSW key back), flags on for one test phone only: open Central with `LIVE_PUSH` on and remote `livePush` true; the "Updated" stamp should move about every 15 s with no pull to refresh; background the app and check `/api/live` sockets go to 0 (hub `/status`); with `LIVE_DATA_AGE` true the row ages should match the board engine's feed age within a few seconds.

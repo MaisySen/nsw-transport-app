@@ -572,3 +572,20 @@ socket; `ping` answers `pong` without waking the object.
 Limits for both kinds of socket: 30 opens a minute per address (`/api/live` rate rule), 4 sockets per address on one
 object (429), 2,000 sockets per object (503), and every socket is closed with code 4000 (`renew`) after 10 minutes so a
 phone that went away without closing stops costing anything (a phone still on the screen opens a new one).
+
+## Request numbers (26 Oct 2026, g17)
+
+Every `/api` request writes one JSON line to the Worker's logs (`reqLog` in `src/worker.js`):
+`{"t":"req","p":"/api/departures","m":"GET","s":200,"ms":84,"up":0,"un":0,"c":"hit","k":"app","colo":"SYD"}` with
+`ms` the time to the answer, `up` and `un` the time spent on and the number of NSW calls (Trip Planner and realtime
+feeds) made for that request, `c` the copy tag (`hit`, `stale`, `miss`, `shared`, `saved`, or `-`), `k` `app` when the
+request carries a profile (the phone app) and `ext` otherwise (Watch, widgets, web), and `test: 1` for load test
+traffic. The path only, never the query or an address. Workers Logs keeps one request in 10 for 3 days
+(`[observability]` in `wrangler.toml.template`); `wrangler tail transport-api --format json` sees every line. `REQ_LOG`
+`off` stops the lines.
+
+Watch and widget asks (no profile, not a refresh) for `/api/departures` and `/api/trip` take a kept copy (up to 2 min
+old) at once instead of waiting up to 700 ms for the fresh answer, which is stored behind it for the next ask
+(DIAGNOSIS_LAG.md item 4, server part). The Watch's trip reuses the phone's recent answer for the same from and to
+through the trip copies (g16, `trip:FROM>TO`).
+

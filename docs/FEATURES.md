@@ -39,6 +39,8 @@ The iPhone and Android apps are one Expo app (`app/`). Anything below marked "ov
 ### 26 Oct, fastest live data (g17, all off)
 * Live push also for stops still served by the Trip Planner (`LIVE_PUSH`, server; app flag `livePush` in remote config, from g14): the open stop screen gets the new board when it changes, about every 15 s, instead of waiting for its own poll. Socket limits per address and per stop, and a renewal every 10 minutes.
 * Data age per row (`LIVE_DATA_AGE` in app/src/lib/features.ts, off): "Live 30 s ago" counts from when the server read that row's time upstream (`liveAt`), corrected for the phone's clock, on the stop screen, Home cards and the board wherever rows already show Live. Pushed boards get their ages the same way.
+* Watch and widgets: a board or trip they ask for is answered at once from the server's kept copy (up to 2 minutes old) while the fresh one is fetched for their next ask (server, on).
+* Request numbers: one log line per request (path, status, time, NSW time and calls, copy tag, app or watch/widget) so slow and failing endpoints can be measured (server, on, sampled 1 in 10 in Workers Logs).
 
 ## Car parks (over the air, 25 Oct, about 10:00 PM)
 

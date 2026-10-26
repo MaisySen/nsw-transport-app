@@ -9,6 +9,8 @@ Bidur at 2:50 PM: "How else can we go crazy fast and fastest live data here."
 * The board push (g14, ENGINE_PUSH) now also covers stops on the Trip Planner path: `LIVE_PUSH` sends the open stop screen the board the server already has, when it changes, about every 15 s, at the cost of one polling phone per stop however many phones are on it.
 * Socket limits for every push: 30 opens a minute and 4 sockets per address, 2,000 per stop or shard, renewal every 10 minutes.
 * "Live 30 s ago" can count from when each row's time was read upstream, with the phone's clock corrected (`LIVE_DATA_AGE`, off). Pushed boards now carry their ages too.
+* Watch and widgets get a board or trip at once from the server's kept copy (up to 2 minutes old) instead of waiting for the Trip Planner; the fresh one is stored for their next ask (DIAGNOSIS_LAG.md item 4, server part; on).
+* Request numbers: one log line per request (path, status, time, NSW time and calls, copy tag, app or watch/widget), Workers Logs on with 1 in 10 kept (item 10; on).
 * Feed timing and per row `liveAt` are in the g14 entry (a81237c8). Nothing is on for phones; tested once the NSW key is back after 1 AM.
 
 ### Diagnosis: lag, slow Watch and failed loads (docs only, no release)
