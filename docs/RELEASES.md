@@ -264,3 +264,12 @@ one before this). The TripPlanner object stays defined after a roll back and is 
 | 4:11 PM | 544279b4-ea16-4ea1-ac1a-ac651d5df3af | dd2641a | `/api/service` carries a run's latest live delay on to stops the feed does not list (`carried`), says what its next stop rests on (`progress`), and a fresh vehicle position behind the clock wins; the trip watch sends no change, arriving or arrived alert from the timetable alone; `/api/live-activity` takes `here`; trip card code regenerated from the app; web live trip holds timetable only legs. No D1 change. |
 
 Roll back: `npx wrangler@4 rollback fb242627-67c8-4df1-bc9f-4ca65a3e7af2 --name transport-api` (g18). Post deploy checks: /api/lines 200, /api/trackwork 200, /api/health 403 without key, /api/usual answers (400 without line and stop), `/api/service` carries `progress`, a shared trip page opens (200). The app side (trip screen, notification, Live Activity, Watch and widget card) is on main for the next over the air update; no update published.
+
+### Budget mode: US$5 a month (server, 26 Oct, g20)
+
+| Time (Sydney) | transport-api version | Main | What |
+|---|---|---|---|
+| 4:13 PM | 3f5e63d3-c354-4fba-9917-e024ce2797ae | 1bf2800 | Budget guard (hourly, `/api/budget` admin), `LOAD_TESTS` off, `ENGINE_SHARDS` 4, `ENGINE_IDLE_MIN` 5, `ENGINE_LEARN` off, `[[send_email]] ALERT_EMAIL`. Then the secret `CF_ANALYTICS_TOKEN` (read only Account Analytics), version a8fbe352. No D1 change. |
+| 4:21 PM | ffc1a25b-0ede-4418-b9ac-47686314a506 | e93ff84 | Guard rate from the last 48 hours; email From name quoted (the 4:17 PM run's email failed on it). |
+
+Roll back: `npx wrangler@4 rollback 544279b4-ea16-4ea1-ac1a-ac651d5df3af --name transport-api` (g19; the guard, the new vars and the email binding go with it, the secret stays). Post deploy checks after each: /api/lines 200, /api/trackwork 200, /api/health 403 without key, /api/usual 200, /api/budget 403 without key, a shared trip opened through transportsydney.app/trip/<id> (302 to /live/, 200) and was deleted. The guard's first run (4:17 PM) read every meter from Cloudflare and saved its reading; it holds the costly switches off (all were already off), see [COSTS.md](COSTS.md). The timetable workflow change (4 days, load every second night) takes effect at tonight's 2:40 AM run: the engine already holds 25 to 29 Oct, so no load is expected before 28 Oct.

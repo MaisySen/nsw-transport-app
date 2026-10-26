@@ -12,7 +12,7 @@ Bidur at 4:02 PM: "Keep making runbook very strong and better ... It would just 
 * tools/orient.mjs prints the live state in one go, read only: git, the production update group from the manifest the phones read, the last 3 deploys, flags on the Worker and in the template, remote config and app switches, health, NSW calls today, the budget guard and Cloudflare usage against the included amounts. tools/verify-deploy.mjs checks the API after a deploy (no NSW call unless `--live`). Neither prints a secret.
 * Fixed stale docs: build 208 is in the field (it was only on branch native-207; RELEASES.md now has its row), health is `/api/health`, the old server fallback has no hold, Workers Paid since 26 Oct, the Cloudflare cron (not cron-job.org) ticks the API, the security inventory, the owner's mobile number taken out of three public docs, and other apps' names taken out of five code comments.
 
-### Budget mode: US$5 a month, no overage, up to 1,000 people (server, SERVER_LINE)
+### Budget mode: US$5 a month, no overage, up to 1,000 people (server 26 Oct, 4:13 and 4:21 PM, transport-api 3f5e63d3 and ffc1a25b, roll back to 544279b4)
 Bidur at 3:47 PM: "Can't pay 90. We stay at 5 right now. Max users we may get currently is 1k."
 * docs/COSTS.md: this cycle's real usage against the Workers Paid included amounts (no overage: Cloudflare shows US$0.00
   projected; today's load tests used 12% of the month's Durable Object requests and nothing was charged), what runs
