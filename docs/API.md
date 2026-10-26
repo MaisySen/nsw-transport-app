@@ -548,6 +548,11 @@ the moment it opens, with no signal too, and lay the live board on top when it a
   `ETag`; sending it back in `If-None-Match` answers 304 with no body.
 * A stop where the Trip Planner lists lines our timetable lacks (`engine.gap` inside the engine) is answered by the
   Trip Planner.
+* Since 27 Oct an engine board may carry `engine.emptyHidden`: up to 12 `[tripId, planned, line, stopId]` of
+  "Empty Train" rows due in the horizon that it leaves off for want of a live time (for `tools/match_x.mjs`; phones
+  ignore it). `GET /api/engine/status` has `learn`: the stand name queue (`queued`, `queuedMiss`), planner reads
+  `today` of `perDay`, `perMin`, `names`, `movedStands`, `asked`, `ok`, `failed`, `conflicts`, `moved`, `cleared`,
+  `skippedBusy`; each shard has `learnWaiting`, `platVer` and `platDeltas` (docs/ENGINE.md "Stand names").
 * **Outage fallback:** when the Trip Planner refuses or fails and no copy is kept or saved, the answer is the engine's
   board as timetable times: `source: "timetable"`, `fallback: "planner-unavailable"`, every row `realtime: false`,
   `estimated: null`, `status.key: "scheduled"` (a row may stay live only from a feed copy under 60 s old, marked

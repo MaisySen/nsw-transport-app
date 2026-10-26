@@ -49,8 +49,9 @@ Code: `backend/src/engine.js` (appended to `worker.js` by `build.mjs`, same modu
    the load) are listed from the feed as added services.
 6. **Platform names and missing services.** Where the Trip Planner's platform names differ from the timetable's (bus
    stands such as "Stand X1", some light rail platforms), the engine uses the planner's, learnt from planner boards
-   (`/learn`). A shard asks the worker for one planner board of a stop on its first read (once in 6 hours when rows
-   have no platform name, else once a day, at most 2 stops a minute per shard). The same board's lines tell the core
+   (`/learn`). Since 27 Oct the core reads a stop's planner board itself from a queue the shards fill as they build
+   boards (once in 6 hours when rows have no platform name, else once a day; at most 30 a minute and 2,000 a day;
+   "Stand names" below). The same board's lines tell the core
    when the planner lists a line our bundles do not have at that stop (the private Watsons Bay ferry, coach 855 and
    SH100 at Goulburn, 700-1): the stop is marked for 6 hours (`engine.gap`) and its boards come from the Trip Planner.
 7. **Serving.** `/api/departures` asks the engine when `ENGINE_BOARDS` is `on` (or `engine=1` on the request). Boards
@@ -94,6 +95,62 @@ ENGINE_LOAD_KEY=... node tools/load_timetable.mjs <out>
 The GTFS zips come from `/v1/gtfs/schedule/<feed>` (one call each, about 26) and `stops_complete.txt` from the complete
 bundle. A stop with no rows for today falls back to the Trip Planner, so a missed refresh degrades to today's speed,
 it does not show wrong boards. The daily refresh is the GitHub workflow `.github/workflows/timetable.yml`.
+
+## Stand names, Empty Train evidence, match check (27 Oct, 8 AM, g14 follow up)
+
+* **Why 20 stands were missed at 4:08 AM.** A shard asked for a planner read only on a phone's first read of a board,
+  at most 2 stops a minute per shard, and never again while the board stayed hot (a hot board is rebuilt by the tick
+  and put in the edge cache, so later reads never reach the shard's first read path). Production runs 4 shards
+  (`ENGINE_SHARDS` "4", budget mode), so the warm up's 22 stops at once got about 8 reads in its first minute and
+  the rest never had one. A second fault: a name learnt made every shard drop all its windows, and the tick that
+  followed built every board from nothing, so each of that shard's boards went to the planner for one tick.
+* **Now (`ENGINE_LEARN_CORE`, on unless "off"):** the shards put each stop they build a board for in a queue the core
+  object holds (riding the `/live` call they already make, so no new object request), and the core reads the
+  stop's planner board itself, at most `ENGINE_LEARN_PER_MIN` a minute (30, a bucket of 10) and `ENGINE_LEARN_DAY`
+  a day (2,000, about 3% of the key's 60,000), stops with unnamed services first, never while the key is busy. A stop
+  is asked again after 6 hours when a service has no name, 24 hours when all have one, 30 minutes after a failed read.
+  When it was last asked is kept in the core's SQLite (`learnt`), so a restart does not ask again; the names were
+  already kept there (`plat`) and still are.
+* **Names go to the shards as changes:** each change has a number; a shard sends the number it holds and gets the
+  changes since (`platDelta`), which it writes into the windows it holds. Only when the core cannot list them (it
+  restarted) does a shard drop its windows, and it now reads them again before building.
+* **Which names are kept (wrong data is worse than none):** per stop id, a name every service the planner shows there
+  unchanged agrees on (two different names at one id teach nothing, counted as `conflicts`). A stand every service at
+  that id shows as moved from its planned one (a bus moved to a temporary stand, the likely case at Dee Why, Dulwich
+  Grove and Rouse Hill, where regular routes stop at Stand X1 and X2) is kept in `platx` only for stops whose timetable
+  has no stand name of its own, only 36 hours unless the planner shows it again, and dropped when the planner shows
+  that stop's services unchanged with no stand. A train platform change is never kept as a stop's name.
+  `ENGINE_LEARN_MOVED` "off" keeps no moved stand. The worker's own planner boards (`engineLearn`) use the same rules.
+* **Counts:** `/api/engine/status` `learn`: queue, reads today, names, moved stands, conflicts, failures.
+* **Empty Train rows on timetable times: not changed.** The evidence is 3 rows at 3 stations (Epping, Hurstville,
+  Lidcombe, 5:13 to 5:35 AM), all on the planner on timetable times; over the night 18 of 18 Empty Train rows seen
+  at matched stations were on the planner (15 of them live). All of it is night or the first trains of the morning,
+  nothing from the day when the 133 a day at Strathfield run, which have never been checked against the planner. A
+  train shown that nobody can board is worse than one left off, and the 3 rows were 0.8% of the gate (the stands
+  5.3%). So they stay off. Each board now lists them as `engine.emptyHidden` (up to 12, phones ignore it) and
+  `tools/match_x.mjs` counts how many the planner lists: a night run from 11 PM, with the evening's trains, is the next
+  evidence. If the planner lists nearly all of them there, list them behind a kill switch like `ENGINE_EMPTY_LIVE`.
+* **Match check in the repo:** `backend/tools/match_x.mjs` (was in a task folder). Staggered warm up: 3 stops at a
+  time 20 s apart, every opened stop read again each minute, then it waits for the name queue to empty (at most 4
+  minutes). Timing: a row counts only when due by the earlier of the engine's build and the request plus 90 minutes,
+  less 60 s (the 2 trains "due 90.5 minutes out" were inside the script's window and past the engine's horizon).
+  A planner row matched by line only takes an engine row not already used. Planner calls capped (`--max-planner`,
+  60, the engine's name reads included); any host that is not local needs `--live` and is refused outside 11 PM to
+  5 AM Sydney. `--dry --load` runs it against `tools/local-dev.mjs`: it loads the fake network (`tools/fake-feed.mjs`,
+  now with `stands` and `at`) into the local engine, and the fake planner board is that network's.
+* **Local check** (27 Oct, 8:27 AM, wrangler dev, fresh local state, fake network of 200 trips with 6 stations whose
+  sides have no name and a planner that shows Stand X1 and X2 as moved): 12 stops opened 4 at a time; the core read 12
+  planner boards in 32 s (4 a tick), kept 10 moved stands and 12 names, and the 4 shards took 22 changes as deltas
+  with no window read again; the match was 370 of 370 with every stand right. Before the fake network change two
+  synthetic trains could share a platform and minute (the engine keeps one row for that), which made 41% noise.
+* **CPU, local** (Node, order of size): a planner board to names 0.03 ms; a shard taking 20 changes over 1,000
+  windows 2.6 ms; the planner answer's JSON parse in the core, about 1 to 3 ms a read at most 30 a minute. Feed copy,
+  board build and shard tick unchanged (`tools/engine-cpu.mjs`: copy 32 ms, board 2 to 3 ms, shard tick 54 to 60 ms).
+* **Cost:** no new Worker or object requests (the queue rides `/live`, the planner read is a subrequest of the core's
+  alarm). D1: no rows written, no migration. Object SQLite rows written: one `learnt` row per planner read, one
+  `learnDay` counter per tick that read, and one row per name that changed: at most about 4,000 a day plus changed
+  names (2,000 reads), against 50 million a month included. Trip Planner calls: at most 2,000 a day for names, only
+  while engine boards are read (none while `ENGINE_BOARDS` is off and nobody asks `engine=1`).
 
 ## Night trains and trackwork trips (27 Oct, 2 to 4 AM, g14)
 
