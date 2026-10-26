@@ -47,6 +47,7 @@ export default function ParkingScreen() {
           </View>
         ) : null}
         {error && !data ? <Empty icon={I.warn} title="Can't load car parks" body={error} /> : null}
+        {data && !list.length ? <Empty icon={I.warn} title="No car parks to show" body="The list came back empty. Pull down to try again." /> : null}
         <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>Live spaces from the Transport for NSW Car Park API. Nearly full means 10 percent or fewer spaces left. Open the station to get an alert when it gets nearly full.</T>
       </Screen>
     </>

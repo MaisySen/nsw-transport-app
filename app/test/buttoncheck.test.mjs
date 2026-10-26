@@ -11,3 +11,9 @@ test('a watch the server no longer has (404) says it has ended once and stops as
   assert.match(s, /This watch has ended/);
   assert.match(s, /router\.replace\('\/watching'\)/);
 });
+
+test('Car parks with an empty list says so instead of a blank screen', () => {
+  const s = readFileSync(src + 'app/parking.tsx', 'utf8');
+  assert.match(s, /data && !list\.length \? <Empty/);
+  assert.match(s, /No car parks to show/);
+});
