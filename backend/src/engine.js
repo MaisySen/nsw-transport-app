@@ -483,6 +483,11 @@ class BoardEngine {
   }
   // Loading a new timetable version: /load/begin, then stops, days and trips in parts, then /load/commit.
   async load(p, req) {
+    if (p === "/load/restart") {
+      // Takes effect after this answer: the object starts again with the code now deployed.
+      setTimeout(() => { try { this.state.abort("restart"); } catch (e) { /* not available */ } }, 50);
+      return Response.json({ restarting: true });
+    }
     if (p === "/load/begin") {
       const meta = await req.json();
       const ver = Number(this.kvGet("ver") || 0) + 1;
@@ -560,9 +565,12 @@ class BoardEngine {
 }
 
 // ---------- worker side ----------
+// The object's name. A running object can keep its old code across deploys while its alarm keeps it busy; a new
+// name starts a new object (load the timetable into it), and /api/engine/load/restart resets the current one.
+const ENGINE_OBJECT = "nsw-2";
 function engineStub(env) {
   if (!env || !env.ENGINE) return null;
-  return env.ENGINE.get(env.ENGINE.idFromName("nsw"), { locationHint: "oc" });
+  return env.ENGINE.get(env.ENGINE.idFromName(ENGINE_OBJECT), { locationHint: "oc" });
 }
 // Whether /api/departures answers from the engine: ENGINE_BOARDS "on", or engine=1 on the request (checks).
 function engineWanted(env, url) {
