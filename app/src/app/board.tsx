@@ -25,6 +25,7 @@ import { Icon, I } from '@/components/Icon';
 import { SpeakButton } from '@/components/SpeakButton';
 import { departuresSentence } from '@/lib/voiceCore';
 import { busBoardWords, rowTraffic } from '@/lib/busLiveCore';
+import { stableKeys } from '@/lib/rowKeysCore';
 
 const TAG = 'departure-board';
 
@@ -102,6 +103,7 @@ export default function Board() {
   const headH = big * 1.6 + 40;
   const fit = rowsThatFit(height - insets.top - insets.bottom - 16, rowH, headH + big * 0.6);
   const rows = boardRows(data?.items || [], now, fit);
+  const rowKeys = stableKeys(rows.map((r) => r.key));
   const stopsOf = useStops(data?.items || [], rows);
   useReportCountdowns('board:' + id, (data?.items || []).slice(0, fit).map((d) => bestTime(d.planned, d.realtime ? d.estimated : null)));
   const whyOf = useWhyLate(data?.items, data?.alerts);
@@ -138,6 +140,7 @@ export default function Board() {
       </View>
       {data && !rows.length ? <Text maxFontSizeMultiplier={1.4} style={{ color: c.text2, fontSize: big * 0.5, marginTop: big }}>{offlineAt ? 'No kept times left' : 'No more services right now'}</Text> : null}
       {rows.map((r, i) => {
+        const rowKey = rowKeys[i];
         const { bg, fg } = badgeLook(r.line, r.mode, r.color);
         const stops = stopsOf(r);
         const w = why.get(r.key) || null;
@@ -153,7 +156,7 @@ export default function Board() {
         const warm = !!w || !!slow;
         const subTone = bus && / late$/.test(bus.status) ? c.lateText : tone;
         return (
-          <View key={r.key + i} accessible accessibilityLabel={[r.a11y, bus && r.kind === 'live' ? bus.status : '', bus?.away || '', slow || '', stops && !r.pattern ? `stops at ${stops}` : '', w ? w.text : ''].filter(Boolean).join(', ')}
+          <View key={rowKey} accessible accessibilityLabel={[r.a11y, bus && r.kind === 'live' ? bus.status : '', bus?.away || '', slow || '', stops && !r.pattern ? `stops at ${stops}` : '', w ? w.text : ''].filter(Boolean).join(', ')}
             style={[s.row, { minHeight: rowH, borderTopColor: c.sep, borderTopWidth: i ? StyleSheet.hairlineWidth : 0 }]}>
             <View style={[s.badge, { backgroundColor: bg, minWidth: big * 1.6, height: big * 1.05, borderRadius: big * 0.22 }]}>
               <Text numberOfLines={1} maxFontSizeMultiplier={1} style={{ color: fg, fontSize: big * 0.52, fontWeight: '800' }}>{r.line}</Text>

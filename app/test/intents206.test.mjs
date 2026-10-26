@@ -57,7 +57,7 @@ test('the app and the Swift side use the same app group keys', () => {
   assert.match(swift, /pendingKey = "intentPendingOpen"/);
   assert.match(bridge, /takeString\('intentPendingOpen'\)/);
   assert.match(swift, /forKey: "apiBase\.v1"/);
-  assert.match(bridge, /setString\('apiBase\.v1'/);
+  assert.match(bridge, /(setString|putString)\('apiBase\.v1'/);
   for (const k of ['homeWork', 'starredStops', 'liveCard', 'apiProfile']) {
     assert.ok(swift.includes(`"${k}"`), `Swift reads ${k}`);
     assert.ok(bridge.includes(`'${k}'`), `the app writes ${k}`);

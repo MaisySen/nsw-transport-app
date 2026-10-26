@@ -39,6 +39,7 @@ import { hasSpeech, speak } from '@/lib/nativeExtras';
 import { departuresSentence } from '@/lib/voiceCore';
 import { openPlatform } from '@/lib/platform';
 import { PLATFORM_VIEW } from '@/lib/features';
+import { withKeys } from '@/lib/rowKeysCore';
 
 const canSpeak = hasSpeech();
 
@@ -325,11 +326,11 @@ export default function StopScreen() {
               ) : null;
             })()}
             {earlierNote && !earlier.busy ? <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}><T kind="foot" tone="text2">{earlierNote}</T></View> : null}
-            {items.map((d, i) => {
+            {withKeys(items, (d) => tripKey(d.tripId, d.planned, d.line)).map(({ v: d, k: rowKey }, i) => {
               const key = tripKey(d.tripId, d.planned, d.line);
               const top = i === 0 && !earlier.busy && !earlierNote && !boardEarlierRow(earlier, firstDep, floor, timeOk).show;
               return (
-                <View key={key + i}>
+                <View key={rowKey}>
                   {top ? null : <Sep inset={i ? 82 : 0} />}
                   {isGone(d, now)
                     ? <LeftDepartureRow d={d} stopNo={signNo ? null : stopLabel(d.stopId, d.mode) || null} onPress={() => openService(d)} />

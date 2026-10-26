@@ -127,16 +127,30 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     if (!ok) { activityId = null; activityTrip = null; dropToken(); }
   }
 
+  // What is shared with the widgets and the Live Activity's app group is written once per change (g13, 26 Oct): each
+  // key keeps the last value written, and the same value again is not written (before, Home, starred stops and the
+  // trip card were written on every store write and every card tick, and every widget reloaded with them).
+  const sharedLast = new Map<string, string>();
+  const putJSON = (k: string, v: any): boolean => {
+    const j = JSON.stringify(v ?? null);
+    if (sharedLast.get(k) === j) return false;
+    sharedLast.set(k, j); iosNative.setJSON(k, v); return true;
+  };
+  const putString = (k: string, v: string): boolean => {
+    if (sharedLast.get(k) === 's:' + v) return false;
+    sharedLast.set(k, 's:' + v); iosNative.setString(k, v); return true;
+  };
+
   // The Next trip widget follows a trip in progress. Reload it only when the words on it change.
   let liveKey = '';
   function shareLive(g: LiveTrip | null, card: TripCardState | null) {
     if (!g || !card) {
-      if (liveKey) { liveKey = ''; iosNative.setJSON('liveCard', null); iosNative.reloadWidgets('NextTrip'); }
+      if (liveKey) { liveKey = ''; putJSON('liveCard', null); iosNative.reloadWidgets('NextTrip'); }
       watchData.live = null; shareWatch();
       return;
     }
     const share = liveCardFor(g.title || `${shortName(g.origin?.name)} to ${shortName(g.to?.name)}`, card, ARRIVED_KEEP_S * 1000);
-    iosNative.setJSON('liveCard', share);
+    putJSON('liveCard', share);
     watchData.live = share; shareWatch();
     const k = [card.phase, card.line, card.getOffAt, card.departs, card.legArrives, card.platform].join('|');
     if (k !== liveKey) { liveKey = k; iosNative.reloadWidgets('NextTrip'); }
@@ -177,27 +191,30 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     }, 2000);
   }
 
-  // Widget data.
-  async function shareWidgetData() {
+  // Widget data. The widgets reload when something on them changed, and each time the app comes to the front
+  // (force); a store write that changed nothing they show (a recent search, a setting) no longer reloads them.
+  async function shareWidgetData(force = false) {
     try {
       const [profile, store] = await Promise.all([AsyncStorage.getItem('profile'), AsyncStorage.getItem('store')]);
-      if (profile) iosNative.setString('apiProfile', profile);
+      let changed = false;
+      if (profile) changed = putString('apiProfile', profile) || changed;
       // The server the app uses now, so Siri and the widgets ask the same one.
-      iosNative.setString('apiBase.v1', apiBase());
+      changed = putString('apiBase.v1', apiBase()) || changed;
       if (store) {
         const st = JSON.parse(store);
         const starred = starredFor(st);
-        iosNative.setJSON('starredStops', starred);
-        if (st?.fareType) iosNative.setString('tb_fare', String(st.fareType));
-        iosNative.setJSON('homeWork', homeWorkFor(st));
-        watchData.starred = starred; watchData.hw = homeWorkFor(st);
+        const hw = homeWorkFor(st);
+        changed = putJSON('starredStops', starred) || changed;
+        if (st?.fareType) changed = putString('tb_fare', String(st.fareType)) || changed;
+        changed = putJSON('homeWork', hw) || changed;
+        watchData.starred = starred; watchData.hw = hw;
       } else {
-        iosNative.setJSON('starredStops', []);
-        iosNative.setJSON('homeWork', homeWorkFor(null));
+        changed = putJSON('starredStops', []) || changed;
+        changed = putJSON('homeWork', homeWorkFor(null)) || changed;
         watchData.starred = []; watchData.hw = homeWorkFor(null);
       }
       watchData.profile = profile || null;
-      iosNative.reloadWidgets();
+      if (changed || force) iosNative.reloadWidgets();
       shareWatch();
     } catch {}
   }
@@ -236,7 +253,7 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     const ids = iosNative.activityIds();
     if (trip && ids.length) { activityId = ids[0]; activityTrip = trip.id; }
     else if (!trip && ids.length) await iosNative.endTrip(null, null, 0);
-    if (!trip) iosNative.setJSON('liveCard', null);
+    if (!trip) putJSON('liveCard', null);
     shareWidgetData();
     refreshCard();
     sendDeviceToken();
@@ -257,5 +274,5 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   // The card refresh runs only while a trip is on and the app is in front; in the background push moves the card.
   cardPoll.setEnabled(!!trip);
   // Going to the background: the last chance to say on the card when its live times are from.
-  AppState.addEventListener('change', (s) => { if (s === 'active') { checkPending(); shareWidgetData(); refreshCard(); sendDeviceToken(); } else if (s === 'background') refreshCard(true); });
+  AppState.addEventListener('change', (s) => { if (s === 'active') { checkPending(); shareWidgetData(true); refreshCard(); sendDeviceToken(); } else if (s === 'background') refreshCard(true); });
 }

@@ -8,10 +8,11 @@ import { pollNotes, pollNotesTick } from '@/lib/push';
 import { startAppPoll } from '@/lib/activity';
 import { startPacks } from '@/lib/timetablePack';
 import { endLive, setupLiveNotifications } from '@/lib/live';
-import { finishProfileMove, initProfile } from '@/lib/device';
+import { finishProfileMove } from '@/lib/device';
 import { finishServerMove } from '@/lib/serverMove';
 import { warmLocalSearch } from '@/lib/localSearch';
-import { loadCachedConfig, refreshConfig } from '@/lib/config';
+import { refreshConfig } from '@/lib/config';
+import { bootLocal } from '@/lib/boot';
 import { api } from '@/lib/api';
 import { morningTripParams } from '@/lib/morning';
 import { store } from '@/lib/store';
@@ -24,6 +25,9 @@ import { orientationFor } from '@/lib/layoutCore';
 
 /** Startup work that is not the first screen's own data waits this long after the app is ready. */
 const STARTUP_DEFER_MS = 1500;
+
+// The phone's own data for the first screen starts loading as soon as this file runs, before React draws anything.
+bootLocal();
 
 // Feature detected: a build without the native module skips it instead of failing at import.
 function systemUI(): any {
@@ -47,7 +51,9 @@ export default function RootLayout() {
     // not queued behind it on a slow connection (docs/PERFORMANCE.md, startup). The cached one is already in use.
     let later: ReturnType<typeof setTimeout> | null = null;
     let search: ReturnType<typeof setTimeout> | null = null;
-    Promise.all([initProfile().catch(() => {}), loadCachedConfig()]).finally(() => {
+    // The profile, cached config, saved places and kept copies are read side by side (lib/boot.ts), so the first
+    // screen draws once, with its saved times, instead of empty cards that fill a few frames later.
+    bootLocal().finally(() => {
       setReady(true);
       later = setTimeout(() => { later = null; finishProfileMove(api).then(() => finishServerMove()); refreshConfig(true); }, STARTUP_DEFER_MS);
       // The stop lists for search as you type are read (or fetched once) well after the first screen has its times.
@@ -108,6 +114,8 @@ export default function RootLayout() {
         {/* On a phone sized window every screen stays upright and only the departure board turns sideways (build 205
             lets iPhone turn); on a wide window every screen follows the window. */}
         <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal', headerTintColor: c.tint, contentStyle: { backgroundColor: c.bg }, orientation }}>
+          {/* The opening route only redirects to Home; without this it drew an empty screen titled "index" for a frame (g13). */}
+          <Stack.Screen name="index" options={{ headerShown: false, animation: 'none' }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="stop/[id]" options={stopHeaderOptions(Platform.OS)} />
           <Stack.Screen name="trip" options={{ title: 'Trips', headerLargeTitle: false }} />

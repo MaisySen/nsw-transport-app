@@ -49,6 +49,7 @@ import { RemindLastButton } from '@/components/LastHome';
 import { canRemind, lastTonightIndex, modeOfLegs, slimLast } from '@/lib/lastHomeCore';
 import { Button, Empty, Screen, Sep, T } from '@/components/ui';
 import { boardWords, stopLabel, stopNumber } from '@/lib/busCore';
+import { stableKeys } from '@/lib/rowKeysCore';
 
 /** "0745" for the trip API's time parameter, Sydney time. */
 function hhmm(t: number) {
@@ -393,6 +394,7 @@ export default function TripScreen() {
   const df = directFilter(filterModes(jsAll, modes), plan, allOn, (j) => j);
   const chips = modesOn ? chipsToShow([...seenModes.current], modes) : [];
   const js = df.list;
+  const jKeys = stableKeys(js.map(jKey));
   // A new reminder starts 15 min before the first service shown (phone time, as the reminder rings in phone time).
   const suggest = (() => { const j = js.find((x) => !hasLeft(depMs(x), now)) || js[0]; if (!j) return null; const t = new Date(depMs(j) - 15 * 60000); return { hour: t.getHours(), minute: Math.floor(t.getMinutes() / 5) * 5 }; })();
   // Last way home: the last service tonight, only when the list shows the night gap after it.
@@ -650,7 +652,7 @@ export default function TripScreen() {
             })()}
             {earlierNote && !earlier.busy ? <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}><T kind="foot" tone="text2">{earlierNote}</T></View> : null}
             {js.map((j, i) => (
-              <View key={jKey(j) + i}>
+              <View key={jKeys[i]}>
                 <Sep inset={0} />
                 {hasLeft(depMs(j), now)
                   ? <LeftRow j={j} arrive={arrs[i]} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />

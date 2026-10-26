@@ -38,7 +38,9 @@ export function LiveStatus({ state, delayMin, compact, timetableText }: { state:
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }} accessibilityLabel={`${d.text}, ${liveWords(state)}`}>
       <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color, marginRight: 5 }} />
-      <Text maxFontSizeMultiplier={1.4} style={[font.foot, { color, fontWeight: '600', flexShrink: 1 }]}>
+      {/* compact (a row of a list): one line, so the row keeps its height as "Live" becomes "Live 30 s ago" between
+          refreshes; before, the longer words wrapped and every row below jumped down (g13). The full words are in the label. */}
+      <Text maxFontSizeMultiplier={1.4} numberOfLines={compact ? 1 : undefined} style={[font.foot, { color, fontWeight: '600', flexShrink: 1 }]}>
         {d.text}<Text style={{ color: c.text2, fontWeight: '400' }}>{` \u00b7 ${words}`}</Text>
       </Text>
     </View>

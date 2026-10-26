@@ -38,6 +38,7 @@ import { planB, planBLine, problemOf } from '@/lib/planBCore';
 import { useJourneyWhy, WhyLate, withWhyAction } from './WhyLate';
 import { SpeakButton } from './SpeakButton';
 import { tripSentence } from '@/lib/voiceCore';
+import { withKeys } from '@/lib/rowKeysCore';
 
 // ---------- shared refresh signals for every card on Home ----------
 
@@ -763,11 +764,11 @@ export function StopBoard({ stop, now, starred, distance, menu }: { stop: Place;
       {offlineAt ? <OfflineNote at={offlineAt} now={now} /> : null}
       {packAt && !offlineAt ? <T kind="foot" tone="text2" style={s.note}>{packStampText(!!error)}</T> : null}
       {data && !groups.length ? <T kind="foot" tone="text2" style={s.note}>{offlineAt ? 'No kept times left' : 'No more services right now'}</T> : null}
-      {groups.map(({ d, next }, i) => {
+      {withKeys(groups, (g) => `${g.d.line}|${g.d.dest}`).map(({ v: { d, next }, k: rowKey }) => {
         const t = cd(bestTime(d.planned, d.realtime ? d.estimated : null), now);
         const n = next ? cd(bestTime(next.planned, next.realtime ? next.estimated : null), now) : null;
         return (
-          <View key={`${d.line}|${d.dest}|${i}`}>
+          <View key={rowKey}>
             <Sep inset={16} />
             <Pressable accessibilityRole="button" onPress={() => openService(d)} android_ripple={{ color: c.fill }} accessibilityLabel={`${d.line} to ${d.dest}, ${t.big} ${t.unit}${d.realtime ? ', live' : ', scheduled'}`}
               style={({ pressed }) => [s.dep, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>

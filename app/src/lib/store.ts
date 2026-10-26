@@ -58,6 +58,8 @@ async function load() {
   } catch {}
   listeners.forEach((l) => l());
 }
+/** Reads the saved places, trips and settings (once). The app's start reads it beside the profile and config. */
+export function loadStore(): Promise<void> { return load(); }
 function save() {
   AsyncStorage.setItem('store', JSON.stringify(state)).catch(() => {});
   listeners.forEach((l) => l());
