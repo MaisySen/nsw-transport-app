@@ -20,6 +20,7 @@ const ENGINE_LOOKBACK_MS = 120 * 60000; // a service planned up to 2 hours ago c
 const ENGINE_MAX_ROWS = 60;
 const ENGINE_DAILY_BUDGET = 30000;     // feed calls a day the engine aims to stay under (ENGINE_BUDGET overrides)
 const ENGINE_HOT_MAX = 3000;
+const ENGINE_GAP_MS = 300;
 
 // Sydney date key (YYYYMMDD) for a moment.
 const ENG_DAYFMT = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney", year: "numeric", month: "2-digit", day: "2-digit" });
@@ -301,10 +302,24 @@ class BoardEngine {
     const frac = Math.min(1, Math.max(0.05, (now - base) / 86400000));
     return Math.min(6, Math.max(1, this.stats.dayCalls / (this.budget() * frac)));
   }
-  async fetchFeed(path, kind) {
+  // Calls start at least ENGINE_GAP_MS apart (about 3 a second at most), so a tick never bursts past the key's
+  // 5 a second with the worker's own Trip Planner calls beside it. A refused call is asked once more 1.5 s later.
+  async slot() {
+    const now = Date.now();
+    const at = Math.max(now, this.nextSlot || 0);
+    this.nextSlot = at + ENGINE_GAP_MS;
+    if (at > now) await new Promise((r) => setTimeout(r, at - now));
+  }
+  async fetchFeed(path, kind, again = true) {
+    await this.slot();
     const res = await fetch(API + path, { headers: { Authorization: "apikey " + apiKey(this.env) }, signal: AbortSignal.timeout(8000) });
     this.stats.calls++; this.stats.dayCalls++;
-    if (!res.ok) { this.stats.refused++; throw new Error("feed " + path + " " + res.status); }
+    if ((res.status === 429 || res.status === 403) && again) {
+      this.stats.refused++;
+      await new Promise((r) => setTimeout(r, 1500));
+      return this.fetchFeed(path, kind, false);
+    }
+    if (!res.ok) { this.stats.refused++; this.stats.lastRefusal = res.status + " " + path; throw new Error("feed " + path + " " + res.status); }
     const buf = new Uint8Array(await res.arrayBuffer());
     const { idx, headerTs } = indexFeed(buf, kind);
     return { at: Date.now(), buf, idx, headerTs, kind, cache: new Map() };
@@ -315,13 +330,13 @@ class BoardEngine {
     f.pending = this.refreshFeedNow(key, f, now, force).finally(() => { f.pending = null; });
     return f.pending;
   }
-  async refreshFeedNow(key, f, now, force) {
+  async refreshFeedNow(key, f, now, force, only) {
     const def = FEEDS[key];
     if (!def) return;
     const k = this.stretch(now);
     const tuEvery = (/^rb_/.test(key) ? ENGINE_SLOW_FEED_MS : ENGINE_TICK_MS) * k;
     const jobs = [];
-    if (force || now - f.tuAt >= tuEvery - 1500) {
+    if (only !== "vp" && (force || now - f.tuAt >= tuEvery - 1500)) {
       f.tuAt = now;
       jobs.push(this.fetchFeed(def.tu, "tu").then((e) => {
         f.tu = e; f.fails = 0;
@@ -329,9 +344,9 @@ class BoardEngine {
         const added = [];
         if (e.idx.size < 2500) for (const id of e.idx.keys()) { const tu = decodeFrom(e, id); if (tu && tu.rel === 1) added.push(tu); }
         f.added = added;
-      }).catch(() => { f.fails++; }));
+      }).catch(() => { f.fails++; f.tuAt = 0; }));
     }
-    if (force || now - f.vpAt >= ENGINE_VP_MS * k - 1500) {
+    if (only !== "tu" && (force || now - f.vpAt >= ENGINE_VP_MS * k - 1500)) {
       f.vpAt = now;
       jobs.push(this.fetchFeed(def.vp, "vp").then((e) => { f.vp = e; }).catch(() => {}));
     }
@@ -341,7 +356,10 @@ class BoardEngine {
     const t0 = Date.now();
     this.stats.ticks++;
     const jobs = [];
-    for (const [key, f] of this.feeds) if (t0 - f.wantAt < ENGINE_FEED_HOT_MS) jobs.push(this.refreshFeed(key, f, t0, false));
+    // Trip updates for every hot feed first, then vehicle positions, through the call pacing in slot().
+    const hot = [...this.feeds].filter(([, f]) => t0 - f.wantAt < ENGINE_FEED_HOT_MS && !f.pending);
+    for (const [key, f] of hot) jobs.push(this.refreshFeedNow(key, f, t0, false, "tu"));
+    for (const [key, f] of hot) jobs.push(this.refreshFeedNow(key, f, t0, false, "vp"));
     await Promise.all(jobs);
     const src = this.source();
     for (const [bk, at] of this.hot) {
@@ -367,8 +385,9 @@ class BoardEngine {
   }
   async alarm() {
     this.alarmSet = true;
+    const t0 = Date.now();
     try { if (this.loadMeta()) await this.tick(); } finally {
-      if (Date.now() - this.lastRead < ENGINE_IDLE_MS) await this.state.storage.setAlarm(Date.now() + ENGINE_TICK_MS);
+      if (Date.now() - this.lastRead < ENGINE_IDLE_MS) await this.state.storage.setAlarm(Math.max(Date.now() + 1000, t0 + ENGINE_TICK_MS));
       else this.alarmSet = false;
     }
   }
