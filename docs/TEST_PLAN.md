@@ -440,6 +440,19 @@ Before switching it on:
 3. On a phone with `OWN_PLANNER` on in a test deploy: search Home to Work at 8 AM and at 11:30 PM (late night, next morning's first services), a trip from your position, and arrive by; compare with Trip Planner screenshots.
 4. `/api/raptor/status`: every replica loaded the same pack day; after the daily load, replicas pulled the new one.
 
+## Budget mode checks (g20, 26 Oct)
+
+1. `node --test test/budget.test.mjs` in `backend/`: billing cycle from `BILLING_DAY`, month end projection, no action
+   under 50%, the hold past 80% (flags off, load key refused, one email), no second email, the hold lifting under 60%, a
+   new cycle lifting it, load keys only with `LOAD_TESTS` on.
+2. After a deploy: `GET /api/budget` with the admin key shows `token: true`, `email: true` and every flag's `var` and
+   `on`; `POST /api/budget/check?dry=1` returns every meter with a projection; `POST /api/budget/mailcheck` says
+   `binding: true, module: true`. Without the key all three answer 403.
+3. An hour later: `last.at` is within the hour (the minute 17 run).
+4. The night after: the timetable workflow log says either "no engine load tonight" (the engine holds today and
+   tomorrow) or loads; `/api/engine/status` `days` always holds today and tomorrow.
+5. Cloudflare dashboard, Billable usage: still US$0.00 projected at the end of the week.
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).

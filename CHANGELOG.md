@@ -4,6 +4,21 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Budget mode: US$5 a month, no overage, up to 1,000 people (server, SERVER_LINE)
+Bidur at 3:47 PM: "Can't pay 90. We stay at 5 right now. Max users we may get currently is 1k."
+* docs/COSTS.md: this cycle's real usage against the Workers Paid included amounts (no overage: Cloudflare shows US$0.00
+  projected; today's load tests used 12% of the month's Durable Object requests and nothing was charged), what runs
+  with nobody using the app and what it costs, the 1,000 people estimate (every meter under 50%), what still risks
+  overage. docs/SCALE_1M.md opens with the budget mode rules.
+* The engine timetable loads every second night with 4 days built (each load writes 1.3 million rows, 80% of the
+  month's included amount at one a night).
+* Idle: 4 engine shards (16 before), engine objects stop 5 minutes after the last read (15), no engine learn calls from
+  Trip Planner boards while the engine is off for phones.
+* Load test keys refused on production (`LOAD_TESTS` off).
+* Hourly budget guard with a read only analytics token: past 80% of any included amount at month end, engine, push and
+  own planner are held off for the cycle and contact@fintex.au gets an email; a warning email at 50%. `/api/budget`
+  (admin).
+
 ### Live trip follows the real train, not the timetable (server 26 Oct, 4:11 PM, transport-api 544279b4 from main dd2641a, roll back to fb242627; app changes on main for the next over the air update, not published)
 Bidur's trip on 26 Oct: the 8:46 T1 from Strathfield platform 4 to Town Hall, then a T4 to Bondi Junction. T1 trains at Strathfield platform 4 ran 25 to 44 minutes late that morning (our own Trip Planner samples), but the live trip said he was at Town Hall and should change while he was not yet at Redfern, kept the arrival at the timetable time and treated the T4 change as made.
 * Why: a train's feed lists only the stops it has news for, and the 8:46 T1's trip ends at Central (it carries on to Town Hall under another trip), so Town Hall never had a live time. The app took the stop's timetable time as the arrival, so the T4 change looked fine and the arrival never moved; the server's next stop followed the clock when the feed had no clock times, and only trusted the train's position when the clock was 3 or more stops off (a 4 stop run never is); and a leg ended on the clock alone.

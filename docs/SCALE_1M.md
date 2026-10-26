@@ -1,5 +1,25 @@
 # Scale: 1,000,000 people using the app at the same moment
 
+## Budget mode: US$5 a month, up to 1,000 people (in force from 26 Oct 2026)
+
+Bidur, 26 Oct, 3:47 PM: "Can't pay 90. We stay at 5 right now. Max users we may get currently is 1k." The server is
+run for that, and the rest of this page is a documented path for later, not the plan now. Numbers, sources and the
+guard are in [COSTS.md](COSTS.md).
+
+* Plan: Workers Paid base fee, US$5 a month, nothing over the included amounts. Target: under 50% of every one at
+  1,000 people (estimate: Worker requests 13%, CPU 25%, Durable Object rows written 40%, everything else under 20%).
+* Phones stay on the Trip Planner path with the edge copies: `ENGINE_BOARDS`, `ENGINE_PUSH`, `LIVE_PUSH` and
+  `OWN_PLANNER` off. The engine serves only outage fallbacks, timetable trips, Nearby and timetable packs.
+* Idle costs nothing but the minute cron: engine objects stop ticking 5 minutes after the last read, 4 shards instead of
+  16, no learn calls from Trip Planner boards, push hubs and the planner have no alarms when nobody is on them.
+* The engine timetable loads every second night (4 days built), not every night: it was 80% of the month's included
+  Durable Object rows written on its own.
+* No load tests on production (`LOAD_TESTS` off). Load tests use `wrangler dev` with a fake Transport for NSW.
+* Budget guard: every hour it reads this cycle's usage, projects the month end and, past 80% of any included amount,
+  switches the costly features off for the rest of the cycle and emails contact@fintex.au.
+* Going past 1,000 people, the order to spend money in: own planner on (cheap, cuts NSW calls), then push, then the
+  engine for phones with fewer, slower shards. Each step needs a fresh COSTS.md estimate first.
+
 Written 26 Oct 2026 after Bidur's 3:09 PM message: "Plan entire infra in scale properly ... as if we have million users.
 Multiple users. Using app in same time. Multiple times in many devices. Live works."
 

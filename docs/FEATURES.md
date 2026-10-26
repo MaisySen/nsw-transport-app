@@ -203,6 +203,17 @@ Every stop board in NSW built ahead of time on the server from the network feeds
 
 Trip searches answered from our own copy of the NSW timetable with RAPTOR, so a search makes no Transport for NSW call and searches stop growing NSW calls with users (docs/SCALE_1M.md). Same answer shape as before, live times added to the legs the same way. Changes at stations and walks between nearby stops (up to 400 m), walks to and from your position (up to 1 km), stops where nobody may board or get off respected. Off for phones (`OWN_PLANNER`) until its trips match NSW's planner on a recorded sample after the key resets; step free trips, trips via a stop and trips leaving out a mode stay on NSW's planner for now. Checks: `/api/raptor/plan` (engine load key).
 
+## Budget mode (server, 26 Oct, g20)
+
+The server stays on the Cloudflare Workers Paid base fee (US$5 a month) for up to 1,000 people ([COSTS.md](COSTS.md)).
+* Nothing costly runs while nobody uses the app: engine objects stop 5 minutes after the last read, 4 board shards, no
+  engine learn calls while the engine is off for phones, the timetable loaded every second night.
+* Hourly budget guard: projects the month end from Cloudflare's usage numbers; at 80% of any included amount it
+  switches the engine, push and own planner off for the rest of the billing cycle and emails contact@fintex.au. At 50%
+  it emails a warning once a cycle.
+* Load test keys do not work on production.
+* Phones see no change.
+
 ## Not in the app
 
 No accounts or login, no ads, no analytics or tracking, no Opal card balance. Privacy details: [STORE_PRIVACY.md](STORE_PRIVACY.md) and https://transportsydney.app/privacy/.

@@ -650,3 +650,23 @@ bound.
 `/api/trip` with `OWN_PLANNER` = `on` asks our planner first (not for step free trips, via, leaving out modes or long
 trips) and, when it has trips, answers from them with no Trip Planner call; legs get live times from the feeds as
 before. No answer (another day, an unknown stop, over 4 s) asks the Trip Planner as before.
+
+## Budget guard `/api/budget` (26 Oct 2026, g20)
+
+Admin key only (403 without). See [COSTS.md](COSTS.md).
+
+* `GET /api/budget`: `{ included, holdPct, warnPct, token, email, flags: { ENGINE_BOARDS: { var, on }, ... }, last }`.
+  `last` is the newest hourly reading: `cycle` and `cycleEnd` (ms), `meters` (each with `used`, `perDay`,
+  `projected`, `included`, `usedPct`, `projectedPct`), `worst`, `hold`, `holdReason`, `holdAt`, `liftedAt`, `mail`.
+* `POST /api/budget/check`: reads usage now and acts on it like the hourly run; `?dry=1` reads only (no hold, no email,
+  nothing saved).
+* `POST /api/budget/clear`: lifts a hold; the guard does not hold again for 6 hours unless a meter is used to 95%.
+* `POST /api/budget/mailcheck`: whether the email binding and the email module are there; sends nothing.
+
+While a hold is on, `ENGINE_BOARDS`, `ENGINE_PUSH`, `LIVE_PUSH`, `OWN_PLANNER`, `ENGINE_LEARN` and `LOAD_TESTS` act
+as off: `/api/departures` stays on the Trip Planner path (`engine=1` checks still work), `/api/live` answers 404,
+`/api/trip` asks the Trip Planner, and `x-load-key` requests are limited like any phone.
+
+Wrangler vars added: `ENGINE_SHARDS` "4", `ENGINE_IDLE_MIN` "5", `ENGINE_LEARN` "off", `LOAD_TESTS` "off",
+`CF_ACCOUNT_ID`, `BILLING_DAY` (25), `LOG_SAMPLING` "0.1"; secret `CF_ANALYTICS_TOKEN` (read only Account Analytics);
+`[[send_email]] ALERT_EMAIL` to contact@fintex.au.
