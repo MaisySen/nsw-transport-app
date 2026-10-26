@@ -20,7 +20,8 @@ function carry(prev: any[] | undefined, items: any[]): any[] {
 
 /** The board answer a pushed board stands for: the same shape as /api/departures. */
 function asAnswer(board: any, now: number): any {
-  const dataAt = (board.live && board.live.feedAt) || (board.engine && board.engine.builtAt) || now;
+  // A Trip Planner board from the live hub (backend/src/livehub.js) says when its copy was made (dataAt).
+  const dataAt = Number(board.dataAt) || (board.live && board.live.feedAt) || (board.engine && board.engine.builtAt) || now;
   return { kind: 'departures', ...board, dataAt, now, pushed: true };
 }
 

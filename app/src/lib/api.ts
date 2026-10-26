@@ -32,8 +32,7 @@ async function once<T>(path: string, init: RequestInit | undefined, timeoutMs: n
     // Rows and legs carry the moment they arrived, so a countdown can say how old its live time is. An answer the
     // server took from its shared cache says when it was made (dataAt); the older of the two is the honest one.
     // LIVE_DATA_AGE (features.ts): each live row's age counts from when its time was read upstream (the row's liveAt).
-    const arrived = Date.now();
-    return stampSeen(cleanAlertTexts(body as T), dataTime(body, arrived), LIVE_DATA_AGE ? arrived : undefined);
+    return stampSeen(cleanAlertTexts(body as T), dataTime(body, Date.now()), LIVE_DATA_AGE ? Date.now() : undefined);
   } finally {
     clearTimeout(t);
   }

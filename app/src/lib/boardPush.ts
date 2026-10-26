@@ -9,6 +9,9 @@ import { appActive } from './activity';
 import { useConfig } from './config';
 import { apiBase } from './server';
 import { applyPush, pushFlagOn, pushUrl, retryDelay } from './boardPushCore';
+import { stampSeen } from './liveLabelCore';
+import { dataTime } from './api';
+import { LIVE_DATA_AGE } from './features';
 
 /** Opens the board's socket while wanted; onBoard gets each new board. `live` is true while the socket is open. */
 export function useBoardPush(stop: string | null, mode: string | null, onBoard: (board: any) => void): { live: boolean } {
@@ -41,7 +44,8 @@ export function useBoardPush(stop: string | null, mode: string | null, onBoard: 
         try { msg = JSON.parse(String(e.data)); } catch { return; }
         const r = applyPush(cur, msg);
         if (r.needFull) { try { ws?.send('full'); } catch {} return; }
-        if (r.board) { cur = r.board; cb.current(r.board); }
+        // Rows get their age like an HTTP answer (api.ts): from the board's dataAt, or per row from liveAt (LIVE_DATA_AGE).
+        if (r.board) { const at = Date.now(); cur = stampSeen(r.board, dataTime(r.board, at), LIVE_DATA_AGE ? at : undefined); cb.current(cur); }
       };
       ws.onerror = () => {};
       ws.onclose = () => { setLive(false); ws = null; retry(); };
