@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Speed: one read of the phone at start, steady lists, fewer widget writes (over the air 26 Oct, 1:13 PM, group 1f117d04, roll back to 54aa4d52)
+Bidur at 12:11 PM: "Do everything to make it fastest".
+* Home opens with its times already on it: the profile, settings, saved places, every kept copy and the timetable packs are read in one go before the first frame. First start to times 2.26 s, was 2.93 s (web export with the CPU slowed 4 times); a start with kept copies no longer draws empty cards that then fill in (layout shift 0.012, was 0.21 to 0.29).
+* Lists keep their rows between refreshes (rows keyed by the service, not by their place in the list): 27% fewer components drawn per refresh on a stop screen (3,613, was 4,963), and a stop opened with nothing kept no longer jumps when its times arrive (layout shift 0.01, was 0.625).
+* Widgets and the trip card: the app group is written only when something on them changed, and widgets reload then or when the app opens, not on every save.
+* No empty "index" screen for a frame at start; a row's "Live 30 s ago" stays on one line so the row keeps its height.
+* Measurements and what was left alone: docs/PERFORMANCE.md (26 Oct, speed g13).
+
 ### Timetable on the phone (server 26 Oct, 12:20 PM, transport-api 2ef1ad9f; over the air 26 Oct, 12:54 PM, group 54aa4d52, roll back to f9c48f4c)
 * Stops you use (starred, on saved trips, home and work, opened lately; 24 at most) keep their timetable for today and tomorrow on the phone: `/api/pack`, built by the board engine from the timetable it holds, 0.7 KB (Katoomba) to 14 KB (Central) gzipped. Fetched once a day, at start or when the app comes back to the front, one stop at a time. No timers added.
 * The stop screen, Home's starred stop cards and the full screen board show those departures in the first frame, with no signal too, marked "Timetable times, getting live times" ("Live times unavailable, showing timetable times" when the live board could not be had); each row says Timetable in grey. The live board replaces them when it lands. A live copy from the last 10 minutes still goes first.

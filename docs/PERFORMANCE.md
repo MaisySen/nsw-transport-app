@@ -79,6 +79,33 @@ Written 25 Oct 2026 after the battery, smoothness and iOS audit (report: files/q
     chip or a route chip asks for that mode alone (`boardAsk` in src/lib/stopBoardCore.ts, `departuresFor` in
     src/lib/api.ts): one request when the chip is tapped, then the same adaptive gap. All is unchanged.
 
+### 26 Oct, speed (g13): app side, measured (12:59 to 1:09 PM, web export at 390 x 844, 4x CPU slowdown, live data)
+Paired runs, the production code (main 05f9d77, the 12:54 PM update) against this change, one after the other three times, medians. Home with Burwood and Strathfield set and Central starred; stop = tapping Central on Home; trip = Burwood to Strathfield list; refreshes = Central's stop screen on view for 65 s. The build box's address was rate limited by the API during other workers' load tests, so the runs send the load test key (no other change to the requests).
+
+| | before | after |
+| --- | --- | --- |
+| Home, first start, to times on screen | 2,928 ms | 2,259 ms |
+| Home, start with kept copies, to times | 2,018 ms | 1,977 ms |
+| Home, start with kept copies, layout shift (CLS) | 0.21 to 0.29 | 0.012 |
+| Stop screen from Home, to times | 1,313 ms | 1,402 ms (runs of 1.2 to 1.5 s both sides: no change) |
+| Stop screen opened with nothing kept, layout shift | 0.625 | 0.01 |
+| Components drawn on opening the stop screen | 11,710 | 10,212 |
+| Components drawn per refresh on the stop screen | 4,963 | 3,613 |
+| Trip list to times | 2,461 ms | 2,338 ms |
+| Tab switch Plan / Home | 265 / 167 ms | 262 / 141 ms |
+| JS bundle (Hermes, iOS / Android) | 6,182,563 / 6,312,886 B with this change; 6,159,227 / 6,290,322 B at 639608f before the timetable packs | |
+
+What changed:
+* One boot (`src/lib/boot.ts`): the profile, cached config, saved places, every kept copy of the last answers (`warmOffline`: the index, then one `multiGet`) and the kept timetable packs are read side by side before the first frame, the copies waiting at most 400 ms. Before: profile and config, then the saved places after the first screen was drawn, then one storage read per Home card after it mounted, so Home drew empty cards and filled them a few frames later (the 0.21 to 0.29 shift above). `peekOffline` answers from the copies read at start; each is parsed only when a screen asks for it.
+* Rows of live lists keyed by their own service (`src/lib/rowKeysCore.ts`): stop screen, Home stop cards, the full screen board and the trip list had the row number in the key, so when the first service left every row below got a new key and React drew the whole list again on each refresh.
+* Widgets and the trip card (`platform/iosBridge.ts`): each value shared with the app group is written only when it differs from the last write, and the widgets reload when something on them changed or when the app comes to the front; before, every store write (a recent search, a setting) rewrote Home, Work and starred stops and reloaded every widget, and every card tick rewrote the Next trip card.
+* The opening route draws no header (it showed an empty screen titled "index" for a frame on web and Android).
+* A compact live status ("On time · Live 30 s ago") stays on one line, so a row keeps its height between refreshes; the full words are in the accessibility label.
+
+Checked and left as they are: requests at start already go out together (7 at about 930 ms on web, none waits for another except the line status for the trip's lines); answers are compressed (brotli to a phone that asks for it, gzip otherwise; Central's board 32.6 KB as JSON, 4.7 KB brotli); lists are short enough not to need a virtualized list (40 rows at most). Not done: `inlineRequires` in a metro config (lazy module loading at start) changes the order modules run in, and nothing here can check a side effect that depends on that order without a phone; worth trying with the 1 November build. The bundle is not smaller: the big parts (react-native, reanimated, expo-router, gesture-handler, bottom sheet) are used by the first screens.
+
+Known: on the stop screen the copy kept on the phone now shows on the first frame of a fresh start too, and when the live answer lands with services added or gone the rows move (layout shift over the 65 s refresh run 0.24 to 0.50, was 0.12 to 0.26). On web the live dot's pulse redraws its view on every animation frame (the native driver is off on web only); phones are not affected.
+
 ### 26 Oct, speed (g10): search and server (11:21 AM to 11:50 AM, live data, from this build box in the US west)
 
 Bidur at 11:20 AM: "app still slow as hell right now. Keep loading in every search". Measured with `meas.mjs` (task folder, not shipped): 10 messy NSW names (wollongong stn, newcastle interchnge, katoomba station, byron bay, albury stn, coffs harbour, port macquarie, wagga wagga, orange station, tamworth stn; no Sydney commute names) and 10 stops across NSW (Wollongong, Newcastle Interchange, Gosford, Katoomba, Albury, Wagga Wagga, Manly Wharf, Randwick Light Rail, Tallawong, Strathfield Stand G), 5 runs 20 s apart. Cold is the first request for a query or stop with a new cache key (`cb=`), warm the same request again at once. The box is in the US, so every answer also pays about 150 ms each way across the Pacific; Sydney phones see less.
