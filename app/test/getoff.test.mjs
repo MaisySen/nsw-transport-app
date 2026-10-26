@@ -88,7 +88,9 @@ test('the stored choice is read safely: anything unknown is 1 stop, no Get off n
   assert.deepEqual(G.readGetOff({ stops: '2' }), { stops: 2, now: false });
   assert.equal(G.getOffValueText({ stops: 2, now: true }), '2 stops before, Get off now');
   assert.equal(G.getOffValueText({ stops: 1, now: false }), '1 stop before');
-  assert.match(G.getOffSubText({ stops: 3, now: false }, 'Central'), /3 stops before Central, then again at the stop before/);
+  assert.equal(G.getOffSubText({ stops: 3, now: false }, 'Central'), '3 stops before Central, then at the stop before');
+  assert.equal(G.getOffSubText({ stops: 1, now: false }, 'Central'), 'As you leave the stop before Central');
+  assert.equal(G.getOffShortText({ stops: 2, now: true }), '2 stops');
 });
 
 test('default (1 stop, no Get off now): exactly the alerts as before, nothing new set', () => {

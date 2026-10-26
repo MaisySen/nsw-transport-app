@@ -49,7 +49,8 @@ const tag = `${W}x${H}-${scheme}`;
 const report = { tag, checks: {} };
 await page.goto(base + "/home", { waitUntil: "networkidle" }).catch(() => {});
 await page.getByText(/stops? away/).first().waitFor({ timeout: 20000 }).catch(() => {});
-report.checks.homeWhere = await page.getByText(/3 stops away \u00b7 4 min late/).count();
+// g32: the status line says the delay, so the where line says only where it is.
+report.checks.homeWhere = await page.getByText(/^3 stops away$/).count();
 report.checks.getMeHome = await page.getByRole("button", { name: /^Get me home/ }).count();
 await shot(`home-${tag}`);
 await page.getByRole("button", { name: /^Get me home/ }).first().click();
@@ -58,7 +59,7 @@ await page.getByRole("button", { name: /^Walking/ }).first().waitFor({ timeout: 
 await page.waitForTimeout(1500);
 report.checks.tripUrl = page.url().replace(base, "");
 report.checks.walking = await page.getByRole("button", { name: /^Walking/ }).count();
-report.checks.rowWhere = await page.getByText(/3 stops away \u00b7 4 min late/).count();
+report.checks.rowWhere = await page.getByText(/^3 stops away$/).count();
 report.checks.saveHidden = (await page.getByRole("button", { name: "Save trip" }).count()) === 0;
 await shot(`trip-${tag}`);
 // Open the first trip and its stand map.

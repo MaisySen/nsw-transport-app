@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Get off alert the rider controls; the delay said once on Home (g32; app only, on main, not in an over the air update yet)
+* Trip mode has a Get off alert row: 1, 2 or 3 stops before, and Get off now, kept on the phone. 1 stop before is the Next stop alert as before (the default). 2 or 3 adds "N stops to Central" as the service leaves that stop; Get off now comes a minute before the live arrival at your stop. Both from the live stop times the trip already reads, set on the phone as local alerts so they ring with the app closed, moved with the live times, never from the timetable alone. Read out with Speak alerts on builds that have the speech module. No location use, no new request, no timer.
+* Home trip cards and the trip screen's rows: the where the bus is line no longer repeats the delay the status line beside it already shows ("4 min late · Live" and "3 stops away", not "4 min late" twice).
+* Files: new `app/src/lib/getOffCore.ts`, `app/src/lib/getOffNotify.ts`, `app/src/components/GetOffChoice.tsx`, `app/test/getoff.test.mjs` (20 tests), `app/test/e2e/getoff.mjs`; changed `app/src/lib/liveEngine.ts`, `live.ts` (cancel on End trip), `smart.ts` (`switchLegs` drops get off alerts of replaced legs), `store.ts` (`getOff`), `whereNowCore.ts`, `components/Smart.tsx` (cancel on Switch to this), `components/Home.tsx`, `app/go.tsx`, `test/riderwins.test.mjs`, `test/e2e/riderwins.mjs`.
+* No new native module, no server change, no OTA. Rollback: revert the g32 commits.
 ### Four rider wins (g31; app only, on main, not in an over the air update yet)
 * Where the bus is: Home trip cards and trip rows show "3 stops away · 4 min late" from the live position the server already sends on ride legs, only while the row is Live. Nothing on timetable rows.
 * Walking on the trip screen: Any, up to 5, 10, 15 or 20 min, and Prefer a bus; kept on the phone. Trips with a longer walk are left out on the phone (never all of them); the request carries `maxWalk` and `lessWalk`, which the server ignores today.

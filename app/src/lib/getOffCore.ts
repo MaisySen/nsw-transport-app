@@ -34,11 +34,14 @@ export function getOffValueText(p: GetOffPref): string {
   return `${stopsWords(p.stops)}${p.now ? ', Get off now' : ''}`;
 }
 
+/** The row's short value at the right: "1 stop", "3 stops". */
+export const getOffShortText = (p: GetOffPref) => `${p.stops} stop${p.stops === 1 ? '' : 's'}`;
+
 /** The row's second line, for the stop you get off at next. */
 export function getOffSubText(p: GetOffPref, stop: string): string {
   const to = stop || 'your stop';
-  const first = p.stops === 1 ? `An alert as you leave the stop before ${to}` : `An alert ${p.stops} stops before ${to}, then again at the stop before`;
-  return `${first}${p.now ? ', and Get off now as you reach it.' : '.'}`;
+  if (p.stops === 1) return p.now ? `At the stop before ${to}, and Get off now as you reach it` : `As you leave the stop before ${to}`;
+  return p.now ? `${p.stops} stops before ${to}, at the stop before, and Get off now` : `${p.stops} stops before ${to}, then at the stop before`;
 }
 
 type Fmt = { clock: (t: number) => string; short: (n?: string | null) => string };

@@ -12,7 +12,7 @@ import { tickLive } from '@/lib/liveEngine';
 import type { LiveState } from '@/lib/liveCalc';
 import { shortName } from '@/lib/format';
 import { canNotify } from '@/lib/smartNotify';
-import { GETOFF_STOPS, getOffSubText, getOffValueText, readGetOff, stopsWords, type GetOffPref } from '@/lib/getOffCore';
+import { GETOFF_STOPS, getOffShortText, getOffSubText, getOffValueText, readGetOff, stopsWords, type GetOffPref } from '@/lib/getOffCore';
 import type { MenuSpec } from '@/lib/menuCore';
 
 const short = (n?: string | null) => shortName(n || '').replace(/ Station$/, '');
@@ -60,7 +60,7 @@ export function GetOffRow({ g, st }: { g: LiveTrip; st: LiveState | null }) {
             <T kind="body">Get off alert</T>
             <T kind="foot" tone="text2" numberOfLines={3}>{done ? 'Trip finished' : getOffSubText(pref, stop)}</T>
           </View>
-          <T kind="foot" tone="text2" numberOfLines={2} style={{ maxWidth: 120, textAlign: 'right', marginLeft: 8 }}>{value}</T>
+          <T kind="foot" tone="text2" numberOfLines={1} style={{ marginLeft: 8 }}>{getOffShortText(pref)}</T>
           <Icon name={I.chevron} size={12} color={c.text3} style={{ marginLeft: 6, transform: [{ rotate: '90deg' }] }} />
         </Pressable>
       </PullDownButton>
