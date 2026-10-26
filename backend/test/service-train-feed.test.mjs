@@ -60,7 +60,11 @@ test("stops from yours onwards from the planner, the feed's earlier stops kept, 
   assert.equal(d.source, "planner");
   assert.equal(d.stopsStatus, "ok");
   assert.equal(d.stops[1].estimated, new Date((s(0) + 120) * 1000).toISOString());
-  assert.equal(d.stops[2].estimated, null, "no live time is made up for a stop the feed has no news for");
+  // GTFS realtime: a delay holds for later stops the feed does not list, so Austinmer is 2 min late too, marked carried.
+  assert.equal(d.stops[2].estimated, new Date(Date.parse(at(3)) + 120000).toISOString(), "the latest delay before a stop the feed has no news for carries on");
+  assert.equal(d.stops[2].carried, true);
+  assert.equal(d.stops[1].carried, false);
+  assert.equal(d.progress, "live");
 });
 
 test("the planner without this run: the feed's list stays as it was", async () => {

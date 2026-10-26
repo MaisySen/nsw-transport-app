@@ -2334,11 +2334,14 @@ window.TBApp = () => {
         const dep = mineS ? tOf(mineS) : tms(l.estimated || l.planned);
         const arr = offS ? tOf(offS) : (l.arrPlanned ? tms(l.arrPlanned) + delay : dep + 10 * 60000);
         // The vehicle is already past your stop: this leg is over whatever the clock says.
-        const past = d && d.alightIndex >= 0 && d.nextIndex > d.alightIndex;
-        return { dep, arr: past ? Math.min(arr, t - 60000) : arr, delay, live: !!(d && d.live), d, mineS, offS };
+        // The server says when its next stop is only the timetable clock (progress): then nothing here ends the leg
+        // by the clock, because the train may be far behind it (26 Oct 2026, a T1 30 minutes late).
+        const ttOnly = !!(d && d.progress === "timetable");
+        const past = d && d.alightIndex >= 0 && d.nextIndex > d.alightIndex && !ttOnly;
+        return { dep, arr: past ? Math.min(arr, t - 60000) : arr, delay, live: !!(d && d.live), d, mineS, offS, ttOnly };
       });
       // A late leg pushes later legs only when you would miss their planned connection.
-      let cur = L2.findIndex((x) => t < x.arr + 45000);
+      let cur = L2.findIndex((x) => x.ttOnly || t < x.arr + 45000);
       if (cur < 0) return { done: true, L2, eta: L2[last].arr };
       const x = L2[cur], d = x.d;
       let phase = "wait";
@@ -2455,7 +2458,7 @@ window.TBApp = () => {
       let changed = false;
       if (!st.done && st.phase === "ride") {
         const d = st.L2[st.cur].d, l = legs[st.cur];
-        if (d && d.alightIndex > 0 && st.nextIdx === d.alightIndex && !a["off" + st.cur]) {
+        if (d && d.alightIndex > 0 && st.nextIdx === d.alightIndex && !st.L2[st.cur].ttOnly && !a["off" + st.cur]) {
           a["off" + st.cur] = 1; changed = true;
           if (st.cur === last) goNotify(`Next stop: ${short(l.to)}`, `Get ready to get off. You arrive at ${fmtClock(st.eta)}.`);
           else { const n = legs[st.cur + 1]; goNotify(`Next stop: ${short(l.to)}, change here`, `Then the ${fmtClock(st.L2[st.cur + 1].dep)} ${n.line}${n.fromPlatform ? " from " + platShort(n.fromPlatform) : ""}.`); }

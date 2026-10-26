@@ -1870,6 +1870,12 @@ async function service(env, q) {
     }
   }
 
+  // A feed's delay carries on to later stops it does not list (GTFS realtime). Sydney Trains lists only the stops it
+  // has news for, and a train's trip can end at Central and carry on to Town Hall under another trip id (the 8:46 T1
+  // from Strathfield, 26 Oct 2026): without this the stop you get off at kept its timetable time while the train ran
+  // late, and the trip screen moved you on to your change by the clock.
+  carryDelays(stops, tuLive || stops.some((s) => s.estimated));
+
   const missing = stops.filter((s) => s.lat == null).map((s) => s.id);
   if (missing.length) {
     const info = await stopInfo(env, missing);
@@ -1881,23 +1887,34 @@ async function service(env, q) {
   stops = stops.filter((s) => s.lat != null);
   for (const s of stops) if (!s.name) s.name = "Stop " + s.id;
 
-  // Where is the vehicle along the route?
-  let nextIdx = -1;
+  // Where is the vehicle along the route? progress says what that rests on: the vehicle (its position or the stop the
+  // feed has it at), live times (with delays carried on), or only the timetable clock. The app never moves anyone on
+  // to their stop or change on the timetable clock alone.
+  let nextIdx = -1, progress = "timetable";
+  const vehFresh = veh && (veh.ageS == null || veh.ageS <= 180) ? veh : null;
   if (tu && tu.stus.length >= 2) {
     const ni = nextStopIndex(tu, veh, now);
     const id = ni >= 0 && tu.stus[ni] ? tu.stus[ni].stopId : null;
-    if (id) nextIdx = stops.findIndex((s) => s.id === id);
-  }
-  if (nextIdx < 0 && stops.some((s) => s.estimated)) {
-    nextIdx = stops.findIndex((s) => ms(s.estimated || s.planned) >= now - 20000);
-    // Trust the clock, but if the vehicle is clearly elsewhere, use its position.
-    if (veh && nextIdx >= 0) {
-      const g = locateGeom(veh, stops);
-      if (g >= 0 && Math.abs(g - nextIdx) > 2) nextIdx = g;
+    if (id) {
+      nextIdx = stops.findIndex((s) => s.id === id);
+      const byVeh = !!veh && tu.stus.some((u) => (veh.stopSeq && u.seq === veh.stopSeq) || (veh.stopId && u.stopId === veh.stopId));
+      if (nextIdx >= 0) progress = byVeh ? "vehicle" : "live";
     }
   }
-  if (nextIdx < 0 && veh) nextIdx = locateGeom(veh, stops);
+  if (nextIdx < 0 && stops.some((s) => s.estimated)) {
+    nextIdx = stops.findIndex((s) => !s.skipped && ms(s.estimated || s.planned) >= now - 20000);
+    if (nextIdx < 0) nextIdx = stops.length;
+    progress = "live";
+  }
+  // A fresh vehicle position wins over the clock when they disagree: a train is never ahead of where it is (on a short
+  // run like Strathfield to Town Hall, 4 stops, the clock could run a whole leg ahead without ever being 3 stops off).
+  if (vehFresh && stops.length >= 2) {
+    const g = locateGeom(vehFresh, stops);
+    if (g >= 0 && (nextIdx < 0 || g < nextIdx || g - nextIdx > 2)) { nextIdx = g; progress = "vehicle"; }
+    else if (g >= 0 && g === nextIdx) progress = "vehicle";
+  }
   if (nextIdx < 0) nextIdx = Math.max(0, stops.findIndex((s) => ms(s.estimated || s.planned) >= now - 20000));
+  nextIdx = Math.min(nextIdx, Math.max(0, stops.length));
   stops.forEach((s, i) => { s.passed = i < nextIdx; });
 
   let mine = q.stop ? stops.findIndex((s) => s.id === q.stop) : -1;
@@ -1935,9 +1952,9 @@ async function service(env, q) {
     alerts: lineAlerts,
     kind: "service", tripId, mode, line, color: q.color || LINE_COLORS[line] || (Object.values(MODES).find((m) => m.key === mode) || {}).color || "#495054",
     dest, live, delayMin, cancelled: !!(tu && tu.rel === 3), vehicle: veh, where,
-    nextIndex: nextIdx, mineIndex: mine, alightIndex: alight, stopsAway,
+    nextIndex: nextIdx, mineIndex: mine, alightIndex: alight, stopsAway, progress,
     mine: mineStop ? { name: mineStop.name, planned: mineStop.planned, estimated: mineStop.estimated, passed: mineStop.passed } : null,
-    stops: stops.map((s) => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, planned: s.planned, estimated: s.estimated, passed: s.passed, mine: !!s.mine, alight: !!s.alight, skipped: !!s.skipped })),
+    stops: stops.map((s) => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, planned: s.planned, estimated: s.estimated, passed: s.passed, mine: !!s.mine, alight: !!s.alight, skipped: !!s.skipped, carried: !!s.carried })),
     path, source, stopsStatus: stops.length ? stopsStatus : tu && tu.rel === 3 ? "cancelled" : stopsStatus === "ok" ? "none" : stopsStatus, feedAt: rt.fetchedAt(), now,
   };
 }
@@ -4382,6 +4399,19 @@ async function liveLegs(env, spec, now, opts = {}) {
   return out;
 }
 
+// Carries a run's latest live delay on to later stops that have no live time of their own (GTFS realtime: a delay holds
+// for the stops after it until the feed says otherwise). Stops before the first live time are left as they are.
+function carryDelays(stops, on) {
+  if (!on || !Array.isArray(stops)) return stops;
+  let delay = null;
+  for (const s of stops) {
+    if (!s || s.skipped) continue;
+    if (s.estimated && s.planned) { delay = ms(s.estimated) - ms(s.planned); continue; }
+    if (delay != null && s.planned && !s.estimated) { s.estimated = iso(ms(s.planned) + delay); s.carried = true; }
+  }
+  return stops;
+}
+
 // Live time at one stop from a trip update: the clock time when published, otherwise the
 // published delay applied to the timetable (Sydney Trains often sends delays only).
 function feedEst(tu, stopId, plannedMs, propagate) {
@@ -4679,6 +4709,9 @@ async function processWatch(env, w, now, opts = {}) {
         continue;
       }
     }
+    // "Change at Town Hall in 2 min" and "Arriving" only from live times: on the timetable alone the train may be
+    // nowhere near (26 Oct 2026, a T1 running 30 minutes late), so nothing is said and the phone shows "not live".
+    if (!o.arrLive) continue;
     if (left <= 150000 && left > -60000) {
       st.arrived = st.arrived || {}; st.arrived[i] = 1;
       const mins = Math.max(1, Math.round(left / 60000));
@@ -4693,7 +4726,7 @@ async function processWatch(env, w, now, opts = {}) {
   // moves on to a later service.
   const fin = live[last];
   if (spec.track && legs[last].toStopId && fin.arr && fin.dep <= now && now >= fin.arr) {
-    if (now <= fin.arr + 10 * 60000) {
+    if (now <= fin.arr + 10 * 60000 && fin.arrLive) {
       await push(`You've arrived at ${stationWord(legs[last].to)}`, `Your ${legs[last].line} got in at ${clock(fin.arr)}. The trip has ended.`, { tagSuffix: "a", once: "done" });
     }
     phase = "done";
@@ -5575,62 +5608,224 @@ const LIVECARD = (() => {
   const tOf = (s) => (s ? tms(s.estimated || s.planned) : NaN);
   const timed = (s) => !!s && !!(s.planned || s.estimated) && !s.skipped;
   const idx = (v) => (typeof v === 'number' ? v : -1);
-  function computeLive(legs, svc, t, memo) {
+  const hasXY = (s) => !!s && typeof s.lat === 'number' && typeof s.lon === 'number';
+  function distM(a, b) {
+      const r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lon - a.lon) * r;
+      const h = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) ** 2;
+      return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+  function carriedDelay(d, k) {
+      if (!d || !d.stops || !d.stops.length)
+          return null;
+      const at = (s) => (s && s.estimated && s.planned && !s.skipped ? tms(s.estimated) - tms(s.planned) : null);
+      for (let j = Math.min(k, d.stops.length - 1); j >= 0; j--) {
+          const v = at(d.stops[j]);
+          if (v != null && Number.isFinite(v))
+              return v;
+      }
+      for (let j = Math.max(0, k + 1); j < d.stops.length; j++) {
+          const v = at(d.stops[j]);
+          if (v != null && Number.isFinite(v))
+              return v;
+      }
+      return null;
+  }
+  function liveAt(d, k) {
+      const s = d.stops[k];
+      if (!s || s.skipped)
+          return NaN;
+      if (s.estimated)
+          return tms(s.estimated);
+      const dl = carriedDelay(d, k);
+      return s.planned ? tms(s.planned) + (dl ?? 0) : NaN;
+  }
+  function vehicleNext(d) {
+      const v = d?.vehicle;
+      if (!d || !v || (typeof v.ageS === 'number' && v.ageS > 180) || !hasXY(v))
+          return -1;
+      const st = d.stops;
+      let best = Infinity, bi = -1, near = -1, nd = Infinity;
+      for (let i = 0; i < st.length; i++) {
+          const a = st[i];
+          if (!hasXY(a))
+              continue;
+          const da = distM(v, a);
+          if (da < nd) {
+              nd = da;
+              near = i;
+          }
+          let j = i + 1;
+          while (j < st.length && !hasXY(st[j]))
+              j++;
+          const b = st[j];
+          if (!hasXY(b))
+              continue;
+          const ex = da + distM(v, b) - distM(a, b);
+          if (ex < best) {
+              best = ex;
+              bi = j;
+          }
+      }
+      if (near >= 0 && nd < 150)
+          return near;
+      if (bi < 0 || best > 1500)
+          return -1;
+      return bi;
+  }
+  function trackOf(d, t) {
+      if (!d || !d.stops || !d.stops.length)
+          return { ni: -1, how: 'timetable' };
+      const sn = idx(d.nextIndex);
+      const p = d.progress;
+      if (p === 'vehicle' && sn >= 0)
+          return { ni: sn, how: 'vehicle' };
+      const g = vehicleNext(d);
+      if (g >= 0)
+          return { ni: g, how: 'vehicle' };
+      if (p === 'timetable')
+          return { ni: sn, how: 'timetable' };
+      if (d.stops.some((s) => !!s.estimated)) {
+          const k = d.stops.findIndex((s, i) => timed(s) && liveAt(d, i) >= t - 20000);
+          return { ni: k < 0 ? d.stops.length : k, how: 'live' };
+      }
+      return { ni: sn, how: 'timetable' };
+  }
+  function gpsOnRun(pos, d, mi, ai, t) {
+      if (!pos || !hasXY(pos) || !d || ai < 0 || !hasXY(d.stops[ai]))
+          return null;
+      if (pos.at != null && t - pos.at > 120000)
+          return null;
+      if (pos.acc != null && pos.acc > 500)
+          return null;
+      const thr = Math.max(300, Math.min(pos.acc || 0, 500));
+      if (distM(pos, d.stops[ai]) <= thr)
+          return 'at';
+      let k = -1, dk = Infinity;
+      for (let i = Math.max(0, mi); i < d.stops.length; i++) {
+          const s = d.stops[i];
+          if (!hasXY(s))
+              continue;
+          const m = distM(pos, s);
+          if (m < dk) {
+              dk = m;
+              k = i;
+          }
+      }
+      if (k < 0 || dk > 800)
+          return null;
+      return k < ai ? 'before' : k > ai ? 'after' : 'at';
+  }
+  function computeLive(legs, svc, t, memo, pos) {
       const last = legs.length - 1;
       const rode = memo?.rode || {};
+      const here = memo?.here || {};
       if (memo?.arrivedAt) {
           const L0 = legs.map((l, i) => {
-              const arr = rode[i] ?? (l.arrPlanned ? tms(l.arrPlanned) : tms(l.planned));
+              const arr = here[i] ?? rode[i] ?? (l.arrPlanned ? tms(l.arrPlanned) : tms(l.planned));
               return { dep: tms(l.estimated || l.planned), arr, delay: 0, live: false, d: svc[i] || null };
           });
-          return { done: true, L2: L0, eta: rode[last] ?? memo.arrivedAt };
+          return { done: true, L2: L0, eta: here[last] ?? rode[last] ?? memo.arrivedAt };
       }
+      const fin = [];
       const L2 = legs.map((l, i) => {
           let d = svc[i] || null;
           if (d && !sameRun(d, l, rode[i] != null))
               d = null;
+          if (here[i] != null) {
+              fin[i] = true;
+              return { dep: tms(l.estimated || l.planned), arr: here[i], delay: 0, live: !!d?.live, d, arrLive: true, track: 'tap', ni: -1 };
+          }
           if (!d && rode[i] != null) {
               const a = rode[i];
-              return { dep: tms(l.estimated || l.planned), arr: a, delay: 0, live: false, d: null };
+              fin[i] = t >= a + 45000;
+              return { dep: tms(l.estimated || l.planned), arr: a, delay: 0, live: false, d: null, arrLive: true, track: 'live', ni: -1 };
           }
           const mi = idx(d?.mineIndex), ai = idx(d?.alightIndex);
           const mineS = d && mi >= 0 ? d.stops[mi] : null, offS = d && ai >= 0 ? d.stops[ai] : null;
-          const delay = mineS && mineS.estimated && mineS.planned ? tms(mineS.estimated) - tms(mineS.planned) : l.estimated ? tms(l.estimated) - tms(l.planned) : 0;
+          const trk = trackOf(d, t);
+          const dMine = mineS && mineS.estimated && mineS.planned ? tms(mineS.estimated) - tms(mineS.planned) : null;
+          const dOff = d ? carriedDelay(d, ai >= 0 ? ai : d.stops.length - 1) : null;
+          const dPlan = l.estimated ? tms(l.estimated) - tms(l.planned) : null;
+          const delay = dMine ?? dOff ?? dPlan ?? 0;
           const dep = mineS && Number.isFinite(tOf(mineS)) ? tOf(mineS) : tms(l.estimated || l.planned);
-          const arr0 = offS && Number.isFinite(tOf(offS)) ? tOf(offS) : l.arrPlanned ? tms(l.arrPlanned) + delay : dep + 10 * 60000;
+          let arr0, arrLive = false, arrDelay;
+          if (offS && offS.estimated) {
+              arr0 = tms(offS.estimated);
+              arrLive = true;
+              arrDelay = offS.planned ? arr0 - tms(offS.planned) : undefined;
+          }
+          else if (offS && offS.planned) {
+              arr0 = tms(offS.planned) + (dOff ?? 0);
+              arrLive = dOff != null;
+              arrDelay = dOff ?? undefined;
+          }
+          else if (l.arrPlanned) {
+              const dl = dOff ?? dMine;
+              arr0 = tms(l.arrPlanned) + (dl ?? dPlan ?? 0);
+              arrLive = dl != null;
+              arrDelay = dl ?? undefined;
+          }
+          else
+              arr0 = dep + 10 * 60000;
+          if (!Number.isFinite(arr0) && l.arrPlanned)
+              arr0 = tms(l.arrPlanned) + (dOff ?? dMine ?? 0);
           const short = vehicleShort(d, mi, ai);
-          const past = !!d && ai >= 0 && idx(d.nextIndex) > ai && !short;
-          const arr = heldArrival(d, ai, arr0, t, short);
-          return { dep, arr, delay: delay || 0, live: !!d?.live, d, gone: past };
+          const ni = trk.ni;
+          const trusted = trk.how !== 'timetable';
+          const past = !!d && ai >= 0 && trusted && ni > ai && !short;
+          const arr = heldArrival(d, ai, arr0, t, short, trusted ? ni : -1);
+          let gps = gpsOnRun(pos, d, mi, ai, t);
+          if (!gps && pos && i < last) {
+              const n = svc[i + 1] || null, nmi = idx(n?.mineIndex);
+              if (n && nmi >= 0 && hasXY(n.stops[nmi]) && hasXY(pos) && (pos.at == null || t - pos.at <= 120000) && (pos.acc == null || pos.acc <= 500)
+                  && distM(pos, n.stops[nmi]) <= Math.max(300, Math.min(pos.acc || 0, 500)))
+                  gps = 'at';
+          }
+          let done = false;
+          if (gps === 'at' || gps === 'after')
+              done = true;
+          else if (gps === 'before')
+              done = false;
+          else if (past)
+              done = true;
+          else if (arrLive && t >= arr + 45000 && !short)
+              done = true;
+          fin[i] = done;
+          const track = gps === 'at' || gps === 'after' ? 'gps' : trk.how;
+          return { dep, arr, delay: delay || 0, live: !!d?.live, d, gone: past, arrLive, arrDelay, track, ni,
+              ...(gps === 'at' || gps === 'after' ? { gpsHere: true } : {}), ...(gps === 'before' ? { gpsBefore: true } : {}) };
       });
       for (let i = 1; i < L2.length; i++) {
-          const prev = rode[i - 1];
-          if (prev == null || !Number.isFinite(L2[i].dep))
+          const prev = here[i - 1] ?? rode[i - 1];
+          if (prev == null || here[i] != null || !Number.isFinite(L2[i].dep))
               continue;
           const ready = prev + (legs[i].walkBefore || 0) * 60000;
           if (connRisk(Math.round((L2[i].dep - ready) / 60000)) !== 'miss')
               continue;
           const lateBy = ready - L2[i].dep;
           L2[i] = { ...L2[i], dep: ready, arr: L2[i].arr + lateBy, gone: false, missed: true, was: L2[i].dep };
+          fin[i] = false;
       }
-      const cur = L2.findIndex((x) => !x.gone && t < x.arr + 45000);
+      const cur = L2.findIndex((_, i) => !fin[i]);
       if (cur < 0)
           return { done: true, L2, eta: L2[last].arr };
       const x = L2[cur], d = x.d;
       const mi = idx(d?.mineIndex), ai = idx(d?.alightIndex);
+      const ni0 = x.ni ?? -1;
+      const how = x.track || 'timetable';
       let phase = 'wait';
       if (x.missed)
           phase = 'wait';
-      else if (d && mi >= 0 && idx(d.nextIndex) > mi)
-          phase = 'ride';
-      else if (!d || mi < 0)
+      else if (d && mi >= 0 && how !== 'timetable')
+          phase = ni0 > mi || how === 'gps' ? 'ride' : 'wait';
+      else
           phase = t >= x.dep ? 'ride' : 'wait';
-      let nextIdx = d ? idx(d.nextIndex) : -1;
+      let nextIdx = d ? ni0 : -1;
       if (d && nextIdx >= 0) {
           while (nextIdx < d.stops.length - 1 && nextIdx !== ai && !timed(d.stops[nextIdx]))
               nextIdx++;
       }
-      const stopsLeft = d && ai >= 0 && phase === 'ride' ? d.stops.slice(Math.max(nextIdx, mi + 1), ai + 1).filter(timed).length : null;
+      const stopsLeft = d && ai >= 0 && phase === 'ride' && how !== 'timetable' ? d.stops.slice(Math.max(nextIdx, mi + 1), ai + 1).filter(timed).length : null;
       const conns = [];
       if (x.missed && cur > 0) {
           conns.push({ i: cur - 1, at: legs[cur - 1].to || '', spare: -1, risk: 'miss', next: legs[cur], nextDep: x.was ?? x.dep });
@@ -5641,16 +5836,18 @@ const LIVECARD = (() => {
           conns.push({ i, at: legs[i].to || '', spare, risk: connRisk(spare), next: legs[i + 1], nextDep: b.dep });
       }
       const e = etaFrom(legs, L2, cur);
-      return { done: false, cur, phase, nextIdx, stopsLeft, L2, conns, eta: e.eta, live: x.live, ...(e.late ? { etaLate: true } : {}) };
+      const lateMs = phase === 'ride' ? (x.arrLive ? x.arrDelay : undefined) : (x.live ? x.delay : undefined);
+      const delayMin = how !== 'timetable' && lateMs != null && Number.isFinite(lateMs) ? Math.round(lateMs / 60000) : null;
+      return { done: false, cur, phase, nextIdx, stopsLeft, L2, conns, eta: e.eta, live: x.live, track: how, delayMin, ...(e.late ? { etaLate: true } : {}) };
   }
   const connRisk = (spare) => (spare < 0 ? 'miss' : spare < 2 ? 'tight' : 'ok');
-  function heldArrival(d, ai, arr, t, short = false) {
+  function heldArrival(d, ai, arr, t, short = false, next) {
       if (!d || ai < 0 || !Number.isFinite(arr))
           return arr;
       if (!short) {
           if (!d.live)
               return arr;
-          const ni = idx(d.nextIndex);
+          const ni = next != null && next >= 0 ? next : idx(d.nextIndex);
           if (ni < 0 || ni > ai || d.stops[ai]?.passed)
               return arr;
       }
@@ -5703,12 +5900,18 @@ const LIVECARD = (() => {
           return false;
       return true;
   }
-  function nextMemo(memo, s) {
+  function nextMemo(memo, s, now) {
       const m = { rode: { ...(memo?.rode || {}) }, arrivedAt: memo?.arrivedAt ?? null };
-      if (!s.done && s.phase === 'ride' && Number.isFinite(s.L2[s.cur].arr))
+      const here = { ...(memo?.here || {}) };
+      s.L2.forEach((x, i) => { if (x.gpsHere && here[i] == null && now != null)
+          here[i] = now; });
+      if (Object.keys(here).length)
+          m.here = here;
+      if (!s.done && s.phase === 'ride' && s.track !== 'timetable' && s.L2[s.cur].arrLive !== false && Number.isFinite(s.L2[s.cur].arr))
           m.rode[s.cur] = s.L2[s.cur].arr;
       return m;
   }
+  const notLive = (s) => !s.done && s.track === 'timetable';
   function tripAlerts(legs, s, alerted, serverWatching, f) {
       const out = [];
       const add = (key, title, body) => { if (!alerted[key] && !out.some((a) => a.key === key))
@@ -5720,7 +5923,7 @@ const LIVECARD = (() => {
           add('arrived', "You've arrived", `${f.short(legs[last]?.to)} at ${f.clock(s.eta)}. Trip alerts are off.`);
           return out;
       }
-      if (s.phase === 'ride') {
+      if (s.phase === 'ride' && !notLive(s)) {
           const d = s.L2[s.cur].d, l = legs[s.cur];
           if (d && (d.alightIndex ?? -1) > 0 && s.nextIdx === d.alightIndex) {
               if (s.cur === last)
@@ -5774,7 +5977,7 @@ const LIVECARD = (() => {
       if (!l || !x)
           return out;
       const noun = NOUN[l.mode] || 'service';
-      if (s.phase === 'ride') {
+      if (s.phase === 'ride' && !notLive(s)) {
           const d = x.d;
           if (d && (d.alightIndex ?? -1) > 0 && s.nextIdx === d.alightIndex) {
               if (i === last)
@@ -5841,23 +6044,28 @@ const LIVECARD = (() => {
       const arrive = `Arrive ${f.clock(s.eta)} (${minsWords((s.eta - now) / 60000)})`;
       if (x.missed)
           return { title: `Change at risk at ${f.short(l.from)}`, body: `The ${x.was ? f.clock(x.was) + ' ' : ''}${l.line} has likely left. Open the app for the next way on. Arrive about ${f.clock(s.eta)}` };
+      const late = s.delayMin != null && s.delayMin >= 2 ? `${s.delayMin} min late. ` : '';
       if (s.phase === 'wait') {
           const dm = Math.round((x.dep - now) / 60000);
-          return { title: `${l.line} to ${f.short(l.towards || l.to)}`, body: `${s.cur ? 'Change to' : 'Board'} the ${l.line} ${dm <= 0 ? 'now' : `at ${f.clock(x.dep)}`}${l.fromPlatform ? `, ${f.plat(l.fromPlatform)}` : ''}. ${arrive}` };
+          return { title: `${l.line} to ${f.short(l.towards || l.to)}`, body: `${s.cur ? 'Change to' : 'Board'} the ${l.line} ${dm <= 0 ? 'now' : `at ${f.clock(x.dep)}`}${l.fromPlatform ? `, ${f.plat(l.fromPlatform)}` : ''}. ${late}${arrive}` };
       }
+      if (notLive(s))
+          return { title: `${l.line} to ${f.short(l.towards || l.to)}`, body: `Not live, running to timetable: due at ${f.short(l.to)} ${f.clock(x.arr)}. Arrive about ${f.clock(s.eta)}` };
       const ns = d && s.nextIdx >= 0 ? d.stops[s.nextIdx] : null;
       const yours = !!d && s.nextIdx === d.alightIndex;
       const left = s.stopsLeft != null ? `${s.stopsLeft} stop${s.stopsLeft === 1 ? '' : 's'} to ${f.short(l.to)}` : `to ${f.short(l.to)}`;
-      return { title: `${l.line} to ${f.short(l.towards || l.to)}`, body: `${yours ? `Get off at ${f.short(l.to)}, next stop` : ns ? `Next stop: ${f.short(ns.name)}, ${left}` : `On the ${l.line}, ${left}`}. ${arrive}` };
+      return { title: `${l.line} to ${f.short(l.towards || l.to)}`, body: `${yours ? `Get off at ${f.short(l.to)}, next stop` : ns ? `Next stop: ${f.short(ns.name)}, ${left}` : `On the ${l.line}, ${left}`}. ${late}${arrive}` };
   }
-  function stepLive(g, svc, now, f) {
+  function stepLive(g, svc, now, f, pos) {
       const actions = [];
-      const memo = { rode: g.rode, arrivedAt: g.arrivedAt };
-      const s = computeLive(g.legs, svc, now, memo);
+      const memo = { rode: g.rode, here: g.here, arrivedAt: g.arrivedAt };
+      const s = computeLive(g.legs, svc, now, memo, pos);
       let n = g;
-      const m = nextMemo(memo, s);
+      const m = nextMemo(memo, s, now);
       if (JSON.stringify(m.rode || {}) !== JSON.stringify(g.rode || {}))
           n = { ...n, rode: m.rode };
+      if (JSON.stringify(m.here || {}) !== JSON.stringify(g.here || {}))
+          n = { ...n, here: m.here };
       const list = tripAlerts(g.legs, s, n.alerted || {}, !!n.watchId, f).filter((a) => !(g.wake && a.key.startsWith('off')));
       if (list.length) {
           const alerted = { ...(n.alerted || {}) };
@@ -5956,13 +6164,16 @@ const LIVECARD = (() => {
       if (s.phase === 'ride') {
           const span = x.arr - x.dep;
           progress = span > 0 ? Math.min(1, Math.max(0, (now - x.dep) / span)) : 0;
+          if (s.track === 'timetable')
+              progress = Math.min(progress, 0.9);
       }
       const c = s.conns.find((k) => k.i === s.cur) || s.conns[0];
       const alt = c && c.risk === 'miss' ? o.alt || null : null;
-      const warning = cardWarning(c, alt, o.asOf ?? null);
+      const legNote = s.track === 'timetable' ? 'Timetable times, not live' : s.delayMin != null && s.delayMin >= 2 ? `${s.delayMin} min late` : null;
+      const warning = cardWarning(c, alt, o.asOf ?? null, legNote);
       return {
           line: l.line, lineColorHex: colorOf(l), mode: l.mode,
-          nextStop: s.phase === 'wait' ? shortName(l.from) || null : next ? shortName(next.name) : null,
+          nextStop: s.phase === 'wait' ? shortName(l.from) || null : next && s.track !== 'timetable' ? shortName(next.name) : null,
           stopsLeft: s.stopsLeft, getOffAt: shortName(l.to), arrival: alt && Number.isFinite(alt.arr) ? alt.arr : s.eta, phase: s.phase, warning, progress,
           towards: shortName(l.towards || d?.dest) || null, platform: platText(l.fromPlatform),
           departs: x.missed ? (alt ? alt.dep : null) : Number.isFinite(x.dep) ? x.dep : null,
@@ -5970,12 +6181,14 @@ const LIVECARD = (() => {
           ...(o.updated ? { updated: o.updated } : {}),
       };
   }
-  function cardWarning(c, alt, asOf) {
+  function cardWarning(c, alt, asOf, legNote = null) {
       let w = null;
       if (c && c.risk === 'miss')
           w = alt ? `Change at risk. Next ${alt.line} ${hhmm(alt.dep)}` : `You'll likely miss the ${hhmm(c.nextDep)} ${c.next.line}`;
       else if (c && c.risk === 'tight')
           w = `Tight change at ${shortName(c.at)}`;
+      else if (legNote)
+          w = legNote;
       if (asOf == null)
           return w;
       return w ? `${w}. Updated ${hhmm(asOf)}` : `Updated ${hhmm(asOf)}. Open the app for live times`;
@@ -6040,7 +6253,10 @@ function laTripFrom(t) {
   const rode = {};
   if (t.rode && typeof t.rode === "object") for (const [k, v] of Object.entries(t.rode)) if (/^\d$/.test(k) && Number.isFinite(Number(v))) rode[k] = Number(v);
   const arrivedAt = Number.isFinite(Number(t.arrivedAt)) && Number(t.arrivedAt) > 0 ? Number(t.arrivedAt) : null;
-  return { id: laStr(t.id, 64) || "", title: laStr(t.title) || "", origin: place(t.origin), to: place(t.to), legs, rode, arrivedAt };
+  // When the person got off each leg (their tap or their location on the phone): the card moves on with them.
+  const here = {};
+  if (t.here && typeof t.here === "object") for (const [k, v] of Object.entries(t.here)) if (/^\d$/.test(k) && Number.isFinite(Number(v)) && Number(v) > 0) here[k] = Number(v);
+  return { id: laStr(t.id, 64) || "", title: laStr(t.title) || "", origin: place(t.origin), to: place(t.to), legs, rode, arrivedAt, ...(Object.keys(here).length ? { here } : {}) };
 }
 
 /** Seconds since 1 Jan 2001: how Swift's default Codable reads a Date in the card's content state. */
@@ -6087,7 +6303,7 @@ async function laCardFor(env, trip, now) {
   const svcs = await Promise.all(trip.legs.map((l) =>
     service(env, { trip: l.tripId, mode: l.mode, line: l.line, feed: l.feed, stop: l.stopId, destId: l.destId, planned: l.planned, to: l.toStopId, dest: l.towards, stopName: l.from, color: l.color })
       .then((r) => (r && !r.error ? r : null)).catch(() => null)));
-  const s = LIVECARD.computeLive(trip.legs, svcs, now, { rode: trip.rode, arrivedAt: trip.arrivedAt });
+  const s = LIVECARD.computeLive(trip.legs, svcs, now, { rode: trip.rode, here: trip.here, arrivedAt: trip.arrivedAt });
   const card = LIVECARD.cardFor(trip, s, now, { updated: now });
   return { card, done: !!s.done || card.phase === "arrived", live: svcs.some(Boolean) };
 }
@@ -6389,6 +6605,8 @@ async function shareRoutes(request, env, url) {
 async function oneStopCheck(env, l) {
   const s = await service(env, { mode: l.mode, line: l.line, feed: l.feed, trip: l.tripId, stop: l.stopId, to: l.toStopId, destId: l.destId, planned: l.planned });
   if (!s || s.alightIndex == null || s.alightIndex < 1) return null;
+  // "Next stop: Town Hall, change here" only when the vehicle or live times say so, never by the timetable clock.
+  if (s.progress === "timetable") return { nextIsYours: false, stopsLeft: null, eta: null, notLive: true };
   return { nextIsYours: s.nextIndex === s.alightIndex, stopsLeft: s.alightIndex - s.nextIndex, eta: s.stops[s.alightIndex] ? ms(s.stops[s.alightIndex].estimated || s.stops[s.alightIndex].planned) : null };
 }
 // ---- live trip end
