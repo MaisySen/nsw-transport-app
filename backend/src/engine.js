@@ -957,7 +957,7 @@ class BoardShard {
   status() {
     let trips = 0;
     for (const e of this.live.values()) trips += e.tu.size;
-    return { role: "shard", name: this.name, boots: this.boots, bootAt: this.bootAt, hotBoards: this.hot.size, windows: this.win.size, liveTrips: trips, ver: this.meta ? this.meta.ver : 0, lastBuildAgeS: this.lastBuild ? Math.round((Date.now() - this.lastBuild) / 1000) : null, ...this.stats };
+    return { role: "shard", code: ENGINE_SHARD_GEN + 2, name: this.name, boots: this.boots, bootAt: this.bootAt, hotBoards: this.hot.size, windows: this.win.size, liveTrips: trips, ver: this.meta ? this.meta.ver : 0, lastBuildAgeS: this.lastBuild ? Math.round((Date.now() - this.lastBuild) / 1000) : null, ...this.stats };
   }
   async fetch(req) {
     const u = new URL(req.url);
@@ -976,6 +976,10 @@ class BoardShard {
         return new Response(null, { status: 204 });
       }
       if (u.pathname === "/status") return Response.json(this.status());
+      if (u.pathname === "/restart" && req.method === "POST") {
+        setTimeout(() => { try { this.state.abort("restart"); } catch (e) { /* not available */ } }, 50);
+        return Response.json({ restarting: true, name: this.name });
+      }
       return new Response("not found", { status: 404 });
     } catch (e) {
       return Response.json({ error: String((e && e.message) || e) }, { status: 500 });
@@ -1001,11 +1005,16 @@ function engineWanted(env, url) {
 // The shard that builds a stop's board (BoardShard): ENGINE_SHARDS objects (16 unless set; "0" builds every board in the
 // core object as before).
 function engineShards(env) { const n = env && env.ENGINE_SHARDS != null && env.ENGINE_SHARDS !== "" ? Number(env.ENGINE_SHARDS) : ENGINE_SHARDS_DEFAULT; return env && env.SHARDS && n > 0 ? Math.min(64, Math.floor(n)) : 0; }
+// A running object can keep its old code across a deploy while its alarm keeps it busy (seen 26 Oct: a shard kept
+// its 02:06 code after the 02:20 deploy). /api/engine/load/restart-shards restarts them all; a new generation letter
+// starts new objects.
+const ENGINE_SHARD_GEN = "b";
+function engShardName(i) { return ENGINE_OBJECT + "-" + ENGINE_SHARD_GEN + i; }
 function engineShardStub(env, stop) {
   const n = engineShards(env);
   if (!n) return null;
   const i = engShardOf(stop, n);
-  const name = ENGINE_OBJECT + "-s" + i;
+  const name = engShardName(i);
   return { name, stub: env.SHARDS.get(env.SHARDS.idFromName(name), { locationHint: "oc" }) };
 }
 const engMem = new Map(); // board key -> { at, text } for this isolate, 2 s

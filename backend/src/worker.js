@@ -6936,6 +6936,11 @@ async function handleRequest(request, env, exec) {
     if (url.pathname.startsWith("/api/engine/load/") && request.method === "POST") {
       if (!adminOk(request) && !(env.ENGINE_LOAD_KEY && keyOk(request, null, env.ENGINE_LOAD_KEY))) return json({ error: "forbidden" }, 403);
       if (typeof engineCall !== "function") return json({ error: "engine not built in" }, 503);
+      if (url.pathname === "/api/engine/load/restart-shards") {
+        const n = engineShards(env);
+        const out = await Promise.all(Array.from({ length: n }, (_, i) => env.SHARDS.get(env.SHARDS.idFromName(engShardName(i)), { locationHint: "oc" }).fetch("https://engine/restart?name=" + engShardName(i), { method: "POST" }).then((x) => x.status, (e) => String(e))));
+        return json({ shards: n, answers: out });
+      }
       const r = await engineCall(env, url.pathname.slice("/api/engine".length), { method: "POST", body: await request.arrayBuffer() });
       return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json" } });
     }
@@ -7026,7 +7031,7 @@ async function handleRequest(request, env, exec) {
           const n = engineShards(env);
           if (n) {
             st.shards = await Promise.all(Array.from({ length: n }, async (_, i) => {
-              const name = ENGINE_OBJECT + "-s" + i;
+              const name = engShardName(i);
               try { return await (await env.SHARDS.get(env.SHARDS.idFromName(name), { locationHint: "oc" }).fetch("https://engine/status?name=" + name)).json(); } catch (e) { return { name, error: String(e && e.message || e) }; }
             }));
           }
