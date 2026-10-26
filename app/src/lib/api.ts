@@ -124,11 +124,14 @@ export const api = {
     noteBoard(boardKey(stop, mode), r);
     return mode ? { ...r, askedMode: mode } : r;
   },
-  trip: async (from: Place, to: Place, opts: { refresh?: boolean; count?: number; time?: string; arriveBy?: boolean; modes?: string[]; date?: string; walk?: WalkPref } = {}): Promise<TripResp> => {
+  trip: async (from: Place, to: Place, opts: { refresh?: boolean; count?: number; time?: string; arriveBy?: boolean; modes?: string[]; date?: string; walk?: WalkPref; page?: boolean; after?: number; before?: number; arr?: number } = {}): Promise<TripResp> => {
     // The trip screen's Walking choice (opts.walk, only that screen sends it) rides along (maxWalk, lessWalk) for a server that takes it; the phone filters
     // either way (walkPrefCore.ts), so with a limit it asks for the most trips the server gives (8).
     const wp = readWalkPref(opts.walk);
     const base = { from: from.id, to: to.id, fromName: from.name, toName: to.name, count: wp.max > 0 ? 8 : opts.count || 5, time: opts.time, arriveBy: opts.arriveBy ? 1 : '', fare: store.fareType(), acc: store.accOn() ? 1 : '', ...walkQuery(wp) };
+    // The trip list's endless scroll (tripPagesCore.ts): page=1 asks for a page of about 20 trips, after= or before=
+    // (with arr=) for the next one later or earlier. A server that does not page answers as before (no page).
+    if (opts.page) Object.assign(base, { page: 1, after: opts.after ?? '', before: opts.before ?? '', arr: opts.arr ?? '' });
     const pair = `${from.id}>${to.id}`;
     if ((opts.modes && opts.modes.length) || opts.date) return tripPicked(base, pair, opts.modes || [], opts.date || '');
     if (isLongTrip(from.id, to.id) || longPairs.has(pair)) return tripLong(base, opts.refresh);

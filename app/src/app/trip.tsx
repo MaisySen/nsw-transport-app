@@ -11,8 +11,10 @@ import { PullDownButton } from '@/components/HoldMenu';
 import { menuOf, type MenuSpec } from '@/lib/menuCore';
 import { arriveByIndex, NOW, whenFromParams, type When } from '@/lib/planCore';
 import { WhenPicker } from '@/components/WhenPicker';
-import { afterBatch, canLoadEarlier, canLoadLater, chipLabel, chipsToShow, dateNeeded, EARLIER_NEEDS_NEW, earlierFloor, earlierRow, earlierSteps, emptyModes, filterModes, hasLeft, keepFrom, modesWords, MODE_CHIPS, nearEnd, normModes, PAGE0, PAGING, pickerDays, pinDay, queryAt, serviceDayEnd, toggleMode, whenAt, whenKeyOf, whenWords, ymd, type ModeK, type PageState } from '@/lib/tripModesCore';
+import { afterBatch, canLoadEarlier, canLoadLater, chipLabel, chipsToShow, dateNeeded, earlierFloor, earlierSteps, emptyModes, filterModes, hasLeft, keepFrom, modesWords, MODE_CHIPS, nearEnd, normModes, PAGE0, PAGING, pickerDays, pinDay, queryAt, serviceDayEnd, toggleMode, whenAt, whenKeyOf, whenWords, ymd, type ModeK, type PageState } from '@/lib/tripModesCore';
 import { LeftRow } from '@/components/LeftRow';
+import { afterPage, canPage, cursorsOf, DIR0, isPaged, nearBottom, nearTop, PAGE_REACH_MS, plannedDep, type PageDir } from '@/lib/tripPagesCore';
+import { SkeletonRows } from '@/components/SkeletonRows';
 import { useOnViewRef } from '@/lib/activity';
 import { haptic } from '@/lib/haptic';
 import { withTimeout } from '@/lib/gesture';
@@ -339,6 +341,9 @@ export default function TripScreen() {
   const legsP: TripLeg[] | null = (() => { try { const v = p.legs ? JSON.parse(String(p.legs)) : null; return Array.isArray(v) && v.length > 1 ? v : null; } catch { return null; } })();
   const plan = legsP ? { from, to, legs: legsP } : { from, to, via, conn };
   const chain = isChain(plan);
+  // A plain A to B trip asks the server for pages (tripPagesCore.ts): about 20 trips each, the next ones loaded
+  // before the reader gets to either end. A trip via a stop or with set legs loads batches from a time as before.
+  const pageable = !chain && !p.via;
   const tkey = tripKey(plan);
   const stNow = useStore();
   const stAll = stNow.allServices || {};
@@ -359,19 +364,27 @@ export default function TripScreen() {
   // Redraws when a shown countdown changes its minute (activity.useCountdownNow), not every 5 s (g10, 26 Oct).
   const now = useCountdownNow();
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
-  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes, walk: wp }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : (d: TripResp | null) => tripGapMs(firstLeaveInMs(d?.journeys, Date.now())), [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey],
+  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes, walk: wp, ...(pageable ? { page: true } : {}) }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : (d: TripResp | null) => tripGapMs(firstLeaveInMs(d?.journeys, Date.now())), [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey],
     { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '') + (modesKey ? `|m:${modesKey}` : '')) });
   useReportCountdowns('trip', (data?.journeys || []).slice(0, 6).map((j) => Date.parse(String(j.board || j.leave || ''))));
   const [extra, setExtra] = useState<Journey[]>([]);
   // Step free on or off, another time or other modes ask again; batches loaded before would be the other kind.
   const [later, setLater] = useState<PageState>(PAGE0);
   const [earlier, setEarlier] = useState<PageState>(PAGE0);
-  const [earlierNote, setEarlierNote] = useState('');
+  // Pages from a server that pages, each way.
+  const [pgL, setPgL] = useState<PageDir>(DIR0);
+  const [pgE, setPgE] = useState<PageDir>(DIR0);
+  // Where the trips start in the scroll view, the last scroll position, and whether the reader has scrolled yet (an
+  // earlier page loads on a scroll up near the top, never by itself on open).
+  const [rowsTop, setRowsTop] = useState(0);
+  const lastY = useRef(0);
+  const dragged = useRef(false);
+  const [anchorOn, setAnchorOn] = useState(false);
   // A batch or Plan B answer still on its way when the trip, time, modes or switches change is dropped (useStamp),
   // and the batches already added for the old ones go.
   const listKey = [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey].join('|');
   const stamp = useStamp(listKey);
-  useEffect(() => { setExtra([]); setLater(PAGE0); setEarlier(PAGE0); setEarlierNote(''); }, [listKey]);
+  useEffect(() => { setExtra([]); setLater(PAGE0); setEarlier(PAGE0); setPgL(DIR0); setPgE(DIR0); }, [listKey]);
   // Modes seen in any answer for this trip, so Metro, Light rail or Ferry show only where they make sense.
   const seenModes = useRef<Set<string>>(new Set());
   const [showTravel, setShowTravel] = useState(false);
@@ -383,7 +396,9 @@ export default function TripScreen() {
   const anchor = whenAt(when, now);
   // Now: main results drop services gone over 2 min ago and ones loaded with Earlier services stay up to 30 min back.
   // A chosen time keeps everything the planner answered for it, gone or not (keepFrom); gone ones show as Left.
-  const keep = keepFrom(when, anchor, now);
+  const keep0 = keepFrom(when, anchor, now);
+  // Pages go back 7 days (tripPagesCore.ts), and the trips loaded earlier stay, shown as Left.
+  const keep = pageable && isPaged(data) ? { ...keep0, extra: anchor - PAGE_REACH_MS } : keep0;
   const jsAll = (() => {
     const seen = new Set<string>();
     const out: Journey[] = [];
@@ -437,7 +452,45 @@ export default function TripScreen() {
     if (fresh.length) setExtra((e) => [...e, ...fresh]);
     return fresh;
   };
+  // Pages (a server that pages answered the first page with its cursors): later and earlier pages of about 20 trips,
+  // up to 7 days either way of the time the list is for, asked for while the reader is still a screen and a half
+  // from the end, one at a time each way, only while this screen is on view with the app in front.
+  const paged = pageable && isPaged(data);
+  const reachLo = anchor - PAGE_REACH_MS, reachHi = anchor + PAGE_REACH_MS;
+  // Every trip loaded counts for the cursors, also ones left out on the phone (walking, modes), so a page that the
+  // phone filters to nothing still moves on.
+  const cur = cursorsOf([...(data?.journeys || []), ...extra]);
+  const loadPage = async (fwd: boolean) => {
+    const st = fwd ? pgL : pgE;
+    const set = fwd ? setPgL : setPgE;
+    const edge = fwd ? cur.after : cur.before;
+    if (!canPage(st, edge, fwd ? reachHi : reachLo, fwd, onView.current)) return;
+    set((x) => ({ ...x, busy: true }));
+    if (!fwd) setAnchorOn(true);
+    const still = stamp();
+    try {
+      const r = await planTrip(plan, { page: true, modes, walk: wp, ...(fwd ? { after: cur.after! } : { before: cur.before!, arr: cur.arr ?? undefined }) });
+      if (!still()) return;
+      const have = new Set(jsAll.map(jKey));
+      const fresh = (r.journeys || []).filter((j) => !have.has(jKey(j)));
+      if (fresh.length) setExtra((e) => [...e, ...fresh]);
+      // Rows put above shift the row numbers, so an open trip closes (as Earlier services always did).
+      if (!fwd && fresh.length) setOpen(null);
+      const all = [...(r.journeys || [])].map(plannedDep).filter(Number.isFinite);
+      const nextEdge = all.length ? (fwd ? Math.max(...all) : Math.min(...all)) : edge;
+      set((x) => afterPage(x, fresh.length, nextEdge, fwd ? reachHi : reachLo, fwd));
+    } catch {
+      if (!still()) return;
+      // No retry loop: the next scroll near that end tries once more.
+      set((x) => ({ ...x, busy: false, pages: x.pages + 1 }));
+    } finally {
+      // The rows put above the ones on screen keep the reader's place (maintainVisibleContentPosition), then the
+      // list behaves as usual again.
+      if (!fwd) setTimeout(() => { if (still()) setAnchorOn(false); }, 400);
+    }
+  };
   const loadLater = async () => {
+    if (paged) return loadPage(true);
     if (!canLoadLater(later, lastDep, dayEnd, onView.current)) return;
     setLater((x) => ({ ...x, busy: true }));
     const still = stamp();
@@ -453,6 +506,7 @@ export default function TripScreen() {
     }
   };
   const loadEarlier = async () => {
+    if (paged) return loadPage(false);
     if (!canLoadEarlier(earlier, firstDep, floor, onView.current)) return;
     setEarlier((x) => ({ ...x, busy: true }));
     const still = stamp();
@@ -466,11 +520,9 @@ export default function TripScreen() {
         if (added) break;
       }
       setEarlier((x) => afterBatch(x, added, null, Infinity));
-      setEarlierNote('');
       if (added) setOpen(null);
-    } catch (e: any) {
+    } catch {
       if (!still()) return;
-      if (e?.neededDate) setEarlierNote(EARLIER_NEEDS_NEW);
       setEarlier((x) => ({ ...x, busy: false, pages: x.pages + 1 }));
     }
   };
@@ -583,11 +635,24 @@ export default function TripScreen() {
           </Stack.Toolbar.Menu>
         </Stack.Toolbar>
       ) : null}
-      <Screen scrollEnabled={scrollOn} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pull} />} scrollEventThrottle={250}
+      <Screen scrollEnabled={scrollOn} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pull} />} scrollEventThrottle={100}
         onLayout={(e) => setViewH(e.nativeEvent.layout.height)}
-        onScroll={(e) => { const n = e.nativeEvent; if (nearEnd({ layoutH: n.layoutMeasurement.height, offsetY: n.contentOffset.y, contentH: n.contentSize.height })) loadLater(); }}
+        onScrollBeginDrag={() => { dragged.current = true; }}
+        // The next page loads while the reader is still a screen and a half from either end (prefetch), so scrolling
+        // does not wait. Earlier pages only on a scroll up by the reader, never by themselves on open.
+        onScroll={(e) => {
+          const n = e.nativeEvent, y = n.contentOffset.y, up = y < lastY.current;
+          lastY.current = y;
+          const at = { layoutH: n.layoutMeasurement.height, offsetY: y, contentH: n.contentSize.height };
+          if (paged ? nearBottom(at) : nearEnd(at)) loadLater();
+          if (paged && dragged.current && nearTop(at, rowsTop, up)) loadEarlier();
+        }}
+        // Rows put above the ones on screen keep the reader's place: the first trip on screen (child 1, after the top
+        // part) stays where it is while an earlier page goes in.
+        maintainVisibleContentPosition={anchorOn ? { minIndexForVisible: 1 } : undefined}
         // A short list that does not fill the screen cannot be scrolled to its end, so it asks for the next batch itself.
-        onContentSizeChange={(_, h) => { if (viewH && js.length && nearEnd({ layoutH: viewH, offsetY: 0, contentH: h })) loadLater(); }}>
+        onContentSizeChange={(_, h) => { if (viewH && js.length && (paged ? nearBottom({ layoutH: viewH, offsetY: lastY.current, contentH: h }) : nearEnd({ layoutH: viewH, offsetY: 0, contentH: h }))) loadLater(); }}>
+        <View onLayout={(e) => setRowsTop(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}>
         <WhenBar when={when} now={now} onOpen={() => setPickOpen(true)} onNow={() => { haptic.select(); setWhen(NOW); }} />
         {alertList.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
@@ -654,46 +719,43 @@ export default function TripScreen() {
             )}
           </View>
         ) : null}
-        {js.length ? (
-          <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
-            {earlier.busy ? <LoadingRow text="Loading earlier services" /> : null}
-            {(() => {
-              // Earlier services, also on Now: each tap loads the batch before the first service shown, gone ones as Left,
-              // back to the start of the service day (pull down at the top does the same).
-              const er = earlierRow(earlier, firstDep, floor);
-              return er.show ? (
-                <Pressable accessibilityRole="button" accessibilityLabel={`${er.label}. Loads the services before ${firstDep != null ? clock(firstDep) : 'the first one'}`} onPress={() => { haptic.select(); loadEarlier(); }}
-                  android_ripple={{ color: c.fill }} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingHorizontal: 16, opacity: pressed ? 0.6 : 1 })}>
-                  <Icon name={I.clock} size={14} color={c.tint} />
-                  <T kind="sub" tone="tint" style={{ fontWeight: '600', marginLeft: 6 }}>{er.label}</T>
-                </Pressable>
-              ) : null;
-            })()}
-            {earlierNote && !earlier.busy ? <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}><T kind="foot" tone="text2">{earlierNote}</T></View> : null}
-            {js.map((j, i) => (
-              <View key={jKeys[i]}>
-                <Sep inset={0} />
-                {hasLeft(depMs(j), now)
-                  ? <LeftRow j={j} arrive={arrs[i]} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />
-                  : <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />}
-                <WarnLine j={j} />
-                <JourneyWhy j={j} />
-                {!chain && i === lastIdx && canRemind(depMs(j), now) ? <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}><T kind="foot" tone="text2">Last service tonight</T><RemindLastButton hint={{ from, to, mode: modeOfLegs(j.legs), svc: slimLast(j) }} acc={accOn} /></View> : null}
-                {data?.accessible ? <JourneyAccessLine j={j} liftOn={liftOn} /> : null}
-                {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} autoStart={autoStart === i} onMapTouch={setScrollOn} /></View> : null}
-              </View>
-            ))}
-            {later.busy ? <><Sep inset={0} /><LoadingRow text="Loading later services" /></> : null}
+        {(paged ? pgE.busy : earlier.busy) && js.length ? <SkeletonRows count={3} label="Loading earlier services" /> : null}
+        </View>
+        {/* Each trip is its own child of the scroll view (one card drawn across them), so an earlier page can go in above
+            the trip on screen without moving it (maintainVisibleContentPosition above). */}
+        {js.map((j, i) => (
+          <View key={jKeys[i]} style={{ marginHorizontal: 16, marginTop: i === 0 ? 12 : 0, backgroundColor: c.card, overflow: 'hidden',
+            borderTopLeftRadius: i === 0 ? radius : 0, borderTopRightRadius: i === 0 ? radius : 0,
+            borderBottomLeftRadius: i === js.length - 1 ? radius : 0, borderBottomRightRadius: i === js.length - 1 ? radius : 0 }}>
+            {i > 0 ? <Sep inset={0} /> : null}
+            {hasLeft(depMs(j), now)
+              ? <LeftRow j={j} arrive={arrs[i]} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />
+              : <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />}
+            <WarnLine j={j} />
+            <JourneyWhy j={j} />
+            {!chain && i === lastIdx && canRemind(depMs(j), now) ? <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}><T kind="foot" tone="text2">Last service tonight</T><RemindLastButton hint={{ from, to, mode: modeOfLegs(j.legs), svc: slimLast(j) }} acc={accOn} /></View> : null}
+            {data?.accessible ? <JourneyAccessLine j={j} liftOn={liftOn} /> : null}
+            {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} autoStart={autoStart === i} onMapTouch={setScrollOn} /></View> : null}
           </View>
-        ) : null}
-        {js.length && !later.busy && (later.done || later.pages >= PAGING.maxLater || (lastDep != null && lastDep >= dayEnd)) ? (
-          <View style={{ alignItems: 'center', marginTop: 12, marginHorizontal: 24 }}>
-            <T kind="foot" tone="text2" style={{ textAlign: 'center' }}>{later.done || (lastDep != null && lastDep >= dayEnd) ? 'No more services found for this day.' : 'For later services, pick a time.'}</T>
-            <Pressable accessibilityRole="button" onPress={() => setPickOpen(true)} hitSlop={8} style={({ pressed }) => ({ minHeight: 44, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
-              <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Choose a time</T>
-            </Pressable>
-          </View>
-        ) : null}
+        ))}
+        {(paged ? pgL.busy : later.busy) && js.length ? <SkeletonRows count={3} label="Loading later services" /> : null}
+        {(() => {
+          // The end of the list: pages stop 7 days on or when the planner has nothing more; batches (a trip via a stop)
+          // at the end of the service day or after their cap, as before.
+          if (!js.length) return null;
+          const endText = paged
+            ? (pgL.busy || !pgL.done ? null : cur.after != null && cur.after >= reachHi ? 'That is 7 days of services. For later ones, pick a time.' : 'No more services found.')
+            : (later.busy || !(later.done || later.pages >= PAGING.maxLater || (lastDep != null && lastDep >= dayEnd)) ? null
+              : later.done || (lastDep != null && lastDep >= dayEnd) ? 'No more services found for this day.' : 'For later services, pick a time.');
+          return endText ? (
+            <View style={{ alignItems: 'center', marginTop: 12, marginHorizontal: 24 }}>
+              <T kind="foot" tone="text2" style={{ textAlign: 'center' }}>{endText}</T>
+              <Pressable accessibilityRole="button" onPress={() => setPickOpen(true)} hitSlop={8} style={({ pressed }) => ({ minHeight: 44, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
+                <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Choose a time</T>
+              </Pressable>
+            </View>
+          ) : null;
+        })()}
         {offlineAt ? null : updatedAt ? (
           <T kind="foot" tone={error ? 'lateText' : 'text2'} style={{ textAlign: 'center', marginTop: 14, fontVariant: ['tabular-nums'] }}>
             {error ? `${failWhy() === 'server' ? 'Live data unavailable right now' : 'Offline'}. Live data updated ${hms(updatedAt)}` : (data as any)?.source === 'timetable' ? TIMETABLE_TRIPS_NOTE : `Live data updated ${hms(updatedAt)}`}
@@ -762,15 +824,6 @@ function ModeChips({ chips, modes, onChange }: { chips: ModeK[]; modes: ModeK[];
       {chip('any', 'Any', !modes.length, () => onChange([]))}
       {chips.map((k) => chip(k, MODE_CHIPS.find((x) => x.k === k)!.name, modes.includes(k), () => onChange(toggleMode(modes, k, chips)), k))}
     </ScrollView>
-  );
-}
-
-function LoadingRow({ text }: { text: string }) {
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: 48, gap: 8 }} accessibilityLiveRegion="polite" accessibilityLabel={text}>
-      <ActivityIndicator size="small" />
-      <T kind="foot" tone="text2">{text}</T>
-    </View>
   );
 }
 
