@@ -7007,6 +7007,12 @@ async function handleRequest(request, env, exec) {
               res.headers.set("etag", etag);
               return res;
             };
+            // Load tests (the load test key) never spend Trip Planner calls: the engine's board whatever its age, or 503.
+            if (loadOk(request, env)) {
+              if (!eb) return json({ error: "The engine has no board for this stop." }, 503);
+              if (eb.engine) delete eb.engine.learn;
+              return await serveEngine();
+            }
             // A stop where the Trip Planner lists services our bundles do not have (engine.gap): the planner's board.
             const gap = eb && eb.engine && eb.engine.gap;
             if (eb && !gap && engAge <= ENGINE_STALE_MS) return await serveEngine();
