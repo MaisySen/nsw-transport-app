@@ -4,7 +4,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
-### Speed: search as you type and saved boards (server 26 Oct, 11:38 and 11:47 AM, transport-api 670c8952 then 863d521d; over the air in the g10 update)
+### Speed: search as you type and saved boards (server 26 Oct, 11:38 and 11:47 AM, transport-api 670c8952 then 863d521d; over the air 26 Oct, 11:58 AM, group f9c48f4c, roll back to fd6a8763)
 Bidur at 11:20 AM: "app still slow as hell right now. Keep loading in every search".
 * Search shows stops as you type, from lists kept on the phone: every train, metro, light rail, ferry, bus and coach stop in NSW. 19 to 41 ms to results on screen in the web build, no spinner; before, every search waited for the server (453 ms median for a first search from the US build box, up to 1.4 s) plus a 220 ms pause. The server is still asked after 280 ms and adds addresses, places and anything not in the lists; a newer keystroke cancels it.
 * The server answers stop search from its own index (no Trip Planner call when the answer is clear) and keeps search copies 6 hours: a first search 239 ms median from the US box, was 453 ms.
