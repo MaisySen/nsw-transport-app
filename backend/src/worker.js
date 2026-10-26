@@ -1150,7 +1150,7 @@ async function trip(env, fromId, toId, opts = {}) {
     if (toMin(opts.time) < toMin(time) - 30) { date = sydneyParts(new Date(Date.now() + 86400000)).date; tomorrow = true; }
     time = opts.time;
   }
-  const data = await tp(env, "trip", {
+  const tpCall = () => tp(env, "trip", {
     depArrMacro: opts.arriveBy ? "arr" : "dep", itdDate: date, itdTime: time,
     type_origin: opts.fromType || (isCoordId(fromId) ? "coord" : "any"), name_origin: fromId,
     type_destination: opts.toType || (isCoordId(toId) ? "coord" : "any"), name_destination: toId,
@@ -1161,6 +1161,16 @@ async function trip(env, fromId, toId, opts = {}) {
     // Plan B: leave out the means of transport that is disrupted (exclMOT_n, Trip Planner manual).
     ...(opts.exclude || {}),
   }, opts.long ? LONG_TRIP_TIMEOUT_MS : 12000);
+  let data;
+  try { data = await tpCall(); }
+  catch (e) {
+    // Outage fallback (ttplan.js): the Trip Planner refused, failed or timed out, so trips from our own timetable,
+    // labelled. Background checks (push alerts, morning check, rescue) pass timetable: false and keep the error.
+    if (opts.timetable === false || opts.accessible || typeof timetableTrip !== "function" || !ttUpstreamDown(e)) throw e;
+    const tt = await timetableTrip(env, fromId, toId, { date, time: opts.time || opts.date ? time : null, arriveBy: !!opts.arriveBy, count: opts.count || 5, accessible: !!opts.accessible, exclude: opts.exclude }).catch(() => null);
+    if (tt) return { ...tt, tomorrow };
+    throw Object.assign(e, { tripsUnavailable: true });
+  }
   const journeys = [];
   for (const j of data.journeys || []) {
     const legs = (j.legs || []).map((lg) => {
@@ -1905,6 +1915,9 @@ async function service(env, q) {
 // ---------- nearby and alerts ----------
 
 async function nearby(env, lat, lon) {
+  // Our own stop list first (ttplan.js): no Transport for NSW call, so Nearby works when the key is refused.
+  const own = typeof ttNearbyStops === "function" ? await ttNearbyStops(env, lat, lon).catch(() => null) : null;
+  if (own) return own;
   const data = await tp(env, "coord", {
     coord: `${lon}:${lat}:EPSG:4326`, inclFilter: "1", type_1: "BUS_POINT", radius_1: "800", PoisOnMapMacro: "true",
   });
@@ -2602,7 +2615,7 @@ function askChainDecorate(d, now, cards, links) {
 // opts.time ("HHMM", Sydney) asks from that time; without it from 11pm (or now, when it is already late).
 async function lastFind(env, a, b, mode, opts = {}) {
   const sn = sydneyNow();
-  const base = { fromType: a.coord ? "coord" : undefined, count: 8, accessible: !!opts.accessible };
+  const base = { fromType: a.coord ? "coord" : undefined, count: 8, accessible: !!opts.accessible, timetable: false };
   const late = sn.tod >= 23 * 60 || sn.tod < 3 * 60;
   if (b.coord) base.toType = "coord";
   const first = await trip(env, a.id, b.id, opts.time ? { ...base, time: opts.time } : late ? base : { ...base, time: "2300" });
@@ -2942,7 +2955,10 @@ function askDecorate(d, ctx) {
 async function askV2(env, q, ctx) {
   let d;
   try { d = await askRoute(env, q, ctx); }
-  catch (e) { d = { kind: "error", text: "I couldn't reach live data just now. Try again in a moment.", detail: String(e && e.message || e).slice(0, 200) }; }
+  catch (e) {
+    const down = typeof ttUpstreamDown === "function" && ttUpstreamDown(e);
+    d = { kind: "error", upstream: !!down, text: down ? "Transport for NSW's live data isn't answering right now, so I can't check that. It's not your connection. Try again soon." : "Something went wrong on our side. Try again in a moment.", detail: String(e && e.message || e).slice(0, 200) };
+  }
   return askDecorate(d || { kind: "help" }, ctx);
 }
 const ASK_V2_KINDS = new Set(["lineStatus", "routeAt", "lastService", "needOrigin", "needHome", "needStop"]);
@@ -4368,7 +4384,7 @@ async function rescuePlan(env, spec, i, live, now) {
   const toId = (spec.to && spec.to.id) || spec.legs[spec.legs.length - 1].toStopId;
   if (!fromId || !toId) return null;
   const t = sydneyParts(new Date(arrive));
-  const r = await trip(env, fromId, toId, { time: t.time, count: 5 });
+  const r = await trip(env, fromId, toId, { time: t.time, count: 5, timetable: false });
   const ok = (r.journeys || []).filter((j) => ms(j.leave) >= arrive - 30000 && j.legs.some((x) => x.kind === "transit"));
   if (!ok.length) return null;
   ok.sort((a, b) => ms(a.arrive) - ms(b.arrive) || ms(a.leave) - ms(b.leave));
@@ -4815,7 +4831,7 @@ async function processCommute(env, c, now, sn, opts = {}) {
   const sent = [];
   if (!opts.force && (dt < -40 || dt > 25 || st.leave)) return { id: c.id, skipped: true };
   if (!opts.force && st.planAt && now - st.planAt < 110000 && st.plan && ms(st.plan.leave) - now > 4 * 60000) return { id: c.id, waiting: true };
-  const r = await trip(env, c.from_id, c.to_id, { count: 5, time: dt < -10 ? hhmmOf(c.tod - 10) : null });
+  const r = await trip(env, c.from_id, c.to_id, { count: 5, time: dt < -10 ? hhmmOf(c.tod - 10) : null, timetable: false });
   const j = pickCommuteJourney(r.journeys || [], c.tod, now);
   if (!j) return { id: c.id, nothing: true };
   const legs = journeyLegs(j);
@@ -5036,7 +5052,7 @@ async function morningPlanB(env, c, j, issues, journeys, now, planner = trip) {
 }
 
 async function morningEvaluate(env, c, now) {
-  const r = await trip(env, c.from_id, c.to_id, { count: 5, time: hhmmOf(c.tod - 10) });
+  const r = await trip(env, c.from_id, c.to_id, { count: 5, time: hhmmOf(c.tod - 10), timetable: false });
   const j = morningJourney(r.journeys || [], c.tod, now, c.mode || null);
   if (!j) return { found: false, issues: [], service: null, alert: null };
   const outs = await liftOutages(env).catch(() => []);
@@ -7549,9 +7565,19 @@ async function handleRequest(request, env, exec) {
           return json({ error: "not found" }, 404);
       }
     } catch (e) {
-      const msg = "Live data didn't answer just now. Try again in a moment.";
       console.error("api error", url.pathname, String((e && e.message) || e).slice(0, 300));
-      return asTxt ? textRes(msg) : json({ kind: "error", text: msg }, 502);
+      // A text board (?format=text) gets the same timetable board as the JSON one when the Trip Planner is down.
+      const down = typeof ttUpstreamDown === "function" && ttUpstreamDown(e);
+      if (asTxt && down && url.pathname === "/api/departures") {
+        const fb = await engineOutage(request, env, exec, url).catch(() => null);
+        if (fb) return fb;
+      }
+      // Never a bare status: the app shows "error" as it is (docs/API.md, errors). The upstream flag says the fault is
+      // Transport for NSW's live data, not the phone's connection.
+      const msg = e && e.tripsUnavailable ? "Live trips are unavailable right now because Transport for NSW isn't answering. Try again soon."
+        : down ? "Live data from Transport for NSW isn't available right now. Try again soon."
+        : "Something went wrong on our side. Try again in a moment.";
+      return asTxt ? textRes(msg) : json({ kind: "error", text: msg, error: msg, upstream: !!down, unavailable: !!down }, down ? 503 : 502);
     }
 }
 
