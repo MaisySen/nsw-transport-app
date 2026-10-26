@@ -13,6 +13,7 @@ import { api } from '@/lib/api';
 import { useCountdownNow, useLive, useReportCountdowns } from '@/lib/hooks';
 import { adaptiveGapMs, nextInMs } from '@/lib/pollCore';
 import { cacheKey, offlineText, staleText } from '@/lib/offlineCore';
+import { packStampText } from '@/lib/timetablePackCore';
 import { boardRows, boardScale, rowsThatFit, stopsSummary, type BoardRow } from '@/lib/boardCore';
 import { androidLook, palettes } from '@/lib/theme';
 import { badgeLook } from '@/lib/lineStyle';
@@ -92,7 +93,7 @@ export default function Board() {
   const { width, height, fontScale } = useWindowDimensions();
   const wide = width > height;
   useStayAwake();
-  const { data, error, offlineAt, staleAt } = useLive((r) => api.departures(String(id), r), (d) => adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), [id], { cacheKey: cacheKey('dep', String(id)) });
+  const { data, error, offlineAt, staleAt, packAt } = useLive((r) => api.departures(String(id), r), (d) => adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), [id], { cacheKey: cacheKey('dep', String(id)), pack: id ? { stop: String(id) } : null });
   const dataRef = useRef(data);
   dataRef.current = data;
   // Dynamic Type: the board grows with the text size setting, within what still fits a few rows.
@@ -109,7 +110,7 @@ export default function Board() {
   const title = shortName(data?.stop?.name || (name ? String(name) : 'Departures')).replace(/ Station$/, '');
   const close = () => { haptic.tap(); goBack({ pathname: '/stop/[id]', params: { id: String(id), name: name ? String(name) : '' } } as any); };
   const flip = () => { haptic.select(); lightChosen = !light; setLight(!light); };
-  const status = offlineAt ? offlineText(offlineAt, now) : staleAt ? staleText(staleAt, now) : !data ? (error ? 'Live times unavailable right now, trying again' : 'Loading live times') : 'Live and timetable times, updated often while a service is close';
+  const status = offlineAt ? offlineText(offlineAt, now) : staleAt ? staleText(staleAt, now) : packAt ? packStampText(!!error) : !data ? (error ? 'Live times unavailable right now, trying again' : 'Loading live times') : 'Live and timetable times, updated often while a service is close';
   const small = Math.max(15, big * 0.34);
 
   return (
@@ -132,7 +133,7 @@ export default function Board() {
         </Pressable>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, marginBottom: 6 }} accessibilityLiveRegion="polite">
-        <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: offlineAt || (error && !data) ? c.orange : staleAt ? c.text3 : c.green, marginRight: 7 }} />
+        <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: offlineAt || (error && !data) || (packAt && error) ? c.orange : staleAt || packAt ? c.text3 : c.green, marginRight: 7 }} />
         <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={{ color: c.text2, fontSize: 15, flex: 1 }}>{status}</Text>
       </View>
       {data && !rows.length ? <Text maxFontSizeMultiplier={1.4} style={{ color: c.text2, fontSize: big * 0.5, marginTop: big }}>{offlineAt ? 'No kept times left' : 'No more services right now'}</Text> : null}

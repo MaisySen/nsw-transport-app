@@ -3,6 +3,8 @@ import { keepOffline, peekOffline, readOffline } from './offline';
 import { createLatest, createStamp, quickReaskMs } from './pollCore';
 import { answerTime } from './liveLabelCore';
 import { useCountdownNow, useNow, useReportCountdowns, useScreenPoll } from './activity';
+import { peekPackBoard, readPackBoard } from './timetablePack';
+import { firstPaint } from './timetablePackCore';
 
 /** Ticks so countdowns move on their own, only while the screen is on view and the app is in front. */
 export { useCountdownNow, useNow, useReportCountdowns };
@@ -14,23 +16,33 @@ export { useCountdownNow, useNow, useReportCountdowns };
  * screen yet (a fresh start with no signal), the kept copy is shown with the services already gone taken out.
  * `offlineAt` is the time the shown times are from while the app is offline, else null.
  * `staleAt` is set while a kept copy is on screen and the live answer is still on its way (label it, never as live).
+ * With `pack` (a stop and mode), the stop's timetable pack (timetablePack.ts) is shown when there is no copy of the
+ * live board from the last 10 minutes: `packAt` is set while those timetable times are on screen (label them as
+ * timetable times, never as live; with `error` set the phone is offline). The live answer replaces them.
  *
  * Race rule (createLatest in pollCore.ts): every change of `deps` starts a new round. An answer that comes back for an
  * earlier round (the stop, service, time or query shown a moment ago) is dropped, never shown under the new one, and
  * the new round asks at once instead of waiting for the old request. `load` gets an AbortSignal that is aborted when
  * its round is over.
  */
-export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Promise<T>, intervalMs: number | ((data: T | null) => number) = 15000, deps: any[] = [], opts: { cacheKey?: string; enabled?: boolean } = {}) {
-  // A copy kept in memory this session shows on the first frame (a screen opened again, Home after a tab change).
-  const first = useRef<{ at: number; data: T } | null | undefined>(undefined);
-  if (first.current === undefined) first.current = opts.cacheKey ? peekOffline<T>(opts.cacheKey) : null;
+export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Promise<T>, intervalMs: number | ((data: T | null) => number) = 15000, deps: any[] = [], opts: { cacheKey?: string; enabled?: boolean; pack?: { stop: string; mode?: string | null } | null } = {}) {
+  // A copy kept in memory this session shows on the first frame (a screen opened again, Home after a tab change),
+  // or the stop's timetable pack when that copy is missing or more than 10 minutes old (firstPaint).
+  const first = useRef<{ at: number; data: T; pack: boolean } | null | undefined>(undefined);
+  if (first.current === undefined) {
+    const f = firstPaint<T>(opts.cacheKey ? peekOffline<T>(opts.cacheKey) : null, opts.pack ? peekPackBoard(opts.pack.stop, opts.pack.mode) : null, Date.now());
+    first.current = f.kind === 'none' ? null : { at: f.at as number, data: f.data as T, pack: f.kind === 'pack' };
+  }
   const [data, setData] = useState<T | null>(first.current ? first.current.data : null);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [offlineAt, setOfflineAt] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   // A fresh start shows the copy kept on the phone at once (staleAt: when it is from) while the live answer loads.
-  const [staleAt, setStaleAt] = useState<number | null>(first.current ? first.current.at : null);
+  const [staleAt, setStaleAt] = useState<number | null>(first.current && !first.current.pack ? first.current.at : null);
+  const [packAt, setPackAt] = useState<number | null>(first.current && first.current.pack ? first.current.at : null);
+  const packRef = useRef(opts.pack);
+  packRef.current = opts.pack;
   const dataRef = useRef<T | null>(null);
   dataRef.current = data;
   const loadRef = useRef(load);
@@ -39,7 +51,14 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
   keyRef.current = opts.cacheKey;
   const latest = useRef<ReturnType<typeof createLatest> | null>(null);
   if (!latest.current) latest.current = createLatest();
-  const shown = useRef<{ live: boolean; at: number | null }>({ live: false, at: first.current ? first.current.at : null });
+  const shown = useRef<{ live: boolean; at: number | null; pack?: boolean }>({ live: false, at: first.current ? first.current.at : null, pack: !!first.current?.pack });
+  // Shows a kept copy (staleAt) or a pack board (packAt) while nothing live is on screen.
+  const paint = useCallback((f: { kind: 'kept' | 'pack' | 'none'; data: unknown; at: number | null }) => {
+    if (f.kind === 'none' || f.at == null) return;
+    setData(f.data as T);
+    if (f.kind === 'pack') { setPackAt(f.at); setStaleAt(null); } else { setStaleAt(f.at); setPackAt(null); }
+    shown.current = { live: false, at: f.at, pack: f.kind === 'pack' };
+  }, []);
   // The quick ask (pollCore.quickReaskMs): an answer the server took from a saved copy more than 20 s old is asked
   // again with refresh after about 2 s, once per opening, then the normal gap.
   const reasked = useRef(false);
@@ -60,6 +79,7 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
       setUpdatedAt(at);
       setOfflineAt(null);
       setStaleAt(null);
+      setPackAt(null);
       shown.current = { live: true, at };
       if (key) keepOffline(key, d);
       const q = quickReaskMs(d, Date.now(), reasked.current);
@@ -70,13 +90,19 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
       setError(String(e?.message || e));
       if (e?.offline) {
         if (shown.current.live) setOfflineAt(shown.current.at);
-        else if (key) {
-          const kept = peekOffline<T>(key) ?? (await readOffline<T>(key));
+        else if (shown.current.pack) { /* timetable times stay, labelled offline by packAt with error */ }
+        else if (key || packRef.current) {
+          const kept = key ? peekOffline<T>(key) ?? (await readOffline<T>(key)) : null;
+          const pk = packRef.current;
+          const pb = pk ? await readPackBoard(pk.stop, pk.mode) : null;
           if (round.current() && !shown.current.live) {
-            if (kept) {
-              setData(kept.data);
-              setOfflineAt(kept.at);
-              shown.current = { live: false, at: kept.at };
+            const f = firstPaint<T>(kept, pb, Date.now());
+            if (f.kind === 'pack') paint(f);
+            else if (f.kind === 'kept') {
+              setData(f.data as T);
+              setOfflineAt(f.at);
+              setPackAt(null);
+              shown.current = { live: false, at: f.at };
             } else if (shown.current.at) setOfflineAt(shown.current.at);
             setStaleAt(null);
           }
@@ -95,24 +121,27 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
     const key = keyRef.current;
     if (mounted.current) {
       // What the screen shows changed: start clean, with this key's copy kept in memory when there is one.
-      const mem = key ? peekOffline<T>(key) : null;
-      setData(mem ? mem.data : null);
-      setStaleAt(mem ? mem.at : null);
+      const pk = packRef.current;
+      const f = firstPaint<T>(key ? peekOffline<T>(key) : null, pk ? peekPackBoard(pk.stop, pk.mode) : null, Date.now());
+      setData(f.kind === 'none' ? null : (f.data as T));
+      setStaleAt(f.kind === 'kept' ? f.at : null);
+      setPackAt(f.kind === 'pack' ? f.at : null);
       setUpdatedAt(null);
       setError(null);
       setOfflineAt(null);
-      shown.current = { live: false, at: mem ? mem.at : null };
+      shown.current = { live: false, at: f.at, pack: f.kind === 'pack' };
     }
     mounted.current = true;
     reasked.current = false;
-    // The kept copy first (a read from the phone, a few milliseconds), then the live answer replaces it.
-    if (key && !shown.current.at) {
-      readOffline<T>(key).then((kept) => {
-        if (kept && gen === L.gen() && !shown.current.live && !shown.current.at) {
-          setData(kept.data);
-          setStaleAt(kept.at);
-          shown.current = { live: false, at: kept.at };
-        }
+    // The kept copy or the pack first (a read from the phone, a few milliseconds), then the live answer replaces it.
+    // A pack on screen still gives way to a copy of the live board from the last 10 minutes.
+    const pk = packRef.current;
+    if ((key || pk) && (!shown.current.at || shown.current.pack)) {
+      Promise.all([key ? readOffline<T>(key) : null, pk ? readPackBoard(pk.stop, pk.mode) : null]).then(([kept, pb]) => {
+        if (gen !== L.gen() || shown.current.live) return;
+        const f = firstPaint<T>(kept, pb, Date.now());
+        if (f.kind === 'none' || (shown.current.at && !shown.current.pack) || (f.kind === 'pack' && shown.current.pack)) return;
+        paint(f);
       }).catch(() => {});
     }
     run(false);
@@ -135,7 +164,7 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
     try { await runNow(); } finally { setRefreshing(false); }
   }, [runNow]);
 
-  return { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh, setData };
+  return { data, error, updatedAt, offlineAt, staleAt, packAt, refreshing, refresh, setData };
 }
 
 /**

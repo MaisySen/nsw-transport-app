@@ -8,6 +8,7 @@ import { adaptiveGapMs, nextInMs } from '@/lib/pollCore';
 import { bestTime } from '@/lib/format';
 import { useScreenPoll } from '@/lib/activity';
 import { cacheKey } from '@/lib/offlineCore';
+import { packWanted } from '@/lib/timetablePack';
 import { usePalette, radius } from '@/lib/theme';
 import { clock, shortName } from '@/lib/format';
 import { boardAsk, boardKey, byRoute, keepRoute, modesServed } from '@/lib/stopBoardCore';
@@ -62,9 +63,13 @@ export default function StopScreen() {
   // the server for that mode alone, so the board reaches further ahead than a mixed list of 40 (boardAsk).
   const [served, setServed] = useState<string[]>([]);
   const ask = boardAsk(served, mode, pick, at);
-  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => (at != null ? departuresAt(String(id), at) : ask ? departuresFor(String(id), ask, r) : api.departures(String(id), r)),
+  // Now only: the stop's timetable pack (timetablePack.ts) paints the first frame when no copy of the live board from
+  // the last 10 minutes is kept, labelled as timetable times until the live board replaces it.
+  const { data, error, updatedAt, offlineAt, staleAt, packAt, refreshing, refresh } = useLive((r) => (at != null ? departuresAt(String(id), at) : ask ? departuresFor(String(id), ask, r) : api.departures(String(id), r)),
     // Adaptive: every 15 s while the next service is 10 minutes away or less, slower when it is further off.
-    (d) => adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), [id, at, ask], { cacheKey: at == null ? cacheKey('dep', boardKey(String(id), ask)) : undefined });
+    (d) => adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), [id, at, ask], { cacheKey: at == null ? cacheKey('dep', boardKey(String(id), ask)) : undefined, pack: at == null && id ? { stop: String(id), mode: ask } : null });
+  // A stop opened is a recent stop: it gets its own pack (once a day) a moment after the screen has its times.
+  useEffect(() => { if (!id) return; const t = setTimeout(() => packWanted(String(id)), 4000); return () => clearTimeout(t); }, [id]);
   useEffect(() => { setServed((p) => modesServed(p, data)); }, [data]);
   // A server without earlier times (no echo): the chip and the row go for the session and the board goes back to now.
   useEffect(() => { if (!boardTimeSupported()) { setTimeOk(false); setAt(null); } }, [error]);
@@ -190,7 +195,7 @@ export default function StopScreen() {
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pull} />}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 4 }}>
           {/* The stamp wraps to a second line rather than pushing Speak and Board off the screen. */}
-          <View style={{ flex: 1, marginRight: 8 }}><LiveStamp updatedAt={updatedAt} error={error} offlineAt={offlineAt} staleAt={staleAt} /></View>
+          <View style={{ flex: 1, marginRight: 8 }}><LiveStamp updatedAt={updatedAt} error={error} offlineAt={offlineAt} staleAt={staleAt} packAt={packAt} /></View>
           {canSpeak && at == null ? (
             <Pressable onPress={() => { haptic.select(); speak(departuresSentence(itemsRef.current, Date.now(), { stop: stopName }), { interrupt: true }); }} hitSlop={8}
               accessibilityRole="button" accessibilityLabel="Speak departures" accessibilityHint="Reads the next two services out loud"

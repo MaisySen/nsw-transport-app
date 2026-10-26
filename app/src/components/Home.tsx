@@ -11,6 +11,7 @@ import { adaptiveGapMs } from '@/lib/pollCore';
 /** The first departure still ahead (or NaN). */
 const nextDep = (ts: number[]) => { const n = Date.now() - 30000; let b = NaN; for (const t of ts) if (t > n && !(t >= b)) b = t; return b; };
 import { cacheKey, offlineText, staleText } from '@/lib/offlineCore';
+import { packStampText, packTarget } from '@/lib/timetablePackCore';
 import { foldNear, type NearPick } from '@/lib/nearCore';
 import { stopNumber } from '@/lib/busCore';
 import { HoldMenu } from './HoldMenu';
@@ -80,7 +81,8 @@ function useOfflineSince() {
 function useHomeLive<T>(load: (refresh: boolean) => Promise<T>, deps: any[], key?: string, nextOf?: (d: T) => number) {
   const nextRef = useRef(nextOf);
   nextRef.current = nextOf;
-  const live = useLive(load, (d) => adaptiveGapMs(15000, d && nextRef.current ? nextRef.current(d) - Date.now() : null), deps, { cacheKey: key });
+  // A stop card (a departures key) paints its timetable pack first when no recent copy is kept (timetablePack.ts).
+  const live = useLive(load, (d) => adaptiveGapMs(15000, d && nextRef.current ? nextRef.current(d) - Date.now() : null), deps, { cacheKey: key, pack: packTarget(key) });
   const { updatedAt, refresh, offlineAt, staleAt } = live;
   useEffect(() => { if (updatedAt) markLive(); }, [updatedAt]);
   useEffect(() => {
@@ -744,7 +746,7 @@ export function StopBoard({ stop, now, starred, distance, menu }: { stop: Place;
   /** Tap and hold on the stop's name: its actions (components/HoldMenu.tsx). */
   menu?: MenuSpec | null }) {
   const c = usePalette();
-  const { data, error, offlineAt } = useHomeLive((r) => api.departures(stop.id, r), [stop.id], cacheKey('dep', stop.id),
+  const { data, error, offlineAt, packAt } = useHomeLive((r) => api.departures(stop.id, r), [stop.id], cacheKey('dep', stop.id),
     (d) => nextDep((d?.items || []).map((x) => bestTime(x.planned, x.realtime ? x.estimated : null))));
   const groups = groupDepartures(data?.items || [], now);
   useReportCountdowns('stop:' + stop.id, (data?.items || []).slice(0, 4).map((x) => bestTime(x.planned, x.realtime ? x.estimated : null)));
@@ -759,6 +761,7 @@ export function StopBoard({ stop, now, starred, distance, menu }: { stop: Place;
         onPress={() => router.push({ pathname: '/stop/[id]', params: { id: stop.id, name: data?.stop?.name || stop.name } })} />
       {!data ? <T kind="foot" tone="text2" style={s.note}>{error ? 'Live times unavailable right now, trying again' : 'Loading live times'}</T> : null}
       {offlineAt ? <OfflineNote at={offlineAt} now={now} /> : null}
+      {packAt && !offlineAt ? <T kind="foot" tone="text2" style={s.note}>{packStampText(!!error)}</T> : null}
       {data && !groups.length ? <T kind="foot" tone="text2" style={s.note}>{offlineAt ? 'No kept times left' : 'No more services right now'}</T> : null}
       {groups.map(({ d, next }, i) => {
         const t = cd(bestTime(d.planned, d.realtime ? d.estimated : null), now);

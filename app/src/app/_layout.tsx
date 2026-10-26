@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Notifications from 'expo-notifications';
 import { pollNotes, pollNotesTick } from '@/lib/push';
 import { startAppPoll } from '@/lib/activity';
+import { startPacks } from '@/lib/timetablePack';
 import { endLive, setupLiveNotifications } from '@/lib/live';
 import { finishProfileMove, initProfile } from '@/lib/device';
 import { finishServerMove } from '@/lib/serverMove';
@@ -53,7 +54,10 @@ export default function RootLayout() {
       search = setTimeout(() => { search = null; warmLocalSearch(); }, STARTUP_DEFER_MS * 4);
     });
     const sub = AppState.addEventListener('change', (s) => { if (s === 'active') refreshConfig(); });
-    return () => { sub.remove(); if (later) clearTimeout(later); if (search) clearTimeout(search); };
+    // Timetable packs (timetablePack.ts): kept ones are read now for the first frame; due ones are fetched after the
+    // first screen has its times, and again (once a day) when the app comes back to the front.
+    const packs = startPacks(STARTUP_DEFER_MS * 3);
+    return () => { sub.remove(); packs(); if (later) clearTimeout(later); if (search) clearTimeout(search); };
   }, []);
 
   // Keep alerts coming while the app is open, and open the right screen when an alert is tapped.

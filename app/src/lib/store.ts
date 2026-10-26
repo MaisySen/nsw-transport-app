@@ -83,6 +83,10 @@ const dropReminders = (keys: string[] | null) => {
 };
 
 export const store = {
+  /** The whole state as last loaded (timetable packs read which stops keep one). */
+  snapshot: (): State => state,
+  /** True once the saved state has been read from the phone. */
+  ready: () => loaded,
   /** The watch on a trip right now (read at tap time, so a memoised row never acts on an old value). */
   watchedId: (key: string) => state.watchedTrips[key],
   isStarred: (id: string) => state.starred.some((s) => s.id === id),

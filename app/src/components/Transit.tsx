@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef } from 'react';
 import { offlineText, staleText } from '@/lib/offlineCore';
+import { packStampText } from '@/lib/timetablePackCore';
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Why } from '@/lib/whyLateCore';
 import { WhyLate, withWhyAction } from './WhyLate';
@@ -104,8 +105,17 @@ export function KeptBanner({ offlineAt, staleAt, now, style }: { offlineAt?: num
   );
 }
 
-export function LiveStamp({ updatedAt, error, offlineAt, staleAt }: { updatedAt: number | null; error?: string | null; offlineAt?: number | null; staleAt?: number | null }) {
+export function LiveStamp({ updatedAt, error, offlineAt, staleAt, packAt }: { updatedAt: number | null; error?: string | null; offlineAt?: number | null; staleAt?: number | null; packAt?: number | null }) {
   const c = usePalette();
+  if (!offlineAt && !updatedAt && packAt) {
+    // Timetable times from the stop's pack (timetablePack.ts) while the live board is on its way: never "Live".
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLiveRegion="polite">
+        <LiveDot beat={packAt} color={error ? c.orange : c.text3} />
+        <T kind="foot" tone="text2" style={{ marginLeft: 2, flexShrink: 1 }}>{packStampText(!!error)}</T>
+      </View>
+    );
+  }
   if (!offlineAt && !updatedAt && staleAt) {
     // A kept copy is on screen while the live answer is on its way: say how old it is, never "Live".
     return (

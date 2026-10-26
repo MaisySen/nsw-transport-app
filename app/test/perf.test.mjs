@@ -93,8 +93,8 @@ test('source: screens with countdowns redraw on minute changes, polls are adapti
     assert.match(s, /adaptiveGapMs\(15000, nextInMs\(/, f);
   }
   const hooks = read('src/lib/hooks.ts');
-  assert.match(hooks, /readOffline<T>\(key\)\.then/, 'the kept copy is read at once on a fresh start');
-  assert.match(hooks, /setStaleAt\(kept\.at\)/);
+  assert.match(hooks, /Promise\.all\(\[key \? readOffline<T>\(key\) : null, pk \? readPackBoard\(pk\.stop, pk\.mode\) : null\]\)\.then/, 'the kept copy (and the timetable pack) is read at once on a fresh start');
+  assert.match(hooks, /setStaleAt\(f\.at\)/, 'a kept copy on screen is labelled with its age');
   const act = read('src/lib/activity.ts');
   assert.doesNotMatch(act, /setInterval/);
 });
