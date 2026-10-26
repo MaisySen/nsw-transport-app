@@ -48,6 +48,8 @@ let worker = fs.readFileSync(path.join(root, "src/worker.js"), "utf8");
 // The board engine (src/engine.js, docs/ENGINE.md) shares the worker's module: it uses the worker's feed readers and
 // labels, and its Durable Object class is exported from the same file.
 worker += "\n" + fs.readFileSync(path.join(root, "src/engine.js"), "utf8");
+// On phone timetable packs (src/pack.js, docs/TIMETABLE_PACKS.md): adds the object's /pack path, after engine.js.
+worker += "\n" + fs.readFileSync(path.join(root, "src/pack.js"), "utf8");
 if (!cf) for (const k of need) worker = worker.split(`__${k}__`).join(vals[k]);
 // The Content Security Policy allows only this site's own scripts plus the exact inline
 // scripts in the built pages, hashed here at build time so later page edits stay covered.

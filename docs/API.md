@@ -47,6 +47,7 @@ Example: `/api/ask?q=campsie%20to%20newcastle%20via%20chatswood&format=text`
 | `/api/lines` | GET | `l=T1,T4,M1` (up to 16 lines) | `{enabled, at, items}`, one per line in the order asked. See Status of my lines below. api.transportsydney.app only |
 | `/api/traffic` | GET | none | `{items, count, at}`: open Live Traffic NSW incidents as `{id, lat, lon, kind, text, major, updated}`, read at most every 2 min. api.transportsydney.app only |
 | `/api/trackwork` | GET | `t=FROM~TO~LINES~HOUR` repeated, up to 6 (`LINES` dot separated, e.g. `T1.T4`) | `{enabled, weekend, at, trips}`. See Weekend trackwork below. api.transportsydney.app only |
+| `/api/pack` | GET | `stop` (stop id) | One stop's timetable for today and tomorrow, for the phone to keep: compact rows, no live data, no trip ids. See "Timetable packs on the phone" below. api.transportsydney.app only |
 
 `/api/plan` leg fields: `f` from stop id, `fn` from name, `t` to stop id, `tn` to name, `m` mode (`train`, `metro`, `bus`, `ferry`, `lightrail`, `walk`), `c` connection minutes before this leg (0 to 60, default 5), `a` all services for this leg (1 or 0), `w` walk minutes (1 to 90). The first leg cannot be a walk.
 
@@ -508,3 +509,27 @@ A departures answer is the 40 services the Trip Planner returns. At a station wi
 * Saved boards. Every live board for now (`/api/departures` without `time` or `date`) that is fetched is also saved in D1 (table `board_copies`, gzip, one row per stop and `mode`, at most one write per board per server copy every 20 s, rows older than a day deleted hourly). A plain open with no edge copy gets the saved board at once (up to 15 minutes old) with `x-edge-cache: saved`, its real `dataAt`, `now` set to the current time and services that left more than a minute ago taken out; the fresh board keeps going in the background and is stored. A request with `refresh=1` takes the saved board only when the fresh one fails (5xx). The app asks again about 2 s after any answer whose `dataAt` is more than 20 s old. Live copies are still 15 s.
 * Warming. The minute tick keeps saved boards for 50 busy interchanges (train, metro, light rail and ferry, named in `WARM_HUBS`) and every stop a phone opened in the last 30 minutes, each refreshed when its saved board is 6 minutes old: at most 8 Trip Planner calls a minute (`WARM_PER_TICK`, 0.13 a second, under 10,000 a day), none from 1:00 to 4:30 AM, none while a server copy is busy (3 calls a second) and none once the day's count passes 40,000 (`WARM_DAY_CAP`). The tick's answer carries `warm` (`due`, `warmed`, `hubs`, `recent`, or `skipped`).
 * Smart Placement is on (`[placement] mode = "smart"` in `wrangler.toml.template`): Cloudflare may run the worker next to the Transport for NSW hub and D1 in Sydney when that is faster.
+
+## Timetable packs on the phone (26 Oct 2026)
+
+`GET /api/pack?stop=ID` returns one stop's timetable (a station includes its platforms and stands) from the board
+engine's timetable (docs/ENGINE.md), today's departures and tomorrow's, so the app can show a saved stop's departures
+the moment it opens, with no signal too, and lay the live board on top when it arrives. Code: `backend/src/pack.js`.
+
+```
+{ "v": 1, "stop": { "id": "213510", "name": "Strathfield Station" }, "ver": 3, "builtAt": "...", "generatedAt": 1792977142932,
+  "base": 1792933260, "until": 1793120400, "days": ["20261025", "20261026", "20261027"],
+  "lines": [["T9", "train", "#D11F2F", "Train", "Hornsby to Gordon via City"]], "heads": ["Hornsby"],
+  "plats": [["2135223", "Platform 3", "Strathfield Station Platform 3"]],
+  "rows": [0, 0, 0, 0, 180, 0, 0, 0] }
+```
+
+* `rows` is flat, four numbers per departure in time order: seconds after the previous departure (the first after
+  `base`, epoch seconds), then an index into `lines`, `heads` and `plats`. `until` (epoch seconds) is the end of the last
+  service day covered; the app asks again before then.
+* Lines, headsigns and platforms are the ones the engine's boards show for the same timetable row (tested in
+  `backend/test/pack.test.mjs`).
+* 200 with `cache-control: public, max-age=3600`; shared through Cloudflare's cache per stop and Sydney day for 6 hours.
+  404 when the timetable has no such stop (some private ferries and coaches): the app keeps no pack and uses the live
+  board as before. 503 when the timetable is not loaded. 400 without a valid `stop`.
+

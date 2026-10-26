@@ -3118,6 +3118,7 @@ const RATE_RULES = [
   [/^\/api\/(saved|commutes|commutes\/dismiss|push\/subscribe|push\/expo|push\/expo\/unregister|push\/unsubscribe)$/, "write", 60, 600000, "POST"],
   [/^\/api\/(history\/delete|live-activity\/forget)$/, "delete", 10, 600000],
   [/^\/api\/hit$/, "hit", 120, 600000],
+  [/^\/api\/pack$/, "pack", 300, 60000],
   [/^\/api\/share$/, "share", 20, 600000, "POST"],
   [/^\/api\/share\/update$/, "shareup", 240, 600000],
   [/^\/api\/share$/, "read", 600, 60000],
@@ -7008,6 +7009,10 @@ async function handleRequest(request, env, exec) {
           const r = await engineCall(env, "/status");
           return json(await r.json(), r.status);
         }
+        case "/api/pack":
+          // One stop's timetable for the phone (src/pack.js, docs/TIMETABLE_PACKS.md).
+          if (typeof packAnswer !== "function") return json({ error: "No timetable right now." }, 503);
+          return packAnswer(env, exec, url, API_SEC_HEADERS);
         case "/api/timetable": {
           // The on phone timetable pack: timetable rows for up to 40 stops (and their platforms) for today and the next
           // day, routes and headsigns included. Shared through Cloudflare's cache for 30 minutes per stop list.
