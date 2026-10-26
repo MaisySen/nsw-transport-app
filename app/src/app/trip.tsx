@@ -341,7 +341,7 @@ export default function TripScreen() {
   const legsP: TripLeg[] | null = (() => { try { const v = p.legs ? JSON.parse(String(p.legs)) : null; return Array.isArray(v) && v.length > 1 ? v : null; } catch { return null; } })();
   const plan = legsP ? { from, to, legs: legsP } : { from, to, via, conn };
   const chain = isChain(plan);
-  // A plain A to B trip asks the server for pages (tripPagesCore.ts): about 20 trips each, the next ones loaded
+  // A plain A to B trip asks the server for pages (tripPagesCore.ts): about 10 trips each, the next ones loaded
   // before the reader gets to either end. A trip via a stop or with set legs loads batches from a time as before.
   const pageable = !chain && !p.via;
   const tkey = tripKey(plan);
@@ -452,7 +452,7 @@ export default function TripScreen() {
     if (fresh.length) setExtra((e) => [...e, ...fresh]);
     return fresh;
   };
-  // Pages (a server that pages answered the first page with its cursors): later and earlier pages of about 20 trips,
+  // Pages (a server that pages answered the first page with its cursors): later and earlier pages of about 10 trips,
   // up to 7 days either way of the time the list is for, asked for while the reader is still a screen and a half
   // from the end, one at a time each way, only while this screen is on view with the app in front.
   const paged = pageable && isPaged(data);

@@ -1,4 +1,4 @@
-// The trip list's endless scroll (app/trip.tsx): pages of about 20 trips from the server (GET /api/trip?page=1 with
+// The trip list's endless scroll (app/trip.tsx): pages of about 10 trips from the server (GET /api/trip?page=1 with
 // after= or before= and arr=), asked for before the reader gets to the end either way, so the list keeps up with the
 // scroll. Plain logic here so it can be tested without a phone (test/trip-pages.test.mjs).
 

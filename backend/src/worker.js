@@ -1215,14 +1215,16 @@ function tripDate(raw, now = Date.now()) {
 }
 
 // ---------- trip pages (the trip list's endless scroll) ----------
-// GET /api/trip?page=1 answers a page of up to TRIP_PAGE_N trips (as many as one Trip Planner call gives), and
+// GET /api/trip?page=1 answers a page of up to TRIP_PAGE_N trips (as many as one Trip Planner call gives, 10), and
 // after=<ms> or before=<ms> (with arr=<ms>, the earliest arrival the phone has) ask for the next page later or
 // earlier. One planner call per page. Each planner answer (the timetable part: the trips and their legs) is kept and
 // shared by every phone for TRIP_WIN_KEEP_S per pair, day, minute and options (tripWinKey); the live part is never
 // kept longer than the 15 s live rule: an answer older than that has the planner's live times taken off and the
 // feeds' current ones put back (tripLegUnlive, enrich), and the whole page answer goes through the usual 15 s edge
 // copy. Nothing is written to D1 or KV for a page.
-const TRIP_PAGE_N = 20;
+// The live Trip Planner gives at most 10 trips a call: asked for 8 or 10 it gave 8 or 10, asked for 12, 14 or 20 it
+// gave its default 4 or 5 (27 Oct 2026, 2 AM, Parramatta to Central). So a page is 10 trips, one call.
+const TRIP_PAGE_N = 10;
 const TRIP_WIN_KEEP_S = 600;
 const TRIP_WIN_LIVE_MS = FEED_TTL_MS;
 // Pages reach 7 days back and 14 days ahead of now (the planner's own range for a chosen day).

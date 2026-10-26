@@ -64,15 +64,15 @@ const P = "/api/trip?from=213410&to=200060&page=1";
 let tag = 0;
 const fresh = () => { W.tripWinMem.clear(); calls.length = 0; delay = null; shift = 0; tag++; };
 
-test("a first page asks the planner once for 20 trips and gives cursors for the next pages", async () => {
+test("a first page asks the planner once for 10 trips (its most) and gives cursors for the next pages", async () => {
   fresh();
   const r = await get(`${P}&fromName=a${tag}`);
   assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 300));
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].get("calcNumberOfTrips"), "20");
+  assert.equal(calls[0].get("calcNumberOfTrips"), "10");
   assert.equal(calls[0].get("depArrMacro"), "dep");
   const js = r.body.journeys;
-  assert.ok(js.length >= 18, "about 20 trips, gone ones left out: " + js.length);
+  assert.ok(js.length >= 8, "about 10 trips, gone ones left out: " + js.length);
   for (let i = 1; i < js.length; i++) assert.ok(dep(js[i]) > dep(js[i - 1]), "in time order");
   assert.equal(r.body.page.dir, "first");
   assert.equal(r.body.page.next, dep(js[js.length - 1]));
@@ -80,7 +80,7 @@ test("a first page asks the planner once for 20 trips and gives cursors for the 
   assert.equal(r.body.page.prevArr, dep(js[0]) + RIDE * MIN);
 });
 
-test("after= gives the next 20 trips from the last one, with no gap", async () => {
+test("after= gives the next 10 trips from the last one, with no gap", async () => {
   fresh();
   const a = await get(`${P}&fromName=b${tag}`);
   const b = await get(`${P}&fromName=b${tag}&after=${a.body.page.next}`);
@@ -89,7 +89,7 @@ test("after= gives the next 20 trips from the last one, with no gap", async () =
   const first = dep(b.body.journeys[0]);
   assert.equal(first, a.body.page.next, "starts at the last trip shown (the phone drops the one it has)");
   assert.equal(dep(b.body.journeys[1]) - a.body.page.next, EVERY);
-  assert.ok(b.body.journeys.length >= 19);
+  assert.ok(b.body.journeys.length >= 9);
 });
 
 test("before= with arr= gives the trips just before the first one shown, ending right there", async () => {
@@ -99,13 +99,13 @@ test("before= with arr= gives the trips just before the first one shown, ending 
   assert.equal(e.body.page.dir, "earlier");
   assert.equal(calls[calls.length - 1].get("depArrMacro"), "arr");
   const js = e.body.journeys;
-  assert.ok(js.length >= 19, "a full page earlier: " + js.length);
+  assert.ok(js.length >= 9, "a full page earlier: " + js.length);
   assert.ok(js.every((j) => dep(j) < a.body.page.prev));
   assert.equal(a.body.page.prev - dep(js[js.length - 1]), EVERY, "no gap before the first trip shown");
   for (let i = 1; i < js.length; i++) assert.equal(dep(js[i]) - dep(js[i - 1]), EVERY);
 });
 
-test("50 trips scrolled cost 3 planner calls, and another phone scrolling the same pair costs none", async () => {
+test("50 trips scrolled cost 6 planner calls, and another phone scrolling the same pair costs none", async () => {
   fresh();
   const seen = new Set();
   // A chosen time (an hour on), so both phones' first pages are the same planner answer whatever the clock does.
@@ -116,7 +116,7 @@ test("50 trips scrolled cost 3 planner calls, and another phone scrolling the sa
     r = await get(`${P}&fromName=d${tag}&after=${r.body.page.next}`);
     for (const j of r.body.journeys) seen.add(dep(j));
   }
-  assert.equal(calls.length, 3, "planner calls for " + seen.size + " trips");
+  assert.equal(calls.length, 6, "planner calls for " + seen.size + " trips");
   // Another phone (another name in its query, so not the 15 s answer copy): the same pages from the window copy.
   const before = calls.length;
   let s = await get(`${P}&fromName=e${tag}&time=${hh}`);
@@ -175,7 +175,7 @@ test("n= asks the planner for that many trips a page (4 to 20), anything else is
   assert.equal(calls[0].get("calcNumberOfTrips"), "8");
   assert.equal(r.body.page.n, 8);
   await get(`${P}&fromName=n${tag}&n=99`);
-  assert.equal(calls[1].get("calcNumberOfTrips"), "20");
+  assert.equal(calls[1].get("calcNumberOfTrips"), "10");
 });
 
 test("a plain trip request is as before (count, no page)", async () => {
