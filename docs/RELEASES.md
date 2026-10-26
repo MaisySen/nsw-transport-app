@@ -253,3 +253,11 @@ and ended, `/api/raptor/status` 403 without key, `/api/raptor/plan` answers (Cen
 Chatswood, Penrith to Bondi Junction, a point in the city to Chatswood). Roll back:
 `npx wrangler@4 rollback 2e7a550e-f5d9-4c09-9b4d-3e84af3ba18e --name transport-api` (g17's deploy at 3:23 PM, the last
 one before this). The TripPlanner object stays defined after a roll back and is unused.
+
+### Live trip follows the real train (server, 26 Oct, g19)
+
+| Time (Sydney) | transport-api version | Main | What |
+|---|---|---|---|
+| 4:11 PM | 544279b4-ea16-4ea1-ac1a-ac651d5df3af | dd2641a | `/api/service` carries a run's latest live delay on to stops the feed does not list (`carried`), says what its next stop rests on (`progress`), and a fresh vehicle position behind the clock wins; the trip watch sends no change, arriving or arrived alert from the timetable alone; `/api/live-activity` takes `here`; trip card code regenerated from the app; web live trip holds timetable only legs. No D1 change. |
+
+Roll back: `npx wrangler@4 rollback fb242627-67c8-4df1-bc9f-4ca65a3e7af2 --name transport-api` (g18). Post deploy checks: /api/lines 200, /api/trackwork 200, /api/health 403 without key, /api/usual answers (400 without line and stop), `/api/service` carries `progress`, a shared trip page opens (200). The app side (trip screen, notification, Live Activity, Watch and widget card) is on main for the next over the air update; no update published.
