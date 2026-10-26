@@ -7504,6 +7504,7 @@ function idxKey(q) {
 }
 function idxScore(s, k, words) {
   if (s.key === k || s.base === k) return 0;
+  if (s.base.startsWith(k + " ") || s.key.startsWith(k + " ")) return 0.9 + (s.key.length - k.length) / 200;
   if (s.base.startsWith(k) || s.key.startsWith(k)) return 1 + (s.key.length - k.length) / 200;
   if (!s.key.includes(words[0].slice(0, 2))) return Infinity;
   const kw = s.key.split(" ");
@@ -7545,7 +7546,7 @@ function indexSearch(idx, q, max = 8) {
 // last 30 minutes saved, at most WARM_PER_TICK Trip Planner calls a minute, and none at night, when the key is busy
 // or when the day's count passes WARM_DAY_CAP.
 const SAVED_MAX_MS = 15 * 60000;
-const SAVED_WAIT_MS = 300;
+const SAVED_WAIT_MS = 0;
 const SAVED_WRITE_GAP_MS = 20000;
 const WARM_EVERY_MS = 6 * 60000;
 const WARM_RECENT_MS = 30 * 60000;
@@ -7775,7 +7776,7 @@ export default {
     }
     const kept = !!hit && !!storedAt && age <= EDGE_KEEP_S * 1000;
     // No edge copy: a live board saved in the last SAVED_MAX_MS (any server copy, any location) stands in. A first
-    // open waits SAVED_WAIT_MS for the fresh board, then gets the saved one with its real age while the fresh one
+    // open gets the saved one at once (SAVED_WAIT_MS) with its real age while the fresh one
     // finishes and is stored; a refresh (the app's polls) takes the saved board only if the fresh one fails.
     const bk = kept ? null : boardKey(url);
     const saved = bk ? await boardSaved(env, bk).catch(() => null) : null;
