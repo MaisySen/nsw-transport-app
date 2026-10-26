@@ -142,7 +142,19 @@ async function tp(env, endpoint, params, timeoutMs = 12000) {
       signal: AbortSignal.timeout(timeoutMs),
     }).finally(() => reqUpstream(Date.now() - t0));
     upstreamHeaders(res);
-    if (res.ok) { budget.lastOkAt = Date.now(); return res.json(); }
+    if (res.ok) {
+      // A 200 that is not a JSON object (an HTML maintenance or gateway page, "null", a cut off body) is the hub being
+      // down, not an answer: it gets the outage path (timetable board, kept copy, "Transport for NSW isn't answering")
+      // instead of "Something went wrong on our side" (26 Oct, g28, docs/REVERSE_ENGINEERING.md).
+      const text = await res.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch (e) { data = null; }
+      if (!data || typeof data !== "object") {
+        throw new Error(`Transport data answered 502: a 200 that is not JSON (${String((res.headers && res.headers.get("content-type")) || "no type").slice(0, 40)})`);
+      }
+      budget.lastOkAt = Date.now();
+      return data;
+    }
     const body = await res.text();
     const detail = (res.headers && res.headers.get("x-error-detail")) || body;
     upstreamRefused(res.status, detail);
