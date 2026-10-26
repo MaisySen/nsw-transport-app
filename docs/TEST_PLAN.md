@@ -386,6 +386,18 @@ Run on a real iPhone (iOS 26 and iOS 27.1) and a real Apple Watch paired with it
 **Unchanged in 207 (regression)**
 21. Live Activity and Dynamic Island on a trip, trip reminders ringing with the app closed, last train home reminder, notifications permission asked only on the first reminder, location asked only when in use (no Always prompt).
 
+## Lag diagnosis device checks
+
+From docs/DIAGNOSIS_LAG.md, 26 Oct. Nothing in that plan has been measured on a phone or a watch; these give the numbers it is missing.
+
+1. iPhone on build 208 with the newest production update, cold start after the update has been applied once: time from tap to times on Home, on Wi-Fi and on 4G, 3 runs each.
+2. Same phone, open a stop with nothing kept: time to live times, and whether a spinner shows for more than 8 s.
+3. Search a trip at 8 AM on a weekday: time to the first trip; note any "still searching" and any error text.
+4. Apple Watch with the phone nearby, then with the phone off or away: open the watch app at 8 AM, time until the times change from "Updated" to the new time; note any "Offline".
+5. Watch complication: note the time it shows against the next real departure after the watch app has been closed for an hour.
+6. Stop board widget with Airplane mode on, then off: does it go empty ("Live times will be back shortly") or keep its rows.
+7. While a watch opens, run `wrangler tail transport-api` and record the User-Agent of the watch's and the widget's requests (needed for fix 4).
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).

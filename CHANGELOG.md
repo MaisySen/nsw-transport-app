@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Diagnosis: lag, slow Watch and failed loads (docs only, no release)
+Bidur at 2:52 PM: "Our own app lags, connected apple watches slow and loads. Sometime it just fail to load."
+* docs/DIAGNOSIS_LAG.md: server numbers from Cloudflare analytics (phone requests Mon 10 AM to 12 PM: p50 82 ms, p90 6.1 s, p95 7.8 s, p99 12.0 s, the Trip Planner timeout; 8.5% of NSW calls refused while our own tests ran), every screen's first load path and worst wait (trip search up to 89 s), how the Watch and widgets get data, and a ranked fix list (server, over the air, build 209).
+* Nothing shipped. Device checks to run are in docs/TEST_PLAN.md, "Lag diagnosis device checks".
+
 ### Speed: one read of the phone at start, steady lists, fewer widget writes (over the air 26 Oct, 1:13 PM, group 1f117d04, roll back to 54aa4d52)
 Bidur at 12:11 PM: "Do everything to make it fastest".
 * Home opens with its times already on it: the profile, settings, saved places, every kept copy and the timetable packs are read in one go before the first frame. First start to times 2.26 s, was 2.93 s (web export with the CPU slowed 4 times); a start with kept copies no longer draws empty cards that then fill in (layout shift 0.012, was 0.21 to 0.29).
