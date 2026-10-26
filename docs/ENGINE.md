@@ -61,7 +61,14 @@ Code: `backend/src/engine.js` (appended to `worker.js` by `build.mjs`, same modu
    and no copy is kept or saved, `/api/departures` answers with the engine's board as timetable times (rows realtime
    false, `source: "timetable"`, a first alert "Live times unavailable, showing timetable times"), never stored as a
    copy. Not the switch on.
-8. **Budget.** The engine counts its feed calls per day. If the day's count runs ahead of `ENGINE_BUDGET` (default
+8. **Push (off).** `/api/live` (ENGINE_PUSH on): a WebSocket to the board's shard, which sends the whole board and
+   then a diff each time it rebuilds the board; open sockets keep the board hot. Format in API.md.
+9. **Feed timing (off).** With `ENGINE_FEED_TIMING` on, the core reads each feed's publish period from the header
+   times of its last 8 copies, asks for the next copy 2 s after it is expected (not on a fixed beat), names the copy it
+   holds (If-None-Match / If-Modified-Since) so an unchanged feed can answer 304, and shards ask the core just after a
+   copy lands. `/api/engine/status` shows each feed's `periodS`, `same` (calls that brought nothing new), `madeAgoS`
+   and `nextInS`.
+10. **Budget.** The engine counts its feed calls per day. If the day's count runs ahead of `ENGINE_BUDGET` (default
    40,000), intervals stretch, up to 6 times.
 
 ## Endpoints

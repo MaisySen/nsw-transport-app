@@ -546,3 +546,15 @@ the moment it opens, with no signal too, and lay the live board on top when it a
   `liveSource: "feed"`), and the first alert is "Live times unavailable, showing timetable times". `cache-control:
   no-store`; never kept as a copy, so the next planner answer replaces it. Not for `time`/`date` boards or
   `format=text` (which still says the live data didn't answer).
+* Every live row (engine and Trip Planner boards) carries `liveAt`: the time in ms its live time was read (the feed
+  copy, or the planner answer). Timetable rows have `liveAt: null`.
+
+## Live board push `/api/live` (26 Oct 2026, g14, off)
+
+`GET /api/live?stop=ID[&mode=]` with `Upgrade: websocket`, answered by the board's shard when `ENGINE_PUSH` is `on`
+(404 otherwise; 426 without the upgrade; 400 for a bad stop id). Messages from the server: first
+`{"type":"board","board":{...}}` (the engine board), then on each rebuild of that board
+`{"type":"diff","base":<builtAt the phone holds>,"builtAt":...,"head":{board without items},"rows":{key: row},"gone":[keys],"order":[keys]?}`
+with key `tripId|stopId|planned` (`order` only when the order changed). A phone whose board is not at `base` sends
+`full` and gets the whole board; `ping` answers `pong`. The HTTP board stays the fallback. App: `useBoardPush`
+(`app/src/lib/boardPush.ts`), off unless remote config sets `flags.livePush` to true.
