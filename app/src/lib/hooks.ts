@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { keepOffline, peekOffline, readOffline } from './offline';
-import { createLatest, createStamp } from './pollCore';
+import { createLatest, createStamp, quickReaskMs } from './pollCore';
 import { answerTime } from './liveLabelCore';
 import { useCountdownNow, useNow, useReportCountdowns, useScreenPoll } from './activity';
 
@@ -40,6 +40,10 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
   const latest = useRef<ReturnType<typeof createLatest> | null>(null);
   if (!latest.current) latest.current = createLatest();
   const shown = useRef<{ live: boolean; at: number | null }>({ live: false, at: first.current ? first.current.at : null });
+  // The quick ask (pollCore.quickReaskMs): an answer the server took from a saved copy more than 20 s old is asked
+  // again with refresh after about 2 s, once per opening, then the normal gap.
+  const reasked = useRef(false);
+  const [soon, setSoon] = useState<{ key: number; ms: number } | null>(null);
 
   const run = useCallback(async (refresh: boolean): Promise<boolean> => {
     const L = latest.current!;
@@ -58,6 +62,8 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
       setStaleAt(null);
       shown.current = { live: true, at };
       if (key) keepOffline(key, d);
+      const q = quickReaskMs(d, Date.now(), reasked.current);
+      if (q != null) { reasked.current = true; setSoon({ key: Date.now(), ms: q }); }
       return true;
     } catch (e: any) {
       if (!round.current()) return true;
@@ -98,6 +104,7 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
       shown.current = { live: false, at: mem ? mem.at : null };
     }
     mounted.current = true;
+    reasked.current = false;
     // The kept copy first (a read from the phone, a few milliseconds), then the live answer replaces it.
     if (key && !shown.current.at) {
       readOffline<T>(key).then((kept) => {
@@ -121,7 +128,7 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
   ivRef.current = intervalMs;
   // enabled false (a Simple mode page that is not the one on view): nothing polls.
   // updatedAt (each answer) re-reads an adaptive gap: the first wait is set before the first answer has arrived.
-  const runNow = useScreenPoll(() => run(true), typeof intervalMs === 'function' ? () => { const f = ivRef.current; return typeof f === 'function' ? f(dataRef.current) : f; } : intervalMs, { enabled: opts.enabled ?? true, retimeKey: updatedAt });
+  const runNow = useScreenPoll(() => run(true), typeof intervalMs === 'function' ? () => { const f = ivRef.current; return typeof f === 'function' ? f(dataRef.current) : f; } : intervalMs, { enabled: opts.enabled ?? true, retimeKey: updatedAt, soon });
 
   const refresh = useCallback(async () => {
     setRefreshing(true);

@@ -21,7 +21,7 @@ export function startAppPoll(run: () => Promise<boolean | void> | boolean | void
  * A job for one screen: runs every `everyMs` while the app is in front AND this screen is on view.
  * `run` returns false for a failure, and the wait doubles after each one (up to 5 minutes).
  */
-export function useScreenPoll(run: () => Promise<boolean | void> | boolean | void, everyMs: number | (() => number), opts: { enabled?: boolean; runAtStart?: boolean; staleMs?: number; retimeKey?: unknown } = {}) {
+export function useScreenPoll(run: () => Promise<boolean | void> | boolean | void, everyMs: number | (() => number), opts: { enabled?: boolean; runAtStart?: boolean; staleMs?: number; retimeKey?: unknown; soon?: { key: unknown; ms: number } | null } = {}) {
   const runRef = useRef(run);
   runRef.current = run;
   // A gap given as a function is read before each wait (adaptive polling) without restarting the poller.
@@ -43,6 +43,10 @@ export function useScreenPoll(run: () => Promise<boolean | void> | boolean | voi
   }, [fixed, dynamic, enabled]);
   // A dynamic gap is read again when the data it depends on changes (useLive passes each answer's time).
   useEffect(() => { if (dynamic) poller.current?.retime(); }, [opts.retimeKey, dynamic]);
+  // One run sooner than the gap (useLive: the quick ask after a saved server copy). Declared after retime so it wins.
+  const soonKey = opts.soon ? opts.soon.key : null;
+  const soonMs = opts.soon ? opts.soon.ms : 0;
+  useEffect(() => { if (soonKey != null) poller.current?.soon(soonMs); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [soonKey]);
   useFocusEffect(useCallback(() => {
     focused.current = true;
     poller.current?.setEnabled(true);

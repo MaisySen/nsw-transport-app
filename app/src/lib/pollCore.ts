@@ -29,6 +29,11 @@ export type Poller = {
    * refresh of a stop came a minute after opening it, whatever was due (measured 26 Oct 2026).
    */
   retime: () => void;
+  /**
+   * Runs once after `ms` (sooner than the gap), then the normal gap again. Nothing happens while the app is away or
+   * the screen is off view, or while a run is out. Used for the quick ask after a saved server copy (quickReaskMs).
+   */
+  soon: (ms: number) => void;
   stop: () => void;
   /** For tests: whether a run is waiting on the timer. */
   scheduled: () => boolean;
@@ -86,9 +91,26 @@ export function createPoller(run: () => Promise<boolean | void> | boolean | void
     setEnabled: (on) => { if (on === enabled) return; enabled = on; resume(); },
     runNow: async () => { clear(); failures = 0; await tick(); if (!handle) schedule(gap()); },
     retime: () => { if (handle == null || running) return; schedule(gap() - (timers.now() - last)); },
+    soon: (ms) => { if (!wanted() || running) return; schedule(Math.max(0, ms)); },
     stop: () => { stopped = true; clear(); },
     scheduled: () => handle != null,
   };
+}
+
+/**
+ * The quick ask after a saved copy (26 Oct 2026, g10). From 26 Oct the server answers a first open at once with the
+ * copy it saved last (its dataAt is older than now, x-edge-cache "saved" or "stale") and fetches fresh times behind it.
+ * When an answer's times are more than QUICK_REASK_AGE_MS old, the screen asks again (refresh=1) after
+ * QUICK_REASK_AFTER_MS, once per opening (`done`), so the fresh times swap in within a few seconds instead of after the
+ * normal 15 s gap. Returns the wait in ms, or null for no quick ask.
+ */
+export const QUICK_REASK_AGE_MS = 20000;
+export const QUICK_REASK_AFTER_MS = 2000;
+export function quickReaskMs(body: unknown, now: number, done: boolean): number | null {
+  if (done || !body || typeof body !== 'object') return null;
+  const at = Number((body as any).dataAt);
+  if (!Number.isFinite(at) || at > now) return null;
+  return now - at > QUICK_REASK_AGE_MS ? QUICK_REASK_AFTER_MS : null;
 }
 
 /**
