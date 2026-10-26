@@ -1,7 +1,7 @@
 # Timetable packs on the phone
 
 Written 26 Oct 2026 after Bidur's 12:11 PM message: "Do everything to make it fastest". Server: transport-api
-2ef1ad9f (26 Oct, 12:20 PM). App: over the air (see RELEASES.md).
+2ef1ad9f (26 Oct, 12:20 PM). App: over the air 26 Oct, 12:54 PM, production group 54aa4d52, roll back to f9c48f4c (RELEASES.md).
 
 ## What it does
 
