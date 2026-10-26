@@ -8,6 +8,7 @@ import { EARLIER_NEEDS_NEW, ymd } from './tripModesCore';
 import { BOARD_EARLIER_NEEDS_NEW, boardQuery, honoured } from './boardTimeCore';
 import { createReadCache } from './pollCore';
 import { stampSeen } from './liveLabelCore';
+import { LIVE_DATA_AGE } from './features';
 import { cleanAlertTexts } from './htmlTextCore';
 import { noteBoard } from './recent';
 import { boardKey } from './stopBoardCore';
@@ -30,7 +31,9 @@ async function once<T>(path: string, init: RequestInit | undefined, timeoutMs: n
     if (!r.ok) throw Object.assign(new Error((body && (body as any).error) || `Something went wrong (${r.status})`), { http: r.status });
     // Rows and legs carry the moment they arrived, so a countdown can say how old its live time is. An answer the
     // server took from its shared cache says when it was made (dataAt); the older of the two is the honest one.
-    return stampSeen(cleanAlertTexts(body as T), dataTime(body, Date.now()));
+    // LIVE_DATA_AGE (features.ts): each live row's age counts from when its time was read upstream (the row's liveAt).
+    const arrived = Date.now();
+    return stampSeen(cleanAlertTexts(body as T), dataTime(body, arrived), LIVE_DATA_AGE ? arrived : undefined);
   } finally {
     clearTimeout(t);
   }

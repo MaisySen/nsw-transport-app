@@ -142,18 +142,34 @@ export function liveWords(s: LiveState): string {
  * Marks an answer with the moment this phone received it: `seenAt` on each departure row and each trip leg (set once;
  * a copy kept for offline use keeps its first time, so its age stays true). Returns the same object.
  */
+/**
+ * Data age per row (features.ts LIVE_DATA_AGE): when the server says when a row's live time was read upstream
+ * (liveAt, ms on the server's clock: the realtime feed copy for engine and feed rows, the Trip Planner answer
+ * otherwise), the row's seenAt is that moment on this phone's clock. The server's `now` in the same answer gives the
+ * offset between the two clocks, so a phone clock that is off does not change the age. Never later than `fallback`
+ * (the answer's own time) and never more than 15 minutes before the answer arrived; no liveAt or no `now`: fallback.
+ */
+export function rowSeenAt(it: any, body: any, fallback: number, arrival: number): number {
+  const liveAt = Number(it && it.liveAt);
+  const serverNow = Number(body && body.now);
+  if (!Number.isFinite(liveAt) || liveAt <= 0 || !Number.isFinite(serverNow) || serverNow <= 0) return fallback;
+  const t = liveAt + (arrival - serverNow);
+  if (!Number.isFinite(t)) return fallback;
+  return Math.max(arrival - 900000, Math.min(fallback, t));
+}
+
 /** When an answer's times were read: its seenAt (api.ts sets it from the server's dataAt or the arrival), else now. */
 export function answerTime(d: any, now: number): number {
   const t = d && typeof d === 'object' ? Number(d.seenAt) : NaN;
   return Number.isFinite(t) && t <= now && now - t < 120000 ? t : now;
 }
 
-export function stampSeen<T>(resp: T, at: number): T {
+export function stampSeen<T>(resp: T, at: number, arrival?: number): T {
   const r: any = resp;
   if (!r || typeof r !== 'object') return resp;
   if (r.seenAt == null) r.seenAt = at;
   const t = r.seenAt;
-  for (const it of Array.isArray(r.items) ? r.items : []) if (it && typeof it === 'object' && it.seenAt == null) it.seenAt = t;
+  for (const it of Array.isArray(r.items) ? r.items : []) if (it && typeof it === 'object' && it.seenAt == null) it.seenAt = arrival != null ? rowSeenAt(it, r, t, arrival) : t;
   for (const j of Array.isArray(r.journeys) ? r.journeys : []) {
     if (!j || typeof j !== 'object') continue;
     if (j.seenAt == null) j.seenAt = t;

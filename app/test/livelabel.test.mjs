@@ -184,3 +184,24 @@ test('cancelled rows are not departures; old ones age out; newest first', () => 
   assert.deepEqual(l.map((x) => x.tripId), ['t3', 't2']);
   assert.equal(m.list('S', NOW + sec(60 * 14)).length, 0);
 });
+
+test('data age: the liveAt of a row on the phone clock, corrected by the now of the answer (LIVE_DATA_AGE)', () => {
+  const arrival = NOW;
+  // The server's clock is 40 s ahead of the phone's; the feed copy was read 25 s before the server answered.
+  const body = { now: NOW + 40000, items: [] };
+  assert.equal(L.rowSeenAt({ liveAt: NOW + 15000 }, body, NOW, arrival), NOW - 25000);
+  // Never after the answer's own time, never more than 15 minutes back, and without liveAt or now: the answer's time.
+  assert.equal(L.rowSeenAt({ liveAt: NOW + 90000 }, body, NOW - 5000, arrival), NOW - 5000);
+  assert.equal(L.rowSeenAt({ liveAt: NOW - 3600000 }, body, NOW, arrival), NOW - 900000);
+  assert.equal(L.rowSeenAt({ liveAt: null }, body, NOW - 7000, arrival), NOW - 7000);
+  assert.equal(L.rowSeenAt({ liveAt: NOW }, { items: [] }, NOW - 7000, arrival), NOW - 7000);
+  // stampSeen with an arrival time uses it per row; without one every row gets the answer's time as before.
+  const r = { now: NOW, items: [{ realtime: true, liveAt: NOW - 20000 }, { realtime: false, liveAt: null }] };
+  L.stampSeen(r, NOW, arrival);
+  assert.equal(r.items[0].seenAt, NOW - 20000);
+  assert.equal(r.items[1].seenAt, NOW);
+  const s = { now: NOW, items: [{ realtime: true, liveAt: NOW - 20000 }] };
+  L.stampSeen(s, NOW);
+  assert.equal(s.items[0].seenAt, NOW);
+  assert.equal(L.liveState({ planned: iso(5), estimated: iso(6), realtime: true, seenAt: r.items[0].seenAt }, NOW).age, '15 s ago');
+});
