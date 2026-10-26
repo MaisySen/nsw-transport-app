@@ -393,6 +393,7 @@ class BoardEngine {
     try { return await fn(); } finally { this.open--; const w = this.openWait.shift(); if (w) w(); }
   }
   async fetchFeed(path, kind, again = true) {
+    if (Date.now() < (this.pauseUntil || 0)) throw new Error("feed calls paused after refusals");
     await this.slot();
     const res = await this.conn(async () => {
       const r = await fetch(API + path, { headers: { Authorization: "apikey " + apiKey(this.env) }, signal: AbortSignal.timeout(8000) });
@@ -404,7 +405,18 @@ class BoardEngine {
       await new Promise((r) => setTimeout(r, 1500));
       return this.fetchFeed(path, kind, false);
     }
-    if (!res.ok) { this.stats.refused++; this.stats.lastRefusal = res.status + " " + path; throw new Error("feed " + path + " " + res.status); }
+    if (!res.ok) {
+      this.stats.refused++; this.stats.lastRefusal = res.status + " " + path;
+      // Refused twice running (the key over its rate or daily quota): no feed calls for 30 s, doubling to 10 minutes
+      // while the refusals go on (26 Oct, g14: the key was over its daily quota and every tick asked again).
+      if (res.status === 429 || res.status === 403) {
+        this.refusedRun = (this.refusedRun || 0) + 1;
+        this.pauseUntil = Date.now() + Math.min(600000, 30000 * Math.pow(2, Math.min(5, this.refusedRun - 1)));
+        this.stats.pausedUntil = this.pauseUntil;
+      }
+      throw new Error("feed " + path + " " + res.status);
+    }
+    this.refusedRun = 0;
     const buf = res.buf;
     const { idx, headerTs } = indexFeed(buf, kind);
     return { at: Date.now(), buf, idx, headerTs, kind, cache: new Map() };
