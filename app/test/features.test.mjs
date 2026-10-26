@@ -17,3 +17,9 @@ test('no switch, entry point, menu item or fetch for Platform view is left', () 
     assert.doesNotMatch(s, /PLATFORM_VIEW|openPlatform|platformDepartures|platformService|stationRows|pathname: '\/platform'|'Platform view'/, rel);
   }
 });
+
+test('an old link to /platform (or any unknown address) gets a plain not found screen with the way Home', () => {
+  const s = readFileSync(src + 'app/+not-found.tsx', 'utf8');
+  assert.match(s, /This link isn't in the app/);
+  assert.match(s, /router\.replace\('\/'\)/);
+});
