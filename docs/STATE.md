@@ -2,7 +2,7 @@
 
 What is live and what is open, by hand, with when each line was last checked. Run `node tools/orient.mjs` for the live numbers; it reads the same sources. Update this file whenever something live changes (a deploy, an update, a flag, a build, an owner answer).
 
-**Last verified: Tue 27 Oct 2026, 9:40 AM Sydney (22:40 UTC)**, the server row with `tools/verify-deploy.mjs` (all 12 checks ok) after the 8:37 AM deploy; the over the air row as of 11:37 PM with `tools/orient.mjs` and the production manifests; the other rows as of 8:33 PM with `tools/orient.mjs` and `tools/verify-deploy.mjs` (all checks ok).
+**Last verified: Tue 27 Oct 2026, 10:31 AM Sydney (23:31 UTC)**, the server row with `tools/verify-deploy.mjs` (all checks ok) after the 10:30 AM deploy; the over the air row as of 11:37 PM with `tools/orient.mjs` and the production manifests; the other rows as of 8:33 PM with `tools/orient.mjs` and `tools/verify-deploy.mjs` (all checks ok).
 
 ## Live now
 
@@ -10,7 +10,7 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 | --- | --- | --- |
 | Production over the air group | `27efc6bd-9201-4e4d-b39b-a070b56d7e89` (11:35 PM, overnight update: g19, g22 app, g23b, g31, g32; iOS `01a17835-90e9-7971-bfb3-8cb4d426b499`, Android `01a17835-90e9-77a0-ad0c-586b04d731b2`), runtime 1.0.0, from main `0dfd53c`. Not checked on a device: locked-phone get off timing, live busy hour, real notifications | `fa0017d8-4ffe-49e7-91da-3b415254943f` (3:39 PM, outage honesty, main `4835561`): `npx eas-cli update:republish --group fa0017d8-4ffe-49e7-91da-3b415254943f --destination-branch production --message "Roll back: why" --non-interactive` |
 | Updates published today | 26 Oct: 3:39 PM (`fa0017d8`) and the overnight update at 11:35 PM (`27efc6bd`). No more over the air updates until tomorrow night (27 Oct) | |
-| Server (`transport-api`) | Version `5c810ba2` (27 Oct, 9:37 AM, speed pass: car parks from a saved copy, service quick answer from the feed, plain opens take a kept copy under 60 s, commute pre-warm, main `7da61a5`; vars `PREWARM` and `SERVICE_QUICK` unset, on). Before it `84060618` (9:33 AM), `79512a1f` (9:19 AM, car parks), `99887568` (8:51 AM, trips on a slow Trip Planner) | `npx wrangler@4 rollback 84060618-23f8-4074-8c20-bfd8c2d07645 --name transport-api` (or `99887568` to drop the whole speed pass) |
+| Server (`transport-api`) | Version `f8c60d91` (27 Oct, 10:30 AM, speed pass part 2 steps A to D: x-serves, x-device, /api/trip/live on the engine's live rules, ETags, cold trip 1.5 s with timetable trips, no error copies, service quick answer beside the full one with the train stop list from the engine's timetable while the guard holds the planner object, main `cb32d76`; vars `WORKERS_CACHE` unset (off), `ID_HEADERS`, `TRIP_LIVE`, `TRIP_QUICK_TT` unset (on)). Before it `a6059579` (10:23 AM, C), `2aff7f9b` (10:10 AM, B), `05eb669b` (10:02 AM, A), `5c810ba2` (9:37 AM, part 1) | `npx wrangler@4 rollback a6059579-f4bf-4fed-b287-775cd2655301 --name transport-api` (or `5c810ba2` to drop all of part 2; `TRIP_LIVE=off` or the server switch kill `tripLive` takes trip-live out of x-serves) |
 | iPhone builds in the field | 201 to 208 (208: 25 Oct 6:48 PM, TestFlight Internal and Public) | |
 | Android | versionCode 2 to 5 (APK on the download page) | |
 | Public site | Pages deployment `6a797b2c` (25 Oct, 9 PM) | `564bc47c` |
