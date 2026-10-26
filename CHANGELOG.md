@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Plan tab trip rows: am and pm, time left, where you get on and off, honest On time (app, 27 Oct, ships with tonight's update)
+* Times on the trip list read "12:56 pm" (lowercase, with a space, as iOS writes them) on a 12 hour phone and "12:56" or "09:05" when the phone is set to 24 hour time (iPhone 24-Hour Time setting read from the settings copy the app already has, else the locale's hour cycle; no new native module). Still Sydney time.
+* Each row's badge says how long until it leaves: "Now", "12 min", then whole hours rounded down ("1 hr", "2 hrs", "3 hrs"), and days for a trip tomorrow. An hour or more away the badge is grey so the services leaving soon stand out. It moves with the screen's existing countdown tick and changes at most once a minute.
+* Each row shows where you get on with its platform ("Flemington Platform 3") over the leave time and status, where you get off over the arrive time, and every line the trip rides as badges under the arrive time. Under big Dynamic Type on a narrow phone the get off column goes under the get on column. Gone trips (Left rows) use the same columns.
+* A row says On time, late or early only when it carries a live reading: an estimate that moved from the timetable, a placed vehicle, or a service within the hour. The trip planner sometimes marks services hours away as live and echoes the timetable as the estimate, which showed a 1:29 pm trip as On time at 10:16 am; those rows now say Scheduled. The same rule holds for the trip detail status and Home trip cards.
+* lib/rowTimeCore.ts (rules), lib/rowTime.ts (phone clock); test/planrows.test.mjs (15).
+
 ### Speed pass part 2, server: x-serves, x-device, /api/trip/live, version tags, quicker cold trips, no error copies (server, 27 Oct; no app update needed, tonight's update uses the new paths)
 * Every /api answer says which newer paths are live (x-serves: id-headers, trip-live). Tonight's update reads it; a rollback that drops the header turns the phone back to today's calls.
 * The device id is read from the x-device header as well as device= (old installs), and neither is ever part of a cache key, so phones on the new update share copies.

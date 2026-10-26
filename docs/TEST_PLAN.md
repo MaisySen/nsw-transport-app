@@ -551,6 +551,11 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 
 * `TZ=Australia/Sydney OFFLINE=1 node --test test/speed27b.test.mjs` in `app/`: x-serves words per server and rollback, ids placed per server, the trip live legs on the wire and in requests of 12, live times laid over a held plan (timetable when the feed has no news), when it plans again, which answers are held, version tags (caps, 304 hands back the kept list), via trips with no forced refresh and the early second part, Home read ahead (plain trips, once per foreground, on screen and in front only).
 
+## Plan tab trip rows (27 Oct)
+
+* `TZ=Australia/Sydney OFFLINE=1 node --test test/planrows.test.mjs` in `app/`: 12 and 24 hour times ("12:56 pm", "09:05"), Sydney time over the daylight saving change, the time left buckets (Now, minutes, hours rounded down, days, Left), the status rule (the 1:29 pm row 3 hours out with an echoed estimate says Scheduled; a moved estimate, a vehicle or the last hour says live), boarding stop with platform, lines once each, when the columns stack, and the rows wired to these.
+* On a phone: Settings, General, Date and Time, 24-Hour Time on and off, then reopen the Plan tab (the setting is read again within a minute). Largest Dynamic Type on an iPhone mini or SE: the get off column goes under the get on column and nothing is cut except long stop names. Light and dark.
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).

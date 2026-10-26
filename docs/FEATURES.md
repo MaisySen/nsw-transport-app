@@ -245,6 +245,13 @@ The server stays on the Cloudflare Workers Paid base fee (US$5 a month) for up t
 * Every screen paints from what the phone already has: the copy kept for that screen, or what the screen before showed. A service opened from a board or a trip shows its line, destination, delay and your stop at once; Nearby shows the last list when you are still near where it was made; car parks and bus routes open on their kept copy. Each says how old its times are until the live answer replaces it.
 * A finger on a service row starts loading that service (bounded: once per 20 s per service, 8 a minute).
 
+## Plan tab trip rows (27 Oct, on main, ships with tonight's update)
+
+* Times in the phone's clock: "12:56 pm" on a 12 hour phone, "12:56" on a 24 hour phone (Sydney time either way).
+* A time left badge on each row: "Now", "N min", then "1 hr", "2 hrs", "3 hrs" (rounded down), days for tomorrow; grey from an hour out.
+* Where you get on with its platform over the leave time, where you get off over the arrive time, the lines under it.
+* On time, late and early only with a live reading (a moved estimate, a placed vehicle, or within the hour); otherwise Scheduled.
+
 ## Not in the app
 
 No accounts or login, no ads, no analytics or tracking, no Opal card balance. Privacy details: [STORE_PRIVACY.md](STORE_PRIVACY.md) and https://transportsydney.app/privacy/.

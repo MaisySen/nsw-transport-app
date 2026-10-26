@@ -46,6 +46,6 @@ export function SkeletonRows({ count, label }: { count: number; label: string })
 
 // The same size as a trip row (LeftRow, ServiceRow), so nothing jumps when the trips come in.
 const s = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, minHeight: 76 },
+  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, minHeight: 88 },
   block: { width: 56, alignSelf: 'stretch', minHeight: 52, borderRadius: 12 },
 });

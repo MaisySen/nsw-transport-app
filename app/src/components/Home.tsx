@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { reportTripLines, tripLinesOf } from '@/lib/myLines';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { haptic } from '@/lib/haptic';
 import { router, type Href } from 'expo-router';
 import * as Location from 'expo-location';
@@ -46,6 +46,8 @@ import { tripSentence } from '@/lib/voiceCore';
 import { withKeys } from '@/lib/rowKeysCore';
 import { whereNow } from '@/lib/whereNowCore';
 import { WhereNow } from './WhereNow';
+import { boardParts, boardText, hasLiveData, placeText, stackColumns, timeLeftBadge, tripLines } from '@/lib/rowTimeCore';
+import { rowTime } from '@/lib/rowTime';
 
 // ---------- shared refresh signals for every card on Home ----------
 
@@ -367,7 +369,9 @@ function statusOf(j: Journey, now: number): Status {
   if (!l) return { text: 'Scheduled', tone: 'grey' };
   // An on demand service (the D400 in the Inner West) runs when booked: no timetable departure to be late for.
   if (l.onDemand) return { text: l.booking === false ? 'On demand' : 'On demand, book ahead', tone: 'grey' };
-  if (l.realtime) {
+  // Live words only when the row carries a live reading (lib/rowTimeCore.ts): the planner echoes the timetable as a
+  // live estimate for some services hours away, which said On time on a trip 3 hours out.
+  if (hasLiveData(l, now)) {
     const d = l.delayMin || 0;
     return { text: lateWords(d), tone: d > 0 ? 'late' : 'live' };
   }
@@ -504,7 +508,7 @@ export function TripBoard({ trip, now, handle, allServices, below, aside, flush,
     const t = Date.now();
     for (const j of data?.journeys || []) {
       const l = firstLeg(j);
-      if (l?.realtime) holds.set(legKey(l), { delay: l.delayMin || 0, at: t });
+      if (hasLiveData(l, t)) holds.set(legKey(l!), { delay: l!.delayMin || 0, at: t });
     }
   }, [data]);
 
@@ -614,7 +618,7 @@ function TripGlance({ look, js, arrs, now, count = { size: 56, line: 62, weight:
   const stt = j ? statusOf(j, now) : null;
   // Honest live label (docs/LIVE-LABELS.md): a live time counts down, a timetable time is grey, a live time gone
   // stale shows its timetable time and "Not tracking" instead of counting to Now.
-  const lsOf = (x: Journey) => { const fl = firstLeg(x); return fl?.planned ? liveState({ planned: fl.planned, estimated: fl.estimated, realtime: fl.realtime, cancelled: !!(x.anyCancelled || fl.cancelled), seenAt: fl.seenAt ?? x.seenAt }, now) : null; };
+  const lsOf = (x: Journey) => { const fl = firstLeg(x); return fl?.planned ? liveState({ planned: fl.planned, estimated: fl.estimated, realtime: hasLiveData(fl, now), cancelled: !!(x.anyCancelled || fl.cancelled), seenAt: fl.seenAt ?? x.seenAt }, now) : null; };
   const ls = j ? lsOf(j) : null;
   const honest = !!ls && ls.kind !== 'live' && ls.kind !== 'cancelled';
   const tone = !stt ? c.text2 : ls?.kind === 'stale' ? c.lateText : honest ? c.text2 : stt.tone === 'live' ? c.liveText : stt.tone === 'late' ? c.lateText : stt.tone === 'red' ? c.redText : c.text2;
@@ -717,48 +721,81 @@ const g = StyleSheet.create({
   chip: { minWidth: 52, minHeight: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 4 },
 });
 
-/** Service row: countdown chip coloured by time left, leave time and status, arrive time with line badges. */
+/**
+ * Service row on the Plan tab's trip list: a time left badge ("12 min", "2 hrs"); where you get on with its platform
+ * over the leave time and the status; where you get off over the arrive time and the lines the trip rides. Times in
+ * the phone's clock ("12:56 pm" or "12:56", lib/rowTime.ts). The badge moves with the screen's countdown tick.
+ */
 export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j: Journey; now: number; arrive: number; beaten?: boolean; onPress: () => void; showTravel?: boolean }) {
   const c = usePalette();
+  const win = useWindowDimensions();
   const l = firstLeg(j);
   const dep = depOf(j);
   const stt = statusOf(j, now);
   const relRaw = useReliabilityText(l);
-  const t = showTravel ? (j.durationMin >= 60 ? { big: `${Math.floor(j.durationMin / 60)}h ${j.durationMin % 60}`, unit: 'min' } : { big: String(j.durationMin), unit: 'min' }) : cd(dep, now);
+  const left = timeLeftBadge(dep, now);
+  const t = showTravel ? (j.durationMin >= 60 ? { big: `${Math.floor(j.durationMin / 60)}h ${j.durationMin % 60}`, unit: 'min' } : { big: String(j.durationMin), unit: 'min' }) : { big: left.big, unit: left.unit };
   const toneText = stt.tone === 'live' ? c.liveText : stt.tone === 'late' ? c.lateText : stt.tone === 'red' ? c.redText : c.text2;
   const legs = j.legs.filter((x) => x.kind === 'transit');
   const cancelled = stt.tone === 'red';
   const rel = cancelled ? null : relRaw;
-  const chip = showTravel ? (cancelled ? c.text3 : '#8E8E93') : cdColor(dep, now, cancelled, c);
-  const badges: Leg[] = [];
-  for (const x of legs) if (x.line && !badges.some((b) => b.line === x.line)) badges.push(x);
+  // An hour or more away: a quiet grey badge, so the services leaving soon stand out.
+  const chip = showTravel ? (cancelled ? c.text3 : '#8E8E93') : !cancelled && left.mins >= 60 ? '#8E8E93' : cdColor(dep, now, cancelled, c);
+  const badges = tripLines(j.legs);
   const changes = j.changes || Math.max(0, legs.length - 1);
   const boardAt = plat(l?.fromPlatform);
+  const fromText = boardText(l?.from, l?.fromPlatform);
+  const fromBits = boardParts(l?.from, l?.fromPlatform);
+  const end = j.legs[j.legs.length - 1];
+  const toText = placeText(end?.to || legs[legs.length - 1]?.to);
+  const depT = rowTime(dep), arrT = rowTime(arrive);
   const bigSize = t.unit ? 22 : t.big === 'Now' ? 16 : 13;
+  const stack = stackColumns(win.width, win.fontScale);
+  const names = !!(fromText || toText);
   // Where the bus is now (lib/whereNowCore.ts): only while the row's own live label is Live.
   // The status line (stt.text) already says the delay, so the where line says only where it is.
-  const wn = l?.planned ? whereNow(l, liveState({ planned: l.planned, estimated: l.estimated, realtime: l.realtime, cancelled: !!(j.anyCancelled || l.cancelled), seenAt: l.seenAt ?? j.seenAt }, now).kind === 'live', true) : null;
+  const wn = l?.planned ? whereNow(l, liveState({ planned: l.planned, estimated: l.estimated, realtime: hasLiveData(l, now), cancelled: !!(j.anyCancelled || l.cancelled), seenAt: l.seenAt ?? j.seenAt }, now).kind === 'live', true) : null;
+  const timeStyle = [font.title3, { color: c.text, fontVariant: ['tabular-nums'] as any, textDecorationLine: cancelled ? ('line-through' as const) : ('none' as const) }];
+  const lineWords = badges.map((b) => b.line).join(', ');
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }} accessibilityLabel={`Leaves ${hm(dep)}${boardAt ? ` from ${boardAt}` : ''}, ${t.big} ${t.unit}, arrives ${hm(arrive)}, ${stt.text}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}${wn ? `. ${wn.a11y}` : ''}${rel ? `. ${rel}` : ''}`}
+    <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }}
+      accessibilityLabel={`Leaves ${fromText ? `${fromText} at ` : ''}${depT}, ${showTravel ? `${t.big} ${t.unit}` : left.a11y}, arrives ${toText ? `${toText} at ` : ''}${arrT}, ${stt.text}${lineWords ? `, ${lineWords}` : ''}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}${wn ? `. ${wn.a11y}` : ''}${rel ? `. ${rel}` : ''}`}
       style={({ pressed }) => [s.svc, (beaten || dep < now - 30000) && { opacity: 0.45 }, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
       <View style={[s.block, { backgroundColor: chip + (c.dark ? '33' : '1F') }]}>
         <Text maxFontSizeMultiplier={1.3} style={{ color: cdText(chip, c), fontSize: bigSize, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }} numberOfLines={1} adjustsFontSizeToFit>{t.big}</Text>
         {t.unit ? <Text maxFontSizeMultiplier={1.3} style={{ color: cdText(chip, c), fontSize: 11, fontWeight: '600', marginTop: -2 }}>{t.unit}</Text> : null}
       </View>
       <View style={{ flex: 1, minWidth: 0, marginLeft: 14 }}>
-        <Text maxFontSizeMultiplier={1.4} style={[font.title3, { color: c.text, fontVariant: ['tabular-nums'], textDecorationLine: cancelled ? 'line-through' : 'none' }]}>{hm(dep)}{' '}<Text style={{ color: c.text3, fontWeight: '400' }}>{'\u2192'}</Text>{' '}{hm(arrive)}</Text>
-        <T kind="foot" numberOfLines={1} style={{ marginTop: 2 }}>
-          <T kind="foot" style={{ color: toneText }}>{stt.text}</T>
-          {boardAt ? <T kind="foot" tone="text2">{` \u00b7 ${boardAt}`}</T> : null}
-          <T kind="foot" tone="text2">{` \u00b7 ${durText(j.durationMin)}`}</T>
-        </T>
-        {l?.platformChangedFrom ? <T kind="foot" numberOfLines={1} style={{ color: c.lateText, marginTop: 1 }}>Platform changed from {plat(l.platformChangedFrom)}</T> : null}
+        <View style={{ flexDirection: stack ? 'column' : 'row' }}>
+          <View style={stack ? null : { flex: 1.2, minWidth: 0 }}>
+            {names ? (
+              <View style={{ flexDirection: 'row' }}>
+                <T kind="foot" tone="text2" numberOfLines={1} style={{ flexShrink: 1 }}>{fromBits.name || ' '}</T>
+                {fromBits.platform ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginLeft: 4, flexShrink: 0 }}>{fromBits.platform}</T> : null}
+              </View>
+            ) : null}
+            <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={timeStyle}>{depT}</Text>
+            <T kind="foot" numberOfLines={1} style={{ marginTop: 1 }}>
+              <T kind="foot" style={{ color: toneText }}>{stt.text}</T>
+              <T kind="foot" tone="text2">{` \u00b7 ${durText(j.durationMin)}`}</T>
+            </T>
+          </View>
+          {stack ? null : <Text accessible={false} maxFontSizeMultiplier={1.4} style={[font.body, { color: c.text3, alignSelf: 'center', marginHorizontal: 4 }]}>{'\u2192'}</Text>}
+          <View style={stack ? { marginTop: 6 } : { flex: 1, minWidth: 0 }}>
+            {names ? <T kind="foot" tone="text2" numberOfLines={1}>{toText || ' '}</T> : null}
+            <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={timeStyle}>{arrT}</Text>
+            {badges.length ? (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 3, marginTop: 2, opacity: cancelled ? 0.5 : 1 }}>
+                {badges.slice(0, 4).map((b, i) => <LineBadge key={`${b.line}${i}`} line={b.line} mode={b.mode} color={b.color} />)}
+                {badges.length > 4 ? <T kind="foot" tone="text2">{`+${badges.length - 4}`}</T> : null}
+              </View>
+            ) : null}
+          </View>
+        </View>
+        {l?.platformChangedFrom ? <T kind="foot" numberOfLines={1} style={{ color: c.lateText, marginTop: 2 }}>Platform changed from {plat(l.platformChangedFrom)}{boardAt ? ` to ${boardAt}` : ''}</T> : null}
         <WhereNow w={wn} style={{ marginTop: 2 }} />
         <OccupancyChip o={l?.occupancy} style={{ marginTop: 3 }} />
         {rel ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{rel}</T> : null}
-      </View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 8 }}>
-        {badges.slice(0, 3).map((b, i) => <LineBadge key={`${b.line}${i}`} line={b.line} mode={b.mode} color={b.color} />)}
       </View>
     </Pressable>
   );

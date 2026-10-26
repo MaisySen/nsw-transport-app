@@ -1,6 +1,6 @@
 // A service that has already gone, on the trip screen's list (a chosen time in the past, or Earlier services).
 // Kept apart from Home's ServiceRow on purpose: same layout, greyed, with "Left 6:18" and the live delay it left with.
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { pressService } from '@/lib/prefetch';
 import { usePalette } from '@/lib/theme';
 import { bestTime, clock, durText, shortName } from '@/lib/format';
@@ -9,39 +9,64 @@ import { goneWords } from '@/lib/boardTimeCore';
 import type { Departure, Journey, Leg } from '@/lib/types';
 import { LineBadge } from './Transit';
 import { font, T } from './ui';
+import { boardParts, boardText, placeText, stackColumns, tripLines } from '@/lib/rowTimeCore';
+import { rowTime } from '@/lib/rowTime';
 
 const hm = (t: number) => clock(t).replace(/(am|pm)$/i, '');
 const plat = (p?: string | null) => (p ? p.replace(/^Platform\s*/i, 'Plat ') : '');
 
 export function LeftRow({ j, arrive, onPress }: { j: Journey; arrive: number; onPress: () => void }) {
   const c = usePalette();
+  const win = useWindowDimensions();
   const legs = j.legs.filter((x) => x.kind === 'transit');
   const l: Leg | undefined = legs[0];
   const dep = l ? bestTime(l.planned, l.realtime ? l.estimated : null) : Date.parse(String(j.leave));
   const cancelled = !!(j.anyCancelled || l?.cancelled);
-  const words = leftWords(dep, l ? { realtime: l.realtime, delayMin: l.delayMin, cancelled } : null, hm);
+  const words = leftWords(dep, l ? { realtime: l.realtime, delayMin: l.delayMin, cancelled } : null, rowTime);
   const late = !cancelled && !!l?.realtime && (l.delayMin || 0) > 0;
-  const badges: Leg[] = [];
-  for (const x of legs) if (x.line && !badges.some((b) => b.line === x.line)) badges.push(x);
+  const badges = tripLines(j.legs);
   const changes = j.changes || Math.max(0, legs.length - 1);
   const boardAt = plat(l?.fromPlatform);
+  // The same columns as the trip screen's ServiceRow (components/Home.tsx), greyed.
+  const fromText = boardText(l?.from, l?.fromPlatform);
+  const fromBits = boardParts(l?.from, l?.fromPlatform);
+  const end = j.legs[j.legs.length - 1];
+  const toText = placeText(end?.to || legs[legs.length - 1]?.to);
+  const stack = stackColumns(win.width, win.fontScale);
+  const names = !!(fromText || toText);
+  const timeStyle = [font.title3, { color: c.text2, fontVariant: ['tabular-nums'] as any, textDecorationLine: cancelled ? ('line-through' as const) : ('none' as const) }];
   return (
     <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }}
-      accessibilityLabel={`${words.replace(' \u00b7 ', ', ')}${boardAt ? ` from ${boardAt}` : ''}, arrived ${hm(arrive)}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}. Already gone`}
+      accessibilityLabel={`${words.replace(' \u00b7 ', ', ')}${fromText ? ` from ${fromText}` : boardAt ? ` from ${boardAt}` : ''}, arrived ${toText ? `${toText} at ` : ''}${rowTime(arrive)}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}. Already gone`}
       style={({ pressed }) => [s.row, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
       <View style={[s.block, { backgroundColor: c.fill }]}>
         <Text maxFontSizeMultiplier={1.3} style={{ color: c.text2, fontSize: 13, fontWeight: '700' }} numberOfLines={1} adjustsFontSizeToFit>{cancelled ? 'Off' : 'Left'}</Text>
       </View>
-      <View style={{ flex: 1, minWidth: 0, marginLeft: 14 }}>
-        <Text maxFontSizeMultiplier={1.4} style={[font.title3, { color: c.text2, fontVariant: ['tabular-nums'], textDecorationLine: cancelled ? 'line-through' : 'none' }]}>{hm(dep)}{' '}<Text style={{ color: c.text3, fontWeight: '400' }}>{'\u2192'}</Text>{' '}{hm(arrive)}</Text>
-        <T kind="foot" numberOfLines={1} style={{ marginTop: 2 }}>
-          <T kind="foot" style={{ color: late ? c.lateText : c.text2, fontWeight: '600' }}>{words}</T>
-          {boardAt ? <T kind="foot" tone="text2">{` \u00b7 ${boardAt}`}</T> : null}
-          <T kind="foot" tone="text2">{` \u00b7 ${durText(j.durationMin)}`}</T>
-        </T>
-      </View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 8, opacity: 0.5 }}>
-        {badges.slice(0, 3).map((b, i) => <LineBadge key={`${b.line}${i}`} line={b.line} mode={b.mode} color={b.color} />)}
+      <View style={{ flex: 1, minWidth: 0, marginLeft: 14, flexDirection: stack ? 'column' : 'row' }}>
+        <View style={stack ? null : { flex: 1.2, minWidth: 0 }}>
+          {names ? (
+            <View style={{ flexDirection: 'row' }}>
+              <T kind="foot" tone="text2" numberOfLines={1} style={{ flexShrink: 1 }}>{fromBits.name || ' '}</T>
+              {fromBits.platform ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginLeft: 4, flexShrink: 0 }}>{fromBits.platform}</T> : null}
+            </View>
+          ) : null}
+          <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={timeStyle}>{rowTime(dep)}</Text>
+          <T kind="foot" numberOfLines={1} style={{ marginTop: 1 }}>
+            <T kind="foot" style={{ color: late ? c.lateText : c.text2, fontWeight: '600' }}>{words}</T>
+            <T kind="foot" tone="text2">{` \u00b7 ${durText(j.durationMin)}`}</T>
+          </T>
+        </View>
+        {stack ? null : <Text accessible={false} maxFontSizeMultiplier={1.4} style={[font.body, { color: c.text3, alignSelf: 'center', marginHorizontal: 4 }]}>{'\u2192'}</Text>}
+        <View style={stack ? { marginTop: 6 } : { flex: 1, minWidth: 0 }}>
+          {names ? <T kind="foot" tone="text2" numberOfLines={1}>{toText || ' '}</T> : null}
+          <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={timeStyle}>{rowTime(arrive)}</Text>
+          {badges.length ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 3, marginTop: 2, opacity: 0.5 }}>
+              {badges.slice(0, 4).map((b, i) => <LineBadge key={`${b.line}${i}`} line={b.line} mode={b.mode} color={b.color} />)}
+              {badges.length > 4 ? <T kind="foot" tone="text2">{`+${badges.length - 4}`}</T> : null}
+            </View>
+          ) : null}
+        </View>
       </View>
     </Pressable>
   );
