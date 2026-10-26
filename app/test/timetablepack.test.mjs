@@ -54,6 +54,12 @@ test('a pack reads into board rows from now on, in order, as timetable times wit
   assert.equal(rows[3].dest, 'Gordon');
 });
 
+test('trains run with no passengers are left out', () => {
+  const p = pack(); p.heads.push('Empty Train');
+  p.rows[p.rows.length - 2] = 3;
+  assert.deepEqual(P.packDepartures(p, NOW).map((r) => r.dest), ['Chiswick', 'Hornsby', 'Chiswick']);
+});
+
 test('one mode, a row cap, and bus taking coaches as the server does', () => {
   assert.deepEqual(P.packDepartures(pack(), NOW, { mode: 'train' }).map((r) => r.line), ['T9', 'T9']);
   assert.equal(P.packDepartures(pack(), NOW, { max: 2 }).length, 2);

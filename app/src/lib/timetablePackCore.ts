@@ -52,6 +52,9 @@ export function packDue(kept: KeptPack | null | undefined, now: number): boolean
 
 const sameMode = (rowMode: string, mode: string) => rowMode === mode || (mode === 'bus' && (rowMode === 'coach' || rowMode === 'school'));
 
+/** Trains the timetable runs with no passengers (Sydney Trains names them "Empty Train"); no planner board shows them. */
+const NOT_IN_SERVICE = /^(empty train|not in service)$/i;
+
 /**
  * The pack's departures from `now` on, as live board rows with no live data: realtime false, status Scheduled, no trip
  * id. `mode` keeps one mode (bus includes coach and school bus, as the server does). At most `max` rows.
@@ -69,6 +72,7 @@ export function packDepartures(p: Pack, now: number, opts: { mode?: string | nul
     const l = p.lines[r[i + 1]], pl = p.plats[r[i + 3]];
     if (!l || !pl) continue;
     if (opts.mode && !sameMode(l[1], opts.mode)) continue;
+    if (NOT_IN_SERVICE.test(p.heads[r[i + 2]] || '')) continue;
     out.push({
       mode: l[1], modeName: l[3], line: l[0], color: l[2], dest: p.heads[r[i + 2]] || '', description: l[4] || '',
       platform: pl[1] || '', platformChangedFrom: null, stopId: pl[0], stopName: pl[2] || '', tripId: '',

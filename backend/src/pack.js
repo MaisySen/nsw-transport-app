@@ -15,6 +15,7 @@
 
 const PACK_DAYS = 2;
 const PACK_EDGE_S = 6 * 3600;
+const PACK_NOT_IN_SERVICE = /^(empty train|not in service)$/i;
 
 function packBuild(src, m, stopId, now, ndays) {
   const me = src.stop(stopId);
@@ -56,6 +57,8 @@ function packBuild(src, m, stopId, now, ndays) {
         if (d === prev && r[0] < 86400) continue;
         const route = src.route(r[2]);
         if (!route) continue;
+        // Trains run with no passengers ("Empty Train") are in the timetable but on no planner board.
+        if (PACK_NOT_IN_SERVICE.test(src.head(r[3]) || "")) continue;
         out.push([start + r[0], li(r[2]), hi(r[3]), pi(k, route[1])]);
       }
     }
