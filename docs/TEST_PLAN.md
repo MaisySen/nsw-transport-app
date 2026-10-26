@@ -429,7 +429,7 @@ stops; Ask answers with the timetable note; flight mode shows "Offline" and "che
 Automated: `backend/test/raptor.test.mjs` (direct trips, changes and change time, walks, boarding rules, arrive by, stations and points, the planner object's load and commit, no Trip Planner call with the flag on, RAPTOR against a brute force search on 300 random networks). On the full NSW timetable (26 Oct pack): RAPTOR and an independent Connection Scan search agree on the earliest arrival for 400 of 400 random station pairs.
 
 Before switching it on:
-1. After 1 AM, off peak, capped: record NSW planner answers for 300 pairs (real searches from the `searches` table plus commutes), same departure times. Compare with `/api/raptor/plan`: first trip leaves within 2 minutes and uses the same lines in at least 90%; write down every miss and why.
+1. After the daily pack load (3 to 6 AM), capped: `ENGINE_LOAD_KEY=... node backend/tools/planner_match.mjs 150 > match.json` asks the Trip Planner (through our server) and our planner the same searches, one pair every 3 s, and prints the match. Gate: our first trip leaves and arrives within 2 minutes of NSW's first, or uses the same lines, in at least 90%; write down every miss and why.
 2. A delayed train: the trip's legs show the live time (the same feed step as NSW legs).
 3. On a phone with `OWN_PLANNER` on in a test deploy: search Home to Work at 8 AM and at 11:30 PM (late night, next morning's first services), a trip from your position, and arrive by; compare with Trip Planner screenshots.
 4. `/api/raptor/status`: every replica loaded the same pack day; after the daily load, replicas pulled the new one.
