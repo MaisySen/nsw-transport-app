@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Board engine: stand names learnt reliably, match check in the repo (g14 follow up; server only, 27 Oct, 8:37 AM, transport-api e7be02c9, roll back to 4760793d)
+* Why 20 of the 26 misses at 4:08 AM were stands: a shard asked for a planner read only on a phone's first read of a board, at most 2 a minute per shard, and never again while the board stayed hot; with 4 shards the warm up's 22 stops at once left most stops unread. Now the shards queue every stop they build a board for and the core object reads its planner board itself (no new object request), at most 30 a minute and 2,000 a day, never twice in 6 hours, kept across restarts. `ENGINE_LEARN_CORE` "off" restores the old rule.
+* Names reach the shards as changes; a shard no longer drops every window for a name, and when it must (the core restarted) it reads them again before building, so its boards no longer go to the planner for a tick.
+* A name is kept only when every service at a stop id agrees; a bus shown at a temporary stand instead of its planned one (Stand X1, X2) is kept only where the timetable names no stand, for 36 hours unless seen again, and dropped when the planner shows the stop plain. Never a train platform change. `ENGINE_LEARN_MOVED` "off" keeps none.
+* Empty Train rows on timetable times stay off: the evidence is 3 rows at 3 stations, all at night or the first trains of the morning, none from the day. Boards now list them as `engine.emptyHidden` so tonight's match counts how many the planner lists.
+* `backend/tools/match_x.mjs`: staggered warm up (3 stops every 20 s, kept hot, then it waits for the name queue), the 90.5 minute edge fixed (rows count only up to the engine's build time plus 90 minutes less 60 s), a cap on planner calls, `--live` only from 11 PM to 5 AM, and `--dry --load` against the local fake network (370 of 370; 12 planner boards read for names in 32 s; 10 moved stands).
+* Checks: backend 451 tests (7 new), app battery 17 of 17, app 699 of 700 (the one needs a native package not installed in a bare clone). Local CPU and cost in [ENGINE.md](docs/ENGINE.md): no new requests, no D1 rows, object rows about 2 per planner read. `ENGINE_BOARDS` stays off.
+
 ### iPhone Duo store screenshots reshot (App Store Connect draft, 27 Oct, 4:52 to 5:00 AM; nothing submitted)
 * The iPhone Duo set (APP_IPHONE_DUO, en-AU, 1.0.0) reshot from main e8c6ff3 against production with live data, light mode, same five screens and settings as the 6.9 and 6.5 inch sets: 5 at 2007 x 2853 (inner display) and 5 at 1398 x 2034 (outer display). Uploaded in place of the 25 Oct files, which showed the owner's stations, and kept in [store/apple/screenshots/iphone-duo/](store/apple/screenshots/iphone-duo/); store/screenshots/apple-duo-inner and apple-duo-outer are removed. The 6.9 and 6.5 inch sets and build 208 are unchanged.
 
