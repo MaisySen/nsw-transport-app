@@ -1,5 +1,7 @@
 # App Store and Google Play
 
+26 Oct 2026, 5:50 PM (g25): the store pack was checked against the code and App Store Connect. The current answers, notes and the list of what the root or owner must confirm are in [store/README.md](../store/README.md). Nothing was submitted.
+
 Where submission stands and what is waiting on Bidur. Updated 25 Oct 2026, 5:30 PM; header lines brought up to date 26 Oct, 4:30 PM. The current list of what waits on the owner is in [STATE.md](STATE.md); the owner only steps are in [RUNBOOK.md](RUNBOOK.md) section 9.
 
 Apple: the App Store Connect app 6826543653 exists, the iPhone app is the Expo app (builds 201 to 208 on TestFlight, public beta link https://testflight.apple.com/join/ZKZY7PKX), version 1.0.0 has not been submitted for review, and it is submitted only with the owner's written OK, with the newest build (208 today, 209 from 1 Nov). Google: at the last check (25 Oct, 8 AM) the app did not exist in Play Console yet. The item by item state, with what needs Bidur, is in [STORE_READINESS.md](STORE_READINESS.md) (25 Oct, 8 AM); builds are in [RELEASES.md](RELEASES.md). From "Status" down, this page is as it was on 24 Oct, 5 PM: its Apple column is out of date and it is kept for the Google steps.

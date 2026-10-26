@@ -1,27 +1,32 @@
-# Store pack: Transport
+# Store pack: Transport: Sydney Live
 
-Everything needed to fill in App Store Connect and the Google Play Console for the Transport app.
-Copy each field as written. Nothing here is a secret. This folder is the only copy of the listing and privacy answers; app/ and ios-native/ do not keep their own.
+Everything needed for App Store Connect and the Google Play Console. Copy each field as written. Nothing here is a secret, and no personal phone number is written here (the repo is public). Checked and brought up to date on 26 Oct 2026, 5:50 PM Sydney (g25). Nothing has been submitted for review.
 
-| File | What it is |
-| --- | --- |
-| AUDIT.md | Review guideline and Play policy audit: every blocker found, what was fixed, what is left |
-| apple/listing.md | App Store name, subtitle, promo text, description, keywords, category, URLs |
-| apple/app-privacy.md | App Privacy answers (the privacy nutrition label) |
-| apple/age-rating.md | Age rating questionnaire answers |
-| apple/review-notes.md | Notes for App Review: how to test without a login, Siri phrases |
-| google/listing.md | Play title, short and full description, category, contact details |
-| google/data-safety.md | Play Data safety form answers |
-| google/content-rating.md | IARC content rating questionnaire answers |
-| google/permissions.md | Why each Android permission is there |
-| attribution.md | Transport for NSW data attribution text and licence terms |
-| privacy-policy.md | The privacy policy, as published at https://transportsydney.app/privacy/ |
-| screenshots/ | App Store and Play screenshots at the exact sizes, plus the Play feature graphic |
-| ../SUBMIT.md | What is left once the App Store Connect API key and the Play Console invite arrive |
+| File | What it is | State |
+| --- | --- | --- |
+| apple/listing.md | Name, subtitle, promo text, description, keywords, category, URLs | In App Store Connect, read back 26 Oct |
+| apple/app-privacy.md | App Privacy answers and the code facts behind them | Published 25 Oct; rechecked 26 Oct, still correct |
+| apple/review-notes.md | Notes for App Review: data source, how to test, permissions, system features, server features | In App Store Connect, read back 26 Oct |
+| apple/age-rating.md | Age rating answers (4+) | In App Store Connect, read back 26 Oct |
+| google/listing.md | Play title, short and full description, contact details | Play app not created yet |
+| google/data-safety.md | Play Data safety answers | Play app not created yet |
+| google/content-rating.md | IARC answers | Play app not created yet |
+| google/permissions.md | Why each Android permission is there | |
+| attribution.md | Transport for NSW data credit and CC BY 4.0 terms | |
+| privacy-policy.md | Text copy of https://transportsydney.app/privacy/ (source site/privacy/index.html) | Published 26 Oct |
+| screenshots/ | Store screenshots and how to make them | Watch set missing, see screenshots/README.md |
+| AUDIT.md | The 24 Oct guideline audit of the earlier Swift build (history) | |
+| ../SUBMIT.md, ../docs/STORE.md | Submission steps and status | |
 
-Final identifiers (proposed, nothing registered yet):
+Identifiers: bundle `com.maisysen.nswtransport` (Watch `.watchkitapp`, complications `.watchkitapp.complications`), App Store Connect app 6826543653, version 1.0.0 (Prepare for Submission, build 206 attached on 26 Oct). iPhone only (`supportsTablet` false). Android application ID `com.maisysen.nswtransport`.
 
-* iPhone bundle ID: `com.maisysen.nswtransport`, widget `com.maisysen.nswtransport.widget`, app group `group.com.maisysen.nswtransport`
-* Android application ID: `com.maisysen.nswtransport` (already in use by the installed APK and its upload key, so it stays)
-* Version 1.0 (iPhone build 7), Android versionName 1.0.0, versionCode 5
-* Minimum OS: iOS 17.0, iPhone only. Android 7.0 (API 24), target API 36.
+## What the root or owner must confirm before submitting
+
+1. **The owner's written OK to submit.** Nothing is submitted without it.
+2. **Apple Watch screenshots** (required; none uploaded). Easiest: the owner takes 3 to 5 on his watch (screenshots/README.md).
+3. **Reshoot the iPhone screenshots or keep them.** The uploaded set shows the owner's own stations (Burwood, Strathfield, Kings Cross). The script now uses NSW wide stations, but needs live data: after about 1 AM, best 4:30 to 5 AM on 27 Oct.
+4. **Attach the newest build** to version 1.0.0 (206 today; 208 has Calendar leave by, which the notes mention; 209 from 1 Nov).
+5. **"Linked to you: No"** in App Privacy (random install IDs, no accounts). Keep, or switch all four types to Linked (apple/app-privacy.md).
+6. **Opal wording**: the listing no longer says "Opal" (a Transport for NSW brand). The app itself still says "Opal fare" and "Opal machines" on screen; that names the real card and is not listing branding, so it was left alone.
+7. **Alerts for saved trips and the Limited Stops tag** (worker g22, in progress): if they ship before submission, add a line each to the review notes and recheck app-privacy.md if the server keeps anything new.
+8. **Organisation account**: the seller shows the owner's own name until the Apple account moves to Fintex (D-U-N-S 889795329).

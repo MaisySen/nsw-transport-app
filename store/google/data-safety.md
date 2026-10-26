@@ -1,39 +1,28 @@
-# Play Data safety form answers
+# Data safety answers (Google Play Console)
 
-The current answers are in [docs/STORE_PRIVACY.md](../../docs/STORE_PRIVACY.md) (25 Oct 2026). The text below is the earlier version, kept for reference.
+The answers for Play Console, App content, Data safety. Source file; docs/STORE_PRIVACY.md points here. The Play app is not created yet, so nothing is filled in.
 
+Checked against the code on 26 Oct 2026, 5:50 PM Sydney (g25), with the same checks and fixes as [../apple/app-privacy.md](../apple/app-privacy.md). One row changed: Precise location now also names the last way home reminder set from where you are. "Approximate location: processed ephemerally Yes" is true again since the server stopped keeping request addresses in its logs (transport-api `3e88773d`, 26 Oct); before that a sample of nearby stop positions sat in the logs for up to 7 days.
 
-Matches Android versionCode 5 with the over the air updates up to 24 Oct 2026 (live trip and Share trip, Park and Ride and lift outage alerts). Re-check this form whenever the app starts collecting something new.
+## Answers (Play Console > App content > Data safety)
 
-Does your app collect or share any of the required user data types? Yes.
-Is all of the user data collected by your app encrypted in transit? Yes (HTTPS only).
-Do you provide a way for users to request that their data is deleted? Yes. In the app: Settings > Clear history > Delete my trip history on server, or Delete all my data. By email: privacy@transportsydney.app. Deletion page: https://transportsydney.app/support/#delete
-Account creation: the app has no accounts.
+* Does your app collect or share any of the required user data types? Yes.
+* Is all of the user data collected by your app encrypted in transit? Yes.
+* Do you provide a way for users to request that their data is deleted? Yes (Delete all my data in More; privacy@transportsydney.app; https://transportsydney.app/support/).
+* Account creation: the app does not have accounts.
+* Data shared with third parties: None. Share trip is a user initiated transfer. Expo, Google and Cloudflare act as service providers.
 
-Data shared with third parties: None.
-* A Share trip link is sent by the user to people they choose, so it is a user initiated transfer, which Play does not count as sharing.
-* Transport for NSW receives only the stop and trip requests the server makes, with no user data.
-* Map tiles come from OpenFreeMap, which sees the phone's IP address like any web request.
-* Push alerts go through Expo's push service and Google's Firebase Cloud Messaging, which act as service providers and see only the push token and the alert text.
-
-## Data collected
-
-| Data type | Collected | Ephemeral | Required or optional | Purpose |
+| Data type | Collected | Processed ephemerally | Required or optional | Purpose |
 | --- | --- | --- | --- | --- |
-| Location: Approximate location | Yes | Yes, processed ephemerally, not stored | Optional (Nearby, Opal machines, Park and Ride list, trip from where you are) | App functionality |
-| Location: Precise location | Yes | No. Only when the user turns on Share trip with "Include my location": the server keeps the latest position while the shared trip is live and deletes it when the trip ends, at most 6 hours. Everywhere else it is processed on the phone or ephemerally and not stored. | Optional | App functionality |
-| App activity: In-app search history | Yes (trips planned, stop boards opened, Ask questions; trip searches kept 90 days) | No | Required | App functionality (commute suggestions, Ask answers) |
-| App activity: Other user-generated content | Yes (saved trip names and stops, home and work stops, commutes) | No | Optional | App functionality |
-| App activity: Other actions | Yes (trips and services watched for alerts, kept 30 days; stations chosen for lift outage alerts; car parks chosen for Nearly full alerts) | No | Optional | App functionality |
-| Device or other IDs | Yes (a random install ID and a random profile ID made by the app, and the push notification token when alerts are on) | No | Required | App functionality |
+| Location: Approximate location | Yes | Yes | Optional | App functionality |
+| Location: Precise location | Yes | No (only by choice: Include my location on Share trip, at most 6 hours; a last way home reminder set from where you are, until 12 hours after the service) | Optional | App functionality |
+| App activity: In-app search history | Yes | No (90 days) | Required | App functionality |
+| App activity: Other user-generated content | Yes | No | Optional | App functionality |
+| App activity: Other actions | Yes (watched services, checks, chosen car parks and stations) | No | Optional | App functionality |
+| Device or other IDs | Yes (random install and profile IDs; push token once Android push ships) | No | Required | App functionality |
 
-## Not collected
+Not collected: personal info, financial info, health and fitness, messages, photos and videos, audio, files and docs, contacts, web browsing, app info and performance, advertising ID. Calendar: not collected while Android versionCode 5 (no calendar module) is the build in use. When an Android build with the calendar module ships, add the row "Calendar: Calendar events | Yes | Yes | Optional | App functionality": with Calendar leave by on, an event's place leaves the phone as a search (no ID, not kept), which Play counts as collected and processed ephemerally. That build also lists READ_CALENDAR and WRITE_CALENDAR.
 
-Personal info (name, email, address, phone), financial info, health and fitness, messages, photos and videos, audio, files and docs, calendar, contacts, web browsing, app info and performance (no crash or analytics SDK), advertising ID.
+Security: encrypted in transit Yes; deletion request Yes; Families policy No; independent security review No.
 
-## Security practices section
-
-* Data is encrypted in transit: Yes.
-* You can request that data be deleted: Yes (in the app and by email, see above).
-* Committed to the Play Families policy: No (not designed for children).
-* Independent security review: No.
+The code facts behind these rows are in [../apple/app-privacy.md](../apple/app-privacy.md).

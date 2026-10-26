@@ -1,6 +1,8 @@
 # App Store listing (App Store Connect)
 
-Set in App Store Connect through the API on 25 Oct 2026 (app 6826543653, version 1.0.0 with build 201). This file is the source; if you change a text here, change it there too. The description and promotional text were updated here at 5:20 PM on 25 Oct for the app after that day's updates and written to App Store Connect (en-AU, the only localization) through the API at 5:30 PM the same day, then read back: they match this file.
+Set in App Store Connect through the API on 25 Oct 2026 (app 6826543653, version 1.0.0). This file is the source; if you change a text here, change it there too.
+
+26 Oct 2026, 5:50 PM (g25): checked for other app names and Transport for NSW branding. No other app is named anywhere in the listing. Three changes, written to App Store Connect (en-AU, the only localization) through the API and read back (match): "an Opal fare estimate" is now "a fare estimate", "Opal machines near you" is now "card top up machines near you" (Opal is a Transport for NSW brand), and the Ask example is "next train Parramatta to Central". Name, subtitle, promotional text and keywords were already clean and are unchanged. The attribution line ("Contains transport information from Transport for NSW Open Data, licensed under CC BY 4.0 ... not made or endorsed by Transport for NSW") stays: CC BY 4.0 requires the credit, and it is a credit, not branding.
 
 ## App information
 
@@ -42,7 +44,7 @@ BUSES DONE PROPERLY
 Search the stop number on the sign or a route number. See every stop on a route with its stop number and the live buses along it, filter a stop's board by route, see what recently departed, and get GET ON and GET OFF on your two stops.
 
 PLAN ANY TRIP
-Trips with changes, leave and arrive times, an Opal fare estimate, and earlier and later services. Step free trips avoid lifts that are out of service.
+Trips with changes, leave and arrive times, a fare estimate, and earlier and later services. Step free trips avoid lifts that are out of service.
 
 FOLLOW YOUR TRIP
 Tap Start trip to follow it on a live map with the next stop, stops left and your arrival time, also on the Lock Screen and in the Dynamic Island. Get an alert before your stop and at each change. Speak alerts can read them out loud. Share trip sends a link others can open; it stops working when the trip ends.
@@ -60,10 +62,10 @@ WIDGETS, SIRI AND APPLE WATCH
 Home Screen, Lock Screen and StandBy widgets for a stop or trip you choose. Ask Siri "Next train home in Transport". Control Center buttons, and an Apple Watch app with complications.
 
 ASK
-Type a question like "next train Burwood to Central", "is the T1 late" or "last train home" and get a short answer with live times you can tap.
+Type a question like "next train Parramatta to Central", "is the T1 late" or "last train home" and get a short answer with live times you can tap.
 
 MORE
-Live free spaces at Park and Ride car parks and Opal machines near you.
+Live free spaces at Park and Ride car parks, and card top up machines near you.
 
 NO ACCOUNT
 No sign up, no ads, no tracking. Saved trips belong to a random ID made on your phone, and Delete all my data in More removes them.
@@ -94,10 +96,12 @@ Please check: the watch app and complications, a bus stop widget, Speak alerts w
 
 ## Screenshots
 
-Made from the Expo app's web export with live data, light mode (store/screenshots/README.md says how):
+Made from the Expo app's web export with live data, light mode (store/screenshots/README.md says how, and what is still open):
 
-* iPhone 6.9 inch (1320 x 2868): screenshots/apple-6.9/, uploaded
-* iPhone 6.5 inch (1284 x 2778): screenshots/apple-6.5/, uploaded
-* iPad: not needed (supportsTablet false)
+* iPhone 6.9 inch (1320 x 2868): screenshots/apple-6.9/, uploaded (set APP_IPHONE_67)
+* iPhone 6.5 inch (1284 x 2778): screenshots/apple-6.5/, uploaded (set APP_IPHONE_65)
+* iPhone Duo: uploaded (set APP_IPHONE_DUO)
+* iPad: not needed (supportsTablet false, iPhone only)
+* Apple Watch: required, because builds 206 and later carry the Watch app, and not made yet (no set in App Store Connect on 26 Oct). See store/screenshots/README.md
 
 Order: 01 Home with the commute card, 02 Central departures, 03 a trip, 04 Ask, 05 Check my trip before I go.

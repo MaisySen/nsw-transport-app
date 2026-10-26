@@ -1,6 +1,6 @@
 # Content rating questionnaire (IARC, Play Console)
 
-Matches Android versionCode 5 with the over the air updates up to 24 Oct 2026. Answer again (a new questionnaire) if these answers change.
+Matches Android versionCode 5 with the over the air updates up to 24 Oct 2026; checked again on 26 Oct 2026 (g25), unchanged. Answer again (a new questionnaire) if these answers change.
 
 * Email for the rating certificate: the developer account email
 * Category: All other app types (not a game, not social, not news)

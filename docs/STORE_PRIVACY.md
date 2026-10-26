@@ -1,82 +1,9 @@
-# Store privacy answers (App Store App Privacy and Play Data safety)
+# Store privacy answers
 
-Written 25 Oct 2026 from the code on main (app/ Expo app for iPhone and Android, backend/ server at api.transportsydney.app and the first address). Rows for the iPhone trip card tokens and phone only reminders added at 5:25 PM the same day; their deletion and clean up at 5:28 PM; Calendar leave by in the evening. Re-check whenever the app or server starts keeping something new.
+Moved on 26 Oct 2026 (g25) into the store pack, next to the listing:
 
-## What the code does
+* App Store App Privacy answers and the code facts behind them: [store/apple/app-privacy.md](../store/apple/app-privacy.md)
+* Google Play Data safety answers: [store/google/data-safety.md](../store/google/data-safety.md)
+* The published privacy policy: https://transportsydney.app/privacy/ (source `site/privacy/index.html`, text copy [store/privacy-policy.md](../store/privacy-policy.md))
 
-Kept only on the phone (never sent): home and work stations, starred and recent stops, the fare type, Ask chat history, trip reminders (local notifications, 25 Oct), the Speak alerts switch, settings. Speak alerts use the phone's own speech.
-
-Calendar (Calendar leave by, More, off by default; iPhone build 208 and later, Android builds with the calendar module; [CALENDAR-LEAVE-BY.md](CALENDAR-LEAVE-BY.md)): events in the next 6 hours are read on the phone, read only, while Home is on screen. The event name, notes, people and calendar never leave the phone. Two requests leave it, and neither is kept: the place written in the event, as a place search (`/api/places`, the same as typing in Plan), and the trip query to the place found, Arrive by the start time, sent with no install ID, profile or names so the server cannot add it to trip history or link it to a phone. Places found are kept on the phone (30 days, at most 60) and deleted when the switch is turned off or with Delete all my data. The server's place search keeps its usual in memory copy of answers by search text for up to 6 hours, not linked to any phone.
-
-Sent to the server and kept, keyed by a random install ID and a random profile ID that the app makes on first launch (not the advertising ID, not the vendor ID, no name, email or phone number):
-
-| Data | Server table | How long | Why |
-| --- | --- | --- | --- |
-| Saved trips (name, stops, legs) | saved, saved_legs | Until the user deletes them | Trips on Home and in widgets |
-| Commutes and dismissed suggestions | commutes, dismissed | Until deleted | Commute card |
-| Trip searches (from, to, day, time of day) | searches | 90 days | Commute suggestions |
-| Watched services and trips | watches, watch_sent | 30 days after they end | Leave now, late and platform alerts |
-| Alerts sent to the phone | notes | 3 days | Alert history in the app |
-| Check my trip before I go settings | morning_checks, morning_sent | Until deleted | The morning check |
-| Last way home reminder | last_home | 12 hours after the service | The reminder push |
-| Car parks and stations chosen for alerts | park_watches, lift_alerts | Until deleted | Nearly full and lift alerts |
-| Push token (iPhone, Expo push) | expo_tokens | Until the app unregisters (alerts off, Delete all my data) or Apple says it is invalid. On api.transportsydney.app also deleted after 30 days with no working push when nothing on the server can still push to that install (no live watch, morning check, lift alert, car park watch or last way home) | Sending alerts |
-| iPhone trip card (Live Activity) push token, the trip and its legs (build 205 and later) | live_activities | Deleted when the trip ends on the phone; otherwise by the hourly clean up once the card has ended or expired, and never kept longer than 24 hours. Delete all my data deletes it at once (25 Oct, 5:28 PM) | Updating the Lock Screen card while the phone is locked |
-| iPhone device push token (build 205 and later) | apns_devices | The app sends it each time it opens; deleted when it has not been sent for 30 days. Delete all my data deletes it at once and the app does not send it again until alerts are turned on (25 Oct, 5:28 PM). Nothing is sent to it yet | Alerts later |
-| Shared trip, with the latest position only if the user taps Include my location | shares | Deleted when the trip ends or sharing stops, otherwise 30 min after arrival, never longer than 6 hours | The Share trip link |
-
-Sent for one request and not kept: the position for nearby stops, Opal machines, Park and Ride distances and trip from where you are; Ask questions; with Calendar leave by on, an event's place (as a place search) and the trip query to it, with no install or profile ID.
-
-Not user data: "Usually N min late" (`/api/usual`, new server only) is counted from the public live feed per route, stop, day type and part of the day; no trips, devices or times of any person are kept for it.
-
-Kept for 5 minutes only: request counters per IP address for rate limiting (ip_rate), deleted by the minute cron.
-
-Not in the app: accounts or login, name, email, phone number, contacts, photos, microphone, camera, health, payments, ads, analytics or crash SDKs, advertising ID, tracking across apps or sites. No ad or analytics library is in app/package.json.
-
-Delete all my data (More) asks the server to delete everything above for this install (POST /api/history/delete with scope all) and resets the phone. The iPhone trip card and phone push tokens are kept on api.transportsydney.app whichever address the app uses, so the app also calls POST /api/live-activity/forget there (from the 25 Oct, 5:28 PM update; skipped when the app already uses that address, quiet if the route is missing). A phone still on an older update is covered by the clean up above (24 hours, 30 days). By email: privacy@transportsydney.app (forwards to contact@fintex.au). Web: https://transportsydney.app/support/
-
-Service providers that see a request: Apple (APNs, MapKit maps on iPhone), Expo (push relay and over the air updates; sees the push token, the alert text and the IP address), OpenFreeMap (map tiles on Android; sees the IP address), Cloudflare (hosting). Transport for NSW receives only the server's own data requests, with no user data.
-
-## Apple App Privacy (App Store Connect > App > App Privacy)
-
-The App Store Connect API has no endpoint for App Privacy, so this is clicked by hand (about 5 minutes):
-
-1. App Privacy > Get Started. "Do you or your third party partners collect data from this app?" Yes.
-2. Tick these data types and nothing else:
-   * Location > Precise Location
-   * Identifiers > Device ID
-   * Search History > Search History
-   * User Content > Other User Content
-3. For each of the four: Used for App Functionality only. Linked to the user's identity: No (there are no accounts; the IDs are random and made on the phone). Used for tracking: No.
-4. Publish.
-
-Why each: Precise Location only when the user chooses Include my location on Share trip (kept while the share is live, so it counts as collected). Device ID is the random install and profile IDs plus the push token. Search History is the trip searches kept 90 days. Other User Content is saved trips, commutes, watches and checks.
-
-Not collected under Apple's definition: the position sent for nearby stops and trip planning (used to answer the request and not kept), Ask questions, calendar events (read on the phone; only an event's place is sent, as a search, with no ID, and not kept), Usage Data, Diagnostics, Contact Info. So Calendar leave by adds no App Privacy answer. Build 208 asks for full calendar access (iOS 17 and later) with the text in [CALENDAR-LEAVE-BY.md](CALENDAR-LEAVE-BY.md).
-
-Tracking: No. ATT is not needed (no IDFA, no tracking SDK). NSPrivacyTracking is false.
-
-The privacy manifest in app/app.json now lists the same four types (not linked, no tracking, App Functionality). Build 201 shipped with an empty list; the next iPhone build carries the new one.
-
-## Google Play Data safety (Play Console > App content > Data safety)
-
-* Does your app collect or share any of the required user data types? Yes.
-* Is all of the user data collected by your app encrypted in transit? Yes.
-* Do you provide a way for users to request that their data is deleted? Yes (Delete all my data in More; privacy@transportsydney.app; https://transportsydney.app/support/).
-* Account creation: the app does not have accounts.
-* Data shared with third parties: None. Share trip is a user initiated transfer. Expo, Google and Cloudflare act as service providers.
-
-| Data type | Collected | Processed ephemerally | Required or optional | Purpose |
-| --- | --- | --- | --- | --- |
-| Location: Approximate location | Yes | Yes | Optional | App functionality |
-| Location: Precise location | Yes | No (only with Include my location on Share trip, at most 6 hours) | Optional | App functionality |
-| App activity: In-app search history | Yes | No (90 days) | Required | App functionality |
-| App activity: Other user-generated content | Yes | No | Optional | App functionality |
-| App activity: Other actions | Yes (watched services, checks, chosen car parks and stations) | No | Optional | App functionality |
-| Device or other IDs | Yes (random install and profile IDs; push token once Android push ships) | No | Required | App functionality |
-
-Not collected: personal info, financial info, health and fitness, messages, photos and videos, audio, files and docs, contacts, web browsing, app info and performance, advertising ID. Calendar: not collected while Android versionCode 5 (no calendar module) is the build in use. When an Android build with the calendar module ships, add the row "Calendar: Calendar events | Yes | Yes | Optional | App functionality": with Calendar leave by on, an event's place leaves the phone as a search (no ID, not kept), which Play counts as collected and processed ephemerally. That build also lists READ_CALENDAR and WRITE_CALENDAR.
-
-Security: encrypted in transit Yes; deletion request Yes; Families policy No; independent security review No.
-
-The older answer files store/apple/app-privacy.md and store/google/data-safety.md point here.
+Re-check whenever the app or server starts keeping something new, and update all three together.

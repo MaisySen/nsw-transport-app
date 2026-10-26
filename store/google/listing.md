@@ -1,5 +1,7 @@
 # Google Play listing (Play Console, Main store listing)
 
+26 Oct 2026 (g25): no other app is named; Transport for NSW branding removed ("Opal fare estimate" is "fare estimate", "Opal machines" is "card top up machines"); the Ask example is "next train Parramatta to Central". The Play app is not created yet, so nothing was written to the Play Console.
+
 * App name (30 max): Transport: Sydney Live
 * Package: com.maisysen.nswtransport
 * Default language: English (Australia), en-AU
@@ -47,14 +49,14 @@ Put your next trip on the home screen with a live countdown, platform and any de
 Live trip
 Tap Start trip to follow your trip on a live map with the next stop, stops left and a countdown to your arrival. Get an alert one stop before yours and at each change. Share trip sends a link that others can open to follow along; it stops working when the trip ends.
 
-Opal fares
-Each trip shows an Opal fare estimate for Adult, Child, Concession or Gold, per leg and in total, with peak and off peak prices.
+Fares
+Each trip shows a fare estimate for Adult, Child, Concession or Gold, per leg and in total, with peak and off peak prices.
 
 Park and Ride and lifts
-See live free spaces at Park and Ride car parks, lift outages and step free access at stations, and Opal machines near you.
+See live free spaces at Park and Ride car parks, lift outages and step free access at stations, and card top up machines near you.
 
 Ask
-Type a question like "next train Burwood to Central", "is the T1 late" or "last train home" and get a short answer with live times you can tap.
+Type a question like "next train Parramatta to Central", "is the T1 late" or "last train home" and get a short answer with live times you can tap.
 
 No account
 No sign up, no ads, no tracking. Saved trips belong to a random ID made on your phone.
