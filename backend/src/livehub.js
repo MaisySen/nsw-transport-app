@@ -84,13 +84,17 @@ class LiveHub {
     const hit = await cache.match(key).catch(() => null);
     const storedAt = hit ? Number(hit.headers.get("x-stored-at")) || 0 : 0;
     if (hit && storedAt && Date.now() - storedAt <= REFRESH_MAX_AGE_MS) return { body: await hit.text(), at: storedAt };
-    let flight = inFlight.get(key.url);
-    if (!flight) {
-      flight = answerAndStore(request, env, exec, cache, key);
-      inFlight.set(key.url, flight);
-      flight.then(() => inFlight.delete(key.url), () => inFlight.delete(key.url));
+    // inFlight holds sharedJob records (worker.js): a job another request started is waited on with this request's
+    // own timers, never by awaiting its promise.
+    let job = inFlight.get(key.url), mine = false;
+    if (!job) {
+      mine = true;
+      const run = answerAndStore(request, env, exec, cache, key);
+      job = sharedJob(run);
+      inFlight.set(key.url, job);
+      run.then(() => inFlight.delete(key.url), () => inFlight.delete(key.url));
     }
-    const out = await flight.catch(() => null);
+    const out = await (mine ? job.promise : joinJob(job, SHARED_WAIT_MS)).catch(() => null);
     if (out && out.status === 200) return { body: out.body, at: Date.now() };
     // Refused or failed: a copy kept for a busy upstream, then the engine's labelled timetable board (engineOutage).
     if (hit && storedAt && Date.now() - storedAt <= EDGE_KEEP_S * 1000) return { body: await hit.text(), at: storedAt };

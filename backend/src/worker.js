@@ -10,6 +10,7 @@ const TZ = "Australia/Sydney";
 const API_KEY_PLACEHOLDER = "__TFNSW_API_KEY__";
 const FEED_TTL_MS = 15000;
 const FEED_WAIT_MS = 2500;
+const FEED_JOB_MAX_MS = 20000;
 const depMem = new Map();          // stop board answers, shared for 12 s         // a slow realtime feed never holds an answer longer than this          // shared realtime feed cache
 const VEHICLE_MAX_AGE_S = 600;      // ignore vehicle positions older than this
 
@@ -529,21 +530,53 @@ function indexFeed(buf, kind) {
 // Each feed is fetched at most once per FEED_TTL_MS per worker instance, and Cloudflare's fetch
 // cache keeps the bytes for the same time so other instances in the same location can reuse them.
 
-const feedMem = new Map(); // path -> { at, buf, idx, headerTs, promise }
+// ---------- one answer shared by several requests in this copy of the worker ----------
+// Cloudflare runs each request in its own context. A request that awaits a promise another request started has no
+// I/O of its own, so the runtime cancels it as hung, or its answer is built inside the other request's context and
+// cannot be sent ("Cannot perform I/O on behalf of a different request"). On wrangler dev (the same runtime) 9 of 10
+// identical first opens of a board failed this way with a 500 (26 Oct, g28, docs/REVERSE_ENGINEERING.md). So a
+// shared job keeps its result as plain data, and a request that did not start it waits on its own short timers and
+// reads that data. The request that started the job awaits its promise as before.
+function sharedJob(promise) {
+  const job = { done: false, ok: false, value: undefined, promise, at: Date.now() };
+  promise.then((v) => { job.done = true; job.ok = true; job.value = v; }, (e) => { job.done = true; job.value = e; });
+  return job;
+}
+// True once the job has settled, false if maxMs passed first. Only this request's own timers are awaited.
+async function waitJob(job, maxMs) {
+  const until = Date.now() + Math.max(0, maxMs);
+  for (let wait = 5; !job.done; wait = Math.min(wait * 2, 100)) {
+    if (Date.now() >= until) return false;
+    await new Promise((r) => setTimeout(r, Math.min(wait, Math.max(1, until - Date.now()))));
+  }
+  return true;
+}
+// The job's value for a request that did not start it (throws its error, or a time out after maxMs).
+async function joinJob(job, maxMs = 30000) {
+  if (!(await waitJob(job, maxMs))) throw new Error("A shared answer took too long");
+  if (!job.ok) throw job.value;
+  return job.value;
+}
+
+const feedMem = new Map(); // path -> { at, buf, idx, headerTs, job }
 const feedStats = { fetched: 0, edgeHits: 0, memHits: 0, edgeMiss: 0, edgeErr: 0, edgePutErr: 0, requests: 0, isolate: Math.random().toString(36).slice(2, 8), born: Date.now() };
 
 async function loadFeed(env, path, kind) {
   const now = Date.now();
   const hit = feedMem.get(path);
   if (hit && hit.buf && now - hit.at < FEED_TTL_MS) { feedStats.memHits++; return hit; }
-  if (hit && hit.promise) return hit.promise;
+  // A fetch still running after FEED_JOB_MAX_MS is taken as lost and asked again: the request that started it may have
+  // answered before it finished (realtimeFor waits FEED_WAIT_MS at most), and the runtime can drop its unfinished work.
+  // Before 26 Oct (g28) such a fetch stayed in feedMem for the life of the copy: no fresh feed again, and every later
+  // board waited FEED_WAIT_MS for it.
+  if (hit && hit.job && (hit.job.done || now - hit.job.at < FEED_JOB_MAX_MS)) return joinJob(hit.job, FEED_JOB_MAX_MS);
   const promise = (async () => {
     // One copy per location is shared through Cloudflare's own fetch cache (good answers only): the same 15 s
     // sharing the Cache API gave, but the copy is stored outside this isolate, so it costs no CPU here.
     // Putting a 2.3 MB feed into the Cache API took about 25 ms of CPU on every fresh fetch, and most
     // requests run in a fresh isolate. A copy from that cache says how old it is in Age.
     const f0 = Date.now();
-    const res = await fetch(API + path, { headers: { Authorization: "apikey " + apiKey(env) }, cf: { cacheEverything: true, cacheTtlByStatus: { "200-299": Math.round(FEED_TTL_MS / 1000), "300-599": 0 } } }).finally(() => reqUpstream(Date.now() - f0));
+    const res = await fetch(API + path, { headers: { Authorization: "apikey " + apiKey(env) }, signal: AbortSignal.timeout(FEED_JOB_MAX_MS - 2000), cf: { cacheEverything: true, cacheTtlByStatus: { "200-299": Math.round(FEED_TTL_MS / 1000), "300-599": 0 } } }).finally(() => reqUpstream(Date.now() - f0));
     const shared = res.headers && res.headers.get("cf-cache-status") === "HIT";
     if (shared) feedStats.edgeHits++; else { upstream.calls++; feedStats.fetched++; }
     if (!res.ok) { upstreamRefused(res.status, res.headers && res.headers.get("x-error-detail")); throw new Error(`Realtime feed ${path} answered ${res.status}`); }
@@ -555,7 +588,9 @@ async function loadFeed(env, path, kind) {
     feedMem.set(path, entry);
     return entry;
   })();
-  feedMem.set(path, { ...(hit || {}), promise });
+  feedMem.set(path, { ...(hit || {}), job: sharedJob(promise) });
+  // The fetch finishes and is kept even when this request answers first (reqLogged keeps the request's waitUntil).
+  reqKeep(promise);
   try { return await promise; }
   catch (e) {
     if (hit && hit.buf) { feedMem.set(path, hit); return hit; } // serve the last good copy
@@ -606,7 +641,8 @@ async function realtimeFor(env, pairs) {
 
 const shardMem = new Map();
 async function loadShard(env, key) {
-  if (shardMem.has(key)) return shardMem.get(key);
+  const known = shardMem.get(key);
+  if (known) return known.done ? known.value : joinJob(known);
   const p = (async () => {
     try {
       const r = await env.ASSETS.fetch(new Request("https://assets.local/stops/" + key + ".json"));
@@ -614,7 +650,7 @@ async function loadShard(env, key) {
       return await r.json();
     } catch (e) { return {}; }
   })();
-  shardMem.set(key, p);
+  shardMem.set(key, sharedJob(p));
   return p;
 }
 function shardKey(id) { return String(id).slice(0, 3).replace(/[^A-Za-z0-9]/g, "_"); }
@@ -1060,7 +1096,7 @@ function hazardOut(f) {
 async function trafficHazards(env) {
   const now = Date.now();
   if (hazMem && hazMem.items && now - hazMem.at < HAZ_TTL_MS) return hazMem.items;
-  if (hazMem && hazMem.promise) return hazMem.promise;
+  if (hazMem && hazMem.job) return joinJob(hazMem.job);
   const promise = (async () => {
     upstream.calls++;
     const res = await fetch(API + "/v1/live/hazards/incident/open", { headers: { Authorization: "apikey " + apiKey(env) }, signal: AbortSignal.timeout(8000), cf: { cacheTtl: 120, cacheEverything: true } });
@@ -1070,7 +1106,7 @@ async function trafficHazards(env) {
     hazMem = { at: Date.now(), items };
     return items;
   })();
-  hazMem = { ...(hazMem || {}), promise };
+  hazMem = { ...(hazMem || {}), job: sharedJob(promise) };
   try { return await promise; }
   catch (e) { const old = hazMem && hazMem.items; hazMem = old ? { at: Date.now() - HAZ_TTL_MS + 30000, items: old } : null; if (old) return old; throw e; }
 }
@@ -1667,7 +1703,7 @@ async function plannerLeg(env, q, tripId, line, opts = {}) {
   const now = Date.now();
   const hit = plannerLegMem.get(key);
   if (hit && hit.leg && now - hit.at < PLANNER_LEG_FRESH_MS) return { leg: hit.leg, status: "ok", stale: false };
-  if (plannerLegFlight.has(key)) return plannerLegFlight.get(key);
+  if (plannerLegFlight.has(key)) return joinJob(plannerLegFlight.get(key));
   const run = (async () => {
     // Other isolates in this data centre may have asked already: the edge cache holds the list for everyone.
     const shared = await edgeLegGet(env, key);
@@ -1727,7 +1763,7 @@ async function plannerLeg(env, q, tripId, line, opts = {}) {
     if (kept) return { leg: kept.leg, status: "stale", stale: true };
     return { leg: null, status: failed ? "busy" : "notFound", stale: false };
   })();
-  plannerLegFlight.set(key, run);
+  plannerLegFlight.set(key, sharedJob(run));
   try { return await run; } finally { plannerLegFlight.delete(key); }
 }
 // The edge cache (Cache API) shares a stop list between isolates in one data centre for up to 20 minutes; the
@@ -6941,8 +6977,10 @@ function sydneyLocalMs(s) {
 const liftMem = { at: 0, list: null, p: null };
 async function liftOutages(env) {
   if (liftMem.list && Date.now() - liftMem.at < 300000) return liftMem.list;
+  let mine = false;
   if (!liftMem.p) {
-    liftMem.p = (async () => {
+    mine = true;
+    const run = (async () => {
       const now = sydneyParts(new Date());
       const [y, m, dd] = String(now.date).replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3").split("-");
       // Lift and escalator notices are the Trip Planner's "infrastructure" infos. Asking for just
@@ -6965,9 +7003,12 @@ async function liftOutages(env) {
       }
       liftMem.list = out; liftMem.at = Date.now();
       return out;
-    })().finally(() => { liftMem.p = null; });
+    })();
+    liftMem.p = sharedJob(run);
+    run.then(() => { liftMem.p = null; }, () => { liftMem.p = null; });
   }
-  try { return await liftMem.p; } catch (e) { return liftMem.list || []; }
+  // Only the request that asked the Trip Planner awaits its promise; others wait on their own timers (sharedJob).
+  try { return mine ? await liftMem.p.promise : await joinJob(liftMem.p); } catch (e) { return liftMem.list || []; }
 }
 
 // One car park, live, cached 90 seconds.
@@ -8307,10 +8348,10 @@ async function warmBoards(env, exec, use, sn) {
       if (mode) url.searchParams.set("mode", mode);
       const key = edgeKey(url);
       if (inFlight.has(key.url)) return;
-      const flight = answerAndStore(new Request(url.toString()), env, exec, cache, key, { warm: true });
-      inFlight.set(key.url, flight);
-      flight.then(() => inFlight.delete(key.url), () => inFlight.delete(key.url));
-      const r = await flight.catch(() => null);
+      const run = answerAndStore(new Request(url.toString()), env, exec, cache, key, { warm: true });
+      inFlight.set(key.url, sharedJob(run));
+      run.then(() => inFlight.delete(key.url), () => inFlight.delete(key.url));
+      const r = await run.catch(() => null);
       if (r && r.status === 200) ok++;
     });
     await Promise.all(part);
@@ -8453,13 +8494,16 @@ async function edgeFetch(request, env, exec) {
     }
     // One upstream answer per key at a time in this copy of the worker: a burst of phones asking for the same stop
     // while it is being fetched all wait for that one answer (shared), not one call each.
-    let flight = inFlight.get(key.url), leader = false;
-    if (!flight) {
+    // The burst waits on its own timers for the first request's answer (sharedJob, joinJob): a request may not await
+    // another request's promise in Workers.
+    let job = inFlight.get(key.url), leader = false;
+    if (!job) {
       leader = true;
-      flight = answerAndStore(request, env, exec, cache, key);
-      inFlight.set(key.url, flight);
+      const run = answerAndStore(request, env, exec, cache, key);
+      job = sharedJob(run);
+      inFlight.set(key.url, job);
       if (inFlight.size > 2000) inFlight.delete(inFlight.keys().next().value);
-      flight.then(() => inFlight.delete(key.url), () => inFlight.delete(key.url));
+      run.then(() => inFlight.delete(key.url), () => inFlight.delete(key.url));
     } else {
       if (!rateOk(request, url.pathname) && !loadOk(request, env)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
       budget.shared++;
@@ -8475,13 +8519,15 @@ async function edgeFetch(request, env, exec) {
     let out = null;
     if (kept || (saved && !refresh)) {
       // Watch and widget requests (no profile, docs/DIAGNOSIS_LAG.md item 4) take a kept copy at once, no wait.
-      out = await Promise.race([flight, new Promise((r) => setTimeout(() => r(null), kept ? (extInstant(url, request) ? 0 : COPY_WAIT_MS) : SAVED_WAIT_MS))]);
+      const wait = kept ? (extInstant(url, request) ? 0 : COPY_WAIT_MS) : SAVED_WAIT_MS;
+      if (leader) out = await Promise.race([job.promise, new Promise((r) => setTimeout(() => r(null), wait))]);
+      else out = (await waitJob(job, wait)) ? await joinJob(job) : null;
       if (!out) {
-        if (exec && exec.waitUntil) exec.waitUntil(flight.catch(() => null));
+        if (leader && exec && exec.waitUntil) exec.waitUntil(job.promise.catch(() => null));
         budget.staleServed++;
         return kept ? fromCopy(hit, storedAt, "stale") : fromSaved(saved);
       }
-    } else out = await flight;
+    } else out = leader ? await job.promise : await joinJob(job, SHARED_WAIT_MS);
     // Transport for NSW refused or failed (over its limit, down, slow): the last copy is better than an error.
     if (out.status >= 500 && kept) {
       budget.staleServed++;
@@ -8510,8 +8556,12 @@ async function edgeFetch(request, env, exec) {
 // address. REQ_LOG "off" stops it.
 const reqStore = new AsyncLocalStorage();
 function reqUpstream(ms) { const s = reqStore.getStore(); if (s) { s.up += ms; s.n++; } }
+// Keeps work this request started alive after it has answered (the request's waitUntil), when there is a request.
+function reqKeep(p) {
+  try { const s = reqStore.getStore(); if (s && s.exec && typeof s.exec.waitUntil === "function") s.exec.waitUntil(Promise.resolve(p).catch(() => null)); } catch (e) { /* never in the way */ }
+}
 async function reqLogged(request, env, exec, inner) {
-  const t0 = Date.now(), st = { up: 0, n: 0 };
+  const t0 = Date.now(), st = { up: 0, n: 0, exec };
   let res = null;
   try {
     res = await reqStore.run(st, () => inner(request, env, exec));
@@ -8547,7 +8597,10 @@ function extInstant(url, request) {
 // fallback above).
 const EDGE_KEEP_S = 120;
 const COPY_WAIT_MS = 700;
-const inFlight = new Map(); // edge key -> Promise<{ status, headers, body }>
+const inFlight = new Map(); // edge key -> sharedJob of { status, headers, body }
+// A request that joins another one's answer (no copy to fall back on) waits at most this long for it: the Trip
+// Planner call times out at 12 s and is asked again for up to about 5 s more.
+const SHARED_WAIT_MS = 25000;
 async function answerAndStore(request, env, exec, cache, key, opts = {}) {
   const res = await handleRequest(request, env, exec);
   const body = await res.text();
