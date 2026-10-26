@@ -225,3 +225,16 @@ The zone caches CSS at the edge for up to 4 hours and the API token has no cache
 `site/og.png` (the share image) is not part of the beta and stays.
 
 Before 24 Oct, 11:45 AM the backend source lived only on the build machine and in a separate private repo; it has been in `backend/` of this repo since commit 7ff789c.
+
+
+## Server: board engine (g11), 26 Oct
+
+Behind `ENGINE_BOARDS` (off). Each deploy passed the post deploy checks (/api/lines, /api/trackwork, /api/health 403 without key, /api/usual, a shared link made, opened and ended).
+
+| Time (Sydney) | transport-api version | Main | What |
+|---|---|---|---|
+| 12:25 PM | 49480881 | b5af4e1 | Loop services, one row for a service in two timetables |
+| 12:35 PM | 9e9220dc | 4a9f72b | Feed bucket charged only for fetches started |
+| 12:40 PM | fefbc66f | c9ffcac | Smaller in memory caches |
+
+Roll back the engine changes: `npx wrangler@4 rollback 2ef1ad9f-ee39-4b85-ac38-f74c04471191 --name transport-api` (g12's timetable pack deploy at 12:20 PM, the last one before these). Before the engine existed: 863d521d.

@@ -62,3 +62,23 @@ ENGINE_LOAD_KEY=... node tools/load_timetable.mjs <out>
 The GTFS zips come from `/v1/gtfs/schedule/<feed>` (one call each, about 26) and `stops_complete.txt` from the complete
 bundle. A stop with no rows for today falls back to the Trip Planner, so a missed refresh degrades to today's speed,
 it does not show wrong boards. The daily refresh is the GitHub workflow `.github/workflows/timetable.yml`.
+
+## Status on 26 Oct, 12:45 PM
+
+* **Behind the flag.** `ENGINE_BOARDS` is off; phones get the Trip Planner path. `engine=1` on a request asks the engine.
+* **Match with the Trip Planner** (30 stops NSW wide, 1 Sydney commute name; same services, times within 60 s,
+  platforms where given; `match_api.mjs` in the task folder): 92.9% at 12:06 PM (328 of 353), 91.1% at 12:27 PM
+  (328 of 360). The gate is 95%, so it stays off. Where they differ:
+  * Live times 61 to 120 s apart on services both show live (light rail and buses mostly, engine later). Polling both
+    every 30 s for 6 minutes, the planner later reached the engine's time in 34 of 143 such cases, so "the planner
+    lags the feed" explains only some of it.
+  * Replacement trains (REPLACEMENT trips in the feed) where the feed says 10 to 22 minutes late and the planner says
+    on time, or where the replacement starts after this stop.
+  * Services with no GTFS data in the bundles we load: the private Watsons Bay ferry, Goulburn coach 855, SH100,
+    Bomaderry 700-1.
+  * A bus whose feed has already dropped this stop (it has left) while the planner still lists it.
+* **Fixed today:** loop services (a stop called at the start and the end: the stop sequence now decides which call an
+  update is for), duplicate rows for NSW TrainLink services that are in two bundles, and the feed bucket going into
+  debt after a restart.
+* **Open:** the object restarted under load (SCALING.md); alerts, wheelchair access and destination ids are not on
+  engine boards yet.

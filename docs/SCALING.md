@@ -77,3 +77,61 @@ In order:
 * **Fewer polls.** Polls at 15 s only while a service is due within 10 minutes (already so), 60 s otherwise. Use push for watched trips and the iPhone trip card (already pushed by the server) instead of polling.
 * **Cost** (Workers Paid, 10 million requests a month included, then 0.30 US dollars a million). At 15 minutes of use a day per person and a request every 15 s: 10,000 people make about 18 million requests a month (about 2.40 US dollars over the included amount). 100,000 make about 180 million (about 51 US dollars). These are estimates from the polling rate, not bills.
 * **D1** holds saved trips, push tokens and observations. At 100,000 people, writes per request (commute memory, observations) need batching or sampling.
+
+
+## Board engine on Cloudflare: design, limits and cost (26 Oct, g11)
+
+Owner's steer (12:11 PM): decide the Cloudflare design from Cloudflare's own documentation and from measuring on our
+account, and write it here. Limits below are Cloudflare's published Workers Paid limits as I read them on 26 Oct; the
+measured lines say what our account showed.
+
+**Chosen:** one Durable Object (`BoardEngine`, SQLite storage, near Sydney) holds the timetable and the live feed
+copies, and an alarm rebuilds every board read in the last 5 minutes every 10 s. The Worker answers `/api/departures`
+from the object, with a 4 s Cloudflare cache copy per location and a 2 s copy per Worker instance in front of it.
+Details in ENGINE.md.
+
+| Option | What the docs say | Verdict |
+|---|---|---|
+| Cron Triggers | Shortest schedule is once a minute. | Too slow for 10 s. Kept as the existing per minute job. |
+| Durable Object alarm | One alarm per object, can be set to any time, retried on failure. | **Used.** A 10 s beat, and one object means one copy of each feed for all of Australia, so NSW calls do not grow with phones. |
+| Queues | A delivery pipe with batching, not a timer. | Not needed: nothing to fan out. |
+| KV for boards | At most 1 write a second per key; reads can be up to about 60 s stale at other locations; writes billed per million. | **No.** 30,000 boards every 10 s is 3,000 writes a second (about 260 million a day, roughly 1,300 US dollars a day at 5 dollars a million), and 60 s stale reads would undo the 10 s refresh. |
+| Cache API | Per location, not shared; no write cost. | **Used** as the 4 s copy in front of the object. |
+| D1 for the timetable | A separate service: every query is a network hop; 10 GB per database. | **No.** A tick reads thousands of rows; inside the object SQLite is in process with no hop. |
+| R2 for the timetable | Object storage; needs R2 switched on (a card on the account). | **Not needed.** The timetable (383,369 stop day rows for 5 days, 165,825 stops) fits the object's SQLite. R2 stays optional. |
+| Durable Object limits | 128 MB memory per object; 30 s CPU per request or alarm by default; SQLite storage up to 10 GB per object. | Memory is the one that bit: see below. |
+
+**Measured on our account (26 Oct):**
+* Timetable load into the object: 119 to 122 s for 5 days.
+* Alarm tick: 0.35 to 2.3 s for up to 990 hot boards (0.9 s typical).
+* NSW calls: capped at 24 a minute by the engine's own bucket (34,560 a day if never idle), measured 10 to 24 a minute during the 1,000 and 10,000 phone tests. The Trip Planner path made 381 to 533 a minute at 1,000 phones (g9 test).
+* The object restarted twice under load (at about 500 hot boards in the 1,000 phone test and about 990 in the 10,000 phone test). No deploy happened at those moments, so the likely cause is the 128 MB memory limit. Caches were cut (200 whole stop days, 2,000 stop windows, 1,500 hot boards; transport-api fefbc66f), and the object still restarted once in the follow up 1,000 phone test (at about 985 hot boards). So the cause is not settled: memory or CPU in one object. Phones did not see errors from it, only older times for up to a minute. Next step before switching on: split the work over several objects (one per group of feeds) so no single object holds every hot board.
+* A restart cost the feed budget: every waiting first read was charged a call, so the bucket went 90 calls into debt and boards went stale for minutes (data age p50 151 s in the first 10,000 phone run). Fixed in 9e9220dc: only fetches actually started are charged, and the bucket floor is 10 s of calls.
+
+**Cost math (Workers Paid; estimates from the published rates, not bills):**
+* Object duration: one object awake around the clock is 128 MB x 86,400 s = about 11,000 GB-s a day, about 330,000 a month, inside the 400,000 GB-s included.
+* Requests to the object: at most one per board per location per 4 s, and never more than the phones' own requests. 10,000 phones polling every 15 s for a 1 hour peak is about 2.4 million requests, about 0.36 US dollars at 0.15 a million beyond the included million.
+* SQLite rows: a board's window is read once per 5 minutes per stop, then kept in memory; rows read are in the millions a day, cents at 0.001 US dollars a million.
+* NSW: flat at 24 calls a minute or less, so the 60,000 a day default quota is never the limit for boards.
+
+**Nothing to switch on in the dashboard.** Durable Objects with SQLite are on, Smart Placement is in the code. R2 is not needed for the engine.
+
+**Load tests against the engine (26 Oct, `engine=1`, simulated phones from this US west coast machine; each phone opens
+a board and refreshes it every 15 s, with a 5% chance of another stop per refresh, Zipf over 1,000 NSW stops):**
+
+| Run | Requests | p50 | p95 | p99 | Errors | NSW calls a minute | Data age p50 / p95 |
+|---|---|---|---|---|---|---|---|
+| 1,000 phones, 3 min, 30 s ramp (transport-api 49480881) | 10,539 (62 a second) | 378 ms | 667 ms | 1.10 s | 0 | 24 (the cap) | 7 s / 24 s |
+| 1,000 phones, 3 min, after the fixes (fefbc66f) | 8,960 (62 a second) | 236 ms | 586 ms | 1.03 s | 0 | 24 or less | 6 s / 16 s |
+| 10,000 phones, 3 min, 60 s ramp (9e9220dc) | 95,130 (about 500 a second) | 886 ms | 5.1 s | 6.7 s | 20,751 on the test machine (20,618 connection resets, 133 time outs) | 10 | 8 s / 19 s |
+
+* The engine answered 100% of the 1,000 phone requests (none fell back to the Trip Planner).
+* The 10,000 phone run is limited by the test machine, so it does not prove the server either way: 10,000 open
+  connections from one address were reset before reaching our Worker (the Worker's own log showed no errors, only a
+  few requests the client gave up on), and the machine's own name lookups failed during the run. The server side
+  numbers from that run (NSW calls 10 a minute, data 8 s old at the median) are real; its latency and error numbers
+  are the test machine's. A clean 10,000 phone number needs several source machines, ideally in Australia.
+* NSW calls stayed flat: 24 a minute or less in every run, against 381 to 533 a minute for 1,000 phones on the Trip
+  Planner path.
+* CPU per request was not read from Cloudflare's analytics for these runs.
+* All from the US: every request crossed the Pacific to the object near Sydney (about 150 ms each way). Sydney phones skip that.

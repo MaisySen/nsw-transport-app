@@ -46,6 +46,8 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 ## Backend unit tests
 
+Board engine (`backend/test/engine.test.mjs`, 15 tests): boards from the timetable plus trip updates, delays carried down the line, cancelled, skipped, platform change, replacement and added services, loop services (the stop sequence decides which call an update is for), feed calls per feed not per phone (200 reads of 3 boards), and the feed bucket after a crowd of first reads (it is charged for fetches started, not for waits). Live checks that are not unit tests: `match_api.mjs` (engine against the Trip Planner, 30 stops) and `load_engine.mjs` (simulated phones), both in the g11 task folder; results in docs/ENGINE.md and docs/SCALING.md.
+
 ### `backend/test/shared-fetch.test.mjs`: 13 tests, 13 pass (26 Oct, shared fetching for many phones)
 
 1. 50 phones asking for one stop at once make one upstream call; every phone gets the answer (1 miss, 49 shared), stored once keyed by the stop only

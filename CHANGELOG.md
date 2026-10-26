@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Board engine, still behind its flag (server 26 Oct, 12:25 to 12:41 PM, transport-api 49480881, 9e9220dc, fefbc66f; no app update)
+Bidur at 11:24 AM: "How can we make it faster like really crazy faster. Everywhere."
+* The engine builds every NSW stop board from the network feeds every 10 s (docs/ENGINE.md). It is not switched on for phones: it matches the Trip Planner on 91 to 93% of services (30 stops NSW wide), under the 95% gate.
+* Fixed: an update for a loop service's first call no longer lands on its last call at the same stop; one row when a NSW TrainLink service is in two timetables; after a restart the feed budget no longer goes minutes into debt (boards were going stale); smaller in memory caches.
+* Load tests: 1,000 phones, 0 errors, p95 586 ms from the US, NSW calls 24 a minute or less (381 to 533 on the Trip Planner path). 10,000 phones from one machine: the machine's connections were reset, the server held NSW calls at 10 a minute with data 8 s old. Details in docs/SCALING.md.
+* Plan for widgets and the Watch in build 209: docs/WIDGET_WATCH_SPEED.md.
+
 ### Speed: search as you type and saved boards (server 26 Oct, 11:38 and 11:47 AM, transport-api 670c8952 then 863d521d; over the air 26 Oct, 11:58 AM, group f9c48f4c, roll back to fd6a8763)
 Bidur at 11:20 AM: "app still slow as hell right now. Keep loading in every search".
 * Search shows stops as you type, from lists kept on the phone: every train, metro, light rail, ferry, bus and coach stop in NSW. 19 to 41 ms to results on screen in the web build, no spinner; before, every search waited for the server (453 ms median for a first search from the US build box, up to 1.4 s) plus a 220 ms pause. The server is still asked after 280 ms and adds addresses, places and anything not in the lists; a newer keystroke cancels it.

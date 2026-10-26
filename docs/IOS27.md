@@ -52,6 +52,8 @@ Bidur asked for a button straight to the voice download in iPhone Settings. iPho
 
 ## Build 209 (1 Nov)
 
+* Widgets and Watch read first, network second (shared board file in the App Group, timetable fallback, widget push, Watch transfer from the phone): steps and files in docs/WIDGET_WATCH_SPEED.md. Not built.
+
 Native work left from the 25 Oct comfort, voice and performance pass (the JavaScript shipped over the air; these need a build):
 * Speak only with headphones: build 208 has no audio route API (`TransportIOS.startSpeechAudio` sets the spoken audio session with duck others, so ducking already works). Add an `AVAudioSession.currentRoute` read and a route change event, then a Voice setting "Only with headphones".
 * Voice download prompt: iOS has no API to download a Premium voice. Since the Get a better voice update (JavaScript) the Voice screen shows three steps to Settings > Accessibility > Read & Speak > Voices (the page was called Spoken Content before iOS 26) and opens the app's own settings page. Check on a device that `AVSpeechSynthesisVoice.speechVoices()` lists a voice downloaded while the app was in the background without a restart (iOS 17 added `availableVoicesDidChangeNotification`; a native listener for it could go in 209 if the list turns out stale).
