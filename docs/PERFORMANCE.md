@@ -312,6 +312,16 @@ both with refresh=1; Ask, search, alerts and settings were already not blocking.
 * Trips via a stop (`trips.ts`): no `refresh: true` on either part; the second part from now is asked at the later of now plus the change time and the last first part arrival seen plus the change time, and used only when `viaCovers`; otherwise asked from the real arrival as before (a read cache hit when the time is the same).
 * Home read ahead (`src/lib/homePrefetchCore.ts`): 1.5 s after Home is focused with its lists, in an idle callback where the runtime has one, the top card's trip screen first page (plain trips with no mode chips) is read and kept under the trip screen's key. Once per foreground, through the press in gate (20 s per key, 8 a minute), cleared on blur, never with the app in the background.
 
+### Workers Cache (27 Oct, server, built and left off)
+* What it is (Cloudflare's docs, read 27 Oct, pages dated 3 and 12 Oct 2026): `[cache] enabled = true` in wrangler.toml puts a tiered cache in front of the worker; responses with `Cache-Control` max-age (or `cdn-cache-control` for the edge only) are stored and a hit is answered without running the worker. The cache is consulted before Smart Placement, so a hit never goes to the placed location; a miss runs the worker at the placed location as now. Requests bill at the standard rate hit or miss; hits use no CPU. It also bills requests that are free today (static asset requests, calls between entrypoints).
+* Wrangler test (4.152.0, a throwaway worker with `[cache] enabled = true` and `[placement] mode = "smart"`): the config is accepted, but `wrangler dev` does not emulate the cache (three asks, three worker runs, no `cf-cache-status`). So it can only be checked on production.
+* Why it stays off:
+  * A hit does not run the worker, so it writes no request log line (reqLog, docs/DIAGNOSIS_LAG.md item 10) and the p50/p95 per endpoint would count only misses.
+  * A hit writes no trip history (afterAnswer and cachedTripLog) and marks no board as opened, and commute memory, usual trips and pre-warm learn from exactly those.
+  * Old installs put `device=` and `profile=` in the address, so their asks would each be their own cache entry until they update; stripping them needs an outer entrypoint calling a cached inner one, which bills 2 requests per ask.
+  * The worker's own copy layer already answers repeat asks from a copy in 0.07 to 0.6 s (part 1), so the gain is the worker's start and CPU, not an upstream call.
+* What is built: `WORKERS_CACHE` "on" adds an edge only `cdn-cache-control` (max-age plus stale-while-revalidate) to shared answers (departures, car parks, station lists, lines, trackwork, alerts, packs, station files) and never to per person addresses, polls, stand ins, saved or stale copies or errors (`workersCacheHeader`, backend/test/speed-part2.test.mjs). Turning it on needs both the var and the `[cache]` block, a production check of `cf-cache-status`, and a decision on the request log and trip history above.
+
 ## Smoothness
 
 1. Long lists use `FlatList` (Ask, new trip). Short fixed lists inside a ScrollView (departures, up to about 40

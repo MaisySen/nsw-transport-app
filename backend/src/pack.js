@@ -111,16 +111,26 @@ async function packAnswer(env, ctx, url, headers) {
   const cache = typeof caches !== "undefined" ? caches.default : null;
   if (cache) {
     const hit = await cache.match(ck).catch(() => null);
-    if (hit) return new Response(hit.body, { status: hit.status, headers: { ...hdr, "cache-control": hit.status === 200 ? "public, max-age=3600" : "no-store", "x-edge-cache": "hit" } });
+    // Only good packs are kept (27 Oct); an older kept 404 is passed over and asked again.
+    if (hit && hit.status === 200) {
+      const text = await hit.text();
+      const etag = hit.headers.get("etag") || (await packTag(text));
+      return new Response(text, { status: 200, headers: { ...hdr, "cache-control": "public, max-age=3600", etag, "x-edge-cache": "hit" } });
+    }
   }
   const r = await engineCall(env, "/pack?stop=" + encodeURIComponent(stop) + "&days=" + PACK_DAYS);
   const body = await r.text();
-  if (r.status === 404) {
-    // No timetable for this stop (a private ferry, some coaches): the phone keeps no pack and uses the live board.
-    if (cache && ctx && ctx.waitUntil) ctx.waitUntil(cache.put(ck, new Response(body, { status: 404, headers: { "content-type": "application/json", "cache-control": "public, max-age=" + PACK_EDGE_S } })).catch(() => {}));
-    return new Response(body, { status: 404, headers: { ...hdr, "cache-control": "no-store" } });
-  }
+  // No timetable for this stop (a private ferry, some coaches): the phone keeps no pack and uses the live board. An
+  // answer that is not a pack is never kept, so a stop that gains a timetable gets it on the next ask.
+  if (r.status === 404) return new Response(body, { status: 404, headers: { ...hdr, "cache-control": "no-store" } });
   if (r.status !== 200) return new Response('{"error":"No timetable right now."}', { status: 503, headers: { ...hdr, "cache-control": "no-store" } });
-  if (cache && ctx && ctx.waitUntil) ctx.waitUntil(cache.put(ck, new Response(body, { headers: { "content-type": "application/json", "cache-control": "public, max-age=" + PACK_EDGE_S } })).catch(() => {}));
-  return new Response(body, { headers: { ...hdr, "cache-control": "public, max-age=3600" } });
+  // A strong ETag (a hash of the bytes): a phone that sends it back as If-None-Match gets a 304 (worker.js finishAnswer).
+  const etag = await packTag(body);
+  if (cache && ctx && ctx.waitUntil) ctx.waitUntil(cache.put(ck, new Response(body, { headers: { "content-type": "application/json", "cache-control": "public, max-age=" + PACK_EDGE_S, etag } })).catch(() => {}));
+  return new Response(body, { headers: { ...hdr, "cache-control": "public, max-age=3600", etag } });
+}
+async function packTag(text) {
+  if (typeof etagOf === "function") return etagOf(text);
+  const h = new Uint8Array(await crypto.subtle.digest("SHA-1", new TextEncoder().encode(text)));
+  return '"' + [...h.slice(0, 12)].map((b) => b.toString(16).padStart(2, "0")).join("") + '"';
 }

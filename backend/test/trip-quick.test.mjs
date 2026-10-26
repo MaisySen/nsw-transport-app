@@ -107,8 +107,9 @@ test("a slow Trip Planner: the phone gets labelled timetable trips before its 10
   const r = await call(PHONE);
   const took = Date.now() - t0;
   assert.equal(r.status, 200);
-  assert.ok(took < 9000, `answered in ${took} ms, inside the app's 10 s`);
-  assert.ok(took >= 6000, "the planner had its chance first");
+  // Part 2 (27 Oct): with timetable trips in hand the phone waits TRIP_QUICK_TT_MS (1.5 s), not 6.5 s.
+  assert.ok(took < 3000, `answered in ${took} ms, well inside the app's 13 s`);
+  assert.ok(took >= 1400, "the planner had its first 1.5 s");
   assert.equal(r.body.source, "timetable");
   assert.equal(r.body.fallback, "planner-slow");
   assert.equal(r.headers.get("x-edge-cache"), "stand-in");
@@ -160,4 +161,24 @@ test("only plain trips from now get the quick answer: a timed trip waits for the
   assert.ok(Date.now() - t0 >= 7000);
   assert.notEqual(r.body.fallback, "planner-slow");
   plannerDelay = 0;
+});
+
+test("TRIP_QUICK_TT=off: the planner gets its whole 6.5 s before timetable trips (the part 1 wait)", { timeout: 30000 }, async () => {
+  edge.clear(); behind.length = 0; plannerDelay = 8000; plannerFail = false;
+  const t0 = Date.now();
+  const r = await call(phone(7), { ...env, TRIP_QUICK_TT: "off" });
+  const took = Date.now() - t0;
+  assert.ok(took >= 6000 && took < 9000, `answered in ${took} ms`);
+  assert.equal(r.body.fallback, "planner-slow");
+  plannerDelay = 0;
+  await settle();
+});
+
+test("a planner that answers inside 1.5 s still wins over ready timetable trips", { timeout: 30000 }, async () => {
+  edge.clear(); behind.length = 0; plannerDelay = 1000; plannerFail = false;
+  const r = await call(phone(8));
+  assert.notEqual(r.body.source, "timetable");
+  assert.equal(r.headers.get("x-edge-cache"), "miss");
+  plannerDelay = 0;
+  await settle();
 });

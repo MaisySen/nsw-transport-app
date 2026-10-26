@@ -772,8 +772,9 @@ async function ownRun(env, tripId, stopId, plannedMs) {
     if (!r || r.status !== 200) return null;
     d = await r.json().catch(() => null);
     if (!d) return null;
-    // A trip the pack does not hold is kept for a minute too, so a polling screen does not ask again each time.
-    if (cache) await cache.put(ck, new Response(JSON.stringify(d), { headers: { "content-type": "application/json", "cache-control": "public, max-age=" + (d.error ? 60 : RP_RUN_EDGE_S) } })).catch(() => null);
+    // Only a good run is kept; an error answer (a trip the pack does not hold) is never stored (27 Oct), so the next ask
+    // tries again.
+    if (cache && !d.error) await cache.put(ck, new Response(JSON.stringify(d), { headers: { "content-type": "application/json", "cache-control": "public, max-age=" + RP_RUN_EDGE_S } })).catch(() => null);
   }
   if (d.error || !Array.isArray(d.stops) || d.stops.length < 2) return null;
   if (typeof budget === "object" && budget) budget.ownRuns = (budget.ownRuns || 0) + 1;

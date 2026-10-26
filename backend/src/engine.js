@@ -1598,6 +1598,8 @@ async function engineBoard(env, ctx, stop, mode) {
   const text = r.status === 200 ? await r.text() : "";
   if (r.status !== 200 && r.status !== 404) return null;
   if (sh) engTouched.set(bk, now);
+  // No board (404) is an empty answer: never kept in memory or in the cache (27 Oct), so the next read asks again.
+  if (r.status !== 200 || !text) return null;
   if (engMem.size > 2000) engMem.clear();
   // The learn flag is for this one answer only.
   const shared = text.replace(',"learn":true', "");

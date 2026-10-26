@@ -4,6 +4,16 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Speed pass part 2, server: x-serves, x-device, /api/trip/live, version tags, quicker cold trips, no error copies (server, 27 Oct; no app update needed, tonight's update uses the new paths)
+* Every /api answer says which newer paths are live (x-serves: id-headers, trip-live). Tonight's update reads it; a rollback that drops the header turns the phone back to today's calls.
+* The device id is read from the x-device header as well as device= (old installs), and neither is ever part of a cache key, so phones on the new update share copies.
+* GET /api/trip/live?legs= re-times trips a phone already holds from the realtime feed: live times at the boarding and get off stops, delay, cancelled and skipped, platform, vehicle and stops away, with no Trip Planner call.
+* Station lists, station files and timetable packs carry a version tag (strong ETag); a phone that sends it back gets a 304 and downloads nothing.
+* A cold trip from now: timetable trips are worked out beside the planner call, so when the planner is slow the phone gets labelled timetable trips at about 1.5 s (was 6.5 s); live times follow on the next poll. The longest wait is unchanged (8.5 s, inside the app's 13 s). TRIP_QUICK_TT=off goes back to the 6.5 s wait.
+* No error answer is kept in any cache any more (a planner run error was kept 60 s, a pack 404 and a failed trackwork look up for hours, an engine board 404 for seconds).
+* Workers Cache: built behind WORKERS_CACHE, left off (docs/PERFORMANCE.md "Workers Cache" says why).
+* Tests: backend/test/speed-part2.test.mjs (9), trip-quick.test.mjs (2 new, 1 updated).
+
 ### Speed pass part 2: shared edge copies, live refresh without planning, version tags (app, on main 27 Oct, ships with tonight's over the air update)
 * Device and profile ids move from the departures and trip addresses into x-device and x-profile headers, so every phone asks the same address and an edge copy serves them all. Only when the server says it reads them there (x-serves id-headers, or app config copy.serves); otherwise the addresses stay as they were.
 * Trip and commute refreshes re-time the trips already on screen through /api/trip/live?legs= when the server says it serves trip-live: no Trip Planner call. A leg the feed has no news for shows its timetable time; a cancelled or skipped leg, a broken change, a gone first trip or a plan over 10 minutes old is planned again. Otherwise the trip call is as before.

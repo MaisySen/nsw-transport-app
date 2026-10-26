@@ -4417,7 +4417,8 @@ async function trackworkRoute(env, p) {
     }
     const buses = works && works.bus && !(normal && normal.bus) ? works.bus : null;
     const r = { affected: items.length > 0, items, addedMin: items.length ? addedMin : null, buses: items.length ? buses : null, day };
-    await cache.put(ck, new Response(JSON.stringify(r), { headers: { "content-type": "application/json", "cache-control": "max-age=10800" } }));
+    // Only an answer worked out from the planner's shapes is kept: a failed look up is never stored (27 Oct).
+    if (shape) await cache.put(ck, new Response(JSON.stringify(r), { headers: { "content-type": "application/json", "cache-control": "max-age=10800" } }));
     return { ...base, ...r };
   }));
   return json({ ...head, at: dg.at || null, trips: out });
@@ -7664,7 +7665,7 @@ function apiOnlyRoute(request, env, url) {
 
 async function handleRequest(request, env, exec) {
     const url = new URL(request.url);
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "content-type, x-profile", "access-control-max-age": "86400" } });
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "content-type, x-profile, x-device, if-none-match", "access-control-expose-headers": SERVES_EXPOSE, "access-control-max-age": "86400" } });
     if (apiOnly(env, url)) { const r = apiOnlyRoute(request, env, url); if (r) return r; }
     if (/^\/(worker\.m?js|_worker\.js|[a-z]+-site\.json)$/.test(url.pathname)) return new Response("Not found", { status: 404 });
     if (/^\/download\/[A-Za-z0-9._-]+\.apk$/.test(url.pathname)) return serveFile(env, url.pathname.slice("/download/".length), request);
@@ -7707,6 +7708,8 @@ async function handleRequest(request, env, exec) {
     const p = url.searchParams;
     const asTxt = p.get("format") === "text";
     const profile = profileId(request.headers.get("x-profile") || p.get("profile"));
+    // id-headers (x-serves): new installs send the device as x-device, old installs as device= in the address.
+    const device = reqDevice(request, p);
     try {
       const ctx = { lat: p.get("lat"), lon: p.get("lon"), profile, exec };
       switch (url.pathname) {
@@ -7728,7 +7731,7 @@ async function handleRequest(request, env, exec) {
             if (d.parking && d.parking.carparks.length) { const pk = d.parking.carparks, fr = pk.reduce((n, c) => n + (c.free || 0), 0), sp = pk.reduce((n, c) => n + c.spots, 0); const nf = pk.filter((c) => c.status === "nearly" || c.status === "full").map((c) => c.name.replace(d.parking.station.name.replace(/ Station$/, "") + " ", "")); lines.push(pk.every((c) => c.free == null) ? `${d.parking.station.name} Park and Ride: no live count right now.` : `${d.parking.station.name} Park and Ride: ${fr} of ${sp} spaces free${nf.length ? `, ${askList(nf)} nearly full` : ""}.`); }
             if (lines.length && d.reply) d.reply += "\n" + lines.join("\n");
           }
-          await afterAnswer(env, d, { profile, device: p.get("device"), exec });
+          await afterAnswer(env, d, { profile, device, exec });
           pickFares(d, fareType(p));
           const fj = (d.journeys || []).find((j) => j.fare && ms(j.board || j.leave) >= Date.now() - 60000) || (d.journeys || [])[0];
           const fs = d.kind === "trip" && fj ? fareSentence(fj.fare) : "";
@@ -7741,6 +7744,13 @@ async function handleRequest(request, env, exec) {
           if (isTt && d.reply) d.reply = ttNote + "\n" + d.reply;
           if (asTxt) { let tx = await askText(env, d); if (isTt && !tx.includes(ttNote)) tx = ttNote + "\n" + tx; return textRes(fs && !tx.includes(fs) ? tx + "\n" + fs : tx); }
           return json(askSlim(d));
+        }
+        case "/api/trip/live": {
+          // Re-times legs the phone holds, from the realtime feeds only (tripLive): no Trip Planner call.
+          if (!servesOn(env, "TRIP_LIVE", "tripLive")) return json({ error: "not found" }, 404);
+          const q = tripLiveParse(p.get("legs"));
+          if (q.error) return json({ error: q.error }, 400);
+          return json(await tripLive(env, q.legs));
         }
         case "/api/departures": {
           const at = boardAt(p.get("time"), p.get("date"));
@@ -7764,7 +7774,7 @@ async function handleRequest(request, env, exec) {
               }
               const d = { kind: "departures", dataAt: (eb.live && eb.live.feedAt) || (eb.engine && eb.engine.builtAt) || Date.now(), ...eb, now: Date.now() };
               if (!(await serverOn(env, "occupancy"))) { d.items = d.items.map((x) => ({ ...x, vehicle: x.vehicle ? { ...x.vehicle } : x.vehicle })); stripOccupancy(d); }
-              await afterAnswer(env, d, { profile, device: p.get("device"), exec });
+              await afterAnswer(env, d, { profile, device, exec });
               if (asTxt) return textRes(await asText(env, d));
               const res = json(d);
               res.headers.set("etag", etag);
@@ -7801,7 +7811,7 @@ async function handleRequest(request, env, exec) {
           }
           const d = { kind: "departures", ...r };
           if (!(await serverOn(env, "occupancy"))) { d.items = d.items.map((x) => ({ ...x, vehicle: x.vehicle ? { ...x.vehicle } : x.vehicle })); stripOccupancy(d); }
-          await afterAnswer(env, d, { profile, device: p.get("device"), exec });
+          await afterAnswer(env, d, { profile, device, exec });
           return asTxt ? textRes(await asText(env, d)) : json(d);
         }
         case "/api/engine/status": {
@@ -7879,7 +7889,7 @@ async function handleRequest(request, env, exec) {
           if (!(await serverOn(env, "occupancy"))) stripOccupancy(d);
           // A later or earlier page is the same search scrolled, so it is not logged again.
           // A stand in while the planner is slow is the same search the planner request already logs.
-          await afterAnswer(env, d, { profile, device: p.get("device"), exec, log: !ttOnly && p.get("refresh") !== "1" && !(pq && (pq.after != null || pq.before != null)) && !(dq && dq.more) });
+          await afterAnswer(env, d, { profile, device, exec, log: !ttOnly && p.get("refresh") !== "1" && !(pq && (pq.after != null || pq.before != null)) && !(dq && dq.more) });
           if (longKey && (d.journeys || []).length && d.source !== "timetable") {
             const put = caches.default.put(longKey, new Response(JSON.stringify(d), { headers: { "content-type": "application/json", "cache-control": `max-age=${LONG_TRIP_CACHE_S}` } })).catch(() => null);
             if (exec && exec.waitUntil) exec.waitUntil(put); else await put;
@@ -7940,7 +7950,7 @@ async function handleRequest(request, env, exec) {
           await addAccess(env, d, { accessible: p.get("acc") === "1" }).catch(() => null);
           if (p.get("acc") === "1" && (await serverOn(env, "liftAwareRouting"))) liftAwareRank(d);
           if (!(await serverOn(env, "occupancy"))) stripOccupancy(d);
-          await afterAnswer(env, d, { profile, device: p.get("device"), exec });
+          await afterAnswer(env, d, { profile, device, exec });
           return asTxt ? textRes(await asText(env, d)) : json(d);
         }
         case "/api/saved": {
@@ -7977,7 +7987,9 @@ async function handleRequest(request, env, exec) {
             if (!hit) return json({ error: "no such route", route }, 404);
             body = hit;
           }
-          return new Response(JSON.stringify(body), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=86400", "access-control-allow-origin": "*" } });
+          // A strong ETag of the exact bytes: a phone that sends it back (If-None-Match) gets a 304 (finishAnswer).
+          const text = JSON.stringify(body);
+          return new Response(text, { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=86400", "access-control-allow-origin": "*", etag: await etagOf(text) } });
         }
         case "/api/places": {
           // Stops, addresses, streets, landmarks and suburbs for the Plan search box (the app falls back to /api/search on a 404).
@@ -8852,8 +8864,13 @@ export default {
   },
   fetch(request, env, exec) { return reqLogged(request, env, exec, edgeFetch); },
 };
-// The worker's answer to every request (the copy layer, then handleRequest); reqLogged times it.
+// The worker's answer to every request: the copy layer and handleRequest (edgeFetchInner), then the last touches every
+// /api answer and station list gets on the way out (finishAnswer: x-serves, ETag 304s, the optional Workers Cache header).
 async function edgeFetch(request, env, exec) {
+  const res = await edgeFetchInner(request, env, exec);
+  try { return await finishAnswer(request, env, res); } catch (e) { return res; }
+}
+async function edgeFetchInner(request, env, exec) {
     applyEnv(env);
     const url = new URL(request.url);
     // The server switches and the budget guard's hold (once a minute per copy of the Worker): budgetHeld reads them.
@@ -8940,15 +8957,30 @@ async function edgeFetch(request, env, exec) {
           out = leader ? await job.promise : await joinJob(job, SHARED_WAIT_MS);
         }
       } else if (quick) {
-        if (leader) out = await Promise.race([job.promise, new Promise((r) => setTimeout(() => r(null), quick))]);
-        else out = (await waitJob(job, quick)) ? await joinJob(job) : null;
+        // Timetable trips are worked out beside the planner call from TRIP_TT_START_MS (27 Oct, part 2), so when the
+        // planner has not answered by TRIP_QUICK_TT_MS and they are ready, the phone gets them then (live follows on the
+        // next poll); without them it waits up to TRIP_QUICK_MS as before. TRIP_QUICK_TT=off goes back to that alone.
+        const t0 = Date.now();
+        let tt = null, ttDone = false, ttP = null;
+        const startTt = () => { if (!ttP) ttP = tripStandIn(request, env, exec).catch(() => null).then((r) => { tt = r; ttDone = true; return r; }); };
+        const early = tripQuickTtOn(env);
+        const take = async () => (leader ? await job.promise : await joinJob(job));
+        if (early) {
+          if (await waitJob(job, TRIP_TT_START_MS)) out = await take();
+          if (!out) startTt();
+          while (!out && Date.now() - t0 < quick) {
+            if (await waitJob(job, 25)) { out = await take(); break; }
+            if (ttDone && tt && Date.now() - t0 >= TRIP_QUICK_TT_MS) break;
+          }
+        } else if (await waitJob(job, quick)) out = await take();
         if (!out) {
           // The Trip Planner is slow: a saved live copy if there is one, else labelled timetable trips, so the phone
           // has an answer before its own deadline. Neither is stored; the planner's answer replaces them on the next poll.
           budget.tripQuick = (budget.tripQuick || 0) + 1;
           if (saved) { budget.staleServed++; return fromSaved(saved); }
-          const fb = await tripStandIn(request, env, exec).catch(() => null);
-          if (fb) return fb;
+          startTt();
+          const fb = await ttP;
+          if (fb) { if (Date.now() - t0 < quick) budget.tripQuickTt = (budget.tripQuickTt || 0) + 1; return fb; }
           out = leader ? await job.promise : await joinJob(job, SHARED_WAIT_MS);
         }
       } else out = leader ? await job.promise : await joinJob(job, SHARED_WAIT_MS);
@@ -8971,6 +9003,161 @@ async function edgeFetch(request, env, exec) {
     const r = new Response(out.body, { status: out.status, headers: out.headers });
     if (out.status === 200) r.headers.set("x-edge-cache", leader ? "miss" : "shared");
     return r;
+}
+
+// ---------- Speed pass part 2 (27 Oct): x-serves, id headers, ETags, trip-live, Workers Cache flag ----------
+// x-serves (docs/API.md): a comma list of the newer paths this server has live, on every /api answer. The app reads
+// id-headers and trip-live, and an answer without the header turns them off again on the phone, so a rollback is safe.
+// Each word is on unless its flag (wrangler var) is "off" or the server switch kill list names it (no deploy needed):
+// ID_HEADERS / kill idHeaders, TRIP_LIVE / kill tripLive.
+const SERVES_EXPOSE = "x-serves, etag, x-edge-cache";
+const SERVES = [["id-headers", "ID_HEADERS", "idHeaders"], ["trip-live", "TRIP_LIVE", "tripLive"]];
+function servesOn(env, flag, sw) {
+  if (String((env && env[flag]) || "").toLowerCase() === "off") return false;
+  const c = serverCfg && serverCfg.cfg;
+  return !(c && c.kill && c.kill[sw]);
+}
+function servesWords(env) { return SERVES.filter(([, f, k]) => servesOn(env, f, k)).map(([w]) => w).join(","); }
+// id-headers: the device id from the x-device header (new installs) or device= in the address (old installs). Neither
+// is ever part of a cache key (edgeKey skips device and profile; the other keys never read them).
+function reqDevice(request, p) {
+  const h = request && request.headers ? cleanId(request.headers.get("x-device")) : "";
+  return h || (p ? p.get("device") : null) || null;
+}
+// Strong ETags (docs/API.md "ETags"): a hash of the exact bytes, so a matching If-None-Match gets a 304 with no body.
+async function etagOf(text) {
+  const buf = typeof text === "string" ? new TextEncoder().encode(text) : new Uint8Array(text);
+  const h = new Uint8Array(await crypto.subtle.digest("SHA-1", buf));
+  return '"' + [...h.slice(0, 12)].map((b) => b.toString(16).padStart(2, "0")).join("") + '"';
+}
+function inmMatches(inm, etag) {
+  if (!inm || !etag) return false;
+  const bare = (t) => String(t).trim().replace(/^W\//, "");
+  return String(inm).split(",").some((t) => t.trim() === "*" || bare(t) === bare(etag));
+}
+// Station list files (/stations/*.json): their tag per path, worked out once per copy of the worker (the files change
+// only with a deploy, which starts new copies).
+const listTags = new Map();
+// Workers Cache (docs/PERFORMANCE.md "Workers Cache"): WORKERS_CACHE "on" adds an edge only cdn-cache-control header on
+// shared answers (phones still get no-store). It does nothing unless [cache] enabled = true is also set in
+// wrangler.toml, and both are off: a cache hit does not run the worker, so it writes no request log line and no trip
+// history (commute memory and pre-warm learn from those), and old installs put device= in the address.
+const WORKERS_CACHE_TTL = [[/^\/api\/departures$/, 15, 45], [/^\/api\/parking$/, 60, 600], [/^\/api\/(stations|lines|trackwork|alerts)$/, 300, 3600], [/^\/api\/pack$/, 1800, 86400], [/^\/stations\/[a-z-]+\.json$/, 300, 86400]];
+function workersCacheOn(env) { return String((env && env.WORKERS_CACHE) || "").toLowerCase() === "on"; }
+function workersCacheHeader(env, request, url, res) {
+  if (!workersCacheOn(env) || request.method !== "GET" || res.status !== 200) return null;
+  const p = url.searchParams;
+  // Per person, polls and stand ins are never shared.
+  if (p.get("device") || p.get("profile") || p.get("refresh") === "1" || res.headers.get("x-stand-in")) return null;
+  const tag = res.headers.get("x-edge-cache") || "";
+  if (/stand-in|quick|saved|stale/.test(tag)) return null;
+  const rule = WORKERS_CACHE_TTL.find(([re]) => re.test(url.pathname));
+  return rule ? `max-age=${rule[1]}, stale-while-revalidate=${rule[2]}` : null;
+}
+async function finishAnswer(request, env, res) {
+  if (!res || res.status === 101 || res.webSocket) return res;
+  const url = new URL(request.url);
+  const api = url.pathname.startsWith("/api/");
+  const list = !api && LIST_PATHS.test(url.pathname);
+  if (!api && !list) return res;
+  const get = request.method === "GET" || request.method === "HEAD";
+  let out = new Response(res.body, res);
+  if (list && get && out.status === 200 && !out.headers.get("etag")) {
+    let tag = listTags.get(url.pathname);
+    if (!tag) {
+      const buf = await out.arrayBuffer();
+      tag = await etagOf(buf);
+      if (listTags.size > 50) listTags.clear();
+      listTags.set(url.pathname, tag);
+      out = new Response(buf, out);
+    }
+    out.headers.set("etag", tag);
+  }
+  const etag = out.headers.get("etag");
+  const words = api ? servesWords(env) : "";
+  if (get && out.status === 200 && etag && inmMatches(request.headers.get("if-none-match"), etag)) {
+    const h = { etag, "cache-control": out.headers.get("cache-control") || "no-store", "access-control-allow-origin": "*", "access-control-expose-headers": SERVES_EXPOSE, ...API_SEC_HEADERS };
+    if (words) h["x-serves"] = words;
+    return new Response(null, { status: 304, headers: h });
+  }
+  if (words) out.headers.set("x-serves", words);
+  out.headers.set("access-control-expose-headers", SERVES_EXPOSE);
+  const cdn = workersCacheHeader(env, request, url, out);
+  if (cdn) out.headers.set("cdn-cache-control", cdn);
+  return out;
+}
+
+// trip-live (docs/API.md "GET /api/trip/live"): re-times legs the phone already holds by trip id, from the realtime
+// feeds only (the shared feed copies boards and the service screen read): no Trip Planner call. legs=L1,L2 (at most
+// TRIP_LIVE_MAX), each tripId@fromStopId@toStopId@mode@line with every part URI encoded. Legs come back in the same
+// order; realtime false means the feed has no news for the leg, and the phone shows its timetable time.
+const TRIP_LIVE_MAX = 12;
+const TRIP_LIVE_MODES = new Set(["train", "metro", "lightrail", "bus", "coach", "ferry", "school"]);
+function tripLiveParse(raw) {
+  const parts = String(raw || "").split(",").filter((x) => x !== "");
+  if (!parts.length) return { error: "Give legs=tripId@from@to@mode@line" };
+  if (parts.length > TRIP_LIVE_MAX) return { error: `At most ${TRIP_LIVE_MAX} legs` };
+  const dec = (x) => { try { return decodeURIComponent(x || ""); } catch (e) { return null; } };
+  const legs = [];
+  for (const part of parts) {
+    const f = part.split("@").map(dec);
+    if (f.length !== 5 || f.some((x) => x == null)) return { error: "Each leg is tripId@from@to@mode@line" };
+    const [tripId, stopId, toStopId, mode, line] = f;
+    if (!tripId || tripId.length > 120 || !stopId || stopId.length > 40 || toStopId.length > 40 || line.length > 40 || f.some((x) => /[<>"`{}\\\u0000-\u001f]/.test(x))) return { error: "Each leg is tripId@from@to@mode@line" };
+    legs.push({ tripId, stopId, toStopId: toStopId || null, mode: TRIP_LIVE_MODES.has(mode) ? mode : "bus", line });
+  }
+  return { legs };
+}
+function platformWord(name) {
+  const m = /\b(Platform|Stand|Wharf|Bay)\s+([A-Za-z0-9]+)\b/.exec(String(name || ""));
+  return m ? `${m[1]} ${m[2]}` : null;
+}
+const stationPart = (name) => String(name || "").replace(/,?\s+(Platform|Stand|Wharf|Bay)\s+[A-Za-z0-9]+.*$/, "").trim();
+async function tripLive(env, legs) {
+  const rt = await realtimeFor(env, legs.map((l) => [l.mode, l.line, null]));
+  const now = Date.now();
+  const occ = await serverOn(env, "occupancy");
+  const tus = legs.map((l) => rt.tu(l.mode, l.line, l.tripId, null));
+  // Stop names (asset shards, no upstream call) for platform words and a trip the feed shows at another platform.
+  const ids = new Set();
+  legs.forEach((l, i) => { ids.add(l.stopId); if (tus[i] && !tus[i].stus.some((u) => u.stopId === l.stopId)) for (const u of tus[i].stus) ids.add(u.stopId); });
+  const names = await stopInfo(env, [...ids]).catch(() => ({}));
+  const out = legs.map((l, i) => {
+    const tu = tus[i];
+    const veh = vehicleOf(rt.vp(l.mode, l.line, l.tripId, null));
+    const base = { tripId: l.tripId, stopId: l.stopId, toStopId: l.toStopId };
+    if (!tu || !tu.ts) {
+      return { ...base, realtime: false, estimated: null, arrEstimated: null, delayMin: null, cancelled: !!(tu && tu.rel === 3), skipped: false, platform: null, vehicle: null, stopsAway: null };
+    }
+    const nm = names[l.stopId] && names[l.stopId].name;
+    // The feed lists the trip at another platform of the same station: that platform and its times.
+    let at = l.stopId, platform = platformWord(nm);
+    if (!tu.stus.some((u) => u.stopId === l.stopId) && nm) {
+      const st = stationPart(nm);
+      const alt = tu.stus.find((u) => names[u.stopId] && platformWord(names[u.stopId].name) && stationPart(names[u.stopId].name) === st);
+      if (alt) { at = alt.stopId; platform = platformWord(names[alt.stopId].name); }
+    }
+    const f = feedAtStop(tu, at);
+    const fa = l.toStopId ? feedAtStop(tu, l.toStopId) : null;
+    const cancelled = tu.rel === 3;
+    const realtime = !cancelled && !!(f && f.est);
+    let stopsAway = null;
+    if (veh && realtime) {
+      const mine = tu.stus.findIndex((u) => u.stopId === at);
+      const nxt = nextStopIndex(tu, veh, now);
+      if (mine >= 0 && nxt >= 0 && mine >= nxt) stopsAway = mine - nxt;
+    }
+    let vehicle = veh ? { ...veh } : null;
+    if (vehicle && !occ) { delete vehicle.occupancy; delete vehicle.quiet; }
+    return {
+      ...base, realtime,
+      estimated: realtime ? iso(f.est) : null,
+      arrEstimated: realtime && fa && fa.est ? iso(fa.est) : null,
+      delayMin: realtime && f.delay != null ? Math.round(f.delay / 60) : null,
+      cancelled, skipped: !!(f && f.skipped), platform: platform || null, vehicle, stopsAway,
+    };
+  });
+  return { kind: "triplive", now, dataAt: rt.fetchedAt() || null, legs: out };
 }
 
 // Request numbers (docs/DIAGNOSIS_LAG.md item 10, 26 Oct, g17): one JSON line per /api request in the Worker's logs
@@ -9031,6 +9218,12 @@ const TRIP_QUICK_MS = 6500;
 const TRIP_STANDIN_MS = 2000;
 const TT_ONLY = new WeakSet(); // internal requests that answer from the timetable only (tripStandIn)
 function tripQuickOn(env) { return String((env && env.TRIP_QUICK) || "").toLowerCase() !== "off"; }
+// Part 2 (27 Oct, speed playbook pattern 5): with timetable trips in hand the phone waits only TRIP_QUICK_TT_MS for the
+// planner. They are started at TRIP_TT_START_MS (a planner answer before then costs no timetable work). The longest
+// wait is unchanged: TRIP_QUICK_MS plus TRIP_STANDIN_MS, well inside the app's 13 s TRIP_MS.
+const TRIP_QUICK_TT_MS = 1500;
+const TRIP_TT_START_MS = 400;
+function tripQuickTtOn(env) { return String((env && env.TRIP_QUICK_TT) || "").toLowerCase() !== "off"; }
 async function tripStandIn(request, env, exec) {
   const r2 = new Request(request.url, { method: "GET", headers: request.headers });
   TT_ONLY.add(r2);
@@ -9075,7 +9268,8 @@ async function answerAndStore(request, env, exec, cache, key, opts = {}) {
   // A timetable stand in (no-store) is never kept as a copy, so the first live answer replaces it.
   const url0 = new URL(request.url);
   const emptyPark = url0.pathname === "/api/parking" && parkCopyKey(url0) && !parkCopyOk(body);
-  if (res.status === 200 && res.headers.get("x-stand-in") !== "timetable" && !emptyPark) {
+  // Error answers are never kept, whatever their status (an {"error": ...} body included; 27 Oct).
+  if (res.status === 200 && res.headers.get("x-stand-in") !== "timetable" && !emptyPark && !errorBody(body)) {
     const url = url0;
     const copy = new Response(body, { status: 200, headers });
     copy.headers.set("cache-control", `public, max-age=${LONG_CACHE_RE.test(url.pathname) ? LONG_CACHE_S : EDGE_KEEP_S}`);
@@ -9091,6 +9285,7 @@ async function answerAndStore(request, env, exec, cache, key, opts = {}) {
   }
   return { status: res.status, headers, body };
 }
+function errorBody(body) { return /^\s*\{\s*"error"\s*:/.test(String(body || "").slice(0, 40)); }
 // A cached answer: "now" is the current time for the countdowns, and dataAt says when its times were read, so the
 // app's "Updated" line is honest about a copy.
 async function fromCopy(hit, storedAt, tag) {
@@ -9118,7 +9313,8 @@ function fromSaved(saved) {
 }
 function copyResponse(text, hit, storedAt, tag) {
   let body = text;
-  if (/json/.test(hit.headers.get("content-type") || "")) {
+  // Static data with a version tag (stations) goes out byte for byte, so its ETag stays true.
+  if (/json/.test(hit.headers.get("content-type") || "") && !hit.headers.get("etag")) {
     body = body.replace(/"now":\d{13}/g, '"now":' + Date.now());
     if (storedAt && /^\{\s*"/.test(body) && !/^\{"dataAt":/.test(body)) body = '{"dataAt":' + storedAt + "," + body.slice(1);
   }
@@ -9131,7 +9327,7 @@ function copyResponse(text, hit, storedAt, tag) {
 function cachedTripLog(env, url, request, exec) {
   const p = url.searchParams, profile = profileId(request.headers.get("x-profile") || p.get("profile"));
   if (url.pathname === "/api/trip" && profile && p.get("refresh") !== "1" && /^\d{4,10}$/.test(p.get("from") || "") && /^\d{4,10}$/.test(p.get("to") || "") && !p.get("time")) {
-    const s = { profile, device: cleanId(p.get("device")) || null, from: { id: p.get("from"), name: p.get("fromName") || p.get("from") }, to: { id: p.get("to"), name: p.get("toName") || p.get("to") }, src: "search" };
+    const s = { profile, device: cleanId(reqDevice(request, p)) || null, from: { id: p.get("from"), name: p.get("fromName") || p.get("from") }, to: { id: p.get("to"), name: p.get("toName") || p.get("to") }, src: "search" };
     if (exec && exec.waitUntil) exec.waitUntil(logSearch(env, s));
   }
 }
