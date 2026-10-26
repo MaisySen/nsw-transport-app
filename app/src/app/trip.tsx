@@ -28,6 +28,10 @@ import { LegAccessChips, ParkGroup } from '@/components/Access';
 import { fareKind, fareOf, fareWords, money, offPeakText, TRAINLINK_BOOKING_URL } from '@/lib/fare';
 import { getLive, startLive } from '@/lib/live';
 import { directFilter, isChain, planTrip, stName, tLegs, tripKey, viaText } from '@/lib/trips';
+import { applyWalkPref, readWalkPref, walkNote } from '@/lib/walkPrefCore';
+import { isPointId } from '@/lib/goHomeCore';
+import { WalkChoice } from '@/components/WalkChoice';
+import { StandPin } from '@/components/StandPin';
 import type { TripLeg } from '@/lib/trips';
 import type { Journey, Leg, Place, TripResp } from '@/lib/types';
 import { useFlag } from '@/lib/config';
@@ -262,7 +266,7 @@ function OpalFareCard({ j, mixed }: { j: Journey; mixed: boolean }) {
   );
 }
 
-function JourneyDetail({ j, now, from, to, autoStart }: { j: Journey; now: number; from: Place; to: Place; autoStart?: boolean }) {
+function JourneyDetail({ j, now, from, to, autoStart, onMapTouch }: { j: Journey; now: number; from: Place; to: Place; autoStart?: boolean; onMapTouch?: (scrollOn: boolean) => void }) {
   const c = usePalette();
   const st2 = useStore();
   const spec = tripSpec(j, from, to);
@@ -297,6 +301,7 @@ function JourneyDetail({ j, now, from, to, autoStart }: { j: Journey; now: numbe
           return (
             <View key={i}>
               {l.kind === 'transit' && prevT && (legs[i - 1]?.kind === 'transit' || (l as any).transfer?.chain) ? <Transfer a={prevT} b={l} /> : null}
+              {l.kind === 'transit' ? <StandPin leg={l} prev={legs[i - 1]} onScrollChange={onMapTouch} /> : null}
               <LegView l={l} next={legs[i + 1]} now={now} />
             </View>
           );
@@ -345,6 +350,8 @@ export default function TripScreen() {
   const modesOn = !chain && !via;
   const modes: ModeK[] = modesOn ? normModes((stNow.tripModes || {})[tkey]) : [];
   const modesKey = modes.join(',');
+  // Walking choice (walkPrefCore.ts), kept on the phone for every trip; sent with the trip request, filtered here.
+  const wp = readWalkPref(stNow.walkPref);
   // A saved trip (Your trips) can have reminders; they open it again with these params.
   const saved = (stNow.myTrips || []).find((t) => tripKeyOf(t) === tkey) || null;
   const openParams = Object.fromEntries(Object.entries(p).filter(([k, v]) => v != null && v !== '' && ['from', 'fromName', 'to', 'toName', 'via', 'viaName', 'conn', 'name', 'legs'].includes(k)).map(([k, v]) => [k, String(v)]));
@@ -352,7 +359,7 @@ export default function TripScreen() {
   // Redraws when a shown countdown changes its minute (activity.useCountdownNow), not every 5 s (g10, 26 Oct).
   const now = useCountdownNow();
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
-  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : (d: TripResp | null) => tripGapMs(firstLeaveInMs(d?.journeys, Date.now())), [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey],
+  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes, walk: wp }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : (d: TripResp | null) => tripGapMs(firstLeaveInMs(d?.journeys, Date.now())), [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey],
     { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '') + (modesKey ? `|m:${modesKey}` : '')) });
   useReportCountdowns('trip', (data?.journeys || []).slice(0, 6).map((j) => Date.parse(String(j.board || j.leave || ''))));
   const [extra, setExtra] = useState<Journey[]>([]);
@@ -396,7 +403,9 @@ export default function TripScreen() {
   // The phone checks the modes too: the older server ignores them, and batches mix with the first answer.
   const df = directFilter(filterModes(jsAll, modes), plan, allOn, (j) => j);
   const chips = modesOn ? chipsToShow([...seenModes.current], modes) : [];
-  const js = df.list;
+  // Walking choice (Less walking, walkPrefCore.ts): trips with a longer walk are left out on the phone, never all of them.
+  const wr = applyWalkPref(df.list, wp);
+  const js = wr.list;
   const jKeys = stableKeys(js.map(jKey));
   // A new reminder starts 15 min before the first service shown (phone time, as the reminder rings in phone time).
   const suggest = (() => { const j = js.find((x) => !hasLeft(depMs(x), now)) || js[0]; if (!j) return null; const t = new Date(depMs(j) - 15 * 60000); return { hour: t.getHours(), minute: Math.floor(t.getMinutes() / 5) * 5 }; })();
@@ -417,7 +426,7 @@ export default function TripScreen() {
     const still = stamp();
     let r: TripResp;
     try {
-      r = await planTrip(plan, { time: hhmm(t), count: 6, refresh: true, all: chain && allOn, modes, ...(day ? { date: day } : {}) });
+      r = await planTrip(plan, { time: hhmm(t), count: 6, refresh: true, all: chain && allOn, modes, walk: wp, ...(day ? { date: day } : {}) });
     } catch (e: any) {
       // Over 30 min ago today needs the new server's date (the older one plans that time for tomorrow).
       throw Object.assign(e instanceof Error ? e : new Error(String(e)), { neededDate: !!day && day === ymd(now) });
@@ -519,7 +528,7 @@ export default function TripScreen() {
     if (!probKey || pbShown || pbAll || pbAsked === probKey || offlineAt) return;
     setPbAsked(probKey);
     const still = stamp();
-    planTrip(plan, { time: hhmm(now), count: 8, refresh: true, all: chain && allOn, modes }).then((r) => { if (still()) setExtra((e) => [...e, ...(r.journeys || [])]); }).catch(() => {});
+    planTrip(plan, { time: hhmm(now), count: 8, refresh: true, all: chain && allOn, modes, walk: wp }).then((r) => { if (still()) setExtra((e) => [...e, ...(r.journeys || [])]); }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [probKey, !!pbShown, !!pbAll, offlineAt]);
   const [showAlerts, setShowAlerts] = useState(false);
@@ -532,7 +541,11 @@ export default function TripScreen() {
   const fromName = data?.from?.name || from.name;
   const toName = data?.to?.name || to.name;
   // Remember opened A to B trips for Home's Your trips.
-  useEffect(() => { if (fromName && toName && !via) store.addRecentTrip({ id: from.id, name: fromName }, { id: to.id, name: toName }); }, [from.id, to.id, fromName, toName, via]);
+  // Get me home plans from where you are (a point, not a stop): not kept as a recent trip and not saved.
+  const here = isPointId(from.id);
+  // A stand map open in a trip: while a finger is on it the page does not scroll (components/MapCard.tsx).
+  const [scrollOn, setScrollOn] = useState(true);
+  useEffect(() => { if (fromName && toName && !via && !here) store.addRecentTrip({ id: from.id, name: fromName }, { id: to.id, name: toName }); }, [from.id, to.id, fromName, toName, via, here]);
   useEffect(() => { setExtra([]); }, [chain && allOn]);
 
   // Save this trip: New trip's Confirm step (name, extend with a connection, change time), or straight in as Home or Work.
@@ -541,7 +554,7 @@ export default function TripScreen() {
     try { await api.saveTrip(name, from, to); haptic.success(); Alert.alert('Saved', `It's on your Home screen as "${name}". You can also text "${name}" to Tab.`); }
     catch (e: any) { Alert.alert("Couldn't save it", e.message); }
   };
-  const saveMenu: MenuSpec | null = !chain ? { title: 'Save this trip', message: 'Saved trips show live on Home.', items: menuOf([
+  const saveMenu: MenuSpec | null = !chain && !here ? { title: 'Save this trip', message: 'Saved trips show live on Home.', items: menuOf([
     { text: 'Save trip', sf: 'star', icon: 'starOpen', onPress: () => save() },
     { text: 'Save as Home', sf: 'house', icon: 'home', onPress: () => doSave('home') },
     { text: 'Save as Work', sf: 'briefcase', icon: 'briefcase', onPress: () => doSave('work') },
@@ -553,6 +566,7 @@ export default function TripScreen() {
   };
   // iPhone: Save this trip is a system bar button with its own UIMenu, dropping from the star (no Cancel row).
   const saveInBar = Platform.OS === 'ios' && !!saveMenu && !chain;
+  const showSave = !here;
   const saveButton = <Pressable accessibilityRole="button" accessibilityLabel="Save trip" hitSlop={13} onPress={save}><Icon name={I.starOpen} size={22} color={c.tint} /></Pressable>;
 
   return (
@@ -560,7 +574,7 @@ export default function TripScreen() {
       <Stack.Screen options={{
         title: `${shortName(fromName).replace(/ Station$/, '')} to ${shortName(toName).replace(/ Station$/, '')}`,
         headerBackTitle: chain ? 'Back' : undefined,
-        headerRight: saveInBar ? undefined : () => (saveMenu && !chain ? <PullDownButton menu={saveMenu}>{saveButton}</PullDownButton> : saveButton),
+        headerRight: saveInBar || !showSave ? undefined : () => (saveMenu && !chain ? <PullDownButton menu={saveMenu}>{saveButton}</PullDownButton> : saveButton),
       }} />
       {saveInBar && saveMenu ? (
         <Stack.Toolbar placement="right">
@@ -569,7 +583,7 @@ export default function TripScreen() {
           </Stack.Toolbar.Menu>
         </Stack.Toolbar>
       ) : null}
-      <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pull} />} scrollEventThrottle={250}
+      <Screen scrollEnabled={scrollOn} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pull} />} scrollEventThrottle={250}
         onLayout={(e) => setViewH(e.nativeEvent.layout.height)}
         onScroll={(e) => { const n = e.nativeEvent; if (nearEnd({ layoutH: n.layoutMeasurement.height, offsetY: n.contentOffset.y, contentH: n.contentSize.height })) loadLater(); }}
         // A short list that does not fill the screen cannot be scrolled to its end, so it asks for the next batch itself.
@@ -612,6 +626,8 @@ export default function TripScreen() {
           </View>
         ) : null}
         {chips.length ? <ModeChips chips={chips} modes={modes} onChange={(m) => { haptic.select(); store.setTripModes(tkey, m); setOpen(0); }} /> : null}
+        {!chain ? <WalkChoice pref={wp} /> : null}
+        {walkNote(wr, wp) && js.length ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>{walkNote(wr, wp)}</T> : null}
         {modes.length && data?.modesBy === 'phone' && js.length ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>From the usual results only, so some {modesWords(modes).toLowerCase()} trips may be missing.</T> : null}
         {data ? <KeptBanner offlineAt={offlineAt} staleAt={updatedAt ? null : staleAt} now={now} /> : null}
         {prob ? (
@@ -664,7 +680,7 @@ export default function TripScreen() {
                 <JourneyWhy j={j} />
                 {!chain && i === lastIdx && canRemind(depMs(j), now) ? <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}><T kind="foot" tone="text2">Last service tonight</T><RemindLastButton hint={{ from, to, mode: modeOfLegs(j.legs), svc: slimLast(j) }} acc={accOn} /></View> : null}
                 {data?.accessible ? <JourneyAccessLine j={j} liftOn={liftOn} /> : null}
-                {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} autoStart={autoStart === i} /></View> : null}
+                {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} autoStart={autoStart === i} onMapTouch={setScrollOn} /></View> : null}
               </View>
             ))}
             {later.busy ? <><Sep inset={0} /><LoadingRow text="Loading later services" /></> : null}

@@ -40,6 +40,8 @@ import { useJourneyWhy, WhyLate, withWhyAction } from './WhyLate';
 import { SpeakButton } from './SpeakButton';
 import { tripSentence } from '@/lib/voiceCore';
 import { withKeys } from '@/lib/rowKeysCore';
+import { whereNow } from '@/lib/whereNowCore';
+import { WhereNow } from './WhereNow';
 
 // ---------- shared refresh signals for every card on Home ----------
 
@@ -612,7 +614,9 @@ function TripGlance({ look, js, arrs, now, count = { size: 56, line: 62, weight:
   const press = ({ pressed }: { pressed: boolean }) => [pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null];
   // Why it's late: the next service's own linked reason, one line (components/WhyLate.tsx).
   const why = useJourneyWhy(j);
-  const label = why ? `${a11y}. ${why.text}` : a11y;
+  // Where the bus is now, from its live position (lib/whereNowCore.ts); nothing on timetable or Not tracking rows.
+  const wn = whereNow(l, ls?.kind === 'live');
+  const label = `${why ? `${a11y}. ${why.text}` : a11y}${wn ? `. ${wn.a11y}` : ''}`;
 
   if (look === 'hero') {
     // Normal text colour; red only once the service has gone or is cancelled (Bidur, 25 Oct 7:45 PM). Timetable and
@@ -639,6 +643,7 @@ function TripGlance({ look, js, arrs, now, count = { size: 56, line: 62, weight:
                 </View>
               </View>
               {ls ? <LiveStatus state={ls} delayMin={l?.delayMin} /> : <T kind="foot" style={{ color: tone }}>{stt?.text}</T>}
+              <WhereNow w={wn} style={{ marginTop: 4 }} />
               <WhyLate why={why} style={{ marginTop: 4 }} />
               <T kind="sub" tone="text2" numberOfLines={2} style={{ marginTop: 4 }}>{`${hm(dep)} \u2192 ${hm(arrs[0])} \u00b7 ${durText(j.durationMin)}`}</T>
               {then ? <T kind="sub" tone="text2" style={{ marginTop: 4 }}>{then}</T> : null}
@@ -662,6 +667,7 @@ function TripGlance({ look, js, arrs, now, count = { size: 56, line: 62, weight:
               {where ? <T kind="foot" tone="text2">{` \u00b7 ${where}`}</T> : null}
             </T>
           </View>
+          <WhereNow w={wn} style={{ marginTop: 3 }} />
           {then ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{then}</T> : null}
           <WhyLate why={why} style={{ marginTop: 2 }} />
         </View>
@@ -702,8 +708,10 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
   const changes = j.changes || Math.max(0, legs.length - 1);
   const boardAt = plat(l?.fromPlatform);
   const bigSize = t.unit ? 22 : t.big === 'Now' ? 16 : 13;
+  // Where the bus is now (lib/whereNowCore.ts): only while the row's own live label is Live.
+  const wn = l?.planned ? whereNow(l, liveState({ planned: l.planned, estimated: l.estimated, realtime: l.realtime, cancelled: !!(j.anyCancelled || l.cancelled), seenAt: l.seenAt ?? j.seenAt }, now).kind === 'live') : null;
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }} accessibilityLabel={`Leaves ${hm(dep)}${boardAt ? ` from ${boardAt}` : ''}, ${t.big} ${t.unit}, arrives ${hm(arrive)}, ${stt.text}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}${rel ? `. ${rel}` : ''}`}
+    <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }} accessibilityLabel={`Leaves ${hm(dep)}${boardAt ? ` from ${boardAt}` : ''}, ${t.big} ${t.unit}, arrives ${hm(arrive)}, ${stt.text}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}${wn ? `. ${wn.a11y}` : ''}${rel ? `. ${rel}` : ''}`}
       style={({ pressed }) => [s.svc, (beaten || dep < now - 30000) && { opacity: 0.45 }, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
       <View style={[s.block, { backgroundColor: chip + (c.dark ? '33' : '1F') }]}>
         <Text maxFontSizeMultiplier={1.3} style={{ color: cdText(chip, c), fontSize: bigSize, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }} numberOfLines={1} adjustsFontSizeToFit>{t.big}</Text>
@@ -717,6 +725,7 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
           <T kind="foot" tone="text2">{` \u00b7 ${durText(j.durationMin)}`}</T>
         </T>
         {l?.platformChangedFrom ? <T kind="foot" numberOfLines={1} style={{ color: c.lateText, marginTop: 1 }}>Platform changed from {plat(l.platformChangedFrom)}</T> : null}
+        <WhereNow w={wn} style={{ marginTop: 2 }} />
         <OccupancyChip o={l?.occupancy} style={{ marginTop: 3 }} />
         {rel ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{rel}</T> : null}
       </View>

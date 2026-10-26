@@ -50,6 +50,8 @@ export type Leg = {
   traffic?: { id?: string; kind?: string; text: string; major?: boolean } | null;
   /** Bus and coach legs: live delays (min) from the bus's next stop to this leg's stop (new server). */
   ahead?: (number | null)[] | null;
+  /** Live position of the vehicle and how many stops it is from this leg's first stop (server enrich, only with live data). */
+  vehicle?: Vehicle; stopsAway?: number | null;
   /** When this phone received the answer (set by api.ts, liveLabelCore.stampSeen). */
   seenAt?: number;
 };

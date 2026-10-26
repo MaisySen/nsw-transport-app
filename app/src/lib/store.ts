@@ -40,6 +40,8 @@ type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; wa
   calLeaveBy?: boolean;
   /** Places found for calendar event locations, kept on this phone only (calendarLeaveByCore.ts). */
   calPlaces?: CalPlaceCache;
+  /** Trip screen Walking choice: the longest walk on a trip (0 is any) and Prefer a bus over a long walk (walkPrefCore.ts). */
+  walkPref?: { max: number; prefer: boolean };
 };
 export type LeaveReminder = { at: number; dep: number; label: string };
 const EMPTY: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {}, places: {}, myTrips: [], tripOrder: [], allServices: {}, fareType: 'adult' };
@@ -118,6 +120,9 @@ export const store = {
   /** Accessible trips: acc=1 on trip, plan and Ask calls. */
   accOn: (): boolean => !!state.acc,
   setAcc(on: boolean) { state = { ...state, acc: on }; save(); },
+  /** Trip screen Walking choice, as stored (read it through walkPrefCore.readWalkPref). */
+  walkPref: (): unknown => state.walkPref,
+  setWalkPref(p: { max: number; prefer: boolean }) { state = { ...state, walkPref: { max: p.max, prefer: !!p.prefer } }; save(); },
   speakOn: (): boolean => !!state.speak,
   setSpeak(on: boolean) { state = { ...state, speak: on }; save(); },
   voiceId: (): string | null => state.voiceId || null,

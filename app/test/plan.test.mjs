@@ -106,7 +106,7 @@ test('when to the trip request and back', () => {
   assert.deepEqual(P.whenFromParams('2460'), P.NOW);
   assert.deepEqual(P.whenFromParams(undefined), P.NOW);
   const trip = read('src/app/trip.tsx');
-  assert.ok(trip.includes('planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes })'), 'the trip screen plans at the chosen time (worked out when sent, trippast.test.mjs), with the mode chips');
+  assert.ok(trip.includes('planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes, walk: wp })'), 'the trip screen plans at the chosen time (worked out when sent, trippast.test.mjs), with the mode chips and the Walking choice');
   assert.ok(trip.includes("(whenKey ? `|${whenKey}` : '')"), 'kept answers are per time');
   const trips = read('src/lib/trips.ts');
   assert.ok(trips.includes('arriveBy?: boolean'), 'planTrip passes arrive by');

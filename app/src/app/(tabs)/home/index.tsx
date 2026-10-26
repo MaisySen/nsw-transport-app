@@ -6,6 +6,7 @@ import { gripStep, type GripEvent, type GripState } from '@/lib/gesture';
 import { dragOrder, sameEnds, splitNext, toFront } from '@/lib/homeCore';
 import { clearAllWords } from '@/lib/planCore';
 import { router, Stack } from 'expo-router';
+import { GetMeHome } from '@/components/GetMeHome';
 import { api } from '@/lib/api';
 import { useCountdownNow, useLive } from '@/lib/hooks';
 import { cacheKey } from '@/lib/offlineCore';
@@ -200,6 +201,9 @@ export default function Home() {
             ) : <TripBoard trip={next} now={now} look="hero" skin={skin} solid={solid} />}
           </HomeSection>
         ) : null}
+
+        {/* Get me home: one tap from where you are to your saved Home (components/GetMeHome.tsx). */}
+        <GetMeHome home={places.home} />
 
         {/* Notifications: alerts, trackwork, line problems and other watched trips as chips, closed until tapped. */}
         <Notices now={now} watches={bar.rest.map((w: any) => ({ id: w.id, title: w.title, sub: watchLine(w, now) }))} />
