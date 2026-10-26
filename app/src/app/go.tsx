@@ -26,6 +26,7 @@ import { WhyLate } from '@/components/WhyLate';
 import { useWhyLate } from '@/lib/whyLate';
 import { Button, Sep, T } from '@/components/ui';
 import { NextOption, SpeakRow, WakeRow } from '@/components/Smart';
+import { GetOffRow } from '@/components/GetOffChoice';
 import { boardWords, stopNumber } from '@/lib/busCore';
 import { ageText, liveState, liveWords, STALE_DATA_MS, STALE_GPS_S, type LiveState as LabelState } from '@/lib/liveLabelCore';
 
@@ -275,6 +276,7 @@ function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc,
       </View>
 
       <WakeRow g={g} st={st} />
+      <GetOffRow g={g} st={st} />
       <SpeakRow g={g} />
 
       {!offline && lk.kind === 'live' && lk.age ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 6 }}>{liveWords(lk)}</T> : null}
