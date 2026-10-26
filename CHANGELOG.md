@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### App Store pack checked against the code; privacy fixes on the server and the policy (g25, no app update)
+Roadmap item 7. Nothing submitted for review.
+* Server, transport-api `3e88773d` (5:45 PM, main `64ed406`; roll back `npx wrangler@4 rollback ffc1a25b-0ede-4418-b9ac-47686314a506 --name transport-api`): Workers Logs invocation logs off, so the full request address (install ID, a position, an Ask question) is no longer kept for up to 7 days; the path only request lines stay. Trip history keeps stops only: a watched trip from a point is not logged. Test `backend/test/search-points.test.mjs`. verify-deploy all ok.
+* Privacy policy republished (Pages deployment `462d58fc`, roll back to `6a797b2c`): a last way home reminder set from where you are keeps that point until 12 hours after the service; the request log keeps no searches, positions or install IDs. store/privacy-policy.md regenerated from the page.
+* App Store Connect (draft text only, read back): description without "Opal" and with a Parramatta Ask example; new review notes (data source and CC BY 4.0, permissions, Live Activities, NSW wide test steps, no stale server address sentence). App Privacy answers and age rating rechecked: unchanged.
+* store/apple/ and store/google/ now hold the full answers (app-privacy, data-safety, review-notes); docs/STORE_PRIVACY.md and docs/REVIEW-NOTES.md point there. store/README.md lists what the root or owner must confirm: the OK to submit, Apple Watch screenshots (required, none yet), a reshoot of the iPhone shots without the owner's stations, the newest build on the version.
+* `app/test/e2e/store-shots.mjs` defaults to NSW wide stations.
+
 ### Handover docs: a new worker starts without asking (docs only, no release)
 Bidur at 4:02 PM: "Keep making runbook very strong and better ... It would just start working fully straight away."
 * docs/START_HERE.md: the one page entry point (what the product is, owner and publisher, builds 201 to 208, runtime 1.0.0, channels, the production group and how to read it, server, what is live and what is behind flags, the standing rules, the first 10 commands, every doc).

@@ -181,6 +181,12 @@ Fresh times: boards refresh every 15 s while the next service is 10 minutes away
 
 Many phones (server, 26 Oct, 10:44 AM): phones at the same stop share one copy and one Transport for NSW call; a burst for one stop waits for that one answer; a slow answer is waited for at most 700 ms when a copy exists; when Transport for NSW is busy or refuses us, phones get the last copy (its "Updated" time says how old) instead of an error. Load tested at 100 and 1,000 phones ([SCALING.md](SCALING.md)).
 
+## Privacy on the server (26 Oct, transport-api 3e88773d)
+
+* Server logs keep the request line only (path, status, time; one request in 10, up to 7 days). Invocation logs are off, so no request address with its query (install ID, a position, an Ask question) is kept.
+* Trip history (commute suggestions, 90 days) keeps stops only: a trip from a point is never logged, searched or watched.
+* Store answers and policy: store/apple/app-privacy.md, store/google/data-safety.md, https://transportsydney.app/privacy/.
+
 ## Board engine (server, behind a flag, 26 Oct)
 
 Every stop board in NSW built ahead of time on the server from the network feeds, so a board is a cache hit and Transport for NSW calls stay flat whatever the number of phones. Since 26 Oct (g14) boards are built by 16 shard objects that write them to Cloudflare's cache, and the worker reads the cache first. Off for phones until it matches the Trip Planner on 95% of services on a fresh sample, with no object restarts and 0 errors at 1,000 phones. docs/ENGINE.md, docs/SCALING.md.

@@ -10,7 +10,7 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 | --- | --- | --- |
 | Production over the air group | `fa0017d8-4ffe-49e7-91da-3b415254943f` (3:39 PM, outage honesty; iOS `01a17680-b011-7faf-8316-b658423cff0e`, Android `01a17680-b011-7caf-9da9-c4d39cd16f3b`), runtime 1.0.0, from main `4835561` | `1f117d04-ee6c-4149-b153-b32fe8f1db79` |
 | Updates published today | 1 production update since 3:39 PM is today's; the next is tonight's overnight update | |
-| Server (`transport-api`) | Version `ffc1a25b` (4:21 PM, budget guard with a 48 hour rate, main `e93ff84`). Before it: `a8fbe352` (4:14 PM, no message, a secret or settings change), `3f5e63d3` (4:13 PM, budget mode, main `ae182e8`), `544279b4` (4:10 PM, live trip follows the real train, main `dd2641a`) | One step: `a8fbe352`. Before budget mode: `544279b4`. Before trip tracking: `fb242627` |
+| Server (`transport-api`) | Version `3e88773d` (5:45 PM, privacy: invocation logs off, trip history stops only, g25, main `64ed406`). Before it: `ffc1a25b` (4:21 PM, budget guard with a 48 hour rate, main `e93ff84`), `a8fbe352` (4:14 PM, no message, a secret or settings change), `3f5e63d3` (4:13 PM, budget mode, main `ae182e8`), `544279b4` (4:10 PM, live trip follows the real train, main `dd2641a`) | One step: `a8fbe352`. Before budget mode: `544279b4`. Before trip tracking: `fb242627` |
 | iPhone builds in the field | 201 to 208 (208: 25 Oct 6:48 PM, TestFlight Internal and Public) | |
 | Android | versionCode 2 to 5 (APK on the download page) | |
 | Public site | Pages deployment `6a797b2c` (25 Oct, 9 PM) | `564bc47c` |
@@ -50,7 +50,7 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 | Item | Since | Notes |
 | --- | --- | --- |
 | NSW quota increase reply (1,000,000 a day, 25 a second) | 26 Oct, 2:46 PM | When it comes: raise the server budget (RUNBOOK section 5) |
-| OK to submit iPhone 1.0.0 for App Store review | 25 Oct | Everything else for the listing is done (App Privacy published 25 Oct 10:54 AM) |
+| OK to submit iPhone 1.0.0 for App Store review | 25 Oct | Also needed first: Apple Watch screenshots (none uploaded, required), the newest build on the version (206 attached), and a decision on reshooting the iPhone screenshots that show his own stations. Listing, review notes, App Privacy and age rating checked 26 Oct (store/README.md) |
 | Apple account conversion to Fintex (organisation, D-U-N-S 889795329) | 25 Oct | Seller shows his own name until then |
 | Google Play: create the app, invite the service account, first AAB upload, 12 testers for 14 days if personal | 24 Oct | RUNBOOK section 9 |
 | Firebase project and FCM key for Android alerts with the app closed | 24 Oct | `app/NEEDS_BIDUR.md` |
