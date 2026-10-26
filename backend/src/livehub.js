@@ -9,7 +9,7 @@ const LIVE_HUB_MIN_TICK_MS = 3000;
 const LIVE_MAX_PER_IP = 4; // sockets from one address on one stop
 const LIVE_MAX_SOCKETS = 2000; // sockets on one stop
 const LIVE_MAX_AGE_MS = 10 * 60000; // a socket is closed (4000, "renew") after this; a phone still on view opens a new one
-function liveOn(env, k) { return String((env && env[k]) || "").toLowerCase() === "on"; }
+function liveOn(env, k) { return String((env && env[k]) || "").toLowerCase() === "on" && !(typeof budgetHeld === "function" && budgetHeld(k)); }
 function liveIp(request) { return (request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "?").slice(0, 64); }
 
 // The answer to a socket that cannot be opened: JSON, so the app's fallback to polling can log why.

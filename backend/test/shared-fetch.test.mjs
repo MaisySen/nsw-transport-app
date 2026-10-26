@@ -23,7 +23,7 @@ globalThis.fetch = async (u) => {
   return new Response(JSON.stringify({ locations: [{ name: "Stop " + stop, disassembledName: "Stop " + stop }], stopEvents: [] }), { headers: { "content-type": "application/json", "x-ratelimit-limit": "5" } });
 };
 const stmt = (q, args = []) => ({ bind: (...a) => stmt(q, a), run: async () => ({ meta: { changes: 0 } }), all: async () => ({ results: [] }), first: async () => (/ip_rate/.test(q) ? { n: 999 } : null) });
-const env = { TFNSW_API_KEY: "t", LOAD_TEST_KEY: "load-key-0123456789", DB: { prepare: (q) => stmt(q), batch: async (l) => l.map(() => ({})) }, ASSETS: { fetch: async () => new Response("[]") } };
+const env = { TFNSW_API_KEY: "t", LOAD_TESTS: "on", LOAD_TEST_KEY: "load-key-0123456789", DB: { prepare: (q) => stmt(q), batch: async (l) => l.map(() => ({})) }, ASSETS: { fetch: async () => new Response("[]") } };
 const store = new Map();
 globalThis.caches = { default: { match: async (req) => { const r = store.get(req.url); return r ? r.clone() : undefined; }, put: async (req, res) => { store.set(req.url, res); } } };
 const waits = [];

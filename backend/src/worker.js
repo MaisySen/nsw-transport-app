@@ -4976,7 +4976,12 @@ async function serverConfig(env) {
   if (serverCfg.cfg && Date.now() - serverCfg.at < 60000) return serverCfg.cfg;
   let over = null;
   try {
-    const row = env && env.DB ? await env.DB.prepare("SELECT body FROM app_config WHERE platform = 'server'").first() : null;
+    // The server switches and, beside them, the budget guard's hold (budgetCheck, budgetHeld).
+    const [row, brow] = env && env.DB ? await Promise.all([
+      env.DB.prepare("SELECT body FROM app_config WHERE platform = 'server'").first(),
+      env.DB.prepare("SELECT body FROM app_config WHERE platform = 'budget'").first().catch(() => null),
+    ]) : [null, null];
+    try { serverCfg.budget = brow && brow.body ? JSON.parse(brow.body) : null; } catch (e) { serverCfg.budget = null; }
     if (row && row.body) over = JSON.parse(row.body);
   } catch (e) { /* no table yet: defaults */ }
   serverCfg.cfg = mergeAppConfig(over); serverCfg.at = Date.now();
@@ -4986,6 +4991,177 @@ async function serverOn(env, flag) {
   const c = await serverConfig(env).catch(() => null);
   if (!c) return true;
   return c.flags[flag] !== false && !c.kill[flag];
+}
+
+// ---------- Budget mode (docs/COSTS.md): the Workers Paid base fee and nothing over it ----------
+// Owner's rule (26 Oct): US$5 a month, no overage, for up to 1,000 people. The included amounts of the Workers Paid
+// plan, read on Cloudflare's pricing pages on 26 Oct 2026 (docs/COSTS.md has the links). Every hour the minute tick
+// reads this billing cycle's usage from Cloudflare's GraphQL analytics (a read only Account Analytics token, the
+// CF_ANALYTICS_TOKEN secret) and works out the month end at the last 6 hours' rate. Projected over BUDGET_HOLD_PCT
+// of any included amount (or used over it): the hold. The costly switches go off for the rest of the billing cycle
+// (BUDGET_HOLD_FLAGS, budgetHeld), load test keys stop working and an email goes to the owner. Over BUDGET_WARN_PCT:
+// one warning email a cycle. The hold lifts by itself under BUDGET_LIFT_PCT; an admin can clear it (POST
+// /api/budget/clear, for 6 hours); a new cycle clears it too.
+const BUDGET_INCLUDED = {
+  workerRequests: 10e6, workerCpuMs: 30e6, doRequests: 1e6, doGbSeconds: 400000, doRowsRead: 25e9, doRowsWritten: 50e6,
+  d1RowsRead: 25e9, d1RowsWritten: 50e6, logEvents: 20e6,
+};
+const BUDGET_HOLD_PCT = 80, BUDGET_WARN_PCT = 50, BUDGET_LIFT_PCT = 60;
+const BUDGET_RATE_MS = 6 * 3600000;
+const BUDGET_HOLD_FLAGS = ["ENGINE_BOARDS", "ENGINE_PUSH", "LIVE_PUSH", "OWN_PLANNER", "ENGINE_LEARN", "LOAD_TESTS"];
+// Whether the budget guard holds a switch off now (sync: from the copy serverConfig keeps, refreshed once a minute).
+function budgetHeld(flag) {
+  const b = serverCfg.budget;
+  if (!b || !b.hold || !BUDGET_HOLD_FLAGS.includes(flag)) return false;
+  return !b.holdCycle || b.holdCycle === budgetCycle(Date.now(), b.billingDay).start;
+}
+// A wrangler switch read through the guard: "on" only when the var says on and the guard does not hold it.
+function flagOn(env, k) { return String((env && env[k]) || "").toLowerCase() === "on" && !budgetHeld(k); }
+// The billing cycle around `now`: from day `day` of a month (UTC, 1 to 28, the BILLING_DAY var) to the same day of
+// the next month. No day set: the calendar month.
+function budgetCycle(now, day) {
+  const d = new Date(now);
+  const bd = Math.min(28, Math.max(1, Number(day) || 1));
+  let y = d.getUTCFullYear(), m = d.getUTCMonth();
+  if (d.getUTCDate() < bd) { m -= 1; if (m < 0) { m = 11; y -= 1; } }
+  const start = Date.UTC(y, m, bd);
+  const end = Date.UTC(m === 11 ? y + 1 : y, (m + 1) % 12, bd);
+  return { start, end };
+}
+// Month end at a day's rate: used + rate x days left. Each meter as a share of its included amount.
+function budgetProject(used, perDay, now, cycle) {
+  const left = Math.max(0, cycle.end - now) / 86400000;
+  const out = {};
+  let worst = { meter: null, projectedPct: 0, usedPct: 0 };
+  for (const k of Object.keys(BUDGET_INCLUDED)) {
+    const u = Number(used[k]) || 0, r = Number(perDay[k]) || 0;
+    const projected = u + r * left;
+    const m = { used: Math.round(u), perDay: Math.round(r), projected: Math.round(projected), included: BUDGET_INCLUDED[k],
+      usedPct: Math.round((u / BUDGET_INCLUDED[k]) * 1000) / 10, projectedPct: Math.round((projected / BUDGET_INCLUDED[k]) * 1000) / 10 };
+    out[k] = m;
+    if (m.projectedPct > worst.projectedPct) worst = { meter: k, projectedPct: m.projectedPct, usedPct: m.usedPct };
+  }
+  return { meters: out, worst, daysLeft: Math.round(left * 10) / 10 };
+}
+// One GraphQL read of the account's usage between two times: Worker requests and CPU (every script), Durable Object
+// requests (incoming socket messages count 1 in 20, as billed), duration in GB-s, SQLite rows, D1 rows. Log events
+// are not in the analytics API: estimated as (Worker + Durable Object invocations) x 2 lines x the sampling rate.
+async function budgetUsage(env, from, to) {
+  const q = `query($a: String!, $s: Time!, $e: Time!) { viewer { accounts(filter: { accountTag: $a }) {
+    w: workersInvocationsAdaptive(limit: 1, filter: { datetime_geq: $s, datetime_lt: $e }) { sum { requests cpuTimeUs } }
+    o: durableObjectsInvocationsAdaptiveGroups(limit: 1, filter: { datetime_geq: $s, datetime_lt: $e }) { sum { requests } }
+    p: durableObjectsPeriodicGroups(limit: 1, filter: { datetimeMinute_geq: $s, datetimeMinute_lt: $e }) { sum { duration rowsRead rowsWritten inboundWebsocketMsgCount } }
+    d: d1AnalyticsAdaptiveGroups(limit: 1, filter: { datetimeMinute_geq: $s, datetimeMinute_lt: $e }) { sum { rowsRead rowsWritten } }
+  } } }`;
+  const r = await fetch("https://api.cloudflare.com/client/v4/graphql", {
+    method: "POST", headers: { authorization: "Bearer " + env.CF_ANALYTICS_TOKEN, "content-type": "application/json" },
+    body: JSON.stringify({ query: q, variables: { a: env.CF_ACCOUNT_ID, s: new Date(from).toISOString(), e: new Date(to).toISOString() } }),
+    signal: AbortSignal.timeout(20000),
+  });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j || (j.errors && j.errors.length) || !j.data) throw new Error("analytics: " + ((j && j.errors && j.errors[0] && j.errors[0].message) || "HTTP " + r.status));
+  const a = (j.data.viewer.accounts || [])[0] || {};
+  const s = (k) => ((a[k] || [])[0] || {}).sum || {};
+  const w = s("w"), o = s("o"), p = s("p"), d = s("d");
+  const rate = Math.min(1, Math.max(0, Number(env.LOG_SAMPLING) || 0.1));
+  return {
+    workerRequests: Number(w.requests) || 0, workerCpuMs: (Number(w.cpuTimeUs) || 0) / 1000,
+    doRequests: (Number(o.requests) || 0) + (Number(p.inboundWebsocketMsgCount) || 0) / 20, doGbSeconds: Number(p.duration) || 0,
+    doRowsRead: Number(p.rowsRead) || 0, doRowsWritten: Number(p.rowsWritten) || 0,
+    d1RowsRead: Number(d.rowsRead) || 0, d1RowsWritten: Number(d.rowsWritten) || 0,
+    logEvents: ((Number(w.requests) || 0) + (Number(o.requests) || 0)) * 2 * rate,
+  };
+}
+async function budgetSave(env, b) {
+  await db(env).prepare("CREATE TABLE IF NOT EXISTS app_config (platform TEXT PRIMARY KEY, body TEXT NOT NULL, at INTEGER)").run();
+  await db(env).prepare("INSERT INTO app_config (platform, body, at) VALUES ('budget', ?1, ?2) ON CONFLICT(platform) DO UPDATE SET body = ?1, at = ?2").bind(JSON.stringify(b), Date.now()).run();
+  serverCfg.budget = b;
+}
+async function budgetLoad(env) {
+  const row = await db(env).prepare("SELECT body FROM app_config WHERE platform = 'budget'").first().catch(() => null);
+  try { return row && row.body ? JSON.parse(row.body) : null; } catch (e) { return null; }
+}
+// The owner's email through Email Routing (the ALERT_EMAIL send_email binding, to its verified address). Plain text.
+async function budgetMail(env, subject, text) {
+  if (!env || !env.ALERT_EMAIL) return "no email binding";
+  const from = env.ALERT_FROM || "budget@transportsydney.app";
+  const to = env.ALERT_TO || "contact@fintex.au";
+  const raw = ["From: Transport: Sydney Live <" + from + ">", "To: " + to, "Subject: " + subject, "Date: " + new Date().toUTCString(),
+    "Message-ID: <" + crypto.randomUUID() + "@transportsydney.app>", "MIME-Version: 1.0", "Content-Type: text/plain; charset=utf-8", "", text].join("\r\n");
+  const EmailMessage = await budgetEmailClass();
+  if (!EmailMessage) return "no email module";
+  await env.ALERT_EMAIL.send(new EmailMessage(from, to, raw));
+  return "sent";
+}
+// The Workers email class (cloudflare:email); tests outside Workers set globalThis.TestEmailMessage.
+async function budgetEmailClass() {
+  try { return (await import("cloudflare:email")).EmailMessage; } catch (e) { return globalThis.TestEmailMessage || null; }
+}
+function budgetText(b) {
+  const lines = Object.entries(b.meters || {}).map(([k, m]) => `${k}: ${m.used} used, ${m.projected} by the end of the cycle (${m.projectedPct}% of ${m.included} included)`);
+  return lines.join("\n");
+}
+// The hourly check (runTick) or an admin's POST /api/budget/check.
+async function budgetCheck(env, now = Date.now(), opts = {}) {
+  if (!env || !env.CF_ANALYTICS_TOKEN || !env.CF_ACCOUNT_ID) return { skipped: "no analytics token" };
+  const prev = (await budgetLoad(env)) || {};
+  const day = Number(env.BILLING_DAY) || null;
+  const cycle = budgetCycle(now, day);
+  // The rate is the last 6 hours' (a runaway is caught within hours; a burst that has ended stops counting toward
+  // the rate but stays in what was used), as a day's worth, never from less than an hour.
+  const from6 = Math.max(cycle.start, now - BUDGET_RATE_MS);
+  const [used, last6] = await Promise.all([budgetUsage(env, cycle.start, now), budgetUsage(env, from6, now)]);
+  const span = Math.max(3600000, now - from6);
+  const perDay = {};
+  for (const k of Object.keys(last6)) perDay[k] = last6[k] * (86400000 / span);
+  const pr = budgetProject(used, perDay, now, cycle);
+  const sameCycle = prev.cycle === cycle.start;
+  const b = { at: now, cycle: cycle.start, cycleEnd: cycle.end, billingDay: day, meters: pr.meters, worst: pr.worst, daysLeft: pr.daysLeft,
+    hold: sameCycle ? !!prev.hold : false, holdCycle: sameCycle ? prev.holdCycle || null : null, holdAt: sameCycle ? prev.holdAt || null : null,
+    holdReason: sameCycle ? prev.holdReason || null : null, warnedCycle: sameCycle ? prev.warnedCycle || null : null,
+    clearedAt: sameCycle ? prev.clearedAt || null : null, liftedAt: sameCycle ? prev.liftedAt || null : null, mail: null };
+  const over = pr.worst.projectedPct >= BUDGET_HOLD_PCT || pr.worst.usedPct >= BUDGET_HOLD_PCT;
+  // An admin's clear holds for 6 hours unless a meter is already used to 95%.
+  const cleared = b.clearedAt && now - b.clearedAt < 6 * 3600000 && pr.worst.usedPct < 95;
+  // A hold lifts on its own once the month end is back under BUDGET_LIFT_PCT and nothing is used past it.
+  if (b.hold && !over && pr.worst.projectedPct < BUDGET_LIFT_PCT && pr.worst.usedPct < BUDGET_LIFT_PCT && !opts.dry) { b.hold = false; b.liftedAt = now; }
+  else if (over && !b.hold && !cleared && !opts.dry) {
+    b.hold = true; b.holdCycle = cycle.start; b.holdAt = now;
+    b.holdReason = `${pr.worst.meter} projected ${pr.worst.projectedPct}% of the included amount (used ${pr.worst.usedPct}%)`;
+    const wasOn = BUDGET_HOLD_FLAGS.filter((k) => String(env[k] || "").toLowerCase() === "on");
+    const what = wasOn.length ? `switched off ${wasOn.join(", ")}` : `holds ${BUDGET_HOLD_FLAGS.join(", ")} off (none of them was on, so the app does not change)`;
+    b.mail = await budgetMail(env, "Sydney Live: Cloudflare usage would pass the included amount this month",
+      `At the last 6 hours' rate, ${b.holdReason}. The budget guard ${what} until the billing cycle ends (${new Date(cycle.end).toUTCString()}) or usage falls back under ${BUDGET_LIFT_PCT}%. Nothing has been charged beyond the US$5 plan by this reading.\n\n${budgetText(b)}\n\nThe app keeps working on the Trip Planner path. Admins can clear it with POST /api/budget/clear.`).catch((e) => "mail failed: " + String((e && e.message) || e).slice(0, 120));
+  } else if (!over && pr.worst.projectedPct >= BUDGET_WARN_PCT && b.warnedCycle !== cycle.start && !opts.dry) {
+    b.warnedCycle = cycle.start;
+    b.mail = await budgetMail(env, "Sydney Live: Cloudflare usage past half of the included amount",
+      `At the last 6 hours' rate, ${pr.worst.meter} reaches ${pr.worst.projectedPct}% of the Workers Paid included amount by the end of this billing cycle. Nothing is switched off yet; the guard does that at ${BUDGET_HOLD_PCT}%.\n\n${budgetText(b)}`).catch((e) => "mail failed: " + String((e && e.message) || e).slice(0, 120));
+  }
+  if (!opts.dry) await budgetSave(env, b);
+  return b;
+}
+// GET /api/budget, POST /api/budget/check, POST /api/budget/clear (admin key).
+async function budgetRoutes(request, env, url) {
+  if (!adminOk(request)) return json({ error: "forbidden" }, 403);
+  if (url.pathname === "/api/budget/check" && request.method === "POST") {
+    try { return json(await budgetCheck(env, Date.now(), { dry: url.searchParams.get("dry") === "1" })); }
+    catch (e) { return json({ error: String((e && e.message) || e).slice(0, 200) }, 502); }
+  }
+  if (url.pathname === "/api/budget/clear" && request.method === "POST") {
+    const b = (await budgetLoad(env)) || {};
+    b.hold = false; b.clearedAt = Date.now();
+    await budgetSave(env, b);
+    return json(b);
+  }
+  if (url.pathname === "/api/budget/mailcheck" && request.method === "POST") {
+    // Builds the message without sending it: shows the binding and the email module are there.
+    try { const EmailMessage = await budgetEmailClass(); return json({ binding: !!env.ALERT_EMAIL, module: typeof EmailMessage === "function" }); }
+    catch (e) { return json({ binding: !!env.ALERT_EMAIL, module: false, error: String((e && e.message) || e).slice(0, 160) }); }
+  }
+  const b = await budgetLoad(env);
+  const flags = {};
+  for (const k of BUDGET_HOLD_FLAGS) flags[k] = { var: String(env[k] || ""), on: flagOn(env, k) };
+  return json({ included: BUDGET_INCLUDED, holdPct: BUDGET_HOLD_PCT, warnPct: BUDGET_WARN_PCT, token: !!env.CF_ANALYTICS_TOKEN, email: !!env.ALERT_EMAIL, flags, last: b });
 }
 
 function parseTod(v) {
@@ -5531,6 +5707,12 @@ async function runTick(env, opts = {}) {
   if (!opts.device) out.late = await lateTick(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   // Service alerts digest for the trackwork card and line status, every ALERT_EVERY_MIN minutes
   if (!opts.device && (sn.tod % ALERT_EVERY_MIN === 3 || opts.force)) out.alerts = await refreshAlertDigest(env, now).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+  // Budget guard (docs/COSTS.md): this billing cycle's Cloudflare usage once an hour; past 80% of an included amount
+  // at month end, the costly switches go off and the owner gets an email.
+  if (!opts.device && sn.tod % 60 === 17) {
+    await serverConfig(env).catch(() => null);
+    out.budget = await budgetCheck(env, now).then((b) => (b && b.worst ? { worst: b.worst, hold: b.hold, mail: b.mail } : b)).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+  }
   // Background sampling for predictions
   if (!opts.device && !opts.noSample) out.sample = await sampleStops(env, sn, use.calls < SAMPLE_BUDGET);
   // Housekeeping once an hour
@@ -7201,6 +7383,8 @@ async function handleRequest(request, env, exec) {
       try { const s = await siteRoutes(request, env, url, exec); if (s) return s; }
       catch (e) { return json({ ok: false, error: "server", errors: { form: "We could not save that right now. Please email contact@fintex.au instead." } }, 500); }
     }
+    // Budget guard (docs/COSTS.md): the last usage reading, a check now, clearing a hold. Admin key.
+    if (url.pathname === "/api/budget" || url.pathname.startsWith("/api/budget/")) return withSec(await budgetRoutes(request, env, url), false);
     // Our own trip planner (raptor.js): loading and checks, engine load key or admin key.
     if (url.pathname.startsWith("/api/raptor/") && typeof plannerRoutes === "function") return withSec(await plannerRoutes(request, env, url), false);
     // Loading the engine's timetable (tools/load_timetable.mjs): admin key only.
@@ -7307,7 +7491,9 @@ async function handleRequest(request, env, exec) {
             depMem.set(depKey, { at: Date.now(), p: pr });
             if (depMem.size > 300) depMem.delete(depMem.keys().next().value);
             try { r = await pr; } catch (e) { depMem.delete(depKey); if (staleEngine) return await staleEngine(); throw e; }
-            if (!at && typeof engineLearn === "function") engineLearn(env, exec, r);
+            // Platform names and missing lines for the engine: a Durable Object request each time, so only while the
+            // engine serves this board or ENGINE_LEARN is "on" (budget mode, docs/COSTS.md).
+            if (!at && typeof engineLearn === "function" && (engineWanted(env, url) || flagOn(env, "ENGINE_LEARN"))) engineLearn(env, exec, r);
           }
           const d = { kind: "departures", ...r };
           if (!(await serverOn(env, "occupancy"))) { d.items = d.items.map((x) => ({ ...x, vehicle: x.vehicle ? { ...x.vehicle } : x.vehicle })); stripOccupancy(d); }
@@ -8147,6 +8333,8 @@ export default {
 async function edgeFetch(request, env, exec) {
     applyEnv(env);
     const url = new URL(request.url);
+    // The server switches and the budget guard's hold (once a minute per copy of the Worker): budgetHeld reads them.
+    if (url.pathname.startsWith("/api/")) await serverConfig(env).catch(() => null);
     // Live board pushes (ENGINE_PUSH on): a WebSocket to the board's shard, which sends a diff each time it rebuilds it.
     if (url.pathname === "/api/live" && typeof engineSocket === "function") {
       if (!rateOk(request, url.pathname)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
@@ -8367,4 +8555,6 @@ async function engineOutage(request, env, exec, url) {
   res.headers.set("cache-control", "no-store");
   return res;
 }
-function loadOk(request, env) { return !!env && safeEq(request.headers.get("x-load-key"), env.LOAD_TEST_KEY); }
+// Budget mode (docs/COSTS.md): a load test key only works while LOAD_TESTS is "on" (off on production; a test there
+// spends the month's included Durable Object requests in an hour) and the budget guard does not hold it.
+function loadOk(request, env) { return !!env && flagOn(env, "LOAD_TESTS") && safeEq(request.headers.get("x-load-key"), env.LOAD_TEST_KEY); }

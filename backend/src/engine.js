@@ -15,6 +15,9 @@ const ENGINE_SLOW_FEED_MS = 45000;     // regional bus feeds
 const ENGINE_FEED_HOT_MS = 5 * 60000;  // a feed is fetched while a board needed it this recently
 const ENGINE_BOARD_HOT_MS = 5 * 60000; // a board is rebuilt every tick while read this recently
 const ENGINE_IDLE_MS = 15 * 60000;     // no reads for this long: the alarm stops until the next read
+// ENGINE_IDLE_MIN (wrangler var) shortens it: each minute an idle object keeps ticking costs alarms and calls between
+// objects, which are billed as Durable Object requests (docs/COSTS.md). Budget mode sets 5.
+function engIdleMs(env) { const n = Number(env && env.ENGINE_IDLE_MIN); return n > 0 ? Math.min(ENGINE_IDLE_MS, n * 60000) : ENGINE_IDLE_MS; }
 const ENGINE_HORIZON_MS = 90 * 60000;  // boards cover the next 90 minutes
 const ENGINE_LOOKBACK_MS = 120 * 60000; // a service planned up to 2 hours ago can still be running late
 const ENGINE_MAX_ROWS = 60;
@@ -541,7 +544,7 @@ class BoardEngine {
     try { if (this.loadMeta()) await this.tick(); } finally {
       // With feed timing, the next beat is when the next feed copy is expected (1 to 10 s away).
       const at = Math.min(t0 + ENGINE_TICK_MS, Number.isFinite(this.nextDue) ? this.nextDue : Infinity);
-      if (Date.now() - this.lastRead < ENGINE_IDLE_MS) await this.state.storage.setAlarm(Math.max(Date.now() + 1000, at));
+      if (Date.now() - this.lastRead < engIdleMs(this.env)) await this.state.storage.setAlarm(Math.max(Date.now() + 1000, at));
       else this.alarmSet = false;
     }
   }
@@ -1091,7 +1094,7 @@ class BoardShard {
     try { await this.tick(); } catch (e) { this.stats.lastError = String((e && e.message) || e); } finally {
       // With feed timing, the next beat is just after the core expects its next feed copy (1 to 5 s away).
       const next = Number.isFinite(this.nextCopy) && this.nextCopy > Date.now() ? this.nextCopy : Infinity;
-      if (Date.now() - this.lastRead < ENGINE_IDLE_MS) await this.state.storage.setAlarm(Math.max(Date.now() + 1000, Math.min(t0 + ENGINE_SHARD_TICK_MS, next)));
+      if (Date.now() - this.lastRead < engIdleMs(this.env)) await this.state.storage.setAlarm(Math.max(Date.now() + 1000, Math.min(t0 + ENGINE_SHARD_TICK_MS, next)));
       else this.alarmSet = false;
     }
   }
@@ -1185,7 +1188,8 @@ function engineWanted(env, url) {
   const q = url.searchParams.get("engine");
   if (q === "0") return false;
   if (q === "1") return true;
-  return String(env.ENGINE_BOARDS || "").toLowerCase() === "on";
+  // The budget guard (worker.js budgetHeld) can hold it off for the rest of the billing cycle.
+  return String(env.ENGINE_BOARDS || "").toLowerCase() === "on" && !(typeof budgetHeld === "function" && budgetHeld("ENGINE_BOARDS"));
 }
 // The shard that builds a stop's board (BoardShard): ENGINE_SHARDS objects (16 unless set; "0" builds every board in the
 // core object as before).
@@ -1283,7 +1287,7 @@ function engineLearn(env, ctx, board) {
 // fallback; a phone sends "full" for the whole board again and "ping" to check the line.
 async function engineSocket(request, env, url) {
   const hdr = { "content-type": "application/json", "access-control-allow-origin": "*" };
-  if (String((env && env.ENGINE_PUSH) || "").toLowerCase() !== "on") return new Response('{"error":"not available"}', { status: 404, headers: hdr });
+  if (String((env && env.ENGINE_PUSH) || "").toLowerCase() !== "on" || (typeof budgetHeld === "function" && budgetHeld("ENGINE_PUSH"))) return new Response('{"error":"not available"}', { status: 404, headers: hdr });
   if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") return new Response('{"error":"websocket only"}', { status: 426, headers: hdr });
   const stop = url.searchParams.get("stop") || "", mode = url.searchParams.get("mode") || "";
   if (!/^[A-Za-z0-9_-]{1,20}$/.test(stop) || (mode && !/^[a-z]{1,12}$/.test(mode))) return new Response('{"error":"bad stop"}', { status: 400, headers: hdr });

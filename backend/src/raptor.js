@@ -515,7 +515,7 @@ function rpNextDay(d) {
 // trips via a stop and trips leaving out a mode stay on the Trip Planner until the planner does them.
 function ownPlannerWanted(env, opts) {
   if (!env || !env.PLANNER) return false;
-  if (env.OWN_PLANNER !== "on" && !(opts && opts.own)) return false;
+  if ((env.OWN_PLANNER !== "on" || (typeof budgetHeld === "function" && budgetHeld("OWN_PLANNER"))) && !(opts && opts.own)) return false;
   if (opts && (opts.accessible || opts.via || opts.long)) return false;
   if (opts && opts.exclude && Object.keys(opts.exclude).length) return false;
   return true;

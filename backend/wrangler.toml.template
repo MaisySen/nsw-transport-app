@@ -32,7 +32,24 @@ run_worker_first = true
 [vars]
 API_ONLY = "1"
 ENGINE_BOARDS = "off"
-ENGINE_SHARDS = "16"
+# Budget mode (docs/COSTS.md, owner's rule 26 Oct: US$5 a month, no overage, up to 1,000 people). Every alarm and every
+# call between objects is a billed Durable Object request (1 million a month included). 4 shards are plenty for
+# 1,000 people (each hot shard costs about 24 requests a minute); raise ENGINE_SHARDS again for more. An idle engine
+# object stops its alarm after ENGINE_IDLE_MIN minutes with no reads (15 in the code).
+ENGINE_SHARDS = "4"
+ENGINE_IDLE_MIN = "5"
+# Platform names and missing lines sent to the engine from Trip Planner boards (one object request each): only while
+# the engine serves boards, or when this is "on".
+ENGINE_LEARN = "off"
+# Load test keys work only when "on". Never on production: the 1,000 phone soak of 26 Oct used about 70,000 Durable
+# Object requests in one hour (7% of the month's included amount). Test on wrangler dev with a fake Transport for NSW.
+LOAD_TESTS = "off"
+# Budget guard (worker.js budgetCheck): the account its hourly usage read covers (the read only analytics token is the
+# CF_ANALYTICS_TOKEN secret), the day of the month the billing cycle starts (UTC, 25: the cycle runs 25th to 25th)
+# and the log sampling rate below.
+CF_ACCOUNT_ID = "${CF_ACCOUNT_ID}"
+BILLING_DAY = "25"
+LOG_SAMPLING = "0.1"
 # Live push for boards on the Trip Planner path (src/livehub.js, docs/API.md "GET /api/live"): "on" opens the LIVE
 # objects' sockets; "off" answers /api/live with 404 unless the engine pushes the stop (ENGINE_PUSH), and phones poll.
 LIVE_PUSH = "off"
@@ -89,6 +106,11 @@ new_sqlite_classes = ["LiveHub"]
 [[migrations]]
 tag = "planner-v1"
 new_sqlite_classes = ["TripPlanner"]
+
+# Budget guard emails (worker.js budgetMail) through Email Routing on transportsydney.app, to its verified address only.
+[[send_email]]
+name = "ALERT_EMAIL"
+destination_address = "contact@fintex.au"
 
 [[d1_databases]]
 binding = "DB"
