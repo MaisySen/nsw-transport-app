@@ -16,11 +16,17 @@ minify = true
 [placement]
 mode = "smart"
 
-# Workers Logs (docs/DIAGNOSIS_LAG.md item 10): the request lines (reqLog) and errors, kept 3 days. One request in 10
-# is kept, which stays under the free plan's daily log events at today's traffic and still gives p95 per endpoint.
+# Workers Logs (docs/DIAGNOSIS_LAG.md item 10): the request lines (reqLog) and errors, kept up to 7 days on Workers
+# Paid. One request in 10 is kept, which stays well inside the included log events and still gives p95 per endpoint.
+# Invocation logs are off: they hold each request's full address, and the query can carry the install ID, a
+# position for stops near you or an Ask question. The reqLog line has the path only, so the privacy policy can say
+# positions and Ask questions are not kept (store/apple/app-privacy.md, 26 Oct, g25).
 [observability]
 enabled = true
 head_sampling_rate = 0.1
+
+[observability.logs]
+invocation_logs = false
 
 # The static files the API reads (stations, stops, facilities) and the shared live trip page.
 # The worker runs first so the API host never serves anything it does not route.

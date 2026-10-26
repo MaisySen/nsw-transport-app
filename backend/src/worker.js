@@ -4821,6 +4821,10 @@ function watchOut(w) {
 async function logSearch(env, s) {
   const d = db(env);
   if (!d || !s.profile || !s.from || !s.to || !s.from.id || !s.to.id) return;
+  // A point ("lon:lat:EPSG:4326", a trip from where you are) is a position, not a stop: trip history keeps stops
+  // only, so no position is kept for 90 days (store/apple/app-privacy.md). The search path already skipped points;
+  // this covers a watched trip too.
+  if (isCoordId(s.from.id) || isCoordId(s.to.id) || /EPSG/.test(String(s.from.id) + String(s.to.id))) return;
   try {
     await ensureSchema3(env);
     const sn = sydneyNow(new Date(s.at || Date.now()));

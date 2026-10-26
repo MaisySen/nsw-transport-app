@@ -582,9 +582,11 @@ Every `/api` request writes one JSON line to the Worker's logs (`reqLog` in `src
 `ms` the time to the answer, `up` and `un` the time spent on and the number of NSW calls (Trip Planner and realtime
 feeds) made for that request, `c` the copy tag (`hit`, `stale`, `miss`, `shared`, `saved`, or `-`), `k` `app` when the
 request carries a profile (the phone app) and `ext` otherwise (Watch, widgets, web), and `test: 1` for load test
-traffic. The path only, never the query or an address. Workers Logs keeps one request in 10 for 3 days
-(`[observability]` in `wrangler.toml.template`); `wrangler tail transport-api --format json` sees every line. `REQ_LOG`
-`off` stops the lines.
+traffic. The path only, never the query or an address. Workers Logs keeps one request in 10 for up to 7 days
+(`[observability]` in `wrangler.toml.template`). Its invocation logs are off (`invocation_logs = false`, 26 Oct): they
+would keep each request's full address, query included (install ID, a position, an Ask question), which the privacy
+policy says is not kept. `wrangler tail transport-api --format json` sees every line live. `REQ_LOG` `off` stops the
+lines.
 
 Watch and widget asks (no profile, not a refresh) for `/api/departures` and `/api/trip` take a kept copy (up to 2 min
 old) at once instead of waiting up to 700 ms for the fresh answer, which is stored behind it for the next ask
