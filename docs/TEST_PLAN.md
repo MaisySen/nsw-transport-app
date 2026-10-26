@@ -44,6 +44,27 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 * Wiring: `prefetchStop` exported and called on press in (Ask, route stops, Opal machines), `useLive` asks again once per opening, the trip list uses `useCountdownNow`, the window background is set through a feature detected `expo-system-ui`.
 * On a device (not done yet): open a stop that nobody has opened for a minute, see "Updated N s ago" then fresh times within about 3 s; touch and hold a stop row in Ask, release, the stop screen opens with departures and no spinner; trip list "1 min" turns to "Now" on the minute; dark mode, push and pop a stop, no white strip.
 
+## Limited stops and alerts for my trips (26 Oct, g22)
+### `backend/test/limited-stops.test.mjs`: 4 tests, 4 pass
+Rail patterns that skip stations a third of the trips stop at are limited; all stops and short runs are not; buses need 4 skipped stops and a quarter of the stretch; route names with express or limited stops count. Generic made up networks.
+### `backend/test/raptor.test.mjs`: 2 more tests (11 pass)
+`rpLegs` marks a limited trip's leg; `markLimited` marks departures and legs from the cached id list and from the description, never waits on the planner, and does nothing with `LIMITED_STOPS=off`.
+### `backend/test/trip-alerts.test.mjs`: 6 tests, 6 pass
+Trips are cleaned; which alerts touch a trip (its line on its stretch, the whole line, its own stops, platform ids mapped to the station; not the same line past where it gets off, not another line); live problems only from an hour before to two hours after a travel time, once a day, none for a trip with no times; planned work once from 6 PM the evening before, nothing at night outside a travel time; one push for several; turn on, push when due, once, turn off (real SQL on node:sqlite).
+### `backend/test/history.test.mjs`
+Delete all my data also deletes the device's `ta:` row.
+### `app/test/limited.test.mjs`: 2 tests, 2 pass; `app/test/tripalerts.test.mjs`: 4 tests, 4 pass
+The tag shows from the server mark or "Limited stops" in the description only, sits on departure rows and trip legs, has a label and no tap target. Trip legs from the Home card, reminder and morning check days, at most 8 trips, the change key; no `setInterval` or polling in the sync, the switch asks for notifications and shows only with `flags.tripAlerts === true`.
+### Results (26 Oct, about 6:10 PM): app 674 of 674 (`OFFLINE=1`, includes battery), `npx tsc --noEmit` clean, backend 396 of 396 (after rebasing on main 52b235c)
+### Screens
+Web export against a local copy of the server with a fake Transport for NSW and a fake limited list: a station board, a trip and More, at 390 x 844 and 430 x 932, light and dark, iPhone and Android look (24 images, g22 task folder). Not yet seen on a real phone.
+### On a phone after the server deploy (not done)
+1. More > Alerts for my trips: switch on, allow notifications; `GET /api/trip-alerts?device=` says `on: true` with the number of trips on Home.
+2. Add a reminder to a saved trip; the trips are sent again once (one POST) and not on the next app open.
+3. A real alert on a saved trip's line within an hour of its reminder time gives one push; an alert on another line gives none.
+4. Switch off: the row is gone (`on: false`).
+5. A board with a limited service (for example an express on an intercity line) shows the tag after the nightly pack has `tripLim`.
+
 ## Live checks after a deploy and of the live state (26 Oct, g21)
 
 * `node tools/verify-deploy.mjs`: 12 checks against api.transportsydney.app with no Transport for NSW call (`/api/lines`, `/api/trackwork`, `/api/health` 403 without the key, `/api/usual`, `/api/stations`, `/api/parking?live=0`, `/api/app/config`, `/live/`, a 404, and a shared live trip link made, opened and ended). `--live` adds departures at Central and a Central to Strathfield trip. Exit 1 when any check fails. Run on 26 Oct, 4:12 PM: 12 of 12 ok.

@@ -222,6 +222,19 @@ The server stays on the Cloudflare Workers Paid base fee (US$5 a month) for up t
 * Load test keys do not work on production.
 * Phones see no change.
 
+## Limited stops tag (g22, on main, not deployed or released)
+* Departure rows and trip legs show a small "Limited stops" tag when that service skips stations its line normally serves. Worked out from the timetable for every line in NSW (trains, metro, light rail, buses, ferries), not a list of lines. iPhone: a filled grey capsule; Android: an outlined chip; caption size, theme colours, light and dark; read out as "Limited stops. Does not stop at every stop on the line.". Not a button.
+* Server: `limited: true` on `/api/departures` items and `/api/trip` transit legs (docs/API.md). Needs the nightly planner pack with `tripLim` (docs/TIMETABLE_PACKS.md); `LIMITED_STOPS=off` turns it off.
+* Known edges: ferry and coach trip ids carry the date, so they match only on the pack's own day; Church Point Ferry request stop wharves are often marked; a bus that runs the same pattern every trip is not marked unless its name says express or limited stops.
+
+## Alerts for my trips (g22, on main, not deployed or released)
+* More > Alerts for my trips, off until switched on. Pushes only when a service alert or planned work touches a trip on Home (saved trips, Home and Work, the usual commute): its line on the stretch you ride, the whole line, or the stops you board and get off at. Nothing for other lines or stops.
+* When: delays, fewer services and detours from an hour before one of the trip's times (its trip reminders and morning checks) to two hours after, once a day per alert; planned work once, from 6 PM the evening before the first time it touches (a trip with no times: the evening before the work starts). Nothing between 10 PM and 6 AM unless it is inside a travel time. Several at once are one push. What already touches the trips when you switch it on is shown then, not pushed.
+* Respects the notification settings: asks for permission when switched on, uses the same push as the other alerts, and turning it off deletes the trips on the server.
+* Battery: nothing polls. The phone sends its trips when the switch is turned on and when the trips, their reminders or their morning checks change (one request). The matching is on the server, every 10 minutes, with no Transport for NSW call.
+* Shows only when the server's remote config has `tripAlerts: true`, so builds 201 to 208 get it in an over the air update without a native change.
+* Not the same as the weekend trackwork push (Thursday evening, trips with a morning check): a trip with both can hear about the same weekend work twice.
+
 ## Not in the app
 
 No accounts or login, no ads, no analytics or tracking, no Opal card balance. Privacy details: [STORE_PRIVACY.md](STORE_PRIVACY.md) and https://transportsydney.app/privacy/.

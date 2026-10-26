@@ -672,3 +672,19 @@ as off: `/api/departures` stays on the Trip Planner path (`engine=1` checks stil
 Wrangler vars added: `ENGINE_SHARDS` "4", `ENGINE_IDLE_MIN` "5", `ENGINE_LEARN` "off", `LOAD_TESTS` "off",
 `CF_ACCOUNT_ID`, `BILLING_DAY` (25), `LOG_SAMPLING` "0.1"; secret `CF_ANALYTICS_TOKEN` (read only Account Analytics);
 `[[send_email]] ALERT_EMAIL` to contact@fintex.au.
+
+## Limited stops: `limited` on departures and trip legs (g22, not deployed)
+`/api/departures` items and `/api/trip` transit legs carry `limited: true` when the service skips stations its line normally serves (worked out from the timetable, `backend/tools/limited_stops.py`), or its description says "Limited Stops". Absent otherwise. The list of limited trip ids for the day comes from the planner object (`GET https://planner/limited?name=...` inside the Worker: `{ day, ver, marked, ids }`), read in the background and kept 3 hours in memory and up to 6 hours in the edge cache (10 minutes when the loaded pack is for another day). It never holds a request: the first request after a cold start is not marked. `LIMITED_STOPS=off` (Worker var) turns it off.
+
+## Saved trip alerts `/api/trip-alerts` (g22, not deployed)
+Per device; the phone's trips, matched by the server to the service alerts digest every `ALERT_EVERY_MIN` minutes (the minute after the digest refresh). Remote config flag `tripAlerts` (default on; `false` stops matching and hides the app switch).
+
+`POST /api/trip-alerts` `{ device, profile, on: true, trips: [{ n, f, t, legs: [{ l, m, f, t }], times: [{ d, m }] }] }`
+* `n` name (60 characters), `f`/`t` the trip's ends, `legs` up to 8 (`l` line, `m` mode, `f`/`t` where it boards and gets off, station ids where known), `times` up to 12 (`d` days 0 Sunday to 6 Saturday, `m` minute of the day). Up to 8 trips; a trip with no legs is dropped.
+* Answers `{ ok, on: true, enabled, trips, now: [{ trip, id, title, url, planned }] }`. `now` is what touches the trips already; the first time a device turns it on, those are marked as seen and not pushed.
+* `on: false`, or no usable trips, deletes the row: `{ ok, on: false, enabled }`.
+* Rate limit: the `write` bucket (60 POSTs in 10 minutes).
+
+`GET /api/trip-alerts?device=` `{ on, enabled, trips, now }`.
+
+Stored as one row in `meta` (`k = "ta:<device>"`, the trips plus the alert ids already sent, kept 10 days). `POST /api/history/delete` with scope `all` deletes it. Matching: an alert naming the leg's line touches it when it lists no stops or a station between where the leg boards and gets off (station order from `data/lineorder.json` for trains, metro, light rail and ferries, the route's stop list from `stations/bus/*.json` for buses; platform ids are mapped to their station); an alert naming no line touches it when it lists the leg's own stops. Sent with the same `notify` as other alerts (Expo push, web push, and the in app notes), tag `ta`, 3 hour time to live.

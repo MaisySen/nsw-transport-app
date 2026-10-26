@@ -148,6 +148,9 @@ object behind it, however many phones ask. The 2 s copy inside each Worker insta
 * **Data:** `tools/build_planner.py` turns the complete NSW GTFS bundle into one pack for a service day (plus the
   night before past midnight and the next morning): 167,294 stops (89,567 with services), 18,376 patterns, 73,738
   trips, 2,448,070 stop events, 566,728 footpaths, 45 MB (26 Oct pack, from the 23 Oct bundle).
+  Since g22 the pack also has `tripLim` (one byte per trip, 1 when its pattern skips stations its line normally
+  serves, `tools/limited_stops.py`) and `counts.limited`; the planner object answers `/limited` with those trip ids for
+  the Limited stops tag (docs/API.md). `LIMITED_REPORT=<file>` writes per line counts while building.
 * **Speed (measured 26 Oct on our build machine, Node 22):** 34 ms per search over the whole NSW network, 114 ms for a
   list of 5 trips (several searches). Opening the pack: 0.14 s.
 * **Correct (measured 26 Oct):** on 400 random NSW station pairs at random times, RAPTOR's earliest arrival equals an
