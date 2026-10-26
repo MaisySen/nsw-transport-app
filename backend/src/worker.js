@@ -1996,6 +1996,8 @@ function baseName(n) { return String(n || "").split(",")[0].trim().toLowerCase()
 async function service(env, q) {
   const mode = q.mode || "bus", line = q.line || "", tripId = q.trip || null;
   const feed = q.feed && (own(FEEDS, q.feed) || own(FEED_GROUPS, q.feed)) ? q.feed : null;
+  // The quick answer for a train asks the board engine for the trip's stop list beside the feed, from the start.
+  const engP = q.quick && mode === "train" && tripId ? engineTrip(env, null, tripId).catch(() => null) : null;
   const rt = await realtimeFor(env, [[mode, line, feed]]);
   const tu = tripId ? rt.tu(mode, line, tripId, feed) : null;
   const veh = tripId ? vehicleOf(rt.vp(mode, line, tripId, feed)) : null;
@@ -2026,7 +2028,10 @@ async function service(env, q) {
   // destination (reached false) a train keeps the old way and the run is used only if that finds nothing.
   let run = null, runList = null;
   if (tripId && q.stop && typeof ownRun === "function") {
-    const r = await ownRun(env, tripId, q.stop, q.planned ? ms(q.planned) : null).catch(() => null);
+    // The quick answer waits at most SERVICE_QUICK_RUN_MS for the run: a fresh copy of the worker may not yet hold the
+    // budget guard's word and ask a held planner object, which can take its whole 2.5 s.
+    const runP = ownRun(env, tripId, q.stop, q.planned ? ms(q.planned) : null).catch(() => null);
+    const r = q.quick ? await Promise.race([runP, new Promise((res) => setTimeout(() => res(null), SERVICE_QUICK_RUN_MS))]) : await runP;
     const list = r ? runStops(r, (t) => (t === tripId ? tu : rt.tu(mode, line, t, feed)), tripId, tuLive) : null;
     if (list) { run = r; runList = list; }
   }
@@ -2038,7 +2043,7 @@ async function service(env, q) {
   // from the board engine's timetable with the feed's delays by the engine's rules (engLive). No planner object read,
   // no Transport for NSW call (27 Oct, step C). The full answer that follows has the whole run.
   if (!useRun && q.quick && mode === "train" && tripId && !(tu && tu.rel === 3)) {
-    const et = await engineTrip(env, null, tripId).catch(() => null);
+    const et = engP ? await engP : null;
     if (et) {
       stops = et.stops.map((x) => {
         const lv = tu ? engineTripLive(tu, et, x.id, false) : null;
@@ -9169,7 +9174,15 @@ function engineTripLive(tu, trip, stopId, arrFirst) {
   const seqs = new Map(trip.stops.map((x) => [x.id, x.seq]));
   const me = trip.stops.find((x) => x.id === stopId);
   if (!me || me.planned == null) return null;
-  return engLive(tu, { planned: me.planned, seq: me.seq, stopId }, (id) => (seqs.has(id) ? seqs.get(id) : null), arrFirst);
+  const seqOf = (id) => (seqs.has(id) ? seqs.get(id) : null);
+  const got = engLive(tu, { planned: me.planned, seq: me.seq, stopId }, seqOf, arrFirst);
+  if (got || !tu || tu.rel === 3) return got;
+  // A stop the train has passed: the feed lists only stops after it, so no listed stop is before it. The delay at the
+  // first listed stop is the train's delay now (a departed boarding stop keeps the leg live, and its arrival with it).
+  const after = (tu.stus || []).map((u) => ({ u, sq: u.seq != null ? u.seq : seqOf(u.stopId) })).filter((x) => x.sq != null && x.u.rel !== 2).sort((a, b) => a.sq - b.sq);
+  if (!after.length || after[0].sq <= me.seq) return null;
+  const d = engDelay(after[0].u, arrFirst);
+  return d != null ? { est: me.planned + d * 1000, delay: d } : null;
 }
 // Planned times and stop sequences for trip-live come from the board engine's timetable (/timetable, the engine core's
 // SQLite copy of the NSW timetable; no Transport for NSW call). One ask per leg's stop pair, shared through Cloudflare's
@@ -9348,10 +9361,12 @@ async function tripStandIn(request, env, exec) {
 // copy the next poll gets. Only when the feed has at least 2 stops for the trip; otherwise the full answer as before.
 // SERVICE_QUICK=off turns it off.
 const SERVICE_QUICK_MS = 600;
+const SERVICE_QUICK_RUN_MS = 300; // the quick answer's wait for our timetable run before it takes the engine's list
 const SERVICE_STANDIN_MS = 1500;
 const FEED_ONLY = new WeakSet(); // internal requests that answer from the realtime feed only (serviceStandIn)
 function serviceQuickOn(env) { return String((env && env.SERVICE_QUICK) || "").toLowerCase() !== "off"; }
 async function serviceStandIn(request, env, exec) {
+  const t0 = Date.now();
   const r2 = new Request(request.url, { method: "GET", headers: request.headers });
   FEED_ONLY.add(r2);
   const res = await Promise.race([handleRequest(r2, env, exec), new Promise((r) => setTimeout(() => r(null), SERVICE_STANDIN_MS))]);
@@ -9362,6 +9377,7 @@ async function serviceStandIn(request, env, exec) {
   const out = new Response(text, { status: 200, headers: res.headers });
   out.headers.set("cache-control", "no-store");
   out.headers.set("x-edge-cache", "quick");
+  out.headers.set("x-quick-ms", String(Date.now() - t0));
   return out;
 }
 const inFlight = new Map(); // edge key -> sharedJob of { status, headers, body }

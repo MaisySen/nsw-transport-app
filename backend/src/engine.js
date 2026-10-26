@@ -1080,6 +1080,8 @@ class BoardEngine {
     const m = this.loadMeta();
     if (!m) return { error: "no timetable" };
     if (!/^[A-Za-z0-9._:-]{1,80}$/.test(tripId)) return { error: "trip" };
+    const memo = this.tripMem && this.tripMem.get(tripId);
+    if (memo && Date.now() - memo.at < 10 * 60000) return memo.out;
     const src = this.source();
     const seq = src.tripSeq("train", tripId);
     if (!seq || !seq.size) return { v: 1, trip: tripId, stops: [] };
@@ -1097,7 +1099,10 @@ class BoardEngine {
       const s = src.stop(id);
       stops.push({ id, seq: sq, planned, name: s ? s[0] : null, parent: s ? s[1] || null : null, plat: s ? s[2] || null : null, lat: s ? s[3] : null, lon: s ? s[4] : null });
     }
-    return { v: 1, trip: tripId, stops };
+    const out = { v: 1, trip: tripId, stops };
+    if (!this.tripMem || this.tripMem.size > 500) this.tripMem = new Map();
+    this.tripMem.set(tripId, { at: Date.now(), out });
+    return out;
   }
   timetable(stopsParam, ndays) {
     const m = this.loadMeta();

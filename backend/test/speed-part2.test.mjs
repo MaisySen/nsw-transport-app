@@ -39,14 +39,14 @@ const lists = { "/stations/train.json": [["200060", "Central Station", -33.88, 1
 // The board engine's timetable (/timetable): planned times and stop sequences at Strathfield P3 (seq 5), Lidcombe (seq 2)
 // and Central P17 (seq 9), for the trips in the feed.
 const dayStart = Math.floor(Date.now() / 1000) - 3600;
-const planned = { live: nowS + 4 * 60 - 120, moved: nowS + 7 * 60 - 60, delay: nowS + 8 * 60 };
+const planned = { live: nowS + 4 * 60 - 120, moved: nowS + 7 * 60 - 60, delay: nowS + 8 * 60, past: nowS - 5 * 60 };
 let ttAsks = 0;
 const row = (t, trip, seq) => [t - dayStart, trip, 0, 0, 0, seq];
 const ENGINE = { idFromName: (n) => n, get: () => ({ fetch: async (u) => {
   const url = new URL(u);
   if (url.pathname === "/trip") {
     ttAsks++;
-    const tr = url.searchParams.get("trip"), p = planned[{ "t1-live": "live", "t1-moved": "moved", "t1-delay": "delay" }[tr]];
+    const tr = url.searchParams.get("trip"), p = planned[{ "t1-live": "live", "t1-moved": "moved", "t1-delay": "delay", "t1-past": "past" }[tr]];
     if (!p) return Response.json({ v: 1, trip: tr, stops: [] });
     return Response.json({ v: 1, trip: tr, stops: [
       { id: "2135101", seq: 2, planned: (p - 6 * 60) * 1000, name: "Lidcombe Station, Platform 1", lat: -33.86, lon: 151.04 },
@@ -75,6 +75,7 @@ globalThis.fetch = async (u) => {
       tripUpdate("t1-moved", [[5, "2135114", nowS + 7 * 60, 60], [9, "2000331", nowS + 23 * 60, 60]]),
       tripUpdate("t1-gone", [], 3),
       delayOnlyNoSeq("t1-delay", [["2135101", 180]]),
+      delayOnlyNoSeq("t1-past", [["2000331", 120]]),
     ]));
   }
   if (url.pathname.endsWith("/tp/trip") || url.pathname.endsWith("/tp/departure_mon")) { plannerCalls++; return new Response("{}", { status: 503 }); }
@@ -272,4 +273,14 @@ test("service quick answer for a train with no run: the trip's stops from the en
   // A train with nothing in the engine's timetable gives no quick list (the full answer follows).
   const none = await W.service(env, { quick: true, mode: "train", line: "T1", trip: "no-such-trip", stop: "2135113" });
   assert.equal(none.stops.length, 0);
+});
+
+test("trip-live: a boarding stop the train has passed takes the delay at the first listed stop, so the arrival stays live", async () => {
+  edge.clear();
+  const r = await call("/api/trip/live?legs=" + leg("t1-past", "2135113", "2000331", "train", "T1"));
+  const x = r.body.legs[0];
+  assert.equal(x.realtime, true);
+  assert.equal(Date.parse(x.estimated), (planned.past + 120) * 1000);
+  assert.equal(Date.parse(x.arrEstimated), (planned.past + 16 * 60 + 120) * 1000);
+  assert.equal(x.delayMin, 2);
 });
