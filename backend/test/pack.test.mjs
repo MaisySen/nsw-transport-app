@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const root = new URL("..", import.meta.url).pathname;
 const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {") + "\n" +
-  fs.readFileSync(root + "src/engine.js", "utf8").replace(/\nexport \{ BoardEngine \};\s*$/, "\n") + "\n" +
+  fs.readFileSync(root + "src/engine.js", "utf8").replace(/\nexport \{ BoardEngine[^}]*\};\s*$/, "\n") + "\n" +
   fs.readFileSync(root + "src/pack.js", "utf8") +
   "\nexport { __default, engDayKey, engBuildBoard, BoardEngine, packBuild, packAnswer };\n";
 const tmp = `/tmp/pack-test-${process.pid}-${Date.now()}.mjs`;

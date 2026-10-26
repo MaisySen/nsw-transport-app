@@ -6980,12 +6980,20 @@ async function handleRequest(request, env, exec) {
           // request says engine=1. A stop it has no timetable for falls through to the Trip Planner below.
           if (!at && typeof engineBoard === "function" && engineWanted(env, url)) {
             const et = await engineBoard(env, exec, p.get("stop") || "", p.get("mode") || "").catch(() => null);
-            if (et) {
-              const eb = JSON.parse(et);
+            const eb = et ? JSON.parse(et) : null;
+            // A board built more than 60 s ago, or from a feed copy more than 60 s old, goes to the Trip Planner instead.
+            const engAge = eb ? Date.now() - Math.min((eb.engine && eb.engine.builtAt) || 0, (eb.live && eb.live.feedAt) || Infinity) : Infinity;
+            if (eb && engAge <= ENGINE_STALE_MS) {
+              // Same board as the phone already holds (If-None-Match): 304, no body.
+              const etag = 'W/"e' + ((eb.engine && eb.engine.builtAt) || 0) + "-" + et.length + '"';
+              if (!asTxt && request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: { etag, "cache-control": "no-store", "access-control-allow-origin": "*", ...API_SEC_HEADERS } });
               const d = { kind: "departures", dataAt: (eb.live && eb.live.feedAt) || (eb.engine && eb.engine.builtAt) || Date.now(), ...eb, now: Date.now() };
               if (!(await serverOn(env, "occupancy"))) { d.items = d.items.map((x) => ({ ...x, vehicle: x.vehicle ? { ...x.vehicle } : x.vehicle })); stripOccupancy(d); }
               await afterAnswer(env, d, { profile, device: p.get("device"), exec });
-              return asTxt ? textRes(await asText(env, d)) : json(d);
+              if (asTxt) return textRes(await asText(env, d));
+              const res = json(d);
+              res.headers.set("etag", etag);
+              return res;
             }
           }
           const depKey = (p.get("stop") || "") + "|" + (p.get("mode") || "") + (at ? "|" + at.date + at.time : "");
@@ -7007,7 +7015,16 @@ async function handleRequest(request, env, exec) {
         case "/api/engine/status": {
           if (typeof engineCall !== "function") return json({ error: "engine not built in" }, 503);
           const r = await engineCall(env, "/status");
-          return json(await r.json(), r.status);
+          const st = await r.json();
+          // The board shards: starts (boots) and ticks of each, so a restart under load shows here.
+          const n = engineShards(env);
+          if (n) {
+            st.shards = await Promise.all(Array.from({ length: n }, async (_, i) => {
+              const name = ENGINE_OBJECT + "-s" + i;
+              try { return await (await env.SHARDS.get(env.SHARDS.idFromName(name), { locationHint: "oc" }).fetch("https://engine/status?name=" + name)).json(); } catch (e) { return { name, error: String(e && e.message || e) }; }
+            }));
+          }
+          return json(st, r.status);
         }
         case "/api/pack":
           // One stop's timetable for the phone (src/pack.js, docs/TIMETABLE_PACKS.md).

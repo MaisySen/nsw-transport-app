@@ -26,6 +26,7 @@ run_worker_first = true
 [vars]
 API_ONLY = "1"
 ENGINE_BOARDS = "off"
+ENGINE_SHARDS = "16"
 API_HOST = "api.transportsydney.app"
 SITE_URL = "https://transportsydney.app"
 VAPID_SUBJECT = "mailto:hello@transportsydney.app"
@@ -41,9 +42,19 @@ APNS_TEAM_ID = "B85KQRQZW7"
 name = "ENGINE"
 class_name = "BoardEngine"
 
+# Board shards (docs/ENGINE.md, "Shards"): ENGINE_SHARDS objects build the boards, a stop always in the same one, and
+# write them to Cloudflare's cache; the core object above keeps the timetable and the one copy of each feed.
+[[durable_objects.bindings]]
+name = "SHARDS"
+class_name = "BoardShard"
+
 [[migrations]]
 tag = "engine-v1"
 new_sqlite_classes = ["BoardEngine"]
+
+[[migrations]]
+tag = "engine-v2"
+new_sqlite_classes = ["BoardShard"]
 
 [[d1_databases]]
 binding = "DB"

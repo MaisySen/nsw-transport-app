@@ -8,8 +8,8 @@ import { DatabaseSync } from "node:sqlite";
 
 const root = new URL("..", import.meta.url).pathname;
 const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {") + "\n" +
-  fs.readFileSync(root + "src/engine.js", "utf8").replace(/\nexport \{ BoardEngine \};\s*$/, "\n") +
-  "\nexport { __default, engBuildBoard, engLive, engDayKey, engPlatform, BoardEngine, engineWanted };\n";
+  fs.readFileSync(root + "src/engine.js", "utf8").replace(/\nexport \{ BoardEngine, BoardShard \};\s*$/, "\n") +
+  "\nexport { __default, engBuildBoard, engLive, engDayKey, engPlatform, BoardEngine, BoardShard, engineWanted, engTrim, engShardOf };\n";
 const tmp = `/tmp/engine-test-${process.pid}-${Date.now()}.mjs`;
 fs.writeFileSync(tmp, src);
 const W = await import(tmp); fs.unlinkSync(tmp);
@@ -120,9 +120,11 @@ test("a service added on the day that calls here is listed with its live time", 
   assert.ok(a); assert.equal(a.line, "T1"); assert.equal(a.dest, "Endtown Station"); assert.equal(a.realtime, true); assert.equal(a.platform, "Platform 2");
 });
 
-test("live times win over a delay; a NO_DATA stop stays scheduled", () => {
+test("a delay wins over the update's time (the time can count from the operator's own schedule); a NO_DATA stop stays scheduled", () => {
   const r = { stopId: "B", seq: 7, planned: Date.now() + 300000 };
-  assert.equal(W.engLive({ stus: [{ seq: 7, stopId: "B", dep: { time: nowS + 400, delay: 9 } }] }, r).est, (nowS + 400) * 1000);
+  // Light rail on 26 Oct: planned 02:00:00, departure delay 307 s with time 02:06:02; the Trip Planner said 02:04:54.
+  assert.equal(W.engLive({ stus: [{ seq: 7, stopId: "B", dep: { time: nowS + 400, delay: 9 } }] }, r).est, r.planned + 9000);
+  assert.equal(W.engLive({ stus: [{ seq: 7, stopId: "B", dep: { time: nowS + 400 } }] }, r).est, (nowS + 400) * 1000);
   assert.equal(W.engLive({ stus: [{ seq: 7, stopId: "B", rel: 2 }] }, r), null);
   assert.equal(W.engLive(null, r), null);
 });
@@ -223,4 +225,58 @@ test("a loop service: the update for its first call does not land on its last ca
   assert.equal(last.est, p + 60000);
   const first = W.engLive(tu, { planned: p - 1800000, stopId: "S", seq: 1 }, null, false);
   assert.equal(first.delay, 120);
+});
+
+test("trains run with no passengers (Empty Train) are left off boards", () => {
+  const save = rows.P1;
+  meta.heads.push("Empty Train");
+  rows.P1 = [...save, [sec(7), "T-empty", 0, meta.heads.length - 1, 10]];
+  try {
+    const b = W.engBuildBoard(fakeSrc(), "P");
+    assert.ok(!b.items.some((i) => i.tripId === "T-empty"));
+    assert.ok(b.items.some((i) => i.tripId === "T-A"));
+  } finally { rows.P1 = save; meta.heads.pop(); }
+});
+
+test("a trimmed update keeps the stop, the last update before it and the next after it, so boards come out the same", () => {
+  const stus = [1, 2, 3, 4, 5, 6, 7, 8].map((s) => ({ seq: s, stopId: "s" + s, dep: { delay: s * 10 } }));
+  const t = W.engTrim({ tripId: "x", rel: 0, stus }, [5]);
+  assert.deepEqual(t.stus.map((u) => u.seq), [4, 5, 6]);
+  // No update at the stop: the one before carries on, as with the whole update.
+  const gap = stus.filter((u) => u.seq !== 5);
+  const row = { stopId: "s5", seq: 5, planned: Date.now() };
+  assert.equal(W.engLive(W.engTrim({ stus: gap }, [5]), row).est, W.engLive({ stus: gap }, row).est);
+  // Updates without stop sequences are kept whole.
+  assert.equal(W.engTrim({ stus: [{ stopId: "a" }, { stopId: "b" }] }, [3]).stus.length, 2);
+});
+
+test("stops spread over the shards and always land in the same one", () => {
+  const n = 16, count = new Array(n).fill(0);
+  for (let i = 0; i < 3200; i++) count[W.engShardOf(String(200000 + i * 7), n)]++;
+  assert.ok(Math.min(...count) > 120 && Math.max(...count) < 280, "spread: " + count.join(","));
+  assert.equal(W.engShardOf("200060", n), W.engShardOf("200060", n));
+});
+
+test("a shard builds the same board as the core object, from the core's one copy of each feed", async () => {
+  const calls = [];
+  const E = await loaded(calls);
+  const core = { fetch: (u, init) => E.fetch(new Request(u, init)) };
+  const env = { ENGINE: { idFromName: () => "core", get: () => core } };
+  const S = new W.BoardShard(fakeState(), env);
+  const r = await S.fetch(new Request("https://engine/board?stop=P&name=nsw-2-s3"));
+  assert.equal(r.status, 200);
+  const b = await r.json();
+  const c = await (await E.fetch(new Request("https://engine/board?stop=P"))).json();
+  assert.deepEqual(b.items.map((i) => [i.tripId, i.estimated, i.platform]), c.items.map((i) => [i.tripId, i.estimated, i.platform]));
+  assert.equal(b.items.find((i) => i.tripId === "B-2").delayMin, 3);
+  assert.equal(b.engine.shard, "nsw-2-s3");
+  assert.equal((await S.fetch(new Request("https://engine/board?stop=nowhere"))).status, 404);
+  // A second shard and a tick: still one copy of each feed in the core.
+  const S2 = new W.BoardShard(fakeState(), env);
+  await S2.fetch(new Request("https://engine/board?stop=P1"));
+  const n0 = calls.length;
+  await S.tick(); await S2.tick();
+  assert.equal(calls.length, n0, "shards never call Transport for NSW");
+  const st = S.status();
+  assert.equal(st.role, "shard"); assert.equal(st.boots, 1); assert.equal(st.hotBoards, 2);
 });
