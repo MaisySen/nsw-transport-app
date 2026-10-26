@@ -11,6 +11,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import { api } from '@/lib/api';
 import { useCountdownNow, useLive, useReportCountdowns } from '@/lib/hooks';
+import { serviceQuery, svcParams } from '@/lib/speedCore';
+import { holdService } from '@/lib/prefetch';
 import { useBoardPush } from '@/lib/boardPush';
 import { pollGapWithPush } from '@/lib/boardPushCore';
 import { adaptiveGapMs, nextInMs } from '@/lib/pollCore';
@@ -66,7 +68,10 @@ function useStops(items: Departure[], rows: BoardRow[]) {
       const d = items.find((x) => x.tripId === r.tripId);
       if (!d) return;
       try {
-        const s = await api.service({ trip: d.tripId, feed: d.feed || undefined, line: d.line, stop: d.stopId, planned: d.planned, mode: d.mode, destId: d.destId || undefined });
+        // The service screen's own query (speedCore.serviceQuery), so the answer also paints that screen's first frame.
+        const sp = svcParams(d);
+        const s = await api.service(serviceQuery(sp));
+        holdService(sp, s);
         stopsKept.set(r.tripId!, stopsSummary(s?.stops, s?.mineIndex));
       } catch { stopsKept.set(r.tripId!, ''); }
       if (stopsKept.size > 80) stopsKept.delete(stopsKept.keys().next().value as string);

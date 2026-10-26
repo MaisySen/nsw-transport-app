@@ -12,12 +12,14 @@ import { Icon, I } from './Icon';
 import { DepartureRow, JourneyCard, LiveDot } from './Transit';
 import { Sep, T } from './ui';
 import { useWhyLate } from '@/lib/whyLate';
+import { svcParams, type SvcRow } from '@/lib/speedCore';
 
 /** Opens the service view. The board's own live flag, estimate and delay travel along so the sheet never contradicts the row that was tapped. */
-export function openService(d: { tripId?: string; feed?: string; line?: string; stopId?: string; planned?: string; mode?: string; destId?: string; color?: string; dest?: string; realtime?: boolean; estimated?: string | null; delayMin?: number | null; toStopId?: string | null }) {
+export function openService(d: SvcRow) {
   // toStopId: opened from a trip or a plan, the stop you get off at (GET ON and GET OFF tags in the stop list).
-  router.push({ pathname: '/service', params: { trip: d.tripId || '', feed: d.feed || '', line: d.line || '', stop: d.stopId || '', planned: d.planned || '', mode: d.mode || '', destId: d.destId || '', color: d.color || '', dest: d.dest || '', rt: d.realtime ? '1' : '', est: d.realtime && d.estimated ? d.estimated : '', delay: d.realtime && d.delayMin != null ? String(d.delayMin) : '', to: d.toStopId || '' } });
+  router.push({ pathname: '/service', params: svcParams(d) });
 }
+
 
 function CardHead({ title, subtitle, onPress, live, beat, icon }: { title: string; subtitle?: string; onPress?: () => void; live?: boolean; beat?: any; icon?: any }) {
   const c = usePalette();
@@ -52,7 +54,7 @@ export function StopCard({ stop }: { stop: Place }) {
         return (
           <View key={key + i}>
             <Sep inset={16} />
-            <DepartureRow d={d} now={now} alertText={rowAlert(d.alerts, data?.alerts)} why={whyOf(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />
+            <DepartureRow d={d} now={now} alertText={rowAlert(d.alerts, data?.alerts)} why={whyOf(d)} watched={!!st.watchedTrips[key]} onPress={() => openService({ ...d, stopName: d.stopName || data?.stop?.name || stop.name })} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />
           </View>
         );
       })}

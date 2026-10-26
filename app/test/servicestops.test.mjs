@@ -10,7 +10,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const src = fs.readFileSync(path.join(here, '..', 'src/app/service.tsx'), 'utf8');
 
 test('the destination name goes to the server', () => {
-  assert.match(src, /api\.service\(\{[^}]*dest: p\.dest \|\| undefined/);
+  // Since the 27 Oct speed pass the query is built by speedCore.serviceQuery (shared with the board and press in).
+  assert.match(src, /api\.service\(serviceQuery\(p\)\)/);
+  const core = fs.readFileSync(path.join(here, '..', 'src/lib/speedCore.ts'), 'utf8');
+  assert.match(core, /to: v\(p\.to\), dest: v\(p\.dest\) \}/);
 });
 
 test('a skipped stop: greyed, "Not stopping", no time, read out as not stopping', () => {

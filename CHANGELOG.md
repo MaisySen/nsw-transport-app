@@ -4,6 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Speed pass: every screen paints at once (app, on main 27 Oct, ships with tonight's over the air update)
+* Why: "It's bad everywhere" (9:11 AM); the service screen sat on "Loading live times" and "Finding the vehicle".
+* Service detail opens on what the tapped row showed: line, destination, live delay, your stop and its time (from a trip, also where you get off), with "Updated just now, refreshing" and "Loading every stop" until the server answers. The row's /api/service read starts on press in (each service once per 20 s, 8 a minute, held in memory only), and a big board's next stops reads are held for it too.
+* Nearby: station lookups side by side instead of one after another; the last list paints at once when you are within 400 m of where it was made.
+* Car parks: the list and a car park opened from it paint at once from the phone, with how old the counts are.
+* Bus route: the stops paint at once from the copy kept this session or on the phone; the opened stop's times load beside the live bus boards.
+* Kept copies on the phone: 40 (was 32). No new timers, nothing in the background, no tap behaviour changes.
+* Audit table of every screen's requests: docs/PERFORMANCE.md. Tests: app/test/speed27.test.mjs (14).
+
 ### Car parks answer at once (server, 27 Oct, about 9:30 AM; no app update needed)
 * Before: More > Car parks (`/api/parking`) took 11.5 to 13.6 s on a cold open, because about 40 car parks are read four at a time under the open data rate limit.
 * Now the last answer with at least one live count is saved (one row per query: all, a station, or one car park) and a cold open gets it at once, labelled with when its counts were read (`dataAt`), while the fresh counts are read behind it and saved for the next open. Copies are used up to 30 minutes old; a car park reading over 30 minutes old is marked stale ("No live count") on the way out, the same rule as a live answer. An answer with no live count is never saved or kept at the edge.

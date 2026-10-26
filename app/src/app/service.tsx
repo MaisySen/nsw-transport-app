@@ -8,6 +8,7 @@ import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { cacheKey } from '@/lib/offlineCore';
+import { isSeeded, serviceQuery, serviceSeed, svcCacheId } from '@/lib/speedCore';
 import { usePalette } from '@/lib/theme';
 import { badgeLook } from '@/lib/lineStyle';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
@@ -25,7 +26,7 @@ import { onColor } from '@/lib/theme';
 import { busMarker, tripTraffic } from '@/lib/busLiveCore';
 
 export default function ServiceScreen() {
-  const p = useLocalSearchParams<{ trip: string; feed: string; line: string; stop: string; planned: string; mode: string; destId: string; color: string; dest: string; rt: string; est: string; delay: string; to: string }>();
+  const p = useLocalSearchParams<{ trip: string; feed: string; line: string; stop: string; planned: string; mode: string; destId: string; color: string; dest: string; rt: string; est: string; delay: string; to: string; sname: string; tname: string; tplan: string; seen: string }>();
   const c = usePalette();
   const now = useNow();
   const insets = useSafeAreaInsets();
@@ -33,8 +34,13 @@ export default function ServiceScreen() {
   const { height } = useWindowDimensions();
   const st = useStore();
   const sheet = useRef<BottomSheet>(null);
-  const { data, error, updatedAt, offlineAt, staleAt } = useLive(() => api.service({ trip: p.trip, feed: p.feed || undefined, line: p.line, stop: p.stop, planned: p.planned, mode: p.mode, destId: p.destId, to: p.to || undefined, dest: p.dest || undefined }), 15000, [p.trip, p.planned, p.to],
-    { cacheKey: p.trip ? cacheKey('svc', `${p.trip}|${p.planned || ''}|${p.stop || ''}|${p.to || ''}`) : undefined });
+  // First frame (27 Oct speed pass): the copy kept on the phone (or read on press in), else what the tapped row showed
+  // (line, destination, live flag, delay, your stop and time), labelled with its age until the live answer lands.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const seed = useMemo(() => serviceSeed(p, Date.now()), [p.trip, p.planned, p.to]);
+  const { data, error, updatedAt, offlineAt, staleAt } = useLive(() => api.service(serviceQuery(p)), 15000, [p.trip, p.planned, p.to],
+    { cacheKey: p.trip ? cacheKey('svc', svcCacheId(p)) : undefined, seed });
+  const seeded = isSeeded(data);
   const color = badgeLook(p.line || data?.line, p.mode || data?.mode, data?.color || p.color).bg;
   const snaps = useMemo(() => ['38%', '62%', '92%'], []);
   const key = tripKey(p.trip, p.planned, p.line);
@@ -90,7 +96,7 @@ export default function ServiceScreen() {
               <StatusLine realtime={live} delayMin={delayMin} cancelled={data?.cancelled} state={liveNow} timetableText={busLike ? 'Timetable only' : undefined} />
               {data?.vehicle?.occupancy?.text ? <OccupancyChip o={data.vehicle.occupancy} style={{ marginLeft: 6 }} /> : null}
               <QuietChip v={data?.vehicle as any} style={{ marginLeft: 6 }} />
-              {data && !data.vehicle ? <T kind="foot" tone="text2">{'\u00b7'} No GPS position yet</T> : null}
+              {data && !seeded && !data.vehicle ? <T kind="foot" tone="text2">{'\u00b7'} No GPS position yet</T> : null}
             </View>
             {traffic ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }} accessibilityLabel={traffic}>
@@ -161,7 +167,8 @@ export default function ServiceScreen() {
               );
             })}
             {!data && !error ? <T kind="sub" tone="text2">Finding the vehicle</T> : null}
-            {!data && error ? <T kind="sub" tone="text2">{error}</T> : null}
+            {seeded && !error ? <T kind="sub" tone="text2" style={{ marginTop: stops.length ? 6 : 0 }}>Loading every stop</T> : null}
+            {(!data || seeded) && error ? <T kind="sub" tone="text2">{error}</T> : null}
           </View>
         </BottomSheetScrollView>
       </BottomSheet>

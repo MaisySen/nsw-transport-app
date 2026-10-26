@@ -541,6 +541,12 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 * Tests: backend `cross-request.test.mjs`, `feed-lost.test.mjs`, `proto-keys.test.mjs`, `upstream-not-json.test.mjs`. Results 26 Oct: backend 430 pass, app 653 pass with 3 skipped (OFFLINE=1), tsc clean, battery test passes.
 * After the next transport-api deploy: open one stop on two phones at once (both show the board), and `/api/health` with the admin key shows feed ages under a minute an hour later.
 
+## Speed pass, every screen paints at once (27 Oct)
+
+* `TZ=Australia/Sydney OFFLINE=1 node --test test/speed27.test.mjs` in `app/`: the shared service query, the service seed (fields, age, never kept), first frame order, a press in answer peeked on the next first frame, the kept copies cap, the press in gate, nearby lookups side by side and the 400 m rule, car park and route copies.
+* On a phone after tonight's update: open a stop, tap a train you have not opened before; the line, destination, delay and your stop show at once with "Loading every stop", then the full list. Open Nearby twice in the same spot; the second shows its stops at once. More > Car parks opens on the last list with its age.
+* Results 27 Oct: app 729 tests, 726 pass, 3 skipped (OFFLINE=1), battery 17 of 17, tsc clean.
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).

@@ -30,6 +30,9 @@ import type { TripLeg } from '@/lib/trips';
 import { Icon, I, IconName } from './Icon';
 import { safeUrl } from '@/lib/access';
 import { openService } from './Cards';
+import { pressService } from '@/lib/prefetch';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { allSettledMap, nearFirstPaint, type NearKept } from '@/lib/speedCore';
 import { LineBadge, OccupancyChip } from './Transit';
 import { swipeA11y, type SwipeAct } from './Swipe';
 import { useReliabilityText } from '@/lib/reliability';
@@ -811,7 +814,7 @@ export function StopBoard({ stop, now, starred, distance, menu }: { stop: Place;
         return (
           <View key={rowKey}>
             <Sep inset={16} />
-            <Pressable accessibilityRole="button" onPress={() => openService(d)} android_ripple={{ color: c.fill }} accessibilityLabel={`${d.line} to ${d.dest}, ${t.big} ${t.unit}${d.realtime ? ', live' : ', scheduled'}`}
+            <Pressable accessibilityRole="button" onPress={() => openService({ ...d, stopName: d.stopName || data?.stop?.name || stop.name })} onPressIn={() => pressService(d)} android_ripple={{ color: c.fill }} accessibilityLabel={`${d.line} to ${d.dest}, ${t.big} ${t.unit}${d.realtime ? ', live' : ', scheduled'}`}
               style={({ pressed }) => [s.dep, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
               <LineBadge line={d.line} mode={d.mode} color={d.color} kind />
               <T kind="body" numberOfLines={1} style={{ flex: 1, marginLeft: 10 }}>{shortName(d.dest)}</T>
@@ -858,28 +861,49 @@ export async function nearbyStops(lat: number, lon: number): Promise<Near[]> {
     groups.set(seg, g);
   }
   const sorted = [...groups.values()].sort((a, b) => a.distance - b.distance).slice(0, 6);
-  const picks: NearPick[] = [];
-  for (const g of sorted) {
-    let p: Near | null = null;
-    if (/(Station|Wharf)$/i.test(g.seg) || g.members.length > 1) p = await parentOf(g.seg);
+  // The station lookups go out side by side (27 Oct speed pass): one after another they cost up to six round trips.
+  const parentsFound = await allSettledMap(sorted, (g) => (/(Station|Wharf)$/i.test(g.seg) || g.members.length > 1 ? parentOf(g.seg) : Promise.resolve(null)));
+  const picks: NearPick[] = sorted.map((g, i) => {
+    const p = parentsFound[i];
     const pick: Near = p ? { ...p, distance: g.distance } : g.members.sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0))[0];
-    picks.push({ ...pick, seg: g.seg, parent: !!p });
-  }
+    return { ...pick, seg: g.seg, parent: !!p };
+  });
   // Up to 5, so Home still has 3 after leaving out starred stops.
   return foldNear(picks, 5).map(({ seg, parent, ...n }) => n);
 }
 
 type NearState = { phase: 'checking' | 'off' | 'loading' | 'on' | 'error'; stops: Near[]; error?: string };
 
+// The last nearby list and where it was made (27 Oct speed pass): in memory for the session and kept on the phone, so
+// Home paints Nearby on its first frame when the phone is still within 400 m of that spot (speedCore.nearFirstPaint).
+const NEAR_KEY = 'near:last';
+let nearKept: NearKept<Near> | null | undefined;
+async function readNearKept(): Promise<NearKept<Near> | null> {
+  if (nearKept !== undefined) return nearKept;
+  try { const raw = await AsyncStorage.getItem(NEAR_KEY); nearKept = raw ? JSON.parse(raw) : null; } catch { nearKept = null; }
+  return nearKept ?? null;
+}
+function keepNear(lat: number, lon: number, stops: Near[]) {
+  if (!stops.length) return;
+  nearKept = { at: Date.now(), lat, lon, stops };
+  AsyncStorage.setItem(NEAR_KEY, JSON.stringify(nearKept)).catch(() => {});
+}
+
 export function useNearby() {
-  const [st, setSt] = useState<NearState>({ phase: 'checking', stops: [] });
+  // A list made this session in the last 3 minutes shows on the first frame; the fresh one replaces it.
+  const [st, setSt] = useState<NearState>(() => (nearKept && Date.now() - nearKept.at < 180000 ? { phase: 'on', stops: nearKept.stops } : { phase: 'checking', stops: [] }));
 
   const load = async () => {
     setSt((s) => ({ ...s, phase: s.stops.length ? 'on' : 'loading' }));
     try {
-      let pos = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60000 }).catch(() => null);
+      const [last, kept] = await Promise.all([Location.getLastKnownPositionAsync({ maxAge: 5 * 60000 }).catch(() => null), readNearKept()]);
+      let pos = last;
+      // Still near where the kept list was made: show it now, while the fresh list loads.
+      const early = pos ? nearFirstPaint(kept, { lat: pos.coords.latitude, lon: pos.coords.longitude }, Date.now()) : null;
+      if (early) setSt((s) => (s.phase === 'on' && s.stops.length ? s : { phase: 'on', stops: early }));
       if (!pos) pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const stops = await nearbyStops(pos.coords.latitude, pos.coords.longitude);
+      keepNear(pos.coords.latitude, pos.coords.longitude, stops);
       setSt({ phase: 'on', stops });
     } catch (e: any) {
       setSt((s) => (s.stops.length ? s : { phase: 'error', stops: [], error: String(e?.message || e) }));

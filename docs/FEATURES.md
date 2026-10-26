@@ -240,6 +240,11 @@ The server stays on the Cloudflare Workers Paid base fee (US$5 a month) for up t
 * Shows only when the server's remote config has `tripAlerts: true`, so builds 201 to 208 get it in an over the air update without a native change.
 * Not the same as the weekend trackwork push (Thursday evening, trips with a morning check): a trip with both can hear about the same weekend work twice.
 
+## Instant screens (27 Oct speed pass, on main, ships with tonight's update)
+
+* Every screen paints from what the phone already has: the copy kept for that screen, or what the screen before showed. A service opened from a board or a trip shows its line, destination, delay and your stop at once; Nearby shows the last list when you are still near where it was made; car parks and bus routes open on their kept copy. Each says how old its times are until the live answer replaces it.
+* A finger on a service row starts loading that service (bounded: once per 20 s per service, 8 a minute).
+
 ## Not in the app
 
 No accounts or login, no ads, no analytics or tracking, no Opal card balance. Privacy details: [STORE_PRIVACY.md](STORE_PRIVACY.md) and https://transportsydney.app/privacy/.

@@ -7,6 +7,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { goBack } from '@/lib/nav';
 import { prefetchStop } from '@/lib/prefetch';
+import { cacheKey } from '@/lib/offlineCore';
+import { keepOffline, peekOffline } from '@/lib/offline';
+import { createCapped } from '@/lib/speedCore';
 import { useSides } from '@/lib/layout';
 import { api } from '@/lib/api';
 import { useScreenPoll, useNow } from '@/lib/activity';
@@ -20,6 +23,8 @@ import { Icon, I } from '@/components/Icon';
 import { depState, LineBadge } from '@/components/Transit';
 import { liveWords } from '@/lib/liveLabelCore';
 import { T } from '@/components/ui';
+/** Routes opened this session (at most 12): a route's stops barely change within a day. */
+const routeMem = createCapped<any>(12);
 
 export default function RouteScreen() {
   const p = useLocalSearchParams<{ line: string; mode: string; stop: string; towards: string; color: string }>();
@@ -42,13 +47,25 @@ export default function RouteScreen() {
 
   useEffect(() => {
     let live = true;
-    setDirs(null); setErr(null);
+    setErr(null);
+    // A route's stops are timetable data: the copy from this session or kept on the phone paints at once (27 Oct speed
+    // pass) and the server's answer replaces it; an error never clears stops already on screen.
+    const rk = cacheKey('route', `${line}|${mode}`);
+    const show = (raw: any) => {
+      const d = regionDirs(routeDirs(raw), p.stop ? String(p.stop) : null);
+      if (!d.length) return false;
+      setDirs(d); setDi(pickDir(d, p.stop, p.towards));
+      return true;
+    };
+    const kept = routeMem.get(rk) ?? peekOffline<any>(rk)?.data;
+    const had = kept ? show(kept) : false;
+    if (!had) setDirs(null);
     api.route(line, mode).then((raw) => {
       if (!live) return;
-      const d = regionDirs(routeDirs(raw), p.stop ? String(p.stop) : null);
-      if (!d.length) { setErr(`No stops found for route ${line}.`); return; }
-      setDirs(d); setDi(pickDir(d, p.stop, p.towards));
-    }).catch((e: any) => { if (live) setErr(e?.http === 404 ? `Route ${line} isn't in the timetable data.` : e?.message || `Can't load route ${line}.`); });
+      routeMem.set(rk, raw);
+      if (!show(raw)) { if (!had) setErr(`No stops found for route ${line}.`); return; }
+      keepOffline(rk, raw);
+    }).catch((e: any) => { if (live && !had) setErr(e?.http === 404 ? `Route ${line} isn't in the timetable data.` : e?.message || `Can't load route ${line}.`); });
     return () => { live = false; };
   }, [line, mode, p.stop, p.towards]);
 
@@ -64,17 +81,20 @@ export default function RouteScreen() {
     const d = dirRef.current;
     if (!d) return false;
     const probes = probeStops(d.stops.length);
+    // The opened stop's times go out beside the three probe boards (27 Oct speed pass), not after them.
+    const o = openRef.current;
+    const openOwn = o && d.stops.some((s) => s.id === o) && !probes.some((idx) => d.stops[idx].id === o)
+      ? api.departures(o).then((r) => r.items as BoardItem[]).catch(() => null) : null;
     const boards = await Promise.all(probes.map(async (idx) => {
       try { return { idx, items: (await api.departures(d.stops[idx].id)).items as BoardItem[] }; } catch { return { idx, items: null }; }
     }));
     if (dirRef.current !== d) return true;
     setBuses(busesOn(line, boards));
     setBusAt(Date.now());
-    const o = openRef.current;
     if (o && d.stops.some((s) => s.id === o)) {
       const hit = boards.find((b) => d.stops[b.idx].id === o);
-      const items = hit ? hit.items : await api.departures(o).then((r) => r.items as BoardItem[]).catch(() => null);
-      setTimes((t) => ({ ...t, [o]: items }));
+      const items = hit ? hit.items : await openOwn;
+      if (dirRef.current === d) setTimes((t) => ({ ...t, [o]: items }));
     }
     return true;
   }, [line]);

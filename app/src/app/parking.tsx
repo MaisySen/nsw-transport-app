@@ -5,6 +5,9 @@ import { RefreshControl, View } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { api } from '@/lib/api';
 import { useLive } from '@/lib/hooks';
+import { cacheKey } from '@/lib/offlineCore';
+import { holdPark } from '@/lib/prefetch';
+import { LiveStamp } from '@/components/Transit';
 import { radius, usePalette } from '@/lib/theme';
 import { distText, type CarPark } from '@/lib/access';
 import { sortParks } from '@/lib/carparkCore';
@@ -18,7 +21,8 @@ export default function ParkingScreen() {
   const c = usePalette();
   const [me, setMe] = useState<{ lat: number; lon: number } | null>(null);
   useEffect(() => { myPosition(false, true).then(setMe); }, []);
-  const { data, error, refreshing, refresh } = useLive(() => api.parking(), 120000);
+  // The list kept on the phone paints the first frame with its age (27 Oct speed pass); the live answer replaces it.
+  const { data, error, refreshing, refresh, updatedAt, staleAt, offlineAt } = useLive(() => api.parking(), 120000, [], { cacheKey: cacheKey('park', 'all') });
   const list = useMemo(() => sortParks<CarPark>(data?.carparks, me, geoDist), [data, me]);
 
   return (
@@ -26,12 +30,13 @@ export default function ParkingScreen() {
       <Stack.Screen options={{ title: 'Car parks' }} />
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
         <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 6 }}>{me ? 'Park and Ride, live spaces, closest first' : 'Park and Ride, live spaces, A to Z'}</T>
+        {staleAt || offlineAt ? <View style={{ marginHorizontal: 20, marginTop: 4 }}><LiveStamp updatedAt={null} error={error} staleAt={staleAt} offlineAt={offlineAt} /></View> : null}
         {list.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
             {list.map((p, i) => (
               <View key={p.id}>
                 {i ? <Sep inset={61} /> : null}
-                <ParkCell p={p} dist={p.d != null ? distText(p.d) : undefined} onPress={() => router.push({ pathname: '/carpark', params: { id: p.id, from: 'list' } })} />
+                <ParkCell p={p} dist={p.d != null ? distText(p.d) : undefined} onPress={() => { holdPark(p, updatedAt ?? staleAt ?? offlineAt); router.push({ pathname: '/carpark', params: { id: p.id, from: 'list' } }); }} />
               </View>
             ))}
           </View>

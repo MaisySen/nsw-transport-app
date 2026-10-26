@@ -1,6 +1,7 @@
 // A service that has already gone, on the trip screen's list (a chosen time in the past, or Earlier services).
 // Kept apart from Home's ServiceRow on purpose: same layout, greyed, with "Left 6:18" and the live delay it left with.
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { pressService } from '@/lib/prefetch';
 import { usePalette } from '@/lib/theme';
 import { bestTime, clock, durText, shortName } from '@/lib/format';
 import { leftWords } from '@/lib/tripModesCore';
@@ -55,7 +56,7 @@ export function LeftDepartureRow({ d, stopNo, onPress }: { d: Departure; stopNo?
   const late = !d.cancelled && !!d.realtime && (d.delayMin || 0) > 0;
   const extra = [plat(d.platform), stopNo || ''].filter(Boolean);
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }}
+    <Pressable accessibilityRole="button" onPress={onPress} onPressIn={() => pressService(d)} android_ripple={{ color: c.fill }}
       accessibilityLabel={`${d.line} to ${shortName(d.dest)}. ${words.replace(' \u00b7 ', ', ')}${extra.length ? `, ${extra.join(', ')}` : ''}. Already gone`}
       style={({ pressed }) => [s.depRow, { backgroundColor: pressed && Platform.OS === 'ios' ? c.card2 : c.card }]}>
       <View style={{ width: 66, alignItems: 'flex-start', opacity: 0.5 }}><LineBadge line={d.line} mode={d.mode} color={d.color} kind /></View>

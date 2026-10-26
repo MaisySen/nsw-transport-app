@@ -4,7 +4,8 @@
 /** Copies older than this are not shown at all: by then every time in them has gone. */
 export const MAX_AGE_MS = 18 * 3600 * 1000;
 /** How many answers are kept on the phone. The oldest goes first. */
-export const MAX_ENTRIES = 32;
+// 40 since the 27 Oct speed pass: car parks, settings lists and watches keep a copy too (each a few KB).
+export const MAX_ENTRIES = 40;
 
 const t = (s?: string | null) => (s ? new Date(s).getTime() : NaN);
 /** Estimated time when the service is live and has one, else the timetable. */
@@ -45,6 +46,9 @@ export function prune<T>(d: T, now: number): T {
 /** True when an answer is worth keeping: it has at least one service in it. */
 export function worthKeeping(d: any): boolean {
   if (!d || typeof d !== 'object' || d.error) return false;
+  // A first frame painted from the row that was tapped (speedCore.serviceSeed) is never kept.
+  if (d.seeded === true) return false;
+  if (Array.isArray(d.carparks)) return d.carparks.length > 0;
   if (Array.isArray(d.journeys)) return d.journeys.length > 0;
   if (Array.isArray(d.items)) return d.items.length > 0;
   return true;
@@ -102,4 +106,4 @@ export function staleText(at: number, now: number): string {
 }
 
 /** Storage key for a cached answer. */
-export const cacheKey = (kind: 'trip' | 'dep' | 'home' | 'svc', id: string) => `offline:${kind}:${id}`;
+export const cacheKey = (kind: 'trip' | 'dep' | 'home' | 'svc' | 'park' | 'list' | 'route', id: string) => `offline:${kind}:${id}`;

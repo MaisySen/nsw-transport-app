@@ -286,7 +286,7 @@ export default function StopScreen() {
                 <View key={g.key}>
                   <Sep inset={16} />
                   <Pressable accessibilityRole="button" accessibilityLabel={`${g.line} to ${shortName(g.dest)}. ${w.main}. ${w.sub}`} android_ripple={{ color: c.fill }}
-                    onPress={() => openService({ tripId: g.tripId || undefined, feed: g.feed, line: g.line, stopId: g.stopId, planned: g.planned, mode: g.mode, destId: g.destId || undefined, color: g.color, dest: g.dest })}
+                    onPress={() => openService({ tripId: g.tripId || undefined, feed: g.feed, line: g.line, stopId: g.stopId, planned: g.planned, mode: g.mode, destId: g.destId || undefined, color: g.color, dest: g.dest, stopName: (g as any).stopName })}
                     style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, minHeight: 56, backgroundColor: pressed && Platform.OS === 'ios' ? c.card2 : c.card })}>
                     <View style={{ width: 66, alignItems: 'flex-start', opacity: 0.7 }}><LineBadge line={g.line} mode={g.mode} color={g.color} /></View>
                     <View style={{ flex: 1, marginRight: 8 }}>
@@ -329,8 +329,8 @@ export default function StopScreen() {
                 <View key={rowKey}>
                   {top ? null : <Sep inset={i ? 82 : 0} />}
                   {isGone(d, now)
-                    ? <LeftDepartureRow d={d} stopNo={signNo ? null : stopLabel(d.stopId, d.mode) || null} onPress={() => openService(d)} />
-                    : <DepartureRow d={d} now={now} stopNo={!signNo} alertText={noteFor(d)} why={whyOf(d)} watched={!!st.watchedTrips[key]} onPress={() => openService(d)} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />}
+                    ? <LeftDepartureRow d={d} stopNo={signNo ? null : stopLabel(d.stopId, d.mode) || null} onPress={() => openService({ ...d, stopName: d.stopName || stopName })} />
+                    : <DepartureRow d={d} now={now} stopNo={!signNo} alertText={noteFor(d)} why={whyOf(d)} watched={!!st.watchedTrips[key]} onPress={() => openService({ ...d, stopName: d.stopName || stopName })} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />}
                 </View>
               );
             })}

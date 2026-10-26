@@ -2,6 +2,7 @@ import { memo, useEffect, useRef } from 'react';
 import { offlineText, staleText } from '@/lib/offlineCore';
 import { packStampText } from '@/lib/timetablePackCore';
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { pressService } from '@/lib/prefetch';
 import type { Why } from '@/lib/whyLateCore';
 import { WhyLate, withWhyAction } from './WhyLate';
 import { LimitedTag } from './LimitedTag';
@@ -206,7 +207,7 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
     ? { label: watched ? 'Stop watching' : 'Watch', text: watched ? 'Stop' : 'Watch', icon: watched ? I.bellOff : I.bell, color: watched ? c.text2 : c.indigo, onPress: onWatch }
     : null;
   const body = (
-    <Pressable accessibilityRole="button" onPress={onPress} {...rowA11y(act, why)}
+    <Pressable accessibilityRole="button" onPress={onPress} onPressIn={() => pressService(d)} {...rowA11y(act, why)}
       android_ripple={{ color: c.fill }} style={({ pressed }) => [st.depRow, { backgroundColor: pressed && Platform.OS === 'ios' ? c.card2 : c.card }]}>
       <View style={{ width: 66, alignItems: 'flex-start' }}><LineBadge line={d.line} mode={d.mode} color={d.color} kind /></View>
       <View style={{ flex: 1, marginRight: 8 }}>

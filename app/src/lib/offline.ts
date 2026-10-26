@@ -54,7 +54,7 @@ export function keepOffline(key: string, data: unknown) {
   mem.delete(key);
   disk.delete(key);
   mem.set(key, { at: now, data });
-  if (mem.size > MAX_ENTRIES) mem.delete(mem.keys().next().value as string);
+  while (mem.size > MAX_ENTRIES) mem.delete(mem.keys().next().value as string);
   if (now - (lastWrite.get(key) || 0) < WRITE_GAP_MS) return;
   lastWrite.set(key, now);
   // One write at a time so two cards never race on the index.
@@ -67,6 +67,26 @@ export function keepOffline(key: string, data: unknown) {
       if (evict.length) await AsyncStorage.multiRemove(evict);
     } catch {}
   });
+}
+
+/**
+ * Holds an answer in memory only (no storage write): a press in prefetch or a board's next stops read, so the next
+ * screen's first frame has it. Bounded by the same cap as kept copies; the screen's own live answer is what gets kept.
+ */
+export function keepMem(key: string, data: unknown, at = Date.now()) {
+  if (!worthKeeping(data)) return;
+  const had = mem.get(key);
+  if (had && had.at > at) return;
+  mem.delete(key);
+  disk.delete(key);
+  mem.set(key, { at, data });
+  while (mem.size > MAX_ENTRIES) mem.delete(mem.keys().next().value as string);
+}
+
+/** When the copy in memory for this key was made, or null. No storage read. */
+export function memAt(key: string): number | null {
+  const e = mem.get(key);
+  return e ? e.at : null;
 }
 
 /** The stored copy for this key with the services already gone taken out, or null. */

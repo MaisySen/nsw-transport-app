@@ -255,6 +255,55 @@ Measured with a browser on the web export; a phone will differ. Not yet measured
 
 Local wrangler dev with the fake NSW (planner answers at 0 ms, so the Trip Planner page time is our overhead only; the live planner adds 3 to 5 s for a new pair). Synthetic pack: 3,621 stops, 324 patterns, 28,674 trips, 590,100 stop events. First page of a new pair: Trip Planner mode 26 to 128 ms (10 trips, one outlier 535 ms); our planner's whole day 45 to 57 ms (70 to 114 trips, planner object 11 to 18 ms with the pair's lines worked out, live step 4 to 12 ms), the same day again 27 to 39 ms, the next day 31 to 37 ms. In Node on the same pack: 18 to 26 ms for the lines (14 RAPTOR searches) and 0 to 3 ms for a day's scan. On the real network one RAPTOR search is about 34 ms (SCALE_1M.md), so a new pair's lines are about 0.5 s once per pair and pack, and every day after that a few ms. A day's answer is 100 to 240 KB of JSON before compression. Storage rows read per day request: none once the pack is in memory (the pack's parts once when an object starts).
 
+### Speed pass: every screen paints at once (27 Oct, app, ships with tonight's over the air update)
+
+Why: Bidur at 9:11 AM, "It's bad everywhere", with the service screen stuck on "Loading live times" and "Finding the
+vehicle". Audit of each screen's load path from the code (main dd5c48b), before this pass:
+
+| Screen | Requests | Serial or side by side | What blocked the first paint |
+| --- | --- | --- | --- |
+| Home lists | /api/commutes, /api/saved, /api/watches | side by side | nothing: kept copy (home lists) |
+| Home trip and stop cards | one /api/trip or /api/departures per card; commute trip first (bb44e11) | side by side | nothing: kept copy or stop pack, "Updating" |
+| Nearby (Home) | last known position, /api/nearby, then up to 6 /api/search station lookups | lookups one after another | the whole chain; no kept list, so "loading" every open |
+| Stop page | /api/departures; /api/station; station map | side by side (separate effects) | nothing: kept copy or pack; press in prefetch from search, Ask, route, top up |
+| Big board | /api/departures; up to 3 /api/service for the next stops line | side by side | nothing: kept copy or pack |
+| Service detail | /api/service | one request | everything when this service was not opened before: empty stop list, "Finding the vehicle", "Loading live times" until the server answered |
+| Trip results | /api/trip (A to B), /api/plan (legs), via: two /api/trip | via: second waits on the first's arrival (needed), both refresh=1 | nothing when Home's card or an earlier open kept a copy (same key); else the planner wait |
+| Trip detail legs | none until a leg is tapped (service detail) | | as service detail |
+| Route (bus) | /api/stations route, then 3 probe boards, then the opened stop's board | opened stop waited for the probes | the route list every open (no copy) |
+| Search | /api/search or places, debounced | one at a time by design | nothing: recents from the phone |
+| Alerts (trackwork, line status) | /api/trackwork or up to 6 /api/alerts | side by side, 30 min memory copy | nothing: the card appears when ready |
+| Car parks list | /api/parking | one request | everything: skeleton until the answer (11.5 s cold before dd5c48b) |
+| Car park | /api/parking?id | one request | everything, though the list had just shown it |
+| Ask | /api/trip and others per question | per question | the question's own answer (chat shows the question at once) |
+| Settings, Watching | /api/commutes and /api/watches; /api/watches | side by side | light reads, a skeleton for a moment |
+
+Timeouts: a read waits 15 s with nothing on screen and 8 s with a copy shown (netErrCore READ_MS_EMPTY,
+READ_MS_WITH_COPY), a trip 13 s (TRIP_MS), a route 25 s. Reads get one quiet retry on a network failure (not after a
+time out) and two screens asking the same thing share one request (api.ts, createReadCache 4 s).
+
+What changed (src/lib/speedCore.ts, test/speed27.test.mjs):
+1. useLive takes a `seed`: what the screen before showed, painted on the first frame when the phone has no kept copy
+   and no pack, labelled with its age by staleAt, replaced by a kept copy from storage or the live answer, never kept.
+   Order: a kept copy under 10 minutes, the pack, an older kept copy, the seed (speedCore.firstFrame).
+2. Service detail: the tapped row's line, destination, live flag, delay, your stop and its time (and, from a trip, the
+   stop you get off at and its time) paint at once with "Loading every stop" under them; no "No GPS position yet"
+   before the server answers. One query builder (serviceQuery) for the screen, the board's next stops line and press
+   in, so they share one request, and the board's next stops answers are held for the service screen.
+3. Press in on any row that opens a service (boards, stop page, Home, trip legs) starts its /api/service read; the
+   answer is held in memory only (offline.keepMem, inside the kept copies cap). Each service at most once per 20 s,
+   at most 8 a minute across the app, none when a copy under 15 s old is held. Nothing runs without a finger down.
+4. Nearby: the station lookups go out side by side; the last list is kept with where it was made and painted at once
+   when the phone is within 400 m of that spot (up to 12 hours old), then replaced.
+5. Car parks: the list keeps a copy on the phone with an age line; a car park opened from the list paints that row
+   at once (and keeps its own copy).
+6. Route: a route's stops are kept (12 this session, and on the phone) and paint at once; the opened stop's board goes
+   out beside the probe boards.
+7. Kept copies cap 32 to 40 (each a few KB).
+
+Not changed: via trips still ask the planner twice, the second after the first (it needs the first's arrival time),
+both with refresh=1; Ask, search, alerts and settings were already not blocking.
+
 ## Smoothness
 
 1. Long lists use `FlatList` (Ask, new trip). Short fixed lists inside a ScrollView (departures, up to about 40

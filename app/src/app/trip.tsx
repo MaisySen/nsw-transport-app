@@ -41,6 +41,8 @@ import { journeyAccess, liftAwareNote } from '@/lib/stepFree';
 import { tripSpec } from '@/lib/watch';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { openService } from '@/components/Cards';
+import { pressService } from '@/lib/prefetch';
+import type { SvcRow } from '@/lib/speedCore';
 import { KeptBanner, LineBadge, OccupancyChip, StatusLine } from '@/components/Transit';
 import { LimitedTag } from '@/components/LimitedTag';
 import { liveState } from '@/lib/liveLabelCore';
@@ -83,6 +85,12 @@ function walkTo(l: Leg, next?: Leg) {
   return l.to ? ` to ${shortName(l.to)}` : '';
 }
 
+/** What a trip leg knows for the service view's first frame (its two stops' names and the get off time). */
+function legRow(l: Leg): SvcRow {
+  return { tripId: l.tripId, feed: l.feed, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId, color: l.color, dest: l.towards, realtime: l.realtime, estimated: l.estimated, delayMin: l.delayMin, toStopId: l.toStopId,
+    stopName: l.from, toName: l.to, arrPlanned: l.arrPlanned, seenAt: (l as any).seenAt };
+}
+
 function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
   const c = usePalette();
   const usual = useUsualText(l);
@@ -105,7 +113,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
   const traffic = trafficLine(l) || rowTraffic(l);
   return (
     <Pressable accessibilityRole="button" {...withWhyAction({}, why)}
-      onPress={() => openService({ tripId: l.tripId, feed: l.feed, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId, color: l.color, dest: l.towards, realtime: l.realtime, estimated: l.estimated, delayMin: l.delayMin, toStopId: l.toStopId })}
+      onPress={() => openService(legRow(l))} onPressIn={() => pressService(legRow(l))}
       style={({ pressed }) => [st.leg, pressed ? { opacity: 0.7 } : null]}>
       <View style={{ width: 36, alignItems: 'center' }}>
         <View style={[st.dotBig, { borderColor: color, backgroundColor: c.card }]} />

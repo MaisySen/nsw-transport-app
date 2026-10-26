@@ -7,6 +7,7 @@ import { answerTime } from './liveLabelCore';
 import { useCountdownNow, useNow, useReportCountdowns, useScreenPoll } from './activity';
 import { peekPackBoard, readPackBoard } from './timetablePack';
 import { firstPaint } from './timetablePackCore';
+import { firstFrame } from './speedCore';
 
 /** Ticks so countdowns move on their own, only while the screen is on view and the app is in front. */
 export { useCountdownNow, useNow, useReportCountdowns };
@@ -30,14 +31,20 @@ export { useCountdownNow, useNow, useReportCountdowns };
 export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Promise<T>, intervalMs: number | ((data: T | null) => number) = 15000, deps: any[] = [], opts: { cacheKey?: string; enabled?: boolean; pack?: { stop: string; mode?: string | null } | null;
   /** Home cards (coldOpenCore.ts): a failed read keeps what is on screen and asks again quickly, a slow planner stand in is
    * asked again soon for live trips, and only failures in a row show the failure. `pending` and `retrying` say so. */
-  quick?: boolean } = {}) {
+  quick?: boolean;
+  /** What the screen before already showed (speedCore.ts, 27 Oct speed pass): painted on the first frame when the phone
+   * has no kept copy and no pack, labelled by staleAt with its age (`at`), replaced by a kept copy read from storage or
+   * the live answer. Never kept on the phone. */
+  seed?: { at: number; data: T } | null } = {}) {
   // A copy kept in memory this session shows on the first frame (a screen opened again, Home after a tab change),
   // or the stop's timetable pack when that copy is missing or more than 10 minutes old (firstPaint).
-  const first = useRef<{ at: number; data: T; pack: boolean } | null | undefined>(undefined);
+  const first = useRef<{ at: number; data: T; pack: boolean; seed?: boolean } | null | undefined>(undefined);
   if (first.current === undefined) {
-    const f = firstPaint<T>(opts.cacheKey ? peekOffline<T>(opts.cacheKey) : null, opts.pack ? peekPackBoard(opts.pack.stop, opts.pack.mode) : null, Date.now());
-    first.current = f.kind === 'none' ? null : { at: f.at as number, data: f.data as T, pack: f.kind === 'pack' };
+    const f = firstFrame<T>(opts.cacheKey ? peekOffline<T>(opts.cacheKey) : null, opts.pack ? peekPackBoard(opts.pack.stop, opts.pack.mode) : null, opts.seed, Date.now());
+    first.current = f.kind === 'none' ? null : { at: f.at as number, data: f.data as T, pack: f.kind === 'pack', seed: f.kind === 'seed' };
   }
+  const seedRef = useRef(opts.seed);
+  seedRef.current = opts.seed;
   const [data, setData] = useState<T | null>(first.current ? first.current.data : null);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
@@ -56,7 +63,7 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
   keyRef.current = opts.cacheKey;
   const latest = useRef<ReturnType<typeof createLatest> | null>(null);
   if (!latest.current) latest.current = createLatest();
-  const shown = useRef<{ live: boolean; at: number | null; pack?: boolean }>({ live: false, at: first.current ? first.current.at : null, pack: !!first.current?.pack });
+  const shown = useRef<{ live: boolean; at: number | null; pack?: boolean; seed?: boolean }>({ live: false, at: first.current ? first.current.at : null, pack: !!first.current?.pack, seed: !!first.current?.seed });
   // Shows a kept copy (staleAt) or a pack board (packAt) while nothing live is on screen.
   const paint = useCallback((f: { kind: 'kept' | 'pack' | 'none'; data: unknown; at: number | null }) => {
     if (f.kind === 'none' || f.at == null) return;
@@ -163,14 +170,14 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
     if (mounted.current) {
       // What the screen shows changed: start clean, with this key's copy kept in memory when there is one.
       const pk = packRef.current;
-      const f = firstPaint<T>(key ? peekOffline<T>(key) : null, pk ? peekPackBoard(pk.stop, pk.mode) : null, Date.now());
+      const f = firstFrame<T>(key ? peekOffline<T>(key) : null, pk ? peekPackBoard(pk.stop, pk.mode) : null, seedRef.current, Date.now());
       setData(f.kind === 'none' ? null : (f.data as T));
-      setStaleAt(f.kind === 'kept' ? f.at : null);
+      setStaleAt(f.kind === 'kept' || f.kind === 'seed' ? f.at : null);
       setPackAt(f.kind === 'pack' ? f.at : null);
       setUpdatedAt(null);
       setError(null);
       setOfflineAt(null);
-      shown.current = { live: false, at: f.at, pack: f.kind === 'pack' };
+      shown.current = { live: false, at: f.at, pack: f.kind === 'pack', seed: f.kind === 'seed' };
     }
     mounted.current = true;
     reasked.current = false;
@@ -183,10 +190,12 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
     // The kept copy or the pack first (a read from the phone, a few milliseconds), then the live answer replaces it.
     // A pack on screen still gives way to a copy of the live board from the last 10 minutes.
     const pk = packRef.current;
-    if ((key || pk) && (!shown.current.at || shown.current.pack)) {
+    if ((key || pk) && (!shown.current.at || shown.current.pack || shown.current.seed)) {
       Promise.all([key ? readOffline<T>(key) : null, pk ? readPackBoard(pk.stop, pk.mode) : null]).then(([kept, pb]) => {
         if (gen !== L.gen() || shown.current.live) return;
         const f = firstPaint<T>(kept, pb, Date.now());
+        // A seed (what the screen before showed) gives way to a full kept copy, never to a pack.
+        if (shown.current.seed) { if (f.kind === 'kept') paint(f); return; }
         if (f.kind === 'none' || (shown.current.at && !shown.current.pack) || (f.kind === 'pack' && shown.current.pack)) return;
         paint(f);
       }).catch(() => {});
