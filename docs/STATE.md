@@ -31,6 +31,8 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 | `OWN_PLANNER` | Worker var | off | Trip searches still go to the Trip Planner. With it on, a phone that sends `days=1` also gets trip lists a whole day at a time from our planner (src/daylist.js, 27 Oct); off, those phones get Trip Planner pages as before |
 | `LOAD_TESTS` | Worker var | off | Load test keys refused |
 | `REQ_LOG` | Worker var | on | One log line per request, 1 in 10 kept |
+| `PREWARM` | Worker var | not set (on, since 27 Oct) | The minute tick keeps used trip pairs, boards and car parks fresh in their usual hours (at most 3 fetches a minute, 1,200 NSW calls a day). "off" stops it |
+| `SERVICE_QUICK` | Worker var | not set (on, since 27 Oct) | A service detail not ready in 0.8 s is answered from the realtime feed alone (partial) while the full stop list finishes behind it. "off" waits for the full answer |
 | Budget guard hold | `/api/budget` | **on** at 4:23 PM: the last hourly reading (made before the 4:21 PM change to a 48 hour rate) projected Durable Object requests at 1,363% of the month (11.3% used), driven by the morning load tests | Engine, push, own planner, learn and load keys act as off; all are off anyway. The next hourly check (minute 17) reads again; it lifts by itself when the projection is back under 60%, or with `POST /api/budget/clear` |
 | Remote config flags | `/api/app/config` | all 16 on, `kill` empty, `livePush` absent (off) | |
 | `LIMITED_STOPS` | Worker var (g22, deployed 8:24 PM) | not set (on) | `limited: true` on departures and trip legs from the planner pack's `tripLim`; `off` turns it off |

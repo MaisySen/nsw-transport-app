@@ -2032,11 +2032,12 @@ async function service(env, q) {
   }
   const useRun = !!(run && (run.reached || mode !== "train"));
   if (useRun) { stops = runList; source = "own"; }
-  const feedShort = stops.length && !useRun ? (mode === "train" || await feedEndsShort(env, q, mode, stops)) : false;
+  // q.quick (the quick first answer, SERVICE_QUICK_MS): the feed's own list only, no Trip Planner call.
+  const feedShort = stops.length && !useRun && !q.quick ? (mode === "train" || await feedEndsShort(env, q, mode, stops)) : false;
   const feedStops = stops;
   let plannerFrom = -1;
   if (run && useRun) plannerFrom = run.mine;
-  if ((!stops.length || feedShort) && !useRun && q.stop && q.destId && q.planned) {
+  if ((!stops.length || feedShort) && !useRun && !q.quick && q.stop && q.destId && q.planned) {
     // Fall back to the trip planner for the stop list from your stop onwards; a City Circle run is asked in two halves
     // (circleLeg), named by the app or by the planner's own answer.
     let got = mode === "train" && isCircleName(q.dest) ? (await circleLeg(env, q, tripId, line, q.dest)) : null;
@@ -6028,6 +6029,8 @@ async function runTick(env, opts = {}) {
   }
   // Saved boards for first opens: the busiest stops and every stop opened in the last 30 min (warmBoards).
   if (!opts.device && !opts.noWarm) out.warm = await warmBoards(env, opts.exec || null, use, sn).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+  // The copies people use, kept fresh in the hours they use them (prewarm, commute pre-warm).
+  if (!opts.device && !opts.noWarm) out.prewarm = await prewarm(env, opts.exec || null, use, sn).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   if (!opts.device && sn.tod % 60 === 7) await db(env).prepare("DELETE FROM board_copies WHERE at < ?1").bind(now - 86400000).run().catch(() => null);
   if (!opts.device) await db(env).prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('last_tick', ?1)").bind(String(now)).run().catch(() => null);
   const calls = upstream.calls - c0;
@@ -7907,7 +7910,16 @@ async function handleRequest(request, env, exec) {
         }
         case "/api/service":
         case "/api/status": {
-          const d = await service(env, serviceQuery(p));
+          const sq = serviceQuery(p);
+          if (FEED_ONLY.has(request)) {
+            // The quick first answer (serviceStandIn): the feed's stops, vehicle and live times, said as partial.
+            const d = await service(env, { ...sq, quick: true });
+            const res = json({ ...d, partial: true });
+            res.headers.set("x-stand-in", "feed");
+            res.headers.set("cache-control", "no-store");
+            return res;
+          }
+          const d = await service(env, sq);
           if (d.mine && q0(p, "line") && q0(p, "stop")) {
             const it = { line: p.get("line"), stopId: p.get("stop"), planned: d.mine.planned || p.get("planned") };
             await predictions(env, [it]).catch(() => null);
@@ -8589,6 +8601,149 @@ async function warmBoards(env, exec, use, sn) {
   return { due: due.length, warmed: ok, hubs: hubs.length, recent: recent.length };
 }
 
+// ---------- commute pre-warm (27 Oct, approved by root after "This is still slow") ----------
+// A first open of the day had no saved copy: boards and trips are saved only when someone opens them (and the busiest
+// hubs every 6 minutes), so the first open of a commute pair or a stop board waited on Transport for NSW (3 s for a
+// board, up to 6.5 s for a trip, 18 s for a service list). The minute tick now keeps the copies people actually use
+// fresh, but only in the hours they use them:
+// * What: trip pairs from the trip history (searches, last 7 days; no watch rows), the boards and car park copies
+//   opened in the last 7 days (an opens history kept in one meta row, read every 10 minutes from board_copies.opened),
+//   and the board of each warmed pair's first stop. Nothing hard coded.
+// * When: a key's usual hour is an hour of the day it was asked for on at least PREWARM_MIN_DAYS different days of the
+//   last 7; it is kept warm from PREWARM_LEAD_MIN before that hour to its end, never 1 AM to 4:30 AM.
+// * How often: a trip or board copy is fetched again once it is PREWARM_EVERY_MS old (car parks PREWARM_PARK_EVERY_MS),
+//   so a first open gets a copy at most that old (labelled dataAt) and the fresh one a moment later.
+// * Cost: at most PREWARM_PER_TICK fetches a minute and PREWARM_DAY_CAP Transport for NSW calls a day, counted in a meta
+//   row ("prewarm_day"); none while the day's calls pass WARM_DAY_CAP or the key is busy. Writes: one board_copies row
+//   per fetch (at most PREWARM_DAY_CAP a day), the day count on ticks that fetched, the opens history at most every 10
+//   minutes (about 1,800 rows a day at the most). PREWARM=off turns it off.
+const PREWARM_DAY_CAP = 1200;
+const PREWARM_PER_TICK = 3;
+const PREWARM_EVERY_MS = 4 * 60000;
+const PREWARM_PARK_EVERY_MS = 20 * 60000;
+const PREWARM_MIN_DAYS = 2;
+const PREWARM_LEAD_MIN = 30;
+const PREWARM_MAX_KEYS = 30;
+const PREWARM_HIST_MAX = 300;
+const PREWARM_DAYS = 7;
+const prewarmMem = { at: 0, trips: null };
+function prewarmOn(env) { return String((env && env.PREWARM) || "").toLowerCase() !== "off"; }
+// Adds one ask (key, Sydney day, hour) to a history map: key -> { hour: [days] }.
+function prewarmAdd(map, k, day, hour) {
+  const e = map[k] || (map[k] = {});
+  const l = e[hour] || (e[hour] = []);
+  if (!l.includes(day)) l.push(day);
+}
+// Keeps only the last PREWARM_DAYS days and at most PREWARM_HIST_MAX keys (the most asked).
+function prewarmPrune(map, today) {
+  const keep = new Set();
+  const t = Date.parse(today.slice(0, 4) + "-" + today.slice(4, 6) + "-" + today.slice(6, 8) + "T12:00:00Z");
+  for (let i = 0; i < PREWARM_DAYS; i++) keep.add(new Date(t - i * 86400000).toISOString().slice(0, 10).replace(/-/g, ""));
+  for (const k of Object.keys(map)) {
+    for (const h of Object.keys(map[k])) { map[k][h] = map[k][h].filter((d) => keep.has(d)); if (!map[k][h].length) delete map[k][h]; }
+    if (!Object.keys(map[k]).length) delete map[k];
+  }
+  const keys = Object.keys(map);
+  if (keys.length > PREWARM_HIST_MAX) {
+    const size = (k) => Object.values(map[k]).reduce((n, l) => n + l.length, 0);
+    keys.sort((a, b) => size(b) - size(a)).slice(PREWARM_HIST_MAX).forEach((k) => delete map[k]);
+  }
+  return map;
+}
+/** The keys to keep warm now: [{ k, days }] best first, from history maps (key -> { hour: [days] }) and the time of day. */
+function prewarmPick(maps, tod) {
+  if (tod >= 60 && tod < 270) return [];
+  const best = new Map();
+  for (const map of maps) {
+    for (const [k, hours] of Object.entries(map || {})) {
+      for (const [h, days] of Object.entries(hours)) {
+        const start = Number(h) * 60 - PREWARM_LEAD_MIN, end = Number(h) * 60 + 60;
+        const inWin = (tod >= start && tod < end) || (start < 0 && tod >= 1440 + start);
+        if (!inWin || days.length < PREWARM_MIN_DAYS) continue;
+        best.set(k, Math.max(best.get(k) || 0, days.length));
+      }
+    }
+  }
+  const out = [...best].map(([k, days]) => ({ k, days }));
+  // A warmed pair's first stop board goes with it.
+  for (const o of [...out]) {
+    const m = /^trip:([^>]+)>/.exec(o.k);
+    if (m && !best.has(m[1] + "|")) { best.set(m[1] + "|", o.days); out.push({ k: m[1] + "|", days: o.days }); }
+  }
+  const kind = (k) => (k.startsWith("trip:") ? 0 : k.startsWith("park:") ? 2 : 1);
+  return out.sort((a, b) => b.days - a.days || kind(a.k) - kind(b.k) || (a.k < b.k ? -1 : 1)).slice(0, PREWARM_MAX_KEYS);
+}
+/** The request that refreshes a saved copy key, or null for a key it does not know. */
+function prewarmUrl(host, k) {
+  const u = new URL(`https://${host}/`);
+  let m;
+  if ((m = /^trip:([A-Za-z0-9_-]{3,20})>([A-Za-z0-9_-]{3,20})$/.exec(k))) { u.pathname = "/api/trip"; u.searchParams.set("from", m[1]); u.searchParams.set("to", m[2]); u.searchParams.set("count", "6"); return u; }
+  if (k === "park:all") { u.pathname = "/api/parking"; return u; }
+  if ((m = /^park:(stop|id):([A-Za-z0-9_-]{1,12})$/.exec(k))) { u.pathname = "/api/parking"; u.searchParams.set(m[1], m[2]); return u; }
+  if ((m = /^([A-Za-z0-9:_-]{3,24})\|([a-z]{0,12})$/.exec(k))) { u.pathname = "/api/departures"; u.searchParams.set("stop", m[1]); if (m[2]) u.searchParams.set("mode", m[2]); return u; }
+  return null;
+}
+async function metaGet(d, k) { const r = await d.prepare("SELECT v FROM meta WHERE k = ?1").bind(k).first().catch(() => null); try { return r && r.v ? JSON.parse(r.v) : null; } catch (e) { return null; } }
+async function metaPut(d, k, v) { await d.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES (?1, ?2)").bind(k, JSON.stringify(v)).run().catch(() => null); }
+async function prewarm(env, exec, use, sn) {
+  if (!prewarmOn(env)) return { skipped: "off" };
+  if (use.calls >= WARM_DAY_CAP) return { skipped: "day count" };
+  const d = await boardDb(env).catch(() => null);
+  if (!d) return { skipped: "storage" };
+  await ensureSchema3(env).catch(() => null);
+  const now = Date.now();
+  const sydDay = (t) => sydneyNow(new Date(t)).day;
+  const sydHour = (t) => Math.floor(sydneyNow(new Date(t)).tod / 60);
+  // The opens history: every 10 minutes, the copies opened since the last read.
+  let hist = await metaGet(d, "prewarm_hist");
+  if (!hist || typeof hist !== "object" || !hist.keys) hist = { keys: {}, read: now - 7 * 86400000 };
+  if (sn.tod % 10 === 1 || !hist.boot) {
+    const since = hist.boot ? Math.max(Number(hist.read) || 0, now - 15 * 60000) : now - PREWARM_DAYS * 86400000;
+    const rows = (await d.prepare("SELECT k, opened FROM board_copies WHERE opened > ?1").bind(since).all().catch(() => ({ results: [] }))).results || [];
+    for (const r of rows) if (!String(r.k).startsWith("trip:")) prewarmAdd(hist.keys, String(r.k), sydDay(Number(r.opened)), String(sydHour(Number(r.opened))));
+    hist.read = now; hist.boot = 1;
+    prewarmPrune(hist.keys, sn.day);
+    await metaPut(d, "prewarm_hist", hist);
+  }
+  // Trip pairs from the trip history, read again every 10 minutes.
+  if (!prewarmMem.trips || now - prewarmMem.at > 10 * 60000) {
+    const rows = (await d.prepare("SELECT from_id, to_id, day, tod FROM searches WHERE at > ?1 AND src != 'watch' GROUP BY from_id, to_id, day, tod / 60").bind(now - PREWARM_DAYS * 86400000).all().catch(() => ({ results: [] }))).results || [];
+    const trips = {};
+    for (const r of rows) if (r.from_id && r.to_id && r.from_id !== r.to_id) prewarmAdd(trips, "trip:" + r.from_id + ">" + r.to_id, String(r.day), String(Math.floor(Number(r.tod) / 60)));
+    prewarmMem.trips = trips; prewarmMem.at = now;
+  }
+  const pick = prewarmPick([prewarmMem.trips, hist.keys], sn.tod);
+  if (!pick.length) return { keys: 0 };
+  if (upstreamBusy()) return { keys: pick.length, skipped: "busy" };
+  let count = await metaGet(d, "prewarm_day");
+  if (!count || count.day !== sn.day) count = { day: sn.day, calls: 0, fetches: 0 };
+  if (count.calls >= PREWARM_DAY_CAP) return { keys: pick.length, skipped: "cap", calls: count.calls };
+  const ks = pick.map((p) => p.k);
+  const at = new Map((((await d.prepare(`SELECT k, at FROM board_copies WHERE k IN (${ks.map((_, i) => "?" + (i + 1)).join(",")})`).bind(...ks).all().catch(() => ({ results: [] }))).results) || []).map((r) => [r.k, Number(r.at) || 0]));
+  const host = (env && env.API_HOST) || "api.transportsydney.app";
+  const due = ks.filter((k) => now - (at.get(k) || 0) >= (k.startsWith("park:") ? PREWARM_PARK_EVERY_MS : PREWARM_EVERY_MS)).slice(0, PREWARM_PER_TICK);
+  const cache = edgeCache();
+  const c0 = upstream.calls;
+  let ok = 0, fetched = 0;
+  await Promise.all(due.map(async (k) => {
+    // Car parks cost one call per car park (about 41 for all of them): only with room left under the cap.
+    if (k === "park:all" && count.calls + 45 > PREWARM_DAY_CAP) return;
+    const url = prewarmUrl(host, k);
+    if (!url) return;
+    const key = edgeKey(url);
+    if (inFlight.has(key.url)) return;
+    fetched++;
+    const run = answerAndStore(new Request(url.toString()), env, exec, cache, key, { warm: true });
+    inFlight.set(key.url, sharedJob(run));
+    run.then(() => inFlight.delete(key.url), () => inFlight.delete(key.url));
+    const r = await run.catch(() => null);
+    if (r && r.status === 200) ok++;
+  }));
+  const calls = upstream.calls - c0;
+  if (fetched) { count.calls += calls; count.fetches = (count.fetches || 0) + fetched; await metaPut(d, "prewarm_day", count); }
+  return { keys: pick.length, due: due.length, warmed: ok, calls, day: count.calls };
+}
+
 // ---------- edge cache, shared limits and input checks ----------
 // Shared live answers are cached at the edge, keyed on the query without the profile and device, so many phones
 // looking at the same board cost one upstream call. A plain open takes a copy up to 15 s old, a refresh up to 5 s;
@@ -8750,7 +8905,10 @@ async function edgeFetch(request, env, exec) {
     let out = null;
     if (kept || (saved && !refresh)) {
       // Watch and widget requests (no profile, docs/DIAGNOSIS_LAG.md item 4) take a kept copy at once, no wait.
-      const wait = kept ? (extInstant(url, request) ? 0 : COPY_WAIT_MS) : SAVED_WAIT_MS;
+      // A plain open (not a poll) with a kept copy up to SWR_SAFE_MS old takes it at once too (27 Oct speed pass): live
+      // times up to a minute old, labelled by dataAt, while the fresh answer is fetched behind it for the next poll. A
+      // poll (refresh=1) still waits COPY_WAIT_MS, so a realtime change reaches a polling phone within seconds.
+      const wait = kept ? (extInstant(url, request) || (!refresh && age <= SWR_SAFE_MS) ? 0 : COPY_WAIT_MS) : SAVED_WAIT_MS;
       if (leader) out = await Promise.race([job.promise, new Promise((r) => setTimeout(() => r(null), wait))]);
       else out = (await waitJob(job, wait)) ? await joinJob(job) : null;
       if (!out) {
@@ -8763,8 +8921,18 @@ async function edgeFetch(request, env, exec) {
       // 10 s, an incident on 27 Oct 8:35 AM): without this the runtime dropped it with the request and every retry
       // started cold again.
       if (leader && exec && exec.waitUntil) exec.waitUntil(job.promise.catch(() => null));
-      const quick = bk && bk.stop === "trip" && tripQuickOn(env) ? TRIP_QUICK_MS : 0;
-      if (quick) {
+      const svcQuick = url.pathname === "/api/service" && serviceQuickOn(env) ? SERVICE_QUICK_MS : 0;
+      const quick = bk && bk.stop === "trip" && tripQuickOn(env) ? TRIP_QUICK_MS : svcQuick;
+      if (svcQuick) {
+        if (leader) out = await Promise.race([job.promise, new Promise((r) => setTimeout(() => r(null), svcQuick))]);
+        else out = (await waitJob(job, svcQuick)) ? await joinJob(job) : null;
+        if (!out) {
+          budget.serviceQuick = (budget.serviceQuick || 0) + 1;
+          const fb = await serviceStandIn(request, env, exec).catch(() => null);
+          if (fb) return fb;
+          out = leader ? await job.promise : await joinJob(job, SHARED_WAIT_MS);
+        }
+      } else if (quick) {
         if (leader) out = await Promise.race([job.promise, new Promise((r) => setTimeout(() => r(null), quick))]);
         else out = (await waitJob(job, quick)) ? await joinJob(job) : null;
         if (!out) {
@@ -8847,6 +9015,7 @@ function extInstant(url, request) {
 // fallback above).
 const EDGE_KEEP_S = 120;
 const COPY_WAIT_MS = 700;
+const SWR_SAFE_MS = 60000;
 // A plain trip from now with no copy waits at most TRIP_QUICK_MS for the Trip Planner, then gets timetable trips
 // (labelled, built in at most TRIP_STANDIN_MS), so the answer always lands inside the app's 10 s trip deadline
 // (TRIP_MS in app/src/lib/netErrCore.ts). The Trip Planner call itself may take 12 s and a retry. TRIP_QUICK=off
@@ -8863,6 +9032,29 @@ async function tripStandIn(request, env, exec) {
   const out = new Response(res.body, res);
   out.headers.set("cache-control", "no-store");
   out.headers.set("x-edge-cache", "stand-in");
+  return out;
+}
+// A service (the service detail screen: stop list, vehicle, map) with no copy waits at most SERVICE_QUICK_MS for the full
+// answer, then gets the feed's own answer for the trip (its stops with live times, the vehicle and where it is; no Trip
+// Planner call, built in at most SERVICE_STANDIN_MS), marked partial and never stored. The full answer (a train's whole
+// stop list from the planner, which took 18 s on 27 Oct at 9:22 AM with four 8 s tries) finishes behind it and is the
+// copy the next poll gets. Only when the feed has at least 2 stops for the trip; otherwise the full answer as before.
+// SERVICE_QUICK=off turns it off.
+const SERVICE_QUICK_MS = 800;
+const SERVICE_STANDIN_MS = 1500;
+const FEED_ONLY = new WeakSet(); // internal requests that answer from the realtime feed only (serviceStandIn)
+function serviceQuickOn(env) { return String((env && env.SERVICE_QUICK) || "").toLowerCase() !== "off"; }
+async function serviceStandIn(request, env, exec) {
+  const r2 = new Request(request.url, { method: "GET", headers: request.headers });
+  FEED_ONLY.add(r2);
+  const res = await Promise.race([handleRequest(r2, env, exec), new Promise((r) => setTimeout(() => r(null), SERVICE_STANDIN_MS))]);
+  if (!res || res.status !== 200 || res.headers.get("x-stand-in") !== "feed") return null;
+  const text = await res.text();
+  let d = null; try { d = JSON.parse(text); } catch (e) { return null; }
+  if (!d || !Array.isArray(d.stops) || d.stops.length < 2) return null;
+  const out = new Response(text, { status: 200, headers: res.headers });
+  out.headers.set("cache-control", "no-store");
+  out.headers.set("x-edge-cache", "quick");
   return out;
 }
 const inFlight = new Map(); // edge key -> sharedJob of { status, headers, body }

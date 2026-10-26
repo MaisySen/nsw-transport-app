@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Every screen answers from a copy at once, and the copies people use are kept warm (server, 27 Oct, about 9:45 AM; no app update needed)
+* Service detail (stop list, vehicle, map): a train's stop list waited on the Trip Planner, 18 s cold on production at 9:22 AM. Now a service not ready in 0.8 s is answered from the realtime feed alone (its stops with live times and the vehicle, marked partial, never stored) while the full list finishes behind it for the next poll (SERVICE_QUICK, on).
+* Boards, trips and service: a plain open with a kept copy under a minute old gets it at once, labelled with its age, while the fresh one is fetched; polls still wait up to 0.7 s for fresh times, so live times on screen stay as fresh as before (15 s).
+* Pre-warm: the minute tick keeps the trip pairs, boards and car parks people actually used in the last 7 days fresh, only in the hours they use them (from 30 minutes before each usual hour), so the first open of the day gets a copy at most 4 minutes old and the fresh one a moment later. At most 3 fetches a minute and 1,200 Transport for NSW calls a day; about 1,800 storage rows a day at the most; nothing hard coded (PREWARM, on).
+* Tests: backend/test/prewarm.test.mjs, backend/test/service-quick.test.mjs, reqlog.test.mjs updated.
 ### Speed pass: every screen paints at once (app, on main 27 Oct, ships with tonight's over the air update)
 * Why: "It's bad everywhere" (9:11 AM); the service screen sat on "Loading live times" and "Finding the vehicle".
 * Service detail opens on what the tapped row showed: line, destination, live delay, your stop and its time (from a trip, also where you get off), with "Updated just now, refreshing" and "Loading every stop" until the server answers. The row's /api/service read starts on press in (each service once per 20 s, 8 a minute, held in memory only), and a big board's next stops reads are held for it too.

@@ -36,9 +36,9 @@ test("one line per /api request: path, status, time, copy tag, app or ext; never
   assert.equal(lines[1].k, "ext");
 });
 
-test("watch or widget ask takes a kept copy at once; the phone app waits up to 700 ms for the fresh one", async () => {
+test("watch or widget ask takes a kept copy at once; the phone app too while the copy is under a minute old (27 Oct), else and on a poll it waits up to 700 ms for the fresh one", async () => {
   delay = 2500;
-  const put = (stop) => edge.set("https://t.example/api/departures?stop=" + stop, new Response(JSON.stringify({ kind: "departures", now: Date.now(), items: [] }), { headers: { "content-type": "application/json", "x-stored-at": String(Date.now() - 30000) } }));
+  const put = (stop, ageMs = 30000) => edge.set("https://t.example/api/departures?stop=" + stop, new Response(JSON.stringify({ kind: "departures", now: Date.now(), items: [] }), { headers: { "content-type": "application/json", "x-stored-at": String(Date.now() - ageMs) } }));
   put("200097");
   let t0 = Date.now();
   let r = await call("/api/departures?stop=200097", "10.8.0.5");
@@ -48,9 +48,21 @@ test("watch or widget ask takes a kept copy at once; the phone app waits up to 7
   put("200096");
   t0 = Date.now();
   r = await call("/api/departures?stop=200096&profile=p2", "10.8.0.6");
-  const app = Date.now() - t0;
+  let app = Date.now() - t0;
   assert.equal(r.headers.get("x-edge-cache"), "stale");
-  assert.ok(app >= 600, "app waited " + app + " ms");
+  assert.ok(app < 400, "app plain open with a 30 s copy waited " + app + " ms");
+  put("200095");
+  t0 = Date.now();
+  r = await call("/api/departures?stop=200095&profile=p2&refresh=1", "10.8.0.7");
+  app = Date.now() - t0;
+  assert.equal(r.headers.get("x-edge-cache"), "stale");
+  assert.ok(app >= 600, "app poll waited " + app + " ms");
+  put("200094", 90000);
+  t0 = Date.now();
+  r = await call("/api/departures?stop=200094&profile=p2", "10.8.0.8");
+  app = Date.now() - t0;
+  assert.equal(r.headers.get("x-edge-cache"), "stale");
+  assert.ok(app >= 600, "app plain open with a 90 s copy waited " + app + " ms");
   delay = 0;
   assert.equal(W.extInstant(new URL("https://t.example/api/trip?from=1&to=2"), new Request("https://t.example")), true);
   assert.equal(W.extInstant(new URL("https://t.example/api/trip?from=1&to=2&refresh=1"), new Request("https://t.example")), false);
