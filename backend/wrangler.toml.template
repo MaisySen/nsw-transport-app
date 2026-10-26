@@ -47,6 +47,10 @@ ENGINE_IDLE_MIN = "5"
 # Platform names and missing lines sent to the engine from Trip Planner boards (one object request each): only while
 # the engine serves boards, or when this is "on".
 ENGINE_LEARN = "off"
+# Stand and platform names for engine boards (docs/ENGINE.md "Stand names"): the core object reads a stop's planner
+# board itself from a queue the shards fill (no extra object request; at most ENGINE_LEARN_PER_MIN 30 a minute and
+# ENGINE_LEARN_DAY 2,000 a day). Not set means on; ENGINE_LEARN_CORE "off" goes back to a read on a phone's first read,
+# and ENGINE_LEARN_MOVED "off" keeps no moved stand (a bus shown at a temporary stand instead of its planned one).
 # Load test keys work only when "on". Never on production: the 1,000 phone soak of 26 Oct used about 70,000 Durable
 # Object requests in one hour (7% of the month's included amount). Test on wrangler dev with a fake Transport for NSW.
 LOAD_TESTS = "off"

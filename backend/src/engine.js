@@ -191,6 +191,9 @@ function engBuildBoard(src, stopId, opts = {}) {
   const feedsUsed = new Set();
   const items = [];
   const seen = new Set();
+  // Empty Train rows left off for want of a live time, for the match check (tools/match_x.mjs): whether the Trip
+  // Planner lists them is the evidence for or against listing them on timetable times. Phones ignore it.
+  const emptyHidden = [];
   const mk = (c, route, live) => {
     const [line, cls, color, feed] = route;
     const mode = modeOf(cls);
@@ -236,12 +239,15 @@ function engBuildBoard(src, stopId, opts = {}) {
     if (opts.mode && !(modeOf(route[1]).key === opts.mode || (opts.mode === "bus" && modeOf(route[1]).key === "coach"))) continue;
     feedsUsed.add(feed);
     const tu = src.tu(feed, c.tripId);
-    if (empty && (!tu || tu.rel === 3 || !engSameRun(tu, c))) continue;
+    if (empty && (!tu || tu.rel === 3 || !engSameRun(tu, c))) {
+      if (!tu && emptyHidden.length < 12 && c.planned >= now && c.planned <= to) emptyHidden.push([c.tripId, iso(c.planned), route[0], c.stopId]);
+      continue;
+    }
     if (tu && !engSameRun(tu, c)) { items.push(mk(c, route, null)); continue; }
     const live = engLive(tu, c, (s) => { const m = src.tripSeq(feed, c.tripId); return m ? m.get(s) : null; }, engArrFirst(feed));
     if (live && live.gone) continue;
     if (empty) {
-      if (!live || !live.est || live.skipped) continue;
+      if (!live || !live.est || live.skipped) { if (!live && emptyHidden.length < 12 && c.planned >= now && c.planned <= to) emptyHidden.push([c.tripId, iso(c.planned), route[0], c.stopId]); continue; }
       c.dest = engTuDest(src, tu);
     }
     seen.add(c.tripId + "|" + c.day);
@@ -314,7 +320,7 @@ function engBuildBoard(src, stopId, opts = {}) {
     items: list, modes, alerts: [],
     live: { feedAt: feedAt || null, filledFromFeed: list.filter((i) => i.realtime).length, liveCount: list.filter((i) => i.realtime).length, total: list.length },
     now,
-    engine: { builtAt: now, feeds: [...feedsUsed] },
+    engine: { builtAt: now, feeds: [...feedsUsed], ...(emptyHidden.length ? { emptyHidden } : {}) },
   };
 }
 
@@ -366,6 +372,65 @@ const ENGINE_NO_SEQ = new Set(["train"]);
 const ENGINE_ADD_UNKNOWN = new Set(["train"]);
 function engAddUnknownOn(env) { return String((env && env.ENGINE_ADD_UNKNOWN) || "on").toLowerCase() !== "off"; }
 
+// ---- Stand and platform names from the Trip Planner (learning) ----
+// The timetable has no name for some stands (temporary stands Stand X1 to X4 for replacement or moved buses; light rail
+// stops whose planner codes differ). The Trip Planner's board names them, so the core object reads a stop's planner
+// board once and keeps the names it gives per stop id (table plat, kept across restarts and timetable versions).
+// Since 27 Oct (g14 follow up) the core reads those boards itself from a queue the shards fill as boards are built
+// (ENGINE_LEARN_CORE, on unless "off"): a stop is learnt within about 20 s of its first read whatever the crowd of
+// first reads, at most ENGINE_LEARN_PER_MIN boards a minute (30) and ENGINE_LEARN_DAY a day (2,000, about 3% of the
+// key's 60,000), and never twice in 6 hours (24 hours when every service already has a name). "off" goes back to the
+// old rule: a learn on a phone's first read, at most 2 stops a minute per shard, never again while the board is hot.
+const ENGINE_LABEL_RE = /^(Platform|Stand|Wharf) [A-Za-z0-9]{1,4}(, Side \w)?$/;
+const ENGINE_LEARN_PER_MIN = 30;
+const ENGINE_LEARN_DAY = 2000;
+const ENGINE_LEARN_MISS_MS = 6 * 3600000;   // a stop with services that have no name: asked again after this
+const ENGINE_LEARN_FULL_MS = 24 * 3600000;  // every service named: asked again after this (names change with works)
+const ENGINE_PLATX_MS = 36 * 3600000;       // a moved stand (below) is kept this long unless the planner says it again
+function engLearnCoreOn(env) { return String((env && env.ENGINE_LEARN_CORE) || "on").toLowerCase() !== "off"; }
+function engLearnTmpOn(env) { return String((env && env.ENGINE_LEARN_MOVED) || "on").toLowerCase() !== "off"; }
+// The names a planner board gives, per stop id. items: [{ stopId, platform, platformChangedFrom }].
+//   pairs: [id, label] where every service at that id the planner shows unchanged has the same name (two different
+//          names at one id is a conflict and teaches nothing: wrong data is worse than none).
+//   moved: [id, "Stand ..."] where every service at that id shows the same stand as a change from its planned one
+//          (a bus moved to a temporary stand: Dee Why, Dulwich Grove, Rouse Hill on 27 Oct). The core keeps these only
+//          for stops whose timetable has no stand name of its own, and only for ENGINE_PLATX_MS.
+//   plain: ids with services shown unchanged and no name at all (a moved stand there has ended).
+function engLabels(items) {
+  const by = new Map();
+  for (const it of items || []) {
+    if (!it || !it.stopId) continue;
+    const id = String(it.stopId);
+    let g = by.get(id);
+    if (!g) { g = { un: new Set(), ch: new Set(), nUn: 0, nCh: 0 }; by.set(id, g); }
+    const label = String(it.platform || "");
+    if (it.platformChangedFrom) { g.nCh++; g.ch.add(label); } else { g.nUn++; if (label) g.un.add(label); }
+  }
+  const out = { pairs: [], moved: [], plain: [], conflicts: 0 };
+  for (const [id, g] of by) {
+    if (g.un.size > 1) { out.conflicts++; continue; }
+    if (g.un.size === 1) { const l = [...g.un][0]; if (ENGINE_LABEL_RE.test(l)) out.pairs.push([id, l]); continue; }
+    if (g.nUn && !g.nCh) { out.plain.push(id); continue; }
+    if (!g.nUn && g.ch.size === 1) { const l = [...g.ch][0]; if (/^Stand [A-Za-z0-9]{1,4}$/.test(l)) out.moved.push([id, l]); }
+  }
+  return out;
+}
+// A Trip Planner departure board (departure_mon) as the items engLabels reads, and the lines due in the horizon.
+function engPlannerLabels(data, now = Date.now()) {
+  const items = [], lines = new Set();
+  for (const e of (data && data.stopEvents) || []) {
+    const t = e.transportation || {};
+    const cls = t.product ? t.product.class : 0;
+    const lp = (e.location && e.location.properties) || {};
+    const id = e.location && e.location.id;
+    if (id) items.push({ stopId: String(id), platform: platformLabel(lp, cls), platformChangedFrom: platformChange(lp, cls) });
+    const line = t.disassembledName || t.number || "";
+    const p = Date.parse(e.departureTimePlanned || "");
+    if (line && !e.isCancelled && p < now + ENGINE_HORIZON_MS) lines.add(String(line));
+  }
+  return { items, lines: [...lines] };
+}
+
 class BoardEngine {
   constructor(state, env) {
     this.state = state; this.env = env; this.sql = state.storage.sql;
@@ -377,7 +442,13 @@ class BoardEngine {
     // Platform names as the Trip Planner gives them (its codes differ from the timetable's at some light rail stops),
     // learnt from planner boards the worker still asks for.
     this.sql.exec("CREATE TABLE IF NOT EXISTS plat (stop TEXT PRIMARY KEY, label TEXT, at INTEGER)");
-    this.platMem = null;
+    // Moved stands (engLabels moved), kept ENGINE_PLATX_MS, and when each stop's planner board was last read to learn.
+    this.sql.exec("CREATE TABLE IF NOT EXISTS platx (stop TEXT PRIMARY KEY, label TEXT, at INTEGER)");
+    this.sql.exec("CREATE TABLE IF NOT EXISTS learnt (stop TEXT PRIMARY KEY, at INTEGER)");
+    this.platMem = null; this.platxMem = null; this.learntMem = null;
+    this.learnQ = new Map();    // stop -> { miss, at } waiting for a planner read
+    this.platLog = [];          // [platVer, stop id, label] or [platVer, stop, null, gap lines]: changes shards apply as deltas
+    this.learnStats = { asked: 0, ok: 0, failed: 0, pairs: 0, moved: 0, cleared: 0, conflicts: 0, skippedBusy: 0, dropped: 0 };
     this.feeds = new Map();     // feed key -> { tu, vp, tuAt, vpAt, added, wantAt, fails }
     this.boards = new Map();    // board key -> { at, body }
     this.hot = new Map();       // board key -> last read ms
@@ -463,9 +534,124 @@ class BoardEngine {
       needFeed(feed) { const f = self.want(feed); f.uses = (f.uses || 0) + 1; },
       plat(id) {
         if (!self.platMem) { self.platMem = new Map(); for (const r of sql.exec("SELECT stop, label FROM plat").toArray()) self.platMem.set(r.stop, r.label); }
-        return self.platMem.get(id) || "";
+        // A moved stand the planner gave in the last ENGINE_PLATX_MS comes first: it is where the bus stops now.
+        const x = self.platxGet(id);
+        return x || self.platMem.get(id) || "";
       },
     };
+  }
+  platxGet(id) {
+    if (!this.platxMem) { this.platxMem = new Map(); for (const r of this.sql.exec("SELECT stop, label, at FROM platx").toArray()) this.platxMem.set(r.stop, [r.label, r.at]); }
+    const v = this.platxMem.get(id);
+    return v && Date.now() - v[1] < ENGINE_PLATX_MS ? v[0] : "";
+  }
+  // One change of a stop's name (or of a stop's gap), for the shards' next /live answer.
+  platBump(id, label, gap) {
+    this.platVer = (this.platVer || 0) + 1;
+    this.platLog.push(gap !== undefined ? [this.platVer, id, null, gap] : [this.platVer, id, label]);
+    if (this.platLog.length > 2000) this.platLog.splice(0, this.platLog.length - 2000);
+  }
+  // Names from one planner board (engLabels): pairs replace plat, moved stands go to platx for stops the timetable
+  // has no stand name for, plain ids drop their moved stand. Returns how many names changed.
+  applyLabels(lab) {
+    if (!this.platMem) this.source().plat("");
+    const src = this.loadMeta() ? this.source() : null;
+    const now = Date.now();
+    let n = 0;
+    for (const [stop, label] of (lab.pairs || []).slice(0, 200)) {
+      if (typeof stop !== "string" || typeof label !== "string" || !ENGINE_LABEL_RE.test(label)) continue;
+      if (this.platMem.get(stop) === label) continue;
+      this.sql.exec("INSERT OR REPLACE INTO plat VALUES (?, ?, ?)", stop, label, now); this.platMem.set(stop, label); n++;
+      if (!this.platxGet(stop)) this.platBump(stop, label);
+    }
+    if (engLearnTmpOn(this.env) && src) {
+      for (const [stop, label] of (lab.moved || []).slice(0, 50)) {
+        if (typeof stop !== "string" || typeof label !== "string" || !/^Stand [A-Za-z0-9]{1,4}$/.test(label)) continue;
+        const s = src.stop(stop);
+        // Only where the timetable names no stand of its own: a moved stand never overrides a real one.
+        if (!s || engPlatform(s[0], s[2], 5)) continue;
+        const was = this.platxMem.get(stop);
+        if (was && was[0] === label && now - was[1] < 12 * 3600000) continue; // still fresh: no write
+        this.sql.exec("INSERT OR REPLACE INTO platx VALUES (?, ?, ?)", stop, label, now); this.platxMem.set(stop, [label, now]);
+        this.learnStats.moved++;
+        if (!was || was[0] !== label || now - was[1] >= ENGINE_PLATX_MS) { this.platBump(stop, label); n++; }
+      }
+    }
+    for (const stop of (lab.plain || []).slice(0, 200)) {
+      if (typeof stop !== "string" || !this.platxMem.has(stop)) continue;
+      this.sql.exec("DELETE FROM platx WHERE stop = ?", stop); this.platxMem.delete(stop);
+      this.learnStats.cleared++;
+      this.platBump(stop, this.platMem.get(stop) || ""); n++;
+    }
+    if (n) this.boards.clear();
+    return n;
+  }
+  // A shard (or this object) built a board: queue the stop for a planner read when it is due (6 hours since the last
+  // read when a service has no name, else 24 hours). Cheap: memory first, the learnt table once per object start.
+  wantLearn(stop, miss, now = Date.now()) {
+    if (typeof stop !== "string" || !/^[A-Za-z0-9_-]{1,20}$/.test(stop)) return false;
+    if (!this.learntMem) { this.learntMem = new Map(); for (const r of this.sql.exec("SELECT stop, at FROM learnt").toArray()) this.learntMem.set(r.stop, r.at); }
+    const last = this.learntMem.get(stop) || 0;
+    if (now - last < (miss ? ENGINE_LEARN_MISS_MS : ENGINE_LEARN_FULL_MS)) return false;
+    const q = this.learnQ.get(stop);
+    if (q) { if (miss && !q.miss) q.miss = true; return false; }
+    if (this.learnQ.size >= 500) {
+      // Full: a stop with unnamed services pushes out the oldest one without.
+      let drop = null;
+      for (const [k, v] of this.learnQ) if (!v.miss) { drop = k; break; }
+      if (!miss || !drop) { this.learnStats.dropped++; return false; }
+      this.learnQ.delete(drop); this.learnStats.dropped++;
+    }
+    this.learnQ.set(stop, { miss: !!miss, at: now });
+    return true;
+  }
+  learnDayCount(now = Date.now()) {
+    const day = engDayKey(now);
+    if (!this.learnDay || this.learnDay.day !== day) {
+      const c = JSON.parse(this.kvGet("learnDay") || "{}");
+      this.learnDay = c.day === day ? c : { day, n: 0 };
+    }
+    return this.learnDay;
+  }
+  // Reads queued stops' planner boards, at most ENGINE_LEARN_PER_MIN a minute (a bucket of a third of that) and
+  // ENGINE_LEARN_DAY a day, stops with unnamed services first. Called from the alarm; never while the key is busy.
+  async learnTick(now = Date.now()) {
+    if (!this.learnQ.size || !engLearnCoreOn(this.env)) return 0;
+    const perMin = Number(this.env.ENGINE_LEARN_PER_MIN) || ENGINE_LEARN_PER_MIN;
+    const perDay = Number(this.env.ENGINE_LEARN_DAY) || ENGINE_LEARN_DAY;
+    const cap = Math.max(1, Math.ceil(perMin / 3));
+    this.learnTokens = Math.min(cap, (this.learnTokens == null ? cap : this.learnTokens) + ((now - (this.learnFill || now)) / 60000) * perMin);
+    this.learnFill = now;
+    const d = this.learnDayCount(now);
+    if (d.n >= perDay) return 0;
+    if (typeof upstreamBusy === "function" && upstreamBusy(false)) { this.learnStats.skippedBusy++; return 0; }
+    const take = Math.min(Math.floor(this.learnTokens), perDay - d.n, 4);
+    if (take < 1) return 0;
+    const pick = [...this.learnQ].sort((a, b) => (b[1].miss - a[1].miss) || (a[1].at - b[1].at)).slice(0, take).map((x) => x[0]);
+    this.learnTokens -= pick.length;
+    d.n += pick.length;
+    this.kvSet("learnDay", JSON.stringify(d));
+    let changed = 0;
+    await Promise.all(pick.map(async (stop) => {
+      this.learnQ.delete(stop);
+      this.sql.exec("INSERT OR REPLACE INTO learnt VALUES (?, ?)", stop, now); this.learntMem.set(stop, now);
+      this.learnStats.asked++;
+      try {
+        const { date, time } = sydneyParts();
+        const data = await tp(this.env, "departure_mon", { mode: "direct", type_dm: "stop", name_dm: stop, departureMonitorMacro: "true", TfNSWDM: "true", itdDate: date, itdTime: time }, 8000);
+        const { items, lines } = engPlannerLabels(data, Date.now());
+        const lab = engLabels(items);
+        this.learnStats.ok++; this.learnStats.pairs += lab.pairs.length; this.learnStats.conflicts += lab.conflicts;
+        changed += this.applyLabels(lab);
+        this.checkGap(stop, lines);
+      } catch (e) {
+        // Asked again in about 30 minutes, not at once: a refusal is not a reason to spend more calls.
+        const back = now - ENGINE_LEARN_MISS_MS + 30 * 60000;
+        this.sql.exec("INSERT OR REPLACE INTO learnt VALUES (?, ?)", stop, back); this.learntMem.set(stop, back);
+        this.learnStats.failed++; this.learnStats.lastError = String((e && e.message) || e).slice(0, 120);
+      }
+    }));
+    return changed;
   }
   want(feed) {
     let f = this.feeds.get(feed);
@@ -635,6 +821,9 @@ class BoardEngine {
       // Let waiting board requests in between builds.
       if (++n % 25 === 0) await new Promise((r) => setTimeout(r, 0));
     }
+    // Planner reads for stand and platform names (wantLearn's queue), after the feeds: a slow planner never holds a
+    // feed copy back.
+    try { await this.learnTick(Date.now()); } catch (e) { this.learnStats.lastError = String((e && e.message) || e).slice(0, 120); }
     this.kvSet("calls", JSON.stringify({ day: this.stats.day, n: this.stats.dayCalls }));
     this.nextDue = soonest;
     this.stats.tickMs = Date.now() - t0;
@@ -642,6 +831,8 @@ class BoardEngine {
   build(src, bk) {
     const [stop, mode] = bk.split("|");
     const b = engBuildBoard(src, stop, { mode: mode || null, candCache: this.candMem, emptyLive: engEmptyLive(this.env) });
+    // Boards built here (ENGINE_SHARDS "0"): the same planner read queue as the shards' boards.
+    if (b && engLearnCoreOn(this.env)) this.wantLearn(stop, b.items.some((i) => !i.platform));
     const body = b ? JSON.stringify(b) : null;
     this.boards.set(bk, { at: Date.now(), body });
     this.stats.built++;
@@ -692,7 +883,9 @@ class BoardEngine {
     const m = this.loadMeta(), now = Date.now();
     const feeds = {};
     for (const [k, f] of this.feeds) feeds[k] = { tuAgeS: f.tu ? Math.round((now - f.tu.at) / 1000) : null, vpAgeS: f.vp ? Math.round((now - f.vp.at) / 1000) : null, trips: f.tu ? f.tu.idx.size : 0, added: (f.added || []).length, unknown: f.unknown || 0, unknownListed: f.unknownListed || 0, addMs: f.addMs || 0, hot: now - f.wantAt < ENGINE_FEED_HOT_MS, fails: f.fails, periodS: f.period ? f.period / 1000 : null, same: f.same || 0, madeAgoS: f.hdrs && f.hdrs.length ? Math.round(now / 1000 - f.hdrs[f.hdrs.length - 1]) : null, nextInS: f.nextAt ? Math.round((f.nextAt - now) / 1000) : null };
-    return { role: "core", boots: this.boots, bootAt: this.bootAt, ver: m ? m.ver : 0, builtAt: m ? m.builtAt : null, days: m ? Object.keys(m.days) : [], hotBoards: this.hot.size, stretch: Math.round(this.stretch(now) * 100) / 100, budget: this.budget(), perMin: Number(this.env.ENGINE_PER_MIN) || ENGINE_PER_MIN, tokens: Math.round((this.tokens || 0) * 10) / 10, gaps: this.gaps ? [...this.gaps].slice(0, 50).map(([s, g]) => [s, g.lines]) : [], pausedUntil: this.pauseUntil || null, ...this.stats, feeds };
+    return { role: "core", boots: this.boots, bootAt: this.bootAt, ver: m ? m.ver : 0, builtAt: m ? m.builtAt : null, days: m ? Object.keys(m.days) : [], hotBoards: this.hot.size, stretch: Math.round(this.stretch(now) * 100) / 100, budget: this.budget(), perMin: Number(this.env.ENGINE_PER_MIN) || ENGINE_PER_MIN, tokens: Math.round((this.tokens || 0) * 10) / 10, gaps: this.gaps ? [...this.gaps].slice(0, 50).map(([s, g]) => [s, g.lines]) : [], pausedUntil: this.pauseUntil || null, ...this.stats, feeds,
+      // Stand and platform names (wantLearn, learnTick): queue, today's planner reads, and what they taught.
+      learn: { core: engLearnCoreOn(this.env), moved: engLearnTmpOn(this.env), queued: this.learnQ.size, queuedMiss: [...this.learnQ.values()].filter((v) => v.miss).length, today: this.learnDayCount(now).n, perDay: Number(this.env.ENGINE_LEARN_DAY) || ENGINE_LEARN_DAY, perMin: Number(this.env.ENGINE_LEARN_PER_MIN) || ENGINE_LEARN_PER_MIN, names: this.platMem ? this.platMem.size : null, movedStands: this.platxMem ? this.platxMem.size : null, platVer: this.platVer || 0, ...this.learnStats } };
   }
   async fetch(req) {
     const u = new URL(req.url);
@@ -712,16 +905,13 @@ class BoardEngine {
       if (p === "/timetable") return Response.json(this.timetable(u.searchParams.get("stops") || "", Number(u.searchParams.get("days")) || 2));
       if (p === "/status") return Response.json(this.status());
       if (p === "/learn" && req.method === "POST") {
-        const q = await req.json(); let n = 0;
-        const pairs = Array.isArray(q) ? q : (q && q.pairs) || [];
+        // Names from a planner board the worker read (engineLearn): [[stop, label]] (older workers) or engLabels'
+        // { pairs, moved, plain } with the board's lines.
+        const q = await req.json();
+        const arr = (x) => (Array.isArray(x) ? x : []);
+        const lab = Array.isArray(q) ? { pairs: q } : { pairs: arr(q && q.pairs), moved: arr(q && q.moved), plain: arr(q && q.plain) };
         if (q && q.lines && typeof q.lines.stop === "string") this.checkGap(q.lines.stop, q.lines.lines);
-        if (!this.platMem) this.source().plat("");
-        for (const [stop, label] of Array.isArray(pairs) ? pairs.slice(0, 200) : []) {
-          if (typeof stop !== "string" || typeof label !== "string" || !/^(Platform|Stand|Wharf) [A-Za-z0-9]{1,4}(, Side \w)?$/.test(label)) continue;
-          if (this.platMem.get(stop) === label) continue;
-          this.sql.exec("INSERT OR REPLACE INTO plat VALUES (?, ?, ?)", stop, label, Date.now()); this.platMem.set(stop, label); n++;
-        }
-        if (n) { this.boards.clear(); this.platVer = (this.platVer || 0) + 1; }
+        const n = this.applyLabels(lab);
         return Response.json({ n, gap: this.gapOf(q && q.lines && q.lines.stop) });
       }
       if (req.method !== "POST") return new Response("not found", { status: 404 });
@@ -747,7 +937,7 @@ class BoardEngine {
     if (missing.length) this.gaps.set(stop, { at: now, lines: missing });
     else this.gaps.delete(stop);
     if (this.gaps.size > 2000) this.gaps.delete(this.gaps.keys().next().value);
-    if (!!was !== !!missing.length) { this.boards.clear(); this.platVer = (this.platVer || 0) + 1; }
+    if (!!was !== !!missing.length) { this.boards.clear(); this.platBump(stop, null, missing.length ? missing : null); }
   }
   gapOf(stop) {
     const g = stop && this.gaps && this.gaps.get(stop);
@@ -793,8 +983,19 @@ class BoardEngine {
       if (starting) this.tokens = Math.max(-perMin / 6, (this.tokens == null ? 0 : this.tokens) - starting);
       await Promise.race([Promise.all(cold.map((f) => this.refreshFeed(f, this.feeds.get(f), t0, true))), new Promise((r) => setTimeout(r, 3000))]);
     }
+    // Stops the shard built boards for that may want a planner read (wantLearn decides).
+    if (q && Array.isArray(q.learn)) for (const x of q.learn.slice(0, 100)) if (Array.isArray(x)) this.wantLearn(x[0], !!x[1], t0);
     const src = this.source();
-    const out = { ver: m.ver, platVer: (this.bootAt % 100000) * 1000 + (this.platVer || 0), at: {}, vpAt: {}, same: [], tu: {}, veh: {}, added: {}, next: {} };
+    const epoch = (this.bootAt % 100000) * 1000;
+    const out = { ver: m.ver, platVer: epoch + (this.platVer || 0), at: {}, vpAt: {}, same: [], tu: {}, veh: {}, added: {}, next: {} };
+    // Name and gap changes since the shard's platVer, when this object still has them all (same start, in the log):
+    // the shard puts them into the windows it holds instead of reading every window again.
+    const pv = Number(q && q.pv);
+    if (Number.isFinite(pv) && pv !== out.platVer && pv >= epoch && pv < out.platVer) {
+      const since = pv - epoch;
+      const first = this.platLog.length ? this.platLog[0][0] : Infinity;
+      if (first <= since + 1) out.platDelta = this.platLog.filter((e) => e[0] > since).map((e) => e.slice(1));
+    }
     // When each asked feed's next copy is expected here (feed timing), so a shard can ask just after it.
     if (engTimingOn(this.env)) for (const feed of asked) { const f = this.feeds.get(feed); const n = f && engNextPublish(f); if (n) out.next[feed] = n + 1500; }
     for (const feed of asked) {
@@ -943,7 +1144,7 @@ class BoardShard {
     this.boards = new Map();  // board key -> { at, body }
     this.hot = new Map();     // board key -> last read or touch
     this.live = new Map();    // feed -> { at, vpAt, trips: Set, tu: Map, veh: Map, added: [] }
-    this.lastRead = 0; this.alarmSet = false; this.lastBuild = 0; this.name = ""; this.platVer = null; this.learnAsked = new Map();
+    this.lastRead = 0; this.alarmSet = false; this.lastBuild = 0; this.name = ""; this.platVer = null; this.learnAsked = new Map(); this.learnWant = new Map();
     this.pushed = new Map();  // board key -> what the phones on its sockets hold (engPushState)
     this.stats = { ticks: 0, built: 0, served: 0, cacheHits: 0, puts: 0, putErrors: 0, liveCalls: 0, liveSame: 0, windows: 0, tickMs: 0, liveMs: 0, buildMs: 0, coreErrors: 0, sockets: 0, pushes: 0, pushBytes: 0 };
   }
@@ -1060,15 +1261,23 @@ class BoardShard {
       feeds[feed] = [...trips].map(([t, s]) => [t, [...s]]);
     }
     if (!Object.keys(feeds).length) return false;
-    const r = await this.coreJson("/live", { feeds, have });
+    // Stops waiting to be learnt ride along (no extra request), with the name version this shard holds.
+    const learn = [];
+    for (const [s, miss] of this.learnWant) { learn.push([s, miss ? 1 : 0]); if (learn.length >= 100) break; }
+    for (const [s] of learn) this.learnWant.delete(s);
+    const r = await this.coreJson("/live", { feeds, have, ...(learn.length ? { learn } : {}), ...(this.platVer != null ? { pv: this.platVer } : {}) });
     this.stats.liveCalls++; this.stats.liveMs += Date.now() - t0;
     if (r.error) return false;
     if (this.meta && r.ver !== this.meta.ver) { await this.ensureMeta(r.ver); return true; }
     if (!merge) this.nextCopy = Object.values(r.next || {}).reduce((a, b) => Math.min(a, b), Infinity);
-    // Platform names learnt from the Trip Planner since the windows were read: read the windows again.
-    if (this.platVer != null && r.platVer !== this.platVer) { this.win.clear(); this.info.clear(); }
-    this.platVer = r.platVer;
+    // Platform names learnt from the Trip Planner since the windows were read: the changes go into the windows held
+    // (platDelta), or, when the core cannot list them (it restarted), every window is read again before the next build.
     let changed = false;
+    if (this.platVer != null && r.platVer !== this.platVer) {
+      if (Array.isArray(r.platDelta)) { if (this.applyPlatDelta(r.platDelta)) changed = true; }
+      else { this.win.clear(); this.info.clear(); this.winCleared = true; changed = true; }
+    }
+    this.platVer = r.platVer;
     for (const feed of Object.keys(feeds)) {
       if (r.same.includes(feed)) { this.stats.liveSame++; continue; }
       if (!(feed in r.tu)) continue;
@@ -1082,6 +1291,21 @@ class BoardShard {
       this.live.set(feed, e);
     }
     return changed;
+  }
+  // Name changes from the core: [id, label] sets the name of a stop in every window holding it; [stop, null, gap]
+  // sets that stop's gap. Returns whether any window changed.
+  applyPlatDelta(list) {
+    let n = 0;
+    for (const e of list) {
+      if (!Array.isArray(e)) continue;
+      const [id, label, gap] = e;
+      if (label === null) { const w = this.win.get(id); if (w) { w.gap = gap || null; n++; } continue; }
+      const s = this.info.get(id);
+      if (s) { s[5] = label || ""; n++; }
+      for (const w of this.win.values()) if (w.info && w.info[id] && w.info[id] !== s) { w.info[id][5] = label || ""; n++; }
+    }
+    this.stats.platDeltas = (this.stats.platDeltas || 0) + n;
+    return n > 0;
   }
   source() {
     const m = this.meta, self = this;
@@ -1113,9 +1337,16 @@ class BoardShard {
     // and lines the core object learns (/learn): once in 6 hours for a stop with services that have no platform name,
     // else once a day, at most 2 stops a minute per shard so a crowd of first reads does not become planner calls.
     const last = this.learnAsked.get(stop) || 0;
-    const due = now - last > (b && b.items.some((i) => !i.platform) ? 6 : 24) * 3600000;
+    const miss = !!(b && b.items.some((i) => !i.platform));
+    // ENGINE_LEARN_CORE (on): the stop goes to the core's planner read queue with the next /live call, on every build
+    // (not only a phone's first read), so a stop that missed its turn is still learnt. The core decides when.
+    if (b && engLearnCoreOn(this.env)) {
+      if (now - last > (miss ? 10 * 60000 : 6 * 3600000)) { this.learnAsked.set(stop, now); this.learnWant.set(stop, miss); }
+      if (this.learnAsked.size > 5000) this.learnAsked.clear();
+    }
+    const due = now - last > (miss ? 6 : 24) * 3600000;
     if (now - (this.learnMin || 0) > 60000) { this.learnMin = now; this.learnN = 0; }
-    if (b && first && due && this.learnN < 2) {
+    if (b && first && due && this.learnN < 2 && !engLearnCoreOn(this.env)) {
       this.learnN++;
       this.learnAsked.set(stop, now);
       if (this.learnAsked.size > 5000) this.learnAsked.clear();
@@ -1154,6 +1385,9 @@ class BoardShard {
     const stops = [...new Set([...this.hot.keys()].map((k) => k.split("|")[0]))];
     await this.ensureWindows(stops, t0);
     const changed = await this.fetchLive(this.tripsFor(stops, t0), false);
+    // Windows dropped for a name change the core could not list: read them again now, so this tick's boards are not
+    // built from nothing (before 27 Oct every board of the shard came out empty for one tick and went to the planner).
+    if (this.winCleared) { this.winCleared = false; await this.ensureWindows(stops, t0); }
     if (!changed && t0 - this.lastBuild < ENGINE_SHARD_REBUILD_MS) { this.stats.tickMs = Date.now() - t0; return; }
     const b0 = Date.now();
     const src = this.source();
@@ -1193,6 +1427,7 @@ class BoardShard {
       if (!trips.size) need.delete(feed);
     }
     if (need.size) await this.fetchLive(need, true).catch(() => false);
+    if (this.winCleared) await this.ensureWindows([stop], now); // the tick reads the other windows again
     const body = this.build(this.source(), bk, Date.now(), true);
     if (body && body.includes('"learn":true')) { this.boards.delete(bk); return body; } // not cached with the flag
     if (body) { const p = this.putCache([[bk, body]]); this.state.waitUntil ? this.state.waitUntil(p) : await p; }
@@ -1217,7 +1452,7 @@ class BoardShard {
   status() {
     let trips = 0;
     for (const e of this.live.values()) trips += e.tu.size;
-    return { role: "shard", code: ENGINE_SHARD_GEN + 2, name: this.name, boots: this.boots, bootAt: this.bootAt, hotBoards: this.hot.size, windows: this.win.size, liveTrips: trips, ver: this.meta ? this.meta.ver : 0, lastBuildAgeS: this.lastBuild ? Math.round((Date.now() - this.lastBuild) / 1000) : null, ...this.stats };
+    return { role: "shard", code: ENGINE_SHARD_GEN + 3, learnWaiting: this.learnWant.size, platVer: this.platVer, name: this.name, boots: this.boots, bootAt: this.bootAt, hotBoards: this.hot.size, windows: this.win.size, liveTrips: trips, ver: this.meta ? this.meta.ver : 0, lastBuildAgeS: this.lastBuild ? Math.round((Date.now() - this.lastBuild) / 1000) : null, ...this.stats };
   }
   async fetch(req) {
     const u = new URL(req.url);
@@ -1378,13 +1613,14 @@ const engLearnt = new Map();
 function engineLearn(env, ctx, board) {
   const stub = engineStub(env);
   if (!stub || !board || !Array.isArray(board.items)) return;
-  const now = Date.now(), pairs = [];
-  for (const it of board.items) {
-    if (!it.stopId || !it.platform || it.platformChangedFrom) continue;
-    const k = it.stopId + "|" + it.platform;
-    if (now - (engLearnt.get(k) || 0) < 3600000) continue;
-    engLearnt.set(k, now); pairs.push([String(it.stopId), String(it.platform)]);
-  }
+  const now = Date.now();
+  // Per stop id, as the core's own planner reads (engLabels): one name for every unchanged service, or a moved stand
+  // every service there shows; two names at one id teach nothing.
+  const lab = engLabels(board.items);
+  const fresh = (k) => { if (now - (engLearnt.get(k) || 0) < 3600000) return false; engLearnt.set(k, now); return true; };
+  const pairs = lab.pairs.filter(([id, l]) => fresh(id + "|" + l));
+  const moved = lab.moved.filter(([id, l]) => fresh("m|" + id + "|" + l));
+  const plain = lab.plain.filter((id) => fresh("p|" + id)).slice(0, 50);
   if (engLearnt.size > 5000) engLearnt.clear();
   // The lines of the next 90 minutes, once in 10 minutes per stop from this isolate, so the engine can tell a stop
   // with services missing from our bundles (checkGap).
@@ -1394,8 +1630,8 @@ function engineLearn(env, ctx, board) {
     engLearnt.set("lines|" + stop, now);
     lines = [...new Set(board.items.filter((i) => i.line && !i.cancelled && Date.parse(i.planned) < now + ENGINE_HORIZON_MS).map((i) => String(i.line)))];
   }
-  if (!pairs.length && !lines) return;
-  const p = stub.fetch("https://engine/learn", { method: "POST", body: JSON.stringify(lines ? { pairs, lines: { stop, lines } } : pairs) }).catch(() => null);
+  if (!pairs.length && !moved.length && !plain.length && !lines) return;
+  const p = stub.fetch("https://engine/learn", { method: "POST", body: JSON.stringify({ pairs, moved, plain, ...(lines ? { lines: { stop, lines } } : {}) }) }).catch(() => null);
   if (ctx && ctx.waitUntil) ctx.waitUntil(p);
 }
 // GET /api/live?stop=ID[&mode=] with Upgrade: websocket (ENGINE_PUSH "on", else 404): the board's shard answers the

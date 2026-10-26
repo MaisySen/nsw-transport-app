@@ -9,7 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 const root = new URL("..", import.meta.url).pathname;
 const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {") + "\n" +
   fs.readFileSync(root + "src/engine.js", "utf8").replace(/\nexport \{ BoardEngine, BoardShard \};\s*$/, "\n") +
-  "\nexport { __default, engBuildBoard, engLive, engDayKey, engPlatform, BoardEngine, BoardShard, engineWanted, engTrim, engShardOf, engNotePublish, engNextPublish, engPushKey, engineSocket, engEmptyLive, engAsAdded, engRun };\n";
+  "\nexport { __default, engBuildBoard, engLive, engDayKey, engPlatform, BoardEngine, BoardShard, engineWanted, engTrim, engShardOf, engNotePublish, engNextPublish, engPushKey, engineSocket, engEmptyLive, engAsAdded, engRun, engLabels, engPlannerLabels };\n";
 const tmp = `/tmp/engine-test-${process.pid}-${Date.now()}.mjs`;
 fs.writeFileSync(tmp, src);
 const W = await import(tmp); fs.unlinkSync(tmp);
@@ -466,4 +466,166 @@ test("the core lists a train feed trip the timetable lacks once per copy, throug
   mk({}, [...known, fresh]);
   const b3 = await (await E3.fetch(new Request("https://engine/board?stop=P"))).json();
   assert.ok(!b3.items.some((i) => i.tripId === "NEW-1"));
+});
+
+// ---- stand and platform names (27 Oct, g14 follow up): the core reads planner boards from a queue the shards fill ----
+test("names from a planner board: one name per stop id, a moved stand only when every service there shows it, conflicts teach nothing", () => {
+  const L = W.engLabels([
+    { stopId: "a", platform: "Stand X1" }, { stopId: "a", platform: "Stand X1" }, { stopId: "a", platform: "" },
+    { stopId: "b", platform: "Stand X1" }, { stopId: "b", platform: "Stand X2" },
+    { stopId: "c", platform: "Stand X2", platformChangedFrom: "Stand A" }, { stopId: "c", platform: "Stand X2", platformChangedFrom: "Stand A" },
+    { stopId: "d", platform: "Stand X1", platformChangedFrom: "Stand A" }, { stopId: "d", platform: "" },
+    { stopId: "e", platform: "" }, { stopId: "f", platform: "Platform 3", platformChangedFrom: "Platform 1" },
+    { stopId: "g", platform: "<b>x</b>" },
+  ]);
+  assert.deepEqual(L.pairs, [["a", "Stand X1"]]);
+  assert.equal(L.conflicts, 1);
+  assert.deepEqual(L.moved, [["c", "Stand X2"]], "a train platform change is never kept as the stop's name");
+  assert.deepEqual(L.plain, ["e"], "a stop with a moved and an unnamed service is left alone");
+  const P = W.engPlannerLabels({ stopEvents: [
+    { location: { id: "q1", properties: { platformName: "Stand X1", plannedPlatformName: "Stand B" } }, transportation: { product: { class: 5 }, disassembledName: "199" }, departureTimePlanned: new Date(Date.now() + 600000).toISOString() },
+    { location: { id: "q1", properties: { platformName: "Stand X1" } }, transportation: { product: { class: 5 }, disassembledName: "178" }, departureTimePlanned: new Date(Date.now() + 200 * 60000).toISOString() },
+  ] });
+  assert.deepEqual(P.items.map((i) => [i.stopId, i.platform, i.platformChangedFrom]), [["q1", "Stand X1", "Stand B"], ["q1", "Stand X1", null]]);
+  assert.deepEqual(P.lines, ["199"]);
+});
+
+const LQ = {
+  meta: { days: { [day]: base }, routes: [["400", 5, "#00B5EF", "bus", "", "Test bus"]], heads: ["Manly"], routeIds: { bus: { R400: 0 } } },
+  stops: { Q: ["Test Shops, Main Rd", "", "", 0, 0], R: ["Test Rd at Other St", "", "", 0, 0], S: ["Test Station, Stand A", "", "", 0, 0] },
+  rows: { Q: [[sec(4), "q-1", 0, 0, 3], [sec(14), "q-2", 0, 0, 3]], R: [[sec(6), "r-1", 0, 0, 5]], S: [[sec(8), "s-1", 0, 0, 2]] },
+};
+// A core object with that timetable, a shard on it, and a fake Transport for NSW: feeds empty, departure_mon boards
+// from tpBoards (stop -> [[platform, planned platform]]), every call counted.
+async function learnRig(env = {}, state = fakeState()) {
+  const calls = { tp: [], feed: 0 };
+  const tpBoards = {};
+  globalThis.fetch = async (u) => {
+    u = String(u);
+    if (/\/v1\/tp\/departure_mon/.test(u)) {
+      const stop = new URL(u).searchParams.get("name_dm");
+      calls.tp.push(stop);
+      const evs = (tpBoards[stop] || []).map(([pl, was], i) => ({ location: { id: stop, properties: { platformName: pl, ...(was ? { plannedPlatformName: was } : {}) } }, transportation: { product: { class: 5 }, disassembledName: "400" }, departureTimePlanned: new Date(Date.now() + (5 + i) * 60000).toISOString() }));
+      return new Response(JSON.stringify({ stopEvents: evs }), { headers: { "content-type": "application/json" } });
+    }
+    calls.feed++;
+    return new Response(feed([]));
+  };
+  const E = new W.BoardEngine(state, { TFNSW_API_KEY: "k", ...env });
+  const post = (p, body) => E.fetch(new Request("https://engine" + p, { method: "POST", body: typeof body === "string" ? body : JSON.stringify(body) }));
+  if (!E.loadMeta()) {
+    await post("/load/begin", { ...LQ.meta, builtAt: "2026-10-27T00:00:00Z" });
+    await post("/load/stops", Object.entries(LQ.stops).map(([id, s]) => [id, s[0], s[1], s[2], s[3], s[4]]));
+    await post("/load/days", Object.entries(LQ.rows).map(([s, r]) => JSON.stringify({ s, d: day, r })).join("\n"));
+    await post("/load/commit", {});
+  }
+  const core = { fetch: (u, init) => E.fetch(new Request(u, init)) };
+  const S = new W.BoardShard(fakeState(), { ENGINE: { idFromName: () => "core", get: () => core }, ...env });
+  const board = async (stop) => (await S.fetch(new Request("https://engine/board?stop=" + stop + "&name=nsw-2-b0"))).json();
+  const shardBoard = (stop) => JSON.parse(S.boards.get(stop + "|").body);
+  return { E, S, calls, tpBoards, board, shardBoard, state };
+}
+
+test("a moved stand is learnt by the core from its queue within a tick or two, reaches the shard as a change, and survives a restart", async () => {
+  const rig = await learnRig();
+  rig.tpBoards.Q = [["Stand X1", "Stand B"], ["Stand X1", "Stand B"]];
+  const b = await rig.board("Q");
+  assert.equal(b.items[0].platform, "", "no stand name in the timetable");
+  assert.equal(b.engine.learn, undefined, "no planner read rides on the phone's answer");
+  await rig.S.tick(); // the shard's /live call carries the stop to the core's queue
+  assert.equal(rig.E.learnQ.size, 1);
+  await rig.E.learnTick();
+  assert.deepEqual(rig.calls.tp, ["Q"], "one planner read");
+  assert.equal(rig.E.status().learn.moved, 1);
+  rig.S.lastBuild = 0;
+  await rig.S.tick(); // the change arrives as a delta: no window read again
+  assert.equal(rig.shardBoard("Q").items[0].platform, "Stand X1");
+  assert.ok(rig.S.stats.platDeltas >= 1);
+  // Not asked again: not by the same object, not after a restart (the learnt table and the name are kept).
+  await rig.S.tick(); await rig.E.learnTick();
+  const E2 = new W.BoardEngine(rig.state, { TFNSW_API_KEY: "k" });
+  assert.equal(E2.source().plat("Q"), "Stand X1");
+  assert.equal(E2.wantLearn("Q", false), false);
+  assert.deepEqual(rig.calls.tp, ["Q"]);
+});
+
+test("a moved stand never overrides a stand the timetable names, and two names at one stop teach nothing", async () => {
+  const rig = await learnRig();
+  rig.tpBoards.S = [["Stand X3", "Stand A"]];
+  rig.tpBoards.R = [["Stand X1", ""], ["Stand X2", ""]];
+  for (const s of ["S", "R"]) rig.E.wantLearn(s, true);
+  await rig.E.learnTick();
+  assert.equal(rig.calls.tp.length, 2);
+  assert.equal(rig.E.source().plat("S"), "");
+  assert.equal(rig.E.source().plat("R"), "");
+  assert.equal(rig.E.status().learn.conflicts, 1);
+  assert.equal((await rig.board("S")).items[0].platform, "Stand A");
+});
+
+test("a moved stand ends when the planner shows the stop plain again, and is dropped after 36 hours unseen", async () => {
+  const rig = await learnRig();
+  rig.E.applyLabels({ moved: [["Q", "Stand X2"]] });
+  assert.equal(rig.E.source().plat("Q"), "Stand X2");
+  rig.E.applyLabels({ plain: ["Q"] });
+  assert.equal(rig.E.source().plat("Q"), "");
+  rig.E.applyLabels({ moved: [["Q", "Stand X2"]] });
+  rig.E.platxMem.get("Q")[1] = Date.now() - 37 * 3600000;
+  assert.equal(rig.E.source().plat("Q"), "");
+  const E2 = new W.BoardEngine(rig.state, { TFNSW_API_KEY: "k", ENGINE_LEARN_MOVED: "off" });
+  E2.applyLabels({ moved: [["R", "Stand X1"]] });
+  assert.equal(E2.source().plat("R"), "", "ENGINE_LEARN_MOVED off keeps no moved stand");
+});
+
+test("planner reads for names stay inside their budget: a bucket a minute and a cap a day, and a failed read waits", async () => {
+  const rig = await learnRig({ ENGINE_LEARN_PER_MIN: "6", ENGINE_LEARN_DAY: "3" });
+  for (const s of ["Q", "R", "S", "A1", "A2", "A3"]) rig.E.wantLearn(s, s !== "S");
+  await rig.E.learnTick();
+  assert.equal(rig.calls.tp.length, 2, "a bucket of a third of the minute's reads");
+  assert.ok(!rig.calls.tp.includes("S"), "stops with unnamed services first");
+  rig.E.learnFill = Date.now() - 60000;
+  await rig.E.learnTick();
+  assert.equal(rig.calls.tp.length, 3, "the day's cap");
+  rig.E.learnFill = Date.now() - 600000;
+  await rig.E.learnTick();
+  assert.equal(rig.calls.tp.length, 3);
+  assert.equal(rig.E.status().learn.today, 3);
+  // A failed read is asked again in about 30 minutes, not at once.
+  const rig2 = await learnRig();
+  globalThis.fetch = async () => new Response("down", { status: 500 });
+  rig2.E.wantLearn("Q", true);
+  await rig2.E.learnTick();
+  assert.equal(rig2.E.status().learn.failed, 1);
+  assert.equal(rig2.E.wantLearn("Q", true), false);
+  assert.equal(rig2.E.wantLearn("Q", true, Date.now() + 31 * 60000), true);
+});
+
+test("ENGINE_LEARN_CORE off: the old rule, a planner read on a phone's first read, at most 2 a minute per shard", async () => {
+  const rig = await learnRig({ ENGINE_LEARN_CORE: "off" });
+  const b = await rig.board("Q");
+  assert.equal(b.engine.learn, true);
+  await rig.S.tick();
+  assert.equal(rig.E.learnQ.size, 0);
+  assert.equal(rig.calls.tp.length, 0);
+});
+
+test("a shard whose windows were dropped for a name change still builds every board on that tick", async () => {
+  const rig = await learnRig();
+  await rig.board("Q"); await rig.board("R");
+  rig.S.platVer = 7; // a version the core cannot list changes from (as after a core restart)
+  rig.S.lastBuild = 0;
+  await rig.S.tick();
+  assert.ok(rig.S.boards.get("Q|").body && rig.S.boards.get("R|").body, "no empty board, so no fall back to the planner");
+  assert.equal(rig.shardBoard("R").items.length, 1);
+});
+
+test("Empty Train rows left off for want of a live time are listed for the match check (engine.emptyHidden), not as rows", () => {
+  const save = rows.P1;
+  meta.heads.push("Empty Train");
+  rows.P1 = [...save, [sec(7), "T-empty", 0, meta.heads.length - 1, 10]];
+  try {
+    const b = W.engBuildBoard(fakeSrc(), "P");
+    assert.ok(!b.items.some((i) => i.tripId === "T-empty"));
+    assert.deepEqual(b.engine.emptyHidden.map((x) => [x[0], x[2], x[3]]), [["T-empty", "T1", "P1"]]);
+    assert.equal(W.engBuildBoard(fakeSrc(), "B").engine.emptyHidden, undefined);
+  } finally { rows.P1 = save; meta.heads.pop(); }
 });

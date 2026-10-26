@@ -2,10 +2,13 @@
 // node backend/tools/fake-nsw.mjs 8799. Upstream behaviour via GET /__mode?set=NAME: ok, 429, 403quota, 500, 502html,
 // empty, malformed, nulljson, huge, slow, slowfeed, weird, trains. GET /__mode also shows the last 20 calls the worker made.
 // trains: the Sydney Trains trip update feed is a synthetic network (tools/fake-feed.mjs), sized by the same call:
-// /__mode?set=trains&trips=1500&unknown=30&empty=0 (unknown: trips the engine's timetable lacks).
+// /__mode?set=trains&trips=1500&unknown=30&empty=0 (unknown: trips the engine's timetable lacks), plus stands=N (the
+// first N stations have sides the timetable does not name, which the planner board calls Stand X1 and X2, moved) and
+// at=MS (the moment the network is made for, so a load into the local engine agrees with the feed). In mode trains
+// the departure board of a network station (ST0, ST1, ...) is that network's (plannerBoard): tools/match_x.mjs --dry.
 // backend/tools/local-dev.mjs builds a worker that talks to this and runs it under wrangler dev.
 import http from "node:http";
-import { trainNetwork } from "./fake-feed.mjs";
+import { trainNetwork, plannerBoard } from "./fake-feed.mjs";
 const PORT = +process.argv[2] || 8799;
 let mode = "ok"; const hits = []; let net = {};
 const STOPS = [["200060","Central Station"],["2000338","Central Station, Platform 16"],["200070","Town Hall Station"],["213510","Strathfield Station"],["2150106","Parramatta Station"],["10101100","Manly Wharf"],["10101101","Circular Quay"],["2067141","Chatswood Station"],["2022100","Bondi Junction Station"],["2000441","Wynyard Station"]];
@@ -61,6 +64,10 @@ function plannerJourneys(q) {
 function body(path, q) {
   if (mode === "planner" && path.includes("/tp/trip")) return plannerJourneys(q);
   if (path.includes("/tp/stop_finder")) { const s = (q.get("name_sf") || "").toLowerCase(); return { locations: STOPS.filter((x) => x[1].toLowerCase().includes(s.split(" ")[0] || "")).map(([id, name], i) => ({ id, name, disassembledName: name, type: "stop", matchQuality: 900 - i, isBest: i === 0, productClasses: [1], coord: [-33.88, 151.2], parent: { name: "Sydney", type: "locality" } })) }; }
+  if (mode === "trains" && path.includes("/tp/departure_mon") && /^ST\d+$/.test(q.get("name_dm") || "")) {
+    const id = q.get("name_dm"), ev = plannerBoard(trainNetwork(net), id);
+    if (ev) return { locations: [{ id, name: "Fake station", type: "stop" }], stopEvents: ev };
+  }
   if (path.includes("/tp/departure_mon")) { const id = q.get("name_dm"); return { locations: [{ id, name: nameOf(id), type: "stop" }], stopEvents: stopEvents(id, 12) }; }
   if (path.includes("/tp/trip")) return journeys(q.get("name_origin"), q.get("name_destination"));
   if (path.includes("/tp/coord")) return { locations: STOPS.slice(0, 5).map(([id, name], i) => ({ id, name, type: "stop", coord: [-33.88 + i * 0.001, 151.2], properties: { distance: 100 * (i + 1) } })) };
@@ -72,7 +79,7 @@ function body(path, q) {
 http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   if (u.pathname === "/__mode") {
-    if (u.searchParams.get("set")) { mode = u.searchParams.get("set"); net = {}; for (const k of ["trips", "stations", "perTrip", "unknown", "empty"]) if (u.searchParams.get(k)) net[k] = +u.searchParams.get(k); }
+    if (u.searchParams.get("set")) { mode = u.searchParams.get("set"); net = {}; for (const k of ["trips", "stations", "perTrip", "unknown", "empty", "stands", "at"]) if (u.searchParams.get(k)) net[k] = +u.searchParams.get(k); }
     res.end(JSON.stringify({ mode, hits: hits.length, last: hits.slice(-20) })); return; }
   hits.push({ t: Date.now(), p: u.pathname, auth: req.headers.authorization ? "apikey set" : "none", mode });
   const isFeed = u.pathname.includes("/gtfs/");
