@@ -22,7 +22,7 @@ const ENGINE_DAILY_BUDGET = 30000;     // feed calls a day the engine aims to st
 const ENGINE_HOT_MAX = 1500;           // boards kept built; the object restarted at 500 and 990 with bigger caches (26 Oct)
 const ENGINE_GAP_MS = 300;
 const ENGINE_OPEN = 5;                 // open connections to Transport for NSW at a time
-const ENGINE_PER_MIN = 24;             // feed calls a minute at most (ENGINE_PER_MIN overrides): 34,560 a day if never idle
+const ENGINE_PER_MIN = 30;             // feed calls a minute at most (ENGINE_PER_MIN overrides): 43,200 a day if never idle
 const ENGINE_VP_FEEDS = /^(bus|train|metro|ferry|lr_)/; // vehicle positions (occupancy, stops away) for Sydney feeds only
 
 // Sydney date key (YYYYMMDD) for a moment.
@@ -446,14 +446,20 @@ class BoardEngine {
     this.tokenAt = t0;
     const k = this.stretch(t0);
     const due = [];
+    // Every wanted feed gets its turn (26 Oct, g14: ranked by use, the four busiest feeds took every call and light
+    // rail and ferry copies went 3 minutes old). The busiest feeds aim for a copy every 10 s, the others every 20 s
+    // (regional buses 30 s); the most overdue for its aim goes first, trip updates before vehicle positions.
+    let maxUses = 0;
+    for (const f of this.feeds.values()) maxUses = Math.max(maxUses, f.uses || 0);
     for (const [key, f] of this.feeds) {
       if (t0 - f.wantAt >= ENGINE_FEED_HOT_MS || f.pending || !FEEDS[key]) continue;
-      const tuEvery = (/^rb_/.test(key) ? ENGINE_SLOW_FEED_MS : ENGINE_TICK_MS) * k;
-      if (t0 - f.tuAt >= tuEvery - 1500) due.push({ key, f, kind: "tu", rank: 0, uses: f.uses || 0, age: t0 - f.tuAt });
-      if (ENGINE_VP_FEEDS.test(key) && t0 - f.vpAt >= ENGINE_VP_MS * k - 1500) due.push({ key, f, kind: "vp", rank: 1, uses: f.uses || 0, age: t0 - f.vpAt });
+      const aim = (/^rb_/.test(key) ? ENGINE_SLOW_FEED_MS : (f.uses || 0) >= maxUses / 4 ? ENGINE_TICK_MS : 2 * ENGINE_TICK_MS) * k;
+      const age = t0 - f.tuAt;
+      if (age >= aim - 1500) due.push({ key, f, kind: "tu", rank: age > ENGINE_STALE_MS * 0.75 ? -1 : 0, over: age / aim });
+      if (ENGINE_VP_FEEDS.test(key) && t0 - f.vpAt >= ENGINE_VP_MS * k - 1500) due.push({ key, f, kind: "vp", rank: 1, over: (t0 - f.vpAt) / (ENGINE_VP_MS * k) });
       f.uses = (f.uses || 0) / 2;
     }
-    due.sort((a, b) => a.rank - b.rank || b.uses - a.uses || b.age - a.age);
+    due.sort((a, b) => a.rank - b.rank || b.over - a.over);
     for (const d of due) {
       if (this.tokens < 1) { this.stats.deferred = (this.stats.deferred || 0) + 1; continue; }
       this.tokens -= 1;
@@ -549,7 +555,7 @@ class BoardEngine {
           if (this.platMem.get(stop) === label) continue;
           this.sql.exec("INSERT OR REPLACE INTO plat VALUES (?, ?, ?)", stop, label, Date.now()); this.platMem.set(stop, label); n++;
         }
-        if (n) this.boards.clear();
+        if (n) { this.boards.clear(); this.platVer = (this.platVer || 0) + 1; }
         return Response.json({ n });
       }
       if (req.method !== "POST") return new Response("not found", { status: 404 });
@@ -597,7 +603,7 @@ class BoardEngine {
       await Promise.race([Promise.all(cold.map((f) => this.refreshFeed(f, this.feeds.get(f), t0, true))), new Promise((r) => setTimeout(r, 3000))]);
     }
     const src = this.source();
-    const out = { ver: m.ver, at: {}, vpAt: {}, same: [], tu: {}, veh: {}, added: {} };
+    const out = { ver: m.ver, platVer: (this.bootAt % 100000) * 1000 + (this.platVer || 0), at: {}, vpAt: {}, same: [], tu: {}, veh: {}, added: {} };
     for (const feed of asked) {
       const f = this.feeds.get(feed);
       if (!f || !f.tu) continue;
@@ -743,7 +749,7 @@ class BoardShard {
     this.boards = new Map();  // board key -> { at, body }
     this.hot = new Map();     // board key -> last read or touch
     this.live = new Map();    // feed -> { at, vpAt, trips: Set, tu: Map, veh: Map, added: [] }
-    this.lastRead = 0; this.alarmSet = false; this.lastBuild = 0; this.name = "";
+    this.lastRead = 0; this.alarmSet = false; this.lastBuild = 0; this.name = ""; this.platVer = null; this.learnAsked = new Map();
     this.stats = { ticks: 0, built: 0, served: 0, cacheHits: 0, puts: 0, putErrors: 0, liveCalls: 0, liveSame: 0, windows: 0, tickMs: 0, liveMs: 0, buildMs: 0, coreErrors: 0 };
   }
   core() { return engineStub(this.env); }
@@ -817,6 +823,9 @@ class BoardShard {
     this.stats.liveCalls++; this.stats.liveMs += Date.now() - t0;
     if (r.error) return false;
     if (this.meta && r.ver !== this.meta.ver) { await this.ensureMeta(r.ver); return true; }
+    // Platform names learnt from the Trip Planner since the windows were read: read the windows again.
+    if (this.platVer != null && r.platVer !== this.platVer) { this.win.clear(); this.info.clear(); }
+    this.platVer = r.platVer;
     let changed = false;
     for (const feed of Object.keys(feeds)) {
       if (r.same.includes(feed)) { this.stats.liveSame++; continue; }
@@ -852,10 +861,17 @@ class BoardShard {
       cands(stop) { const w = self.win.get(stop); return w ? { cand: w.cand } : null; },
     };
   }
-  build(src, bk, now) {
+  build(src, bk, now, first) {
     const [stop, mode] = bk.split("|");
     const b = engBuildBoard(src, stop, { mode: mode || null, now });
     if (b) b.engine.shard = this.name;
+    // A first read of a board with services that have no platform or stand name: ask the worker (once in 6 hours per
+    // stop) to read the Trip Planner's board, whose names the core object learns (/learn).
+    if (b && first && b.items.some((i) => !i.platform) && now - (this.learnAsked.get(stop) || 0) > 6 * 3600000) {
+      this.learnAsked.set(stop, now);
+      if (this.learnAsked.size > 5000) this.learnAsked.clear();
+      b.engine.learn = true;
+    }
     const body = b ? JSON.stringify(b) : null;
     this.boards.set(bk, { at: now, body });
     this.stats.built++;
@@ -919,7 +935,8 @@ class BoardShard {
       if (!trips.size) need.delete(feed);
     }
     if (need.size) await this.fetchLive(need, true).catch(() => false);
-    const body = this.build(this.source(), bk, Date.now());
+    const body = this.build(this.source(), bk, Date.now(), true);
+    if (body && body.includes('"learn":true')) { this.boards.delete(bk); return body; } // not cached with the flag
     if (body) { const p = this.putCache([[bk, body]]); this.state.waitUntil ? this.state.waitUntil(p) : await p; }
     return body;
   }
@@ -1032,9 +1049,11 @@ async function engineBoard(env, ctx, stop, mode) {
   if (r.status !== 200 && r.status !== 404) return null;
   if (sh) engTouched.set(bk, now);
   if (engMem.size > 2000) engMem.clear();
-  engMem.set(bk, { at: now, text });
+  // The learn flag is for this one answer only.
+  const shared = text.replace(',"learn":true', "");
+  engMem.set(bk, { at: now, text: shared });
   if (cache) {
-    const put = cache.put(ck, new Response(text, { headers: { "content-type": "application/json", "cache-control": "public, max-age=" + ENGINE_EDGE_S } })).catch(() => {});
+    const put = cache.put(ck, new Response(shared, { headers: { "content-type": "application/json", "cache-control": "public, max-age=" + ENGINE_EDGE_S } })).catch(() => {});
     if (ctx && ctx.waitUntil) ctx.waitUntil(put);
   }
   return text || null;

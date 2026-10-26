@@ -6987,6 +6987,12 @@ async function handleRequest(request, env, exec) {
               // Same board as the phone already holds (If-None-Match): 304, no body.
               const etag = 'W/"e' + ((eb.engine && eb.engine.builtAt) || 0) + "-" + et.length + '"';
               if (!asTxt && request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: { etag, "cache-control": "no-store", "access-control-allow-origin": "*", ...API_SEC_HEADERS } });
+              // The shard asks for the Trip Planner's platform and stand names of a stop it has none for (once in 6 hours).
+              if (eb.engine && eb.engine.learn) {
+                delete eb.engine.learn;
+                const stop = p.get("stop") || "";
+                exec.waitUntil(departures(env, stop, { ctx: exec }).then((r) => engineLearn(env, exec, r)).catch(() => {}));
+              }
               const d = { kind: "departures", dataAt: (eb.live && eb.live.feedAt) || (eb.engine && eb.engine.builtAt) || Date.now(), ...eb, now: Date.now() };
               if (!(await serverOn(env, "occupancy"))) { d.items = d.items.map((x) => ({ ...x, vehicle: x.vehicle ? { ...x.vehicle } : x.vehicle })); stripOccupancy(d); }
               await afterAnswer(env, d, { profile, device: p.get("device"), exec });
