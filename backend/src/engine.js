@@ -21,6 +21,8 @@ const ENGINE_MAX_ROWS = 60;
 const ENGINE_DAILY_BUDGET = 30000;     // feed calls a day the engine aims to stay under (ENGINE_BUDGET overrides)
 const ENGINE_HOT_MAX = 3000;
 const ENGINE_GAP_MS = 300;
+const ENGINE_PER_MIN = 24;             // feed calls a minute at most (ENGINE_PER_MIN overrides): 34,560 a day if never idle
+const ENGINE_VP_FEEDS = /^(bus|train|metro|ferry|lr_)/; // vehicle positions (occupancy, stops away) for Sydney feeds only
 
 // Sydney date key (YYYYMMDD) for a moment.
 const ENG_DAYFMT = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney", year: "numeric", month: "2-digit", day: "2-digit" });
@@ -290,7 +292,7 @@ class BoardEngine {
       vp(feed, tripId) { const f = self.feeds.get(feed); return f && f.vp ? decodeFrom(f.vp, tripId) : null; },
       feedAt(feed) { const f = self.feeds.get(feed); return f && f.tu ? f.tu.at : 0; },
       added(feed) { const f = self.feeds.get(feed); return f ? f.added || [] : []; },
-      needFeed(feed) { self.want(feed); },
+      needFeed(feed) { const f = self.want(feed); f.uses = (f.uses || 0) + 1; },
       plat(id) {
         if (!self.platMem) { self.platMem = new Map(); for (const r of sql.exec("SELECT stop, label FROM plat").toArray()) self.platMem.set(r.stop, r.label); }
         return self.platMem.get(id) || "";
@@ -357,7 +359,7 @@ class BoardEngine {
         f.added = added;
       }).catch(() => { f.fails++; f.tuAt = 0; }));
     }
-    if (only !== "tu" && (force || now - f.vpAt >= ENGINE_VP_MS * k - 1500)) {
+    if (only !== "tu" && ENGINE_VP_FEEDS.test(key) && (force || now - f.vpAt >= ENGINE_VP_MS * k - 1500)) {
       f.vpAt = now;
       jobs.push(this.fetchFeed(def.vp, "vp").then((e) => { f.vp = e; }).catch(() => {}));
     }
@@ -367,10 +369,27 @@ class BoardEngine {
     const t0 = Date.now();
     this.stats.ticks++;
     const jobs = [];
-    // Trip updates for every hot feed first, then vehicle positions, through the call pacing in slot().
-    const hot = [...this.feeds].filter(([, f]) => t0 - f.wantAt < ENGINE_FEED_HOT_MS && !f.pending);
-    for (const [key, f] of hot) jobs.push(this.refreshFeedNow(key, f, t0, false, "tu"));
-    for (const [key, f] of hot) jobs.push(this.refreshFeedNow(key, f, t0, false, "vp"));
+    // Feed calls per minute are capped (ENGINE_PER_MIN, a token bucket), whatever the number of phones, stops or
+    // feeds in use. Due trip updates go first, the feeds most boards use first; vehicle positions (Sydney feeds only)
+    // after. A feed that misses its turn keeps its last copy and goes first next tick.
+    const perMin = Number(this.env.ENGINE_PER_MIN) || ENGINE_PER_MIN;
+    this.tokens = Math.min(perMin / 3, (this.tokens == null ? perMin / 6 : this.tokens) + ((t0 - (this.tokenAt || t0)) / 60000) * perMin);
+    this.tokenAt = t0;
+    const k = this.stretch(t0);
+    const due = [];
+    for (const [key, f] of this.feeds) {
+      if (t0 - f.wantAt >= ENGINE_FEED_HOT_MS || f.pending || !FEEDS[key]) continue;
+      const tuEvery = (/^rb_/.test(key) ? ENGINE_SLOW_FEED_MS : ENGINE_TICK_MS) * k;
+      if (t0 - f.tuAt >= tuEvery - 1500) due.push({ key, f, kind: "tu", rank: 0, uses: f.uses || 0, age: t0 - f.tuAt });
+      if (ENGINE_VP_FEEDS.test(key) && t0 - f.vpAt >= ENGINE_VP_MS * k - 1500) due.push({ key, f, kind: "vp", rank: 1, uses: f.uses || 0, age: t0 - f.vpAt });
+      f.uses = (f.uses || 0) / 2;
+    }
+    due.sort((a, b) => a.rank - b.rank || b.uses - a.uses || b.age - a.age);
+    for (const d of due) {
+      if (this.tokens < 1) { this.stats.deferred = (this.stats.deferred || 0) + 1; continue; }
+      this.tokens -= 1;
+      jobs.push(this.refreshFeedNow(d.key, d.f, t0, true, d.kind));
+    }
     await Promise.all(jobs);
     const src = this.source();
     let n = 0;
@@ -420,6 +439,7 @@ class BoardEngine {
     if (!probe) { this.boards.set(bk, { at: now, body: null }); return null; }
     const cold = probe.engine.feeds.filter((f) => { const x = this.feeds.get(f); return !x || !x.tu; });
     if (cold.length) {
+      this.tokens = (this.tokens == null ? 0 : this.tokens) - cold.length;
       await Promise.race([Promise.all(cold.map((f) => this.refreshFeed(f, this.want(f), now, true))), new Promise((r) => setTimeout(r, 3000))]);
       src = this.source();
     }
@@ -429,7 +449,7 @@ class BoardEngine {
     const m = this.loadMeta(), now = Date.now();
     const feeds = {};
     for (const [k, f] of this.feeds) feeds[k] = { tuAgeS: f.tu ? Math.round((now - f.tu.at) / 1000) : null, vpAgeS: f.vp ? Math.round((now - f.vp.at) / 1000) : null, trips: f.tu ? f.tu.idx.size : 0, added: (f.added || []).length, hot: now - f.wantAt < ENGINE_FEED_HOT_MS, fails: f.fails };
-    return { ver: m ? m.ver : 0, builtAt: m ? m.builtAt : null, days: m ? Object.keys(m.days) : [], hotBoards: this.hot.size, stretch: Math.round(this.stretch(now) * 100) / 100, budget: this.budget(), ...this.stats, feeds };
+    return { ver: m ? m.ver : 0, builtAt: m ? m.builtAt : null, days: m ? Object.keys(m.days) : [], hotBoards: this.hot.size, stretch: Math.round(this.stretch(now) * 100) / 100, budget: this.budget(), perMin: Number(this.env.ENGINE_PER_MIN) || ENGINE_PER_MIN, tokens: Math.round((this.tokens || 0) * 10) / 10, ...this.stats, feeds };
   }
   async fetch(req) {
     const u = new URL(req.url);
