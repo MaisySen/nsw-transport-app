@@ -19,7 +19,7 @@ Listing texts: store/apple/listing.md, store/google/listing.md. Privacy answers:
 | Content rights | DONE | Uses third party content (TfNSW Open Data, CC BY 4.0) |
 | Price and availability | DONE | Free, Australia only |
 | Export compliance | DONE | usesNonExemptEncryption false in app.json; build 201 reports false, so nothing to answer |
-| App Review contact and notes | DONE | Bidur Khatri, contact@fintex.au, [redacted-phone] (his number on file; change it in App Review Information if another number should get Apple's calls). Notes rewritten for the Expo build |
+| App Review contact and notes | DONE | Bidur Khatri, contact@fintex.au, his mobile (on file in App Store Connect, App Review Information; not written here because the repo is public; change it there if another number should get Apple's calls). Notes rewritten for the Expo build |
 | Screenshots 6.9 inch and 6.5 inch | DONE | 5 each, uploaded |
 | App Privacy | BIDUR | No API for it. 5 minutes of clicks, steps in docs/STORE_PRIVACY.md |
 | Test build 201 on a real iPhone | BIDUR | TestFlight: Home, Plan, Ask, Start trip (Live Activity), a widget, a watched service alert |
