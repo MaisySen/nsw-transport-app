@@ -41,24 +41,26 @@ function engPlaceName(name) {
   return String(name || "").replace(/,?\s+(Platform|Stand|Wharf|Side)\s+\w+.*$/i, "").trim();
 }
 
-// Delay in seconds that a trip update gives for one stop (departure first), or null.
-function engDelay(u) {
+// Delay in seconds that a trip update gives for one stop, or null; arrFirst reads the arrival before the departure.
+function engDelay(u, arrFirst) {
   if (!u) return null;
-  if (u.dep && u.dep.delay != null) return u.dep.delay;
-  if (u.arr && u.arr.delay != null) return u.arr.delay;
-  return null;
+  const a = u.arr && u.arr.delay != null ? u.arr.delay : null, d = u.dep && u.dep.delay != null ? u.dep.delay : null;
+  return arrFirst ? (a != null ? a : d) : (d != null ? d : a);
 }
-function engTime(u) {
-  if (u && u.dep && u.dep.time) return u.dep.time * 1000;
-  if (u && u.arr && u.arr.time) return u.arr.time * 1000;
-  return null;
+function engTime(u, arrFirst) {
+  const a = u && u.arr && u.arr.time ? u.arr.time * 1000 : null, d = u && u.dep && u.dep.time ? u.dep.time * 1000 : null;
+  return arrFirst ? (a || d) : (d || a);
 }
+// Feeds whose boards read the arrival estimate before the departure. None: on 26 Oct 2026 (30 stops, 358 services)
+// departure first agreed with the Trip Planner within 60 s for 331, arrival first for buses 327, for everything 320.
+const ENGINE_ARRIVAL_FIRST = new Set();
+function engArrFirst(feed) { return ENGINE_ARRIVAL_FIRST.has(feed); }
 
 // What the live trip update says about one timetabled stop of a trip.
 // seqOf(stopId) gives the timetable stop sequence for a stop of this trip (updates from feeds without sequences).
 // Returns null (no live data), { cancelled }, { skipped }, or { est, delay, stopId } with stopId set when the
 // service now uses another platform of the same station.
-function engLive(tu, row, seqOf) {
+function engLive(tu, row, seqOf, arrFirst) {
   if (!tu) return null;
   if (tu.rel === 3) return { cancelled: true };
   const stus = tu.stus || [];
@@ -73,7 +75,7 @@ function engLive(tu, row, seqOf) {
   if (exact) {
     if (exact.rel === 1) return { skipped: true };
     if (exact.rel === 2) return null;
-    const t = engTime(exact), d = engDelay(exact);
+    const t = engTime(exact, arrFirst), d = engDelay(exact, arrFirst);
     const est = t || (d != null ? row.planned + d * 1000 : null);
     if (est == null) return null;
     const out = { est, delay: d != null ? d : Math.round((est - row.planned) / 1000) };
@@ -82,7 +84,7 @@ function engLive(tu, row, seqOf) {
   }
   // No update for this stop: the last update before it carries on down the line (GTFS realtime rule).
   if (before && before.rel !== 2) {
-    const d = engDelay(before);
+    const d = engDelay(before, arrFirst);
     if (d != null) return { est: row.planned + d * 1000, delay: d };
   }
   // A replacement timetable that lists stops on both sides of this one but not this one: it no longer calls here.
@@ -104,24 +106,33 @@ function engBuildBoard(src, stopId, opts = {}) {
   const ids = [stopId, ...src.children(stopId)];
   // A platform's own board stays on that platform; a station's board covers all its platforms and stands.
   const idSet = new Set(ids);
-  const days = src.days();
   const from = now - ENGINE_LOOKBACK_MS, to = now + (opts.horizonMs || ENGINE_HORIZON_MS);
-  const cand = [];
-  let covered = false;
-  for (const [dk, base] of Object.entries(days)) {
-    if (base * 1000 > to || base * 1000 + 36 * 3600000 < from) continue;
-    for (const id of ids) {
-      const rows = src.rows(id, dk);
-      if (rows === null) continue;
-      covered = true;
-      for (const r of rows) {
-        const planned = (base + r[0]) * 1000;
-        if (planned < from || planned > to) continue;
-        cand.push({ planned, tripId: r[1], ri: r[2], hi: r[3], seq: r[4], stopId: id, day: dk });
+  // The timetable rows in the window, kept per stop for 5 minutes (opts.candCache): a tick only lays live data on.
+  const cc = opts.candCache, ck = stopId;
+  let hit = cc ? cc.get(ck) : null;
+  if (!hit || hit.from > from || hit.to < to) {
+    const days = src.days();
+    const wTo = to + 5 * 60000;
+    const cand = [];
+    let covered = false;
+    for (const [dk, base] of Object.entries(days)) {
+      if (base * 1000 > wTo || base * 1000 + 36 * 3600000 < from) continue;
+      for (const id of ids) {
+        const rows = src.rows(id, dk);
+        if (rows === null) continue;
+        covered = true;
+        for (const r of rows) {
+          const planned = (base + r[0]) * 1000;
+          if (planned < from || planned > wTo) continue;
+          cand.push({ planned, tripId: r[1], ri: r[2], hi: r[3], seq: r[4], stopId: id, day: dk });
+        }
       }
     }
+    hit = { from, to: wTo, cand: covered ? cand : null };
+    if (cc) { if (cc.size > 4000) cc.clear(); cc.set(ck, hit); }
   }
-  if (!covered) return null; // no timetable for this stop: the caller asks the Trip Planner instead
+  if (!hit.cand) return null; // no timetable for this stop: the caller asks the Trip Planner instead
+  const cand = hit.cand.filter((c) => c.planned >= from && c.planned <= to);
   const feedsUsed = new Set();
   const items = [];
   const seen = new Set();
@@ -166,7 +177,7 @@ function engBuildBoard(src, stopId, opts = {}) {
     feedsUsed.add(feed);
     const tu = src.tu(feed, c.tripId);
     if (tu && tu.startDate && tu.startDate !== c.day) { items.push(mk(c, route, null)); continue; }
-    const live = engLive(tu, c, (s) => { const m = src.tripSeq(feed, c.tripId); return m ? m.get(s) : null; });
+    const live = engLive(tu, c, (s) => { const m = src.tripSeq(feed, c.tripId); return m ? m.get(s) : null; }, engArrFirst(feed));
     if (live && live.gone) continue;
     seen.add(c.tripId + "|" + c.day);
     items.push(mk(c, route, live));
@@ -222,7 +233,7 @@ class BoardEngine {
     this.feeds = new Map();     // feed key -> { tu, vp, tuAt, vpAt, added, wantAt, fails }
     this.boards = new Map();    // board key -> { at, body }
     this.hot = new Map();       // board key -> last read ms
-    this.stopMem = new Map(); this.kidsMem = new Map(); this.rowMem = new Map(); this.seqMem = new Map();
+    this.stopMem = new Map(); this.kidsMem = new Map(); this.rowMem = new Map(); this.seqMem = new Map(); this.candMem = new Map();
     this.meta = null; this.lastRead = 0; this.alarmSet = false;
     this.stats = { calls: 0, refused: 0, ticks: 0, built: 0, served: 0, cacheHits: 0, tickMs: 0, day: engDayKey(Date.now()), dayCalls: 0 };
   }
@@ -237,7 +248,7 @@ class BoardEngine {
     if (!this.stats.dayCallsLoaded) { const c = JSON.parse(this.kvGet("calls") || "{}"); if (c.day === this.stats.day) this.stats.dayCalls = c.n || 0; this.stats.dayCallsLoaded = true; }
     return this.meta;
   }
-  dropMem() { this.meta = null; this.stopMem.clear(); this.kidsMem.clear(); this.rowMem.clear(); this.seqMem.clear(); this.boards.clear(); }
+  dropMem() { this.meta = null; this.stopMem.clear(); this.kidsMem.clear(); this.rowMem.clear(); this.seqMem.clear(); this.candMem.clear(); this.boards.clear(); }
   source() {
     const m = this.loadMeta(), sql = this.sql, self = this;
     return {
@@ -259,7 +270,7 @@ class BoardEngine {
         if (self.rowMem.has(k)) return self.rowMem.get(k);
         const r = sql.exec("SELECT data FROM dep WHERE ver = ? AND stop = ? AND day = ?", m.ver, id, day).toArray();
         const v = r.length ? JSON.parse(r[0].data) : null;
-        if (self.rowMem.size > 6000) self.rowMem.clear();
+        if (self.rowMem.size > 3000) self.rowMem.clear();
         self.rowMem.set(k, v); return v;
       },
       days() { return m.days; },
@@ -362,16 +373,19 @@ class BoardEngine {
     for (const [key, f] of hot) jobs.push(this.refreshFeedNow(key, f, t0, false, "vp"));
     await Promise.all(jobs);
     const src = this.source();
-    for (const [bk, at] of this.hot) {
+    let n = 0;
+    for (const [bk, at] of [...this.hot]) {
       if (t0 - at > ENGINE_BOARD_HOT_MS) { this.hot.delete(bk); this.boards.delete(bk); continue; }
       this.build(src, bk);
+      // Let waiting board requests in between builds.
+      if (++n % 25 === 0) await new Promise((r) => setTimeout(r, 0));
     }
     this.kvSet("calls", JSON.stringify({ day: this.stats.day, n: this.stats.dayCalls }));
     this.stats.tickMs = Date.now() - t0;
   }
   build(src, bk) {
     const [stop, mode] = bk.split("|");
-    const b = engBuildBoard(src, stop, { mode: mode || null });
+    const b = engBuildBoard(src, stop, { mode: mode || null, candCache: this.candMem });
     const body = b ? JSON.stringify(b) : null;
     this.boards.set(bk, { at: Date.now(), body });
     this.stats.built++;
@@ -402,7 +416,7 @@ class BoardEngine {
     if (have && now - have.at < ENGINE_TICK_MS + 2000) { this.stats.cacheHits++; return have.body; }
     let src = this.source();
     // First read of a feed (a cold object): fetch the feeds this board needs before answering, at most 3 s.
-    const probe = engBuildBoard(src, stop, { mode: mode || null });
+    const probe = engBuildBoard(src, stop, { mode: mode || null, candCache: this.candMem });
     if (!probe) { this.boards.set(bk, { at: now, body: null }); return null; }
     const cold = probe.engine.feeds.filter((f) => { const x = this.feeds.get(f); return !x || !x.tu; });
     if (cold.length) {
