@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Keyboard, Platform, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { searchFieldProps } from '@/lib/pickerCore';
 import { HoldMenu } from '@/components/HoldMenu';
@@ -13,6 +13,8 @@ import { planResults } from '@/lib/homeCore';
 import { isStopItem, noPlaceText, NOW, placeSubtitle, stopsAsPlaces, whenLabel, whenParams, type PlaceItem, type When } from '@/lib/planCore';
 import { WhenPicker } from '@/components/WhenPicker';
 import { useBusLookup } from '@/lib/busSearch';
+import { useLocalIndex } from '@/lib/localSearch';
+import { localSearch, mergeSearch, searchBusy, searchKey, SEARCH_DEBOUNCE_MS } from '@/lib/localSearchCore';
 import { badgeLook } from '@/lib/lineStyle';
 import { useNow } from '@/lib/hooks';
 import type { Place } from '@/lib/types';
@@ -25,23 +27,39 @@ import { Row, Screen, Section, Sep, T, font } from '@/components/ui';
 type Field = 'stop' | 'from' | 'to';
 
 // Trip ends can be any place (addresses, streets, landmarks, suburbs, stops); Departures needs a stop.
+// Stops answer at once from the lists kept on the phone (localSearch.ts); the server is asked after a short pause
+// and anything it adds (addresses, places, stops not in the lists) is merged in under them. A newer keystroke
+// cancels the request still out. The spinner shows only while nothing at all is on screen.
+const serverMemo = new Map<string, { items: PlaceItem[]; wide: boolean }>();
 function useStopSearch(q: string, places: boolean) {
-  const [items, setItems] = useState<PlaceItem[]>([]);
+  const idx = useLocalIndex();
+  const key = q.trim();
+  const [server, setServer] = useState<{ key: string; items: PlaceItem[]; wide: boolean } | null>(null);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [wide, setWide] = useState(false);
+  const local = useMemo(() => stopsAsPlaces(localSearch(key, idx, places ? 6 : 10)), [key, idx, places]);
   useEffect(() => {
-    if (q.trim().length < 2) { setItems([]); setFailed(false); return; }
+    if (key.length < 2) { setServer(null); setFailed(false); setLoading(false); return; }
+    const mk = `${places ? 'p' : 's'}|${searchKey(key)}`;
+    const memo = serverMemo.get(mk);
+    if (memo) { setServer({ key, ...memo }); setFailed(false); setLoading(false); return; }
     let live = true;
+    const ctl = new AbortController();
     setLoading(true);
     const t = setTimeout(() => {
-      const ask = places ? searchPlaces(q.trim()) : api.search(q.trim()).then((r) => ({ items: stopsAsPlaces(r.items || []), places: false }));
-      ask.then((r) => { if (live) { setItems(r.items || []); setWide(r.places); setFailed(false); } })
-        .catch(() => { if (live) { setItems([]); setFailed(true); } }).finally(() => live && setLoading(false));
-    }, 220);
-    return () => { live = false; clearTimeout(t); };
-  }, [q, places]);
-  return { items, loading, failed, wide };
+      const ask = places ? searchPlaces(key, ctl.signal) : api.search(key).then((r) => ({ items: stopsAsPlaces(r.items || []), places: false }));
+      ask.then((r) => {
+        if (!live) return;
+        const got = { items: r.items || [], wide: r.places };
+        serverMemo.set(mk, got);
+        if (serverMemo.size > 80) serverMemo.delete(serverMemo.keys().next().value as string);
+        setServer({ key, ...got }); setFailed(false);
+      }).catch(() => { if (live) setFailed(true); }).finally(() => live && setLoading(false));
+    }, SEARCH_DEBOUNCE_MS);
+    return () => { live = false; clearTimeout(t); ctl.abort(); };
+  }, [key, places]);
+  const items = mergeSearch(local, server && server.key === key ? server.items : [], 12);
+  return { items, loading, busy: searchBusy(loading, items.length), failed: failed && !items.length, wide: places && (server ? server.wide : true) };
 }
 
 const KIND_ICON = { address: I.pin, place: I.pin, street: I.route, suburb: I.location } as const;
@@ -79,7 +97,7 @@ export default function Search() {
     return () => clearTimeout(t);
   }, [focus]);
   const text = mode === 'stop' ? q : field === 'from' ? fromText : toText;
-  const { items, loading, failed, wide } = useStopSearch(text, mode === 'trip');
+  const { items, loading, busy, failed, wide } = useStopSearch(text, mode === 'trip');
   const bus = useBusLookup(text);
   // Leave now, Leave at or Arrive by, for trips planned from here.
   const [when, setWhen] = useState<When>(NOW);
@@ -143,7 +161,7 @@ export default function Search() {
               <TextInput {...searchFieldProps} ref={stopRef} value={q} onChangeText={setQ} placeholder="Stop, station or stop number" placeholderTextColor={c.text3} autoCorrect={false}
                 accessibilityLabel="Stop, station or stop number"
                 style={[font.body, { flex: 1, color: c.text, paddingVertical: Platform.OS === 'android' ? 6 : 10, minHeight: 48 }]} clearButtonMode="while-editing" returnKeyType="search" />
-              {loading ? <ActivityIndicator size="small" /> : null}
+              {busy ? <ActivityIndicator size="small" /> : null}
             </View>
           ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>

@@ -36,10 +36,11 @@ async function once<T>(path: string, init: RequestInit | undefined, timeoutMs: n
   }
 }
 
-/** When an answer's times were read: the server's dataAt for a cached answer (never in the future, at most 2 min back), else now. */
+/** When an answer's times were read: the server's dataAt for a cached answer (never in the future, at most 15 min back:
+ * a first open can get the server's saved board at once, minutes old, while it fetches a fresh one), else now. */
 export function dataTime(body: any, now: number): number {
   const d = body && typeof body === 'object' ? Number((body as any).dataAt) : NaN;
-  return Number.isFinite(d) && d <= now && now - d < 120000 ? d : now;
+  return Number.isFinite(d) && d <= now && now - d < 900000 ? d : now;
 }
 
 /** Network or timeout failure, as opposed to an answer from the server. Android reports an aborted fetch as "canceled". */
@@ -275,10 +276,12 @@ export const isLongPair = (fromId: string, toId: string) => isLongTrip(fromId, t
 // Until every server has it, a 404 there means stops only from /api/search on the server in use, for the rest
 // of the session; a dropped connection or a slow answer falls back for this search only.
 let placesOff = false;
-export async function searchPlaces(q: string): Promise<{ items: PlaceItem[]; places: boolean }> {
+export async function searchPlaces(q: string, signal?: AbortSignal): Promise<{ items: PlaceItem[]; places: boolean }> {
   if (!placesOff) {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 6000);
+    // A newer keystroke cancels this request (the search box passes its own signal).
+    if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener('abort', () => ctl.abort()); }
     try {
       const r = await fetch(`${NEW_API_BASE}/api/places?${qs({ q })}`, { signal: ctl.signal });
       if (!r.ok) throw Object.assign(new Error(`Something went wrong (${r.status})`), { http: r.status });
@@ -290,6 +293,7 @@ export async function searchPlaces(q: string): Promise<{ items: PlaceItem[]; pla
       clearTimeout(t);
     }
   }
+  if (signal?.aborted) throw Object.assign(new Error('Cancelled'), { cancelled: true });
   const r = await api.search(q);
   return { items: stopsAsPlaces(r.items || []), places: false };
 }

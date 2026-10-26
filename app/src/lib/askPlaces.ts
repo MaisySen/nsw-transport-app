@@ -10,6 +10,8 @@ const KEY = 'ask:places:v2';
 const KEEP_MS = 14 * 86400000;
 const FILES = ['train', 'metro', 'lightrail', 'ferry', 'places'] as const;
 let gaz: Gaz | null = null;
+// The same lists as rows, for search as you type (localSearch.ts).
+let rows: Record<string, any[]> | null = null;
 let loading: Promise<Gaz | null> | null = null;
 
 async function fetchAll(base: string): Promise<Record<string, any[]> | null> {
@@ -31,15 +33,18 @@ export function askPlaces(): Promise<Gaz | null> {
   loading = (async () => {
     let kept: { at: number; lists: Record<string, any[]> } | null = null;
     try { kept = JSON.parse((await AsyncStorage.getItem(KEY)) || 'null'); } catch { kept = null; }
-    if (kept && kept.lists && Date.now() - kept.at < KEEP_MS) { gaz = buildGaz(kept.lists as any); return gaz; }
+    if (kept && kept.lists && Date.now() - kept.at < KEEP_MS) { rows = kept.lists; gaz = buildGaz(kept.lists as any); return gaz; }
     const lists = (await fetchAll(apiBase())) || (apiBase() !== DEFAULT_BASE ? await fetchAll(DEFAULT_BASE) : null);
     if (lists) {
+      rows = lists;
       gaz = buildGaz(lists as any);
       AsyncStorage.setItem(KEY, JSON.stringify({ at: Date.now(), lists })).catch(() => {});
-    } else if (kept && kept.lists) gaz = buildGaz(kept.lists as any);
+    } else if (kept && kept.lists) { rows = kept.lists; gaz = buildGaz(kept.lists as any); }
     return gaz;
   })().finally(() => { loading = null; });
   return loading;
 }
 /** The index if it is already in memory (no wait). */
 export const askPlacesNow = () => gaz;
+/** The kept lists as rows (train, metro, lightrail, ferry, places), if already read. */
+export const askListsNow = () => rows;

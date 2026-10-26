@@ -113,7 +113,7 @@ export function buildGaz(src: { train?: any[]; metro?: any[]; lightrail?: any[];
 }
 
 // Short forms people use for places all over the network. Each points at a name in the lists above.
-const PLACE_ALIAS: Record<string, string> = {
+export const PLACE_ALIAS: Record<string, string> = {
   'kings x': 'kings cross', kx: 'kings cross', cq: 'circular quay', 'the quay': 'circular quay', quay: 'circular quay', 'circ quay': 'circular quay',
   parra: 'parramatta', parramatta: 'parramatta', 'bondi j': 'bondi junction', 'bondi jn': 'bondi junction', 'bondi jct': 'bondi junction', 'bj': 'bondi junction',
   chatty: 'chatswood', 'chats': 'chatswood', 'syd olympic park': 'sydney olympic park', domestic: 'domestic airport', 'domestic terminal': 'domestic airport',

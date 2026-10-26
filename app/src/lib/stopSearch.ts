@@ -1,19 +1,35 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from './api';
+import { useLocalIndex } from './localSearch';
+import { localSearch, mergeSearch, searchBusy, searchKey, SEARCH_DEBOUNCE_MS } from './localSearchCore';
 import type { SearchItem } from './types';
 
-/** Stops and stations matching what you type, after a short pause. */
+const memo = new Map<string, SearchItem[]>();
+
+/** Stops and stations matching what you type: at once from the lists kept on the phone, then the server's extras. */
 export function useStopSearch(q: string) {
-  const [items, setItems] = useState<SearchItem[]>([]);
+  const idx = useLocalIndex();
+  const key = q.trim();
+  const [server, setServer] = useState<{ key: string; items: SearchItem[] } | null>(null);
   const [loading, setLoading] = useState(false);
+  const local = useMemo(() => localSearch(key, idx, 10), [key, idx]);
   useEffect(() => {
-    if (q.trim().length < 2) { setItems([]); return; }
+    if (key.length < 2) { setServer(null); setLoading(false); return; }
+    const mk = searchKey(key);
+    const hit = memo.get(mk);
+    if (hit) { setServer({ key, items: hit }); setLoading(false); return; }
     let live = true;
     setLoading(true);
     const t = setTimeout(() => {
-      api.search(q.trim()).then((r) => { if (live) setItems(r.items || []); }).catch(() => {}).finally(() => live && setLoading(false));
-    }, 220);
+      api.search(key).then((r) => {
+        if (!live) return;
+        memo.set(mk, r.items || []);
+        if (memo.size > 80) memo.delete(memo.keys().next().value as string);
+        setServer({ key, items: r.items || [] });
+      }).catch(() => {}).finally(() => live && setLoading(false));
+    }, SEARCH_DEBOUNCE_MS);
     return () => { live = false; clearTimeout(t); };
-  }, [q]);
-  return { items, loading };
+  }, [key]);
+  const items = mergeSearch(local, server && server.key === key ? server.items : [], 12);
+  return { items, loading: searchBusy(loading, items.length) };
 }
