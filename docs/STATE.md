@@ -2,7 +2,7 @@
 
 What is live and what is open, by hand, with when each line was last checked. Run `node tools/orient.mjs` for the live numbers; it reads the same sources. Update this file whenever something live changes (a deploy, an update, a flag, a build, an owner answer).
 
-**Last verified: Mon 26 Oct 2026, 4:23 PM Sydney (05:23 UTC)**, with `tools/orient.mjs` and `tools/verify-deploy.mjs` (all checks ok).
+**Last verified: Mon 26 Oct 2026, 8:33 PM Sydney (09:33 UTC)**, with `tools/orient.mjs` and `tools/verify-deploy.mjs` (all checks ok).
 
 ## Live now
 
@@ -10,7 +10,7 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 | --- | --- | --- |
 | Production over the air group | `fa0017d8-4ffe-49e7-91da-3b415254943f` (3:39 PM, outage honesty; iOS `01a17680-b011-7faf-8316-b658423cff0e`, Android `01a17680-b011-7caf-9da9-c4d39cd16f3b`), runtime 1.0.0, from main `4835561` | `1f117d04-ee6c-4149-b153-b32fe8f1db79` |
 | Updates published today | 1 production update since 3:39 PM is today's; the next is tonight's overnight update | |
-| Server (`transport-api`) | Version `16b2b9f5` (8:24 PM, stop lists from the timetable run and outage trips to a last stop, g24, with the g22 server part, main `c40d52b`; roll back to `3e88773d`). Before it: `3e88773d` (5:45 PM, privacy: invocation logs off, trip history stops only, g25, main `64ed406`). Before it: `ffc1a25b` (4:21 PM, budget guard with a 48 hour rate, main `e93ff84`), `a8fbe352` (4:14 PM, no message, a secret or settings change), `3f5e63d3` (4:13 PM, budget mode, main `ae182e8`), `544279b4` (4:10 PM, live trip follows the real train, main `dd2641a`) | One step: `a8fbe352`. Before budget mode: `544279b4`. Before trip tracking: `fb242627` |
+| Server (`transport-api`) | Version `d76e91a8` (8:32 PM, the g28 server fixes: shared answers on own timers, feed fetch kept alive, non JSON NSW answer as down, own keys and predict 400, g30, main `aa375e5`; roll back to `16b2b9f5`: `npx wrangler@4 rollback 16b2b9f5-5582-41d7-8d00-1ff7f3b67f08 --name transport-api`). Before it: `16b2b9f5` (8:24 PM, stop lists from the timetable run and outage trips to a last stop, g24, with the g22 server part, main `c40d52b`; roll back to `3e88773d`). Before it: `3e88773d` (5:45 PM, privacy: invocation logs off, trip history stops only, g25, main `64ed406`). Before it: `ffc1a25b` (4:21 PM, budget guard with a 48 hour rate, main `e93ff84`), `a8fbe352` (4:14 PM, no message, a secret or settings change), `3f5e63d3` (4:13 PM, budget mode, main `ae182e8`), `544279b4` (4:10 PM, live trip follows the real train, main `dd2641a`) | One step: `16b2b9f5` (`npx wrangler@4 rollback 16b2b9f5-5582-41d7-8d00-1ff7f3b67f08 --name transport-api`). Then `3e88773d`, `ffc1a25b`, `a8fbe352`. Before budget mode: `544279b4`. Before trip tracking: `fb242627` |
 | iPhone builds in the field | 201 to 208 (208: 25 Oct 6:48 PM, TestFlight Internal and Public) | |
 | Android | versionCode 2 to 5 (APK on the download page) | |
 | Public site | Pages deployment `6a797b2c` (25 Oct, 9 PM) | `564bc47c` |

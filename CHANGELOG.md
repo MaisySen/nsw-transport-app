@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Server deploy of the break it fixes (g30; deployed 8:32 PM, no app change)
+* transport-api `d76e91a8-29eb-42d1-b2fa-36e864bf3440` from main `aa375e5`: the four g28 server fixes below (shared answers on each request's own timers, realtime feed fetch kept alive, a non JSON 200 from Transport for NSW treated as the hub being down, own keys only and predict 400). No D1 migration, no new setting, secret or flag.
+* Checks: backend tests 430 pass, `schema.mjs --check` clean, `tools/verify-deploy.mjs` all 12 ok (no NSW call), `/api/health` 403 without the key. One timetable board (`/api/timetable`, one stop) asked 10 times at once on production: 10 of 10 answered. `/api/departures` not burst tested on production (its first answer asks the Trip Planner; no NSW calls before 11 PM).
+* Roll back: `npx wrangler@4 rollback 16b2b9f5-5582-41d7-8d00-1ff7f3b67f08 --name transport-api`
+* Repo: `backend/tools/__pycache__` untracked and ignored (root `.gitignore`).
+
 ### Break it pass on our own app and server (g28; server fixes on main, not deployed, no app change)
 The app and server run locally against a fake Transport for NSW, 20,984 hostile requests over all 68 routes, every broken upstream answer, the shipped bundle read for secrets. Full write up: [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md).
 * Server: phones opening the same stop at the same moment could get a 500 (a request waited on another request's fetch, which Workers cancels; 9 of 10 identical first opens failed on wrangler dev). Now 10 of 10 answer.
