@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 26 Oct 2026
 
+### Fastest live data, part A (server, all off; no app update)
+Bidur at 2:50 PM: "How else can we go crazy fast and fastest live data here."
+* The board push (g14, ENGINE_PUSH) now also covers stops on the Trip Planner path: `LIVE_PUSH` sends the open stop screen the board the server already has, when it changes, about every 15 s, at the cost of one polling phone per stop however many phones are on it.
+* Socket limits for every push: 30 opens a minute and 4 sockets per address, 2,000 per stop or shard, renewal every 10 minutes.
+* "Live 30 s ago" can count from when each row's time was read upstream, with the phone's clock corrected (`LIVE_DATA_AGE`, off). Pushed boards now carry their ages too.
+* Feed timing and per row `liveAt` are in the g14 entry (a81237c8). Nothing is on for phones; tested once the NSW key is back after 1 AM.
+
 ### Diagnosis: lag, slow Watch and failed loads (docs only, no release)
 Bidur at 2:52 PM: "Our own app lags, connected apple watches slow and loads. Sometime it just fail to load."
 * docs/DIAGNOSIS_LAG.md: server numbers from Cloudflare analytics (phone requests Mon 10 AM to 12 PM: p50 82 ms, p90 6.1 s, p95 7.8 s, p99 12.0 s, the Trip Planner timeout; 8.5% of NSW calls refused while our own tests ran), every screen's first load path and worst wait (trip search up to 89 s), how the Watch and widgets get data, and a ranked fix list (server, over the air, build 209).

@@ -280,6 +280,12 @@ App: a pack reads into board rows from now on, in order, with no live data (real
 Manual (web build): `docs/TIMETABLE_PACKS.md` has the cross check against the Trip Planner (20 stops) and the before and after timings.
 On a device: put the phone in airplane mode, kill the app, open a starred stop: departures show at once with "Live times unavailable, showing timetable times"; turn airplane mode off: the live board replaces them within 15 s.
 
+### `backend/test/livehub.test.mjs`: 10 tests (26 Oct, g17, live push for Trip Planner boards)
+The board the HTTP path has, with dataAt and no data call when the copy is under 5 s; a changed board to every phone and the same rows at a new moment to none; 4 sockets per address then 429, 503 at the object's limit; renewal after 10 minutes; no asks with nobody on the stop; no socket when the Trip Planner refuses and nothing is kept, two hubs on one stop cost one; `full` once in 10 s; the route between hub and shards; 404 with both pushes off and 30 opens a minute; the shards share the limits.
+`app/test/livelabel.test.mjs`: data age from `liveAt` on the phone's clock (server 40 s ahead), clamps, and the old behaviour without the flag.
+
+Device checks after 1 AM (NSW key back), flags on for one test phone only: open Central with `LIVE_PUSH` on and remote `livePush` true; the "Updated" stamp should move about every 15 s with no pull to refresh; background the app and check `/api/live` sockets go to 0 (hub `/status`); with `LIVE_DATA_AGE` true the row ages should match the board engine's feed age within a few seconds.
+
 ## iPhone UI tests (XCUITest)
 
 Run on an iPhone 16 Pro simulator with location set to Burwood, against the live backend. Results are written to `r2.txt` on the `ci-out` branch with per test pass or fail. Read the counts there, not only the step result, because the test steps are allowed to fail without failing the job.

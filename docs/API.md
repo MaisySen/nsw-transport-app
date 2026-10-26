@@ -558,3 +558,17 @@ the moment it opens, with no signal too, and lay the live board on top when it a
 with key `tripId|stopId|planned` (`order` only when the order changed). A phone whose board is not at `base` sends
 `full` and gets the whole board; `ping` answers `pong`. The HTTP board stays the fallback. App: `useBoardPush`
 (`app/src/lib/boardPush.ts`), off unless remote config sets `flags.livePush` to true.
+
+Boards on the Trip Planner path (26 Oct, g17, off): with `LIVE_PUSH` `on` the same address is answered by a `LiveHub`
+object for that stop and mode (`backend/src/livehub.js`), unless `ENGINE_PUSH` is on and the engine serves that
+stop's boards (then the shard, as above). The hub asks for the board the way a polling phone does (`refresh=1`: the
+edge copy when it is at most 5 s old, else one shared Trip Planner call that is stored for everyone; when that fails, a
+kept copy or the labelled engine timetable board), sends `{"type":"board","board":{...}}` on connect with `dataAt`
+(when the copy was made) and `now` (server clock), and sends it again only when the rows, alerts or stop changed. It
+asks again just after the copy it got is 15 s old (`LIVE_TICK_MS`), and stops asking when no phone is on the stop.
+No socket (503) when no board could be had; the phone keeps polling. `full` is answered at most once in 10 s per
+socket; `ping` answers `pong` without waking the object.
+
+Limits for both kinds of socket: 30 opens a minute per address (`/api/live` rate rule), 4 sockets per address on one
+object (429), 2,000 sockets per object (503), and every socket is closed with code 4000 (`renew`) after 10 minutes so a
+phone that went away without closing stops costing anything (a phone still on the screen opens a new one).

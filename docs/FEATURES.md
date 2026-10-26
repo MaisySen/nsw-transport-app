@@ -36,6 +36,10 @@ The iPhone and Android apps are one Expo app (`app/`). Anything below marked "ov
 * Countdowns on the trip list change exactly when the minute changes.
 * No white flash behind screens in dark mode.
 
+### 26 Oct, fastest live data (g17, all off)
+* Live push also for stops still served by the Trip Planner (`LIVE_PUSH`, server; app flag `livePush` in remote config, from g14): the open stop screen gets the new board when it changes, about every 15 s, instead of waiting for its own poll. Socket limits per address and per stop, and a renewal every 10 minutes.
+* Data age per row (`LIVE_DATA_AGE` in app/src/lib/features.ts, off): "Live 30 s ago" counts from when the server read that row's time upstream (`liveAt`), corrected for the phone's clock, on the stop screen, Home cards and the board wherever rows already show Live. Pushed boards get their ages the same way.
+
 ## Car parks (over the air, 25 Oct, about 10:00 PM)
 
 * **Car park row on a station:** a train station with a Transport Park and Ride car park shows one row under its name, "Car park: 218 free of 228" (or "Car parks" with the free spaces across a station's car parks) and when Transport for NSW read it ("Updated 9:40pm, 3 min ago"). A car park without a live count says "no live count right now"; a station without one shows nothing. Tap opens the car park.
