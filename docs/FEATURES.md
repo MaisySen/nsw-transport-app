@@ -105,7 +105,7 @@ Ask opens on the latest message and its field sits above the tab bar and the key
 Measured: `app/test/ask-corpus.test.mjs`, 309 questions from all over Sydney and NSW (every region and mode, at most 5% on one commute): 192 of 309 (62%) read right by the old path (the question as typed, the server's rules, exact names), 309 of 309 (100%) by the new one. A second batch of 60, written after the first passed, scored 58 of 60 (97%) on its first run before fixes.
 
 ## Instant start and offline (over the air, 26 Oct, item 1)
-* Home, the stop screen, the full screen board, Platform view, the trip list, Simple mode and the service screen show the last answer kept on the phone at once, with "Updated 4 min ago, refreshing" until the live answer replaces it. Kept times are never shown as live, and services already gone are left out.
+* Home, the stop screen, the full screen board, the trip list, Simple mode and the service screen show the last answer kept on the phone at once, with "Updated 4 min ago, refreshing" until the live answer replaces it. Kept times are never shown as live, and services already gone are left out.
 * With no signal the same screens show the kept times with "Offline, showing times from 8:05am" (a banner over the trips on the trip list) instead of an error, and try again with a growing gap while the screen is on view.
 * Data for one stop, service, time or trip never shows under another one: an answer still on its way when you switch is dropped.
 
@@ -114,26 +114,17 @@ Measured: `app/test/ask-corpus.test.mjs`, 309 questions from all over Sydney and
 * The stop screen, Home's starred stop cards and the full screen board show those departures in the first frame, with no signal too, marked "Timetable times, getting live times" (or "Live times unavailable, showing timetable times"), each row in grey as Timetable. The live board replaces them when it lands. A copy of the live board from the last 10 minutes still goes first.
 * Checked: every timetable row at 20 stops NSW wide was on the Trip Planner's board at the same minute (370 of 370). Details: [TIMETABLE_PACKS.md](TIMETABLE_PACKS.md).
 
-## Platform view (over the air, 25 Oct, about 11:17 PM; station board look 25 Oct, about 11:57 PM)
+## Button check fixes (26 Oct, g23; next over the air update)
 
-**Hidden since 26 Oct, about 8:30 AM** (Bidur at 7:57 AM: not to be used until it is reliable). The switch is `PLATFORM_VIEW` in `app/src/lib/features.ts`, off: no platform button on the stop screen, no Platform view in the hold menu, `openPlatform()` does nothing and a link straight to `/platform` goes to Home. The code below stays; turning it back on is that one line and an over the air update, after the stop list check reaches 95% or more and Bidur says so.
+* Commute card in the busy hour: the leave line ("Leave in N min", Remind me) now shows when every loaded service leaves before you could reach the station; the card asks once for services from the moment you could board (`reachFrom` in `src/lib/smart.ts`).
+* A watch the server no longer has (`/watch/<id>`, for example from an old notification) says "This watch has ended" with Show Watching, and stops asking.
+* Car parks with an empty list says "No car parks to show".
+* A link to a screen the app does not have (an old Platform view link) shows "This link isn't in the app" with Go to Home.
+* Details: [BUTTON_CHECK.md](BUTTON_CHECK.md).
 
-One train or metro at a station, full screen and readable from a distance, laid out like the departure screens on station platforms (Bidur's photo of the real screen, approved mock 25 Oct 11:31 PM; our own build with system fonts and no logos). Open it with the platform button at the top of a train or metro station's screen, or hold a train or metro departure and choose **Platform view** (the row's tap still opens the service). Above the board: close, the station name, and **Speak**. The board:
-* A white board (dark in dark mode) with an orange bar: Next train (or Next metro) and Time now.
-* The line badge and the destination in large type, with "via ..." under it and a plane mark when it runs via the airport stations.
-* The stops after this station in large bold type down the left, in their own scrolling list with a soft fade at the bottom when it is longer than the space. Everything else stays still. Skipped stops are left out and listed under Not stopping at. Stops sent with no name (Domestic and International Airport) are named from the station list the server publishes, by place. When the list is empty or does not include this station (for example a train still shown at a station it will not start from during a closure), the board shows the destination and "Full stop list not available yet"; a cancelled service says so.
-* On the right: Platform with the number large in orange and a grey "N cars" pill, only when the live feed reports carriages (Platform not given yet without one), then Departs with the minutes large in orange and Live or Timetable with the clock time; a stale live time shows Not tracking and the timetable time, the same rule as every other countdown.
-* A grey Limited Stops or All stops pill only when the service's own description says so.
-* A Next service, Platform, Departs table with the next two train or metro services at the station, any platform.
-* **Speak** reads the line, destination, platform, carriages, time and stops, with the one time Get a better voice offer.
-Works at every train and metro station; nothing is written in for a station. From 720 pt wide (an open iPhone Duo, a fold, a tablet), by width alone, two columns: destination and stops on the left, departs, platform and next services on the right. Dynamic Type (with very large text or a short window the whole board scrolls instead of only the stop list), dark mode, Reduce Motion (no transition), VoiceOver and TalkBack ("Platform 23, 8 cars, departs in 4 minutes, stops at ...").
+## Platform view (removed 26 Oct)
 
-
-Fixes after Bidur's phone at 11:59 PM and 12:00 AM (over the air, 26 Oct):
-* A train that has gone never shows, as the next train or in the Next service rows. A live train counts until a minute after its live time; a train with no live time, or one whose live time has gone stale (Not tracking), counts until its timetable minute has passed. Rows are ordered by the time they show. The rule is `stillToCome` in `platformCore.ts`, with the same live label the departure rows use.
-* A stop list is shown only under the service it was asked for and only when it includes this station. When the next train takes over, an answer still arriving for the one before is dropped and the new list is asked for at once (`serviceKey`, `serviceFits`). Otherwise the board says "Full stop list not available yet". The list is asked of api.transportsydney.app first, the same server as the board (it retries a busy trip planner), with the server in use as the fallback.
-* Times stay on one line: Departs, Not tracking, the timetable time and the Next service times are sized to fit their column at every text size (`fitSize`), and shrink further on a phone if needed.
-* Departs sits right under the platform and cars. The board is as tall as what it shows, so a short stop list leaves no gap; a long one still scrolls in its own area.
+Removed from the app on 26 Oct (Bidur at 5:36 PM: better not to keep it, he does not use it, and it may cost requests). It had been hidden since 8:30 AM that day. The screen (`app/platform.tsx`), its helpers (`lib/platform.ts`, `lib/platformCore.ts`), its tests, the `PLATFORM_VIEW` switch, the stop screen header button, the hold menu item and the two `api.ts` calls only it used (`platformDepartures`, `platformService`) are deleted (g23, main `e33c2fe`). An old link to `/platform` opens a plain "This link isn't in the app" screen with Go to Home (`app/+not-found.tsx`). While hidden it made no requests: the route redirected before the screen mounted and `openPlatform()` returned at once. It used no server endpoint of its own (it read `/api/departures` and `/api/service`, which every stop and service screen uses); the `cars` count on departure rows is now read by no screen, while the `quiet` hint next to it is still used by the quiet carriage tag. What it looked like is in git history before `e33c2fe` and in the CHANGELOG entries of 25 and 26 Oct.
 
 ## Wide windows (over the air, 25 Oct, about 11:17 PM)
 

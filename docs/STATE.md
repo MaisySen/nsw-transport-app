@@ -35,7 +35,6 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 | `LIMITED_STOPS` | Worker var (g22, deployed 8:24 PM) | not set (on) | `limited: true` on departures and trip legs from the planner pack's `tripLim`; `off` turns it off |
 | `OWN_RUNS` | Worker var (g24) | not set (on) | Service stop lists from the planner pack's run (`tripNext`); `off` turns it off; stands down while the budget guard holds `OWN_PLANNER`. Needs a pack with `tripNext` (nightly from main) |
 | `tripAlerts` | Remote config (g22, server deployed 8:24 PM) | default true | Server matches alerts to phones' trips every 10 min; the app's More switch shows only when this is true |
-| `PLATFORM_VIEW` | `app/src/lib/features.ts` | false | Platform view hidden (owner) |
 | `LIVE_DATA_AGE` | `app/src/lib/features.ts` | false | Live age counted from receipt, not from `liveAt` |
 
 ## Open bugs

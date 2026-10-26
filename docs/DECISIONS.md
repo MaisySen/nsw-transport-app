@@ -33,6 +33,7 @@ Updated 26 Oct 2026, 4:30 PM.
 | Date | Decision | Why | Where it lives |
 | --- | --- | --- | --- |
 | 26 Oct, 3:08 PM (rule after the lag diagnosis) | At most one over the air update a day, published overnight (after 10 PM), preview first. | 52 updates in 2 days, each a 6 MB download and a slower start. | [RUNBOOK.md](RUNBOOK.md) section 3 |
+| 26 Oct, 5:36 PM (owner) | Platform view removed from the app, not just hidden. | He does not use it and did not want it costing requests. | Deleted in main `e33c2fe` (g23); old `/platform` links get the not found screen (`app/src/app/+not-found.tsx`). |
 | 26 Oct, 7:57 AM (owner) | Platform view hidden until it is reliable and the owner agrees. | His iPhone showed glitches on the board ("Board have full glitches", 11:59 PM). | `PLATFORM_VIEW=false` in `app/src/lib/features.ts` |
 | 25 Oct (rule) | Version 1.0.0 and runtime 1.0.0 never change. | Runtime policy `appVersion`: a new version would cut every installed build off from over the air updates. | `app/app.json`, [RELEASES.md](RELEASES.md) |
 | 25 Oct (rule) | JavaScript ships over the air; native changes wait for the next build. No new native module in an update; every native call is feature detected. Next build: 209 on 1 Nov (the Expo plan's 15 iPhone builds for October are used). | Builds 201 to 208 must keep working on every update. | [IOS27.md](IOS27.md) "Build 209" |

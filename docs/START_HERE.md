@@ -36,7 +36,7 @@ Transport: Sydney Live is a free public transport app for NSW: live departures w
 4. At most one over the air update a day, published overnight (after 10 PM). Preview first, then production.
 5. Never change `version` (1.0.0) or the runtime. Never submit for App Store review, change pricing, or create store records without the owner's OK.
 6. No D1 migrations without asking. Never deploy an older tree over a newer deploy. Never deploy the old host.
-7. The board engine serves phones only after it matches the Trip Planner on 95% or more and the owner agrees. Platform view stays hidden until it is reliable and the owner agrees.
+7. The board engine serves phones only after it matches the Trip Planner on 95% or more and the owner agrees. Platform view was removed on 26 Oct (owner).
 8. Battery first: no `setInterval`, no `useNow(1000)`, no high accuracy location, no new background modes. `app/test/battery.test.mjs` must pass.
 9. No em or en dashes anywhere. Plain words, no filler. No hard coded content or example times. No ads, no login, no AI model in Ask, no Transport for NSW branding. Apple HIG on iPhone, Material 3 on Android. Never name another transport app in the UI, code or commits.
 10. When a credential is created or changed, the full credentials list is emailed to the owner's ops email (address in the operator notes, not in this repo).

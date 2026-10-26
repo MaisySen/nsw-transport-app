@@ -165,7 +165,7 @@ curl -s -X POST -H "x-admin-key: $ADMIN_KEY" -H 'content-type: application/json'
 
 Roll back: post the previous file again. `copy.api_base` moves every phone to another server: only an https origin is accepted, and a wrong one strands every install, so never set it without the owner.
 
-**App switches** in `app/src/lib/features.ts` (`PLATFORM_VIEW=false`, `LIVE_DATA_AGE=false`): change the line, test, ship in the nightly over the air update (section 3).
+**App switches** in `app/src/lib/features.ts` (`LIVE_DATA_AGE=false`; Platform view and its switch were removed on 26 Oct): change the line, test, ship in the nightly over the air update (section 3).
 
 ## 5. Transport for NSW quota ran out (429 or 403)
 

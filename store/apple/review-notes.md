@@ -16,7 +16,6 @@ Source for the Notes field. Written to App Store Connect through the API on 26 O
 * Attach the newest build to version 1.0.0. On 26 Oct the version page still has build 206; Calendar leave by needs 208 and the text names it. From 1 Nov, build 209.
 * Apple Watch screenshots must be uploaded first (store/screenshots/README.md).
 * If worker g22 ships alerts for saved trips or the Limited Stops tag before submission, add one line each under HOW TO TEST.
-* If Platform view (`PLATFORM_VIEW` in app/src/lib/features.ts, off at the owner's request) is ever turned on by an over the air update after approval, that is a new feature: describe it in the notes of the next submitted version (guidelines 2.3.1(a) and 2.5.19).
 * Submit only with the owner's written OK.
 
 ## Notes
