@@ -10,7 +10,7 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 | --- | --- | --- |
 | Production over the air group | `fa0017d8-4ffe-49e7-91da-3b415254943f` (3:39 PM, outage honesty; iOS `01a17680-b011-7faf-8316-b658423cff0e`, Android `01a17680-b011-7caf-9da9-c4d39cd16f3b`), runtime 1.0.0, from main `4835561` | `1f117d04-ee6c-4149-b153-b32fe8f1db79` |
 | Updates published today | 1 production update since 3:39 PM is today's; the next is tonight's overnight update | |
-| Server (`transport-api`) | Version `3e88773d` (5:45 PM, privacy: invocation logs off, trip history stops only, g25, main `64ed406`). Before it: `ffc1a25b` (4:21 PM, budget guard with a 48 hour rate, main `e93ff84`), `a8fbe352` (4:14 PM, no message, a secret or settings change), `3f5e63d3` (4:13 PM, budget mode, main `ae182e8`), `544279b4` (4:10 PM, live trip follows the real train, main `dd2641a`) | One step: `a8fbe352`. Before budget mode: `544279b4`. Before trip tracking: `fb242627` |
+| Server (`transport-api`) | Version `16b2b9f5` (8:24 PM, stop lists from the timetable run and outage trips to a last stop, g24, with the g22 server part, main `c40d52b`; roll back to `3e88773d`). Before it: `3e88773d` (5:45 PM, privacy: invocation logs off, trip history stops only, g25, main `64ed406`). Before it: `ffc1a25b` (4:21 PM, budget guard with a 48 hour rate, main `e93ff84`), `a8fbe352` (4:14 PM, no message, a secret or settings change), `3f5e63d3` (4:13 PM, budget mode, main `ae182e8`), `544279b4` (4:10 PM, live trip follows the real train, main `dd2641a`) | One step: `a8fbe352`. Before budget mode: `544279b4`. Before trip tracking: `fb242627` |
 | iPhone builds in the field | 201 to 208 (208: 25 Oct 6:48 PM, TestFlight Internal and Public) | |
 | Android | versionCode 2 to 5 (APK on the download page) | |
 | Public site | Pages deployment `6a797b2c` (25 Oct, 9 PM) | `564bc47c` |
@@ -32,9 +32,9 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 | `REQ_LOG` | Worker var | on | One log line per request, 1 in 10 kept |
 | Budget guard hold | `/api/budget` | **on** at 4:23 PM: the last hourly reading (made before the 4:21 PM change to a 48 hour rate) projected Durable Object requests at 1,363% of the month (11.3% used), driven by the morning load tests | Engine, push, own planner, learn and load keys act as off; all are off anyway. The next hourly check (minute 17) reads again; it lifts by itself when the projection is back under 60%, or with `POST /api/budget/clear` |
 | Remote config flags | `/api/app/config` | all 16 on, `kill` empty, `livePush` absent (off) | |
-| `LIMITED_STOPS` | Worker var (g22, not deployed) | not set (on once deployed) | `limited: true` on departures and trip legs from the planner pack's `tripLim`; `off` turns it off |
+| `LIMITED_STOPS` | Worker var (g22, deployed 8:24 PM) | not set (on) | `limited: true` on departures and trip legs from the planner pack's `tripLim`; `off` turns it off |
 | `OWN_RUNS` | Worker var (g24) | not set (on) | Service stop lists from the planner pack's run (`tripNext`); `off` turns it off; stands down while the budget guard holds `OWN_PLANNER`. Needs a pack with `tripNext` (nightly from main) |
-| `tripAlerts` | Remote config (g22, not deployed) | default true once deployed | Server matches alerts to phones' trips every 10 min; the app's More switch shows only when this is true |
+| `tripAlerts` | Remote config (g22, server deployed 8:24 PM) | default true | Server matches alerts to phones' trips every 10 min; the app's More switch shows only when this is true |
 | `PLATFORM_VIEW` | `app/src/lib/features.ts` | false | Platform view hidden (owner) |
 | `LIVE_DATA_AGE` | `app/src/lib/features.ts` | false | Live age counted from receipt, not from `liveAt` |
 
@@ -66,8 +66,7 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 | Tonight, after 10 PM | The one over the air update of the day: trip tracking app fix and whatever is on main and green | The root decides; preview first |
 | 27 Oct, 1 AM | NSW quota resets: probe once, `node tools/verify-deploy.mjs --live`, device check of the outage fixes | Any worker |
 | 27 Oct, after 1 AM | Board engine 95% match run on real feeds (capped); engine stays off for phones until the owner agrees | Board engine worker |
-| When the root decides | g22 server deploy (Limited stops marks, `/api/trip-alerts`, trip alert matching in the tick, `data/lineorder.json`), RUNBOOK deploy steps; the app part ships in the next over the air update and stays hidden until then | Root |
-| 27 Oct, 2:40 AM | Timetable workflow: planner pack (nightly), engine load only if it no longer holds today and tomorrow | GitHub Actions |
+| 27 Oct, 2:40 AM | Timetable workflow: planner pack (nightly, first pack with `tripNext` for g24 stop lists; check `/api/raptor/status` counts and a T9 `/api/service` from Gordon after 1 AM), engine load only if it no longer holds today and tomorrow | GitHub Actions |
 | 27 Oct, 3 to 6 AM | `tools/planner_match.mjs` (our planner vs NSW, gate 90%) | Any worker, off peak |
 | From 1 Nov | iPhone build 209 with the native list in IOS27.md (Watch gets times from the phone, widget push, calendar, audio route) | Build worker, after the owner's go |
 | 25 Nov | Cloudflare cycle renews (US$5) | |
