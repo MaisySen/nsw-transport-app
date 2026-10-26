@@ -143,7 +143,8 @@ test('stand pin: maps links per platform', () => {
 // ---------- the screens ----------
 test('screens: Home cards and trip rows show where the bus is; trip screen has Walking, stand pins, Get me home guards', () => {
   const home = src('components/Home.tsx');
-  assert.match(home, /whereNow\(l, ls\?\.kind === 'live'\)/);
+  // g32: the status line already says the delay, so these pass true and the where line says only where it is.
+  assert.match(home, /whereNow\(l, ls\?\.kind === 'live', true\)/);
   assert.equal((home.match(/<WhereNow w=\{wn\}/g) || []).length, 3, 'hero card, row card, service row');
   const trip = src('app/trip.tsx');
   assert.match(trip, /<WalkChoice pref=\{wp\} \/>/);

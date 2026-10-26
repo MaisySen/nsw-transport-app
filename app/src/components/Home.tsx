@@ -615,7 +615,8 @@ function TripGlance({ look, js, arrs, now, count = { size: 56, line: 62, weight:
   // Why it's late: the next service's own linked reason, one line (components/WhyLate.tsx).
   const why = useJourneyWhy(j);
   // Where the bus is now, from its live position (lib/whereNowCore.ts); nothing on timetable or Not tracking rows.
-  const wn = whereNow(l, ls?.kind === 'live');
+  // Live rows always show the delay in their status line, so it is not said again here.
+  const wn = whereNow(l, ls?.kind === 'live', true);
   const label = `${why ? `${a11y}. ${why.text}` : a11y}${wn ? `. ${wn.a11y}` : ''}`;
 
   if (look === 'hero') {
@@ -709,7 +710,8 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
   const boardAt = plat(l?.fromPlatform);
   const bigSize = t.unit ? 22 : t.big === 'Now' ? 16 : 13;
   // Where the bus is now (lib/whereNowCore.ts): only while the row's own live label is Live.
-  const wn = l?.planned ? whereNow(l, liveState({ planned: l.planned, estimated: l.estimated, realtime: l.realtime, cancelled: !!(j.anyCancelled || l.cancelled), seenAt: l.seenAt ?? j.seenAt }, now).kind === 'live') : null;
+  // The status line (stt.text) already says the delay, so the where line says only where it is.
+  const wn = l?.planned ? whereNow(l, liveState({ planned: l.planned, estimated: l.estimated, realtime: l.realtime, cancelled: !!(j.anyCancelled || l.cancelled), seenAt: l.seenAt ?? j.seenAt }, now).kind === 'live', true) : null;
   return (
     <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }} accessibilityLabel={`Leaves ${hm(dep)}${boardAt ? ` from ${boardAt}` : ''}, ${t.big} ${t.unit}, arrives ${hm(arrive)}, ${stt.text}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}${wn ? `. ${wn.a11y}` : ''}${rel ? `. ${rel}` : ''}`}
       style={({ pressed }) => [s.svc, (beaten || dep < now - 30000) && { opacity: 0.45 }, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>

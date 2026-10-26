@@ -38,9 +38,11 @@ export function lateText(m: number | null): string {
 /**
  * Where the vehicle is now, or null. Needs live times (`realtime`), a live position (`vehicle`) and the stop count
  * from it to your stop (`stopsAway`, 0 to WHERE_MAX_STOPS). `liveNow` is the row's own live label being Live (not
- * Not tracking); pass false and nothing shows. Cancelled and walk legs show nothing.
+ * Not tracking); pass false and nothing shows. Cancelled and walk legs show nothing. `statusHasDelay`: the row's
+ * status line beside it already shows the delay ("4 min late", "On time"), so this line says only where the vehicle
+ * is ("3 stops away"); `late` still carries the delay for the colour.
  */
-export function whereNow(x: WhereInput | null | undefined, liveNow = true): WhereNow | null {
+export function whereNow(x: WhereInput | null | undefined, liveNow = true, statusHasDelay = false): WhereNow | null {
   if (!x || !liveNow || x.kind === 'walk' || x.cancelled || !x.realtime) return null;
   if (!x.vehicle || !finite(x.vehicle.lat) || !finite(x.vehicle.lon)) return null;
   if (finite(x.vehicle.ageS) && x.vehicle.ageS > WHERE_MAX_AGE_S) return null;
@@ -48,7 +50,8 @@ export function whereNow(x: WhereInput | null | undefined, liveNow = true): Wher
   const away = Math.round(x.stopsAway);
   const late = lateAtStop(x);
   const where = away === 0 ? 'At your stop' : `${away} stop${away === 1 ? '' : 's'} away`;
-  const lt = lateText(late);
+  // The row's own status line already says "4 min late" or "On time": the delay is said there once, not twice.
+  const lt = statusHasDelay ? '' : lateText(late);
   const noun = NOUN[String(x.mode || '')] || 'Service';
   const text = lt ? `${where} \u00b7 ${lt}` : where;
   const a11y = `${noun} ${away === 0 ? 'at your stop' : `${away} stop${away === 1 ? '' : 's'} away`}${lt ? `, ${lt}` : ''}, from its live position`;
