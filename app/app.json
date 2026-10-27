@@ -64,6 +64,14 @@
             "NSPrivacyCollectedDataTypePurposes": [
               "NSPrivacyCollectedDataTypePurposeAppFunctionality"
             ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeCrashData",
+            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
           }
         ],
         "NSPrivacyAccessedAPITypes": [
@@ -220,7 +228,15 @@
       ],
       "./plugins/withTransportWidget",
       "./plugins/withStoreManifest",
-      "@bacons/apple-targets"
+      "@bacons/apple-targets",
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "organization": "fintex-australia-bk",
+          "project": "transport-sydney-live"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
@@ -235,7 +251,8 @@
       },
       "eas": {
         "projectId": "cf1f4c4c-5157-41bf-a254-4480223f6368"
-      }
+      },
+      "sentryDsn": "https://2bc87e4c2d52805d72eb7f980c6105a0@o4512325459116032.ingest.us.sentry.io/4512325463179264"
     },
     "owner": "bidurtab",
     "updates": {
