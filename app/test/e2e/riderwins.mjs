@@ -55,10 +55,10 @@ report.checks.getMeHome = await page.getByRole("button", { name: /^Get me home/ 
 await shot(`home-${tag}`);
 await page.getByRole("button", { name: /^Get me home/ }).first().click();
 await page.waitForURL(/\/trip/, { timeout: 15000 }).catch(() => {});
-await page.getByRole("button", { name: /^Walking/ }).first().waitFor({ timeout: 20000 }).catch(() => {});
+await page.getByRole("button", { name: /^Max walk 5 min/ }).first().waitFor({ timeout: 20000 }).catch(() => {});
 await page.waitForTimeout(1500);
 report.checks.tripUrl = page.url().replace(base, "");
-report.checks.walking = await page.getByRole("button", { name: /^Walking/ }).count();
+report.checks.walking = await page.getByRole("button", { name: /^Max walk \d+ min/ }).count();
 report.checks.rowWhere = await page.getByText(/^3 stops away$/).count();
 report.checks.saveHidden = (await page.getByRole("button", { name: "Save trip" }).count()) === 0;
 await shot(`trip-${tag}`);
@@ -72,14 +72,12 @@ report.checks.across = await page.getByText(/across the road from where your wal
 if (await pin.count()) { await pin.scrollIntoViewIfNeeded(); await pin.click(); await page.waitForTimeout(2500); }
 report.checks.mapsLink = await page.getByRole("link", { name: /in Maps$/ }).count();
 await shot(`pin-${tag}`);
-// The Walking menu (drawn menu on the web) and a 5 min limit.
-const walk = page.getByRole("button", { name: /^Walking/ }).first();
-await walk.scrollIntoViewIfNeeded(); await walk.click(); await page.waitForTimeout(600);
-await shot(`walkmenu-${tag}`);
-const five = page.getByText("Up to 5 min", { exact: true }).last();
-if (await five.count()) { await five.click(); await page.waitForTimeout(800); }
-report.checks.walkValue = await page.getByRole("button", { name: /^Walking, Up to 5 min/ }).count();
-report.checks.stored = await page.evaluate(() => JSON.parse(localStorage.getItem("store") || "{}").walkPref || null);
+// The Max walk chips (28 Oct): 5 min, kept for this trip on the phone.
+const five = page.getByRole("button", { name: /^Max walk 5 min/ }).first();
+if (await five.count()) { await five.scrollIntoViewIfNeeded(); await five.click(); await page.waitForTimeout(800); }
+await shot(`walkchips-${tag}`);
+report.checks.walkValue = await page.getByRole("button", { name: "Max walk 5 min, on" }).count();
+report.checks.stored = await page.evaluate(() => JSON.parse(localStorage.getItem("store") || "{}").tripWalk || null);
 await page.evaluate(() => window.scrollTo(0, 0));
 await shot(`walk5-${tag}`);
 report.errors = errs.slice(0, 5);

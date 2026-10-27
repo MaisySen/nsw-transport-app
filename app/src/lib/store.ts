@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import type { Place } from './types';
 import { rememberPlace, type CalPlace, type CalPlaceCache } from './calendarLeaveByCore';
+import { withTripWalk } from './walkPrefCore';
 
 export type RecentTrip = { from: Place; to: Place; at: number };
 export type Places = { home?: Place; work?: Place };
@@ -42,6 +43,8 @@ type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; wa
   calPlaces?: CalPlaceCache;
   /** Trip screen Walking choice: the longest walk on a trip (0 is any) and Prefer a bus over a long walk (walkPrefCore.ts). */
   walkPref?: { max: number; prefer: boolean };
+  /** Trip screen Max walk chips per trip (tripKey to choice, 28 Oct); a trip without one starts from walkPref. */
+  tripWalk?: Record<string, { max: number; prefer: boolean }>;
   /** Trip mode Get off alert: how many stops before your stop, and Get off now (getOffCore.ts). */
   getOff?: { stops: number; now: boolean; v?: 2 };
 };
@@ -125,6 +128,8 @@ export const store = {
   /** Trip screen Walking choice, as stored (read it through walkPrefCore.readWalkPref). */
   walkPref: (): unknown => state.walkPref,
   setWalkPref(p: { max: number; prefer: boolean }) { state = { ...state, walkPref: { max: p.max, prefer: !!p.prefer } }; save(); },
+  /** Max walk chips: this trip's own choice (walkPrefCore.withTripWalk keeps the newest TRIP_WALK_KEEP trips). */
+  setTripWalk(key: string, p: { max: number; prefer: boolean }) { state = { ...state, tripWalk: withTripWalk(state.tripWalk, key, p) }; save(); },
   /** Trip mode Get off alert, as stored (read it through getOffCore.readGetOff). */
   getOff: (): unknown => state.getOff,
   setGetOff(p: { stops: number; now: boolean }) { state = { ...state, getOff: { stops: p.stops, now: !!p.now, v: 2 } }; save(); },

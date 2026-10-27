@@ -294,7 +294,7 @@ test('Home wiring: idle timer on focus, cleared on blur, through the press in ga
   assert.match(h, /useFocusEffect\(useCallback\(\(\) => \{/);
   assert.match(h, /\}, HOME_IDLE_MS\);/);
   assert.match(h, /return \(\) => \{ clearTimeout\(t\);/);
-  assert.match(h, /prefetchTripScreen\(aheadPlan, aheadKey, readWalkPref\(store\.snapshot\(\)\.walkPref\), AppState\.currentState\)/);
+  assert.match(h, /prefetchTripScreen\(aheadPlan, aheadKey, readTripWalk\(sn\.tripWalk, `\$\{aheadPlan\.from\.id\}>\$\{aheadPlan\.to\.id\}`, sn\.walkPref\), AppState\.currentState\)/);
   assert.doesNotMatch(h.slice(h.indexOf('Read ahead')), /setInterval/);
   const p = read('src/lib/prefetch.ts');
   const fn = p.slice(p.indexOf('export function prefetchTripScreen'));

@@ -30,7 +30,7 @@ import { LegAccessChips, ParkGroup } from '@/components/Access';
 import { fareKind, fareOf, fareWords, money, offPeakText, TRAINLINK_BOOKING_URL } from '@/lib/fare';
 import { getLive, startLive } from '@/lib/live';
 import { directFilter, isChain, planTrip, stName, tLegs, tripKey, viaText } from '@/lib/trips';
-import { applyWalkPref, readWalkPref, walkNote } from '@/lib/walkPrefCore';
+import { applyWalkPref, readTripWalk, walkKey, walkNote } from '@/lib/walkPrefCore';
 import { isPointId } from '@/lib/goHomeCore';
 import { WalkChoice } from '@/components/WalkChoice';
 import { StandPin } from '@/components/StandPin';
@@ -370,8 +370,10 @@ export default function TripScreen() {
   const modesOn = !chain && !via;
   const modes: ModeK[] = modesOn ? normModes((stNow.tripModes || {})[tkey]) : [];
   const modesKey = modes.join(',');
-  // Walking choice (walkPrefCore.ts), kept on the phone for every trip; sent with the trip request, filtered here.
-  const wp = readWalkPref(stNow.walkPref);
+  // Max walk chips (walkPrefCore.ts), kept on the phone for this trip (else the older choice for every trip); sent with
+  // the trip request, filtered here. A change asks again (walkKey), so a server that honours it plans least walking.
+  const wp = readTripWalk(stNow.tripWalk, tkey, stNow.walkPref);
+  const wKey = walkKey(wp);
   // A saved trip (Your trips) can have reminders; they open it again with these params.
   const saved = (stNow.myTrips || []).find((t) => tripKeyOf(t) === tkey) || null;
   const openParams = Object.fromEntries(Object.entries(p).filter(([k, v]) => v != null && v !== '' && ['from', 'fromName', 'to', 'toName', 'via', 'viaName', 'conn', 'name', 'legs'].includes(k)).map(([k, v]) => [k, String(v)]));
@@ -379,7 +381,7 @@ export default function TripScreen() {
   // Redraws when a shown countdown changes its minute (activity.useCountdownNow), not every 5 s (g10, 26 Oct).
   const now = useCountdownNow();
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
-  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes, walk: wp, ...(pageable ? { page: true, days: true } : {}) }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : (d: TripResp | null) => tripGapMs(firstLeaveInMs(d?.journeys, Date.now())), [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey],
+  const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes, walk: wp, ...(pageable ? { page: true, days: true } : {}) }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : (d: TripResp | null) => tripGapMs(firstLeaveInMs(d?.journeys, Date.now())), [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey, wKey],
     { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '') + (modesKey ? `|m:${modesKey}` : '')) });
   useReportCountdowns('trip', (data?.journeys || []).slice(0, 6).map((j) => Date.parse(String(j.board || j.leave || ''))));
   const [extra, setExtra] = useState<Journey[]>([]);
@@ -395,9 +397,9 @@ export default function TripScreen() {
   const lastY = useRef(0);
   const dragged = useRef(false);
   const [anchorOn, setAnchorOn] = useState(false);
-  // A batch or Plan B answer still on its way when the trip, time, modes or switches change is dropped (useStamp),
+  // A batch or Plan B answer still on its way when the trip, time, modes, walking or switches change is dropped (useStamp),
   // and the batches already added for the old ones go.
-  const listKey = [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey].join('|');
+  const listKey = [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey, wKey].join('|');
   const stamp = useStamp(listKey);
   // Whole days from the server's own planner (tripPagesCore.ts dayPageOf): the earliest and latest day loaded, the
   // earlier trips loaded and not yet shown (the days before, and today's trips before now), and how many of them show.
@@ -745,7 +747,7 @@ export default function TripScreen() {
           </View>
         ) : null}
         {chips.length ? <ModeChips chips={chips} modes={modes} onChange={(m) => { haptic.select(); store.setTripModes(tkey, m); setOpen(0); }} /> : null}
-        {!chain ? <WalkChoice pref={wp} /> : null}
+        {!chain ? <WalkChoice pref={wp} tripKey={tkey} /> : null}
         {walkNote(wr, wp) && js.length ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>{walkNote(wr, wp)}</T> : null}
         {modes.length && data?.modesBy === 'phone' && js.length ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>From the usual results only, so some {modesWords(modes).toLowerCase()} trips may be missing.</T> : null}
         {data ? <KeptBanner offlineAt={offlineAt} staleAt={updatedAt ? null : staleAt} now={now} /> : null}

@@ -21,7 +21,7 @@ import { ActionRow, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTa
 import { homeForeground, prefetchTripScreen } from '@/lib/prefetch';
 import { setHomeOnView } from '@/lib/homeBundle';
 import { HOME_IDLE_MS, mayReadAhead, nextTripPlan } from '@/lib/homePrefetchCore';
-import { readWalkPref } from '@/lib/walkPrefCore';
+import { readTripWalk } from '@/lib/walkPrefCore';
 import { menuFrom, type MenuSpec } from '@/lib/menuCore';
 import { AnchoredMenu, type MenuItem, type Rect } from '@/components/AnchoredMenu';
 import { LineBadge } from '@/components/Transit';
@@ -184,7 +184,7 @@ export default function Home() {
     let idle: any = null;
     const g: any = globalThis as any;
     const t = setTimeout(() => {
-      const go = () => prefetchTripScreen(aheadPlan, aheadKey, readWalkPref(store.snapshot().walkPref), AppState.currentState);
+      const go = () => { const sn = store.snapshot(); prefetchTripScreen(aheadPlan, aheadKey, readTripWalk(sn.tripWalk, `${aheadPlan.from.id}>${aheadPlan.to.id}`, sn.walkPref), AppState.currentState); };
       // Feature detected: an idle callback where the runtime has one, else at once (the timer already waited).
       idle = typeof g.requestIdleCallback === 'function' ? g.requestIdleCallback(go, { timeout: 2000 }) : (go(), null);
     }, HOME_IDLE_MS);

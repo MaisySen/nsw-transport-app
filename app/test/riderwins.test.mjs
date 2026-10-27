@@ -71,7 +71,7 @@ test('walking: when every trip walks longer, all stay and the note says so', () 
   const r = P.applyWalkPref(list, { max: 15, prefer: false });
   assert.equal(r.list.length, 2);
   assert.equal(r.allOver, true);
-  assert.equal(P.walkNote(r, { max: 15, prefer: false }), 'Every trip found walks more than 15 min, so they all show.');
+  assert.equal(P.walkNote(r, { max: 15, prefer: false }), 'Every trip found walks more than 15 min, so they all show. Try Prefer bus.');
 });
 test('walking: prefer a bus moves a long walk below a shorter walk arriving at most 10 min later', () => {
   const list = [J([15], 9, 0, 'long'), J([3], 9, 6, 'bus'), J([4], 9, 30, 'late')];
@@ -147,7 +147,7 @@ test('screens: Home cards and trip rows show where the bus is; trip screen has W
   assert.match(home, /whereNow\(l, ls\?\.kind === 'live', true\)/);
   assert.equal((home.match(/<WhereNow w=\{wn\}/g) || []).length, 3, 'hero card, row card, service row');
   const trip = src('app/trip.tsx');
-  assert.match(trip, /<WalkChoice pref=\{wp\} \/>/);
+  assert.match(trip, /<WalkChoice pref=\{wp\} tripKey=\{tkey\} \/>/);
   assert.match(trip, /applyWalkPref\(df\.list, wp\)/);
   assert.match(trip, /<StandPin leg=\{l\}/);
   assert.match(trip, /!via && !here\) store\.addRecentTrip/);
