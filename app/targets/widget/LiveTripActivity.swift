@@ -110,6 +110,10 @@ extension LiveTripAttributes.ContentState {
         return "Off \(off)"
     }
 
+    /// The Dynamic Island on board from build 209: just where you get off with a colon, "Redfern:", so the compact
+    /// view stays short and the system clock beside it stays visible (28 Oct).
+    public var compactStation: String { "\(Naming.compact(Naming.short(getOffAt))):" }
+
     public var arriveLine: String { "Arrive \(destination ?? getOffAt) \(Clock.time(arrival))" }
 }
 #endif
