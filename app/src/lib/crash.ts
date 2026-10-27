@@ -6,10 +6,13 @@
 //   can be read from the server; at most MAX_REPORTS a run, never with personal data beyond the install id;
 // - "Clear saved times" drops the phone's kept answers, timetable packs and an active trip (not places, starred stops,
 //   trips on Home or settings), then reloads, for a crash that comes back from a kept copy.
+// - build 209 and later (Sentry native module, docs/SENTRY.md): a caught error also goes to Sentry, and Sentry's own
+//   handler takes fatal errors and native crashes. Builds 201 to 208 have no module and use the feedback inbox alone.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { crashMessage, crashPage, keptKeys, MAX_REPORTS, recentRequests } from './crashCore';
 import { apiBase } from './server';
+import { captureToSentry } from './sentry';
 
 let sent = 0;
 const seen = new Set<string>();
@@ -28,8 +31,13 @@ async function installId(): Promise<string> {
 }
 
 
-/** Sends one crash report. Never throws; the same error is sent once a run. */
+/**
+ * Sends one crash report. Never throws; the same error is sent once a run. A caught error also goes to Sentry where
+ * the build has it; a fatal one (fatal true, from the global handler) is left to Sentry's own handler, so it is not
+ * sent there twice.
+ */
 export async function reportCrash(error: unknown, where: string, fatal = false): Promise<void> {
+  if (!fatal) captureToSentry(error, where);
   try {
     const message = crashMessage(error, { where, fatal, os: Platform.OS, build: buildNo(), update: updateId(), recent: recentRequests() });
     const sig = message.slice(0, 300);
