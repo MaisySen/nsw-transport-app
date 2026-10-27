@@ -25,6 +25,10 @@ A departures board lists services from now on; a service drops off once it has g
 
 Two reads more than 3 min apart record nothing (the app was closed in between). A service that drops off more than 90 s before its time is not a departure (cancelled or the list changed). Code: `app/src/lib/recentCore.ts`, `app/src/lib/recent.ts`, same tests.
 
+## Not stopping today
+
+Written 28 Oct 2026. Trains say "Not stopping" when the realtime feed marks a stop skipped. Buses now get the same from the service's own alerts: a detour, a stop moved, no service, or changed service whose words say a stop is not served, naming the stop (docs/API.md `notStopping`). The row keeps its time and countdown and adds **Not stopping at <stop> today** in amber under it (another day: "on <day>"); with no stop name, "Not stopping here today". VoiceOver and TalkBack read the label and then the alert's own words. Trip legs show it with the warning icon where you get on, else where you get off. The bus route view asks `/api/detours` once per open: a line above the stops ("Not stopping at <stop> today", or "at N stops today") and "Not stopping today" under each stop skipped. Code: `lib/notStoppingCore.ts`, the departure row in `Transit.tsx`, `LegView` in `app/trip.tsx`, `app/route.tsx`. Tests: `app/test/notstopping.test.mjs`.
+
 ## Often does not run
 
 Written 28 Oct 2026. A bus with no live time ("Timetable only") or a stale one ("Not tracking") in an hour where many of its line's services never showed live says **Often does not run** instead, amber with the no live icon. VoiceOver: "Often does not run at this time, no live data" or "Not tracking, often does not run". The countdown is unchanged (minutes to the timetable time, or the clock time once passed or when stale). Live and Cancelled rows never change.

@@ -261,6 +261,9 @@ export const api = {
   service: (q: Record<string, string | undefined>) => req<ServiceResp>(`/api/service?${qs(q)}`),
   /** A bus route's stops in order, each direction: [{ to, stops: [[id, name, lat, lon]] }]. 404 when there is no such route. */
   route: (line: string, mode = 'bus') => req<any>(`/api/stations?${qs({ mode, route: line })}`, undefined, 25000),
+  /** Stops of a bus route not served today (detours, closed stops) from the service's alerts. New server only: an
+   * older one answers 404 and the route view shows every stop as before (notStoppingCore.routeDetours). */
+  detours: (line: string, mode = 'bus') => req<any>(`/api/detours?${qs({ line, mode })}`, undefined, 8000),
   alerts: (q = '') => req<{ items?: any[]; alerts?: any[] }>(`/api/alerts?${qs({ q })}`),
   saved: () => req<{ items: Saved[] }>(`/api/saved?${qs({ profile: PROFILE })}`),
   saveTrip: (name: string, from: Place, to: Place) => req<{ ok: boolean }>(`/api/saved`, { method: 'POST', body: JSON.stringify({ profile: PROFILE, name, from, to }) }),

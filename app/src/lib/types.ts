@@ -6,6 +6,8 @@ export type Alert = { id?: string; title: string; url?: string; priority?: strin
 export type Prediction = { delayMin: number; n: number; days: number; text: string; short: string; basis: string; kind: 'prediction' } | null;
 /** Buses in an hour where many recorded services never showed live (new server, docs/LIVE-LABELS.md "Often does not run"). */
 export type NoShow = { share: number; n: number } | null;
+/** Buses: a detour or closed stop from the service's alerts (new server, lib/notStoppingCore.ts "Not stopping today"). */
+export type NotStopping = { at?: 'from' | 'to'; stop?: string | null; id?: string; title?: string | null; url?: string | null } | null;
 
 export type Departure = {
   mode: string; modeName?: string; line: string; color?: string; dest: string; destId?: string; description?: string;
@@ -21,6 +23,8 @@ export type Departure = {
   status?: { key: string; text: string }; pred?: Prediction;
   /** Often does not run: share (percent) of recorded services in this line's hour that never showed live (new server only). */
   noShow?: NoShow;
+  /** Not stopping at this stop today: a bus detour or closed stop from the service's alerts (new server only). */
+  notStopping?: NotStopping;
   /** A board for another time (/api/departures with time): true when it left over a minute ago. */
   departed?: boolean;
   /** When this phone received the answer (set by api.ts, liveLabelCore.stampSeen). */
@@ -58,6 +62,8 @@ export type Leg = {
   vehicle?: Vehicle; stopsAway?: number | null;
   /** Bus legs: often does not run in this hour (new server only), as on departures. */
   noShow?: NoShow;
+  /** Bus legs: not stopping where you get on (at "from") or off (at "to") today, from the service's alerts (new server only). */
+  notStopping?: NotStopping;
   /** When this phone received the answer (set by api.ts, liveLabelCore.stampSeen). */
   seenAt?: number;
 };

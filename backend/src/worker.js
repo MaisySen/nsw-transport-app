@@ -4481,12 +4481,15 @@ function decodeAlerts(buf) {
         a.periods.push([s * 1000, e * 1000]);
       } else if (f === 5 && wt === 2) {
         const r = al.sub();
+        let er = "", es = "";
         while (r.p < r.e) {
           const g = r.uint(), gf = g >>> 3;
-          if (gf === 2) { const v = r.str(); if (!a.routes.includes(v)) a.routes.push(v); }
-          else if (gf === 5) { const v = r.str(); if (!a.stops.includes(v)) a.stops.push(v); }
+          if (gf === 2) { const v = r.str(); er = v; if (!a.routes.includes(v)) a.routes.push(v); }
+          else if (gf === 5) { const v = r.str(); es = v; if (!a.stops.includes(v)) a.stops.push(v); }
           else r.skip(g & 7);
         }
+        // One entity naming a route and a stop: that route at that stop (Not stopping today, notStopAlerts).
+        if (er && es) (a.pairs || (a.pairs = [])).push([er, es]);
       } else if (f === 6 && wt === 0) a.cause = al.uint();
       else if (f === 7 && wt === 0) a.effect = al.uint();
       else if (f === 8 && wt === 2) a.url = readText(al.sub());
@@ -4518,8 +4521,19 @@ function digestAlerts(raw, table, now) {
     const stops = [...new Set(a.stops.map((s) => String(s).replace(/^G/, "")))].slice(0, 80);
     if (!lines.length && !stops.length) continue;
     const planned = ALERT_PLANNED_CAUSES.has(a.cause) || PLANNED_WORDS.test(a.header);
-    items.push({ id: a.id.slice(0, 64), h: plainText(a.header).slice(0, 240), u: httpsUrl(a.url), e: effect, pl: planned ? 1 : 0,
-      p: periods.map(([s, e]) => [s, e]).slice(0, 12), l: lines, s: stops });
+    const item = { id: a.id.slice(0, 64), h: plainText(a.header).slice(0, 240), u: httpsUrl(a.url), e: effect, pl: planned ? 1 : 0,
+      p: periods.map(([s, e]) => [s, e]).slice(0, 12), l: lines, s: stops };
+    // Route and stop named together (only when the alert has such entities): [line, stop] pairs, so a detour of one
+    // line is not read as every listed stop being skipped by every listed line (notStopHit).
+    if (a.pairs && a.pairs.length) {
+      const ls = [];
+      for (const [r, s] of a.pairs) {
+        const l = lineOfRoute(r, table), st = String(s).replace(/^G/, "");
+        if (l && !ls.some((x) => x[0] === l && x[1] === st)) ls.push([l, st]);
+      }
+      if (ls.length) item.ls = ls.slice(0, 80);
+    }
+    items.push(item);
   }
   return items;
 }
@@ -4550,6 +4564,163 @@ async function alertDigest(env) {
   // First use on a new database, before the tick has made one.
   await refreshAlertDigest(env);
   return alertDigestMem;
+}
+
+// ---------- Not stopping today: bus detours and closed stops (28 Oct, docs/LIVE-LABELS.md) ----------
+// Trains already show "Not stopping" from the realtime feed (a skipped stop). Buses get it from the service alerts
+// digest above, which the minute tick already reads, so nothing here calls Transport for NSW and nothing here makes
+// a digest (notStopDigest only reads the kept row). An alert counts when it names stops and is a detour, a stop
+// moved or no service, or changed service whose words say a stop is not served (NOT_STOP_WORDS). Matching is the
+// trip alerts rule (tripalerts.js taHits): an alert naming lines counts for those lines at the stops it lists; one
+// naming no line counts for every bus at its stops. Where an alert names a route and a stop in one entity (ls), the
+// pair is matched as given. Only while one of the alert's periods covers the bus's time. Optional fields only, so
+// builds 201 to 208 get the same answers:
+//   departures items (bus, coach): notStopping: { stop, id, title, url }
+//   bus legs of trips:             notStopping: { at: "from" | "to", stop, id, title, url }
+//   GET /api/detours?line=&mode=bus   { line, at, items: [{ id, title, url, stops: [stop ids], until }] } (new)
+// Server switch notStopping (on unless the server config sets it false). A digest older than ALERT_STALE_MS is not used.
+const NOT_STOP_EFFECTS = new Set(["detour", "stopMoved", "none"]);
+const NOT_STOP_WORDS = /\b(will not (stop|service|serve)|won'?t (stop|service|serve)|not (stopping|servicing|serving)|bypass(es|ing)?|stops? (is |are |will be )?(temporarily )?(closed|moved|relocated|out of use)|diver(ted|sion)|detour(ed|s)?)\b/i;
+const NOT_STOP_MODES = new Set(["bus", "coach"]);
+const NOT_STOP_MEM_MS = 300000;
+/** The digest items that can say a bus is not stopping somewhere. Pure. */
+function notStopAlerts(items) {
+  return (items || []).filter((it) => it && Array.isArray(it.s) && it.s.length
+    && (NOT_STOP_EFFECTS.has(it.e) || (it.e === "modified" && NOT_STOP_WORDS.test(it.h || ""))));
+}
+function notStopActive(periods, t) {
+  if (!Number.isFinite(t)) return false;
+  if (!periods || !periods.length) return true;
+  return periods.some(([s, e]) => s <= t && (!e || e > t));
+}
+/** The alert that says a bus of `line` does not stop at any of `ids` at time t, or null. Pure. */
+function notStopHit(alerts, line, ids, t) {
+  const want = new Set((ids || []).filter(Boolean).map((s) => String(s).replace(/^G/, "")));
+  if (!line || !want.size) return null;
+  for (const it of alerts || []) {
+    if (!notStopActive(it.p, t)) continue;
+    const lines = it.l || [];
+    const ls = Array.isArray(it.ls) ? it.ls : [];
+    if (ls.some(([l, s]) => l === line && want.has(s))) return it;
+    const paired = new Set(ls.map((x) => x[1]));
+    // A stop named on its own: the alert's lines, or with no line every bus there (detours, moves and closures only).
+    if (lines.length ? !lines.includes(line) : !NOT_STOP_EFFECTS.has(it.e)) continue;
+    if (it.s.some((s) => want.has(s) && !paired.has(s))) return it;
+  }
+  return null;
+}
+function notStopOut(it, stop) {
+  return { stop: String(stop || "").slice(0, 80), id: it.id, title: it.h, url: it.u || null };
+}
+/** Marks bus departures and bus legs (pure, given the alerts). Rows that no longer match lose an old mark. */
+function markNotStoppingWith(alerts, d) {
+  let n = 0;
+  if (!d) return n;
+  if (d.kind === "departures" && Array.isArray(d.items)) {
+    const board = d.stop || {};
+    for (const it of d.items) {
+      if (!it) continue;
+      const hit = NOT_STOP_MODES.has(it.mode) ? notStopHit(alerts, it.line, [it.stopId, board.id], ms(it.estimated || it.planned)) : null;
+      if (hit) { it.notStopping = notStopOut(hit, board.name || it.stopName); n++; } else if (it.notStopping) delete it.notStopping;
+    }
+  }
+  if (d.kind === "trip" && Array.isArray(d.journeys)) {
+    for (const j of d.journeys) for (const l of (j && j.legs) || []) {
+      if (!l || l.kind !== "transit") continue;
+      let out = null;
+      if (NOT_STOP_MODES.has(l.mode)) {
+        const a = notStopHit(alerts, l.line, [l.stopId, l.fromParent], ms(l.estimated || l.planned));
+        const b = a ? null : notStopHit(alerts, l.line, [l.toStopId, l.toParent], ms(l.arrEstimated || l.arrPlanned));
+        if (a) out = { at: "from", ...notStopOut(a, l.from) };
+        else if (b) out = { at: "to", ...notStopOut(b, l.to) };
+      }
+      if (out) { l.notStopping = out; n++; } else if (l.notStopping) delete l.notStopping;
+    }
+  }
+  return n;
+}
+/** The kept digest, read only: never fetched here (the minute tick makes it). Null when missing or old. */
+async function notStopDigest(env, now = Date.now()) {
+  const m = alertDigestMem;
+  if (!(m.items && Date.now() - m.read < NOT_STOP_MEM_MS)) {
+    let row = null;
+    try { row = await db(env).prepare("SELECT v FROM meta WHERE k = 'alert_digest'").first(); } catch (e) { row = null; }
+    if (!row || !row.v) return null;
+    try { const o = JSON.parse(row.v); m.at = o.at; m.items = o.items || []; m.read = Date.now(); } catch (e) { return null; }
+  }
+  if (!m.at || now - m.at > ALERT_STALE_MS) return null;
+  return m;
+}
+let notStopMemo = { items: null, list: [] };
+async function notStopList(env) {
+  const dg = await notStopDigest(env);
+  if (!dg) return [];
+  if (notStopMemo.items !== dg.items) notStopMemo = { items: dg.items, list: notStopAlerts(dg.items) };
+  return notStopMemo.list;
+}
+/** Adds notStopping to bus departures and bus legs of an answer. No Transport for NSW call, at most one D1 read. */
+async function markNotStopping(env, d) {
+  if (!d || (d.kind !== "departures" && d.kind !== "trip") || !db(env)) return 0;
+  if (!(await serverOn(env, "notStopping"))) return 0;
+  // With nothing to mark this still runs: it clears a mark left on a kept copy (depMem shares its rows).
+  return markNotStoppingWith(await notStopList(env), d);
+}
+/** GET /api/detours: the stops a bus line is not stopping at now or later today. Pure, given the alerts. */
+function detoursFor(alerts, line, routeStops, now) {
+  const sn = sydneyNow(now);
+  const dayEnd = now + (24 * 60 - sn.tod) * 60000 + 3 * 3600000; // the service day runs to about 3am
+  const onRoute = routeStops && routeStops.size ? routeStops : null;
+  const out = [];
+  for (const it of alerts || []) {
+    const per = it.p && it.p.length ? it.p : null;
+    if (per && !per.some(([s, e]) => s < dayEnd && (!e || e > now))) continue;
+    const ls = Array.isArray(it.ls) ? it.ls : [];
+    const paired = new Set(ls.map((x) => x[1]));
+    const stops = new Set(ls.filter(([l]) => l === line).map((x) => x[1]));
+    const lines = it.l || [];
+    if (lines.length ? lines.includes(line) : NOT_STOP_EFFECTS.has(it.e)) {
+      for (const s of it.s) if (!paired.has(s) && (lines.length || (onRoute && onRoute.has(s)))) stops.add(s);
+    }
+    const list = [...stops].filter((s) => !onRoute || onRoute.has(s));
+    if (!list.length) continue;
+    const ends = per ? per.map(([, e]) => e).filter((e) => e > now) : [];
+    out.push({ id: it.id, title: it.h, url: it.u || null, stops: list.slice(0, 80), until: ends.length && ends.length === per.length ? iso(Math.max(...ends)) : null });
+  }
+  return out.slice(0, 20);
+}
+const routeStopMem = createRouteStopMem();
+function createRouteStopMem() { const m = new Map(); return { get: (k) => m.get(k), set: (k, v) => { m.set(k, v); if (m.size > 60) m.delete(m.keys().next().value); } }; }
+/** Every stop id of a bus route, both directions, from the route files the server already serves (no NSW call). */
+async function routeStopIds(env, origin, line) {
+  const k = line;
+  const kept = routeStopMem.get(k);
+  if (kept) return kept;
+  const file = await askAsset(env, origin, "/stations/bus/" + line.slice(0, 2).replace(/[^A-Z0-9]/gi, "_") + ".json");
+  const key = file && !Array.isArray(file) ? Object.keys(file).find((x) => x.toUpperCase() === line) : null;
+  const dirs = key ? file[key] : null;
+  const ids = new Set();
+  for (const one of Array.isArray(dirs) ? dirs : dirs ? [dirs] : []) for (const s of (one && one.stops) || []) if (s && s[0] != null) ids.add(String(s[0]));
+  routeStopMem.set(k, ids);
+  return ids;
+}
+async function detoursRoute(env, url) {
+  const p = url.searchParams;
+  const line = String(p.get("line") || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+  const mode = p.get("mode") || "bus";
+  if (!line) return json({ error: "line needed" }, 400);
+  const headers = { "cache-control": "public, max-age=120" };
+  const empty = (why) => { const r = json({ line, at: null, items: [], ...(why ? { off: why } : {}) }); r.headers.set("cache-control", headers["cache-control"]); return r; };
+  if (!NOT_STOP_MODES.has(mode)) return empty(null);
+  if (!(await serverOn(env, "notStopping"))) return empty("switch");
+  const dg = db(env) ? await notStopDigest(env) : null;
+  if (!dg) return empty(null);
+  const list = notStopAlerts(dg.items);
+  // The route's own stops only when an alert names stops with no line (they apply to every bus there).
+  const needRoute = list.some((it) => !(it.l && it.l.length));
+  const routeStops = needRoute ? await routeStopIds(env, url.origin, line).catch(() => null) : null;
+  const r = json({ line, at: dg.at, items: detoursFor(list, line, routeStops, Date.now()) });
+  r.headers.set("cache-control", headers["cache-control"]);
+  return r;
 }
 
 // The coming weekend in Sydney time: Saturday and Sunday dates, and the window planned work is
@@ -6369,6 +6540,8 @@ async function afterAnswer(env, d, o) {
   if (typeof markLimited === "function") await markLimited(env, d, o.exec).catch(() => 0);
   // Often does not run (noShowTick): buses in an hour where many recorded services never showed live.
   await markNoShow(env, d.kind === "departures" ? d.items : d.kind === "trip" && Array.isArray(d.journeys) ? d.journeys.flatMap((j) => (j.legs || []).filter((l) => l && l.kind === "transit")) : null).catch(() => null);
+  // Not stopping today (notStopHit): bus detours and closed stops from the kept service alerts digest.
+  await markNotStopping(env, d).catch(() => null);
   try {
     if (d.kind === "departures" && d.items) await predictions(env, d.items);
     if (d.kind === "trip" && d.journeys) {
@@ -8294,6 +8467,10 @@ async function handleRequest(request, env, exec) {
             return json({ ok: true, saved: await savedPut(env, prof, name, from, to) });
           }
           return json({ error: "method" }, 405);
+        }
+        case "/api/detours": {
+          // Not stopping today on a bus route view (detoursRoute): the kept alerts digest, no Transport for NSW call.
+          return await detoursRoute(env, url);
         }
         case "/api/stations": {
           // Station lists for New Trip, built from the TfNSW GTFS timetable (tools/build_stations.py).

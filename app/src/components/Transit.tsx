@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef } from 'react';
 import { offlineText, staleText } from '@/lib/offlineCore';
 import { packStampText } from '@/lib/timetablePackCore';
+import { notStoppingText, notStoppingWhy } from '@/lib/notStoppingCore';
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { pressService } from '@/lib/prefetch';
 import type { Why } from '@/lib/whyLateCore';
@@ -199,6 +200,9 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
   const live = depState(d, now);
   // Buses: "Running slow in traffic" when the live delays ahead grow (busLiveCore.ts); live rows only.
   const traffic = live.kind === 'live' ? rowTraffic(d) : null;
+  // A bus detour or closed stop from the service's alerts (notStoppingCore.ts): "Not stopping at Main St today".
+  const noStop = notStoppingText(d, now);
+  const noStopWhy = noStop ? notStoppingWhy(d) : null;
   const extra: string[] = [];
   if (d.platform) extra.push(d.platform.replace(/^Platform /, 'Plat. '));
   // The number on the bus stop sign, unless the screen is that one stop (its number is in the header).
@@ -225,6 +229,7 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
           <QuietChip v={d.vehicle} />
         </View>
         {d.platformChangedFrom ? <T kind="foot" style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }}>Platform changed from {d.platformChangedFrom}</T> : null}
+        {noStop ? <T kind="foot" numberOfLines={2} style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }} accessibilityLabel={noStopWhy ? `${noStop}. ${noStopWhy}` : noStop}>{noStop}</T> : null}
         {traffic ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }} accessibilityLabel={traffic}>
             <Icon name={I.traffic} size={12} color={c.orange} />

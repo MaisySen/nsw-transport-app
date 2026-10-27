@@ -22,6 +22,7 @@ import TransitMap from '@/components/LazyTransitMap';
 import { Icon, I } from '@/components/Icon';
 import { depState, LineBadge } from '@/components/Transit';
 import { liveWords } from '@/lib/liveLabelCore';
+import { detourSummary, routeDetours, type Detour } from '@/lib/notStoppingCore';
 import { T } from '@/components/ui';
 /** Routes opened this session (at most 12): a route's stops barely change within a day. */
 const routeMem = createCapped<any>(12);
@@ -44,6 +45,9 @@ export default function RouteScreen() {
   const [busAt, setBusAt] = useState<number | null>(null);
   const [open, setOpen] = useState<string | null>(p.stop ? String(p.stop) : null);
   const [times, setTimes] = useState<Record<string, BoardItem[] | null>>({});
+  // Stops this route is not stopping at today (bus detours, closed stops), from the service's alerts: asked once per
+  // route open, never polled. A server without /api/detours (or no answer) leaves every stop as it was.
+  const [skips, setSkips] = useState<Map<string, Detour>>(() => new Map());
 
   useEffect(() => {
     let live = true;
@@ -68,6 +72,14 @@ export default function RouteScreen() {
     }).catch((e: any) => { if (live && !had) setErr(e?.http === 404 ? `Route ${line} isn't in the timetable data.` : e?.message || `Can't load route ${line}.`); });
     return () => { live = false; };
   }, [line, mode, p.stop, p.towards]);
+
+  useEffect(() => {
+    let live = true;
+    setSkips(new Map());
+    if (mode !== 'bus' && mode !== 'coach') return;
+    api.detours(line, mode).then((raw) => { if (live) setSkips(routeDetours(raw)); }).catch(() => {});
+    return () => { live = false; };
+  }, [line, mode]);
 
   const dir = dirs?.[di] || null;
   const dirRef = useRef(dir);
@@ -108,6 +120,8 @@ export default function RouteScreen() {
     if (!times[id]) api.departures(id).then((r) => setTimes((t) => ({ ...t, [id]: r.items as BoardItem[] }))).catch(() => setTimes((t) => ({ ...t, [id]: null })));
   };
 
+  const skipLine = useMemo(() => detourSummary(dir?.stops, skips), [dir, skips]);
+  const skipWhy = useMemo(() => { const s = (dir?.stops || []).find((x) => skips.has(String(x.id))); const t = s ? skips.get(String(s.id))?.title : null; return t ? String(t).replace(/[.\s]+$/, '') : null; }, [dir, skips]);
   const mapStops = useMemo(() => (dir?.stops || []).map((s) => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, mine: s.id === p.stop })), [dir, p.stop]);
   const markers = useMemo(() => [...mapStops, ...buses.map((b) => ({ id: 'bus-' + b.tripId, name: `Bus ${line}`, lat: b.lat, lon: b.lon, color: c.text }))], [mapStops, buses, line, c.text]);
   const path = useMemo(() => (dir?.stops || []).filter((s) => s.lat != null && s.lon != null).map((s) => [s.lat!, s.lon!] as [number, number]), [dir]);
@@ -140,6 +154,12 @@ export default function RouteScreen() {
                 {dir.stops.length} stops{busAt ? ` \u00b7 ${buses.length ? `${buses.length} bus${buses.length === 1 ? '' : 'es'} on the way now` : 'No live buses on this direction now'}` : ''}
               </T>
             ) : null}
+            {skipLine ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }} accessibilityLabel={skipWhy ? `${skipLine}. ${skipWhy}` : skipLine}>
+                <Icon name={I.warn} size={13} color={c.orange} />
+                <T kind="sub" style={{ color: c.lateText, fontWeight: '600', flex: 1 }} numberOfLines={2}>{skipLine}</T>
+              </View>
+            ) : null}
             {err ? <T kind="body" tone="text2" style={{ marginTop: 12 }}>{err}</T> : null}
             {!dir && !err ? <T kind="sub" tone="text2" style={{ marginTop: 12 }}>Loading route {line}</T> : null}
           </View>
@@ -152,9 +172,10 @@ export default function RouteScreen() {
               const isOpen = open === s.id;
               const list = isOpen ? lineTimes(times[s.id], line, now) : [];
               const last = i === dir!.stops.length - 1;
+              const skip = skips.has(String(s.id));
               return (
                 <Pressable key={s.id + i} onPress={() => tap(s.id)} accessibilityRole="button"
-                  accessibilityLabel={`${s.name}, stop ${s.id}${nb && !last ? `, next bus ${awayWords(nb.away)}` : ''}`} accessibilityHint={isOpen ? 'Hides the next times' : 'Shows the next times'}
+                  accessibilityLabel={`${s.name}, stop ${s.id}${skip ? ', not stopping today' : ''}${nb && !last ? `, next bus ${awayWords(nb.away)}` : ''}`} accessibilityHint={isOpen ? 'Hides the next times' : 'Shows the next times'}
                   style={({ pressed }) => ({ flexDirection: 'row', minHeight: 52, opacity: pressed ? 0.75 : 1 })}>
                   <View style={{ width: 28, alignItems: 'center' }}>
                     <View style={{ position: 'absolute', top: i === 0 ? 22 : 0, bottom: last ? undefined : 0, height: last ? 22 : undefined, width: 4, backgroundColor: color }} />
@@ -173,6 +194,7 @@ export default function RouteScreen() {
                     <T kind="foot" tone="text2" style={{ marginTop: 2 }}>
                       Stop {s.id}{here.length ? ` \u00b7 Bus at this stop${here[0].delayMin ? `, ${here[0].delayMin} min late` : ''}` : nb && !last ? ` \u00b7 Next bus ${awayWords(nb.away).toLowerCase()}` : ''}
                     </T>
+                    {skip ? <T kind="caption" style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }}>Not stopping today</T> : null}
                     {mine ? <T kind="caption" tone="tint" style={{ fontWeight: '700', marginTop: 2 }}>YOUR STOP</T> : null}
                     {isOpen ? (
                       <View style={{ marginTop: 8, gap: 6 }}>

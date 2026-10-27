@@ -46,6 +46,7 @@ import type { SvcRow } from '@/lib/speedCore';
 import { KeptBanner, LineBadge, OccupancyChip, StatusLine } from '@/components/Transit';
 import { LimitedTag } from '@/components/LimitedTag';
 import { liveState } from '@/lib/liveLabelCore';
+import { notStoppingText, notStoppingWhy } from '@/lib/notStoppingCore';
 import { arrOf, ServiceRow, TightLabel, tripCacheId, tripPkey, WarnLine } from '@/components/Home';
 import { cacheKey } from '@/lib/offlineCore';
 import { firstLeaveInMs, tripGapMs } from '@/lib/pollCore';
@@ -114,6 +115,9 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
   const bus = busLegStatus(l);
   // A Live Traffic incident on the route first; else the live delays ahead say the bus is slowing (busLiveCore.ts).
   const traffic = trafficLine(l) || rowTraffic(l);
+  // A bus detour or closed stop where you get on or off, from the service's alerts (notStoppingCore.ts).
+  const noStop = notStoppingText(l, now);
+  const noStopWhy = noStop ? notStoppingWhy(l) : null;
   return (
     <Pressable accessibilityRole="button" {...withWhyAction({}, why)}
       onPress={() => openService(legRow(l))} onPressIn={() => pressService(legRow(l))}
@@ -133,6 +137,12 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
           </View>
         </View>
         {l.platformChangedFrom ? <T kind="foot" style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }}>Platform changed from {l.platformChangedFrom}</T> : null}
+        {noStop ? (
+          <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }} accessibilityLabel={noStopWhy ? `${noStop}. ${noStopWhy}` : noStop}>
+            <Icon name={I.warn} size={13} color={c.orange} />
+            <T kind="foot" style={{ color: c.lateText, fontWeight: '600', flex: 1 }} numberOfLines={2}>{noStop}</T>
+          </View>
+        ) : null}
         <View style={[st.ride, { backgroundColor: c.bg }]}>
           <LineBadge line={l.line} mode={l.mode} color={l.color} />
           <View style={{ flex: 1, minWidth: 0, marginLeft: 8, marginRight: 8 }}>
