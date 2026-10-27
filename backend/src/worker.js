@@ -1227,10 +1227,51 @@ async function addTraffic(env, d, hazardsFn = trafficHazards) {
 const LONG_TRIP_TIMEOUT_MS = 35000;
 const LONG_TRIP_CACHE_S = 120;
 function longTripCacheKey(p) {
-  const keep = ["from", "to", "time", "date", "modes", "arriveBy", "count", "acc", "fare"];
+  const keep = ["from", "to", "time", "date", "modes", "arriveBy", "count", "acc", "fare", "maxWalk", "lessWalk"];
   const u = new URL("https://cache.internal/long-trip");
   for (const k of keep) { const v = p.get(k); if (v) u.searchParams.set(k, v); }
   return u.toString();
+}
+
+// Max walk chips on the trip screen (28 Oct): maxWalk (5, 10, 15 or 20, the longest walk in minutes) and lessWalk=1
+// (prefer a bus over a long walk), sent by the app since update 27efc6bd (26 Oct) and ignored until now. The Trip
+// Planner (EFA) takes them as its own options: itOptionsActive=1 with trITMOT=100 (footpath) and trITMOTvalue100 = the
+// longest walk to the first stop and from the last stop, and ptOptionsActive=1 with routeType=leastwalking (journeys
+// with the fewest footpaths). The phone still filters every journey by its longest walk (walkPrefCore.ts). No new
+// planner call: the same one call carries them; only a refused or empty answer to them is asked once more without them
+// (walk.dropped). WALK_PLANNER=off sends them no more (and drops the echo). Requests without them are unchanged.
+const TRIP_WALK_MAX = [5, 10, 15, 20];
+function tripWalkParse(p, env) {
+  if (env && String(env.WALK_PLANNER || "").toLowerCase() === "off") return null;
+  const n = Number(p.get("maxWalk"));
+  const max = TRIP_WALK_MAX.includes(n) ? n : 0;
+  const less = p.get("lessWalk") === "1";
+  return max || less ? { max, less } : null;
+}
+function tripWalkParams(w) {
+  const o = {};
+  if (!w) return o;
+  if (w.max) Object.assign(o, { itOptionsActive: "1", trITMOT: "100", trITMOTvalue100: String(w.max) });
+  if (w.less) Object.assign(o, { ptOptionsActive: "1", routeType: "leastwalking" });
+  return o;
+}
+/** "w10l" for maxWalk=10 with lessWalk, "" without: the walking part of a cache or copy key. */
+function tripWalkTag(w) {
+  return w ? "w" + (w.max || 0) + (w.less ? "l" : "") : "";
+}
+// The planner refused the walking options themselves (a 4xx that is not its limit or quota): ask without them.
+function tripWalkRefused(e) {
+  const m = String((e && e.message) || e || "");
+  return /Transport data answered 4\d\d\b/.test(m) && !/Transport data answered (403|408|429)\b/.test(m);
+}
+/** One planner call with the walking options; a refusal of them or an answer with no journey asks once without. */
+async function tripWalkCall(call, walk, onDrop) {
+  if (!walk) return call(null);
+  let data;
+  try { data = await call(walk); } catch (e) { if (!tripWalkRefused(e)) throw e; onDrop(); return call(null); }
+  if (data && Array.isArray(data.journeys) && data.journeys.length) return data;
+  onDrop();
+  return call(null);
 }
 
 // Mode chips on the trip screen (modes=bus,train): which planner product classes to keep, the rest left out
@@ -1284,7 +1325,7 @@ const tripWinMem = new Map(); // key -> { at, text }
 const TRIP_WIN_MEM_MAX = 80;
 function tripWinKey(fromId, toId, date, time, o) {
   const u = new URL("https://cache.internal/trip-win");
-  const v = { f: fromId, t: toId, d: date, h: time, a: o.arriveBy ? "1" : "", n: String(o.count || 5), acc: o.accessible ? "1" : "", x: o.exclude ? JSON.stringify(o.exclude) : "", l: o.long ? "1" : "" };
+  const v = { f: fromId, t: toId, d: date, h: time, a: o.arriveBy ? "1" : "", n: String(o.count || 5), acc: o.accessible ? "1" : "", x: o.exclude ? JSON.stringify(o.exclude) : "", l: o.long ? "1" : "", w: tripWalkTag(o.walk) };
   for (const k of Object.keys(v)) if (v[k]) u.searchParams.set(k, v[k]);
   return u.toString();
 }
@@ -1474,7 +1515,8 @@ async function trip(env, fromId, toId, opts = {}) {
     if (toMin(opts.time) < toMin(time) - 30) { date = sydneyParts(new Date(Date.now() + 86400000)).date; tomorrow = true; }
     time = opts.time;
   }
-  const tpCall = () => tp(env, "trip", {
+  let walkDropped = false;
+  const tpCall = (walk = null) => tp(env, "trip", {
     depArrMacro: opts.arriveBy ? "arr" : "dep", itdDate: date, itdTime: time,
     type_origin: opts.fromType || (isCoordId(fromId) ? "coord" : "any"), name_origin: fromId,
     type_destination: opts.toType || (isCoordId(toId) ? "coord" : "any"), name_destination: toId,
@@ -1484,6 +1526,8 @@ async function trip(env, fromId, toId, opts = {}) {
     ...(opts.accessible ? { wheelchair: "on" } : {}),
     // Plan B: leave out the means of transport that is disrupted (exclMOT_n, Trip Planner manual).
     ...(opts.exclude || {}),
+    // Max walk chips (tripWalkParse): the planner's own walking options.
+    ...tripWalkParams(walk),
   }, opts.long ? LONG_TRIP_TIMEOUT_MS : 12000);
   let data;
   // Our own planner (raptor.js, OWN_PLANNER): answered from our timetable, so no Transport for NSW call; the legs go
@@ -1502,7 +1546,7 @@ async function trip(env, fromId, toId, opts = {}) {
     if (tt) return { ...tt, fallback: "planner-slow", tomorrow };
     throw Object.assign(new Error("No timetable trips to stand in"), { tripsUnavailable: true });
   }
-  else try { data = await tpCall(); }
+  else try { data = await tripWalkCall(tpCall, opts.walk || null, () => { walkDropped = true; }); }
   catch (e) {
     // Outage fallback (ttplan.js): the Trip Planner refused, failed or timed out, so trips from our own timetable,
     // labelled. Background checks (push alerts, morning check, rescue) pass timetable: false and keep the error.
@@ -1571,7 +1615,9 @@ async function trip(env, fromId, toId, opts = {}) {
   const now = Date.now();
   const list = out.filter((j) => ms(j.board) >= now - 60000 || opts.time || opts.ownJourneys);
   for (const j of list) j.beaten = list.some((o) => o !== j && ms(o.leave) > ms(j.leave) && ms(o.arrive) < ms(j.arrive));
-  return { journeys: list, tomorrow, live: { feedAt: rt.fetchedAt() }, now };
+  // The walking choice the planner was asked with (an older app sends none, so it sees no walk).
+  const walkEcho = opts.walk && !own && !kept ? { walk: { max: opts.walk.max, less: opts.walk.less, dropped: walkDropped } } : {};
+  return { journeys: list, tomorrow, live: { feedAt: rt.fetchedAt() }, now, ...walkEcho };
 }
 
 // ---- opal fares start
@@ -7963,7 +8009,7 @@ async function handleRequest(request, env, exec) {
           // Lift aware: ask for a few more trips so one that avoids a lift outage can be found.
           const modes = tripModesParse(p.get("modes"));
           const day = tripDate(p.get("date"));
-          const tbase = { time: p.get("time") || null, date: day, arriveBy: p.get("arriveBy") === "1", count: liftAware ? Math.min(8, want + 3) : want, accessible: acc, long, exclude: tripModesExclude(modes) };
+          const tbase = { time: p.get("time") || null, date: day, arriveBy: p.get("arriveBy") === "1", count: liftAware ? Math.min(8, want + 3) : want, accessible: acc, long, exclude: tripModesExclude(modes), walk: tripWalkParse(p, env) };
           const ttOnly = TT_ONLY.has(request);
           if (ttOnly) tbase.ttOnly = true;
           // A page of the trip list's endless scroll (tripPage): more trips per answer, cursors for the next pages.
@@ -8600,8 +8646,12 @@ function tripCopyKey(url) {
   if (page && (p.get("day") || p.get("n"))) return null;
   const from = p.get("from") || "", to = p.get("to") || "";
   if (!/^[A-Za-z0-9_-]{3,20}$/.test(from) || !/^[A-Za-z0-9_-]{3,20}$/.test(to) || from === to) return null;
-  if (page) return { k: "tripp:" + from + ">" + to, stop: "trip", page: true, plain: "trip:" + from + ">" + to };
-  return { k: "trip:" + from + ">" + to, stop: "trip" };
+  // Max walk chips (tripWalkParse): a trip asked with a walking choice has its own copy, never the plain one.
+  const wn = Number(p.get("maxWalk")), wl = p.get("lessWalk") === "1";
+  const w = tripWalkTag(TRIP_WALK_MAX.includes(wn) || wl ? { max: TRIP_WALK_MAX.includes(wn) ? wn : 0, less: wl } : null);
+  const ws = w ? "~" + w : "";
+  if (page) return { k: "tripp:" + from + ">" + to + ws, stop: "trip", page: true, plain: "trip:" + from + ">" + to + ws };
+  return { k: "trip:" + from + ">" + to + ws, stop: "trip" };
 }
 // A saved plain trip copy (Home's commute card, the pre-warm) as a first page: the same journeys, from the first to
 // leave, with the page cursors worked out the way tripPage does, so the trip list's first open has live trips at once
