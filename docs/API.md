@@ -737,7 +737,7 @@ Stored as one row in `meta` (`k = "ta:<device>"`, the trips plus the alert ids a
 * **Saved copies (D1 `board_copies`).** Boards and trips up to 15 min old, car parks up to 30 min old, served at once to a first open with `dataAt` and `x-edge-cache: saved`; departed services and trips are taken out on the way out; never a timetable stand in, an error or an empty answer.
 * **Pre-warm (`prewarm`, minute tick).** Trip pairs from the trip history and boards and car parks opened in the last 7 days are fetched again when their saved copy is 4 min old (car parks 20 min), only from 30 min before to the end of each hour of the day they were asked for on at least 2 different days (the hours either side count), or of any hour they were asked in when they were asked on 3 or more days in all, never 1 AM to 4:30 AM. At most 3 fetches a minute and 1,200 Transport for NSW calls a day (meta row `prewarm_day`). The opens history is one meta row (`prewarm_hist`, at most 300 keys, 7 days). `PREWARM=off` turns it off. Each tick's numbers are in the tick output under `prewarm`.
 
-## Tight change in `transfer.risk` (27 Oct 2026, on main, deploy follows)
+## Tight change in `transfer.risk` (27 Oct 2026, deployed 1:45 PM as transport-api 3bf49b2f)
 
 Each change in a trip answer (`/api/trip` legs, timetable trips when the Trip Planner refuses, `/api/raptor`, your own trips with a change you set) carries `transfer: { minutes, walkMin, spare, at, risk }` on the leg you change onto, and the journey carries `risk`, the worst of its changes. The shape and the three words are unchanged for builds 201 to 208.
 
