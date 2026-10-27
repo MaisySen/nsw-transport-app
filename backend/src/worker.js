@@ -8586,12 +8586,36 @@ function boardKey(url) {
 // board (board_copies, key "trip:FROM>TO") and a first open gets it at once with its age while the fresh one loads.
 // Only plain trips from now (no time, day, arrive by, step free, modes or long trips); never a timetable answer; never
 // warmed by the minute tick; served only while at least 2 of its trips are still to leave.
+// The trip list's first page from now (page=1 with no cursor, no chosen day and no n; 27 Oct speed pass 3) is a plain
+// trip too: it gets the same quick wait and stand in, and its own saved copy ("tripp:FROM>TO", the page shape with its
+// cursors). Without it every first open of the newer app's trip list waited for the whole planner call (8 to 12.5 s on
+// 27 Oct, 2:35 PM, Central to Strathfield). Later and earlier pages (after, before) are never copies.
 function tripCopyKey(url) {
   const p = url.searchParams;
-  for (const k of ["time", "date", "arriveBy", "acc", "modes", "long", "via", "page", "after", "before"]) if (p.get(k)) return null;
+  const page = p.get("page") === "1";
+  for (const k of ["time", "date", "arriveBy", "acc", "modes", "long", "via", "after", "before"]) if (p.get(k)) return null;
+  if (p.get("page") && !page) return null;
+  if (page && (p.get("day") || p.get("n"))) return null;
   const from = p.get("from") || "", to = p.get("to") || "";
   if (!/^[A-Za-z0-9_-]{3,20}$/.test(from) || !/^[A-Za-z0-9_-]{3,20}$/.test(to) || from === to) return null;
+  if (page) return { k: "tripp:" + from + ">" + to, stop: "trip", page: true, plain: "trip:" + from + ">" + to };
   return { k: "trip:" + from + ">" + to, stop: "trip" };
+}
+// A saved plain trip copy (Home's commute card, the pre-warm) as a first page: the same journeys, from the first to
+// leave, with the page cursors worked out the way tripPage does, so the trip list's first open has live trips at once
+// and pages on from them. Null when it is not a usable trip copy.
+function tripPageFromPlain(body, now = Date.now()) {
+  try {
+    const d = JSON.parse(body);
+    if (!d || d.source === "timetable" || !Array.isArray(d.journeys) || d.page) return null;
+    d.journeys = d.journeys.filter((j) => ms(j.board || j.leave) >= now - 60000).sort((a, b) => tripPlannedDep(a) - tripPlannedDep(b));
+    if (d.journeys.length < 2) return null;
+    const deps = d.journeys.map(tripPlannedDep).filter(Number.isFinite);
+    const arrs = d.journeys.map(tripPlannedArr).filter(Number.isFinite);
+    if (!deps.length) return null;
+    d.page = { dir: "first", n: TRIP_PAGE_N, next: Math.max(...deps), prev: Math.min(...deps), prevArr: arrs.length ? Math.min(...arrs) : null, end: false };
+    return JSON.stringify(d);
+  } catch (e) { return null; }
 }
 function tripCopyOk(body) {
   try {
@@ -8646,7 +8670,15 @@ async function boardSaved(env, bk) {
   const d = await boardDb(env).catch(() => null);
   if (!d || !bk) return null;
   const r = await d.prepare("SELECT at, body FROM board_copies WHERE k = ?1").bind(bk.k).first().catch(() => null);
-  if (!r || !r.body || !(Date.now() - r.at <= (bk.stop === "park" ? PARK_SAVED_MAX_MS : SAVED_MAX_MS))) return null;
+  if (!r || !r.body || !(Date.now() - r.at <= (bk.stop === "park" ? PARK_SAVED_MAX_MS : SAVED_MAX_MS))) {
+    // A first page with no page copy of its own: the pair's plain copy, as a page (tripPageFromPlain).
+    if (bk.page && bk.plain) {
+      const plain = await boardSaved(env, { k: bk.plain, stop: "trip" }).catch(() => null);
+      const text = plain ? tripPageFromPlain(plain.body) : null;
+      return text ? { at: plain.at, body: text } : null;
+    }
+    return null;
+  }
   const body = await gunzipText(r.body);
   if (bk.stop === "trip" && !tripCopyOk(body)) return null;
   if (bk.stop === "park" && !parkCopyOk(body)) return null;
@@ -8814,7 +8846,7 @@ async function prewarm(env, exec, use, sn) {
   if (sn.tod % 10 === 1 || !hist.boot) {
     const since = hist.boot ? Math.max(Number(hist.read) || 0, now - 15 * 60000) : now - PREWARM_DAYS * 86400000;
     const rows = (await d.prepare("SELECT k, opened FROM board_copies WHERE opened > ?1").bind(since).all().catch(() => ({ results: [] }))).results || [];
-    for (const r of rows) if (!String(r.k).startsWith("trip:")) prewarmAdd(hist.keys, String(r.k), sydDay(Number(r.opened)), String(sydHour(Number(r.opened))));
+    for (const r of rows) if (!String(r.k).startsWith("trip:") && !String(r.k).startsWith("tripp:")) prewarmAdd(hist.keys, String(r.k), sydDay(Number(r.opened)), String(sydHour(Number(r.opened))));
     hist.read = now; hist.boot = 1;
     prewarmPrune(hist.keys, sn.day);
     await metaPut(d, "prewarm_hist", hist);
