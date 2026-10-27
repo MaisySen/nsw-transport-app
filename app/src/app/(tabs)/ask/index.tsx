@@ -285,7 +285,8 @@ export default function AskScreen() {
     usual: (myTrips || []).map((t) => ({ from: t.from, to: t.to, mode: t.legs?.[0]?.mode || t.modes?.[0] })), hasLocation,
   }), [places, starred, recentTrips, myTrips]);
   // Station and suburb names, kept on the phone after the first time (no wait: Ask works before they arrive).
-  useEffect(() => { askPlaces().catch(() => null); }, []);
+  // Read when Ask is opened, not at launch (the native tabs mount every tab at start; 27 Oct speed pass 5).
+  useFocusEffect(useCallback(() => { askPlaces().catch(() => null); }, []));
   // Chips come from your own trips only: usual and recent trips, home and work, starred stops.
   const starters = chipsFor(brainCtx(now, false), sydney(now).h);
 

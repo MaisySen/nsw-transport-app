@@ -1,7 +1,8 @@
 // Search as you type, the phone side: builds the local stop index (localSearchCore.ts) from the station lists Ask
 // keeps (askPlaces.ts) and the bus and coach stop list (/stations/bus-stops.json, read once, kept 14 days in parts).
 // Nothing here blocks: a screen gets whatever index is ready now and is told when a fuller one is built.
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { askListsNow, askPlaces } from './askPlaces';
 import { NEW_API_BASE } from './server';
@@ -84,8 +85,11 @@ export function useLocalIndex(): LocalIndex | null {
   useEffect(() => {
     subs.add(setI);
     if (idx !== i) setI(idx);
-    warmLocalSearch();
     return () => { subs.delete(setI); };
   }, []);
+  // The lists are read when the screen is opened, not when it mounts (27 Oct speed pass 5): the native tabs mount Plan
+  // at launch, so reading here at mount ran the whole build (about 1.4 MB of bus stops parsed and indexed, about 100 ms
+  // on the build server, more on a phone) right after Home's first frame instead of with the 6 s warm in _layout.
+  useFocusEffect(useCallback(() => { warmLocalSearch(); }, []));
   return i;
 }

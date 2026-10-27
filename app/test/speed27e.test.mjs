@@ -1,7 +1,7 @@
 // Speed pass 5, app (27 Oct 2026): less work before the first frame and fewer redraws per clock tick. The local search
 // index and the Ask gazetteer leave the modules read before Home draws; tabs that were never opened stop ticking; the
 // service screen, the live trip screen and watches tick only their time text; trip list rows redraw only when what they
-// show changes; two more rows start the next screen's read on press in. Screen wiring is checked in the source.
+// show changes; Plan and Ask read the stop lists when opened, not at launch; two more rows start the next screen's read on press in. Screen wiring is checked in the source.
 // Run: TZ=Australia/Sydney OFFLINE=1 node --test test/speed27e.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -48,6 +48,17 @@ test('cold start: the local search index and the Ask gazetteer are not evaluated
   assert.ok(!/import\s*\{[^}]*warmLocalSearch[^}]*\}\s*from/.test(layout), 'no top level import of warmLocalSearch');
   assert.match(layout, /require\('\.\.\/lib\/localSearch'\)[^;]*\.warmLocalSearch\(\)/);
   assert.match(layout, /STARTUP_DEFER_MS \* 4/, 'still warmed well after the first screen has its times');
+});
+
+test('the Plan and Ask tabs read the stop lists when opened, not when the native tabs mount them at launch', () => {
+  const ls = read('src/lib/localSearch.ts');
+  const hook = ls.slice(ls.indexOf('export function useLocalIndex('));
+  assert.match(hook, /useFocusEffect\(useCallback\(\(\) => \{ warmLocalSearch\(\); \}, \[\]\)\);/);
+  const effect = hook.slice(hook.indexOf('useEffect('), hook.indexOf('useFocusEffect('));
+  assert.ok(!effect.includes('warmLocalSearch'), 'mounting alone no longer reads and indexes the lists');
+  const ask = read('src/app/(tabs)/ask/index.tsx');
+  assert.match(ask, /useFocusEffect\(useCallback\(\(\) => \{ askPlaces\(\)\.catch\(\(\) => null\); \}, \[\]\)\);/);
+  assert.ok(!/useEffect\(\(\) => \{ askPlaces\(\)/.test(ask));
 });
 
 test('clocks: a screen that was never focused does not tick (native tabs mount every tab at start)', () => {
