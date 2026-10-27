@@ -92,6 +92,8 @@ Deploy log: 25 Oct 2026, 11:47 PM, from main 7239ff3 (service view stop lists su
 
 Deploy log: 25 Oct 2026, 10:16 PM, from main 7f1925c (bus rows carry `ahead`, the live delays ahead of the bus), Worker version 0c748a01-d066-4de2-881d-07283cc761c3, replacing 60316eaa-5d30-4617-bb21-db7503d83afe. Steps of `tools/deploy-cloudflare.sh` run by hand: schema check, all tests, dash check, build, render, `d1 migrations list` (none to apply, none run), `wrangler deploy`. Checks above all passed.
 
+Deploy log: 28 Oct 2026, 7:26 AM, from main b80af71 (board engine, Sydney Metro from its own feed), Worker version bb061632-f222-47cd-ade6-f69e2b596b46, replacing f803bd1f-81f3-4d32-8467-7b6558bd0eb2. Steps of `tools/deploy-cloudflare.sh` run by hand: schema check, all tests (564 of 564), dash check, build, render, `d1 migrations list` (none to apply, none run), `wrangler deploy`. `tools/verify-deploy.mjs` all 12 ok. Later deploys are in [RELEASES.md](RELEASES.md).
+
 **APK download (optional).** R2 must be turned on in the account first (R2, Purchase R2 Plan; the free allowance covers this).
 
 ```bash
