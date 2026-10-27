@@ -67,8 +67,14 @@ test("which alerts count: detours, stop moved and no service with stops; changed
     item({ id: "plain", e: "modified", h: "Timetable changes from Monday", l: ["X91"], s: [A] }),
     item({ id: "late", e: "delays", h: "Allow extra travel time", l: ["X91"], s: [A] }),
     item({ id: "line", e: "detour", l: ["X91"], s: [] }),
+    // Shapes seen in the live digest on 28 Oct (fake ids): stop closures filed as reduced or changed service.
+    item({ id: "closure", e: "reduced", h: "Main St after Park Pl temporary bus stop closure", l: ["X91"], s: [A], ls: [["X91", A]] }),
+    item({ id: "closures", e: "modified", h: "High St, permanent bus stop closures", l: ["N91"], s: [B], ls: [["N91", B]] }),
+    item({ id: "fewer", e: "reduced", h: "Fewer services on Sunday", l: ["X91"], s: [A] }),
+    item({ id: "changes", e: "modified", h: "Bus service changes", l: ["X91"], s: [A] }),
+    item({ id: "train", e: "modified", h: "31st October 2026 inclusive- XPT service", s: [A, B] }),
   ]);
-  assert.deepEqual(list.map((x) => x.id), ["d", "m", "n", "w"]);
+  assert.deepEqual(list.map((x) => x.id), ["d", "m", "n", "w", "closure", "closures"]);
 });
 
 test("matching: line and stop, stop only alerts for every bus, pairs as given, and only while a period covers the time", () => {

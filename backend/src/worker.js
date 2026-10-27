@@ -4570,7 +4570,8 @@ async function alertDigest(env) {
 // Trains already show "Not stopping" from the realtime feed (a skipped stop). Buses get it from the service alerts
 // digest above, which the minute tick already reads, so nothing here calls Transport for NSW and nothing here makes
 // a digest (notStopDigest only reads the kept row). An alert counts when it names stops and is a detour, a stop
-// moved or no service, or changed service whose words say a stop is not served (NOT_STOP_WORDS). Matching is the
+// moved or no service, or changed or reduced service whose words say a stop is not served (NOT_STOP_WORDS: on 28 Oct
+// the live digest's stop closures were filed as "reduced" or "modified", with "bus stop closure(s)" in the header). Matching is the
 // trip alerts rule (tripalerts.js taHits): an alert naming lines counts for those lines at the stops it lists; one
 // naming no line counts for every bus at its stops. Where an alert names a route and a stop in one entity (ls), the
 // pair is matched as given. Only while one of the alert's periods covers the bus's time. Optional fields only, so
@@ -4580,13 +4581,13 @@ async function alertDigest(env) {
 //   GET /api/detours?line=&mode=bus   { line, at, items: [{ id, title, url, stops: [stop ids], until }] } (new)
 // Server switch notStopping (on unless the server config sets it false). A digest older than ALERT_STALE_MS is not used.
 const NOT_STOP_EFFECTS = new Set(["detour", "stopMoved", "none"]);
-const NOT_STOP_WORDS = /\b(will not (stop|service|serve)|won'?t (stop|service|serve)|not (stopping|servicing|serving)|bypass(es|ing)?|stops? (is |are |will be )?(temporarily )?(closed|moved|relocated|out of use)|diver(ted|sion)|detour(ed|s)?)\b/i;
+const NOT_STOP_WORDS = /\b(will not (stop|service|serve)|won'?t (stop|service|serve)|not (stopping|servicing|serving)|bypass(es|ing)?|missed stops?|stops? (is |are |will be )?(temporarily |permanently )?(closed|moved|relocated|out of use)|stops? closures?|temporary (bus )?stops?|diver(ted|sions?)|detour(ed|s)?)\b/i;
 const NOT_STOP_MODES = new Set(["bus", "coach"]);
 const NOT_STOP_MEM_MS = 300000;
 /** The digest items that can say a bus is not stopping somewhere. Pure. */
 function notStopAlerts(items) {
   return (items || []).filter((it) => it && Array.isArray(it.s) && it.s.length
-    && (NOT_STOP_EFFECTS.has(it.e) || (it.e === "modified" && NOT_STOP_WORDS.test(it.h || ""))));
+    && (NOT_STOP_EFFECTS.has(it.e) || ((it.e === "modified" || it.e === "reduced") && NOT_STOP_WORDS.test(it.h || ""))));
 }
 function notStopActive(periods, t) {
   if (!Number.isFinite(t)) return false;

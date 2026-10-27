@@ -22,7 +22,7 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 ### `backend/test/not-stopping.test.mjs`: 9 tests, 9 pass (28 Oct, not stopping today, server)
 * Digest keeps a route and stop named in one entity as a pair (`ls`); alerts without such entities keep their old shape.
-* Which alerts count (detour, stop moved, no service; changed service only with not-stopping words; delays and line-only alerts never).
+* Which alerts count (detour, stop moved, no service; changed or reduced service only with not-stopping words, including the stop closure shapes seen in the live digest on 28 Oct; delays, plain service changes, line-only alerts and stop-only rail notices never).
 * Matching: line and stop, stop-only alerts for every bus, pairs as given, a G prefix ignored, only inside a period.
 * Departures: bus and coach rows marked with the board's stop name, trains and other lines untouched, an old mark on a kept copy cleared. Trip legs: get-on stop first, else get-off stop.
 * Reads only the kept digest: no digest, a digest over 2 hours old, or the switch off marks nothing; no outside request.
