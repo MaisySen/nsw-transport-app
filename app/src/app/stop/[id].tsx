@@ -11,6 +11,7 @@ import { bestTime } from '@/lib/format';
 import { useScreenPoll } from '@/lib/activity';
 import { cacheKey } from '@/lib/offlineCore';
 import { packWanted } from '@/lib/timetablePack';
+import { boardAtAgainMs, isSlowStandIn } from '@/lib/coldOpenCore';
 import { usePalette, radius } from '@/lib/theme';
 import { clock, shortName } from '@/lib/format';
 import { boardAsk, boardKey, byRoute, keepRoute, modesServed } from '@/lib/stopBoardCore';
@@ -71,7 +72,10 @@ export default function StopScreen() {
   const pushLive = useRef(false);
   const { data, error, updatedAt, offlineAt, staleAt, packAt, refreshing, refresh, pushed } = useLive((r) => (at != null ? departuresAt(String(id), at) : ask ? departuresFor(String(id), ask, r) : api.departures(String(id), r)),
     // Adaptive: every 15 s while the next service is 10 minutes away or less, slower when it is further off.
-    (d) => pollGapWithPush(adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), pushLive.current), [id, at, ask], { cacheKey: at == null ? cacheKey('dep', boardKey(String(id), ask)) : undefined, pack: at == null && id ? { stop: String(id), mode: ask } : null });
+    (d) => pollGapWithPush(adaptiveGapMs(15000, nextInMs(d?.items, Date.now())), pushLive.current), [id, at, ask], { cacheKey: at == null ? cacheKey('dep', boardKey(String(id), ask)) : undefined, pack: id ? (at == null ? { stop: String(id), mode: ask } : { stop: String(id), mode: null, at }) : null,
+      // A board at another time (27 Oct speed pass 4): the server answers with timetable rows when the Trip Planner is
+      // slow (isSlowStandIn) and keeps the planner's board for the ask again at 6 s, then 10 s.
+      again: at != null ? boardAtAgainMs : null });
   pushLive.current = useBoardPush(at == null && id ? String(id) : null, at == null && typeof ask === 'string' ? ask : null, pushed).live;
   // A stop opened is a recent stop: it gets its own pack (once a day) a moment after the screen has its times.
   useEffect(() => { if (!id) return; const t = setTimeout(() => packWanted(String(id)), 4000); return () => clearTimeout(t); }, [id]);
@@ -192,7 +196,7 @@ export default function StopScreen() {
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pull} />}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 4 }}>
           {/* The stamp wraps to a second line rather than pushing Speak and Board off the screen. */}
-          <View style={{ flex: 1, marginRight: 8 }}><LiveStamp updatedAt={updatedAt} error={error} offlineAt={offlineAt} staleAt={staleAt} packAt={packAt} /></View>
+          <View style={{ flex: 1, marginRight: 8 }}><LiveStamp updatedAt={isSlowStandIn(data) ? null : updatedAt} error={error} offlineAt={offlineAt} staleAt={staleAt} packAt={packAt ?? (isSlowStandIn(data) ? updatedAt : null)} /></View>
           {canSpeak && at == null ? (
             <Pressable onPress={() => { haptic.select(); speak(departuresSentence(itemsRef.current, Date.now(), { stop: stopName }), { interrupt: true }); }} hitSlop={8}
               accessibilityRole="button" accessibilityLabel="Speak departures" accessibilityHint="Reads the next two services out loud"

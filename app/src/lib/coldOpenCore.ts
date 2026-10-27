@@ -131,3 +131,14 @@ export function commutePlanOf<P extends { id: string }>(places: { home?: P | nul
   if (!h || !w || !h.id || !w.id || h.id === w.id) return null;
   return dir === 'toWork' ? { from: h, to: w } : { from: w, to: h };
 }
+
+/**
+ * A board at another time on timetable rows (27 Oct speed pass 4): api.transportsydney.app answers with the timetable
+ * for that moment when the Trip Planner has not answered within a moment (source "timetable", fallback "planner-slow")
+ * and keeps the planner's board when it lands. The stop screen asks again after 6 s, then 10 s; after that, the normal
+ * gap. Null for any other answer.
+ */
+export function boardAtAgainMs(d: unknown, asked: number): number | null {
+  if (!isSlowStandIn(d) || asked < 0 || asked >= STAND_IN_REASK_MS.length) return null;
+  return STAND_IN_REASK_MS[asked];
+}

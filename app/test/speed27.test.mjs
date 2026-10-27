@@ -170,9 +170,10 @@ test('rows that open a service start its read on press in; the screen joins it (
 test('the service screen paints the seed and says it is still loading, never "Finding the vehicle" with a row in hand', () => {
   const s = read('src/app/service.tsx');
   assert.match(s, /seed \}\);/);
-  assert.match(s, /serviceSeed\(p, Date\.now\(\)\)/);
+  assert.match(s, /serviceSeed\(p, Date\.now\(\)(, keptRoute\(p\.line, p\.mode\))?\)/);
   assert.match(s, /\{!data && !error \? <T kind="sub" tone="text2">Finding the vehicle<\/T> : null\}/);
-  assert.match(s, /seeded && !error \? <T[^>]*>Loading every stop<\/T>/);
+  // 27 Oct speed pass 4: with the stops after yours from the kept route on screen, it says live times are coming.
+  assert.match(s, /seeded && !error \? <T[^>]*>\{stops\.length > 2 \? 'Getting live times' : 'Loading every stop'\}<\/T>/);
   assert.match(s, /data && !seeded && !data\.vehicle/, 'no "No GPS position yet" before the server has answered');
   assert.match(read('src/components/Cards.tsx'), /stopName: d\.stopName \|\| data\?\.stop\?\.name \|\| stop\.name/);
 });

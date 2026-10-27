@@ -10,7 +10,7 @@ import { holdPark } from '@/lib/prefetch';
 import { LiveStamp } from '@/components/Transit';
 import { radius, usePalette } from '@/lib/theme';
 import { distText, type CarPark } from '@/lib/access';
-import { sortParks } from '@/lib/carparkCore';
+import { isParkLoading, parkAgainMs, parkLoadingNote, sortParks } from '@/lib/carparkCore';
 import { geoDist } from '@/lib/trips';
 import { myPosition } from '@/lib/where';
 import { ParkCell } from '@/components/Access';
@@ -22,7 +22,10 @@ export default function ParkingScreen() {
   const [me, setMe] = useState<{ lat: number; lon: number } | null>(null);
   useEffect(() => { myPosition(false, true).then(setMe); }, []);
   // The list kept on the phone paints the first frame with its age (27 Oct speed pass); the live answer replaces it.
-  const { data, error, refreshing, refresh, updatedAt, staleAt, offlineAt } = useLive(() => api.parking(), 120000, [], { cacheKey: cacheKey('park', 'all') });
+  // With no copy from the last 30 minutes the server answers at once with its last list while the live counts are read
+  // (fallback counts-loading, 27 Oct speed pass 4); the list asks again a few seconds later (parkAgainMs).
+  const { data, error, refreshing, refresh, updatedAt, staleAt, offlineAt } = useLive(() => api.parking(), 120000, [], { cacheKey: cacheKey('park', 'all'), again: parkAgainMs });
+  const loading = isParkLoading(data);
   const list = useMemo(() => sortParks<CarPark>(data?.carparks, me, geoDist), [data, me]);
 
   return (
@@ -31,6 +34,7 @@ export default function ParkingScreen() {
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
         <T kind="sub" tone="text2" style={{ marginHorizontal: 20, marginTop: 6 }}>{me ? 'Park and Ride, live spaces, closest first' : 'Park and Ride, live spaces, A to Z'}</T>
         {staleAt || offlineAt ? <View style={{ marginHorizontal: 20, marginTop: 4 }}><LiveStamp updatedAt={null} error={error} staleAt={staleAt} offlineAt={offlineAt} /></View> : null}
+        {loading && !staleAt && !offlineAt ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 4 }} accessibilityLiveRegion="polite">{parkLoadingNote(data)}</T> : null}
         {list.length ? (
           <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
             {list.map((p, i) => (

@@ -63,3 +63,22 @@ export function sortParks<T extends ParkLike>(list: T[] | null | undefined, me: 
   const all = (list || []).map((p) => ({ ...p, d: me && Number.isFinite(p.lat) && Number.isFinite(p.lon) ? dist(me.lat, me.lon, p.lat as number, p.lon as number) : undefined }));
   return me ? all.sort((a, b) => (a.d ?? 1e12) - (b.d ?? 1e12) || a.name.localeCompare(b.name)) : all.sort((a, b) => a.name.localeCompare(b.name));
 }
+
+/**
+ * The car park list while its live counts are read (27 Oct speed pass 4): with no copy from the last 30 minutes,
+ * api.transportsydney.app answers at once with the last list it saved (counts over 30 minutes old say No live count)
+ * or the car parks with no counts, marked fallback "counts-loading", and reads the live counts behind it (about 10 s
+ * for some 40 car parks). The list asks again after these waits, then keeps its normal 2 minute gap.
+ */
+export const PARK_AGAIN_MS = [8000, 15000, 30000] as const;
+export const isParkLoading = (d: unknown): boolean => !!d && typeof d === 'object' && (d as any).fallback === 'counts-loading';
+export function parkAgainMs(d: unknown, asked: number): number | null {
+  if (!isParkLoading(d) || asked < 0 || asked >= PARK_AGAIN_MS.length) return null;
+  return PARK_AGAIN_MS[asked];
+}
+/** The line over the list meanwhile: when the shown counts were read, if the server said, and that live ones are coming. */
+export function parkLoadingNote(d: unknown): string {
+  const at = d && typeof d === 'object' ? Number((d as any).dataAt) : NaN;
+  const when = Number.isFinite(at) && at > 0 ? parkClock(at) : '';
+  return when ? `Counts from ${when}. Getting live counts.` : 'Getting live counts.';
+}

@@ -29,19 +29,23 @@ export { useCountdownNow, useNow, useReportCountdowns };
  * the new round asks at once instead of waiting for the old request. `load` gets an AbortSignal that is aborted when
  * its round is over.
  */
-export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Promise<T>, intervalMs: number | ((data: T | null) => number) = 15000, deps: any[] = [], opts: { cacheKey?: string; enabled?: boolean; pack?: { stop: string; mode?: string | null } | null;
+export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Promise<T>, intervalMs: number | ((data: T | null) => number) = 15000, deps: any[] = [], opts: { cacheKey?: string; enabled?: boolean; pack?: { stop: string; mode?: string | null; at?: number | null } | null;
   /** Home cards (coldOpenCore.ts): a failed read keeps what is on screen and asks again quickly, a slow planner stand in is
    * asked again soon for live trips, and only failures in a row show the failure. `pending` and `retrying` say so. */
   quick?: boolean;
   /** What the screen before already showed (speedCore.ts, 27 Oct speed pass): painted on the first frame when the phone
    * has no kept copy and no pack, labelled by staleAt with its age (`at`), replaced by a kept copy read from storage or
    * the live answer. Never kept on the phone. */
-  seed?: { at: number; data: T } | null } = {}) {
+  seed?: { at: number; data: T } | null;
+  /** Ask again soon after this answer (27 Oct speed pass 4): the wait in ms for the `asked`th ask again in a row, or null
+   * for the normal gap. A board at another time on timetable rows while the planner answers, the car park list while
+   * its live counts are read. One run after the wait, then the normal gap; nothing runs off screen. */
+  again?: ((d: T, asked: number) => number | null) | null } = {}) {
   // A copy kept in memory this session shows on the first frame (a screen opened again, Home after a tab change),
   // or the stop's timetable pack when that copy is missing or more than 10 minutes old (firstPaint).
   const first = useRef<{ at: number; data: T; pack: boolean; seed?: boolean } | null | undefined>(undefined);
   if (first.current === undefined) {
-    const f = firstFrame<T>(opts.cacheKey ? peekOffline<T>(opts.cacheKey) : null, opts.pack ? peekPackBoard(opts.pack.stop, opts.pack.mode) : null, opts.seed, Date.now());
+    const f = firstFrame<T>(opts.cacheKey ? peekOffline<T>(opts.cacheKey) : null, opts.pack ? peekPackBoard(opts.pack.stop, opts.pack.mode, opts.pack.at) : null, opts.seed, Date.now());
     first.current = f.kind === 'none' ? null : { at: f.at as number, data: f.data as T, pack: f.kind === 'pack', seed: f.kind === 'seed' };
   }
   const seedRef = useRef(opts.seed);
@@ -84,6 +88,9 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
   const nextQuick = useRef<number | null>(null);
   const plainNext = useRef(false);
   const standAsked = useRef(0);
+  const againRef = useRef(opts.again);
+  againRef.current = opts.again;
+  const againAsked = useRef(0);
   // pending: the first live answer of this opening is still on its way (a request out or a quick ask waiting).
   // retrying: a quick ask again is waiting (Home's header and cards say Updating, never unavailable, meanwhile).
   const [pending, setPending] = useState(true);
@@ -129,7 +136,10 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
       setPackAt(null);
       shown.current = { live: true, at };
       if (key) keepOffline(key, d);
-      const q = sa == null ? quickReaskMs(d, Date.now(), reasked.current) : null;
+      const ag = sa == null && againRef.current ? againRef.current(d, againAsked.current) : null;
+      if (ag != null && Number.isFinite(ag) && ag >= 0) { againAsked.current += 1; setSoon({ key: Date.now() + Math.random(), ms: ag }); }
+      else againAsked.current = 0;
+      const q = sa == null && ag == null ? quickReaskMs(d, Date.now(), reasked.current) : null;
       if (q != null) { reasked.current = true; setSoon({ key: Date.now(), ms: q }); }
       return true;
     } catch (e: any) {
@@ -155,7 +165,7 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
         else if (key || packRef.current) {
           const kept = key ? peekOffline<T>(key) ?? (await readOffline<T>(key)) : null;
           const pk = packRef.current;
-          const pb = pk ? await readPackBoard(pk.stop, pk.mode) : null;
+          const pb = pk ? await readPackBoard(pk.stop, pk.mode, pk.at) : null;
           if (round.current() && !shown.current.live) {
             const f = firstPaint<T>(kept, pb, Date.now());
             if (f.kind === 'pack') paint(f);
@@ -183,7 +193,7 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
     if (mounted.current) {
       // What the screen shows changed: start clean, with this key's copy kept in memory when there is one.
       const pk = packRef.current;
-      const f = firstFrame<T>(key ? peekOffline<T>(key) : null, pk ? peekPackBoard(pk.stop, pk.mode) : null, seedRef.current, Date.now());
+      const f = firstFrame<T>(key ? peekOffline<T>(key) : null, pk ? peekPackBoard(pk.stop, pk.mode, pk.at) : null, seedRef.current, Date.now());
       setData(f.kind === 'none' ? null : (f.data as T));
       setStaleAt(f.kind === 'kept' || f.kind === 'seed' ? f.at : null);
       setPackAt(f.kind === 'pack' ? f.at : null);
@@ -196,6 +206,7 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
     reasked.current = false;
     fails.current = 0;
     standAsked.current = 0;
+    againAsked.current = 0;
     nextQuick.current = null;
     plainNext.current = false;
     setPending(true);
@@ -204,7 +215,7 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
     // A pack on screen still gives way to a copy of the live board from the last 10 minutes.
     const pk = packRef.current;
     if ((key || pk) && (!shown.current.at || shown.current.pack || shown.current.seed)) {
-      Promise.all([key ? readOffline<T>(key) : null, pk ? readPackBoard(pk.stop, pk.mode) : null]).then(([kept, pb]) => {
+      Promise.all([key ? readOffline<T>(key) : null, pk ? readPackBoard(pk.stop, pk.mode, pk.at) : null]).then(([kept, pb]) => {
         if (gen !== L.gen() || shown.current.live) return;
         const f = firstPaint<T>(kept, pb, Date.now());
         // A seed (what the screen before showed) gives way to a full kept copy, never to a pack.

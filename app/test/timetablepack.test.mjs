@@ -129,10 +129,11 @@ test('labels say timetable times, never live, and say when live times could not 
   assert.ok(!/live,|updated/i.test(P.packStampText(false)));
 });
 
-test('wired in: stop screen (Now only), Home stop cards and the full screen board paint packs; the live answer replaces them', () => {
+test('wired in: stop screen (Now, and a picked time the pack holds), Home stop cards and the full screen board paint packs; the live answer replaces them', () => {
   const stop = read('src/app/stop/[id].tsx');
-  assert.match(stop, /pack: at == null && id \? \{ stop: String\(id\), mode: ask \} : null/);
-  assert.match(stop, /packAt=\{packAt\}/);
+  // 27 Oct speed pass 4: a picked time paints from the pack too (all modes, from that moment; packCovers).
+  assert.match(stop, /pack: id \? \(at == null \? \{ stop: String\(id\), mode: ask \} : \{ stop: String\(id\), mode: null, at \}\) : null/);
+  assert.match(stop, /packAt=\{packAt \?\? /);
   assert.match(stop, /packWanted\(String\(id\)\)/);
   assert.match(read('src/components/Home.tsx'), /pack: packTarget\(key\)/);
   assert.match(read('src/app/board.tsx'), /packStampText/);

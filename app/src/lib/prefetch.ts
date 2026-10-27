@@ -6,7 +6,7 @@ import { api, departuresFor } from './api';
 import { planTrip } from './trips';
 import { createForegroundOnce, mayReadAhead } from './homePrefetchCore';
 import type { WalkPref } from './walkPrefCore';
-import { keepMem, keepOffline, memAt } from './offline';
+import { keepMem, keepOffline, memAt, peekOffline } from './offline';
 import { cacheKey } from './offlineCore';
 import { boardKey } from './stopBoardCore';
 import { prefetchDue } from './prefetchCore';
@@ -43,9 +43,35 @@ export function holdService(p: SvcParams, r: unknown) {
 }
 
 /** Press in on a row that opens a service (Cards.openService): its read starts now, at most once per 20 s per service
- * and 8 a minute across the app; the answer waits in memory for the screen's first frame. */
+ * and 8 a minute across the app; the answer waits in memory for the screen's first frame. A bus also gets its route's
+ * stop list (prefetchRoute), so the service screen can paint the stops after yours next time with no wait. */
 export function pressService(d: SvcRow) {
   prefetchService(svcParams(d));
+  if (d.line && BUS_ROUTE_MODES.has(String(d.mode || ''))) prefetchRoute(String(d.line));
+}
+
+// Bus route stop lists (27 Oct speed pass 4): timetable data kept like route.tsx keeps them (offline cacheKey 'route',
+// "LINE|bus"). A kept list younger than ROUTE_FRESH_MS is not asked again; each line at most once per ROUTE_GAP_MS.
+const BUS_ROUTE_MODES = new Set(['bus', 'coach', 'school']);
+const ROUTE_FRESH_MS = 24 * 3600 * 1000;
+const ROUTE_GAP_MS = 10 * 60 * 1000;
+const routeAsked = new Map<string, number>();
+const routeKey = (line: string) => cacheKey('route', `${line}|bus`);
+/** The bus route's stop list kept on the phone (memory, no wait), or null. Only for buses. */
+export function keptRoute(line?: string | null, mode?: string | null): unknown {
+  if (!line || !BUS_ROUTE_MODES.has(String(mode || ''))) return null;
+  return peekOffline<unknown>(routeKey(String(line)))?.data ?? null;
+}
+/** Reads a bus route's stop list in the background and keeps it, unless a fresh one is kept or it was asked lately. */
+export function prefetchRoute(line: string): void {
+  const k = routeKey(line);
+  const now = Date.now();
+  const kept = peekOffline<unknown>(k);
+  if (kept && now - kept.at < ROUTE_FRESH_MS) return;
+  if (now - (routeAsked.get(k) || 0) < ROUTE_GAP_MS) return;
+  routeAsked.set(k, now);
+  if (routeAsked.size > 60) routeAsked.delete(routeAsked.keys().next().value as string);
+  api.route(line, 'bus').then((raw) => { if (Array.isArray(raw) && raw.length) keepOffline(k, raw); }).catch(() => {});
 }
 
 /** The car park the list showed, held for the car park screen's first frame (with the list's age). */

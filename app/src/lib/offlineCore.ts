@@ -48,6 +48,9 @@ export function worthKeeping(d: any): boolean {
   if (!d || typeof d !== 'object' || d.error) return false;
   // A first frame painted from the row that was tapped (speedCore.serviceSeed) is never kept.
   if (d.seeded === true) return false;
+  // The server's stand ins (27 Oct speed pass 4) are never kept: a car park list whose live counts are still being read,
+  // a board at another time on timetable rows. A copy with real counts or live times stays the kept one.
+  if (d.fallback === 'counts-loading' || (d.source === 'timetable' && d.fallback === 'planner-slow' && d.at)) return false;
   if (Array.isArray(d.carparks)) return d.carparks.length > 0;
   if (Array.isArray(d.journeys)) return d.journeys.length > 0;
   if (Array.isArray(d.items)) return d.items.length > 0;

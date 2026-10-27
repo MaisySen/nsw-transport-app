@@ -8,6 +8,7 @@ import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
 import { cacheKey } from '@/lib/offlineCore';
+import { keptRoute } from '@/lib/prefetch';
 import { isSeeded, serviceQuery, serviceSeed, svcCacheId } from '@/lib/speedCore';
 import { usePalette } from '@/lib/theme';
 import { badgeLook } from '@/lib/lineStyle';
@@ -37,7 +38,8 @@ export default function ServiceScreen() {
   // First frame (27 Oct speed pass): the copy kept on the phone (or read on press in), else what the tapped row showed
   // (line, destination, live flag, delay, your stop and time), labelled with its age until the live answer lands.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const seed = useMemo(() => serviceSeed(p, Date.now()), [p.trip, p.planned, p.to]);
+  // A bus whose route list is kept on the phone (route.tsx, or read on press in) also paints the stops after yours.
+  const seed = useMemo(() => serviceSeed(p, Date.now(), keptRoute(p.line, p.mode)), [p.trip, p.planned, p.to]);
   const { data, error, updatedAt, offlineAt, staleAt } = useLive(() => api.service(serviceQuery(p)), 15000, [p.trip, p.planned, p.to],
     { cacheKey: p.trip ? cacheKey('svc', svcCacheId(p)) : undefined, seed });
   const seeded = isSeeded(data);
@@ -167,7 +169,7 @@ export default function ServiceScreen() {
               );
             })}
             {!data && !error ? <T kind="sub" tone="text2">Finding the vehicle</T> : null}
-            {seeded && !error ? <T kind="sub" tone="text2" style={{ marginTop: stops.length ? 6 : 0 }}>Loading every stop</T> : null}
+            {seeded && !error ? <T kind="sub" tone="text2" style={{ marginTop: stops.length ? 6 : 0 }}>{stops.length > 2 ? 'Getting live times' : 'Loading every stop'}</T> : null}
             {(!data || seeded) && error ? <T kind="sub" tone="text2">{error}</T> : null}
           </View>
         </BottomSheetScrollView>

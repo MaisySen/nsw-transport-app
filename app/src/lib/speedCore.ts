@@ -3,6 +3,7 @@
 // its live answer replaces that; reads go out side by side; a row's next screen is read on press in when that is cheap.
 import type { ServiceResp, ServiceStop } from './types';
 import { firstPaint, type PackBoard } from './timetablePackCore';
+import { regionDirs, routeDirs } from './busCore';
 
 /** What a service screen is opened with (Cards.openService params). Strings, '' when absent. */
 export type SvcParams = {
@@ -44,7 +45,7 @@ export const SEED_MAX_AGE_MS = 10 * 60 * 1000;
  * delay, your stop and its time (and the stop you get off at, from a trip). Marked `seeded`, never kept on the phone,
  * replaced by the live answer. Null when the row says too little (no trip or no line) or its times are too old.
  */
-export function serviceSeed(p: SvcParams, now: number): { at: number; data: ServiceResp & { seeded: true } } | null {
+export function serviceSeed(p: SvcParams, now: number, route?: unknown): { at: number; data: ServiceResp & { seeded: true } } | null {
   if (!p.trip || !p.line) return null;
   const seen = Number(p.seen);
   const at = Number.isFinite(seen) && seen > 0 && seen <= now ? seen : now;
@@ -60,7 +61,45 @@ export function serviceSeed(p: SvcParams, now: number): { at: number; data: Serv
     mine: p.stop && p.sname ? { name: String(p.sname), planned: p.planned || undefined, estimated: live && p.est ? p.est : undefined } : null,
   };
   if (stops.length && stops[0].mine) data.mineIndex = 0;
+  // A bus with its route's stop list kept on the phone (27 Oct speed pass 4): the stops after yours paint at once too,
+  // names and places only (no times), and the live answer fills them in.
+  const more = route != null && stops.length && stops[0].mine ? routeStopsAfter(route, p) : null;
+  if (more && more.stops.length) {
+    const alight = stops.find((s) => s.alight);
+    const list: ServiceStop[] = [{ ...stops[0], lat: more.lat, lon: more.lon }];
+    for (const s of more.stops) list.push(alight && s.id === alight.id ? { ...s, alight: true, planned: alight.planned } : s);
+    if (alight && !list.some((s) => s.alight)) list.push(alight);
+    data.stops = list;
+    const ai = list.findIndex((s) => s.alight);
+    if (ai > 0) data.alightIndex = ai;
+  }
   return { at, data };
+}
+
+const BUS_SEED_MODES = new Set(['bus', 'coach', 'school']);
+/**
+ * The stops after the tapped one on a bus route kept on the phone (/api/stations?mode=bus&route= as route.tsx keeps it):
+ * the direction that calls at the tapped stop (and at the stop you get off at after it, when there is one), from the
+ * next stop to the end, or to the stop named like the bus's destination when there is one. Null for a non bus, a route
+ * that does not call at the tapped stop, or a stop at the end of the route. `lat`/`lon` are the tapped stop's own.
+ */
+export function routeStopsAfter(raw: unknown, p: SvcParams): { stops: ServiceStop[]; lat?: number; lon?: number } | null {
+  if (!p.stop || !BUS_SEED_MODES.has(String(p.mode || ''))) return null;
+  const dirs = regionDirs(routeDirs(raw), String(p.stop));
+  const at = (d: (typeof dirs)[number]) => d.stops.findIndex((s) => s.id === String(p.stop));
+  const fits = dirs.filter((d) => { const i = at(d); if (i < 0 || i >= d.stops.length - 1) return false; return !p.to || d.stops.slice(i + 1).some((s) => s.id === String(p.to)); });
+  if (!fits.length) return null;
+  const dest = String(p.dest || '').toLowerCase().replace(/\s+(station|interchange|wharf)\b.*$/, '').trim();
+  const d = fits.find((x) => dest && x.to.toLowerCase().includes(dest)) || fits[0];
+  const i = at(d);
+  let rest = d.stops.slice(i + 1);
+  if (dest && dest.length >= 4) {
+    const end = rest.findIndex((s) => s.name.toLowerCase().startsWith(dest));
+    if (end >= 0) rest = rest.slice(0, end + 1);
+  }
+  if (!rest.length) return null;
+  const me = d.stops[i];
+  return { stops: rest.map((s) => ({ id: s.id, name: s.name, ...(Number.isFinite(s.lat) ? { lat: s.lat } : {}), ...(Number.isFinite(s.lon) ? { lon: s.lon } : {}) })), lat: me.lat, lon: me.lon };
 }
 
 /** True for a first frame painted from the row that was tapped (serviceSeed), not from the server. */

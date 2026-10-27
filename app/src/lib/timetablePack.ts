@@ -9,7 +9,7 @@ import { AppState } from 'react-native';
 import { NEW_API_BASE } from './server';
 import { store } from './store';
 import { cleanTag, condHeaders } from './etagCore';
-import { PACK_MAX_CHARS, packBoard, packDue, packStops, packValid, type KeptPack, type PackBoard } from './timetablePackCore';
+import { PACK_MAX_CHARS, packBoard, packBoardAt, packCovers, packDue, packStops, packValid, type KeptPack, type PackBoard } from './timetablePackCore';
 
 const INDEX = 'tt:index';
 const keyOf = (stop: string) => `tt:pack:${stop}`;
@@ -42,20 +42,24 @@ export function loadPacks(): Promise<void> {
   return loading;
 }
 
-/** The pack board for a stop from memory (no wait), or null when it has no pack or no services left in it. */
-export function peekPackBoard(stop: string, mode?: string | null): PackBoard | null {
+/**
+ * The pack board for a stop from memory (no wait), or null when it has no pack or no services left in it. With `at` (a
+ * board at another time), the board from that moment, only when the pack covers it (packCovers).
+ */
+export function peekPackBoard(stop: string, mode?: string | null, at?: number | null): PackBoard | null {
   const e = mem.get(stop);
   if (!e) return null;
   const now = Date.now();
   if (!packValid(e.pack, now)) return null;
-  const b = packBoard(e.pack, now, mode);
+  if (at != null && !packCovers(e.pack, at)) return null;
+  const b = at != null ? packBoardAt(e.pack, at, now, mode) : packBoard(e.pack, now, mode);
   return b.items.length ? b : null;
 }
 
 /** The same after the kept packs have been read (a cold start). */
-export async function readPackBoard(stop: string, mode?: string | null): Promise<PackBoard | null> {
+export async function readPackBoard(stop: string, mode?: string | null, at?: number | null): Promise<PackBoard | null> {
   await loadPacks();
-  return peekPackBoard(stop, mode);
+  return peekPackBoard(stop, mode, at);
 }
 
 async function fetchPack(stop: string): Promise<'ok' | 'none' | 'fail'> {

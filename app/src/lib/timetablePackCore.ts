@@ -94,6 +94,23 @@ export function packBoard(p: Pack, now: number, mode?: string | null): PackBoard
   };
 }
 
+/**
+ * A board at another moment (the stop screen's time chip, 27 Oct speed pass 4) is made from the pack only when the pack
+ * holds that moment and at least PACK_AT_SPAN_MS after it, so the list is not cut short by the end of the pack.
+ */
+export const PACK_AT_SPAN_MS = 2 * 3600 * 1000;
+export function packCovers(p: Pack, at: number): boolean {
+  return Number.isFinite(at) && at >= p.base * 1000 - 60000 && at + PACK_AT_SPAN_MS <= p.until * 1000;
+}
+/**
+ * The pack's board from moment `at` on (the server's board for that time keeps services that have left and marks them
+ * departed; this does the same against `now`). Timetable times, never live; the server's board replaces it.
+ */
+export function packBoardAt(p: Pack, at: number, now: number, mode?: string | null): PackBoard {
+  const b = packBoard(p, at, mode);
+  return { ...b, now, items: b.items.map((d) => ({ ...d, departed: Date.parse(d.planned) < now - 60000 })) };
+}
+
 /** True for a board made from a pack (not from the server). */
 export const isPackBoard = (d: any): d is PackBoard => !!d && typeof d === 'object' && typeof d.fromPack === 'number';
 
