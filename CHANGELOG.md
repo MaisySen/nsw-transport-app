@@ -10,6 +10,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * Counts carry their days (meta `noshow_agg2`, claim `noshow_day2`). The first minute tick after the deploy drops the old rows (`noshow_agg`, `noshow_day` and the old marks in `noshow`) and folds every stored day again, one day per tick; answers never read an old mark. Same cost per fold, about 14 folds once.
 * Shape unchanged: `noShow: {share, n}` on marked bus rows only; the app needs no update (its own floor of 8 is lower than the server's).
 * Tests: backend/test/noshow.test.mjs now 11 (3 new: 3 of 9 over 2 days gets no label, 12 over 4 days gets it, the change refolds and ignores old marks).
+* Server live: transport-api `b92dbc81` at 9:41 AM from main eecd943, verify-deploy all 12 ok, 10 min watch to 9:51 AM: 21 invocations, 0 errors, 0 feedback rows; the refold reached 27 Oct at 9:55 AM with 0 hours marked (most days counted for any hour: 2). roll back to `ab6153b6`.
 
 ### Often does not run (28 Oct; server change for transport-api, app on main for tonight's update)
 * What it is: a bus with no live time (or a live time gone stale) in an hour where many of that line's services recorded over the past weeks never showed live now says "Often does not run" where it said "Timetable only" or "Not tracking". Departure rows, Home stop cards, the route view, the full screen board and trip legs. Live and cancelled rows never change.
