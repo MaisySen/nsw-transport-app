@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Backend tests no longer depend on the time of day (tests only, 27 Oct, no deploy; live stays transport-api `b515ee95`)
+* `engine.test.mjs`, "a bus after midnight": failed on main from 2 PM every day (seen on c1c1813 and later). The test put its after midnight bus on yesterday's timetable at the real time of day plus 24 hours, so after 2 PM the row sat past 36:00, outside the window the engine reads a day's rows in (the day's start plus 36 hours, less the 2 hour look back), and the bus was not on the board. The engine is right: a real run past 24:00 is in the small hours. The test now pins the board's clock to 00:35 today. It still fails if the next day's feed date is not matched to yesterday's timetable (checked by breaking `engSameRun`).
+* `trip-days.test.mjs`, "/api/trip days=1" and "added trains": failed from midnight to 3 AM. The test's pack held the calendar date, while the planner's day runs 3 AM to 3 AM, so before 3 AM the server (rightly) asked for yesterday's list, which the pack did not have. The pack now holds the planner day of the moment (`dlDayOf`).
+* Not caused by the tight change (3e2d0e7) or Home in one request (00887ca). No server or app code changed.
+* Checked: backend 539 of 539 with TZ=Australia/Sydney at the real clock, and with the clock faked to 12:40 AM, 2:30 AM, 3:10 AM, 10 AM, 2:30 PM and 11:15 PM.
+
 ### Home in one request, and Home recovers by itself (server 27 Oct, 2:01 PM, transport-api `b515ee95`, roll back to `3bf49b2f`; app on main 5438c9d, in tonight's update)
 * Server: `GET /api/home?p=<read>&p=<read>` answers up to 10 of Home's own reads (trip, departures, commutes, saved, watches, app config) in one request, each run through its own request path side by side (edge copies, shared upstream calls, budget guard, rate limits, trip history, old app guard), so no Trip Planner call the separate reads would not make. A part still waiting at 2.5 s is answered late and carries on. `home-bundle` is added to `x-serves`; off with `HOME_BUNDLE=off` or `kill.homeBundle`. Builds 201 to 208 and earlier updates never call it.
 * Measured on production after the deploy (box in the US, about 150 ms each way; 5 reads: config, commutes, saved, Central and Town Hall boards): the bundle from copies took 35 ms on the server and 297 ms end to end, one request; the same 5 reads as separate requests took 309 ms before the deploy and 730 ms after it (a cold board), 5 requests.

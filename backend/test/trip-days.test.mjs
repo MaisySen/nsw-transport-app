@@ -200,11 +200,13 @@ async function loadInto(obj, pack) {
   return (await post(`/load/commit?ver=3`, "")).json();
 }
 function todayPack() {
-  const s = W.sydneyParts();
-  const ds = W.dlDayStart(s.date);
+  // The day of this moment (3 AM to 3 AM), not the calendar date: from midnight to 3 AM the planner's day is yesterday's,
+  // and a pack on the calendar date failed the days=1 and added train tests in those hours.
+  const date = W.dlDayOf(Date.now());
+  const ds = W.dlDayStart(date);
   // Today's list: the timetable above on today's date, tomorrow held too.
-  const held = [{ day: s.date, off: 0, dayStart: ds }];
-  return mkPack({ stops: STOPS, trips: day0(), walks: WALKS, dayStart: ds, day: s.date, held });
+  const held = [{ day: date, off: 0, dayStart: ds }];
+  return mkPack({ stops: STOPS, trips: day0(), walks: WALKS, dayStart: ds, day: date, held });
 }
 
 test("the planner object's /day: templates once per pair, then a scan; rows read only when it opens", async () => {

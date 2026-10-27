@@ -110,17 +110,22 @@ test("cancelled trip, skipped stop, platform change, and another day's update ig
 
 test("a bus after midnight: the timetable keeps it on the day before, the feed gives the calendar date", () => {
   // The run is on yesterday's timetable at a time past 24:00; the Sydney buses feed says today's date for it.
+  // The board's clock is pinned to 00:35 today, when such a bus runs: with the real clock, an afternoon run put the row
+  // past 36:00 on yesterday's timetable, outside the day's window, and the test failed after 2 PM (27 Oct).
+  const at = base + 35 * 60, opts = { now: at * 1000 };
+  const past = (min) => at + min * 60 - base + 86400; // seconds after yesterday's day start
   const prev = W.engDayKey((base - 43200) * 1000), next = W.engDayKey((base + 86400 + 43200) * 1000);
-  const late = { "N-1": [[sec(4) + 86400, "N-1", 1, 1, 3]], "N-2": [[sec(9) + 86400, "N-2", 1, 1, 3]] };
+  const late = { "N-1": [[past(4), "N-1", 1, 1, 3]], "N-2": [[past(9), "N-2", 1, 1, 3]] };
   const src = (live) => ({ ...fakeSrc(live), rows: (id, d) => (d === prev && id === "B" ? [...late["N-1"], ...late["N-2"]] : d === day ? [] : null), days: () => ({ [prev]: base - 86400, [day]: base }) });
   const b = W.engBuildBoard(src({
     "N-1": { tripId: "N-1", ts: 1, startDate: day, stus: [{ seq: 3, stopId: "B", dep: { delay: 180 } }] },
     "N-2": { tripId: "N-2", ts: 1, startDate: next, stus: [{ seq: 3, stopId: "B", dep: { delay: 300 } }] },
-  }), "P");
+  }), "P", opts);
   const by = (id) => b.items.find((i) => i.tripId === id);
+  assert.ok(by("N-1") && by("N-2"), "both runs are on the board");
   assert.equal(by("N-1").realtime, true); assert.equal(by("N-1").delayMin, 3);
   assert.equal(by("N-2").realtime, false, "two days on is another run");
-  const same = W.engBuildBoard(src({ "N-1": { tripId: "N-1", ts: 1, startDate: prev, stus: [{ seq: 3, stopId: "B", dep: { delay: 60 } }] } }), "P");
+  const same = W.engBuildBoard(src({ "N-1": { tripId: "N-1", ts: 1, startDate: prev, stus: [{ seq: 3, stopId: "B", dep: { delay: 60 } }] } }), "P", opts);
   assert.equal(same.items.find((i) => i.tripId === "N-1").delayMin, 1, "the timetable's own date still counts");
 });
 
