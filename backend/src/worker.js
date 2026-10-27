@@ -6122,7 +6122,8 @@ async function runTick(env, opts = {}) {
   if (!opts.device && !opts.noWarm) out.warm = await warmBoards(env, opts.exec || null, use, sn).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   // The copies people use, kept fresh in the hours they use them (prewarm, commute pre-warm).
   if (!opts.device && !opts.noWarm) out.prewarm = await prewarm(env, opts.exec || null, use, sn).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
-  if (!opts.device && sn.tod % 60 === 7) await db(env).prepare("DELETE FROM board_copies WHERE at < ?1").bind(now - 86400000).run().catch(() => null);
+  // Car park copies are kept 7 days (the list's stand in, parkStandIn); every other copy a day.
+  if (!opts.device && sn.tod % 60 === 7) await db(env).prepare("DELETE FROM board_copies WHERE at < ?1 AND (k NOT LIKE 'park:%' OR at < ?2)").bind(now - 86400000, now - 7 * 86400000).run().catch(() => null);
   if (!opts.device) await db(env).prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('last_tick', ?1)").bind(String(now)).run().catch(() => null);
   const calls = upstream.calls - c0;
   upstream.flushed = Math.max(upstream.flushed || 0, upstream.calls);
@@ -9074,6 +9075,8 @@ async function edgeFetchInner(request, env, exec) {
       if (leader && exec && exec.waitUntil) exec.waitUntil(job.promise.catch(() => null));
       const svcQuick = url.pathname === "/api/service" && serviceQuickOn(env) ? SERVICE_QUICK_MS : 0;
       const quick = bk && bk.stop === "trip" && tripQuickOn(env) ? TRIP_QUICK_MS : svcQuick;
+      const atQuick = !svcQuick && url.pathname === "/api/departures" && (url.searchParams.get("time") || url.searchParams.get("date")) && newerApp(request) && depAtQuickOn(env) && !asTextReq(url) ? DEP_AT_QUICK_MS : 0;
+      const parkQuick = bk && bk.k === "park:all" && newerApp(request) && parkQuickOn(env) ? PARK_QUICK_MS : 0;
       if (svcQuick) {
         // The feed and timetable answer (serviceStandIn: no Trip Planner call) is worked out beside the full one from the
         // start (27 Oct, part 2), so a cold open has an answer by SERVICE_QUICK_MS instead of after it.
@@ -9091,6 +9094,39 @@ async function edgeFetchInner(request, env, exec) {
           budget.serviceQuick = (budget.serviceQuick || 0) + 1;
           const fb = await sbP;
           if (fb) return fb;
+          out = leader ? await job.promise : await joinJob(job, SHARED_WAIT_MS);
+        }
+      } else if (atQuick) {
+        // A board at another time (27 Oct speed pass 4): the engine's timetable rows for that moment are worked out beside
+        // the Trip Planner call from the start (no Transport for NSW call). The newer app gets them when the planner has
+        // not answered by DEP_AT_QUICK_MS; the planner's board finishes behind it, is kept at the edge, and the app's ask
+        // again (6 s, then 10 s) gets it. Older apps never see this: they wait for the planner as before.
+        const t0 = Date.now();
+        let sb = null, sbDone = false;
+        const sbP = depAtStandIn(env, url).catch(() => null).then((r) => { sb = r; sbDone = true; return r; });
+        const take = async () => (leader ? await job.promise : await joinJob(job));
+        while (!out) {
+          if (await waitJob(job, 20)) { out = await take(); break; }
+          const tms = Date.now() - t0;
+          if (sbDone && (sb ? tms >= atQuick : true)) break;
+          if (tms > atQuick + DEP_AT_STANDIN_MS) break;
+        }
+        if (!out) {
+          const fb = await sbP;
+          if (fb) { budget.depAtQuick = (budget.depAtQuick || 0) + 1; return fb; }
+          out = leader ? await job.promise : await joinJob(job, SHARED_WAIT_MS);
+        }
+      } else if (parkQuick) {
+        // The car park list with no copy from the last 30 minutes (27 Oct speed pass 4: 9.5 s on a first open of the
+        // day, about 40 car parks read four at a time under the open data rate limit). The newer app waits at most
+        // PARK_QUICK_MS for the live read, then gets the last list saved (up to PARK_STANDIN_MAX_MS old, each reading
+        // over 30 minutes old marked stale, so "No live count") or the list with no counts, marked fallback
+        // "counts-loading". The live read finishes behind it and is kept; the app asks again a few seconds later.
+        // No extra open data call: the same read the first open always made.
+        if (await waitJob(job, parkQuick)) out = leader ? await job.promise : await joinJob(job);
+        if (!out) {
+          const fb = await parkStandIn(env, bk).catch(() => null);
+          if (fb) { budget.parkQuick = (budget.parkQuick || 0) + 1; return fb; }
           out = leader ? await job.promise : await joinJob(job, SHARED_WAIT_MS);
         }
       } else if (quick) {
@@ -9499,6 +9535,62 @@ async function serviceStandIn(request, env, exec) {
   out.headers.set("cache-control", "no-store");
   out.headers.set("x-edge-cache", "quick");
   if (newerApp(request)) out.headers.set("x-quick-ms", String(Date.now() - t0));
+  return out;
+}
+// A board at another time (/api/departures with time or date; 27 Oct speed pass 4) waits at most DEP_AT_QUICK_MS for the
+// Trip Planner when the engine's timetable rows for that moment are ready (ttBoardAt, built beside it from the start, at
+// most DEP_AT_STANDIN_MS more), then the newer app gets those rows, labelled (source "timetable", fallback
+// "planner-slow", the app asks again at 6 s and 10 s). Never stored; the planner's board is. DEP_AT_QUICK=off turns it off.
+const DEP_AT_QUICK_MS = 700;
+const DEP_AT_STANDIN_MS = 1500;
+function depAtQuickOn(env) { return String((env && env.DEP_AT_QUICK) || "").toLowerCase() !== "off"; }
+function asTextReq(url) { return url.searchParams.get("format") === "text"; }
+async function depAtStandIn(env, url) {
+  if (typeof ttBoardAt !== "function") return null;
+  const p = url.searchParams;
+  const at = boardAt(p.get("time"), p.get("date"));
+  if (!at) return null;
+  const d = await ttBoardAt(env, p.get("stop") || "", p.get("mode") || "", at);
+  if (!d) return null;
+  const out = json(d);
+  out.headers.set("cache-control", "no-store");
+  out.headers.set("x-edge-cache", "stand-in");
+  out.headers.set("x-stand-in", "timetable");
+  return out;
+}
+// The car park list with no copy from the last 30 minutes (27 Oct speed pass 4): the newer app waits at most
+// PARK_QUICK_MS for the live read, then gets the last saved list up to PARK_STANDIN_MAX_MS old (parkRestale: readings
+// over 30 minutes old say "No live count") or, with none, the car parks with no counts; marked fallback
+// "counts-loading" and never stored. PARK_QUICK=off turns it off.
+const PARK_QUICK_MS = 1500;
+const PARK_STANDIN_MAX_MS = 7 * 86400000;
+function parkQuickOn(env) { return String((env && env.PARK_QUICK) || "").toLowerCase() !== "off"; }
+async function parkStandIn(env, bk) {
+  let d = null, at = 0;
+  const db0 = await boardDb(env).catch(() => null);
+  const r = db0 && bk ? await db0.prepare("SELECT at, body FROM board_copies WHERE k = ?1").bind(bk.k).first().catch(() => null) : null;
+  if (r && r.body && Date.now() - Number(r.at) <= PARK_STANDIN_MAX_MS) {
+    try { d = JSON.parse(await gunzipText(r.body)); at = Number(r.at); } catch (e) { d = null; }
+    if (d && !Array.isArray(d.carparks)) d = null;
+    if (d) {
+      d = parkRestale(d);
+      if (Number(d.dataAt)) at = Math.min(at, Number(d.dataAt));
+      // Read over 30 minutes ago (that is why this copy stands in): no count from it is shown as live.
+      if (Date.now() - at > 30 * 60000) d.carparks = d.carparks.map((c) => (c && !c.stale && c.free != null ? { ...c, stale: true, status: "unknown", label: PARK_LABEL.unknown } : c));
+    }
+  }
+  if (!d) {
+    const list = await carparkList(env).catch(() => []);
+    if (!list.length) return null;
+    d = { carparks: list.map((c) => parkOut(c, null)), source: FAC_SRC.parking };
+    at = 0;
+  }
+  delete d.dataAt; delete d.now;
+  const body = { ...(at ? { dataAt: at } : {}), ...d, fallback: "counts-loading", now: Date.now() };
+  const out = json(body);
+  out.headers.set("cache-control", "no-store");
+  out.headers.set("x-edge-cache", "stand-in");
+  out.headers.set("x-stand-in", "counts");
   return out;
 }
 const inFlight = new Map(); // edge key -> sharedJob of { status, headers, body }

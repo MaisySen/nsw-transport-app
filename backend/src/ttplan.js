@@ -202,6 +202,25 @@ if (typeof BoardEngine === "function") {
         return Response.json({ error: String((e && e.message) || e) }, { status: 500 });
       }
     }
+    // A stop's timetable board from another moment (27 Oct speed pass 4): the rows engBuildBoard makes for `at` (epoch
+    // ms), with no feed asked for (needFeed is not called on), for the worker's stand in while the Trip Planner answers
+    // a board at that time. 404 when the timetable has no rows for the stop (or not for that day).
+    if (u.pathname === "/boardat") {
+      try {
+        const m = this.loadMeta();
+        if (!m) return Response.json({ error: "no timetable" }, { status: 503 });
+        const stop = u.searchParams.get("stop") || "", mode = u.searchParams.get("mode") || "";
+        const at = Number(u.searchParams.get("at"));
+        if (!/^[A-Za-z0-9_-]{1,20}$/.test(stop) || !/^[a-z]{0,12}$/.test(mode) || !Number.isFinite(at) || at <= 0) return Response.json({ error: "bad board" }, { status: 400 });
+        const src = Object.create(this.source());
+        src.needFeed = () => {};
+        const b = engBuildBoard(src, stop, { mode: mode || null, now: at, emptyLive: false });
+        if (!b || !b.items.length) return Response.json({ error: "no timetable for this stop" }, { status: 404 });
+        return Response.json({ ver: m.ver, stop: b.stop, items: b.items, modes: b.modes });
+      } catch (e) {
+        return Response.json({ error: String((e && e.message) || e) }, { status: 500 });
+      }
+    }
     return ttFetch.call(this, req);
   };
 }
@@ -286,6 +305,36 @@ async function ownTimetableTrip(env, fromId, toId, o = {}) {
   const out = ttAnswer(legs.filter((l) => Array.isArray(l) && l.length));
   if (out && typeof budget === "object" && budget) budget.ttOwnTrips = (budget.ttOwnTrips || 0) + 1;
   return out;
+}
+// A board from another moment as timetable times (27 Oct speed pass 4): /api/departures with time or date asks the Trip
+// Planner for that moment (3.4 s for Central at 6 PM on 27 Oct), and the newer app shows this meanwhile. The engine's
+// rows for `at` (ms, from boardAt), every row a timetable time (realtime false, status Scheduled), services that have
+// left marked departed as the planner board marks them. No Transport for NSW call. Kept 60 s per stop, mode and minute.
+// Null with no engine, no timetable for the stop or day, or no answer in 1.2 s.
+const TT_AT_WAIT_MS = 1200;
+async function ttBoardAt(env, stopId, mode, at) {
+  if (typeof engineCall !== "function" || !env || !env.ENGINE || !at || !Number.isFinite(at.t)) return null;
+  const stop = String(stopId || ""), md = String(mode || "");
+  if (!/^[A-Za-z0-9_-]{1,20}$/.test(stop) || !/^[a-z]{0,12}$/.test(md)) return null;
+  const qs = new URLSearchParams({ stop, at: String(Math.floor(at.t / 60000) * 60000) });
+  if (md) qs.set("mode", md);
+  const ck = new Request("https://engine-cache.transportsydney.app/boardat?" + qs.toString());
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  let d = null;
+  const hit = cache ? await cache.match(ck).catch(() => null) : null;
+  if (hit) d = await hit.json().catch(() => null);
+  if (!d) {
+    const r = await Promise.race([engineCall(env, "/boardat?" + qs.toString()), new Promise((res) => setTimeout(() => res(null), TT_AT_WAIT_MS))]);
+    if (!r || r.status !== 200) return null;
+    d = await r.json().catch(() => null);
+    if (!d || !Array.isArray(d.items) || !d.items.length) return null;
+    if (cache) await cache.put(ck, new Response(JSON.stringify(d), { headers: { "content-type": "application/json", "cache-control": "public, max-age=" + TT_EDGE_S } })).catch(() => null);
+  }
+  const now = Date.now();
+  const items = d.items.map((x) => ({ ...x, estimated: null, realtime: false, delayMin: null, vehicle: null, occupancy: null, stopsAway: undefined, liveAt: null, source: "timetable",
+    status: { key: "scheduled", text: "Scheduled" }, departed: Date.parse(x.planned) < now - 60000 }));
+  return { kind: "departures", stop: d.stop, items, modes: Array.isArray(d.modes) ? d.modes : [...new Set(items.map((i) => i.mode))], alerts: [],
+    source: "timetable", fallback: "planner-slow", dataAt: now, now, at: { date: at.date, time: at.time, clamped: !!at.clamped } };
 }
 // Nearby stops from our own timetable's stop list (no Transport for NSW call), or null with no engine.
 async function ttNearbyStops(env, lat, lon) {
