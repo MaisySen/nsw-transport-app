@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Crash safety net (app, 27 Oct, after the owner's "App has been crashing continuously" at 10:43 AM; on main for tonight's update, and on branch hotfix-crash-27oct for an emergency update)
+* The app had no error boundary and no error reporting, so any error while drawing a screen closed the whole app with nothing to read. The root layout now exports an error boundary: a screen that throws shows "Something went wrong" with Try again and Go to Home, and after one retry "Clear saved times and reload" (drops kept answers, timetable packs, kept lists and an active trip; places, starred stops, trips on Home and settings stay).
+* Each caught error, and a fatal error outside the screens (reported, then the app closes as before), goes once to the existing feedback inbox: POST /api/feedback, topic problem, page `crash:<screen>`, with the build, the update id, the last 8 server paths asked (query names only, no values) and the top of the stack; at most 3 a run. No server change, no new native module, no timers.
+* Branch `hotfix-crash-27oct` (f9fac91) is the shipped update's code (27efc6bd, 44702bb) plus only this net, for an emergency update without today's other app work.
+* lib/crash.ts, lib/crashCore.ts, app/_layout.tsx, lib/api.ts (one line); test/crash27.test.mjs (5).
+
 ### Plan tab trip rows: am and pm, time left, where you get on and off, honest On time (app, 27 Oct, ships with tonight's update)
 * Times on the trip list read "12:56 pm" (lowercase, with a space, as iOS writes them) on a 12 hour phone and "12:56" or "09:05" when the phone is set to 24 hour time (iPhone 24-Hour Time setting read from the settings copy the app already has, else the locale's hour cycle; no new native module). Still Sydney time.
 * Each row's badge says how long until it leaves: "Now", "12 min", then whole hours rounded down ("1 hr", "2 hrs", "3 hrs"), and days for a trip tomorrow. An hour or more away the badge is grey so the services leaving soon stand out. It moves with the screen's existing countdown tick and changes at most once a minute.

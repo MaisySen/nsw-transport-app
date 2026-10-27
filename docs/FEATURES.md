@@ -252,6 +252,11 @@ The server stays on the Cloudflare Workers Paid base fee (US$5 a month) for up t
 * Where you get on with its platform over the leave time, where you get off over the arrive time, the lines under it.
 * On time, late and early only with a live reading (a moved estimate, a placed vehicle, or within the hour); otherwise Scheduled.
 
+## Crash safety net (27 Oct, on main, ships with tonight's update; emergency branch hotfix-crash-27oct)
+
+* A screen that hits an error shows Something went wrong with Try again and Go to Home instead of closing the app; after a retry, Clear saved times and reload.
+* Each error is reported once to the support inbox with the screen, build, update and the last server paths asked, so the cause can be read.
+
 ## Not in the app
 
 No accounts or login, no ads, no analytics or tracking, no Opal card balance. Privacy details: [STORE_PRIVACY.md](STORE_PRIVACY.md) and https://transportsydney.app/privacy/.

@@ -556,6 +556,13 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 * `TZ=Australia/Sydney OFFLINE=1 node --test test/planrows.test.mjs` in `app/`: 12 and 24 hour times ("12:56 pm", "09:05"), Sydney time over the daylight saving change, the time left buckets (Now, minutes, hours rounded down, days, Left), the status rule (the 1:29 pm row 3 hours out with an echoed estimate says Scheduled; a moved estimate, a vehicle or the last hour says live), boarding stop with platform, lines once each, when the columns stack, and the rows wired to these.
 * On a phone: Settings, General, Date and Time, 24-Hour Time on and off, then reopen the Plan tab (the setting is read again within a minute). Largest Dynamic Type on an iPhone mini or SE: the get off column goes under the get on column and nothing is cut except long stop names. Light and dark.
 
+## Crash safety net (27 Oct)
+
+* `TZ=Australia/Sydney OFFLINE=1 node --test test/crash27.test.mjs` in `app/`: the report text (kind, screen, build, update, recent paths with query names only, the error once, under 4000 characters), the page tag, which phone keys Clear saved times drops and keeps, and source checks (the root layout exports ErrorBoundary and reports from it, the reporter is installed, no timers or native modules).
+* Web export check: a forced throw on Home shows the recovery screen, posts one report to /api/feedback, and Try again, Go to Home and Clear saved times and reload work.
+* Reading reports: `SELECT at, message, page, install FROM feedback WHERE page LIKE 'crash:%' ORDER BY at DESC` on the transport D1 database (read only).
+* On a phone (not yet done): the recovery screen in light and dark and at the largest Dynamic Type; a report arrives with the iOS build and update id.
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).
