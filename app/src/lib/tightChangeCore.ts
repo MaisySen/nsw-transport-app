@@ -94,6 +94,14 @@ export function tightChange(legs: ChangeLeg[] | null | undefined): TightChange |
   return tightChanges(legs)[0] || null;
 }
 
+/** A change the person gave their own time for (a via trip joined on the phone): tight when it is under their own
+ * minutes or under the rule, whichever is longer, the same as the server's chains (tightChangeAt in worker.js).
+ * `gapMin` and `ownMin` are the join's own minutes to change and the person's change time. */
+export function tightOrOwn(legs: ChangeLeg[] | null | undefined, i: number, gapMin: number, ownMin: number): boolean {
+  if (Number.isFinite(gapMin) && Number.isFinite(ownMin) && gapMin < ownMin) return true;
+  return !!(legs && changeAt(legs, i));
+}
+
 /** VoiceOver and TalkBack words: "tight change, 2 minutes to change". */
 export function tightA11y(t: TightChange): string {
   const g = Math.max(0, t.gapMin);

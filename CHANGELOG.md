@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Via trips use the same Tight change rule on the phone and the web page (app and web page, 27 Oct)
+* A trip with a via stop is joined on the phone (app/src/lib/trips.ts) and on the web page (backend/src/public/app.js), not by the server. Those joins called the change tight only when it was shorter than the person's own change time, which the join never picks, so the via change was almost never marked. They now use the same rule as the trip rows and the server: under 3 min on the same mode at the same stop or platform, under 5 min to another mode, platform or stop, or under the walk plus 2 min (at least 5), with the person's own change time as a floor (tight under either, whichever is longer, as the server's chains).
+* The app reuses lib/tightChangeCore.ts (new `tightOrOwn`). The web page has one marked copy of the rule (`tight-change-rule:start` to `:end`), checked against the app's file. The transfer keeps its shape (`minutes`, `at`, `risk` "tight" or empty). No tap or screen changes, no station names.
+* Tests: app/test/tightfallback.test.mjs (7); backend/test/web-tight-change.test.mjs (4), the web page's rule and the app's agree on every change of 20,000 generated trips and on the via floor.
+
 ### Server tight change warnings use the app's rule (server, 27 Oct, 1:45 PM, transport-api `3bf49b2f`, roll back to `946e1aac`)
 * `transfer.risk` on trip answers now says `tight` by the app's Tight change rule (c62684f): under 3 min on the same mode at the same stop or platform, under 5 min to another mode, platform or stop, or under the walk plus 2 min (at least 5). Before, the server said tight only under 2 min of spare time, so a 4 min train to bus change was tight in the app and fine on the server. `miss` (shorter than the walk) and the shape are unchanged for builds 201 to 208.
 * One copy of the rule on the server (`tightChangeAt` in worker.js), used by Trip Planner trips, timetable trips (ttplan.js), our own planner (raptor.js) and your own trips with a change you set (tight under your own change time or the rule, whichever is longer; the warning line follows). No station names.

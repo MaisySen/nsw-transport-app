@@ -985,6 +985,45 @@ window.TBApp = () => {
     const d = list.filter((o) => isDirect(getJ(o), t));
     return d.length || !list.length ? { list: d, all, none: false } : { list, all, none: true };
   }
+  // Tight change rule (27 Oct 2026), the same as the app (app/src/lib/tightChangeCore.ts) and the server (tightChangeAt
+  // in worker.js): under 3 min on the same mode at the same stop or platform, under 5 min to another mode, platform or
+  // stop, and with a walk in the change the walk plus 2 min (at least 5). Legs' times (live when there are any), modes,
+  // stops and platforms only. test/tight-change.test.mjs runs this block against the app's file, so change all three together.
+  // tight-change-rule:start
+  const TIGHT_SAME_MODE_MIN = 3, TIGHT_OTHER_MIN = 5, TIGHT_WALK_SPARE_MIN = 2;
+  const tcBest = (p, e) => { const x = e ? new Date(e).getTime() : NaN; return Number.isFinite(x) ? x : p ? new Date(p).getTime() : NaN; };
+  const tcNorm = (s) => String(s ?? "").trim().toLowerCase().replace(/^(platform|stand|wharf)\s+/, "");
+  const tcMode = (m) => { const x = String(m || "").toLowerCase(); return /bus|coach/.test(x) ? "bus" : x; };
+  function tcSamePlace(a, b) {
+    const ap = tcNorm(a.toPlatform), bp = tcNorm(b.fromPlatform);
+    if (a.toStopId && b.stopId && a.toStopId === b.stopId) return true;
+    if (ap && bp) return ap === bp && (!a.toParent || !b.fromParent || a.toParent === b.fromParent);
+    if (a.toStopId && b.stopId) return false;
+    return true;
+  }
+  // The change onto legs[i] when the rule calls it tight, else null; the same object as the app's changeAt.
+  function tightChangeAt(legs, i) {
+    const b = legs[i];
+    if (!b || b.kind !== "transit" || b.cancelled) return null;
+    let k = i - 1, walkMin = 0;
+    while (k >= 0 && legs[k].kind !== "transit") { walkMin += Math.max(0, Number(legs[k].durationMin) || 0); k--; }
+    if (k < 0) return null;
+    const a = legs[k];
+    if (a.cancelled) return null;
+    const off = tcBest(a.arrPlanned, a.arrEstimated), on = tcBest(b.planned, b.estimated);
+    if (!Number.isFinite(off) || !Number.isFinite(on)) return null;
+    const gapMin = Math.floor((on - off) / 60000);
+    const why = tcMode(a.mode) !== tcMode(b.mode) ? "mode" : tcSamePlace(a, b) && walkMin === 0 ? "same" : "platform";
+    const needMin = Math.max(why === "same" ? TIGHT_SAME_MODE_MIN : TIGHT_OTHER_MIN, walkMin > 0 ? walkMin + TIGHT_WALK_SPARE_MIN : 0);
+    if (gapMin >= needMin) return null;
+    return { index: i, fromIndex: k, gapMin, needMin, why, walkMin };
+  }
+  // A change the person gave their own time for (a via trip): tight under their minutes or under the rule, whichever is longer.
+  function tightOrOwn(legs, i, gapMin, ownMin) {
+    if (Number.isFinite(gapMin) && Number.isFinite(ownMin) && gapMin < ownMin) return true;
+    return !!(legs && tightChangeAt(legs, i));
+  }
+  // tight-change-rule:end
   async function planTrip(t, opt = {}) {
     const count = opt.count || 5;
     if (isChain(t)) return api("/api/plan?" + qs({ legs: JSON.stringify(wireLegs(t)), count, time: opt.time, all: allSvc()[tripKey(t)] ? 1 : null, fare: fareT(), acc: accOn() ? 1 : null }));
@@ -1003,8 +1042,9 @@ window.TBApp = () => {
       const legs2 = (b.j.legs || []).map((l) => ({ ...l }));
       const f2 = legs2.find((l) => l.kind === "transit");
       const gap = Math.round((b.x.dep - a.x.arr) / 60000);
-      if (f2) f2.transfer = { minutes: gap, at: short(t.via.name), risk: gap < conn / 60000 ? "tight" : "" };
-      journeys.push({ ...a.j, legs: [...(a.j.legs || []), ...legs2], changes: (a.j.changes || 0) + (b.j.changes || 0) + 1, arrive: b.j.arrive, durationMin: Math.round((b.x.arr - a.x.leave) / 60000) });
+      const legs = [...(a.j.legs || []), ...legs2];
+      if (f2) f2.transfer = { minutes: gap, at: short(t.via.name), risk: tightOrOwn(legs, (a.j.legs || []).length + legs2.indexOf(f2), gap, conn / 60000) ? "tight" : "" };
+      journeys.push({ ...a.j, legs, changes: (a.j.changes || 0) + (b.j.changes || 0) + 1, arrive: b.j.arrive, durationMin: Math.round((b.x.arr - a.x.leave) / 60000) });
     }
     return { from: d1.from, to: d2.to || { id: t.to.id, name: t.to.name }, via: d1.to, journeys };
   }

@@ -3,6 +3,7 @@ import { bestTime, ms, shortName } from './format';
 import type { Fare, Journey, Leg, Place, TripResp } from './types';
 import { getJsonTagged } from './etag';
 import { dateNeeded, ymd } from './tripModesCore';
+import { tightOrOwn } from './tightChangeCore';
 
 /** One leg of a saved trip: mode, change time before it (legs after the first), all services, walk minutes. */
 export type TripLeg = { mode: string; from: Place; to: Place; conn?: number; any?: boolean; walk?: number };
@@ -114,8 +115,10 @@ export async function planTrip(t: PlanTrip, opts: { refresh?: boolean; count?: n
     const legs2 = b.j.legs.map((l) => ({ ...l }));
     const f2: any = legs2.find((l) => l.kind === 'transit');
     const gap = Math.round((b.dep - arr) / 60000);
-    if (f2) f2.transfer = { minutes: gap, at: t.via.name, risk: gap < conn / 60000 ? 'tight' : '' };
-    journeys.push({ ...a, legs: [...a.legs, ...legs2], changes: ((a as any).changes || 0) + ((b.j as any).changes || 0) + 1, arrive: b.j.arrive, fare: addFares(a.fare, b.j.fare) } as Journey);
+    const legs = [...a.legs, ...legs2];
+    // Tight by the same rule as the server and the trip rows (lib/tightChangeCore.ts), with the via time as a floor.
+    if (f2) f2.transfer = { minutes: gap, at: t.via.name, risk: tightOrOwn(legs, a.legs.length + legs2.indexOf(f2), gap, conn / 60000) ? 'tight' : '' };
+    journeys.push({ ...a, legs, changes: ((a as any).changes || 0) + ((b.j as any).changes || 0) + 1, arrive: b.j.arrive, fare: addFares(a.fare, b.j.fare) } as Journey);
   }
   return { ...d1, to: d2.to || { id: t.to.id, name: t.to.name }, journeys };
 }
