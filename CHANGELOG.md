@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Tonight's update is out (27 Oct, 11:34 PM; over the air, both platforms)
+* Production group `f5b9ac08-d95b-4f95-8cbb-35b744ed58bb` from main 75dc077 carries everything in the 27 Oct entries below marked for tonight's update: Home in one request and asking again by itself, screens painting from the kept copy, the trip list, stop board, car park and bus stop speed passes, the via trip Tight change rule, the endless trip list's day pages, less work at launch, poll tags and search kept on the phone. The crash safety net from the 11:14 AM update stays.
+* JS only, runtime 1.0.0, builds 201 to 208. Tests: backend 559 of 559, app 811 of 814 (3 skipped), battery 17 of 17, tsc clean. 15 minute watch 11:34 to 11:49 PM: 0 feedback rows, 0 crash rows, and 0 searches from any phone in the window (the last search was 11:33 PM), so it shows very little.
+* Roll back: republish `ecb0882d-4809-430e-8e2e-89248ad01fba`. Not tried on a phone yet: close and reopen the app twice to get it.
+
 ### Speed pass 5, app: less at launch, fewer redraws (27 Oct, 9:30 PM; app in tonight's update)
 * Plan and Ask read the stop lists when opened. The native tabs mount every tab at start, so their build (about 1.4 MB of bus stops parsed and indexed, about 100 ms on the build server and more on a phone, plus a 371 KB download on a fresh install) ran right after Home's first frame; it now waits for the tab to be opened or the 6 s warm, as designed.
 * The local search index and the Ask names are no longer loaded before Home draws (4 modules, 81 KB of source out of the startup set).
