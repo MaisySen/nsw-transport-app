@@ -567,6 +567,11 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 * Reading reports: `SELECT at, message, page, install FROM feedback WHERE page LIKE 'crash:%' ORDER BY at DESC` on the transport D1 database (read only).
 * On a phone (not yet done): the recovery screen in light and dark and at the largest Dynamic Type; a report arrives with the iOS build and update id.
 
+## Old apps and server steps C and D (27 Oct)
+
+* `node --test test/old-client-compat.test.mjs` in `backend/`: an old app's asks (device and profile in the address, no x-device) for the service screen (a delay only train and one with clock times, slow planner), a kept and a fresh station list and /api/timetable after a trip-live ask, compared with shapes, headers and stop lists recorded from server B (2aff7f9b, main 50dd351). A newer app (x-device) still gets the train quick answer from the engine and tags on kept copies.
+* To record again from another server's source: `COMPAT_SRC=<dir with worker.js, engine.js, raptor.js> COMPAT_WRITE=1 node test/old-client-compat.test.mjs`.
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).

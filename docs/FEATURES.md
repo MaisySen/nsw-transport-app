@@ -255,6 +255,10 @@ The server stays on the Cloudflare Workers Paid base fee (US$5 a month) for up t
 * The Home countdown chip an hour or more out shows the clock time with am or pm ("12:56" and "pm" small), or 24 hour digits.
 * "Tight change" on a trip row and in trip detail when a change is shorter than the rule allows: 3 min on the same mode and platform, 5 min to another mode, platform or stop, or the walk plus 2 min. From leg times and modes only.
 
+## Old apps keep server B's answers (27 Oct, server, on main, not deployed)
+
+The server parts of speed pass part 2 steps C and D that a phone could meet (the train quick answer on the service screen from the engine's timetable, tags on kept station list and pack copies) go only to the newer app, which sends its ids as x-device and x-profile headers. Phones on builds 201 to 208 and every update up to the crash net get exactly what server B gave them. See docs/API.md "Old apps".
+
 ## Crash safety net (27 Oct, on main, ships with tonight's update; emergency branch hotfix-crash-27oct)
 
 * A screen that hits an error shows Something went wrong with Try again and Go to Home instead of closing the app; after a retry, Clear saved times and reload.
