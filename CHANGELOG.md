@@ -11,6 +11,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * Cost: one D1 query a day (164,000 rows read and 0.19 s on 27 Oct's data, against 25 billion included a month), two meta rows written a day, one meta row read per isolate every 10 minutes. No Durable Object request. The fold waits while a D1 meter is projected over the budget hold.
 * Data so far: live times have been recorded only since 23 Oct, and no hour reaches the floors yet (1.5 percent of watched buses missed on 27 Oct, no hour with 8 or more watched), so nothing is marked until about a week of weekdays has been folded.
 * Tests: backend/test/noshow.test.mjs (8), app/test/noshow.test.mjs (7).
+* Server live: transport-api `ab6153b6` at 9:18 AM from main c9a5083 (with the Max walk server part), verify-deploy all 12 ok, 14 min watch to 9:32 AM: 25 invocations, 0 errors, 0 feedback rows; the fold had reached 27 Oct; roll back to `bb061632`. App label ships in tonight's update.
 
 ### Max walk chips (28 Oct; app on main for tonight's update, server part needs a transport-api deploy)
 * Trip screen: the Walking menu row is now a chip row, "Max walk 5 min", "10 min", "15 min" and "Prefer bus", one tap each, kept per trip (from and to) on the phone. A trip with no choice of its own starts from the older choice for every trip, so nothing set before is lost. A change asks for trips again. When every trip walks more than the limit they all still show, with a note suggesting Prefer bus.
