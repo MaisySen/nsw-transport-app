@@ -115,15 +115,18 @@ test('first frame order: a recent kept copy, the pack, an older kept copy, then 
 
 test('paint from cache: an answer held in memory by a press in is what the next screen peeks on its first frame', async () => {
   const key = O.cacheKey('svc', S.svcCacheId(S.svcParams(row)));
+  // peekOffline reads the real clock and drops a copy older than 18 hours, so the held times follow the real clock
+  // (with the fixed NOW this test failed from 3:20 AM on 28 Oct).
+  const HELD = Date.now();
   assert.equal(OFF.peekOffline(key), null);
   const ans = { kind: 'service', line: 'T1', stops: [{ id: '2135223', name: 'Strathfield', planned: iso(4) }] };
-  OFF.keepMem(key, ans, NOW - 2000);
+  OFF.keepMem(key, ans, HELD - 2000);
   const p = OFF.peekOffline(key);
   assert.ok(p, 'peeked with no storage read');
-  assert.equal(p.at, NOW - 2000);
-  assert.equal(OFF.memAt(key), NOW - 2000);
+  assert.equal(p.at, HELD - 2000);
+  assert.equal(OFF.memAt(key), HELD - 2000);
   // An older answer never replaces a newer one; a seed or an error is never held.
-  OFF.keepMem(key, { ...ans, line: 'old' }, NOW - 9000);
+  OFF.keepMem(key, { ...ans, line: 'old' }, HELD - 9000);
   assert.equal(OFF.peekOffline(key).data.line, 'T1');
   OFF.keepMem(O.cacheKey('svc', 'x'), { kind: 'service', seeded: true, stops: [] });
   assert.equal(OFF.memAt(O.cacheKey('svc', 'x')), null);

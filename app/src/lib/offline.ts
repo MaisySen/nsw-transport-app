@@ -114,9 +114,15 @@ export async function readOffline<T>(key: string): Promise<{ at: number; data: T
 /** The copy kept in memory this session (or read at start by warmOffline) for this key, gone services taken out, or
  * null. No storage read. */
 export function peekOffline<T>(key: string): { at: number; data: T } | null {
-  const e = usable(mem.get(key) || fromDisk(key), Date.now());
-  if (!e) return null;
-  const now = Date.now();
-  const data = prune(e.data as T, now);
-  return worthKeeping(data) ? { at: e.at, data } : null;
+  // Runs while a screen draws its first frame, so a kept copy it cannot read is treated as no copy (28 Oct crash
+  // hunt): the screen then waits for the live answer as it does on a first open.
+  try {
+    const e = usable(mem.get(key) || fromDisk(key), Date.now());
+    if (!e) return null;
+    const now = Date.now();
+    const data = prune(e.data as T, now);
+    return worthKeeping(data) ? { at: e.at, data } : null;
+  } catch {
+    return null;
+  }
 }

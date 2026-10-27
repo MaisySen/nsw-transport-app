@@ -26,7 +26,9 @@ export function journeyLeaves(j: any): number {
 /** A departures answer without the services that have already left. */
 export function pruneDepartures<T extends { items?: any[] }>(d: T, now: number): T {
   if (!d || !Array.isArray(d.items)) return d;
-  return { ...d, items: d.items.filter((x) => bestOf(x.planned, x.estimated, x.realtime) > now) };
+  // A kept copy is read back from the phone's storage, so a row that is not an object (a broken or older copy) is
+  // dropped here instead of stopping the screen that reads it (28 Oct crash hunt).
+  return { ...d, items: d.items.filter((x) => !!x && typeof x === 'object' && bestOf(x.planned, x.estimated, x.realtime) > now) };
 }
 
 /** A trip answer without the journeys that have already left. */
