@@ -47,6 +47,8 @@ type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; wa
   tripWalk?: Record<string, { max: number; prefer: boolean }>;
   /** Trip mode Get off alert: how many stops before your stop, and Get off now (getOffCore.ts). */
   getOff?: { stops: number; now: boolean; v?: 2 };
+  /** Spoken Get off now (getOffCore.readGetOffSay): on unless set to false. */
+  getOffSay?: boolean;
 };
 export type LeaveReminder = { at: number; dep: number; label: string };
 const EMPTY: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {}, places: {}, myTrips: [], tripOrder: [], allServices: {}, fareType: 'adult' };
@@ -133,6 +135,9 @@ export const store = {
   /** Trip mode Get off alert, as stored (read it through getOffCore.readGetOff). */
   getOff: (): unknown => state.getOff,
   setGetOff(p: { stops: number; now: boolean }) { state = { ...state, getOff: { stops: p.stops, now: !!p.now, v: 2 } }; save(); },
+  /** Spoken Get off now, as stored (read it through getOffCore.readGetOffSay). */
+  getOffSay: (): unknown => state.getOffSay,
+  setGetOffSay(on: boolean) { state = { ...state, getOffSay: !!on }; save(); },
   speakOn: (): boolean => !!state.speak,
   setSpeak(on: boolean) { state = { ...state, speak: on }; save(); },
   voiceId: (): string | null => state.voiceId || null,

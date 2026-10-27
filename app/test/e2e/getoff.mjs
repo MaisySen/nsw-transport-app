@@ -63,7 +63,7 @@ await page.waitForTimeout(800);
 await shot("row");
 await row.click(); await page.waitForTimeout(700);
 await shot("menu");
-const three = page.getByText(/^3 stops before/).last();
+const three = page.getByText(/^Alert 3 stops early/).last();
 if (await three.count()) { await three.click(); await page.waitForTimeout(2500); }
 report.checks.after3 = await page.getByRole("button", { name: /^Get off alert/ }).locator("visible=true").first().getAttribute("aria-label").catch(() => null);
 await page.getByRole("button", { name: /^Get off alert/ }).locator("visible=true").first().click(); await page.waitForTimeout(700);

@@ -187,8 +187,8 @@ test('Speak alerts on: the heads up and Get off now are read out once each', () 
   const r = replay({ pref: { stops: 2, now: true }, speak: true });
   const texts = r.said.map((x) => x.text);
   assert.ok(texts.includes('2 stops to Central.'), texts.join(' | '));
-  assert.ok(texts.includes('Get off now. Central.'), texts.join(' | '));
-  assert.equal(texts.filter((x) => x === 'Get off now. Central.').length, 1);
+  assert.ok(texts.includes('Get off now at Central.'), texts.join(' | '));
+  assert.equal(texts.filter((x) => x === 'Get off now at Central.').length, 1);
   assert.ok(texts.includes('Your stop is next. Central.'), 'the existing line stays');
 });
 

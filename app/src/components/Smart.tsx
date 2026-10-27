@@ -12,7 +12,7 @@ import { resetLiveCache, tickLive } from '@/lib/liveEngine';
 import type { LiveState } from '@/lib/liveCalc';
 import { boardTime, leavePlan, leaveWords, legsOf, reachFrom, missedConn, missedPlanLegs, pickNextOption, switchLegs, sydHHMM, wakeId, type LatLon, type Missed } from '@/lib/smart';
 import { canNotify, cancelLeave, cancelWake, scheduleLeave } from '@/lib/smartNotify';
-import { getOffId } from '@/lib/getOffCore';
+import { getOffId, readGetOffSay } from '@/lib/getOffCore';
 import { cancelGetOff } from '@/lib/getOffNotify';
 import { store, useStore } from '@/lib/store';
 import { androidLook, radius, usePalette } from '@/lib/theme';
@@ -238,6 +238,7 @@ export function WakeRow({ g, st }: { g: LiveTrip; st: LiveState | null }) {
 /** Say trip alerts out loud, in headphones when they are in. Only on builds with the speech module (206 and later). */
 export function SpeakRow({ g }: { g: LiveTrip }) {
   const c = usePalette();
+  const sayNow = readGetOffSay(useStore().getOffSay);
   if (!hasSpeech()) return null;
   const toggle = (on: boolean) => {
     const cur = getLive();
@@ -255,7 +256,7 @@ export function SpeakRow({ g }: { g: LiveTrip }) {
       </View>
       <View style={{ flex: 1 }}>
         <T kind="body">Speak alerts</T>
-        <T kind="foot" tone="text2" numberOfLines={4}>{g.speak ? `Read out while the app is open: leaving soon, delays, stand changes and your stop.${silentNote ? ' Silent mode mutes the speaker; headphones still work.' : ''}` : 'Hear next stop and get off alerts in your headphones'}</T>
+        <T kind="foot" tone="text2" numberOfLines={4}>{g.speak ? `Read out while the app is open: leaving soon, delays, stand changes and your stop.${silentNote ? ' Silent mode mutes the speaker; headphones still work.' : ''}` : sayNow ? 'Get off now is already spoken. Turn on to hear every trip alert too.' : 'Hear next stop and get off alerts in your headphones'}</T>
       </View>
       <Switch value={!!g.speak} onValueChange={toggle} accessibilityLabel="Speak alerts"
         trackColor={Platform.OS === 'android' ? { true: c.tint, false: c.fill } : undefined}

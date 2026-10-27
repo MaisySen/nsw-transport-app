@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 28 Oct 2026
 
+### Get off alert you choose, spoken (28 Oct; app on main for tonight's update)
+* The Get off alert menu now reads "Alert 1 stop early", "Alert 2 stops early", "Alert 3 stops early" (a nap setting: the heads up wakes you before your stop). Same saved choice as before, so nothing set is lost. Stops are counted on the stops the service calls at, so an express that runs through stops counts only the ones it stops at; a ride that calls at fewer stops than the choice gets no extra heads up.
+* Spoken Get off now: "Get off now at Rhodes." (and "Change here." at a change) is said as the final alert rings while the app can run, with the voice picked in More > Voice, even with Speak alerts off. On unless turned off with "Speak Get off now" in the same menu (shown only on builds with the speech module, 206 and later; builds without it say nothing). With Speak alerts off it goes through the system's speech session rather than the app's own (207 and later), so Silent mode mutes it; with Speak alerts on it is said like every other alert.
+* Never after arrival for speech too: a Get off now the phone rang with the app closed is no longer read out when the app opens after the arrival (before, it could be read up to 45 s after it rang).
+* Speak alerts row: when off, says Get off now is already spoken.
+* Untouched: Get off now 30 s before the realtime arrival (60 s before the timetable one), never after, on by default, time sensitive. All of getoff30.test.mjs passes unchanged.
+* Tests: app/test/getoffspoken.test.mjs (16); getoff.test.mjs expects the new spoken words; e2e/getoff.mjs taps "Alert 3 stops early". No native code, no server change.
+
 ### Often does not run: stricter bar (28 Oct; server change for transport-api, no app change)
 * Why: one hour already qualified on 2 days of data (weekday 610X, midnight to 1 AM, 3 of 9 never live). A wrong "Often does not run" is worse than none.
 * Now an hour is marked only with at least 12 counted buses AND those buses counted on at least 4 distinct service days. The 30 percent share and the skip of a day over 35 percent missed (another timetable) are kept.

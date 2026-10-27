@@ -36,6 +36,16 @@ export function readGetOff(raw: unknown): GetOffPref {
   return { stops, now: v2 ? r.now === true : true };
 }
 
+/**
+ * Spoken Get off now (28 Oct): "Get off now at Central" is said out loud as it rings, while the app can run, even
+ * with Speak alerts off. On unless turned off in the Get off alert menu; kept apart from the stops choice so a saved
+ * choice reads the same as before. Builds without the speech module say nothing (hasSpeech in liveEngine).
+ */
+export function readGetOffSay(raw: unknown): boolean { return raw !== false; }
+
+/** The menu's choice: "Alert 1 stop early", "Alert 3 stops early" (a nap setting: the heads up wakes you in time). */
+export const earlyWords = (n: number) => `Alert ${n} stop${n === 1 ? '' : 's'} early`;
+
 /** "1 stop before", "2 stops before". */
 export const stopsWords = (n: number) => `${n} stop${n === 1 ? '' : 's'} before`;
 
@@ -118,19 +128,28 @@ export function getOffWords(legs: WatchLeg[], s: LiveState, k: number, kind: 'ea
   return {
     title: `Get off now: ${stop}`,
     body: change ? `Change here to the ${change.line}.` : `This is your stop${at ? `, due ${at}` : ''}.`,
-    say: change ? `Get off now. ${sayStop(l?.to)}. Change here.` : `Get off now. ${sayStop(l?.to)}.`,
+    say: getOffSayText(sayStop(l?.to), !!change),
   };
+}
+
+/** The spoken Get off now: "Get off now at Central." (and "Change here." when another leg follows). */
+export function getOffSayText(stop: string, change: boolean): string {
+  return `Get off now${stop ? ` at ${stop}` : ''}.${change ? ' Change here.' : ''}`;
 }
 
 /** A stop as it is heard: the part before the comma, without "Station". */
 const sayStop = (n?: string | null) => String(n || '').split(',')[0].replace(/ Station$/, '').trim();
 
-export type GetOffTrip = { id: string; legs: WatchLeg[]; alerted: Record<string, 1>; offSet?: Record<string, number>; speak?: boolean; spoken?: Record<string, 1> };
+/**
+ * `speak`: Speak alerts is on (every alert is read out). `sayNow`: the phone can speak and spoken Get off now is on,
+ * so the final alert is read out even with Speak alerts off; that one is marked quiet (it follows Silent mode).
+ */
+export type GetOffTrip = { id: string; legs: WatchLeg[]; alerted: Record<string, 1>; offSet?: Record<string, number>; speak?: boolean; sayNow?: boolean; spoken?: Record<string, 1> };
 export type GetOffAction =
   | { t: 'offSchedule'; id: string; key: string; at: number; title: string; body: string }
   | { t: 'offDue'; id: string; key: string; title: string; body: string }
   | { t: 'offCancel'; id: string; key: string }
-  | { t: 'say'; key: string; text: string };
+  | { t: 'say'; key: string; text: string; quiet?: boolean };
 
 /**
  * One refresh of the get off alerts, beside the trip's own alerts. With the default (1 stop, no Get off now) it does
@@ -145,7 +164,8 @@ export type GetOffAction =
  * - an alert whose set time has passed has rung (the phone rang it), so nothing rings twice;
  * - without live times no heads up is set (and what was set is taken back), the same rule as the Next stop alert;
  * - a leg you are past, a trip that ended, or a choice turned off takes back what is still to ring.
- * Speak alerts (when on) reads each one out as it comes while the app is open.
+ * Speak alerts (when on) reads each one out as it comes while the app is open. Spoken Get off now (sayNow) reads
+ * the final one out even with Speak alerts off, and never once the arrival has passed.
  */
 export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: number, f: Fmt): { g: GetOffTrip; actions: GetOffAction[] } {
   const actions: GetOffAction[] = [];
@@ -158,10 +178,11 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
     if (!alerted[key] && set[key] > now) actions.push({ t: 'offCancel', id: getOffId(g.id, key), key });
     delete set[key];
   };
-  const say = (key: string, text: string) => {
-    if (!g.speak || spoken[key]) return;
+  const say = (key: string, text: string, kind: 'early' | 'now') => {
+    const all = !!g.speak;
+    if ((!all && !(kind === 'now' && g.sayNow)) || spoken[key]) return;
     spoken = { ...spoken, [key]: 1 };
-    actions.push({ t: 'say', key, text });
+    actions.push(all ? { t: 'say', key, text } : { t: 'say', key, text, quiet: true });
   };
   const wantEarly = pref.stops > 1;
   for (const key of Object.keys(set)) {
@@ -185,7 +206,8 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
         const w = getOffWords(g.legs, s, k, kind, pref.stops, f);
         if (prev != null && prev <= now) {
           // The phone's alert has rung. With the app open (this refresh) it is read out too, while it is still news.
-          if (now - prev <= SAY_LATE_MS) say(key, w.say);
+          // Get off now is never said once the arrival has passed.
+          if (now - prev <= SAY_LATE_MS && (kind !== 'now' || nowArrival(s, k) > now)) say(key, w.say, kind);
           mark(key); delete set[key]; continue;
         }
         if (kind === 'now') {
@@ -201,7 +223,7 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
           const nat = nowTime(s, k);
           if (nat <= now) {
             actions.push({ t: 'offDue', id: getOffId(g.id, key), key, title: w.title, body: w.body });
-            say(key, w.say);
+            say(key, w.say, kind);
             mark(key);
             delete set[key];
             continue;
@@ -227,7 +249,7 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
         }
         if (due) {
           actions.push({ t: 'offDue', id: getOffId(g.id, key), key, title: w.title, body: w.body });
-          say(key, w.say);
+          say(key, w.say, kind);
           mark(key);
           delete set[key];
           continue;

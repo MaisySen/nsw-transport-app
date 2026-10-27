@@ -135,9 +135,11 @@ export async function currentVoice(): Promise<RankedVoice | null> {
 /**
  * The one way the app speaks: trip alerts, trip guidance, Speak departures and the Voice sample all come here, so
  * each uses the same best voice and pace. Queued after anything still being said unless `interrupt` (a button the
- * person pressed: what they asked for now replaces what was being said).
+ * person pressed: what they asked for now replaces what was being said). `quiet`: said through the system's own
+ * speech session, not the app's (207 and later), so Silent mode mutes it like any other sound (spoken Get off now
+ * with Speak alerts off; the rider never chose to hear it in Silent mode).
  */
-export async function speak(text: string, opts: { interrupt?: boolean; voice?: string | null } = {}) {
+export async function speak(text: string, opts: { interrupt?: boolean; voice?: string | null; quiet?: boolean } = {}) {
   const S = speechModule();
   if (!S || !text) return;
   let voice: string | null = null;
@@ -147,7 +149,7 @@ export async function speak(text: string, opts: { interrupt?: boolean; voice?: s
     // Queued after anything still being said (two moments in one refresh are both heard). The app's own audio
     // session, where there is one, is let go only when the last queued alert is done.
     const a = speechAudio();
-    const own = !!a?.start?.();
+    const own = !opts.quiet && !!a?.start?.();
     if (own) pending++;
     const done = own ? () => { pending = Math.max(0, pending - 1); if (!pending) a?.end?.(); } : undefined;
     try { S.speak(text, speechOptions(own, done, voice)); }
