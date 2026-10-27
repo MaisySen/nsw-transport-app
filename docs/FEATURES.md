@@ -262,4 +262,4 @@ The server stays on the Cloudflare Workers Paid base fee (US$5 a month) for up t
 
 ## Not in the app
 
-No accounts or login, no ads, no analytics or tracking, no Opal card balance. Privacy details: [STORE_PRIVACY.md](STORE_PRIVACY.md) and https://transportsydney.app/privacy/.
+No accounts or login, no ads, no analytics or tracking, no Opal card balance. Crash reports are sent only to fix faults (the crash safety net, and Sentry from build 209); the privacy policy lists them. Privacy details: [STORE_PRIVACY.md](STORE_PRIVACY.md) and https://transportsydney.app/privacy/.

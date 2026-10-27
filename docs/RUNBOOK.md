@@ -366,10 +366,10 @@ for p in / /support/ /privacy/ /terms/; do echo "$p $(curl -s -o /dev/null -w '%
 
 ### Current deployment, rollback and SEO checklist
 
-Current production deployment: `6a797b2c-197c-4ad0-8721-16737a8b6b03` (25 Oct, about 9:00 PM, SEO and polish). Roll back to the one before it (`564bc47c-7128-4534-83e1-b4fdce138fd4`, the 8:50 PM simple home page): Cloudflare dashboard, Workers and Pages, `transportsydney`, Deployments, 564bc47c, Rollback, or
+Current production deployment: `202d89e9-fd1f-4253-83b1-7d02ad00d17f` (27 Oct, 12:56 PM, privacy policy discloses crash reports). Roll back to the one before it (`462d58fc-28e0-4aba-b6b8-4249f5921f9d`, the 26 Oct privacy update): Cloudflare dashboard, Workers and Pages, `transportsydney`, Deployments, 462d58fc, Rollback, or
 
 ```bash
-curl -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/pages/projects/transportsydney/deployments/564bc47c-7128-4534-83e1-b4fdce138fd4/rollback"
+curl -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/pages/projects/transportsydney/deployments/462d58fc-28e0-4aba-b6b8-4249f5921f9d/rollback"
 ```
 
 Rules for the site: no scripts (JSON-LD data is the one allowed script element), no ads, no analytics, no tracking. The contact addresses are support@, privacy@ and hello@transportsydney.app, and contact@fintex.au never appears. No em or en dashes. Change a stylesheet by giving it a new file name. Leave `site.css` and `home.css` as they are, and put new rules in `extra-1.css`, or in `extra-2.css` once that file has changed. `backend/test/public-site.test.mjs` checks the items below.

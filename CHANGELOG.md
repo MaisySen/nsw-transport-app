@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Privacy policy discloses crash reports (site, 27 Oct, 12:56 PM, Pages `202d89e9`, roll back to `462d58fc`)
+* The published policy said "no analytics" and did not mention crash reports, while the crash safety net has sent them from every build since the 11:14 AM update. The short version now says the app sends a crash report if it crashes, used only to fix faults, and that these are not analytics.
+* New Crash reports section: what goes to our server (error, code location, screen, iPhone or Android, version, build, update, recent server paths that can carry a stop or trip number but not what was typed, the install ID; at most 3 a run; deleted once fixed, 12 months at most) and to Sentry from build 209 (cleaned on the phone, phone model and system version, no install ID). Sentry under Who else is involved (United States, 30 days, IP not stored, no screenshots, replay or performance). Delete all my data does not reach crash reports, so the policy says to email with the install ID.
+* site/privacy/index.html, store/privacy-policy.md, site/sitemap.xml (privacy lastmod); docs RELEASES, STATE, TEST_PLAN, FEATURES. Branch sentry-build209 is not merged.
+
 ### Trip legs live only with a live reading (server, 27 Oct, on main, pending deploy)
 * `/api/trip` legs say `realtime: true` only when the planner's estimate differs from the timetable (to the minute, late or early) or the trip leaves within 60 min (its first service's live time, else its timetable time). The planner marks some services hours away as realtime controlled and echoes the timetable as the estimate, which the app showed as On time. `estimated` and `delayMin` are passed on as before, so nothing else moves; the app already applies the same rule on its side (lib/rowTimeCore.ts hasLiveData), so old builds get it from the server once deployed.
 * Not deployed: another worker is redeploying the server today. Deploy with the next server deploy from main; rollback is that deploy's previous version.

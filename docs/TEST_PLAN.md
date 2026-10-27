@@ -527,7 +527,7 @@ Before switching it on:
 
 * `backend/test/search-points.test.mjs`: a watched trip from a point writes no trip history row; stop to stop still does.
 * After a server deploy, the live script keeps `invocation_logs: false` (Cloudflare API, `workers/scripts/transport-api/script-settings`, `observability.logs`). Read back 26 Oct after `3e88773d`.
-* Privacy policy live: https://transportsydney.app/privacy/ says "Updated 26 October 2026", has no script and keeps `no-transform` (checked 26 Oct after Pages `462d58fc`).
+* Privacy policy live: https://transportsydney.app/privacy/ says "Updated 27 October 2026", has the Crash reports section (`id="crash-h"`) and Sentry under Who else is involved, has no script and keeps `no-transform` (checked 27 Oct, 12:57 PM after Pages `202d89e9`; the live page is byte for byte `site/privacy/index.html`). Whenever the app starts sending something new (Sentry in build 209 is already covered), update the policy before the update or build ships.
 * App Store Connect draft text read back through the API equals store/apple/listing.md (description) and store/apple/review-notes.md (Notes, 3562 characters). Age rating read back: every item None or No, 4+.
 * Before submission: an Apple Watch screenshot set exists; the version has the newest build; the iPhone screenshots are a reshoot without the owner's stations or the owner kept the old set (store/README.md).
 * Not verified: the store screenshot script's new defaults (Parramatta, Wynyard, Chatswood to Bondi Junction) have not been run; they need live data (after about 1 AM).
