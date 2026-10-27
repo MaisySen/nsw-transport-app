@@ -4,21 +4,27 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
-### Old apps get server B's answers from steps C and D (server, 27 Oct, crash review; on main, not deployed)
+### Server main deployed: steps C and D back with the old app guard (server, 27 Oct, 1:10 PM, transport-api `807c3663`, roll back to `2aff7f9b`)
+* `wrangler deploy` from main 5e73147, root authorised: the old app guard (35aca71), steps C and D, and 6b461ff (trip legs live only with a live reading). Backend 511 of 511, old-client-compat 7 of 7, no D1 migration, no R2 as before.
+* Checked on production: `tools/verify-deploy.mjs` all 12 ok. An old app's ask (no x-device) for a train service got server B's keys and headers (planner answer, no quick answer, no x-quick-ms) and a kept station list with no tag. A newer app (x-device) got the train quick answer from the engine's timetable (x-edge-cache quick, 51 stops, 1.3 s), a tagged station copy and trip-live train legs live with vehicle and platform. x-serves on every answer.
+* Watched 15 min after the deploy: no `crash:` feedback rows, no device relaunching in the searches table.
+* Roll back: `npx wrangler@4 rollback 2aff7f9b-5d40-481b-a2b4-34ea3f2ae2f2 --name transport-api -y`. Never roll back to `f8c60d91` (D without the guard).
+
+### Old apps get server B's answers from steps C and D (server, 27 Oct, crash review; deployed 1:10 PM as `807c3663`)
 * Review of the 10:42 AM crash loop (owner's phone, shipped update 27efc6bd, server D f8c60d91 live): nothing steps C and D changed reaches what Home asks at launch. The Home commute trips (/api/trip), the boards (/api/departures), packs, config, saved trips and commutes run the same code on B and D. The shipped app reads no response headers, so x-serves and ETags are invisible to it. The changes an old app could meet were only: the train quick answer on the service screen, the full board's stop names and an active trip (/api/service, from the engine's timetable), tags on kept /api/stations and /api/pack copies, and x-quick-ms. The cause of the crash is not found; the server change is a time match, not a proven cause.
 * So C and D can come back with no change for old apps, those parts now go only to a phone that sends `x-device` or `x-profile` (the newer app, main caeb0ee on, once a server says id-headers). An older app (builds 201 to 208 as built, 27efc6bd, the crash net ecb0882d) gets server B's answers: the service quick answer from the feed only and the run waited for as on B, no tag added to a kept copy, no x-quick-ms.
 * The engine adds the stop sequence to /timetable rows only when asked with seq=1 (trip-live), under its own edge key, so /api/timetable keeps its five value rows.
 * x-serves stays on every answer: the newer app only sends x-device after it has seen it, and old apps never read it.
-* test/old-client-compat.test.mjs (7) replays an old app's asks against shapes recorded from server B's own source (test/fixtures/old-client-b.json); steps C and D as deployed fail 3 of them, this code passes all. Home's commute trip is in it too, with 6b461ff (pending deploy on main): same keys and types for old apps. engine and speed-part2 tests updated. Backend suite 503 of 503.
+* test/old-client-compat.test.mjs (7) replays an old app's asks against shapes recorded from server B's own source (test/fixtures/old-client-b.json); steps C and D as deployed fail 3 of them, this code passes all. Home's commute trip is in it too, with 6b461ff (deployed with it): same keys and types for old apps. engine and speed-part2 tests updated. Backend suite 503 of 503.
 
 ### Privacy policy discloses crash reports (site, 27 Oct, 12:56 PM, Pages `202d89e9`, roll back to `462d58fc`)
 * The published policy said "no analytics" and did not mention crash reports, while the crash safety net has sent them from every build since the 11:14 AM update. The short version now says the app sends a crash report if it crashes, used only to fix faults, and that these are not analytics.
 * New Crash reports section: what goes to our server (error, code location, screen, iPhone or Android, version, build, update, recent server paths that can carry a stop or trip number but not what was typed, the install ID; at most 3 a run; deleted once fixed, 12 months at most) and to Sentry from build 209 (cleaned on the phone, phone model and system version, no install ID). Sentry under Who else is involved (United States, 30 days, IP not stored, no screenshots, replay or performance). Delete all my data does not reach crash reports, so the policy says to email with the install ID.
 * site/privacy/index.html, store/privacy-policy.md, site/sitemap.xml (privacy lastmod); docs RELEASES, STATE, TEST_PLAN, FEATURES. Branch sentry-build209 is not merged.
 
-### Trip legs live only with a live reading (server, 27 Oct, on main, pending deploy)
+### Trip legs live only with a live reading (server, 27 Oct, deployed 1:10 PM as `807c3663`)
 * `/api/trip` legs say `realtime: true` only when the planner's estimate differs from the timetable (to the minute, late or early) or the trip leaves within 60 min (its first service's live time, else its timetable time). The planner marks some services hours away as realtime controlled and echoes the timetable as the estimate, which the app showed as On time. `estimated` and `delayMin` are passed on as before, so nothing else moves; the app already applies the same rule on its side (lib/rowTimeCore.ts hasLiveData), so old builds get it from the server once deployed.
-* Not deployed: another worker is redeploying the server today. Deploy with the next server deploy from main; rollback is that deploy's previous version.
+* Deployed with main at 1:10 PM (`807c3663`); roll back to `2aff7f9b`.
 * backend/src/worker.js (tripLegLive, tripLegsOf); test/trip-realtime.test.mjs (7).
 
 ### Plan rows follow ups: trip detail times, Home chip am and pm, Tight change (app, 27 Oct, on main, ships with tonight's update)
