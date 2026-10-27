@@ -7,6 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { efaTrip } from "./helpers/efa.mjs";
 
 const here = new URL(".", import.meta.url).pathname;
 const dir = process.env.COMPAT_SRC || new URL("../src/", import.meta.url).pathname;
@@ -55,12 +56,13 @@ const ENGINE = { idFromName: (n) => n, get: () => ({ fetch: async (u) => {
   return new Response("no", { status: 404 });
 } }) };
 const env = { TFNSW_API_KEY: "t", ENGINE, ASSETS: { fetch: async (req) => { const p = new URL(req.url).pathname; const v = stops[p] || lists[p]; return v ? new Response(JSON.stringify(v), { headers: { "content-type": "application/json" } }) : new Response("no", { status: 404 }); } } };
-let plannerDelay = 0;
+let plannerDelay = 0, tripAnswer = null;
 globalThis.fetch = async (u) => {
   const url = new URL(String(u.url || u));
   if (url.pathname.includes("realtime/sydneytrains")) {
     return new Response(feed([delayOnlyNoSeq("t1-delay", [["2135101", 180]]), tripUpdate("t1-live", [[5, "2135113", nowS + 4 * 60, 120], [9, "2000331", nowS + 20 * 60, 120]])]));
   }
+  if (url.pathname.endsWith("/tp/trip") && tripAnswer) return new Response(JSON.stringify(tripAnswer), { status: 200 });
   if (url.pathname.endsWith("/tp/trip") || url.pathname.endsWith("/tp/departure_mon")) {
     if (plannerDelay) await new Promise((r) => setTimeout(r, plannerDelay));
     return new Response("{}", { status: 503 });
@@ -126,6 +128,12 @@ async function replay() {
   await settle();
   const tt = await call("/api/timetable?stops=2135113,2000331&days=1" + OLD);
   got.timetable = { status: tt.status, shape: shape(tt.body) };
+  // 5. Home's commute trip: one service in 20 min running 2 min late, one 3 hours out whose estimate echoes the timetable.
+  tripAnswer = efaTrip([[{ from: "strathfield", to: "kingscross", dep: Date.now() + 20 * 60000, delay: 2, line: "T2" }],
+    [{ from: "strathfield", to: "kingscross", dep: Date.now() + 180 * 60000, delay: 0, line: "T2" }]]);
+  const trip = await call("/api/trip?from=213510&to=201110&count=3" + OLD);
+  tripAnswer = null;
+  got.trip = { status: trip.status, headers: headerNames(trip.headers), shape: shape(trip.body) };
   return got;
 }
 
@@ -151,6 +159,17 @@ if (process.env.COMPAT_WRITE) {
   test("/api/timetable keeps five value rows, even after trip-live asked the engine for the same stops", () => {
     assert.deepEqual(got.timetable, want.timetable);
   });
+  test("Home's commute trip has the keys and types server B gave (6b461ff: a far echoed leg says realtime false, source null)", () => {
+    assert.equal(got.trip.status, want.trip.status);
+    assert.deepEqual(got.trip.headers, want.trip.headers);
+    const paths = (o, p = "") => (o && typeof o === "object" && !Array.isArray(o) ? (o.tuple ? [p + "=" + o.tuple.join(",")] : Object.entries(o).flatMap(([k, v]) => paths(v, p + "." + k)))
+      : Array.isArray(o) ? (o.length ? o.flatMap((x) => paths(x, p + "[]")) : [p + "=[]"]) : [p + "=" + o]);
+    const b = new Set(paths(want.trip.shape)), g = new Set(paths(got.trip.shape));
+    const keyOf = (x) => x.slice(0, x.lastIndexOf("="));
+    assert.deepEqual([...new Set([...g].map(keyOf))].sort(), [...new Set([...b].map(keyOf))].sort(), "same keys");
+    // A value is null only where server B could already say null for it (leg source is null on a leg with no live reading).
+    for (const x of g) if (!b.has(x)) assert.ok(x.endsWith("=null") && keyOf(x) === ".journeys[].legs[].source", "new type at " + x);
+  });
   test("a newer app (x-device) still gets the steps C and D answers", async () => {
     edge.clear(); plannerDelay = 1000;
     const svc = await call(SERVICE.replace("dest=Hornsby", "dest=Hornsby&n=1"), { "x-device": "app-new", "x-profile": "u-new" });
@@ -166,6 +185,6 @@ if (process.env.COMPAT_WRITE) {
     assert.match(kept.headers.get("etag") || "", /^"[0-9a-f]{24}"$/);
   });
   test("every answer still says x-serves (an old app reads no headers; a newer app finds the paths through it)", () => {
-    for (const k of ["service", "serviceLive", "stationsKept", "stationsFresh"]) assert.ok(got[k].headers.includes("x-serves"), k);
+    for (const k of ["service", "serviceLive", "stationsKept", "stationsFresh", "trip"]) assert.ok(got[k].headers.includes("x-serves"), k);
   });
 }

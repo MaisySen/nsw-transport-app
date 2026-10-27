@@ -229,5 +229,109 @@
    },
    "v": "number"
   }
+ },
+ "trip": {
+  "status": 200,
+  "headers": [
+   "access-control-allow-origin",
+   "access-control-expose-headers",
+   "cache-control",
+   "content-security-policy",
+   "content-type",
+   "referrer-policy",
+   "strict-transport-security",
+   "x-content-type-options",
+   "x-edge-cache",
+   "x-frame-options",
+   "x-serves"
+  ],
+  "shape": {
+   "from": {
+    "id": "string",
+    "name": "string"
+   },
+   "journeys": [
+    {
+     "anyCancelled": "boolean",
+     "arrive": "string",
+     "beaten": "boolean",
+     "board": "string",
+     "changes": "number",
+     "durationMin": "number",
+     "fare": {
+      "airportFee": "number",
+      "capped": "boolean",
+      "estimate": "boolean",
+      "legs": [
+       {
+        "amount": "null",
+        "joined": "boolean",
+        "km": "null",
+        "line": "string",
+        "mode": "string",
+        "peak": "null"
+       }
+      ],
+      "peak": "boolean",
+      "total": "number",
+      "transfer": "number",
+      "type": "string",
+      "typeName": "string",
+      "unknown": "boolean"
+     },
+     "leave": "string",
+     "legs": [
+      {
+       "alerts": [],
+       "arrEstimated": "string",
+       "arrPlanned": "string",
+       "cancelled": "boolean",
+       "color": "string",
+       "delayMin": "number",
+       "destId": "string",
+       "durationMin": "number",
+       "estimated": "string",
+       "from": "string",
+       "fromParent": "string",
+       "fromPlatform": "string",
+       "kind": "string",
+       "line": "string",
+       "mode": "string",
+       "modeName": "string",
+       "occupancy": "null",
+       "path": [],
+       "planned": "string",
+       "platformChangedFrom": "null",
+       "realtime": "boolean",
+       "source": "string",
+       "status": {
+        "key": "string",
+        "text": "string"
+       },
+       "stopId": "string",
+       "stops": "number",
+       "to": "string",
+       "toParent": "string",
+       "toPlatform": "string",
+       "toStopId": "string",
+       "towards": "string",
+       "tripId": "string"
+      }
+     ],
+     "live": "boolean",
+     "risk": "string"
+    }
+   ],
+   "kind": "string",
+   "live": {
+    "feedAt": "number"
+   },
+   "now": "number",
+   "to": {
+    "id": "string",
+    "name": "string"
+   },
+   "tomorrow": "boolean"
+  }
  }
 }
