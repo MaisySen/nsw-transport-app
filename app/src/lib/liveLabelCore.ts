@@ -14,6 +14,8 @@ export type LiveInput = {
   seenAt?: number | null;
   /** Age of the vehicle's GPS position in that answer, in seconds, when the feed gave one. */
   vehicleAgeS?: number | null;
+  /** Buses: the server's count of how often this line's services in this hour never showed live (new server only). */
+  noShow?: { share?: number | null; n?: number | null } | null;
 };
 
 export type LiveState = {
@@ -32,6 +34,8 @@ export type LiveState = {
   counting: boolean;
   /** One line for VoiceOver and TalkBack. */
   a11y: string;
+  /** Not tracking or timetable only, on a bus whose services in this hour often never show live: the label says so. */
+  noShow?: boolean;
 };
 
 /** Our copy of the live times is older than this: close services stop counting down. */
@@ -42,6 +46,19 @@ export const STALE_GPS_S = 180;
 export const DUE_GRACE_MS = 60000;
 /** Old data only matters for services this close; further out the age is shown instead. */
 export const STALE_NEAR_MS = 10 * 60000;
+/** "Often does not run": at least this percent of the recorded services in the hour never showed live... */
+export const NO_SHOW_SHARE = 30;
+/** ...out of at least this many watched services (the server applies the same floor). */
+export const NO_SHOW_MIN_N = 8;
+export const NO_SHOW_LABEL = 'Often does not run';
+
+/** Whether a row's noShow (server, docs/LIVE-LABELS.md) is strong enough to say "Often does not run". */
+export function oftenNoShow(x: Pick<LiveInput, 'noShow'> | null | undefined): boolean {
+  const v = x && x.noShow;
+  if (!v || typeof v !== 'object') return false;
+  const share = Number(v.share), n = Number(v.n);
+  return Number.isFinite(share) && Number.isFinite(n) && share >= NO_SHOW_SHARE && n >= NO_SHOW_MIN_N;
+}
 
 const ms = (s?: string | null) => (s ? new Date(s).getTime() : NaN);
 
@@ -99,6 +116,12 @@ export function liveState(x: LiveInput, now: number): LiveState {
   }
   if (!rt) {
     const t = planned;
+    if (oftenNoShow(x)) {
+      // No live time, and this line's services in this hour often never show live: say so instead of "Timetable".
+      const k = t < now - DUE_GRACE_MS ? { big: clockText(t), unit: '', counting: false } : counter(t, now);
+      return { kind: 'timetable', label: NO_SHOW_LABEL, age: null, t, big: k.big, unit: k.unit, soon: false, counting: k.counting, noShow: true,
+        a11y: `${NO_SHOW_LABEL}. ${k.unit ? `${k.big} ${k.unit === 'min' ? 'minutes' : k.unit}, ` : ''}timetable time ${clockText(t)}, no live data` };
+    }
     if (t < now - DUE_GRACE_MS) {
       // A timetable time that has passed: no live data says whether it came. Show the time, not "left".
       return { kind: 'timetable', label: 'Timetable', age: null, t, big: clockText(t), unit: '', soon: false, counting: false,
@@ -117,6 +140,10 @@ export function liveState(x: LiveInput, now: number): LiveState {
     || est < now - DUE_GRACE_MS;
   if (stale) {
     const t = Number.isFinite(planned) ? planned : est;
+    if (oftenNoShow(x)) {
+      return { kind: 'stale', label: NO_SHOW_LABEL, age: ageText(age), t, big: clockText(t), unit: '', soon: false, counting: false, noShow: true,
+        a11y: `Not tracking, ${NO_SHOW_LABEL.toLowerCase()}. Timetable ${clockText(t)}${age != null ? `, last live time ${ageText(age)}` : ''}` };
+    }
     return { kind: 'stale', label: 'Not tracking', age: ageText(age), t, big: clockText(t), unit: '', soon: false, counting: false,
       a11y: `Not tracking. Timetable ${clockText(t)}${age != null ? `, last live time ${ageText(age)}` : ''}` };
   }
@@ -129,7 +156,7 @@ export function liveState(x: LiveInput, now: number): LiveState {
 /** What a row shows, as one string: rows redraw only when this changes. */
 export function liveKey(x: LiveInput, now: number): string {
   const s = liveState(x, now);
-  return `${s.kind}|${s.big}|${s.unit}|${s.soon ? 1 : 0}|${s.age || ''}`;
+  return `${s.kind}|${s.big}|${s.unit}|${s.soon ? 1 : 0}|${s.age || ''}${s.noShow ? '|n' : ''}`;
 }
 
 /** "Live, updated 20 s ago" / "Live" / "Timetable" / "Not tracking" / "Cancelled". */

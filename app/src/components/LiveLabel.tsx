@@ -10,11 +10,20 @@ import { font } from './ui';
 
 export type LiveProps = LiveInput & { delayMin?: number | null; now: number };
 
-/** The label line: "3 min late · Live, updated 20 s ago", "Timetable", "Not tracking", "Cancelled". */
+/** The label line: "3 min late · Live, updated 20 s ago", "Timetable", "Not tracking", "Often does not run", "Cancelled". */
 export function LiveStatus({ state, delayMin, compact, timetableText }: { state: LiveState; delayMin?: number | null; compact?: boolean; timetableText?: string }) {
   const c = usePalette();
   if (state.kind === 'cancelled') {
     return <Text maxFontSizeMultiplier={1.4} style={[font.foot, { color: c.redText, fontWeight: '600' }]}>Cancelled</Text>;
+  }
+  if (state.noShow && (state.kind === 'timetable' || state.kind === 'stale')) {
+    // Often does not run (liveLabelCore.oftenNoShow): no live time on a bus whose services in this hour often never show.
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel={state.kind === 'stale' ? `Not tracking, often does not run${state.age ? `, last live time ${state.age}` : ''}` : 'Often does not run at this time, no live data'}>
+        <Icon name={I.noLive} size={12} color={c.lateText} style={{ marginRight: 4 }} />
+        <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={[font.foot, { color: c.lateText, fontWeight: '600', flexShrink: 1 }]}>{state.label}</Text>
+      </View>
+    );
   }
   if (state.kind === 'timetable') {
     return (

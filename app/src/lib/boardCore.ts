@@ -64,7 +64,7 @@ export function boardRows(items: any[], now: number, max = 8, mode: string | nul
     const est = d.realtime ? t(d.estimated) : NaN;
     const at = Number.isFinite(est) ? est : t(d.planned);
     if (!Number.isFinite(at) || at <= now - 30000) continue;
-    const st = liveState({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS }, now);
+    const st = liveState({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS, noShow: d.noShow }, now);
     const live = st.kind === 'live';
     // A live or timetable time counts down; Not tracking shows its timetable clock time instead (never "Now").
     const { when, unit } = st.kind === 'stale' ? { when: st.big, unit: '' } : boardTime(st.kind === 'live' ? at : t(d.planned), now);
@@ -72,9 +72,9 @@ export function boardRows(items: any[], now: number, max = 8, mode: string | nul
     const dest = String(d.dest || '').replace(/ Station$/, '');
     const cancelled = !!d.cancelled;
     const pattern = patternOf(d.description);
-    const words = cancelled ? 'cancelled' : st.kind === 'stale' ? `not tracking, timetable ${when}` : when === 'Now' ? 'now' : unit ? `${when} minutes` : `at ${when}`;
+    const words = cancelled ? 'cancelled' : st.kind === 'stale' ? `not tracking${st.noShow ? ', often does not run' : ''}, timetable ${when}` : when === 'Now' ? 'now' : unit ? `${when} minutes` : `at ${when}`;
     const a11y = [`${d.line} to ${dest}`, platform ? platform.replace(/^Plat /, 'platform ') : '', words,
-      cancelled || st.kind === 'stale' ? '' : live ? `live${st.age ? `, updated ${st.age}` : ''}` : 'timetable', pattern ? `stops: ${pattern}` : ''].filter(Boolean).join(', ');
+      cancelled || st.kind === 'stale' ? '' : live ? `live${st.age ? `, updated ${st.age}` : ''}` : st.noShow ? 'timetable, often does not run' : 'timetable', pattern ? `stops: ${pattern}` : ''].filter(Boolean).join(', ');
     rows.push({ key: `${d.tripId || d.line}|${d.planned}`, line: String(d.line || ''), mode: String(d.mode || ''), color: d.color, dest, platform, when, unit, live, cancelled, at,
       a11y, kind: st.kind, label: st.label, age: st.age, pattern, tripId: d.tripId });
   }

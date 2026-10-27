@@ -4,6 +4,8 @@ export type Vehicle = { lat: number; lon: number; bearing?: number | null; speed
   quiet?: { where: 'front' | 'middle' | 'back' | 'ends'; text: string } | null; cars?: number } | null;
 export type Alert = { id?: string; title: string; url?: string; priority?: string; body?: string; lines?: string[] };
 export type Prediction = { delayMin: number; n: number; days: number; text: string; short: string; basis: string; kind: 'prediction' } | null;
+/** Buses in an hour where many recorded services never showed live (new server, docs/LIVE-LABELS.md "Often does not run"). */
+export type NoShow = { share: number; n: number } | null;
 
 export type Departure = {
   mode: string; modeName?: string; line: string; color?: string; dest: string; destId?: string; description?: string;
@@ -17,6 +19,8 @@ export type Departure = {
   /** Buses: live delays (min) from the bus's next stop to this stop (new server), for busLiveCore.rowTraffic. */
   ahead?: (number | null)[] | null;
   status?: { key: string; text: string }; pred?: Prediction;
+  /** Often does not run: share (percent) of recorded services in this line's hour that never showed live (new server only). */
+  noShow?: NoShow;
   /** A board for another time (/api/departures with time): true when it left over a minute ago. */
   departed?: boolean;
   /** When this phone received the answer (set by api.ts, liveLabelCore.stampSeen). */
@@ -52,6 +56,8 @@ export type Leg = {
   ahead?: (number | null)[] | null;
   /** Live position of the vehicle and how many stops it is from this leg's first stop (server enrich, only with live data). */
   vehicle?: Vehicle; stopsAway?: number | null;
+  /** Bus legs: often does not run in this hour (new server only), as on departures. */
+  noShow?: NoShow;
   /** When this phone received the answer (set by api.ts, liveLabelCore.stampSeen). */
   seenAt?: number;
 };

@@ -20,6 +20,17 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 | Lighthouse (mobile) | Landing, support, privacy and web app | After site changes. Last run: 100 in all four categories on landing, support and privacy; web app 100, 100, 100 and 96 for accessibility |
 | Writing style check | grep in every test file and before every push | No em dashes, no en dashes, no filler words |
 
+### `backend/test/noshow.test.mjs`: 8 tests, 8 pass (28 Oct, often does not run, server)
+* Next day to fold (backfill 14 days, yesterday from 1am, never today) and the same day type window.
+* Pure fold: fading by 0.95, adding a day, dropping faded keys; marked only at 8 watched and 30 percent.
+* Two of four 8 o'clock buses never live on four weekdays: 8 o'clock marked (share 40 to 50), 7 o'clock not, the last bus of the run not counted; one day per tick; idle after; departures get `noShow` only on the marked line, hour and day type, other rows keep exactly their shape.
+* A service nobody was watching is not a miss. A day where nearly everything missed is skipped as another timetable.
+* Switch `noShow` off: no fold, no `noShow`. Budget guard: waits on a D1 meter over the hold, not on a Durable Object hold.
+
+### `app/test/noshow.test.mjs`: 7 tests, 7 pass (28 Oct, often does not run, app)
+* Floors (30 percent, 8 watched); timetable rows count down and say "Often does not run"; stale rows show the timetable clock time with the age kept; Live and Cancelled never change; rows without `noShow` are exactly as before; the row redraws when `noShow` arrives; board rows carry the label and the VoiceOver and TalkBack words.
+* On a device (not done yet): a stop where a bus hour is marked shows "Often does not run" in amber on its rows.
+
 ### `app/test/localsearch.test.mjs`: 6 tests, 6 pass (26 Oct, speed (g10), search as you type)
 * 15 messy names from all over NSW find the right stop first (wollongong stn, newcastle interch, newcastle interchnge, wolongong, katoomba, albury, wagga wagga, strathfeild, parra, kings x, manly wharf, tallawong, bondi jnct, circular quay, gosf).
 * Every mode: light rail (randwick light), ferry (manly wharf), metro (tallawong), a bus stop by street (warnervale rd), a stop number (213516); Central carries train, metro and light rail.

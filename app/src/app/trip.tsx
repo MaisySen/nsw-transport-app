@@ -128,7 +128,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
           <View style={{ flex: 1 }}>
             <T kind="headline" numberOfLines={2}>{shortName(l.from)}</T>
             <T kind="foot" tone="text2">{[l.fromPlatform, stopLabel(l.stopId, l.mode), `${rowTime(dep)}`].filter(Boolean).join(' \u00b7 ')}</T>
-            <View style={{ marginTop: 2 }}><StatusLine realtime={hasLiveData(l, now)} delayMin={l.delayMin} cancelled={l.cancelled} state={liveState({ planned: l.planned, estimated: l.estimated, realtime: hasLiveData(l, now), cancelled: l.cancelled, seenAt: l.seenAt }, now)} /></View>
+            <View style={{ marginTop: 2 }}><StatusLine realtime={hasLiveData(l, now)} delayMin={l.delayMin} cancelled={l.cancelled} state={liveState({ planned: l.planned, estimated: l.estimated, realtime: hasLiveData(l, now), cancelled: l.cancelled, seenAt: l.seenAt, noShow: l.noShow }, now)} /></View>
             {usual ? <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{usual}</T> : null}
           </View>
         </View>

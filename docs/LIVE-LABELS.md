@@ -25,6 +25,12 @@ A departures board lists services from now on; a service drops off once it has g
 
 Two reads more than 3 min apart record nothing (the app was closed in between). A service that drops off more than 90 s before its time is not a departure (cancelled or the list changed). Code: `app/src/lib/recentCore.ts`, `app/src/lib/recent.ts`, same tests.
 
+## Often does not run
+
+Written 28 Oct 2026. A bus with no live time ("Timetable only") or a stale one ("Not tracking") in an hour where many of its line's services never showed live says **Often does not run** instead, amber with the no live icon. VoiceOver: "Often does not run at this time, no live data" or "Not tracking, often does not run". The countdown is unchanged (minutes to the timetable time, or the clock time once passed or when stale). Live and Cancelled rows never change.
+
+The server counts it (docs/API.md `noShow`): from the live times it already records, per line, day type and hour, only services that were being watched (a later bus at the stop was read live around their time); marked at 8 or more watched and 30 percent or more never live. The app checks the same floors (`liveLabelCore.ts` `oftenNoShow`, `NO_SHOW_SHARE`, `NO_SHOW_MIN_N`). Servers without it send no `noShow`, so older servers and every other row show the labels above. Code: `liveState` (label, `noShow` on the state), `LiveStatus` in `LiveLabel.tsx`, `depState` and the row key in `Transit.tsx`, `boardRows` in `boardCore.ts`, the trip screen's legs. Tests: `app/test/noshow.test.mjs`.
+
 ## Bus stop boards (Opal style)
 
 * **Route chips** on a bus stop: tap 410 to see only the 410 (tap again or All routes to see every route); with a route chosen, "Route 410: all stops and live buses" opens the route view. A route that leaves the board drops the filter. Code: `stopBoardCore.ts` (`byRoute`, `keepRoute`).

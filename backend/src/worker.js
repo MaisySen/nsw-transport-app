@@ -4256,6 +4256,167 @@ async function usualRoute(env, p) {
   return res;
 }
 
+// ---------- Often does not run: bus no show counts (28 Oct 2026, docs/LIVE-LABELS.md "Often does not run") ----------
+// From the live times already recorded in obs (no new table, no Transport for NSW call). A bus service is known from
+// the days it showed live: its line, stop, trip id and time of day (bus trip ids repeat on every day of a day type).
+// For one day, a known service counts as WATCHED at a stop when a later bus of the same line at that stop (due within
+// the next hour) was read live before the service's own time and again no more than 10 minutes before it (its first
+// read at or before that time, its last read within 10 minutes of it): someone was looking at that stop and the live
+// data was flowing, so this service should have shown live too. Watched and never live is a MISS. Once a day
+// the minute tick folds yesterday's counts per line, day type (weekday, weekend) and hour of the day into one meta row
+// (noshow_agg), every older count faded by 0.95 first; the hours where at least NS_SHARE percent of NS_MIN_W watched
+// services never showed are copied to a second small meta row (noshow) that answers read. A departure or bus leg in
+// one of those hours gets noShow: {share, n}. A day where over NS_DAY_SKIP percent of everything missed (a public
+// holiday on another timetable) is skipped. Cost: one D1 query a day (about 170,000 rows read on 27 Oct's data) and
+// two meta rows written; answers read one meta row per isolate every 10 minutes. No Durable Object request.
+// Server switch noShow (on unless the server config sets it false). Off: no fold, no noShow on any answer.
+const NS_WINDOW_DAYS = 14; // services are known from the last 14 days of the same day type
+const NS_BACKFILL_DAYS = 14; // the first run folds the days obs already holds, one day per minute tick
+const NS_DECAY = 0.95;
+const NS_WATCH_MS = 10 * 60000;
+const NS_AHEAD_MS = 60 * 60000;
+const NS_MIN_W = 8; // watched services (after fading) before an hour can be marked
+const NS_SHARE = 30; // percent never live
+const NS_DAY_SKIP = 35; // percent: a day this bad is another timetable, not no shows
+const NS_MAX_KEYS = 20000;
+/** Sydney midnight of a "YYYYMMDD" day, in ms. */
+function nsDayBase(day) {
+  const t = Date.UTC(Number(day.slice(0, 4)), Number(day.slice(4, 6)) - 1, Number(day.slice(6, 8)));
+  return t - sydOffsetMin(t + 2 * 3600000) * 60000;
+}
+/** The days of the same day type as `day` in the NS_WINDOW_DAYS ending with it, oldest first. */
+function nsWindowDays(day) {
+  const dt = dayType(day), out = [];
+  for (let k = NS_WINDOW_DAYS - 1; k >= 0; k--) { const x = dayAdd(day, -k); if (dayType(x) === dt) out.push(x); }
+  return out;
+}
+/** The next day to fold, or null (yesterday from 1am, never today). */
+function nsNextDay(last, sn) {
+  const today = sn.day;
+  const next = last ? dayAdd(last, 1) : dayAdd(today, -NS_BACKFILL_DAYS);
+  if (next >= today) return null;
+  if (next === dayAdd(today, -1) && sn.tod < 60) return null;
+  return next;
+}
+/** One day's counts: rows {route, slot, w, m} (slot is the Sydney hour of the service's time). One D1 query. */
+function nsFoldStatement(d, day) {
+  const days = nsWindowDays(day);
+  const off = (x) => sydOffsetMin(Date.UTC(Number(x.slice(0, 4)), Number(x.slice(4, 6)) - 1, Number(x.slice(6, 8)), 2));
+  const caseOff = `CASE day ${days.map((x, i) => `WHEN ?${i + 2} THEN ${off(x)}`).join(" ")} ELSE ${off(day)} END`;
+  const pd = `(${nsDayBase(day)} + k.tod * 60000)`;
+  return d.prepare(`WITH k AS (SELECT route, stop_id, trip_id, MIN(((planned / 60000) + ${caseOff}) % 1440) AS tod FROM obs
+      WHERE day IN (${days.map((_, i) => "?" + (i + 2)).join(", ")}) AND mode = 'bus' AND route IS NOT NULL AND route != '' AND planned IS NOT NULL
+      GROUP BY route, stop_id, trip_id),
+    x AS (SELECT k.route AS route, k.tod AS tod,
+      EXISTS (SELECT 1 FROM obs o WHERE o.day = ?1 AND o.trip_id = k.trip_id AND o.stop_id = k.stop_id) AS s,
+      EXISTS (SELECT 1 FROM obs o WHERE o.route = k.route AND o.stop_id = k.stop_id AND o.planned > ${pd} AND o.planned <= ${pd} + ${NS_AHEAD_MS}
+        AND o.first_seen <= ${pd} AND o.last_seen >= ${pd} - ${NS_WATCH_MS} AND o.day = ?1) AS w FROM k)
+    SELECT route, tod / 60 AS slot, SUM(w) AS w, SUM(w AND NOT s) AS m FROM x WHERE w GROUP BY route, tod / 60`).bind(day, ...days);
+}
+/** Pure: fade the running counts, add one day's rows. agg: {v, upTo, n: {"LINE|dt|hour": [watched, missed]}}. */
+function nsFold(agg, rows, day, dt) {
+  const n = {};
+  for (const [k, v] of Object.entries((agg && agg.n) || {})) {
+    if (!Array.isArray(v)) continue;
+    const w = (Number(v[0]) || 0) * NS_DECAY, m = (Number(v[1]) || 0) * NS_DECAY;
+    if (w >= 0.5) n[k] = [w, Math.min(w, m)];
+  }
+  for (const r of rows || []) {
+    if (!r || !r.route || !Number.isFinite(Number(r.slot))) continue;
+    const k = `${r.route}|${dt}|${Number(r.slot)}`;
+    const v = n[k] || [0, 0];
+    v[0] += Number(r.w) || 0; v[1] += Number(r.m) || 0;
+    n[k] = v;
+  }
+  let keys = Object.keys(n);
+  if (keys.length > NS_MAX_KEYS) keys = keys.sort((a, b) => n[b][0] - n[a][0]).slice(0, NS_MAX_KEYS);
+  const out = {};
+  for (const k of keys) out[k] = [Math.round(n[k][0] * 100) / 100, Math.round(n[k][1] * 100) / 100];
+  return { v: 1, upTo: day, n: out };
+}
+/** Pure: the hours that often do not run: {"LINE|dt|hour": [share percent, watched]}. */
+function nsFlagged(n) {
+  const f = {};
+  for (const [k, v] of Object.entries(n || {})) {
+    const w = Number(v[0]) || 0, m = Number(v[1]) || 0;
+    if (w < NS_MIN_W) continue;
+    const share = Math.round((m / w) * 100);
+    if (share >= NS_SHARE) f[k] = [share, Math.round(w)];
+  }
+  return f;
+}
+// The budget guard (budgetCheck): the fold only spends D1 rows, so it waits while a D1 meter is projected over the hold.
+function nsBudgetOk() {
+  const m = serverCfg.budget && serverCfg.budget.meters;
+  if (!m) return true;
+  return !["d1RowsRead", "d1RowsWritten"].some((k) => m[k] && Number(m[k].projectedPct) >= BUDGET_HOLD_PCT);
+}
+let nsIdle = ""; // the Sydney day on which nothing is left to fold (this isolate): no D1 read until tomorrow
+/** Minute tick: fold the next due day, claimed in meta so two ticks never fold one day twice. */
+async function noShowTick(env, now = Date.now()) {
+  const d = db(env);
+  if (!d || !(await serverOn(env, "noShow"))) return { skipped: "off" };
+  const sn = sydneyNow(new Date(now));
+  if (nsIdle === sn.day) return { idle: true };
+  if (!nsBudgetOk()) return { skipped: "budget" };
+  await ensureLateSchema(env);
+  await d.prepare("INSERT OR IGNORE INTO meta (k, v) VALUES ('noshow_day', '')").run();
+  const row = await d.prepare("SELECT v FROM meta WHERE k = 'noshow_day'").first();
+  const last = row && row.v ? String(row.v) : "";
+  const day = nsNextDay(last, sn);
+  if (!day) { if (sn.tod >= 60) nsIdle = sn.day; return { upTo: last || null }; }
+  const claim = await d.prepare("UPDATE meta SET v = ?1 WHERE k = 'noshow_day' AND v = ?2").bind(day, last).run();
+  if (!((claim.meta && claim.meta.changes) > 0)) return { skipped: "claimed" };
+  try {
+    const rows = ((await nsFoldStatement(d, day).all()).results) || [];
+    const tw = rows.reduce((s, r) => s + (Number(r.w) || 0), 0), tm = rows.reduce((s, r) => s + (Number(r.m) || 0), 0);
+    if (tw >= 50 && (tm / tw) * 100 > NS_DAY_SKIP) return { folded: day, watched: tw, missed: tm, skipped: "another timetable" };
+    const ar = await d.prepare("SELECT v FROM meta WHERE k = 'noshow_agg'").first();
+    let agg = null;
+    try { agg = ar && ar.v ? JSON.parse(ar.v) : null; } catch (e) { agg = null; }
+    const next = nsFold(agg, rows, day, dayType(day));
+    const f = nsFlagged(next.n);
+    const put = "INSERT INTO meta (k, v) VALUES (?1, ?2) ON CONFLICT (k) DO UPDATE SET v = excluded.v";
+    await d.batch([d.prepare(put).bind("noshow_agg", JSON.stringify(next)), d.prepare(put).bind("noshow", JSON.stringify({ v: 1, upTo: day, at: now, f }))]);
+    nsMem = null;
+    return { folded: day, watched: tw, missed: tm, flagged: Object.keys(f).length };
+  } catch (e) {
+    await d.prepare("UPDATE meta SET v = ?1 WHERE k = 'noshow_day' AND v = ?2").bind(last, day).run().catch(() => null);
+    return { error: String(e && e.message || e).slice(0, 160) };
+  }
+}
+let nsMem = null; // { at, f, n }
+/** Tests only: forget this isolate's copies. */
+function nsReset() { nsIdle = ""; nsMem = null; }
+async function noShowFlags(env) {
+  if (nsMem && Date.now() - nsMem.at < 600000) return nsMem;
+  let f = {};
+  try {
+    const r = await db(env).prepare("SELECT v FROM meta WHERE k = 'noshow'").first();
+    const o = r && r.v ? JSON.parse(r.v) : null;
+    if (o && o.f && typeof o.f === "object") f = o.f;
+  } catch (e) { /* no meta table or no row yet */ }
+  nsMem = { at: Date.now(), f, n: Object.keys(f).length };
+  return nsMem;
+}
+/** Pure: the noShow of a departure or leg from the flagged hours, or null. Buses only. */
+function nsOf(f, it) {
+  if (!it || it.mode !== "bus" || !it.line || !it.planned) return null;
+  const t = ms(it.planned);
+  if (!Number.isFinite(t)) return null;
+  const s = sydneyNow(new Date(t));
+  const v = f[`${it.line}|${s.dow >= 6 ? 1 : 0}|${Math.floor(s.tod / 60)}`];
+  return Array.isArray(v) ? { share: Number(v[0]) || 0, n: Number(v[1]) || 0 } : null;
+}
+/** Adds noShow to the departures or bus legs in an hour that often does not run. Nothing else changes. */
+async function markNoShow(env, items) {
+  if (!items || !items.length || !db(env)) return;
+  if (!(await serverOn(env, "noShow"))) return;
+  const m = await noShowFlags(env);
+  if (!m.n) return;
+  for (const it of items) { const v = nsOf(m.f, it); if (v) it.noShow = v; }
+}
+
 // ---------- service alerts digest: planned trackwork and line status ----------
 // Transport for NSW's GTFS realtime service alerts (v2, every mode in one feed, about 500 KB of
 // protobuf) are read by the minute tick every ALERT_EVERY_MIN minutes, cut down to what the
@@ -6131,6 +6292,8 @@ async function runTick(env, opts = {}) {
   if (!opts.device) out.facilities = await facTick(env, Date.now(), sn, opts).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   // Usual lateness: fold one day of recorded live times into late_agg when one is due (once a day after the backfill)
   if (!opts.device) out.late = await lateTick(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+  // Often does not run: fold one day of bus no show counts (noShowTick), once a day after the backfill
+  if (!opts.device) out.noShow = await noShowTick(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   // Service alerts digest for the trackwork card and line status, every ALERT_EVERY_MIN minutes
   if (!opts.device && (sn.tod % ALERT_EVERY_MIN === 3 || opts.force)) out.alerts = await refreshAlertDigest(env, now).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   // Saved trip alerts (src/tripalerts.js): the minute after the digest, every phone's trips against it; no NSW call.
@@ -6190,6 +6353,8 @@ async function afterAnswer(env, d, o) {
   if (!d) return;
   // Limited Stops from our timetable (raptor.js markLimited): a set lookup, never a wait on the planner object.
   if (typeof markLimited === "function") await markLimited(env, d, o.exec).catch(() => 0);
+  // Often does not run (noShowTick): buses in an hour where many recorded services never showed live.
+  await markNoShow(env, d.kind === "departures" ? d.items : d.kind === "trip" && Array.isArray(d.journeys) ? d.journeys.flatMap((j) => (j.legs || []).filter((l) => l && l.kind === "transit")) : null).catch(() => null);
   try {
     if (d.kind === "departures" && d.items) await predictions(env, d.items);
     if (d.kind === "trip" && d.journeys) {

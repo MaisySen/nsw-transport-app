@@ -172,9 +172,9 @@ export function Countdown({ planned, estimated, realtime, cancelled, now, align 
 }
 
 /** The live state of a departure row (its own answer's age and the vehicle's GPS age). */
-export const depState = (d: { planned?: string; estimated?: string | null; realtime?: boolean; cancelled?: boolean; seenAt?: number; vehicle?: { ageS?: number; lat?: number } | null }, now: number) => liveState({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS }, now);
+export const depState = (d: { planned?: string; estimated?: string | null; realtime?: boolean; cancelled?: boolean; seenAt?: number; vehicle?: { ageS?: number; lat?: number } | null; noShow?: Departure['noShow'] }, now: number) => liveState({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS, noShow: d.noShow }, now);
 const isBusMode = (m?: string) => m === 'bus' || m === 'coach' || m === 'school';
-const depKey = (d: Departure, now: number) => liveKey({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS }, now);
+const depKey = (d: Departure, now: number) => liveKey({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS, noShow: d.noShow }, now);
 
 export const DepartureRow = memo(DepartureRowView, sameDepartureRow);
 
