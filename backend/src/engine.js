@@ -902,7 +902,7 @@ class BoardEngine {
       if (p === "/window" && req.method === "POST") return Response.json(this.window(await req.json()));
       if (p === "/meta") { const m = this.loadMeta(); return Response.json(m ? { ver: m.ver, days: m.days, routes: m.routes, heads: m.heads, routeIds: m.routeIds, builtAt: m.builtAt } : { error: "no timetable" }, { status: m ? 200 : 503 }); }
       if (p === "/live" && req.method === "POST") return Response.json(await this.live(await req.json()));
-      if (p === "/timetable") return Response.json(this.timetable(u.searchParams.get("stops") || "", Number(u.searchParams.get("days")) || 2));
+      if (p === "/timetable") return Response.json(this.timetable(u.searchParams.get("stops") || "", Number(u.searchParams.get("days")) || 2, u.searchParams.get("seq") === "1"));
       if (p === "/trip") return Response.json(this.tripRun(u.searchParams.get("trip") || ""));
       if (p === "/status") return Response.json(this.status());
       if (p === "/learn" && req.method === "POST") {
@@ -1104,7 +1104,7 @@ class BoardEngine {
     this.tripMem.set(tripId, { at: Date.now(), out });
     return out;
   }
-  timetable(stopsParam, ndays) {
+  timetable(stopsParam, ndays, withSeq = false) {
     const m = this.loadMeta();
     if (!m) return { error: "no timetable" };
     const src = this.source();
@@ -1125,9 +1125,13 @@ class BoardEngine {
       const days = {};
       for (const d of prev ? [prev, ...keys] : keys) {
         const rows = [];
-        // The 6th value is the trip's stop sequence there (for /api/trip/live, worker.js tripLive: where a stop falls among
-        // the feed's stop updates). The phones read /api/pack, not this list.
-        for (const k of kids) for (const r of src.rows(k, d) || []) if (d !== prev || r[0] >= 86400) rows.push([r[0], r[1], ri(r[2]), hi(r[3]), k === id ? 0 : kids.indexOf(k), r[4] != null ? r[4] : null]);
+        // With seq=1 a 6th value is the trip's stop sequence there (for /api/trip/live, worker.js tripLive: where a stop
+        // falls among the feed's stop updates). Without it the rows are the five values /api/timetable always gave.
+        for (const k of kids) for (const r of src.rows(k, d) || []) if (d !== prev || r[0] >= 86400) {
+          const row = [r[0], r[1], ri(r[2]), hi(r[3]), k === id ? 0 : kids.indexOf(k)];
+          if (withSeq) row.push(r[4] != null ? r[4] : null);
+          rows.push(row);
+        }
         rows.sort((a, b) => a[0] - b[0]);
         days[d] = { start: m.days[d], rows };
       }

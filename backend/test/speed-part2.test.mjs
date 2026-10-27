@@ -190,13 +190,13 @@ test("a kept station list copy made before tags existed is tagged on the way out
   const key = W.edgeKey(new URL("https://api.transportsydney.app/api/stations?mode=ferry")).url;
   const storedAt = Date.now() - 60000;
   edge.set(key, { body: JSON.stringify([["F1", "Circular Quay", -33.86, 151.21]]), headers: [["content-type", "application/json"], ["x-stored-at", String(storedAt)]] });
-  const r = await call("/api/stations?mode=ferry");
+  const r = await call("/api/stations?mode=ferry", { headers: { "x-device": "dev-new" } });
   assert.equal(r.status, 200);
   const tagged = r.headers.get("etag");
   assert.match(tagged, /^"[0-9a-f]{24}"$/);
   assert.equal(tagged, await W.etagOf(r.text));
   // Cloudflare weakens a strong tag when it compresses the answer; the phone sends back what it got.
-  const r2 = await call("/api/stations?mode=ferry", { headers: { "if-none-match": "W/" + tagged } });
+  const r2 = await call("/api/stations?mode=ferry", { headers: { "if-none-match": "W/" + tagged, "x-device": "dev-new" } });
   assert.equal(r2.status, 304);
 });
 
@@ -262,7 +262,7 @@ test("trip-live with no engine: the feed's own clock times; a delay with no time
 test("service quick answer for a train with no run: the trip's stops from the engine's timetable with the feed's delays", async () => {
   edge.clear(); plannerCalls = 0;
   const t0 = Date.now();
-  const r = await W.service(env, { quick: true, mode: "train", line: "T1", trip: "t1-delay", stop: "2135113" });
+  const r = await W.service(env, { quick: true, ttQuick: true, mode: "train", line: "T1", trip: "t1-delay", stop: "2135113" });
   assert.ok(Date.now() - t0 < 1000);
   assert.equal(r.source, "timetable");
   assert.deepEqual(r.stops.map((s) => s.id), ["2135101", "2135113", "2000331"]);
@@ -271,7 +271,7 @@ test("service quick answer for a train with no run: the trip's stops from the en
   assert.equal(Date.parse(r.stops[2].estimated), (planned.delay + 16 * 60 + 180) * 1000);
   assert.equal(plannerCalls, 0, "no Trip Planner call");
   // A train with nothing in the engine's timetable gives no quick list (the full answer follows).
-  const none = await W.service(env, { quick: true, mode: "train", line: "T1", trip: "no-such-trip", stop: "2135113" });
+  const none = await W.service(env, { quick: true, ttQuick: true, mode: "train", line: "T1", trip: "no-such-trip", stop: "2135113" });
   assert.equal(none.stops.length, 0);
 });
 

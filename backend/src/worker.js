@@ -2012,7 +2012,9 @@ async function service(env, q) {
   const mode = q.mode || "bus", line = q.line || "", tripId = q.trip || null;
   const feed = q.feed && (own(FEEDS, q.feed) || own(FEED_GROUPS, q.feed)) ? q.feed : null;
   // The quick answer for a train asks the board engine for the trip's stop list beside the feed, from the start.
-  const engP = q.quick && mode === "train" && tripId ? engineTrip(env, null, tripId).catch(() => null) : null;
+  // Only for a phone that says it has the newer app (q.ttQuick, x-device or x-profile header): an older app gets the quick
+  // answer exactly as server B gave it (27 Oct crash review, docs/API.md "Old apps").
+  const engP = q.quick && q.ttQuick && mode === "train" && tripId ? engineTrip(env, null, tripId).catch(() => null) : null;
   const rt = await realtimeFor(env, [[mode, line, feed]]);
   const tu = tripId ? rt.tu(mode, line, tripId, feed) : null;
   const veh = tripId ? vehicleOf(rt.vp(mode, line, tripId, feed)) : null;
@@ -2046,7 +2048,7 @@ async function service(env, q) {
     // The quick answer waits at most SERVICE_QUICK_RUN_MS for the run: a fresh copy of the worker may not yet hold the
     // budget guard's word and ask a held planner object, which can take its whole 2.5 s.
     const runP = ownRun(env, tripId, q.stop, q.planned ? ms(q.planned) : null).catch(() => null);
-    const r = q.quick ? await Promise.race([runP, new Promise((res) => setTimeout(() => res(null), SERVICE_QUICK_RUN_MS))]) : await runP;
+    const r = q.quick && q.ttQuick ? await Promise.race([runP, new Promise((res) => setTimeout(() => res(null), SERVICE_QUICK_RUN_MS))]) : await runP;
     const list = r ? runStops(r, (t) => (t === tripId ? tu : rt.tu(mode, line, t, feed)), tripId, tuLive) : null;
     if (list) { run = r; runList = list; }
   }
@@ -2057,7 +2059,7 @@ async function service(env, q) {
   // The quick answer for a train with no run (the planner object off or held by the budget guard): the trip's stop list
   // from the board engine's timetable with the feed's delays by the engine's rules (engLive). No planner object read,
   // no Transport for NSW call (27 Oct, step C). The full answer that follows has the whole run.
-  if (!useRun && q.quick && mode === "train" && tripId && !(tu && tu.rel === 3)) {
+  if (!useRun && q.quick && q.ttQuick && mode === "train" && tripId && !(tu && tu.rel === 3)) {
     const et = engP ? await engP : null;
     if (et) {
       stops = et.stops.map((x) => {
@@ -7959,7 +7961,7 @@ async function handleRequest(request, env, exec) {
           const sq = serviceQuery(p);
           if (FEED_ONLY.has(request)) {
             // The quick first answer (serviceStandIn): the feed's stops, vehicle and live times, said as partial.
-            const d = await service(env, { ...sq, quick: true });
+            const d = await service(env, { ...sq, quick: true, ttQuick: newerApp(request) });
             const res = json({ ...d, partial: true });
             res.headers.set("x-stand-in", "feed");
             res.headers.set("cache-control", "no-store");
@@ -9070,6 +9072,15 @@ function reqDevice(request, p) {
   const h = request && request.headers ? cleanId(request.headers.get("x-device")) : "";
   return h || (p ? p.get("device") : null) || null;
 }
+// A phone with the newer app (main caeb0ee on): it sends its ids as x-device or x-profile headers once a server says
+// id-headers. Older apps (builds 201 to 208 as built, the 26 Oct update 27efc6bd, the crash net ecb0882d) never send
+// them, so the steps C and D changes that reach a phone (the train quick answer from the engine's timetable, tags on
+// kept station list and pack copies) are given only to a phone that does; an older app gets server B's answers
+// (27 Oct, after the 10:42 AM crash loop; test/old-client-compat.test.mjs).
+function newerApp(request) {
+  const h = request && request.headers;
+  return !!(h && (cleanId(h.get("x-device")) || cleanId(h.get("x-profile"))));
+}
 // Strong ETags (docs/API.md "ETags"): a hash of the exact bytes, so a matching If-None-Match gets a 304 with no body.
 async function etagOf(text) {
   const buf = typeof text === "string" ? new TextEncoder().encode(text) : new Uint8Array(text);
@@ -9119,7 +9130,7 @@ async function finishAnswer(request, env, res) {
       out = new Response(buf, out);
     }
     out.headers.set("etag", tag);
-  } else if (api && get && out.status === 200 && ETAG_API.test(url.pathname) && !out.headers.get("etag")) {
+  } else if (api && get && out.status === 200 && ETAG_API.test(url.pathname) && !out.headers.get("etag") && newerApp(request)) {
     // A copy kept before tags existed (station lists are kept 6 hours): tagged here from the bytes going out.
     const buf = await out.arrayBuffer();
     out = new Response(buf, out);
@@ -9201,16 +9212,17 @@ function engineTripLive(tu, trip, stopId, arrFirst) {
 }
 // Planned times and stop sequences for trip-live come from the board engine's timetable (/timetable, the engine core's
 // SQLite copy of the NSW timetable; no Transport for NSW call). One ask per leg's stop pair, shared through Cloudflare's
-// cache for 30 minutes per data centre (the same key /api/timetable uses); only a good answer is kept.
+// cache for 30 minutes per data centre under its own key (seq=1: rows with the stop sequence; /api/timetable keeps the
+// five value rows it always had); only a good answer is kept.
 async function tripLiveTimetable(env, exec, ids) {
   if (typeof engineCall !== "function" || !env || !env.ENGINE) return null;
   const list = [...new Set(ids.filter((x) => /^[A-Za-z0-9_-]{1,20}$/.test(x)))].sort().slice(0, 40);
   if (!list.length) return null;
-  const ck = new Request("https://engine-cache.transportsydney.app/timetable?stops=" + list.join(",") + "&days=1");
+  const ck = new Request("https://engine-cache.transportsydney.app/timetable?stops=" + list.join(",") + "&days=1&seq=1");
   const cache = typeof caches !== "undefined" ? caches.default : null;
   const hit = cache ? await cache.match(ck).catch(() => null) : null;
   if (hit) { const d = await hit.json().catch(() => null); if (d && d.stops) return d; }
-  const r = await Promise.race([engineCall(env, "/timetable?stops=" + encodeURIComponent(list.join(",")) + "&days=1"), new Promise((res) => setTimeout(() => res(null), 2500))]).catch(() => null);
+  const r = await Promise.race([engineCall(env, "/timetable?stops=" + encodeURIComponent(list.join(",")) + "&days=1&seq=1"), new Promise((res) => setTimeout(() => res(null), 2500))]).catch(() => null);
   if (!r || r.status !== 200) return null;
   const body = await r.text();
   let d = null; try { d = JSON.parse(body); } catch (e) { return null; }
@@ -9392,7 +9404,7 @@ async function serviceStandIn(request, env, exec) {
   const out = new Response(text, { status: 200, headers: res.headers });
   out.headers.set("cache-control", "no-store");
   out.headers.set("x-edge-cache", "quick");
-  out.headers.set("x-quick-ms", String(Date.now() - t0));
+  if (newerApp(request)) out.headers.set("x-quick-ms", String(Date.now() - t0));
   return out;
 }
 const inFlight = new Map(); // edge key -> sharedJob of { status, headers, body }

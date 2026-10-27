@@ -235,9 +235,12 @@ test("a train trip's stops from the timetable in order, with sequences and plann
   assert.equal(t.stops[0].planned, null, "a stop with no departure row there has no planned time");
   assert.deepEqual((await (await E.fetch(new Request("https://engine/trip?trip=nope"))).json()).stops, []);
   assert.equal((await (await E.fetch(new Request("https://engine/trip?trip=" + encodeURIComponent("a b")))).json()).error, "trip");
-  // The timetable list carries the stop sequence as its 6th value.
-  const tt = await (await E.fetch(new Request("https://engine/timetable?stops=P1&days=1"))).json();
+  // Asked with seq=1 (trip-live) the timetable list carries the stop sequence as its 6th value; /api/timetable's ask
+  // (no seq) keeps the five values it always had.
+  const tt = await (await E.fetch(new Request("https://engine/timetable?stops=P1&days=1&seq=1"))).json();
   assert.equal(tt.stops.P1.days[day].rows[0][5], 10);
+  const plain = await (await E.fetch(new Request("https://engine/timetable?stops=P1&days=1"))).json();
+  assert.ok(plain.stops.P1.days[day].rows.every((r) => r.length === 5));
 });
 
 test("platform names learnt from Trip Planner boards replace the timetable's", async () => {
