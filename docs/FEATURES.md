@@ -260,6 +260,10 @@ The server stays on the Cloudflare Workers Paid base fee (US$5 a month) for up t
 * A screen that hits an error shows Something went wrong with Try again and Go to Home instead of closing the app; after a retry, Clear saved times and reload.
 * Each error is reported once to the support inbox with the screen, build, update and the last server paths asked, so the cause can be read.
 
+## Sentry crash reporting (build 209, 1 Nov; branch sentry-build209, not on main yet)
+
+* From build 209, crashes (native and JavaScript) also go to Sentry, cleaned on the phone of stop, route and place names, positions, IDs and the phone's name. Battery first: errors only, no tracing, replay, profiling or sessions. Builds 201 to 208 keep reporting to the feedback inbox. [SENTRY.md](SENTRY.md).
+
 ## Not in the app
 
-No accounts or login, no ads, no analytics or tracking, no Opal card balance. Privacy details: [STORE_PRIVACY.md](STORE_PRIVACY.md) and https://transportsydney.app/privacy/.
+No accounts or login, no ads, no analytics or tracking (crash reports only), no Opal card balance. Privacy details: [STORE_PRIVACY.md](STORE_PRIVACY.md) and https://transportsydney.app/privacy/.
