@@ -96,6 +96,19 @@ The GTFS zips come from `/v1/gtfs/schedule/<feed>` (one call each, about 26) and
 bundle. A stop with no rows for today falls back to the Trip Planner, so a missed refresh degrades to today's speed,
 it does not show wrong boards. The daily refresh is the GitHub workflow `.github/workflows/timetable.yml`.
 
+## Sydney Metro from its own feed (28 Oct, morning)
+
+The 27 Oct, 11:30 PM match check had Metro at 20 of 39, the weakest mode. Every metro row the engine showed was a timetable row with no live time, and all 19 misses were Sydenham bound (Epping platform 5, Castle Hill platform 1, Crows Nest). The cause: the metro timetable we load (`/v2/gtfs/schedule/metro`, trip ids `0273-001-...`) and the metro trip update feed (`/v2/gtfs/realtime/metro`, trip ids `0160-006-...`, the ones the Trip Planner uses) are different versions. No trip id matched, so no live time was ever laid on, and the timetable's Sydenham bound times ran 7 minutes off the trains actually running (Epping platform 5: timetable 11:41 PM, planner 11:34 and 11:44 PM), which made 12 of the 17 extras. The rule for trains the timetable lacks (`ENGINE_ADD_UNKNOWN`) only covers the train feed, and it lists none when most of a copy is unknown.
+
+What the engine does now (`ENGINE_FEED_ONLY`, metro only):
+* For each metro copy the core checks up to 12 running trips against the timetable: is the trip id in the timetable's rows at the first stop the update gives, on a service day that reaches that time (`engVersionOff`, one lookup per trip id per timetable version). At least 3 checked and at most 20% found means another version.
+* Then every running trip of the copy (not cancelled) is listed as an added service marked `fo`, the same way as an unknown train: the planned time is the update's time less its delay to the whole minute, the live time that minute plus the delay, the platform is the update's own stop, the destination its last stop. A route id the timetable does not have takes the feed's one route (metro has one, `SMNW_M1`).
+* A board drops that feed's timetable rows of the same route up to the last live time the copy gives at this stop; timetable rows after it stay, so the board still reaches 90 minutes when the feed covers less. Rows with a live time are never dropped. Shards get the same rows from the core's `added` list, so no change to `/live`.
+* A metro copy whose trip ids are in the timetable is used exactly as before. Train, bus, light rail and ferry boards are unchanged.
+* `ENGINE_FEED_ONLY` "off" (wrangler var, unset means on) stops it. `/api/engine/status` shows per feed `feedOnly` (1 while a copy is listed whole), `unknown` and `unknownListed`.
+
+Expected effect, an estimate from the 27 Oct result file and not yet measured: every metro row on the planner's boards that night was live from this same feed, so with its trips listed the misses and the static Sydenham extras should go, about 37 to 39 of 39. Measured at the next match check. Phones are not on the engine (`ENGINE_BOARDS` off). Tests: `backend/test/engine-metro.test.mjs` (5).
+
 ## Stand names, Empty Train evidence, match check (27 Oct, 8 AM, g14 follow up)
 
 * **Why 20 stands were missed at 4:08 AM.** A shard asked for a planner read only on a phone's first read of a board,

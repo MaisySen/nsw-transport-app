@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 28 Oct 2026
 
+### Board engine: Sydney Metro from its own feed (28 Oct, morning; server only, behind the flag)
+* Last night's match check had Metro at 20 of 39. The metro timetable and the metro live feed are different versions (trip ids `0273-001-...` against `0160-006-...`), so no metro row on an engine board ever got a live time, and the timetable's Sydenham bound times were 7 minutes off the trains running: all 19 misses and 12 of the 17 extras.
+* When a metro copy is another version (at most 20% of up to 12 sampled trips found in the timetable), the engine lists the feed's trains as the board, live, on their own platform, at the whole planned minute, and drops that line's timetable rows up to the last time the feed gives at the stop. A matching copy is used as before. Train, bus, light rail and ferry unchanged. `ENGINE_FEED_ONLY=off` undoes it; `/api/engine/status` shows `feedOnly` per feed.
+* Expected Metro match about 37 to 39 of 39, an estimate from the 27 Oct result file, not measured yet. Phones are not on the engine (`ENGINE_BOARDS` off). Tests: backend test/engine-metro.test.mjs (5), backend 564 of 564.
+
 ### Get off now 30 s before your stop, never after (28 Oct; app on main for tonight's update)
 * A rider got "get off" after he had already got off and the train had left. Cause: Get off now waited until the stop list showed his stop as the next one and the live arrival was under a minute away, and a passed time was held 30 s more on each refresh. The stop list trails the train, so on a short last stretch it rang after arrival. It was also opt in, so most trips had only the Next stop alert.
 * Now Get off now is on for everyone unless turned off (a choice saved before today counts as the old default). It is set for the realtime arrival at your stop minus 30 s (the timetable arrival minus a minute when the leg has no live times), set again on every refresh as the arrival moves, rung at once when that moment has come, and taken back once the arrival has passed, so it never rings after it. It asks iOS for a time sensitive alert (it breaks through a Focus once build 209 carries the entitlement; 201 to 208 show it as a normal alert).

@@ -201,6 +201,8 @@ Many phones (server, 26 Oct, 10:44 AM): phones at the same stop share one copy a
 
 Every stop board in NSW built ahead of time on the server from the network feeds, so a board is a cache hit and Transport for NSW calls stay flat whatever the number of phones. Since 26 Oct (g14) boards are built by 16 shard objects that write them to Cloudflare's cache, and the worker reads the cache first. Off for phones until it matches the Trip Planner on 95% of services on a fresh sample, with no object restarts and 0 errors at 1,000 phones. docs/ENGINE.md, docs/SCALING.md.
 
+**Sydney Metro from its own feed** (server, 28 Oct, still behind the flag): the metro timetable Transport for NSW publishes and the metro live feed are different versions with different trip ids, so engine boards had no live metro times and late evening Sydenham trains 7 minutes off. When a metro copy is another version, the engine now lists the feed's trains (live time, platform, destination) and leaves out the timetable's rows up to the last time the feed gives at that stop. Other modes unchanged. `ENGINE_FEED_ONLY` off undoes it. docs/ENGINE.md.
+
 **Timetable times when live data is down** (server, 26 Oct, 1:58 PM): when the Trip Planner refuses or fails and no copy of a stop's board is kept, the stop board shows the engine's timetable times instead of an error, every row marked Scheduled, with the alert "Live times unavailable, showing timetable times" on top. The next live answer replaces it. No app update needed.
 
 

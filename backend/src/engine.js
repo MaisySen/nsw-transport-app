@@ -230,6 +230,7 @@ function engBuildBoard(src, stopId, opts = {}) {
     it.status = statusOf(it);
     return it;
   };
+  const rowRi = new Map(); // timetable row item -> route index (ENGINE_FEED_ONLY drops)
   for (const c of cand) {
     const route = src.route(c.ri);
     if (!route) continue;
@@ -243,7 +244,7 @@ function engBuildBoard(src, stopId, opts = {}) {
       if (!tu && emptyHidden.length < 12 && c.planned >= now && c.planned <= to) emptyHidden.push([c.tripId, iso(c.planned), route[0], c.stopId]);
       continue;
     }
-    if (tu && !engSameRun(tu, c)) { items.push(mk(c, route, null)); continue; }
+    if (tu && !engSameRun(tu, c)) { const it = mk(c, route, null); rowRi.set(it, c.ri); items.push(it); continue; }
     const live = engLive(tu, c, (s) => { const m = src.tripSeq(feed, c.tripId); return m ? m.get(s) : null; }, engArrFirst(feed));
     if (live && live.gone) continue;
     if (empty) {
@@ -251,12 +252,17 @@ function engBuildBoard(src, stopId, opts = {}) {
       c.dest = engTuDest(src, tu);
     }
     seen.add(c.tripId + "|" + c.day);
-    items.push(mk(c, route, live));
+    const it = mk(c, route, live);
+    rowRi.set(it, c.ri);
+    items.push(it);
   }
   // Services added on the day (not in the timetable) that call here, from the trip update feeds already in use, and
   // trains the feed has that the timetable does not (tu.unk: a trip id published after our timetable load, such as a
   // trackwork change; the core object lists them, engAsAdded).
   const unkRows = [];
+  // The metro feed may describe a newer timetable version. Replace only the same route's static departures
+  // through the last time this copy covers at this stop; beyond that time the timetable still fills the board.
+  const feedCover = new Map(); // feed + route index -> latest time in the live copy at this stop
   for (const feed of feedsUsed) {
     for (const tu of src.added(feed) || []) {
       const u = (tu.stus || []).find((x) => idSet.has(x.stopId) && x.rel !== 1);
@@ -268,6 +274,10 @@ function engBuildBoard(src, stopId, opts = {}) {
       const route = src.route(ri);
       if (!route) continue;
       if (opts.mode && !(modeOf(route[1]).key === opts.mode || (opts.mode === "bus" && modeOf(route[1]).key === "coach"))) continue;
+      if (tu.fo) {
+        const key = feed + "|" + ri;
+        feedCover.set(key, Math.max(feedCover.get(key) || 0, t));
+      }
       if (tu.unk) {
         // As for timetable rows: the planned time in whole minutes and the live time that minute plus the delay.
         const dl = engDelay(u);
@@ -298,6 +308,15 @@ function engBuildBoard(src, stopId, opts = {}) {
     }
   }
   if (dropOld.size) for (let k = items.length - 1; k >= 0; k--) if (dropOld.has(items[k])) items.splice(k, 1);
+  if (feedCover.size) for (let k = items.length - 1; k >= 0; k--) {
+    const it = items[k];
+    if (it.realtime) continue;
+    const ri = rowRi.get(it);
+    if (ri == null) continue;
+    const r = src.route(ri);
+    const end = r && feedCover.get(r[3] + "|" + ri);
+    if (end && Date.parse(it.planned) <= end) items.splice(k, 1);
+  }
   const t0 = (i) => Date.parse(i.estimated || i.planned);
   // The same service from two timetables (NSW TrainLink trips are in both the train and the regional bundle): one row,
   // the one with live data.
@@ -327,7 +346,7 @@ function engBuildBoard(src, stopId, opts = {}) {
 // A train the feed has and the timetable does not, as an added service: its stop sequence is the order of the update's
 // stops, and only the stops due between 10 minutes ago and the board horizon (plus 15 minutes) are kept, so the copy
 // sent to every shard stays small; destName is the update's last stop. null when no stop is due in that span.
-function engAsAdded(tu, now, src) {
+function engAsAdded(tu, now, src, fo) {
   const lastU = tu.stus && tu.stus[tu.stus.length - 1];
   if (!lastU) return null;
   const lo = now - 10 * 60000, hi = now + ENGINE_HORIZON_MS + 15 * 60000;
@@ -338,7 +357,9 @@ function engAsAdded(tu, now, src) {
   }
   if (!stus.length) return null;
   const s = src.stop(lastU.stopId);
-  return { tripId: tu.tripId, routeId: tu.routeId, rel: tu.rel, startDate: tu.startDate, unk: 1, stus, destName: s ? engPlaceName(s[0]) : "" };
+  const out = { tripId: tu.tripId, routeId: tu.routeId, rel: tu.rel, startDate: tu.startDate, unk: 1, stus, destName: s ? engPlaceName(s[0]) : "" };
+  if (fo) out.fo = 1; // the feed's copy replaces the timetable (ENGINE_FEED_ONLY)
+  return out;
 }
 
 // The parts of a trip update that boards need for some stops of the trip (their stop sequences): the update at each
@@ -371,6 +392,33 @@ const ENGINE_NO_SEQ = new Set(["train"]);
 // ENGINE_ADD_UNKNOWN "off" (wrangler var) stops it.
 const ENGINE_ADD_UNKNOWN = new Set(["train"]);
 function engAddUnknownOn(env) { return String((env && env.ENGINE_ADD_UNKNOWN) || "on").toLowerCase() !== "off"; }
+// Feeds whose live copy replaces the timetable when the two are different versions (28 Oct): the Sydney Metro timetable
+// (/v2/gtfs/schedule/metro, trip ids 0273-001-...) and its trip update feed (ids 0160-006-..., the ones the Trip Planner
+// uses) disagreed on every trip id, so no metro board had a live time, and the timetable's Sydenham bound times ran
+// 7 minutes off the trains running (27 Oct, 11:30 PM: Metro 20 of 39 matched the planner, all 19 misses Sydenham bound).
+// The core samples a copy's trip ids against the timetable rows (engVersionOff); when almost none are there it lists
+// every trip of the copy as an added service marked fo, and boards drop that feed's timetable rows up to the last live
+// time the copy gives at the stop. A copy whose trip ids match the timetable is used as before.
+// ENGINE_FEED_ONLY "off" (wrangler var) stops it.
+const ENGINE_FEED_ONLY = new Set(["metro"]);
+const ENGINE_FO_SAMPLE = 12;       // trip ids of a copy checked against the timetable
+const ENGINE_FO_KNOWN_MAX = 0.2;   // at most this share found: another version
+function engFeedOnlyOn(env) { return String((env && env.ENGINE_FEED_ONLY) || "on").toLowerCase() !== "off"; }
+// Whether a copy's trips are another version than the timetable: of up to ENGINE_FO_SAMPLE running trips, how many
+// have a timetable row under their own trip id at the first stop the update gives (the stop's rows for each service
+// day that reaches that time). known(tripId, stopId, t) answers one lookup. Fewer than 3 sampled: not decided (false).
+function engVersionOff(tus, known) {
+  let n = 0, hit = 0;
+  for (const tu of tus) {
+    if (n >= ENGINE_FO_SAMPLE) break;
+    if (!tu || tu.rel === 1 || tu.rel === 3) continue;
+    const u = (tu.stus || []).find((x) => x.stopId && engTime(x));
+    if (!u) continue;
+    n++;
+    if (known(tu.tripId, u.stopId, engTime(u))) hit++;
+  }
+  return n >= 3 && hit <= n * ENGINE_FO_KNOWN_MAX;
+}
 
 // ---- Stand and platform names from the Trip Planner (learning) ----
 // The timetable has no name for some stands (temporary stands Stand X1 to X4 for replacement or moved buses; light rail
@@ -487,6 +535,26 @@ class BoardEngine {
       v = this.sql.exec("SELECT 1 AS x FROM trips WHERE ver = ? AND trip = ? LIMIT 1", m.ver, tripId).toArray().length > 0;
       if (this.knownMem.size > 20000) this.knownMem.clear();
       this.knownMem.set(tripId, v);
+    }
+    return v;
+  }
+  // Whether the timetable has this trip id at this stop on a service day that reaches moment t (engVersionOff), kept per
+  // version with tripKnown's map.
+  tripAtStop(tripId, stopId, t) {
+    const m = this.loadMeta();
+    if (!m) return true;
+    if (!this.atMem || this.atVer !== m.ver) { this.atMem = new Map(); this.atVer = m.ver; }
+    let v = this.atMem.get(tripId);
+    if (v === undefined) {
+      v = false;
+      const src = this.source();
+      for (const [dk, base] of Object.entries(m.days)) {
+        if (base * 1000 > t + 3600000 || base * 1000 + 36 * 3600000 < t - 3600000) continue;
+        const rows = src.rows(stopId, dk);
+        if (rows && rows.some((r) => r[1] === tripId)) { v = true; break; }
+      }
+      if (this.atMem.size > 5000) this.atMem.clear();
+      this.atMem.set(tripId, v);
     }
     return v;
   }
@@ -762,6 +830,24 @@ class BoardEngine {
           const src = this.source(), t = Date.now();
           for (const tu of unk) { const a = engAsAdded(tu, t, src); if (a) { added.push(a); f.unknownListed++; } }
         }
+        // A feed whose copy is another version than the timetable (ENGINE_FEED_ONLY): every running trip is listed.
+        f.feedOnly = 0;
+        if (ENGINE_FEED_ONLY.has(key) && engFeedOnlyOn(this.env) && e.idx.size < 2500 && this.loadMeta()) {
+          const all = [];
+          for (const id of e.idx.keys()) { const tu = decodeFrom(e, id); if (tu && tu.rel !== 1 && tu.rel !== 3) all.push(tu); }
+          if (engVersionOff(all, (id, stop, tt) => this.tripAtStop(id, stop, tt))) {
+            const src = this.source(), t = Date.now();
+            // The copy's route ids may be the other version's too: a feed with one route in the timetable takes that one.
+            const rids = Object.keys(this.loadMeta().routeIds[key] || {});
+            f.feedOnly = 1; f.unknown = all.length;
+            for (const tu of all) {
+              const a = engAsAdded(tu, t, src, true);
+              if (!a) continue;
+              if (src.routeOf(key, a.routeId) < 0 && rids.length === 1) a.routeId = rids[0];
+              added.push(a); f.unknownListed++;
+            }
+          }
+        }
         f.addMs = Date.now() - c0;
         f.added = added;
       }).catch(() => { f.fails++; f.tuAt = 0; }));
@@ -882,7 +968,7 @@ class BoardEngine {
   status() {
     const m = this.loadMeta(), now = Date.now();
     const feeds = {};
-    for (const [k, f] of this.feeds) feeds[k] = { tuAgeS: f.tu ? Math.round((now - f.tu.at) / 1000) : null, vpAgeS: f.vp ? Math.round((now - f.vp.at) / 1000) : null, trips: f.tu ? f.tu.idx.size : 0, added: (f.added || []).length, unknown: f.unknown || 0, unknownListed: f.unknownListed || 0, addMs: f.addMs || 0, hot: now - f.wantAt < ENGINE_FEED_HOT_MS, fails: f.fails, periodS: f.period ? f.period / 1000 : null, same: f.same || 0, madeAgoS: f.hdrs && f.hdrs.length ? Math.round(now / 1000 - f.hdrs[f.hdrs.length - 1]) : null, nextInS: f.nextAt ? Math.round((f.nextAt - now) / 1000) : null };
+    for (const [k, f] of this.feeds) feeds[k] = { tuAgeS: f.tu ? Math.round((now - f.tu.at) / 1000) : null, vpAgeS: f.vp ? Math.round((now - f.vp.at) / 1000) : null, trips: f.tu ? f.tu.idx.size : 0, added: (f.added || []).length, unknown: f.unknown || 0, unknownListed: f.unknownListed || 0, feedOnly: f.feedOnly || 0, addMs: f.addMs || 0, hot: now - f.wantAt < ENGINE_FEED_HOT_MS, fails: f.fails, periodS: f.period ? f.period / 1000 : null, same: f.same || 0, madeAgoS: f.hdrs && f.hdrs.length ? Math.round(now / 1000 - f.hdrs[f.hdrs.length - 1]) : null, nextInS: f.nextAt ? Math.round((f.nextAt - now) / 1000) : null };
     return { role: "core", boots: this.boots, bootAt: this.bootAt, ver: m ? m.ver : 0, builtAt: m ? m.builtAt : null, days: m ? Object.keys(m.days) : [], hotBoards: this.hot.size, stretch: Math.round(this.stretch(now) * 100) / 100, budget: this.budget(), perMin: Number(this.env.ENGINE_PER_MIN) || ENGINE_PER_MIN, tokens: Math.round((this.tokens || 0) * 10) / 10, gaps: this.gaps ? [...this.gaps].slice(0, 50).map(([s, g]) => [s, g.lines]) : [], pausedUntil: this.pauseUntil || null, ...this.stats, feeds,
       // Stand and platform names (wantLearn, learnTick): queue, today's planner reads, and what they taught.
       learn: { core: engLearnCoreOn(this.env), moved: engLearnTmpOn(this.env), queued: this.learnQ.size, queuedMiss: [...this.learnQ.values()].filter((v) => v.miss).length, today: this.learnDayCount(now).n, perDay: Number(this.env.ENGINE_LEARN_DAY) || ENGINE_LEARN_DAY, perMin: Number(this.env.ENGINE_LEARN_PER_MIN) || ENGINE_LEARN_PER_MIN, names: this.platMem ? this.platMem.size : null, movedStands: this.platxMem ? this.platxMem.size : null, platVer: this.platVer || 0, ...this.learnStats } };
