@@ -97,7 +97,7 @@ const leg = (...p) => p.map(encodeURIComponent).join("@");
 test("x-serves on every /api answer names id-headers and trip-live; CORS allows x-device and exposes x-serves", async () => {
   const r = await call("/api/trip/live?legs=" + leg("t1-live", "2135113", "2000331", "train", "T1"));
   assert.equal(r.status, 200);
-  assert.deepEqual(r.headers.get("x-serves").split(","), ["id-headers", "trip-live"]);
+  assert.deepEqual(r.headers.get("x-serves").split(","), ["id-headers", "trip-live", "home-bundle"]);
   assert.match(r.headers.get("access-control-expose-headers"), /x-serves/);
   const bad = await call("/api/trip/live");
   assert.equal(bad.status, 400);
@@ -111,8 +111,8 @@ test("x-serves on every /api answer names id-headers and trip-live; CORS allows 
 test("a word whose flag is off (or killed by the server switches) leaves x-serves; trip-live off is a 404", async () => {
   const r = await call("/api/trip/live?legs=" + leg("t1-live", "2135113", "2000331", "train", "T1"), {}, { ...env, TRIP_LIVE: "off" });
   assert.equal(r.status, 404);
-  assert.equal(r.headers.get("x-serves"), "id-headers");
-  const both = await call("/api/trip/live?legs=x", {}, { ...env, TRIP_LIVE: "off", ID_HEADERS: "off" });
+  assert.equal(r.headers.get("x-serves"), "id-headers,home-bundle");
+  const both = await call("/api/trip/live?legs=x", {}, { ...env, TRIP_LIVE: "off", ID_HEADERS: "off", HOME_BUNDLE: "off" });
   assert.equal(both.headers.get("x-serves"), null, "no words: the app turns both off");
   W.serverCfg.cfg = { flags: {}, kill: { tripLive: true } }; W.serverCfg.at = Date.now();
   try { assert.doesNotMatch(String(W.__default && (await call("/api/lines")).headers.get("x-serves")), /trip-live/); }

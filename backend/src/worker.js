@@ -7835,6 +7835,11 @@ async function handleRequest(request, env, exec) {
           if (asTxt) { let tx = await askText(env, d); if (isTt && !tx.includes(ttNote)) tx = ttNote + "\n" + tx; return textRes(fs && !tx.includes(fs) ? tx + "\n" + fs : tx); }
           return json(askSlim(d));
         }
+        case "/api/home": {
+          // One request for Home (home-bundle in x-serves): the answers to several of Home's own reads at once.
+          if (!servesOn(env, "HOME_BUNDLE", "homeBundle")) return json({ error: "not found" }, 404);
+          return await homeBundle(request, env, exec, url);
+        }
         case "/api/trip/live": {
           // Re-times legs the phone holds, from the realtime feeds only (tripLive): no Trip Planner call.
           if (!servesOn(env, "TRIP_LIVE", "tripLive")) return json({ error: "not found" }, 404);
@@ -9114,9 +9119,9 @@ async function edgeFetchInner(request, env, exec) {
 // x-serves (docs/API.md): a comma list of the newer paths this server has live, on every /api answer. The app reads
 // id-headers and trip-live, and an answer without the header turns them off again on the phone, so a rollback is safe.
 // Each word is on unless its flag (wrangler var) is "off" or the server switch kill list names it (no deploy needed):
-// ID_HEADERS / kill idHeaders, TRIP_LIVE / kill tripLive.
+// ID_HEADERS / kill idHeaders, TRIP_LIVE / kill tripLive, HOME_BUNDLE / kill homeBundle.
 const SERVES_EXPOSE = "x-serves, etag, x-edge-cache";
-const SERVES = [["id-headers", "ID_HEADERS", "idHeaders"], ["trip-live", "TRIP_LIVE", "tripLive"]];
+const SERVES = [["id-headers", "ID_HEADERS", "idHeaders"], ["trip-live", "TRIP_LIVE", "tripLive"], ["home-bundle", "HOME_BUNDLE", "homeBundle"]];
 function servesOn(env, flag, sw) {
   if (String((env && env[flag]) || "").toLowerCase() === "off") return false;
   const c = serverCfg && serverCfg.cfg;
@@ -9573,3 +9578,63 @@ async function engineOutage(request, env, exec, url) {
 // Budget mode (docs/COSTS.md): a load test key only works while LOAD_TESTS is "on" (off on production; a test there
 // spends the month's included Durable Object requests in an hour) and the budget guard does not hold it.
 function loadOk(request, env) { return !!env && flagOn(env, "LOAD_TESTS") && safeEq(request.headers.get("x-load-key"), env.LOAD_TEST_KEY); }
+
+// ---------- Home bundle (27 Oct): GET /api/home ----------
+// docs/API.md "GET /api/home". The app asks for Home's reads in one request: p= once per read, each the exact path and
+// query it would have asked on its own (/api/trip, /api/departures, /api/commutes, /api/saved, /api/watches,
+// /api/app/config). Each one runs here through the same path as its own request (edgeFetch: the edge copies, shared
+// upstream calls, the budget guard, rate limits and trip history), side by side, with this request's headers (x-device,
+// x-profile), so the bundle makes no upstream call the separate requests would not have made. A read still waiting
+// after HOME_PART_MS is answered { status: 0, late: true } and carries on behind the answer (its copy is saved for the
+// phone's own request). The answer is never cached; each part's own copy rules apply as before.
+const HOME_PART_RE = /^\/api\/(trip|departures|commutes|saved|watches|app\/config)$/;
+const HOME_PARTS_MAX = 10;
+const HOME_PART_MS = 2500;
+const HOME_DROP_HEADERS = ["if-none-match", "content-length", "content-type"];
+function homePartPath(raw, origin) {
+  if (typeof raw !== "string" || raw.length > 1500 || !raw.startsWith("/api/")) return null;
+  let u;
+  try { u = new URL(raw, origin); } catch (e) { return null; }
+  if (u.origin !== origin || !HOME_PART_RE.test(u.pathname) || u.searchParams.has("format")) return null;
+  return u;
+}
+async function homeBundle(request, env, exec, url) {
+  const t0 = Date.now();
+  const asked = url.searchParams.getAll("p");
+  if (!asked.length) return json({ error: "Add one p= per read." }, 400);
+  if (asked.length > HOME_PARTS_MAX) return json({ error: `At most ${HOME_PARTS_MAX} reads.` }, 400);
+  const headers = new Headers(request.headers);
+  for (const h of HOME_DROP_HEADERS) headers.delete(h);
+  // The same read twice in one bundle is run once.
+  const runs = new Map();
+  const parts = await Promise.all(asked.map((p) => { if (!runs.has(p)) runs.set(p, homePart(p, url, headers, env, exec)); return runs.get(p); }));
+  return json({ v: 1, parts, ms: Date.now() - t0 });
+}
+async function homePart(p, url, headers, env, exec) {
+  const u = homePartPath(p, url.origin);
+  if (!u) return { p, status: 400, body: { error: "Not a Home read." } };
+  const sub = new Request(u.toString(), { method: "GET", headers });
+  const s0 = Date.now();
+  const run = edgeFetch(sub, env, exec).then(async (res) => {
+    const text = await res.text();
+    let body = null;
+    try { body = JSON.parse(text); } catch (e) { body = null; }
+    homePartLog(sub, env, res, Date.now() - s0);
+    return { p, status: res.status, body, cache: res.headers.get("x-edge-cache") || undefined, ms: Date.now() - s0 };
+  }).catch(() => ({ p, status: 500, body: null }));
+  let timer = null;
+  const late = new Promise((r) => { timer = setTimeout(() => r(null), HOME_PART_MS); });
+  const v = await Promise.race([run, late]);
+  clearTimeout(timer);
+  if (v) return v;
+  if (exec && exec.waitUntil) exec.waitUntil(run.catch(() => null));
+  return { p, status: 0, late: true, ms: Date.now() - s0 };
+}
+// Each read in a bundle writes its own request log line (via "home"), as it would have on its own.
+function homePartLog(sub, env, res, ms) {
+  try {
+    if (String((env && env.REQ_LOG) || "").toLowerCase() === "off") return;
+    const line = reqLine(sub, env, res, ms, { up: 0, n: 0 });
+    if (line) { line.via = "home"; console.log(JSON.stringify(line)); }
+  } catch (e) { /* never in the way of an answer */ }
+}
