@@ -7,6 +7,8 @@ import * as Updates from 'expo-updates';
 import { versionLine } from '@/lib/format';
 import { api } from '@/lib/api';
 import { useLive } from '@/lib/hooks';
+import { LIST_KEYS } from '@/lib/offlineCore';
+import { forgetOffline } from '@/lib/offline';
 import { usePalette } from '@/lib/theme';
 import { daysText, shortName, todText } from '@/lib/format';
 import { disablePush, enablePush, getPushState, PushState } from '@/lib/push';
@@ -48,10 +50,11 @@ export default function Settings() {
   const c = usePalette();
   const [push, setPush] = useState<PushState | null>(null);
   const [busy, setBusy] = useState(false);
+  // The commutes and watch count kept on the phone paint the first frame (27 Oct speed pass 3); the answer replaces them.
   const { data, refresh } = useLive(async () => {
     const [cm, w] = await Promise.all([api.commutes(), api.watches().catch(() => null)]);
     return { commutes: cm.items, watching: (w?.items || []).filter((x) => x.active).length };
-  }, 60000);
+  }, 60000, [], { cacheKey: LIST_KEYS.settings });
   useEffect(() => { getPushState().then(setPush); }, []);
   const st = useStore();
   // Same chat as the Ask tab (lib/askChat.ts), so clearing here empties Ask at once.
@@ -92,6 +95,8 @@ export default function Settings() {
         const keys = await AsyncStorage.getAllKeys();
         await AsyncStorage.multiRemove(keys.filter((k) => !['profile', 'device', 'store', 'apiBase', 'remoteConfig', PUSH_FORGOTTEN_KEY].includes(k)));
       } catch {}
+      // The kept copies this session holds in memory go too, so no screen paints a deleted list from them.
+      forgetOffline();
       await clearAskChat();
       setPush(await getPushState());
       refresh();

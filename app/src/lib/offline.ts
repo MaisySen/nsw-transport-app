@@ -69,6 +69,13 @@ export function keepOffline(key: string, data: unknown) {
   });
 }
 
+/** Drops every kept copy held in memory this session (Delete all my data; storage is cleared by the caller). */
+export function forgetOffline() {
+  mem.clear();
+  disk.clear();
+  lastWrite.clear();
+}
+
 /**
  * Holds an answer in memory only (no storage write): a press in prefetch or a board's next stops read, so the next
  * screen's first frame has it. Bounded by the same cap as kept copies; the screen's own live answer is what gets kept.

@@ -2,6 +2,7 @@ import { Alert, RefreshControl, View } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
+import { LIST_KEYS } from '@/lib/offlineCore';
 import { usePalette, radius } from '@/lib/theme';
 import { clock } from '@/lib/format';
 import { stopWatch } from '@/lib/watch';
@@ -13,7 +14,8 @@ import { Button, Empty, Row, Screen, Section, Sep, T } from '@/components/ui';
 export default function Watching() {
   const c = usePalette();
   const now = useNow();
-  const { data, error, updatedAt, refreshing, refresh } = useLive(() => api.watches(), 15000);
+  // The list kept on the phone paints the first frame with its age (27 Oct speed pass 3); the live answer replaces it.
+  const { data, error, updatedAt, refreshing, refresh, staleAt, offlineAt } = useLive(() => api.watches(), 15000, [], { cacheKey: LIST_KEYS.watches });
   const active = (data?.items || []).filter((w) => w.active);
   const done = (data?.items || []).filter((w) => !w.active);
   const notes = data?.notes || [];
@@ -21,7 +23,7 @@ export default function Watching() {
     <>
       <Stack.Screen options={{ title: 'Watching' }} />
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
-        <View style={{ paddingHorizontal: 20, paddingTop: 4 }}><LiveStamp updatedAt={updatedAt} error={error} /></View>
+        <View style={{ paddingHorizontal: 20, paddingTop: 4 }}><LiveStamp updatedAt={updatedAt} error={error} staleAt={staleAt} offlineAt={offlineAt} /></View>
         {active.map((w) => {
           const L = w.legs?.[0];
           return (

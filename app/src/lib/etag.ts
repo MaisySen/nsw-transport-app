@@ -1,8 +1,9 @@
 // Kept static answers with their version tags (etagCore.ts), on the phone. getJsonTagged asks the server with the kept
-// copy's tag; a 304 returns the kept copy, a new answer replaces it. Used for station and line lists (trips.ts).
+// copy's tag; a 304 returns the kept copy, a new answer replaces it. Used for station and line lists (trips.ts). A copy
+// checked in the last 7 days shows at once while the check runs behind it.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getJson, NOT_MODIFIED } from './server';
-import { keepTag, touchTag, type TagIndex } from './etagCore';
+import { keepTag, tagShowsAtOnce, touchTag, type TagIndex } from './etagCore';
 
 const IDX = 'etag:idx:v1';
 const bodyKey = (k: string) => `etag:b:${k}`;
@@ -14,7 +15,11 @@ function load(): Promise<void> {
   return loaded;
 }
 
-/** A GET of static JSON through getJson, with the kept copy's tag when there is one. */
+/**
+ * A GET of static JSON through getJson, with the kept copy's tag when there is one. A kept copy checked in the last
+ * 7 days (etagCore.tagShowsAtOnce) is returned at once and its tag is checked behind it (stale while revalidate, 27 Oct
+ * speed pass 3): a 304 marks it checked, a new list replaces it for the next read. Otherwise the check is waited for.
+ */
 export async function getJsonTagged<T = any>(path: string, timeoutMs: number): Promise<T> {
   await load();
   let kept: T | null = null;
@@ -22,8 +27,17 @@ export async function getJsonTagged<T = any>(path: string, timeoutMs: number): P
   if (entry) {
     try { const raw = await AsyncStorage.getItem(bodyKey(path)); kept = raw ? (JSON.parse(raw) as T) : null; } catch { kept = null; }
   }
+  if (kept != null && tagShowsAtOnce(entry, Date.now())) {
+    check(path, timeoutMs, kept, entry.e).catch(() => {});
+    return kept;
+  }
+  return check(path, timeoutMs, kept, kept != null && entry ? entry.e : null);
+}
+
+/** Asks the server with the tag; a 304 returns the kept copy, a new answer is kept with its tag and returned. */
+async function check<T>(path: string, timeoutMs: number, kept: T | null, sent: string | null): Promise<T> {
   let tag: string | null = null;
-  const r = await getJson<T>(path, timeoutMs, undefined, { tag: kept != null && entry ? entry.e : null, onTag: (e) => { tag = e; } });
+  const r = await getJson<T>(path, timeoutMs, undefined, { tag: sent, onTag: (e) => { tag = e; } });
   if (r === NOT_MODIFIED) {
     idx = touchTag(idx, path, Date.now());
     AsyncStorage.setItem(IDX, JSON.stringify(idx)).catch(() => {});

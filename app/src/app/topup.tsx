@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { api } from '@/lib/api';
+import { keepOffline, peekOffline } from '@/lib/offline';
+import { LIST_KEYS } from '@/lib/offlineCore';
 import { prefetchStop } from '@/lib/prefetch';
 import { radius, usePalette } from '@/lib/theme';
 import { distText, stShort, TICKET, type TopupItem } from '@/lib/access';
@@ -20,7 +22,9 @@ export default function TopupScreen() {
   const p = useLocalSearchParams<{ cash?: string }>();
   const [filter, setFilter] = useState<Filter>(p.cash === '1' ? 'cash' : 'all');
   const [me, setMe] = useState<{ lat: number; lon: number } | null>(null);
-  const [items, setItems] = useState<TopupItem[] | null>(null);
+  // The last list kept on the phone paints the map and list at once (27 Oct speed pass 3); the answer for where the
+  // phone is now replaces it.
+  const [items, setItems] = useState<TopupItem[] | null>(() => peekOffline<{ items?: TopupItem[] }>(LIST_KEYS.topup)?.data?.items ?? null);
   const [error, setError] = useState<string | null>(null);
   const [scrollOn, setScrollOn] = useState(true);
   const onScrollChange = useCallback((on: boolean) => setScrollOn(on), []);
@@ -34,6 +38,8 @@ export default function TopupScreen() {
       try {
         const r = await api.topup(pos?.lat, pos?.lon, 40);
         if (live) setItems(r.items || []);
+        // Kept without distances: they were measured from where the phone was then.
+        keepOffline(LIST_KEYS.topup, { items: (r.items || []).map(({ distance, ...x }) => x) });
       } catch (e: any) { if (live) setError(e.message); }
     })();
     return () => { live = false; };

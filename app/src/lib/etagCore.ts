@@ -47,6 +47,15 @@ export function keepTag(idx: TagIndex, key: string, tag: string | null | undefin
   return { idx: out, drop };
 }
 
+/**
+ * How long a kept static list (station and line lists, bus stops) is shown at once while its tag is checked behind it
+ * (27 Oct speed pass 3): a list checked in the last 7 days. Older, or with no tag, the check is waited for as before.
+ */
+export const TAG_SWR_MS = 7 * 86400000;
+export function tagShowsAtOnce(entry: TagEntry | null | undefined, now: number, maxMs = TAG_SWR_MS): boolean {
+  return !!entry && !!cleanTag(entry.e) && Number.isFinite(entry.at) && entry.at <= now + 60000 && now - entry.at <= maxMs;
+}
+
 /** The index after a 304: the copy counts as just checked. */
 export function touchTag(idx: TagIndex, key: string, now: number): TagIndex {
   return idx[key] ? { ...idx, [key]: { ...idx[key], at: now } } : idx;

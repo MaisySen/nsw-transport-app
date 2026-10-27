@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, View } from 'react-native';
 import { goBack } from '@/lib/nav';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { api } from '@/lib/api';
 import { useLive, useNow } from '@/lib/hooks';
+import { LIST_KEYS, watchSeed } from '@/lib/offlineCore';
+import { peekOffline } from '@/lib/offline';
+import type { Watch } from '@/lib/types';
 import { usePalette } from '@/lib/theme';
 import { clock, ms, shortName } from '@/lib/format';
 import { stopWatch } from '@/lib/watch';
@@ -19,7 +22,11 @@ export default function WatchDetail() {
   // A watch the server no longer has (stopped, ended and cleared, or a mistyped link) answers 404: say so once and stop
   // asking, instead of "Live times unavailable, trying again" over an empty screen every 15 seconds.
   const [gone, setGone] = useState(false);
-  const { data, error, updatedAt } = useLive(() => api.watchDetail(String(id)).catch((e: any) => { if (e?.http === 404) setGone(true); throw e; }), 15000, [id], { enabled: !gone });
+  // First frame (27 Oct speed pass 3): this watch's kept copy, else the watch as the Watching list showed it (its
+  // kept copy), labelled with its age until the detail answer lands.
+  const seed = useMemo(() => watchSeed(peekOffline<{ items?: Watch[] }>(LIST_KEYS.watches), String(id)), [id]);
+  const { data, error, updatedAt, staleAt, offlineAt } = useLive(() => api.watchDetail(String(id)).catch((e: any) => { if (e?.http === 404) setGone(true); throw e; }), 15000, [id],
+    { enabled: !gone, cacheKey: id ? LIST_KEYS.watch(String(id)) : undefined, seed });
   const w = gone ? null : data?.watch;
   return (
     <>
@@ -28,7 +35,7 @@ export default function WatchDetail() {
         {gone ? (
           <Empty icon={I.route} title="This watch has ended" body="It was stopped or its trip is over. Watches you have on now are in Watching."
             action={<Button title="Show Watching" onPress={() => router.replace('/watching')} />} />
-        ) : <View style={{ paddingHorizontal: 20, paddingTop: 12 }}><LiveStamp updatedAt={updatedAt} error={error} /></View>}
+        ) : <View style={{ paddingHorizontal: 20, paddingTop: 12 }}><LiveStamp updatedAt={updatedAt} error={error} staleAt={staleAt} offlineAt={offlineAt} /></View>}
         {w ? (
           <>
             <T kind="title3" style={{ marginHorizontal: 20, marginTop: 10 }}>{watchLine(w, now)}</T>

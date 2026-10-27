@@ -107,3 +107,25 @@ export function staleText(at: number, now: number): string {
 
 /** Storage key for a cached answer. */
 export const cacheKey = (kind: 'trip' | 'dep' | 'home' | 'svc' | 'park' | 'list' | 'route', id: string) => `offline:${kind}:${id}`;
+
+/**
+ * Kept copies of the light per phone lists (27 Oct speed pass 3), so their screens paint at once with their age:
+ * Watching, one watch's detail (`watch(id)`), More's commutes and watch count, the morning checks and the Opal machines
+ * list. Each is a few KB, inside MAX_ENTRIES. Delete all my data clears them with the rest (offline.forgetOffline).
+ */
+export const LIST_KEYS = {
+  watches: cacheKey('list', 'watches'),
+  watch: (id: string) => cacheKey('list', `watch:${id}`),
+  settings: cacheKey('list', 'settings'),
+  morning: cacheKey('list', 'morning'),
+  topup: cacheKey('list', 'topup'),
+};
+
+/**
+ * A watch's detail painted from the Watching list's kept copy (the same watch object the list shows), with no notes
+ * until the detail answer lands; null when the list has no watch with this id.
+ */
+export function watchSeed<W extends { id?: string }>(list: { at: number; data: { items?: W[] } } | null | undefined, id: string): { at: number; data: { watch: W; notes: any[]; now: number; seeded: true } } | null {
+  const w = list && Array.isArray(list.data?.items) ? list.data.items.find((x) => x && String(x.id) === String(id)) : null;
+  return w && list ? { at: list.at, data: { watch: w, notes: [], now: list.at, seeded: true } } : null;
+}

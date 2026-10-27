@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { api } from '@/lib/api';
+import { keepOffline, peekOffline } from '@/lib/offline';
+import { LIST_KEYS } from '@/lib/offlineCore';
 import { useConfig, flagOn } from '@/lib/config';
 import { haptic } from '@/lib/haptic';
 import { clock } from '@/lib/format';
@@ -26,7 +28,8 @@ export default function MorningScreen() {
   const params = useLocalSearchParams<{ dir?: string }>();
   const home = st.places?.home, work = st.places?.work;
   const hasPlaces = !!(home && work && home.id !== work.id);
-  const [list, setList] = useState<MorningListResp | null>(null);
+  // The checks kept on the phone paint the first frame (27 Oct speed pass 3); the server's list replaces them.
+  const [list, setList] = useState<MorningListResp | null>(() => peekOffline<MorningListResp>(LIST_KEYS.morning)?.data ?? null);
   const [err, setErr] = useState<string | null>(null);
   const [push, setPush] = useState<PushState | null>(null);
   const [form, setForm] = useState<Form | null>(null);
@@ -39,6 +42,7 @@ export default function MorningScreen() {
       const r = await api.morningList();
       setList(r); setErr(null);
       store.setMorning(r.items || []);
+      keepOffline(LIST_KEYS.morning, r);
     } catch (e: any) { setErr(e.message); }
   }, []);
   useEffect(() => { load(); getPushState().then(setPush).catch(() => {}); }, [load]);
