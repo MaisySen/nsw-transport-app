@@ -276,6 +276,12 @@ The server parts of speed pass part 2 steps C and D that a phone could meet (the
 * A screen that hits an error shows Something went wrong with Try again and Go to Home instead of closing the app; after a retry, Clear saved times and reload.
 * Each error is reported once to the support inbox with the screen, build, update and the last server paths asked, so the cause can be read.
 
+## Less data on every refresh (27 Oct, 9 PM network pass; server transport-api, app in tonight's update)
+* Boards, services, trips, live trip legs, alerts, car parks, line status and trackwork: when nothing changed since the last refresh, the server answers with a short "not changed" (304) and the phone keeps what it shows, with the server's clock for its countdowns. Times, rows and how old the times are never change on a 304.
+* Board rows no longer carry two fields the app never reads (mode name, wheelchair flag).
+* Stop and place search: an answer is kept by the phone for an hour, so typing the same words again answers on the phone. Stops already answer as you type from the lists kept on the phone (26 Oct).
+* Older apps (builds 201 to 208, updates up to ecb0882d) get exactly what they got before. Off switch: POLL_TAGS=off or kill.pollTags.
+
 ## Not in the app
 
 No accounts or login, no ads, no analytics or tracking, no Opal card balance. Crash reports are sent only to fix faults (the crash safety net, and Sentry from build 209); the privacy policy lists them. Privacy details: [STORE_PRIVACY.md](STORE_PRIVACY.md) and https://transportsydney.app/privacy/.

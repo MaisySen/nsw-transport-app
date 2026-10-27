@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Network pass: less data on every refresh (27 Oct, 9 PM; server transport-api, app in tonight's update)
+* Poll tags (`poll-tags` in x-serves): boards, services, trips, live trip legs, alerts, car parks, line status and trackwork carry a tag of their content with only the server clock ("now") left out; the newer app sends it back and an unchanged answer is a 304 with no body and `x-now`, and the phone keeps the answer it holds (memory only, 24 answers, 10 minutes at most). `dataAt` and every time are in the tag, so a 304 never makes kept times look newer. Off: POLL_TAGS=off or kill.pollTags.
+* Board rows for the newer app leave out `modeName` and `wheelchair`, which nothing in the app reads.
+* Stop and place search answers say `public, max-age=3600` to the newer app (it sends `x-public-ok: 1`, no ids), so the phone's own HTTP cache answers the same words again. Stops already answer as you type from the phone's own index (26 Oct); the server's extras are memoized per session.
+* Already in place and checked: brotli to phones that ask (Central's board 31.9 KB as JSON, 4.3 KB on the wire), tags on station lists and packs.
+* Older apps (builds 201 to 208, updates up to ecb0882d): same bytes and headers as before.
+* Tests: backend test/net-pass.test.mjs (8), app test/polltags.test.mjs (6); speed-part2 expects the new word.
+
 ### Speed pass 4: the last three slow screens (27 Oct; server transport-api, app in tonight's update)
 * Stop board at another time (3.4 s spinner in pass 3): the server builds the board engine's timetable rows for that moment beside the Trip Planner call (no Transport for NSW call) and the newer app gets them after at most 0.7 s when the planner is slow, labelled, with the planner's board on the ask again (measured 1.04 s, then 0.29 s from the US box). The app paints the stop's timetable pack from that moment on the first frame when the pack holds it.
 * Car park list (9.5 s on a first open with no fresh copy): the newer app gets the last saved list (old counts say No live count) or the list with no counts after at most 0.5 s, marked counts-loading, says Getting live counts and asks again at 8, 15 and 30 s; the same live read finishes behind (measured 2.1 s with the first 1.5 s wait, live 9 s later). Car park copies kept 7 days.

@@ -23,6 +23,7 @@ import { HOME_BUNDLE, ID_HEADERS, placeIds, SERVES_HEADER, TRIP_LIVE } from './s
 import { homeBundle } from './homeBundle';
 import { HOME_BUNDLE_MS, homeBundlePath, type HomeOccasion, type HomePart, type HomeRead } from './homeBundleCore';
 import { keepAsPlan, liveRequests, overlayLive, planFresh, type LiveResp } from './tripLiveCore';
+import { pollTag, pollTags, pollTagWorthy, POLL_TAGS, PUBLIC_OK, withNow } from './pollTagCore';
 
 // Kept times say why they are on screen: the phone offline, or the live data down (netErrCore.ts).
 onFailWhy(setOfflineWhy);
@@ -52,14 +53,31 @@ async function once<T>(path: string, init: ApiInit | undefined, timeoutMs: numbe
     const { ids, ...rest } = init || {};
     const placed = placeIds(path, ids, !!ids && serves(ID_HEADERS, base));
     const headers: Record<string, string> = rest.body ? { 'content-type': 'application/json' } : {};
-    const r = await fetch(base + placed.path, { ...rest, signal: ctl.signal, headers: { ...headers, ...placed.headers, ...((rest.headers as any) || {}) } });
+    // Polled reads carry the tag of the answer the phone holds when the server says poll-tags (pollTagCore.ts).
+    const tagKey = !rest.method && !rest.body && pollTagWorthy(path) && serves(POLL_TAGS, base) ? base + placed.path : '';
+    const sent = tagKey ? pollTags.tagFor(tagKey, Date.now()) : null;
+    const sentText = sent ? pollTags.textFor(tagKey, sent) : null;
+    const r = await fetch(base + placed.path, { ...rest, signal: ctl.signal, headers: { ...headers, ...placed.headers, ...(sent ? { 'if-none-match': sent } : {}), ...((rest.headers as any) || {}) } });
     noteReach();
     // What this server says it can do (servesCore.ts): read from every /api answer.
     try { noteServes(base, path, r.status, r.headers?.get?.(SERVES_HEADER)); } catch { /* no headers on this answer */ }
     noteRequest(path, r.status);
-    const body = await r.json().catch(() => ({}));
+    let body: any;
+    const keptText = r.status === 304 ? sentText : null;
+    if (keptText != null) {
+      // Nothing changed since the answer the phone holds: that answer, with the server clock of this one.
+      pollTags.touch(tagKey, Date.now());
+      try { body = withNow(keptText, r.headers?.get?.('x-now'), Date.now()); } catch { pollTags.forget(tagKey); throw httpError(502, {}); }
+    } else {
+      const text = await r.text().catch(() => '');
+      try { body = text ? JSON.parse(text) : {}; } catch { body = {}; }
+      if (tagKey) {
+        if (r.ok) pollTags.keep(tagKey, pollTag(r.headers?.get?.('etag')), text, Date.now());
+        else pollTags.forget(tagKey);
+      }
+    }
     // The server's own words, never a bare status (netErrCore.ts); a 5xx or 429 is marked server (live data's fault).
-    if (!r.ok) throw httpError(r.status, body);
+    if (keptText == null && !r.ok) throw httpError(r.status, body);
     if (raw) return body as T;
     // Rows and legs carry the moment they arrived, so a countdown can say how old its live time is. An answer the
     // server took from its shared cache says when it was made (dataAt); the older of the two is the honest one.
@@ -185,7 +203,8 @@ export function startHomeBundle(occ: HomeOccasion, o: { config?: boolean } = {})
 export const watchClock = { startedAt: 0 };
 
 export const api = {
-  search: (q: string) => req<{ items: SearchItem[] }>(`/api/search?${qs({ q })}`),
+  // x-public-ok (network pass, 27 Oct): the answer is the same for everyone, so the phone's HTTP cache may keep it an hour.
+  search: (q: string) => req<{ items: SearchItem[] }>(`/api/search?${qs({ q })}`, { headers: PUBLIC_OK }),
   nearby: (lat: number, lon: number) => req<{ stops: (SearchItem & { distanceM?: number; dist?: number })[] }>(`/api/nearby?${qs({ lat: lat.toFixed(5), lon: lon.toFixed(5) })}`),
   departures: async (stop: string, refresh = false, mode?: string) => {
     // A refresh has the board on screen already, so it waits less (netErrCore.ts read deadlines).
@@ -418,7 +437,7 @@ export async function searchPlaces(q: string, signal?: AbortSignal): Promise<{ i
     // A newer keystroke cancels this request (the search box passes its own signal).
     if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener('abort', () => ctl.abort()); }
     try {
-      const r = await fetch(`${NEW_API_BASE}/api/places?${qs({ q })}`, { signal: ctl.signal });
+      const r = await fetch(`${NEW_API_BASE}/api/places?${qs({ q })}`, { signal: ctl.signal, headers: PUBLIC_OK });
       if (!r.ok) throw httpError(r.status, {});
       const body = await r.json();
       if (Array.isArray(body?.items)) return { items: body.items as PlaceItem[], places: true };

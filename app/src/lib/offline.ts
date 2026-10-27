@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MAX_ENTRIES, prune, touch, usable, worthKeeping } from './offlineCore';
 import { cleanAlertTexts } from './htmlTextCore';
+import { pollTags } from './pollTagCore';
 
 const INDEX = 'offline:index';
 /** At most one write per answer every 60 s: refreshes come every 15 s and the times barely move. */
@@ -71,6 +72,7 @@ export function keepOffline(key: string, data: unknown) {
 
 /** Drops every kept copy held in memory this session (Delete all my data; storage is cleared by the caller). */
 export function forgetOffline() {
+  pollTags.clear();
   mem.clear();
   disk.clear();
   lastWrite.clear();

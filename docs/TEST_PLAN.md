@@ -44,6 +44,14 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 * Wiring: `prefetchStop` exported and called on press in (Ask, route stops, Opal machines), `useLive` asks again once per opening, the trip list uses `useCountdownNow`, the window background is set through a feature detected `expo-system-ui`.
 * On a device (not done yet): open a stop that nobody has opened for a minute, see "Updated N s ago" then fresh times within about 3 s; touch and hold a stop row in Ask, release, the stop screen opens with departures and no spinner; trip list "1 min" turns to "Now" on the minute; dark mode, push and pop a stop, no white strip.
 
+## Network pass (27 Oct, 9 PM, poll tags)
+### `backend/test/net-pass.test.mjs`: 8 tests, 8 pass
+Newer app board rows lose modeName and wheelchair and keep the rest (nulls too); an old app gets the same bytes, no tag and no-store (and a full answer to a tag it never got); the tag leaves out only "now" (a moved time and dataAt change it); a matching tag (weak or strong) is a 304 with no body, x-now, x-edge-cache and x-serves; every polled path is tagged and saved, watches, home and search are not, errors are not; POLL_TAGS=off and kill.pollTags turn tags off and keep the trim; search and places are public for an hour with x-public-ok or the ids, never for stand ins or errors; trimBoard leaves anything not a board as it was. `speed-part2.test.mjs` expects poll-tags in x-serves.
+### `app/test/polltags.test.mjs`: 6 tests, 6 pass
+Which addresses are polled; tag header values; a kept answer comes back on a 304 with x-now (dataAt never moved, no now added); old, oversized and untagged answers are not kept; bounded by count and size, oldest out first; api.ts sends the tag only for polled GETs while the server says poll-tags, keeps the answer on a 304, search and places send x-public-ok, and Delete all my data clears it.
+### On a device (not done)
+Open a board, wait for two refreshes with no change: the second should be a 304 (Workers Logs or a proxy), the countdowns keep moving, the Updated line stays honest. Type a stop name, clear it, type it again in a new session: answered with no request.
+
 ## Home in one request and recovery (27 Oct, home bundle)
 ### `backend/test/home-bundle.test.mjs`: 7 tests, 7 pass
 x-serves names home-bundle; parts come back in order and each equals the same read asked on its own; one Trip Planner call per board, and the same read twice runs once; only Home's reads (ask, budget, another host, format=text, trip/live are refused per part with no upstream call); no reads or more than 10 is 400; a part still waiting at 2.5 s is answered late and handed to waitUntil; HOME_BUNDLE=off is a 404 and the word leaves x-serves. `backend/test/speed-part2.test.mjs` expects the word too.

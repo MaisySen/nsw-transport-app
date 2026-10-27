@@ -7756,7 +7756,7 @@ function apiOnlyRoute(request, env, url) {
 
 async function handleRequest(request, env, exec) {
     const url = new URL(request.url);
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "content-type, x-profile, x-device, if-none-match", "access-control-expose-headers": SERVES_EXPOSE, "access-control-max-age": "86400" } });
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "content-type, x-profile, x-device, if-none-match, x-public-ok", "access-control-expose-headers": SERVES_EXPOSE, "access-control-max-age": "86400" } });
     if (apiOnly(env, url)) { const r = apiOnlyRoute(request, env, url); if (r) return r; }
     if (/^\/(worker\.m?js|_worker\.js|[a-z]+-site\.json)$/.test(url.pathname)) return new Response("Not found", { status: 404 });
     if (/^\/download\/[A-Za-z0-9._-]+\.apk$/.test(url.pathname)) return serveFile(env, url.pathname.slice("/download/".length), request);
@@ -9187,9 +9187,9 @@ async function edgeFetchInner(request, env, exec) {
 // x-serves (docs/API.md): a comma list of the newer paths this server has live, on every /api answer. The app reads
 // id-headers and trip-live, and an answer without the header turns them off again on the phone, so a rollback is safe.
 // Each word is on unless its flag (wrangler var) is "off" or the server switch kill list names it (no deploy needed):
-// ID_HEADERS / kill idHeaders, TRIP_LIVE / kill tripLive, HOME_BUNDLE / kill homeBundle.
+// ID_HEADERS / kill idHeaders, TRIP_LIVE / kill tripLive, HOME_BUNDLE / kill homeBundle, POLL_TAGS / kill pollTags.
 const SERVES_EXPOSE = "x-serves, etag, x-edge-cache";
-const SERVES = [["id-headers", "ID_HEADERS", "idHeaders"], ["trip-live", "TRIP_LIVE", "tripLive"], ["home-bundle", "HOME_BUNDLE", "homeBundle"]];
+const SERVES = [["id-headers", "ID_HEADERS", "idHeaders"], ["trip-live", "TRIP_LIVE", "tripLive"], ["home-bundle", "HOME_BUNDLE", "homeBundle"], ["poll-tags", "POLL_TAGS", "pollTags"]];
 function servesOn(env, flag, sw) {
   if (String((env && env[flag]) || "").toLowerCase() === "off") return false;
   const c = serverCfg && serverCfg.cfg;
@@ -9226,6 +9226,34 @@ function inmMatches(inm, etag) {
 // only with a deploy, which starts new copies).
 const listTags = new Map();
 const ETAG_API = /^\/api\/(stations|pack)$/;
+// Network pass (27 Oct, 9 PM): three things on the way out, for the newer app only (x-device or x-profile), so builds
+// 201 to 208 and the updates up to ecb0882d get the same bytes and headers as before.
+// 1. poll-tags: the answers the app asks again and again (boards, services, live trip legs, trips, alerts, car parks,
+//    line status, trackwork) carry a tag of their content with "now" (the server clock, new on every answer) left out.
+//    A phone that sends the tag back (If-None-Match) while nothing changed gets a 304 with no body and x-now (the
+//    server clock) and keeps the answer it holds. "dataAt" and every row's times are in the tag, so a 304 never
+//    makes kept times look newer than they are. POLL_TAGS=off or kill.pollTags turns it off without a deploy.
+// 2. Fields the app never reads are left out of board rows (modeName, wheelchair; checked against app/src 27 Oct).
+// 3. Stop search and place search answers (the same for everyone, no person in them) may be kept by the phone's own
+//    HTTP cache for an hour, so a word typed again is answered on the phone. Stand ins and errors are never marked.
+//    The newer app asks for this with x-public-ok: 1 (search carries no device or profile id); older apps never send
+//    it and keep no-store.
+const POLL_TAG_API = /^\/api\/(departures|service|status|trip|trip\/live|alerts|parking|lines|trackwork)$/;
+const PUBLIC_READ_API = /^\/api\/(search|places)$/;
+const PUBLIC_READ_S = 3600;
+const ROW_DROP = ["modeName", "wheelchair"];
+function pollTagsOn(env) { return servesOn(env, "POLL_TAGS", "pollTags"); }
+// The tag of a polled answer: the bytes with the server clock taken out.
+async function pollTagOf(text) { return etagOf(String(text).replace(/"now":\d+/g, '"now":0')); }
+// Board rows without the fields the newer app never reads. Anything that is not a plain board goes out as it was.
+function trimBoard(text) {
+  if (!/"modeName"|"wheelchair"/.test(text)) return text;
+  let d;
+  try { d = JSON.parse(text); } catch (e) { return text; }
+  if (!d || !Array.isArray(d.items)) return text;
+  for (const it of d.items) if (it && typeof it === "object") for (const k of ROW_DROP) delete it[k];
+  return JSON.stringify(d);
+}
 // Workers Cache (docs/PERFORMANCE.md "Workers Cache"): WORKERS_CACHE "on" adds an edge only cdn-cache-control header on
 // shared answers (phones still get no-store). It does nothing unless [cache] enabled = true is also set in
 // wrangler.toml, and both are off: a cache hit does not run the worker, so it writes no request log line and no trip
@@ -9266,11 +9294,26 @@ async function finishAnswer(request, env, res) {
     out = new Response(buf, out);
     out.headers.set("etag", await etagOf(buf));
   }
+  let polled = false;
+  if (api && request.method === "GET" && out.status === 200 && newerApp(request) && /json/.test(out.headers.get("content-type") || "")) {
+    const path = url.pathname;
+    if (path === "/api/departures" || (POLL_TAG_API.test(path) && !out.headers.get("etag") && pollTagsOn(env))) {
+      let text = await out.text();
+      if (path === "/api/departures") text = trimBoard(text);
+      out = new Response(text, out);
+      out.headers.delete("content-length");
+      if (POLL_TAG_API.test(path) && !out.headers.get("etag") && pollTagsOn(env)) { out.headers.set("etag", await pollTagOf(text)); polled = true; }
+    }
+  }
+  // Search answers: the newer app says it may keep them (x-public-ok, sent without its ids) or sends its ids.
+  if (api && request.method === "GET" && out.status === 200 && PUBLIC_READ_API.test(url.pathname) && (newerApp(request) || request.headers.get("x-public-ok") === "1") &&
+    !out.headers.get("x-stand-in") && !/stand-in|quick/.test(out.headers.get("x-edge-cache") || "")) out.headers.set("cache-control", `public, max-age=${PUBLIC_READ_S}`);
   const etag = out.headers.get("etag");
   const words = api ? servesWords(env) : "";
   if (get && out.status === 200 && etag && inmMatches(request.headers.get("if-none-match"), etag)) {
-    const h = { etag, "cache-control": out.headers.get("cache-control") || "no-store", "access-control-allow-origin": "*", "access-control-expose-headers": SERVES_EXPOSE, ...API_SEC_HEADERS };
+    const h = { etag, "cache-control": out.headers.get("cache-control") || "no-store", "access-control-allow-origin": "*", "access-control-expose-headers": SERVES_EXPOSE + (polled ? ", x-now" : ""), ...API_SEC_HEADERS };
     if (words) h["x-serves"] = words;
+    if (polled) { h["x-now"] = String(Date.now()); const ec = out.headers.get("x-edge-cache"); if (ec) h["x-edge-cache"] = ec; }
     return new Response(null, { status: 304, headers: h });
   }
   if (words) out.headers.set("x-serves", words);
