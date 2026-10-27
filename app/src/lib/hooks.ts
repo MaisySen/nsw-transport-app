@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import { showsKept } from './netErrCore';
 import { keepOffline, peekOffline, readOffline } from './offline';
 import { createLatest, createStamp, quickReaskMs } from './pollCore';
-import { phoneOffline, quickRetryMs, standInReaskMs } from './coldOpenCore';
+import { cardDegraded, failAgainMs, phoneOffline, quickRetryMs, standInAgainMs } from './coldOpenCore';
 import { answerTime } from './liveLabelCore';
 import { useCountdownNow, useNow, useReportCountdowns, useScreenPoll } from './activity';
 import { peekPackBoard, readPackBoard } from './timetablePack';
@@ -93,6 +94,14 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
     setRetrying(true);
     setSoon({ key: Date.now() + Math.random(), ms });
   }, []);
+  // Recovery (coldOpenCore.ts RECOVER_MS): the next plain ask after this wait, never later than the normal gap, said
+  // nowhere on screen (the card keeps its honest words) and not counted towards the poller's back off.
+  const quietAgain = useCallback((ms: number) => {
+    const f = ivRef.current;
+    const gap = typeof f === 'function' ? f(dataRef.current) : f;
+    nextQuick.current = Number.isFinite(gap) && gap > 0 ? Math.min(ms, gap) : ms;
+    plainNext.current = true;
+  }, []);
 
   const run = useCallback(async (refresh: boolean): Promise<boolean> => {
     const L = latest.current!;
@@ -105,9 +114,11 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
       if (!round.current()) return true;
       fails.current = 0;
       setPending(false);
-      // A slow planner's timetable stand in: live trips asked for again soon (the server saves them when they come).
-      const sw = quickRef.current ? standInReaskMs(d, standAsked.current) : null;
-      if (sw != null) { standAsked.current += 1; quickAgain(sw); } else setRetrying(false);
+      // A timetable stand in: live trips asked for again soon (the server saves them when they come). A slow planner's
+      // first, said as Getting live times; any stand in after that, quietly, until a live answer (coldOpenCore.ts).
+      const sa = quickRef.current ? standInAgainMs(d, standAsked.current) : null;
+      if (sa) { standAsked.current += 1; if (sa.quick) quickAgain(sa.ms); else { setRetrying(false); quietAgain(sa.ms); } }
+      else { standAsked.current = 0; setRetrying(false); }
       // When the times were read (a cached answer from the server says so), not just when they arrived (honest "Updated").
       const at = answerTime(d, Date.now());
       setData(d);
@@ -118,7 +129,7 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
       setPackAt(null);
       shown.current = { live: true, at };
       if (key) keepOffline(key, d);
-      const q = sw == null ? quickReaskMs(d, Date.now(), reasked.current) : null;
+      const q = sa == null ? quickReaskMs(d, Date.now(), reasked.current) : null;
       if (q != null) { reasked.current = true; setSoon({ key: Date.now(), ms: q }); }
       return true;
     } catch (e: any) {
@@ -130,6 +141,8 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
         const liveAge = shown.current.live && shown.current.at != null ? Date.now() - shown.current.at : null;
         const w = quickRetryMs({ fails: fails.current, offline: phoneOffline(e), liveAgeMs: liveAge });
         if (w != null) { quickAgain(w); return false; }
+        // The quick asks have run out: the failure shows, and the card keeps asking quietly (never minutes apart).
+        quietAgain(failAgainMs(fails.current, phoneOffline(e)));
       }
       setPending(false);
       setRetrying(false);
@@ -216,6 +229,21 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
   // A quick ask again is a plain read (plainNext): the server answers it from the live copy it saved a moment ago.
   const nextMs = useRef(() => { const n = nextQuick.current; nextQuick.current = null; return n; }).current;
   const runNow = useScreenPoll(() => { const plain = plainNext.current; plainNext.current = false; return run(!plain); }, typeof intervalMs === 'function' ? () => { const f = ivRef.current; return typeof f === 'function' ? f(dataRef.current) : f; } : intervalMs, { enabled: opts.enabled ?? true, retimeKey: updatedAt, soon, nextMs });
+
+  // Back in front (opts.quick, Home's cards): a card on a stand in, a failure, kept or timetable times asks again at
+  // once with a plain read, whatever its gap (coldOpenCore.ts, Home recovers by itself).
+  const degraded = useRef(false);
+  degraded.current = cardDegraded({ data, error, offlineAt, packAt });
+  const quickOn = !!opts.quick;
+  useEffect(() => {
+    if (!quickOn) return;
+    const sub = AppState.addEventListener('change', (a) => {
+      if (a !== 'active' || !degraded.current) return;
+      plainNext.current = true;
+      setSoon({ key: Date.now() + Math.random(), ms: 0 });
+    });
+    return () => sub.remove();
+  }, [quickOn]);
 
   const refresh = useCallback(async () => {
     plainNext.current = false;

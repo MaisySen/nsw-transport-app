@@ -11,10 +11,11 @@ import { endLive, setupLiveNotifications } from '@/lib/live';
 import { finishProfileMove } from '@/lib/device';
 import { finishServerMove } from '@/lib/serverMove';
 import { warmLocalSearch } from '@/lib/localSearch';
-import { refreshConfig } from '@/lib/config';
+import { configDue, refreshConfig } from '@/lib/config';
 import { bootLocal } from '@/lib/boot';
 import { warmCommute } from '@/lib/commuteWarm';
-import { api } from '@/lib/api';
+import { api, startHomeBundle } from '@/lib/api';
+import { homeOnView } from '@/lib/homeBundle';
 import { morningTripParams } from '@/lib/morning';
 import { store } from '@/lib/store';
 import { recheckLastLocal } from '@/lib/lastHome';
@@ -94,14 +95,21 @@ export default function RootLayout() {
     // The profile, cached config, saved places and kept copies are read side by side (lib/boot.ts), so the first
     // screen draws once, with its saved times, instead of empty cards that fill a few frames later.
     bootLocal().finally(() => {
-      // The commute card's trip first, before Home draws and asks for everything else (lib/commuteWarm.ts).
+      // Home's reads from last time in one request (homeBundleCore.ts), then the commute card's trip, which joins
+      // that request when it has it, else goes first on its own, before Home draws (lib/commuteWarm.ts).
+      startHomeBundle('start', { config: true });
       warmCommute();
       setReady(true);
       later = setTimeout(() => { later = null; finishProfileMove(api).then(() => finishServerMove()); refreshConfig(true); }, STARTUP_DEFER_MS);
       // The stop lists for search as you type are read (or fetched once) well after the first screen has its times.
       search = setTimeout(() => { search = null; warmLocalSearch(); }, STARTUP_DEFER_MS * 4);
     });
-    const sub = AppState.addEventListener('change', (s) => { if (s === 'active') refreshConfig(); });
+    // Back in front with Home on view: Home's reads in one request first (the config too when it is due).
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s !== 'active') return;
+      if (homeOnView()) startHomeBundle('front', { config: configDue() });
+      refreshConfig();
+    });
     // Timetable packs (timetablePack.ts): kept ones are read now for the first frame; due ones are fetched after the
     // first screen has its times, and again (once a day) when the app comes back to the front.
     const packs = startPacks(STARTUP_DEFER_MS * 3);

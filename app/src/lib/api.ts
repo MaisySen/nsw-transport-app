@@ -19,7 +19,9 @@ import { httpError, isNetErr as netErr, legacyWorthy, noAnswerError, noteReach, 
 import { setOfflineWhy } from './offlineCore';
 import { slowMakesLong } from './coldOpenCore';
 import { loadServes, noteServes, serves } from './serves';
-import { ID_HEADERS, placeIds, SERVES_HEADER, TRIP_LIVE } from './servesCore';
+import { HOME_BUNDLE, ID_HEADERS, placeIds, SERVES_HEADER, TRIP_LIVE } from './servesCore';
+import { homeBundle } from './homeBundle';
+import { HOME_BUNDLE_MS, homeBundlePath, type HomeOccasion, type HomePart, type HomeRead } from './homeBundleCore';
 import { keepAsPlan, liveRequests, overlayLive, planFresh, type LiveResp } from './tripLiveCore';
 
 // Kept times say why they are on screen: the phone offline, or the live data down (netErrCore.ts).
@@ -43,7 +45,7 @@ async function withIds(profile = true): Promise<ApiInit> {
   return { ids: { device, profile: profile ? PROFILE : undefined } };
 }
 
-async function once<T>(path: string, init: ApiInit | undefined, timeoutMs: number, base: string = apiBase()): Promise<T> {
+async function once<T>(path: string, init: ApiInit | undefined, timeoutMs: number, base: string = apiBase(), raw = false): Promise<T> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
@@ -58,6 +60,7 @@ async function once<T>(path: string, init: ApiInit | undefined, timeoutMs: numbe
     const body = await r.json().catch(() => ({}));
     // The server's own words, never a bare status (netErrCore.ts); a 5xx or 429 is marked server (live data's fault).
     if (!r.ok) throw httpError(r.status, body);
+    if (raw) return body as T;
     // Rows and legs carry the moment they arrived, so a countdown can say how old its live time is. An answer the
     // server took from its shared cache says when it was made (dataAt); the older of the two is the honest one.
     // LIVE_DATA_AGE (features.ts): each live row's age counts from when its time was read upstream (the row's liveAt).
@@ -86,7 +89,9 @@ const reads = createReadCache(4000);
 
 function req<T>(path: string, init?: ApiInit, timeoutMs = READ_MS_EMPTY): Promise<T> {
   const read = !init?.method || init.method === 'GET';
-  if (!read) { reads.clear(); return send<T>(path, init, timeoutMs, false).finally(() => reads.clear()); }
+  if (!read) { reads.clear(); homeBundle.clear(); return send<T>(path, init, timeoutMs, false).finally(() => reads.clear()); }
+  // Home in one request (homeBundleCore.ts): Home's reads in the first seconds are noted for the next bundle.
+  if (!init?.headers) homeBundle.note(path, !!init?.ids);
   const key = `${apiBase()}${path}|${init?.headers ? JSON.stringify(init.headers) : ''}`;
   return reads.get<T>(key, () => send<T>(path, init, timeoutMs, true), { fresh: /[?&]refresh=1(&|$)/.test(path) });
 }
@@ -94,6 +99,8 @@ function req<T>(path: string, init?: ApiInit, timeoutMs = READ_MS_EMPTY): Promis
 async function send<T>(path: string, init: ApiInit | undefined, timeoutMs: number, read: boolean): Promise<T> {
   // Reads go to the first server for a minute after the new one failed and the first one answered (server.ts).
   const first = read ? readBase() : apiBase();
+  // This read's answer from Home's one request (homeBundleCore.ts), when a bundle has it: no request of its own.
+  if (read && !init?.headers) { const b = await fromBundle<T>(first, path); if (b) return b; }
   const t0 = Date.now();
   try {
     try {
@@ -128,6 +135,50 @@ async function send<T>(path: string, init: ApiInit | undefined, timeoutMs: numbe
     if (isNetErr(e)) throw noAnswerError(e);
     throw e;
   }
+}
+
+/** A read answered by Home's bundle: the same touches once() gives an answer, timed from the bundle's arrival. */
+async function fromBundle<T>(base: string, path: string): Promise<T | null> {
+  const got = await homeBundle.take(base, path).catch(() => null);
+  if (!got) return null;
+  noteRequest(path, 200);
+  return stampSeen(cleanAlertTexts(got.body as T), dataTime(got.body, got.at), LIVE_DATA_AGE ? got.at : undefined);
+}
+
+/** The config read the bundle can carry (config.ts asks the same path). */
+export const CONFIG_READ = '/api/app/config?platform=android';
+
+/** One GET /api/home for these reads, on a server that says home-bundle; the parts in order, or null. */
+function bundleSender(base: string) {
+  return async (list: HomeRead[]): Promise<HomePart[] | null> => {
+    const [device] = await Promise.all([getDevice(), loadServes()]);
+    if (!serves(HOME_BUNDLE, base) || readBase() !== base) return null;
+    const asHeaders = serves(ID_HEADERS, base);
+    const ids = { device, profile: PROFILE };
+    // Each read as it would have gone on its own: device and profile in its address unless they ride as headers.
+    const placed = list.map((r) => (r.ids && !asHeaders ? placeIds(r.p, ids, false).path : r.p));
+    const init: ApiInit | undefined = asHeaders && list.some((r) => r.ids) ? { ids } : undefined;
+    try {
+      const r = await once<{ parts?: HomePart[] }>(homeBundlePath(placed), init, HOME_BUNDLE_MS, base, true);
+      return Array.isArray(r?.parts) ? r.parts : null;
+    } catch {
+      return null;
+    }
+  };
+}
+
+/**
+ * A start of the app ('start', before Home draws) or a return to the front with Home on view ('front'): asks for the
+ * reads Home made last time in one request, and notes the reads it makes now for next time. `config`: the config is
+ * due, so its read rides along (config.ts takes it from the bundle); otherwise it is left out.
+ */
+export function startHomeBundle(occ: HomeOccasion, o: { config?: boolean } = {}): boolean {
+  const base = readBase();
+  if (base !== apiBase()) { homeBundle.begin(occ, base, null); return false; }
+  return homeBundle.begin(occ, base, bundleSender(base), {
+    extra: o.config ? [{ p: CONFIG_READ, ids: false }] : [],
+    drop: (r) => r.p === CONFIG_READ && !o.config,
+  });
 }
 
 /** When this phone last started a watch: the alerts timer asks every tick again at once (push.ts, notesWaitMs). */

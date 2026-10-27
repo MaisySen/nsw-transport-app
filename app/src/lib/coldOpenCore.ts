@@ -51,6 +51,42 @@ export function standInReaskMs(d: any, asked: number): number | null {
   return STAND_IN_REASK_MS[Math.max(0, asked)];
 }
 
+/**
+ * Home recovers by itself (27 Oct, 1:20 PM: the commute card stayed on "Live trips are unavailable" until a pull to
+ * refresh). A card on any timetable stand in (not only a slow planner's) keeps asking for live times, and a card whose
+ * quick asks again have run out keeps asking too: after these waits, then every RECOVER_MS's last value, never longer
+ * than the card's normal gap. These asks are quiet (the card keeps its honest words, the header does not say Updating),
+ * and do not count towards the poller's back off, so the wait never grows to minutes while Home is on view. The app
+ * coming back to the front asks such a card again at once (hooks.ts).
+ */
+export const RECOVER_MS = [5000, 10000, 20000, 40000, 60000] as const;
+export function recoverMs(step: number): number {
+  const i = Math.max(0, Math.floor(Number.isFinite(step) ? step : 0));
+  return RECOVER_MS[Math.min(i, RECOVER_MS.length - 1)];
+}
+/** Any timetable stand in from the server (its source), whatever the reason the planner gave none. */
+export function isStandIn(d: any): boolean {
+  return !!(d && typeof d === 'object' && d.source === 'timetable');
+}
+/**
+ * The next ask after a stand in: `quick` (a slow planner's, said as Getting live times) for its first asks, then the
+ * quiet recovery asks. Null for a live answer. `asked`: asks after stand ins in a row so far.
+ */
+export function standInAgainMs(d: any, asked: number): { ms: number; quick: boolean } | null {
+  if (!isStandIn(d)) return null;
+  const slow = standInReaskMs(d, asked);
+  if (slow != null) return { ms: slow, quick: true };
+  return { ms: recoverMs(isSlowStandIn(d) ? asked - STAND_IN_REASK_MS.length : asked), quick: false };
+}
+/** After the quick asks again have run out (the card shows the failure): the wait before the next quiet ask. */
+export function failAgainMs(fails: number, offline: boolean): number {
+  return recoverMs(fails - (offline ? OFFLINE_FAILS_BEFORE_SAYING : FAILS_BEFORE_UNAVAILABLE));
+}
+/** Whether a Home card is showing something other than live times (asked again at once on a return to the front). */
+export function cardDegraded(o: { data: unknown; error: string | null; offlineAt: number | null; packAt?: number | null }): boolean {
+  return !!o.error || !!o.offlineAt || !!o.packAt || isStandIn(o.data);
+}
+
 /** Under a Home trip card on timetable trips while live ones are still being asked for. */
 export const STAND_IN_UPDATING_NOTE = 'Timetable times for now. Getting live times.';
 

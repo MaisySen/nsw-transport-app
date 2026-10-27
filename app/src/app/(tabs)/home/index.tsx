@@ -19,6 +19,7 @@ import { Icon, I } from '@/components/Icon';
 import { watchLine } from '@/components/Cards';
 import { ActionRow, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTag, onTripDeleted, pullHome, StopBoard, TripBoard, TripItem, UNDO_MS, useNearby, tripCacheId, tripPkey } from '@/components/Home';
 import { homeForeground, prefetchTripScreen } from '@/lib/prefetch';
+import { setHomeOnView } from '@/lib/homeBundle';
 import { HOME_IDLE_MS, mayReadAhead, nextTripPlan } from '@/lib/homePrefetchCore';
 import { readWalkPref } from '@/lib/walkPrefCore';
 import { menuFrom, type MenuSpec } from '@/lib/menuCore';
@@ -173,6 +174,8 @@ export default function Home() {
   // Read ahead (homePrefetchCore.ts): a moment after Home is on screen with its lists, the top card's trip screen is
   // read and kept, once per foreground, within the press in limits; never with the app in the background.
   const [fg, setFg] = useState(0);
+  // Home on view: a return to the front then asks for Home's reads in one request (app/_layout.tsx, homeBundleCore.ts).
+  useFocusEffect(useCallback(() => { setHomeOnView(true); return () => setHomeOnView(false); }, []));
   useEffect(() => { const sub = AppState.addEventListener('change', (a) => { if (a === 'active') { homeForeground(); setFg((n) => n + 1); } }); return () => sub.remove(); }, []);
   const aheadPlan = nextTripPlan(next, next ? ((st as any).tripModes || {})[`${next.from.id}>${next.to.id}`] : null);
   const aheadKey = aheadPlan ? cacheKey('trip', tripCacheId(tripPkey(aheadPlan), false)) : '';

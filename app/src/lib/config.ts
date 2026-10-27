@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSyncExternalStore } from 'react';
 import { apiBase, DEFAULT_BASE, nextBase, setApiBase, startBase } from './server';
 import { cleanConfig, DEFAULTS, flagOn, type RemoteConfig } from './configCore';
+import { homeBundle } from './homeBundle';
 export { cleanConfig, flagOn };
 export type { RemoteConfig };
 
@@ -33,7 +34,15 @@ export async function loadCachedConfig() {
   } catch {}
 }
 
+const CONFIG_READ = '/api/app/config?platform=android';
+
 async function fetchFrom(base: string): Promise<any> {
+  // Home's one request (homeBundleCore.ts) may carry the config: taken from it, else asked on its own.
+  if (base === apiBase()) {
+    homeBundle.note(CONFIG_READ, false);
+    const got = await homeBundle.take(base, CONFIG_READ).catch(() => null);
+    if (got) return got.body;
+  }
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 10000);
   try {
@@ -48,8 +57,13 @@ async function fetchFrom(base: string): Promise<any> {
  * api_base (see server.ts) and keeps it as the last good copy. If a moved address does not answer, the
  * default address is asked once, so a removed api_base can still bring the app back.
  */
+const refreshEvery = () => Math.min(240, Math.max(5, cfg.timing.configRefreshMin || 30)) * 60000;
+
+/** True when the next refreshConfig() would ask the server (the bundle on a return to the front carries it then). */
+export function configDue(): boolean { return !fetchedAt || Date.now() - fetchedAt >= refreshEvery(); }
+
 export function refreshConfig(force = false): Promise<void> {
-  const every = Math.min(240, Math.max(5, cfg.timing.configRefreshMin || 30)) * 60000;
+  const every = refreshEvery();
   if (!force && fetchedAt && Date.now() - fetchedAt < every) return Promise.resolve();
   if (inflight) return inflight;
   inflight = (async () => {

@@ -180,7 +180,7 @@ test('wiring: Home cards use the quick ask, the header uses homeHeader, the comm
   // The quick ask comes before any error or offline label is set.
   const i = h.indexOf('quickRetryMs({'), j = h.indexOf('setError(String(e?.message || e));');
   assert.ok(i > 0 && j > i, 'quick ask decided before the error is shown');
-  assert.match(h, /standInReaskMs\(d, standAsked\.current\)/);
+  assert.match(h, /standInAgainMs\(d, standAsked\.current\)/, 'any stand in is asked again (27 Oct home bundle: slow planner first, then quietly)');
   assert.match(h, /return run\(!plain\);/, 'a quick ask is a plain read (the server\'s saved live copy)');
   const home = read('src/components/Home.tsx');
   assert.match(home, /quick: true \}\);/);

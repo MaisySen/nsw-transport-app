@@ -3,6 +3,7 @@ import { loadCachedConfig } from './config';
 import { loadStore } from './store';
 import { warmOffline } from './offline';
 import { loadPacks } from './timetablePack';
+import { loadHomeBundle } from './homeBundle';
 
 /** The longest the first frame waits for the kept copies; a slow storage read never holds the splash longer. */
 export const WARM_WAIT_MS = 400;
@@ -23,6 +24,8 @@ export function bootLocal(): Promise<void> {
     initProfile().catch(() => ''),
     loadCachedConfig(),
     loadStore(),
+    // The reads Home made last time, for the one request that asks for them all (homeBundleCore.ts).
+    loadHomeBundle(),
     // The kept timetable packs too (timetablePack.ts), so a stop with no recent live copy paints its timetable first.
     Promise.race([Promise.all([warmOffline(), loadPacks()]), wait]),
   ]).then(() => undefined, () => undefined);

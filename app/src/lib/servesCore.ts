@@ -9,6 +9,8 @@ export const SERVES_HEADER = 'x-serves';
 export const ID_HEADERS = 'id-headers';
 /** GET /api/trip/live?legs= re-times trips the phone holds by trip id, from the feeds, with no planner call. */
 export const TRIP_LIVE = 'trip-live';
+/** GET /api/home?p=... answers several of Home's reads in one request (homeBundleCore.ts). */
+export const HOME_BUNDLE = 'home-bundle';
 
 /** The words in an x-serves header (lower case, at most 24, each at most 32 characters). */
 export function parseServes(v: string | null | undefined): string[] {
