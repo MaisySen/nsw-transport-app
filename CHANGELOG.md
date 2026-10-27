@@ -2,6 +2,15 @@
 
 What changed in Transport, newest first. Times are Sydney time. Build numbers, update ids and links are in [docs/RELEASES.md](docs/RELEASES.md).
 
+## 28 Oct 2026
+
+### Get off now 30 s before your stop, never after (28 Oct; app on main for tonight's update)
+* A rider got "get off" after he had already got off and the train had left. Cause: Get off now waited until the stop list showed his stop as the next one and the live arrival was under a minute away, and a passed time was held 30 s more on each refresh. The stop list trails the train, so on a short last stretch it rang after arrival. It was also opt in, so most trips had only the Next stop alert.
+* Now Get off now is on for everyone unless turned off (a choice saved before today counts as the old default). It is set for the realtime arrival at your stop minus 30 s (the timetable arrival minus a minute when the leg has no live times), set again on every refresh as the arrival moves, rung at once when that moment has come, and taken back once the arrival has passed, so it never rings after it. It asks iOS for a time sensitive alert (it breaks through a Focus once build 209 carries the entitlement; 201 to 208 show it as a normal alert).
+* The trip card goes stale at the arrival where you get off, so the Lock Screen and Dynamic Island show the clock time instead of "in 1 minute" after arrival (builds with the honest stale card; the server's copy of the card code is regenerated on main and goes live with the next transport-api deploy).
+* Not over the air: the shorter Dynamic Island ("<station>:" and a tiny countdown, leaving room for the clock) is drawn by the widget extension, so it is on branch `island-209` for build 209 (docs/IOS27.md).
+* `app/src/lib/getOffCore.ts`, `getOffNotify.ts`, `store.ts`, `app/src/components/GetOffChoice.tsx`, `app/platform/tripCard.ts`, `backend/src/worker.js` (generated). Tests: `app/test/getoff30.test.mjs` (12), `getoff.test.mjs` updated. App 822 of 826 pass, 3 skipped, 1 fails (speed27 "paint from cache", which fails on main without this change too), tsc clean, battery 17 of 17.
+
 ## 27 Oct 2026
 
 ### Tonight's update is out (27 Oct, 11:34 PM; over the air, both platforms)
