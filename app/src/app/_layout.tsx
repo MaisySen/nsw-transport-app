@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { AppState, Platform, useColorScheme, useWindowDimensions } from 'react-native';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider, router } from 'expo-router';
+import { AppState, Platform, Pressable, Text, View, useColorScheme, useWindowDimensions } from 'react-native';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider, router, usePathname, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Notifications from 'expo-notifications';
@@ -24,9 +24,13 @@ import { LiftAlertSync } from '@/lib/liftAlerts';
 import { TripAlertSync } from '@/lib/tripAlerts';
 import { LiveTripEngine } from '@/lib/liveEngine';
 import { orientationFor } from '@/lib/layoutCore';
+import { clearKeptAndReload, installCrashReporter, reportCrash } from '@/lib/crash';
 
 /** Startup work that is not the first screen's own data waits this long after the app is ready. */
 const STARTUP_DEFER_MS = 1500;
+
+// Fatal errors outside the screens are reported before the app closes (lib/crash.ts).
+installCrashReporter();
 
 // The phone's own data for the first screen starts loading as soon as this file runs, before React draws anything.
 bootLocal();
@@ -34,6 +38,40 @@ bootLocal();
 // Feature detected: a build without the native module skips it instead of failing at import.
 function systemUI(): any {
   try { return require('expo-system-ui'); } catch { return null; }
+}
+
+// Crash safety net (27 Oct): a screen that throws while drawing shows this instead of closing the app, and the error
+// is reported once to the server (lib/crash.ts). Plain React Native only, so it cannot fail the way a screen did.
+// How many times Try again or Go to Home was pressed this run: kept outside the screen, which is drawn anew each time.
+let boundaryTries = 0;
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  const dark = useColorScheme() === 'dark';
+  const [tries, setTriesState] = useState(boundaryTries);
+  const setTries = (f: (n: number) => number) => { boundaryTries = f(boundaryTries); setTriesState(boundaryTries); };
+  let where = 'screen';
+  try { where = 'screen ' + (usePathname() || ''); } catch { /* outside the router */ }
+  useEffect(() => { reportCrash(error, where); }, [error, where]);
+  const fg = dark ? '#FFFFFF' : '#000000', fg2 = dark ? '#AEAEB2' : '#636366', bg = dark ? '#000000' : '#F2F2F7', tint = dark ? '#0A84FF' : '#007AFF';
+  const btn = { minHeight: 50, borderRadius: 12, alignItems: 'center' as const, justifyContent: 'center' as const, paddingHorizontal: 20, marginTop: 12 };
+  return (
+    <View style={{ flex: 1, backgroundColor: bg, justifyContent: 'center', padding: 24 }}>
+      <Text accessibilityRole="header" style={{ color: fg, fontSize: 28, fontWeight: '700', marginBottom: 8 }} maxFontSizeMultiplier={1.6}>Something went wrong</Text>
+      <Text style={{ color: fg2, fontSize: 17, lineHeight: 22, marginBottom: 12 }} maxFontSizeMultiplier={1.8}>
+        {tries < 2 ? 'This screen hit a problem and has been reported. Try again, or go to Home.' : 'It happened again. Clearing the times kept on this phone usually fixes it. Your places, starred stops and trips stay.'}
+      </Text>
+      <Pressable accessibilityRole="button" onPress={() => { setTries((n) => n + 1); retry(); }} style={({ pressed }) => [btn, { backgroundColor: tint, opacity: pressed ? 0.7 : 1 }]}>
+        <Text style={{ color: '#FFFFFF', fontSize: 17, fontWeight: '600' }} maxFontSizeMultiplier={1.6}>Try again</Text>
+      </Pressable>
+      <Pressable accessibilityRole="button" onPress={() => { setTries((n) => n + 1); try { router.replace('/'); } catch {} retry(); }} style={({ pressed }) => [btn, { backgroundColor: dark ? '#1C1C1E' : '#FFFFFF', opacity: pressed ? 0.7 : 1 }]}>
+        <Text style={{ color: tint, fontSize: 17, fontWeight: '600' }} maxFontSizeMultiplier={1.6}>Go to Home</Text>
+      </Pressable>
+      {tries >= 1 ? (
+        <Pressable accessibilityRole="button" onPress={() => { clearKeptAndReload(); }} style={({ pressed }) => [btn, { backgroundColor: dark ? '#1C1C1E' : '#FFFFFF', opacity: pressed ? 0.7 : 1 }]}>
+          <Text style={{ color: tint, fontSize: 17, fontWeight: '600' }} maxFontSizeMultiplier={1.6}>Clear saved times and reload</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
 }
 
 export default function RootLayout() {

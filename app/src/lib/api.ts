@@ -3,6 +3,7 @@ import { getDevice, PROFILE } from './device';
 import { store } from './store';
 import { readWalkPref, walkQuery, type WalkPref } from './walkPrefCore';
 import type { CarPark, Station, TopupItem } from './access';
+import { noteRequest } from './crashCore';
 import { apiBase, fallbackFor, NEW_API_BASE, noteFallback, noteNewServerOk, readBase, setErrorWords } from './server';
 import { placesGone, stopsAsPlaces, type PlaceItem } from './planCore';
 import { EARLIER_NEEDS_NEW, ymd } from './tripModesCore';
@@ -53,6 +54,7 @@ async function once<T>(path: string, init: ApiInit | undefined, timeoutMs: numbe
     noteReach();
     // What this server says it can do (servesCore.ts): read from every /api answer.
     try { noteServes(base, path, r.status, r.headers?.get?.(SERVES_HEADER)); } catch { /* no headers on this answer */ }
+    noteRequest(path, r.status);
     const body = await r.json().catch(() => ({}));
     // The server's own words, never a bare status (netErrCore.ts); a 5xx or 429 is marked server (live data's fault).
     if (!r.ok) throw httpError(r.status, body);
