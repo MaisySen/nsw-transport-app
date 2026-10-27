@@ -368,6 +368,26 @@ What changed:
 
 Not measured on a phone or from Sydney. The car park list's first open on a phone that never opened it, and a bus whose route list is not kept, still wait for the server (about 1 s and 0.7 s from here).
 
+### Network pass: poll tags, trimmed board rows, search kept on the phone (27 Oct, 9:15 to 9:30 PM)
+
+Measured from the build box (US: 0.2 to 0.35 s of each time is the trip there and back; Cloudflare's Seattle and Portland copies, not Sydney's), app shaped GETs with the made up device `tabnet27e`, 24 GETs in all (10 before, 14 after), no direct NSW calls. Wire is bytes on the wire with `accept-encoding: br`; JSON is the answer after decompression. Before and after are different moments, so an answer can be a live board one time and a saved copy the next: compare the bytes only within a row's own note.
+
+| Read | Before: wire / JSON / time | After: wire / JSON / time | Note |
+| --- | --- | --- | --- |
+| Board, Central `/api/departures` | 4,325 B / 31,864 B / 1.44 s (live) | 2,484 B / 10,576 B / 0.50 s (saved copy) | Same moment, old app: 2,517 B / 11,055 B. The row trim is 4.3% of the JSON, 1.3% on the wire |
+| Board asked again, unchanged | full answer every time | **304, 0 B body**, 0.73 s | `x-now` carried; the server still builds the answer, so the time is the same, the bytes are not |
+| Car park list `/api/parking` | 2,495 B / 15,180 B / 2.27 s (stand in) | 2,493 B / 14,877 B / 0.23 s (saved) | |
+| Car park list asked again | full answer | **304, 0 B body**, 0.42 s | |
+| Alerts `/api/alerts?q=T1` | 1,531 B / 4,307 B / 0.67 s | 1,512 B / 4,307 B / 1.15 s (miss) | The first copy adds `dataAt`, so its tag differs once from the fresh answer; copy to copy the tag stayed the same (`af37...` twice) |
+| Trip `/api/trip` page 1 | 1,052 B / 9,382 B / 3.03 s (timetable stand in) | 2,553 B / 15,180 B / 0.48 s (saved, live) | |
+| Live trip legs `/api/trip/live` | 287 B / 822 B / 1.04 s | 261 B / 588 B / 0.67 s | Asked again 0.3 s later: new tag, because the answer's `dataAt` (the feed's age) moved. The feed changes every few seconds, so this read will rarely be a 304 |
+| Service `/api/service` (train) | 1,691 B / 6,738 B / 1.01 s (quick) | 6,283 B / 25,094 B / 1.89 s (full, miss) | A different train; tagged |
+| Stop search `/api/search?q=strath` | 187 B / 542 B / 0.50 s, `no-store` | 206 B / 565 B / 0.07 s (edge hit), **`public, max-age=3600`** | The phone's HTTP cache answers the same words for an hour; stops already answer per keystroke from the phone's own index |
+| Home in one request `/api/home` (board, trip, config) | 5,324 B / 38,667 B / 2.31 s | 6,486 B / 45,388 B / 0.37 s | Parts are not trimmed or tagged |
+| Station list `/api/stations?mode=train` | 6,698 B / 18,133 B / 0.33 s, tagged, a day | unchanged | |
+
+What this does and does not do: an unchanged refresh of a board or the car park list now costs a few hundred bytes of headers instead of 2.5 to 6 KB, which matters on a weak signal and over a day of polling; it does not make the server answer faster, because the answer is still built to know whether it changed. Live trip legs and fresh boards change between most polls (new times, the feed's age), so they will mostly be full answers. Compression (brotli, about 7x on boards) was already on.
+
 ### Workers Cache (27 Oct, server, built and left off)
 * What it is (Cloudflare's docs, read 27 Oct, pages dated 3 and 12 Oct 2026): `[cache] enabled = true` in wrangler.toml puts a tiered cache in front of the worker; responses with `Cache-Control` max-age (or `cdn-cache-control` for the edge only) are stored and a hit is answered without running the worker. The cache is consulted before Smart Placement, so a hit never goes to the placed location; a miss runs the worker at the placed location as now. Requests bill at the standard rate hit or miss; hits use no CPU. It also bills requests that are free today (static asset requests, calls between entrypoints).
 * Wrangler test (4.152.0, a throwaway worker with `[cache] enabled = true` and `[placement] mode = "smart"`): the config is accepted, but `wrangler dev` does not emulate the cache (three asks, three worker runs, no `cf-cache-status`). So it can only be checked on production.
