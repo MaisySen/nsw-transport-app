@@ -9559,10 +9559,11 @@ async function depAtStandIn(env, url) {
   return out;
 }
 // The car park list with no copy from the last 30 minutes (27 Oct speed pass 4): the newer app waits at most
-// PARK_QUICK_MS for the live read, then gets the last saved list up to PARK_STANDIN_MAX_MS old (parkRestale: readings
+// PARK_QUICK_MS for the live read (it can only finish that soon when each car park's count is still in memory; a cold
+// read is about 10 s, so a longer wait only delays the list: 2.1 s end to end from the US box with 1.5 s), then gets the last saved list up to PARK_STANDIN_MAX_MS old (parkRestale: readings
 // over 30 minutes old say "No live count") or, with none, the car parks with no counts; marked fallback
 // "counts-loading" and never stored. PARK_QUICK=off turns it off.
-const PARK_QUICK_MS = 1500;
+const PARK_QUICK_MS = 500;
 const PARK_STANDIN_MAX_MS = 7 * 86400000;
 function parkQuickOn(env) { return String((env && env.PARK_QUICK) || "").toLowerCase() !== "off"; }
 async function parkStandIn(env, bk) {
