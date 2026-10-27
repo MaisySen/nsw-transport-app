@@ -1,7 +1,7 @@
 // Last way home: "Remind me 15 min before" on the last service home (Ask and trip results), and the Home card
 // for a reminder that is set. On the new server and iPhone the server sends one push; everywhere else the phone
 // schedules its own notification and looks at live times again while the app is open (docs/LAST-WAY-HOME.md).
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { haptic } from '@/lib/haptic';
 import { radius, usePalette } from '@/lib/theme';
@@ -99,7 +99,7 @@ export function RemindLastButton({ hint, known = false, acc = false }: { hint: L
 }
 
 /** On Home while a reminder is set: when the last service leaves, then "Leave in 12 min" once it is time. */
-export function LastHomeCard() {
+function LastHomeCardView() {
   const c = usePalette();
   const on = useLastHomeOn();
   const s = useLastHome();
@@ -141,3 +141,7 @@ const st = StyleSheet.create({
   card: { marginHorizontal: 16, marginTop: 12, borderRadius: radius, padding: 14, borderLeftWidth: 4 },
   x: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginVertical: -12, marginRight: -10 },
 });
+
+// Home redraws at each countdown minute; this card takes nothing that changes with the clock, so it skips those redraws
+// (27 Oct speed pass 5).
+export const LastHomeCard = memo(LastHomeCardView);

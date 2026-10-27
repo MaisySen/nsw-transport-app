@@ -1,6 +1,6 @@
 // Get me home on Home: one tap plans from where you are to your saved Home (lib/goHomeCore.ts). Without a Home it
 // asks once to set it. Opens the trip screen; it changes nothing else on Home.
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 import { Icon, I } from './Icon';
@@ -12,7 +12,7 @@ import { goHomeStep } from '@/lib/goHomeCore';
 import { shortName } from '@/lib/format';
 import type { Place } from '@/lib/types';
 
-export function GetMeHome({ home }: { home?: Place | null }) {
+function GetMeHomeView({ home }: { home?: Place | null }) {
   const c = usePalette();
   const [busy, setBusy] = useState(false);
   const sub = home ? `From where you are to ${shortName(home.name).replace(/ Station$/, '')}` : 'Set your Home first';
@@ -53,3 +53,7 @@ export function GetMeHome({ home }: { home?: Place | null }) {
     </View>
   );
 }
+
+// Home redraws at each countdown minute; this card takes nothing that changes with the clock, so it skips those redraws
+// (27 Oct speed pass 5).
+export const GetMeHome = memo(GetMeHomeView);

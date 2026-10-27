@@ -3,14 +3,15 @@ import { Alert, View } from 'react-native';
 import { goBack } from '@/lib/nav';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { api } from '@/lib/api';
-import { useLive, useNow } from '@/lib/hooks';
+import { useLive } from '@/lib/hooks';
 import { LIST_KEYS, watchSeed } from '@/lib/offlineCore';
 import { peekOffline } from '@/lib/offline';
 import type { Watch } from '@/lib/types';
 import { usePalette } from '@/lib/theme';
 import { clock, ms, shortName } from '@/lib/format';
 import { stopWatch } from '@/lib/watch';
-import { watchLine, openService } from '@/components/Cards';
+import { pressService } from '@/lib/prefetch';
+import { WatchLineText, openService } from '@/components/Cards';
 import { LineBadge, LiveStamp } from '@/components/Transit';
 import { I } from '@/components/Icon';
 import { Button, Empty, Row, Screen, Section, Sep, T } from '@/components/ui';
@@ -18,7 +19,6 @@ import { Button, Empty, Row, Screen, Section, Sep, T } from '@/components/ui';
 export default function WatchDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const c = usePalette();
-  const now = useNow();
   // A watch the server no longer has (stopped, ended and cleared, or a mistyped link) answers 404: say so once and stop
   // asking, instead of "Live times unavailable, trying again" over an empty screen every 15 seconds.
   const [gone, setGone] = useState(false);
@@ -38,7 +38,7 @@ export default function WatchDetail() {
         ) : <View style={{ paddingHorizontal: 20, paddingTop: 12 }}><LiveStamp updatedAt={updatedAt} error={error} staleAt={staleAt} offlineAt={offlineAt} /></View>}
         {w ? (
           <>
-            <T kind="title3" style={{ marginHorizontal: 20, marginTop: 10 }}>{watchLine(w, now)}</T>
+            <WatchLineText w={w} kind="title3" style={{ marginHorizontal: 20, marginTop: 10 }} />
             <Section title={w.legs.length > 1 ? 'Legs' : 'Service'}>
               {w.legs.map((l, i) => {
                 const s0 = w.snap?.legs?.[i];
@@ -49,7 +49,7 @@ export default function WatchDetail() {
                     <Row title={`${l.line} to ${shortName(l.towards)}`}
                       subtitle={`${shortName(l.from)}${l.fromPlatform ? `, ${l.fromPlatform}` : ''} at ${clock(dep)}${l.to ? `, off at ${shortName(l.to)}` : ''}${s0?.delay > 0 ? `, ${s0.delay} min late` : s0?.depLive ? ', on time' : ''}`}
                       right={<LineBadge line={l.line} mode={l.mode} color={l.color || undefined} />}
-                      onPress={() => openService({ tripId: l.tripId || undefined, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId || undefined, color: l.color || undefined, dest: l.towards || undefined })} />
+                      onPressIn={() => pressService(legSvc(l))} onPress={() => openService(legSvc(l))} />
                   </View>
                 );
               })}
@@ -74,4 +74,9 @@ export default function WatchDetail() {
       </Screen>
     </>
   );
+}
+
+/** The service a watch leg opens; a finger on the row starts its read (prefetch.pressService) like a board row does. */
+function legSvc(l: Watch['legs'][number]) {
+  return { tripId: l.tripId || undefined, line: l.line, stopId: l.stopId, planned: l.planned, mode: l.mode, destId: l.destId || undefined, color: l.color || undefined, dest: l.towards || undefined };
 }

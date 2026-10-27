@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { memo, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { reportTripLines, tripLinesOf } from '@/lib/myLines';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { haptic } from '@/lib/haptic';
@@ -746,7 +746,35 @@ const g = StyleSheet.create({
  * over the leave time and the status; where you get off over the arrive time and the lines the trip rides. Times in
  * the phone's clock ("12:56 pm" or "12:56", lib/rowTime.ts). The badge moves with the screen's countdown tick.
  */
-export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j: Journey; now: number; arrive: number; beaten?: boolean; onPress: () => void; showTravel?: boolean }) {
+type ServiceRowProps = { j: Journey; now: number; arrive: number; beaten?: boolean; onPress: () => void; showTravel?: boolean;
+  /** Set when onPress only changes with this value (the trip list passes the row's index), so a new closure each redraw
+   * does not count as a change. Without it the row redraws whenever onPress is a new function, as before. */
+  pressKey?: string | number };
+
+/** Everything the row shows that moves with the clock: the badge, its colour band, the status words, the live label and
+ * the faded look once it has left. Two clocks that give the same key draw the same row. */
+export function serviceRowClock(j: Journey, now: number): string {
+  const l = firstLeg(j);
+  const dep = depOf(j);
+  const st = statusOf(j, now);
+  const b = timeLeftBadge(dep, now);
+  const cancelled = st.tone === 'red';
+  const band = cancelled ? 'x' : Number.isFinite(dep) ? (Math.floor((dep - now) / 60000) <= 3 ? 'r' : Math.floor((dep - now) / 60000) <= 9 ? 'a' : 'g') : '';
+  const kind = l?.planned ? liveState({ planned: l.planned, estimated: l.estimated, realtime: hasLiveData(l, now), cancelled: !!(j.anyCancelled || l.cancelled), seenAt: l.seenAt ?? j.seenAt }, now).kind : '';
+  return [st.text, st.tone, b.big, b.unit, b.a11y, b.mins >= 60 ? 1 : 0, band, kind, dep < now - 30000 ? 1 : 0].join('|');
+}
+
+/** Redraw only when the trip, its props or what the clock changes on the row change (27 Oct speed pass 5): a trip list
+ * a few days long no longer redraws every row at each countdown minute. */
+export function sameServiceRow(a: ServiceRowProps, b: ServiceRowProps): boolean {
+  if (a.j !== b.j || a.arrive !== b.arrive || !!a.beaten !== !!b.beaten || !!a.showTravel !== !!b.showTravel) return false;
+  if (a.pressKey === undefined || b.pressKey === undefined ? a.onPress !== b.onPress : a.pressKey !== b.pressKey) return false;
+  return a.now === b.now || serviceRowClock(a.j, a.now) === serviceRowClock(b.j, b.now);
+}
+
+export const ServiceRow = memo(ServiceRowView, sameServiceRow);
+
+function ServiceRowView({ j, now, arrive, beaten, onPress, showTravel }: ServiceRowProps) {
   const c = usePalette();
   const win = useWindowDimensions();
   const l = firstLeg(j);

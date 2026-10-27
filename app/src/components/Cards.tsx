@@ -83,6 +83,13 @@ export function TripCard({ from, to, title, subtitle, icon }: { from: Place; to:
   );
 }
 
+/** A watch's one line ("Departs in 4 min, On time") with its own clock (useNow, only while on view), so a list of watches
+ * or the watch screen does not redraw everything else every 5 s (27 Oct speed pass 5). */
+export function WatchLineText({ w, kind, style }: { w: any; kind: Parameters<typeof T>[0]['kind']; style?: any }) {
+  const now = useNow();
+  return <T kind={kind} style={style}>{watchLine(w, now)}</T>;
+}
+
 export function watchLine(w: any, now: number) {
   const L = w.legs?.[0];
   const s0 = w.snap?.legs?.[0];

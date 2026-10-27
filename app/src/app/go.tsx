@@ -50,7 +50,6 @@ export default function LiveTripScreen() {
   const c = usePalette();
   const g = useLiveTrip();
   const params = useLocalSearchParams<{ share?: string }>();
-  const now = useNow();
   const insets = useSafeAreaInsets();
   const side = useSides();
   const { height } = useWindowDimensions();
@@ -194,7 +193,7 @@ export default function LiveTripScreen() {
               <View style={{ marginTop: 18 }}><Button title="Done" onPress={() => { endLive().catch(() => {}); router.canGoBack() ? router.back() : router.replace('/'); }} /></View>
             </View>
           ) : (
-            <Sheet st={st} now={now} legs={legs} g={g} me={!!me} locDenied={locDenied} push={push} offline={offline} updated={updated}
+            <Sheet st={st} legs={legs} g={g} me={!!me} locDenied={locDenied} push={push} offline={offline} updated={updated}
               onLoc={askLocation} onShare={share} onEnd={end}
               onPush={async () => { const r = await enablePush(false); setPush(r.status); if (r.status === 'on' || r.status === 'local') { liveWatch().catch(() => {}); } else Alert.alert('Notifications are off', 'Turn them on for Transport in your phone settings to get off alerts.', [{ text: 'Not now', style: 'cancel' }, { text: 'Settings', onPress: () => Linking.openSettings() }]); }} />
           )}
@@ -204,10 +203,12 @@ export default function LiveTripScreen() {
   );
 }
 
-function Sheet({ st, now, legs, g, me, locDenied, push, offline, updated, onLoc, onShare, onEnd, onPush }: {
-  st: Extract<LiveState, { done: false }>; now: number; legs: WatchLeg[]; g: NonNullable<ReturnType<typeof getLive>>; me: boolean; locDenied: boolean; push: string;
+function Sheet({ st, legs, g, me, locDenied, push, offline, updated, onLoc, onShare, onEnd, onPush }: {
+  st: Extract<LiveState, { done: false }>; legs: WatchLeg[]; g: NonNullable<ReturnType<typeof getLive>>; me: boolean; locDenied: boolean; push: string;
   offline: string | null; updated: number; onLoc: () => void; onShare: () => void; onEnd: () => void; onPush: () => void;
 }) {
+  // The clock ticks here, not in the screen above, so the full screen map does not redraw every 5 s (27 Oct speed pass 5).
+  const now = useNow();
   const c = usePalette();
   const last = legs.length - 1;
   const l = legs[st.cur], x = st.L2[st.cur], d = x.d;

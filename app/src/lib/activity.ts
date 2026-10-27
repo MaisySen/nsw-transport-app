@@ -76,7 +76,9 @@ export function useOnViewRef() {
  */
 export function useNow(ms = 5000) {
   const [now, setNow] = useState(Date.now());
-  const [on, setOn] = useState(true);
+  // Off until this screen is focused (27 Oct speed pass 5): the native tabs mount every tab at start, and a tab never
+  // opened used to tick from launch (Plan every 30 s, Ask every 15 s) because no blur ever came to stop it.
+  const [on, setOn] = useState(false);
   const [active, setActive] = useState(appActive());
   useFocusEffect(useCallback(() => { setOn(true); setNow(Date.now()); return () => setOn(false); }, []));
   useEffect(() => {
@@ -126,7 +128,9 @@ function allTimes(): number[] { const out: number[] = []; countdownTimes.forEach
  */
 export function useCountdownNow() {
   const [now, setNow] = useState(Date.now());
-  const [on, setOn] = useState(true);
+  // Off until this screen is focused (27 Oct speed pass 5): the native tabs mount every tab at start, and a tab never
+  // opened used to tick from launch (Plan every 30 s, Ask every 15 s) because no blur ever came to stop it.
+  const [on, setOn] = useState(false);
   const [active, setActive] = useState(appActive());
   const version = useSyncExternalStore((f) => { timeSubs.add(f); return () => { timeSubs.delete(f); }; }, () => timesVersion, () => timesVersion);
   useFocusEffect(useCallback(() => { setOn(true); setNow(Date.now()); return () => setOn(false); }, []));

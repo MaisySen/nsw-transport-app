@@ -29,7 +29,6 @@ import { busMarker, tripTraffic } from '@/lib/busLiveCore';
 export default function ServiceScreen() {
   const p = useLocalSearchParams<{ trip: string; feed: string; line: string; stop: string; planned: string; mode: string; destId: string; color: string; dest: string; rt: string; est: string; delay: string; to: string; sname: string; tname: string; tplan: string; seen: string }>();
   const c = usePalette();
-  const now = useNow();
   const insets = useSafeAreaInsets();
   const side = useSides();
   const { height } = useWindowDimensions();
@@ -63,7 +62,9 @@ export default function ServiceScreen() {
   // Buses: "Running slow in traffic" when the live delays ahead grow, and where to draw the bus on the line of stops.
   const traffic = busLike && data ? tripTraffic({ ...data, mode: data.mode || busMode }) : null;
   const mk = busLike && data?.live ? busMarker(stops, nextIdx, data.where, !!data.vehicle) : null;
-  const liveNow = liveState({ planned: mineStop?.planned || p.planned, estimated: mineEst || mineStop?.estimated, realtime: live, cancelled: data?.cancelled, seenAt: updatedAt ?? (data as any)?.seenAt, vehicleAgeS: data?.vehicle?.ageS }, now);
+  // The live label is the only thing on this screen that changes with the clock: it ticks in ServiceStatus, so the map and
+  // the stop list do not redraw every 5 s (27 Oct speed pass 5).
+  const liveAt = { planned: mineStop?.planned || p.planned, estimated: mineEst || mineStop?.estimated, realtime: live, cancelled: data?.cancelled, seenAt: updatedAt ?? (data as any)?.seenAt, vehicleAgeS: data?.vehicle?.ageS };
 
   const watch = () => {
     const mine = stops.find((s) => s.mine);
@@ -95,7 +96,7 @@ export default function ServiceScreen() {
               ) : null}
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
-              <StatusLine realtime={live} delayMin={delayMin} cancelled={data?.cancelled} state={liveNow} timetableText={busLike ? 'Timetable only' : undefined} />
+              <ServiceStatus at={liveAt} realtime={live} delayMin={delayMin} cancelled={data?.cancelled} timetableText={busLike ? 'Timetable only' : undefined} />
               {data?.vehicle?.occupancy?.text ? <OccupancyChip o={data.vehicle.occupancy} style={{ marginLeft: 6 }} /> : null}
               <QuietChip v={data?.vehicle as any} style={{ marginLeft: 6 }} />
               {data && !seeded && !data.vehicle ? <T kind="foot" tone="text2">{'\u00b7'} No GPS position yet</T> : null}
@@ -192,3 +193,9 @@ const sx = StyleSheet.create({
   bus: { position: 'absolute', width: 24, height: 24, borderRadius: 12, borderWidth: 2, alignItems: 'center', justifyContent: 'center', zIndex: 2 },
   back: { position: 'absolute', left: 16, width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 4 },
 });
+
+/** The service's live label with its own clock (useNow, 5 s, only while on view): the one part of the screen that ages. */
+function ServiceStatus({ at, realtime, delayMin, cancelled, timetableText }: { at: Parameters<typeof liveState>[0]; realtime?: boolean; delayMin?: number | null; cancelled?: boolean; timetableText?: string }) {
+  const now = useNow();
+  return <StatusLine realtime={realtime} delayMin={delayMin} cancelled={cancelled} state={liveState(at, now)} timetableText={timetableText} />;
+}

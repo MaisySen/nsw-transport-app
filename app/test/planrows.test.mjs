@@ -157,7 +157,7 @@ test('columns sit side by side at normal sizes and stack for big Dynamic Type on
 
 test('trip rows use the phone clock, the time left badge and the live rule', () => {
   const home = read('src/components/Home.tsx');
-  const row = home.slice(home.indexOf('export function ServiceRow('), home.indexOf('// ---------- stop boards'));
+  const row = home.slice(home.indexOf('function ServiceRowView('), home.indexOf('// ---------- stop boards'));
   assert.match(row, /timeLeftBadge\(dep, now\)/);
   assert.match(row, /rowTime\(dep\)/);
   assert.match(row, /rowTime\(arrive\)/);

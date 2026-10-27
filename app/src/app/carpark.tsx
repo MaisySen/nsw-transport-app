@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { Linking, Platform, RefreshControl, Text, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { api } from '@/lib/api';
+import { prefetchStop } from '@/lib/prefetch';
 import { useLive } from '@/lib/hooks';
 import { cacheKey } from '@/lib/offlineCore';
 import { LiveStamp } from '@/components/Transit';
@@ -67,7 +68,7 @@ export default function CarParkScreen() {
         {list.map((x) => <ParkBlock key={x.id} p={x} station={station} />)}
         {p.from === 'list' && stationId ? (
           <View style={{ marginHorizontal: 16, marginTop: 16, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
-            <Row icon={I.train} iconBg="#F6891F" title="Station departures" onPress={() => router.push({ pathname: '/stop/[id]', params: { id: stationId, name: '' } })} />
+            <Row icon={I.train} iconBg="#F6891F" title="Station departures" onPressIn={() => prefetchStop(stationId)} onPress={() => router.push({ pathname: '/stop/[id]', params: { id: stationId, name: '' } })} />
           </View>
         ) : null}
         {data && !list.length ? <Empty icon={I.car} title="No live car park here" body="Transport for NSW sends no Park and Ride count for this one right now." /> : null}

@@ -145,7 +145,7 @@ test('screens: trip detail and the Home chip use the Plan rows clock; rows and d
   assert.ok(!trip.includes('very tight'));
   assert.ok(home.includes('chipClock(x, phone24h())') && home.includes('lsChip(ls)'));
   assert.ok(!home.includes(".replace(/(am|pm)$/i, '')"), 'Home no longer strips am or pm');
-  const row = home.slice(home.indexOf('export function ServiceRow'));
+  const row = home.slice(home.indexOf('function ServiceRowView('));
   assert.ok(row.includes('tightChange(j.legs)') && row.includes('<TightLabel') && row.includes('tightA11y(tc)'));
   const label = home.slice(home.indexOf('export function TightLabel'), home.indexOf('export function WarnLine'));
   assert.ok(label.includes('Tight change') && !label.includes('Pressable') && !label.includes('onPress'));

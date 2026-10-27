@@ -784,7 +784,7 @@ export default function TripScreen() {
             {i > 0 ? <Sep inset={0} /> : null}
             {hasLeft(depMs(j), now)
               ? <LeftRow j={j} arrive={arrs[i]} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />
-              : <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />}
+              : <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} pressKey={i} onPress={() => { haptic.select(); setOpen((o) => (o === i ? null : i)); }} />}
             <WarnLine j={j} />
             <JourneyWhy j={j} />
             {!chain && i === lastIdx && canRemind(depMs(j), now) ? <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}><T kind="foot" tone="text2">Last service tonight</T><RemindLastButton hint={{ from, to, mode: modeOfLegs(j.legs), svc: slimLast(j) }} acc={accOn} /></View> : null}

@@ -10,7 +10,6 @@ import { startPacks } from '@/lib/timetablePack';
 import { endLive, setupLiveNotifications } from '@/lib/live';
 import { finishProfileMove } from '@/lib/device';
 import { finishServerMove } from '@/lib/serverMove';
-import { warmLocalSearch } from '@/lib/localSearch';
 import { configDue, refreshConfig } from '@/lib/config';
 import { bootLocal } from '@/lib/boot';
 import { warmCommute } from '@/lib/commuteWarm';
@@ -102,7 +101,9 @@ export default function RootLayout() {
       setReady(true);
       later = setTimeout(() => { later = null; finishProfileMove(api).then(() => finishServerMove()); refreshConfig(true); }, STARTUP_DEFER_MS);
       // The stop lists for search as you type are read (or fetched once) well after the first screen has its times.
-      search = setTimeout(() => { search = null; warmLocalSearch(); }, STARTUP_DEFER_MS * 4);
+      // Loaded here, not imported at the top (27 Oct speed pass 5): the local search index and the Ask gazetteer it
+      // builds (about 80 KB of source) are not evaluated before the first frame.
+      search = setTimeout(() => { search = null; (require('../lib/localSearch') as typeof import('../lib/localSearch')).warmLocalSearch(); }, STARTUP_DEFER_MS * 4);
     });
     // Back in front with Home on view: Home's reads in one request first (the config too when it is due).
     const sub = AppState.addEventListener('change', (s) => {

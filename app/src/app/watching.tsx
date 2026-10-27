@@ -1,19 +1,18 @@
 import { Alert, RefreshControl, View } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { api } from '@/lib/api';
-import { useLive, useNow } from '@/lib/hooks';
+import { useLive } from '@/lib/hooks';
 import { LIST_KEYS } from '@/lib/offlineCore';
 import { usePalette, radius } from '@/lib/theme';
 import { clock } from '@/lib/format';
 import { stopWatch } from '@/lib/watch';
 import { Icon, I } from '@/components/Icon';
-import { watchLine } from '@/components/Cards';
+import { WatchLineText } from '@/components/Cards';
 import { LineBadge, LiveStamp } from '@/components/Transit';
 import { Button, Empty, Row, Screen, Section, Sep, T } from '@/components/ui';
 
 export default function Watching() {
   const c = usePalette();
-  const now = useNow();
   // The list kept on the phone paints the first frame with its age (27 Oct speed pass 3); the live answer replaces it.
   const { data, error, updatedAt, refreshing, refresh, staleAt, offlineAt } = useLive(() => api.watches(), 15000, [], { cacheKey: LIST_KEYS.watches });
   const active = (data?.items || []).filter((w) => w.active);
@@ -34,7 +33,7 @@ export default function Watching() {
                   <T kind="headline" numberOfLines={1} style={{ flex: 1 }}>{w.title}</T>
                   <Icon name={I.bell} size={16} color={c.indigo} />
                 </View>
-                <T kind="sub" style={{ marginTop: 8 }}>{watchLine(w, now)}</T>
+                <WatchLineText w={w} kind="sub" style={{ marginTop: 8 }} />
                 {w.legs.length > 1 ? <T kind="foot" tone="text2" style={{ marginTop: 3 }}>{w.legs.map((l) => l.line).join(', then ')}{w.replanned ? ' \u00b7 replanned' : ''}</T> : null}
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
                   <View style={{ flex: 1 }}><Button title="Details" kind="tinted" onPress={() => router.push({ pathname: '/watch/[id]', params: { id: w.id } })} /></View>
