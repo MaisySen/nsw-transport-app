@@ -1,5 +1,5 @@
 // Trip mode: Get off alert. How many stops before your stop the heads up comes (1, 2 or 3) and an optional
-// "Get off now" as the service reaches it, in one system menu (lib/getOffCore.ts). Kept on this phone for every trip.
+// "Get off now" 30 s before the service reaches it, in one system menu (lib/getOffCore.ts). Kept on this phone for every trip.
 import { Alert, Platform, Pressable, View } from 'react-native';
 import { PullDownButton } from './HoldMenu';
 import { Icon, I } from './Icon';
@@ -26,7 +26,7 @@ export function getOffMenu(pref: GetOffPref, set: (p: GetOffPref) => void, os: s
   });
   items.push({ text: pref.now ? 'Turn off Get off now' : 'Also Get off now', sf: pref.now ? 'xmark' : 'figure.walk', icon: pref.now ? 'close' : 'walk', destructive: false,
     onPress: () => { haptic.select(); set({ ...pref, now: !pref.now }); } });
-  return { title: 'Get off alert', message: 'How many stops before yours the alert comes. Get off now adds one more as the service reaches your stop. Both need live times.', items };
+  return { title: 'Get off alert', message: 'How many stops before yours the alert comes. Get off now adds one more 30 seconds before the service reaches your stop, from live times when there are any.', items };
 }
 
 /** Saves the choice, asks for notifications when a new alert needs them, and refreshes the trip so it takes effect now. */

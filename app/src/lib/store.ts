@@ -43,7 +43,7 @@ type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; wa
   /** Trip screen Walking choice: the longest walk on a trip (0 is any) and Prefer a bus over a long walk (walkPrefCore.ts). */
   walkPref?: { max: number; prefer: boolean };
   /** Trip mode Get off alert: how many stops before your stop, and Get off now (getOffCore.ts). */
-  getOff?: { stops: number; now: boolean };
+  getOff?: { stops: number; now: boolean; v?: 2 };
 };
 export type LeaveReminder = { at: number; dep: number; label: string };
 const EMPTY: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {}, places: {}, myTrips: [], tripOrder: [], allServices: {}, fareType: 'adult' };
@@ -127,7 +127,7 @@ export const store = {
   setWalkPref(p: { max: number; prefer: boolean }) { state = { ...state, walkPref: { max: p.max, prefer: !!p.prefer } }; save(); },
   /** Trip mode Get off alert, as stored (read it through getOffCore.readGetOff). */
   getOff: (): unknown => state.getOff,
-  setGetOff(p: { stops: number; now: boolean }) { state = { ...state, getOff: { stops: p.stops, now: !!p.now } }; save(); },
+  setGetOff(p: { stops: number; now: boolean }) { state = { ...state, getOff: { stops: p.stops, now: !!p.now, v: 2 } }; save(); },
   speakOn: (): boolean => !!state.speak,
   setSpeak(on: boolean) { state = { ...state, speak: on }; save(); },
   voiceId: (): string | null => state.voiceId || null,

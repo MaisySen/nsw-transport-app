@@ -14,7 +14,9 @@ async function put(id: string, at: number | null, title: string, body: string) {
     if (!p.granted) return false;
     await Notifications.scheduleNotificationAsync({
       identifier: id,
-      content: { title, body, data: { go: 1 }, sound: true },
+      // Time sensitive (iOS 15 and later) so it breaks through a Focus and lights the screen; a build without the
+      // entitlement shows it as a normal alert. Other platforms ignore the field.
+      content: { title, body, data: { go: 1 }, sound: true, interruptionLevel: 'timeSensitive' },
       trigger: at == null
         ? (Platform.OS === 'android' ? { channelId: CHANNEL } : null)
         : { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at, channelId: CHANNEL } as any,

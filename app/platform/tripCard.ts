@@ -95,7 +95,10 @@ type LiveStateConn = Extract<LiveState, { done: false }>['conns'][number];
  */
 export function staleAt(card: TripCardState, updated: number | null, honestStale: boolean, keepMs = 120000): number | null {
   if (card.phase === 'arrived') return null;
-  if (honestStale && updated) return Math.min(updated + 120000, card.arrival + keepMs);
+  // On board, the card also goes stale at the arrival where you get off (28 Oct: the Dynamic Island still counted
+  // "in 1 minute" after the rider had got off), so with no newer times it shows the clock time, not a countdown.
+  const off = card.phase === 'ride' && typeof card.legArrives === 'number' && Number.isFinite(card.legArrives) ? card.legArrives : Infinity;
+  if (honestStale && updated) return Math.min(updated + 120000, card.arrival + keepMs, off);
   return card.arrival + keepMs;
 }
 

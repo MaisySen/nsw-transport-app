@@ -81,11 +81,13 @@ function replay({ pref = G.GETOFF_DEFAULT, delay = 0, lateDelay = null, lateFrom
   return { rang, early, now, next, said, schedules, cancels, g, alarms };
 }
 
-test('the stored choice is read safely: anything unknown is 1 stop, no Get off now', () => {
-  assert.deepEqual(G.readGetOff(undefined), { stops: 1, now: false });
-  assert.deepEqual(G.readGetOff({ stops: 7, now: 'yes' }), { stops: 1, now: false });
+test('the stored choice is read safely: anything unknown is 1 stop with Get off now (28 Oct default)', () => {
+  assert.deepEqual(G.readGetOff(undefined), { stops: 1, now: true });
+  assert.deepEqual(G.readGetOff({ stops: 7, now: 'yes' }), { stops: 1, now: true });
   assert.deepEqual(G.readGetOff({ stops: 3, now: true }), { stops: 3, now: true });
-  assert.deepEqual(G.readGetOff({ stops: '2' }), { stops: 2, now: false });
+  assert.deepEqual(G.readGetOff({ stops: '2' }), { stops: 2, now: true });
+  assert.deepEqual(G.readGetOff({ stops: 1, now: false }), { stops: 1, now: true }, 'a false saved before 28 Oct was the old default');
+  assert.deepEqual(G.readGetOff({ stops: 2, now: false, v: 2 }), { stops: 2, now: false }, 'turned off from this version stays off');
   assert.equal(G.getOffValueText({ stops: 2, now: true }), '2 stops before, Get off now');
   assert.equal(G.getOffValueText({ stops: 1, now: false }), '1 stop before');
   assert.equal(G.getOffSubText({ stops: 3, now: false }, 'Central'), '3 stops before Central, then at the stop before');
@@ -93,11 +95,11 @@ test('the stored choice is read safely: anything unknown is 1 stop, no Get off n
   assert.equal(G.getOffShortText({ stops: 2, now: true }), '2 stops');
 });
 
-test('default (1 stop, no Get off now): exactly the alerts as before, nothing new set', () => {
+test('default (1 stop, Get off now): the Next stop alert as before, and Get off now once', () => {
   const r = replay({});
   assert.equal(r.early.length, 0);
-  assert.equal(r.now.length, 0);
-  assert.equal(r.schedules.length, 0);
+  assert.equal(r.now.length, 1);
+  assert.ok(r.schedules.length >= 1);
   assert.equal(r.next.length, 1, 'the Next stop alert, once');
   assert.match(r.next[0].title, /^Next stop: Central/);
   assert.ok(r.next[0].t >= leaves(5) && r.next[0].t <= leaves(5) + 30000, 'as the train leaves Redfern');
@@ -160,15 +162,15 @@ test('a ride shorter than the choice: no heads up (the Next stop alert covers it
   assert.equal(r.next.length, 1);
 });
 
-test('no live times: nothing is set or rung from the timetable clock', () => {
+test('no live times: no heads up from the timetable clock; Get off now a minute before the timetable arrival', () => {
   const r = replay({ pref: { stops: 3, now: true }, isLive: false });
   assert.equal(r.early.length, 0);
-  assert.equal(r.now.length, 0);
-  assert.equal(r.schedules.length, 0);
+  assert.equal(r.now.length, 1);
+  assert.ok(r.now[0].t >= at(16) - 60000 - 15000 && r.now[0].t < at(16), JSON.stringify(r.now));
 });
 
 test('turning it back to 1 stop before it rings takes the set alerts back', () => {
-  const r = replay({ pref: { stops: 3, now: true }, prefAt: 2, pref2: G.GETOFF_DEFAULT });
+  const r = replay({ pref: { stops: 3, now: true }, prefAt: 2, pref2: { stops: 1, now: false } });
   assert.equal(r.early.length, 0);
   assert.equal(r.now.length, 0);
   assert.equal(r.cancels.length, 2);
@@ -176,7 +178,7 @@ test('turning it back to 1 stop before it rings takes the set alerts back', () =
 });
 
 test('turned on after the moment: the heads up is not rung late, Get off now still comes', () => {
-  const r = replay({ pref: G.GETOFF_DEFAULT, prefAt: 14, pref2: { stops: 3, now: true } });
+  const r = replay({ pref: { stops: 1, now: false }, prefAt: 14, pref2: { stops: 3, now: true } });
   assert.equal(r.early.length, 0, 'already past 3 stops before');
   assert.equal(r.now.length, 1);
 });

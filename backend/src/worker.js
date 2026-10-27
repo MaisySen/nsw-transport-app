@@ -6767,8 +6767,9 @@ const LIVECARD = (() => {
   function staleAt(card, updated, honestStale, keepMs = 120000) {
       if (card.phase === 'arrived')
           return null;
+      const off = card.phase === 'ride' && typeof card.legArrives === 'number' && Number.isFinite(card.legArrives) ? card.legArrives : Infinity;
       if (honestStale && updated)
-          return Math.min(updated + 120000, card.arrival + keepMs);
+          return Math.min(updated + 120000, card.arrival + keepMs, off);
       return card.arrival + keepMs;
   }
   return { computeLive, cardFor, staleAt, cardWarning };

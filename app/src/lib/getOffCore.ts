@@ -1,29 +1,39 @@
 // Get off alert the rider controls: how many stops before your stop the heads up comes (1, 2 or 3; 1 is the
-// "Next stop" alert the app has always sent), and an optional "Get off now" as the service reaches your stop. Both
-// come from the live stop times the trip already reads (no location, no extra request), are set on the phone as
-// local alerts so they ring with the app closed, and move when the live times move. No React here
-// (test/getoff.test.mjs).
+// "Next stop" alert the app has always sent), and "Get off now" 30 s before the realtime arrival at your stop (on
+// unless turned off; a minute before the timetable arrival when the leg has no live times). Both come from the stop
+// times the trip already reads (no location, no extra request), are set on the phone as local alerts so they ring
+// with the app closed, and move when the live times move. No React here (test/getoff.test.mjs, test/getoff30.test.mjs).
 import type { WatchLeg, ServiceResp } from './types';
 import type { LiveState } from './liveCalc';
 
 export type GetOffPref = { stops: 1 | 2 | 3; now: boolean };
-export const GETOFF_DEFAULT: GetOffPref = { stops: 1, now: false };
+export const GETOFF_DEFAULT: GetOffPref = { stops: 1, now: true };
 export const GETOFF_STOPS = [1, 2, 3] as const;
-/** "Get off now" comes this long before the live arrival at your stop. */
-export const GETOFF_NOW_LEAD_MS = 60000;
+/** "Get off now" comes this long before the live (realtime) arrival at your stop (28 Oct: the rider asked for 30 s). */
+export const GETOFF_NOW_LEAD_MS = 30000;
+/** With no live times for the leg, "Get off now" comes this long before the timetable arrival. */
+export const GETOFF_NOW_TIMETABLE_LEAD_MS = 60000;
 /** A set alert is moved only when its time moves by this much. */
 const MOVE_MS = 15000;
+/** Get off now is moved sooner, so it stays well inside the 30 s before arrival. */
+const NOW_MOVE_MS = 10000;
 /** While the live times say the service is not there yet but its time has passed, the alert waits this long more. */
 const HOLD_MS = 30000;
 /** A rung alert found on the next refresh is still read out when it rang at most this long ago. */
 const SAY_LATE_MS = 45000;
 
-/** The stored value, made safe: anything unknown is the default (1 stop, no Get off now). */
+/**
+ * The stored value, made safe: anything unknown is the default (1 stop, Get off now on). Get off now is on unless
+ * the rider turned it off (stored false), so phones that kept the old default get it from this update.
+ */
 export function readGetOff(raw: unknown): GetOffPref {
   const r = (raw && typeof raw === 'object' ? raw : {}) as { stops?: unknown; now?: unknown };
   const n = Number(r.stops);
   const stops = (n === 2 || n === 3 ? n : 1) as 1 | 2 | 3;
-  return { stops, now: r.now === true };
+  // Get off now was opt in before 28 Oct, so a stored false from then is the old default, not a choice: only a
+  // value saved from this version (v 2) can turn it off.
+  const v2 = (raw as { v?: unknown } | null)?.v === 2;
+  return { stops, now: v2 ? r.now === true : true };
 }
 
 /** "1 stop before", "2 stops before". */
@@ -40,7 +50,7 @@ export const getOffShortText = (p: GetOffPref) => `${p.stops} stop${p.stops === 
 /** The row's second line, for the stop you get off at next. */
 export function getOffSubText(p: GetOffPref, stop: string): string {
   const to = stop || 'your stop';
-  if (p.stops === 1) return p.now ? `At the stop before ${to}, and Get off now as you reach it` : `As you leave the stop before ${to}`;
+  if (p.stops === 1) return p.now ? `At the stop before ${to}, and Get off now 30 s before you reach it` : `As you leave the stop before ${to}`;
   return p.now ? `${p.stops} stops before ${to}, at the stop before, and Get off now` : `${p.stops} stops before ${to}, then at the stop before`;
 }
 
@@ -65,21 +75,21 @@ export function earlyTime(s: LiveState, k: number, n: number): number {
   return tOfStop(d.stops[p]);
 }
 
-/** When to say "Get off now" on leg k: a minute before the live arrival at your stop, never before the service leaves the stop before it. */
+/**
+ * When to say "Get off now" on leg k: 30 seconds before the realtime arrival at your stop when the leg is live, or
+ * a minute before the timetable arrival when it is not. NaN without an arrival time.
+ */
 export function nowTime(s: LiveState, k: number): number {
   const x = s.L2[k];
   if (!x || !Number.isFinite(x.arr)) return NaN;
-  const d = x.d, mi = ix(d?.mineIndex), ai = ix(d?.alightIndex);
-  let before = x.dep;
-  if (d && mi >= 0 && ai > mi) {
-    let p = ai - 1;
-    while (p > mi && !timed(d.stops[p])) p--;
-    const t = tOfStop(d.stops[p]);
-    if (Number.isFinite(t)) before = t;
-  }
-  const t = x.arr - GETOFF_NOW_LEAD_MS;
-  return Number.isFinite(before) ? Math.max(before, t) : t;
+  return x.arr - (legLive(s, k) ? GETOFF_NOW_LEAD_MS : GETOFF_NOW_TIMETABLE_LEAD_MS);
 }
+
+/** The arrival "Get off now" counts to on leg k (realtime when live, else timetable). */
+export const nowArrival = (s: LiveState, k: number): number => {
+  const a = s.L2[k]?.arr;
+  return typeof a === 'number' && Number.isFinite(a) ? a : NaN;
+};
 
 /** The leg's times are live (never a timetable guess): the run's own live feed, and on the leg you are on, live tracking. */
 function legLive(s: LiveState, k: number) {
@@ -127,11 +137,13 @@ export type GetOffAction =
  * nothing, so the alerts are exactly as before. Otherwise, for each leg still ahead:
  * - "N stops to Central" (2 or 3 stops before) and "Get off now" are each set once as a local alert for the time
  *   the live stop times give, and moved when those times move;
- * - on the leg you are on, with live tracking, the service's real position decides: the heads up comes once the
- *   service has left the stop N before yours, and Get off now once your stop is next and it is due within a minute;
- *   until then an alert whose time has passed waits 30 seconds more instead of ringing early;
+ * - on the leg you are on, with live tracking, the service's real position decides the heads up: it comes once the
+ *   service has left the stop N before yours; until then an alert whose time has passed waits 30 seconds more;
+ * - Get off now is set for the realtime arrival minus 30 s (timetable minus 60 s without live times), moved on every
+ *   refresh, rung at once when that moment has come, and never after the arrival (28 Oct: it used to wait for the
+ *   stop list to show your stop as next, which trails the train, and rang after the rider had got off);
  * - an alert whose set time has passed has rung (the phone rang it), so nothing rings twice;
- * - without live times nothing is set (and what was set is taken back), the same rule as the Next stop alert;
+ * - without live times no heads up is set (and what was set is taken back), the same rule as the Next stop alert;
  * - a leg you are past, a trip that ended, or a choice turned off takes back what is still to ring.
  * Speak alerts (when on) reads each one out as it comes while the app is open.
  */
@@ -162,8 +174,6 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
     for (let k = s.cur; k < g.legs.length; k++) {
       const live = legLive(s, k);
       const riding = k === s.cur && s.phase === 'ride' && live;
-      const d = s.L2[k]?.d;
-      const ai = ix(d?.alightIndex);
       const stopsLeft = riding ? s.stopsLeft : null;
       const kinds: ('early' | 'now')[] = [];
       if (wantEarly) kinds.push('early');
@@ -178,6 +188,27 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
           if (now - prev <= SAY_LATE_MS) say(key, w.say);
           mark(key); delete set[key]; continue;
         }
+        if (kind === 'now') {
+          // Get off now: realtime arrival minus 30 s (timetable minus 60 s without live times), set again on every
+          // refresh as the arrival moves, rung at once when that moment has come, and never after the arrival: once
+          // the arrival has passed, or the service was missed, nothing rings and what was set is taken back.
+          const arr = nowArrival(s, k);
+          if (!Number.isFinite(arr) || s.L2[k]?.missed || arr <= now) {
+            cancel(key);
+            if (Number.isFinite(arr) && arr <= now) mark(key);
+            continue;
+          }
+          const nat = nowTime(s, k);
+          if (nat <= now) {
+            actions.push({ t: 'offDue', id: getOffId(g.id, key), key, title: w.title, body: w.body });
+            say(key, w.say);
+            mark(key);
+            delete set[key];
+            continue;
+          }
+          if (prev == null || Math.abs(prev - nat) >= NOW_MOVE_MS) { actions.push({ t: 'offSchedule', id: getOffId(g.id, key), key, at: nat, title: w.title, body: w.body }); set[key] = nat; }
+          continue;
+        }
         if (!live) { cancel(key); continue; }
         let at = kind === 'early' ? earlyTime(s, k, pref.stops) : nowTime(s, k);
         let due = false;
@@ -188,10 +219,6 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
             // choice (the stop that many before is where you got on): no heads up.
             if (stopsLeft <= 1 || !Number.isFinite(at)) { cancel(key); mark(key); continue; }
             due = stopsLeft <= pref.stops;
-          } else {
-            const nextIsYours = ai > 0 && s.nextIdx === ai;
-            const arr = s.L2[k].arr;
-            due = nextIsYours && Number.isFinite(arr) && arr - now <= GETOFF_NOW_LEAD_MS;
           }
           if (!due && Number.isFinite(at) && at <= now) at = now + HOLD_MS;
         } else if (Number.isFinite(at) && at <= now) {
