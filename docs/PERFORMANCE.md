@@ -83,6 +83,18 @@ Written 25 Oct 2026 after the battery, smoothness and iOS audit (report: files/q
     chip or a route chip asks for that mode alone (`boardAsk` in src/lib/stopBoardCore.ts, `departuresFor` in
     src/lib/api.ts): one request when the chip is tapped, then the same adaptive gap. All is unchanged.
 
+19. **Clocks start off (27 Oct, speed pass 5).** `useNow` and `useCountdownNow` tick only after the screen's first
+    focus. The native tabs mount every tab at start, and a tab never opened gets no blur to stop it: before this, Plan
+    redrew every 30 s and Ask every 15 s from launch without being opened.
+20. **No work at mount in a tab screen (27 Oct, speed pass 5).** Plan, Ask and More are mounted at launch beside Home.
+    Anything they read or build starts on focus (`useFocusEffect`), never in a bare `useEffect`. Plan's stop lists
+    (`useLocalIndex`) and Ask's names (`askPlaces`) start on focus; the 6 s warm in `_layout.tsx` still builds them for
+    everyone, after the first screen has its times.
+21. **Only what ages ticks (27 Oct, speed pass 5).** A clock goes in the smallest component that shows a time, not in
+    the screen: the service screen's live label (`ServiceStatus`), the live trip sheet, the watch line
+    (`WatchLineText`). Trip list rows (`ServiceRow`) are memo with `sameServiceRow`: a new use of `now` in the row needs
+    its place in `serviceRowClock` (a test counts them).
+
 ### 26 Oct, speed (g13): app side, measured (12:59 to 1:09 PM, web export at 390 x 844, 4x CPU slowdown, live data)
 Paired runs, the production code (main 05f9d77, the 12:54 PM update) against this change, one after the other three times, medians. Home with Burwood and Strathfield set and Central starred; stop = tapping Central on Home; trip = Burwood to Strathfield list; refreshes = Central's stop screen on view for 65 s. The build box's address was rate limited by the API during other workers' load tests, so the runs send the load test key (no other change to the requests).
 
@@ -393,3 +405,28 @@ Not measured on a phone or from Sydney. The car park list's first open on a phon
 * `npm test` (battery.test.mjs among them) and `npx tsc --noEmit`.
 * Tap sweep: build the web export, serve it, run the sweep script from the audit (every tappable thing on each
   screen at 390 x 844 is tapped once and must do something).
+
+### Speed pass 5, app: the first frame and redraws (27 Oct, 9:15 to 9:45 PM)
+
+App only, JS only, on main c681578 and d43fe9a for tonight's update. No server change, so no GETs were needed to measure
+it (one GET of `/stations/bus-stops.json` to size the list). Nothing tried on a phone; the numbers below are from the
+build server and from the code.
+
+| What | Before (main 1c0079c) | After |
+|---|---|---|
+| iOS bundle (Hermes, `expo export --platform ios`) | 5,079.4 KB | 5,081.0 KB (+1.6 KB: code moved, not removed) |
+| App modules evaluated before Home draws (import graph from `_layout`, the tabs layout and Home) | 142 modules, 956 KB of source | 139 modules, 883 KB on main now: this pass took out localSearch, askPlaces, askBrain and localSearchCore (4 modules, 81 KB); the network pass added pollTagCore (4 KB) |
+| Evaluating those modules, Node on the build server, 3 runs | 5.2 to 5.8 ms | 0 at startup (loaded by the 6 s warm) |
+| Stop list build right after Home's first frame (Plan and Ask mounted at launch) | station lists 196 KB parsed 1 to 3 ms, names 7 to 11 ms; bus stops 1,448 KB (34,592 rows) parsed 8 to 12 ms, index 82 to 90 ms; on a fresh install the 371 KB download as well | none until Plan or Ask is opened, or the 6 s warm |
+| Plan tab never opened | redraw every 30 s from launch | none |
+| Ask tab never opened | redraw every 15 s from launch | none |
+| Service screen, every 5 s | whole screen: map, sheet, every stop row (about 50 on a train) | the live label (`ServiceStatus`) |
+| Live trip screen, every 5 s | whole screen with the full screen map | the sheet |
+| Watching and a watch's screen, every 5 s | whole screen | one line per watch |
+| Trip list, each countdown minute | every row (a list days long has hundreds) | rows whose badge, colour, status words or live label changed (rows an hour or more away change badge on the hour) |
+| Home, each countdown minute | Get me home and Last way home cards redraw | skipped (memo) |
+| Press in | watch legs and the car park's Station departures row read nothing | service read (`pressService`) and the station's board (`prefetchStop`) |
+
+Phone timings are not measured: Hermes runs without a JIT, so the build server's milliseconds are a floor, not the phone's
+cost. Left for later: the native tabs mount Plan, Ask and More at launch (`lazyByDefault: false` in expo-router's native
+tabs); making them lazy would draw a tab on its first tap, which is a tap change, so it was not done.

@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Speed pass 5, app: less at launch, fewer redraws (27 Oct, 9:30 PM; app in tonight's update)
+* Plan and Ask read the stop lists when opened. The native tabs mount every tab at start, so their build (about 1.4 MB of bus stops parsed and indexed, about 100 ms on the build server and more on a phone, plus a 371 KB download on a fresh install) ran right after Home's first frame; it now waits for the tab to be opened or the 6 s warm, as designed.
+* The local search index and the Ask names are no longer loaded before Home draws (4 modules, 81 KB of source out of the startup set).
+* Tabs never opened no longer tick (Plan every 30 s, Ask every 15 s from launch): `useNow` and `useCountdownNow` start on the screen's first focus.
+* Only the time text ticks on the service screen (the map and every stop row no longer redraw every 5 s), the live trip screen (the map no longer redraws) and the watch screens. Trip list rows redraw only when their badge, colour, status or live label changes. Get me home and Last way home skip Home's minute redraws.
+* A finger on a watch leg starts its service read; on the car park's Station departures row, its board.
+* No tap, layout, polling or server changes. Tests: app test/speed27e.test.mjs (7); app 811 of 811 (3 skipped), battery 17 of 17, tsc clean. Not tried on a phone.
+
 ### Network pass: less data on every refresh (27 Oct, 9 PM; server transport-api, app in tonight's update)
 * Poll tags (`poll-tags` in x-serves): boards, services, trips, live trip legs, alerts, car parks, line status and trackwork carry a tag of their content with only the server clock ("now") left out; the newer app sends it back and an unchanged answer is a 304 with no body and `x-now`, and the phone keeps the answer it holds (memory only, 24 answers, 10 minutes at most). `dataAt` and every time are in the tag, so a 304 never makes kept times look newer. Off: POLL_TAGS=off or kill.pollTags.
 * Board rows for the newer app leave out `modeName` and `wheelchair`, which nothing in the app reads.

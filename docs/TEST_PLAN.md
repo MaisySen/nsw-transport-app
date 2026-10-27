@@ -606,6 +606,12 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 * By hand on a phone (not done in this pass): pick a time on a starred stop's board in flight mode (pack rows from that time, "Timetable times"); pick a time on a stop with no pack (rows within about a second, then live); open Car parks on a fresh install in the afternoon (list at once, "Getting live counts", counts within about 15 s); tap a bus on a board twice, the second time the stops after yours show before the times.
 * Measuring again: `node tasks/<id>/meas.mjs` style app shaped GETs with a made up device; a car park cold open needs the saved copy over 30 minutes old.
 
+## Speed pass 5, app: the first frame and redraws (27 Oct)
+
+* App: `TZ=Australia/Sydney OFFLINE=1 node --test test/speed27e.test.mjs` (7): the modules read before Home's first frame (an import graph walk from `_layout`, the tabs layout and Home) leave out localSearch, askPlaces, askBrain and localSearchCore; Plan's `useLocalIndex` and Ask's `askPlaces` start in `useFocusEffect`; `useNow` and `useCountdownNow` start off; the service screen, the live trip screen and the watch screens hold no screen clock; `ServiceRow` is memo with `sameServiceRow`, every clock input of the row is in `serviceRowClock`, and the trip list passes `pressKey`; Get me home and Last way home are memo; the watch leg and car park press ins.
+* By hand on a phone (not done in this pass): cold start with Plan never opened, then scroll Home at once (no hitch about a second in); open Plan after 10 s and type a stop (results as you type at once); open Plan in the first 2 s and type (server results first, local ones a moment later, as on a fresh install); a train's service screen and the live trip map should not flicker or redraw every 5 s; a trip list paged a few days out should scroll smoothly across a minute change.
+* Measuring again: `node tasks/<id>/evalcost.mjs app` and `node tasks/<id>/idxcost.mjs . bus-stops.raw.json` on the build box (Node timings, a floor for the phone); `expo export --platform ios` for the bundle size.
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).

@@ -190,6 +190,8 @@ Until the switch: published to the first address (each publish replaces the whol
 
 Tests only, nothing to deploy (27 Oct, main a7b30f3): the backend tests that failed by time of day now pin their clock (`engine.test.mjs` "a bus after midnight" from 2 PM; `trip-days.test.mjs` days=1 and added trains from midnight to 3 AM). No server or app code changed; transport-api stays `b515ee95` (roll back to `3bf49b2f` as before).
 
+In main, not published (27 Oct, 9:30 PM, c681578 and d43fe9a): speed pass 5, app only, JS only. Plan and Ask read the stop lists when opened instead of at launch, tabs never opened do not tick, the service, live trip and watch screens tick only their time text, trip list rows redraw only when they change, two more press ins. Goes out in tonight's update; app tests 811 of 811, battery 17 of 17, tsc clean. Rollback is the update's own (the production group before it).
+
 In main, not deployed (27 Oct, 4ecb2aa): the web app's via trips (`src/public/app.js`) mark their change with the Tight change rule. The Cloudflare build leaves the old web app out of transport-api and the old address is not redeployed, so this ships only when a web app is served again. The phone's part goes out in tonight's update.
 
 | Time (about) | Release | Commit |
