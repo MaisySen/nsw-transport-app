@@ -60,9 +60,21 @@ test('route view: /api/detours becomes stop marks and one line above the stops; 
   const stops = [{ id: '1', name: 'Main St, Townsville' }, { id: '9', name: 'Far Rd' }];
   assert.equal(N.detourSummary(stops, m), 'Not stopping at Main St today');
   assert.equal(N.detourSummary([...stops, { id: '3', name: 'Park Rd' }], m), 'Not stopping at 2 stops today');
-  assert.equal(N.detourSummary([{ id: '9', name: 'Far Rd' }], m), null, 'none of this direction\'s stops');
+  assert.equal(N.detourSummary([{ id: '9', name: 'Far Rd' }], m, new Set(['1', '2', '3', '9'])), null, 'its stops are on the other direction');
   for (const bad of [null, undefined, {}, { items: 'x' }, { error: 'not found' }]) assert.equal(N.routeDetours(bad).size, 0);
   assert.equal(N.detourSummary(stops, new Map()), null);
+});
+
+test('route view: a closed stop the timetable already dropped shows the alert\'s own words above the stops', () => {
+  const m = N.routeDetours({ items: [{ id: 'c1', title: 'Main St after Park Pl temporary bus stop closure.', stops: ['77'] }] });
+  const dirA = [{ id: '1', name: 'Main St opp Park Pl' }], dirB = [{ id: '2', name: 'Main St at Park Pl' }];
+  const all = new Set(['1', '2']);
+  assert.equal(N.detourSummary(dirA, m, all), 'Main St after Park Pl temporary bus stop closure');
+  assert.equal(N.detourSummary(dirB, m, all), 'Main St after Park Pl temporary bus stop closure');
+  // A stop on the other direction's list is shown there, by name, not here.
+  const both = new Set(['1', '2', '77']);
+  assert.equal(N.detourSummary(dirA, m, both), null);
+  assert.equal(N.detourSummary([{ id: '77', name: 'Main St after Park Pl' }], m, both), 'Not stopping at Main St after Park Pl today');
 });
 
 test('screens: the stop board row, the trip leg and the route view use it; the route view asks once, never polls', () => {

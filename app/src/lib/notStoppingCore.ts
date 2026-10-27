@@ -61,11 +61,20 @@ export function routeDetours(raw: any): Map<string, Detour> {
   return out;
 }
 
-/** The line above a route's stops: one stop by name, or how many. Null when every stop is served. */
-export function detourSummary(stops: { id: string; name: string }[] | null | undefined, skipped: Map<string, Detour>): string | null {
+/**
+ * The line above a route's stops: one stop by name, or how many. When this line has a closure whose stops are on
+ * neither direction's list (a stop the timetable has already dropped), the alert's own words instead. Null when none.
+ * allIds: every stop id of the route, both directions (a stop on the other direction is shown there, not here).
+ */
+export function detourSummary(stops: { id: string; name: string }[] | null | undefined, skipped: Map<string, Detour>, allIds?: Set<string> | null): string | null {
   if (!stops || !skipped.size) return null;
   const hit = stops.filter((s) => skipped.has(String(s.id)));
-  if (!hit.length) return null;
   if (hit.length === 1) return `Not stopping at ${stopShort(hit[0].name) || `stop ${hit[0].id}`} today`;
-  return `Not stopping at ${hit.length} stops today`;
+  if (hit.length > 1) return `Not stopping at ${hit.length} stops today`;
+  for (const [id, d] of skipped) {
+    if (allIds && allIds.has(id)) continue;
+    const t = String(d.title || '').replace(/[.\s]+$/, '').trim();
+    if (t) return t.slice(0, 120);
+  }
+  return null;
 }

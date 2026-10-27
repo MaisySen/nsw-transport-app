@@ -28,9 +28,9 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 * Reads only the kept digest: no digest, a digest over 2 hours old, or the switch off marks nothing; no outside request.
 * `GET /api/departures` end to end with a fake planner: the marked bus row carries `notStopping`, the other keeps its shape, the alerts feed is not read. `GET /api/detours`: the line's stops, stop-only alerts limited to the route's stops, a week-ahead alert left out, buses only, 400 without a line. `until` when every period ends.
 
-### `app/test/notstopping.test.mjs`: 5 tests, 5 pass (28 Oct, not stopping today, app)
+### `app/test/notstopping.test.mjs`: 6 tests, 6 pass (28 Oct, not stopping today, app)
 * Row text: "Not stopping at <stop> today" for marked buses and coaches; nothing for unmarked rows, bad shapes or trains; "Not stopping here today" with no stop name; another day names the day. Leg text for the get-on and get-off stops; the alert's words for VoiceOver.
-* Route view: `/api/detours` to stop marks and one summary line; bad answers mark nothing. Screens use it; the route view asks once, outside the 30 s poll, and catches a missing endpoint.
+* Route view: `/api/detours` to stop marks and one summary line; bad answers mark nothing; a closed stop the timetable already dropped shows the alert's words, a stop on the other direction is left to that direction. Screens use it; the route view asks once, outside the 30 s poll, and catches a missing endpoint.
 * On a device (not done yet): a stop with a live bus detour alert shows the line on its rows, the trip leg and the route view.
 
 ### `backend/test/noshow.test.mjs`: 11 tests, 11 pass (28 Oct, often does not run, server; bar tightened the same day)

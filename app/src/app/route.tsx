@@ -120,7 +120,7 @@ export default function RouteScreen() {
     if (!times[id]) api.departures(id).then((r) => setTimes((t) => ({ ...t, [id]: r.items as BoardItem[] }))).catch(() => setTimes((t) => ({ ...t, [id]: null })));
   };
 
-  const skipLine = useMemo(() => detourSummary(dir?.stops, skips), [dir, skips]);
+  const skipLine = useMemo(() => detourSummary(dir?.stops, skips, new Set((dirs || []).flatMap((d) => d.stops.map((s) => String(s.id))))), [dir, dirs, skips]);
   const skipWhy = useMemo(() => { const s = (dir?.stops || []).find((x) => skips.has(String(x.id))); const t = s ? skips.get(String(s.id))?.title : null; return t ? String(t).replace(/[.\s]+$/, '') : null; }, [dir, skips]);
   const mapStops = useMemo(() => (dir?.stops || []).map((s) => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, mine: s.id === p.stop })), [dir, p.stop]);
   const markers = useMemo(() => [...mapStops, ...buses.map((b) => ({ id: 'bus-' + b.tripId, name: `Bus ${line}`, lat: b.lat, lon: b.lon, color: c.text }))], [mapStops, buses, line, c.text]);
