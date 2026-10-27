@@ -13,6 +13,8 @@ The iPhone and Android apps are one Expo app (`app/`). Anything below marked "ov
 * **Notifications** under the card: one row of small chips, closed until tapped: trip alerts with a count, Trackwork this weekend, lines with a problem ("T4 Delays"), a high priority alert, other watched trips. A tap opens the full text in place. Nothing alert related sits above the card. See [HOME-REDESIGN.md](HOME-REDESIGN.md).
 * **When to leave** and **Check before I go** as small buttons in the commute card.
 * **Delete** a trip by swiping, holding or with VoiceOver; Undo shows above the tab bar for 5 seconds.
+* **Home in one request** (27 Oct, server live with `home-bundle`, app part in tonight's update): the reads Home made last time (the lists, each trip and stop card, the config when due) go as one `GET /api/home` at start and when the app comes back to the front with Home on view; anything new goes on its own and joins the bundle next time. Kept copies still paint first. Server without the word: separate reads as before.
+* **Recovers by itself** (27 Oct, tonight's update): a card on timetable times (any reason, not only a slow planner) or a failed read keeps asking for live times on its own, after 5, 10, 20 and 40 s, then every minute at most, never later than its normal refresh, with no 5 minute back off; coming back to the app asks again at once. The card's words stay honest meanwhile ("Timetable times. Live trips are unavailable right now."), and the header does not say Updating for these asks.
 
 ## Live times
 
