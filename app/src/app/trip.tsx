@@ -31,6 +31,7 @@ import { fareKind, fareOf, fareWords, money, offPeakText, TRAINLINK_BOOKING_URL 
 import { getLive, startLive } from '@/lib/live';
 import { directFilter, isChain, planTrip, stName, tLegs, tripKey, viaText } from '@/lib/trips';
 import { applyWalkPref, readTripWalk, walkKey, walkNote } from '@/lib/walkPrefCore';
+import { offPeakHint } from '@/lib/offPeakCore';
 import { isPointId } from '@/lib/goHomeCore';
 import { WalkChoice } from '@/components/WalkChoice';
 import { StandPin } from '@/components/StandPin';
@@ -461,6 +462,9 @@ export default function TripScreen() {
   // Walking choice (Less walking, walkPrefCore.ts): trips with a longer walk are left out on the phone, never all of them.
   const wr = applyWalkPref(df.list, wp);
   const js = wr.list;
+  // Off peak hint (offPeakCore.ts): in an Opal peak, one line with the server's off peak saving for the first trip still
+  // to leave, only when a trip after the peak is loaded (shown, waiting above or a later page) with the same choices.
+  const opHint = offPeakHint(js, applyWalkPref(filterModes([...(data?.journeys || []), ...extra, ...heldDays], modes), wp).list, depMs, now, when.kind === 'arrive');
   const jKeys = stableKeys(js.map(jKey));
   // A new reminder starts 15 min before the first service shown (phone time, as the reminder rings in phone time).
   const suggest = (() => { const j = js.find((x) => !hasLeft(depMs(x), now)) || js[0]; if (!j) return null; const t = new Date(depMs(j) - 15 * 60000); return { hour: t.getHours(), minute: Math.floor(t.getMinutes() / 5) * 5 }; })();
@@ -759,6 +763,16 @@ export default function TripScreen() {
         {chips.length ? <ModeChips chips={chips} modes={modes} onChange={(m) => { haptic.select(); store.setTripModes(tkey, m); setOpen(0); }} /> : null}
         {!chain ? <WalkChoice pref={wp} tripKey={tkey} /> : null}
         {walkNote(wr, wp) && js.length ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>{walkNote(wr, wp)}</T> : null}
+        {opHint && js.length ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={opHint.a11y} hitSlop={4} onPress={() => {
+            haptic.select();
+            setWhen({ kind: 'leave', h: opHint.h, m: opHint.m, day: opHint.day });
+            setOpen(0);
+          }} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginTop: 4, minHeight: 44, opacity: pressed ? 0.6 : 1 })}>
+            <Icon name={I.clock} size={14} color={c.text2} />
+            <T kind="foot" tone="text2" style={{ marginLeft: 6, flexShrink: 1 }} numberOfLines={2}>{opHint.text}</T>
+          </Pressable>
+        ) : null}
         {modes.length && data?.modesBy === 'phone' && js.length ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>From the usual results only, so some {modesWords(modes).toLowerCase()} trips may be missing.</T> : null}
         {data ? <KeptBanner offlineAt={offlineAt} staleAt={updatedAt ? null : staleAt} now={now} /> : null}
         {prob ? (

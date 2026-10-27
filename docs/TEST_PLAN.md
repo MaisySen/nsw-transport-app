@@ -20,6 +20,13 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 | Lighthouse (mobile) | Landing, support, privacy and web app | After site changes. Last run: 100 in all four categories on landing, support and privacy; web app 100, 100, 100 and 96 for accessibility |
 | Writing style check | grep in every test file and before every push | No em dashes, no en dashes, no filler words |
 
+### `app/test/offpeak.test.mjs`: 9 tests, 9 pass (28 Oct, off peak hint, app)
+* Server times ("10am", "7pm", "9:30 am", "19:00") read as hour and minute; bad ones read as nothing; the app's 12 hour clock.
+* Fare objects come from the server's own `fareOf`: a Wednesday 8am trip with a 10:05am trip loaded gets "Leave after 10:00am and pay about $x less" with the server's saving and a Leave at 10:00 on the same day; 5:30pm gets 7:00pm.
+* No line: no trip after the peak loaded, only tomorrow's, a later trip with no Opal fare, off peak already, Saturday, a ferry, an older server without `offPeak`, broken savings (zero, negative, not a number, more than the fare, a bad time), Arrive by, every shown trip already gone. A trip that has left is skipped for the amount. Concession uses the concession saving.
+* Source checks: the trip screen line is a button with the hint as its label, 44 point tall, grey footnote text, sets Leave at; the list never reads the hint; no timer, no fetch, no dashes.
+* On a device (not done yet): a weekday morning trip before 10am shows the line once the list has a trip after 10am (scroll down if needed); tapping it shows trips from 10:00am; VoiceOver reads "Opal fare estimate..."; no line on Saturday or after 10am.
+
 ### `backend/test/not-stopping.test.mjs`: 9 tests, 9 pass (28 Oct, not stopping today, server)
 * Digest keeps a route and stop named in one entity as a pair (`ls`); alerts without such entities keep their old shape.
 * Which alerts count (detour, stop moved, no service; changed or reduced service only with not-stopping words, including the stop closure shapes seen in the live digest on 28 Oct; delays, plain service changes, line-only alerts and stop-only rail notices never).
