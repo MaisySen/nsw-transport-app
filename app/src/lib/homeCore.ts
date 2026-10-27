@@ -7,16 +7,18 @@ export function plural(n: number, one: string, many = one + 's') {
 
 /**
  * Countdown chip parts for a service row: "4" + "min", "Now" within a minute either way, "Left" once it has
- * gone (rows from Earlier services), or the clock time (from `hm`) an hour or more ahead.
+ * gone (rows from Earlier services), or the clock time (from `hm`, a string or already split into "12:56" and "pm")
+ * an hour or more ahead.
  */
-export function chipTime(t: number, now: number, hm: (t: number) => string): { big: string; unit: string } {
+export function chipTime(t: number, now: number, hm: (t: number) => string | { big: string; unit: string }): { big: string; unit: string } {
   const diff = t - now;
   if (!Number.isFinite(diff)) return { big: '', unit: '' };
   if (diff < -60000) return { big: 'Left', unit: '' };
   if (diff < 60000) return { big: 'Now', unit: '' };
   const m = Math.floor(diff / 60000);
   if (m < 60) return { big: String(m), unit: 'min' };
-  return { big: hm(t), unit: '' };
+  const c = hm(t);
+  return typeof c === 'string' ? { big: c, unit: '' } : c;
 }
 
 /**

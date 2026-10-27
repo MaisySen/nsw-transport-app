@@ -251,6 +251,9 @@ The server stays on the Cloudflare Workers Paid base fee (US$5 a month) for up t
 * A time left badge on each row: "Now", "N min", then "1 hr", "2 hrs", "3 hrs" (rounded down), days for tomorrow; grey from an hour out.
 * Where you get on with its platform over the leave time, where you get off over the arrive time, the lines under it.
 * On time, late and early only with a live reading (a moved estimate, a placed vehicle, or within the hour); otherwise Scheduled.
+* Trip detail and the Home trip cards use the same clock ("12:56 pm" or "12:56").
+* The Home countdown chip an hour or more out shows the clock time with am or pm ("12:56" and "pm" small), or 24 hour digits.
+* "Tight change" on a trip row and in trip detail when a change is shorter than the rule allows: 3 min on the same mode and platform, 5 min to another mode, platform or stop, or the walk plus 2 min. From leg times and modes only.
 
 ## Crash safety net (27 Oct, on main, ships with tonight's update; emergency branch hotfix-crash-27oct)
 

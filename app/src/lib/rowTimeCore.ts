@@ -46,6 +46,16 @@ export function rowClock(t: number, h24: boolean): string {
   return `${((h + 11) % 12) + 1}:${mm} ${h < 12 ? 'am' : 'pm'}`;
 }
 
+/**
+ * A clock time for a countdown chip, split like "12 min": the digits big and "am" or "pm" small under or beside
+ * them ("12:56" + "pm"), or "12:56" alone on a 24 hour phone. The same clock as the Plan rows (rowClock).
+ */
+export function chipClock(t: number, h24: boolean): { big: string; unit: string } {
+  const s = rowClock(t, h24);
+  const m = s.match(/^(\S+) (am|pm)$/);
+  return m ? { big: m[1], unit: m[2] } : { big: s, unit: '' };
+}
+
 export type Badge = {
   /** The big part: "Now", "Left", "12", "2". */
   big: string;

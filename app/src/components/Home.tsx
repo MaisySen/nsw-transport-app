@@ -46,8 +46,9 @@ import { tripSentence } from '@/lib/voiceCore';
 import { withKeys } from '@/lib/rowKeysCore';
 import { whereNow } from '@/lib/whereNowCore';
 import { WhereNow } from './WhereNow';
-import { boardParts, boardText, hasLiveData, placeText, stackColumns, timeLeftBadge, tripLines } from '@/lib/rowTimeCore';
-import { rowTime } from '@/lib/rowTime';
+import { boardParts, boardText, chipClock, hasLiveData, placeText, stackColumns, timeLeftBadge, tripLines } from '@/lib/rowTimeCore';
+import { phone24h, rowTime } from '@/lib/rowTime';
+import { tightA11y, tightChange } from '@/lib/tightChangeCore';
 
 // ---------- shared refresh signals for every card on Home ----------
 
@@ -219,8 +220,8 @@ export function AlertBanner() {
 
 // ---------- small formatters ----------
 
-/** "7:52" with no am or pm, Sydney time. */
-const hm = (t: number) => clock(t).replace(/(am|pm)$/i, '');
+/** "7:52 pm" (or "19:52" on a 24 hour phone), Sydney time: the Plan rows' clock (lib/rowTime.ts). */
+const hm = (t: number) => rowTime(t);
 
 /** 24 hour "07:55", Sydney time. */
 export function hm24(t: number) {
@@ -232,8 +233,12 @@ export function hm24(t: number) {
   }
 }
 
-/** Countdown parts: "4" + "min", "Now", "Left" once gone, or a clock time past an hour. */
-const cd = (t: number, now: number) => chipTime(t, now, hm);
+/** Countdown parts: "4" + "min", "Now", "Left" once gone, or past an hour the Plan rows' clock split "7:52" + "pm". */
+const cd = (t: number, now: number) => chipTime(t, now, (x) => chipClock(x, phone24h()));
+
+/** A live label's chip parts: its countdown, or where it shows a clock time, the Plan rows' clock split "7:52" + "pm". */
+const lsChip = (s: { big: string; unit: string; counting: boolean; t: number }) =>
+  !s.counting && s.big && Number.isFinite(s.t) ? chipClock(s.t, phone24h()) : { big: s.big, unit: s.unit };
 
 /** Countdown chip colour by time left: red at 3 min or less, amber 4 to 9, green 10 plus, grey when cancelled. */
 export function cdColor(t: number, now: number, cancelled: boolean, c: { red: string; green: string; text3: string }) {
@@ -385,6 +390,21 @@ function statusOf(j: Journey, now: number): Status {
 }
 
 export type TripItem = { key: string; from: Place; to: Place; kind: 'commute' | 'saved' | 'recent' | 'place' | 'mine'; id?: string; name?: string; tag?: string; via?: Place; conn?: number; okey?: string; legs?: TripLeg[]; modes?: string[] };
+
+/**
+ * "Tight change": a change shorter than the rule's minimum (lib/tightChangeCore.ts). Secondary size, the system orange
+ * text colour and a small clock, so it reads as a hint (Apple HIG footnote, Material 3 label small), not an alert.
+ * Not a button: the row's tap stays as it was. VoiceOver and TalkBack hear it in the row's own label.
+ */
+export function TightLabel({ style }: { style?: any }) {
+  const c = usePalette();
+  return (
+    <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 4 }, style]} accessible={false} importantForAccessibility="no-hide-descendants">
+      <Icon name={I.clock} size={11} color={c.orange} />
+      <T kind="foot" numberOfLines={1} style={{ color: c.lateText }}>Tight change</T>
+    </View>
+  );
+}
 
 /** Warning under a multi leg service: a tight change, or a change missed because of a delay. */
 export function WarnLine({ j }: { j: Journey }) {
@@ -624,12 +644,12 @@ function TripGlance({ look, js, arrs, now, count = { size: 56, line: 62, weight:
   const tone = !stt ? c.text2 : ls?.kind === 'stale' ? c.lateText : honest ? c.text2 : stt.tone === 'live' ? c.liveText : stt.tone === 'late' ? c.lateText : stt.tone === 'red' ? c.redText : c.text2;
   const cancelled = stt?.tone === 'red';
   const chip = !j ? c.text3 : honest ? '#8E8E93' : cdColor(dep, now, cancelled, c);
-  const t = ls ? { big: ls.big, unit: ls.unit } : j ? cd(dep, now) : { big: '', unit: '' };
+  const t = ls ? lsChip(ls) : j ? cd(dep, now) : { big: '', unit: '' };
   const status = ls && honest ? ls.label : stt?.text;
   const badges: Leg[] = [];
   for (const x of j ? j.legs.filter((y) => y.kind === 'transit') : []) if (x.line && !badges.some((b) => b.line === x.line)) badges.push(x);
   const where = whereText(l?.fromPlatform, l?.stopId, l?.mode, look === 'hero');
-  const then = thenText(js.slice(1, 3).map((x) => { const s = lsOf(x); return s ? { big: s.big, unit: s.unit } : cd(depOf(x), now); }));
+  const then = thenText(js.slice(1, 3).map((x) => { const s = lsOf(x); return s ? lsChip(s) : cd(depOf(x), now); }));
   const head = (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       {glyph && glyph !== I.star && look === 'hero' ? <Icon name={glyph} size={15} color={glyphColor || c.tint} style={{ marginRight: 6 }} /> : null}
@@ -757,9 +777,12 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
   const wn = l?.planned ? whereNow(l, liveState({ planned: l.planned, estimated: l.estimated, realtime: hasLiveData(l, now), cancelled: !!(j.anyCancelled || l.cancelled), seenAt: l.seenAt ?? j.seenAt }, now).kind === 'live', true) : null;
   const timeStyle = [font.title3, { color: c.text, fontVariant: ['tabular-nums'] as any, textDecorationLine: cancelled ? ('line-through' as const) : ('none' as const) }];
   const lineWords = badges.map((b) => b.line).join(', ');
+  // A change shorter than the rule's minimum (lib/tightChangeCore.ts): a quiet orange line, no tap change.
+  // The server's own warning (WarnLine, under the row) wins when it has one.
+  const tc = cancelled || j.warn ? null : tightChange(j.legs);
   return (
     <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }}
-      accessibilityLabel={`Leaves ${fromText ? `${fromText} at ` : ''}${depT}, ${showTravel ? `${t.big} ${t.unit}` : left.a11y}, arrives ${toText ? `${toText} at ` : ''}${arrT}, ${stt.text}${lineWords ? `, ${lineWords}` : ''}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}${wn ? `. ${wn.a11y}` : ''}${rel ? `. ${rel}` : ''}`}
+      accessibilityLabel={`Leaves ${fromText ? `${fromText} at ` : ''}${depT}, ${showTravel ? `${t.big} ${t.unit}` : left.a11y}, arrives ${toText ? `${toText} at ` : ''}${arrT}, ${stt.text}${lineWords ? `, ${lineWords}` : ''}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}${tc ? `, ${tightA11y(tc)}` : ''}${wn ? `. ${wn.a11y}` : ''}${rel ? `. ${rel}` : ''}`}
       style={({ pressed }) => [s.svc, (beaten || dep < now - 30000) && { opacity: 0.45 }, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
       <View style={[s.block, { backgroundColor: chip + (c.dark ? '33' : '1F') }]}>
         <Text maxFontSizeMultiplier={1.3} style={{ color: cdText(chip, c), fontSize: bigSize, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }} numberOfLines={1} adjustsFontSizeToFit>{t.big}</Text>
@@ -793,6 +816,7 @@ export function ServiceRow({ j, now, arrive, beaten, onPress, showTravel }: { j:
           </View>
         </View>
         {l?.platformChangedFrom ? <T kind="foot" numberOfLines={1} style={{ color: c.lateText, marginTop: 2 }}>Platform changed from {plat(l.platformChangedFrom)}{boardAt ? ` to ${boardAt}` : ''}</T> : null}
+        {tc ? <TightLabel style={{ marginTop: 2 }} /> : null}
         <WhereNow w={wn} style={{ marginTop: 2 }} />
         <OccupancyChip o={l?.occupancy} style={{ marginTop: 3 }} />
         {rel ? <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2 }}>{rel}</T> : null}

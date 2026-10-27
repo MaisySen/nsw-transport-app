@@ -16,6 +16,7 @@ globalThis.Date = FakeDate;
 let MODE = "ok"; // ok | down (every NSW call 503) | quota (403 over quota)
 let HEADWAY = 10; // minutes between the fake services
 let LATENCY = 0; // ms added to every API answer, to look like a slow day
+let CHANGE = false; // trips with a change: a train to a station near the middle, then a bus (tight change checks)
 // Stops: a JSON map { id: [name, lat, lon, parentId, platform] } (for example made from the GTFS stops.txt), or
 // without one the station lists this repo already publishes (train, metro, ferry, light rail and bus route stops).
 function repoStops() {
@@ -77,9 +78,16 @@ function trip(p) {
   const first = Math.ceil((arrBy ? at - min * 60000 - n * step : at) / step) * step + 2 * 60000;
   const line = train ? "T" + (1 + (parseInt(o, 10) % 9)) : String(400 + (parseInt(o, 10) % 99));
   const out = [];
+  // CHANGE: each trip changes at the station nearest the middle; the change takes 2, 8, 4, 12 or 3 min in turn.
+  const mid = CHANGE ? parents.filter((i) => i !== o && i !== d && isStation(i)).map((i) => [i, dist([(S[o][1] + S[d][1]) / 2, (S[o][2] + S[d][2]) / 2], [S[i][1], S[i][2]])]).sort((a, b) => a[1] - b[1])[0]?.[0] : null;
   for (let k = 0; k < n; k++) {
     const dep = first + k * step;
     const delay = (k % 3 === 0) ? 2 : (k % 3 === 1 ? 0 : null);
+    if (mid) {
+      const m1 = Math.max(3, Math.round(min / 2)), gap = [2, 8, 4, 12, 3][k % 5];
+      out.push({ legs: [leg(o, mid, dep, m1, line, 1, delay, k), leg(mid, d, dep + (m1 + gap) * 60000, Math.max(3, min - m1), String(400 + (parseInt(d, 10) % 99)), 5, null, k)] });
+      continue;
+    }
     out.push({ legs: [leg(o, d, dep, min, line, train ? 1 : 5, delay, k)] });
   }
   return { journeys: out };
@@ -130,7 +138,7 @@ http.createServer(async (req, res) => {
   const chunks = []; for await (const c of req) chunks.push(c);
   const body = Buffer.concat(chunks);
   const u = new URL(req.url, "http://x");
-  if (u.pathname === "/__clock") { const j = JSON.parse(body.toString() || "{}"); if (j.t) OFF = j.t - RealDate.now(); if (j.mode) MODE = j.mode; if (j.headway) HEADWAY = +j.headway; if (j.latency != null) LATENCY = +j.latency; res.end(JSON.stringify({ now: FakeDate.now(), mode: MODE, headway: HEADWAY, latency: LATENCY, nswCalls: nswCalls.n })); return; }
+  if (u.pathname === "/__clock") { const j = JSON.parse(body.toString() || "{}"); if (j.t) OFF = j.t - RealDate.now(); if (j.mode) MODE = j.mode; if (j.headway) HEADWAY = +j.headway; if (j.latency != null) LATENCY = +j.latency; if (j.change != null) CHANGE = !!j.change; res.end(JSON.stringify({ now: FakeDate.now(), mode: MODE, headway: HEADWAY, latency: LATENCY, change: CHANGE, nswCalls: nswCalls.n })); return; }
   if (u.pathname === "/__log") { res.end(JSON.stringify(log.slice(-400))); return; }
   if (LATENCY) await new Promise((r) => setTimeout(r, LATENCY));
   try {

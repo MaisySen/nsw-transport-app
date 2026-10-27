@@ -12,6 +12,7 @@ import { departureMenu } from '@/lib/menuCore';
 import { usePalette } from '@/lib/theme';
 import { BADGE, badgeLook } from '@/lib/lineStyle';
 import { clock, delayWords, durText, ms, shortName } from '@/lib/format';
+import { rowTime } from '@/lib/rowTime';
 import type { Departure, Journey, Leg } from '@/lib/types';
 import { Icon, I, modeIconName } from './Icon';
 import { stopLabel } from '@/lib/busCore';
@@ -259,7 +260,7 @@ export function JourneyCard({ j, now, onPress, best }: { j: Journey; now: number
   const mins = Math.round((leave - now) / 60000);
   const first = j.legs.find((l) => l.kind === 'transit');
   const firstLive = first ? liveState({ planned: first.planned, estimated: first.estimated, realtime: first.realtime, cancelled: j.anyCancelled, seenAt: first.seenAt ?? j.seenAt }, now) : undefined;
-  const leaveText = mins <= 0 ? 'Leave now' : mins < 60 ? `Leave in ${mins} min` : `Leave ${clock(leave)}`;
+  const leaveText = mins <= 0 ? 'Leave now' : mins < 60 ? `Leave in ${mins} min` : `Leave ${rowTime(leave)}`;
   return (
     <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }} style={({ pressed }) => [st.jRow, pressed && Platform.OS === 'ios' ? { backgroundColor: c.card2 } : null]}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
@@ -269,7 +270,7 @@ export function JourneyCard({ j, now, onPress, best }: { j: Journey; now: number
             {best ? <View style={[st.tag, { backgroundColor: c.fill }]}><Text style={[font.caption, { color: c.tint, fontWeight: '700' }]}>BEST</Text></View> : null}
           </View>
           <T kind="sub" tone="text2" style={{ marginTop: 2, fontVariant: ['tabular-nums'] }}>
-            {clock(ms(j.board))} to {clock(ms(j.arrive))} {'\u00b7'} {durText(j.durationMin)}{j.changes ? ` \u00b7 ${j.changes} change${j.changes > 1 ? 's' : ''}` : ''}
+            {rowTime(ms(j.board))} to {rowTime(ms(j.arrive))} {'\u00b7'} {durText(j.durationMin)}{j.changes ? ` \u00b7 ${j.changes} change${j.changes > 1 ? 's' : ''}` : ''}
           </T>
         </View>
         <StatusLine realtime={first?.realtime} delayMin={first?.delayMin} cancelled={j.anyCancelled} state={firstLive} compact />

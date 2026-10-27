@@ -134,7 +134,9 @@ test('Next trip card and rows use the shared live label', () => {
   assert.ok(/liveState\(/.test(g), 'countdown from liveState');
   assert.ok(/<LiveStatus state=\{ls\}/.test(g), 'card label is LiveStatus');
   assert.ok(/honest \? ls\.label/.test(g), 'rows say Timetable or Not tracking');
-  assert.ok(!/\bcd\(dep, now\) : \{ big/.test(g) || /ls \? \{ big: ls\.big/.test(g), 'the big number is the honest one');
+  assert.ok(!/\bcd\(dep, now\) : \{ big/.test(g) || /ls \? (\{ big: ls\.big|lsChip\(ls\))/.test(g), 'the big number is the honest one');
+  // lsChip (27 Oct) keeps the live label's countdown and only rewrites a clock time into the Plan rows' clock.
+  assert.ok(src.includes('!s.counting && s.big && Number.isFinite(s.t) ? chipClock(s.t, phone24h()) : { big: s.big, unit: s.unit }'), 'lsChip passes countdowns through');
 });
 
 test('spoken countdown: 1 minute, not 1 minutes', () => {

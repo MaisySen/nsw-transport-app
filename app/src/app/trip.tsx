@@ -22,7 +22,7 @@ import { api, isLongPair } from '@/lib/api';
 import { LONG_TRIP_KEEP_MS, STILL_SEARCHING_MS } from '@/lib/longTripCore';
 import { useCountdownNow, useLive, useReportCountdowns, useStamp } from '@/lib/hooks';
 import { usePalette, radius, modeColor } from '@/lib/theme';
-import { bestTime, clock, durText, ms, shortName } from '@/lib/format';
+import { bestTime, durText, ms, shortName } from '@/lib/format';
 import { plainText } from '@/lib/htmlTextCore';
 import { store, tripKeyOf, useStore } from '@/lib/store';
 import { safeUrl, stShort } from '@/lib/access';
@@ -46,7 +46,7 @@ import type { SvcRow } from '@/lib/speedCore';
 import { KeptBanner, LineBadge, OccupancyChip, StatusLine } from '@/components/Transit';
 import { LimitedTag } from '@/components/LimitedTag';
 import { liveState } from '@/lib/liveLabelCore';
-import { arrOf, ServiceRow, tripCacheId, tripPkey, WarnLine } from '@/components/Home';
+import { arrOf, ServiceRow, TightLabel, tripCacheId, tripPkey, WarnLine } from '@/components/Home';
 import { cacheKey } from '@/lib/offlineCore';
 import { firstLeaveInMs, tripGapMs } from '@/lib/pollCore';
 import { rankTrips } from '@/lib/rankCore';
@@ -61,6 +61,8 @@ import { Button, Empty, Screen, Sep, T } from '@/components/ui';
 import { boardWords, stopLabel, stopNumber } from '@/lib/busCore';
 import { stableKeys } from '@/lib/rowKeysCore';
 import { hasLiveData } from '@/lib/rowTimeCore';
+import { rowTime } from '@/lib/rowTime';
+import { changeAt } from '@/lib/tightChangeCore';
 
 /** "0745" for the trip API's time parameter, Sydney time. */
 function hhmm(t: number) {
@@ -125,7 +127,7 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
         <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
           <View style={{ flex: 1 }}>
             <T kind="headline" numberOfLines={2}>{shortName(l.from)}</T>
-            <T kind="foot" tone="text2">{[l.fromPlatform, stopLabel(l.stopId, l.mode), `${clock(dep)}`].filter(Boolean).join(' \u00b7 ')}</T>
+            <T kind="foot" tone="text2">{[l.fromPlatform, stopLabel(l.stopId, l.mode), `${rowTime(dep)}`].filter(Boolean).join(' \u00b7 ')}</T>
             <View style={{ marginTop: 2 }}><StatusLine realtime={hasLiveData(l, now)} delayMin={l.delayMin} cancelled={l.cancelled} state={liveState({ planned: l.planned, estimated: l.estimated, realtime: hasLiveData(l, now), cancelled: l.cancelled, seenAt: l.seenAt }, now)} /></View>
             {usual ? <T kind="foot" tone="text2" style={{ marginTop: 2 }}>{usual}</T> : null}
           </View>
@@ -174,19 +176,19 @@ function LegView({ l, next, now }: { l: Leg; next?: Leg; now: number }) {
         <LegAccessChips access={l.access} from={l.from} to={l.to} />
         <View style={{ marginTop: 10 }}>
           <T kind="headline" numberOfLines={2}>{shortName(l.to)}</T>
-          <T kind="foot" tone="text2">{[l.toPlatform, stopLabel(l.toStopId, l.mode), `Arrive ${clock(arr)}`].filter(Boolean).join(' \u00b7 ')}</T>
+          <T kind="foot" tone="text2">{[l.toPlatform, stopLabel(l.toStopId, l.mode), `Arrive ${rowTime(arr)}`].filter(Boolean).join(' \u00b7 ')}</T>
         </View>
       </View>
     </Pressable>
   );
 }
 
-function Transfer({ a, b }: { a: Leg; b: Leg }) {
+function Transfer({ a, b, legs, i }: { a: Leg; b: Leg; legs: Leg[]; i: number }) {
   const c = usePalette();
   const tf: any = (b as any).transfer;
   if (tf && tf.chain) {
     const bad = tf.risk === 'miss', tight = tf.risk === 'tight';
-    const text = tf.missed ? `Delays: you miss the ${clock(ms(tf.missed.planned))} ${tf.missed.line} at ${shortName(tf.at)}. Next connection: ${Math.max(0, tf.minutes)} min to change`
+    const text = tf.missed ? `Delays: you miss the ${rowTime(ms(tf.missed.planned))} ${tf.missed.line} at ${shortName(tf.at)}. Next connection: ${Math.max(0, tf.minutes)} min to change`
       : `${Math.max(0, tf.minutes)} min to change at ${shortName(tf.at)}${tight ? ', tight' : `, you allow ${tf.conn}`}`;
     return (
       <View style={[st.walk, { paddingVertical: 6 }]}>
@@ -197,11 +199,15 @@ function Transfer({ a, b }: { a: Leg; b: Leg }) {
   }
   const gap = Math.round((bestTime(b.planned, b.estimated) - bestTime(a.arrPlanned, a.arrEstimated)) / 60000);
   if (!Number.isFinite(gap)) return null;
-  const tight = gap < 3;
+  // Tight by the rule in lib/tightChangeCore.ts: under 3 min on the same mode and platform, under 5 min to another
+  // mode, platform or stop, or a walk with under 2 min to spare.
+  const tight = !!changeAt(legs, i);
+  const text = gap <= 0 ? 'Change now' : `${gap} min to change`;
   return (
-    <View style={[st.walk, { paddingVertical: 6 }]}>
+    <View style={[st.walk, { paddingVertical: 6 }]} accessible accessibilityLabel={tight ? `${text}, tight change` : text}>
       <View style={{ width: 36, alignItems: 'center' }}><Icon name={I.clock} size={15} color={tight ? c.orange : c.text3} /></View>
-      <T kind="foot" style={{ color: tight ? c.lateText : c.text2, fontWeight: tight ? '600' : '400' }}>{gap <= 0 ? 'Change now, very tight' : `${gap} min to change${tight ? ', tight' : ''}`}</T>
+      <T kind="foot" style={{ color: c.text2 }}>{text}</T>
+      {tight ? <TightLabel style={{ marginLeft: 8 }} /> : null}
     </View>
   );
 }
@@ -311,7 +317,7 @@ function JourneyDetail({ j, now, from, to, autoStart, onMapTouch }: { j: Journey
           const prevT = legs.slice(0, i).reverse().find((x) => x.kind === 'transit');
           return (
             <View key={i}>
-              {l.kind === 'transit' && prevT && (legs[i - 1]?.kind === 'transit' || (l as any).transfer?.chain) ? <Transfer a={prevT} b={l} /> : null}
+              {l.kind === 'transit' && prevT && (legs[i - 1]?.kind === 'transit' || (l as any).transfer?.chain || changeAt(legs, i)) ? <Transfer a={prevT} b={l} legs={legs} i={i} /> : null}
               {l.kind === 'transit' ? <StandPin leg={l} prev={legs[i - 1]} onScrollChange={onMapTouch} /> : null}
               <LegView l={l} next={legs[i + 1]} now={now} />
             </View>
