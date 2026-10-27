@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Trip legs live only with a live reading (server, 27 Oct, on main, pending deploy)
+* `/api/trip` legs say `realtime: true` only when the planner's estimate differs from the timetable (to the minute, late or early) or the trip leaves within 60 min (its first service's live time, else its timetable time). The planner marks some services hours away as realtime controlled and echoes the timetable as the estimate, which the app showed as On time. `estimated` and `delayMin` are passed on as before, so nothing else moves; the app already applies the same rule on its side (lib/rowTimeCore.ts hasLiveData), so old builds get it from the server once deployed.
+* Not deployed: another worker is redeploying the server today. Deploy with the next server deploy from main; rollback is that deploy's previous version.
+* backend/src/worker.js (tripLegLive, tripLegsOf); test/trip-realtime.test.mjs (7).
+
 ### Plan rows follow ups: trip detail times, Home chip am and pm, Tight change (app, 27 Oct, on main, ships with tonight's update)
 * Trip detail (the legs under a trip on the Plan tab) wrote "12:56pm"; its leave, arrive and missed connection times now use the trip rows' clock: "12:56 pm" on a 12 hour phone, "12:56" on a 24 hour phone. The Home trip cards' "Leave 12:56 pm" and "12:44 pm to 12:57 pm" lines too.
 * Home countdown chip an hour or more out: the clock time now carries am or pm ("12:56" big with "pm" small under it, like "12 min"), or 24 hour digits on a 24 hour phone. Clock times from the live label (Timetable, Not tracking, cancelled) go through the same clock; countdowns are unchanged. The Next trip card's "7:52 pm to 8:30 pm" line and its VoiceOver words use the same clock.

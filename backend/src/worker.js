@@ -1347,9 +1347,24 @@ async function tripPage(env, fromId, toId, q, base) {
 }
 
 // The planner's journeys as our legs (before any live times from the feeds are added).
-function tripLegsOf(data) {
+// A leg is marked live only with a live reading: the planner marks some services hours away as realtime controlled and
+// echoes the timetable as the estimate, so a trip three hours out said On time. Live when the estimate differs from the
+// timetable (a delay or early running, to the minute) or when the trip leaves within TRIP_LIVE_HORIZON_MS. The estimate
+// and delay stay as given, so nothing else moves. The app applies the same rule (app/src/lib/rowTimeCore.ts hasLiveData).
+const TRIP_LIVE_HORIZON_MS = 60 * 60000;
+function tripLegLive(oEst, planned, tripDep, now) {
+  if (!oEst) return false;
+  const e = ms(oEst), p = ms(planned);
+  if (Number.isFinite(e) && Number.isFinite(p) && Math.round((e - p) / 60000) !== 0) return true;
+  return Number.isFinite(tripDep) && tripDep - now <= TRIP_LIVE_HORIZON_MS;
+}
+function tripLegsOf(data, now = Date.now()) {
   const journeys = [];
   for (const j of data.journeys || []) {
+    // When the trip leaves: its first service's live time, else its timetable time (a walk first counts too).
+    const first = (j.legs || [])[0];
+    const fo = (first && first.origin) || {};
+    const tripDep = ms((fo.departureTimeEstimated && first.isRealtimeControlled ? fo.departureTimeEstimated : null) || fo.departureTimePlanned);
     const legs = (j.legs || []).map((lg) => {
       const t = lg.transportation || {};
       const cls = t.product ? t.product.class : null;
@@ -1373,7 +1388,7 @@ function tripLegsOf(data) {
         to: stopName(d), toPlatform: platformLabel(d.properties, cls),
         planned: iso(o.departureTimePlanned), estimated: oEst ? iso(oEst) : null,
         arrPlanned: iso(d.arrivalTimePlanned), arrEstimated: dEst ? iso(dEst) : null,
-        realtime: !!oEst,
+        realtime: tripLegLive(oEst, o.departureTimePlanned, tripDep, now),
         delayMin: oEst ? Math.round((ms(oEst) - ms(o.departureTimePlanned)) / 60000) : null,
         durationMin: Math.round((lg.duration || 0) / 60),
         stops: Math.max(0, (lg.stopSequence || []).length - 1),

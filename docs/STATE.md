@@ -72,6 +72,7 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 | 27 Oct, after 1 AM | Board engine 95% match run on real feeds (capped); engine stays off for phones until the owner agrees | Board engine worker |
 | 27 Oct, 2:40 AM | Timetable workflow: planner pack (nightly, first pack with `tripNext` for g24 stop lists; check `/api/raptor/status` counts and a T9 `/api/service` from Gordon after 1 AM), engine load only if it no longer holds today and tomorrow | GitHub Actions |
 | 27 Oct, 3 to 6 AM | `tools/planner_match.mjs` (our planner vs NSW, gate 90%) | Any worker, off peak |
+| Next server deploy | **Pending deploy** (on main, not deployed, 27 Oct): `/api/trip` legs marked `realtime` only when the estimate differs from the timetable or the trip leaves within 60 min (tripLegsOf, test/trip-realtime.test.mjs). Goes out with the next deploy from main; no flag | Whoever deploys the server next |
 | From 1 Nov | iPhone build 209 with the native list in IOS27.md (Watch gets times from the phone, widget push, calendar, audio route) | Build worker, after the owner's go |
 | 25 Nov | Cloudflare cycle renews (US$5) | |
 
