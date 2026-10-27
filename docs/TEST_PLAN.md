@@ -20,12 +20,14 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 | Lighthouse (mobile) | Landing, support, privacy and web app | After site changes. Last run: 100 in all four categories on landing, support and privacy; web app 100, 100, 100 and 96 for accessibility |
 | Writing style check | grep in every test file and before every push | No em dashes, no en dashes, no filler words |
 
-### `backend/test/noshow.test.mjs`: 8 tests, 8 pass (28 Oct, often does not run, server)
+### `backend/test/noshow.test.mjs`: 11 tests, 11 pass (28 Oct, often does not run, server; bar tightened the same day)
 * Next day to fold (backfill 14 days, yesterday from 1am, never today) and the same day type window.
-* Pure fold: fading by 0.95, adding a day, dropping faded keys; marked only at 8 watched and 30 percent.
+* Pure fold: fading by 0.95, adding a day, dropping faded keys, one more distinct day per day that counted a bus; marked only at 12 watched over 4 days and 30 percent.
 * Two of four 8 o'clock buses never live on four weekdays: 8 o'clock marked (share 40 to 50), 7 o'clock not, the last bus of the run not counted; one day per tick; idle after; departures get `noShow` only on the marked line, hour and day type, other rows keep exactly their shape.
 * A service nobody was watching is not a miss. A day where nearly everything missed is skipped as another timetable.
 * Switch `noShow` off: no fold, no `noShow`. Budget guard: waits on a D1 meter over the hold, not on a Durable Object hold.
+* The bar: 3 of 9 missing over 2 days gets no label (the old bar of 8 would have marked it), nor do 12 or more over 3 days; 4 days with 12 or more counted and 50 percent missing is marked, 4 days under 12 is not.
+* After the change: a mark left by the old version (meta `noshow` v 1) is never read, the old counts and claim are dropped, and every stored day is folded again into `noshow_agg2` from the backfill start.
 
 ### `app/test/noshow.test.mjs`: 7 tests, 7 pass (28 Oct, often does not run, app)
 * Floors (30 percent, 8 watched); timetable rows count down and say "Often does not run"; stale rows show the timetable clock time with the age kept; Live and Cancelled never change; rows without `noShow` are exactly as before; the row redraws when `noShow` arrives; board rows carry the label and the VoiceOver and TalkBack words.

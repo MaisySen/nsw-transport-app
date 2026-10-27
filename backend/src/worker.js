@@ -4264,8 +4264,9 @@ async function usualRoute(env, p) {
 // read at or before that time, its last read within 10 minutes of it): someone was looking at that stop and the live
 // data was flowing, so this service should have shown live too. Watched and never live is a MISS. Once a day
 // the minute tick folds yesterday's counts per line, day type (weekday, weekend) and hour of the day into one meta row
-// (noshow_agg), every older count faded by 0.95 first; the hours where at least NS_SHARE percent of NS_MIN_W watched
-// services never showed are copied to a second small meta row (noshow) that answers read. A departure or bus leg in
+// (noshow_agg2), every older count faded by 0.95 first, with how many distinct service days counted a bus there; the
+// hours where at least NS_SHARE percent of at least NS_MIN_W watched services never showed, counted over at least
+// NS_MIN_DAYS distinct days, are copied to a second small meta row (noshow, v 2) that answers read. A departure or bus leg in
 // one of those hours gets noShow: {share, n}. A day where over NS_DAY_SKIP percent of everything missed (a public
 // holiday on another timetable) is skipped. Cost: one D1 query a day (about 170,000 rows read on 27 Oct's data) and
 // two meta rows written; answers read one meta row per isolate every 10 minutes. No Durable Object request.
@@ -4275,7 +4276,9 @@ const NS_BACKFILL_DAYS = 14; // the first run folds the days obs already holds, 
 const NS_DECAY = 0.95;
 const NS_WATCH_MS = 10 * 60000;
 const NS_AHEAD_MS = 60 * 60000;
-const NS_MIN_W = 8; // watched services (after fading) before an hour can be marked
+const NS_MIN_W = 12; // watched services (after fading) before an hour can be marked
+const NS_MIN_DAYS = 4; // and those services counted on at least this many distinct service days
+const NS_V = 2; // v 2 (28 Oct): counts carry distinct days; v 1 rows are refolded from the start, never read
 const NS_SHARE = 30; // percent never live
 const NS_DAY_SKIP = 35; // percent: a day this bad is another timetable, not no shows
 const NS_MAX_KEYS = 20000;
@@ -4313,33 +4316,37 @@ function nsFoldStatement(d, day) {
         AND o.first_seen <= ${pd} AND o.last_seen >= ${pd} - ${NS_WATCH_MS} AND o.day = ?1) AS w FROM k)
     SELECT route, tod / 60 AS slot, SUM(w) AS w, SUM(w AND NOT s) AS m FROM x WHERE w GROUP BY route, tod / 60`).bind(day, ...days);
 }
-/** Pure: fade the running counts, add one day's rows. agg: {v, upTo, n: {"LINE|dt|hour": [watched, missed]}}. */
+/** Pure: fade the running counts, add one day's rows.
+ * agg: {v, upTo, n: {"LINE|dt|hour": [watched, missed, distinct days, last day counted (YYYYMMDD number)]}}.
+ * Days are folded once each and in order, so a key's day count goes up by one on each day that counted a bus there. */
 function nsFold(agg, rows, day, dt) {
-  const n = {};
+  const n = {}, dn = Number(day) || 0;
   for (const [k, v] of Object.entries((agg && agg.n) || {})) {
     if (!Array.isArray(v)) continue;
     const w = (Number(v[0]) || 0) * NS_DECAY, m = (Number(v[1]) || 0) * NS_DECAY;
-    if (w >= 0.5) n[k] = [w, Math.min(w, m)];
+    if (w >= 0.5) n[k] = [w, Math.min(w, m), Number(v[2]) || 0, Number(v[3]) || 0];
   }
   for (const r of rows || []) {
     if (!r || !r.route || !Number.isFinite(Number(r.slot))) continue;
     const k = `${r.route}|${dt}|${Number(r.slot)}`;
-    const v = n[k] || [0, 0];
-    v[0] += Number(r.w) || 0; v[1] += Number(r.m) || 0;
+    const v = n[k] || [0, 0, 0, 0];
+    const w = Number(r.w) || 0;
+    v[0] += w; v[1] += Number(r.m) || 0;
+    if (w > 0 && v[3] !== dn) { v[2] += 1; v[3] = dn; }
     n[k] = v;
   }
   let keys = Object.keys(n);
   if (keys.length > NS_MAX_KEYS) keys = keys.sort((a, b) => n[b][0] - n[a][0]).slice(0, NS_MAX_KEYS);
   const out = {};
-  for (const k of keys) out[k] = [Math.round(n[k][0] * 100) / 100, Math.round(n[k][1] * 100) / 100];
-  return { v: 1, upTo: day, n: out };
+  for (const k of keys) out[k] = [Math.round(n[k][0] * 100) / 100, Math.round(n[k][1] * 100) / 100, n[k][2], n[k][3]];
+  return { v: NS_V, upTo: day, n: out };
 }
-/** Pure: the hours that often do not run: {"LINE|dt|hour": [share percent, watched]}. */
+/** Pure: the hours that often do not run: {"LINE|dt|hour": [share percent, watched]}. Needs NS_MIN_W watched over NS_MIN_DAYS days. */
 function nsFlagged(n) {
   const f = {};
   for (const [k, v] of Object.entries(n || {})) {
     const w = Number(v[0]) || 0, m = Number(v[1]) || 0;
-    if (w < NS_MIN_W) continue;
+    if (w < NS_MIN_W || (Number(v[2]) || 0) < NS_MIN_DAYS) continue;
     const share = Math.round((m / w) * 100);
     if (share >= NS_SHARE) f[k] = [share, Math.round(w)];
   }
@@ -4360,28 +4367,35 @@ async function noShowTick(env, now = Date.now()) {
   if (nsIdle === sn.day) return { idle: true };
   if (!nsBudgetOk()) return { skipped: "budget" };
   await ensureLateSchema(env);
-  await d.prepare("INSERT OR IGNORE INTO meta (k, v) VALUES ('noshow_day', '')").run();
-  const row = await d.prepare("SELECT v FROM meta WHERE k = 'noshow_day'").first();
+  // v 2 keeps its own claim and counts (noshow_day2, noshow_agg2): the first tick after the change refolds every
+  // stored day, one per tick, and drops the v 1 rows (their marks were made on the old, thinner bar).
+  const fresh = await d.prepare("INSERT OR IGNORE INTO meta (k, v) VALUES ('noshow_day2', '')").run();
+  if ((fresh.meta && fresh.meta.changes) > 0) {
+    await d.prepare("DELETE FROM meta WHERE k IN ('noshow_day', 'noshow_agg', 'noshow')").run();
+    nsMem = null;
+  }
+  const row = await d.prepare("SELECT v FROM meta WHERE k = 'noshow_day2'").first();
   const last = row && row.v ? String(row.v) : "";
   const day = nsNextDay(last, sn);
   if (!day) { if (sn.tod >= 60) nsIdle = sn.day; return { upTo: last || null }; }
-  const claim = await d.prepare("UPDATE meta SET v = ?1 WHERE k = 'noshow_day' AND v = ?2").bind(day, last).run();
+  const claim = await d.prepare("UPDATE meta SET v = ?1 WHERE k = 'noshow_day2' AND v = ?2").bind(day, last).run();
   if (!((claim.meta && claim.meta.changes) > 0)) return { skipped: "claimed" };
   try {
     const rows = ((await nsFoldStatement(d, day).all()).results) || [];
     const tw = rows.reduce((s, r) => s + (Number(r.w) || 0), 0), tm = rows.reduce((s, r) => s + (Number(r.m) || 0), 0);
     if (tw >= 50 && (tm / tw) * 100 > NS_DAY_SKIP) return { folded: day, watched: tw, missed: tm, skipped: "another timetable" };
-    const ar = await d.prepare("SELECT v FROM meta WHERE k = 'noshow_agg'").first();
+    const ar = await d.prepare("SELECT v FROM meta WHERE k = 'noshow_agg2'").first();
     let agg = null;
     try { agg = ar && ar.v ? JSON.parse(ar.v) : null; } catch (e) { agg = null; }
+    if (agg && agg.v !== NS_V) agg = null;
     const next = nsFold(agg, rows, day, dayType(day));
     const f = nsFlagged(next.n);
     const put = "INSERT INTO meta (k, v) VALUES (?1, ?2) ON CONFLICT (k) DO UPDATE SET v = excluded.v";
-    await d.batch([d.prepare(put).bind("noshow_agg", JSON.stringify(next)), d.prepare(put).bind("noshow", JSON.stringify({ v: 1, upTo: day, at: now, f }))]);
+    await d.batch([d.prepare(put).bind("noshow_agg2", JSON.stringify(next)), d.prepare(put).bind("noshow", JSON.stringify({ v: NS_V, upTo: day, at: now, f }))]);
     nsMem = null;
     return { folded: day, watched: tw, missed: tm, flagged: Object.keys(f).length };
   } catch (e) {
-    await d.prepare("UPDATE meta SET v = ?1 WHERE k = 'noshow_day' AND v = ?2").bind(last, day).run().catch(() => null);
+    await d.prepare("UPDATE meta SET v = ?1 WHERE k = 'noshow_day2' AND v = ?2").bind(last, day).run().catch(() => null);
     return { error: String(e && e.message || e).slice(0, 160) };
   }
 }
@@ -4394,7 +4408,7 @@ async function noShowFlags(env) {
   try {
     const r = await db(env).prepare("SELECT v FROM meta WHERE k = 'noshow'").first();
     const o = r && r.v ? JSON.parse(r.v) : null;
-    if (o && o.f && typeof o.f === "object") f = o.f;
+    if (o && o.v === NS_V && o.f && typeof o.f === "object") f = o.f; // a v 1 row (old bar) marks nothing
   } catch (e) { /* no meta table or no row yet */ }
   nsMem = { at: Date.now(), f, n: Object.keys(f).length };
   return nsMem;

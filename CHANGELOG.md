@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 28 Oct 2026
 
+### Often does not run: stricter bar (28 Oct; server change for transport-api, no app change)
+* Why: one hour already qualified on 2 days of data (weekday 610X, midnight to 1 AM, 3 of 9 never live). A wrong "Often does not run" is worse than none.
+* Now an hour is marked only with at least 12 counted buses AND those buses counted on at least 4 distinct service days. The 30 percent share and the skip of a day over 35 percent missed (another timetable) are kept.
+* Counts carry their days (meta `noshow_agg2`, claim `noshow_day2`). The first minute tick after the deploy drops the old rows (`noshow_agg`, `noshow_day` and the old marks in `noshow`) and folds every stored day again, one day per tick; answers never read an old mark. Same cost per fold, about 14 folds once.
+* Shape unchanged: `noShow: {share, n}` on marked bus rows only; the app needs no update (its own floor of 8 is lower than the server's).
+* Tests: backend/test/noshow.test.mjs now 11 (3 new: 3 of 9 over 2 days gets no label, 12 over 4 days gets it, the change refolds and ignores old marks).
+
 ### Often does not run (28 Oct; server change for transport-api, app on main for tonight's update)
 * What it is: a bus with no live time (or a live time gone stale) in an hour where many of that line's services recorded over the past weeks never showed live now says "Often does not run" where it said "Timetable only" or "Not tracking". Departure rows, Home stop cards, the route view, the full screen board and trip legs. Live and cancelled rows never change.
 * How it is counted (server, no new table, no Transport for NSW call): once a day the minute tick folds yesterday's recorded live times (obs). A bus service is known from the days it showed live (line, stop, trip id, time of day). It counts as watched at a stop when a later bus of the same line there was read live before its time and again within 10 minutes of it, so the stop was being looked at; watched and never live is a miss. Counts per line, day type and hour go into one meta row (noshow_agg, older counts faded by 0.95 a day); hours with at least 8 watched services of which 30 percent or more missed go into a second small row (noshow) that answers read. A day where over 35 percent of everything missed (another timetable, a public holiday) is skipped.
