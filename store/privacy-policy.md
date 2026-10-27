@@ -2,11 +2,11 @@
 
 The text published at https://transportsydney.app/privacy/ (source: site/privacy/index.html). This copy is generated from that page; edit the page, then regenerate this file.
 
-Updated 26 October 2026
+Updated 27 October 2026
 
 This policy covers the Transport: Sydney Live app for iPhone and Android, this website and the server the apps use. The app and website are provided by Fintex Australia Pty Ltd (ABN 60 688 406 108), New South Wales, Australia ("we", "us"). Contact: privacy@transportsydney.app.
 
-**The short version.** There are no accounts, and we never ask for your name, email or phone number. There are no ads, no analytics and no third party tracking, and nothing is sold or shared for advertising. This website sets no cookies and runs no scripts.
+**The short version.** There are no accounts, and we never ask for your name, email or phone number. There are no ads, no analytics and no third party tracking, and nothing is sold or shared for advertising. If the app crashes, it sends a crash report so we can fix it. Crash reports are used only to fix faults; they are not analytics, because they do not count or follow what you do in the app. This website sets no cookies and runs no scripts.
 
 ## What the server keeps
 * **A random ID for your install.** The app makes it on your phone the first time it opens. It is not your device's advertising ID and is not linked to who you are. The server uses it to keep your saved trips, commutes, watched trips and alerts together.
@@ -18,6 +18,14 @@ This policy covers the Transport: Sydney Live app for iPhone and Android, this w
 * **A last way home reminder,** if you set one: the trip home and its time (if you set it from where you are, that starting point instead of a stop), deleted 12 hours after that service.
 * **A notification token** if you allow notifications, so the server can send alerts to your phone. It is deleted when you turn alerts off or delete all your data. On the iPhone the app also sends the phone's own notification token each time it opens; it is deleted when the app has not sent it for 30 days.
 * **The trip card on the iPhone Lock Screen:** during a trip, the card's push token and the trip, so the server can keep the card up to date while your phone is locked. Both are deleted when the trip ends, and never kept longer than 24 hours.
+
+## Crash reports
+
+When the app hits an error or crashes, it sends a report so we can find and fix the fault. Reports are used for nothing else: not to count or follow what you do, not for advertising and not for tracking. They are not linked to your name, email or phone number, which the app never asks for.
+* **To our server** (every version of the app since 27 October 2026): the error, where in the app's code it happened, the screen it was on, whether the phone is an iPhone or Android, the app version and build, the update, and the last parts of our server the app asked. Those can include the number of a stop or trip the app was showing, but not what you typed or searched for. These reports also carry the app's random install ID, so we can tell one phone crashing again from many phones crashing once. At most 3 are sent each time the app is open. We delete them once the fault is fixed, and after 12 months at the latest.
+* **To Sentry** (from app build 209): the same kind of report, with your phone's model and system version. Before a report leaves your phone, the app removes stop, route and place names, positions, what you searched for, IDs and your phone's name. Sentry reports carry no install ID. See Who else is involved.
+
+The app does not add your position, your trips, what you searched for or your phone's name to crash reports, and your IP address is not stored with them.
 
 ## Storage on your device
 
@@ -58,6 +66,7 @@ If you email us, we keep your message and your email address so we can answer. W
 * **Cloudflare** hosts this website and the server, and processes requests to deliver them and protect them from abuse. For us it keeps a short log of one request in ten for up to 7 days, so we can find faults: which part of the server was asked, the result and how long it took. The log does not keep what you searched for, your position or your install ID.
 * **Expo, Apple and Google** deliver notifications from the server: Expo passes them on, Apple delivers them to iPhones and Google Firebase Cloud Messaging to Android phones. Reminders you set are scheduled on the phone and do not go through them.
 * **Maps:** the Android app loads map tiles from OpenFreeMap, and the iPhone app uses Apple Maps. Like any website, these services see your IP address when a map loads.
+* **Sentry** (from app build 209) receives crash reports for us, in the United States, and keeps them for up to 30 days. It does not receive your install ID and does not store your IP address, and we have turned off its screenshots, session recording and performance tracking.
 
 We use these services only to run the app.
 
@@ -71,6 +80,7 @@ You can delete your data yourself, at any time:
 * **Everything:** in the app, open More, then Clear history, then Delete all my data. This deletes your saved trips, commutes, morning checks, watched trips, alerts, notification tokens, the Lock Screen trip card and trip history from the server, and clears the app's storage on your phone, straight away.
 * **Trip history on the server:** More, then Clear history.
 * **One trip or watch:** swipe left on it, or stop watching it in Watching.
+* **Crash reports:** Delete all my data does not reach them. Email us with your install ID and we will delete the reports your phone sent to our server. Reports sent to Sentry carry no install ID, so they cannot be matched to your phone; they are deleted after 30 days.
 
 You can also email privacy@transportsydney.app with the install ID shown in More and we will remove everything kept for your install within 30 days, or tell you what we hold.
 
