@@ -642,6 +642,12 @@ services today", Nearby said "Something went wrong (502)" and Ask said "Check yo
   `fallback: "planner-slow"` and header `x-edge-cache: stand-in` (never stored), so the app has an answer inside its 10 s
   trip deadline. A refresh with a saved live copy gets that copy instead. The planner call carries on and its live answer
   becomes the copy for the next ask. `TRIP_QUICK=off` turns this off.
+  * Timetable trips at 1.5 s (`TRIP_QUICK_TT`, part 2) go only to a phone that sends `x-device` or `x-profile` (the
+  newer app, which labels them "Timetable times for now. Getting live times." and asks again at 6 s and 10 s). An older
+  app (builds 201 to 208, updates 27efc6bd and ecb0882d: ids only in the address) labels any stand in "Timetable times.
+  Live trips are unavailable right now." and asks again only at its normal poll, so it keeps the full 6.5 s wait for
+  the planner (27 Oct, 1:20 PM: the owner's commute card said unavailable while the planner answered a moment later).
+  The timetable trips are still worked out from 0.4 s, so an older app that does get them has them at 6.5 s.
   * No timetable trip found: `503 { kind: "error", unavailable: true, upstream: true, error, text }` with
   "Live trips are unavailable right now because Transport for NSW isn't answering. Try again soon." Never an empty
   list. A Trip Planner time out with nothing found is `504` (the app's long trip path).

@@ -94,14 +94,18 @@ const behind = [];
 async function settle() { for (let n = -1; n !== behind.length;) { n = behind.length; await Promise.all(behind); await new Promise((r) => setTimeout(r, 20)); } }
 const exec = { waitUntil: (p) => { behind.push(Promise.resolve(p).catch(() => null)); } };
 let ip = 1;
-const call = async (path, envX = env) => { const res = await W.__default.fetch(new Request("https://api.transportsydney.app" + path, { headers: { "cf-connecting-ip": "10.8.0." + (ip++ % 250) } }), envX, exec); return { status: res.status, body: await res.json().catch(() => null), headers: res.headers }; };
+const call = async (path, envX = env, extra = NEW_APP) => { const res = await W.__default.fetch(new Request("https://api.transportsydney.app" + path, { headers: { "cf-connecting-ip": "10.8.0." + (ip++ % 250), ...extra } }), envX, exec); return { status: res.status, body: await res.json().catch(() => null), headers: res.headers }; };
+// The newer app sends its ids as headers (newerApp in worker.js); an older app (builds 201 to 208, updates 27efc6bd
+// and ecb0882d) only has device= and profile= in the address.
+const NEW_APP = { "x-device": "d1", "x-profile": "p1" };
+const OLD_APP = {};
 
 
 const PHONE = "/api/trip?from=201110&to=213510&fromName=Kings%20Cross&toName=Strathfield&count=5&fare=adult&device=d1&profile=p1";
 // Each test its own count, so no test reads another one's copy (copies are also kept 15 s in memory).
 const phone = (n) => PHONE.replace("count=5", "count=" + n);
 
-test("a slow Trip Planner: the phone gets labelled timetable trips before its 10 s deadline, then the live answer on the next poll", { timeout: 30000 }, async () => {
+test("a slow Trip Planner, newer app: labelled timetable trips at 1.5 s, then the live answer on the next poll", { timeout: 30000 }, async () => {
   edge.clear(); behind.length = 0; plannerDelay = 8000; plannerFail = false;
   const t0 = Date.now();
   const r = await call(PHONE);
@@ -179,6 +183,49 @@ test("a planner that answers inside 1.5 s still wins over ready timetable trips"
   const r = await call(phone(8));
   assert.notEqual(r.body.source, "timetable");
   assert.equal(r.headers.get("x-edge-cache"), "miss");
+  plannerDelay = 0;
+  await settle();
+});
+
+// 27 Oct, 1:20 PM: the owner's commute card (update ecb0882d) said "Timetable times. Live trips are unavailable right now."
+// over a 1.5 s stand in while the planner answered a moment later. An older app labels every stand in that way and only
+// asks again at its normal poll, so it keeps the full TRIP_QUICK_MS wait for the planner.
+test("older app, planner answers at 3 s: the live answer, no timetable stand in", { timeout: 30000 }, async () => {
+  edge.clear(); behind.length = 0; plannerDelay = 3000; plannerFail = false;
+  const t0 = Date.now();
+  const r = await call(phone(5).replace("fare=adult", "fare=child"), env, OLD_APP);
+  const took = Date.now() - t0;
+  assert.equal(r.status, 200);
+  assert.ok(took >= 2900, `waited for the planner (${took} ms)`);
+  assert.notEqual(r.body.source, "timetable");
+  assert.notEqual(r.body.fallback, "planner-slow");
+  assert.equal(r.body.journeys[0].live, true);
+  assert.equal(r.headers.get("x-edge-cache"), "miss");
+  plannerDelay = 0;
+  await settle();
+});
+
+test("older app, planner slower than 6.5 s: labelled timetable trips at about 6.5 s, inside its 10 s deadline", { timeout: 30000 }, async () => {
+  edge.clear(); behind.length = 0; plannerDelay = 9000; plannerFail = false;
+  const t0 = Date.now();
+  const r = await call(phone(5).replace("fare=adult", "fare=concession"), env, OLD_APP);
+  const took = Date.now() - t0;
+  assert.equal(r.status, 200);
+  assert.ok(took >= 6400 && took < 8000, `answered in ${took} ms`);
+  assert.equal(r.body.source, "timetable");
+  assert.equal(r.body.fallback, "planner-slow");
+  assert.equal(r.headers.get("x-edge-cache"), "stand-in");
+  plannerDelay = 0;
+  await settle();
+});
+
+test("newer app, planner answers at 3 s: timetable trips at 1.5 s as before (the app asks again at 6 s)", { timeout: 30000 }, async () => {
+  edge.clear(); behind.length = 0; plannerDelay = 3000; plannerFail = false;
+  const t0 = Date.now();
+  const r = await call(phone(5).replace("fare=adult", "fare=gold"), env, NEW_APP);
+  const took = Date.now() - t0;
+  assert.ok(took < 2900, `answered in ${took} ms`);
+  assert.equal(r.body.fallback, "planner-slow");
   plannerDelay = 0;
   await settle();
 });

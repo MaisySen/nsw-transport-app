@@ -202,6 +202,10 @@ Every stop board in NSW built ahead of time on the server from the network feeds
 * Trip cards, the trip screen and Ask show timetable trips (direct, or one change) labelled "Timetable times. Live
   trips are unavailable right now." instead of an error, and never "No more services today" unless a live answer
   truly had none. Nearby comes from our own stop list and works with no Trip Planner at all.
+* A slow Trip Planner is not an outage (27 Oct, server): the newer app gets timetable trips after 1.5 s labelled
+  "Timetable times for now. Getting live times." and asks again at 6 s and 10 s. Older app versions (builds 201 to 208,
+  updates up to ecb0882d) wait up to 6.5 s for the live trips instead, so they no longer say "Live trips are unavailable"
+  on a first open while the planner is only a few seconds slow.
 * Messages say where the fault is: "check your signal" only when the phone has no connection; otherwise Transport for
   NSW's live data is unavailable or slow. No status codes anywhere.
 * A server error or slow answer shows the times kept on the phone (or the timetable pack) instead of an error,

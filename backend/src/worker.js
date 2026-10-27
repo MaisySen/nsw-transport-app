@@ -9012,13 +9012,18 @@ async function edgeFetchInner(request, env, exec) {
         let tt = null, ttDone = false, ttP = null;
         const startTt = () => { if (!ttP) ttP = tripStandIn(request, env, exec).catch(() => null).then((r) => { tt = r; ttDone = true; return r; }); };
         const early = tripQuickTtOn(env);
+        // Only the newer app (x-device or x-profile, newerApp) takes timetable trips at TRIP_QUICK_TT_MS: it labels them
+        // "Timetable times for now. Getting live times." and asks again at 6 s and 10 s. An older app (builds 201 to 208,
+        // updates 27efc6bd and ecb0882d) says "Live trips are unavailable right now" over them and waits its normal poll,
+        // so it keeps the full TRIP_QUICK_MS wait for the planner (27 Oct, 1:20 PM: the owner's commute card).
+        const ttWait = newerApp(request) ? TRIP_QUICK_TT_MS : quick;
         const take = async () => (leader ? await job.promise : await joinJob(job));
         if (early) {
           if (await waitJob(job, TRIP_TT_START_MS)) out = await take();
           if (!out) startTt();
           while (!out && Date.now() - t0 < quick) {
             if (await waitJob(job, 25)) { out = await take(); break; }
-            if (ttDone && tt && Date.now() - t0 >= TRIP_QUICK_TT_MS) break;
+            if (ttDone && tt && Date.now() - t0 >= ttWait) break;
           }
         } else if (await waitJob(job, quick)) out = await take();
         if (!out) {

@@ -569,6 +569,7 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 
 ## Old apps and server steps C and D (27 Oct)
 
+* `node --test test/trip-quick.test.mjs` in `backend/` (27 Oct, 1:20 PM commute card): an older app's plain trip (device and profile in the address, no x-device) with the planner answering at 3 s gets the live answer, not timetable trips; past 6.5 s it gets the planner-slow stand in at about 6.5 s; a newer app (x-device) still gets it at 1.5 s. Production check: the shipped app's request for a pair with no saved copy answers live (or a stand in only after 6.5 s), and with `x-device` a stand in at about 1.5 s when the planner is slow.
 * `node --test test/old-client-compat.test.mjs` in `backend/`: an old app's asks (device and profile in the address, no x-device) for the service screen (a delay only train and one with clock times, slow planner), a kept and a fresh station list /api/timetable after a trip-live ask and Home's commute trip (with 6b461ff's realtime rule), compared with shapes, headers and stop lists recorded from server B (2aff7f9b, main 50dd351). A newer app (x-device) still gets the train quick answer from the engine and tags on kept copies.
 * To record again from another server's source: `COMPAT_SRC=<dir with worker.js, engine.js, raptor.js> COMPAT_WRITE=1 node test/old-client-compat.test.mjs`.
 
