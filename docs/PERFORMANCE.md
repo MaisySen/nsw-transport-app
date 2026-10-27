@@ -335,7 +335,7 @@ Measured from the build box (US west coast, about 0.2 to 0.35 s of the times bel
 | Pack, config, last home | /api/pack, /api/app/config, /api/last-home | 0.19 to 0.24 s | hit | yes |
 
 What changed:
-1. Server: the trip list's first page is a plain trip for the copy layer (quick wait, stand in, saved copy `tripp:`, else the pair's plain copy as a page). See API.md, trip pages.
+1. Server: the trip list's first page is a plain trip for the copy layer (quick wait, stand in, saved copy `tripp:`, else the pair's plain copy as a page). See API.md, trip pages. Live as transport-api `e5d5384c` (2:50 PM): Central to Strathfield's first page 0.55 s from the saved copy (was 12.5 s), a pair with no copy 1.7 s live.
 2. App: Watching, watch detail (seeded from the Watching copy), More's lists, morning checks and Opal machines keep a copy (`offlineCore.LIST_KEYS`) and paint it on the first frame; static lists checked in the last 7 days show at once and are checked behind (`etagCore.tagShowsAtOnce`); Delete all my data clears the copies in memory (`offline.forgetOffline`).
 
 Left as they are, and why: a stop board at another time asks the planner for that time (3.4 s; Earlier and Later are rare and the screen keeps Now on view until it lands); the car park list's 9.5 s is a cold first open of the day, every later open paints from the kept copy and the server's saved copy; a bus service's stop list (about 1 s) already paints the tapped row at once.
