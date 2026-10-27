@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 27 Oct 2026
 
+### Speed pass 4: the last three slow screens (27 Oct; server transport-api, app in tonight's update)
+* Stop board at another time (3.4 s spinner in pass 3): the server builds the board engine's timetable rows for that moment beside the Trip Planner call (no Transport for NSW call) and the newer app gets them after at most 0.7 s when the planner is slow, labelled, with the planner's board on the ask again (measured 1.04 s, then 0.29 s from the US box). The app paints the stop's timetable pack from that moment on the first frame when the pack holds it.
+* Car park list (9.5 s on a first open with no fresh copy): the newer app gets the last saved list (old counts say No live count) or the list with no counts after at most 0.5 s, marked counts-loading, says Getting live counts and asks again at 8, 15 and 30 s; the same live read finishes behind (measured 2.1 s with the first 1.5 s wait, live 9 s later). Car park copies kept 7 days.
+* Bus service screen: the stops after yours paint at once from the route's stop list kept on the phone (names and map places, no times), cut at the destination; a press in on a bus row reads that list in the background when it is not kept.
+* Older apps (builds 201 to 208, updates to ecb0882d) and text answers unchanged. Off switches: DEP_AT_QUICK=off, PARK_QUICK=off.
+* Tests: backend test/speed-pass4.test.mjs (6), app test/speed27d.test.mjs (7); perf, speed27 and timetablepack source checks follow the new wiring.
+
 ### Speed pass 3: every screen other than Home (27 Oct; server transport-api, app in tonight's update)
 * Measured first (27 Oct, 2:30 PM, from the build box, app shaped requests with a made up device, 33 GETs): every screen's reads answer in 0.2 to 0.6 s end to end except four. Before and after table in docs/STATE.md and docs/PERFORMANCE.md.
 * Server: the trip list's first page (`/api/trip?page=1` with no cursor, what tonight's update asks when a trip opens) had no quick wait, no stand in and no saved copy, so it waited for the whole Trip Planner call: 12.5 s twice and 8 s for Central to Strathfield while the plain trip of the same pair answered in 0.4 s from its saved copy. It is now a plain trip for the copy layer: the same 1.5 s quick wait and labelled timetable stand in (newer app only; older apps never send `page`), its own saved copy (`tripp:FROM>TO`), and with none, the pair's saved plain copy (Home's card, the pre-warm) as a first page with its cursors. Later and earlier pages are unchanged. backend/test/trip-page-quick.test.mjs (6).

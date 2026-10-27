@@ -591,6 +591,13 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 * `app/test/speed27c.test.mjs` (5): list keys, the watch detail seed from the Watching copy (never kept), kept lists shown and forgotten (`forgetOffline`), static lists shown at once only with a tag checked in the last 7 days, and the wiring of Watching, watch detail, More, morning checks, Opal machines and etag.ts.
 * On a phone after tonight's update: open a trip never opened before on a slow afternoon; the list should show trips within about 2 s (timetable labelled, then live), not a spinner for 8 to 12 s. Open Watching, More, Check before I go and Opal machines twice; the second open should show the list on the first frame with an age line where the screen has one. In flight mode, New trip's station lists should still open.
 
+## Speed pass 4, the last three slow screens (27 Oct)
+
+* Backend: `TZ=Australia/Sydney node --test test/speed-pass4.test.mjs` (6): the engine's `/boardat` rows from the asked moment with no feed marked wanted; a slow planner gives the newer app labelled timetable rows after `DEP_AT_QUICK_MS` and the planner's board on the next ask (one planner call); a quick planner still wins; older apps, `format=text`, `DEP_AT_QUICK=off` and no engine wait for the planner; the board for now is unchanged; the car park list with a saved copy over 30 minutes old answers after `PARK_QUICK_MS` with every count stale and `counts-loading`, then live; with nothing saved, the list with no counts; older apps wait for the live read.
+* App: `TZ=Australia/Sydney OFFLINE=1 node --test test/speed27d.test.mjs` (7): `packCovers` and `packBoardAt` (from the moment, departed marked, timetable only, not near the pack's end), `boardAtAgainMs` (6 s, 10 s, then null), `parkAgainMs` and `parkLoadingNote`, stand ins never kept (`worthKeeping`), `serviceSeed` with a kept route (stops after yours to the destination, alight tag, no made up times; trains, unknown stops and last stops unchanged), and the screen wiring.
+* By hand on a phone (not done in this pass): pick a time on a starred stop's board in flight mode (pack rows from that time, "Timetable times"); pick a time on a stop with no pack (rows within about a second, then live); open Car parks on a fresh install in the afternoon (list at once, "Getting live counts", counts within about 15 s); tap a bus on a board twice, the second time the stops after yours show before the times.
+* Measuring again: `node tasks/<id>/meas.mjs` style app shaped GETs with a made up device; a car park cold open needs the saved copy over 30 minutes old.
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).

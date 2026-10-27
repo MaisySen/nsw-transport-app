@@ -521,6 +521,19 @@ Why it was added: on 25 Oct 2026 around 11:20 PM most trains at Central, T1 at C
 
 What is upstream and not ours: during trackwork or a line closure (on 25 Oct trains did not run between Strathfield and Central from 9 PM), the realtime feed sends trips that start or end short of their timetable. A train still labelled Central can list stops only to Strathfield with Central skipped, and a train still on the Central board can list stops from Strathfield (so the station is not in its list). Cancelled trips have no stop list. The app shows the destination with "Full stop list not available yet" when the list does not include the station or is empty, "Not stopping at ..." for skipped stops, and "This service is cancelled" for a cancelled one; nothing is guessed.
 
+### Board at another time while the Trip Planner answers (27 Oct speed pass 4, transport-api 883ad673)
+
+A board with `time` or `date` asks the Trip Planner for that moment (3.4 s for Central at 6 PM on 27 Oct). For the newer app (`x-device` or `x-profile`) the server now builds the board engine's timetable rows for that moment beside the planner call (`/boardat` on the engine object, `ttBoardAt` in ttplan.js; no Transport for NSW call, kept 60 s per stop, mode and minute). When the planner has not answered by `DEP_AT_QUICK_MS` (700 ms) and those rows are ready (at most 1.5 s more), the answer is them:
+
+* `source: "timetable"`, `fallback: "planner-slow"`, `at` echoed as for a planner board, `alerts: []`, `dataAt` and `now` the time of the answer.
+* Every row a timetable time: `realtime: false`, `estimated: null`, status Scheduled, `departed` against now as a planner board marks it. Trip ids are the timetable's.
+* Headers `x-edge-cache: stand-in`, `x-stand-in: timetable`, `cache-control: no-store`. Never stored; the planner's board finishes behind it and is kept at the edge, so the app's ask again (6 s, then 10 s) gets it.
+* Older apps (no `x-device` or `x-profile`), `format=text`, a stop or day the engine has no timetable for, and `DEP_AT_QUICK=off`: the planner board as before.
+
+### Car park list while its counts are read (27 Oct speed pass 4)
+
+`/api/parking` with no `id` or `stop` (the list) and no copy from the last 30 minutes reads about 40 car parks four at a time (9.5 s on 27 Oct). For the newer app the server waits at most `PARK_QUICK_MS` (0.5 s; 1.5 s in transport-api 883ad673) for that read, then answers with the last list it saved (up to 7 days old; `dataAt` says when its counts were read and every count over 30 minutes old is `stale`, status `unknown`, "No live count") or, with none saved, every car park with no count. The answer says `fallback: "counts-loading"`, `x-edge-cache: stand-in`, `x-stand-in: counts`, `cache-control: no-store`, and is never stored. The same live read finishes behind it and is kept (edge and saved copy), so the app's ask again gets live counts. No extra open data call. Car park copies are now kept 7 days (other copies a day). Older apps wait for the live read as before. `PARK_QUICK=off` turns it off.
+
 ## One mode on `/api/departures` (26 Oct 2026, transport-api 89566d44)
 
 A departures answer is the 40 services the Trip Planner returns. At a station with trains and many bus stands a mixed list of 40 covers only about 15 minutes, and its buses fewer still: Strathfield Station (213510) at 7:51am on Monday 26 Oct listed 7:51 to 8:07, 11 buses, and the 8:10 415 to Chiswick from Stand G (213516) was past the end, although it ran (8:12, 2 min late).

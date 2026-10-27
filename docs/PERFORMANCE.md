@@ -340,6 +340,22 @@ What changed:
 
 Left as they are, and why: a stop board at another time asks the planner for that time (3.4 s; Earlier and Later are rare and the screen keeps Now on view until it lands); the car park list's 9.5 s is a cold first open of the day, every later open paints from the kept copy and the server's saved copy; a bus service's stop list (about 1 s) already paints the tapped row at once.
 
+### Speed pass 4: the last three slow screens (27 Oct, 4:55 to 5:30 PM)
+Measured from the build box (US west coast, about 0.2 to 0.35 s of each time is the trip there and back; Cloudflare's Seattle location), app shaped requests with a made up device, 12 GETs, no direct NSW calls.
+
+| Screen | Read | Before (end to end) | After | Paints from, before | Paints from, after |
+| --- | --- | --- | --- | --- | --- |
+| Stop page, another time (no pack) | /api/departures?time= | 1.7 s Central 7:15 PM, 0.75 s Parramatta 8:10 PM (planner; 3.4 s in pass 3) | Central 7:35 PM: 1.04 s, timetable rows (`x-edge-cache: stand-in`); ask again 6 s later 0.29 s, the planner's board (edge hit). Parramatta 8:45 PM: 0.5 s, the planner itself. Older app: 0.65 s, planner board, no stand in | spinner | stand in at most about 0.7 s on the server, then live |
+| Stop page, another time (stop with a pack) | none on the first frame | as above | no wait | spinner | the pack from that moment (Timetable times, getting live times) |
+| Car parks, no copy from the last 30 minutes | /api/parking | 9.66 s (live read) | 2.12 s with a 1.5 s wait (06:27 UTC, the 30 min old saved list, every count No live count, `counts-loading`); ask again 9 s later 0.43 s with 40 of 41 live. Wait now 0.5 s (a79bcad): about 1.1 s expected, not measured (needs the copy 30 min old again) | kept copy, else skeleton | kept copy, else the list at once with Getting live counts |
+| Service, bus | /api/service | 0.72 s (feed answer), 0.2 s again (1.3 s in pass 3) | server unchanged | the tapped row | the tapped row plus the stops after yours from the kept route list (names and map places), times on the live answer |
+
+What changed:
+1. Server (transport-api 883ad673, then the 0.5 s car park wait): a board at another time gets the board engine's timetable rows for that moment beside the planner call (`/boardat`, no Transport for NSW call); the newer app gets them when the planner has not answered by 0.7 s. The car park list with no copy from the last 30 minutes gets the last saved list (up to 7 days) or the list with no counts, marked `counts-loading`, while the same live read finishes behind. Older apps unchanged. API.md has the shapes.
+2. App (tonight's update): a picked time paints from the stop's pack when the pack holds it; a timetable stand in is labelled and asked again at 6 s and 10 s; the car park list says Getting live counts and asks again at 8, 15 and 30 s; a bus's service screen paints the stops after yours from the route list kept on the phone (read in the background on press in when not kept). Stand ins are never kept on the phone.
+
+Not measured on a phone or from Sydney. The car park list's first open on a phone that never opened it, and a bus whose route list is not kept, still wait for the server (about 1 s and 0.7 s from here).
+
 ### Workers Cache (27 Oct, server, built and left off)
 * What it is (Cloudflare's docs, read 27 Oct, pages dated 3 and 12 Oct 2026): `[cache] enabled = true` in wrangler.toml puts a tiered cache in front of the worker; responses with `Cache-Control` max-age (or `cdn-cache-control` for the edge only) are stored and a hit is answered without running the worker. The cache is consulted before Smart Placement, so a hit never goes to the placed location; a miss runs the worker at the placed location as now. Requests bill at the standard rate hit or miss; hits use no CPU. It also bills requests that are free today (static asset requests, calls between entrypoints).
 * Wrangler test (4.152.0, a throwaway worker with `[cache] enabled = true` and `[placement] mode = "smart"`): the config is accepted, but `wrangler dev` does not emulate the cache (three asks, three worker runs, no `cf-cache-status`). So it can only be checked on production.
