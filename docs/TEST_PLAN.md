@@ -586,6 +586,11 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 * `node --test test/old-client-compat.test.mjs` in `backend/`: an old app's asks (device and profile in the address, no x-device) for the service screen (a delay only train and one with clock times, slow planner), a kept and a fresh station list /api/timetable after a trip-live ask and Home's commute trip (with 6b461ff's realtime rule), compared with shapes, headers and stop lists recorded from server B (2aff7f9b, main 50dd351). A newer app (x-device) still gets the train quick answer from the engine and tags on kept copies.
 * To record again from another server's source: `COMPAT_SRC=<dir with worker.js, engine.js, raptor.js> COMPAT_WRITE=1 node test/old-client-compat.test.mjs`.
 
+## Speed pass 3, every other screen (27 Oct)
+* `backend/test/trip-page-quick.test.mjs` (6): copy keys (first page `tripp:FROM>TO` with the plain key beside it; no key for after, before, day, n, time or page other than 1), a plain copy turned into a first page (gone trips out, sorted, cursors from timetable times; never a timetable, page or one trip copy), a slow planner gives a labelled first page at about 1.5 s and the live page is kept and saved, a saved plain copy answers a first page at once, a later page still waits for the planner, a fast planner is unchanged.
+* `app/test/speed27c.test.mjs` (5): list keys, the watch detail seed from the Watching copy (never kept), kept lists shown and forgotten (`forgetOffline`), static lists shown at once only with a tag checked in the last 7 days, and the wiring of Watching, watch detail, More, morning checks, Opal machines and etag.ts.
+* On a phone after tonight's update: open a trip never opened before on a slow afternoon; the list should show trips within about 2 s (timetable labelled, then live), not a spinner for 8 to 12 s. Open Watching, More, Check before I go and Opal machines twice; the second open should show the list on the first frame with an age line where the screen has one. In flight mode, New trip's station lists should still open.
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).

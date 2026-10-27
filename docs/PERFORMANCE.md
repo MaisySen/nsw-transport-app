@@ -312,6 +312,34 @@ both with refresh=1; Ask, search, alerts and settings were already not blocking.
 * Trips via a stop (`trips.ts`): no `refresh: true` on either part; the second part from now is asked at the later of now plus the change time and the last first part arrival seen plus the change time, and used only when `viaCovers`; otherwise asked from the real arrival as before (a read cache hit when the time is the same).
 * Home read ahead (`src/lib/homePrefetchCore.ts`): 1.5 s after Home is focused with its lists, in an idle callback where the runtime has one, the top card's trip screen first page (plain trips with no mode chips) is read and kept under the trip screen's key. Once per foreground, through the press in gate (20 s per key, 8 a minute), cleared on blur, never with the app in the background.
 
+### Speed pass 3: every screen other than Home (27 Oct, 2:30 PM)
+Measured from the build box (US west coast, about 0.2 to 0.35 s of the times below is the trip there and back; answered by Cloudflare's Seattle location, whose copies are not Sydney's) against api.transportsydney.app with app shaped requests (`x-device` and `x-profile` of a made up device), 33 GETs, no direct Transport for NSW calls. The server sends no timing header except `x-quick-ms` on the service screen, so the server time is the end to end time less the 0.2 to 0.35 s a 403 from /api/health took.
+
+| Screen | Read | End to end | Copy | Kept on the phone before this pass |
+| --- | --- | --- | --- | --- |
+| Stop page | /api/departures (Central, Kings Cross) | 0.25 to 0.33 s | saved | yes, or the stop's pack |
+| Stop page, another time | /api/departures?time= | 3.4 s | miss (planner) | no (spinner) |
+| Stop page facilities | /api/station | 0.35 s | miss | n/a |
+| Search | /api/search, /api/places | 0.41 to 0.49 s | miss | recents |
+| Nearby | /api/nearby | 0.46 s | miss | last list within 400 m |
+| Trip list, first page | /api/trip?page=1 | 12.5 s, 12.5 s; 8.0 s with n=6 | miss, then timetable | yes when Home kept the pair |
+| Trip (plain, Home card) | /api/trip | 0.4 s | saved | yes |
+| Service, train | /api/service | 0.8 s (x-quick-ms 400 to 570) | quick | the tapped row |
+| Service, bus | /api/service | 1.3 s | miss | the tapped row |
+| Alerts, trackwork, lines | /api/alerts, /api/trackwork, /api/lines | 0.18 to 0.5 s | | memory 30 min |
+| Station and bus lists | /api/stations | 0.31 to 0.59 s | hit/miss, tagged | tagged copy, but waited a round trip |
+| Saved, commutes, watches | /api/saved, /api/commutes, /api/watches | 0.18 to 0.32 s | | Home lists only; Watching and More no |
+| Morning checks | /api/morning-check | 0.26 s | | no (spinner) |
+| Car parks (all) | /api/parking | 9.5 s | miss (cold) | yes |
+| Opal machines | /api/topup | 0.2 s | miss | no (spinner, after the position) |
+| Pack, config, last home | /api/pack, /api/app/config, /api/last-home | 0.19 to 0.24 s | hit | yes |
+
+What changed:
+1. Server: the trip list's first page is a plain trip for the copy layer (quick wait, stand in, saved copy `tripp:`, else the pair's plain copy as a page). See API.md, trip pages.
+2. App: Watching, watch detail (seeded from the Watching copy), More's lists, morning checks and Opal machines keep a copy (`offlineCore.LIST_KEYS`) and paint it on the first frame; static lists checked in the last 7 days show at once and are checked behind (`etagCore.tagShowsAtOnce`); Delete all my data clears the copies in memory (`offline.forgetOffline`).
+
+Left as they are, and why: a stop board at another time asks the planner for that time (3.4 s; Earlier and Later are rare and the screen keeps Now on view until it lands); the car park list's 9.5 s is a cold first open of the day, every later open paints from the kept copy and the server's saved copy; a bus service's stop list (about 1 s) already paints the tapped row at once.
+
 ### Workers Cache (27 Oct, server, built and left off)
 * What it is (Cloudflare's docs, read 27 Oct, pages dated 3 and 12 Oct 2026): `[cache] enabled = true` in wrangler.toml puts a tiered cache in front of the worker; responses with `Cache-Control` max-age (or `cdn-cache-control` for the edge only) are stored and a hit is answered without running the worker. The cache is consulted before Smart Placement, so a hit never goes to the placed location; a miss runs the worker at the placed location as now. Requests bill at the standard rate hit or miss; hits use no CPU. It also bills requests that are free today (static asset requests, calls between entrypoints).
 * Wrangler test (4.152.0, a throwaway worker with `[cache] enabled = true` and `[placement] mode = "smart"`): the config is accepted, but `wrangler dev` does not emulate the cache (three asks, three worker runs, no `cf-cache-status`). So it can only be checked on production.
