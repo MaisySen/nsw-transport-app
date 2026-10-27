@@ -279,6 +279,8 @@ The server parts of speed pass part 2 steps C and D that a phone could meet (the
 * A screen that hits an error shows Something went wrong with Try again and Go to Home instead of closing the app; after a retry, Clear saved times and reload.
 * Each error is reported once to the support inbox with the screen, build, update and the last server paths asked, so the cause can be read.
 
+
+Kept copies that cannot be read (28 Oct crash hunt, on main for tonight's update): a board copy kept on the phone with a broken row draws its good rows, and a kept copy that cannot be read at all counts as no copy, so the screen waits for the live answer as on a first open instead of stopping (`app/src/lib/offline.ts` peekOffline, `offlineCore.ts` pruneDepartures; test/crash28.test.mjs).
 ## Less data on every refresh (27 Oct, 9 PM network pass; server transport-api, app in the 27 Oct 11:34 PM update)
 * Boards, services, trips, live trip legs, alerts, car parks, line status and trackwork: when nothing changed since the last refresh, the server answers with a short "not changed" (304) and the phone keeps what it shows, with the server's clock for its countdowns. Times, rows and how old the times are never change on a 304.
 * Board rows no longer carry two fields the app never reads (mode name, wheelchair flag).

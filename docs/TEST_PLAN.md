@@ -592,6 +592,7 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 * `TZ=Australia/Sydney OFFLINE=1 node --test test/crash27.test.mjs` in `app/`: the report text (kind, screen, build, update, recent paths with query names only, the error once, under 4000 characters), the page tag, which phone keys Clear saved times drops and keeps, and source checks (the root layout exports ErrorBoundary and reports from it, the reporter is installed, no timers or native modules).
 * Web export check: a forced throw on Home shows the recovery screen, posts one report to /api/feedback, and Try again, Go to Home and Clear saved times and reload work.
 * Reading reports: `SELECT at, message, page, install FROM feedback WHERE page LIKE 'crash:%' ORDER BY at DESC` on the transport D1 database (read only).
+* `TZ=Australia/Sydney OFFLINE=1 node --test test/crash28.test.mjs` in `app/` (28 Oct crash hunt): the train service shapes server D gave (a stop with no name, no planned time, skipped stops, no live times, no indexes, an empty list, ids only) through the trip in progress, its card and the stops after line at every minute of a two leg trip; a kept board copy with broken rows keeps its good rows; first frame reads of broken, unreadable or future dated kept copies give no copy; broken packs fail `packValid`; the two guards are in the source.
 * On a phone (not yet done): the recovery screen in light and dark and at the largest Dynamic Type; a report arrives with the iOS build and update id.
 
 ## Old apps and server steps C and D (27 Oct)
