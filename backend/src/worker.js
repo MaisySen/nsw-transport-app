@@ -813,6 +813,56 @@ function aheadDelays(tu, from, to) {
   return [...new Set(keep)].sort((a, b) => a - b).map((i) => all[i]);
 }
 
+// Tight change rule (27 Oct 2026): the server's transfer.risk uses the same rule as the app's "Tight change" hint
+// (app/src/lib/tightChangeCore.ts, c62684f): under 3 min on the same mode at the same stop or platform, under 5 min
+// to another mode (train to bus) or another platform or stop, and with a walk in the change the walk plus 2 min (at
+// least 5). From the legs' times (live when there are any), modes, stops and platforms only, so it holds for every
+// stop in NSW. ttplan.js and raptor.js use it too (build.mjs puts them after this file). test/tight-change.test.mjs
+// runs this and the app's file over the same legs and fails on any difference, so change both together.
+// transfer.risk keeps its words and shape for builds 201 to 208: "miss" when the minutes to change are fewer than
+// the walk (as before), "tight" by the rule, else "ok".
+const TIGHT_SAME_MODE_MIN = 3;
+const TIGHT_OTHER_MIN = 5;
+const TIGHT_WALK_SPARE_MIN = 2;
+function tcBest(p, e) { const x = e ? new Date(e).getTime() : NaN; return Number.isFinite(x) ? x : p ? new Date(p).getTime() : NaN; }
+function tcNorm(s) { return String(s ?? "").trim().toLowerCase().replace(/^(platform|stand|wharf)\s+/, ""); }
+// Bus, coach and school bus count as one mode for a change.
+function tcMode(m) { const x = String(m || "").toLowerCase(); return /bus|coach/.test(x) ? "bus" : x; }
+// Whether you stay on the same platform or stop between the two services. Unknown counts as the same.
+function tcSamePlace(a, b) {
+  const ap = tcNorm(a.toPlatform), bp = tcNorm(b.fromPlatform);
+  if (a.toStopId && b.stopId && a.toStopId === b.stopId) return true;
+  if (ap && bp) return ap === bp && (!a.toParent || !b.fromParent || a.toParent === b.fromParent);
+  if (a.toStopId && b.stopId) return false;
+  return true;
+}
+// The change onto legs[i] (a transit leg after another one) when the rule calls it tight, else null.
+// { index, fromIndex, gapMin, needMin, why: "same" | "mode" | "platform", walkMin }, as the app's changeAt.
+function tightChangeAt(legs, i) {
+  const b = legs[i];
+  if (!b || b.kind !== "transit" || b.cancelled) return null;
+  let k = i - 1, walkMin = 0;
+  while (k >= 0 && legs[k].kind !== "transit") { walkMin += Math.max(0, Number(legs[k].durationMin) || 0); k--; }
+  if (k < 0) return null;
+  const a = legs[k];
+  if (a.cancelled) return null;
+  const off = tcBest(a.arrPlanned, a.arrEstimated), on = tcBest(b.planned, b.estimated);
+  if (!Number.isFinite(off) || !Number.isFinite(on)) return null;
+  const gapMin = Math.floor((on - off) / 60000);
+  const why = tcMode(a.mode) !== tcMode(b.mode) ? "mode" : tcSamePlace(a, b) && walkMin === 0 ? "same" : "platform";
+  const needMin = Math.max(why === "same" ? TIGHT_SAME_MODE_MIN : TIGHT_OTHER_MIN, walkMin > 0 ? walkMin + TIGHT_WALK_SPARE_MIN : 0);
+  if (gapMin >= needMin) return null;
+  return { index: i, fromIndex: k, gapMin, needMin, why, walkMin };
+}
+// transfer.risk for the change onto legs[i], with the minutes to change and the walk the answer states.
+function transferRisk(legs, i, gapMin, walkMin) {
+  if (gapMin - (walkMin || 0) < 0) return "miss";
+  return tightChangeAt(legs, i) ? "tight" : "ok";
+}
+// A journey's risk from its transit legs' transfers: the worst one.
+function journeyRisk(tl) {
+  return tl.some((l) => l.transfer && l.transfer.risk === "miss") ? "miss" : tl.some((l) => l.transfer && l.transfer.risk === "tight") ? "tight" : "ok";
+}
 function statusOf(it) {
   if (it.cancelled) return { key: "cancelled", text: "Cancelled" };
   if (it.skipped) return { key: "cancelled", text: "Not stopping here" };
@@ -1497,7 +1547,7 @@ async function trip(env, fromId, toId, opts = {}) {
       const between = legs.slice(legs.indexOf(a) + 1, legs.indexOf(b));
       const walk = between.filter((x) => x.kind === "walk").reduce((s, x) => s + x.durationMin, 0);
       const gap = Math.round((dep(b) - arr(a)) / 60000);
-      b.transfer = { minutes: gap, walkMin: walk, spare: gap - walk, at: a.to, risk: gap - walk < 0 ? "miss" : gap - walk < 2 ? "tight" : "ok" };
+      b.transfer = { minutes: gap, walkMin: walk, spare: gap - walk, at: a.to, risk: transferRisk(legs, legs.indexOf(b), gap, walk) };
     }
     const first = legs[0], last = legs[legs.length - 1];
     const firstTransit = tl[0] || null;
@@ -1513,7 +1563,7 @@ async function trip(env, fromId, toId, opts = {}) {
       changes: Math.max(0, tl.length - 1),
       live: !!(firstTransit && firstTransit.realtime),
       anyCancelled: tl.some((l) => l.cancelled),
-      risk: tl.some((l) => l.transfer && l.transfer.risk === "miss") ? "miss" : tl.some((l) => l.transfer && l.transfer.risk === "tight") ? "tight" : "ok",
+      risk: journeyRisk(tl),
       legs,
       fares: faresAll(legs),
     });
@@ -1757,6 +1807,8 @@ async function planChain(env, legs, opts = {}) {
       const nl = pick.j.legs.map((l) => ({ ...l, seg: k }));
       const ft = nl.find((l) => l.kind === "transit");
       const gap = Math.round((pick.t.leave - c.t.arr) / 60000);
+      // Your own change time (L.c) and the tight change rule both count: tight when the change is under either.
+      if (ft && risk === "ok" && tightChangeAt([...c.legs, ...nl], c.legs.length + nl.indexOf(ft))) risk = "tight";
       if (ft) {
         const mt = missed && missed.j.legs.find((l) => l.kind === "transit");
         ft.transfer = { minutes: gap, conn: L.c, spare: gap - L.c, at, risk, chain: true, walkMin: Math.round((ms(pick.j.board) - ms(pick.j.leave)) / 60000),

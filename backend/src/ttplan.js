@@ -256,14 +256,14 @@ function ttAnswer(list) {
     for (let i = 1; i < tl.length; i++) {
       const gap = Math.round((t(tl[i].planned) - t(tl[i - 1].arrPlanned)) / 60000);
       const walk = legs.slice(legs.indexOf(tl[i - 1]) + 1, legs.indexOf(tl[i])).reduce((s, x) => s + (x.kind === "walk" ? x.durationMin || 0 : 0), 0);
-      tl[i].transfer = { minutes: gap, walkMin: walk, spare: gap - walk, at: tl[i - 1].to, risk: gap - walk < 0 ? "miss" : gap - walk < 2 ? "tight" : "ok" };
+      tl[i].transfer = { minutes: gap, walkMin: walk, spare: gap - walk, at: tl[i - 1].to, risk: transferRisk(legs, legs.indexOf(tl[i]), gap, walk) };
     }
     const first = legs[0], last = legs[legs.length - 1];
     const board = t(tl[0].planned), leave = t(first.planned), arrive = t(last.arrPlanned);
     return {
       leave: new Date(leave).toISOString(), board: new Date(board).toISOString(), arrive: new Date(arrive).toISOString(),
       durationMin: Math.round((arrive - leave) / 60000), changes: Math.max(0, tl.length - 1), live: false, anyCancelled: false,
-      risk: tl.some((l) => l.transfer && l.transfer.risk === "miss") ? "miss" : tl.some((l) => l.transfer && l.transfer.risk === "tight") ? "tight" : "ok", legs,
+      risk: journeyRisk(tl), legs,
       // No fare: Opal fares need the distance along the route, which a timetable leg does not carry.
       source: "timetable",
     };

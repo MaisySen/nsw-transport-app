@@ -507,13 +507,13 @@ function rpAnswer(pk, plan) {
       const between = legs.slice(legs.indexOf(a) + 1, legs.indexOf(b));
       const walk = between.reduce((s, x) => s + (x.durationMin || 0), 0);
       const gap = Math.round((Date.parse(b.planned) - Date.parse(a.arrPlanned)) / 60000);
-      b.transfer = { minutes: gap, walkMin: walk, spare: gap - walk, at: a.to, risk: gap - walk < 0 ? "miss" : gap - walk < 2 ? "tight" : "ok" };
+      b.transfer = { minutes: gap, walkMin: walk, spare: gap - walk, at: a.to, risk: transferRisk(legs, legs.indexOf(b), gap, walk) };
     }
     for (const l of tl) l.status = { key: "scheduled", text: "Scheduled" };
     return {
       leave: iso(j.t.leave), board: iso(j.t.board), arrive: iso(j.t.arrive),
       durationMin: Math.round((j.t.arrive - j.t.leave) / 60), changes: Math.max(0, tl.length - 1), live: false, anyCancelled: false,
-      risk: tl.some((l) => l.transfer && l.transfer.risk === "miss") ? "miss" : tl.some((l) => l.transfer && l.transfer.risk === "tight") ? "tight" : "ok",
+      risk: journeyRisk(tl),
       legs, source: "own",
     };
   });

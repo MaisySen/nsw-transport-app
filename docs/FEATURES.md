@@ -258,6 +258,7 @@ The server stays on the Cloudflare Workers Paid base fee (US$5 a month) for up t
 * Trip detail and the Home trip cards use the same clock ("12:56 pm" or "12:56").
 * The Home countdown chip an hour or more out shows the clock time with am or pm ("12:56" and "pm" small), or 24 hour digits.
 * "Tight change" on a trip row and in trip detail when a change is shorter than the rule allows: 3 min on the same mode and platform, 5 min to another mode, platform or stop, or the walk plus 2 min. From leg times and modes only.
+* The server uses the same rule for its own tight change warnings (transfer.risk, the warning line under a trip with your own change, the ask answers), so the app and the server never disagree and only one warning shows (on main, deploy follows).
 
 ## Old apps keep server B's answers (27 Oct, server, deployed 1:10 PM, transport-api 807c3663)
 
