@@ -729,7 +729,7 @@ bound.
   in the `/api/trip` leg shape with `source: "own"`, `realtime: false` (live times are added by `/api/trip`). Without
   day and time: now in Sydney. A day the loaded pack does not hold answers `journeys: []` and `error: "day"`.
 * `GET /api/raptor/status[?open=1]` the flag and each replica's pack (`ver`, `day`, `builtAt`, `counts`, searches and
-  their total ms). Since 29 Oct (branch `raptor-status-fix`): `inMemory` (the pack is open in that object now),
+  their total ms). Since 29 Oct (transport-api 2d6170e4, main 600b5e5): `inMemory` (the pack is open in that object now),
   `stored` (a version is kept), `from` (`memory`, `stored` or null), and `loaded`, `day`, `builtAt`, `counts` also from
   the facts kept when that version last opened (or were pulled with it), so an object that slept reads as loaded.
   Before, these read memory only: a sleeping copy showed `loaded: false, day: null` while `/api/raptor/day` (which
