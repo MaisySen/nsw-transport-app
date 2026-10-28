@@ -55,10 +55,11 @@ export function ActionSheet({ visible, title, message, actions, onClose, anchor 
     showIosSheet({ title, message, actions, anchor, onClose });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
-  if (ios) return null;
   // The chosen action runs once the sheet has gone (onDismiss, or 450 ms at the latest). An Android dialog
   // opened while the sheet's window is still closing can vanish with it, which felt like a dead button.
+  // Above the iPhone return so every render calls the same hooks.
   const pending = useRef<(() => void) | null>(null);
+  if (ios) return null;
   const choose = (a: SheetAction) => {
     if (pending.current) return;
     const run = once(() => { pending.current = null; a.onPress(); }, 450);

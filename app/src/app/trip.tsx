@@ -250,6 +250,8 @@ function TrainLinkFare() {
 
 function OpalFareCard({ j, mixed }: { j: Journey; mixed: boolean }) {
   const c = usePalette();
+  // Every hook above the no fare return: a trip's fare can arrive on a later refresh (29 Oct crash reports).
+  const [more, setMore] = useState(false);
   const f = fareOf(j);
   if (!f) return null;
   const sub = (label: string, val: string, tone?: string) => (
@@ -259,7 +261,6 @@ function OpalFareCard({ j, mixed }: { j: Journey; mixed: boolean }) {
     </View>
   );
   const op = offPeakText(f);
-  const [more, setMore] = useState(false);
   return (
     <View style={{ marginHorizontal: 16, marginTop: 10, backgroundColor: c.card2, borderRadius: radius, paddingVertical: 4 }}>
       <Pressable onPress={() => setMore(!more)} accessibilityRole="button" accessibilityState={{ expanded: more }} accessibilityHint={`An estimate, ${fareWords(f)}. ${more ? 'Hides' : 'Shows'} the fare for each leg.`}

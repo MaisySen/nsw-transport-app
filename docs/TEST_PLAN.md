@@ -676,6 +676,8 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 * Reading reports: `SELECT at, message, page, install FROM feedback WHERE page LIKE 'crash:%' ORDER BY at DESC` on the transport D1 database (read only).
 * `TZ=Australia/Sydney OFFLINE=1 node --test test/crash28.test.mjs` in `app/` (28 Oct crash hunt): the train service shapes server D gave (a stop with no name, no planned time, skipped stops, no live times, no indexes, an empty list, ids only) through the trip in progress, its card and the stops after line at every minute of a two leg trip; a kept board copy with broken rows keeps its good rows; first frame reads of broken, unreadable or future dated kept copies give no copy; broken packs fail `packValid`; the two guards are in the source.
 * On a phone (not yet done): the recovery screen in light and dark and at the largest Dynamic Type; a report arrives with the iOS build and update id.
+* `OFFLINE=1 node --test test/hooksorder.test.mjs` in `app/` (29 Oct): no hook after an early return or inside a condition or loop in any component or hook under `src` (TypeScript parser walk), and OpalFareCard's state hook above its no fare return. From the 28 Oct crash reports ("Rendered more hooks than during the previous render" on the trip screen).
+* On a phone after the update that carries it: open a trip whose fare shows only after a refresh (a long list, Earlier and Later pages); the Opal fare card appears with no error screen.
 
 ## Old apps and server steps C and D (27 Oct)
 

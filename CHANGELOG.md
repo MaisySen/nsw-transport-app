@@ -2,6 +2,13 @@
 
 What changed in Transport, newest first. Times are Sydney time. Build numbers, update ids and links are in [docs/RELEASES.md](docs/RELEASES.md).
 
+## 29 Oct 2026
+
+### Trip screen error screen fixed (29 Oct, 12:20 AM; on main, not in an update yet)
+* Five automatic crash reports came in from build 208 on the update live until tonight (f5b9ac08): two phones, 28 Oct at 2:47 PM and 10:14 to 10:16 PM, all on the trip screen, all "Rendered more hooks than during the previous render" in `OpalFareCard`. The card returned early while a trip had no fare yet, before its own state hook, so when a refresh brought the fare the next draw ran one hook more and React threw; the safety net showed "Something went wrong". The same code is in tonight's update (ac1d9962), so it is not a new fault and a roll back would not help.
+* Fix: the card's state hook comes before the no fare return (`app/src/app/trip.tsx`). `ActionSheet` (`app/src/components/Sheet.tsx`) had the same shape behind its iPhone return; it could not throw (the platform never changes while the app runs) but now calls the same hooks on every draw too.
+* New `app/test/hooksorder.test.mjs` (2): walks every component and hook in `app/src` with the TypeScript parser and fails on a hook after a statement that can return early or inside a condition or loop; it found these two and fails without the fix. App 880 pass, 3 skipped, 0 fail, battery 17 of 17, tsc clean.
+
 ## 28 Oct 2026
 
 ### Outage trips to a last stop (28 Oct; server transport-api, takes effect at the next nightly timetable load)
