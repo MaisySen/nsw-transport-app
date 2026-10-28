@@ -234,6 +234,11 @@ Every stop board in NSW built ahead of time on the server from the network feeds
 * Trip cards, the trip screen and Ask show timetable trips (direct, or one change) labelled "Timetable times. Live
   trips are unavailable right now." instead of an error, and never "No more services today" unless a live answer
   truly had none. Nearby comes from our own stop list and works with no Trip Planner at all.
+* Trips to a last stop in an outage (28 Oct, server): with the Trip Planner down, a trip that ends where its service
+  ends (a ferry's last wharf, a bus terminus, a metro or light rail end, a loop back to its start, an interchange
+  where several lines end) now gets timetable trips like any other, and a change can be at a station where the first
+  service ends. Before, these had no timetable answer and said live trips were unavailable. Boards are unchanged.
+  Works from the first nightly timetable load after the deploy. All app versions get it (same answer shape).
 * A slow Trip Planner is not an outage (27 Oct, server): the newer app gets timetable trips after 1.5 s labelled
   "Timetable times for now. Getting live times." and asks again at 6 s and 10 s. Older app versions (builds 201 to 208,
   updates up to ecb0882d) wait up to 6.5 s for the live trips instead, so they no longer say "Live trips are unavailable"

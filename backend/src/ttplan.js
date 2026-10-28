@@ -7,9 +7,11 @@
 // with no Transport for NSW call at all. This file is appended to worker.js after pack.js by build.mjs (same module)
 // and adds the object's /ttplan and /nearby paths without changing engine.js. docs/API.md has the answer shapes.
 //
-// Known gaps, said in the answer by having no trip rather than a wrong one: the timetable keeps no row for a trip's
-// last stop (nobody boards there), so a trip to a terminus (Manly Wharf on the F1, a bus's last stop) is found only
-// with a change before it; walks between two different stops are not planned.
+// A trip can end at a service's last stop (Manly Wharf on the F1, a bus's last stop, a loop back to where it began)
+// or a set down only stop: those rows are kept apart from the board rows (build_timetable.py, engCands alight, 28 Oct
+// 2026; before, the fallback had no answer for them). A trip never starts on a row where nobody boards and never ends
+// on one where nobody gets off. Known gap, said in the answer by having no trip rather than a wrong one: walks between
+// two different stops are not planned.
 
 const TT_NOTE = "Live trips unavailable, showing timetable times";
 const TT_AHEAD_MS = 3 * 3600000;      // departures looked at after the asked time
@@ -49,8 +51,11 @@ function ttPlan(src, q) {
   // Depart window: from the asked time on, or (arrive by) the hours before it.
   const w0 = arriveBy ? at - TT_AHEAD_MS - TT_RIDE_MS / 2 : at, w1 = arriveBy ? at : at + TT_AHEAD_MS;
   const inService = (c) => !TT_NOT_IN_SERVICE.test(src.head(c[3]) || "");
+  // Boarding rows at the origin (no arrival only rows); rows where one can get off at the destination (arrival only
+  // rows of a last stop included, rows where nobody gets off left out).
   const A = (engCands(src, from, w0, w1) || []).filter(inService);
-  const Braw = (engCands(src, to, w0, w1 + TT_RIDE_MS) || []).filter(inService);
+  const offOk = (c) => !c[8], onOk = (c) => !c[7];
+  const Braw = (engCands(src, to, w0, w1 + TT_RIDE_MS, true) || []).filter(inService).filter(offOk);
   if (!A.length || !Braw.length) return { journeys: [], from: ttEnd(src, from), to: ttEnd(src, to) };
   const key = (c) => c[1] + "|" + c[6];
   const byTrip = (list) => { const m = new Map(); for (const c of list) { const k = key(c); if (!m.has(k)) m.set(k, []); m.get(k).push(c); } for (const v of m.values()) v.sort((x, y) => x[0] - y[0]); return m; };
@@ -90,11 +95,13 @@ function ttPlan(src, q) {
     for (const h of hubs) { if (cands.length >= Math.min(TT_MAX_CHANGES, 6)) break; cands.push(h[0]); }
   }
   for (const H of cands) {
-    const R = byTrip((engCands(src, H, w0, w1 + TT_RIDE_MS) || []).filter(inService));
-    if (!R.size) continue;
+    // At the change: get off a first service (its last stop counts, as at a terminus station), get on a second.
+    const Hall = (engCands(src, H, w0, w1 + TT_RIDE_MS, true) || []).filter(inService);
+    const R = byTrip(Hall.filter(offOk)), Ron = byTrip(Hall.filter(onOk));
+    if (!R.size || !Ron.size) continue;
     // Second services: leave H and reach the destination later, by time leaving H.
     const second = [];
-    for (const [k, rows] of R) {
+    for (const [k, rows] of Ron) {
       const bs = B.get(k); if (!bs) continue;
       for (const r of rows) { const b = after(bs, r[0]); if (b && b[0] - r[0] <= TT_RIDE_MS) { second.push([r, b]); break; } }
     }
@@ -292,9 +299,9 @@ function ttAnswer(list) {
   return { journeys, live: { feedAt: null }, now: Date.now(), source: "timetable", fallback: "planner-unavailable", alerts: [note] };
 }
 // Outage trips from our own planner's timetable pack (raptor.js), whatever OWN_PLANNER says (these are labelled
-// timetable answers, not a stand in for live trips): used when the board engine's timetable has none. It reaches a
-// service's last stop (the engine keeps no row there, so Circular Quay to Manly on the F1 had no answer), changes
-// more than once and walks up to 400 m between nearby stops. Not while the budget guard holds OWN_PLANNER, and not
+// timetable answers, not a stand in for live trips): used when the board engine's timetable has none. It changes
+// more than once and walks up to 400 m between nearby stops (a last stop is answered by the engine's timetable too
+// since 28 Oct, once a timetable built with arrival only rows is loaded). Not while the budget guard holds OWN_PLANNER, and not
 // for a trip that leaves out a mode. o = { date (YYYYMMDD), time (HHMM), arriveBy, count, exclude }.
 async function ownTimetableTrip(env, fromId, toId, o = {}) {
   if (typeof ownTripLegs !== "function" || !env || !env.PLANNER) return null;

@@ -17,7 +17,10 @@ Code: `backend/src/engine.js` (appended to `worker.js` by `build.mjs`, same modu
    ferries, MFF, 4 light rail networks, nswtrains, 13 regional bus feeds) plus `stops.txt` of the complete bundle (its
    parent stations put a station's bus stands on the station's board, as the Trip Planner does). It writes one row per
    stop and service day: departure seconds, trip id, route, headsign, stop sequence. Rows where nobody can board (pick
-   up type 1, a trip's last stop) are left out. Sydney Trains updates carry no stop sequence, so the stop order of each
+   up type 1, a trip's last stop) are left out of the board rows; since 28 Oct they are kept on their own line (stop
+   id plus `~a`, with the arrival time) for the outage trip planner only, and a row where nobody gets off carries a 6th
+   value 1. Boards never read either (`engCands` reads the `~a` rows only when asked by `ttPlan`), and an engine
+   without this code never asks for a `~a` id, so a rollback over a new load keeps boards as they were. Sydney Trains updates carry no stop sequence, so the stop order of each
    train trip is kept too.
 2. **Storage.** One Durable Object (`BoardEngine`, binding `ENGINE`, SQLite storage, created near Sydney with location
    hint `oc`) holds the timetable. A load writes a new version next to the old one and `commit` switches to it, so

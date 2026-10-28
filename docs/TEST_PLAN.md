@@ -572,6 +572,18 @@ T2 at Wynyard), Circular Quay to Bondi Junction (333), Circular Quay to Drummoyn
 Parramatta and Manly Wharf, Ask "Kings Cross to Strathfield", "departures Central", "next bus from Circular Quay to
 Bondi Junction". Circular Quay to Manly has no timetable trip (terminus gap) and says live trips are unavailable.
 
+Last stops (28 Oct): `backend/test/outage-terminus.test.mjs` (10 tests) builds tiny GTFS bundles per mode with the
+real `tools/build_timetable.py`, loads them into the engine object (real SQLite) and asks `/ttplan`, `/board`,
+`/trip` and `/api/trip` with every NSW call refused. Checks: the build keeps last stop and set down only rows apart
+with the arrival time and marks pick up only rows; a trip to the last stop of a ferry, metro, light rail, bus and
+train line has timetable trips (and none from a load without the new rows, as in the bug); from a stop that is both a
+first and a last stop only leaving services are boarded; a loop back to its first stop ends at the loop's last call;
+a last stop served by two lines at two stands gives both lines; never ending where nobody gets off; one change at a
+station where the first service ends; boards never list a service ending at the stop; a train's stop list gets its
+last stop's planned time; `/api/trip` with the planner refused answers 200 labelled. Every test fails without the
+fix. On production (after the next nightly timetable load, 2:40 AM): with the planner refused, Circular Quay to
+Manly should give F1 timetable trips; not checked yet (no live NSW calls allowed today).
+
 On a phone (not done yet): with NSW refusing, the Home commute card shows timetable trips with the note; Nearby lists
 stops; Ask answers with the timetable note; flight mode shows "Offline" and "check your signal"; after NSW is back
 (after 1 AM) cards show live times again with no note, and the trip screen's first open of a saved trip is instant.

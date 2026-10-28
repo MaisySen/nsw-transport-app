@@ -1575,8 +1575,8 @@ function tripLegsOf(data, now = Date.now()) {
 async function tripTimetableStandIn(env, fromId, toId, opts, date, time) {
   if (opts.accessible || typeof timetableTrip !== "function") return null;
   return await timetableTrip(env, fromId, toId, { date, time: opts.time || opts.date ? time : null, arriveBy: !!opts.arriveBy, count: opts.count || 5, accessible: !!opts.accessible, exclude: opts.exclude }).catch(() => null)
-    // Our own planner's timetable (raptor.js) where the board engine's has none: a trip to a service's last stop (the
-    // engine keeps no row for it), more than one change, a walk between nearby stops, or a point to start from.
+    // Our own planner's timetable (raptor.js) where the board engine's has none: more than one change, a walk between
+    // nearby stops, a point to start from, or a service's last stop on a timetable loaded before 28 Oct.
     || (typeof ownTimetableTrip === "function" ? await ownTimetableTrip(env, fromId, toId, { date, time, arriveBy: !!opts.arriveBy, count: opts.count || 5, exclude: opts.exclude }).catch(() => null) : null);
 }
 async function trip(env, fromId, toId, opts = {}) {

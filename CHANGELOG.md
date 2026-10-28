@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 28 Oct 2026
 
+### Outage trips to a last stop (28 Oct; server transport-api, takes effect at the next nightly timetable load)
+* The open bug "no outage fallback for trips ending at a last stop" (plan-28oct). Cause: the board engine's timetable (`build_timetable.py`) leaves out every row where nobody boards, which includes each trip's last stop, so the outage trip planner (`ttplan.js`) had no arrival row at a terminus and found no trip (Circular Quay to Manly on the F1, a bus's last stop, a loop back to its start, the end of a metro or light rail line). The second fallback from our own planner's pack (26 Oct, g24) answers these only when that pack is loaded and the budget guard does not hold `OWN_PLANNER`.
+* Fix: the build keeps those rows (a trip's last stop, pick up type 1 stops) on their own line, stop id plus `~a`, with the arrival time; a row where nobody gets off (drop off type 1) carries a 6th value 1. `engCands(..., alight)` reads them only for `ttPlan`: the destination may be an arrival only row, never a row where nobody gets off; the origin never an arrival only row; a change may get off where the first service ends. Boards, windows, shards and the phone's timetable pack are unchanged (they never ask for `~a`), and a server rolled back over a new load ignores the extra lines. The train stop list (`/trip`, `tripRun`) gets its last stop's planned time from the same rows.
+* Neighbouring cases checked: trips from a first stop, from a stop that is both first and last (only leaving services boarded), loops (ends at the loop's last call), a last stop with two lines at two stands (both offered).
+* Cost: one more stop day line per last stop (and set down only stop) per day in the engine load; an estimate from the 26 Oct build (383k stop day lines, about 93k trips a day, 195 distinct train last stops) is a few percent more rows per load, every second day. No NSW call, no D1 migration, answer shape unchanged for every app version.
+* Tests: `backend/test/outage-terminus.test.mjs` (10, real build script and engine object, every NSW call refused; all fail without the fix). Backend 611 of 611. No app change.
+
 ### App Review notes and docs for build 209 (28 Oct, 4 PM; docs and App Store Connect draft only, no deploy, no update)
 
 * Notes for Review rewritten in docs/APP_REVIEW_NOTES.md (now the one source; docs/REVIEW-NOTES.md and store/apple/review-notes.md point there) and saved in App Store Connect version 1.0.0 as a draft through the API, read back at 3:53 PM: 3854 of 4000 characters, equal to the file. Nothing submitted, build 208 still attached, contact fields unchanged.

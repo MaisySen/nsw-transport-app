@@ -123,7 +123,11 @@ function engLive(tu, row, seqOf, arrFirst) {
 //   routeOf(feed, routeId) -> route index or -1                       needFeed(feed) marks a feed as wanted
 // Timetable rows of a stop and its platforms and stands between two moments, as [planned ms, trip id, route index,
 // headsign index, stop sequence, stop id, service day], or null when the timetable has no rows for the stop.
-function engCands(src, stopId, from, to) {
+// alight (the outage trip planner, ttplan.js, 28 Oct 2026): also the rows where nobody boards (a trip's last stop, a
+// set down only stop), which build_timetable.py keeps under the stop id plus ENG_ALIGHT, with an 8th value 1; and a
+// 9th value 1 on a row where nobody gets off. Boards never pass alight, so they never show a trip ending here.
+const ENG_ALIGHT = "~a";
+function engCands(src, stopId, from, to, alight = false) {
   const ids = [stopId, ...src.children(stopId)];
   const days = src.days();
   const cand = [];
@@ -131,13 +135,16 @@ function engCands(src, stopId, from, to) {
   for (const [dk, base] of Object.entries(days)) {
     if (base * 1000 > to || base * 1000 + 36 * 3600000 < from) continue;
     for (const id of ids) {
-      const rows = src.rows(id, dk);
-      if (rows === null) continue;
-      covered = true;
-      for (const r of rows) {
-        const planned = (base + r[0]) * 1000;
-        if (planned < from || planned > to) continue;
-        cand.push([planned, r[1], r[2], r[3], r[4], id, dk]);
+      for (const only of alight ? [0, 1] : [0]) {
+        const rows = src.rows(only ? id + ENG_ALIGHT : id, dk);
+        if (rows === null || rows === undefined) continue;
+        covered = true;
+        for (const r of rows) {
+          const planned = (base + r[0]) * 1000;
+          if (planned < from || planned > to) continue;
+          if (alight) cand.push([planned, r[1], r[2], r[3], r[4], id, dk, only, !only && r[5] === 1 ? 1 : 0]);
+          else cand.push([planned, r[1], r[2], r[3], r[4], id, dk]);
+        }
       }
     }
   }
@@ -1188,6 +1195,12 @@ class BoardEngine {
     for (const [id, sq] of [...seq.entries()].sort((a, b) => a[1] - b[1])) {
       let planned = null;
       for (const d of days) for (const r of src.rows(id, d) || []) {
+        if (r[1] !== tripId) continue;
+        const t = (m.days[d] + r[0]) * 1000;
+        if (planned == null || Math.abs(t - now) < Math.abs(planned - now)) planned = t;
+      }
+      // The trip's last stop has no board row; its arrival is kept with the arrival only rows (28 Oct 2026).
+      if (planned == null) for (const d of days) for (const r of src.rows(id + ENG_ALIGHT, d) || []) {
         if (r[1] !== tripId) continue;
         const t = (m.days[d] + r[0]) * 1000;
         if (planned == null || Math.abs(t - now) < Math.abs(planned - now)) planned = t;

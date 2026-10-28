@@ -12,7 +12,11 @@ rb_northcoast.zip a regional bus feed, and so on, see FEED_OF_ZIP). Writes to <o
                      "s": [stop id, sequence, stop id, sequence, ...]} so a live delay can be carried down the line
 If <gtfs dir>/stops_complete.txt exists (stops.txt from the complete NSW GTFS bundle), its parent stations are used:
 the mode bundles leave bus stands at a station without a parent, the Trip Planner's station board includes them.
-Rows where nobody can board (pickup_type 1, or the trip's last stop) are left out, as on the Trip Planner's boards.
+Rows where nobody can board (pickup_type 1, or the trip's last stop) are left out of a stop's rows, as on the Trip
+Planner's boards. They go to their own line instead, with the stop id plus "~a" (ALIGHT_SUFFIX) and the arrival
+time, so the outage trip planner (src/ttplan.js) can end a trip at a last stop or a set down only stop; no stop id a
+phone can send has a "~", so a board never reads them, and an engine without this code never asks for them. A row
+where nobody can get off (drop_off_type 1) carries a 6th value, 1, so the planner never ends a trip there.
 First day defaults to yesterday in Sydney (a trip after midnight belongs to the day before), days to 3.
 """
 import sys, os, io, csv, json, gzip, zipfile, datetime, collections
@@ -22,6 +26,7 @@ SYD = ZoneInfo("Australia/Sydney")
 FEED_OF_ZIP = {"buses": "bus", "sydneytrains": "train", "metro": "metro", "ferry": "ferry", "ferry_mff": "ferry_mff",
                "lr_cse": "lr_cse", "lr_iw": "lr_iw", "lr_par": "lr_par", "lr_new": "lr_new", "nswtrains": "nswtrains"}
 NO_SEQ_FEEDS = {"train"}
+ALIGHT_SUFFIX = "~a"
 WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
 
@@ -69,6 +74,7 @@ def main():
     heads, head_idx = [], {}
     stops = {}
     per = collections.defaultdict(list)
+    alight = collections.defaultdict(list)
     feeds_info = {}
     tf = gzip.open(os.path.join(out, "trips.ndjson.gz"), "wt", compresslevel=6)
     for fn in sorted(os.listdir(src)):
@@ -115,27 +121,39 @@ def main():
         by_trip = collections.defaultdict(list)
         for x in rows(z, "stop_times.txt"):
             if x["trip_id"] in trip:
-                by_trip[x["trip_id"]].append((int(x["stop_sequence"]), x["stop_id"], x["departure_time"] or x["arrival_time"], x.get("pickup_type", "")))
-        n = 0
+                by_trip[x["trip_id"]].append((int(x["stop_sequence"]), x["stop_id"], x["departure_time"] or x["arrival_time"],
+                                              x.get("pickup_type", ""), x["arrival_time"] or x["departure_time"], x.get("drop_off_type", "")))
+        n = na = 0
         for tid, sts in by_trip.items():
             sts.sort()
             ri, hi, tdays = trip[tid]
-            for i, (sq, sid, tt, pick) in enumerate(sts):
-                if i == len(sts) - 1 or pick == "1" or not tt: continue
+            for i, (sq, sid, tt, pick, at, drop) in enumerate(sts):
+                if i == len(sts) - 1 or pick == "1":
+                    # Nobody boards here: an arrival only row for the outage planner, unless nobody gets off either.
+                    if not at or drop == "1" or i == 0: continue
+                    t = secs(at)
+                    for k in tdays:
+                        alight[(sid, k)].append([t, tid, ri, hi, sq]); na += 1
+                    continue
+                if not tt: continue
                 t = secs(tt)
+                row = [t, tid, ri, hi, sq] + ([1] if drop == "1" else [])
                 for k in tdays:
-                    per[(sid, k)].append([t, tid, ri, hi, sq]); n += 1
+                    per[(sid, k)].append(list(row)); n += 1
             if feed in NO_SEQ_FEEDS:
                 flat = []
-                for sq, sid, _, _ in sts: flat += [sid, sq]
+                for sq, sid, _, _, _, _ in sts: flat += [sid, sq]
                 tf.write(json.dumps({"t": tid, "s": flat}, separators=(",", ":")) + "\n")
-        feeds_info[name] = {"feed": feed, "trips": len(trip), "rows": n}
-        print(name, feed, "trips", len(trip), "rows", n, flush=True)
+        feeds_info[name] = {"feed": feed, "trips": len(trip), "rows": n, "alight": na}
+        print(name, feed, "trips", len(trip), "rows", n, "arrival only", na, flush=True)
     tf.close()
     with gzip.open(os.path.join(out, "days.ndjson.gz"), "wt", compresslevel=6) as f:
         for (sid, k), rs in per.items():
             rs.sort(key=lambda x: x[0])
             f.write(json.dumps({"s": sid, "d": k, "r": rs}, separators=(",", ":")) + "\n")
+        for (sid, k), rs in alight.items():
+            rs.sort(key=lambda x: x[0])
+            f.write(json.dumps({"s": sid + ALIGHT_SUFFIX, "d": k, "r": rs}, separators=(",", ":")) + "\n")
     comp = os.path.join(src, "stops_complete.txt")
     if os.path.exists(comp):
         with open(comp, encoding="utf-8-sig", newline="") as f:
@@ -148,7 +166,7 @@ def main():
                     except ValueError: lat, lon = 0, 0
                     stops[sid] = [x.get("stop_name", ""), x.get("parent_station", ""), x.get("platform_code", ""), lat, lon]
     keep = {}
-    for sid, _ in per.keys():
+    for sid, _ in list(per.keys()) + list(alight.keys()):
         if sid in keep: continue
         keep[sid] = stops.get(sid, ["", "", "", 0, 0])
         p = keep[sid][1]
@@ -157,7 +175,7 @@ def main():
             "days": {k: day_start(d) for d, k in zip(days, dkeys)}, "routes": routes, "heads": heads,
             "routeIds": route_ids, "stops": keep, "feeds": feeds_info}
     with open(os.path.join(out, "meta.json"), "w") as f: json.dump(meta, f, separators=(",", ":"))
-    print("stop days", len(per), "stops", len(keep), "routes", len(routes), "headsigns", len(heads))
+    print("stop days", len(per), "arrival only stop days", len(alight), "stops", len(keep), "routes", len(routes), "headsigns", len(heads))
 
 
 if __name__ == "__main__":
