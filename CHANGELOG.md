@@ -12,6 +12,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * App: no live time over 5 minutes old is Live, on the phone's own clock, however far off the service (`LIVE_MAX_MS`; 2 minutes within 10 minutes stays); row ages count from the feed copy (`LIVE_DATA_AGE` on) with the GPS age not counted twice (`liveLead`); kept copies keep their age on the server's clock (`copyTime`, at most 15 minutes back); the "Live, updated" line says "Updated N min ago, refreshing" past 5 minutes. No new request, no timer.
 * Speed, measured offline: every main endpoint answers in about 10 ms of server work (worst first stop search about 220 ms), and every main screen with a kept copy paints its times on the app's first frame; nothing was over budget, so no speed change was made. Numbers in docs/PERFORMANCE.md "Liveness and speed (28 Oct)". Tools: `backend/tools/speed-local.mjs`, `app/test/e2e/paintcache.mjs`.
 * Tests: backend/test/feed-fresh.test.mjs (9), app/test/liveness.test.mjs (6); servermove.test.mjs updated for the new `answerTime`.
+* Live: transport-api b6785f97 (28 Oct, 2:11 PM, main 941b228), verify-deploy all 12 ok, 15 min watch 42 invocations, 0 errors, 0 feedback rows; roll back to 385d6822. The app part ships in tonight's update.
 * Not done: widgets keep a 15 minute timeline with live styling (native, written under Build 209 in docs/IOS27.md). Not tried on a phone; real feed header lag is read from `workerFeeds` after the deploy.
 
 ### Off peak hint on trip results (28 Oct; app on main for tonight's update, no server change)
