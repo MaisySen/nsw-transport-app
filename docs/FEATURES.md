@@ -310,7 +310,7 @@ The server parts of speed pass part 2 steps C and D that a phone could meet (the
 
 Kept copies that cannot be read (28 Oct crash hunt, on main for tonight's update): a board copy kept on the phone with a broken row draws its good rows, and a kept copy that cannot be read at all counts as no copy, so the screen waits for the live answer as on a first open instead of stopping (`app/src/lib/offline.ts` peekOffline, `offlineCore.ts` pruneDepartures; test/crash28.test.mjs).
 
-Opal fare card on the trip screen (29 Oct, on main for the next update): a trip whose fare arrives on a later refresh no longer shows "Something went wrong" (crash reports from build 208 on 28 Oct).
+Opal fare card on the trip screen (29 Oct, in the 12:29 AM update 281aa87b): a trip whose fare arrives on a later refresh no longer shows "Something went wrong" (crash reports from build 208 on 28 Oct).
 ## Less data on every refresh (27 Oct, 9 PM network pass; server transport-api, app in the 27 Oct 11:34 PM update)
 * Boards, services, trips, live trip legs, alerts, car parks, line status and trackwork: when nothing changed since the last refresh, the server answers with a short "not changed" (304) and the phone keeps what it shows, with the server's clock for its countdowns. Times, rows and how old the times are never change on a 304.
 * Board rows no longer carry two fields the app never reads (mode name, wheelchair flag).
