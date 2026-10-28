@@ -255,7 +255,7 @@ A Transport for NSW answer that is not JSON (an HTML maintenance page, `null`, a
 
 ## Our own trip planner (server, behind a flag, 26 Oct)
 
-Trip searches answered from our own copy of the NSW timetable with RAPTOR, so a search makes no Transport for NSW call and searches stop growing NSW calls with users (docs/SCALE_1M.md). Same answer shape as before, live times added to the legs the same way. Changes at stations and walks between nearby stops (up to 400 m), walks to and from your position (up to 1 km), stops where nobody may board or get off respected. Off for phones (`OWN_PLANNER`) until its trips match NSW's planner on a recorded sample after the key resets; step free trips, trips via a stop and trips leaving out a mode stay on NSW's planner for now. Checks: `/api/raptor/plan` (engine load key).
+Trip searches answered from our own copy of the NSW timetable with RAPTOR, so a search makes no Transport for NSW call and searches stop growing NSW calls with users (docs/SCALE_1M.md). Same answer shape as before, live times added to the legs the same way. Changes at stations and walks between nearby stops (up to 400 m), walks to and from your position (up to 1 km), stops where nobody may board or get off respected. Off for phones (`OWN_PLANNER`) until its trips match NSW's planner on a recorded sample after the key resets; step free trips, trips via a stop and trips leaving out a mode stay on NSW's planner for now. Checks: `/api/raptor/plan` and `/api/raptor/status` (engine load key; from `raptor-status-fix` the status names a sleeping copy's stored pack instead of showing it as not loaded).
 
 ## Budget mode (server, 26 Oct, g20)
 

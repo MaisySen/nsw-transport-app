@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 29 Oct 2026
 
+### Planner status names a sleeping copy's pack (29 Oct; branch `raptor-status-fix`, not deployed)
+* `/api/raptor/status` showed one planner copy as `loaded: false, day: null` while `/api/raptor/day` answered from a loaded pack (trips-compare, 3:24 AM). Cause, from the code: the status read only the copy's memory (`this.pk`), and a planner object that slept (idle eviction or restart) keeps its pack in storage and opens it again on the next `/plan`, `/run` or `/day`. `/day` goes to the first object and opens it, so it answered while a status read of a sleeping copy said not loaded. Planning was never affected; the status was misleading.
+* Fix (`backend/src/raptor.js`): a small `meta` (version, day, build time, counts) is kept when a version opens cleanly and travels with a replica's pull; the status reports `inMemory`, `stored`, `from`, and `loaded`, `day`, `builtAt`, `counts` from memory or the kept facts for the same version. Facts about another version are never used. No new NSW call, no D1 migration, the answer only gains fields.
+* Tests: 2 new in `backend/test/raptor.test.mjs` (a sleeping copy, a replica that pulled, stale facts ignored, `?open=1`), both fail without the fix. Backend 616 of 616.
+
 ### Over the air update (29 Oct, 12:08 AM; production group ac1d9962)
 * The 28 Oct night update, moved past midnight, from main d7d6e14: Get off now 30 s before arrival and never after, alert 1, 2 or 3 stops early with spoken "Get off now at <station>", Max walk chips, "Often does not run" and "Not stopping at <stop> today" for buses, the off peak hint, no time older than 5 minutes shown as Live, and the kept board crash path fix. Preview 82021b0f, production ac1d9962 (iOS 01a182a0-8aad-7fce-8253-32deb2e9105e, Android 01a182a0-8aad-7f07-bb88-3b54c28498a8), runtime 1.0.0, both manifests checked. Backend 614/614, app 878 pass, 3 skipped, 0 fail, battery 17/17, tsc clean. 15 minute watch: 0 crash rows. Roll back f5b9ac08.
 * Board engine re-match after it (12:04 to 12:07 AM, capped, 42 planner calls of 60): 94.0%, 171 of 182 (bus 62/63, train 64/68, metro 21/23, light rail 24/28), up from 89.6% and Metro 20/39 on 27 Oct. Fewer services after midnight, so the sample is smaller. Still under the 95% gate; ENGINE_BOARDS stays off.
