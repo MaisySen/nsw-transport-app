@@ -598,7 +598,29 @@ the moment it opens, with no signal too, and lay the live board on top when it a
   no-store`; never kept as a copy, so the next planner answer replaces it. Not for `time`/`date` boards or
   `format=text` (which still says the live data didn't answer).
 * Every live row (engine and Trip Planner boards) carries `liveAt`: the time in ms its live time was read (the feed
-  copy, or the planner answer). Timetable rows have `liveAt: null`.
+  copy, or the planner answer). Timetable rows have `liveAt: null`. Since 28 Oct (liveness pass) a feed row's
+  `liveAt` is the feed copy's own time: its GTFS realtime header timestamp, never later than the fetch (a header more
+  than 2 minutes in the future is ignored); on a Trip Planner board it is the oldest trip update copy used.
+
+**Liveness (28 Oct 2026).** Optional fields for the newer app only (x-device or x-profile; older apps get server B's
+shape, `oldAppText` takes them out of `/api/departures`, `/api/service`, `/api/status`, `/api/trip` and
+`/api/trip/live`):
+* `live.feedTs` on departures and trips, `feedTs` on service and status answers: the oldest trip update copy's own
+  time in ms (null when no feed was used). `live.feedAt` is unchanged (the newest fetch).
+* `liveOld: true` on a board row sent as a timetable row because its kept live time was over 5 minutes old.
+* `/api/trip/live` `dataAt` is now the oldest feed copy's own time (was the newest fetch).
+Behaviour for every app version: no live time comes from a feed copy over 5 minutes old by its own time
+(`FEED_LIVE_MAX_MS`); kept copies (edge, saved in D1, engine boards held while the planner fails) send rows whose
+`liveAt` (else the copy's `dataAt`) is over 5 minutes old as timetable rows: `realtime: false`, `estimated`,
+`delayMin`, `vehicle` and `liveAt` null, status Scheduled. Live Activity cards are "updated" at the oldest service
+`feedTs` on them, so the stale date is 2 minutes after the live times. Server switches `feedAgeCap` (the 5 minute
+drop) and `feedHeaderTime` (header time for ages); both on by default.
+Feed freshness: `/api/health` `feedFresh` and `/api/engine/status` `workerFeeds` (this server copy, memory only):
+`{ at, maxAgeS, headerTime, isolate, byMode: { train|metro|bus|lightrail|ferry: { ageS, errors, ok, staleDropped,
+live } }, feeds: [{ feed, mode, kind, ageS, fetchedAgoS, headerLagS, ok, errors, lastError, lastErrorAgoS, fetchMs,
+servedOld, staleDropped, live }] }`. `byMode` counts Sydney trip update feeds only (not regional buses, NSW
+TrainLink or the Manly Fast Ferry feed). The engine's own feeds in `/api/engine/status` add `dataAgeS` (header time)
+beside `tuAgeS`.
 
 ## Live board push `/api/live` (26 Oct 2026, g14, off)
 

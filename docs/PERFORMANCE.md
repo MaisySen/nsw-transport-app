@@ -187,6 +187,48 @@ with a kept copy 1245 ms before, 1216 ms after. Home first start 1430 ms before 
 733). The web export runs on this build box; the first server's answers vary more (90th percentile 1.5 s) than the new
 one's shared copies. Not yet measured on a phone.
 
+### Liveness and speed (28 Oct, offline, no NSW call)
+
+**Server time per endpoint** (`node backend/tools/speed-local.mjs 5`: the built worker in node against the fake
+Transport for NSW, as the newer app asks; median and worst of 5 in ms; cold = a key this copy has not answered, warm =
+the same ask again, poll = `refresh=1`). Before = main 9d10699, after = this pass. Budget: under 1000 ms.
+
+| Endpoint | Cold before | Cold after | Warm after | Poll after |
+|---|---|---|---|---|
+| stop board | 8 (12) | 8 (8) | 1 | 1 (3) |
+| trip list | 7 (10) | 7 (10) | 1 | 1 (8) |
+| trip list page 2 | 6 (8) | 6 (8) | 1 | 1 (1) |
+| service | 8 (8) | 8 (8) | 1 | 1 (2) |
+| trip live legs | 2 (4) | 2 (6) | 1 | 1 (2) |
+| nearby | 5 (6) | 5 (6) | 1 | 0 (1) |
+| alerts | 2 (6) | 1 (5) | 1 | 1 (2) |
+| lines | 1 (3) | 2 (2) | 1 | 1 (2) |
+| stop search | 17 (146) | 16 (223) | 1 | 1 (1) |
+| car park | 7 (10) | 6 (7) | 1 | 1 (1) |
+
+Nothing is over budget. The server's own work is about 10 ms an answer; the first stop search in a copy builds the
+stop index (about 150 to 220 ms, once). Back to back cold asks without the 1.1 s gap the tool now leaves took about
+920 ms once a second: that is the server's own pacing of Trip Planner calls (`upstreamSlot`, at most 4 start in any
+second, for the Transport for NSW limit), by design, not slowness. On a real day the cold time is the Trip Planner's
+own (p50 0.2 to 0.9 s, DIAGNOSIS_LAG.md), which the kept and saved copies already hide.
+
+**First paint from what the phone keeps** (`app/test/e2e/paintcache.mjs`: web export, 390 x 844, headless Chrome on
+the build box, local server `test/e2e/mockapi.mjs` answering 4 s late; median of 3 in ms from navigation start to the
+first frame with times on it). "App start" is the first frame with any words: the floor under every screen on this
+box. Not measured on a phone.
+
+| Screen | Kept copy before | Kept copy after | App start (after) | Nothing kept before | Nothing kept after |
+|---|---|---|---|---|---|
+| Stop board, train station | 880 | 886 | 886 | 4885 | 4866 |
+| Stop board, another station | 849 | 861 | 861 | 4840 | 4873 |
+| Stop board, ferry wharf | 890 | 864 | 864 | 4988 | 5038 |
+| Trip list | 847 | 845 | 845 | 914 | 814 |
+
+With a kept copy every screen shows its times on the app's first frame (paint time equals app start), before and
+after this pass, so there was nothing to fix there. With nothing kept a stop board waits for the server (4 s here by
+design of the test); the trip list's first frame shows its time chooser (counted as times), its trips come with the
+server. The kept copy's rows now carry their true age: a copy over 5 minutes old paints as Not tracking, never Live.
+
 ### Battery and data audit (26 Oct, 7:55 to 8:29 AM, item 2)
 
 Web export at 390 x 844 with live data, each screen in its own browser, every request to the servers counted with its

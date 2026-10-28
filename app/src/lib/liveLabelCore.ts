@@ -14,6 +14,11 @@ export type LiveInput = {
   seenAt?: number | null;
   /** Age of the vehicle's GPS position in that answer, in seconds, when the feed gave one. */
   vehicleAgeS?: number | null;
+  /**
+   * How much earlier than its answer this row's live time was read (ms; stampSeen sets it as `liveLead` when the row's
+   * own liveAt moved seenAt back). The GPS age was measured when the answer was made, so it is not counted twice.
+   */
+  liveLeadMs?: number | null;
   /** Buses: the server's count of how often this line's services in this hour never showed live (new server only). */
   noShow?: { share?: number | null; n?: number | null } | null;
 };
@@ -42,6 +47,12 @@ export type LiveState = {
 export const STALE_DATA_MS = 120000;
 /** The vehicle's own position (or our copy of it) older than this: the live time is not tracking the vehicle. */
 export const STALE_GPS_S = 180;
+/**
+ * A live time read longer ago than this is never shown as live, however far off the service is (28 Oct liveness pass):
+ * the row shows Not tracking with its timetable time. The server sends no live time from a feed copy this old
+ * (FEED_LIVE_MAX_MS in backend/src/worker.js), and this covers the age the copy gains on the phone.
+ */
+export const LIVE_MAX_MS = 300000;
 /** A live time this far in the past while the service is still listed: the feed lost it. */
 export const DUE_GRACE_MS = 60000;
 /** Old data only matters for services this close; further out the age is shown instead. */
@@ -89,7 +100,14 @@ export function liveAgeMs(x: LiveInput, now: number): number | null {
   if (x.seenAt == null || !Number.isFinite(x.seenAt)) return x.vehicleAgeS != null && Number.isFinite(x.vehicleAgeS) ? Math.max(0, x.vehicleAgeS) * 1000 : null;
   const data = Math.max(0, now - x.seenAt);
   const gps = x.vehicleAgeS != null && Number.isFinite(x.vehicleAgeS) ? Math.max(0, x.vehicleAgeS) * 1000 : 0;
-  return data + gps;
+  const lead = leadOf(x);
+  // With a row's own read time (lead), the GPS age counts from the answer, and the live time is as old as the older one.
+  return lead > 0 ? Math.max(data, gps + Math.max(0, data - lead)) : data + gps;
+}
+
+function leadOf(x: LiveInput): number {
+  const v = Number(x.liveLeadMs);
+  return Number.isFinite(v) && v > 0 ? Math.min(v, 900000) : 0;
 }
 
 function counter(t: number, now: number) {
@@ -133,10 +151,11 @@ export function liveState(x: LiveInput, now: number): LiveState {
   }
   const age = liveAgeMs(x, now);
   const dataAge = x.seenAt != null && Number.isFinite(x.seenAt) ? Math.max(0, now - x.seenAt) : 0;
-  const gpsAgeS = x.vehicleAgeS != null && Number.isFinite(x.vehicleAgeS) ? x.vehicleAgeS + dataAge / 1000 : null;
+  const gpsAgeS = x.vehicleAgeS != null && Number.isFinite(x.vehicleAgeS) ? x.vehicleAgeS + Math.max(0, dataAge - leadOf(x)) / 1000 : null;
   const near = est - now < STALE_NEAR_MS;
   const stale = (gpsAgeS != null && gpsAgeS > STALE_GPS_S)
     || (near && dataAge > STALE_DATA_MS)
+    || dataAge > LIVE_MAX_MS
     || est < now - DUE_GRACE_MS;
   if (stale) {
     const t = Number.isFinite(planned) ? planned : est;
@@ -185,10 +204,27 @@ export function rowSeenAt(it: any, body: any, fallback: number, arrival: number)
   return Math.max(arrival - 900000, Math.min(fallback, t));
 }
 
+/**
+ * When a server answer's times were read, on this phone's clock (api.ts dataTime): its dataAt (a kept copy) measured
+ * on the server's own clock against the answer's `now`, so a phone clock that is off cannot make it look younger.
+ * 28 Oct: a copy over 15 minutes old counts as 15 minutes old (before, it counted as just read). No dataAt: now.
+ */
+export function copyTime(body: any, now: number): number {
+  const d = body && typeof body === 'object' ? Number(body.dataAt) : NaN;
+  if (!Number.isFinite(d) || d <= 0) return now;
+  const serverNow = Number(body.now);
+  const t = Number.isFinite(serverNow) && serverNow >= d && serverNow - d < 86400000 ? now - (serverNow - d) : d;
+  if (t > now) return now;
+  return Math.max(t, now - 900000);
+}
+
 /** When an answer's times were read: its seenAt (api.ts sets it from the server's dataAt or the arrival), else now. */
 export function answerTime(d: any, now: number): number {
   const t = d && typeof d === 'object' ? Number(d.seenAt) : NaN;
-  return Number.isFinite(t) && t <= now && now - t < 120000 ? t : now;
+  // 28 Oct: an answer read up to 15 minutes ago keeps its own time (before, anything over 2 minutes said "now", so a
+  // saved server copy 5 minutes old read "Updated just now"). Unknown or in the future: now.
+  if (!Number.isFinite(t) || t > now) return now;
+  return Math.max(t, now - 900000);
 }
 
 export function stampSeen<T>(resp: T, at: number, arrival?: number): T {
@@ -196,7 +232,12 @@ export function stampSeen<T>(resp: T, at: number, arrival?: number): T {
   if (!r || typeof r !== 'object') return resp;
   if (r.seenAt == null) r.seenAt = at;
   const t = r.seenAt;
-  for (const it of Array.isArray(r.items) ? r.items : []) if (it && typeof it === 'object' && it.seenAt == null) it.seenAt = arrival != null ? rowSeenAt(it, r, t, arrival) : t;
+  for (const it of Array.isArray(r.items) ? r.items : []) {
+    if (!it || typeof it !== 'object' || it.seenAt != null) continue;
+    it.seenAt = arrival != null ? rowSeenAt(it, r, t, arrival) : t;
+    // How much older than the answer this row's live time is (liveState counts the GPS age from the answer).
+    if (it.seenAt < t) it.liveLead = t - it.seenAt;
+  }
   for (const j of Array.isArray(r.journeys) ? r.journeys : []) {
     if (!j || typeof j !== 'object') continue;
     if (j.seenAt == null) j.seenAt = t;

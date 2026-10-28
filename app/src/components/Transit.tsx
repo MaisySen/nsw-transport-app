@@ -20,7 +20,7 @@ import { stopLabel } from '@/lib/busCore';
 import { rowTraffic } from '@/lib/busLiveCore';
 import { font, T } from './ui';
 import { LiveCountdown, LiveStatus } from './LiveLabel';
-import { liveKey, liveState, type LiveState } from '@/lib/liveLabelCore';
+import { LIVE_MAX_MS, liveKey, liveState, type LiveState } from '@/lib/liveLabelCore';
 import { useFlag } from '@/lib/config';
 import { useReduceMotion } from '@/lib/motion';
 import { occBusy, occText, quietText } from '@/lib/occupancy';
@@ -107,6 +107,9 @@ export function KeptBanner({ offlineAt, staleAt, now, style }: { offlineAt?: num
   );
 }
 
+/** The "Live, updated" line is only said of times read within LIVE_MAX_MS (28 Oct liveness pass). */
+export const stampTooOld = (updatedAt: number | null | undefined, now: number) => updatedAt != null && Number.isFinite(updatedAt) && now - updatedAt > LIVE_MAX_MS;
+
 export function LiveStamp({ updatedAt, error, offlineAt, staleAt, packAt }: { updatedAt: number | null; error?: string | null; offlineAt?: number | null; staleAt?: number | null; packAt?: number | null }) {
   const c = usePalette();
   if (!offlineAt && !updatedAt && packAt) {
@@ -136,6 +139,15 @@ export function LiveStamp({ updatedAt, error, offlineAt, staleAt, packAt }: { up
     );
   }
   if (!updatedAt) return <T kind="foot" tone="text2">{error ? 'Live times unavailable right now, trying again' : 'Loading live times'}</T>;
+  if (!error && stampTooOld(updatedAt, Date.now())) {
+    // Times read longer ago than LIVE_MAX_MS (a kept server copy, or no answer since): their age, never "Live".
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <LiveDot beat={updatedAt} color={c.text3} />
+        <T kind="foot" tone="text2" style={{ marginLeft: 2, flexShrink: 1 }}>{staleText(updatedAt, Date.now())}</T>
+      </View>
+    );
+  }
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       <LiveDot beat={updatedAt} color={error ? c.orange : undefined} />
@@ -173,9 +185,9 @@ export function Countdown({ planned, estimated, realtime, cancelled, now, align 
 }
 
 /** The live state of a departure row (its own answer's age and the vehicle's GPS age). */
-export const depState = (d: { planned?: string; estimated?: string | null; realtime?: boolean; cancelled?: boolean; seenAt?: number; vehicle?: { ageS?: number; lat?: number } | null; noShow?: Departure['noShow'] }, now: number) => liveState({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS, noShow: d.noShow }, now);
+export const depState = (d: { planned?: string; estimated?: string | null; realtime?: boolean; cancelled?: boolean; seenAt?: number; liveLead?: number; vehicle?: { ageS?: number; lat?: number } | null; noShow?: Departure['noShow'] }, now: number) => liveState({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS, liveLeadMs: d.liveLead, noShow: d.noShow }, now);
 const isBusMode = (m?: string) => m === 'bus' || m === 'coach' || m === 'school';
-const depKey = (d: Departure, now: number) => liveKey({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS, noShow: d.noShow }, now);
+const depKey = (d: Departure, now: number) => liveKey({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS, liveLeadMs: d.liveLead, noShow: d.noShow }, now);
 
 export const DepartureRow = memo(DepartureRowView, sameDepartureRow);
 

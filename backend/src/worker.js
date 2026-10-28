@@ -577,6 +577,66 @@ async function joinJob(job, maxMs = 30000) {
 const feedMem = new Map(); // path -> { at, buf, idx, headerTs, job }
 const feedStats = { fetched: 0, edgeHits: 0, memHits: 0, edgeMiss: 0, edgeErr: 0, edgePutErr: 0, requests: 0, isolate: Math.random().toString(36).slice(2, 8), born: Date.now() };
 
+// ---------- Feed freshness (28 Oct liveness pass, docs/LIVE-LABELS.md "How fresh live is") ----------
+// A live time is only as fresh as the feed copy it came from. The copy's own time is the feed's header timestamp
+// (when Transport for NSW made it), never later than when we fetched it; a header in the future (clock skew over
+// FEED_HEADER_FUTURE_MS) is not trusted and the fetch time stands. A copy older than FEED_LIVE_MAX_MS gives no live
+// times at all (realtimeFor): the rows stay timetable rows, for every app version. Server switch feedHeaderTime off:
+// the fetch time only (as before 28 Oct); feedAgeCap off: no cap.
+const FEED_LIVE_MAX_MS = 300000;
+const FEED_HEADER_FUTURE_MS = 120000;
+let FEED_HEADER_USE = true;
+// Per feed, this server copy only (memory, no storage): last good fetch, the copy's own time, errors. /api/health and
+// /api/engine/status show it (feedFreshness).
+const feedFresh = new Map(); // path -> { mode, kind, okAt, ts, headerTs, ok, err, lastErr, lastErrAt, ms, servedOld, staleDropped }
+function feedModeOf(path) {
+  const p = String(path || "");
+  if (/sydneytrains|nswtrains/.test(p)) return "train";
+  if (/\/metro\b/.test(p)) return "metro";
+  if (/lightrail/.test(p)) return "lightrail";
+  if (/ferries/.test(p)) return "ferry";
+  if (/buses/.test(p)) return "bus";
+  return "other";
+}
+/** The time a feed copy's data stands for (ms): its header time when plausible, else when it was fetched. */
+function feedDataTs(e, useHeader = FEED_HEADER_USE) {
+  if (!e) return 0;
+  const at = Number(e.at) || 0;
+  const h = Number(e.headerTs) * 1000;
+  if (useHeader && at > 0 && h > 0 && h <= at + FEED_HEADER_FUTURE_MS) return Math.min(at, h);
+  return at;
+}
+function feedFreshRow(path, kind) {
+  let r = feedFresh.get(path);
+  if (!r) { r = { mode: feedModeOf(path), kind, okAt: 0, ts: 0, headerTs: 0, ok: 0, err: 0, lastErr: null, lastErrAt: 0, ms: null, servedOld: 0, staleDropped: 0 }; feedFresh.set(path, r); }
+  return r;
+}
+function feedNoteOk(path, kind, entry, ms) {
+  const r = feedFreshRow(path, kind);
+  r.ok++; r.okAt = entry.at; r.headerTs = Number(entry.headerTs) || 0; r.ts = feedDataTs(entry); r.ms = ms;
+}
+function feedNoteErr(path, kind, e) {
+  const r = feedFreshRow(path, kind);
+  // The error words only (a status and the path): never a key or a header.
+  r.err++; r.lastErrAt = Date.now(); r.lastErr = String((e && e.message) || e || "error").replace(/apikey\s+\S+/gi, "apikey ***").slice(0, 120);
+}
+/** Feed freshness for status answers: per feed, and per mode the worst (oldest) Sydney copy. Ages in seconds. */
+function feedFreshness(now = Date.now()) {
+  const s = (t) => (t ? Math.max(0, Math.round((now - t) / 1000)) : null);
+  const feeds = [];
+  const byMode = {};
+  for (const [path, r] of feedFresh) {
+    const row = { feed: path, mode: r.mode, kind: r.kind, ageS: s(r.ts), fetchedAgoS: s(r.okAt), headerLagS: r.headerTs && r.okAt ? Math.round((r.okAt - r.headerTs * 1000) / 1000) : null,
+      ok: r.ok, errors: r.err, lastError: r.lastErr, lastErrorAgoS: s(r.lastErrAt), fetchMs: r.ms, servedOld: r.servedOld, staleDropped: r.staleDropped, live: !!r.ts && now - r.ts <= FEED_LIVE_MAX_MS };
+    feeds.push(row);
+    if (r.kind !== "tu" || /regionbuses|nswtrains|ferries\/MFF/.test(path)) continue;
+    const m = byMode[r.mode] || (byMode[r.mode] = { ageS: null, errors: 0, ok: 0, staleDropped: 0, live: true });
+    if (row.ageS != null && (m.ageS == null || row.ageS > m.ageS)) m.ageS = row.ageS;
+    m.errors += r.err; m.ok += r.ok; m.staleDropped += r.staleDropped; if (!row.live) m.live = false;
+  }
+  return { at: now, maxAgeS: FEED_LIVE_MAX_MS / 1000, headerTime: FEED_HEADER_USE, isolate: feedStats.isolate, byMode, feeds };
+}
+
 async function loadFeed(env, path, kind) {
   const now = Date.now();
   const hit = feedMem.get(path);
@@ -602,6 +662,7 @@ async function loadFeed(env, path, kind) {
     const { idx, headerTs } = indexFeed(buf, kind);
     const entry = { at, buf, idx, headerTs, kind, cache: new Map() };
     feedMem.set(path, entry);
+    feedNoteOk(path, kind, entry, Date.now() - f0);
     return entry;
   })();
   feedMem.set(path, { ...(hit || {}), job: sharedJob(promise) });
@@ -609,7 +670,9 @@ async function loadFeed(env, path, kind) {
   reqKeep(promise);
   try { return await promise; }
   catch (e) {
-    if (hit && hit.buf) { feedMem.set(path, hit); return hit; } // serve the last good copy
+    feedNoteErr(path, kind, e);
+    // The last good copy, with its own time: realtimeFor gives no live times from it once it is FEED_LIVE_MAX_MS old.
+    if (hit && hit.buf) { feedMem.set(path, hit); feedFreshRow(path, kind).servedOld++; return hit; }
     feedMem.delete(path);
     throw e;
   }
@@ -630,6 +693,15 @@ async function realtimeFor(env, pairs) {
   const keys = new Set();
   for (const [mode, line, feed] of pairs) for (const k of feedKeys(mode, line, feed)) keys.add(k);
   const out = {};
+  // The two freshness switches (server config, read at most once a minute per server copy).
+  const [cap, hdr] = keys.size ? await Promise.all([serverOn(env, "feedAgeCap"), serverOn(env, "feedHeaderTime")]).catch(() => [true, true]) : [true, true];
+  FEED_HEADER_USE = hdr !== false;
+  const fresh = (e, path, kind) => {
+    if (!e || cap === false) return e;
+    if (Date.now() - feedDataTs(e) <= FEED_LIVE_MAX_MS) return e;
+    feedFreshRow(path, kind).staleDropped++;
+    return null; // too old to call live: the rows keep their timetable times
+  };
   await Promise.all([...keys].map(async (k) => {
     const f = FEEDS[k];
     const late = () => new Promise((r) => setTimeout(() => r(null), FEED_WAIT_MS));
@@ -637,7 +709,7 @@ async function realtimeFor(env, pairs) {
       Promise.race([loadFeed(env, f.tu, "tu").catch(() => null), late()]),
       Promise.race([loadFeed(env, f.vp, "vp").catch(() => null), late()]),
     ]);
-    out[k] = { tu, vp };
+    out[k] = { tu: fresh(tu, f.tu, "tu"), vp: fresh(vp, f.vp, "vp") };
   }));
   const pick = (mode, line, tripId, feed, kind) => {
     if (!tripId) return null;
@@ -649,6 +721,8 @@ async function realtimeFor(env, pairs) {
     tu(mode, line, tripId, feed) { return pick(mode, line, tripId, feed, "tu"); },
     vp(mode, line, tripId, feed) { return pick(mode, line, tripId, feed, "vp"); },
     fetchedAt() { let m = 0; for (const k in out) { if (out[k].tu) m = Math.max(m, out[k].tu.at); if (out[k].vp) m = Math.max(m, out[k].vp.at); } return m || null; },
+    // The oldest trip update copy in use, by its own time (feedDataTs): what a live time from these feeds is as of.
+    dataTs() { let m = Infinity; for (const k in out) if (out[k].tu) m = Math.min(m, feedDataTs(out[k].tu)); return Number.isFinite(m) && m > 0 ? m : null; },
   };
 }
 
@@ -1097,13 +1171,15 @@ async function departures(env, stopId, opts = {}) {
   // Delay samples are live times read close to departure: a board for another moment records none.
   if (opts.log !== false && !opts.at) logObservations(env, opts.ctx, items, stopId);
   // When each live row's time was read: the realtime feed copy for rows filled from it, else this answer.
-  const feedRead = rt.fetchedAt() || now;
+  // Feed rows: the oldest trip update copy in use, by its own header time (rt.dataTs), so a phone's "live 30 s ago"
+  // counts from when Transport for NSW made the times, not from when this server fetched them.
+  const feedRead = rt.dataTs() || rt.fetchedAt() || now;
   for (const it of items) it.liveAt = it.realtime ? (it.source === "feed" ? feedRead : now) : null;
   return {
     stop: { id: stopId, name: (loc.disassembledName || loc.name) ? seqStopName(loc) : stopId, fullName: loc.name || "", exactName },
     items, modes,
     alerts: [...alerts.values()].map((a) => ({ ...a, lines: [...a.lines].filter(Boolean) })).slice(0, 10),
-    live: { feedAt: rt.fetchedAt(), filledFromFeed: filled, liveCount: items.filter((i) => i.realtime).length, total: items.length },
+    live: { feedAt: rt.fetchedAt(), feedTs: rt.dataTs(), filledFromFeed: filled, liveCount: items.filter((i) => i.realtime).length, total: items.length },
     now,
     // Echoed so the app knows this server honoured the moment (an older server ignores time and answers for now).
     ...(opts.at ? { at: { date: opts.at.date, time: opts.at.time, clamped: opts.at.clamped } } : {}),
@@ -1617,7 +1693,7 @@ async function trip(env, fromId, toId, opts = {}) {
   for (const j of list) j.beaten = list.some((o) => o !== j && ms(o.leave) > ms(j.leave) && ms(o.arrive) < ms(j.arrive));
   // The walking choice the planner was asked with (an older app sends none, so it sees no walk).
   const walkEcho = opts.walk && !own && !kept ? { walk: { max: opts.walk.max, less: opts.walk.less, dropped: walkDropped } } : {};
-  return { journeys: list, tomorrow, live: { feedAt: rt.fetchedAt() }, now, ...walkEcho };
+  return { journeys: list, tomorrow, live: { feedAt: rt.fetchedAt(), feedTs: rt.dataTs() }, now, ...walkEcho };
 }
 
 // ---- opal fares start
@@ -2327,7 +2403,7 @@ async function service(env, q) {
     nextIndex: nextIdx, mineIndex: mine, alightIndex: alight, stopsAway, progress,
     mine: mineStop ? { name: mineStop.name, planned: mineStop.planned, estimated: mineStop.estimated, passed: mineStop.passed } : null,
     stops: stops.map((s) => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, planned: s.planned, estimated: s.estimated, passed: s.passed, mine: !!s.mine, alight: !!s.alight, skipped: !!s.skipped, carried: !!s.carried })),
-    path, source, stopsStatus: stops.length ? stopsStatus : tu && tu.rel === 3 ? "cancelled" : stopsStatus === "ok" ? "none" : stopsStatus, feedAt: rt.fetchedAt(), now,
+    path, source, stopsStatus: stops.length ? stopsStatus : tu && tu.rel === 3 ? "cancelled" : stopsStatus === "ok" ? "none" : stopsStatus, feedAt: rt.fetchedAt(), feedTs: rt.dataTs(), now,
   };
 }
 
@@ -7275,7 +7351,10 @@ async function laCardFor(env, trip, now) {
     service(env, { trip: l.tripId, mode: l.mode, line: l.line, feed: l.feed, stop: l.stopId, destId: l.destId, planned: l.planned, to: l.toStopId, dest: l.towards, stopName: l.from, color: l.color })
       .then((r) => (r && !r.error ? r : null)).catch(() => null)));
   const s = LIVECARD.computeLive(trip.legs, svcs, now, { rode: trip.rode, here: trip.here, arrivedAt: trip.arrivedAt });
-  const card = LIVECARD.cardFor(trip, s, now, { updated: now });
+  // "Updated" is when the oldest live time on the card was made (each service's feedTs), not when the tick ran, so the
+  // card's stale date (2 minutes after it) never outlives its live times.
+  const ts = svcs.map((r) => Number(r && r.feedTs)).filter((t) => Number.isFinite(t) && t > 0 && t <= now && now - t <= FEED_LIVE_MAX_MS);
+  const card = LIVECARD.cardFor(trip, s, now, { updated: ts.length ? Math.min(...ts) : now });
   return { card, done: !!s.done || card.phase === "arrived", live: svcs.some(Boolean) };
 }
 
@@ -7333,7 +7412,7 @@ async function laPushOne(env, row, now, o = {}) {
   const cs = laContentState(card);
   const look = laLook(cs);
   const changed = look !== row.last_state;
-  const stale = LIVECARD.staleAt(card, now, true, LA_ARRIVED_KEEP_S * 1000);
+  const stale = LIVECARD.staleAt(card, Number(card.updated) > 0 && Number(card.updated) <= now ? Number(card.updated) : now, true, LA_ARRIVED_KEEP_S * 1000);
   const payload = laPayload(card, { event: end ? "end" : "update", now, staleMs: stale ?? undefined });
   const res = await apnsSend(env, row.token, payload, { priority: end || changed || o.warning ? 10 : 5 });
   const active = end || apnsGone(res) ? 0 : 1;
@@ -8269,6 +8348,8 @@ async function handleRequest(request, env, exec) {
                 exec.waitUntil(departures(env, stop, { ctx: exec }).then((r) => engineLearn(env, exec, r)).catch(() => {}));
               }
               const d = { kind: "departures", dataAt: (eb.live && eb.live.feedAt) || (eb.engine && eb.engine.builtAt) || Date.now(), ...eb, now: Date.now() };
+              // A board held while the Trip Planner fails (up to ENGINE_HOLD_MS): live times past FEED_LIVE_MAX_MS go out as timetable.
+              capLiveRows(d);
               if (!(await serverOn(env, "occupancy"))) { d.items = d.items.map((x) => ({ ...x, vehicle: x.vehicle ? { ...x.vehicle } : x.vehicle })); stripOccupancy(d); }
               await afterAnswer(env, d, { profile, device, exec });
               if (asTxt) return textRes(await asText(env, d));
@@ -8322,6 +8403,8 @@ async function handleRequest(request, env, exec) {
               try { return await (await env.SHARDS.get(env.SHARDS.idFromName(name), { locationHint: "oc" }).fetch("https://engine/status?name=" + name)).json(); } catch (e) { return { name, error: String(e && e.message || e) }; }
             }));
           }
+          // This server copy's own feed freshness (feedFreshness): ages and error counts only.
+          st.workerFeeds = feedFreshness();
           return json(st, r.status);
         }
         case "/api/pack":
@@ -8848,7 +8931,7 @@ async function handleRequest(request, env, exec) {
         }
         case "/api/health":
           if (!adminOk(request)) return json({ error: "forbidden" }, 403);
-          return json({ ok: true, at: new Date().toISOString(), feeds: feedStats, cachedFeeds: [...feedMem.entries()].filter(([, v]) => v.buf).map(([k, v]) => ({ feed: k, ageS: Math.round((Date.now() - v.at) / 1000), trips: v.idx.size, bytes: v.buf.length })), storage: !!db(env), upstream: budgetStats() });
+          return json({ ok: true, at: new Date().toISOString(), feeds: feedStats, feedFresh: feedFreshness(), cachedFeeds: [...feedMem.entries()].filter(([, v]) => v.buf).map(([k, v]) => ({ feed: k, ageS: Math.round((Date.now() - v.at) / 1000), trips: v.idx.size, bytes: v.buf.length })), storage: !!db(env), upstream: budgetStats() });
         default:
           return json({ error: "not found" }, 404);
       }
@@ -9678,6 +9761,12 @@ function workersCacheHeader(env, request, url, res) {
   const rule = WORKERS_CACHE_TTL.find(([re]) => re.test(url.pathname));
   return rule ? `max-age=${rule[1]}, stale-while-revalidate=${rule[2]}` : null;
 }
+// Liveness pass (28 Oct): the fields it adds (feedTs, the copy's own feed time; liveOld, a row sent as timetable because
+// its kept live time was too old) go only to the newer app, so older apps keep server B's exact shape. Both values are
+// numbers, null or booleans and never the first key of an object, so taking them out of the text is safe.
+const NEW_ONLY_KEYS = /,"(?:feedTs|liveOld)":(?:null|true|false|-?\d+(?:\.\d+)?)/g;
+const NEW_KEYS_API = /^\/api\/(departures|service|status|trip|trip\/live)$/;
+function oldAppText(text) { return /"(?:feedTs|liveOld)":/.test(text) ? text.replace(NEW_ONLY_KEYS, "") : text; }
 async function finishAnswer(request, env, res) {
   if (!res || res.status === 101 || res.webSocket) return res;
   const url = new URL(request.url);
@@ -9686,6 +9775,12 @@ async function finishAnswer(request, env, res) {
   if (!api && !list) return res;
   const get = request.method === "GET" || request.method === "HEAD";
   let out = new Response(res.body, res);
+  if (api && request.method === "GET" && out.status === 200 && NEW_KEYS_API.test(url.pathname) && !newerApp(request) && /json/.test(out.headers.get("content-type") || "")) {
+    const text = await out.text();
+    const t2 = oldAppText(text);
+    out = new Response(t2, out);
+    if (t2 !== text) out.headers.delete("content-length");
+  }
   if (list && get && out.status === 200 && !out.headers.get("etag")) {
     let tag = listTags.get(url.pathname);
     if (!tag) {
@@ -9885,7 +9980,9 @@ async function tripLive(env, legs, exec) {
       platform: word(at) || null, vehicle, stopsAway,
     };
   });
-  return { kind: "triplive", now, dataAt: rt.fetchedAt() || null, legs: out };
+  // dataAt: the oldest feed copy in use by its own time (28 Oct; was the newest fetch), so a re-timed trip is never
+  // younger than its oldest live time.
+  return { kind: "triplive", now, dataAt: rt.dataTs() || rt.fetchedAt() || null, legs: out };
 }
 
 // Request numbers (docs/DIAGNOSIS_LAG.md item 10, 26 Oct, g17): one JSON line per /api request in the Worker's logs
@@ -10073,6 +10170,33 @@ async function answerAndStore(request, env, exec, cache, key, opts = {}) {
   }
   return { status: res.status, headers, body };
 }
+// A board kept as a copy (edge, saved in D1, or an engine board held while the Trip Planner fails) can outlive its live
+// times. On the way out, a row whose live time was read more than FEED_LIVE_MAX_MS ago (its liveAt, else the copy's
+// dataAt) goes out as a timetable row: no estimate, no delay, no vehicle, liveOld true. Every app version then shows
+// the timetable time, never a "Live" time minutes old. Returns how many rows changed.
+function capLiveRows(d, now = Date.now()) {
+  if (!d || !Array.isArray(d.items)) return 0;
+  const copyAt = Number(d.dataAt) || 0;
+  let n = 0;
+  d.items = d.items.map((x) => {
+    if (!x || !x.realtime || x.cancelled) return x;
+    const at = Number(x.liveAt) || copyAt;
+    if (!at || now - at <= FEED_LIVE_MAX_MS) return x;
+    n++;
+    return { ...x, estimated: null, realtime: false, delayMin: null, vehicle: null, liveOld: true, liveAt: null, status: { key: "scheduled", text: "Scheduled" } };
+  });
+  if (n && d.live) d.live = { ...d.live, liveCount: d.items.filter((i) => i && i.realtime).length };
+  return n;
+}
+// Cheap test before parsing a kept copy: its oldest liveAt (or its dataAt) is past the limit.
+function copyMayHaveOldLive(text, storedAt, now = Date.now()) {
+  if (!/"realtime":true/.test(text)) return false;
+  if (storedAt && now - storedAt > FEED_LIVE_MAX_MS) return true;
+  const re = /"liveAt":(\d{13})/g;
+  let m;
+  while ((m = re.exec(text))) if (now - Number(m[1]) > FEED_LIVE_MAX_MS) return true;
+  return false;
+}
 function errorBody(body) { return /^\s*\{\s*"error"\s*:/.test(String(body || "").slice(0, 40)); }
 // A cached answer: "now" is the current time for the countdowns, and dataAt says when its times were read, so the
 // app's "Updated" line is honest about a copy.
@@ -10105,6 +10229,10 @@ function copyResponse(text, hit, storedAt, tag) {
   if (/json/.test(hit.headers.get("content-type") || "") && !hit.headers.get("etag")) {
     body = body.replace(/"now":\d{13}/g, '"now":' + Date.now());
     if (storedAt && /^\{\s*"/.test(body) && !/^\{"dataAt":/.test(body)) body = '{"dataAt":' + storedAt + "," + body.slice(1);
+    // Live times too old to call live go out as timetable rows (capLiveRows).
+    if (/"items":\[/.test(body) && copyMayHaveOldLive(body, storedAt)) {
+      try { const d = JSON.parse(body); if (capLiveRows(d)) body = JSON.stringify(d); } catch (e) { /* the copy as it is */ }
+    }
   }
   const r = new Response(body, hit);
   r.headers.set("cache-control", "no-store");

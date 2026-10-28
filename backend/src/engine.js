@@ -215,7 +215,8 @@ function engBuildBoard(src, stopId, opts = {}) {
       cancelled: !!(live && live.cancelled), wheelchair: false, occupancy: null, alerts: [],
       source: est ? "feed" : null,
       // When this row's live time was read (the feed copy's time), so a phone can say "live 12 s ago" per row.
-      liveAt: est ? (src.feedAt(feed) || null) : null,
+      // 28 Oct: the copy's own time (its feed header, feedDataTs) where the source has it, else when it was fetched.
+      liveAt: est ? ((src.feedTs ? src.feedTs(feed) : 0) || src.feedAt(feed) || null) : null,
       ...(live && live.skipped ? { skipped: true } : {}),
       ...(feed === "ferry_mff" || feed === "nswtrains" || /^rb_/.test(feed) ? { feed } : {}),
     };
@@ -331,13 +332,20 @@ function engBuildBoard(src, stopId, opts = {}) {
   list.sort((a, b) => t0(a) - t0(b));
   const modes = [...new Set(list.map((i) => i.mode))];
   list = list.slice(0, opts.n || ENGINE_MAX_ROWS);
-  let feedAt = 0;
-  for (const f of feedsUsed) { src.needFeed && src.needFeed(f); feedAt = Math.max(feedAt, src.feedAt(f) || 0); }
+  let feedAt = 0, feedTs = Infinity;
+  for (const f of feedsUsed) {
+    src.needFeed && src.needFeed(f);
+    const a = src.feedAt(f) || 0;
+    feedAt = Math.max(feedAt, a);
+    // The oldest copy's own time (header), for "live as of"; feedAt (newest fetch) still decides the board's age.
+    const t = (src.feedTs ? src.feedTs(f) : 0) || a;
+    if (t) feedTs = Math.min(feedTs, t);
+  }
   const name = me[1] ? engPlaceName(me[0]) : me[0];
   return {
     stop: { id: stopId, name: name || stopId, fullName: me[0] || "", exactName: me[1] ? me[0] : null },
     items: list, modes, alerts: [],
-    live: { feedAt: feedAt || null, filledFromFeed: list.filter((i) => i.realtime).length, liveCount: list.filter((i) => i.realtime).length, total: list.length },
+    live: { feedAt: feedAt || null, feedTs: Number.isFinite(feedTs) ? feedTs : null, filledFromFeed: list.filter((i) => i.realtime).length, liveCount: list.filter((i) => i.realtime).length, total: list.length },
     now,
     engine: { builtAt: now, feeds: [...feedsUsed], ...(emptyHidden.length ? { emptyHidden } : {}) },
   };
@@ -598,6 +606,7 @@ class BoardEngine {
       tu(feed, tripId) { const f = self.feeds.get(feed); return f && f.tu ? decodeFrom(f.tu, tripId) : null; },
       vp(feed, tripId) { const f = self.feeds.get(feed); return f && f.vp ? decodeFrom(f.vp, tripId) : null; },
       feedAt(feed) { const f = self.feeds.get(feed); return f && f.tu ? f.tu.at : 0; },
+      feedTs(feed) { const f = self.feeds.get(feed); return f && f.tu && typeof feedDataTs === "function" ? feedDataTs(f.tu) : 0; },
       added(feed) { const f = self.feeds.get(feed); return f ? f.added || [] : []; },
       needFeed(feed) { const f = self.want(feed); f.uses = (f.uses || 0) + 1; },
       plat(id) {
@@ -968,7 +977,7 @@ class BoardEngine {
   status() {
     const m = this.loadMeta(), now = Date.now();
     const feeds = {};
-    for (const [k, f] of this.feeds) feeds[k] = { tuAgeS: f.tu ? Math.round((now - f.tu.at) / 1000) : null, vpAgeS: f.vp ? Math.round((now - f.vp.at) / 1000) : null, trips: f.tu ? f.tu.idx.size : 0, added: (f.added || []).length, unknown: f.unknown || 0, unknownListed: f.unknownListed || 0, feedOnly: f.feedOnly || 0, addMs: f.addMs || 0, hot: now - f.wantAt < ENGINE_FEED_HOT_MS, fails: f.fails, periodS: f.period ? f.period / 1000 : null, same: f.same || 0, madeAgoS: f.hdrs && f.hdrs.length ? Math.round(now / 1000 - f.hdrs[f.hdrs.length - 1]) : null, nextInS: f.nextAt ? Math.round((f.nextAt - now) / 1000) : null };
+    for (const [k, f] of this.feeds) feeds[k] = { tuAgeS: f.tu ? Math.round((now - f.tu.at) / 1000) : null, dataAgeS: f.tu && typeof feedDataTs === "function" ? Math.round((now - feedDataTs(f.tu)) / 1000) : null, vpAgeS: f.vp ? Math.round((now - f.vp.at) / 1000) : null, trips: f.tu ? f.tu.idx.size : 0, added: (f.added || []).length, unknown: f.unknown || 0, unknownListed: f.unknownListed || 0, feedOnly: f.feedOnly || 0, addMs: f.addMs || 0, hot: now - f.wantAt < ENGINE_FEED_HOT_MS, fails: f.fails, periodS: f.period ? f.period / 1000 : null, same: f.same || 0, madeAgoS: f.hdrs && f.hdrs.length ? Math.round(now / 1000 - f.hdrs[f.hdrs.length - 1]) : null, nextInS: f.nextAt ? Math.round((f.nextAt - now) / 1000) : null };
     return { role: "core", boots: this.boots, bootAt: this.bootAt, ver: m ? m.ver : 0, builtAt: m ? m.builtAt : null, days: m ? Object.keys(m.days) : [], hotBoards: this.hot.size, stretch: Math.round(this.stretch(now) * 100) / 100, budget: this.budget(), perMin: Number(this.env.ENGINE_PER_MIN) || ENGINE_PER_MIN, tokens: Math.round((this.tokens || 0) * 10) / 10, gaps: this.gaps ? [...this.gaps].slice(0, 50).map(([s, g]) => [s, g.lines]) : [], pausedUntil: this.pauseUntil || null, ...this.stats, feeds,
       // Stand and platform names (wantLearn, learnTick): queue, today's planner reads, and what they taught.
       learn: { core: engLearnCoreOn(this.env), moved: engLearnTmpOn(this.env), queued: this.learnQ.size, queuedMiss: [...this.learnQ.values()].filter((v) => v.miss).length, today: this.learnDayCount(now).n, perDay: Number(this.env.ENGINE_LEARN_DAY) || ENGINE_LEARN_DAY, perMin: Number(this.env.ENGINE_LEARN_PER_MIN) || ENGINE_LEARN_PER_MIN, names: this.platMem ? this.platMem.size : null, movedStands: this.platxMem ? this.platxMem.size : null, platVer: this.platVer || 0, ...this.learnStats } };
@@ -1074,7 +1083,7 @@ class BoardEngine {
     if (q && Array.isArray(q.learn)) for (const x of q.learn.slice(0, 100)) if (Array.isArray(x)) this.wantLearn(x[0], !!x[1], t0);
     const src = this.source();
     const epoch = (this.bootAt % 100000) * 1000;
-    const out = { ver: m.ver, platVer: epoch + (this.platVer || 0), at: {}, vpAt: {}, same: [], tu: {}, veh: {}, added: {}, next: {} };
+    const out = { ver: m.ver, platVer: epoch + (this.platVer || 0), at: {}, ts: {}, vpAt: {}, same: [], tu: {}, veh: {}, added: {}, next: {} };
     // Name and gap changes since the shard's platVer, when this object still has them all (same start, in the log):
     // the shard puts them into the windows it holds instead of reading every window again.
     const pv = Number(q && q.pv);
@@ -1089,6 +1098,7 @@ class BoardEngine {
       const f = this.feeds.get(feed);
       if (!f || !f.tu) continue;
       out.at[feed] = f.tu.at; out.vpAt[feed] = f.vp ? f.vp.at : 0;
+      out.ts[feed] = typeof feedDataTs === "function" ? feedDataTs(f.tu) : f.tu.at;
       const have = q.have && q.have[feed];
       if (have && have[0] === out.at[feed] && have[1] === out.vpAt[feed]) { out.same.push(feed); continue; }
       const tus = {}, vehs = {};
@@ -1411,7 +1421,7 @@ class BoardShard {
       for (const [t, tu] of Object.entries(r.tu[feed])) e.tu.set(t, tu);
       for (const [t, v] of Object.entries(r.veh[feed] || {})) e.veh.set(t, v);
       if (!merge || !old || old.at !== r.at[feed]) changed = true;
-      e.at = r.at[feed]; e.vpAt = r.vpAt[feed]; e.added = r.added[feed] || [];
+      e.at = r.at[feed]; e.ts = (r.ts && r.ts[feed]) || r.at[feed]; e.vpAt = r.vpAt[feed]; e.added = r.added[feed] || [];
       this.live.set(feed, e);
     }
     return changed;
@@ -1446,6 +1456,7 @@ class BoardShard {
       veh(feed, t) { const e = self.live.get(feed); return e ? e.veh.get(t) || null : null; },
       vp() { return null; },
       feedAt(feed) { const e = self.live.get(feed); return e ? e.at : 0; },
+      feedTs(feed) { const e = self.live.get(feed); return e ? e.ts || e.at : 0; },
       added(feed) { const e = self.live.get(feed); return e ? e.added || [] : []; },
       plat(id) { const s = info(id); return s ? s[5] || "" : ""; },
       cands(stop) { const w = self.win.get(stop); return w ? { cand: w.cand } : null; },

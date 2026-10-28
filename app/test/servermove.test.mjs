@@ -99,7 +99,9 @@ test('honest "Updated": a cached answer keeps the time it was read', async () =>
   assert.match(a, /stampSeen\((?:cleanAlertTexts\()?body as T\)?, dataTime\(body, Date\.now\(\)\)(?:, LIVE_DATA_AGE \? Date\.now\(\) : undefined)?\)/);
   assert.equal(L.answerTime({ seenAt: now - 9000 }, now), now - 9000);
   assert.equal(L.answerTime({ seenAt: now + 9000 }, now), now, 'never in the future');
-  assert.equal(L.answerTime({ seenAt: now - 600000 }, now), now, 'nothing older than 2 minutes is believed');
+  // 28 Oct liveness pass: an older answer keeps its own time (up to 15 minutes back), so "Updated" never says now.
+  assert.equal(L.answerTime({ seenAt: now - 600000 }, now), now - 600000, 'a 10 minute old answer keeps its time');
+  assert.equal(L.answerTime({ seenAt: now - 3600000 }, now), now - 900000, 'at most 15 minutes back');
   assert.equal(L.answerTime(null, now), now);
   assert.match(read('src/lib/hooks.ts'), /const at = answerTime\(d, Date\.now\(\)\);/);
   const r = L.stampSeen({ dataAt: now - 7000, items: [{}] }, now - 7000);

@@ -20,6 +20,25 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 | Lighthouse (mobile) | Landing, support, privacy and web app | After site changes. Last run: 100 in all four categories on landing, support and privacy; web app 100, 100, 100 and 96 for accessibility |
 | Writing style check | grep in every test file and before every push | No em dashes, no en dashes, no filler words |
 
+### `backend/test/feed-fresh.test.mjs`: 9 tests, 9 pass (28 Oct, liveness pass, server)
+* A good fetch is counted per feed and per mode with the copy's own header time (age and header lag); a header in the future is not trusted.
+* A failed fetch counts an error with words that carry no key, and the last good copy is marked served old.
+* A feed copy over `FEED_LIVE_MAX_MS` (5 min) by its header gives no live times (`staleDropped`), a fresh one does, and `dataTs` is the header time; the last good copy stops giving live times once it is 5 minutes old.
+* `capLiveRows`: kept board rows with a live time over 5 minutes go out as timetable rows (no estimate, delay or vehicle, `liveOld`); fresh, timetable and cancelled rows do not change; a copy with no `liveAt` uses its `dataAt`. The cheap check reads a copy only when it may hold such a row.
+* Older apps never see `feedTs` or `liveOld` (`oldAppText`); `old-client-compat.test.mjs` still matches server B's shape.
+* `/api/health` shows `feedFresh` with the admin key only.
+
+### `app/test/liveness.test.mjs`: 6 tests, 6 pass (28 Oct, liveness pass, app)
+* A live time over `LIVE_MAX_MS` (5 min) is Not tracking with its timetable clock time, however far off the service is; 4 minutes far off stays Live with its age; within 10 minutes the 2 minute rule stays.
+* The GPS age is counted from the answer when the row has its own read time (`liveLead`), not twice.
+* `stampSeen` gives each row its own read time from `liveAt` on the server's clock and the lead, never younger than the answer.
+* `copyTime`: a kept copy's `dataAt` on the server's clock, at most 15 minutes back, never in the future; a 6 minute old saved board's live rows are Not tracking.
+* `answerTime` keeps an older answer's time; `LIVE_DATA_AGE` is on; the "Live, updated" line is not said past 5 minutes; board rows and row keys pass the lead.
+
+### Speed, measured offline (28 Oct): `backend/tools/speed-local.mjs` and `app/test/e2e/paintcache.mjs`
+* Server: `node backend/tools/speed-local.mjs 5` times each main endpoint of the built worker against the fake Transport for NSW (cold, warm copy, poll), no NSW call. Numbers in [PERFORMANCE.md](PERFORMANCE.md) "Liveness and speed (28 Oct)".
+* App: `MOCK_API=<port> CHROME=<chrome> node app/test/e2e/paintcache.mjs <dist-web> OUT.json` opens each main screen with nothing kept and with a kept copy while the local server answers 4 s late, and times the first frame with times on it.
+
 ### `app/test/offpeak.test.mjs`: 9 tests, 9 pass (28 Oct, off peak hint, app)
 * Server times ("10am", "7pm", "9:30 am", "19:00") read as hour and minute; bad ones read as nothing; the app's 12 hour clock.
 * Fare objects come from the server's own `fareOf`: a Wednesday 8am trip with a 10:05am trip loaded gets "Leave after 10:00am and pay about $x less" with the server's saving and a Leave at 10:00 on the same day; 5:30pm gets 7:00pm.

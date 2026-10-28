@@ -9,7 +9,7 @@ import { placesGone, stopsAsPlaces, type PlaceItem } from './planCore';
 import { EARLIER_NEEDS_NEW, ymd } from './tripModesCore';
 import { BOARD_EARLIER_NEEDS_NEW, boardQuery, honoured } from './boardTimeCore';
 import { createReadCache } from './pollCore';
-import { stampSeen } from './liveLabelCore';
+import { copyTime, stampSeen } from './liveLabelCore';
 import { LIVE_DATA_AGE } from './features';
 import { cleanAlertTexts } from './htmlTextCore';
 import { noteBoard } from './recent';
@@ -91,8 +91,7 @@ async function once<T>(path: string, init: ApiInit | undefined, timeoutMs: numbe
 /** When an answer's times were read: the server's dataAt for a cached answer (never in the future, at most 15 min back:
  * a first open can get the server's saved board at once, minutes old, while it fetches a fresh one), else now. */
 export function dataTime(body: any, now: number): number {
-  const d = body && typeof body === 'object' ? Number((body as any).dataAt) : NaN;
-  return Number.isFinite(d) && d <= now && now - d < 900000 ? d : now;
+  return copyTime(body, now);
 }
 
 /** Network or timeout failure, as opposed to an answer from the server. Android reports an aborted fetch as "canceled". */

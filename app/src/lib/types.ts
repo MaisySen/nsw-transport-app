@@ -29,11 +29,17 @@ export type Departure = {
   departed?: boolean;
   /** When this phone received the answer (set by api.ts, liveLabelCore.stampSeen). */
   seenAt?: number;
+  /** Server: when this row's live time was made (the feed copy's header time, or the planner answer), ms server clock. */
+  liveAt?: number | null;
+  /** Server, 28 Oct: a kept copy's live time was too old, so this row went out as a timetable row. */
+  liveOld?: boolean;
+  /** Phone: how much older than its answer this row's live time is (stampSeen), for liveState's GPS age. */
+  liveLead?: number;
 };
 
 export type DeparturesResp = {
   kind: 'departures'; stop: { id: string; name: string; fullName?: string; exactName?: string };
-  items: Departure[]; modes?: any[]; alerts?: Alert[]; live?: { feedAt?: number; liveCount?: number; total?: number }; now: number; seenAt?: number;
+  items: Departure[]; modes?: any[]; alerts?: Alert[]; live?: { feedAt?: number; feedTs?: number | null; liveCount?: number; total?: number }; now: number; seenAt?: number;
   /** The moment a board for another time is from, echoed by a server that takes time (api.transportsydney.app). */
   at?: { date: string; time: string; clamped?: boolean };
   /** Set by the app when it asked for one mode (`mode` on /api/departures); the items are that mode only. */

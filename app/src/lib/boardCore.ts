@@ -64,7 +64,7 @@ export function boardRows(items: any[], now: number, max = 8, mode: string | nul
     const est = d.realtime ? t(d.estimated) : NaN;
     const at = Number.isFinite(est) ? est : t(d.planned);
     if (!Number.isFinite(at) || at <= now - 30000) continue;
-    const st = liveState({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS, noShow: d.noShow }, now);
+    const st = liveState({ planned: d.planned, estimated: d.estimated, realtime: d.realtime, cancelled: d.cancelled, seenAt: d.seenAt, vehicleAgeS: d.vehicle?.ageS, liveLeadMs: d.liveLead, noShow: d.noShow }, now);
     const live = st.kind === 'live';
     // A live or timetable time counts down; Not tracking shows its timetable clock time instead (never "Now").
     const { when, unit } = st.kind === 'stale' ? { when: st.big, unit: '' } : boardTime(st.kind === 'live' ? at : t(d.planned), now);
