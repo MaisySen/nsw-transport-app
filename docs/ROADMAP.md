@@ -61,6 +61,8 @@ The plan's items for 29 and 30 Oct (get off timing, no show counts, bus detours,
 
 ## Build 209 checklist (Sun 1 Nov)
 
+Every step, with commands and what to show Bidur before any submit: [BUILD_209_CHECKLIST.md](BUILD_209_CHECKLIST.md) (29 Oct). Branches ready: `sentry-build209`, `island-209`, `widget-209` (widgets drop Live, 29 Oct), throwaway `int-209` (all merged, tests green).
+
 1. Branch from main. Merge the Sentry branch (head f8479c2) and the short Dynamic Island branch `island-209` (3e77300: station with a colon on the left, a self updating countdown on the right). Fix the STORE_PRIVACY.md line that says "not changed on this branch".
 2. Add the EAS secret SENTRY_AUTH_TOKEN. On Android, set SENTRY_DISABLE_AUTO_UPLOAD until a token is in place.
 3. Give build 209 its own runtime (proposed 1.1.0) because it adds native modules. From then each night's update is published to both runtimes from the same commit, so builds 201 to 208 keep working. Owner to confirm.
