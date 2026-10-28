@@ -45,7 +45,7 @@ Rules that shape the order: one over the air update a night (server only work do
 * Off peak hint on peak hour trips, from the server's fare saving (9d10699).
 * Liveness pass: no time older than 5 min by the feed's own timestamp is ever shown as Live; per feed freshness on the server (941b228).
 * App Review notes list every server feature and switch, saved in App Store Connect as a draft ([APP_REVIEW_NOTES.md](APP_REVIEW_NOTES.md)).
-* In progress: outage fallback for trips that end at a last stop (the open bug from 26 Oct).
+* Done 28 Oct (server, transport-api 2ff6fdda): outage fallback for trips that end at a last stop (the open bug from 26 Oct); live from the 29 Oct 2:40 AM timetable load, to check on production with the planner refused.
 
 ## Now: to 1 Nov
 
