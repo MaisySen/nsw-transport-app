@@ -36,26 +36,50 @@ struct LiveTripActivityWidget: Widget {
                     LiveTripIslandBottom(state: s, stale: stale)
                 }
             } compactLeading: {
-                // Before boarding the line ("T1" then the minutes); on board the next thing to do ("Off Redfern").
+                // Before boarding the line badge; on board just where you get off with a colon ("Rhodes:"), short so
+                // the system clock beside the island stays visible (28 Oct: "Off <station>" and "in 2 minutes" covered it).
                 if s.phase == "ride" && !s.arrived(stale: stale) {
-                    Text(s.compactAction)
+                    Text(s.compactStation)
                         .font(.caption.weight(.semibold))
                         .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                        .frame(maxWidth: 84, alignment: .leading)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: 64, alignment: .leading)
                 } else {
                     WidgetLineBadge(line: s.line, colorHex: s.lineColorHex, mode: s.mode)
                 }
             } compactTrailing: {
-                MinutesUntil(date: s.countdownTarget, arrived: s.arrived(stale: stale), outdated: s.outdated(stale: stale))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                    .frame(maxWidth: 56)
+                CompactCountdown(date: s.countdownTarget, arrived: s.arrived(stale: stale), outdated: s.outdated(stale: stale))
+                    .frame(maxWidth: 40, alignment: .trailing)
             } minimal: {
-                WidgetLineBadge(line: s.line, colorHex: s.lineColorHex, mode: s.mode)
+                CompactCountdown(date: s.countdownTarget, arrived: s.arrived(stale: stale), outdated: s.outdated(stale: stale))
+                    .frame(maxWidth: 36)
             }
             .widgetURL(URL(string: "nswtransport://go"))
+        }
+    }
+}
+
+/// The Dynamic Island's tiny countdown ("1:59", counting down by itself with no update), a tick once arrived, and
+/// the clock time when the live times are old or the moment is more than an hour away. Never "in 2 minutes".
+struct CompactCountdown: View {
+    var date: Date
+    var arrived = false
+    var outdated = false
+    var body: some View {
+        if arrived {
+            Image(systemName: "checkmark.circle.fill").accessibilityLabel("Arrived")
+        } else if outdated || date.timeIntervalSinceNow > 3600 {
+            Text(Clock.time(date))
+                .font(.caption2.weight(.semibold))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+        } else {
+            Text(timerInterval: Date()...max(date, Date()), countsDown: true, showsHours: false)
+                .font(.caption.weight(.semibold))
+                .monospacedDigit()
+                .lineLimit(1)
+                .multilineTextAlignment(.trailing)
         }
     }
 }

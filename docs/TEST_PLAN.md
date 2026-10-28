@@ -20,6 +20,14 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 | Lighthouse (mobile) | Landing, support, privacy and web app | After site changes. Last run: 100 in all four categories on landing, support and privacy; web app 100, 100, 100 and 96 for accessibility |
 | Writing style check | grep in every test file and before every push | No em dashes, no en dashes, no filler words |
 
+### `app/test/widgetlive.test.mjs`: 7 tests, 7 pass (29 Oct, build 209 widgets, branch `widget-209`)
+* The iPhone (`WidgetLive.swift`) and Android (`WidgetLive.kt`) widget rules use the app's numbers (`LIVE_MAX_MS`, `STALE_DATA_MS`, `STALE_NEAR_MS`).
+* With swiftc on the machine: `app/test/swift/widgetlive/main.swift` is compiled with `WidgetLive.swift` and its 77 grid cases (data age by time to the service) must equal `liveState`; data time on the phone's clock (server clock skew, a feed time in the future, an ancient one, none); "Updated N min ago"; a stale live row shows its timetable time. Skipped without swiftc (set `WIDGET_NATIVE_CHECK=0` to skip on purpose).
+* With kotlinc (or `KOTLINC`): the same grid for `WidgetLive.kt` (`app/test/kotlin/WidgetLiveCheck.kt`), and the trip widget's refresh cap is the first stale moment. Skipped without kotlinc.
+* The widgets use the rule: every Next trip and stop board entry settles its rows, the trip answer's `live.feedTs`/`feedAt` and `now`, each board row's `liveAt`, the trip in progress card's `updated`; new model fields are optional so older answers and caches decode.
+* Battery: no repeating, exact or waking alarm and no Swift timer in the widget code; the refresh stays at least a minute apart.
+* Not checked on a phone: the widget views themselves (SwiftUI and RemoteViews cannot be built here).
+
 ### `backend/test/feed-fresh.test.mjs`: 9 tests, 9 pass (28 Oct, liveness pass, server)
 * A good fetch is counted per feed and per mode with the copy's own header time (age and header lag); a header in the future is not trusted.
 * A failed fetch counts an error with words that carry no key, and the last good copy is marked served old.
@@ -668,6 +676,13 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 * Server, tight change rule (27 Oct, deployed 1:45 PM as transport-api 3bf49b2f): `TZ=Australia/Sydney node --test test/tight-change.test.mjs` in `backend/`: the minimums equal the app's, the server rule and app/src/lib/tightChangeCore.ts agree on every change of 20,000 generated trips (generated stops, no real stations), the rule cases (same mode 3 min, another mode or platform 5 min, a walk plus 2 min, shorter than the walk is miss, cancelled is not tight), the journey risk, timetable trips keep the transfer keys, `/api/trip` with a 4 min train to bus change says tight, your own trips with a change (2 min on the same platform with 2 allowed is tight, 3 is fine, your own longer change time still counts) with the warning line, and the app hides its row label when the server has a warning line.
 * Tight change fallback (27 Oct): `TZ=Australia/Sydney OFFLINE=1 node --test test/tightfallback.test.mjs` in `app/` (via trips joined on the phone: the rule with the person's own change time as a floor, a walk counts, cancelled is not tight, trips.ts uses `tightOrOwn`) and `TZ=Australia/Sydney node --test test/web-tight-change.test.mjs` in `backend/` (the web page's marked rule block equals app/src/lib/tightChangeCore.ts on 20,000 generated trips, the via floor, the web via join uses it). On a phone or the web page: a via trip whose change at the via stop is under the rule (for example train to bus under 5 min) shows Tight change in the detail.
 * Server, trip legs live (27 Oct, deployed 1:10 PM, 807c3663): `TZ=Australia/Sydney node --test test/trip-realtime.test.mjs` in `backend/`: an echoed zero delay estimate 3 hours out is not live (estimate and delay kept), a moved estimate is live at any distance (late and early), within the hour is live and 61 min is not, a late first service counts from its live time, later legs of a trip leaving soon stay live, no estimate is never live, and the same through the whole `/api/trip` path.
+
+## Sentry crash reporting for build 209 (27 Oct, branch sentry-build209)
+
+* `OFFLINE=1 node --test test/sentry209.test.mjs` in `app/` (10 tests): the cleaning (query values, positions, stop IDs, paths with IDs, quoted names and place words go; code, stack lines and error words stay), events lose the user, request, phone name, time zone and IP, breadcrumbs for touches, screens, requests and console are dropped, the options (no replay, profiling, traces, sessions, screenshots or view tree, sendDefaultPii false), release and dist, the native module check (missing or throwing lookups mean no Sentry), source checks that no file loads the SDK at the top and the module check runs before the `require`, the crash net hooks, the config plugin, the public DSN, no token in the repo, the EAS upload switches and Crash Data in the privacy manifest.
+* `test/press.test.mjs` allows a Sentry DSN (key at an ingest host) in its address scan.
+* `npx expo export --platform ios` bundles with `sentry.native.ts` and puts a debug ID in the source map (checked 27 Oct; folder deleted after).
+* On a phone (not done; needs build 209): the app opens and works as before; one test error reaches Sentry with release `com.maisysen.nswtransport@1.0.0+209`, dist 209, symbolicated, and with no stop names, positions, IDs or the phone's name. On a build 201 to 208 phone with the same update: no Sentry request leaves the phone, and a caught error still reaches the feedback inbox.
 
 ## Crash safety net (27 Oct)
 

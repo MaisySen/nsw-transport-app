@@ -190,7 +190,7 @@ Native work, so it needs the build (checklist in [ROADMAP.md](ROADMAP.md), detai
 
 * Short Dynamic Island while following a trip: the station with a colon on the left and a self updating countdown on the right, so the system clock stays visible (branch `island-209`, 3e77300; written, not compiled).
 * Get off now as a time sensitive notification that breaks through a Focus (entitlement), and moved by push when a delay appears with the phone locked.
-* Widgets drop Live after the same 5 minute rule as the app; widgets and Watch read the phone's copies first.
+* Widgets drop Live after the same rule as the app (5 minutes, 2 minutes within 10 minutes of the service, by the feed's own time), showing the timetable time and "Updated N min ago" (branch `widget-209`, written 29 Oct, not compiled for a phone); widgets and Watch read the phone's copies first.
 * Crash reports through Sentry (branch head f8479c2), Speak only with headphones, the Here stand on a Lock Screen widget, timetable packs on Wi-Fi only, the commute warmed before the usual departure, Android's 24 hour setting.
 
 ## Tonight's update (28 Oct, 11:15 PM, over the air)
@@ -316,6 +316,10 @@ Opal fare card on the trip screen (29 Oct, in the 12:29 AM update 281aa87b): a t
 * Board rows no longer carry two fields the app never reads (mode name, wheelchair flag).
 * Stop and place search: an answer is kept by the phone for an hour, so typing the same words again answers on the phone. Stops already answer as you type from the lists kept on the phone (26 Oct).
 * Older apps (builds 201 to 208, updates up to ecb0882d) get exactly what they got before. Off switch: POLL_TAGS=off or kill.pollTags.
+
+## Sentry crash reporting (build 209, 1 Nov; branch sentry-build209, not on main yet)
+
+* From build 209, crashes (native and JavaScript) also go to Sentry, cleaned on the phone of stop, route and place names, positions, IDs and the phone's name. Battery first: errors only, no tracing, replay, profiling or sessions. Builds 201 to 208 keep reporting to the feedback inbox. [SENTRY.md](SENTRY.md).
 
 ## Not in the app
 

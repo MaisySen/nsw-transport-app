@@ -2,6 +2,8 @@
 # Local release build (native libs stored compressed and extracted on install, arm64 plus x86_64) of the Android app. Signing secrets come from ~/.nsw-secrets (never in the repo).
 set -e
 export ANDROID_HOME=/home/user/android-sdk ANDROID_SDK_ROOT=/home/user/android-sdk NODE_ENV=production
+# Sentry (build 209): source maps upload only when SENTRY_AUTH_TOKEN is set; a local build without it skips the upload.
+[ -n "$SENTRY_AUTH_TOKEN" ] || export SENTRY_DISABLE_AUTO_UPLOAD=true
 cd /home/user/nsw-app
 CI=1 npx expo prebuild --platform android --no-install
 cd android
