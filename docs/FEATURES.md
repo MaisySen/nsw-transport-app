@@ -1,6 +1,6 @@
 # Features
 
-What Transport: Sydney Live does today, where to find each thing, and what is still to come. Written for testers, support and App Review. Updated 25 Oct 2026, 7:45 PM Sydney time.
+What Transport: Sydney Live does today, where to find each thing, and what is still to come. Written for testers, support and App Review. Updated 28 Oct 2026, 4 PM Sydney time. Every feature that appears or changes from the server, with its switch, is listed in [APP_REVIEW_NOTES.md](APP_REVIEW_NOTES.md); what is planned is in [ROADMAP.md](ROADMAP.md).
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
@@ -67,7 +67,7 @@ The iPhone and Android apps are one Expo app (`app/`). Anything below marked "ov
 * **GET ON and GET OFF** on your two stops when a bus or train leg is opened from a trip.
 * **Bus picker in New trip:** opens on bus stops near you (only when location is already allowed), then saved and recent bus stops, then Sydney routes in number order. Trackwork, school and regional routes sit in closed sections at the end.
 
-## Four rider wins (g31, on main, not in an over the air update yet)
+## Four rider wins (g31, over the air 26 Oct, 11:35 PM, group 27efc6bd)
 
 App only, JavaScript, no new native module, no server change. Not tried on a real phone yet.
 
@@ -135,7 +135,7 @@ Measured: `app/test/ask-corpus.test.mjs`, 309 questions from all over Sydney and
 * The stop screen, Home's starred stop cards and the full screen board show those departures in the first frame, with no signal too, marked "Timetable times, getting live times" (or "Live times unavailable, showing timetable times"), each row in grey as Timetable. The live board replaces them when it lands. A copy of the live board from the last 10 minutes still goes first.
 * Checked: every timetable row at 20 stops NSW wide was on the Trip Planner's board at the same minute (370 of 370). Details: [TIMETABLE_PACKS.md](TIMETABLE_PACKS.md).
 
-## Button check fixes (26 Oct, g23; next over the air update)
+## Button check fixes (26 Oct, g23; over the air 26 Oct, 11:35 PM, group 27efc6bd)
 
 * Commute card in the busy hour: the leave line ("Leave in N min", Remind me) now shows when every loaded service leaves before you could reach the station; the card asks once for services from the moment you could board (`reachFrom` in `src/lib/smart.ts`).
 * A watch the server no longer has (`/watch/<id>`, for example from an old notification) says "This watch has ended" with Show Watching, and stops asking.
@@ -169,7 +169,7 @@ Reduce Motion stops the live dot pulsing. One light tap (haptic) when it's time 
 
 Home Screen, Lock Screen and StandBy widgets; Siri, Spotlight and Shortcuts ("Next train home in Transport", "Start my commute in Transport"); Control Center buttons (iOS 18); Apple Watch app and complications ([WATCH.md](WATCH.md)); Add to Calendar.
 
-## Coming in build 207 (not built yet)
+## Build 207 (built, on TestFlight; not yet seen on a real iPhone)
 
 Native changes, so they need a new build (branches `native-207` and `native-207-bus`, see [RELEASES.md](RELEASES.md)):
 
@@ -183,6 +183,25 @@ Native changes, so they need a new build (branches `native-207` and `native-207-
 * Calendar leave by: build 208 carries the calendar read access it needs (full access text on iPhone), so More > Calendar leave by shows on 208 and later; builds 201 to 207 keep it hidden. Android needs a build with READ_CALENDAR (versionCode 6). See [CALENDAR-LEAVE-BY.md](CALENDAR-LEAVE-BY.md).
 * Widget layout fixes: times in one column, alerts on 2 or 3 lines, nothing in the rounded corners, a bigger countdown on the small widget.
 * Not yet seen on a real iPhone. The next build is 209 on 1 Nov ([IOS27.md](IOS27.md), "Build 209").
+
+## Build 209 (1 Nov, not built yet)
+
+Native work, so it needs the build (checklist in [ROADMAP.md](ROADMAP.md), details in [IOS27.md](IOS27.md), "Build 209"):
+
+* Short Dynamic Island while following a trip: the station with a colon on the left and a self updating countdown on the right, so the system clock stays visible (branch `island-209`, 3e77300; written, not compiled).
+* Get off now as a time sensitive notification that breaks through a Focus (entitlement), and moved by push when a delay appears with the phone locked.
+* Widgets drop Live after the same 5 minute rule as the app; widgets and Watch read the phone's copies first.
+* Crash reports through Sentry (branch head f8479c2), Speak only with headphones, the Here stand on a Lock Screen widget, timetable packs on Wi-Fi only, the commute warmed before the usual departure, Android's 24 hour setting.
+
+## Tonight's update (28 Oct, 11:15 PM, over the air)
+
+Everything below is on main and ships to builds 201 to 208 and Android in one update; the server parts are already live. Details are in the sections named.
+
+* Get off now 30 s before the live arrival, never after, on by default; alert 1, 2 or 3 stops early; spoken "Get off now at (stop)" (Follow a trip).
+* Max walk chips and the off peak hint on trip results (listed under Four rider wins).
+* Often does not run and Not stopping today on bus times (Live times).
+* Never stale as live: the 5 minute limit on the phone and true row ages (Live times).
+* Kept boards that cannot be read are skipped instead of crashing the screen (Crash safety net).
 
 ## The new server (over the air, 26 Oct)
 
@@ -244,12 +263,12 @@ The server stays on the Cloudflare Workers Paid base fee (US$5 a month) for up t
 * Load test keys do not work on production.
 * Phones see no change.
 
-## Limited stops tag (g22, on main, not deployed or released)
+## Limited stops tag (g22; server deployed 26 Oct, 8:24 PM, app over the air 26 Oct, 11:35 PM, group 27efc6bd)
 * Departure rows and trip legs show a small "Limited stops" tag when that service skips stations its line normally serves. Worked out from the timetable for every line in NSW (trains, metro, light rail, buses, ferries), not a list of lines. iPhone: a filled grey capsule; Android: an outlined chip; caption size, theme colours, light and dark; read out as "Limited stops. Does not stop at every stop on the line.". Not a button.
 * Server: `limited: true` on `/api/departures` items and `/api/trip` transit legs (docs/API.md). Needs the nightly planner pack with `tripLim` (docs/TIMETABLE_PACKS.md); `LIMITED_STOPS=off` turns it off.
 * Known edges: ferry and coach trip ids carry the date, so they match only on the pack's own day; Church Point Ferry request stop wharves are often marked; a bus that runs the same pattern every trip is not marked unless its name says express or limited stops.
 
-## Alerts for my trips (g22, on main, not deployed or released)
+## Alerts for my trips (g22; server deployed 26 Oct, 8:24 PM, app over the air 26 Oct, 11:35 PM, group 27efc6bd)
 * More > Alerts for my trips, off until switched on. Pushes only when a service alert or planned work touches a trip on Home (saved trips, Home and Work, the usual commute): its line on the stretch you ride, the whole line, or the stops you board and get off at. Nothing for other lines or stops.
 * When: delays, fewer services and detours from an hour before one of the trip's times (its trip reminders and morning checks) to two hours after, once a day per alert; planned work once, from 6 PM the evening before the first time it touches (a trip with no times: the evening before the work starts). Nothing between 10 PM and 6 AM unless it is inside a travel time. Several at once are one push. What already touches the trips when you switch it on is shown then, not pushed.
 * Respects the notification settings: asks for permission when switched on, uses the same push as the other alerts, and turning it off deletes the trips on the server.

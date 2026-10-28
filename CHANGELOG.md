@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 28 Oct 2026
 
+### App Review notes and docs for build 209 (28 Oct, 4 PM; docs and App Store Connect draft only, no deploy, no update)
+
+* Notes for Review rewritten in docs/APP_REVIEW_NOTES.md (now the one source; docs/REVIEW-NOTES.md and store/apple/review-notes.md point there) and saved in App Store Connect version 1.0.0 as a draft through the API, read back at 3:53 PM: 3854 of 4000 characters, equal to the file. Nothing submitted, build 208 still attached, contact fields unchanged.
+* The notes now list every feature that appears or changes from the server (Plan B, weekend trackwork, status of my lines, last way home, usually late, reliability, Park and Ride, bus traffic, quieter carriages, regional live times, Often does not run, Not stopping today, the off peak hint, the walking limit sent to the planner, Step free routing, platform change alerts, Alerts for my trips), the 5 minute freshness rule for Live, and everything remote configuration and the server switches can do (guidelines 2.5.2 and 2.5.19). A table maps each to its app and server switch.
+* backend/test/review-notes.test.mjs (3): every `serverOn` switch in backend/src and every remote config flag the app reads is named in APP_REVIEW_NOTES.md, and the Notes text fits 4000 characters with no long dashes. Backend 604 of 604.
+* ROADMAP rewritten (shipped 25 to 28 Oct, nights to 1 Nov, build 209 checklist, App Store path, waiting on the owner, November, known gaps). FEATURES: updated line, build 209 and tonight's update sections, stale "not released" headings for 207, g22, g23 and g31 corrected. STATE: docs pass line, next update and App Store Connect rows, 28 Oct switches, owner items, schedule. IOS27, TEST_PLAN, README, SUBMIT, store/README pointers.
+
 ### Never stale as live: liveness pass (28 Oct; server transport-api, app on main for tonight's update)
 * Why: "We cant compromise liveness and speed here with accuracy" (Bidur, 1:32 PM). Every path that shows a live time was audited (files/liveness-audit-28oct.md on the build box; docs/LIVE-LABELS.md "How fresh live is").
 * Found: a feed that stopped answering kept giving live times from its last good copy for as long as the server copy lived, and the app counted them as just read; the feed's own header time was read but never used; saved boards up to 15 minutes old and engine boards held up to 10 minutes went out with their live rows as live; a copy over 15 minutes old counted as just read on the phone (`dataTime`), and an answer over 2 minutes old said "Live, updated" with the current time (`answerTime`); the Live Activity's stale date ignored the feed copy's age.
