@@ -602,7 +602,7 @@ Before switching it on:
 1. After the daily pack load (3 to 6 AM), capped: `ENGINE_LOAD_KEY=... node backend/tools/planner_match.mjs 150 > match.json` asks the Trip Planner (through our server) and our planner the same searches, one pair every 3 s, and prints the match. Gate: our first trip leaves and arrives within 2 minutes of NSW's first, or uses the same lines, in at least 90%; write down every miss and why.
 2. A delayed train: the trip's legs show the live time (the same feed step as NSW legs).
 3. On a phone with `OWN_PLANNER` on in a test deploy: search Home to Work at 8 AM and at 11:30 PM (late night, next morning's first services), a trip from your position, and arrive by; compare with Trip Planner screenshots.
-4. `/api/raptor/status`: every replica loaded the same pack day; after the daily load, replicas pulled the new one.
+4. `/api/raptor/status`: every replica loaded the same pack day; after the daily load, replicas pulled the new one. From `raptor-status-fix` a sleeping replica reads `loaded: true, inMemory: false, from: "stored"` with its day; before it, `loaded: false, day: null` meant only "not in memory". `backend/test/raptor.test.mjs` has 2 tests for it (both fail without the fix).
 
 ## Trip lists a day at a time (27 Oct, OWN_PLANNER off)
 

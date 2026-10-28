@@ -380,3 +380,53 @@ test("limited: the planner object lists the day's limited trips, and boards and 
   assert.equal(calls, 1);
   globalThis.caches = oldCaches;
 });
+
+// 29 Oct: /api/raptor/status showed a copy as loaded:false, day:null while /api/raptor/day answered from its pack.
+// The status read only the object's memory; a Durable Object that slept (idle eviction, restart) keeps its pack in
+// storage and opens it again on the next /plan, /run or /day. A new object on the same storage is that sleeping copy.
+test("planner status: a sleeping copy with a stored pack reads as loaded, with its day, without opening it", async () => {
+  const state = fakeState();
+  const awake = new W.TripPlanner(state, {});
+  await loadInto(awake, net());
+  const a = await (await awake.fetch(new Request("https://planner/status"))).json();
+  assert.equal(a.loaded, true); assert.equal(a.inMemory, true); assert.equal(a.from, "memory"); assert.equal(a.day, "20261026");
+  const asleep = new W.TripPlanner(state, {});
+  const s = await (await asleep.fetch(new Request("https://planner/status"))).json();
+  assert.equal(s.ver, 7);
+  assert.equal(s.stored, true);
+  assert.equal(s.inMemory, false, "status itself does not open the pack");
+  assert.equal(s.loaded, true, "was loaded:false before the fix");
+  assert.equal(s.day, "20261026", "was day:null before the fix");
+  assert.equal(s.from, "stored");
+  assert.deepEqual(s.counts, a.counts);
+  assert.equal(asleep.stats.opens, 0);
+  // The next use opens it, as /api/raptor/day did.
+  const r = await (await asleep.fetch(new Request("https://planner/plan?from=A&to=B&day=20261026&time=0800&count=1"))).json();
+  assert.equal(r.journeys.length, 1);
+  assert.equal((await (await asleep.fetch(new Request("https://planner/status"))).json()).from, "memory");
+  // A copy with nothing stored still says so.
+  const empty = await (await new W.TripPlanner(fakeState(), {}).fetch(new Request("https://planner/status"))).json();
+  assert.deepEqual([empty.loaded, empty.stored, empty.day, empty.from], [false, false, null, null]);
+});
+
+test("planner status: a replica that pulled the pack names its day; facts about an older version are not used", async () => {
+  const objs = {};
+  const env = { PLANNER: { idFromName: (n) => n, get: (n) => ({ fetch: (u, init) => objs[n].fetch(typeof u === "string" ? new Request(u, init) : u) }) } };
+  objs["planner-r0"] = new W.TripPlanner(fakeState(), env);
+  objs["planner-r1"] = new W.TripPlanner(fakeState(), env);
+  await loadInto(objs["planner-r0"], net());
+  const pulled = await (await objs["planner-r1"].fetch(new Request("https://planner/load/pull?ver=1", { method: "POST" }))).json();
+  assert.equal(pulled.ok, true);
+  const r1 = await (await objs["planner-r1"].fetch(new Request("https://planner/status"))).json();
+  assert.deepEqual([r1.ver, r1.loaded, r1.inMemory, r1.day], [7, true, false, "20261026"]);
+  // Kept facts naming another version (a load that moved on) are ignored, never reported as this pack's day.
+  const st = fakeState();
+  const o = new W.TripPlanner(st, {});
+  await loadInto(o, net());
+  st.storage.sql.exec("INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)", "meta", JSON.stringify({ ver: 6, day: "20261020" }));
+  const s = await (await new W.TripPlanner(st, {}).fetch(new Request("https://planner/status"))).json();
+  assert.deepEqual([s.stored, s.loaded, s.day], [true, false, null]);
+  // ?open=1 opens it and the facts are written again.
+  const opened = await (await new W.TripPlanner(st, {}).fetch(new Request("https://planner/status?open=1"))).json();
+  assert.deepEqual([opened.loaded, opened.inMemory, opened.day], [true, true, "20261026"]);
+});

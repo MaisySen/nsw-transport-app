@@ -525,6 +525,13 @@ function rpAnswer(pk, plan) {
 // 1) copy the pack from the first object the first time they start, so one load serves them all.
 const RP_PART = 1 << 20;
 const RP_PRIMARY = "planner-r0";
+// A pack's facts for /status, small enough to keep beside it: its version, day, build time and counts.
+function rpMeta(pk) { return { ver: pk.ver, day: pk.day, builtAt: pk.h.builtAt || null, counts: pk.h.counts || null }; }
+// The kept facts, only when they are about the version this copy holds now (a pull or a load moves it on).
+function rpStoredMeta(text, ver) {
+  if (!text || !ver) return null;
+  try { const m = JSON.parse(text); return m && m.ver === ver ? m : null; } catch { return null; }
+}
 function rpReplicaName(i) { return "planner-r" + i; }
 function rpReplicas(env) { return Math.max(1, Math.min(32, Number(env && env.OWN_PLANNER_REPLICAS) || 1)); }
 function rpStub(env, name) {
@@ -568,6 +575,8 @@ class TripPlanner {
       this.pk = rpOpen({ header: head, arrays });
       this.pk.ver = ver;
       this.stats.opens++; this.stats.openMs = Date.now() - t0;
+      // What /status reports while the pack is not in memory (29 Oct): written once a version has opened cleanly.
+      this.setKv("meta", JSON.stringify(rpMeta(this.pk)));
       return this.pk;
     })();
     try { return await this.opening; } finally { this.opening = null; }
@@ -584,6 +593,8 @@ class TripPlanner {
       this.sql.exec("INSERT OR REPLACE INTO part (ver, name, i, data) VALUES (?, ?, ?, ?)", m.ver, p.name, p.i, await r.arrayBuffer());
     }
     this.setKv("cur", m.ver);
+    // The first object's facts about that version travel with it, so a replica's /status can name its day too.
+    if (m.meta && m.meta.ver === m.ver) this.setKv("meta", JSON.stringify(m.meta));
     this.sql.exec("DELETE FROM part WHERE ver != ?", m.ver);
     return m.ver;
   }
@@ -627,13 +638,22 @@ class TripPlanner {
         return Response.json(run ? { ver: pk.ver, ...run } : { error: "trip", day: pk.day });
       }
       if (u.pathname === "/status") {
+        // The pack lives in this object's memory only while the object is awake; after an idle eviction or a restart
+        // it is opened again from storage by the next /plan, /run or /day. Before 29 Oct `loaded` and `day` read memory
+        // alone, so a copy whose stored pack was fine showed loaded:false, day:null until something used it (while
+        // /api/raptor/day, which goes to the first object and opens the pack, answered from it). Now: inMemory is the
+        // memory state, stored says a version is kept, and loaded, day, builtAt and counts also come from the facts
+        // kept when that version last opened (meta), so a sleeping copy reads as loaded. ?open=1 still opens it.
         const pk = q.open === "1" ? await this.open(name) : this.pk;
-        return Response.json({ name, ver: Number(this.kv("cur") || 0), loaded: !!pk, day: pk ? pk.day : null, builtAt: pk ? pk.h.builtAt : null, counts: pk ? pk.h.counts : null, stats: this.stats });
+        const ver = Number(this.kv("cur") || 0);
+        const meta = pk ? rpMeta(pk) : rpStoredMeta(this.kv("meta"), ver);
+        return Response.json({ name, ver, loaded: !!meta, inMemory: !!pk, stored: ver > 0, from: pk ? "memory" : meta ? "stored" : null,
+          day: meta ? meta.day : null, builtAt: meta ? meta.builtAt : null, counts: meta ? meta.counts : null, stats: this.stats });
       }
       if (u.pathname === "/manifest") {
         const ver = Number(this.kv("cur") || 0);
         const parts = ver ? this.sql.exec("SELECT name, i FROM part WHERE ver = ? ORDER BY name, i", ver).toArray() : [];
-        return Response.json({ ver, parts });
+        return Response.json({ ver, parts, meta: rpStoredMeta(this.kv("meta"), ver) });
       }
       if (u.pathname === "/dump") {
         const r = this.sql.exec("SELECT data FROM part WHERE ver = ? AND name = ? AND i = ?", Number(q.ver), q.part, Number(q.i)).toArray();
