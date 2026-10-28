@@ -20,6 +20,14 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 | Lighthouse (mobile) | Landing, support, privacy and web app | After site changes. Last run: 100 in all four categories on landing, support and privacy; web app 100, 100, 100 and 96 for accessibility |
 | Writing style check | grep in every test file and before every push | No em dashes, no en dashes, no filler words |
 
+### `app/test/widgetlive.test.mjs`: 7 tests, 7 pass (29 Oct, build 209 widgets, branch `widget-209`)
+* The iPhone (`WidgetLive.swift`) and Android (`WidgetLive.kt`) widget rules use the app's numbers (`LIVE_MAX_MS`, `STALE_DATA_MS`, `STALE_NEAR_MS`).
+* With swiftc on the machine: `app/test/swift/widgetlive/main.swift` is compiled with `WidgetLive.swift` and its 77 grid cases (data age by time to the service) must equal `liveState`; data time on the phone's clock (server clock skew, a feed time in the future, an ancient one, none); "Updated N min ago"; a stale live row shows its timetable time. Skipped without swiftc (set `WIDGET_NATIVE_CHECK=0` to skip on purpose).
+* With kotlinc (or `KOTLINC`): the same grid for `WidgetLive.kt` (`app/test/kotlin/WidgetLiveCheck.kt`), and the trip widget's refresh cap is the first stale moment. Skipped without kotlinc.
+* The widgets use the rule: every Next trip and stop board entry settles its rows, the trip answer's `live.feedTs`/`feedAt` and `now`, each board row's `liveAt`, the trip in progress card's `updated`; new model fields are optional so older answers and caches decode.
+* Battery: no repeating, exact or waking alarm and no Swift timer in the widget code; the refresh stays at least a minute apart.
+* Not checked on a phone: the widget views themselves (SwiftUI and RemoteViews cannot be built here).
+
 ### `backend/test/feed-fresh.test.mjs`: 9 tests, 9 pass (28 Oct, liveness pass, server)
 * A good fetch is counted per feed and per mode with the copy's own header time (age and header lag); a header in the future is not trusted.
 * A failed fetch counts an error with words that carry no key, and the last good copy is marked served old.

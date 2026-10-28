@@ -86,7 +86,8 @@ class BoardWidgetProvider : AppWidgetProvider() {
             val now = System.currentTimeMillis()
             val name = board?.stopName?.takeIf { it.isNotEmpty() } ?: TransitApi.shortName(cfg.stop.name)
             v.setTextViewText(R.id.title, name)
-            v.setTextViewText(R.id.subtitle, modeLabel(cfg.mode) + if (board != null) ", updated ${TransitApi.clock(now)}" else "")
+            // A row whose live time got too old shows as Scheduled (WidgetLive); the line then says when that data was made.
+            v.setTextViewText(R.id.subtitle, modeLabel(cfg.mode) + if (board != null) ", updated ${TransitApi.clock(board.dataAt.takeIf { it > 0 } ?: now)}" else "")
             v.setOnClickPendingIntent(R.id.root, openStop(context, id, cfg.stop.id))
             v.setOnClickPendingIntent(R.id.refresh, refreshIntent(context, id))
             val n = rowsFor(manager, id)

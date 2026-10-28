@@ -114,6 +114,8 @@ public struct Departure: Codable, Hashable, Sendable, Identifiable {
     public var stopsAway: Int?
     public var status: StatusInfo?
     public var pred: Prediction?
+    /// When this row's live time was read, in ms: its feed copy's own time since 28 Oct; null on timetable rows.
+    public var liveAt: Double?
 
     /// The time to show as the main number: live when the feed has it, else the timetable.
     public var bestTime: Date? { (isLive ? estimated : nil) ?? planned }
@@ -124,6 +126,8 @@ public struct Departure: Codable, Hashable, Sendable, Identifiable {
 
 public struct LiveInfo: Codable, Hashable, Sendable {
     public var feedAt: Double?
+    /// The oldest feed copy's own time in ms (newer server and app, 28 Oct); nil on older answers.
+    public var feedTs: Double?
     public var liveCount: Int?
     public var total: Int?
 }
@@ -134,6 +138,8 @@ public struct DeparturesResponse: Codable, Sendable {
     public var modes: [String]?
     public var alerts: [ServiceAlert]?
     public var live: LiveInfo?
+    /// The server's clock in ms, so the widget can age live data on the phone's clock (build 209).
+    public var now: Double?
 
     /// The full alerts for one departure, looked up by id in the board's list.
     public func alerts(for d: Departure) -> [ServiceAlert] {
@@ -214,6 +220,9 @@ public struct TripResponse: Codable, Sendable {
     public var accessible: Bool?
     /// Live Park and Ride spaces when the first leg starts at a Park and Ride station.
     public var parking: TripParking?
+    /// When the live times were read (build 209 widgets age them with it) and the server's clock, in ms.
+    public var live: LiveInfo?
+    public var now: Double?
 }
 
 public struct ServiceStop: Codable, Hashable, Sendable, Identifiable {

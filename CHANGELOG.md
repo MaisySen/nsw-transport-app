@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 29 Oct 2026
 
+### Widgets drop Live after the app's rule (29 Oct; branch `widget-209`, build 209 only, not built)
+* Home screen and Lock Screen widgets kept a fetch's live status for their whole timeline (up to 15 minutes on iPhone), so a time read 14 minutes earlier could still look live. Now the iPhone widgets (`targets/widget/WidgetLive.swift`) and Android widgets (`plugins/widget/kotlin/WidgetLive.kt`) use the app's rule: a live time over 5 minutes old, or over 2 minutes old for a service under 10 minutes away, shows its timetable time with "No live data", and the footer says "Updated N min ago".
+* Age counts from the feed's own time where the answer has it (a board row's `liveAt`, else `live.feedTs`, else `live.feedAt`), turned into the phone's clock with the server's `now`. A trip in progress on the Next trip widget ages from the card's `updated`.
+* Battery: no new timer. iPhone entries were already one a minute; Android rows settle when read, and the trip widget's one non waking refresh alarm comes no later than the first live time's stale moment, still never sooner than a minute. Live Activities already went stale 2 minutes after their live times.
+* Optional fields only (`feedTs`, `now`, `liveAt`, `timetable`, card `updated`), so older answers and widget caches still decode. Server unchanged.
+* New `app/test/widgetlive.test.mjs` (7), `app/test/swift/widgetlive/main.swift`, `app/test/kotlin/WidgetLiveCheck.kt`.
+
 ### Over the air update (29 Oct, 12:08 AM; production group ac1d9962)
 * The 28 Oct night update, moved past midnight, from main d7d6e14: Get off now 30 s before arrival and never after, alert 1, 2 or 3 stops early with spoken "Get off now at <station>", Max walk chips, "Often does not run" and "Not stopping at <stop> today" for buses, the off peak hint, no time older than 5 minutes shown as Live, and the kept board crash path fix. Preview 82021b0f, production ac1d9962 (iOS 01a182a0-8aad-7fce-8253-32deb2e9105e, Android 01a182a0-8aad-7f07-bb88-3b54c28498a8), runtime 1.0.0, both manifests checked. Backend 614/614, app 878 pass, 3 skipped, 0 fail, battery 17/17, tsc clean. 15 minute watch: 0 crash rows. Roll back f5b9ac08.
 * Board engine re-match after it (12:04 to 12:07 AM, capped, 42 planner calls of 60): 94.0%, 171 of 182 (bus 62/63, train 64/68, metro 21/23, light rail 24/28), up from 89.6% and Metro 20/39 on 27 Oct. Fewer services after midnight, so the sample is smaller. Still under the 95% gate; ENGINE_BOARDS stays off.
