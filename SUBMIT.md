@@ -48,7 +48,7 @@ first TestFlight run on 24 Oct 2026 (App Groups capability on). The app group it
 4. TestFlight: the build appears after processing (about 10 to 30 minutes). Add Bidur as an internal tester; the
    export compliance question is already answered in the app (ITSAppUsesNonExemptEncryption false).
 5. Fill the version page from store/apple/: listing.md (name, subtitle, promo text, description, keywords, URLs,
-   category), app-privacy.md (App Privacy), age-rating.md, review-notes.md. Upload screenshots from
+   category), app-privacy.md (App Privacy), age-rating.md, review-notes.md (points to docs/APP_REVIEW_NOTES.md). Upload screenshots from
    store/screenshots/apple-6.9/ and apple-6.5/. Pricing Free, availability Australia.
 6. Select the TestFlight build on the version page and press Add for Review, then Submit.
 

@@ -86,7 +86,7 @@ Native work left from the 25 Oct comfort, voice and performance pass (the JavaSc
 
 ## App Review Guidelines (updated 16 Oct 2026)
 
-* **2.5.19 (new):** no hidden, dormant or undocumented features. With **2.3.1(a)** (new features described in Notes for Review): the features that switch on when api.transportsydney.app answers (Plan B, weekend trackwork, line status, last train home and the rest) should be listed in Notes for Review at submission, saying they turn on when the server has data.
+* **2.5.19 (new):** no hidden, dormant or undocumented features. With **2.3.1(a)** (new features described in Notes for Review): the features that switch on when api.transportsydney.app answers (Plan B, weekend trackwork, line status, last train home and the rest) should be listed in Notes for Review at submission, saying they turn on when the server has data. Done 28 Oct: every server feature and switch is in [APP_REVIEW_NOTES.md](APP_REVIEW_NOTES.md) and in App Store Connect as a draft (read back), and `backend/test/review-notes.test.mjs` fails when a new switch is not listed there.
 * **2.3.14 (new):** creative assets (product page header, search result art) must be about the app and carry no prices or unverifiable claims.
 
 ## Build 207 native list (branch native-207)

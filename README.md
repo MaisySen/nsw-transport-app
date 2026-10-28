@@ -59,7 +59,7 @@ Publisher: Fintex Australia Pty Ltd (ABN 60 688 406 108), https://fintex.au.
 | [Live labels](docs/LIVE-LABELS.md), [Reminders](docs/REMINDERS.md), [Home](docs/HOME-REDESIGN.md), [Watch](docs/WATCH.md) | One feature each |
 | [Store](docs/STORE.md) | App Store and Google Play status and what is waiting on Bidur |
 | [Store privacy](docs/STORE_PRIVACY.md) | What the app and server keep, and the App Privacy and Data safety answers |
-| [Review notes](docs/REVIEW-NOTES.md) | The App Review notes text and when to change it |
+| [Review notes](docs/APP_REVIEW_NOTES.md) | The App Review notes text, every server feature and its switch, and when to change it |
 | [Roadmap](docs/ROADMAP.md) | Done today, open items and what comes next |
 | [Security](docs/SECURITY.md) | Where secrets live (by name only) and how to rotate them |
 | [Engine](docs/ENGINE.md), [Scaling](docs/SCALING.md), [Scale to 1M](docs/SCALE_1M.md), [Lag diagnosis](docs/DIAGNOSIS_LAG.md), [Timetable packs](docs/TIMETABLE_PACKS.md), [Widget and Watch speed](docs/WIDGET_WATCH_SPEED.md) | The board engine, limits, the million user plan (paper only), why the app lagged on 26 Oct, timetables on the phone |

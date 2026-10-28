@@ -617,9 +617,15 @@ Before switching it on:
 * `backend/test/search-points.test.mjs`: a watched trip from a point writes no trip history row; stop to stop still does.
 * After a server deploy, the live script keeps `invocation_logs: false` (Cloudflare API, `workers/scripts/transport-api/script-settings`, `observability.logs`). Read back 26 Oct after `3e88773d`.
 * Privacy policy live: https://transportsydney.app/privacy/ says "Updated 27 October 2026", has the Crash reports section (`id="crash-h"`) and Sentry under Who else is involved, has no script and keeps `no-transform` (checked 27 Oct, 12:57 PM after Pages `202d89e9`; the live page is byte for byte `site/privacy/index.html`). Whenever the app starts sending something new (Sentry in build 209 is already covered), update the policy before the update or build ships.
-* App Store Connect draft text read back through the API equals store/apple/listing.md (description) and store/apple/review-notes.md (Notes, 3562 characters). Age rating read back: every item None or No, 4+.
+* App Store Connect draft text read back through the API equals store/apple/listing.md (description) and docs/APP_REVIEW_NOTES.md (Notes, 3854 characters, read back 28 Oct, 3:53 PM; before that 3562 characters on 26 Oct). Age rating read back: every item None or No, 4+.
 * Before submission: an Apple Watch screenshot set exists; the version has the newest build; the iPhone screenshots are a reshoot without the owner's stations or the owner kept the old set (store/README.md).
 * Not verified: the store screenshot script's new defaults (Parramatta, Wynyard, Chatswood to Bondi Junction) have not been run; they need live data (after about 1 AM).
+
+## Review notes checks (28 Oct)
+
+* `node --test test/review-notes.test.mjs` in `backend/`: every server switch (`serverOn`) and every remote config flag the app reads (`useFlag`, `isOn`, `flags.`) is named in docs/APP_REVIEW_NOTES.md; the Notes text is at most 4000 characters with no long dashes. A new switch fails it until the notes list it.
+* When the notes change: write the Notes section to App Store Connect (version 1.0.0, App Review Information) through the API and read it back equal to the file; never submit, never attach or change a build in the same step.
+* Read back 28 Oct, 3:53 PM: 3854 characters, equal; version Prepare for Submission, build 208.
 
 ## Break it pass (g28, 26 Oct)
 

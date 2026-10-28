@@ -6,7 +6,7 @@ Everything needed for App Store Connect and the Google Play Console. Copy each f
 | --- | --- | --- |
 | apple/listing.md | Name, subtitle, promo text, description, keywords, category, URLs | In App Store Connect, read back 26 Oct |
 | apple/app-privacy.md | App Privacy answers and the code facts behind them | Published 25 Oct; rechecked 26 Oct, still correct |
-| apple/review-notes.md | Notes for App Review: data source, how to test, permissions, system features, server features | In App Store Connect, read back 26 Oct |
+| apple/review-notes.md | Points to docs/APP_REVIEW_NOTES.md: Notes for App Review (data source, how to test, permissions, system features, every server feature and switch) | In App Store Connect as a draft, read back 28 Oct (3854 characters) |
 | apple/age-rating.md | Age rating answers (4+) | In App Store Connect, read back 26 Oct |
 | google/listing.md | Play title, short and full description, contact details | Play app not created yet |
 | google/data-safety.md | Play Data safety answers | Play app not created yet |
