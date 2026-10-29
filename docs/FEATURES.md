@@ -132,7 +132,7 @@ Measured: `app/test/ask-corpus.test.mjs`, 309 questions from all over Sydney and
 * With no signal the same screens show the kept times with "Offline, showing times from 8:05am" (a banner over the trips on the trip list) instead of an error, and try again with a growing gap while the screen is on view.
 * Data for one stop, service, time or trip never shows under another one: an answer still on its way when you switch is dropped.
 
-## Instant paint (30 Oct; over the air, not in an update yet)
+## Instant paint (30 Oct; over the air, in production update `f41a1eb2` from 12:42 AM)
 * Trip results draw at once: another time or other mode chips for a plain A to B trip show timetable trips from the phone's kept copy of that trip, labelled "Timetable times. Getting live times.", and the live answer replaces them in place. With nothing on the phone that covers the time, placeholder rows show instead of a spinner.
 * Never shown as live (Bidur's rules R1 to R6): trips built on the phone have timetable times only and no Live badge or delay; the 5 minute live cap stays; gone services drop by the phone's clock; live replaces in place; they are never kept; Start trip arms from live times only from a fresh live answer.
 * The stop screen shows placeholder rows while its first board, or a board at another time, is on its way.
