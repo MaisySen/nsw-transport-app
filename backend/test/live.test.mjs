@@ -97,7 +97,7 @@ test("creating shares is rate limited per address", async () => {
   assert.equal(last, 429);
 });
 
-test("web app: Start trip, the live trip screen, sharing and privacy text", () => {
+test("web app: Start trip, the live trip screen and sharing; no old privacy copy", () => {
   const app = fs.readFileSync(root + "src/public/app.js", "utf8");
   assert.match(app, /data-go>\$\{I\.loc\}Start trip/);
   assert.match(app, /path === "\/go"\) goView\(\)/);
@@ -107,9 +107,8 @@ test("web app: Start trip, the live trip screen, sharing and privacy text", () =
   assert.doesNotMatch(live, /<script(?![^>]*\bsrc=)[^>]*>/, "the viewer page has no inline script");
   assert.match(live, /<meta name="viewport"/);
   assert.match(fs.readFileSync(root + "src/public/live/live.js", "utf8"), /This trip has ended/);
-  const priv = fs.readFileSync(root + "src/public/privacy/index.html", "utf8");
-  assert.match(priv, /id="live-trip"/);
-  assert.match(priv, /used on your phone only/);
+  // The old privacy copy in src/public was deleted (30 Oct); the policy is site/privacy/ only.
+  assert.ok(!fs.existsSync(root + "src/public/privacy"), "no old privacy copy");
 });
 
 test("watches started from Start trip are marked for the one stop before alert", () => {

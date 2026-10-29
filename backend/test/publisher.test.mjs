@@ -16,8 +16,9 @@ test("no public page or server message shows the internal mailbox", () => {
   }
 });
 
-test("privacy, terms, support and every footer name the publisher and contact", () => {
-  for (const rel of ["privacy/index.html", "terms/index.html", "support/index.html"]) {
+test("terms, support and every footer name the publisher and contact", () => {
+  // The old privacy copy here was deleted (30 Oct); the policy is site/privacy/ (public-site.test.mjs).
+  for (const rel of ["terms/index.html", "support/index.html"]) {
     const t = fs.readFileSync(path.join(pub, rel), "utf8");
     assert.match(t, /Transport: Sydney Live is provided by Fintex Australia Pty Ltd \(ABN 60 688 406 108\), New South Wales, Australia\./, rel);
     assert.match(t, /contact@fintex\.au/, rel);

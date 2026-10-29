@@ -18,6 +18,8 @@ This policy covers the Transport: Sydney Live app for iPhone and Android, this w
 * **A last way home reminder,** if you set one: the trip home and its time (if you set it from where you are, that starting point instead of a stop), deleted 12 hours after that service.
 * **A notification token** if you allow notifications, so the server can send alerts to your phone. It is deleted when you turn alerts off or delete all your data. On the iPhone the app also sends the phone's own notification token each time it opens; it is deleted when the app has not sent it for 30 days.
 * **The trip card on the iPhone Lock Screen:** during a trip, the card's push token and the trip, so the server can keep the card up to date while your phone is locked. Both are deleted when the trip ends, and never kept longer than 24 hours.
+* **Alerts the server sends you,** so the app can show them under Watching. These are deleted after 3 days.
+* **Your IP address, with a count of requests from it,** so the server can slow down anyone sending too many requests. The count covers one minute at a time, and it is deleted within an hour of your last request.
 
 ## Crash reports
 
@@ -62,10 +64,11 @@ Questions typed in Ask, or asked through Siri, are sent to the server to find th
 If you email us, we keep your message and your email address so we can answer. We delete messages within 12 months, sooner if you ask, and never add you to a mailing list.
 
 ## Who else is involved
-* **Transport for NSW** provides the live transport data. The server asks it for stops, departures and trips; no information about you is sent.
+* **Transport for NSW** provides the live transport data. The server asks it for stops, departures and trips; no information that identifies you is sent. When you plan a trip from where you are, that position is passed on for that one request. The same happens for stops near you when our own stop list cannot answer.
 * **Our hosting provider** hosts this website and the server, and processes requests to deliver them and protect them from abuse. For us it keeps a short log of one request in ten for up to 7 days, so we can find faults: which part of the server was asked, the result and how long it took. The log does not keep what you searched for, your position or your install ID.
 * **A notification relay service and Apple's and Google's push services** deliver notifications from the server: the relay service passes them on, Apple's push service delivers them to iPhones and Google's push service to Android phones. Reminders you set are scheduled on the phone and do not go through them.
 * **Maps:** the Android app loads map tiles from an open map tile service, and the iPhone app uses Apple's maps. Like any website, these services see your IP address when a map loads.
+* **Our app update service:** each time the app opens, it asks this service whether a newer version is ready. The service sees your IP address, a random ID it makes on your phone for these checks (not your install ID), whether the phone is an iPhone or Android, and the app version and update it is running. We use it only to deliver app updates.
 * **A crash reporting service** (from app build 209) receives crash reports for us, in the United States, and keeps them for up to 30 days. It does not receive your install ID and does not store your IP address, and we have turned off its screenshots, session recording and performance tracking.
 
 We use these services only to run the app.

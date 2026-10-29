@@ -8314,6 +8314,8 @@ async function handleRequest(request, env, exec) {
     if (/^\/(worker\.m?js|_worker\.js|[a-z]+-site\.json)$/.test(url.pathname)) return new Response("Not found", { status: 404 });
     if (/^\/download\/[A-Za-z0-9._-]+\.apk$/.test(url.pathname)) return serveFile(env, url.pathname.slice("/download/".length), request);
     if (!url.pathname.startsWith("/api/")) {
+      // The privacy policy lives only on the public site (site/privacy/), so an old copy can never be served here.
+      if (/^\/privacy(\/.*)?$/.test(url.pathname)) return new Response(null, { status: 301, headers: { location: siteUrl(env) + "/privacy/", "cache-control": "public, max-age=3600", ...API_SEC_HEADERS } });
       if (url.pathname !== "/404.html") { const page = servePage(request, url); if (page) return page; }
       const res = await env.ASSETS.fetch(request);
       if (res.status === 404) { const nf = notFoundPage(request); if (nf) return nf; }

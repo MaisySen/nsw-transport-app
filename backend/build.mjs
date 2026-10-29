@@ -100,7 +100,7 @@ for (const f of htmlFiles) {
   pages[rel.endsWith("/index.html") || rel === "/index.html" ? rel.slice(0, -"index.html".length) : rel] = html;
   fs.rmSync(f);
 }
-for (const k of cf ? ["/live/"] : ["/", "/404.html", "/privacy/", "/support/", "/terms/", "/download/", "/live/"]) {
+for (const k of cf ? ["/live/"] : ["/", "/404.html", "/support/", "/terms/", "/download/", "/live/"]) {
   if (!(k in pages)) { console.error("Missing page " + k); process.exit(1); }
 }
 // The Cloudflare deploy serves the API, the shared live trip page and the APK only (the public site

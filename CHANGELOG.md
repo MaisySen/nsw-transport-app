@@ -4,11 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 30 Oct 2026
 
-### Privacy policy: service names swapped for categories (30 Oct, about 5:30 AM; branch privacy-categories, DRAFT, NOT published or deployed)
-* `site/privacy/index.html` and its text copy `store/privacy-policy.md`: Cloudflare becomes "our hosting provider", Expo "a notification relay service", Apple push and Google Firebase Cloud Messaging "Apple's and Google's push services", OpenFreeMap "an open map tile service", Apple Maps "Apple's maps", Sentry "a crash reporting service in the United States". Every promise, retention time and country is unchanged; Transport for NSW (CC BY 4.0) and OpenStreetMap (ODbL) stay named.
-* "Updated" date 30 October 2026 and the sitemap lastmod, because the policy says the date changes when the policy does; set both to the real publish day if it goes out later.
-* Terms of Use unchanged: they name no service provider (only Transport for NSW and OpenStreetMap, for the licences).
-* Owner approval needed before publishing. Tests: backend `public-site` and `publisher` 9 of 9.
+### Privacy policy: owner approved edits 1 to 11 and 13 (30 Oct, about 8 AM; site only, item 12 not included)
+* Owner's approval: Bidur, 7:44 AM, "Do it" to the numbered list (items 1 to 13); 12 (overseas countries) waits for its own wording.
+* 1 to 7, `site/privacy/index.html` and its text copy `store/privacy-policy.md`: Cloudflare becomes "our hosting provider", Expo "a notification relay service", Apple push and Google Firebase Cloud Messaging "Apple's and Google's push services", OpenFreeMap "an open map tile service", Apple Maps "Apple's maps", Sentry "a crash reporting service in the United States". Every promise, retention time and country is unchanged; Transport for NSW (CC BY 4.0) and OpenStreetMap (ODbL) stay named.
+* 8: "Updated" date 30 October 2026 and the sitemap lastmod.
+* 9: Transport for NSW: "no information that identifies you is sent", and planning from where you are passes that position on for that one request; the same for stops near you when our own stop list cannot answer (worker.js `trip` with a coord origin, `nearby` fallback to the Trip Planner's coord search).
+* 10: What the server keeps adds alerts the server sends you (shown under Watching, `notes`, deleted after 3 days) and your IP address with a count of requests from it (`ip_rate`, one minute windows, deleted by the hourly clean up, so within an hour of the last request).
+* 11: Who else is involved adds our app update service: checked each time the app opens (`updates.checkAutomatically` ON_LOAD); it sees the IP address, its own random ID made on the phone (expo-updates `EAS-Client-ID`, not the install ID), iPhone or Android, and the app version and update running.
+* 13: the old unused copy of the policy, `backend/src/public/privacy/`, is deleted. The Cloudflare build never served it; the single folder build no longer needs it, and any non API host now answers `/privacy` with a 301 to https://transportsydney.app/privacy/ (worker.js, before the page lookup). Tests: `security.test.mjs` (non API build: /privacy, /privacy/ and /privacy/index.html redirect), `live.test.mjs` and `publisher.test.mjs` no longer read the old copy.
+* Terms of Use unchanged. The first address (nsw-transport-bot.sites.tab.bot) still serves its own frozen 24 Oct copy of the old policy, because it is not redeployed.
 
 ### New trip first look, app part (30 Oct, about 5 AM; JS only, on main 3d00ac3, NOT published; rides tonight's update)
 * A brand new plain A to B search (nothing kept for it, no kept copy of the same trip to build from) now asks `/api/trip?tt=1` beside its normal request when the server says `trip-tt`, and paints those trips as timetable times ("Timetable times. Getting live times.") until the live answer replaces them in the same rows. Before: placeholder rows until the Trip Planner answered (1 to 1.5 s from Sydney).

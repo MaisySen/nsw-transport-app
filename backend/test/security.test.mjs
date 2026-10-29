@@ -117,7 +117,7 @@ test("build moves every page into the worker with a hash for every inline script
   const assets = { fetch: async () => new Response("nope", { status: 404 }) };
   const benv = { ...env, ASSETS: assets };
   const get = (p, method = "GET") => BW.default.fetch(new Request("https://t.example" + p, { method, headers: { "cf-connecting-ip": "10.7.0.1" } }), benv, { waitUntil() {} });
-  for (const p of ["/", "/privacy/", "/support/", "/support/thanks/", "/terms/", "/download/", "/live/"]) {
+  for (const p of ["/", "/support/", "/support/thanks/", "/terms/", "/download/", "/live/"]) {
     const r = await get(p);
     assert.equal(r.status, 200, p);
     assert.match(r.headers.get("content-type"), /text\/html/, p);
@@ -128,9 +128,15 @@ test("build moves every page into the worker with a hash for every inline script
     const at = html.indexOf('http-equiv="Content-Security-Policy"');
     assert.ok(at > 0 && (html.indexOf("<script") < 0 || at < html.indexOf("<script")), p + " meta CSP first");
   }
-  const red = await get("/privacy");
+  const red = await get("/terms");
   assert.equal(red.status, 301);
-  assert.equal(red.headers.get("location"), "/privacy/");
+  assert.equal(red.headers.get("location"), "/terms/");
+  // The privacy policy is served only by the public site; the old copy here was deleted (30 Oct).
+  for (const p of ["/privacy", "/privacy/", "/privacy/index.html"]) {
+    const pr = await get(p);
+    assert.equal(pr.status, 301, p);
+    assert.equal(pr.headers.get("location"), "https://transportsydney.app/privacy/", p);
+  }
   assert.equal((await get("/index.html")).headers.get("location"), "/");
   const nf = await get("/no-such-page");
   assert.equal(nf.status, 404);
