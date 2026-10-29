@@ -9,6 +9,7 @@ import { useCountdownNow, useNow, useReportCountdowns, useScreenPoll } from './a
 import { peekPackBoard, readPackBoard } from './timetablePack';
 import { firstPaint } from './timetablePackCore';
 import { firstFrame } from './speedCore';
+import { ttFirstMayPaint } from './newTripCore';
 
 /** Ticks so countdowns move on their own, only while the screen is on view and the app is in front. */
 export { useCountdownNow, useNow, useReportCountdowns };
@@ -40,7 +41,12 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
   /** Ask again soon after this answer (27 Oct speed pass 4): the wait in ms for the `asked`th ask again in a row, or null
    * for the normal gap. A board at another time on timetable rows while the planner answers, the car park list while
    * its live counts are read. One run after the wait, then the normal gap; nothing runs off screen. */
-  again?: ((d: T, asked: number) => number | null) | null } = {}) {
+  again?: ((d: T, asked: number) => number | null) | null;
+  /** New trip first look (30 Oct, newTripCore.ts): a quick timetable answer asked beside the live load when nothing is
+   * on screen after the phone's own copies were read. Painted like a seed (staleAt, never kept, never live) only while
+   * nothing live, kept or seeded is on screen; a kept copy read from storage, or the live answer, replaces it. Null when
+   * it has nothing (the screen keeps its placeholder rows). Read once per round (deps). */
+  early?: (() => Promise<T | null>) | null } = {}) {
   // A copy kept in memory this session shows on the first frame (a screen opened again, Home after a tab change),
   // or the stop's timetable pack when that copy is missing or more than 10 minutes old (firstPaint).
   const first = useRef<{ at: number; data: T; pack: boolean; seed?: boolean } | null | undefined>(undefined);
@@ -90,6 +96,8 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
   const standAsked = useRef(0);
   const againRef = useRef(opts.again);
   againRef.current = opts.again;
+  const earlyRef = useRef(opts.early);
+  earlyRef.current = opts.early;
   const againAsked = useRef(0);
   // pending: the first live answer of this opening is still on its way (a request out or a quick ask waiting).
   // retrying: a quick ask again is waiting (Home's header and cards say Updating, never unavailable, meanwhile).
@@ -214,6 +222,20 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
     // The kept copy or the pack first (a read from the phone, a few milliseconds), then the live answer replaces it.
     // A pack on screen still gives way to a copy of the live board from the last 10 minutes.
     const pk = packRef.current;
+    // The first look (opts.early): asked only once the phone's own copies are read and none is on screen, so a search
+    // the phone holds costs no extra request. It paints only if still nothing live, kept or seeded is on screen.
+    const ea = earlyRef.current;
+    const startEarly = () => {
+      if (!ea || gen !== L.gen() || !ttFirstMayPaint(shown.current)) return;
+      ea().then((d) => {
+        if (!d || gen !== L.gen() || !ttFirstMayPaint(shown.current)) return;
+        const at = Date.now();
+        setData(d);
+        setStaleAt(at);
+        setPackAt(null);
+        shown.current = { live: false, at, seed: true };
+      }).catch(() => {});
+    };
     if ((key || pk) && (!shown.current.at || shown.current.pack || shown.current.seed)) {
       Promise.all([key ? readOffline<T>(key) : null, pk ? readPackBoard(pk.stop, pk.mode, pk.at) : null]).then(([kept, pb]) => {
         if (gen !== L.gen() || shown.current.live) return;
@@ -222,8 +244,8 @@ export function useLive<T>(load: (refresh: boolean, signal?: AbortSignal) => Pro
         if (shown.current.seed) { if (f.kind === 'kept') paint(f); return; }
         if (f.kind === 'none' || (shown.current.at && !shown.current.pack) || (f.kind === 'pack' && shown.current.pack)) return;
         paint(f);
-      }).catch(() => {});
-    }
+      }).catch(() => {}).then(startEarly);
+    } else startEarly();
     run(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
