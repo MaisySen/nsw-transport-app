@@ -46,8 +46,9 @@ The source for the Notes field. It lists every feature that appears, changes or 
 | Live board push (WebSocket) | `livePush` (off unless `true`) | `LIVE_PUSH` (off) |
 | Freshness rule | none (the phone also caps Live at 5 min) | `feedAgeCap`, `feedHeaderTime` |
 | Server built boards and trips | none | `ENGINE_BOARDS`, `OWN_PLANNER` (both off), `ENGINE_FEED_ONLY` |
+| New trip first look (timetable times shown while the live search runs, labelled Timetable) | `tripTt` (kill) | `TRIP_TT`, `TRIP_TT_OWN`, `/api/trip?tt=1` |
 
-App switches are `flags` and `kill` in `/api/app/config` (an unknown flag counts as on). Server switches are the same sections under `platform=server`, read once a minute; the budget guard holds `ENGINE_BOARDS`, `ENGINE_PUSH`, `LIVE_PUSH`, `OWN_PLANNER`, `ENGINE_LEARN` and `LOAD_TESTS` off when the month is projected over its line (docs/COSTS.md). The server address is `copy.api_base` (docs/API.md).
+App switches are `flags` and `kill` in `/api/app/config` (an unknown flag counts as on). Server switches are the same sections under `platform=server`, read once a minute; the budget guard holds `ENGINE_BOARDS`, `ENGINE_PUSH`, `LIVE_PUSH`, `OWN_PLANNER`, `ENGINE_LEARN`, `LOAD_TESTS` and `TRIP_TT` off when the month is projected over its line (docs/COSTS.md). The server address is `copy.api_base` (docs/API.md).
 
 ## Notes
 
