@@ -20,6 +20,12 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 | Lighthouse (mobile) | Landing, support, privacy and web app | After site changes. Last run: 100 in all four categories on landing, support and privacy; web app 100, 100, 100 and 96 for accessibility |
 | Writing style check | grep in every test file and before every push | No em dashes, no en dashes, no filler words |
 
+### `app/test/livefresh.test.mjs`: 5 tests, 5 pass (30 Oct, live trip freshness, app, branch liveact-ota)
+* First ask for a leg is a plain open, later asks carry `refresh=1` (and match the shared read cache's fresh rule); the ask passed in is not changed.
+* The trip card: going to the background or with no push the app always writes it; while the server pushes it, only live times from the last 20 s overwrite it (edge at 20 s, a clock that moved back is not fresh).
+* The engine and the iPhone bridge call these rules in the right place (source check).
+* Results (30 Oct, 12:30 AM, on main c7a2a11 plus this change): app 885 pass, 3 skipped offline, 0 fail (`OFFLINE=1 TZ=Australia/Sydney`, includes battery), `npx tsc --noEmit` clean. Device check after the update: start a trip on an iPhone (build 205 to 208), lock for 3 min, open the app: the card keeps its times and does not flash "Updated"; the trip screen's "Updated" age stays under about 20 s.
+
 ### `backend/test/feed-fresh.test.mjs`: 9 tests, 9 pass (28 Oct, liveness pass, server)
 * A good fetch is counted per feed and per mode with the copy's own header time (age and header lag); a header in the future is not trusted.
 * A failed fetch counts an error with words that carry no key, and the last good copy is marked served old.

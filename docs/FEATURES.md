@@ -99,6 +99,7 @@ App only, JavaScript, no new native module, no server change. Not tried on a rea
 * **Speak alerts** (switch in trip mode, remembered for the next trip): short spoken lines once each, such as "Your bus leaves in 2 minutes from stand X1", "Redfern is next. Change here for the T4" and "You've arrived". Needs the app open. On iPhone build 206, Silent mode mutes the speaker (headphones work); build 207 fixes that.
 * **Watch** a service (swipe left on a departure) for leave now, running late and platform change alerts.
 * **Share trip:** a link that stops working when the trip ends.
+* **Live trip freshness (30 Oct, over the air after merge):** the live trip engine asks for live feed times on every refresh after the first, so the trip screen, get off alert and trip card follow the feed within seconds instead of up to a minute behind. On iPhone, opening the app no longer puts older times on a trip card the server has been pushing.
 
 ## Reminders and checks
 
