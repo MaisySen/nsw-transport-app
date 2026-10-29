@@ -24,6 +24,7 @@ import { homeBundle } from './homeBundle';
 import { HOME_BUNDLE_MS, homeBundlePath, type HomeOccasion, type HomePart, type HomeRead } from './homeBundleCore';
 import { keepAsPlan, liveRequests, overlayLive, planFresh, type LiveResp } from './tripLiveCore';
 import { pollTag, pollTags, pollTagWorthy, POLL_TAGS, PUBLIC_OK, withNow } from './pollTagCore';
+import { TRIP_TT, TT_FIRST_MS, ttFirstQuery } from './newTripCore';
 
 // Kept times say why they are on screen: the phone offline, or the live data down (netErrCore.ts).
 onFailWhy(setOfflineWhy);
@@ -253,6 +254,21 @@ export const api = {
       if (e?.slow) slowPairs.set(pair, (slowPairs.get(pair) || 0) + 1);
       if (slowMakesLong(slowPairs.get(pair) || 0, e?.http === 504)) longPairs.add(pair);
       throw e;
+    }
+  },
+  /** New trip first look (newTripCore.ts): the server's timetable trips for a new search, asked beside the normal
+   * request, or null. Only when the server in use says trip-tt; one try, a short deadline, no fallback server, no
+   * retry, and a failure says nothing anywhere (the normal request owns what the screen says). Never kept. */
+  tripFirst: async (from: Place, to: Place, opts: { count?: number; time?: string; arriveBy?: boolean; date?: string; modes?: string[] } = {}): Promise<TripResp | null> => {
+    const base = apiBase();
+    try {
+      await loadServes();
+      if (!serves(TRIP_TT, base)) return null;
+      const q = ttFirstQuery({ from: from.id, to: to.id, fromName: from.name, toName: to.name, count: opts.count, time: opts.time, arriveBy: opts.arriveBy, date: opts.date, modes: opts.modes, fare: store.fareType() });
+      const r = await once<TripResp>(`/api/trip?${qs(q)}`, await withIds(), TT_FIRST_MS, base);
+      return r && (r as any).source === 'timetable' ? r : null;
+    } catch {
+      return null;
     }
   },
   plan: (legs: any[], opts: { count?: number; time?: string; all?: boolean } = {}) =>

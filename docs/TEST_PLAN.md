@@ -21,6 +21,13 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 | Writing style check | grep in every test file and before every push | No em dashes, no en dashes, no filler words |
 
 
+
+### `app/test/newtrip.test.mjs`: 12 tests, 12 pass (30 Oct, new trip first look, app, branch newtrip-app)
+* When it asks (served, plain, not step free, not long, nothing on screen) and the query (tt=1, never page, days, refresh or acc).
+* R1 stray live fields from a server are taken off and the answer is labelled phone built; only a timetable answer paints (a live answer, a 204, an error do not); R3 gone services drop; R4 trip id keys in time order, at most 10; arrive by and leave at windows; R5 never kept, never seeds; R6 Start trip arms timetable times; R2 cap still 5 min; paints only while nothing is on screen.
+* Source checks: `api.tripFirst` is feature detected and one try; `useLive` asks it after the kept copy read and never keeps it; `trip.tsx` wiring; the new module is JavaScript only.
+* Results (30 Oct, about 4:40 AM, on newtrip-server): app 906 pass, 3 skipped offline, 0 fail (`OFFLINE=1 TZ=Australia/Sydney`), battery 17 of 17, `npx tsc --noEmit` clean. Device check after deploy and update: a pair never searched before shows timetable rows within about a quarter second, labelled "Timetable times. Getting live times.", then Live badges arrive in the same rows with no jump; with `TRIP_TT=off` the old placeholder rows show and no `tt=1` request goes out.
+
 ### `backend/test/trip-tt-first.test.mjs`: 8 tests, 8 pass (30 Oct, new trip first look, server, branch newtrip-server)
 * `tt=1` from the newer app: timetable trips in under 0.8 s while the fake Trip Planner takes 8 s; no Trip Planner call and no feed read; every trip timetable, every leg Scheduled with no live fields; `no-store`, `tt-first`; nothing kept.
 * `tt=1` beside the normal request: one Trip Planner call in all, the normal answer live.

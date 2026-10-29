@@ -181,7 +181,7 @@ test('paint first: the trip screen seeds from the phone, draws placeholder rows,
   // The seed: only the kept copy of the same trip from now, read from memory (no request, no storage wait).
   assert.match(trip, /const seedKey = pageable && \(whenKey \|\| modesKey\) \? cacheKey\('trip', tripCacheId\(tripPkey\(plan\), false\)\) : '';/);
   assert.match(trip, /return tripSeed\(peekOffline\(seedKey\), \{ anchor: whenAt\(when, t\), arriveBy: when\.kind === 'arrive', now: t, accessible: accOn \}\);/);
-  assert.match(trip, /seed: tripSeedNow \}\);/);
+  assert.match(trip, /seed: tripSeedNow(, early: ttFirstAsk)? \}\);/);
   // No extra page or batch request while phone built trips are on screen (battery: the live answer is on its way).
   assert.match(trip, /const loadLater = async \(\) => \{\n    \/\/ [^\n]*\n    if \(isPhoneBuilt\(data\)\) return;/);
   assert.match(trip, /const loadEarlier = async \(\) => \{\n    if \(isPhoneBuilt\(data\)\) return;/);

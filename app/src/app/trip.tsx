@@ -23,6 +23,7 @@ import { LONG_TRIP_KEEP_MS, STILL_SEARCHING_MS } from '@/lib/longTripCore';
 import { useCountdownNow, useLive, useReportCountdowns, useStamp } from '@/lib/hooks';
 import { peekOffline } from '@/lib/offline';
 import { armFresh, armSpec, isPhoneBuilt, phoneBuiltText, tripSeed } from '@/lib/instantPaintCore';
+import { ttFirstSeed, ttFirstWanted } from '@/lib/newTripCore';
 import { usePalette, radius, modeColor } from '@/lib/theme';
 import { bestTime, durText, ms, shortName } from '@/lib/format';
 import { plainText } from '@/lib/htmlTextCore';
@@ -408,8 +409,20 @@ export default function TripScreen() {
     return tripSeed(peekOffline(seedKey), { anchor: whenAt(when, t), arriveBy: when.kind === 'arrive', now: t, accessible: accOn });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedKey, whenKey, modesKey, accOn]);
+  // New trip first look (30 Oct, newTripCore.ts): a plain new search with nothing to paint from asks the server's
+  // timetable trips beside the live request (when the server serves trip-tt), shown as timetable times until the live
+  // answer replaces them in place. useLive asks it only after the phone's own copies came up empty.
+  const ttFirstAsk = useMemo(() => {
+    if (!ttFirstWanted({ served: true, plain: pageable, accessible: accOn, long: isLongPair(from.id, to.id), painted: !!tripSeedNow })) return null;
+    return async (): Promise<TripResp | null> => {
+      const t = Date.now();
+      const r = await api.tripFirst(from, to, { count: 6, ...queryAt(when, t), modes });
+      return ttFirstSeed(r, Date.now(), whenAt(when, t), when.kind === 'arrive');
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from.id, to.id, pageable, accOn, whenKey, modesKey, !!tripSeedNow]);
   const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes, walk: wp, ...(pageable ? { page: true, days: true } : {}) }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : (d: TripResp | null) => tripGapMs(firstLeaveInMs(d?.journeys, Date.now())), [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey, wKey],
-    { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '') + (modesKey ? `|m:${modesKey}` : '')), seed: tripSeedNow });
+    { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '') + (modesKey ? `|m:${modesKey}` : '')), seed: tripSeedNow, early: ttFirstAsk });
   useReportCountdowns('trip', (data?.journeys || []).slice(0, 6).map((j) => Date.parse(String(j.board || j.leave || ''))));
   const [extra, setExtra] = useState<Journey[]>([]);
   // Step free on or off, another time or other modes ask again; batches loaded before would be the other kind.
