@@ -80,7 +80,8 @@ test('the index keeps the newest first and drops the oldest past the limit', () 
   assert.deepEqual(r.index, ['b', 'a', 'c']);
   assert.deepEqual(r.evict, []);
   assert.deepEqual(o.touch(['a', 'b', 'c'], 'd', 3).evict, ['c']);
-  assert.equal(o.MAX_ENTRIES, 40);
+  // 64 since the 30 Oct instant paint pass (40 since 27 Oct).
+  assert.equal(o.MAX_ENTRIES, 64);
 });
 
 test('the offline line names the time in Sydney, and yesterday when it was', () => {

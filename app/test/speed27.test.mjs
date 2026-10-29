@@ -216,7 +216,7 @@ test('nearby paints the kept list at once when the phone is within 400 m of wher
 test('car parks and routes keep a copy: the list, a car park opened from it, a route\'s stops', () => {
   assert.equal(O.worthKeeping({ carparks: [] }), false, 'an empty car park list is never kept');
   assert.equal(O.worthKeeping({ carparks: [{ id: '1' }] }), true);
-  assert.equal(O.MAX_ENTRIES, 40);
+  assert.equal(O.MAX_ENTRIES, 64, '64 since the 30 Oct instant paint pass');
   const pk = read('src/app/parking.tsx');
   assert.match(pk, /cacheKey: cacheKey\('park', 'all'\)/);
   assert.match(pk, /holdPark\(p, /);

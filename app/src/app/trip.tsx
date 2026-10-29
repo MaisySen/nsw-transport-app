@@ -5,7 +5,7 @@ import { JourneyWhy, WhyLate, withWhyAction } from '@/components/WhyLate';
 import { useUsualText } from '@/lib/usual';
 import { TripReminders } from '@/components/TripReminders';
 import { plural } from '@/lib/homeCore';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, useColorScheme, View } from 'react-native';
+import { Alert, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, useColorScheme, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { PullDownButton } from '@/components/HoldMenu';
 import { menuOf, type MenuSpec } from '@/lib/menuCore';
@@ -21,6 +21,8 @@ import { withTimeout } from '@/lib/gesture';
 import { api, isLongPair } from '@/lib/api';
 import { LONG_TRIP_KEEP_MS, STILL_SEARCHING_MS } from '@/lib/longTripCore';
 import { useCountdownNow, useLive, useReportCountdowns, useStamp } from '@/lib/hooks';
+import { peekOffline } from '@/lib/offline';
+import { armFresh, armSpec, isPhoneBuilt, phoneBuiltText, tripSeed } from '@/lib/instantPaintCore';
 import { usePalette, radius, modeColor } from '@/lib/theme';
 import { bestTime, durText, ms, shortName } from '@/lib/format';
 import { plainText } from '@/lib/htmlTextCore';
@@ -295,7 +297,9 @@ function OpalFareCard({ j, mixed }: { j: Journey; mixed: boolean }) {
   );
 }
 
-function JourneyDetail({ j, now, from, to, autoStart, onMapTouch }: { j: Journey; now: number; from: Place; to: Place; autoStart?: boolean; onMapTouch?: (scrollOn: boolean) => void }) {
+function JourneyDetail({ j, now, from, to, autoStart, onMapTouch, fresh = true }: { j: Journey; now: number; from: Place; to: Place; autoStart?: boolean; onMapTouch?: (scrollOn: boolean) => void;
+  /** R6 (instantPaintCore.armFresh): false while the times on screen are a kept copy, phone built or offline. */
+  fresh?: boolean }) {
   const c = usePalette();
   const st2 = useStore();
   const spec = tripSpec(j, from, to);
@@ -304,7 +308,8 @@ function JourneyDetail({ j, now, from, to, autoStart, onMapTouch }: { j: Journey
   const begin = () => {
     const go = async () => {
       setBusy(true);
-      try { await withTimeout(startLive(spec, j.fare), 5000, null); router.push('/go'); haptic.success(); }
+      // R6: from a fresh live answer only; else the trip starts on its timetable times and reads live times itself.
+      try { await withTimeout(startLive(armSpec(spec, fresh), j.fare), 5000, null); router.push('/go'); haptic.success(); }
       catch (e: any) { Alert.alert("Couldn't start it", e.message); }
       finally { setBusy(false); }
     };
@@ -393,8 +398,18 @@ export default function TripScreen() {
   // Redraws when a shown countdown changes its minute (activity.useCountdownNow), not every 5 s (g10, 26 Oct).
   const now = useCountdownNow();
   const [open, setOpen] = useState<number | null>(p.pick != null ? Number(p.pick) : 0);
+  // Instant paint (30 Oct, instantPaintCore.ts): a search with no kept copy of its own (another time, other mode chips)
+  // paints timetable trips from the kept copy of this trip from now on the first frame, never as live (R1), never kept
+  // (R5); the live answer replaces them in place (R4). Plain A to B trips only; nothing when that copy does not cover it.
+  const seedKey = pageable && (whenKey || modesKey) ? cacheKey('trip', tripCacheId(tripPkey(plan), false)) : '';
+  const tripSeedNow = useMemo(() => {
+    if (!seedKey) return null;
+    const t = Date.now();
+    return tripSeed(peekOffline(seedKey), { anchor: whenAt(when, t), arriveBy: when.kind === 'arrive', now: t, accessible: accOn });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedKey, whenKey, modesKey, accOn]);
   const { data, error, updatedAt, offlineAt, staleAt, refreshing, refresh } = useLive((r) => planTrip(plan, { refresh: r, count: 6, all: chain && allOn, ...queryAt(when, Date.now()), modes, walk: wp, ...(pageable ? { page: true, days: true } : {}) }), !chain && !via && isLongPair(from.id, to.id) ? LONG_TRIP_KEEP_MS : (d: TripResp | null) => tripGapMs(firstLeaveInMs(d?.journeys, Date.now())), [from.id, to.id, via?.id, conn, String(p.legs || ''), chain && allOn, accOn, whenKey, modesKey, wKey],
-    { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '') + (modesKey ? `|m:${modesKey}` : '')) });
+    { cacheKey: cacheKey('trip', tripCacheId(tripPkey(plan), chain && allOn) + (whenKey ? `|${whenKey}` : '') + (modesKey ? `|m:${modesKey}` : '')), seed: tripSeedNow });
   useReportCountdowns('trip', (data?.journeys || []).slice(0, 6).map((j) => Date.parse(String(j.board || j.leave || ''))));
   const [extra, setExtra] = useState<Journey[]>([]);
   // Step free on or off, another time or other modes ask again; batches loaded before would be the other kind.
@@ -557,6 +572,8 @@ export default function TripScreen() {
     }
   };
   const loadLater = async () => {
+    // Phone built trips (instantPaintCore) load nothing more: the live answer is already on its way.
+    if (isPhoneBuilt(data)) return;
     if (paged) return loadPage(true);
     if (!canLoadLater(later, lastDep, dayEnd, onView.current)) return;
     setLater((x) => ({ ...x, busy: true }));
@@ -573,6 +590,7 @@ export default function TripScreen() {
     }
   };
   const loadEarlier = async () => {
+    if (isPhoneBuilt(data)) return;
     if (paged) return loadPage(false);
     if (!canLoadEarlier(earlier, firstDep, floor, onView.current)) return;
     setEarlier((x) => ({ ...x, busy: true }));
@@ -775,7 +793,8 @@ export default function TripScreen() {
           </Pressable>
         ) : null}
         {modes.length && data?.modesBy === 'phone' && js.length ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 8 }}>From the usual results only, so some {modesWords(modes).toLowerCase()} trips may be missing.</T> : null}
-        {data ? <KeptBanner offlineAt={offlineAt} staleAt={updatedAt ? null : staleAt} now={now} /> : null}
+        {/* R1: phone built trips say they are timetable times, never an age that reads like live (instantPaintCore). */}
+        {data && isPhoneBuilt(data) ? <TimetableFirstNote text={phoneBuiltText(!!error || !!offlineAt)} /> : data ? <KeptBanner offlineAt={offlineAt} staleAt={updatedAt ? null : staleAt} now={now} /> : null}
         {prob ? (
           <View accessibilityRole="summary" style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: c.card, borderRadius: radius, padding: 16, borderLeftWidth: 4, borderLeftColor: c.red }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -816,7 +835,7 @@ export default function TripScreen() {
             <JourneyWhy j={j} />
             {!chain && i === lastIdx && canRemind(depMs(j), now) ? <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}><T kind="foot" tone="text2">Last service tonight</T><RemindLastButton hint={{ from, to, mode: modeOfLegs(j.legs), svc: slimLast(j) }} acc={accOn} /></View> : null}
             {data?.accessible ? <JourneyAccessLine j={j} liftOn={liftOn} /> : null}
-            {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} autoStart={autoStart === i} onMapTouch={setScrollOn} /></View> : null}
+            {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} autoStart={autoStart === i} onMapTouch={setScrollOn} fresh={armFresh({ data, updatedAt, offlineAt, staleAt, now })} /></View> : null}
           </View>
         ))}
         {(paged ? pgL.busy : later.busy) && js.length ? <SkeletonRows count={3} label="Loading later services" /> : null}
@@ -909,15 +928,29 @@ function ModeChips({ chips, modes, onChange }: { chips: ModeK[]; modes: ModeK[];
 }
 
 /** Step free trips only, switchable right here (the same setting as More > Accessible trips), with the lift aware note. */
-/** Shown while the first answer is on its way. Long trips can take the planner up to about 30 seconds. */
+/** Shown while the first answer is on its way: placeholder trip rows of a fixed height (instant paint, 30 Oct), so the
+ * list draws on the first frame and the trips land in place with no jump. Long trips can take the planner up to about
+ * 30 seconds. */
 function Searching({ long }: { long: boolean }) {
   const [still, setStill] = useState(false);
   useEffect(() => { const t = setTimeout(() => setStill(true), STILL_SEARCHING_MS); return () => clearTimeout(t); }, []);
   return (
-    <View style={{ alignItems: 'center', marginTop: 40, paddingHorizontal: 24 }} accessibilityLiveRegion="polite">
-      <ActivityIndicator />
-      <T kind="sub" tone="text2" style={{ textAlign: 'center', marginTop: 12 }}>{still ? 'Still searching' : 'Finding live trips'}</T>
-      {still ? <T kind="foot" tone="text2" style={{ textAlign: 'center', marginTop: 6 }}>{long ? 'Long distance trips can take up to 30 seconds.' : 'This is taking longer than usual.'}</T> : null}
+    <View accessibilityLiveRegion="polite">
+      <SkeletonRows count={4} label={still ? 'Still searching for trips' : 'Finding live trips'} />
+      <T kind="foot" tone="text2" style={{ textAlign: 'center', marginTop: 10, marginHorizontal: 24 }}>{still ? 'Still searching' : 'Finding live trips'}</T>
+      {still ? <T kind="foot" tone="text2" style={{ textAlign: 'center', marginTop: 4, marginHorizontal: 24 }}>{long ? 'Long distance trips can take up to 30 seconds.' : 'This is taking longer than usual.'}</T> : null}
+    </View>
+  );
+}
+
+/** Above phone built trips (instantPaintCore.tripSeed): timetable times while the live answer is on its way. */
+function TimetableFirstNote({ text }: { text: string }) {
+  const c = usePalette();
+  return (
+    <View accessibilityRole="text" accessibilityLiveRegion="polite" accessibilityLabel={text}
+      style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 12, paddingHorizontal: 12, paddingVertical: 8 }}>
+      <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: c.text3 }} />
+      <T kind="foot" style={{ color: c.text2, marginLeft: 7, flexShrink: 1 }}>{text}</T>
     </View>
   );
 }

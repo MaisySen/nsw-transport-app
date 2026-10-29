@@ -130,6 +130,12 @@ Measured: `app/test/ask-corpus.test.mjs`, 309 questions from all over Sydney and
 * With no signal the same screens show the kept times with "Offline, showing times from 8:05am" (a banner over the trips on the trip list) instead of an error, and try again with a growing gap while the screen is on view.
 * Data for one stop, service, time or trip never shows under another one: an answer still on its way when you switch is dropped.
 
+## Instant paint (30 Oct; over the air, not in an update yet)
+* Trip results draw at once: another time or other mode chips for a plain A to B trip show timetable trips from the phone's kept copy of that trip, labelled "Timetable times. Getting live times.", and the live answer replaces them in place. With nothing on the phone that covers the time, placeholder rows show instead of a spinner.
+* Never shown as live (Bidur's rules R1 to R6): trips built on the phone have timetable times only and no Live badge or delay; the 5 minute live cap stays; gone services drop by the phone's clock; live replaces in place; they are never kept; Start trip arms from live times only from a fresh live answer.
+* The stop screen shows placeholder rows while its first board, or a board at another time, is on its way.
+* Home reads ahead the trip screen for up to 4 of its trips, once per time the app comes to the front, only when the kept copy is missing or over 10 minutes old. The phone keeps 64 answers (was 40).
+
 ## Timetable on the phone (server 26 Oct, 12:20 PM, transport-api 2ef1ad9f; over the air 26 Oct, 12:54 PM, group 54aa4d52)
 * Stops you use (starred, on saved trips, home and work, opened lately; 24 at most) keep their timetable for today and tomorrow on the phone, from api.transportsydney.app's `/api/pack`. Fetched once a day, at start or when the app comes back to the front, one stop at a time; 0.7 to 14 KB each.
 * The stop screen, Home's starred stop cards and the full screen board show those departures in the first frame, with no signal too, marked "Timetable times, getting live times" (or "Live times unavailable, showing timetable times"), each row in grey as Timetable. The live board replaces them when it lands. A copy of the live board from the last 10 minutes still goes first.

@@ -18,9 +18,9 @@ import type { Place } from '@/lib/types';
 import { Icon, I } from '@/components/Icon';
 import { watchLine } from '@/components/Cards';
 import { ActionRow, clearAllTrips, deleteTrip, deletedSaved, HomeSection, LiveTag, onTripDeleted, pullHome, StopBoard, TripBoard, TripItem, UNDO_MS, useNearby, tripCacheId, tripPkey } from '@/components/Home';
-import { homeForeground, prefetchTripScreen } from '@/lib/prefetch';
+import { homeForeground, keptAt, prefetchTripScreen } from '@/lib/prefetch';
 import { setHomeOnView } from '@/lib/homeBundle';
-import { HOME_IDLE_MS, mayReadAhead, nextTripPlan } from '@/lib/homePrefetchCore';
+import { HOME_IDLE_MS, mayReadAhead, nextTripPlan, READ_AHEAD_MAX, readAheadDue, readAheadPlans } from '@/lib/homePrefetchCore';
 import { readTripWalk } from '@/lib/walkPrefCore';
 import { menuFrom, type MenuSpec } from '@/lib/menuCore';
 import { AnchoredMenu, type MenuItem, type Rect } from '@/components/AnchoredMenu';
@@ -179,18 +179,27 @@ export default function Home() {
   useEffect(() => { const sub = AppState.addEventListener('change', (a) => { if (a === 'active') { homeForeground(); setFg((n) => n + 1); } }); return () => sub.remove(); }, []);
   const aheadPlan = nextTripPlan(next, next ? ((st as any).tripModes || {})[`${next.from.id}>${next.to.id}`] : null);
   const aheadKey = aheadPlan ? cacheKey('trip', tripCacheId(tripPkey(aheadPlan), false)) : '';
+  // Instant paint (30 Oct): the next few trips on Home too, at most READ_AHEAD_MAX with the top card, each only when its
+  // kept copy is missing or over 10 min old (homePrefetchCore.readAheadPlans, readAheadDue). Same limits, no timer.
+  const morePlans = readAheadPlans([next, ...rest], (pair) => ((st as any).tripModes || {})[pair]).filter((x) => !aheadPlan || `${x.from.id}>${x.to.id}` !== `${aheadPlan.from.id}>${aheadPlan.to.id}`).slice(0, READ_AHEAD_MAX - (aheadPlan ? 1 : 0));
+  const moreKeys = morePlans.map((x) => cacheKey('trip', tripCacheId(tripPkey(x), false)));
   useFocusEffect(useCallback(() => {
-    if (!aheadPlan || !mayReadAhead({ focused: true, appState: AppState.currentState, hasLists: !!d })) return;
+    if ((!aheadPlan && !morePlans.length) || !mayReadAhead({ focused: true, appState: AppState.currentState, hasLists: !!d })) return;
     let idle: any = null;
     const g: any = globalThis as any;
     const t = setTimeout(() => {
-      const go = () => { const sn = store.snapshot(); prefetchTripScreen(aheadPlan, aheadKey, readTripWalk(sn.tripWalk, `${aheadPlan.from.id}>${aheadPlan.to.id}`, sn.walkPref), AppState.currentState); };
+      const go = () => {
+        const sn = store.snapshot();
+        if (aheadPlan) prefetchTripScreen(aheadPlan, aheadKey, readTripWalk(sn.tripWalk, `${aheadPlan.from.id}>${aheadPlan.to.id}`, sn.walkPref), AppState.currentState);
+        const t0 = Date.now();
+        morePlans.forEach((x, i) => { if (readAheadDue(keptAt(moreKeys[i]), t0)) prefetchTripScreen(x, moreKeys[i], readTripWalk(sn.tripWalk, `${x.from.id}>${x.to.id}`, sn.walkPref), AppState.currentState); });
+      };
       // Feature detected: an idle callback where the runtime has one, else at once (the timer already waited).
       idle = typeof g.requestIdleCallback === 'function' ? g.requestIdleCallback(go, { timeout: 2000 }) : (go(), null);
     }, HOME_IDLE_MS);
     return () => { clearTimeout(t); if (idle != null && typeof g.cancelIdleCallback === 'function') g.cancelIdleCallback(idle); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aheadKey, !!d, fg]));
+  }, [aheadKey, moreKeys.join(','), !!d, fg]));
 
   return (
     <>

@@ -5,7 +5,9 @@
 export const MAX_AGE_MS = 18 * 3600 * 1000;
 /** How many answers are kept on the phone. The oldest goes first. */
 // 40 since the 27 Oct speed pass: car parks, settings lists and watches keep a copy too (each a few KB).
-export const MAX_ENTRIES = 40;
+// 64 since the 30 Oct instant paint pass: more stops, trips and services open on a kept copy (a few KB each, read in one
+// multiGet at start; about 64 x 6 KB at most).
+export const MAX_ENTRIES = 64;
 
 const t = (s?: string | null) => (s ? new Date(s).getTime() : NaN);
 /** Estimated time when the service is live and has one, else the timetable. */

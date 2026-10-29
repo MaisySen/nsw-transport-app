@@ -2,6 +2,18 @@
 
 What changed in Transport, newest first. Times are Sydney time. Build numbers, update ids and links are in [docs/RELEASES.md](docs/RELEASES.md).
 
+## 30 Oct 2026
+
+### Instant paint (30 Oct, 12:45 AM; app only, over the air, not in an update yet)
+* Why: from Sydney the server answers boards in about 40 ms, but a trip search with no kept copy waited on the Trip Planner (1 to 1.5 s cold) with a spinner. Plan: `/home/user/tab/files/instant-paint-29oct.md` (29 Oct speed check).
+* Trip results paint on the first frame: another time or other mode chips for a plain A to B trip now show timetable trips built on the phone from the kept copy of the same trip from now (Home's card, the read ahead or the last visit), labelled "Timetable times. Getting live times." The live answer replaces them in place (same rows, keyed by trip id). Only when that copy covers the moment asked for (asked before it, its trips reach past it), else placeholder rows. `app/src/lib/instantPaintCore.ts` (`tripSeed`), wired in `app/src/app/trip.tsx` through useLive's existing `seed`.
+* Live trip rules (Bidur, 29 Oct 11:34 PM): R1 phone built trips carry timetable times only (no Live, no delay, no countdown from a live time, cancelled services left out); a kept live time under 5 min keeps its true age as before. R2 the 5 min live cap stays. R3 gone services drop by the phone's clock on every paint. R4 live replaces in place. R5 phone built trips are never kept and never seed again. R6 Start trip (and its Live Activity) arms from live times only from a fresh live answer (under 5 min, online, not kept, not phone built); otherwise from the timetable times, and the live trip reads live times itself (`armFresh`, `armSpec`).
+* Placeholders, not spinners: the trip screen's "Finding live trips" is now 4 fixed height placeholder rows (still says "Still searching" after 6 s); the stop screen shows 5 placeholder rows while a first board or a board at another time is on its way. No more paging requests while phone built trips are on screen.
+* Read ahead: Home now reads ahead the trip screen for up to 4 trips on Home (top card included), once per foreground, only when a trip's kept copy is missing or over 10 min old, in the same idle slot after Home has its lists, through the same limits; never in the background, no new timer. Home's cards already read every saved trip and starred stop under the same keys their screens paint from, so stop boards needed nothing new.
+* More kept copies: 64 instead of 40 (`MAX_ENTRIES`).
+* JavaScript only, runtime 1.0.0 and 1.1.0, no native call, safe on builds 201 to 208. No new tab, no tap change.
+* Tests: new `app/test/instantpaint.test.mjs` (9: R1, R1 exception and R2, R3, R4, R5 with coverage rules, R6, paint first source checks, prefetch budget, OTA safety); `offline.test.mjs` and `speed27.test.mjs` now expect 64 kept copies. App 889 pass, 3 skipped, 0 fail; battery 17 of 17; tsc clean; backend 616 of 616 with TZ=Australia/Sydney.
+
 ## 29 Oct 2026
 
 ### Planner status names a sleeping copy's pack (29 Oct, 9:51 AM; live as transport-api 2d6170e4, main 600b5e5)

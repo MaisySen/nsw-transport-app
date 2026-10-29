@@ -10,6 +10,7 @@ import { adaptiveGapMs, nextInMs } from '@/lib/pollCore';
 import { bestTime } from '@/lib/format';
 import { useScreenPoll } from '@/lib/activity';
 import { cacheKey } from '@/lib/offlineCore';
+import { SkeletonRows } from '@/components/SkeletonRows';
 import { packWanted } from '@/lib/timetablePack';
 import { boardAtAgainMs, isSlowStandIn } from '@/lib/coldOpenCore';
 import { usePalette, radius } from '@/lib/theme';
@@ -344,7 +345,9 @@ export default function StopScreen() {
 
         {!data && error && at != null ? <T kind="sub" tone="text2" style={{ marginHorizontal: 32, marginTop: 16 }} accessibilityLiveRegion="polite">{error}</T> : null}
         {!data && error && at == null ? <Empty icon={I.warn} title="Can't load this stop" body={error} /> : null}
-        {!data && !error && at != null ? <View style={{ alignItems: 'center', marginTop: 24 }}><ActivityIndicator size="small" /></View> : null}
+        {/* Instant paint (30 Oct): placeholder rows of a fixed height while the first board is on its way (a first open
+            with no kept copy and no timetable pack, or another time), never a spinner on an empty screen. */}
+        {!data && !error ? <SkeletonRows count={5} label={at != null ? 'Loading departures at that time' : 'Loading departures'} /> : null}
         {data ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>Touch and hold a service to watch it. Live times show how old they are; grey times are from the timetable.</T> : null}
         {map ? (
           <Pressable onPress={() => { haptic.tap(); WebBrowser.openBrowserAsync(map.url).catch(() => {}); }} accessibilityRole="link" accessibilityLabel={`Station map, ${map.label}, from Transport for NSW`}

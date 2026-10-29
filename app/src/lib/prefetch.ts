@@ -94,3 +94,11 @@ export function prefetchTripScreen(plan: { from: { id: string; name: string }; t
   // The trip screen's own first request for a plain trip from now (trip.tsx): 6 trips, pages, day lists when served.
   planTrip(plan, { count: 6, walk, page: true, days: true }).then((r) => keepOffline(keepKey, r)).catch(() => {});
 }
+
+/** When the copy kept for this key (memory, or read at start) was made, or null. No storage read (instant paint, 30 Oct). */
+export function keptAt(key: string): number | null {
+  const m = memAt(key);
+  if (m != null) return m;
+  const k = peekOffline<unknown>(key);
+  return k ? k.at : null;
+}
