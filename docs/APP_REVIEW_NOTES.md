@@ -17,6 +17,7 @@ The source for the Notes field. It lists every feature that appears, changes or 
 
 ## Before submitting (root or owner)
 
+* Branch `build-209` only (30 Oct): the Notes text below adds two lines for build 209 (Get off now is Time Sensitive; crash reports are errors only, cleaned on the phone), now 3953 characters. App Store Connect still holds the 28 Oct text: write this one on 1 Nov when 209 is attached, and read it back.
 * Attach build 209 (from 1 Nov) to version 1.0.0 and reread this text against it: if 209 adds Sentry crash reports, the App Privacy Crash Data answer must be in first (store/apple/app-privacy.md).
 * Apple Watch screenshots must be uploaded first (store/screenshots/README.md).
 * If a feature switches on or changes from the server after 28 Oct, add one line under SERVER DATA here and in App Store Connect, and read it back.
@@ -47,6 +48,8 @@ The source for the Notes field. It lists every feature that appears, changes or 
 | Freshness rule | none (the phone also caps Live at 5 min) | `feedAgeCap`, `feedHeaderTime` |
 | Server built boards and trips | none | `ENGINE_BOARDS`, `OWN_PLANNER` (both off), `ENGINE_FEED_ONLY` |
 | New trip first look (timetable times shown while the live search runs, labelled Timetable) | `tripTt` (kill) | `TRIP_TT`, `TRIP_TT_OWN`, `/api/trip?tt=1` |
+| Crash reports to the crash reporting service (build 209 and later, errors only, cleaned on the phone; not seen by riders) | `sentry` (and `kill.sentry`; off drops every event, the feedback inbox reports carry on) | none |
+| Time Sensitive Get off now (build 209 entitlement; only the Get off now alert) | none | none |
 
 App switches are `flags` and `kill` in `/api/app/config` (an unknown flag counts as on). Server switches are the same sections under `platform=server`, read once a minute; the budget guard holds `ENGINE_BOARDS`, `ENGINE_PUSH`, `LIVE_PUSH`, `OWN_PLANNER`, `ENGINE_LEARN`, `LOAD_TESTS` and `TRIP_TT` off when the month is projected over its line (docs/COSTS.md). The server address is `copy.api_base` (docs/API.md).
 
@@ -68,8 +71,9 @@ HOW TO TEST
 
 PERMISSIONS
 Location: optional, only on a location button tap, foreground only.
-Notifications: never at launch; asked when you first turn on an alert.
+Notifications: never at launch; asked when you first turn on an alert. Only Get off now is Time Sensitive.
 Calendar: only for Calendar leave by in More (off by default), read only.
+Crash reports: errors only, cleaned on the phone, no tracking.
 
 SYSTEM FEATURES
 Live Activities (step 5); Home Screen, Lock Screen and StandBy widgets; Siri ("Next train home in Transport"); Control Center (search Transport); Apple Watch app and complications.

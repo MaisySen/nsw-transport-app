@@ -41,7 +41,7 @@ Written 28 Oct 2026 for "We cant compromise liveness and speed here with accurac
 * **Live Activity.** The server tick's card is "updated" at the oldest live time on it (each service's `feedTs`), so its stale date (2 minutes after) never outlives its live times.
 * **Switches** (server config, no deploy): `feedAgeCap` off removes the 5 minute drop; `feedHeaderTime` off ages copies by fetch time again.
 * **Watching it.** `/api/engine/status` (`workerFeeds`) and `/api/health` (`feedFresh`) show per feed and per mode the copy's age, header lag, errors, copies served old and copies dropped as too old.
-* Widgets are native and keep a timeline up to 15 minutes; the same limit for them is under Build 209 in IOS27.md.
+* Widgets are native and keep a timeline up to 15 minutes. From build 209 (branch `widget-209`, not built) they use the same rule as the app, from the feed's own time (`WidgetLive.swift`, `WidgetLive.kt`; IOS27.md, Build 209). Builds 201 to 208 keep the old behaviour; the server's 5 minute drop still applies to what they fetch.
 
 ## Often does not run
 

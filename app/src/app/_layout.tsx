@@ -25,10 +25,14 @@ import { TripAlertSync } from '@/lib/tripAlerts';
 import { LiveTripEngine } from '@/lib/liveEngine';
 import { orientationFor } from '@/lib/layoutCore';
 import { clearKeptAndReload, installCrashReporter, reportCrash } from '@/lib/crash';
+import { initSentry, withSentry } from '@/lib/sentry';
 
 /** Startup work that is not the first screen's own data waits this long after the app is ready. */
 const STARTUP_DEFER_MS = 1500;
 
+// Sentry first (build 209 and later; does nothing on a build without its native module, lib/sentry.native.ts), then
+// the feedback inbox handler, which runs before Sentry's on a fatal error outside the screens (lib/crash.ts).
+initSentry();
 // Fatal errors outside the screens are reported before the app closes (lib/crash.ts).
 installCrashReporter();
 
@@ -74,7 +78,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const scheme = useColorScheme();
   const c = usePalette();
   const [ready, setReady] = useState(false);
@@ -192,3 +196,6 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+// Wrapped with Sentry on a build that has it (lib/sentry.native.ts); the same component everywhere else.
+export default withSentry(RootLayout);

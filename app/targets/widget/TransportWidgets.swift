@@ -50,6 +50,9 @@ struct TripLine: Hashable, Codable {
     var stopID: String?
     /// When you board, if there is a walk first. The countdown is to `leave`, which includes the walk.
     var board: Date?
+    /// `leave` by the timetable, for a live time that gets too old to call live (build 209). Nil on caches
+    /// written by older builds and on rows that were never live.
+    var timetable: Date?
 
     var walkMinutes: Int {
         guard let b = board else { return 0 }
@@ -87,6 +90,10 @@ struct NextTripEntry: TimelineEntry {
     var commute: Bool = false
     /// A trip in progress, from the app.
     var live: Bool = false
+    /// When the live times were made, on the phone's clock (WidgetLive.dataAt). Nil: never aged (sample, offline).
+    var dataAt: Date?
+    /// "Updated 7 min ago" once a live time on this entry got too old to call live (build 209).
+    var ago: String?
 
     static let sample = NextTripEntry(
         date: .now, title: "Home", from: "Burwood", to: "Central",
@@ -120,10 +127,34 @@ struct NextTripProvider: AppIntentTimelineProvider {
         WidgetText.entryDates(updated: e.updated, departures: e.trips.map(\.leave)).map { d in
             var x = e
             x.date = d
-            x.trips = WidgetText.upcoming(e.trips, at: d) { $0.leave }
+            let (trips, demoted) = settle(e.trips, dataAt: e.dataAt, at: d)
+            x.trips = WidgetText.upcoming(trips, at: d) { $0.leave }
+            if demoted, let at = e.dataAt {
+                x.ago = WidgetLive.ago(at, at: d)
+                // An info line ("Trip started") and the live delay ("Running 6 min late") give way to the age;
+                // alerts, cancellations and platform changes stay.
+                if x.notice?.level == .info || x.notice?.text.hasPrefix("Running ") == true { x.notice = nil }
+            }
             if x.trips.isEmpty, x.message == nil { x.message = "Checking for the next one" }
             return x
         }
+    }
+
+    /// The trips as they should read at `at`: a live time older than the app's rule (WidgetLive) shows its
+    /// timetable time and is no longer live. Same order as the list, re-sorted only when a time moved.
+    static func settle(_ trips: [TripLine], dataAt: Date?, at: Date) -> ([TripLine], Bool) {
+        var any = false
+        let out: [TripLine] = trips.map { t in
+            let r = WidgetLive.settle(leave: t.leave, timetable: t.timetable, isLive: t.isLive, dataAt: dataAt, at: at)
+            guard r.demoted else { return t }
+            any = true
+            var x = t
+            if let b = t.board { x.board = b.addingTimeInterval(r.leave.timeIntervalSince(t.leave)) }
+            x.leave = r.leave
+            x.isLive = false
+            return x
+        }
+        return (any ? out.sorted { $0.leave < $1.leave } : out, any)
     }
 
     static func load(_ c: NextTripIntent) async -> NextTripEntry {
@@ -187,16 +218,21 @@ struct NextTripProvider: AppIntentTimelineProvider {
             return TripLine(line: f.line ?? "", colorHex: f.color ?? Mode(raw: f.mode).fallbackHex, mode: f.mode ?? "bus",
                             leave: leave, arrive: j.arrive, isLive: j.live == true,
                             status: Delay.text(delayMin: f.delayMin, live: f.isLive, cancelled: j.anyCancelled == true),
-                            platform: f.fromPlatform, changes: j.changes ?? 0, stopID: f.stopId, board: j.board)
+                            platform: f.fromPlatform, changes: j.changes ?? 0, stopID: f.stopId, board: j.board,
+                            timetable: WidgetLive.timetable(leave: leave, live: f.isLive ? f.estimated : nil, planned: f.planned))
         }
+        // The feed's own time when the answer has it (newer server and app), else the newest fetch, else now.
+        let dataAt = WidgetLive.dataAt(fetched: now, feedMs: r.live?.feedTs ?? r.live?.feedAt, serverNowMs: r.now)
         TripCache.save(Array(trips.prefix(6)), from: from.id, to: to.id, at: now)
         let rName = r.from.map { Naming.compact(Naming.short($0.name)) }
         let toResolved = r.to.map { Naming.compact(Naming.short($0.name)) }
-        return NextTripEntry(date: now, title: title,
+        var e = NextTripEntry(date: now, title: title,
                              from: (rName?.allSatisfy(\.isNumber) == false ? rName : nil) ?? fromName,
                              to: (toResolved?.allSatisfy(\.isNumber) == false ? toResolved : nil) ?? toName,
                              trips: Array(trips.prefix(6)), message: trips.isEmpty ? "No trips soon." : nil,
                              fromID: from.id, toID: to.id, notice: notice(for: Array(ok.prefix(3))), updated: now)
+        e.dataAt = dataAt
+        return e
     }
 
     /// A trip in progress, from the app: the next thing to do and the minutes to it.
@@ -213,6 +249,9 @@ struct NextTripProvider: AppIntentTimelineProvider {
         var e = NextTripEntry(date: now, title: "Your trip", from: from, to: to, trips: [line], message: nil,
                               notice: WidgetNotice(text: waiting ? "Trip started" : status, level: .info), updated: now)
         e.live = true
+        // The app writes when the card's live times were loaded (build 207 on); a card older than the rule stops
+        // counting as live in the timeline, like a fetched trip. No timetable time travels with the card.
+        if let u = c.updated, u > 0 { e.dataAt = Date(timeIntervalSince1970: u / 1000) }
         return e
     }
 
@@ -560,7 +599,7 @@ struct NextTripView: View {
             if let u = alertsLink { Link(destination: u) { NoticeLine(notice: n, maxChars: chars) } }
             else { NoticeLine(notice: n, maxChars: chars) }
         } else {
-            Text("Updated \(Clock.time(entry.updated))").font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+            Text(entry.ago ?? "Updated \(Clock.time(entry.updated))").font(.caption2).foregroundStyle(.secondary).monospacedDigit()
         }
     }
 
@@ -618,6 +657,9 @@ struct BoardRow: Hashable {
     var isLive: Bool
     var status: String
     var platform: String?
+    /// `time` by the timetable, and when this row's live time was made on the phone's clock (build 209).
+    var timetable: Date?
+    var liveAt: Date?
 }
 
 struct StopBoardEntry: TimelineEntry {
@@ -629,6 +671,8 @@ struct StopBoardEntry: TimelineEntry {
     var message: String?
     var notice: WidgetNotice?
     var updated: Date = .now
+    /// "Updated 7 min ago" once a live time on this entry got too old to call live (build 209).
+    var ago: String?
 
     static let sample = StopBoardEntry(
         date: .now, stopID: "200060", stopName: "Central", filter: nil,
@@ -651,7 +695,9 @@ struct StopBoardProvider: AppIntentTimelineProvider {
         let entries = (0..<15).map { i -> StopBoardEntry in
             var x = e
             x.date = e.updated.addingTimeInterval(Double(i) * 60)
-            x.rows = WidgetText.upcoming(e.rows, at: x.date) { $0.time }
+            let (rows, oldest) = Self.settle(e.rows, at: x.date)
+            x.rows = WidgetText.upcoming(rows, at: x.date) { $0.time }
+            if let o = oldest { x.ago = WidgetLive.ago(o, at: x.date) }
             return x
         }
         return Timeline(entries: entries, policy: .after(WidgetText.reloadDate(updated: e.updated, departures: e.rows.map(\.time))))
@@ -666,6 +712,22 @@ struct StopBoardProvider: AppIntentTimelineProvider {
         return await entry(stop: stop.ref, lines: c.lines)
     }
 
+    /// The rows as they should read at `at` (WidgetLive): a live time older than the app's rule shows its timetable
+    /// time. Also returns the data time of the oldest row that stopped being live, for "Updated N min ago".
+    static func settle(_ rows: [BoardRow], at: Date) -> ([BoardRow], Date?) {
+        var oldest: Date?
+        let out: [BoardRow] = rows.map { r in
+            let s = WidgetLive.settle(leave: r.time, timetable: r.timetable, isLive: r.isLive, dataAt: r.liveAt, at: at)
+            guard s.demoted else { return r }
+            if let l = r.liveAt { oldest = min(oldest ?? l, l) }
+            var x = r
+            x.time = s.leave
+            x.isLive = false
+            return x
+        }
+        return (oldest == nil ? out : out.sorted { $0.time < $1.time }, oldest)
+    }
+
     /// Live departures for one stop, optionally only some lines. Also used by the snapshot tests.
     static func entry(stop: StopRef, lines: String?) async -> StopBoardEntry {
         let wanted = Set((lines ?? "").uppercased().split(whereSeparator: { $0 == "," || $0 == " " }).map(String.init))
@@ -675,13 +737,16 @@ struct StopBoardProvider: AppIntentTimelineProvider {
                                   message: "Live times will be back shortly.")
         }
         let now = Date()
+        // Each row ages from its own feed time (liveAt, every server since 28 Oct), else the board's, else now.
+        let boardFeed = r.live?.feedTs ?? r.live?.feedAt
         let rows: [BoardRow] = r.items.compactMap { d in
             guard let t = d.bestTime, t > now else { return nil }
             if !wanted.isEmpty && !wanted.contains(d.line.uppercased()) { return nil }
             return BoardRow(line: d.line, colorHex: d.color ?? Mode(raw: d.mode).fallbackHex, mode: d.mode ?? "bus",
                             dest: Naming.compact(Naming.short(d.dest ?? "")), time: t, isLive: d.isLive,
                             status: Delay.text(delayMin: d.delayMin, live: d.isLive, cancelled: d.isCancelled),
-                            platform: d.platform)
+                            platform: d.platform, timetable: d.isLive ? d.planned : nil,
+                            liveAt: d.isLive ? WidgetLive.dataAt(fetched: now, feedMs: d.liveAt ?? boardFeed, serverNowMs: r.now) : nil)
         }
         let serious = (r.alerts ?? []).first { $0.isSerious }
         let resolved = r.stop.map { Naming.compact(Naming.short($0.name)) }
@@ -763,7 +828,7 @@ struct StopBoardView: View {
             if !compact {
                 HStack(spacing: 6) {
                     if let n = entry.notice { NoticeLine(notice: n, maxChars: 44) }
-                    else { Text("Updated \(Clock.time(entry.updated))").font(.caption2).foregroundStyle(.secondary).monospacedDigit() }
+                    else { Text(entry.ago ?? "Updated \(Clock.time(entry.updated))").font(.caption2).foregroundStyle(.secondary).monospacedDigit() }
                     Spacer(minLength: 0)
                 }
             }

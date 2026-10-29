@@ -72,13 +72,32 @@ object TransitApi {
         val arrive: Long = 0, val minutes: Int = 0, val lines: List<Line> = emptyList(),
         val warn: String? = null, val risk: String = "ok"
     )
-    data class Result(val trips: List<Trip>, val notice: String?, val severe: Boolean, val fromName: String, val toName: String)
+    /** dataAt: when the live times were made, on the phone's clock (WidgetLive.dataAt); 0 when not known. */
+    data class Result(val trips: List<Trip>, val notice: String?, val severe: Boolean, val fromName: String, val toName: String, val dataAt: Long = 0)
     /** One row of a departure board. */
     data class Departure(
         val line: String, val color: Int, val dest: String, val platform: String?, val time: Long,
         val live: Boolean, val delay: Int?, val cancelled: Boolean, val mode: String
     )
-    data class Board(val stopName: String, val items: List<Departure>, val notice: String?)
+    data class Board(val stopName: String, val items: List<Departure>, val notice: String?, val dataAt: Long = 0)
+
+    /** When an answer's live times were made, on the phone's clock: live.feedTs, else live.feedAt, else [now]. */
+    private fun answerDataAt(j: JSONObject, now: Long): Long {
+        val live = j.optJSONObject("live")
+        val feed = live?.optLong("feedTs", 0L)?.takeIf { it > 0 } ?: live?.optLong("feedAt", 0L) ?: 0L
+        return WidgetLive.dataAt(now, feed, j.optLong("now", 0L))
+    }
+
+    /**
+     * A trip's first service as it should read now (build 209): [leave] and [board] stay, unless the live time is
+     * older than WidgetLive's rule, when both move to the timetable and the trip is no longer live.
+     */
+    private fun settle(leave: Long, board: Long, live: Boolean, f: JSONObject, dataAt: Long, now: Long): Triple<Long, Long, Boolean> {
+        if (!live || WidgetLive.isFresh(dataAt, leave, now)) return Triple(leave, board, live)
+        val tt = WidgetLive.timetable(leave, parseTime(f.optString("estimated")), parseTime(f.optString("planned")))
+        if (tt <= 0) return Triple(leave, board, false)
+        return Triple(tt, board + (tt - leave), false)
+    }
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
@@ -137,14 +156,15 @@ object TransitApi {
     private fun chain(choice: Choice): Result {
         val j = get("/api/plan?legs=${enc(choice.legs ?: "[]")}&count=6&profile=$PROFILE")
         val now = System.currentTimeMillis()
+        val dataAt = answerDataAt(j, now)
         val out = ArrayList<Trip>()
         val js = j.optJSONArray("journeys") ?: JSONArray()
         var notice: String? = null
         var severe = false
         for (i in 0 until js.length()) {
             val jo = js.getJSONObject(i)
-            val leave = parseTime(jo.optString("leave"))
-            if (leave < now - 30_000) continue
+            val leave0 = parseTime(jo.optString("leave"))
+            if (leave0 < now - 30_000) continue
             if (jo.optBoolean("beaten", false) && out.isNotEmpty()) continue
             val legs = jo.optJSONArray("legs") ?: continue
             val lines = ArrayList<Line>()
@@ -156,13 +176,15 @@ object TransitApi {
                 lines.add(Line(l.optString("line").ifEmpty { l.optString("modeName") }, color(l.optString("color"), l.optString("mode"))))
             }
             val f = first ?: continue
-            val live = jo.optBoolean("live", false)
+            val (leave, board, live) = settle(leave0, parseTime(jo.optString("board")).takeIf { it > 0 } ?: leave0,
+                jo.optBoolean("live", false), f, dataAt, now)
+            if (leave < now - 30_000) continue
             val cancelled = jo.optBoolean("anyCancelled", false)
             val delay = if (f.isNull("delayMin")) null else f.optInt("delayMin")
             val warn = jo.optString("warn").takeIf { it.isNotEmpty() && it != "null" }
             val plat = f.optString("fromPlatform").takeIf { it.isNotEmpty() && it != "null" }
             out.add(Trip(f.optString("line"), color(f.optString("color"), f.optString("mode")), leave,
-                parseTime(jo.optString("board")).takeIf { it > 0 } ?: leave, live, status(live, delay, cancelled),
+                board, live, status(live, delay, cancelled),
                 plat, jo.optInt("changes", 0), cancelled, parseTime(jo.optString("arrive")), jo.optInt("durationMin", 0),
                 lines, warn, jo.optString("risk", "ok")))
             if (out.size == 1) {
@@ -171,20 +193,32 @@ object TransitApi {
                 else { notice = n?.first; severe = n?.second ?: false }
             }
         }
-        return Result(out, notice, severe, shortName(choice.from.name), shortName(choice.to.name))
+        return Result(out.sortedBy { it.leave }, notice, severe, shortName(choice.from.name), shortName(choice.to.name), dataAt)
     }
 
     /** The next services from a stop, optionally one mode only. */
     fun board(stopId: String, mode: String?, max: Int = 6): Board {
         val j = get("/api/departures?stop=${enc(stopId)}" + (if (mode.isNullOrEmpty()) "" else "&mode=${enc(mode)}") + "&profile=$PROFILE")
         val now = System.currentTimeMillis()
+        val boardFeed = j.optJSONObject("live")?.let { l -> l.optLong("feedTs", 0L).takeIf { it > 0 } ?: l.optLong("feedAt", 0L) } ?: 0L
+        val serverNow = j.optLong("now", 0L)
         val a = j.optJSONArray("items") ?: JSONArray()
         val out = ArrayList<Departure>()
+        var oldest = 0L
         for (i in 0 until a.length()) {
             val o = a.getJSONObject(i)
             if (!mode.isNullOrEmpty() && o.optString("mode") != mode) continue
-            val live = o.optBoolean("realtime", false)
-            val t = parseTime(if (live) o.optString("estimated") else null).takeIf { it > 0 } ?: parseTime(o.optString("planned"))
+            var live = o.optBoolean("realtime", false)
+            var t = parseTime(if (live) o.optString("estimated") else null).takeIf { it > 0 } ?: parseTime(o.optString("planned"))
+            if (live) {
+                // Each row ages from its own feed time (liveAt, every server since 28 Oct), else the board's (build 209).
+                val at = WidgetLive.dataAt(now, o.optLong("liveAt", 0L).takeIf { it > 0 } ?: boardFeed, serverNow)
+                if (!WidgetLive.isFresh(at, t, now)) {
+                    live = false
+                    t = parseTime(o.optString("planned")).takeIf { it > 0 } ?: t
+                    if (oldest == 0L || at < oldest) oldest = at
+                }
+            }
             if (t < now - 30_000) continue
             out.add(Departure(o.optString("line").ifEmpty { o.optString("modeName") }, color(o.optString("color"), o.optString("mode")),
                 shortName(o.optString("dest")).ifEmpty { o.optString("description") },
@@ -200,20 +234,21 @@ object TransitApi {
             val p = x.optString("priority").lowercase(Locale.US)
             if (p == "high" || p == "veryhigh") { notice = x.optString("title"); break }
         }
-        return Board(shortName(stop?.optString("name") ?: ""), out, notice)
+        return Board(shortName(stop?.optString("name") ?: ""), out.sortedBy { it.time }, notice, oldest)
     }
 
     fun trips(from: Stop, to: Stop): Result {
         val j = get("/api/trip?from=${enc(from.id)}&to=${enc(to.id)}&fromName=${enc(from.name)}&toName=${enc(to.name)}&count=6&profile=$PROFILE")
         val now = System.currentTimeMillis()
+        val dataAt = answerDataAt(j, now)
         val out = ArrayList<Trip>()
         var notice: String? = null
         var severe = false
         val js = j.optJSONArray("journeys") ?: JSONArray()
         for (i in 0 until js.length()) {
             val jo = js.getJSONObject(i)
-            val leave = parseTime(jo.optString("leave"))
-            if (leave < now - 30_000) continue
+            val leave0 = parseTime(jo.optString("leave"))
+            if (leave0 < now - 30_000) continue
             val legs = jo.optJSONArray("legs") ?: continue
             var first: JSONObject? = null
             for (k in 0 until legs.length()) {
@@ -221,12 +256,14 @@ object TransitApi {
                 if (l.optString("kind") != "walk") { first = l; break }
             }
             val f = first ?: continue
-            val live = jo.optBoolean("live", false)
+            val (leave, board, live) = settle(leave0, parseTime(jo.optString("board")).takeIf { it > 0 } ?: leave0,
+                jo.optBoolean("live", false), f, dataAt, now)
+            if (leave < now - 30_000) continue
             val cancelled = jo.optBoolean("anyCancelled", false)
             val delay = if (f.isNull("delayMin")) null else f.optInt("delayMin")
             val plat = f.optString("fromPlatform").takeIf { it.isNotEmpty() && it != "null" }
             out.add(Trip(f.optString("line"), color(f.optString("color"), f.optString("mode")), leave,
-                parseTime(jo.optString("board")).takeIf { it > 0 } ?: leave, live, status(live, delay, cancelled),
+                board, live, status(live, delay, cancelled),
                 plat, jo.optInt("changes", 0), cancelled))
             if (out.size == 1) {
                 val n = notice(jo, legs, f, delay)
@@ -235,7 +272,7 @@ object TransitApi {
         }
         val fn = j.optJSONObject("from")?.optString("name")?.takeIf { it.isNotEmpty() && !it.all { c -> c.isDigit() } } ?: from.name
         val tn = j.optJSONObject("to")?.optString("name")?.takeIf { it.isNotEmpty() && !it.all { c -> c.isDigit() } } ?: to.name
-        return Result(out, notice, severe, shortName(fn), shortName(tn))
+        return Result(out.sortedBy { it.leave }, notice, severe, shortName(fn), shortName(tn), dataAt)
     }
 
     /** The one thing worth knowing before you leave, most serious first. */

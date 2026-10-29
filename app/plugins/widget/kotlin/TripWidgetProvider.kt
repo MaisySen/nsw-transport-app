@@ -133,13 +133,19 @@ class TripWidgetProvider : AppWidgetProvider() {
                             else "${TransitApi.clock(x.leave)}   ${x.line}   ${if (w <= 0) "Now" else "$w min"}   ${x.status}"
                         }
                         v.setTextViewText(R.id.next, if (then.isEmpty()) "No more services soon" else then)
-                        v.setTextViewText(R.id.notice, notice ?: "Updated ${TransitApi.clock(now)}")
+                        // When the live times were made (the feed's own time where the answer has it), not when asked.
+                        v.setTextViewText(R.id.notice, notice ?: "Updated ${TransitApi.clock(result?.dataAt?.takeIf { it > 0 } ?: now)}")
                         v.setTextColor(R.id.notice, if (notice == null) context.getColor(R.color.widget_secondary) else if (result?.severe == true) RED else ORANGE)
                     }
                 }
             })
-            // Fresh data when the next service leaves, and at least every 15 minutes.
-            val next = (result?.trips?.firstOrNull()?.leave ?: now) + 30_000
+            // Fresh data when the next service leaves, and at least every 15 minutes. Build 209: the same one alarm comes
+            // sooner when the first live time would stop being live (WidgetLive), so a live countdown never outlives
+            // its data; still never sooner than a minute, and a non waking alarm, so nothing runs while the screen is off.
+            val first = result?.trips?.firstOrNull()
+            var next = (first?.leave ?: now) + 30_000
+            val dataAt = result?.dataAt ?: 0L
+            if (first != null && first.live && dataAt > 0) next = minOf(next, WidgetLive.staleAt(dataAt, first.leave))
             schedule(context, id, next.coerceIn(now + 60_000, now + 15 * 60_000))
         }
 

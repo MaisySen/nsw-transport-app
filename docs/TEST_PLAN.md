@@ -22,6 +22,12 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 
 
+### Build 209 branch `build-209` (30 Oct prep, not built)
+* App 925 tests, 921 pass, 4 skipped (kotlinc not on this box), 0 fail (`OFFLINE=1 TZ=Australia/Sydney`, includes battery); `npx tsc --noEmit` clean; backend 629 of 629 after adding `sentry` and Time Sensitive to docs/APP_REVIEW_NOTES.md (review-notes guard 3 of 3).
+* `CI=1 IOS_APP_GROUP=1 npx expo prebuild --platform ios --no-install`: Expo.plist runtime 1.1.0, Info.plist 1.0.0 (209), entitlements carry time sensitive and the App Group, privacy manifest lists Crash Data (not linked), Sentry build phases present, widget target picks up every file in targets/widget (synchronized folder).
+* Swift: all 26 Swift files under app/ parse with `swiftc -parse` (Swift 6.4.1 on Linux). A full compile needs the iOS SDK (SwiftUI, WidgetKit, ActivityKit), so the first real compile is the EAS compile check on 1 Nov (checklist step 4).
+* On a device: the 209 checks in docs/BUILD_209_CHECKLIST.md step 6.
+
 ### `app/test/newtrip.test.mjs`: 12 tests, 12 pass (30 Oct, new trip first look, app, branch newtrip-app)
 * When it asks (served, plain, not step free, not long, nothing on screen) and the query (tt=1, never page, days, refresh or acc).
 * R1 stray live fields from a server are taken off and the answer is labelled phone built; only a timetable answer paints (a live answer, a 204, an error do not); R3 gone services drop; R4 trip id keys in time order, at most 10; arrive by and leave at windows; R5 never kept, never seeds; R6 Start trip arms timetable times; R2 cap still 5 min; paints only while nothing is on screen.
@@ -48,6 +54,13 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 * The trip card: going to the background or with no push the app always writes it; while the server pushes it, only live times from the last 20 s overwrite it (edge at 20 s, a clock that moved back is not fresh).
 * The engine and the iPhone bridge call these rules in the right place (source check).
 * Results (30 Oct, 12:30 AM, on main c7a2a11 plus this change): app 885 pass, 3 skipped offline, 0 fail (`OFFLINE=1 TZ=Australia/Sydney`, includes battery), `npx tsc --noEmit` clean. Device check after the update: start a trip on an iPhone (build 205 to 208), lock for 3 min, open the app: the card keeps its times and does not flash "Updated"; the trip screen's "Updated" age stays under about 20 s.
+### `app/test/widgetlive.test.mjs`: 7 tests, 7 pass (29 Oct, build 209 widgets, branch `widget-209`)
+* The iPhone (`WidgetLive.swift`) and Android (`WidgetLive.kt`) widget rules use the app's numbers (`LIVE_MAX_MS`, `STALE_DATA_MS`, `STALE_NEAR_MS`).
+* With swiftc on the machine: `app/test/swift/widgetlive/main.swift` is compiled with `WidgetLive.swift` and its 77 grid cases (data age by time to the service) must equal `liveState`; data time on the phone's clock (server clock skew, a feed time in the future, an ancient one, none); "Updated N min ago"; a stale live row shows its timetable time. Skipped without swiftc (set `WIDGET_NATIVE_CHECK=0` to skip on purpose).
+* With kotlinc (or `KOTLINC`): the same grid for `WidgetLive.kt` (`app/test/kotlin/WidgetLiveCheck.kt`), and the trip widget's refresh cap is the first stale moment. Skipped without kotlinc.
+* The widgets use the rule: every Next trip and stop board entry settles its rows, the trip answer's `live.feedTs`/`feedAt` and `now`, each board row's `liveAt`, the trip in progress card's `updated`; new model fields are optional so older answers and caches decode.
+* Battery: no repeating, exact or waking alarm and no Swift timer in the widget code; the refresh stays at least a minute apart.
+* Not checked on a phone: the widget views themselves (SwiftUI and RemoteViews cannot be built here).
 
 ### `backend/test/feed-fresh.test.mjs`: 9 tests, 9 pass (28 Oct, liveness pass, server)
 * A good fetch is counted per feed and per mode with the copy's own header time (age and header lag); a header in the future is not trusted.
@@ -700,6 +713,13 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 * Server, tight change rule (27 Oct, deployed 1:45 PM as transport-api 3bf49b2f): `TZ=Australia/Sydney node --test test/tight-change.test.mjs` in `backend/`: the minimums equal the app's, the server rule and app/src/lib/tightChangeCore.ts agree on every change of 20,000 generated trips (generated stops, no real stations), the rule cases (same mode 3 min, another mode or platform 5 min, a walk plus 2 min, shorter than the walk is miss, cancelled is not tight), the journey risk, timetable trips keep the transfer keys, `/api/trip` with a 4 min train to bus change says tight, your own trips with a change (2 min on the same platform with 2 allowed is tight, 3 is fine, your own longer change time still counts) with the warning line, and the app hides its row label when the server has a warning line.
 * Tight change fallback (27 Oct): `TZ=Australia/Sydney OFFLINE=1 node --test test/tightfallback.test.mjs` in `app/` (via trips joined on the phone: the rule with the person's own change time as a floor, a walk counts, cancelled is not tight, trips.ts uses `tightOrOwn`) and `TZ=Australia/Sydney node --test test/web-tight-change.test.mjs` in `backend/` (the web page's marked rule block equals app/src/lib/tightChangeCore.ts on 20,000 generated trips, the via floor, the web via join uses it). On a phone or the web page: a via trip whose change at the via stop is under the rule (for example train to bus under 5 min) shows Tight change in the detail.
 * Server, trip legs live (27 Oct, deployed 1:10 PM, 807c3663): `TZ=Australia/Sydney node --test test/trip-realtime.test.mjs` in `backend/`: an echoed zero delay estimate 3 hours out is not live (estimate and delay kept), a moved estimate is live at any distance (late and early), within the hour is live and 61 min is not, a late first service counts from its live time, later legs of a trip leaving soon stay live, no estimate is never live, and the same through the whole `/api/trip` path.
+
+## Sentry crash reporting for build 209 (27 Oct, branch sentry-build209)
+
+* `OFFLINE=1 node --test test/sentry209.test.mjs` in `app/` (10 tests): the cleaning (query values, positions, stop IDs, paths with IDs, quoted names and place words go; code, stack lines and error words stay), events lose the user, request, phone name, time zone and IP, breadcrumbs for touches, screens, requests and console are dropped, the options (no replay, profiling, traces, sessions, screenshots or view tree, sendDefaultPii false), release and dist, the native module check (missing or throwing lookups mean no Sentry), source checks that no file loads the SDK at the top and the module check runs before the `require`, the crash net hooks, the config plugin, the public DSN, no token in the repo, the EAS upload switches and Crash Data in the privacy manifest.
+* `test/press.test.mjs` allows a Sentry DSN (key at an ingest host) in its address scan.
+* `npx expo export --platform ios` bundles with `sentry.native.ts` and puts a debug ID in the source map (checked 27 Oct; folder deleted after).
+* On a phone (not done; needs build 209): the app opens and works as before; one test error reaches Sentry with release `com.maisysen.nswtransport@1.0.0+209`, dist 209, symbolicated, and with no stop names, positions, IDs or the phone's name. On a build 201 to 208 phone with the same update: no Sentry request leaves the phone, and a caught error still reaches the feedback inbox.
 
 ## Crash safety net (27 Oct)
 

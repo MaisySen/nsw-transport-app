@@ -10,7 +10,7 @@ Checked against the code on 26 Oct 2026, 5:50 PM Sydney (g25), with the same che
 * Is all of the user data collected by your app encrypted in transit? Yes.
 * Do you provide a way for users to request that their data is deleted? Yes (Delete all my data in More; privacy@transportsydney.app; https://transportsydney.app/support/).
 * Account creation: the app does not have accounts.
-* Data shared with third parties: None. Share trip is a user initiated transfer. Expo, Google and Cloudflare act as service providers.
+* Data shared with third parties: None. Share trip is a user initiated transfer. Expo, Google, Cloudflare and Sentry (crash reports, from build 209) act as service providers.
 
 | Data type | Collected | Processed ephemerally | Required or optional | Purpose |
 | --- | --- | --- | --- | --- |
@@ -19,10 +19,11 @@ Checked against the code on 26 Oct 2026, 5:50 PM Sydney (g25), with the same che
 | App activity: In-app search history | Yes | No (90 days) | Required | App functionality |
 | App activity: Other user-generated content | Yes | No | Optional | App functionality |
 | App activity: Other actions | Yes (watched services, checks, chosen car parks and stations) | No | Optional | App functionality |
+| App info and performance: Crash logs | Yes (crash safety net since 27 Oct; Sentry from build 209) | No | Required | App functionality |
 | Device or other IDs | Yes (random install and profile IDs; push token once Android push ships) | No | Required | App functionality |
 
-Not collected: personal info, financial info, health and fitness, messages, photos and videos, audio, files and docs, contacts, web browsing, app info and performance, advertising ID. Calendar: not collected while Android versionCode 5 (no calendar module) is the build in use. When an Android build with the calendar module ships, add the row "Calendar: Calendar events | Yes | Yes | Optional | App functionality": with Calendar leave by on, an event's place leaves the phone as a search (no ID, not kept), which Play counts as collected and processed ephemerally. That build also lists READ_CALENDAR and WRITE_CALENDAR.
+Not collected: personal info, financial info, health and fitness, messages, photos and videos, audio, files and docs, contacts, web browsing, app info and performance other than crash logs (no diagnostics or performance data), advertising ID. Calendar: not collected while Android versionCode 5 (no calendar module) is the build in use. When an Android build with the calendar module ships, add the row "Calendar: Calendar events | Yes | Yes | Optional | App functionality": with Calendar leave by on, an event's place leaves the phone as a search (no ID, not kept), which Play counts as collected and processed ephemerally. That build also lists READ_CALENDAR and WRITE_CALENDAR.
 
 Security: encrypted in transit Yes; deletion request Yes; Families policy No; independent security review No.
 
-The code facts behind these rows are in [../apple/app-privacy.md](../apple/app-privacy.md).
+Crash logs (27 Oct): exact answers and reasons in [../../docs/STORE_PRIVACY.md](../../docs/STORE_PRIVACY.md), Crash data. The code facts behind these rows are in [../apple/app-privacy.md](../apple/app-privacy.md).

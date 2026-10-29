@@ -357,6 +357,8 @@ struct SharedLiveCard: Decodable {
     var legArrives: Double?
     var arrival: Double
     var until: Double
+    /// When the card's live times were loaded, ms (app code from 25 Oct; optional, older apps leave it out).
+    var updated: Double?
 
     /// The card while the trip runs, nil once it has arrived or the app has not updated it for a while.
     static func load(now: Date = Date(), _ d: UserDefaults = AppIdentity.groupDefaults) -> SharedLiveCard? {

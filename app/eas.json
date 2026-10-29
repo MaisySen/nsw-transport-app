@@ -11,7 +11,8 @@
         "buildType": "apk"
       },
       "env": {
-        "IOS_APP_GROUP": "0"
+        "IOS_APP_GROUP": "0",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       }
     },
     "production": {
@@ -24,7 +25,8 @@
         "credentialsSource": "local"
       },
       "env": {
-        "IOS_APP_GROUP": "1"
+        "IOS_APP_GROUP": "1",
+        "SENTRY_ALLOW_FAILURE": "true"
       }
     },
     "compilecheck": {
@@ -35,7 +37,8 @@
         "buildConfiguration": "Release"
       },
       "env": {
-        "IOS_APP_GROUP": "1"
+        "IOS_APP_GROUP": "1",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       }
     }
   },
