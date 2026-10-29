@@ -133,8 +133,8 @@ Measured: `app/test/ask-corpus.test.mjs`, 309 questions from all over Sydney and
 * Data for one stop, service, time or trip never shows under another one: an answer still on its way when you switch is dropped.
 
 
-## New trip first look (30 Oct; branches newtrip-server and newtrip-app, not deployed or published)
-A brand new A to B search shows trips at once. The phone asks the server's timetable trips (`/api/trip?tt=1`, about 0.1 to 0.3 s from Sydney, no Trip Planner call) beside its normal search, shows them as timetable times ("Timetable times. Getting live times.", no Live badge, no countdown from a live time), and the live answer replaces them in the same rows about a second later. Only when the server says `trip-tt` and nothing else is on screen; step free, long and via trips keep the normal search. Off with `TRIP_TT=off` or `kill.tripTt` (no deploy), and the budget guard holds it.
+## New trip first look (30 Oct; server live as transport-api 80706bee since 5:05 AM, app part on main 3d00ac3 for the next update, not published)
+A brand new A to B search shows trips at once. The phone asks the server's timetable trips (`/api/trip?tt=1`, measured 0.13 to 0.28 s from Sydney once warm, up to 0.79 s cold, no Trip Planner call) beside its normal search, shows them as timetable times ("Timetable times. Getting live times.", no Live badge, no countdown from a live time), and the live answer replaces them in the same rows about a second later. Only when the server says `trip-tt` and nothing else is on screen; step free, long and via trips keep the normal search. Off with `TRIP_TT=off` or `kill.tripTt` (no deploy), and the budget guard holds it.
 
 ## Instant paint (30 Oct; over the air, in production update `f41a1eb2` from 12:42 AM)
 * Trip results draw at once: another time or other mode chips for a plain A to B trip show timetable trips from the phone's kept copy of that trip, labelled "Timetable times. Getting live times.", and the live answer replaces them in place. With nothing on the phone that covers the time, placeholder rows show instead of a spinner.
