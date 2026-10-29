@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 30 Oct 2026
 
+### Privacy policy: service names swapped for categories (30 Oct, about 5:30 AM; branch privacy-categories, DRAFT, NOT published or deployed)
+* `site/privacy/index.html` and its text copy `store/privacy-policy.md`: Cloudflare becomes "our hosting provider", Expo "a notification relay service", Apple push and Google Firebase Cloud Messaging "Apple's and Google's push services", OpenFreeMap "an open map tile service", Apple Maps "Apple's maps", Sentry "a crash reporting service in the United States". Every promise, retention time and country is unchanged; Transport for NSW (CC BY 4.0) and OpenStreetMap (ODbL) stay named.
+* "Updated" date 30 October 2026 and the sitemap lastmod, because the policy says the date changes when the policy does; set both to the real publish day if it goes out later.
+* Terms of Use unchanged: they name no service provider (only Transport for NSW and OpenStreetMap, for the licences).
+* Owner approval needed before publishing. Tests: backend `public-site` and `publisher` 9 of 9.
+
 ### New trip first look, app part (30 Oct, about 5 AM; JS only, on main 3d00ac3, NOT published; rides tonight's update)
 * A brand new plain A to B search (nothing kept for it, no kept copy of the same trip to build from) now asks `/api/trip?tt=1` beside its normal request when the server says `trip-tt`, and paints those trips as timetable times ("Timetable times. Getting live times.") until the live answer replaces them in the same rows. Before: placeholder rows until the Trip Planner answered (1 to 1.5 s from Sydney).
 * `app/src/lib/newTripCore.ts`: when to ask (`ttFirstWanted`: served, plain, not step free, not long, nothing painted), the query (`ttFirstQuery`: never a page, day list, poll or step free), and `ttFirstSeed`: only a `source: "timetable"` answer, every journey through `timetableJourney` again (R1, whatever the server sent), gone services dropped by the phone clock (R3), one row per trip key in time order (R4), marked `phoneBuilt` and `seeded` so it is never kept (R5) and Start trip never arms live times from it (R6). The 5 min live cap is untouched (R2).
