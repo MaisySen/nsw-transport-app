@@ -6528,7 +6528,7 @@ async function runTick(env, opts = {}) {
     }
   }
   // Trip cards on iPhone lock screens (build 205 and later), updated by push
-  if (!opts.device) out.liveActivities = await tickLiveActivities(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+  if (!opts.device && !opts.skipLa) out.liveActivities = await tickLiveActivities(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   // Commutes
   if (!opts.device && use.calls < WATCH_BUDGET) {
     const days = String(sn.dow);
@@ -7261,8 +7261,19 @@ const APNS_HOST = "https://api.push.apple.com";
 const apnsLaTopic = (env) => (env.APNS_BUNDLE || "") + ".push-type.liveactivity";
 const APPLE_EPOCH_S = 978307200;
 const LA_MAX_MS = 7 * 3600000;
-const LA_EVERY_MS = 50000;
-const LA_PER_TICK = 10;
+// Cards are pushed twice a minute (29 Oct): on the minute tick and again 30 s later (laPasses), so the card's live times are
+// at most about 30 s behind the server's and a missed push still leaves a second chance before the 2 minute stale date.
+const LA_EVERY_MS = 25000;
+const LA_PER_TICK = 150;
+// Pushes in flight at once in one pass: Apple is one HTTP request each, and the live times come from the shared feed copies.
+const LA_CONCURRENCY = 12;
+// A push whose stale date is this close goes as priority 10. A priority 5 push may be held by the phone to save power
+// (Apple: "delivered opportunistically"); before 29 Oct the push that only moved the stale date on was priority 5, so a
+// card whose words had not changed could pass its stale date and show "Updated 8:21am" while the server had fresh times.
+const LA_URGENT_MS = 180000;
+// The row is written when what Apple said or the card's look changes, on the end, and at least every 5 minutes: one D1
+// write per push was the cost that grew with users (docs/LIVE_ACTIVITY_PUSH.md).
+const LA_WRITE_EVERY_MS = 300000;
 const LA_ARRIVED_KEEP_S = 120;
 const LA_TOKEN_RE = /^[0-9a-f]{32,400}$/;
 const laSchema = new WeakMap();
@@ -7331,12 +7342,41 @@ function laPayload(card, o = {}) {
   return { aps };
 }
 
-/** Which cards this tick updates: active, not expired, not pushed in the last 50 s, longest waiting first. */
+/** When this copy of the server last pushed each card (the row is not written on every push). */
+const laSentMem = new Map();
+/** Pushes this copy sent since it last wrote the row, so the row's push count stays whole. */
+const laUnwritten = new Map();
+const laLastPush = (r) => Math.max(Number(r.last_push) || 0, laSentMem.get(r.token) || 0);
+/** Which cards this pass updates: active, not expired, not pushed in the last 25 s, longest waiting first. */
 function laDue(rows, now, max = LA_PER_TICK) {
   return rows
-    .filter((r) => Number(r.active) === 1 && Number(r.expires) > now && (!r.last_push || now - Number(r.last_push) >= LA_EVERY_MS))
-    .sort((a, b) => (Number(a.last_push) || 0) - (Number(b.last_push) || 0))
+    .filter((r) => Number(r.active) === 1 && Number(r.expires) > now && (!laLastPush(r) || now - laLastPush(r) >= LA_EVERY_MS))
+    .sort((a, b) => laLastPush(a) - laLastPush(b))
     .slice(0, max);
+}
+
+/**
+ * The APNs priority of a card push. 10 (deliver now) for an end, a change to the card's words, a warning, or when the
+ * stale date it carries is within LA_URGENT_MS: with honest stale dates (2 minutes after the live times) that is every
+ * update while the trip runs, so the phone never holds back the push that keeps the card from going stale. 5 only for a
+ * card with no stale date soon (none, or a long way off). The app declares NSSupportsLiveActivitiesFrequentUpdates.
+ */
+function laPriority({ end = false, changed = false, warning = false, staleMs = null, now = Date.now() } = {}) {
+  if (end || changed || warning) return 10;
+  if (Number.isFinite(staleMs) && staleMs - now <= LA_URGENT_MS) return 10;
+  return 5;
+}
+
+/** Whether the row is written after a push (see LA_WRITE_EVERY_MS). */
+function laWriteNeeded(row, { status, changed, end, gone, now }) {
+  return !!(end || gone || changed || status !== Number(row.last_status) || !row.last_push || now - Number(row.last_push) >= LA_WRITE_EVERY_MS);
+}
+
+/** The live times the card's "updated" is taken from: the leg you are on and the legs after it (not legs already done). */
+function laUpdatedFrom(svcs, s, now) {
+  const from = s && !s.done && Number.isInteger(s.cur) ? Math.max(0, s.cur) : 0;
+  const ts = svcs.slice(from).map((r) => Number(r && r.feedTs)).filter((t) => Number.isFinite(t) && t > 0 && t <= now && now - t <= FEED_LIVE_MAX_MS);
+  return ts.length ? Math.min(...ts) : now;
 }
 
 /** What changes the card's look: the state without the time it was made and with progress in 5% steps. */
@@ -7353,8 +7393,9 @@ async function laCardFor(env, trip, now) {
   const s = LIVECARD.computeLive(trip.legs, svcs, now, { rode: trip.rode, here: trip.here, arrivedAt: trip.arrivedAt });
   // "Updated" is when the oldest live time on the card was made (each service's feedTs), not when the tick ran, so the
   // card's stale date (2 minutes after it) never outlives its live times.
-  const ts = svcs.map((r) => Number(r && r.feedTs)).filter((t) => Number.isFinite(t) && t > 0 && t <= now && now - t <= FEED_LIVE_MAX_MS);
-  const card = LIVECARD.cardFor(trip, s, now, { updated: ts.length ? Math.min(...ts) : now });
+  // Legs already ridden no longer count (29 Oct): their feed may have stopped listing the trip, and its older time made
+  // the card stale early.
+  const card = LIVECARD.cardFor(trip, s, now, { updated: laUpdatedFrom(svcs, s, now) });
   return { card, done: !!s.done || card.phase === "arrived", live: svcs.some(Boolean) };
 }
 
@@ -7414,24 +7455,53 @@ async function laPushOne(env, row, now, o = {}) {
   const changed = look !== row.last_state;
   const stale = LIVECARD.staleAt(card, Number(card.updated) > 0 && Number(card.updated) <= now ? Number(card.updated) : now, true, LA_ARRIVED_KEEP_S * 1000);
   const payload = laPayload(card, { event: end ? "end" : "update", now, staleMs: stale ?? undefined });
-  const res = await apnsSend(env, row.token, payload, { priority: end || changed || o.warning ? 10 : 5 });
-  const active = end || apnsGone(res) ? 0 : 1;
-  await db(env).prepare("UPDATE live_activities SET last_push = ?2, last_state = ?3, last_status = ?4, last_reason = ?5, pushes = COALESCE(pushes, 0) + 1, active = ?6 WHERE token = ?1")
-    .bind(row.token, now, res.status === 200 ? look : row.last_state, res.status, res.reason, active).run();
-  return { token: row.token.slice(0, 8), status: res.status, reason: res.reason, event: payload.aps.event, phase: card.phase, warning: card.warning || null, changed, apnsId: res.id, contentState: cs };
+  const priority = laPriority({ end, changed, warning: !!o.warning, staleMs: stale ?? null, now });
+  const res = await apnsSend(env, row.token, payload, { priority });
+  const gone = apnsGone(res);
+  const active = end || gone ? 0 : 1;
+  laSentMem.set(row.token, now);
+  if (laSentMem.size > 5000) { const k = laSentMem.keys().next().value; laSentMem.delete(k); laUnwritten.delete(k); }
+  const n = (laUnwritten.get(row.token) || 0) + 1;
+  if (laWriteNeeded(row, { status: res.status, changed, end, gone, now }) || o.warning) {
+    await db(env).prepare("UPDATE live_activities SET last_push = ?2, last_state = ?3, last_status = ?4, last_reason = ?5, pushes = COALESCE(pushes, 0) + ?7, active = ?6 WHERE token = ?1")
+      .bind(row.token, now, res.status === 200 ? look : row.last_state, res.status, res.reason, active, n).run();
+    laUnwritten.delete(row.token);
+  } else laUnwritten.set(row.token, n);
+  return { token: row.token.slice(0, 8), status: res.status, reason: res.reason, event: payload.aps.event, phase: card.phase, warning: card.warning || null, changed, priority, apnsId: res.id, contentState: cs };
 }
 
 /** The minute tick's part: every due card gets its live state. */
 async function tickLiveActivities(env, now = Date.now()) {
   if (!env.APNS_KEY || !env.APNS_BUNDLE || !(await ensureLiveActivities(env))) return { skipped: "no push key" };
   await db(env).prepare("UPDATE live_activities SET active = 0 WHERE active = 1 AND expires < ?1").bind(now - 3600000).run().catch(() => null);
-  const rows = laDue(await d1all(env, "SELECT * FROM live_activities WHERE active = 1 AND expires > ?1 ORDER BY last_push LIMIT 40", now - 600000), now);
+  const all = await d1all(env, "SELECT * FROM live_activities WHERE active = 1 AND expires > ?1 ORDER BY last_push LIMIT ?2", now - 600000, LA_PER_TICK * 2);
+  const rows = laDue(all, now);
   const out = [];
-  for (const r of rows) {
-    try { out.push(await laPushOne(env, r, now)); }
-    catch (e) { out.push({ token: r.token.slice(0, 8), error: String(e && e.message || e).slice(0, 160) }); }
-  }
-  return { sent: out.length, items: out.map(({ contentState, ...x }) => x) };
+  let next = 0;
+  const worker = async () => {
+    while (next < rows.length) {
+      const r = rows[next++];
+      try { out.push(await laPushOne(env, r, now)); }
+      catch (e) { out.push({ token: r.token.slice(0, 8), error: String(e && e.message || e).slice(0, 160) }); }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(LA_CONCURRENCY, rows.length) }, worker));
+  return { sent: out.length, active: all.length, items: out.slice(0, 20).map(({ contentState, ...x }) => x) };
+}
+
+/**
+ * The cron's trip card passes (29 Oct): one at once and, while any card is active, one more 30 s after the cron's
+ * minute, so each card is pushed about every 30 s. They run beside the minute tick, not after it: a slow tick (watches,
+ * commutes) or one skipped because the last is still running no longer delays or drops a card push. LA_HALF=off goes
+ * back to one pass a minute.
+ */
+async function laPasses(env, startedAt = Date.now(), wait = (ms) => new Promise((r) => setTimeout(r, ms))) {
+  const first = await tickLiveActivities(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+  if (String(env.LA_HALF || "").toLowerCase() === "off" || !first || !first.active) return { first };
+  const ms = Math.max(0, startedAt + 30000 - Date.now());
+  if (ms) await wait(ms);
+  const second = await tickLiveActivities(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+  return { first, second };
 }
 
 /**
@@ -7493,6 +7563,9 @@ async function liveActivityRoute(env, request, path, now = Date.now()) {
   }
   const token = String(b && b.token || "").trim().toLowerCase();
   if (!LA_TOKEN_RE.test(token)) return json({ error: "bad token" }, 400);
+  // A card registered again (a leg ridden, a replan, arrival) is pushed on the next pass, not up to 25 s later.
+  laSentMem.delete(token);
+  if (path === "/api/live-activity/end") laUnwritten.delete(token);
   if (path === "/api/live-activity/end") {
     // The trip ended on the phone: the token is not needed any more, so it is deleted, not kept.
     await db(env).prepare("DELETE FROM live_activities WHERE token = ?1").bind(token).run();
@@ -9478,8 +9551,11 @@ export default {
   // Cloudflare Cron Trigger (wrangler.toml): the minute tick, the same work as GET /api/tick.
   async scheduled(event, env, exec) {
     applyEnv(env);
-    const run = runTick(env, { exec }).catch(() => null);
-    if (exec && exec.waitUntil) exec.waitUntil(run); else await run;
+    // Trip card pushes run on their own (laPasses), beside the minute tick and outside its lease.
+    const startedAt = Number(event && event.scheduledTime) || Date.now();
+    const la = laPasses(env, startedAt).catch(() => null);
+    const run = runTick(env, { exec, skipLa: true }).catch(() => null);
+    if (exec && exec.waitUntil) { exec.waitUntil(la); exec.waitUntil(run); } else await Promise.all([la, run]);
   },
   fetch(request, env, exec) { return reqLogged(request, env, exec, edgeFetch); },
 };

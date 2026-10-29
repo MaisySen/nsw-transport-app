@@ -8,7 +8,7 @@ import { makeD1 } from "./helpers/d1.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
 const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {") +
-  "\nexport { __default, appleDate, laContentState, laPayload, laDue, laTripFrom, laLook, signApnsJwt, liveActivityRoute, tickLiveActivities, LIVECARD };\n";
+  "\nexport { __default, appleDate, laContentState, laPayload, laDue, laTripFrom, laLook, signApnsJwt, liveActivityRoute, tickLiveActivities, LIVECARD, laPriority, laWriteNeeded, laUpdatedFrom, laPasses };\n";
 const tmp = `/tmp/live-activity-test-${process.pid}-${Date.now()}.mjs`;
 fs.writeFileSync(tmp, src);
 const W = await import(tmp); fs.unlinkSync(tmp);
@@ -104,7 +104,7 @@ test("the provider token is an ES256 JWT Apple can check with the key", async ()
   assert.ok(crypto.verify("sha256", Buffer.from(h + "." + b), { key: publicKey, dsaEncoding: "ieee-p1363" }, Buffer.from(s, "base64url")));
 });
 
-test("register, tick, skip within 50 s, end on arrival", async () => {
+test("register, tick, skip within 25 s, end on arrival", async () => {
   const env = makeEnv();
   sent = [];
   apple = () => new Response(null, { status: 200, headers: { "apns-id": "id-1" } });
@@ -135,7 +135,9 @@ test("register, tick, skip within 50 s, end on arrival", async () => {
   await W.tickLiveActivities(env, NOW + 60000);
   assert.equal(sent.length, 2);
   assert.equal(sent[1].headers.authorization, m.headers.authorization);
-  assert.equal(sent[1].headers["apns-priority"], "5");
+  // 29 Oct: the push that only moves the stale date on goes as priority 10 (its stale date is under 3 minutes away), so
+  // the phone does not hold it back and let the card go stale. Before, it was 5.
+  assert.equal(sent[1].headers["apns-priority"], "10");
 
   // The phone says the trip arrived: the next tick sends the final card and stops.
   await W.liveActivityRoute(env, post("/api/live-activity", { token: TOKEN, trip: trip({ arrivedAt: NOW + 100000 }) }), "/api/live-activity", NOW + 100000);
@@ -188,4 +190,78 @@ test("routes are reachable through the worker, the admin route needs the key", a
   assert.equal(d.items.length, 1);
   assert.equal(d.items[0].token, TOKEN.slice(0, 8));
   assert.equal(d.items[0].trip.legs, 2);
+});
+
+// ---- 29 Oct: pushes that keep the card fresh (docs/LIVE_ACTIVITY_PUSH.md)
+test("priority: 10 for an end, a change, a warning or a stale date under 3 minutes away; 5 otherwise", () => {
+  assert.equal(W.laPriority({ end: true, now: NOW }), 10);
+  assert.equal(W.laPriority({ changed: true, now: NOW }), 10);
+  assert.equal(W.laPriority({ warning: true, now: NOW }), 10);
+  assert.equal(W.laPriority({ staleMs: NOW + 120000, now: NOW }), 10);
+  assert.equal(W.laPriority({ staleMs: NOW + 180000, now: NOW }), 10);
+  assert.equal(W.laPriority({ staleMs: NOW + 181000, now: NOW }), 5);
+  assert.equal(W.laPriority({ staleMs: null, now: NOW }), 5);
+  assert.equal(W.laPriority({ now: NOW }), 5);
+});
+
+test("the row is written on a change, a new answer from Apple, the end, a gone token or every 5 minutes, not on every push", () => {
+  const row = { last_push: NOW - 30000, last_status: 200 };
+  const base = { status: 200, changed: false, end: false, gone: false, now: NOW };
+  assert.equal(W.laWriteNeeded(row, base), false);
+  assert.equal(W.laWriteNeeded(row, { ...base, changed: true }), true);
+  assert.equal(W.laWriteNeeded(row, { ...base, status: 429 }), true);
+  assert.equal(W.laWriteNeeded(row, { ...base, end: true }), true);
+  assert.equal(W.laWriteNeeded(row, { ...base, gone: true }), true);
+  assert.equal(W.laWriteNeeded({ ...row, last_push: NOW - 300000 }, base), true);
+  assert.equal(W.laWriteNeeded({ last_push: null, last_status: null }, base), true);
+});
+
+test("updated counts from the leg you are on and later legs, not legs already ridden", () => {
+  const svcs = [{ feedTs: NOW - 200000 }, { feedTs: NOW - 15000 }, { feedTs: NOW - 20000 }];
+  assert.equal(W.laUpdatedFrom(svcs, { done: false, cur: 1 }, NOW), NOW - 20000);
+  assert.equal(W.laUpdatedFrom(svcs, { done: false, cur: 0 }, NOW), NOW - 200000);
+  // Older than the feed's live limit, from the future, or missing: not counted; none left means now.
+  assert.equal(W.laUpdatedFrom([{ feedTs: NOW - 400000 }, { feedTs: NOW + 5000 }, null], { done: false, cur: 0 }, NOW), NOW);
+  assert.equal(W.laUpdatedFrom(svcs, { done: true }, NOW), NOW - 200000);
+});
+
+test("the second push of a minute: the stale date moves on with priority 10, the row is not written again", async () => {
+  const env = makeEnv();
+  sent = [];
+  apple = () => new Response(null, { status: 200, headers: { "apns-id": "id-2" } });
+  const tok = "cd".repeat(32);
+  await W.liveActivityRoute(env, post("/api/live-activity", { token: tok, trip: trip() }), "/api/live-activity", NOW);
+  await W.tickLiveActivities(env, NOW);
+  const r1 = { ...env.DB.sql.prepare("SELECT last_push, pushes FROM live_activities").get() };
+  await W.tickLiveActivities(env, NOW + 30000);
+  assert.equal(sent.length, 2);
+  assert.equal(sent[1].headers["apns-priority"], "10");
+  assert.ok(sent[1].body.aps["stale-date"] >= sent[0].body.aps["stale-date"]);
+  assert.deepEqual({ ...env.DB.sql.prepare("SELECT last_push, pushes FROM live_activities").get() }, r1);
+  // 5 minutes on, the row is written with every push counted.
+  await W.tickLiveActivities(env, NOW + 300000);
+  const r2 = env.DB.sql.prepare("SELECT last_push, pushes FROM live_activities").get();
+  assert.equal(r2.last_push, NOW + 300000);
+  assert.equal(r2.pushes, 3);
+});
+
+test("laPasses: a second pass 30 s after the cron's minute while a card is active; none without cards or with LA_HALF=off", async () => {
+  const waits = [];
+  const fakeWait = async (ms) => { waits.push(ms); };
+  const empty = makeEnv();
+  const a = await W.laPasses(empty, Date.now(), fakeWait);
+  assert.equal(a.second, undefined);
+  assert.deepEqual(waits, []);
+  const env = makeEnv();
+  apple = () => new Response(null, { status: 200 });
+  await W.liveActivityRoute(env, post("/api/live-activity", { token: "ef".repeat(32), trip: trip({}) }), "/api/live-activity", Date.now());
+  const b = await W.laPasses(env, Date.now(), fakeWait);
+  assert.equal(b.first.active, 1);
+  assert.ok(b.second && b.second.active === 1);
+  assert.equal(waits.length, 1);
+  assert.ok(waits[0] > 25000 && waits[0] <= 30000);
+  waits.length = 0;
+  const off = await W.laPasses({ ...env, LA_HALF: "off" }, Date.now(), fakeWait);
+  assert.equal(off.second, undefined);
+  assert.deepEqual(waits, []);
 });
