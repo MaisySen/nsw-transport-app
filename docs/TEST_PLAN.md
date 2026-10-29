@@ -20,7 +20,7 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 | Lighthouse (mobile) | Landing, support, privacy and web app | After site changes. Last run: 100 in all four categories on landing, support and privacy; web app 100, 100, 100 and 96 for accessibility |
 | Writing style check | grep in every test file and before every push | No em dashes, no en dashes, no filler words |
 
-### `backend/test/live-activity.test.mjs`: 5 new tests (30 Oct, trip card push, server, branch liveact-push)
+### `backend/test/live-activity.test.mjs`: 5 new tests (30 Oct, trip card push, server, branch liveact-push, live as transport-api d5ee76f9)
 * Priority: 10 for an end, a change, a warning or a stale date under 3 minutes away (edge at 180 s), 5 otherwise.
 * The row is written on a change, a new Apple status, the end, a gone token, a first push or after 5 minutes, not on every push; the push count stays whole.
 * "Updated" from the current leg and later legs; too old, future and missing feed times are left out.

@@ -45,6 +45,8 @@ iOS 26 lets the server ask for a widget reload by push (WidgetKit push: a `Widge
 
 ## Deploy and check (root OK first)
 
+Deployed 30 Oct, 12:36 AM as transport-api d5ee76f9 (main 5c90af7); roll back to 2d6170e4. No trip card was active during the 15 min watch, so step 2 is still open.
+
 1. Merge liveact-push to main. Backend tests with `TZ=Australia/Sydney`. Deploy transport-api the usual way (no R2, no migrations), then run verify-deploy.
 2. During the next trip on an iPhone (205 to 208): `GET /api/admin/live-activity` (x-admin-key) should show `last_status: 200`, a push count going up about 2 a minute, and `last_push` within 5 minutes. Lock the phone for 5 min: the card keeps counting down and doesn't show "Updated". Off at the stop: the card ends.
 3. Rollback: the previous transport-api version, or `LA_HALF=off` for one pass a minute.
