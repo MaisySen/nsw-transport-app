@@ -4,7 +4,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 30 Oct 2026
 
-### Privacy policy: owner approved edits 1 to 11 and 13 (30 Oct, about 8 AM; site only, item 12 not included)
+### Privacy policy: owner approved edits 1 to 11 and 13 (30 Oct, 7:53 AM; LIVE on transportsydney.app, Pages deployment aa2b7ec2, main 79a6b55; item 12 not included)
 * Owner's approval: Bidur, 7:44 AM, "Do it" to the numbered list (items 1 to 13); 12 (overseas countries) waits for its own wording.
 * 1 to 7, `site/privacy/index.html` and its text copy `store/privacy-policy.md`: Cloudflare becomes "our hosting provider", Expo "a notification relay service", Apple push and Google Firebase Cloud Messaging "Apple's and Google's push services", OpenFreeMap "an open map tile service", Apple Maps "Apple's maps", Sentry "a crash reporting service in the United States". Every promise, retention time and country is unchanged; Transport for NSW (CC BY 4.0) and OpenStreetMap (ODbL) stay named.
 * 8: "Updated" date 30 October 2026 and the sitemap lastmod.

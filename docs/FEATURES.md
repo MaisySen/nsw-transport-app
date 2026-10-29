@@ -231,6 +231,7 @@ Many phones (server, 26 Oct, 10:44 AM): phones at the same stop share one copy a
 * Server logs keep the request line only (path, status, time; one request in 10, up to 7 days). Invocation logs are off, so no request address with its query (install ID, a position, an Ask question) is kept.
 * Trip history (commute suggestions, 90 days) keeps stops only: a trip from a point is never logged, searched or watched.
 * Store answers and policy: store/apple/app-privacy.md, store/google/data-safety.md, https://transportsydney.app/privacy/.
+* Policy of 30 Oct (Pages aa2b7ec2): service names as categories; Transport for NSW gets a position only for a trip planned from where you are (or the nearby stops fallback), nothing that identifies you; lists alerts sent (3 days), IP request counts (within an hour) and the app update check. The policy lives only in `site/privacy/`; non API hosts redirect /privacy to it.
 
 ## Board engine (server, behind a flag, 26 Oct)
 
