@@ -1577,7 +1577,7 @@ async function tripTimetableStandIn(env, fromId, toId, opts, date, time) {
   return await timetableTrip(env, fromId, toId, { date, time: opts.time || opts.date ? time : null, arriveBy: !!opts.arriveBy, count: opts.count || 5, accessible: !!opts.accessible, exclude: opts.exclude }).catch(() => null)
     // Our own planner's timetable (raptor.js) where the board engine's has none: more than one change, a walk between
     // nearby stops, a point to start from, or a service's last stop on a timetable loaded before 28 Oct.
-    || (typeof ownTimetableTrip === "function" ? await ownTimetableTrip(env, fromId, toId, { date, time, arriveBy: !!opts.arriveBy, count: opts.count || 5, exclude: opts.exclude }).catch(() => null) : null);
+    || (typeof ownTimetableTrip === "function" && !opts.ttNoOwn ? await ownTimetableTrip(env, fromId, toId, { date, time, arriveBy: !!opts.arriveBy, count: opts.count || 5, exclude: opts.exclude }).catch(() => null) : null);
 }
 async function trip(env, fromId, toId, opts = {}) {
   let { date, time } = sydneyParts();
@@ -5856,7 +5856,8 @@ const BUDGET_INCLUDED = {
 };
 const BUDGET_HOLD_PCT = 80, BUDGET_WARN_PCT = 50, BUDGET_LIFT_PCT = 60;
 const BUDGET_RATE_MS = 48 * 3600000;
-const BUDGET_HOLD_FLAGS = ["ENGINE_BOARDS", "ENGINE_PUSH", "LIVE_PUSH", "OWN_PLANNER", "ENGINE_LEARN", "LOAD_TESTS"];
+// TRIP_TT (30 Oct, the new trip first look) is on unless its var says off; the guard holding it turns it off too.
+const BUDGET_HOLD_FLAGS = ["ENGINE_BOARDS", "ENGINE_PUSH", "LIVE_PUSH", "OWN_PLANNER", "ENGINE_LEARN", "LOAD_TESTS", "TRIP_TT"];
 // Whether the budget guard holds a switch off now (sync: from the copy serverConfig keeps, refreshed once a minute).
 function budgetHeld(flag) {
   const b = serverCfg.budget;
@@ -8521,6 +8522,7 @@ async function handleRequest(request, env, exec) {
           const tbase = { time: p.get("time") || null, date: day, arriveBy: p.get("arriveBy") === "1", count: liftAware ? Math.min(8, want + 3) : want, accessible: acc, long, exclude: tripModesExclude(modes), walk: tripWalkParse(p, env) };
           const ttOnly = TT_ONLY.has(request);
           if (ttOnly) tbase.ttOnly = true;
+          if (ttOnly && TT_NO_OWN.has(request)) tbase.ttNoOwn = true;
           // A page of the trip list's endless scroll (tripPage): more trips per answer, cursors for the next pages.
           const pq = tripPageQuery(p);
           // A whole day of trips from our own planner (daylist.js) for a phone that sends days=1, when the planner is
@@ -9579,6 +9581,9 @@ async function edgeFetchInner(request, env, exec) {
     }
     // Engine boards skip the copy layer below: the engine makes each board every 10 s and keeps its own 4 s copies.
     if (request.method === "GET" && url.pathname === "/api/departures" && !url.searchParams.get("time") && !url.searchParams.get("date") && typeof engineWanted === "function" && env.ENGINE && engineWanted(env, url)) return handleRequest(request, env, exec);
+    // New trip first look (30 Oct, x-serves trip-tt): tt=1 answers from our timetable only, never a Trip Planner call, never
+    // a copy. The newer app sends it beside its normal trip request for a search it has nothing on screen for.
+    if (request.method === "GET" && url.pathname === "/api/trip" && url.searchParams.get("tt") === "1") return tripTtFirst(request, env, exec, url);
     const cache = request.method === "GET" && EDGE_CACHE_RE.test(url.pathname) && !badInput(url.searchParams) ? edgeCache() : null;
     if (!cache) return handleRequest(request, env, exec);
     const key = edgeKey(url);
@@ -9756,9 +9761,11 @@ async function edgeFetchInner(request, env, exec) {
 // Each word is on unless its flag (wrangler var) is "off" or the server switch kill list names it (no deploy needed):
 // ID_HEADERS / kill idHeaders, TRIP_LIVE / kill tripLive, HOME_BUNDLE / kill homeBundle, POLL_TAGS / kill pollTags.
 const SERVES_EXPOSE = "x-serves, etag, x-edge-cache";
-const SERVES = [["id-headers", "ID_HEADERS", "idHeaders"], ["trip-live", "TRIP_LIVE", "tripLive"], ["home-bundle", "HOME_BUNDLE", "homeBundle"], ["poll-tags", "POLL_TAGS", "pollTags"]];
+const SERVES = [["id-headers", "ID_HEADERS", "idHeaders"], ["trip-live", "TRIP_LIVE", "tripLive"], ["home-bundle", "HOME_BUNDLE", "homeBundle"], ["poll-tags", "POLL_TAGS", "pollTags"], ["trip-tt", "TRIP_TT", "tripTt"]];
 function servesOn(env, flag, sw) {
   if (String((env && env[flag]) || "").toLowerCase() === "off") return false;
+  // trip-tt asks our timetable for every new trip search, so the budget guard can hold it (BUDGET_HOLD_FLAGS).
+  if (flag === "TRIP_TT" && budgetHeld("TRIP_TT")) return false;
   const c = serverCfg && serverCfg.cfg;
   return !(c && c.kill && c.kill[sw]);
 }
@@ -10133,6 +10140,47 @@ async function tripStandIn(request, env, exec) {
   const out = new Response(res.body, res);
   out.headers.set("cache-control", "no-store");
   out.headers.set("x-edge-cache", "stand-in");
+  return out;
+}
+// ---------- New trip first look (30 Oct, x-serves word trip-tt) ----------
+// A brand new A to B search used to show nothing until the Trip Planner answered (1 to 1.5 s from Sydney). The newer
+// app (feature detected through x-serves) now sends a second request with tt=1 beside its normal one. That request is
+// answered from our timetable only (the board engine's timetable first, then our own planner's pack, the same chain as
+// the stand in above, tripTimetableStandIn), in about 0.1 to 0.3 s: every trip source "timetable", every leg
+// "Scheduled", live false, no live times read, never stored as a copy, not logged as a search. The phone shows it as
+// timetable times and the normal request's live answer replaces it in place. It never asks the Trip Planner and never
+// changes the normal request, so older apps (builds 201 to 208, which never send tt=1) keep server B's answers and the
+// TRIP_QUICK_MS wait. Not an OWN_PLANNER switch: no trip search is answered by our planner instead of the Trip Planner.
+// 204 (with x-tt-first saying why) when it has nothing: off (TRIP_TT=off, kill tripTt or the budget guard), not the
+// newer app, a kind of search it does not do (step free, long, via, text), or no timetable trips within TRIP_TT_FIRST_MS.
+// TRIP_TT_OWN=off leaves our own planner's pack out (board engine timetable only).
+const TRIP_TT_FIRST_MS = 1500;
+const TT_NO_OWN = new WeakSet(); // tt=1 requests that leave our own planner's pack out (TRIP_TT_OWN=off)
+function tripTtOn(env) { return servesOn(env, "TRIP_TT", "tripTt"); }
+function tripTtNone(why) {
+  return new Response(null, { status: 204, headers: { "cache-control": "no-store", "x-tt-first": why, "access-control-allow-origin": "*", "access-control-expose-headers": SERVES_EXPOSE + ", x-tt-first" } });
+}
+async function tripTtFirst(request, env, exec, url) {
+  if (!tripTtOn(env)) return tripTtNone("off");
+  if (!newerApp(request)) return tripTtNone("app");
+  const p = url.searchParams;
+  if (p.get("acc") === "1" || p.get("long") === "1" || p.get("format") === "text" || p.get("via")) return tripTtNone("kind");
+  if (!/^[A-Za-z0-9_:.,-]{1,40}$/.test(p.get("from") || "") || !/^[A-Za-z0-9_:.,-]{1,40}$/.test(p.get("to") || "")) return tripTtNone("kind");
+  // The first page of the plain search: no paging cursors, no day list, no poll.
+  const u = new URL(url.toString());
+  for (const k of ["tt", "page", "days", "after", "before", "refresh", "n", "own"]) u.searchParams.delete(k);
+  const t0 = Date.now();
+  const r2 = new Request(u.toString(), { method: "GET", headers: request.headers });
+  TT_ONLY.add(r2);
+  if (String((env && env.TRIP_TT_OWN) || "").toLowerCase() === "off") TT_NO_OWN.add(r2);
+  const res = await Promise.race([handleRequest(r2, env, exec).catch(() => null), new Promise((r) => setTimeout(() => r(null), TRIP_TT_FIRST_MS))]);
+  if (!res || res.status !== 200 || res.headers.get("x-stand-in") !== "timetable") return tripTtNone("none");
+  budget.tripTtFirst = (budget.tripTtFirst || 0) + 1;
+  const out = new Response(res.body, res);
+  out.headers.set("cache-control", "no-store");
+  out.headers.set("x-edge-cache", "tt-first");
+  out.headers.set("x-stand-in", "timetable");
+  out.headers.set("x-quick-ms", String(Date.now() - t0));
   return out;
 }
 // A service (the service detail screen: stop list, vehicle, map) with no copy waits at most SERVICE_QUICK_MS for the full

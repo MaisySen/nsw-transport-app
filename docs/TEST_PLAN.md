@@ -20,6 +20,14 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 | Lighthouse (mobile) | Landing, support, privacy and web app | After site changes. Last run: 100 in all four categories on landing, support and privacy; web app 100, 100, 100 and 96 for accessibility |
 | Writing style check | grep in every test file and before every push | No em dashes, no en dashes, no filler words |
 
+
+### `backend/test/trip-tt-first.test.mjs`: 8 tests, 8 pass (30 Oct, new trip first look, server, branch newtrip-server)
+* `tt=1` from the newer app: timetable trips in under 0.8 s while the fake Trip Planner takes 8 s; no Trip Planner call and no feed read; every trip timetable, every leg Scheduled with no live fields; `no-store`, `tt-first`; nothing kept.
+* `tt=1` beside the normal request: one Trip Planner call in all, the normal answer live.
+* Paging, `days` and `refresh` are dropped; older apps get 204 `app` and an unchanged normal answer; `TRIP_TT=off` and the budget guard: 204 `off` and no `trip-tt` in x-serves; step free, long, via: 204 `kind` (with x-serves); no timetable: 204 `none`; a slow timetable gives up at 1.5 s.
+* Changed: `speed-part2.test.mjs` expects `trip-tt` in x-serves.
+* Results (30 Oct, about 4:30 AM, on main 485fad7 plus this change): backend 629 of 629 (`TZ=Australia/Sydney`, `OFFLINE=1`).
+
 ### `backend/test/live-activity.test.mjs`: 5 new tests (30 Oct, trip card push, server, branch liveact-push, live as transport-api d5ee76f9)
 * Priority: 10 for an end, a change, a warning or a stale date under 3 minutes away (edge at 180 s), 5 otherwise.
 * The row is written on a change, a new Apple status, the end, a gone token, a first push or after 5 minutes, not on every push; the push count stays whole.
