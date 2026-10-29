@@ -5,20 +5,16 @@
 export const NEW_API_BASE = 'https://api.transportsydney.app';
 export const DEFAULT_HOST = 'api.transportsydney.app';
 export const DEFAULT_BASE = NEW_API_BASE;
-/**
- * The first server, used until 26 Oct 2026. It keeps running for builds that have not taken the update, and a read
- * that the new server cannot answer (no connection to it, or a 5xx) is asked there once (readFallback below).
- */
-export const LEGACY_HOST = 'nsw-transport-bot.sites.tab.bot';
-export const LEGACY_BASE = `https://${LEGACY_HOST}`;
+// The first server (used until 26 Oct 2026) was switched off on 30 Oct 2026: its old address now only forwards to
+// api.transportsydney.app and transportsydney.app, so the app never names it and never asks it for anything.
 /** The new home: public pages (privacy, support). */
 export const SITE = 'https://transportsydney.app';
 export const PRIVACY_URL = `${SITE}/privacy`;
 export const SUPPORT_URL = `${SITE}/support`;
 /** The link sent by Share trip: transportsydney.app/trip/<share id> (the site shows the live trip). */
 export const shareLink = (id: string) => `${SITE}/trip/${encodeURIComponent(id)}`;
-/** Hosts the app may move to (each, or a subdomain of it): the new API host and the first server. */
-export const ALLOWED_DOMAINS: readonly string[] = [DEFAULT_HOST, LEGACY_HOST];
+/** Hosts the app may move to (each, or a subdomain of it): the API host. */
+export const ALLOWED_DOMAINS: readonly string[] = [DEFAULT_HOST];
 
 const hostOf = (base: string) => base.replace(/^https:\/\//, '');
 
@@ -67,20 +63,18 @@ export function setApiBase(v: unknown): string {
 }
 
 /**
- * A phone that ran a build from before the move has the first server stored as its address (config.ts keeps the
- * address in use). The first launch on this update starts on the new server instead; after that a stored address is
- * used as it is, so remote config can still move the app back (docs/DEPLOY_CLOUDFLARE.md, Undo).
+ * The address to start on from the stored one (config.ts keeps the address in use). A phone that ran a build from
+ * before the move has the first server stored; that host is no longer allowed, so it starts on the new server. A
+ * stored address that is still allowed is used as it is. `movedBefore` is kept for config.ts and changes nothing now.
  */
-export function startBase(stored: string | null | undefined, movedBefore: boolean): string {
+export function startBase(stored: string | null | undefined, _movedBefore?: boolean): string {
   if (!stored) return DEFAULT_BASE;
-  if (!movedBefore && validBase(stored, DEFAULT_BASE) === LEGACY_BASE) return DEFAULT_BASE;
   return validBase(stored, DEFAULT_BASE) || DEFAULT_BASE;
 }
 
-// Fallback for reads (docs/DIAGNOSIS_LAG.md item 5, 26 Oct): only when the new server cannot be reached at all (no
-// route, DNS, TLS) is the same read asked of the first server, once. Never after a time out or an error answer: those
-// come from Transport for NSW's live data, which the first server waits on too, so a fallback only doubled the wait.
-// No hold: the next read asks the new server again. Writes never fall back: saves stay in one place.
+// Fallback for reads: until 30 Oct 2026 a read the new server could not be reached for at all was asked of the first
+// server once. The first server is switched off (its address only forwards here), so there is nothing to fall back to:
+// fallbackFor answers null and every read goes to the address in use. The functions stay so callers need no change.
 export const FALLBACK_HOLD_MS = 0;
 let newDownUntil = 0;
 
@@ -101,14 +95,14 @@ let words: { http: (status: number, body: any) => Error; noAnswer: (e: any) => E
 };
 export function setErrorWords(w: typeof words) { words = w; }
 
-/** Where a read goes first: the first server while a recent fallback holds, else the address in use. */
-export function readBase(now: number = Date.now()): string {
-  return base === NEW_API_BASE && now < newDownUntil ? LEGACY_BASE : base;
+/** Where a read goes: the address in use. */
+export function readBase(_now: number = Date.now()): string {
+  return base;
 }
 
-/** The address to ask again after `failedBase` failed, or null when there is none (the app is not on the new server). */
-export function fallbackFor(failedBase: string): string | null {
-  return base === NEW_API_BASE && failedBase === NEW_API_BASE ? LEGACY_BASE : null;
+/** The address to ask again after a failure: none, since the first server is switched off. */
+export function fallbackFor(_failedBase: string): string | null {
+  return null;
 }
 
 /** Records how a fallback went: worked holds reads on the first server for FALLBACK_HOLD_MS; a new server answer ends the hold. */
@@ -119,8 +113,7 @@ export function noteNewServerOk() { newDownUntil = 0; }
 export const fallbackHeld = (now: number = Date.now()) => base === NEW_API_BASE && now < newDownUntil;
 
 /**
- * GET `path` from the server in use, with the same fallback as api.ts reads. For the few screens that fetch on their
- * own (trip lists, Ask). Throws the first server's error when both fail.
+ * GET `path` from the server in use. For the few screens that fetch on their own (trip lists, Ask).
  */
 /** getJson's answer when the phone sent a version tag (If-None-Match) and the server said its copy is the same (304). */
 export const NOT_MODIFIED: any = Object.freeze({ notModified: true });

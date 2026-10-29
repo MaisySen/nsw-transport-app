@@ -306,8 +306,10 @@ Usual lateness on the server: a day folds into late_agg with the right minute co
 
 ## Android app logic tests
 
-### `app/test/servermove.test.mjs`: 9 tests (added 26 Oct, the server move)
-Start address (a stored first server is replaced once, then a stored address is kept so remote config can move the app back), fallback only on no answer or a 5xx (never a 4xx), the one minute hold on the first server and its end on a new server answer, `getJson` with a mocked fetch, reads fall back and writes do not, no second try after a time out, honest "Updated" from `dataAt`, and the morning checks carried over once within the per phone limit.
+### `app/test/servermove.test.mjs`: 8 tests (added 26 Oct, the server move; 30 Oct: first server switched off)
+30 Oct: the old address is no longer allowed (validBase null, startBase always moves off it, nextBase ignores it), `fallbackFor` is always null and `getJson` asks only the address in use (no second ask on no connection), and serverMove.ts never calls the old address or sends a DELETE there. `round4.test.mjs`: no file in `app/` names tab.bot or nsw-transport-bot, and no "to Tab" text. Results (30 Oct, about 8:25 AM, main c2632cd plus this change): app 905 pass, 3 skipped offline, 0 fail (`OFFLINE=1 TZ=Australia/Sydney`), battery 17 of 17, `npx tsc --noEmit` clean, backend 629 of 629 (review-notes 3 of 3).
+
+Before 30 Oct: Start address (a stored first server is replaced once, then a stored address is kept so remote config can move the app back), fallback only on no answer or a 5xx (never a 4xx), the one minute hold on the first server and its end on a new server answer, `getJson` with a mocked fetch, reads fall back and writes do not, no second try after a time out, honest "Updated" from `dataAt`, and the morning checks carried over once within the per phone limit.
 
 ### `app/test/perf.test.mjs` and `app/test/battery.test.mjs`: 3 more tests (26 Oct, freshness)
 Adaptive gap 15 s up to 10 minutes, 30 s to 20, a minute beyond; trip lists 15 s within 10 minutes, else 20 s, on the trip screen, Simple mode and Home cards; `retime` makes the first refresh 15 s after opening instead of 60 s, and adds no run while the app is away.

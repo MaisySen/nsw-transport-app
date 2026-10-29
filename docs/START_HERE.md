@@ -16,7 +16,7 @@ Transport: Sydney Live is a free public transport app for NSW: live departures w
 | iPhone | App Store Connect app 6826543653, bundle `com.maisysen.nswtransport`, TestFlight public link https://testflight.apple.com/join/ZKZY7PKX. Not submitted for App Store review |
 | Android | Application id `com.maisysen.nswtransport`, versionCode 5, APK at https://api.transportsydney.app/download/transport.apk. Not on Google Play yet |
 | Expo | Account `bidurtab`, project `nsw-transport` (id `cf1f4c4c-5157-41bf-a254-4480223f6368`) |
-| Old host | `nsw-transport-bot.sites.tab.bot`, the first address. Old builds still write to it. Never deploy to it |
+| Old host | `nsw-transport-bot.sites.tab.bot`, the first address. Switched off 30 Oct 2026: it only forwards to api.transportsydney.app (its /api paths) and transportsydney.app (pages) since 30 Oct 2026. Old builds still reach the live server through it. Never deploy to it |
 
 ## Current state (26 Oct, 4:15 PM)
 

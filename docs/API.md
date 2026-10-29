@@ -547,7 +547,7 @@ A departures answer is the 40 services the Trip Planner returns. At a station wi
 
 * With `mode`, api.transportsydney.app asks the planner for that mode only (`excludedMeans=checkbox` and `exclMOT_n=1` for every other class: 1 train, 2 metro, 4 light rail, 5 bus, 7 coach, 9 ferry, 11 school bus). `bus` keeps coach and school bus, as the filter on the answer always did. The answer is 40 services of that mode: buses at Strathfield then reach about 50 minutes ahead (40 over 53 min, checked 8:04am), at Chatswood 45 min (18 before), at Hornsby 2 hours (39 min before).
 * No `mode`, or an unknown one: unchanged. The edge cache already keys on `mode`.
-* The first address (nsw-transport-bot.sites.tab.bot) only filters its mixed list of 40. The stop screen asks api.transportsydney.app directly for a one mode board and falls back to the server in use (`departuresFor` in app/src/lib/api.ts).
+* The first address (nsw-transport-bot.sites.tab.bot, switched off 30 Oct 2026 and now only forwarding) used to filter its mixed list of 40. The stop screen asks api.transportsydney.app directly for a one mode board and falls back to the server in use (`departuresFor` in app/src/lib/api.ts).
 * Tests: backend/test/departures-mode.test.mjs. Rollback: transport-api 98fd6119.
 
 **Speed (26 Oct 2026, g10).**

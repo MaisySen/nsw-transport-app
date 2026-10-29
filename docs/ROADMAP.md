@@ -74,7 +74,7 @@ Every step, with commands and what to show Bidur before any submit: [BUILD_209_C
    * Widget and Live Activity updates by push, not their own timeline fetches.
    * Speak only with headphones (audio route read).
    * Simple mode "Here" stand on a Lock Screen widget.
-   * Built in server address moved to api.transportsydney.app in the widget and intents, with the old one still allowed.
+   * Built in server address moved to api.transportsydney.app in the widget and intents (done on main 30 Oct: `APIBase.swift` `builtIn`, `CommuteIntents.swift` `builtInBase`; the old tab.bot address is switched off and no longer allowed).
    * Timetable packs refresh on Wi-Fi only.
    * Background warm of the commute about 10 min before the usual departure.
    * Android: read the phone's 24 hour setting.

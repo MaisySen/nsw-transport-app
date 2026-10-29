@@ -9,7 +9,7 @@ import Foundation
 enum TSShared {
     static let appGroup = "group.com.maisysen.nswtransport"
     static var defaults: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }
-    static let builtInBase = "https://nsw-transport-bot.sites.tab.bot"
+    static let builtInBase = "https://api.transportsydney.app"
     static let allowedDomains = ["api.transportsydney.app"]
     /// The half day the widget's swap button turned the commute round for, "2026-10-25 pm".
     static let widgetFlipKey = "commuteFlip.widget"

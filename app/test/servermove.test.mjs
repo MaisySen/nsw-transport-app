@@ -25,60 +25,54 @@ const S = await load('src/lib/server.ts');
 const M = await load('src/lib/serverMoveCore.ts');
 const L = await load('src/lib/liveLabelCore.ts');
 const NEW = 'https://api.transportsydney.app';
-const OLD = S.LEGACY_BASE;
+const OLD = 'https://nsw-transport-' + 'bot.sites.' + 'tab' + '.bot'; // the first server's old address, switched off 30 Oct 2026
 
-test('the app starts on the new server; the first server stays allowed', () => {
+test('the app starts on the new server; the first server is no longer allowed (switched off 30 Oct 2026)', () => {
   assert.equal(S.DEFAULT_BASE, NEW);
   assert.equal(S.apiBase(), NEW);
-  assert.equal(S.validBase(OLD, NEW), OLD, 'remote config can still move the app back (Undo)');
-  assert.equal(S.nextBase({ copy: {} }, OLD), NEW, 'a config with no api_base means the new server');
+  assert.equal(S.validBase(OLD, NEW), null, 'remote config can no longer move the app to the old address');
+  assert.equal(S.nextBase({ copy: {} }, NEW), NEW, 'a config with no api_base means the new server');
+  assert.equal(S.nextBase({ api_base: OLD }, NEW), NEW, 'a config naming the old address is ignored');
 });
 
-test('startBase: a stored first server is replaced once, then a stored address is used as it is', () => {
+test('startBase: a stored first server is always replaced; an allowed stored address is used as it is', () => {
   assert.equal(S.startBase(null, false), NEW);
   assert.equal(S.startBase(OLD, false), NEW, 'first launch on this update moves off the first server');
   assert.equal(S.startBase(OLD + '/', false), NEW);
-  assert.equal(S.startBase(OLD, true), OLD, 'after the move, a config that moved it back is kept');
+  assert.equal(S.startBase(OLD, true), NEW, 'even after a move back, the old address is not used');
   assert.equal(S.startBase(NEW, false), NEW);
+  assert.equal(S.startBase('https://api.api.transportsydney.app', true), 'https://api.api.transportsydney.app');
   assert.equal(S.startBase('https://evil.example', true), NEW, 'a stored value off the list is ignored');
 });
 
-test('fallback (g16): only when the new server cannot be reached at all, never after an answer or a time out', () => {
+test('no fallback: the first server is switched off, so every read goes to the address in use', () => {
   assert.equal(S.fallbackWorthy({ http: 500 }), false);
-  assert.equal(S.fallbackWorthy({ http: 503 }), false);
-  assert.equal(S.fallbackWorthy({ http: 404 }), false);
-  assert.equal(S.fallbackWorthy({ http: 429 }), false);
-  assert.equal(S.fallbackWorthy({ name: 'AbortError' }), false, 'a time out is slow live data, not a missing server');
+  assert.equal(S.fallbackWorthy({ name: 'AbortError' }), false);
   assert.equal(S.fallbackWorthy(new TypeError('Network request failed')), true);
-  assert.equal(S.fallbackFor(NEW), OLD);
-  assert.equal(S.fallbackFor(OLD), null, 'the first server has nothing behind it');
-});
-
-test('no fallback hold: the next read asks the new server again', () => {
+  assert.equal(S.fallbackFor(NEW), null);
+  assert.equal(S.fallbackFor(OLD), null);
   const t = 1_000_000;
   S.noteFallback(true, t);
-  assert.equal(S.FALLBACK_HOLD_MS, 0);
   assert.equal(S.readBase(t + 1), NEW);
   S.noteFallback(false);
   assert.equal(S.readBase(), NEW);
 });
 
-test('getJson: asks the first server only when the new one cannot be reached, never on an error answer', async () => {
+test('getJson: asks only the address in use, never the old address', async () => {
   const real = globalThis.fetch;
   const asked = [];
   try {
-    globalThis.fetch = async (url) => { asked.push(String(url)); return String(url).startsWith(NEW) ? new Response('{"kind":"error","text":"x"}', { status: 502 }) : new Response('[1]', { status: 200 }); };
+    globalThis.fetch = async (url) => { asked.push(String(url)); return new Response('{"kind":"error","text":"x"}', { status: 502 }); };
     await assert.rejects(S.getJson('/api/stations?mode=train'), (e) => e.http === 502 && !/\(502\)/.test(e.message));
-    assert.deepEqual(asked, [NEW + '/api/stations?mode=train'], 'a 5xx is the answer: no second wait on the first server');
+    assert.deepEqual(asked, [NEW + '/api/stations?mode=train']);
     asked.length = 0;
-    globalThis.fetch = async (url) => { asked.push(String(url)); if (String(url).startsWith(NEW)) throw new TypeError('Network request failed'); return new Response('[2]'); };
+    globalThis.fetch = async (url) => { asked.push(String(url)); throw new TypeError('Network request failed'); };
+    await assert.rejects(S.getJson('/api/stations?mode=bus'));
+    assert.deepEqual(asked, [NEW + '/api/stations?mode=bus'], 'no connection: no second ask anywhere');
+    asked.length = 0;
+    globalThis.fetch = async (url) => { asked.push(String(url)); return new Response('[2]'); };
     assert.deepEqual(await S.getJson('/api/stations?mode=bus'), [2]);
-    assert.deepEqual(asked, [NEW + '/api/stations?mode=bus', OLD + '/api/stations?mode=bus']);
-    S.noteNewServerOk();
-    asked.length = 0;
-    globalThis.fetch = async (url) => { asked.push(String(url)); return new Response('{"error":"not found"}', { status: 404 }); };
-    await assert.rejects(S.getJson('/api/x'), (e) => e.http === 404);
-    assert.equal(asked.length, 1, 'a 4xx is the answer');
+    assert.deepEqual(asked, [NEW + '/api/stations?mode=bus']);
   } finally { globalThis.fetch = real; S.noteNewServerOk(); }
 });
 
@@ -121,12 +115,13 @@ test('morning checks: copy what the new server lacks, once, within the per phone
   assert.equal(M.morningToCopy(null, null).length, 0);
 });
 
-test('the move runs once after launch, keeps the forgotten push token forgotten and deletes only its own morning checks there', () => {
+test('the move runs once after launch, keeps the forgotten push token forgotten and never calls the old address', () => {
   const m = read('src/lib/serverMove.ts');
   assert.match(m, /if \(apiBase\(\) !== NEW_API_BASE\) return;/);
   assert.match(m, /await AsyncStorage\.setItem\('profileReupload', '1'\);/);
   assert.match(m, /if \(tok && forgot !== '1'\) await api\.registerExpo\(tok, Platform\.OS, false\);/);
-  assert.match(m, /method: 'DELETE'/);
+  assert.doesNotMatch(m, /method: 'DELETE'/, 'a forwarded delete would reach the new server');
+  assert.doesNotMatch(m, /LEGACY|tab\.bot|fetch\(/);
   assert.match(m, /await AsyncStorage\.setItem\(DONE_KEY, '1'\);/);
   const c = read('src/lib/config.ts');
   assert.match(c, /setApiBase\(startBase\(b, moved === '1'\)\);/);

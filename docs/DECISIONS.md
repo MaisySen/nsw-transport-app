@@ -53,6 +53,7 @@ Updated 26 Oct 2026, 4:30 PM.
 | Date | Decision | Why | Where it lives |
 | --- | --- | --- | --- |
 | 26 Oct, 9:58 AM (owner, via the server move) | Phones read api.transportsydney.app; the first address stays only as a read fallback for old builds and is never redeployed. | The new server is on the Fintex account with Workers Paid. | `app/src/lib/server.ts`, [DEPLOY_CLOUDFLARE.md](DEPLOY_CLOUDFLARE.md) |
+| 30 Oct, 8:10 AM (owner) | Disable every tab.bot address. The first address became a forwarder (its /api paths to api.transportsydney.app, its pages to transportsydney.app); the app drops the read fallback to it and the old server morning check move, and build 209 ships api.transportsydney.app as the native built in address. | Nothing public should carry the tab.bot name. | `app/src/lib/server.ts`, `app/src/lib/serverMove.ts`, `app/targets/widget/APIBase.swift` |
 | 25 Oct, 12:15 AM (owner) | Domain transportsydney.app (site), api.transportsydney.app (API), publisher Fintex Australia Pty Ltd. | His choice of name; one company for both stores. | DNS on the Fintex Cloudflare account |
 | Rule | No D1 migrations without asking. Never deploy an older tree over a newer deploy. Keep the `/api/live-activity` routes. | A migration cannot be rolled back with the code; trip cards on builds 205+ need those routes. | [RUNBOOK.md](RUNBOOK.md) section 1 |
 | Rule | Public contact addresses are support@, privacy@ and hello@transportsydney.app. The Fintex mailbox address never appears on the site. | Brand and spam. | `site/`, tests |

@@ -701,7 +701,7 @@ export default function TripScreen() {
   // Save this trip: New trip's Confirm step (name, extend with a connection, change time), or straight in as Home or Work.
   // A trip with legs has one way to save (New trip), so its star saves at once.
   const doSave = async (name: string) => {
-    try { await api.saveTrip(name, from, to); haptic.success(); Alert.alert('Saved', `It's on your Home screen as "${name}". You can also text "${name}" to Tab.`); }
+    try { await api.saveTrip(name, from, to); haptic.success(); Alert.alert('Saved', `It's on your Home screen as "${name}".`); }
     catch (e: any) { Alert.alert("Couldn't save it", e.message); }
   };
   const saveMenu: MenuSpec | null = !chain && !here ? { title: 'Save this trip', message: 'Saved trips show live on Home.', items: menuOf([

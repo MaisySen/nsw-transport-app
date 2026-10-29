@@ -2,7 +2,7 @@
 
 Every routine operation as copy and paste steps, with what you should see, how to check it and how to roll it back. Updated 26 Oct 2026, 4:30 PM Sydney. Start with [START_HERE.md](START_HERE.md); live numbers come from `node tools/orient.mjs`.
 
-The API runs at https://api.transportsydney.app and the public site at https://transportsydney.app, both on the Fintex Australia Cloudflare account. The first address (`nsw-transport-bot.sites.tab.bot`) keeps serving installed apps that have not moved yet; never deploy it. Commands need Node 20 or later. Times are Sydney time.
+The API runs at https://api.transportsydney.app and the public site at https://transportsydney.app, both on the Fintex Australia Cloudflare account. The first address (`nsw-transport-bot.sites.tab.bot`) is switched off: it only forwards to api.transportsydney.app (its /api paths) and transportsydney.app (pages) since 30 Oct 2026, set up by the operator, not from this repo. Never deploy it. Commands need Node 20 or later. Times are Sydney time.
 
 Secrets are named in [Security](SECURITY.md) and in section 11. Never paste a value into the repo, a commit message, a log or a chat. When a command below needs a secret, load it into the environment of that one command from the operator's private files, for example:
 
@@ -89,6 +89,8 @@ cd .. && node tools/verify-deploy.mjs
 Each `CHANGELOG.md` and `RELEASES.md` deploy entry names its rollback version. A rollback restores code and plain variables, not D1 data and not Durable Object storage. If the bad deploy added a Durable Object migration (for example `planner-v1`), the rollback still works: the older code simply does not use that class. After a rollback, tell the other workers in your report: their next deploy from main would bring the bad change back.
 
 **First address, until the switch.**  It runs the build from before the move (`node build.mjs site` writes one folder with the secrets filled in). Do not redeploy it unless Bidur asks; `backend/` deployed there keeps its full behaviour for old app builds. Its address is `nsw-transport-bot.sites.tab.bot`. Never deploy to it.
+
+**Update 30 Oct 2026 (Bidur: disable all tab.bot addresses).** The first address no longer runs the old build: the operator replaced it with a forwarder. Its /api paths reach api.transportsydney.app and its pages go to transportsydney.app. The rule above still holds: never deploy to it from this repo. The app (from tonight's update) and build 209 never name it.
 
 ## 3. Ship an over the air update (iPhone and Android)
 

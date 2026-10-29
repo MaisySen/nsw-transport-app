@@ -36,7 +36,8 @@ test('server: the default address and the allowlist', () => {
   assert.equal(server.SUPPORT_URL, 'https://transportsydney.app/support');
   assert.equal(CUR, 'https://api.transportsydney.app', 'the app reads from the new server (26 Oct 2026)');
   assert.equal(server.NEW_API_BASE, CUR);
-  assert.deepEqual([...server.ALLOWED_DOMAINS], ['api.transportsydney.app', server.LEGACY_HOST]);
+  assert.deepEqual([...server.ALLOWED_DOMAINS], ['api.transportsydney.app'], 'the first server is switched off (30 Oct 2026)');
+  assert.equal(server.LEGACY_HOST, undefined);
   assert.equal(server.apiBase(), CUR);
 });
 
@@ -97,7 +98,7 @@ test('server: setApiBase applies only allowed values', () => {
   assert.equal(server.setApiBase(CUR), CUR);
 });
 
-test('one address: the old server host is written once, and no first phase names anywhere in the app', () => {
+test('one address: the old server host is never written, and no first phase names anywhere in the app', () => {
   const files = [];
   const skip = new Set(['node_modules', 'android', 'dist', '.expo', '.git', 'assets']);
   const walk = (d) => { for (const f of fs.readdirSync(d)) { if (skip.has(f)) continue; const p = path.join(d, f); const s = fs.lstatSync(p); if (s.isDirectory()) walk(p); else if (s.isFile() && /\.(tsx?|mjs|js|kt|json|md|sh)$/.test(f)) files.push(p); } };
@@ -105,9 +106,9 @@ test('one address: the old server host is written once, and no first phase names
   assert.ok(files.length > 50);
   const rel = (f) => path.relative(root, f);
   const hits = (re) => files.filter((f) => re.test(fs.readFileSync(f, 'utf8'))).map(rel).filter((f) => f !== 'package-lock.json' && f !== 'test/round4.test.mjs'); // this file names what it looks for
-  assert.deepEqual(hits(/tab\.bot/), ['src/lib/server.ts'], 'only the default API host');
-  assert.deepEqual(hits(/nsw-transport-bot/), ['src/lib/server.ts']);
-  assert.equal(fs.readFileSync(path.join(root, 'src/lib/server.ts'), 'utf8').match(/sites\.tab\.bot/g).length, 1);
+  assert.deepEqual(hits(/tab\.bot/), [], 'the old tab.bot address is gone from the app (30 Oct 2026)');
+  assert.deepEqual(hits(/nsw-transport-bot/), []);
+  assert.deepEqual(hits(/to Tab\b/), [], 'no Tab branding in the app');
   assert.deepEqual(hits(/mail\.tab\.bot|Transport Bot/i), []);
   const src = files.filter((f) => rel(f).startsWith('src/') || rel(f).startsWith('plugins/'));
   const bad = src.filter((f) => /[\u2013\u2014]/.test(fs.readFileSync(f, 'utf8'))).map(rel);

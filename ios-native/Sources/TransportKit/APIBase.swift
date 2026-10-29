@@ -6,7 +6,7 @@ import Foundation
 /// Group so the widgets follow it too.
 public enum APIBase {
     /// The address the app ships with.
-    public static let builtIn = URL(string: "https://nsw-transport-bot.sites.tab.bot")!
+    public static let builtIn = URL(string: "https://api.transportsydney.app")!
 
     /// Hosts remote config may move the app to (the host itself and any host under it), besides
     /// the host in use now. Adding a server is a one line change here.
