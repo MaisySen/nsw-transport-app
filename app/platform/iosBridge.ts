@@ -25,6 +25,7 @@ import { apiBase } from '@/lib/server';
 import { endActivityToken, sendActivityToken, sendDeviceToken } from './livePush';
 import { pendingOpenURL } from './intentInboxCore';
 import { startAppPoll } from '@/lib/activity';
+import { appMayWriteCard } from '@/lib/liveFreshCore';
 
 const ARRIVED_KEEP_S = 120;
 const TICK_MS = 30000;
@@ -114,6 +115,9 @@ if (Platform.OS === 'ios' && iosNative.available()) {
       return;
     }
     shareToken();
+    // While the server pushes this card, older times of the app's own (back in front after a while) do not overwrite
+    // what it pushed; the engine's fresh answer a moment later writes the card (liveFreshCore.ts).
+    if (!appMayWriteCard({ background, pushing: !!activityToken, lastSvcAt, now: Date.now() })) return;
     const j = JSON.stringify({ ...card, progress: Math.round(card.progress * 20) / 20 });
     if (j === lastJSON) return;
     lastJSON = j;

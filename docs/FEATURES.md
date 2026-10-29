@@ -100,6 +100,7 @@ App only, JavaScript, no new native module, no server change. Not tried on a rea
 * **Watch** a service (swipe left on a departure) for leave now, running late and platform change alerts.
 * **Share trip:** a link that stops working when the trip ends.
 * **Trip card push (server, 30 Oct, branch liveact-push, not deployed):** while the phone is locked the server pushes the trip card about every 30 s at full priority, so the Lock Screen card and Dynamic Island keep their countdown instead of going stale. Details: [LIVE_ACTIVITY_PUSH.md](LIVE_ACTIVITY_PUSH.md).
+* **Live trip freshness (30 Oct, over the air after merge):** the live trip engine asks for live feed times on every refresh after the first, so the trip screen, get off alert and trip card follow the feed within seconds instead of up to a minute behind. On iPhone, opening the app no longer puts older times on a trip card the server has been pushing.
 
 ## Reminders and checks
 
