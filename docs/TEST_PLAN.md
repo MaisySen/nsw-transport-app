@@ -20,6 +20,15 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 | Lighthouse (mobile) | Landing, support, privacy and web app | After site changes. Last run: 100 in all four categories on landing, support and privacy; web app 100, 100, 100 and 96 for accessibility |
 | Writing style check | grep in every test file and before every push | No em dashes, no en dashes, no filler words |
 
+### `backend/test/live-activity.test.mjs`: 5 new tests (30 Oct, trip card push, server, branch liveact-push)
+* Priority: 10 for an end, a change, a warning or a stale date under 3 minutes away (edge at 180 s), 5 otherwise.
+* The row is written on a change, a new Apple status, the end, a gone token, a first push or after 5 minutes, not on every push; the push count stays whole.
+* "Updated" from the current leg and later legs; too old, future and missing feed times are left out.
+* A second push 30 s later goes as priority 10 with the stale date moved on and no row write.
+* `laPasses`: a second pass about 30 s after the cron's minute only while a card is active; none with `LA_HALF=off`.
+* Changed: "register, tick, skip within 25 s, end on arrival" (the unchanged push is priority 10 now); `hosts.test.mjs` "the Cron Trigger runs the minute tick" expects two scheduled jobs.
+* Results (30 Oct, 12:35 AM, on main c7a2a11 plus this change): backend 621 of 621 (`TZ=Australia/Sydney`). No app change. Device check after deploy: docs/LIVE_ACTIVITY_PUSH.md, "Deploy and check".
+
 ### `backend/test/feed-fresh.test.mjs`: 9 tests, 9 pass (28 Oct, liveness pass, server)
 * A good fetch is counted per feed and per mode with the copy's own header time (age and header lag); a header in the future is not trusted.
 * A failed fetch counts an error with words that carry no key, and the last good copy is marked served old.
