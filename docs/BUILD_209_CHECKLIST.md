@@ -1,6 +1,6 @@
 # Build 209 checklist (Sunday 1 Nov 2026)
 
-Every step for build 209, in order. Nothing in this file has been run yet. Written 29 Oct from branch prep (task 9578965a); the reasons behind each item are in [IOS27.md](IOS27.md) "Build 209", [ROADMAP.md](ROADMAP.md) and [SENTRY.md](SENTRY.md) (on `sentry-build209`).
+Every step for build 209, in order. Steps 2.1 to 2.8 were run on 30 Oct (branch `build-209`, readiness notes in CHANGELOG and TEST_PLAN); everything from step 3 on has not been run. Written 29 Oct from branch prep (task 9578965a); the reasons behind each item are in [IOS27.md](IOS27.md) "Build 209", [ROADMAP.md](ROADMAP.md) and [SENTRY.md](SENTRY.md) (on `sentry-build209`).
 
 Hard rules for the day: main stays over the air safe for runtime 1.0.0 until build 209 is on TestFlight and checked; no App Store submit without Bidur's written yes; no secret in the repo, a log or a commit (the repo is public); the Expo free plan allows 15 iOS builds a month and resets on 1 Nov, so plan for 2 (one simulator compile check, one production build).
 
@@ -25,7 +25,7 @@ Hard rules for the day: main stays over the air safe for runtime 1.0.0 until bui
 1. Fresh clone. `git checkout -b build-209 origin/main` (latest main, after the 31 Oct freeze night).
 2. Merge in this order: `origin/sentry-build209`, `origin/island-209`, `origin/widget-209`. On 29 Oct the only conflicts were docs: `docs/FEATURES.md` (put the Sentry section before "Not in the app", keep main's "Not in the app", which already names Sentry) and `docs/IOS27.md` (keep both sides; the widget bullet from `widget-209`). No code conflicts.
 3. Fix the `docs/STORE_PRIVACY.md` line that says "not changed on this branch".
-4. Runtime and version in `app/app.json` (as on `int-209`): `"version": "1.0.0"` unchanged, `"runtimeVersion": "1.1.0"` (a fixed string instead of policy appVersion), `ios.buildNumber` `"209"` (main still says 206; 207 and 208 set it on their branch), and `app/app.config.js` from `int-209` (the `OTA_RUNTIME` override, see step 9).
+4. Runtime and version in `app/app.json` (as on `int-209`): `"version": "1.0.0"` unchanged, `"runtimeVersion": "1.1.0"` (a fixed string instead of policy appVersion), `ios.buildNumber` `"209"` (main still says 206; 207 and 208 set it on their branch), and `app/app.config.js` from `int-209` (the `OTA_RUNTIME` override, see step 9). Also `app/eas.json` production `"autoIncrement": false` (as on `native-207`): main has it true, and with `appVersionSource` local EAS would turn 209 into 210 at build time. Done on `build-209` (30 Oct).
 5. Time sensitive notifications: `"entitlements": { "com.apple.developer.usernotifications.time-sensitive": true }` under `ios` in `app/app.json`, and tick Time Sensitive Notifications on the App ID `com.maisysen.nswtransport` in the Apple Developer site (Bidur's account; the App Group stays ticked).
 6. `cd app && npm ci`.
 7. Tests, all must pass with 0 failures:

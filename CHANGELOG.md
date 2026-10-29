@@ -7,6 +7,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 ### Build 209 branch ready (30 Oct, about 8:40 AM; branch build-209 only, not built, not on main)
 * `build-209` = main acba665 + `sentry-build209` + `island-209` + `widget-209`. Conflicts were docs only (FEATURES, IOS27, TEST_PLAN, CHANGELOG).
 * `app/app.json`: runtime 1.1.0 (fixed), version 1.0.0, `ios.buildNumber` 209, time sensitive entitlement. `app/app.config.js`: `OTA_RUNTIME` override for publishing the same JavaScript to builds 201 to 208 (never applied to an EAS build).
+* `app/eas.json`: production `autoIncrement` false on this branch, as on `native-207` for builds 207 and 208. With it true and `appVersionSource` local, EAS would raise the build number from 209 to 210 at build time.
 * docs/APP_REVIEW_NOTES.md: `sentry` switch and Time Sensitive Get off now in the table; Notes text adds two lines (3953 characters), to be written to App Store Connect on 1 Nov. docs/STORE_PRIVACY.md: the policy lines are already published.
 * App 921 pass, 4 skipped, 0 fail; tsc clean; backend 629 of 629; prebuild ok; Swift parses. No EAS build, no submit, no update.
 
