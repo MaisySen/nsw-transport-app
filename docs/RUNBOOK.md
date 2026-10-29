@@ -148,6 +148,8 @@ There are three kinds. `node tools/orient.mjs` prints all three.
 | `ENGINE_LEARN` | off | Platform names and missing lines sent to the engine from Trip Planner boards | Only while the engine serves boards |
 | `LIVE_PUSH` | off | Trip Planner boards pushed over a socket | After a device test, and the app flag below |
 | `OWN_PLANNER` | off | Trip searches answered by our own planner, no NSW call; also whole day trip lists for phones that send `days=1` (src/daylist.js) | After `tools/planner_match.mjs` passes 90% (3 to 6 AM) and, for the day lists, `tools/trips-compare.mjs` passes 95% (11 PM to 5 AM, at most 40 Trip Planner calls; root and the owner decide) |
+| `TRIP_TT` | not set (on once deployed) | `trip-tt` in x-serves: the newer app asks `/api/trip?tt=1` for timetable trips beside a new search (no Trip Planner call); `off` or `kill.tripTt` removes it, the budget guard holds it | Root, after the device check |
+| `TRIP_TT_OWN` | not set (on) | The first look may use our own planner's pack when the board engine's timetable has none (labelled timetable, never instead of the Trip Planner); `off` leaves it out | Root |
 | `REQ_LOG` | on | One log line per request | Turn off if Workers Logs costs grow |
 | `LOAD_TESTS` | off | Load test keys accepted | Never on production |
 | `API_ONLY` | 1 | API host serves only `/api`, `/live/` and the APK | Keep |
