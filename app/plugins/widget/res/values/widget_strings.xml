@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="widget_trip_label">Next trip</string>
-    <string name="widget_trip_description">A live countdown for your trip. Smart shows Home to Work in the morning and back in the evening. Trips with changes show every leg and the arrival time.</string>
-    <string name="widget_board_label">Departure board</string>
-    <string name="widget_board_description">The next services from a stop you choose, with platforms and live times.</string>
-    <string name="shortcut_ask_short">Ask</string>
-    <string name="shortcut_ask_long">Ask about a trip</string>
-</resources>

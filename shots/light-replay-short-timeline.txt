@@ -1,0 +1,13 @@
+8:52am start: Burwood Station to Strathfield Station: 2 min late
+8:52am state: leg 1 waiting, next Burwood Station, arrive 8:59am
+8:52am lock screen: Next stop: Burwood Station, arrive 8:59am
+8:53am alert: Leave now | The T9 leaves Burwood at 8:58am, Plat 2.
+8:57am alert: Board the T9 to Eastwood via Strathfield | Burwood, Plat 2, leaves 8:58am. Get off at the next stop, Strathfield.
+8:58am state: leg 1 on board, next Strathfield Station, 1 stops left, arrive 8:59am
+8:58am lock screen: Next stop: Strathfield Station, arrive 8:59am
+8:58am alert: Next stop: Strathfield, get off | Arrive 8:59am.
+8:59am state: arrived, arrive 8:58am
+8:59am lock screen: Arrived at Strathfield Station
+8:59am alert: You've arrived at Strathfield | Got in at 8:58am.
+8:59am trip ended, Lock Screen card says You've arrived and leaves in 2 min
+9:14am 15 min after arrival: no trip running, nothing more sent

@@ -1,0 +1,23 @@
+9:26pm start: Strathfield to Kings Cross: T1 3 min late, change at Redfern, T4 1 min early
+9:26pm state: leg 1 waiting, next Strathfield Station, arrive 9:51pm
+9:26pm lock screen: Next stop: Strathfield Station, arrive 9:51pm
+9:26pm alert: Tight change at Redfern Station | 0 min to catch the T4.
+9:33pm state: leg 1 on board, next Burwood Station, 3 stops left, arrive 9:51pm
+9:33pm lock screen: Next stop: Burwood Station, arrive 9:51pm
+9:36pm state: leg 1 on board, next Ashfield Station, 2 stops left, arrive 9:51pm
+9:36pm lock screen: Next stop: Ashfield Station, arrive 9:51pm
+9:39pm state: leg 1 on board, next Redfern Station, 1 stops left, arrive 9:51pm
+9:39pm lock screen: Next stop: Redfern Station, arrive 9:51pm
+9:42pm state: leg 2 waiting, next Redfern Station, arrive 9:51pm
+9:44pm state: leg 2 on board, next Central Station, 4 stops left, arrive 9:51pm
+9:44pm lock screen: Next stop: Central Station, arrive 9:51pm
+9:46pm state: leg 2 on board, next Town Hall Station, 3 stops left, arrive 9:51pm
+9:46pm lock screen: Next stop: Town Hall Station, arrive 9:51pm
+9:47pm state: leg 2 on board, next Martin Place Station, 2 stops left, arrive 9:51pm
+9:47pm lock screen: Next stop: Martin Place Station, arrive 9:51pm
+9:49pm state: leg 2 on board, next Kings Cross Station, 1 stops left, arrive 9:51pm
+9:49pm lock screen: Next stop: Kings Cross Station, arrive 9:51pm
+9:51pm state: arrived, arrive 9:50pm
+9:51pm lock screen: Arrived at Kings Cross Station
+9:51pm trip ended, Lock Screen card says You've arrived and leaves in 2 min
+10:07pm 15 min after arrival: no trip running, nothing more sent
