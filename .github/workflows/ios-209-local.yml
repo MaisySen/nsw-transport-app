@@ -146,8 +146,12 @@ jobs:
 
       - name: Simulator
         run: |
-          RT=$(xcrun simctl list runtimes -j | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)['runtimes'] if x.get('platform')=='iOS' and x.get('isAvailable')]; r.sort(key=lambda x:[int(p) for p in x['version'].split('.')]); print(r[-1]['identifier'])")
-          DT=$(xcrun simctl list devicetypes -j | python3 -c "import json,sys; t=[x['identifier'] for x in json.load(sys.stdin)['devicetypes'] if x['name'].startswith('iPhone') and 'Pro' in x['name'] and 'Max' not in x['name']]; print(t[-1])")
+          read RT DT < <(xcrun simctl list runtimes -j | python3 -c "
+          import json,sys
+          r=[x for x in json.load(sys.stdin)['runtimes'] if x.get('platform')=='iOS' and x.get('isAvailable')]
+          r.sort(key=lambda x:[int(p) for p in x['version'].split('.')])
+          t=[d['identifier'] for d in r[-1].get('supportedDeviceTypes',[]) if d['name'].startswith('iPhone') and d['name'].endswith(' Pro')]
+          print(r[-1]['identifier'], t[-1])")
           echo "runtime $RT, device $DT"
           DEV=$(xcrun simctl create "Widget shots" "$DT" "$RT")
           echo "$DEV" > /tmp/sim-id.txt
