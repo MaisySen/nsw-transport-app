@@ -2,10 +2,12 @@
 // iPhone), else Home to Work or back by time of day, with its line, a live countdown and the platform.
 //   Rectangular: "T1 4:12, Plat 2" and what it is for. Circular: a countdown ring. Inline and corner: the countdown.
 //
-// Battery: the complications never load anything. They draw the times the watch app last loaded and the trip card
-// the iPhone sent, with system countdowns (Text style .timer, ProgressView timerInterval), so a timeline has one
-// entry per service instead of one a minute. The watch app reloads them only when what they show changes; on
-// their own they reload at most every 15 minutes (every 5 while a trip runs).
+// Battery: they draw with system countdowns (Text style .timer, ProgressView timerInterval), so a timeline has one
+// entry per service instead of one a minute. Build 210: on each reload they load the commute themselves when the kept
+// times are over 4 minutes old (before, they never loaded anything and changed only after the watch app was opened),
+// and reload on WatchRefresh's clock: every 20 minutes in the weekday peaks, 30 in the day, 45 in the evening,
+// hourly overnight, 5 while a trip runs (from the phone's card, no loading). The watch app still reloads them when
+// what they show changes.
 import SwiftUI
 import WidgetKit
 
@@ -80,11 +82,22 @@ struct NextProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<NextEntry>) -> Void) {
-        let now = Date()
-        let ctx = WatchStore.loadContext()
-        let entries = NextProvider.entries(now: now, context: ctx, snapshot: WatchStore.loadSnapshot())
-        let live = ctx?.live?.isActive(now: now) == true
-        completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(live ? 5 * 60 : 15 * 60))))
+        Task {
+            let now = Date()
+            let ctx = WatchStore.loadContext()
+            var snap = WatchStore.loadSnapshot()
+            let live = ctx?.live?.isActive(now: now) == true
+            var failed = false
+            // Build 210: the complication loads the commute itself when the kept times are old (it used to wait for
+            // the watch app to be opened). One call, 8 s at most; on failure the kept times show with "Updated".
+            if !live, let c = ctx, let m = c.commute(now: now), WatchRefresh.commuteStale(snap, key: m.key, now: now) {
+                let (s, f) = await WatchRefresh.load(c, into: snap, stops: false, now: now)
+                failed = f
+                if !f { snap = s; WatchStore.save(s) }
+            }
+            let entries = NextProvider.entries(now: Date(), context: ctx, snapshot: snap)
+            completion(Timeline(entries: entries, policy: .after(WatchRefresh.next(now, live: live, failed: failed))))
+        }
     }
 
     /// One entry per service from what the watch keeps: each starts when the one before it leaves.

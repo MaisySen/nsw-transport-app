@@ -65,29 +65,17 @@ public enum WidgetText {
         return out + "\u{2026}"
     }
 
-    /// When the widget should redraw: every minute for 20 minutes, plus the moment each service
-    /// leaves, so a departed service is never on screen.
-    public static func entryDates(updated: Date, departures: [Date], minutes: Int = 20) -> [Date] {
-        let end = updated.addingTimeInterval(Double(minutes) * 60)
-        var set = Set((0..<minutes).map { updated.addingTimeInterval(Double($0) * 60) })
-        for d in departures where d > updated && d < end { set.insert(d) }
-        return set.sorted()
+    /// When the widget should redraw: every minute for an hour, plus the moment each service leaves, so a departed
+    /// service is never on screen and the minutes keep counting down when iOS reloads late (WidgetRefresh, build 210;
+    /// was 20 minutes, after which a late reload froze the widget).
+    public static func entryDates(updated: Date, departures: [Date], minutes: Int = 60) -> [Date] {
+        WidgetRefresh.entryDates(updated: updated, departures: departures, horizon: Double(minutes) * 60)
     }
 
-    /// When to fetch fresh live data. The timeline already has an entry a minute and one at each departure, so
-    /// a reload is only needed for fresh live times: every 15 minutes, or sooner (not before 5 minutes) when
-    /// the list is down to its last service. A trip in progress reloads every 5 minutes, or when its next
-    /// step is due if that comes first (never sooner than a minute). Fewer reloads, less battery.
-    public static func reloadDate(updated: Date, departures: [Date], live: Bool = false) -> Date {
-        let soon = updated.addingTimeInterval(300)
-        let later = updated.addingTimeInterval(900)
-        let ahead = departures.filter { $0 > updated }.sorted()
-        if live {
-            guard let first = ahead.first else { return soon }
-            return min(soon, max(first, updated.addingTimeInterval(60)))
-        }
-        guard ahead.count >= 2 else { return ahead.isEmpty ? later : soon }
-        return min(later, max(ahead[ahead.count - 2], soon))
+    /// When to fetch fresh live data: WidgetRefresh.next, which spends WidgetKit's daily budget by the time of day
+    /// (build 210; was every 5 to 15 minutes day and night, which ran the budget out by midday).
+    public static func reloadDate(updated: Date, departures: [Date], live: Bool = false, failed: Bool = false) -> Date {
+        WidgetRefresh.next(updated: updated, departures: departures, live: live, failed: failed)
     }
 
     /// Services still to come at `date`. A service is gone the moment it leaves.

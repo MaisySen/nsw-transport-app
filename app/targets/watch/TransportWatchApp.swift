@@ -10,6 +10,7 @@ import WidgetKit
 #if !SNAPSHOT_TESTS
 @main
 struct TransportWatchApp: App {
+    @WKApplicationDelegateAdaptor(WatchAppDelegate.self) private var appDelegate
     @StateObject private var model = WatchModel.shared
     @Environment(\.scenePhase) private var phase
 
@@ -39,7 +40,8 @@ final class WatchModel: NSObject, ObservableObject {
     @Published var now = Date()
 
     private var lastRefresh: Date?
-    /// Live times load only while the app is on screen; the complications draw what is kept.
+    /// Live times load every minute while the app is on screen, and on watchOS's background refresh when it is not
+    /// (build 210); the complications also load the commute themselves.
     private var foreground = false
     /// The get off moment last tapped on the wrist, kept across launches so each one taps once.
     private var tapped: String? {
@@ -123,37 +125,21 @@ final class WatchModel: NSObject, ObservableObject {
             now = Date()
             askPhone()
             refresh(ifOlderThan: 30)
+        } else {
+            // Leaving the screen: the next times load in the background (build 210).
+            scheduleBackgroundRefresh()
         }
     }
 
     func refresh(ifOlderThan seconds: TimeInterval = 0) {
         guard foreground else { return }
         if seconds > 0, let l = lastRefresh, Date().timeIntervalSince(l) < seconds { return }
-        guard !loading, let c = context, let api = WatchAPI(c) else { return }
+        guard !loading, let c = context, WatchAPI(c) != nil else { return }
         loading = true
         lastRefresh = Date()
-        let commute = c.commute(now: Date())
-        let stops = c.starred
         Task {
-            var snap = self.snapshot
-            var failed = false
-            if let m = commute {
-                if let s = try? await api.trip(from: m.from.id, to: m.to.id, count: 6) {
-                    snap.commuteKey = m.key; snap.commute = s; snap.commuteAt = Date()
-                } else { failed = true }
-            }
-            await withTaskGroup(of: (String, [WService]?).self) { g in
-                for st in stops {
-                    g.addTask { (st.id, try? await api.departures(stop: st.id)) }
-                }
-                for await (id, s) in g {
-                    if let s { snap.stops[id] = s; snap.stopsAt[id] = Date() } else { failed = true }
-                }
-            }
-            // Stops no longer starred are not kept.
-            let ids = Set(stops.map(\.id))
-            snap.stops = snap.stops.filter { ids.contains($0.key) }
-            snap.stopsAt = snap.stopsAt.filter { ids.contains($0.key) }
+            // Stops no longer starred are not kept (WatchRefresh.load).
+            let (snap, failed) = await WatchRefresh.load(c, into: self.snapshot, stops: true)
             self.snapshot = snap
             self.offline = failed
             self.loading = false
@@ -161,6 +147,35 @@ final class WatchModel: NSObject, ObservableObject {
             WatchStore.save(snap)
             self.reloadComplicationsIfChanged()
         }
+    }
+
+    /// A background refresh from watchOS (build 210): the same load as on screen, with the app closed, then the next
+    /// one asked for on WatchRefresh's clock. Before, the watch app loaded only while on screen.
+    func backgroundRefresh() async {
+        context = WatchStore.loadContext() ?? context
+        var failed = false
+        let live = context?.live?.isActive(now: Date()) == true
+        if !loading, let c = context, !live {
+            loading = true
+            let (snap, f) = await WatchRefresh.load(c, into: WatchStore.loadSnapshot(), stops: true)
+            failed = f
+            snapshot = snap
+            offline = f
+            loading = false
+            lastRefresh = Date()
+            WatchStore.save(snap)
+        }
+        now = Date()
+        reloadComplicationsIfChanged()
+        scheduleBackgroundRefresh(failed: failed)
+    }
+
+    /// Asks watchOS for the next background refresh. watchOS decides the moment (about four an hour at most for an
+    /// app on the watch face); this only says the earliest that is useful.
+    func scheduleBackgroundRefresh(failed: Bool = false) {
+        let live = context?.live?.isActive(now: Date()) == true
+        let at = WatchRefresh.next(Date(), live: live, failed: failed)
+        WKApplication.shared().scheduleBackgroundRefresh(withPreferredDate: at, userInfo: nil) { _ in }
     }
 
     /// Reloads the complications only when the service or trip they show changed (WidgetKit limits reloads).
@@ -208,6 +223,29 @@ extension WatchModel: WCSessionDelegate {
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
         if session.isReachable { Task { @MainActor in WatchModel.shared.askPhone() } }
+    }
+}
+
+// MARK: Background refresh
+
+/// Hands watchOS's background refresh to the model (build 210). Every other task is completed at once.
+@MainActor
+final class WatchAppDelegate: NSObject, WKApplicationDelegate {
+    func applicationDidFinishLaunching() {
+        WatchModel.shared.scheduleBackgroundRefresh()
+    }
+
+    func handle(_ backgroundTasks: Set<WKRefreshBackgroundTask>) {
+        for task in backgroundTasks {
+            if let refresh = task as? WKApplicationRefreshBackgroundTask {
+                Task { @MainActor in
+                    await WatchModel.shared.backgroundRefresh()
+                    refresh.setTaskCompletedWithSnapshot(false)
+                }
+            } else {
+                task.setTaskCompletedWithSnapshot(false)
+            }
+        }
     }
 }
 

@@ -94,6 +94,8 @@ struct NextTripEntry: TimelineEntry {
     var dataAt: Date?
     /// "Updated 7 min ago" once a live time on this entry got too old to call live (build 209).
     var ago: String?
+    /// The fetch did not answer: saved times or a message, so the next ask comes sooner (WidgetRefresh, build 210).
+    var failed: Bool = false
 
     static let sample = NextTripEntry(
         date: .now, title: "Home", from: "Burwood", to: "Central",
@@ -118,7 +120,7 @@ struct NextTripProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: NextTripIntent, in context: Context) async -> Timeline<NextTripEntry> {
         let e = await Self.load(configuration)
-        return Timeline(entries: Self.entries(from: e), policy: .after(WidgetText.reloadDate(updated: e.updated, departures: e.trips.map(\.leave), live: e.live)))
+        return Timeline(entries: Self.entries(from: e), policy: .after(WidgetText.reloadDate(updated: e.updated, departures: e.trips.map(\.leave), live: e.live, failed: e.failed)))
     }
 
     /// One entry a minute and one at each departure, so the minutes stay right and a service
@@ -202,14 +204,18 @@ struct NextTripProvider: AppIntentTimelineProvider {
                     return x
                 }
                 if !left.isEmpty {
-                    return NextTripEntry(date: now, title: title, from: fromName, to: toName, trips: left, message: nil,
-                                         fromID: from.id, toID: to.id,
-                                         notice: WidgetNotice(text: "Offline, times from \(Clock.time(c.updated))", level: .info),
-                                         updated: now)
+                    var e = NextTripEntry(date: now, title: title, from: fromName, to: toName, trips: left, message: nil,
+                                          fromID: from.id, toID: to.id,
+                                          notice: WidgetNotice(text: "Offline, times from \(Clock.time(c.updated))", level: .info),
+                                          updated: now)
+                    e.failed = true
+                    return e
                 }
             }
-            return NextTripEntry(date: .now, title: title, from: fromName, to: toName,
-                                 trips: [], message: "Offline. Live times will be back shortly.", fromID: from.id, toID: to.id)
+            var e = NextTripEntry(date: .now, title: title, from: fromName, to: toName,
+                                  trips: [], message: "Offline. Live times will be back shortly.", fromID: from.id, toID: to.id)
+            e.failed = true
+            return e
         }
         let now = Date()
         let ok = r.journeys.filter { ($0.leave ?? .distantPast) > now && $0.firstTransit != nil }
@@ -293,6 +299,40 @@ struct TripCache: Codable {
     static func load(from: String, to: String) -> TripCache? {
         guard let data = AppIdentity.groupDefaults.data(forKey: key(from: from, to: to)) else { return nil }
         return try? JSONDecoder().decode(TripCache.self, from: data)
+    }
+}
+
+/// The last rows per stop board (and line filter), kept in the app group so an offline board still shows the services
+/// to come, at their timetable times and never as live (build 210; before, an offline board was empty).
+struct BoardCache: Codable {
+    var updated: Date
+    var rows: [BoardRow]
+
+    static func key(stop: String, filter: String?) -> String { "stopBoardCache.\(stop).\(filter ?? "")" }
+
+    static func save(_ rows: [BoardRow], stop: String, filter: String?, at: Date) {
+        guard !rows.isEmpty, let data = try? JSONEncoder().encode(BoardCache(updated: at, rows: rows)) else { return }
+        AppIdentity.groupDefaults.set(data, forKey: key(stop: stop, filter: filter))
+    }
+
+    static func load(stop: String, filter: String?) -> BoardCache? {
+        guard let data = AppIdentity.groupDefaults.data(forKey: key(stop: stop, filter: filter)) else { return nil }
+        return try? JSONDecoder().decode(BoardCache.self, from: data)
+    }
+
+    /// Saved rows as an offline board shows them at `now`: the timetable time where there is one, not live, and only
+    /// the services that have not left.
+    static func offline(_ rows: [BoardRow], at now: Date) -> [BoardRow] {
+        rows.map { r -> BoardRow in
+            var x = r
+            if r.isLive, let t = r.timetable { x.time = t }
+            x.isLive = false
+            x.liveAt = nil
+            x.status = "Scheduled"
+            return x
+        }
+        .filter { $0.time > now }
+        .sorted { $0.time < $1.time }
     }
 }
 
@@ -737,7 +777,7 @@ struct StopBoardWidget: Widget {
     }
 }
 
-struct BoardRow: Hashable {
+struct BoardRow: Hashable, Codable {
     var line: String
     var colorHex: String
     var mode: String
@@ -762,6 +802,8 @@ struct StopBoardEntry: TimelineEntry {
     var updated: Date = .now
     /// "Updated 7 min ago" once a live time on this entry got too old to call live (build 209).
     var ago: String?
+    /// The fetch did not answer: saved rows or a message, so the next ask comes sooner (WidgetRefresh, build 210).
+    var failed: Bool = false
 
     static let sample = StopBoardEntry(
         date: .now, stopID: "200060", stopName: "Central", filter: nil,
@@ -781,15 +823,17 @@ struct StopBoardProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: StopBoardIntent, in context: Context) async -> Timeline<StopBoardEntry> {
         let e = await Self.load(configuration)
-        let entries = (0..<15).map { i -> StopBoardEntry in
+        // An entry a minute for an hour and one as each service leaves (was 15 minutes, then frozen until a reload).
+        let entries = WidgetText.entryDates(updated: e.updated, departures: e.rows.map(\.time)).map { d -> StopBoardEntry in
             var x = e
-            x.date = e.updated.addingTimeInterval(Double(i) * 60)
+            x.date = d
             let (rows, oldest) = Self.settle(e.rows, at: x.date)
             x.rows = WidgetText.upcoming(rows, at: x.date) { $0.time }
             if let o = oldest { x.ago = WidgetLive.ago(o, at: x.date) }
+            if x.rows.isEmpty, x.message == nil { x.message = "Checking for the next one" }
             return x
         }
-        return Timeline(entries: entries, policy: .after(WidgetText.reloadDate(updated: e.updated, departures: e.rows.map(\.time))))
+        return Timeline(entries: entries, policy: .after(WidgetText.reloadDate(updated: e.updated, departures: e.rows.map(\.time), failed: e.failed)))
     }
 
     static func load(_ c: StopBoardIntent) async -> StopBoardEntry {
@@ -821,9 +865,22 @@ struct StopBoardProvider: AppIntentTimelineProvider {
     static func entry(stop: StopRef, lines: String?) async -> StopBoardEntry {
         let wanted = Set((lines ?? "").uppercased().split(whereSeparator: { $0 == "," || $0 == " " }).map(String.init))
         let name = Naming.compact(Naming.short(stop.name))
+        let filter = wanted.isEmpty ? nil : wanted.sorted().joined(separator: ", ")
         guard let r = try? await TransportAPI.shared.departures(stop: stop.id, device: nil) else {
-            return StopBoardEntry(date: .now, stopID: stop.id, stopName: name, filter: lines, rows: [],
-                                  message: "Live times will be back shortly.")
+            // Offline: the last rows saved for this stop that have not left, at their timetable times and never live.
+            let now = Date()
+            var e = StopBoardEntry(date: now, stopID: stop.id, stopName: name, filter: filter, rows: [],
+                                   message: "Live times will be back shortly.", updated: now)
+            if let c = BoardCache.load(stop: stop.id, filter: filter) {
+                let left = BoardCache.offline(c.rows, at: now)
+                if !left.isEmpty {
+                    e.rows = left
+                    e.message = nil
+                    e.notice = WidgetNotice(text: "Offline, times from \(Clock.time(c.updated))", level: .info)
+                }
+            }
+            e.failed = true
+            return e
         }
         let now = Date()
         // Each row ages from its own feed time (liveAt, every server since 28 Oct), else the board's, else now.
@@ -839,9 +896,10 @@ struct StopBoardProvider: AppIntentTimelineProvider {
         }
         let serious = (r.alerts ?? []).first { $0.isSerious }
         let resolved = r.stop.map { Naming.compact(Naming.short($0.name)) }
+        BoardCache.save(Array(rows.prefix(10)), stop: stop.id, filter: filter, at: now)
         return StopBoardEntry(date: now, stopID: stop.id,
                               stopName: (resolved?.allSatisfy(\.isNumber) == false ? resolved : nil) ?? name,
-                              filter: wanted.isEmpty ? nil : wanted.sorted().joined(separator: ", "),
+                              filter: filter,
                               rows: Array(rows.prefix(10)), message: rows.isEmpty ? "No departures soon." : nil,
                               notice: serious?.title.map { WidgetNotice(text: $0, level: .severe) }, updated: now)
     }

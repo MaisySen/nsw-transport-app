@@ -294,6 +294,89 @@ enum WatchStore {
     }
 }
 
+// MARK: Refreshing on its own (30 Oct, build 210)
+
+/// When the complications and the watch app load fresh times by themselves. Up to build 209 the complications never
+/// loaded anything and the watch app loaded only while on screen, so the watch face changed only after one of the
+/// apps was opened. Now the complications load the commute themselves when what is kept is older than `fresh`, and
+/// the app asks watchOS for a background refresh on the same clock. Spent by the time of day, inside watchOS's budget
+/// (about 50 complication reloads a day): every 20 minutes in the weekday peaks, 30 in the rest of the day, 45 in the
+/// evening, hourly overnight. A trip in progress (the phone's card, no loading) every 5 minutes.
+enum WatchRefresh {
+    static let busyEvery: TimeInterval = 20 * 60
+    static let dayEvery: TimeInterval = 30 * 60
+    static let eveningEvery: TimeInterval = 45 * 60
+    static let nightEvery: TimeInterval = 60 * 60
+    static let liveEvery: TimeInterval = 5 * 60
+    static let offlineEvery: TimeInterval = 15 * 60
+    /// Times loaded less than this long ago are used as they are, so the app and the complications never load twice.
+    static let fresh: TimeInterval = 4 * 60
+
+    enum Band: String { case busy, day, evening, night }
+
+    /// Which part of the day `at` is in, on the Sydney clock: weekday 6:30 to 9:30am and 3:30 to 7pm are the peaks,
+    /// 9pm to 12:30am the evening, 12:30 to 5am the night.
+    static func band(at: Date) -> Band {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = Clock.sydney
+        let p = cal.dateComponents([.hour, .minute, .weekday], from: at)
+        let m = (p.hour ?? 0) * 60 + (p.minute ?? 0)
+        let weekday = (2...6).contains(p.weekday ?? 1)
+        if m >= 30 && m < 5 * 60 { return .night }
+        if m >= 21 * 60 || m < 30 { return .evening }
+        if weekday && ((m >= 6 * 60 + 30 && m < 9 * 60 + 30) || (m >= 15 * 60 + 30 && m < 19 * 60)) { return .busy }
+        return .day
+    }
+
+    /// The next reload (complications) or background refresh (app) after `now`.
+    static func next(_ now: Date, live: Bool = false, failed: Bool = false) -> Date {
+        if live { return now.addingTimeInterval(liveEvery) }
+        let b = band(at: now)
+        var gap: TimeInterval
+        switch b {
+        case .busy: gap = busyEvery
+        case .day: gap = dayEvery
+        case .evening: gap = eveningEvery
+        case .night: gap = nightEvery
+        }
+        if failed { gap = min(gap, offlineEvery) }
+        return now.addingTimeInterval(gap)
+    }
+
+    /// Whether the kept commute times need loading again at `now`.
+    static func commuteStale(_ s: WatchSnapshot, key: String, now: Date) -> Bool {
+        guard s.commuteKey == key, let at = s.commuteAt else { return true }
+        return now.timeIntervalSince(at) >= fresh || WatchSnapshot.upcoming(s.commute, now: now).count < 2
+    }
+
+    /// Loads the commute (and, for the app, the starred stops) into `snap`. Returns the new snapshot and whether any
+    /// part failed (the kept times stay for that part). Stops no longer starred are dropped.
+    static func load(_ c: WatchContext, into snap: WatchSnapshot, stops: Bool, now: Date = Date()) async -> (WatchSnapshot, Bool) {
+        guard let api = WatchAPI(c) else { return (snap, true) }
+        var s = snap
+        var failed = false
+        if let m = c.commute(now: now) {
+            if let got = try? await api.trip(from: m.from.id, to: m.to.id, count: 6) {
+                s.commuteKey = m.key; s.commute = got; s.commuteAt = Date()
+            } else { failed = true }
+        }
+        guard stops else { return (s, failed) }
+        let starred = c.starred
+        await withTaskGroup(of: (String, [WService]?).self) { g in
+            for st in starred {
+                g.addTask { (st.id, try? await api.departures(stop: st.id)) }
+            }
+            for await (id, got) in g {
+                if let got { s.stops[id] = got; s.stopsAt[id] = Date() } else { failed = true }
+            }
+        }
+        let ids = Set(starred.map(\.id))
+        s.stops = s.stops.filter { ids.contains($0.key) }
+        s.stopsAt = s.stopsAt.filter { ids.contains($0.key) }
+        return (s, failed)
+    }
+}
+
 // MARK: Words and times
 
 enum Clock {
