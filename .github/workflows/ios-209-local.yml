@@ -3,7 +3,7 @@
 # and only from the build-209 branch. Signing: the distribution certificate and the four App Store profiles
 # (the app's profile regenerated on 30 Oct with Time Sensitive) arrive as one secret and are deleted at the end.
 # Upload goes to App Store Connect for TestFlight only. Nothing here submits for App Review.
-name: iOS build 209 (local EAS build, TestFlight upload)
+name: iOS build 209+ (local EAS build, TestFlight upload; widget snapshots)
 
 on:
   workflow_dispatch:
@@ -13,6 +13,11 @@ on:
         type: choice
         options: ["yes", "no"]
         default: "yes"
+      mode:
+        description: "build: signed build (and upload). snapshots: widget fit check and snapshots only, no secrets used"
+        type: choice
+        options: ["build", "snapshots"]
+        default: "build"
 
 permissions:
   contents: read
@@ -23,7 +28,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/build-209'
+    if: github.ref == 'refs/heads/build-209' && inputs.mode != 'snapshots'
     runs-on: xcode-27
     timeout-minutes: 120
     env:
@@ -67,13 +72,13 @@ jobs:
           set -o pipefail
           npx -y eas-cli@latest whoami
           npx -y eas-cli@latest build --platform ios --profile production --local --non-interactive \
-            --output "$RUNNER_TEMP/Transport-209.ipa" 2>&1 | tee "$RUNNER_TEMP/build.log"
-          ls -la "$RUNNER_TEMP/Transport-209.ipa"
+            --output "$RUNNER_TEMP/Transport.ipa" 2>&1 | tee "$RUNNER_TEMP/build.log"
+          ls -la "$RUNNER_TEMP/Transport.ipa"
 
       - name: Check the IPA
         run: |
           set -e
-          cd "$RUNNER_TEMP" && rm -rf ipa && mkdir ipa && cd ipa && unzip -q ../Transport-209.ipa
+          cd "$RUNNER_TEMP" && rm -rf ipa && mkdir ipa && cd ipa && unzip -q ../Transport.ipa
           APP=$(ls -d Payload/*.app)
           for b in "$APP" "$APP"/PlugIns/*.appex "$APP"/Watch/*.app "$APP"/Watch/*.app/PlugIns/*.appex; do
             [ -e "$b" ] || continue
@@ -92,7 +97,7 @@ jobs:
           grep -c NSPrivacyCollectedDataTypeCrashData "$APP/PrivacyInfo.xcprivacy" && echo "privacy manifest: Crash Data listed"
           if grep -r -l -E 'tab\.bot|nsw-transport-bot' "$APP" >/dev/null 2>&1; then echo "OLD ADDRESS FOUND:"; grep -r -l -E 'tab\.bot|nsw-transport-bot' "$APP" | head; else echo "no old address in the IPA"; fi
           grep -i -E 'sentry' "$RUNNER_TEMP/build.log" | grep -i -E 'upload|error|warn' | sort -u | head -20 || true
-          shasum -a 256 "$RUNNER_TEMP/Transport-209.ipa"
+          shasum -a 256 "$RUNNER_TEMP/Transport.ipa"
 
       - name: Upload to App Store Connect (TestFlight only, no review submit)
         if: inputs.upload == 'yes'
@@ -105,12 +110,67 @@ jobs:
           mkdir -p ~/.appstoreconnect/private_keys
           printf '%s\n' "$ASC_KEY_P8" > ~/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8
           chmod 600 ~/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8
-          xcrun altool --upload-app --type ios --file "$RUNNER_TEMP/Transport-209.ipa" \
+          xcrun altool --upload-app --type ios --file "$RUNNER_TEMP/Transport.ipa" \
             --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --output-format normal 2>&1 | tee "$RUNNER_TEMP/upload.log"
           grep -q -i -E 'No errors uploading|UPLOAD SUCCEEDED|successfully uploaded' "$RUNNER_TEMP/upload.log"
 
       - name: Clean up signing files
         if: always()
         run: |
-          rm -rf credentials credentials.json ~/.appstoreconnect "$RUNNER_TEMP/ipa" "$RUNNER_TEMP/Transport-209.ipa"
+          rm -rf credentials credentials.json ~/.appstoreconnect "$RUNNER_TEMP/ipa" "$RUNNER_TEMP/Transport.ipa"
           security delete-keychain "$RUNNER_TEMP"/*.keychain-db 2>/dev/null || true
+
+  # Build 210 (30 Oct): the trip widget rendered in every family at the smallest to the largest iPhone widget
+  # sizes and at a larger text size, with a check that each layout fits. Uses no secrets.
+  snapshots:
+    if: github.ref == 'refs/heads/build-209' && inputs.mode == 'snapshots'
+    runs-on: xcode-27
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: app/native-tests/widget-snapshots
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+
+      - name: Project
+        run: |
+          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip
+          unzip -q /tmp/xcodegen.zip -d /tmp/xg
+          XG=$(find /tmp/xg -type f -name xcodegen -perm -u+x | head -1)
+          "$XG" generate
+
+      - name: Simulator
+        run: |
+          RT=$(xcrun simctl list runtimes -j | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)['runtimes'] if x.get('platform')=='iOS' and x.get('isAvailable')]; r.sort(key=lambda x:[int(p) for p in x['version'].split('.')]); print(r[-1]['identifier'])")
+          DT=$(xcrun simctl list devicetypes -j | python3 -c "import json,sys; t=[x['identifier'] for x in json.load(sys.stdin)['devicetypes'] if x['name'].startswith('iPhone') and 'Pro' in x['name'] and 'Max' not in x['name']]; print(t[-1])")
+          echo "runtime $RT, device $DT"
+          DEV=$(xcrun simctl create "Widget shots" "$DT" "$RT")
+          echo "$DEV" > /tmp/sim-id.txt
+          xcrun simctl boot "$DEV"
+          xcrun simctl bootstatus "$DEV" -b > /dev/null
+
+      - name: Fit check and snapshots
+        run: |
+          set -o pipefail
+          mkdir -p "$GITHUB_WORKSPACE/out/widgets"
+          TEST_RUNNER_SNAPSHOT_DIR="$GITHUB_WORKSPACE/out/widgets" TEST_RUNNER_TZ=Australia/Sydney \
+          xcodebuild test -project WidgetSnapshots.xcodeproj -scheme WidgetSnapshotTests \
+            -destination "id=$(cat /tmp/sim-id.txt)" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO > "$GITHUB_WORKSPACE/out/test.log" 2>&1 \
+            || { grep -E "error:|failed|OVERFLOWS" "$GITHUB_WORKSPACE/out/test.log" | sort -u | head -80; touch "$GITHUB_WORKSPACE/out/FAILED"; }
+          cat "$GITHUB_WORKSPACE/out/widgets/fit-report.txt" || true
+          ls "$GITHUB_WORKSPACE/out/widgets" | wc -l
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: widget-snapshots
+          path: out
+          retention-days: 7
+
+      - name: Result
+        run: test ! -e "$GITHUB_WORKSPACE/out/FAILED"
