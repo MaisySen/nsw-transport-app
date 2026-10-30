@@ -413,7 +413,7 @@ struct LiveTripLockCard: View {
                         .font(.title2.weight(.bold))
                         .monospacedDigit()
                         .lineLimit(2)
-                        .minimumScaleFactor(0.7)
+                        .minimumScaleFactor(0.5)  // xxxLarge with a warning: shrink, never "in 18 mi…" (31 Oct readiness audit)
                         .multilineTextAlignment(.trailing)
                         .frame(maxWidth: 100, alignment: .trailing)
                 }
