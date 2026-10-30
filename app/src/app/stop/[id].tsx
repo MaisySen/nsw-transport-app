@@ -42,6 +42,8 @@ import type { Station } from '@/lib/access';
 import { hasSpeech, speak } from '@/lib/nativeExtras';
 import { departuresSentence } from '@/lib/voiceCore';
 import { withKeys } from '@/lib/rowKeysCore';
+import { frequentLines } from '@/lib/frequentCore';
+import { FREQUENT_LINES } from '@/lib/features';
 
 const canSpeak = hasSpeech();
 
@@ -166,6 +168,12 @@ export default function StopScreen() {
   useReportCountdowns('stopscreen:' + id, items.slice(0, 6).map((d) => bestTime(d.planned, d.realtime ? d.estimated : null)));
   // Services that left in the last few minutes, from this phone's own reads of this board (recentCore.ts).
   const next = items.find((d) => !isGone(d, now));
+  // Every N minutes (30 Oct, frequentCore.ts): a line and direction that runs often in the next half hour, from the
+  // rows above, worked out at most twice a minute. Now only; nothing to tap.
+  const freqTick = Math.floor(now / 30000);
+  const freq = useMemo(() => (FREQUENT_LINES ? frequentLines(byRoute(board.filter((d) => !mode || d.mode === mode), route), freqTick * 30000, at) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [board, mode, route, at, freqTick]);
   const usual = useUsualText(route && next ? { kind: 'transit', line: route, stopId: next.stopId || String(id), planned: next.planned } : null);
   // The phone's own Recently departed, on Now only until Earlier departures are loaded (they list the same services).
   const recent = useRecentDeparted(id ? boardKey(String(id), ask) : undefined, now);
@@ -303,6 +311,19 @@ export default function StopScreen() {
                 </View>
               );
             }) : null}
+          </View>
+        ) : null}
+
+        {freq.length ? (
+          <View style={{ marginHorizontal: 20, marginTop: 14, gap: 6 }}>
+            {freq.map((f) => (
+              <View key={f.key} accessible accessibilityLabel={f.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 24 }}>
+                <LineBadge line={f.line} mode={f.mode} color={f.color} />
+                <T kind="sub" tone="text2" numberOfLines={2} style={{ flex: 1 }}>
+                  {f.dest ? `to ${f.dest}: ` : ''}<T kind="sub" style={{ fontWeight: '600' }}>{f.text.charAt(0).toLowerCase() + f.text.slice(1)}</T>
+                </T>
+              </View>
+            ))}
           </View>
         ) : null}
 

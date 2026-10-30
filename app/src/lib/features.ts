@@ -8,3 +8,9 @@
 // makes a row younger than its answer), and the GPS age is not counted twice (liveLead). Off is this one line (false)
 // and an over the air update.
 export const LIVE_DATA_AGE = true;
+
+// FREQUENT_LINES (30 Oct): on a stop's board for now, a line and direction with at least 4 services in the next 30
+// minutes, none more than 10 minutes apart, gets one line above the list ("M1 to Tallawong: every 3 to 5 min"),
+// worked out on the phone from the rows the board already has (frequentCore.ts). No request, no server part. Off is
+// this one line (false) and an over the air update.
+export const FREQUENT_LINES = true;

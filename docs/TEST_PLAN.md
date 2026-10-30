@@ -22,6 +22,11 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 
 
+### `app/test/frequent.test.mjs`: 10 tests, 10 pass (30 Oct, every N minutes for frequent lines, app, branch next-frequent, not on main)
+* `frequentLines`: every 4 min, a range ("Every 3 to 5 min", whole minutes), live times counted only on live rows (as the board shows them); nothing for fewer than 4 services, a gap over 10 min, a first service more than 10 min away, or services past 30 min; cancelled, gone and departed rows left out; each direction its own line and one service seen twice (two stands) counted once; at most 2 lines, soonest first; a board for another time shows none.
+* Source checks: no hard coded lines or stops and no native imports in `frequentCore.ts`; the stop board shows it just above the departures list, behind `FREQUENT_LINES`, with nothing to tap.
+* Results (30 Oct, about 3:45 PM, on main cfd0246 plus this change): app 915 pass, 3 skipped offline, 0 fail (`OFFLINE=1 TZ=Australia/Sydney`), battery 17 of 17, `npx tsc --noEmit` clean. Mock (not a device screenshot): `frequent-lines-mock-30oct.png` in Tab's files. Device check after an update: a Metro or light rail stop at peak shows one or two "every N min" lines above the list; a stop with a 15 minute bus shows none; Board, Speak, the route chips and every row tap the same as before.
+
 ### `app/test/newtrip.test.mjs`: 12 tests, 12 pass (30 Oct, new trip first look, app, branch newtrip-app)
 * When it asks (served, plain, not step free, not long, nothing on screen) and the query (tt=1, never page, days, refresh or acc).
 * R1 stray live fields from a server are taken off and the answer is labelled phone built; only a timetable answer paints (a live answer, a 204, an error do not); R3 gone services drop; R4 trip id keys in time order, at most 10; arrive by and leave at windows; R5 never kept, never seeds; R6 Start trip arms timetable times; R2 cap still 5 min; paints only while nothing is on screen.

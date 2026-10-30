@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 30 Oct 2026
 
+### Every N minutes for frequent lines (30 Oct, about 3:45 PM; branch `next-frequent`, NOT on main, not in any update yet)
+* Stop boards (Now only): a line and direction with at least 4 services in the next 30 minutes, none more than 10 minutes apart and the first within 10 minutes, gets one line above the list: line badge, "to Tallawong: every 4 min" or "every 3 to 5 min". At most 2 lines, soonest first. Worked out on the phone from the rows the board already has (live time on a live row, else the timetable), so it says nothing the list does not; follows the mode and route chips.
+* No request, no server part, no native code, so builds 201 to 209 and Android take it over the air once merged. Nothing to tap; rows, Board, Speak and the chips behave as before. No hard coded lines or stops. Switch: `FREQUENT_LINES` in `app/src/lib/features.ts`.
+* Files: `app/src/lib/frequentCore.ts`, `app/src/app/stop/[id].tsx`, `app/src/lib/features.ts`, `app/test/frequent.test.mjs` (10). App 915 pass, 3 skipped, 0 fail (`OFFLINE=1 TZ=Australia/Sydney`), battery 17 of 17, tsc clean.
+
 ### Build 209 on TestFlight (30 Oct, 3:23 PM; Internal group only, no App Store submit)
 * Built from `build-209` 222f132 (main 5a6b662 merged; runtime 1.1.0, version 1.0.0 (209)) with `eas build --local` on a GitHub hosted Mac, because the Expo Free plan's October iOS builds were used up (they come back 1 Nov, 11 AM Sydney). Workflow `.github/workflows/ios-209-local.yml` (manual trigger, runs only on build-209). App Store Connect build f50e9fce VALID, export compliance answered by the binary, What to Test written (en-AU, en-US). IPA checks and Sentry uploads in docs/RELEASES.md.
 * Recheck before the build: app 921 pass, 4 skipped, 0 fail; battery 17 of 17; tsc clean; backend 631 of 631; review-notes 3 of 3; iOS prebuild checks. App Review Notes in App Store Connect now hold the build-209 text (3953 characters, read back the same).
