@@ -17,6 +17,17 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * `GETOFF_SOUND_WORDS` in `app/src/lib/getOffCore.ts` and the comments that quote the clips updated. New `app/test/getoffvoice31.test.mjs` (2) pins both files to the chosen clips and their words. FEATURES, TEST_PLAN, BUILD_209_CHECKLIST.
 * Sounds reach phones only in a build: build 210. No update changes them.
 
+### Trips from Current location skip the 10 minute trip window (31 Oct, 7:40 AM; server only, transport-api aa8f04ff, roll back 4ecfebf1)
+* With Current location in From and To on main, a trip page from or to a point (`lon:lat:EPSG:4326`, also Get me home) was kept in the shared trip window for 10 minutes (`TRIP_WIN_KEEP_S`), keyed on the point. Now such a trip is never kept there, nor in the 2 minute long trip copy (`tripWinSkip` in `backend/src/worker.js`): every ask goes to the planner, so a moving phone always gets an answer for where it is now, and the point is not held. Stop to stop trips share the window as before.
+* Backward compatible: the answer has the same shape and fields for builds 201 to 209; nothing new for the app to read.
+* Deployed 7:40 AM as transport-api `aa8f04ff` from main 37ad731 (no R2, no migrations, schema check and dash check clean). verify-deploy (not --live) all 12 ok, again after the watch; 15 min watch to 7:55 AM: 35 invocations, all on aa8f04ff, 0 errors, 0 new feedback or crash rows (still 5). No NSW call by hand. Roll back: `npx wrangler@4 rollback 4ecfebf1-407e-4b37-8329-0bb3512f46a7 --name transport-api -y`.
+* `backend/test/trip-point-nocache.test.mjs` (4). Backend 638 of 638 (`TZ=Australia/Sydney`, `OFFLINE=1`).
+
+### Current location in From and To merged into main (31 Oct, morning; over the air in tonight's update, builds 201 to 209)
+* The owner said yes on 30 Oct (11:26 PM). Branch `next-fromloc` is merged into main as a real merge of commit b545d06 (`git merge --no-ff`, not a rebase or cherry-pick), so build-210-rc, which already holds b545d06, takes main later without a second copy of the change.
+* Nothing in the feature changed in the merge: the 30 Oct entry below describes it. The only conflict was this file (both entries kept). No native change: the row shows only when the ExpoLocation native module is in the build (`lib/hereLocation.ts`), which every iPhone build from 201 and every Android build has. Not published yet; tonight's update carries it to runtimes 1.0.0 and 1.1.0.
+* Results on the merge (OFFLINE=1, TZ=Australia/Sydney): app 942 pass, 3 skipped, 0 fail (932 before plus fromloc's 10); battery 17 of 17; tsc clean; backend 634 of 634 (owner-stations and review-notes guards pass).
+
 ## 30 Oct 2026
 
 ### Build 210 = runtime 1.2.0 (30 Oct, about 7:15 PM; branch build-209, no build)
@@ -108,6 +119,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 * The list opens at Now: once per list (trip, time, modes) and only before the reader scrolls, the Now band goes to the top of the screen, just under the see-through iPhone header. A row going on the minute tick later never moves the list. The server flag `pastNowScroll` turns only this off.
 * What counts as gone is unchanged (over a minute past, phone clock, the same `hasLeft`/`isGone`), no new timer (the screens' minute tick), no request, no native code. Earlier pages still keep the reader's place (one scroll child per trip, the Earlier header in the top part).
 * Code: `app/src/lib/pastNowCore.ts`, `app/src/components/PastNow.tsx`, `LeftRow.tsx` (`muted`), `Transit.tsx` (`DepartureRow` `next`), `theme.ts`, `trip.tsx`, `stop/[id].tsx`, `ui.tsx` (`Screen` passes a ref). Tests: `app/test/pastnow.test.mjs` (21: divider place, cards split, initial scroll, settled open, muted rows, contrast per palette, wiring).
+
 ### Plan: "Current location" in From and To (30 Oct, about 5:30 PM; branch `next-fromloc`, not on main, not published)
 * Asked by the owner while testing build 209 (5:03 PM): "From should have option to put current location as well."
 * Plan > Trip: an empty From or To shows "Current location" (location.fill on iPhone, near_me on Android) as the first row above the results and Recent trips. Tapping it asks When In Use permission (the system prompt, only on this tap, never on launch), takes one fix (a fix the system already has from the last 2 minutes, else one Balanced fix; nothing in the background, no watching) and fills the field with Current location. The trip is planned from that point (`lon:lat:EPSG:4326`, the same planner point Get me home uses; the server already takes it, no server change).
