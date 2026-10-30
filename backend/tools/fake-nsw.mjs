@@ -4,7 +4,8 @@
 // trains: the Sydney Trains trip update feed is a synthetic network (tools/fake-feed.mjs), sized by the same call:
 // /__mode?set=trains&trips=1500&unknown=30&empty=0 (unknown: trips the engine's timetable lacks), plus stands=N (the
 // first N stations have sides the timetable does not name, which the planner board calls Stand X1 and X2, moved) and
-// at=MS (the moment the network is made for, so a load into the local engine agrees with the feed). In mode trains
+// at=MS (the moment the network is made for, so a load into the local engine agrees with the feed), ts=MS (the feed's
+// own time, for stale feed runs) and late=S (seconds added to every trip's delay); tools/sim210.mjs drives both. In mode trains
 // the departure board of a network station (ST0, ST1, ...) is that network's (plannerBoard): tools/match_x.mjs --dry.
 // backend/tools/local-dev.mjs builds a worker that talks to this and runs it under wrangler dev.
 import http from "node:http";
@@ -79,7 +80,7 @@ function body(path, q) {
 http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   if (u.pathname === "/__mode") {
-    if (u.searchParams.get("set")) { mode = u.searchParams.get("set"); net = {}; for (const k of ["trips", "stations", "perTrip", "unknown", "empty", "stands", "at"]) if (u.searchParams.get(k)) net[k] = +u.searchParams.get(k); }
+    if (u.searchParams.get("set")) { mode = u.searchParams.get("set"); net = {}; for (const k of ["trips", "stations", "perTrip", "unknown", "empty", "stands", "at", "ts", "late"]) if (u.searchParams.get(k)) net[k] = +u.searchParams.get(k); }
     res.end(JSON.stringify({ mode, hits: hits.length, last: hits.slice(-20) })); return; }
   hits.push({ t: Date.now(), p: u.pathname, auth: req.headers.authorization ? "apikey set" : "none", mode });
   const isFeed = u.pathname.includes("/gtfs/");

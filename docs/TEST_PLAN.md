@@ -26,6 +26,13 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 
 
+### `backend/test/sim210.test.mjs`: 4 tests, 4 pass (31 Oct, build 210 end to end on this machine, server, branch server-210-rc)
+- `tools/sim210.mjs` against `tools/fake-nsw.mjs` (mode trains): trip watch plus Live Activity token through the worker's routes and minute tick, Apple and Expo caught, no Transport for NSW call.
+- Switches on: stop track on the card pushes under 4 KB; one Get off now at 90 s or less before the live arrival; no Arriving alert beside it.
+- A run 4 min late after the phone locked: Get off now moves with the live arrival.
+- Feed frozen: past the 5 min cap one alert worded as timetable, and the live track goes.
+- No server config (a plain deploy) and a kill: no server Get off now, no stop track, the old alerts.
+
 ### `app/test/fromloc.test.mjs`: 10 tests, 10 pass (30 Oct, Current location in Plan, app; on main 31 Oct, merge of next-fromloc b545d06)
 - Hidden when the build has no location module: `hasLocation()` false, nothing loaded, nothing asked.
 - Shown only in an empty From or To in trip mode; not while typing, on Departures, or when the other end is already Current location.

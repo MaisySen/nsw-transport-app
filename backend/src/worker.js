@@ -5995,8 +5995,12 @@ async function serverConfig(env) {
   serverCfg.cfg = mergeAppConfig(over); serverCfg.at = Date.now();
   return serverCfg.cfg;
 }
+// Build 210 server switches that stay off until an admin turns them on (platform=server flags, true): a deploy alone
+// never starts them, and with no config (no table, a failed read) they are off (31 Oct, final check before build 210).
+const SERVER_OPT_IN = new Set(["getOffPush", "liveStops"]);
 async function serverOn(env, flag) {
   const c = await serverConfig(env).catch(() => null);
+  if (SERVER_OPT_IN.has(flag)) return !!(c && c.flags[flag] === true && !c.kill[flag]);
   if (!c) return true;
   return c.flags[flag] !== false && !c.kill[flag];
 }

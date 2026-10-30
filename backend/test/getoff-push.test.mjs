@@ -38,7 +38,8 @@ const iso = (t) => new Date(t).toISOString();
 const busLeg = { mode: "bus", line: "530", tripId: "530-1700", stopId: "2000111", toStopId: "2000222", from: "Stop A", to: "Stop B", towards: "Five Dock",
   planned: iso(T), arrPlanned: iso(T + 20 * MIN), feed: "" };
 
-function fakeDB({ tokens = 1, active = 1, serverBody = null } = {}) {
+const ON = JSON.stringify({ flags: { getOffPush: true, liveStops: true } }); // opt in (31 Oct): off until an admin turns it on
+function fakeDB({ tokens = 1, active = 1, serverBody = ON } = {}) {
   const sentKeys = new Set();
   const notes = [];
   const updates = [];
@@ -222,6 +223,12 @@ test("accepted only when asked, switched on, with a push token and room in the m
   assert.equal(await W.getOffAccept({ ...env({}), GETOFF_PUSH: "off" }, b, "d1"), false);
   W.serverCfg.at = 0;
   assert.equal(await W.getOffAccept(env({ serverBody: JSON.stringify({ flags: { getOffPush: false } }) }), b, "d1"), false);
+  W.serverCfg.at = 0;
+  assert.equal(await W.getOffAccept(env({ serverBody: null }), b, "d1"), false, "opt in: no server config, off");
+  W.serverCfg.at = 0;
+  assert.equal(await W.getOffAccept(env({ serverBody: JSON.stringify({ flags: {} }) }), b, "d1"), false, "opt in: a deploy alone never starts it");
+  W.serverCfg.at = 0;
+  assert.equal(await W.getOffAccept(env({ serverBody: JSON.stringify({ flags: { getOffPush: true }, kill: { getOffPush: true } }) }), b, "d1"), false, "kill wins");
   W.serverCfg.at = 0;
 });
 

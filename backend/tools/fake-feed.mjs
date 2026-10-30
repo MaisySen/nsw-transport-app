@@ -16,8 +16,11 @@ const tripUpdate = (t) => [...msg(1, [...str(1, t.tripId), ...num(4, t.rel || 0)
 // stands: how many stations (from ST0) have sides with no name in the timetable (as temporary bus stands have), which
 // the fake planner board (plannerBoard) names Stand X1 and X2 as moved stands; at: the moment the network is made for,
 // so the feed, the planner board and a load into the engine agree (fake-nsw /__mode?at=).
-export function trainNetwork({ trips = 1500, stations = 60, perTrip = 20, unknown = 0, empty = 0, stands = 0, at = 0, now = at || Date.now() } = {}) {
+// ts: the feed's own time (header and trip updates; default the network's moment), so a run can tell a fresh feed from
+// a stale one; late: seconds added to every trip's delay (a run that falls behind after the phone locked).
+export function trainNetwork({ trips = 1500, stations = 60, perTrip = 20, unknown = 0, empty = 0, stands = 0, at = 0, now = at || Date.now(), ts = 0, late = 0 } = {}) {
   const nowS = Math.floor(now / 1000);
+  const feedS = ts ? Math.floor(ts / 1000) : nowS;
   const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney", year: "numeric", month: "2-digit", day: "2-digit" });
   const day = fmt.format(new Date(now)).replace(/-/g, "");
   // Sydney midnight whatever the machine's time zone (the old way parsed the date in the local zone: 11 hours out on a
@@ -41,7 +44,7 @@ export function trainNetwork({ trips = 1500, stations = 60, perTrip = 20, unknow
     const up = i % 2 === 0;
     const first = (i * 7) % Math.max(1, stations - perTrip);
     const start = nowS - 45 * 60 + Math.floor((i * 6000) / trips); // spread over 100 minutes from 45 minutes ago
-    const delay = (i % 5) * 30;
+    const delay = (i % 5) * 30 + late;
     const run = "R" + i;
     const known = i >= unknown;
     const tripId = run + ".1324.165." + (known ? "4" : "8") + ".A.8." + (90000000 + i);
@@ -60,10 +63,10 @@ export function trainNetwork({ trips = 1500, stations = 60, perTrip = 20, unknow
       if (known && stops) (rows[sid] = rows[sid] || []).push([t + 30 - base, tripId, 0, i < empty ? 1 : 0, k + 1]);
     }
     if (known) tripRows.push({ t: tripId, s: flat });
-    feedTrips.push({ tripId, routeId: "FAKE_1", rel: 0, stus, ts: nowS });
+    feedTrips.push({ tripId, routeId: "FAKE_1", rel: 0, stus, ts: feedS });
   }
   for (const r of Object.values(rows)) r.sort((a, b) => a[0] - b[0]);
-  const header = [...str(1, "2.0"), ...num(3, nowS)];
+  const header = [...str(1, "2.0"), ...num(3, feedS)];
   const tu = new Uint8Array([...msg(1, header), ...feedTrips.flatMap((t, i) => msg(2, [...str(1, "e" + i), ...msg(3, tripUpdate(t))]))]);
   return { tu, meta, stops, rows, trips: tripRows, day, calls };
 }
