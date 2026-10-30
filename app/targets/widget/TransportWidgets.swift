@@ -445,7 +445,16 @@ struct NextTripView: View {
     }
 
     /// The next commute departure: the trip, the line with its wait and platform, then the status.
+    /// At larger text sizes the status line goes first, so the rows are never cut off (build 210).
     private var rectangular: some View {
+        ViewThatFits(in: .vertical) {
+            rectangularBody(third: true)
+            rectangularBody(third: false)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func rectangularBody(third: Bool) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(title).font(.headline).lineLimit(1).minimumScaleFactor(0.8).widgetAccentable()
             if let t = entry.trips.first {
@@ -456,15 +465,18 @@ struct NextTripView: View {
                     if let p = WidgetText.plat(t.platform) { Text(p) }
                 }
                 .lineLimit(1)
-                if let n = entry.notice {
-                    NoticeLine(notice: n, maxChars: 24)
-                } else {
-                    let then = entry.trips.dropFirst().prefix(2).map { WidgetText.wait($0.leave, from: entry.date) }
-                    Text(then.isEmpty ? status(t) : "\(status(t)). Then \(then.joined(separator: ", "))")
-                        .font(.caption).lineLimit(1)
+                .minimumScaleFactor(0.8)
+                if third {
+                    if let n = entry.notice {
+                        NoticeLine(notice: n, maxChars: 24)
+                    } else {
+                        let then = entry.trips.dropFirst().prefix(2).map { WidgetText.wait($0.leave, from: entry.date) }
+                        Text(then.isEmpty ? status(t) : "\(status(t)). Then \(then.joined(separator: ", "))")
+                            .font(.caption).lineLimit(1)
+                    }
                 }
             } else {
-                Text(entry.message ?? "No trips soon").font(.caption)
+                Text(entry.message ?? "No trips soon").font(.caption).lineLimit(2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -472,10 +484,23 @@ struct NextTripView: View {
 
     // Home Screen
 
+    /// Fits every small widget size (148 pt on the smallest iPhones) at any text size: when the full layout is
+    /// too tall, the "from to" line goes first, then the title drops to one line, then the status line
+    /// (build 210, owner 30 Oct: a trip widget looked cut off).
     private var small: some View {
+        ViewThatFits(in: .vertical) {
+            smallBody(subtitle: true, titleLines: 2, status: true)
+            smallBody(subtitle: false, titleLines: 2, status: true)
+            smallBody(subtitle: false, titleLines: 1, status: true)
+            smallBody(subtitle: false, titleLines: 1, status: false)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func smallBody(subtitle showSubtitle: Bool, titleLines: Int, status showStatus: Bool) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.subheadline.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.85)
-            if let s = subtitle { Text(s).font(.caption2).foregroundStyle(Color.secondary).lineLimit(1) }
+            Text(title).font(.subheadline.weight(.semibold)).lineLimit(titleLines).minimumScaleFactor(0.85)
+            if showSubtitle, let s = subtitle { Text(s).font(.caption2).foregroundStyle(Color.secondary).lineLimit(1) }
             Spacer(minLength: 0)
             if let t = entry.trips.first {
                 HStack(spacing: 4) {
@@ -486,16 +511,17 @@ struct NextTripView: View {
                     .font(.system(.title, design: .rounded).weight(.bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                if let n = entry.notice {
-                    NoticeLine(notice: n, maxChars: 20)
-                } else {
-                    statusLine(t, font: .caption)
+                if showStatus {
+                    if let n = entry.notice {
+                        NoticeLine(notice: n, maxChars: 20)
+                    } else {
+                        statusLine(t, font: .caption)
+                    }
                 }
             } else {
-                Text(entry.message ?? "No trips soon").font(.caption).foregroundStyle(.secondary)
+                Text(entry.message ?? "No trips soon").font(.caption).foregroundStyle(.secondary).lineLimit(3)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     /// StandBy on a charger: big minutes you can read from across the room.
@@ -525,20 +551,23 @@ struct NextTripView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
-    private var header: some View {
+    private var header: some View { header(subtitle: true, button: 28) }
+
+    /// The title, the "from to" line when it fits on the same line, then Swap and Refresh.
+    private func header(subtitle showSubtitle: Bool, button: CGFloat) -> some View {
         HStack(alignment: .center, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(title).font(.headline).lineLimit(1).layoutPriority(1)
-                if let s = subtitle { Text(s).font(.caption).foregroundStyle(Color.secondary).lineLimit(1) }
+                Text(title).font(.headline).lineLimit(1).minimumScaleFactor(0.85).layoutPriority(1)
+                if showSubtitle, let s = subtitle { Text(s).font(.caption).foregroundStyle(Color.secondary).lineLimit(1) }
             }
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
             if !entry.live && !entry.fromID.isEmpty {
                 if entry.commute {
-                    WidgetIconButton(intent: SwapCommuteIntent(), symbol: "arrow.up.arrow.down", label: "Swap direction")
+                    WidgetIconButton(intent: SwapCommuteIntent(), symbol: "arrow.up.arrow.down", label: "Swap direction", size: button)
                 }
-                WidgetIconButton(intent: RefreshDeparturesIntent(), symbol: "arrow.clockwise", label: "Refresh")
+                WidgetIconButton(intent: RefreshDeparturesIntent(), symbol: "arrow.clockwise", label: "Refresh", size: button)
             }
         }
     }
@@ -550,7 +579,7 @@ struct NextTripView: View {
     }
 
     /// The notice or the time of the last update, then the Start button.
-    @ViewBuilder private var footer: some View {
+    private var footer: some View {
         HStack(alignment: .center, spacing: 6) {
             noticeOrUpdated
             Spacer(minLength: 4)
@@ -603,30 +632,58 @@ struct NextTripView: View {
         }
     }
 
+    /// The medium widget is about 126 pt tall inside its margins on most iPhones and less on the smallest, so the
+    /// full layout (two rows and the footer) does not always fit. The first layout that fits wins: two rows,
+    /// then one row, then without the "from to" line, then without the footer. Nothing is ever cut off and
+    /// nothing is a fixed height (build 210; owner 30 Oct, build 209: "This one widget looks cut off").
     private var medium: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            header
+        ViewThatFits(in: .vertical) {
+            mediumBody(rows: 2, subtitle: true, footer: true)
+            mediumBody(rows: 1, subtitle: true, footer: true)
+            mediumBody(rows: 1, subtitle: false, footer: true)
+            mediumBody(rows: 1, subtitle: false, footer: false)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func mediumBody(rows: Int, subtitle: Bool, footer showFooter: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            header(subtitle: subtitle, button: 24)
             if entry.trips.isEmpty {
                 Spacer(minLength: 0)
-                Text(entry.message ?? "No trips soon").font(.subheadline).foregroundStyle(.secondary)
+                Text(entry.message ?? "No trips soon").font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
             }
-            ForEach(Array(entry.trips.prefix(2).enumerated()), id: \.offset) { i, t in
+            ForEach(Array(entry.trips.prefix(rows).enumerated()), id: \.offset) { i, t in
                 row(t, first: i == 0)
             }
             Spacer(minLength: 0)
-            footer
+            if showFooter { footer }
         }
     }
 
+    /// Up to five rows (four with a notice); fewer when they do not fit, for example on the smallest iPhones
+    /// or at a larger text size (build 210).
     private var large: some View {
+        let most = entry.notice == nil ? 5 : 4
+        return ViewThatFits(in: .vertical) {
+            largeBody(rows: most)
+            largeBody(rows: most - 1)
+            largeBody(rows: most - 2)
+            largeBody(rows: 2)
+            largeBody(rows: 1)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func largeBody(rows: Int) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             header
             if entry.trips.isEmpty {
-                Text(entry.message ?? "No trips soon").font(.subheadline).foregroundStyle(.secondary)
+                Text(entry.message ?? "No trips soon").font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
             }
-            ForEach(Array(entry.trips.prefix(entry.notice == nil ? 5 : 4).enumerated()), id: \.offset) { i, t in
+            ForEach(Array(entry.trips.prefix(rows).enumerated()), id: \.offset) { i, t in
                 row(t, first: i == 0)
-                if i == 0 && entry.trips.count > 1 { Divider() }
+                if i == 0 && min(rows, entry.trips.count) > 1 { Divider() }
             }
             Spacer(minLength: 0)
             footer

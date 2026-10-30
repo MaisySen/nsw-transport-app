@@ -64,13 +64,15 @@ struct WidgetIconButton<I: AppIntent>: View {
     var intent: I
     var symbol: String
     var label: String
+    /// 28 pt everywhere except the medium trip widget's header, which uses 24 so two rows fit (build 210).
+    var size: CGFloat = 28
 
     var body: some View {
         Button(intent: intent) {
             Image(systemName: symbol)
                 .font(.caption.weight(.bold))
                 .foregroundStyle(Color.primary)
-                .frame(width: 28, height: 28)
+                .frame(width: size, height: size)
                 .background(Circle().fill(Color.secondary.opacity(0.18)))
         }
         .buttonStyle(.plain)
@@ -87,8 +89,9 @@ struct StartTripLink: View {
             Label("Start", systemImage: "location.fill")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.white)
+                .lineLimit(1)
                 .padding(.horizontal, 10)
-                .padding(.vertical, 5)
+                .padding(.vertical, 4)
                 .background(Capsule().fill(Color.accentColor))
         }
         .accessibilityLabel("Start trip")
