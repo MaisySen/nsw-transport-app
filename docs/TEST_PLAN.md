@@ -31,6 +31,12 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 
 
+### Build 210 final check (31 Oct morning, branch `build-210-rc` at 1e823a4, not built)
+* App (OFFLINE=1, TZ=Australia/Sydney): 1,016 tests, 1,012 pass, 4 skipped, 0 fail. Battery 17/17, tsc clean, backend 644/644 (guards pass). instantpaint R1 to R6 9/9, fromloc 10/10, pastnow 21/21, trippages 9/9, widgetleave 3/3, livestops 11/11, getoffpush 9/9, getoffvoice 12/12, getoffvoice31 2/2, widgetfit210 8/8, nativeaudit 6/6.
+* Native audit final run 41137445922 (1e823a4): iPhone 1,426 shots, Watch 120 shots, 0 drawn outside their box; sheets read by eye.
+* `expo prebuild --platform ios --no-install` with `IOS_APP_GROUP=1 EAS_BUILD=1`: runtime 1.2.0, 1.0.0 (210), entitlements, Watch targets, both sounds byte for byte the approved clips. Delete `targets/watch/Assets.xcassets/AppIcon.appiconset` afterwards (press.test).
+* Server (`server-210-rc` ca56b90): backend 666/666 including `backend/test/sim210.test.mjs` (end to end against tools/fake-nsw.mjs).
+
 ### Build 210 readiness (31 Oct, branch `build-210-rc`, not built)
 * App (OFFLINE=1, TZ=Australia/Sydney): 1,016 tests, 1,012 pass, 4 skipped, 0 fail. Battery 17/17, tsc clean, backend 640/640, owner stations and review notes guards pass.
 * `app/test/nativeaudit.test.mjs` also pins the 31 Oct fixes: Lock Screen countdown `minimumScaleFactor(0.5)` (trip and follow cards), the `headLines: 2` middle layouts, the Watch corner timer on one line.
