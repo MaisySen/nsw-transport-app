@@ -1399,6 +1399,8 @@ const TRIP_PAGE_BACK_MS = 7 * 86400000;
 const TRIP_PAGE_AHEAD_MS = 14 * 86400000;
 const tripWinMem = new Map(); // key -> { at, text }
 const TRIP_WIN_MEM_MAX = 80;
+/** True when a trip end is a position (isCoordId): such trips skip the shared trip window (tripWinGet/tripWinPut). */
+function tripWinSkip(fromId, toId) { return isCoordId(fromId) || isCoordId(toId); }
 function tripWinKey(fromId, toId, date, time, o) {
   const u = new URL("https://cache.internal/trip-win");
   const v = { f: fromId, t: toId, d: date, h: time, a: o.arriveBy ? "1" : "", n: String(o.count || 5), acc: o.accessible ? "1" : "", x: o.exclude ? JSON.stringify(o.exclude) : "", l: o.long ? "1" : "", w: tripWalkTag(o.walk) };
@@ -1612,7 +1614,9 @@ async function trip(env, fromId, toId, opts = {}) {
   const own = opts.ownJourneys ? opts.ownJourneys : typeof ownPlannerWanted === "function" && ownPlannerWanted(env, opts)
     ? await ownTripLegs(env, fromId, toId, { date, time, arriveBy: !!opts.arriveBy, count: opts.count || 5 }).catch(() => null) : null;
   // Trip pages (opts.win): the planner's answer for this pair, time and options is kept and shared (tripWinGet).
-  const win = opts.win && !own ? tripWinKey(fromId, toId, date, time, opts) : null;
+  // A trip from or to a position (Current location, Get me home: lon:lat:EPSG:4326) is never kept (tripWinSkip,
+  // 31 Oct): a moving phone's next ask is another point, and the point is not held for TRIP_WIN_KEEP_S.
+  const win = opts.win && !own && !tripWinSkip(fromId, toId) ? tripWinKey(fromId, toId, date, time, opts) : null;
   const kept = win ? await tripWinGet(win) : null;
   if (own || kept) data = { journeys: [] };
   else if (opts.ttOnly) {
@@ -8511,7 +8515,8 @@ async function handleRequest(request, env, exec) {
         case "/api/trip": {
           const acc = p.get("acc") === "1";
           const long = p.get("long") === "1";
-          const longKey = long && !asTxt ? longTripCacheKey(p) : null;
+          // A long trip from or to a position is not kept either (tripWinSkip, 31 Oct).
+          const longKey = long && !asTxt && !tripWinSkip(p.get("from"), p.get("to")) ? longTripCacheKey(p) : null;
           if (longKey) {
             const hit = await caches.default.match(longKey).catch(() => null);
             if (hit) { const d = await hit.json().catch(() => null); if (d) return json({ ...d, cached: true }); }
