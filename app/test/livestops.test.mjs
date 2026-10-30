@@ -145,6 +145,8 @@ test('the Swift card decodes the same keys: StopTrack fields match, and both str
   const v = fs.readFileSync(path.join(here, '..', 'targets/widget/LiveTripActivityWidget.swift'), 'utf8');
   assert.match(v, /struct StopTrackView: View/);
   assert.match(v, /state\.showsTrack\(stale: stale\)/);
+  // The stop off name keeps two lines before "6 stops" and the warning lose their own lines (owner: "Get off at Five...").
+  assert.ok(v.indexOf('card(lines: 2, track: true, merged: true)') < v.indexOf('card(lines: 1, track: true, merged: true)'));
   // Cards without the track keep the plain bar.
   assert.match(v, /ProgressView\(value:/);
 });

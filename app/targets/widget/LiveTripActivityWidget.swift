@@ -351,19 +351,32 @@ struct LiveTripLockCard: View {
 
     var body: some View {
         ViewThatFits(in: .vertical) {
-            // Build 210: the stop track in place of the bar when the card carries the leg's stops.
+            // Build 210: the stop track in place of the bar when the card carries the leg's stops. The stop off
+            // name stays whole first (owner, 30 Oct: "Get off at Five..."): "6 stops" and the late or change words
+            // share one line before the headline is cut, and the track stays before the bar layouts are used.
             if state.showsTrack(stale: stale) {
                 card(lines: 2, track: true)
-                card(lines: 1, track: true)
-                // Large text: the dots already show the stops left, so "6 stops" gives way before the track does.
-                card(lines: 1, track: true, detail: false)
+                card(lines: 2, track: true, merged: true)
+                card(lines: 1, track: true, merged: true)
             }
             card(lines: 2, track: false)
             card(lines: 1, track: false)
         }
     }
 
-    private func card(lines: Int, track: Bool, detail: Bool = true) -> some View {
+    /// "6 stops · 4 min late" on one line: the detail in grey, the warning in its colour.
+    private func detailAndWarning(_ lines: Int) -> some View {
+        let d = state.detail(stale: stale)
+        let w = state.arrived(stale: stale) ? nil : state.warning
+        var t = Text(d).foregroundColor(.secondary)
+        if let w, !w.isEmpty {
+            let warn = Text(w).fontWeight(.semibold).foregroundColor(state.warningIsRed ? .red : .orange)
+            t = d.isEmpty ? warn : t + Text(" · ").foregroundColor(.secondary) + warn
+        }
+        return t.font(.subheadline).lineLimit(lines).minimumScaleFactor(0.85)
+    }
+
+    private func card(lines: Int, track: Bool, merged: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -371,17 +384,22 @@ struct LiveTripLockCard: View {
                         WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode).fixedSize()
                         Text(state.headline(stale: stale)).font(.headline).lineLimit(lines).minimumScaleFactor(0.8)
                     }
-                    if detail {
-                        Text(state.detail(stale: stale))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(lines)
-                    }
-                    if let w = state.warning, !state.arrived(stale: stale) {
-                        Text(w)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(state.warningIsRed ? Color.red : Color.orange)
-                            .lineLimit(lines)
+                    if merged {
+                        detailAndWarning(lines)
+                    } else {
+                        // An empty detail (no live stop count) takes no line.
+                        if !track || !state.detail(stale: stale).isEmpty {
+                            Text(state.detail(stale: stale))
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(lines)
+                        }
+                        if let w = state.warning, !state.arrived(stale: stale) {
+                            Text(w)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(state.warningIsRed ? Color.red : Color.orange)
+                                .lineLimit(lines)
+                        }
                     }
                 }
                 Spacer(minLength: 8)

@@ -67,7 +67,7 @@ test('fixes the audit found stay in: compact island countdown, Lock Screen words
   const l = read('app/targets/widget/LiveTripActivityWidget.swift');
   // Build 210: the stop track layouts come first when the card carries stops; the bar layouts stay as the fallback.
   assert.match(l, /card\(lines: 2, track: false\)\s*card\(lines: 1, track: false\)/);
-  assert.match(l, /card\(lines: 2, track: true\)\s*card\(lines: 1, track: true\)/);
+  assert.match(l, /card\(lines: 2, track: true\)\s*card\(lines: 2, track: true, merged: true\)\s*card\(lines: 1, track: true, merged: true\)/);
   assert.match(l, /\.frame\(maxWidth: 100, alignment: \.trailing\)/);
   const w = read('app/targets/watch/TransportWatchApp.swift');
   assert.match(w, /\.strikethrough\(service\.cancelled\)\s*\.lineLimit\(1\)/);
