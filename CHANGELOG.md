@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 31 Oct 2026
 
+### Trips from Current location skip the 10 minute trip window (31 Oct, 7:40 AM; server only, transport-api aa8f04ff, roll back 4ecfebf1)
+* With Current location in From and To on main, a trip page from or to a point (`lon:lat:EPSG:4326`, also Get me home) was kept in the shared trip window for 10 minutes (`TRIP_WIN_KEEP_S`), keyed on the point. Now such a trip is never kept there, nor in the 2 minute long trip copy (`tripWinSkip` in `backend/src/worker.js`): every ask goes to the planner, so a moving phone always gets an answer for where it is now, and the point is not held. Stop to stop trips share the window as before.
+* Backward compatible: the answer has the same shape and fields for builds 201 to 209; nothing new for the app to read.
+* Deployed 7:40 AM as transport-api `aa8f04ff` from main 37ad731 (no R2, no migrations, schema check and dash check clean). verify-deploy (not --live) all 12 ok, again after the watch; 15 min watch to 7:55 AM: 35 invocations, all on aa8f04ff, 0 errors, 0 new feedback or crash rows (still 5). No NSW call by hand. Roll back: `npx wrangler@4 rollback 4ecfebf1-407e-4b37-8329-0bb3512f46a7 --name transport-api -y`.
+* `backend/test/trip-point-nocache.test.mjs` (4). Backend 638 of 638 (`TZ=Australia/Sydney`, `OFFLINE=1`).
+
 ### Current location in From and To merged into main (31 Oct, morning; over the air in tonight's update, builds 201 to 209)
 * The owner said yes on 30 Oct (11:26 PM). Branch `next-fromloc` is merged into main as a real merge of commit b545d06 (`git merge --no-ff`, not a rebase or cherry-pick), so build-210-rc, which already holds b545d06, takes main later without a second copy of the change.
 * Nothing in the feature changed in the merge: the 30 Oct entry below describes it. The only conflict was this file (both entries kept). No native change: the row shows only when the ExpoLocation native module is in the build (`lib/hereLocation.ts`), which every iPhone build from 201 and every Android build has. Not published yet; tonight's update carries it to runtimes 1.0.0 and 1.1.0.
