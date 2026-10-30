@@ -296,7 +296,9 @@ enum TSSay {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_AU")
         f.timeZone = TSShared.sydney
-        f.dateFormat = "h:mm a"
+        // The phone's clock: "7:40pm", or "19:40" with 24-Hour Time on.
+        let h24 = !(DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .autoupdatingCurrent) ?? "a").contains("a")
+        f.dateFormat = h24 ? "HH:mm" : "h:mm a"
         return f.string(from: d).lowercased().replacingOccurrences(of: " ", with: "")
     }
 

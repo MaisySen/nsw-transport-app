@@ -398,12 +398,13 @@ enum Clock {
         return f.string(from: d) + (minuteOfDay(d) < 12 * 60 ? " am" : " pm")
     }
 
-    /// "9:41am", Sydney time, as the phone app writes times.
+    /// "9:41am", Sydney time, as the phone app writes times; "09:41" when the watch uses 24 hour time.
     static func hhmm(_ d: Date) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_AU")
         f.timeZone = sydney
-        f.dateFormat = "h:mma"
+        let h24 = !(DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .autoupdatingCurrent) ?? "a").contains("a")
+        f.dateFormat = h24 ? "HH:mm" : "h:mma"
         return f.string(from: d).lowercased().replacingOccurrences(of: " ", with: "")
     }
 
