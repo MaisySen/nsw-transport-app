@@ -15,7 +15,7 @@ const W = await import(tmp); fs.unlinkSync(tmp);
 const MIN = 60000;
 const t0 = Date.now() + 6 * MIN;
 const ev = (line, dep, occ) => ({
-  location: { id: "2134103", name: "Burwood Station, Platform 3", properties: { platformName: "Platform 3", ...(occ ? { occupancy: occ } : {}) }, parent: { id: "213410", name: "Burwood Station" } },
+  location: { id: "2134103", name: "Parramatta Station, Platform 3", properties: { platformName: "Platform 3", ...(occ ? { occupancy: occ } : {}) }, parent: { id: "215020", name: "Parramatta Station" } },
   departureTimePlanned: new Date(dep).toISOString(), departureTimeEstimated: new Date(dep).toISOString(), isRealtimeControlled: true,
   transportation: { disassembledName: line, number: line, product: { class: 1 }, destination: { name: "Hornsby", id: "1" }, properties: { RealtimeTripId: line + dep } },
   properties: {},
@@ -23,7 +23,7 @@ const ev = (line, dep, occ) => ({
 let tripAnswer = null;
 globalThis.fetch = async (u) => {
   const url = new URL(typeof u === "string" ? u : u.url);
-  if (url.pathname.endsWith("/departure_mon")) return new Response(JSON.stringify({ locations: [{ id: "213410", name: "Burwood Station", disassembledName: "Burwood" }], stopEvents: [ev("T1", t0, "FEW_SEATS"), ev("T9", t0 + 3 * MIN, null), ev("T2", t0 + 5 * MIN, "SOMETHING_NEW")] }));
+  if (url.pathname.endsWith("/departure_mon")) return new Response(JSON.stringify({ locations: [{ id: "215020", name: "Parramatta Station", disassembledName: "Parramatta" }], stopEvents: [ev("T1", t0, "FEW_SEATS"), ev("T9", t0 + 3 * MIN, null), ev("T2", t0 + 5 * MIN, "SOMETHING_NEW")] }));
   if (url.pathname.endsWith("/trip")) return new Response(JSON.stringify(tripAnswer));
   return new Response("{}", { status: 404 });
 };
@@ -36,7 +36,7 @@ const get = async (path) => { const r = await W.__default.fetch(new Request("htt
 
 test("departures: occupancy when sent, null when not, never a guess", async () => {
   serverBody = null; W.serverCfg.at = 0;
-  const r = await get("/api/departures?stop=213410&t=1");
+  const r = await get("/api/departures?stop=215020&t=1");
   assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 300));
   const by = Object.fromEntries(r.body.items.map((i) => [i.line, i.occupancy]));
   assert.deepEqual(by.T1, { level: 2, text: "Few seats" });
@@ -45,24 +45,24 @@ test("departures: occupancy when sent, null when not, never a guess", async () =
 });
 
 test("trip legs: occupancy when sent, null when not", async () => {
-  tripAnswer = efaTrip([[{ from: "burwood", to: "strathfield", dep: t0, delay: 0, occupancy: "MANY_SEATS" }], [{ from: "burwood", to: "strathfield", dep: t0 + 10 * MIN, delay: 0 }]]);
-  const r = await get("/api/trip?from=213410&to=213510&t=2");
+  tripAnswer = efaTrip([[{ from: "parramatta", to: "chatswood", dep: t0, delay: 0, occupancy: "MANY_SEATS" }], [{ from: "parramatta", to: "chatswood", dep: t0 + 10 * MIN, delay: 0 }]]);
+  const r = await get("/api/trip?from=215020&to=206710&t=2");
   assert.deepEqual(r.body.journeys[0].legs[0].occupancy, { level: 1, text: "Many seats" });
   assert.equal(r.body.journeys[1].legs[0].occupancy, null);
-  const legs = encodeURIComponent(JSON.stringify([{ f: "213410", fn: "Burwood", t: "213510", tn: "Strathfield" }]));
+  const legs = encodeURIComponent(JSON.stringify([{ f: "215020", fn: "Parramatta", t: "206710", tn: "Chatswood" }]));
   const p = await get(`/api/plan?legs=${legs}&t=2`);
   assert.deepEqual(p.body.journeys[0].legs.find((l) => l.kind === "transit").occupancy, { level: 1, text: "Many seats" });
 });
 
 test("server flag occupancy off: no occupancy in any answer", async () => {
   serverBody = JSON.stringify({ flags: { occupancy: false } }); W.serverCfg.at = 0;
-  const d = await get("/api/departures?stop=213410&t=3");
+  const d = await get("/api/departures?stop=215020&t=3");
   assert.ok(d.body.items.length);
   assert.ok(d.body.items.every((i) => i.occupancy === undefined));
-  const r = await get("/api/trip?from=213410&to=213510&t=3");
+  const r = await get("/api/trip?from=215020&to=206710&t=3");
   assert.ok(r.body.journeys[0].legs.every((l) => l.occupancy === undefined));
   // The shared board answer was copied, not changed: with the flag back on it carries occupancy.
   serverBody = null; W.serverCfg.at = 0;
-  const again = await get("/api/departures?stop=213410&t=4");
+  const again = await get("/api/departures?stop=215020&t=4");
   assert.deepEqual(again.body.items.find((i) => i.line === "T1").occupancy, { level: 2, text: "Few seats" });
 });

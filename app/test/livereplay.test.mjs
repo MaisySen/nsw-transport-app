@@ -1,5 +1,5 @@
-// Replay of a whole live trip with a fake clock: a real two leg trip shape (T2 Ashfield to Redfern, change to the
-// T4, get off at Kings Cross), on time, delayed and early, refreshed every 15 seconds from 5 minutes before the
+// Replay of a whole live trip with a fake clock: a real two leg trip shape (T2 Ashfield to Epping, change to the
+// T4, get off at Milsons Point), on time, delayed and early, refreshed every 15 seconds from 5 minutes before the
 // first train until 15 minutes after arrival, through the same stepLive the app runs. Every notification the phone
 // would schedule is logged and checked: each alert once, times that agree with the feed, the trip ends at arrival
 // and nothing happens after it. Run: node --test test/ (set REPLAY_LOG=<file> to keep the timelines).
@@ -33,12 +33,12 @@ const at = (min) => T0 + min * 60000;
 const iso = (t) => new Date(t).toISOString();
 
 // Timetable minutes from T0 for each run's stops. Index of your stop and of where you get off.
-const T2 = { line: 'T2', mode: 'train', stops: [['Strathfield', -6], ['Burwood', -3], ['Ashfield', 0], ['Stanmore', 6], ['Newtown', 9], ['Redfern', 13], ['Central', 16]], mine: 2, off: 5 };
-const T4 = { line: 'T4', mode: 'train', stops: [['Wolli Creek', 12], ['Sydenham', 15], ['Redfern', 19], ['Central', 21], ['Town Hall', 23], ['Martin Place', 25], ['Kings Cross', 28], ['Edgecliff', 31], ['Bondi Junction', 34]], mine: 2, off: 6 };
+const T2 = { line: 'T2', mode: 'train', stops: [['Chatswood', -6], ['Parramatta', -3], ['Ashfield', 0], ['Stanmore', 6], ['Newtown', 9], ['Epping', 13], ['Central', 16]], mine: 2, off: 5 };
+const T4 = { line: 'T4', mode: 'train', stops: [['Wolli Creek', 12], ['Sydenham', 15], ['Epping', 19], ['Central', 21], ['North Sydney', 23], ['Martin Place', 25], ['Milsons Point', 28], ['Edgecliff', 31], ['Bondi Junction', 34]], mine: 2, off: 6 };
 
 const legsKX = [
-  { mode: 'train', line: 'T2', tripId: 'T2.run1', stopId: 'ASH', toStopId: 'RDF', from: 'Ashfield Station', to: 'Redfern Station', planned: iso(at(0)), arrPlanned: iso(at(13)), fromPlatform: 'Platform 3', towards: 'Central Station' },
-  { mode: 'train', line: 'T4', tripId: 'T4.run1', stopId: 'RDF4', toStopId: 'KXS', from: 'Redfern Station', to: 'Kings Cross Station', planned: iso(at(19)), arrPlanned: iso(at(28)), fromPlatform: 'Platform 9', towards: 'Bondi Junction Station' },
+  { mode: 'train', line: 'T2', tripId: 'T2.run1', stopId: 'ASH', toStopId: 'RDF', from: 'Ashfield Station', to: 'Epping Station', planned: iso(at(0)), arrPlanned: iso(at(13)), fromPlatform: 'Platform 3', towards: 'Central Station' },
+  { mode: 'train', line: 'T4', tripId: 'T4.run1', stopId: 'RDF4', toStopId: 'KXS', from: 'Epping Station', to: 'Milsons Point Station', planned: iso(at(19)), arrPlanned: iso(at(28)), fromPlatform: 'Platform 9', towards: 'Bondi Junction Station' },
 ];
 
 /**
@@ -56,15 +56,15 @@ function feed(run, delay, t, { shift = 0, rollAfter = null } = {}) {
   return { kind: 'service', live: true, line: run.line, mode: run.mode, mineIndex: run.mine, alightIndex: run.off, nextIndex, stops };
 }
 
-// Short trips Bidur picked to test on: Burwood to Strathfield (one stop), and one stop more with a change.
-const T1s = { line: 'T1', mode: 'train', stops: [['Croydon', -2], ['Burwood', 0], ['Strathfield', 3], ['Homebush', 5]], mine: 1, off: 2 };
-const T9s = { line: 'T9', mode: 'train', stops: [['Burwood', 3], ['Strathfield', 7], ['North Strathfield', 9]], mine: 1, off: 2 };
-const legBS = { mode: 'train', line: 'T1', tripId: 'T1.short', stopId: 'BWD', toStopId: 'STR', from: 'Burwood Station', to: 'Strathfield Station', planned: iso(at(0)), arrPlanned: iso(at(3)), fromPlatform: 'Platform 2', towards: 'Penrith Station' };
-const legSN = { mode: 'train', line: 'T9', tripId: 'T9.short', stopId: 'STR9', toStopId: 'NST', from: 'Strathfield Station', to: 'North Strathfield Station', planned: iso(at(7)), arrPlanned: iso(at(9)), fromPlatform: 'Platform 6', towards: 'Hornsby Station' };
+// Short trips Bidur picked to test on: Parramatta to Chatswood (one stop), and one stop more with a change.
+const T1s = { line: 'T1', mode: 'train', stops: [['Croydon', -2], ['Parramatta', 0], ['Chatswood', 3], ['Homebush', 5]], mine: 1, off: 2 };
+const T9s = { line: 'T9', mode: 'train', stops: [['Parramatta', 3], ['Chatswood', 7], ['North Chatswood', 9]], mine: 1, off: 2 };
+const legBS = { mode: 'train', line: 'T1', tripId: 'T1.short', stopId: 'BWD', toStopId: 'STR', from: 'Parramatta Station', to: 'Chatswood Station', planned: iso(at(0)), arrPlanned: iso(at(3)), fromPlatform: 'Platform 2', towards: 'Penrith Station' };
+const legSN = { mode: 'train', line: 'T9', tripId: 'T9.short', stopId: 'STR9', toStopId: 'NST', from: 'Chatswood Station', to: 'North Chatswood Station', planned: iso(at(7)), arrPlanned: iso(at(9)), fromPlatform: 'Platform 6', towards: 'Hornsby Station' };
 const SC = {
-  kx: { legs: legsKX, runs: [T2, T4], change: 'Redfern', final: 'Kings Cross', changeLeg: 1 },
-  bs: { legs: [legBS], runs: [T1s], change: null, final: 'Strathfield' },
-  bsn: { legs: [legBS, legSN], runs: [T1s, T9s], change: 'Strathfield', final: 'North Strathfield', changeLeg: 1 },
+  kx: { legs: legsKX, runs: [T2, T4], change: 'Epping', final: 'Milsons Point', changeLeg: 1 },
+  bs: { legs: [legBS], runs: [T1s], change: null, final: 'Chatswood' },
+  bsn: { legs: [legBS, legSN], runs: [T1s, T9s], change: 'Chatswood', final: 'North Chatswood', changeLeg: 1 },
 };
 const offAt = (run, d) => at(run.stops[run.off][1]) + d * 60000;
 const depAt = (run, d) => at(run.stops[run.mine][1]) + d * 60000;
@@ -170,7 +170,7 @@ for (const c of cases) {
     if (c.d1 === 7) {
       const tight = r.log.filter((e) => e.t === 'alert' && e.key === 'conn0');
       assert.equal(tight.length, 1, 'one tight change alert');
-      assert.match(tight[0].title, /^Tight change at Redfern/);
+      assert.match(tight[0].title, /^Tight change at Epping/);
     }
   });
   test(`replay, server watching: ${c.name}`, () => {
@@ -181,11 +181,11 @@ for (const c of cases) {
 }
 
 const shortTrips = [
-  { name: 'Burwood to Strathfield, one stop, on time', sc: 'bs', d1: 0 },
-  { name: 'Burwood to Strathfield, one stop, 3 min late', sc: 'bs', d1: 3 },
-  { name: 'Burwood to Strathfield, one stop, 1 min early', sc: 'bs', d1: -1 },
-  { name: 'Burwood to North Strathfield, change at Strathfield', sc: 'bsn', d1: 0, d2: 0 },
-  { name: 'Burwood to North Strathfield, change at Strathfield, T1 2 min late', sc: 'bsn', d1: 2, d2: 0 },
+  { name: 'Parramatta to Chatswood, one stop, on time', sc: 'bs', d1: 0 },
+  { name: 'Parramatta to Chatswood, one stop, 3 min late', sc: 'bs', d1: 3 },
+  { name: 'Parramatta to Chatswood, one stop, 1 min early', sc: 'bs', d1: -1 },
+  { name: 'Parramatta to North Chatswood, change at Chatswood', sc: 'bsn', d1: 0, d2: 0 },
+  { name: 'Parramatta to North Chatswood, change at Chatswood, T1 2 min late', sc: 'bsn', d1: 2, d2: 0 },
 ];
 for (const c of shortTrips) {
   test(`replay, short trip: ${c.name}`, () => {
@@ -215,10 +215,10 @@ test('a later feed for the next service is not your train', () => {
 });
 
 test('server alerts about the same stop share one key and one notification id', () => {
-  const a = live.noteKey({ id: 1, watch_id: 'w9', title: 'Next stop: Kings Cross Station' });
-  const b = live.noteKey({ id: 2, watch_id: 'w9', title: 'Arriving at Kings Cross Station in 2 min' });
-  const c = live.noteKey({ id: 3, watch_id: 'w9', title: 'Change at Redfern Station in 2 min' });
-  const d = live.noteKey({ id: 4, watch_id: 'w9', title: 'Next stop: Redfern Station, change here' });
+  const a = live.noteKey({ id: 1, watch_id: 'w9', title: 'Next stop: Milsons Point Station' });
+  const b = live.noteKey({ id: 2, watch_id: 'w9', title: 'Arriving at Milsons Point Station in 2 min' });
+  const c = live.noteKey({ id: 3, watch_id: 'w9', title: 'Change at Epping Station in 2 min' });
+  const d = live.noteKey({ id: 4, watch_id: 'w9', title: 'Next stop: Epping Station, change here' });
   assert.equal(a.key, b.key);
   assert.equal(c.key, d.key);
   assert.notEqual(a.key, c.key);

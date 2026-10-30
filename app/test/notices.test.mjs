@@ -30,9 +30,9 @@ test('no alerts, trackwork, line problems or extra watches: no chips', () => {
 test('chips in order, most urgent first, each with its full text for VoiceOver', () => {
   const chips = n.noticeChips({
     high: [{ title: 'Departing platform 6. Platform changed', url: 'https://x/1' }, { title: 'Lift out at Central', url: null }],
-    tripAlerts: ['Trackwork at Redfern. Buses replace trains.', 'Lift 7 at Redfern is not available', 'Trackwork at Redfern. Buses replace trains.'],
-    trackwork: [{ key: 'k1', name: 'Kings Cross to Strathfield', text: 'Sat and Sun: Trains run to a changed timetable', extra: 'About 20 min longer', url: 'https://x/tw' }],
-    lines: [{ line: 'T4', mode: 'train', color: '#005AA3', status: 'delays', label: 'Delays', title: 'Signal repairs at Redfern', url: 'https://x/t4', more: 1 }],
+    tripAlerts: ['Trackwork at Epping. Buses replace trains.', 'Lift 7 at Epping is not available', 'Trackwork at Epping. Buses replace trains.'],
+    trackwork: [{ key: 'k1', name: 'Bondi Junction to Chatswood', text: 'Sat and Sun: Trains run to a changed timetable', extra: 'About 20 min longer', url: 'https://x/tw' }],
+    lines: [{ line: 'T4', mode: 'train', color: '#005AA3', status: 'delays', label: 'Delays', title: 'Signal repairs at Epping', url: 'https://x/t4', more: 1 }],
     watches: [{ id: 'w1', title: 'Central to Parramatta', sub: 'Departs in 5 min' }],
   });
   assert.deepEqual(chips.map((c) => c.key), ['high', 'line:T4', 'alerts', 'trackwork', 'watching']);
@@ -43,9 +43,9 @@ test('chips in order, most urgent first, each with its full text for VoiceOver',
   assert.equal(high.items[1].trip, true, 'a high alert with no page opens the trip, like the old banner');
   assert.equal(line.label, 'Delays');
   assert.equal(line.line.line, 'T4');
-  assert.match(line.a11y, /^T4: Delays\. Signal repairs at Redfern\. 1 more$/);
+  assert.match(line.a11y, /^T4: Delays\. Signal repairs at Epping\. 1 more$/);
   assert.equal(alerts.label, '2 trip alerts', 'the same alert on two trips counts once');
-  assert.equal(alerts.a11y, '2 alerts on your trips: Trackwork at Redfern. Buses replace trains. Lift 7 at Redfern is not available');
+  assert.equal(alerts.a11y, '2 alerts on your trips: Trackwork at Epping. Buses replace trains. Lift 7 at Epping is not available');
   assert.equal(tw.label, 'Trackwork this weekend');
   assert.equal(tw.items[0].url, 'https://x/tw');
   assert.match(tw.a11y, /About 20 min longer$/);
@@ -54,9 +54,9 @@ test('chips in order, most urgent first, each with its full text for VoiceOver',
 });
 
 test('one alert reads in the singular', () => {
-  const [c] = n.noticeChips({ tripAlerts: ['Lift 7 at Redfern is not available.'] });
+  const [c] = n.noticeChips({ tripAlerts: ['Lift 7 at Epping is not available.'] });
   assert.equal(c.label, '1 trip alert');
-  assert.equal(c.a11y, '1 alert on your trips: Lift 7 at Redfern is not available');
+  assert.equal(c.a11y, '1 alert on your trips: Lift 7 at Epping is not available');
 });
 
 test('chip labels stay short: the first clause, cut at a word', () => {

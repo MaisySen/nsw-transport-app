@@ -1,5 +1,5 @@
 // Get off alert the rider controls (g32): 1, 2 or 3 stops before, and Get off now. Replayed with a fake clock on a
-// 6 stop T1 run (Strathfield to Central), refreshing every 15 s like the app, with the phone's own scheduled alerts
+// 6 stop T1 run (Chatswood to Central), refreshing every 15 s like the app, with the phone's own scheduled alerts
 // simulated (they ring at their time with the app open or closed). Also: the delay is said once on Home cards.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,9 +40,9 @@ function feed(run, delay, t, isLive = true) {
   if (nextIndex < 0) nextIndex = stops.length;
   return { kind: 'service', live: isLive, line: run.line, mode: 'train', mineIndex: run.mine, alightIndex: run.off, nextIndex, stops };
 }
-// Strathfield to Central: Burwood, Croydon, Ashfield, Redfern between (5 stops ridden).
-const RUN = { line: 'T1', stops: [['Homebush', -2], ['Strathfield', 0], ['Burwood', 3], ['Croydon', 5], ['Ashfield', 7], ['Redfern', 13], ['Central', 16], ['Town Hall', 18]], mine: 1, off: 6 };
-const LEG = { mode: 'train', line: 'T1', tripId: 'T1.r', stopId: 'STR', toStopId: 'CEN', from: 'Strathfield Station', to: 'Central Station', planned: iso(at(0)), arrPlanned: iso(at(16)), fromPlatform: 'Platform 4', towards: 'Hornsby Station' };
+// Chatswood to Central: Parramatta, Croydon, Ashfield, Epping between (5 stops ridden).
+const RUN = { line: 'T1', stops: [['Homebush', -2], ['Chatswood', 0], ['Parramatta', 3], ['Croydon', 5], ['Ashfield', 7], ['Epping', 13], ['Central', 16], ['Martin Place', 18]], mine: 1, off: 6 };
+const LEG = { mode: 'train', line: 'T1', tripId: 'T1.r', stopId: 'STR', toStopId: 'CEN', from: 'Chatswood Station', to: 'Central Station', planned: iso(at(0)), arrPlanned: iso(at(16)), fromPlatform: 'Platform 4', towards: 'Hornsby Station' };
 const leaves = (k, d = 0) => at(RUN.stops[k][1]) + d * 60000;
 
 /** One trip, refreshed every 15 s. `pref` may change at a minute (prefAt). Returns what rang, by whom and when. */
@@ -102,7 +102,7 @@ test('default (1 stop, Get off now): the Next stop alert as before, and Get off 
   assert.ok(r.schedules.length >= 1);
   assert.equal(r.next.length, 1, 'the Next stop alert, once');
   assert.match(r.next[0].title, /^Next stop: Central/);
-  assert.ok(r.next[0].t >= leaves(5) && r.next[0].t <= leaves(5) + 30000, 'as the train leaves Redfern');
+  assert.ok(r.next[0].t >= leaves(5) && r.next[0].t <= leaves(5) + 30000, 'as the train leaves Epping');
 });
 
 for (const n of [2, 3]) {
@@ -147,15 +147,15 @@ test('Get off now: once, after Next stop, in the minute before arrival, never be
 });
 
 test('Get off now on a short last stretch waits for the train to leave the stop before', () => {
-  // Redfern to Central in 1 minute: arrival minus a minute is before it leaves Redfern.
-  const run = { ...RUN, stops: RUN.stops.map(([n, m]) => [n, n === 'Central' ? 13.5 : n === 'Town Hall' ? 15 : m]) };
+  // Epping to Central in 1 minute: arrival minus a minute is before it leaves Epping.
+  const run = { ...RUN, stops: RUN.stops.map(([n, m]) => [n, n === 'Central' ? 13.5 : n === 'Martin Place' ? 15 : m]) };
   const r = replay({ pref: { stops: 1, now: true }, run });
   assert.equal(r.now.length, 1);
   assert.ok(r.now[0].t >= leaves(5));
 });
 
 test('a ride shorter than the choice: no heads up (the Next stop alert covers it)', () => {
-  const run = { ...RUN, mine: 4 }; // Ashfield to Central: Redfern only between
+  const run = { ...RUN, mine: 4 }; // Ashfield to Central: Epping only between
   const leg = { ...LEG, stopId: 'ASH', from: 'Ashfield Station', planned: iso(at(7)) };
   const r = replay({ pref: { stops: 3, now: false }, run, leg });
   assert.equal(r.early.length, 0);

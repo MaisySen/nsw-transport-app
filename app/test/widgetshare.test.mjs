@@ -23,8 +23,8 @@ async function load(rel) {
 const { homeWorkFor, liveCardFor, starredFor } = await load('platform/widgetShare.ts');
 const { shortName } = await load('platform/tripCard.ts');
 
-const strath = { id: '213510', name: 'Strathfield Station' };
-const kx = { id: '201110', name: 'Kings Cross Station' };
+const strath = { id: '206710', name: 'Chatswood Station' };
+const kx = { id: '202210', name: 'Bondi Junction Station' };
 
 test('Home and Work go to the widget as id and name', () => {
   const st = { places: { home: { ...strath, lat: -33.87 }, work: kx }, myTrips: [], commuteFlip: null };
@@ -32,7 +32,7 @@ test('Home and Work go to the widget as id and name', () => {
 });
 
 test('numeric stop ids become strings, as the widget decodes them', () => {
-  const st = { places: { home: { id: 213510, name: 'Strathfield Station' } } };
+  const st = { places: { home: { id: 206710, name: 'Chatswood Station' } } };
   assert.deepEqual(homeWorkFor(st).home, strath);
   assert.equal(homeWorkFor(st).work, null);
 });
@@ -56,33 +56,33 @@ test('trips saved on the phone are shared with their names; broken ones are left
 });
 
 test('the live card keeps the trip card fields and says when to stop showing it', () => {
-  const card = { line: 'T1', lineColorHex: '#F99D1C', mode: 'train', nextStop: 'Redfern', stopsLeft: 1, getOffAt: 'Redfern',
+  const card = { line: 'T1', lineColorHex: '#F99D1C', mode: 'train', nextStop: 'Epping', stopsLeft: 1, getOffAt: 'Epping',
     arrival: 1000000, phase: 'ride', warning: null, progress: 0.5, towards: 'Hornsby', platform: null, departs: 1, legArrives: 900000,
-    destination: 'Kings Cross' };
-  const c = liveCardFor('Strathfield to Kings Cross', card, 120000);
-  assert.equal(c.title, 'Strathfield to Kings Cross');
+    destination: 'Bondi Junction' };
+  const c = liveCardFor('Chatswood to Bondi Junction', card, 120000);
+  assert.equal(c.title, 'Chatswood to Bondi Junction');
   assert.equal(c.until, 1120000);
-  assert.equal(c.getOffAt, 'Redfern');
+  assert.equal(c.getOffAt, 'Epping');
   assert.equal(c.legArrives, 900000);
 });
 
 test('stop names lose Station even when a suburb follows', () => {
-  assert.equal(shortName('Kings Cross Station, Kings Cross'), 'Kings Cross');
-  assert.equal(shortName('Kings Cross Station'), 'Kings Cross');
+  assert.equal(shortName('Bondi Junction Station, Bondi Junction'), 'Bondi Junction');
+  assert.equal(shortName('Bondi Junction Station'), 'Bondi Junction');
   assert.equal(shortName('Circular Quay Wharf 4, Sydney'), 'Circular Quay Wharf 4');
   assert.equal(shortName('Manly Wharf'), 'Manly');
   assert.equal(shortName(null), '');
 });
 
 test('bus trips and bus stops reach the widget: modes on saved trips, stop number and routes on starred bus stops', () => {
-  const fd = { id: 'G2046100', name: 'Five Dock Shops, Great North Rd, Five Dock' };
-  const st = { myTrips: [{ from: strath, to: fd, name: 'Strathfield to Five Dock Shops', modes: ['bus'] }, { from: strath, to: kx, name: 'Strathfield to Kings Cross' }],
-    starred: [{ id: '2046100', name: 'Five Dock Shops, Great North Rd', mode: 'bus', lines: ['438X', '492', '530', '415', 'D400', '501', '502', '504'] }, kx, { id: '213723', name: 'Concord Oval', mode: 'train' }] };
+  const fd = { id: 'G2046100', name: 'Lane Cove Shops, Great North Rd, Lane Cove' };
+  const st = { myTrips: [{ from: strath, to: fd, name: 'Chatswood to Lane Cove Shops', modes: ['bus'] }, { from: strath, to: kx, name: 'Chatswood to Bondi Junction' }],
+    starred: [{ id: '2046100', name: 'Lane Cove Shops, Great North Rd', mode: 'bus', lines: ['438X', '492', '530', '415', 'D400', '501', '502', '504'] }, kx, { id: '213723', name: 'Concord Oval', mode: 'train' }] };
   const hw = homeWorkFor(st);
-  assert.deepEqual(hw.trips[0], { name: 'Strathfield to Five Dock Shops', from: strath, to: fd, modes: ['bus'] });
-  assert.deepEqual(hw.trips[1], { name: 'Strathfield to Kings Cross', from: strath, to: kx });
+  assert.deepEqual(hw.trips[0], { name: 'Chatswood to Lane Cove Shops', from: strath, to: fd, modes: ['bus'] });
+  assert.deepEqual(hw.trips[1], { name: 'Chatswood to Bondi Junction', from: strath, to: kx });
   const s = starredFor(st);
-  assert.deepEqual(s[0], { id: '2046100', name: 'Five Dock Shops, Great North Rd', code: '2046100', mode: 'bus', lines: ['438X', '492', '530', '415', 'D400', '501'] });
+  assert.deepEqual(s[0], { id: '2046100', name: 'Lane Cove Shops, Great North Rd', code: '2046100', mode: 'bus', lines: ['438X', '492', '530', '415', 'D400', '501'] });
   assert.deepEqual(s[1], kx, 'a station stays id and name, as older widgets read it');
   assert.equal(s[2].code, undefined, 'only bus stops get a stop number');
   assert.deepEqual(starredFor(null), []);

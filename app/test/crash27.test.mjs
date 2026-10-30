@@ -35,12 +35,12 @@ test('report text: kind, where, build, update, error and stack, inside the inbox
 });
 
 test('recent requests: last 8 paths with query names only, never values, in the report', () => {
-  for (let i = 0; i < 10; i++) C.noteRequest(`/api/trip?from=2135${i}&to=201110&device=secretdevice`, 200);
-  C.noteRequest('https://api.transportsydney.app/api/departures?stop=213510', 304);
+  for (let i = 0; i < 10; i++) C.noteRequest(`/api/trip?from=2135${i}&to=202210&device=secretdevice`, 200);
+  C.noteRequest('https://api.transportsydney.app/api/departures?stop=206710', 304);
   const r = C.recentRequests();
   assert.equal(r.length, 8);
   assert.equal(r[r.length - 1], '/api/departures?stop 304');
-  assert.ok(!r.join(' ').includes('secretdevice') && !r.join(' ').includes('213510'));
+  assert.ok(!r.join(' ').includes('secretdevice') && !r.join(' ').includes('206710'));
   const m = C.crashMessage(new Error('x'), { where: 'screen /home', recent: r });
   assert.match(m, /\nRecent: \/api\/trip\?from,to,device 200/);
   assert.equal((m.match(/Error: x/g) || []).length, 1, 'the error line once');

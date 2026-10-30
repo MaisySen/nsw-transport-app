@@ -23,14 +23,14 @@ const gen = await load('src/lib/busGroups.gen.ts');
 
 test('stop numbers: bus and coach stop ids are the number on the sign; stations and trains are not', () => {
   assert.equal(bus.stopNumber('2046100', 'bus'), '2046100');
-  assert.equal(bus.stopNumber('213516', 'bus'), '213516');
+  assert.equal(bus.stopNumber('206712', 'bus'), '206712');
   assert.equal(bus.stopNumber('2046100'), '2046100');
-  assert.equal(bus.stopNumber('213510', 'train'), null);
+  assert.equal(bus.stopNumber('206710', 'train'), null);
   assert.equal(bus.stopNumber('G2046100', 'bus'), null);
   assert.equal(bus.stopNumber('placeID:95356003:1', 'bus'), null);
   assert.equal(bus.stopNumber('', 'bus'), null);
   assert.equal(bus.stopLabel('2220328', 'bus'), 'Stop 2220328');
-  assert.equal(bus.stopLabel('201110', 'train'), '');
+  assert.equal(bus.stopLabel('202210', 'train'), '');
 });
 
 test('search: 6 or 7 digits is a stop number; 410, M90, B1, D400, 438X are routes', () => {
@@ -38,7 +38,7 @@ test('search: 6 or 7 digits is a stop number; 410, M90, B1, D400, 438X are route
   assert.ok(bus.isStopNumber(' 213723 '));
   assert.ok(!bus.isStopNumber('410'));
   for (const q of ['410', 'm90', 'B1', 'D400', '438X', '610X', 'T80', 'route 501', '1']) assert.ok(bus.routeQuery(q), q);
-  for (const q of ['2046100', 'Five Dock', 'Strathfield', '', 'ABCDEF', 'X']) assert.equal(bus.routeQuery(q), null, q);
+  for (const q of ['2046100', 'Lane Cove', 'Chatswood', '', 'ABCDEF', 'X']) assert.equal(bus.routeQuery(q), null, q);
   assert.equal(bus.routeQuery('route 501'), '501');
   assert.equal(bus.routeQuery('m90'), 'M90');
 });
@@ -106,7 +106,7 @@ test('routes at a stop: bus lines only, once each, in number order', () => {
 test('where to board: name, stand when the name lacks it, and the stop number', () => {
   assert.equal(bus.boardWords('Concord Oval, Parramatta Rd', 'Stand X1', '213723', 'bus'), 'Concord Oval, Parramatta Rd, Stand X1, Stop 213723');
   assert.equal(bus.boardWords('Hurstville Station, Stand A', 'Stand A', '2220328', 'bus'), 'Hurstville Station, Stand A, Stop 2220328');
-  assert.equal(bus.boardWords('Strathfield Station', 'Platform 1', '213510', 'train'), 'Strathfield Station, Platform 1');
+  assert.equal(bus.boardWords('Chatswood Station', 'Platform 1', '206710', 'train'), 'Chatswood Station, Platform 1');
 });
 
 test('a stop number search finds the stop from its own board, and nothing for a number with no stop', async () => {
@@ -156,7 +156,7 @@ test('natural route order: numbers first by value, then lettered routes', () => 
 
 test('a route reads on two lines: from, then to with the via; a shared number shows where the Sydney service goes', () => {
   assert.deepEqual(bus.routeEnds('Hurstville to Macquarie Park'), { from: 'Hurstville', to: 'Macquarie Park' });
-  assert.deepEqual(bus.routeEnds('Campsie to Chiswick via Five Dock'), { from: 'Campsie', to: 'Chiswick via Five Dock' });
+  assert.deepEqual(bus.routeEnds('Lakemba to Abbotsford via Lane Cove'), { from: 'Lakemba', to: 'Abbotsford via Lane Cove' });
   assert.deepEqual(bus.routeEnds('Unknown'), { from: '', to: '' });
   assert.deepEqual(bus.routeEnds('Nowra to Ulladulla', ['Taronga Zoo Via City QVB']), { from: '', to: 'Taronga Zoo via City QVB' });
   assert.ok(gen.SYDNEY_TO['100'], 'route 100 runs in Sydney and around Nowra');

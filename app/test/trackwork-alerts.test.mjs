@@ -22,7 +22,7 @@ const w = await load('src/lib/trackworkCore.ts');
 const fx = JSON.parse(fs.readFileSync(path.join(here, 'fixtures', 'alerts-old-host-25oct.json'), 'utf8'));
 const SUN = Date.parse('2026-10-25T06:10:00Z'); // Sunday 25 Oct, 5:10pm Sydney
 const TUE = Date.parse('2026-10-27T00:00:00Z'); // Tuesday 27 Oct, 11am Sydney
-const bidur = { key: 'a', f: '213510', t: '201110', name: 'Strathfield to Kings Cross', h: 8, lines: ['T9', 'T1', 'T4'], stops: ['strathfield', 'redfern', 'kings cross'] };
+const bidur = { key: 'a', f: '206710', t: '202210', name: 'Chatswood to Bondi Junction', h: 8, lines: ['T9', 'T1', 'T4'], stops: ['chatswood', 'epping', 'bondi junction'] };
 const north = { key: 'b', f: '207210', t: '200080', name: 'Pymble to Wynyard', h: 8, lines: ['T1'], stops: ['pymble', 'gordon', 'wynyard'] };
 
 test('this weekend, in Sydney time', () => {
@@ -47,9 +47,9 @@ test('dates in alert words', () => {
   assert.equal(w.weekendDays('Buses replace trains Saturday 7 and Sunday 8 November', TUE), null, 'next weekend is not this one');
 });
 
-test('real alerts from the current server: the T4 work touches Strathfield to Kings Cross, the North Shore work does not', () => {
+test('real alerts from the current server: the T4 work touches Chatswood to Bondi Junction, the North Shore work does not', () => {
   const r = w.weekendFromAlerts(fx.byLine, [bidur, north], SUN);
-  const a = r.trips.find((x) => x.f === '213510');
+  const a = r.trips.find((x) => x.f === '206710');
   assert.equal(a.affected, true);
   assert.ok(a.items.every((i) => !/North Shore Line/.test(i.title)), 'Hornsby to Wynyard is not on this trip');
   assert.ok(a.items.some((i) => i.lines.includes('T4')));
@@ -65,17 +65,17 @@ test('real alerts from the current server: the T4 work touches Strathfield to Ki
 
 test('places named in an alert', () => {
   assert.deepEqual(w.betweenPlaces('Trains run between Hornsby and Wynyard only. Buses replace some trains between Hornsby and Gordon Saturday 24'), ['hornsby', 'wynyard', 'gordon']);
-  assert.equal(w.placeKey('Kings Cross Station, Potts Point'), 'kings cross');
-  const trip = w.tripLinesOf('k', '1', '2', 'X to Y', [{ legs: [{ kind: 'walk' }, { kind: 'transit', line: 'T1', from: 'Strathfield Station, Platform 1', to: 'Redfern Station' }] }], 8);
-  assert.deepEqual(trip.stops, ['strathfield', 'redfern']);
+  assert.equal(w.placeKey('Bondi Junction Station, Potts Point'), 'bondi junction');
+  const trip = w.tripLinesOf('k', '1', '2', 'X to Y', [{ legs: [{ kind: 'walk' }, { kind: 'transit', line: 'T1', from: 'Chatswood Station, Platform 1', to: 'Epping Station' }] }], 8);
+  assert.deepEqual(trip.stops, ['chatswood', 'epping']);
 });
 
 test('the Thursday heads up: only before Thursday 6pm and only when a trip is touched', () => {
-  const resp = { enabled: true, trips: [{ f: '213510', t: '201110', affected: true, addedMin: 25, buses: { from: 'Strathfield', to: 'Lidcombe' }, items: [{ id: 'x', title: 'Buses replace trains between Strathfield and Lidcombe', lines: ['T1'], days: 'Sat and Sun' }] }] };
+  const resp = { enabled: true, trips: [{ f: '206710', t: '202210', affected: true, addedMin: 25, buses: { from: 'Chatswood', to: 'Lidcombe' }, items: [{ id: 'x', title: 'Buses replace trains between Chatswood and Lidcombe', lines: ['T1'], days: 'Sat and Sun' }] }] };
   const p = w.headsUpPlan(resp, [bidur], TUE);
   assert.equal(new Date(p.at).toISOString(), '2026-10-29T07:00:00.000Z');
   assert.equal(p.title, 'Trackwork this weekend');
-  assert.equal(p.body, 'Strathfield to Kings Cross. Sat and Sun: Buses replace trains between Strathfield and Lidcombe. Buses replace trains Strathfield to Lidcombe. Your trip takes about 25 min longer.');
+  assert.equal(p.body, 'Chatswood to Bondi Junction. Sat and Sun: Buses replace trains between Chatswood and Lidcombe. Buses replace trains Chatswood to Lidcombe. Your trip takes about 25 min longer.');
   assert.equal(w.headsUpPlan(resp, [bidur], SUN), null, 'past Thursday 6pm');
   assert.equal(w.headsUpPlan({ enabled: true, trips: [] }, [bidur], TUE), null);
   assert.equal(w.headsUpPlan(resp, [bidur], TUE, () => true), null, 'a trip the server already pushes about is left out');

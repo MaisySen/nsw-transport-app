@@ -111,9 +111,9 @@ test("car park copy keys, and the board warm up leaves them alone", () => {
   assert.deepEqual(W.parkCopyKey(u("?id=26")), { k: "park:id:26", stop: "park" });
   assert.equal(W.parkCopyKey(u("?live=0")), null);
   assert.equal(W.parkCopyKey(u("?id=" + encodeURIComponent("1 OR 1"))), null);
-  assert.equal(W.isBoardCopyKey("213510|"), true);
-  assert.equal(W.isBoardCopyKey("213510|train"), true);
-  assert.equal(W.isBoardCopyKey("trip:213510>201110"), false);
+  assert.equal(W.isBoardCopyKey("206710|"), true);
+  assert.equal(W.isBoardCopyKey("206710|train"), true);
+  assert.equal(W.isBoardCopyKey("trip:206710>202210"), false);
   assert.equal(W.isBoardCopyKey("park:all"), false);
   assert.equal(W.parkCopyOk(JSON.stringify({ carparks: [{ free: null }] })), false);
   assert.equal(W.parkCopyOk(JSON.stringify({ carparks: [{ free: 3 }] })), true);

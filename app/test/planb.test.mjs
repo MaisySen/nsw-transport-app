@@ -50,16 +50,16 @@ test('a suspended line: only ways without that line, never trackwork with buses 
   const trackwork = J(leg('T1', 4, 30, { alerts: [{ title: 'Trains run to a changed timetable. Buses replace some trains', priority: 'normal' }] }));
   assert.equal(b.problemOf(trackwork), null);
   assert.equal(b.problemOf(J(leg('T1', 4, 30, { alerts: ['ems-1 suspended'] }))), null, 'bare alert ids are not read');
-  assert.ok(b.SUSPENDED.test('No trains between Central and Redfern'));
+  assert.ok(b.SUSPENDED.test('No trains between Central and Penrith'));
   assert.ok(b.SUSPENDED.test('Ferries are not running'));
 });
 
 test('a missed change: Plan B is a way you can make, and live times count', () => {
-  const t4 = leg('T4', 26, 36, { transfer: { risk: 'miss', at: 'Redfern Station' } });
+  const t4 = leg('T4', 26, 36, { transfer: { risk: 'miss', at: 'Penrith Station' } });
   const bad = { ...J(leg('T1', 4, 22, { realtime: true, estimated: iso(8), arrEstimated: iso(26) }), t4), risk: 'miss' };
   const p = b.problemOf(bad);
   assert.equal(p.kind, 'missed');
-  assert.equal(p.text, 'Delays mean you will likely miss the 8:26am T4 at Redfern');
+  assert.equal(p.text, 'Delays mean you will likely miss the 8:26am T4 at Penrith');
   const alsoMiss = { ...J(leg('T1', 9, 25), leg('T4', 27, 37, { transfer: { risk: 'miss' } })), risk: 'miss' };
   const ok = J(leg('T1', 12, 28), leg('T4', 31, 41));
   const r = b.planB([bad, alsoMiss, ok], bad, NOW);
@@ -126,8 +126,8 @@ test('the Home and alert sentence', () => {
 
 test('a tapped morning check alert opens its trip, or the checks when the phone does not know it', async () => {
   const m = await load('src/lib/morning.ts');
-  const list = [{ id: 'abc123', name: 'To work', from: { id: '213510', name: 'Strathfield Station' }, to: { id: '201110', name: 'Kings Cross Station' } }];
-  assert.deepEqual(m.morningTripParams('mabc123', list), { from: '213510', fromName: 'Strathfield Station', to: '201110', toName: 'Kings Cross Station', name: 'To work' });
+  const list = [{ id: 'abc123', name: 'To work', from: { id: '215020', name: 'Parramatta Station' }, to: { id: '202210', name: 'Bondi Junction Station' } }];
+  assert.deepEqual(m.morningTripParams('mabc123', list), { from: '215020', fromName: 'Parramatta Station', to: '202210', toName: 'Bondi Junction Station', name: 'To work' });
   assert.equal(m.morningTripParams('mzzz', list), null);
   assert.equal(m.morningTripParams('w123', list), null);
   assert.equal(m.morningTripParams(undefined, list), null);

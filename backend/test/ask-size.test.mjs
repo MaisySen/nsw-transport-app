@@ -30,13 +30,13 @@ const leg = (i) => ({
 });
 const jny = () => ({ leave: "2026-10-24T04:34:00.000Z", board: "x", arrive: "2026-10-24T05:34:00.000Z", durationMin: 60, changes: 2, live: true, cancelled: false, legs: [leg(1), { kind: "walk", durationMin: 4 }, leg(2), leg(3)] });
 const big = () => ({
-  kind: "trip", v: 2, from: { id: "219410", name: "Campsie Station" }, to: { id: "229310", name: "Newcastle Interchange" },
-  journeys: Array.from({ length: 6 }, jny), reply: "Campsie Station to Newcastle Interchange via Chatswood.",
-  cards: [{ type: "trip", title: "Next", from: { id: "219410", name: "Campsie Station" }, to: { id: "229310", name: "Newcastle Interchange" }, link, journeys: Array.from({ length: 4 }, jny) },
+  kind: "trip", v: 2, from: { id: "219510", name: "Lakemba Station" }, to: { id: "229310", name: "Newcastle Interchange" },
+  journeys: Array.from({ length: 6 }, jny), reply: "Lakemba Station to Newcastle Interchange via Chatswood.",
+  cards: [{ type: "trip", title: "Next", from: { id: "219510", name: "Lakemba Station" }, to: { id: "229310", name: "Newcastle Interchange" }, link, journeys: Array.from({ length: 4 }, jny) },
     { type: "alerts", items: [{ title: "Trackwork", url: "javascript:alert(1)", lines: ["T1"] }, { title: "Lift out", url: "https://transportnsw.info/alerts/1", lines: [] }] },
     { type: "departures", title: "Central", items: [{ line: "T1", dest: "Hornsby", planned: "2026-10-24T04:34:00.000Z", realtime: 1, cancelled: 0, link, path: [[1, 2]] }] }],
-  links: [{ label: "Open trip", kind: "trip", from: "219410", to: "229310", href: "#/trip?from=219410&to=229310" }],
-  suggestions: ["newcastle to campsie via chatswood"], detail: "internal error text",
+  links: [{ label: "Open trip", kind: "trip", from: "219510", to: "229310", href: "#/trip?from=219510&to=229310" }],
+  suggestions: ["newcastle to lakemba via chatswood"], detail: "internal error text",
 });
 
 test("askSlim keeps every field the Ask screens read and drops the rest", () => {
@@ -69,7 +69,7 @@ test("alert links become links only when they are https", () => {
 });
 
 test("/api/ask answers small and without internal error text", async () => {
-  const r = await W.__default.fetch(new Request("https://t.example/api/ask?q=campsie%20to%20central", { headers: { "cf-connecting-ip": "10.9.9.9" } }), env, { waitUntil() {} });
+  const r = await W.__default.fetch(new Request("https://t.example/api/ask?q=lakemba%20to%20central", { headers: { "cf-connecting-ip": "10.9.9.9" } }), env, { waitUntil() {} });
   const body = await r.text();
   assert.ok(body.length < 30000, "size " + body.length);
   const d = JSON.parse(body);

@@ -52,7 +52,7 @@ test('ticket machine wording', () => {
 
 test('access chips and outages on trip legs', () => {
   assert.deepEqual(acc.accChip({ id: '1', level: 'independent' }, 'Central Station'), { text: 'Central: Step free', tone: 'green' });
-  assert.deepEqual(acc.accChip({ id: '1', level: 'assisted' }, 'Redfern Station'), { text: 'Redfern: Assisted access', tone: 'orange' });
+  assert.deepEqual(acc.accChip({ id: '1', level: 'assisted' }, 'Epping Station'), { text: 'Epping: Assisted access', tone: 'orange' });
   assert.deepEqual(acc.accChip({ id: '1', level: 'none' }, 'Stanmore Station'), { text: 'Stanmore: Not step free', tone: 'grey' });
   assert.deepEqual(acc.accChip({ id: '1', level: 'independent', outage: 'Lift 6 out' }, 'Central Station'), { text: 'Central: lift out', tone: 'red' });
   assert.equal(acc.accChip(null, 'X'), null);
@@ -72,7 +72,7 @@ test('access chips and outages on trip legs', () => {
 
 test('lift alert stations come from every saved trip end, digits only, at most 40', () => {
   const trips = [
-    { from: { id: '2135223', name: 'Campsie' }, to: { id: '200060', name: 'Central' }, legs: [{ from: { id: '2135223' }, to: { id: '200060' } }, { from: { id: '200060' }, to: { id: '2067141' } }] },
+    { from: { id: '2135223', name: 'Lakemba' }, to: { id: '200060', name: 'Central' }, legs: [{ from: { id: '2135223' }, to: { id: '200060' } }, { from: { id: '200060' }, to: { id: '2067141' } }] },
     { from: { id: '200060' }, to: { id: 'home' }, via: { id: '2077011' } },
   ];
   assert.deepEqual(acc.liftStations(trips), ['2135223', '200060', '2067141', '2077011']);

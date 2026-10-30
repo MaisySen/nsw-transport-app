@@ -133,16 +133,16 @@ test("Ask answers parking, lifts, top up and accessible trips", async () => {
   assert.equal(b.cards[0].type, "station");
   const c = (await get("/api/ask?q=" + encodeURIComponent("top up at central"))).body;
   assert.match(c.reply, /cash or card/);
-  const d = (await get("/api/ask?q=" + encodeURIComponent("parking at Redfern"))).body;
+  const d = (await get("/api/ask?q=" + encodeURIComponent("parking at Epping"))).body;
   assert.match(d.reply, /no Park and Ride car park with live spaces/);
   calls.length = 0;
-  await get("/api/ask?q=" + encodeURIComponent("accessible trip from burwood to central"));
+  await get("/api/ask?q=" + encodeURIComponent("accessible trip from parramatta to central"));
   const t = calls.find((u) => u.pathname.endsWith("/trip"));
   assert.ok(t, "planned a trip");
   assert.equal(t.searchParams.get("wheelchair"), "on");
   // A place called Park is a trip, not a parking question.
   calls.length = 0;
-  const e = (await get("/api/ask?q=" + encodeURIComponent("burwood to olympic park"))).body;
+  const e = (await get("/api/ask?q=" + encodeURIComponent("parramatta to olympic park"))).body;
   assert.notEqual(e.kind, "facility");
 });
 

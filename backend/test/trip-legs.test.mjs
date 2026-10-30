@@ -1,4 +1,4 @@
-// Trip legs as the app gets them (Bidur, 26 Oct 8:50 AM, Strathfield to Five Dock Shops): the D400 on demand service
+// Trip legs as the app gets them (Bidur, 26 Oct 8:50 AM, Chatswood to Lane Cove Shops): the D400 on demand service
 // is flagged as one (booked, not a timetable departure), and each leg's delay is its own live time against its own
 // timetable time.
 import { test } from "node:test";
@@ -29,13 +29,13 @@ test("on demand: class 10 legs are flagged with booking and operator; other legs
 
 test("trip: the D400 comes through as on demand, the T2 then bus carries the train's own delay", async () => {
   const now = Date.now() + 2 * MIN;
-  const d400 = efaLeg({ from: "strathfield", to: "burwood", dep: now, min: 10, line: "D400", cls: 10 });
+  const d400 = efaLeg({ from: "chatswood", to: "parramatta", dep: now, min: 10, line: "D400", cls: 10 });
   d400.transportation.operator = { name: "Bridj" };
   d400.transportation.properties = { attributes: ["BOOKINGREQUIRED", "AREA_ON_DEMAND"] };
-  const train = efaLeg({ from: "strathfield", to: "burwood", dep: now - 27 * MIN, delay: 27, min: 2, line: "T2" });
-  const bus = efaLeg({ from: "burwood", to: "homebush", dep: now + 8 * MIN, delay: 0, min: 15, line: "530", cls: 5 });
+  const train = efaLeg({ from: "chatswood", to: "parramatta", dep: now - 27 * MIN, delay: 27, min: 2, line: "T2" });
+  const bus = efaLeg({ from: "parramatta", to: "homebush", dep: now + 8 * MIN, delay: 0, min: 15, line: "530", cls: 5 });
   answer = { journeys: [{ legs: [d400] }, { legs: [train, bus] }] };
-  const r = await W.trip({ TFNSW_API_KEY: "t" }, "213510", "G2046100", {});
+  const r = await W.trip({ TFNSW_API_KEY: "t" }, "206710", "G2046100", {});
   const [od, tb] = r.journeys;
   assert.equal(od.legs[0].onDemand, true);
   assert.equal(od.legs[0].booking, true);

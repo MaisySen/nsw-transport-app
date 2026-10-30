@@ -182,6 +182,10 @@ Reduce Motion stops the live dot pulsing. One light tap (haptic) when it's time 
 
 Home Screen, Lock Screen and StandBy widgets; Siri, Spotlight and Shortcuts ("Next train home in Transport", "Start my commute in Transport"); Control Center buttons (iOS 18); Apple Watch app and complications ([WATCH.md](WATCH.md)); Add to Calendar.
 
+## Tests cover all of Sydney (30 Oct; tests only, nothing changes in the app)
+
+No feature changed. The app and server tests now use stations from all over Sydney and NSW: at most 5% of tests may name the owner's own stations, and `backend/test/owner-stations.test.mjs` fails if that share goes over 5% (29 of 1513, 1.9%, on 30 Oct). See [TEST_PLAN.md](TEST_PLAN.md).
+
 ## Build 207 (built, on TestFlight; not yet seen on a real iPhone)
 
 Native changes, so they need a new build (branches `native-207` and `native-207-bus`, see [RELEASES.md](RELEASES.md)):

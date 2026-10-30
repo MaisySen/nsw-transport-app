@@ -22,11 +22,11 @@ async function load(rel) {
 }
 const { watchContextFor, watchContextJSON, WATCH_MAX_STARRED } = await load('platform/watchShare.ts');
 
-const hw = { home: { id: '213510', name: 'Strathfield Station' }, work: { id: '2011', name: 'Kings Cross Station' }, flip: null, trips: [] };
+const hw = { home: { id: '206710', name: 'Chatswood Station' }, work: { id: '2011', name: 'Bondi Junction Station' }, flip: null, trips: [] };
 const card = {
-  line: 'T1', lineColorHex: '#F99D1C', mode: 'train', nextStop: 'Burwood', stopsLeft: 3, getOffAt: 'Redfern', arrival: 2000, phase: 'ride',
-  warning: null, progress: 0.4, towards: 'Central', platform: 'Platform 2', departs: 1000, legArrives: 1500, destination: 'Kings Cross',
-  title: 'Strathfield to Kings Cross', until: 122000,
+  line: 'T1', lineColorHex: '#F99D1C', mode: 'train', nextStop: 'Parramatta', stopsLeft: 3, getOffAt: 'Epping', arrival: 2000, phase: 'ride',
+  warning: null, progress: 0.4, towards: 'Central', platform: 'Platform 2', departs: 1000, legArrives: 1500, destination: 'Bondi Junction',
+  title: 'Chatswood to Bondi Junction', until: 122000,
 };
 
 test('context carries Home, Work, the server and the trip card', () => {
@@ -37,7 +37,7 @@ test('context carries Home, Work, the server and the trip card', () => {
   assert.deepEqual(c.home, hw.home);
   assert.deepEqual(c.work, hw.work);
   assert.deepEqual(c.starred, [{ id: '200060', name: 'Central' }]);
-  assert.equal(c.live.getOffAt, 'Redfern');
+  assert.equal(c.live.getOffAt, 'Epping');
   assert.equal('trips' in c, false);
 });
 

@@ -97,9 +97,9 @@ test("trackwork matches a trip by its lines or its end stops, only inside the we
     { id: "sat", h: "Buses replace trains between Central and Bondi Junction", pl: 1, p: [[w.satStart + 2 * H, w.satStart + 20 * H]], l: ["T4"], s: [] },
     { id: "next", h: "Trackwork next week", pl: 1, p: [[w.to + 2 * D, w.to + 3 * D]], l: ["T4"], s: [] },
     { id: "delay", h: "Allow extra travel time", pl: 0, p: [], l: ["T4"], s: [] },
-    { id: "stop", h: "Kings Cross: changed timetable", pl: 1, p: [[w.satEnd + H, w.satEnd + 5 * H]], l: [], s: ["201110"] },
+    { id: "stop", h: "Martin Place: changed timetable", pl: 1, p: [[w.satEnd + H, w.satEnd + 5 * H]], l: [], s: ["200030"] },
   ];
-  const [m] = W.trackworkMatches(items, [{ f: "213510", t: "201110", lines: ["T1", "T4"] }], w);
+  const [m] = W.trackworkMatches(items, [{ f: "206710", t: "200030", lines: ["T1", "T4"] }], w);
   assert.deepEqual(m.map((x) => x.id), ["sat", "stop"]);
   assert.equal(m[0].sat, true); assert.equal(m[0].sun, false);
   assert.equal(m[1].sat, false); assert.equal(m[1].sun, true);
@@ -108,13 +108,13 @@ test("trackwork matches a trip by its lines or its end stops, only inside the we
 });
 
 test("on the trip's path: by stop, by a place the header names, or line wide", () => {
-  const shape = { stops: ["213510", "201510", "200060"], names: ["strathfield", "redfern", "central"] };
+  const shape = { stops: ["206710", "212110", "200060"], names: ["chatswood", "epping", "central"] };
   assert.deepEqual(W.alertPlaces("T1 North Shore Line: Buses replace trains between Berowra and Hornsby"), ["Berowra", "Hornsby"]);
   assert.deepEqual(W.alertPlaces("Trains run between Berowra or Hornsby and Central, platforms 1-14"), ["Berowra", "Central"]);
   assert.equal(W.onPath({ title: "Buses replace trains between Berowra and Hornsby", s: [] }, shape), false);
   assert.equal(W.onPath({ title: "Buses replace trains between Central and Bondi Junction", s: [] }, shape), true);
   assert.equal(W.onPath({ title: "T1 Western Line: Trains run to a changed timetable", s: [] }, shape), true);
-  assert.equal(W.onPath({ title: "x", s: ["201510"] }, shape), true);
+  assert.equal(W.onPath({ title: "x", s: ["212110"] }, shape), true);
   assert.equal(W.onPath({ title: "x", s: ["999999"] }, shape), false);
 });
 
@@ -139,14 +139,14 @@ test("GET /api/trackwork: the affected trip gets the alert, buses and the time a
     ]));
     if (u.includes("/v1/tp/trip")) {
       const day = new URL(u).searchParams.get("itdDate");
-      if (day === w.sat) return Response.json(plan(WED, 55, [{ line: "T1", from: "Strathfield", to: "Central", stops: [["213510", "Strathfield"], ["200060", "Central"]] }, { line: "1T4", bus: true, from: "Central", to: "Kings Cross", stops: [["200060", "Central"], ["201110", "Kings Cross"]] }]));
-      return Response.json(plan(WED, 30, [{ line: "T1", from: "Strathfield", to: "Central", stops: [["213510", "Strathfield"], ["200060", "Central"]] }, { line: "T4", from: "Central", to: "Kings Cross", stops: [["200060", "Central"], ["201110", "Kings Cross"]] }]));
+      if (day === w.sat) return Response.json(plan(WED, 55, [{ line: "T1", from: "Chatswood", to: "Central", stops: [["206710", "Chatswood"], ["200060", "Central"]] }, { line: "1T4", bus: true, from: "Central", to: "Martin Place", stops: [["200060", "Central"], ["200030", "Martin Place"]] }]));
+      return Response.json(plan(WED, 30, [{ line: "T1", from: "Chatswood", to: "Central", stops: [["206710", "Chatswood"], ["200060", "Central"]] }, { line: "T4", from: "Central", to: "Martin Place", stops: [["200060", "Central"], ["200030", "Martin Place"]] }]));
     }
     return new Response("{}", { status: 404 });
   };
   const env = { TFNSW_API_KEY: "t", DB: makeD1(), ASSETS: { fetch: async (r) => (String(r.url || r).endsWith("/data/routes.json") ? Response.json({ routes: TABLE }) : new Response("", { status: 404 })) } };
   try {
-    const r = await W.__default.fetch(new Request("https://t.example/api/trackwork?t=213510~201110~T1.T4~8&t=213510~200070~M1~8", { headers: { "cf-connecting-ip": "10.9.0.1" } }), env, { waitUntil() {} });
+    const r = await W.__default.fetch(new Request("https://t.example/api/trackwork?t=206710~200030~T1.T4~8&t=206710~206110~M1~8", { headers: { "cf-connecting-ip": "10.9.0.1" } }), env, { waitUntil() {} });
     assert.equal(r.status, 200);
     const b = await r.json();
     assert.equal(b.enabled, true);
@@ -156,12 +156,12 @@ test("GET /api/trackwork: the affected trip gets the alert, buses and the time a
     assert.equal(a.items[0].title, "Buses replace trains between Central and Bondi Junction");
     assert.equal(a.items[0].days, "Saturday");
     assert.equal(a.items[0].url, "https://transportnsw.info/alerts/details#/ems-9");
-    assert.deepEqual(a.buses, { from: "Central", to: "Kings Cross" });
+    assert.deepEqual(a.buses, { from: "Central", to: "Martin Place" });
     assert.equal(a.addedMin, 25);
     assert.equal(other.affected, false); assert.deepEqual(other.items, []);
     // The digest is now a meta row; the feed is not read again for the next request, nor the planner.
     const n = calls.length;
-    const r2 = await W.__default.fetch(new Request("https://t.example/api/trackwork?t=213510~201110~T1.T4~8", { headers: { "cf-connecting-ip": "10.9.0.2" } }), env, { waitUntil() {} });
+    const r2 = await W.__default.fetch(new Request("https://t.example/api/trackwork?t=206710~200030~T1.T4~8", { headers: { "cf-connecting-ip": "10.9.0.2" } }), env, { waitUntil() {} });
     assert.equal((await r2.json()).trips[0].addedMin, 25);
     assert.equal(calls.length, n);
     const row = await env.DB.prepare("SELECT v FROM meta WHERE k = 'alert_digest'").first();
@@ -173,7 +173,7 @@ test("line status: suspended over delays over trackwork, only what is active now
   const now = WED;
   const items = [
     { id: "w", h: "Buses replace trains between Central and Bondi Junction", e: "modified", pl: 1, p: [[now - H, now + H]], l: ["T4"], u: "https://x/w" },
-    { id: "d", h: "Allow extra travel time, signal repairs at Redfern", e: "delays", pl: 0, p: [], l: ["T4", "T8"], u: "https://x/d" },
+    { id: "d", h: "Allow extra travel time, signal repairs at Epping", e: "delays", pl: 0, p: [], l: ["T4", "T8"], u: "https://x/d" },
     { id: "s", h: "Metro North West Line: Services are suspended", e: "none", pl: 0, p: [[now - H, 0]], l: ["M1"], u: null },
     { id: "f", h: "Weekend trackwork", e: "modified", pl: 1, p: [[now + D, now + 2 * D]], l: ["T1"], u: null },
     { id: "b", h: "Route 540 diversion", e: "detour", pl: 1, p: [], l: ["540"], u: null },

@@ -31,7 +31,7 @@ test('the card window is Thursday 6pm to the end of Sunday, Sydney time', () => 
 
 test('a trip card reports its lines once each, no walking, from the services it shows', () => {
   const j = (...lines) => ({ legs: lines.map((l) => (l === 'walk' ? { kind: 'walk' } : { kind: 'transit', line: l })) });
-  const r = tw.tripLinesOf('k', '213510', '201110', 'To work', [j('T1', 'walk', 'T4'), j('T2', 'T4'), j('T9'), j('M1')], 8);
+  const r = tw.tripLinesOf('k', '206710', '200030', 'To work', [j('T1', 'walk', 'T4'), j('T2', 'T4'), j('T9'), j('M1')], 8);
   assert.deepEqual(r.lines, ['T1', 'T4', 'T2', 'T9']);
   assert.equal(r.h, 8);
 });
@@ -47,13 +47,13 @@ test('rows only for affected trips, in Home order, with buses and the time added
   const trips = [{ key: 'a', f: '1', t: '2', lines: ['T4'], name: 'To work', h: 8 }, { key: 'b', f: '3', t: '4', lines: ['M1'], name: 'Gym', h: 10 }];
   const resp = { enabled: true, trips: [
     { f: '3', t: '4', affected: false, items: [], addedMin: null, buses: null },
-    { f: '1', t: '2', affected: true, items: [{ id: 'x', title: 'Buses replace trains between Central and Bondi Junction.', url: 'https://transportnsw.info/x', lines: ['T4'], days: 'Sat and Sun' }], addedMin: 25, buses: { from: 'Central', to: 'Kings Cross' } },
+    { f: '1', t: '2', affected: true, items: [{ id: 'x', title: 'Buses replace trains between Central and Bondi Junction.', url: 'https://transportnsw.info/x', lines: ['T4'], days: 'Sat and Sun' }], addedMin: 25, buses: { from: 'Central', to: 'Martin Place' } },
   ] };
   const rows = tw.trackworkRows(resp, trips);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].name, 'To work');
   assert.equal(rows[0].text, 'Sat and Sun: Buses replace trains between Central and Bondi Junction');
-  assert.equal(rows[0].extra, 'Buses replace trains Central to Kings Cross. Your trip takes about 25 min longer.');
+  assert.equal(rows[0].extra, 'Buses replace trains Central to Martin Place. Your trip takes about 25 min longer.');
   assert.deepEqual(tw.trackworkRows({ enabled: false, trips: resp.trips }, trips), []);
   assert.deepEqual(tw.trackworkRows(null, trips), []);
   const noExtra = tw.trackworkRows({ trips: [{ ...resp.trips[1], addedMin: 3, buses: null }] }, trips);

@@ -26,10 +26,10 @@ const T0 = Date.parse('2026-10-24T11:00:00Z');
 const at = (min) => T0 + min * 60000;
 const iso = (t) => new Date(t).toISOString();
 const legs = (changeAt) => [
-  { mode: 'train', line: 'T2', stopId: 'ASH', toStopId: 'RDF', from: 'Ashfield Station', to: 'Redfern Station', planned: iso(at(0)), arrPlanned: iso(at(13)), fromPlatform: 'Platform 3', towards: 'Central Station', color: '#0098CD' },
-  { mode: 'train', line: 'T4', stopId: 'RDF4', toStopId: 'KXS', from: 'Redfern Station', to: 'Kings Cross Station', planned: iso(at(changeAt)), arrPlanned: iso(at(changeAt + 9)), fromPlatform: 'Platform 9', towards: 'Bondi Junction Station', color: '#005AA3' },
+  { mode: 'train', line: 'T2', stopId: 'ASH', toStopId: 'RDF', from: 'Ashfield Station', to: 'Epping Station', planned: iso(at(0)), arrPlanned: iso(at(13)), fromPlatform: 'Platform 3', towards: 'Central Station', color: '#0098CD' },
+  { mode: 'train', line: 'T4', stopId: 'RDF4', toStopId: 'KXS', from: 'Epping Station', to: 'Martin Place Station', planned: iso(at(changeAt)), arrPlanned: iso(at(changeAt + 9)), fromPlatform: 'Platform 9', towards: 'Bondi Junction Station', color: '#005AA3' },
 ];
-const trip = (changeAt = 19) => ({ legs: legs(changeAt), to: { id: 'KXS', name: 'Kings Cross Station' } });
+const trip = (changeAt = 19) => ({ legs: legs(changeAt), to: { id: 'KXS', name: 'Martin Place Station' } });
 const cardAt = (g, t, memo) => cardFor(g, live.computeLive(g.legs, [], t, memo), t);
 
 const SWIFT_FIELDS = new Set(['line', 'lineColorHex', 'mode', 'nextStop', 'stopsLeft', 'getOffAt', 'arrival', 'phase', 'warning', 'progress',
@@ -52,11 +52,11 @@ test('waiting for the first leg: board details, no timer text', () => {
   assert.equal(c.phase, 'wait');
   assert.equal(c.line, 'T2');
   assert.equal(c.nextStop, 'Ashfield');
-  assert.equal(c.getOffAt, 'Redfern');
+  assert.equal(c.getOffAt, 'Epping');
   assert.equal(c.towards, 'Central');
   assert.equal(c.platform, 'Platform 3');
   assert.equal(c.departs, at(0));
-  assert.equal(c.destination, 'Kings Cross');
+  assert.equal(c.destination, 'Martin Place');
   // No live data in this card: it says so rather than reading as on time.
   assert.equal(c.warning, 'Timetable times, not live');
 });
@@ -73,7 +73,7 @@ test('on board: ride phase with progress between 0 and 1', () => {
 test('a one minute change says Tight change', () => {
   const c = cardAt(trip(14), at(6));
   checkShape(c);
-  assert.equal(c.warning, 'Tight change at Redfern');
+  assert.equal(c.warning, 'Tight change at Epping');
 });
 
 test('a change that cannot be made names the service you will miss', () => {
@@ -83,11 +83,11 @@ test('a change that cannot be made names the service you will miss', () => {
 });
 
 test('second leg after the change', () => {
-  // You got off at Redfern (your tap or your location): the card moves on to the T4.
+  // You got off at Epping (your tap or your location): the card moves on to the T4.
   const c = cardAt(trip(), at(20), { here: { 0: at(13) } });
   checkShape(c);
   assert.equal(c.line, 'T4');
-  assert.equal(c.getOffAt, 'Kings Cross');
+  assert.equal(c.getOffAt, 'Martin Place');
 });
 
 test('no live data and nothing from you: the card stays on the leg you are on, never at the change by the clock', () => {
@@ -107,5 +107,5 @@ test('arrived: one final card, nothing after', () => {
   assert.equal(c.phase, 'arrived');
   assert.equal(c.progress, 1);
   assert.equal(c.arrival, at(28));
-  assert.equal(c.destination, 'Kings Cross');
+  assert.equal(c.destination, 'Martin Place');
 });

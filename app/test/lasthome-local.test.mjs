@@ -22,9 +22,9 @@ const h = await load('src/lib/lastHomeCore.ts');
 const fx = JSON.parse(fs.readFileSync(path.join(here, 'fixtures', 'ask-last-home-old-host.json'), 'utf8'));
 const T0 = Date.parse('2026-10-25T12:00:00Z'); // 11:00pm Sydney
 const iso = (m) => new Date(T0 + m * 60000).toISOString();
-const leg = (line, dep, x = {}) => ({ kind: 'transit', line, mode: 'train', tripId: `${line}-${dep}`, from: 'Kings Cross Station', fromPlatform: 'Platform 1', planned: iso(dep), arrPlanned: iso(dep + 20), realtime: false, ...x });
+const leg = (line, dep, x = {}) => ({ kind: 'transit', line, mode: 'train', tripId: `${line}-${dep}`, from: 'Bondi Junction Station', fromPlatform: 'Platform 1', planned: iso(dep), arrPlanned: iso(dep + 20), realtime: false, ...x });
 const J = (dep, x = {}, l = {}) => ({ leave: iso(dep), legs: [leg(x.line || 'T4', dep, l)], anyCancelled: false, ...x });
-const hint = { from: { id: '201110', name: 'Kings Cross Station' }, to: { id: '10101100', name: 'Strathfield Station' }, mode: 'train' };
+const hint = { from: { id: '202210', name: 'Bondi Junction Station' }, to: { id: '10101100', name: 'Chatswood Station' }, mode: 'train' };
 
 test('the current server Ask answer gives a Remind me hint; the server hint wins when there is one', () => {
   const x = h.askLastHint(fx);
@@ -57,15 +57,15 @@ test('the reminder rings 15 min before leaving, with words written at scheduling
   assert.equal(it.leaveText, '12:00am');
   assert.equal(it.remindText, '11:45pm');
   const w = h.localRingWords(it);
-  assert.equal(w.title, 'Last train to Strathfield');
-  assert.equal(w.body, "The 12:00am T4 from Kings Cross, Platform 1 leaves in 15 min. It's the last one tonight.");
+  assert.equal(w.title, 'Last train to Chatswood');
+  assert.equal(w.body, "The 12:00am T4 from Bondi Junction, Platform 1 leaves in 15 min. It's the last one tonight.");
   const walk = h.localItem(hint, h.slimLast({ ...J(60), leave: iso(51) }), T0);
   assert.match(h.localRingWords(walk).body, /^Leave by 11:51pm for the 12:00am T4/);
-  assert.equal(h.cardWords(walk, T0).line, 'Leave by 11:51pm for the 12:00am T4 from Kings Cross, Platform 1. Reminder at 11:36pm.');
-  assert.equal(h.cardWords(walk, T0 + 41 * 60000).line, 'Leave in 10 min for the 12:00am T4 from Kings Cross, Platform 1.');
+  assert.equal(h.cardWords(walk, T0).line, 'Leave by 11:51pm for the 12:00am T4 from Bondi Junction, Platform 1. Reminder at 11:36pm.');
+  assert.equal(h.cardWords(walk, T0 + 41 * 60000).line, 'Leave in 10 min for the 12:00am T4 from Bondi Junction, Platform 1.');
   assert.match(h.setNoteLocal(it), /^Reminder set for 11:45pm, 15 min before you leave at 12:00am\./);
   assert.doesNotMatch(w.body + h.setNoteLocal(it), /[\u2013\u2014]/);
-  assert.deepEqual(h.cardWords(it, T0).title, 'Last train to Strathfield');
+  assert.deepEqual(h.cardWords(it, T0).title, 'Last train to Chatswood');
 });
 
 test('recheck: a late service moves the reminder; the same time leaves it', () => {

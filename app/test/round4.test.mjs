@@ -167,8 +167,8 @@ test('morning: time steps and labels', () => {
 });
 
 test('morning: titles, subtitles and when to ask for notifications', () => {
-  const m = { id: 'x', name: null, from: { id: '213410', name: 'Burwood Station' }, to: { id: '213510', name: 'Strathfield Station' }, time: '08:00', timeText: '8:00am', days: [1, 2, 3, 4, 5], mode: null, lead: 15, active: true };
-  assert.equal(morning.checkTitle(m), 'Burwood to Strathfield');
+  const m = { id: 'x', name: null, from: { id: '215020', name: 'Parramatta Station' }, to: { id: '206710', name: 'Chatswood Station' }, time: '08:00', timeText: '8:00am', days: [1, 2, 3, 4, 5], mode: null, lead: 15, active: true };
+  assert.equal(morning.checkTitle(m), 'Parramatta to Chatswood');
   assert.equal(morning.checkTitle({ ...m, name: 'Work' }), 'Work');
   assert.equal(morning.checkSubtitle(m), '8:00am, Mon to Fri. Checks 15 min before.');
   assert.equal(morning.checkSubtitle({ ...m, mode: 'lightrail', lead: 10 }), '8:00am light rail, Mon to Fri. Checks 10 min before.');
@@ -180,10 +180,10 @@ test('morning: titles, subtitles and when to ask for notifications', () => {
 
 test('morning: Check now preview words', () => {
   const item = { id: 'x', time: '08:00', timeText: '8:00am', days: [1], lead: 15 };
-  const issue = morning.previewWords({ item, found: true, issues: [{ kind: 'delay', minutes: 7, text: 'The 8:00am T1 is 7 min late.' }, { kind: 'lift', text: 'Lift out of service at Burwood.' }], service: {}, alert: { title: 't', body: 'b' }, sent: false }, format.clock);
+  const issue = morning.previewWords({ item, found: true, issues: [{ kind: 'delay', minutes: 7, text: 'The 8:00am T1 is 7 min late.' }, { kind: 'lift', text: 'Lift out of service at Parramatta.' }], service: {}, alert: { title: 't', body: 'b' }, sent: false }, format.clock);
   assert.equal(issue.tone, 'issue');
   assert.equal(issue.title, '2 problems right now');
-  assert.deepEqual(issue.lines, ['The 8:00am T1 is 7 min late.', 'Lift out of service at Burwood.']);
+  assert.deepEqual(issue.lines, ['The 8:00am T1 is 7 min late.', 'Lift out of service at Parramatta.']);
   const ok = morning.previewWords({ item, found: true, issues: [], service: { line: 'T1', planned: '2026-10-25T21:00:00.000Z', estimated: '2026-10-25T21:00:00.000Z', platform: 'Platform 3', realtime: true }, alert: null, sent: false }, format.clock);
   assert.equal(ok.tone, 'ok');
   assert.equal(ok.lines[0], 'The 8:00am T1 runs on time from Platform 3. Nothing would be sent.');
@@ -210,16 +210,16 @@ test('occupancy: a chip only when Transport for NSW sends it, and only with the 
 
 test('step free: lift aware note and per trip chips', () => {
   assert.equal(sf.liftAwareNote({ accessible: true, liftAware: { avoided: 1, allAffected: false, stations: ['Central Station'] } }).text, 'Left out 1 trip with a lift out of service at Central.');
-  assert.equal(sf.liftAwareNote({ accessible: true, liftAware: { avoided: 2, allAffected: false, stations: ['Central', 'Redfern', 'Central'] } }).text, 'Left out 2 trips with a lift out of service at Central and Redfern.');
-  const all = sf.liftAwareNote({ accessible: true, liftAware: { avoided: 0, allAffected: true, stations: ['Burwood'] } });
+  assert.equal(sf.liftAwareNote({ accessible: true, liftAware: { avoided: 2, allAffected: false, stations: ['Central', 'Epping', 'Central'] } }).text, 'Left out 2 trips with a lift out of service at Central and Epping.');
+  const all = sf.liftAwareNote({ accessible: true, liftAware: { avoided: 0, allAffected: true, stations: ['Parramatta'] } });
   assert.equal(all.tone, 'warn');
-  assert.equal(all.text, 'Every trip found passes a lift that is out of service at Burwood. Each trip shows where.');
+  assert.equal(all.text, 'Every trip found passes a lift that is out of service at Parramatta. Each trip shows where.');
   assert.equal(sf.liftAwareNote({ accessible: true, liftAware: { avoided: 0, allAffected: false, stations: [] } }), null);
   assert.equal(sf.liftAwareNote({ accessible: true, liftAware: { avoided: 1, allAffected: false, stations: [] } }, false), null, 'flag off');
   assert.equal(sf.liftAwareNote({ accessible: false, liftAware: null }), null);
   assert.deepEqual(sf.journeyAccess({ stepFree: true, liftOutages: [] }), { stepFree: true, outages: [] });
-  assert.deepEqual(sf.journeyAccess({ stepFree: false, liftOutages: [{ id: '1', name: 'Burwood Station', title: 'Lift 1' }, { id: '1', name: 'Burwood Station' }] }), { stepFree: false, outages: ['Burwood'] });
-  assert.deepEqual(sf.journeyAccess({ liftOutages: [{ id: '1', name: 'Burwood Station' }] }, false), { stepFree: false, outages: [] });
+  assert.deepEqual(sf.journeyAccess({ stepFree: false, liftOutages: [{ id: '1', name: 'Parramatta Station', title: 'Lift 1' }, { id: '1', name: 'Parramatta Station' }] }), { stepFree: false, outages: ['Parramatta'] });
+  assert.deepEqual(sf.journeyAccess({ liftOutages: [{ id: '1', name: 'Parramatta Station' }] }, false), { stepFree: false, outages: [] });
 });
 
 // Live: the server the app talks to answers the config, the Morning check round trip and step free trips.
@@ -230,7 +230,7 @@ test('live: config, morning check and step free answers', { skip: process.env.OF
   for (const k of ['morningCheck', 'occupancy', 'liftAwareRouting']) assert.equal(typeof cfg.body.flags[k], 'boolean', k);
   assert.equal(server.nextBase(cfg.body, CUR), CUR);
   const device = 'test.r4.' + Math.random().toString(36).slice(2, 10);
-  const save = await get('/api/morning-check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ device, from: { id: '213410', name: 'Burwood Station' }, to: { id: '213510', name: 'Strathfield Station' }, time: '08:00', days: [1, 2, 3, 4, 5], lead: 15 }) });
+  const save = await get('/api/morning-check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ device, from: { id: '215020', name: 'Parramatta Station' }, to: { id: '206710', name: 'Chatswood Station' }, time: '08:00', days: [1, 2, 3, 4, 5], lead: 15 }) });
   try {
     assert.equal(save.status, 200, JSON.stringify(save.body));
     assert.deepEqual(save.body.push, { web: 0, expo: 0 });
@@ -247,7 +247,7 @@ test('live: config, morning check and step free answers', { skip: process.env.OF
     const after = await get(`/api/morning-check?device=${device}`);
     assert.equal(after.body.items.length, 0);
   }
-  const trip = await get(`/api/trip?from=213410&to=200060&count=3&acc=1&t=${Date.now()}`);
+  const trip = await get(`/api/trip?from=215020&to=200060&count=3&acc=1&t=${Date.now()}`);
   assert.equal(trip.status, 200);
   assert.equal(trip.body.accessible, true);
   for (const j of trip.body.journeys || []) assert.equal(typeof j.stepFree, 'boolean');

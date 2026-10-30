@@ -1,12 +1,13 @@
 // Builds Trip Planner (EFA rapidJSON) answers for tests: one journey per call, legs by train.
 const STN = {
-  burwood: { id: "213410", name: "Burwood Station" },
-  strathfield: { id: "213510", name: "Strathfield Station" },
   central: { id: "200060", name: "Central Station" },
-  redfern: { id: "201510", name: "Redfern Station" },
+  carramar: { id: "216330", name: "Carramar Station" },
   homebush: { id: "214010", name: "Homebush Station" },
-  kingscross: { id: "201110", name: "Kings Cross Station" },
-  townhall: { id: "200070", name: "Town Hall Station" },
+  bondijunction: { id: "202210", name: "Bondi Junction Station" },
+  chatswood: { id: "206710", name: "Chatswood Station" },
+  epping: { id: "212110", name: "Epping Station" },
+  martinplace: { id: "200030", name: "Martin Place Station" },
+  parramatta: { id: "215020", name: "Parramatta Station" },
 };
 export { STN };
 

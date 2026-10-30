@@ -74,7 +74,7 @@ test('another day goes to the planner for that day, with the time asked', () => 
 });
 
 test('home and work come from your saved places; missing ones say where to set them', () => {
-  const ctx = { ...base, places: { home: { id: '275010', name: 'Penrith Station' }, work: { id: '200070', name: 'Martin Place Station' } } };
+  const ctx = { ...base, places: { home: { id: '275010', name: 'Penrith Station' }, work: { id: '206110', name: 'Martin Place Station' } } };
   assert.equal(act('home to work', ctx).q, 'Penrith to Martin Place');
   const none = act('home to work');
   assert.equal(none.kind, 'say');

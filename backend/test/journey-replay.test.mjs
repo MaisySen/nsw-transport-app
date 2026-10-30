@@ -1,7 +1,7 @@
 // Journey replay: a whole Start trip followed by the server watch, minute by minute, on a fake
-// clock and fake live data. Strathfield to Redfern on the T1 (running 3 min late), change at
-// Redfern to the T4 (running 1 min early), off at Kings Cross. It checks every alert the phone
-// would get: each one once, times that agree, the trip ends at Kings Cross and nothing after.
+// clock and fake live data. Chatswood to Epping on the T1 (running 3 min late), change at
+// Epping to the T4 (running 1 min early), off at Martin Place. It checks every alert the phone
+// would get: each one once, times that agree, the trip ends at Martin Place and nothing after.
 // REPLAY_LOG=path writes the timeline.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -20,9 +20,9 @@ globalThis.fetch = async () => new Response("{}", { status: 503 });
 const MIN = 60000;
 const T = Date.UTC(2026, 9, 24, 10, 30, 0); // 9:30pm Sydney
 const legs = [
-  { mode: "train", line: "T1", tripId: "T1-930", stopId: "213510", toStopId: "201510", from: "Strathfield Station", to: "Redfern Station", towards: "Hornsby",
+  { mode: "train", line: "T1", tripId: "T1-930", stopId: "206710", toStopId: "212110", from: "Chatswood Station", to: "Epping Station", towards: "Hornsby",
     planned: new Date(T).toISOString(), arrPlanned: new Date(T + 9 * MIN).toISOString(), fromPlatform: "Platform 5" },
-  { mode: "train", line: "T4", tripId: "T4-941", stopId: "201511", toStopId: "201110", from: "Redfern Station", to: "Kings Cross Station", towards: "Bondi Junction",
+  { mode: "train", line: "T4", tripId: "T4-941", stopId: "201511", toStopId: "200030", from: "Epping Station", to: "Martin Place Station", towards: "Bondi Junction",
     planned: new Date(T + 15 * MIN).toISOString(), arrPlanned: new Date(T + 22 * MIN).toISOString(), fromPlatform: "Platform 11", walkBefore: 2 },
 ];
 
@@ -60,11 +60,11 @@ function fakeDB() {
   return { notes, updates, DB: { prepare: (q) => stmt(q), batch: async (l) => l.map(() => ({ meta: { changes: 1 } })) } };
 }
 
-test("replay: Strathfield to Kings Cross via Redfern, each alert once, ends at Kings Cross", async () => {
+test("replay: Chatswood to Martin Place via Epping, each alert once, ends at Martin Place", async () => {
   globalThis.__fakeLive = fakeLive;
   const f = fakeDB();
   const env = { TFNSW_API_KEY: "t", DB: f.DB };
-  const w = { id: "wreplay1", device: "dReplay", spec: JSON.stringify({ legs, track: true, to: { name: "Kings Cross Station" } }), state: null, expires: T + 4 * 60 * MIN, active: 1 };
+  const w = { id: "wreplay1", device: "dReplay", spec: JSON.stringify({ legs, track: true, to: { name: "Martin Place Station" } }), state: null, expires: T + 4 * 60 * MIN, active: 1 };
   const timeline = [];
   let notesSeen = 0;
   const finArr = Date.parse(legs[1].arrPlanned) - MIN;
@@ -89,18 +89,18 @@ test("replay: Strathfield to Kings Cross via Redfern, each alert once, ends at K
   const alerts = timeline.filter((e) => e.title !== "(watch ended)");
   const titles = alerts.map((e) => e.title.replace(/ in \d+ min$/, ""));
   assert.equal(new Set(titles).size, titles.length, "each alert once:\n" + lines.join("\n"));
-  assert.equal(alerts.filter((e) => /^(Next stop: Redfern|Change at Redfern)/.test(e.title)).length, 1, "one change alert at Redfern");
-  assert.equal(alerts.filter((e) => /^(Next stop: Kings Cross|Arriving at Kings Cross)/.test(e.title)).length, 1, "one get ready alert for Kings Cross");
-  const arrived = alerts.filter((e) => /^You've arrived at Kings Cross$/.test(e.title));
+  assert.equal(alerts.filter((e) => /^(Next stop: Epping|Change at Epping)/.test(e.title)).length, 1, "one change alert at Epping");
+  assert.equal(alerts.filter((e) => /^(Next stop: Martin Place|Arriving at Martin Place)/.test(e.title)).length, 1, "one get ready alert for Martin Place");
+  const arrived = alerts.filter((e) => /^You've arrived at Martin Place$/.test(e.title));
   assert.equal(arrived.length, 1, "one arrived alert");
   assert.ok(arrived[0].at >= finArr, "arrived is said once the train is in, not before");
-  assert.equal(alerts[alerts.length - 1].title, "You've arrived at Kings Cross", "nothing after arrived");
+  assert.equal(alerts[alerts.length - 1].title, "You've arrived at Martin Place", "nothing after arrived");
   // Times agree: the get ready alert and the arrived alert name the same arrival time.
   const at = clock(finArr).replace(/\s/g, "").toLowerCase();
-  const ready = alerts.find((e) => /^(Next stop: Kings Cross|Arriving at Kings Cross)/.test(e.title));
+  const ready = alerts.find((e) => /^(Next stop: Martin Place|Arriving at Martin Place)/.test(e.title));
   assert.match(ready.body.replace(/\s/g, "").toLowerCase(), new RegExp(at.replace(":", ":")), "get ready names " + at);
   assert.match(arrived[0].body.replace(/\s/g, "").toLowerCase(), new RegExp(at), "arrived names " + at);
-  // The watch ends at Kings Cross, not later and not on a later train.
+  // The watch ends at Martin Place, not later and not on a later train.
   assert.equal(w.active, 0, "watch ended");
   const endAt = timeline.find((e) => e.title === "(watch ended)").at;
   assert.ok(endAt <= finArr + 60000, "ended within a minute of arrival");

@@ -14,7 +14,7 @@ const W = await import(tmp); fs.unlinkSync(tmp);
 const MIN = 60000;
 const now = Date.now();
 const ev = (line, planned, delayMin) => ({
-  location: { id: "2135101", name: "Strathfield Station, Platform 1", properties: { platformName: "Platform 1" }, parent: { id: "213510", name: "Strathfield Station" } },
+  location: { id: "2135101", name: "Chatswood Station, Platform 1", properties: { platformName: "Platform 1" }, parent: { id: "206710", name: "Chatswood Station" } },
   departureTimePlanned: new Date(planned).toISOString(),
   ...(delayMin == null ? {} : { departureTimeEstimated: new Date(planned + delayMin * MIN).toISOString(), isRealtimeControlled: true }),
   transportation: { disassembledName: line, number: line, product: { class: 1 }, destination: { name: "Central", id: "1" }, properties: {} },
@@ -25,7 +25,7 @@ globalThis.fetch = async (u) => {
   const url = new URL(typeof u === "string" ? u : u.url);
   if (url.pathname.endsWith("/departure_mon")) {
     asked.push({ date: url.searchParams.get("itdDate"), time: url.searchParams.get("itdTime") });
-    return new Response(JSON.stringify({ locations: [{ id: "213510", name: "Strathfield Station", disassembledName: "Strathfield" }],
+    return new Response(JSON.stringify({ locations: [{ id: "206710", name: "Chatswood Station", disassembledName: "Chatswood" }],
       stopEvents: [ev("T9", now - 20 * MIN, 3), ev("T2", now - 12 * MIN, null), ev("T1", now + 4 * MIN, 0), ev("T3", now + 9 * MIN, null)] }));
   }
   return new Response("{}", { status: 404 });
@@ -37,7 +37,7 @@ const get = async (path) => { const r = await W.__default.fetch(new Request("htt
 const hhmm = (t) => { const p = new Intl.DateTimeFormat("en-GB", { timeZone: "Australia/Sydney", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(t)); const o = Object.fromEntries(p.map((x) => [x.type, x.value])); return o.hour + o.minute; };
 
 test("no time: the board for now, gone services dropped, no at (unchanged)", async () => {
-  const r = await get("/api/departures?stop=213510&n=1");
+  const r = await get("/api/departures?stop=206710&n=1");
   assert.equal(r.status, 200);
   assert.deepEqual(r.body.items.map((i) => i.line), ["T1", "T3"]);
   assert.equal(r.body.at, undefined);
@@ -47,7 +47,7 @@ test("no time: the board for now, gone services dropped, no at (unchanged)", asy
 test("time: services that left are kept, marked departed, with their live delay", async () => {
   const want = hhmm(now - 25 * MIN);
   asked.length = 0;
-  const r = await get(`/api/departures?stop=213510&time=${want}&n=2`);
+  const r = await get(`/api/departures?stop=206710&time=${want}&n=2`);
   assert.equal(r.status, 200);
   assert.equal(asked[0].time, want);
   assert.deepEqual(r.body.items.map((i) => i.line), ["T9", "T2", "T1", "T3"]);
@@ -81,6 +81,6 @@ test("boardAt: no date means the current service day; before 4am is clamped to 4
 });
 
 test("a bad time is refused as before", async () => {
-  const r = await get("/api/departures?stop=213510&time=25:00&n=3");
+  const r = await get("/api/departures?stop=206710&time=25:00&n=3");
   assert.equal(r.status, 400);
 });

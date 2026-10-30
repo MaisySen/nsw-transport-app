@@ -131,7 +131,7 @@ test('tight change: every change on a trip, and the words for screen readers', (
 
 test('the rule names no stations or routes', () => {
   const src = read('src/lib/tightChangeCore.ts');
-  assert.ok(!/Central|Strathfield|Town Hall|Parramatta|Flemington|Campsie/.test(src));
+  assert.ok(!/Central|Chatswood|Martin Place|Parramatta|Hornsby|Lakemba/.test(src));
   assert.ok(!/[\u2013\u2014]/.test(src));
 });
 

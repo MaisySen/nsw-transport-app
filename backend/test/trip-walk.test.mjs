@@ -25,7 +25,7 @@ globalThis.fetch = async (u) => {
   if (withWalk && refuseWalk) return new Response(JSON.stringify({ error: "bad option" }), { status: 400 });
   if (withWalk && emptyWalk) return new Response(JSON.stringify({ journeys: [] }));
   const now = Date.now();
-  return new Response(JSON.stringify(efaTrip([4, 14].map((m) => [{ from: "central", to: "townhall", dep: now + m * 60000, min: 4, delay: 0, trip: "w" + m }]))));
+  return new Response(JSON.stringify(efaTrip([4, 14].map((m) => [{ from: "central", to: "martinplace", dep: now + m * 60000, min: 4, delay: 0, trip: "w" + m }]))));
 };
 const edge = new Map();
 globalThis.caches = { default: { match: async (r) => (edge.has(String(r.url || r)) ? new Response(edge.get(String(r.url || r))) : undefined), put: async (r, res) => { edge.set(String(r.url || r), await res.text()); }, delete: async () => true } };
@@ -68,12 +68,12 @@ test("caches and copies keep a walking choice apart from the plain trip", () => 
   assert.notEqual(W.tripWinKey("1", "2", "20261028", "0900", { count: 8, walk: { max: 10, less: false } }), plain);
   assert.notEqual(W.longTripCacheKey(P("from=1&to=2&maxWalk=10")), W.longTripCacheKey(P("from=1&to=2")));
   const U = (q) => new URL("https://api.transportsydney.app/api/trip?" + q);
-  assert.deepEqual(W.boardKey(U("from=200060&to=200070")), { k: "trip:200060>200070", stop: "trip" });
-  assert.deepEqual(W.boardKey(U("from=200060&to=200070&maxWalk=10&lessWalk=1")), { k: "trip:200060>200070~w10l", stop: "trip" });
-  assert.equal(W.boardKey(U("from=200060&to=200070&maxWalk=9")).k, "trip:200060>200070", "an unknown limit is no choice");
-  const pg = W.boardKey(U("from=200060&to=200070&page=1&lessWalk=1"));
-  assert.equal(pg.k, "tripp:200060>200070~w0l");
-  assert.equal(pg.plain, "trip:200060>200070~w0l");
+  assert.deepEqual(W.boardKey(U("from=200060&to=200030")), { k: "trip:200060>200030", stop: "trip" });
+  assert.deepEqual(W.boardKey(U("from=200060&to=200030&maxWalk=10&lessWalk=1")), { k: "trip:200060>200030~w10l", stop: "trip" });
+  assert.equal(W.boardKey(U("from=200060&to=200030&maxWalk=9")).k, "trip:200060>200030", "an unknown limit is no choice");
+  const pg = W.boardKey(U("from=200060&to=200030&page=1&lessWalk=1"));
+  assert.equal(pg.k, "tripp:200060>200030~w0l");
+  assert.equal(pg.plain, "trip:200060>200030~w0l");
 });
 
 test("an older app (no maxWalk, no lessWalk): one planner call without walking options, no walk in the answer", async () => {

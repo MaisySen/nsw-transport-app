@@ -28,9 +28,9 @@ const fmt = { clock: format.clock, short, plat: (p) => (p ? p.replace(/^Platform
 const T0 = Date.parse('2026-10-25T04:00:00Z');
 const at = (min) => T0 + min * 60000;
 const iso = (t) => new Date(t).toISOString();
-// The 415 bus from Concord Oval to Five Dock Shops, 4 stops.
-const run = { stops: [['Concord Oval, Parramatta Rd', 0], ['Majors Bay Rd', 2], ['Five Dock Park', 4], ['Garfield St', 5], ['Five Dock Shops, Great North Rd', 7], ['Lyons Rd', 9]], mine: 0, off: 4 };
-const leg = { mode: 'bus', line: '415', tripId: '2666549', stopId: '213723', toStopId: '2046100', from: 'Concord Oval, Parramatta Rd', to: 'Five Dock Shops, Great North Rd', planned: iso(at(0)), arrPlanned: iso(at(7)), fromPlatform: 'Stand X1', towards: 'Chiswick' };
+// The 415 bus from Concord Oval to Lane Cove Shops, 4 stops.
+const run = { stops: [['Concord Oval, Parramatta Rd', 0], ['Majors Bay Rd', 2], ['Lane Cove Park', 4], ['Garfield St', 5], ['Lane Cove Shops, Great North Rd', 7], ['Lyons Rd', 9]], mine: 0, off: 4 };
+const leg = { mode: 'bus', line: '415', tripId: '2666549', stopId: '213723', toStopId: '2046100', from: 'Concord Oval, Parramatta Rd', to: 'Lane Cove Shops, Great North Rd', planned: iso(at(0)), arrPlanned: iso(at(7)), fromPlatform: 'Stand X1', towards: 'Abbotsford' };
 function feed(t) {
   const stops = run.stops.map(([name, m], k) => ({ id: 'S' + k, name, planned: iso(at(m)), estimated: iso(at(m)), mine: k === run.mine, alight: k === run.off }));
   let nextIndex = stops.findIndex((s) => Date.parse(s.estimated) > t - 20000);
@@ -51,9 +51,9 @@ function replay(g0) {
 test('speak alerts reads out "your stop is next" even when the server sends the notifications', () => {
   const r = replay({ id: 'b1', legs: [leg], alerted: {}, watchId: 'w123', share: null, speak: true });
   assert.equal(r.shown.length, 0, 'the phone shows no notification of its own (the server does)');
-  const next = r.said.filter((x) => x.text === 'Your stop is next. Five Dock Shops.');
+  const next = r.said.filter((x) => x.text === 'Your stop is next. Lane Cove Shops.');
   assert.equal(next.length, 1, JSON.stringify(r.said));
-  assert.ok(r.said.some((x) => x.text === "You've arrived at Five Dock Shops."), JSON.stringify(r.said));
+  assert.ok(r.said.some((x) => x.text === "You've arrived at Lane Cove Shops."), JSON.stringify(r.said));
 });
 
 test('each moment is read out once', () => {
@@ -66,7 +66,7 @@ test('each moment is read out once', () => {
 test('with Wake me on, the alarm replaces the notification but the voice still says it', () => {
   const r = replay({ id: 'b3', legs: [leg], alerted: {}, watchId: null, share: null, speak: true, wake: true });
   assert.ok(!r.shown.includes('off0'));
-  assert.ok(r.said.some((x) => x.text === 'Your stop is next. Five Dock Shops.'));
+  assert.ok(r.said.some((x) => x.text === 'Your stop is next. Lane Cove Shops.'));
 });
 
 test('nothing is said with Speak alerts off', () => {
@@ -127,7 +127,7 @@ function waitStep(over = {}) {
 }
 const says = (r) => r.actions.filter((a) => a.t === 'say').map((a) => a.text);
 test('departing soon: "leaves in 2 minutes from Stand X1"', () => {
-  assert.deepEqual(says(waitStep()), ['Your bus to Five Dock Shops leaves in 2 minutes, from stand X1.']);
+  assert.deepEqual(says(waitStep()), ['Your bus to Lane Cove Shops leaves in 2 minutes, from stand X1.']);
 });
 test('stand or platform change is read out once', () => {
   const r = waitStep({ plat: 'Stand X2', t: at(-10) });
@@ -142,27 +142,27 @@ test('delay: said at 3 minutes late, again at 5, 10 and 15, not every refresh', 
   assert.match(says(waitStep({ delay: 6, t: at(-9), spoken: r3.g.spoken }))[0], /running 6 minutes late/);
 });
 test('transfer: a tight change is read out', () => {
-  const leg2 = { mode: 'train', line: 'T1', tripId: 'T1x', stopId: 'X', from: 'Five Dock', to: 'Strathfield Station', planned: iso(at(8)), arrPlanned: iso(at(20)), towards: 'Penrith' };
+  const leg2 = { mode: 'train', line: 'T1', tripId: 'T1x', stopId: 'X', from: 'Lane Cove', to: 'Chatswood Station', planned: iso(at(8)), arrPlanned: iso(at(20)), towards: 'Penrith' };
   const svc = feed(at(5));
   const r = live.stepLive({ id: 'c', legs: [leg, leg2], alerted: {}, watchId: 'w', share: null, speak: true }, [svc, null], at(5), fmt);
-  assert.ok(says(r).includes('Tight change at Five Dock Shops. 1 minute to catch the T1 line.'), JSON.stringify(says(r)));
+  assert.ok(says(r).includes('Tight change at Lane Cove Shops. 1 minute to catch the T1 line.'), JSON.stringify(says(r)));
 });
 
-test('a train trip: "Next stop, Redfern. Change here for the T4 line", then "Your train to Redfern leaves in 2 minutes, from platform 1"', () => {
-  const T1 = { mode: 'train', line: 'T1', tripId: 'a', stopId: 'X', from: 'Strathfield Station', to: 'Redfern Station', planned: iso(at(0)), arrPlanned: iso(at(7)), fromPlatform: 'Platform 1', towards: 'Hornsby' };
-  const T4 = { mode: 'train', line: 'T4', tripId: 'b', stopId: 'Y', from: 'Redfern Station', to: 'Kings Cross Station', planned: iso(at(12)), arrPlanned: iso(at(20)), fromPlatform: 'Platform 6', towards: 'Bondi Junction' };
-  const stops = [['Strathfield', 0], ['Burwood', 3], ['Redfern', 7]].map(([n, m], k) => ({ id: 'R' + k, name: n + ' Station', planned: iso(at(m)), estimated: iso(at(m)), platform: k === 0 ? 'Platform 1' : undefined }));
+test('a train trip: "Next stop, Cronulla. Change here for the T4 line", then "Your train to Cronulla leaves in 2 minutes, from platform 1"', () => {
+  const T1 = { mode: 'train', line: 'T1', tripId: 'a', stopId: 'X', from: 'Chatswood Station', to: 'Cronulla Station', planned: iso(at(0)), arrPlanned: iso(at(7)), fromPlatform: 'Platform 1', towards: 'Hornsby' };
+  const T4 = { mode: 'train', line: 'T4', tripId: 'b', stopId: 'Y', from: 'Cronulla Station', to: 'Martin Place Station', planned: iso(at(12)), arrPlanned: iso(at(20)), fromPlatform: 'Platform 6', towards: 'Bondi Junction' };
+  const stops = [['Chatswood', 0], ['Epping', 3], ['Cronulla', 7]].map(([n, m], k) => ({ id: 'R' + k, name: n + ' Station', planned: iso(at(m)), estimated: iso(at(m)), platform: k === 0 ? 'Platform 1' : undefined }));
   const ride = { kind: 'service', live: true, mineIndex: 0, alightIndex: 2, nextIndex: 2, stops };
   const r = live.stepLive({ id: 't', legs: [T1, T4], alerted: {}, watchId: 'w', share: null, speak: true }, [ride, null], at(5), fmt);
-  assert.deepEqual(says(r), ['Next stop, Redfern. Change here for the T4 line.']);
+  assert.deepEqual(says(r), ['Next stop, Cronulla. Change here for the T4 line.']);
   const wait = { ...ride, nextIndex: 0 };
   const r2 = live.stepLive({ id: 't', legs: [T1, T4], alerted: {}, watchId: 'w', share: null, speak: true }, [wait, null], at(-2), fmt);
-  assert.deepEqual(says(r2), ['Your train to Redfern leaves in 2 minutes, from platform 1.']);
+  assert.deepEqual(says(r2), ['Your train to Cronulla leaves in 2 minutes, from platform 1.']);
 });
 
 test('names are heard as words: no "Rd", "St", "Stn" or "Opp"', async () => {
   assert.equal(live.sayName('Queens Rd At Wright St, Hurstville'), 'Queens Road at Wright Street');
-  assert.equal(live.sayName('Opp Burwood Stn'), 'opposite Burwood Station');
-  assert.equal(live.sayName('Strathfield Station'), 'Strathfield');
-  assert.equal(live.sayName('Five Dock Shops, Great North Rd'), 'Five Dock Shops');
+  assert.equal(live.sayName('Opp Epping Stn'), 'opposite Epping Station');
+  assert.equal(live.sayName('Chatswood Station'), 'Chatswood');
+  assert.equal(live.sayName('Lane Cove Shops, Great North Rd'), 'Lane Cove Shops');
 });

@@ -62,7 +62,7 @@ test("the profile can come in an x-profile header", async () => {
 test("a search with no profile is never logged", async () => {
   sql.length = 0;
   await call("/api/trip?from=10101100&to=10101101", {}, "10.6.2.1");
-  await call("/api/ask?q=" + encodeURIComponent("Central to Burwood"), {}, "10.6.2.2");
+  await call("/api/ask?q=" + encodeURIComponent("Central to Parramatta"), {}, "10.6.2.2");
   assert.ok(!sql.some((x) => /INSERT INTO searches/.test(x.q)), "no search row without a profile");
 });
 
@@ -82,7 +82,7 @@ test("inputs are checked before any upstream call", async () => {
     assert.equal(upstream, 0, why + " made no upstream call");
   }
   assert.equal(W.badInput(new URLSearchParams("from=151.2:-33.8:EPSG:4326&to=10101100&count=3&time=0815")), null);
-  assert.equal(W.badInput(new URLSearchParams("q=" + encodeURIComponent("Central to Burwood"))), null);
+  assert.equal(W.badInput(new URLSearchParams("q=" + encodeURIComponent("Central to Parramatta"))), null);
 });
 
 test("per address limits shared in D1 answer 429 over the limit, and fail open without D1", async () => {
@@ -137,9 +137,9 @@ test("a trip link with stop ids and no names takes the names from the trip", asy
   const f = `/tmp/names-test-${process.pid}-${Date.now()}.mjs`;
   fs.writeFileSync(f, src2);
   const M = await import(f); fs.unlinkSync(f);
-  const r = { journeys: [{ legs: [{ from: "Central Station", to: "Redfern Station" }, { from: "Redfern Station", to: "Town Hall Station" }] }] };
+  const r = { journeys: [{ legs: [{ from: "Central Station", to: "Epping Station" }, { from: "Epping Station", to: "Martin Place Station" }] }] };
   assert.equal(M.tripEndName(r, "from"), "Central Station");
-  assert.equal(M.tripEndName(r, "to"), "Town Hall Station");
+  assert.equal(M.tripEndName(r, "to"), "Martin Place Station");
   assert.equal(M.tripEndName({ journeys: [] }, "from"), null);
   assert.match(read("src/worker.js"), /given\("fromName"\) \|\| tripEndName\(r, "from"\)/);
 });

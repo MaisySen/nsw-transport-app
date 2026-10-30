@@ -1,5 +1,5 @@
 // Tests for the "it just knows" set: the commute direction, Leave in N min, Wake me before my stop (replayed with
-// a fake clock on Burwood to Strathfield and a 3 stop trip, with the phone's own alarm simulated), and the next
+// a fake clock on Parramatta to Chatswood and a 3 stop trip, with the phone's own alarm simulated), and the next
 // option after a missed change. Run: node --test test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -57,12 +57,12 @@ test('a swap lasts until the next 12: the half day key changes at noon and at mi
 
 // ---------- 3: Leave now ----------
 
-// Burwood Station platform area, and a spot 750 m south of it.
+// Parramatta Station platform area, and a spot 750 m south of it.
 const BWD = { lat: -33.8773, lon: 151.1037 };
 const south = (m) => ({ lat: BWD.lat - m / 111195, lon: BWD.lon });
 const jny = (depMin, { line = 'T1', late = 0, cancelled = false, path = [[BWD.lat, BWD.lon], [-33.8760, 151.0900]] } = {}) => ({
   leave: iso(at(depMin + late)), board: iso(at(depMin + late)), arrive: iso(at(depMin + late + 4)), durationMin: 4, changes: 0, live: true,
-  legs: [{ kind: 'transit', mode: 'train', line, from: 'Burwood Station', fromPlatform: 'Platform 2', to: 'Strathfield Station', planned: iso(at(depMin)), estimated: iso(at(depMin + late)), realtime: true, cancelled, durationMin: 4, path }],
+  legs: [{ kind: 'transit', mode: 'train', line, from: 'Parramatta Station', fromPlatform: 'Platform 2', to: 'Chatswood Station', planned: iso(at(depMin)), estimated: iso(at(depMin + late)), realtime: true, cancelled, durationMin: 4, path }],
 });
 
 test('walking time is a straight line at 5 km/h, rounded up', () => {
@@ -122,12 +122,12 @@ function feed(run, delay, t) {
   if (nextIndex < 0) nextIndex = stops.length;
   return { kind: 'service', live: true, line: run.line, mode: 'train', mineIndex: run.mine, alightIndex: run.off, nextIndex, stops };
 }
-// Burwood to Strathfield, one stop.
-const T1s = { line: 'T1', stops: [['Croydon', -2], ['Burwood', 0], ['Strathfield', 3], ['Homebush', 5]], mine: 1, off: 2 };
-const legBS = { mode: 'train', line: 'T1', tripId: 'T1.short', stopId: 'BWD', toStopId: 'STR', from: 'Burwood Station', to: 'Strathfield Station', planned: iso(at(0)), arrPlanned: iso(at(3)), fromPlatform: 'Platform 2', towards: 'Penrith Station' };
-// A 3 stop trip: Ashfield to Strathfield via Croydon and Burwood.
-const T1three = { line: 'T1', stops: [['Summer Hill', -2], ['Ashfield', 0], ['Croydon', 3], ['Burwood', 5], ['Strathfield', 8], ['Homebush', 10]], mine: 1, off: 4 };
-const legAS = { mode: 'train', line: 'T1', tripId: 'T1.three', stopId: 'ASH', toStopId: 'STR', from: 'Ashfield Station', to: 'Strathfield Station', planned: iso(at(0)), arrPlanned: iso(at(8)), fromPlatform: 'Platform 3', towards: 'Penrith Station' };
+// Parramatta to Chatswood, one stop.
+const T1s = { line: 'T1', stops: [['Croydon', -2], ['Parramatta', 0], ['Chatswood', 3], ['Homebush', 5]], mine: 1, off: 2 };
+const legBS = { mode: 'train', line: 'T1', tripId: 'T1.short', stopId: 'BWD', toStopId: 'STR', from: 'Parramatta Station', to: 'Chatswood Station', planned: iso(at(0)), arrPlanned: iso(at(3)), fromPlatform: 'Platform 2', towards: 'Penrith Station' };
+// A 3 stop trip: Ashfield to Chatswood via Croydon and Parramatta.
+const T1three = { line: 'T1', stops: [['Summer Hill', -2], ['Ashfield', 0], ['Croydon', 3], ['Parramatta', 5], ['Chatswood', 8], ['Homebush', 10]], mine: 1, off: 4 };
+const legAS = { mode: 'train', line: 'T1', tripId: 'T1.three', stopId: 'ASH', toStopId: 'STR', from: 'Ashfield Station', to: 'Chatswood Station', planned: iso(at(0)), arrPlanned: iso(at(8)), fromPlatform: 'Platform 3', towards: 'Penrith Station' };
 
 /**
  * Replays a trip with Wake me on, refreshing every 15 s like the app. The phone side is simulated: a scheduled
@@ -169,7 +169,7 @@ function wakeReplay({ run, leg, delay = 0, lateDelay = null, lateFrom = -3, wake
 
 const depOf = (run, d) => at(run.stops[run.off - 1][1]) + d * 60000;
 
-for (const [name, run, leg] of [['Burwood to Strathfield (one stop)', T1s, legBS], ['Ashfield to Strathfield (3 stops)', T1three, legAS]]) {
+for (const [name, run, leg] of [['Parramatta to Chatswood (one stop)', T1s, legBS], ['Ashfield to Chatswood (3 stops)', T1three, legAS]]) {
   for (const delay of [0, 3, -1]) {
     test(`wake me, ${name}, ${delay === 0 ? 'on time' : delay > 0 ? delay + ' min late' : 'early'}: rings once as the train leaves the stop before`, () => {
       const r = wakeReplay({ run, leg, delay });
@@ -208,7 +208,7 @@ test('wake me turned on after the moment (already past the stop before) rings at
   assert.equal(wakes.length, 1);
   assert.equal(wakes[0].by, 'app');
   assert.ok(wakes[0].t >= at(6) && wakes[0].t <= at(6) + 15000);
-  assert.match(wakes[0].title, /^Wake up, Strathfield is next/);
+  assert.match(wakes[0].title, /^Wake up, Chatswood is next/);
 });
 
 test('wake me turned off before it rings cancels the alarm', () => {
@@ -226,34 +226,34 @@ test('wake time without a live feed: 2 minutes before arrival', () => {
 
 // ---------- 5: Missed connection ----------
 
-const legA = { mode: 'train', line: 'T2', tripId: 'T2.run1', stopId: 'ASH3', toStopId: 'RDF3', toParent: '201510', from: 'Ashfield Station', to: 'Redfern Station', planned: iso(at(0)), arrPlanned: iso(at(13)), fromPlatform: 'Platform 3' };
-const legB = { mode: 'train', line: 'T4', tripId: 'T4.run1', stopId: 'RDF9', toStopId: 'KXS1', toParent: '201110', from: 'Redfern Station', to: 'Kings Cross Station', planned: iso(at(19)), arrPlanned: iso(at(28)), fromPlatform: 'Platform 9', walkBefore: 3 };
-const T2 = { line: 'T2', stops: [['Ashfield', 0], ['Newtown', 9], ['Redfern', 13], ['Central', 16]], mine: 0, off: 2 };
-const T4 = { line: 'T4', stops: [['Wolli Creek', 12], ['Redfern', 19], ['Kings Cross', 28]], mine: 1, off: 2 };
+const legA = { mode: 'train', line: 'T2', tripId: 'T2.run1', stopId: 'ASH3', toStopId: 'RDF3', toParent: '212110', from: 'Ashfield Station', to: 'Epping Station', planned: iso(at(0)), arrPlanned: iso(at(13)), fromPlatform: 'Platform 3' };
+const legB = { mode: 'train', line: 'T4', tripId: 'T4.run1', stopId: 'RDF9', toStopId: 'KXS1', toParent: '202210', from: 'Epping Station', to: 'Bondi Junction Station', planned: iso(at(19)), arrPlanned: iso(at(28)), fromPlatform: 'Platform 9', walkBefore: 3 };
+const T2 = { line: 'T2', stops: [['Ashfield', 0], ['Newtown', 9], ['Epping', 13], ['Central', 16]], mine: 0, off: 2 };
+const T4 = { line: 'T4', stops: [['Wolli Creek', 12], ['Epping', 19], ['Bondi Junction', 28]], mine: 1, off: 2 };
 
 test('missed change: detected from live times, planned from the change station to the end', () => {
   // T2 is 6 min late: in at 19, plus a 3 min walk, misses the 19 T4.
   const t = at(5);
   const s = live.computeLive([legA, legB], [feed(T2, 6, t), feed(T4, 0, t)], t, null);
-  const m = smart.missedConn([legA, legB], s, { id: '201110', name: 'Kings Cross Station' });
+  const m = smart.missedConn([legA, legB], s, { id: '202210', name: 'Bondi Junction Station' });
   assert.ok(m);
   assert.equal(m.i, 0);
-  assert.equal(m.fromId, '201510', 'the station, not one platform');
-  assert.equal(m.toId, '201110');
+  assert.equal(m.fromId, '212110', 'the station, not one platform');
+  assert.equal(m.toId, '202210');
   assert.equal(m.readyAt, at(22));
-  assert.deepEqual(smart.missedPlanLegs(m), [{ f: '201510', fn: 'Redfern Station', t: '201110', tn: 'Kings Cross Station', a: 1 }]);
+  assert.deepEqual(smart.missedPlanLegs(m), [{ f: '212110', fn: 'Epping Station', t: '202210', tn: 'Bondi Junction Station', a: 1 }]);
   // On time: no miss.
   const s2 = live.computeLive([legA, legB], [feed(T2, 0, t), feed(T4, 0, t)], t, null);
   assert.equal(smart.missedConn([legA, legB], s2, null), null);
 });
 
 const opt = (line, depMin, tripId, extra = {}) => ({ leave: iso(at(depMin)), board: iso(at(depMin)), arrive: iso(at(depMin + 9)), durationMin: 9, changes: 0, live: true,
-  legs: [{ kind: 'transit', mode: 'train', line, tripId, from: 'Redfern Station', fromPlatform: 'Platform 9', to: 'Kings Cross Station', planned: iso(at(depMin)), estimated: iso(at(depMin)), realtime: true, durationMin: 9, arrPlanned: iso(at(depMin + 9)), fromParent: '201510', toParent: '201110', ...extra }] });
+  legs: [{ kind: 'transit', mode: 'train', line, tripId, from: 'Epping Station', fromPlatform: 'Platform 9', to: 'Bondi Junction Station', planned: iso(at(depMin)), estimated: iso(at(depMin)), realtime: true, durationMin: 9, arrPlanned: iso(at(depMin + 9)), fromParent: '212110', toParent: '202210', ...extra }] });
 
 test('next option: never the train you are missing, never one you cannot reach, the first after that', () => {
   const t = at(5);
   const s = live.computeLive([legA, legB], [feed(T2, 6, t), feed(T4, 0, t)], t, null);
-  const m = smart.missedConn([legA, legB], s, { id: '201110', name: 'Kings Cross Station' });
+  const m = smart.missedConn([legA, legB], s, { id: '202210', name: 'Bondi Junction Station' });
   // 19 is the train being missed, 21 leaves before you reach the platform at 22, so the 25 T8 is the next option.
   const sorted = [opt('T4', 19, 'T4.run1'), opt('T4', 21, 'T4.runX'), opt('T8', 25, 'T8.run1'), opt('T4', 34, 'T4.run2')];
   assert.equal(smart.pickNextOption(sorted, m).legs[0].tripId, 'T8.run1');
@@ -264,7 +264,7 @@ test('next option: never the train you are missing, never one you cannot reach, 
 test('switch to this: the change stays, the rest is the new service, its alerts can fire again', () => {
   const t = at(5);
   const s = live.computeLive([legA, legB], [feed(T2, 6, t), feed(T4, 0, t)], t, null);
-  const m = smart.missedConn([legA, legB], s, { id: '201110', name: 'Kings Cross Station' });
+  const m = smart.missedConn([legA, legB], s, { id: '202210', name: 'Bondi Junction Station' });
   const next = smart.legsOf(opt('T8', 25, 'T8.run1'), short);
   const g = { id: 'g1', legs: [legA, legB], alerted: { conn0: 1, off0: 1, off1: 1, wake1: 1, wake0: 1 }, wakeSet: { 0: at(9), 1: at(27) }, rode: { 0: at(19) } };
   const n = smart.switchLegs(g, m, next);
@@ -272,7 +272,7 @@ test('switch to this: the change stays, the rest is the new service, its alerts 
   assert.equal(n.legs[0], legA);
   assert.equal(n.legs[1].tripId, 'T8.run1');
   assert.equal(n.legs[1].walkBefore, 3, 'keeps the walk between platforms');
-  assert.equal(n.legs[1].toParent, '201110');
+  assert.equal(n.legs[1].toParent, '202210');
   assert.deepEqual(Object.keys(n.alerted).sort(), ['off0', 'wake0'], 'conn0, off1 and wake1 can fire for the new train');
   assert.deepEqual(Object.keys(n.wakeSet), ['0']);
   // With the new train the change is fine.

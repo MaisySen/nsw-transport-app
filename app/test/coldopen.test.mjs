@@ -167,7 +167,7 @@ test('the poller takes a run\'s own next wait once (the quick ask), then the nor
 });
 
 test('the commute card\'s trip for now: Home to Work in the morning, Work to Home after; none without both places', () => {
-  const home = { id: '213510', name: 'Strathfield Station' }, work = { id: '201110', name: 'Kings Cross Station' };
+  const home = { id: '206710', name: 'Chatswood Station' }, work = { id: '202210', name: 'Bondi Junction Station' };
   assert.deepEqual(C.commutePlanOf({ home, work }, 'toWork'), { from: home, to: work });
   assert.deepEqual(C.commutePlanOf({ home, work }, 'toHome'), { from: work, to: home });
   assert.equal(C.commutePlanOf({ home }, 'toWork'), null);

@@ -52,7 +52,7 @@ test('a saved trip deleted here is hidden until the server forgets it', () => {
 });
 
 test('same ends either way round', () => {
-  const A = { id: '213510' }, B = { id: '201110' }, C = { id: '200060' };
+  const A = { id: '206710' }, B = { id: '202210' }, C = { id: '200060' };
   assert.equal(h.sameEnds({ from: A, to: B }, { from: A, to: B }), true);
   assert.equal(h.sameEnds({ from: B, to: A }, { from: A, to: B }), true);
   assert.equal(h.sameEnds({ from: A, to: C }, { from: A, to: B }), false);

@@ -20,15 +20,15 @@ async function load(rel) {
 }
 const w = await load('src/lib/whyLateCore.ts');
 
-// Shapes as the server sent them on 25 Oct 2026 (Strathfield and Central boards, Strathfield to Kings Cross trip).
+// Shapes as the server sent them on 25 Oct 2026 (Chatswood and Central boards, Chatswood to Bondi Junction trip).
 const U = (id) => `https://transportnsw.info/alerts/details#/${id}`;
 const board = [
   { id: 'c5212ba1', title: 'Eastern Suburbs & Illawarra Line, South Coast Line', url: U('c5212ba1'), priority: 'normal', lines: ['T4'] },
   { id: 'ems-79751', title: 'Trains run to a changed timetable and stopping pattern. City Circle trackwork may also affect how you travel', url: U('ems-79751'), priority: 'normal', lines: ['T4'] },
   { id: '6ac672a5', title: 'Running late', url: U('6ac672a5'), priority: 'normal', lines: ['T4'] },
-  { id: 'station', title: 'Station Update - Strathfield', url: U('station'), priority: 'normal' },
+  { id: 'station', title: 'Station Update - Chatswood', url: U('station'), priority: 'normal' },
   { id: 'ems-169', title: 'Platforms may change. Check indicator screens and listen for announcements', priority: 'veryLow' },
-  { id: 'lift', title: 'Redfern Station Lift 7 between the southern concourse and Platform 10 is not available', url: U('lift'), priority: 'low' },
+  { id: 'lift', title: 'Epping Station Lift 7 between the southern concourse and Platform 10 is not available', url: U('lift'), priority: 'low' },
 ];
 const full = w.alertTexts([{ items: [
   { title: 'Eastern Suburbs & Illawarra Line, South Coast Line Allow plenty of extra travel time in both directions due to an incident requiring emergency services at Allawah earlier. Stops and platforms may change at short notice.', url: U('c5212ba1') },
@@ -45,13 +45,13 @@ test('alert ids from links, linked alerts from ids', () => {
 
 test('causes: due to, and alerts that start with the cause', () => {
   assert.equal(w.causeOf('Allow extra travel time due to an incident requiring emergency services at Allawah earlier. Stops may change.'), 'incident requiring emergency services at Allawah');
-  assert.equal(w.causeOf('Trains are delayed due to signal repairs at Redfern.'), 'signal repairs at Redfern');
+  assert.equal(w.causeOf('Trains are delayed due to signal repairs at Epping.'), 'signal repairs at Epping');
   assert.equal(w.causeOf('Police operation at Central. Allow extra travel time.'), 'Police operation at Central');
-  assert.equal(w.causeOf('Buses replace trains between Lidcombe and Strathfield due to trackwork, please allow extra time'), 'trackwork');
+  assert.equal(w.causeOf('Buses replace trains between Lidcombe and Chatswood due to trackwork, please allow extra time'), 'trackwork');
   assert.equal(w.causeOf('Trains run to a changed timetable and stopping pattern. City Circle trackwork may also affect how you travel'), '');
   assert.equal(w.causeOf('Running late'), '');
-  assert.equal(w.causeOf('Station Update - Strathfield'), '');
-  assert.equal(w.causeOf('Delays due to a lift outage at Redfern'), '');
+  assert.equal(w.causeOf('Station Update - Chatswood'), '');
+  assert.equal(w.causeOf('Delays due to a lift outage at Epping'), '');
   assert.equal(w.causeOf(''), '');
 });
 

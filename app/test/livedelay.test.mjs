@@ -1,6 +1,6 @@
 // Live times on the trip card and screen: realtime over the timetable, a train that is late but not there yet, tight
 // and missed changes, and a card that says when its times are from. The case is Bidur's trip on 25 Oct 2026:
-// Strathfield to Redfern on a T1 that ran 4 minutes late, then a T4 to Kings Cross with 4 minutes planned to change.
+// Chatswood to Epping on a T1 that ran 4 minutes late, then a T4 to Milsons Point with 4 minutes planned to change.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -29,15 +29,15 @@ const at = (min) => T0 + min * 60000;
 const iso = (t) => new Date(t).toISOString();
 const sec = (t) => new Date(t).toISOString().slice(11, 19);
 
-// T1: Strathfield 8:10, Redfern 8:22. T4: Redfern 8:26, Kings Cross 8:36.
-const T1 = { line: 'T1', stops: [['Lidcombe', -6, -33.865, 151.047], ['Strathfield', 0, -33.8713, 151.0941], ['Redfern', 12, -33.8919, 151.1982], ['Central', 15, -33.8832, 151.2063]], mine: 1, off: 2 };
-const T4 = { line: 'T4', stops: [['Sydenham', 22, -33.9149, 151.1677], ['Redfern', 16, -33.8923, 151.1993], ['Central', 18, -33.8832, 151.2063], ['Martin Place', 21, -33.8679, 151.2111], ['Kings Cross', 26, -33.8742, 151.2218]], mine: 1, off: 4 };
+// T1: Chatswood 8:10, Epping 8:22. T4: Epping 8:26, Milsons Point 8:36.
+const T1 = { line: 'T1', stops: [['Lidcombe', -6, -33.865, 151.047], ['Chatswood', 0, -33.8713, 151.0941], ['Epping', 12, -33.8919, 151.1982], ['Central', 15, -33.8832, 151.2063]], mine: 1, off: 2 };
+const T4 = { line: 'T4', stops: [['Sydenham', 22, -33.9149, 151.1677], ['Epping', 16, -33.8923, 151.1993], ['Central', 18, -33.8832, 151.2063], ['Martin Place', 21, -33.8679, 151.2111], ['Milsons Point', 26, -33.8742, 151.2218]], mine: 1, off: 4 };
 T4.stops[0][1] = 13;
 const legs = [
-  { mode: 'train', line: 'T1', tripId: 'T1.a', stopId: 'STR', toStopId: 'RDF', from: 'Strathfield Station', to: 'Redfern Station', planned: iso(at(0)), arrPlanned: iso(at(12)), fromPlatform: 'Platform 2', towards: 'Central Station', color: '#F99D1C' },
-  { mode: 'train', line: 'T4', tripId: 'T4.a', stopId: 'RDF11', toStopId: 'KXS', from: 'Redfern Station', to: 'Kings Cross Station', planned: iso(at(16)), arrPlanned: iso(at(26)), fromPlatform: 'Platform 11', towards: 'Bondi Junction Station', color: '#005AA3' },
+  { mode: 'train', line: 'T1', tripId: 'T1.a', stopId: 'STR', toStopId: 'RDF', from: 'Chatswood Station', to: 'Epping Station', planned: iso(at(0)), arrPlanned: iso(at(12)), fromPlatform: 'Platform 2', towards: 'Central Station', color: '#F99D1C' },
+  { mode: 'train', line: 'T4', tripId: 'T4.a', stopId: 'RDF11', toStopId: 'KXS', from: 'Epping Station', to: 'Milsons Point Station', planned: iso(at(16)), arrPlanned: iso(at(26)), fromPlatform: 'Platform 11', towards: 'Bondi Junction Station', color: '#005AA3' },
 ];
-const trip = { legs, to: { id: 'KXS', name: 'Kings Cross Station, Potts Point' } };
+const trip = { legs, to: { id: 'KXS', name: 'Milsons Point Station, Potts Point' } };
 
 /**
  * /api/service for a run at time t. delay: minutes the feed knows about. lag: minutes the train is really behind the
@@ -63,7 +63,7 @@ function feed(run, t, { delay = 0, lag = 0, vehicle = false, shift = 0 } = {}) {
   return { kind: 'service', live: true, line: run.line, mode: 'train', tripId: run === T1 ? 'T1.a' : 'T4.a', mineIndex: run.mine, alightIndex: run.off, nextIndex, stops, ...(veh ? { vehicle: veh } : {}) };
 }
 
-test('realtime first: a T1 4 min late counts to 8:26 at Redfern, and a 0 minute change is tight', () => {
+test('realtime first: a T1 4 min late counts to 8:26 at Epping, and a 0 minute change is tight', () => {
   const t = at(5);
   const s = live.computeLive(legs, [feed(T1, t, { delay: 4 }), feed(T4, t)], t, { rode: { 0: at(16) } });
   assert.equal(s.done, false);
@@ -72,8 +72,8 @@ test('realtime first: a T1 4 min late counts to 8:26 at Redfern, and a 0 minute 
   assert.equal(s.conns[0].risk, 'tight');
   const c = cardFor(trip, s, t);
   assert.equal(c.legArrives, at(16));
-  assert.equal(c.warning, 'Tight change at Redfern');
-  assert.equal(c.destination, 'Kings Cross', 'no "Station", no suburb');
+  assert.equal(c.warning, 'Tight change at Epping');
+  assert.equal(c.destination, 'Milsons Point', 'no "Station", no suburb');
   assert.equal(c.arrival, at(26), 'the T4 is still catchable, so 8:36 stands');
 });
 
@@ -99,19 +99,19 @@ test('the T4 leaving before the T1 gets in: change at risk, and the arrival move
   assert.equal(c2.arrival, at(31));
 });
 
-test('25 Oct, 8:24am: the stop list moved past Redfern by the clock, the train had not; the card stays on the T1', () => {
-  // The feed has no delay for the T1 (estimates are the timetable), so its next stop passes Redfern at 8:22:20.
+test('25 Oct, 8:24am: the stop list moved past Epping by the clock, the train had not; the card stays on the T1', () => {
+  // The feed has no delay for the T1 (estimates are the timetable), so its next stop passes Epping at 8:22:20.
   // The train is really 4 minutes behind, and its position says so.
   const t = at(14);
   const f1 = feed(T1, t, { delay: 0, lag: 4, vehicle: true });
-  assert.ok(f1.nextIndex > f1.alightIndex, 'the stop list alone says the T1 is past Redfern');
+  assert.ok(f1.nextIndex > f1.alightIndex, 'the stop list alone says the T1 is past Epping');
   const s = live.computeLive(legs, [f1, feed(T4, t)], t, { rode: { 0: at(12) } });
   assert.equal(s.cur, 0, 'still on the T1, not "T4 leaves 8:26am"');
   assert.equal(s.phase, 'ride');
   assert.ok(s.L2[0].arr >= t + 30000, 'counts to a time still ahead, never "Get off now" before the train is there');
   const c = cardFor(trip, s, t);
   assert.equal(c.line, 'T1');
-  assert.equal(c.getOffAt, 'Redfern');
+  assert.equal(c.getOffAt, 'Epping');
   // Without the train's position the stop list is all there is.
   const s2 = live.computeLive(legs, [feed(T1, t), feed(T4, t)], t, { rode: { 0: at(12) } });
   assert.equal(s2.cur, 1);
@@ -129,16 +129,16 @@ test('a live feed that still shows the train before your stop holds the arrival 
 
 test('vehicleShort: only a fresh position clearly before the stop', () => {
   const d = feed(T1, at(6), { vehicle: true });
-  assert.equal(live.vehicleShort(d, 1, 2), true, 'halfway to Redfern');
+  assert.equal(live.vehicleShort(d, 1, 2), true, 'halfway to Epping');
   const near = { ...d, vehicle: { lat: -33.8918, lon: 151.1975, ageS: 10 } };
-  assert.equal(live.vehicleShort(near, 1, 2), false, 'at Redfern');
+  assert.equal(live.vehicleShort(near, 1, 2), false, 'at Epping');
   const old = { ...d, vehicle: { ...d.vehicle, ageS: 400 } };
   assert.equal(live.vehicleShort(old, 1, 2), false, 'position too old');
   assert.equal(live.vehicleShort({ ...d, vehicle: undefined }, 1, 2), false);
 });
 
 test('a change already missed: no countdown to the train that left, and the trip does not end with it', () => {
-  // The T1 got to Redfern at 8:29 (rode records it); the T4 left at 8:26.
+  // The T1 got to Epping at 8:29 (rode records it); the T4 left at 8:26.
   const t = at(20);
   const f4 = feed(T4, t);
   const s = live.computeLive(legs, [null, f4], t, { rode: { 0: at(19) } });
@@ -154,19 +154,19 @@ test('a change already missed: no countdown to the train that left, and the trip
   const c2 = cardFor(trip, s, t, { alt: { line: 'T4', dep: at(23), arr: at(33) } });
   assert.equal(c2.departs, at(23));
   assert.equal(c2.arrival, at(33));
-  // When the missed T4 reaches Kings Cross the trip is still on.
+  // When the missed T4 reaches Milsons Point the trip is still on.
   const t2 = at(27);
   const s2 = live.computeLive(legs, [null, feed(T4, t2)], t2, { rode: { 0: at(19) } });
   assert.equal(s2.done, false);
   const w = live.liveWords(legs, s, t, { clock: (x) => sec(x), short: (n) => String(n).replace(/ Station$/, ''), plat: (p) => p });
-  assert.match(w.title, /Change at risk at Redfern/);
+  assert.match(w.title, /Change at risk at Epping/);
 });
 
 test('the card says when its times are from once the app cannot refresh it', () => {
   const t = at(5);
   const s = live.computeLive(legs, [feed(T1, t, { delay: 4 }), feed(T4, t)], t);
   const c = cardFor(trip, s, t, { asOf: at(5) });
-  assert.equal(c.warning, 'Tight change at Redfern. Updated 8:15am');
+  assert.equal(c.warning, 'Tight change at Epping. Updated 8:15am');
   assert.equal(cardWarning(null, null, at(11)), 'Updated 8:21am. Open the app for live times');
   assert.equal(cardWarning(null, null, null), null);
   const c2 = cardFor(trip, live.computeLive(legs, [feed(T1, t), feed(T4, t)], t), t, { updated: at(5) });

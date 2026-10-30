@@ -32,11 +32,11 @@ function pack(times = [[-3, 0, 0, 0], [2, 1, 1, 1], [5, 0, 0, 0], [9, 1, 1, 1], 
   let last = S(times[0][0]);
   for (const [m, l, h, p] of times) { rows.push(S(m) - last, l, h, p); last = S(m); }
   return {
-    v: 1, stop: { id: '213510', name: 'Strathfield Station' }, ver: 3, builtAt: '2026-10-25T18:00:00Z', generatedAt: NOW - 3600000,
+    v: 1, stop: { id: '215020', name: 'Parramatta Station' }, ver: 3, builtAt: '2026-10-25T18:00:00Z', generatedAt: NOW - 3600000,
     base: S(times[0][0]), until: S(0) + 40 * 3600, days: ['20261026', '20261027'],
-    lines: [['T9', 'train', '#D11F2F', 'Train', 'Hornsby to Gordon'], ['415', 'bus', '#00B5EF', 'Bus', 'Strathfield to Chiswick']],
-    heads: ['Hornsby', 'Chiswick', 'Gordon'],
-    plats: [['2135223', 'Platform 3', 'Strathfield Station Platform 3'], ['2135215', 'Stand E', 'Strathfield Station, Albert Rd, Stand E']],
+    lines: [['T9', 'train', '#D11F2F', 'Train', 'Hornsby to Gordon'], ['415', 'bus', '#00B5EF', 'Bus', 'Parramatta to Abbotsford']],
+    heads: ['Hornsby', 'Abbotsford', 'Gordon'],
+    plats: [['2135223', 'Platform 3', 'Parramatta Station Platform 3'], ['2135215', 'Stand E', 'Parramatta Station, Albert Rd, Stand E']],
     rows,
   };
 }
@@ -57,7 +57,7 @@ test('a pack reads into board rows from now on, in order, as timetable times wit
 test('trains run with no passengers are left out', () => {
   const p = pack(); p.heads.push('Empty Train');
   p.rows[p.rows.length - 2] = 3;
-  assert.deepEqual(P.packDepartures(p, NOW).map((r) => r.dest), ['Chiswick', 'Hornsby', 'Chiswick']);
+  assert.deepEqual(P.packDepartures(p, NOW).map((r) => r.dest), ['Abbotsford', 'Hornsby', 'Abbotsford']);
 });
 
 test('one mode, a row cap, and bus taking coaches as the server does', () => {
@@ -69,7 +69,7 @@ test('one mode, a row cap, and bus taking coaches as the server does', () => {
 
 test('a pack board is a departures answer marked fromPack; an empty one has no rows', () => {
   const b = P.packBoard(pack(), NOW, 'bus');
-  assert.equal(b.kind, 'departures'); assert.equal(b.askedMode, 'bus'); assert.equal(b.stop.name, 'Strathfield Station');
+  assert.equal(b.kind, 'departures'); assert.equal(b.askedMode, 'bus'); assert.equal(b.stop.name, 'Parramatta Station');
   assert.ok(P.isPackBoard(b)); assert.ok(!P.isPackBoard({ kind: 'departures', items: [] }));
   assert.deepEqual(b.alerts, []);
   assert.equal(P.packBoard(pack(), NOW + 2 * 3600000).items.length, 0);
@@ -105,20 +105,20 @@ test('first paint: a live copy from the last 10 minutes, else the pack, else an 
 
 test('which stops keep a pack: starred, saved trips, home and work, recent; not addresses; no repeats; capped', () => {
   const st = {
-    starred: [{ id: '213510' }, { id: '200060' }],
+    starred: [{ id: '215020' }, { id: '200060' }],
     myTrips: [{ from: { id: '2135223' }, to: { id: '206710' }, legs: [{ from: { id: '2135223' } }, { from: { id: '2000441' } }] }],
     places: { home: { id: '-33.87,151.21' }, work: { id: '209573' } },
     recents: [{ id: '200060' }, { id: '278020' }],
     recentTrips: [{ from: { id: 'streetID:123:Some St' }, to: { id: '1' } }],
   };
-  assert.deepEqual(P.packStops(st), ['213510', '200060', '2135223', '2000441', '209573', '278020']);
+  assert.deepEqual(P.packStops(st), ['215020', '200060', '2135223', '2000441', '209573', '278020']);
   assert.equal(P.packStops(st, 3).length, 3);
   assert.deepEqual(P.packStops({}), []);
 });
 
 test('departure cache keys name the stop and mode a pack is for; other keys none', () => {
-  assert.deepEqual(P.packTarget('offline:dep:213510'), { stop: '213510', mode: null });
-  assert.deepEqual(P.packTarget('offline:dep:213510|bus'), { stop: '213510', mode: 'bus' });
+  assert.deepEqual(P.packTarget('offline:dep:215020'), { stop: '215020', mode: null });
+  assert.deepEqual(P.packTarget('offline:dep:215020|bus'), { stop: '215020', mode: 'bus' });
   assert.equal(P.packTarget('offline:trip:a>b'), null);
   assert.equal(P.packTarget(undefined), null);
 });

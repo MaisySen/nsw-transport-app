@@ -25,10 +25,10 @@ async function load(rel) {
 test('placeholder asks the question; To names where you got on only when it fits', async () => {
   const { pickerPlaceholder, PLACEHOLDER_MAX } = await load('src/lib/pickerCore.ts');
   assert.equal(pickerPlaceholder('from'), 'Where do you get on?');
-  assert.equal(pickerPlaceholder('to', 'Kings Cross'), 'Kings Cross to where?');
+  assert.equal(pickerPlaceholder('to', 'Bondi Junction'), 'Bondi Junction to where?');
   assert.equal(pickerPlaceholder('to', 'Sydney Olympic Park Wharf Ferry'), 'Where do you get off?');
   assert.equal(pickerPlaceholder('to'), 'Where do you get off?');
-  for (const n of ['Central', 'Kings Cross', 'Strathfield', 'Macquarie University']) assert.ok(pickerPlaceholder('to', n).length <= PLACEHOLDER_MAX, n);
+  for (const n of ['Central', 'Bondi Junction', 'Chatswood', 'Macquarie University']) assert.ok(pickerPlaceholder('to', n).length <= PLACEHOLDER_MAX, n);
 });
 
 test('search fields never capitalise, correct or spell check, and show a Search key', async () => {
