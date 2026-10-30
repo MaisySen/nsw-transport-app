@@ -58,3 +58,18 @@ test('the Dynamic Island draws the same views the audit checks', () => {
   assert.match(c, /#if !SNAPSHOT_TESTS\n@main/);
   assert.match(read('app/targets/watch/TransportWatchApp.swift'), /#if !SNAPSHOT_TESTS\n@main/);
 });
+
+test('fixes the audit found stay in: compact island countdown, Lock Screen words, Watch rows', () => {
+  const t = read('app/targets/widget/TripLiveActivity.swift');
+  assert.match(t, /struct IslandCompactTrailing[\s\S]*?CompactCountdown\(date: state\.departs\)/);
+  assert.match(t, /statusRow\(platform: true, detail: true\)[\s\S]*statusRow\(platform: false, detail: false\)/);
+  assert.match(t, /\.frame\(maxWidth: 100, alignment: \.trailing\)/);
+  const l = read('app/targets/widget/LiveTripActivityWidget.swift');
+  assert.match(l, /card\(lines: 2\)\s*card\(lines: 1\)/);
+  assert.match(l, /\.frame\(maxWidth: 100, alignment: \.trailing\)/);
+  const w = read('app/targets/watch/TransportWatchApp.swift');
+  assert.match(w, /\.strikethrough\(service\.cancelled\)\s*\.lineLimit\(1\)/);
+  assert.match(w, /Text\(p\)\.fontWeight\(\.medium\)\.lineLimit\(1\)\.minimumScaleFactor\(0\.8\)/);
+  const n = read('app/targets/widget/TransportWidgets.swift');
+  assert.match(n, /Text\(Clock\.time\(t\.leave\)\)[\s\S]{0,200}\.fixedSize\(\)/);
+});

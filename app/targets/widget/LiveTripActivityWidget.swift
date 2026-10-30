@@ -225,7 +225,7 @@ struct LiveTripLockCard: View {
                         .lineLimit(2)
                         .minimumScaleFactor(0.7)
                         .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 120, alignment: .trailing)
+                        .frame(maxWidth: 100, alignment: .trailing)
                 }
                 .layoutPriority(1)
             }

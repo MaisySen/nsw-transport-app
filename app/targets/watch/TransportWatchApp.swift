@@ -320,16 +320,16 @@ struct ServiceRow: View {
             LineBadge(line: service.line, colorHex: service.colorHex)
             VStack(alignment: .leading, spacing: 1) {
                 // One line each: "Cancelled" and "4:50pm" shrink a little instead of wrapping ("Can-celled"), the platform
-                // never wraps ("Plat / 2"), the destination gives way (native audit, 30 Oct).
+                // never wraps ("Plat / 2"), the destination gives way whole (native audit, 30 Oct).
                 Text(service.cancelled ? "Cancelled" : Clock.countdown(service.time, from: now))
                     .font(.title3.weight(.semibold).monospacedDigit())
                     .foregroundStyle(service.cancelled ? Color.red : Color.primary)
                     .strikethrough(service.cancelled)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                HStack(spacing: 4) {
-                    if let p = WText.platform(service.platform) { Text(p).fontWeight(.medium).lineLimit(1).fixedSize() }
-                    if let d = service.dest, !d.isEmpty { Text(WText.short(d)).lineLimit(1) }
+                    .minimumScaleFactor(0.5)
+                ViewThatFits(in: .horizontal) {
+                    serviceDetail(dest: true)
+                    serviceDetail(dest: false)
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -343,6 +343,19 @@ struct ServiceRow: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken)
+    }
+
+    /// The platform shrinks a little rather than wrap; the destination shows when at least 40 pt is left for it,
+    /// never as a one letter sliver (native audit, 30 Oct).
+    private func serviceDetail(dest: Bool) -> some View {
+        HStack(spacing: 4) {
+            if let p = WText.platform(service.platform) {
+                Text(p).fontWeight(.medium).lineLimit(1).minimumScaleFactor(0.8).layoutPriority(1)
+            }
+            if dest, let d = service.dest, !d.isEmpty {
+                Text(WText.short(d)).lineLimit(1).frame(minWidth: 40, idealWidth: 40, maxWidth: .infinity, alignment: .leading)
+            }
+        }
     }
 
     /// "T1 to Central, 4 min, Plat 2, live" for VoiceOver.

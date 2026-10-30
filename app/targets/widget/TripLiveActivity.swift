@@ -115,7 +115,7 @@ struct LockScreenCard: View {
     var attrs: TripActivityAttributes
     var state: TripActivityAttributes.ContentState
 
-    /// The countdown takes at most 120 pt (two lines when it needs them) and the left side gives way: "to <where>" may take two lines, then the
+    /// The countdown takes at most 100 pt (two lines when it needs them) and the left side gives way: "to <where>" may take two lines, then the
     /// detail goes, then the platform (native audit, 30 Oct: "in 6 minut…", "On / time" wrapping, "to Macquar…").
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -133,7 +133,7 @@ struct LockScreenCard: View {
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
                     .multilineTextAlignment(.trailing)
-                    .frame(maxWidth: 120, alignment: .trailing)
+                    .frame(maxWidth: 100, alignment: .trailing)
                 Text(Clock.time(state.departs)).font(.caption).foregroundStyle(.secondary).fixedSize()
             }
             .layoutPriority(1)
