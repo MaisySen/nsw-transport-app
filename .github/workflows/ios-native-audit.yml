@@ -93,8 +93,8 @@ jobs:
           "$(find /tmp/xg -type f -name xcodegen -perm -u+x | head -1)" generate
       - name: Watch simulator
         run: |
-          # The image's watchOS runtime does not match Xcode 27.1 (the device boots with no architecture), so the
-          # matching runtime is downloaded first; that adds a few minutes.
+          # Make sure Xcode's simulator services are set up and the watchOS runtime for this Xcode is there.
+          sudo xcodebuild -runFirstLaunch 2>&1 | tail -2 || true
           sudo xcodebuild -downloadPlatform watchOS 2>&1 | tail -3 || true
           xcrun simctl list runtimes | grep -i watch || true
           xcrun simctl list devices available -j > /tmp/devs.json
@@ -112,11 +112,32 @@ jobs:
       - name: Audit (Apple Watch app and complications)
         run: |
           mkdir -p "$GITHUB_WORKSPACE/out/watch"
-          TEST_RUNNER_SNAPSHOT_DIR="$GITHUB_WORKSPACE/out/watch" TEST_RUNNER_TZ=Australia/Sydney \
-          xcodebuild test -project NativeAudit.xcodeproj -scheme WatchAuditTests -destination "id=$(cat /tmp/sim-id.txt)" \
-            -derivedDataPath dd CODE_SIGNING_ALLOWED=NO > "$GITHUB_WORKSPACE/out/watch-test.log" 2>&1 \
-            || { grep -E "error:|DOES NOT FIT|failed" "$GITHUB_WORKSPACE/out/watch-test.log" | sort -u | head -150; touch "$GITHUB_WORKSPACE/out/FAILED-watch"; }
-          grep -E "native audit:" "$GITHUB_WORKSPACE/out/watch-test.log" | head -3 || true
+          LOG="$GITHUB_WORKSPACE/out/watch-test.log"
+          run_tests() {
+            TEST_RUNNER_SNAPSHOT_DIR="$GITHUB_WORKSPACE/out/watch" TEST_RUNNER_TZ=Australia/Sydney \
+            xcodebuild test -project NativeAudit.xcodeproj -scheme WatchAuditTests -destination "id=$1" \
+              -derivedDataPath dd CODE_SIGNING_ALLOWED=NO > "$LOG" 2>&1
+          }
+          DEV=$(cat /tmp/sim-id.txt)
+          if ! run_tests "$DEV"; then
+            # Some runners hand Xcode the watch simulator with no runtime ("watchOS Simulator (null)"): start a fresh
+            # device on the same runtime and try once more.
+            if grep -q "Simulator (null)" "$LOG"; then
+              echo "watch simulator had no runtime, retrying on a fresh device"
+              xcrun simctl shutdown all || true
+              RT=$(xcrun simctl list runtimes | grep -o 'com.apple.CoreSimulator.SimRuntime.watchOS-[0-9-]*' | tail -1)
+              for DT in $(xcrun simctl list devicetypes | grep -o 'com.apple.CoreSimulator.SimDeviceType.Apple-Watch[^)]*' | tail -r); do
+                NEW=$(xcrun simctl create "Audit Watch 2" "$DT" "$RT" 2>/dev/null) && break
+              done
+              xcrun simctl boot "$NEW" 2>&1 || true
+              xcrun simctl bootstatus "$NEW" -b > /dev/null || true
+              sleep 20
+              run_tests "$NEW" || { grep -E "error:|DOES NOT FIT|failed" "$LOG" | sort -u | head -150; touch "$GITHUB_WORKSPACE/out/FAILED-watch"; }
+            else
+              grep -E "error:|DOES NOT FIT|failed" "$LOG" | sort -u | head -150; touch "$GITHUB_WORKSPACE/out/FAILED-watch"
+            fi
+          fi
+          grep -E "native audit:" "$LOG" | head -3 || true
           ls "$GITHUB_WORKSPACE/out/watch" | wc -l
       - name: Contact sheets
         if: always()
