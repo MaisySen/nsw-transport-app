@@ -4,6 +4,10 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## System settings (31 Oct, build 210)
+
+Light and dark follow the phone everywhere (app, widgets, Lock Screen, Island, Watch). Text size, Bold Text, Reduce Motion, Reduce Transparency and Increase Contrast are followed. From build 210 the widgets, Live Activities, Siri answers and the Watch follow 24-Hour Time; in the app only the Plan tab trip rows do so far. Calendar leave by works again on build 210 (full access text restored).
+
 ## Home
 
 * **Next trip card** on top, the first card under the title (25 Oct, evening): the big countdown, line badges, platform (for a bus, the stand and stop number), the live label, leave and arrive times and the next two times ("Next 12 min, 19 min"). Drawn in the Line glow look: a 2 pt ring running between the trip's line colours (T4 blue into T1 orange), a glow in those colours and a lifted surface in dark, a soft shadow in light; a solid 1.5 pt line colour border with Reduce Transparency or Increase Contrast. Other cards stay flat. The countdown turns red only once the service has gone or is cancelled. It is your commute when Home and Work are set (home to work in the morning, work to home after midday), otherwise the first trip in your list. Hold a trip and choose Show first to make it the card. See [HOME-REDESIGN.md](HOME-REDESIGN.md).

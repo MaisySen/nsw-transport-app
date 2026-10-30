@@ -177,6 +177,13 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 * Wiring: `prefetchStop` exported and called on press in (Ask, route stops, Opal machines), `useLive` asks again once per opening, the trip list uses `useCountdownNow`, the window background is set through a feature detected `expo-system-ui`.
 * On a device (not done yet): open a stop that nobody has opened for a minute, see "Updated N s ago" then fresh times within about 3 s; touch and hold a stop row in Ask, release, the stop screen opens with departures and no spinner; trip list "1 min" turns to "Now" on the minute; dark mode, push and pop a stop, no white strip.
 
+## System settings and App Store check (31 Oct, before build 210)
+
+* `app/test/compliance210.test.mjs`: native clocks follow 24-Hour Time (no fixed `h:mm` pattern left in the widget, Siri or Watch formatters); privacy manifests on the app and both widget bundles, none of the Watch app's own; Info.plist answers (when in use location only, no encryption, iPhone only, calendar full access text plus the add only text).
+* `app/test/leaveby206.test.mjs`: Calendar leave by full access text (build 208 and 210).
+* Native audit with accessibility size 3, Bold Text and a 24 hour simulator: throwaway branch only (run 41140575117); the standard audit stays default and xxxLarge text, light and dark.
+* On Bidur's phone after 210: Settings > General > Date & Time > 24-Hour Time on, then a widget and a live trip show 17:45 style times; More > Calendar leave by asks for full calendar access and shows a leave by time for an event with a place.
+
 ## Past and upcoming apart (30 Oct, branch next-pastnow)
 
 * `app/test/pastnow.test.mjs`, 21 tests: the split (Earlier header above the first gone row, Now divider above the first service to come, nothing gone, all gone, a gone row ranked under a later trip), card edges at the cut, the divider words ("Now, 5:08pm") and VoiceOver label, the initial scroll (under a see-through header, once per list, never after a drag, not before layout), the open settled by the first rows (a row going on the minute tick never scrolls), muted Left rows (no strikethrough, faded badges), the wiring on the trip screen and the stop board with the rows' own gone rule and no timer or request, and the colours: past text and late text on the past zone, Now band text, text, late and red on the next tint at 4.5:1 or more in all four palettes, live green on the tint no more than 0.35 below its card value, the zones distinct.
