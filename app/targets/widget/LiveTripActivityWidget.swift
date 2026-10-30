@@ -17,45 +17,94 @@ struct LiveTripActivityWidget: Widget {
             let stale = context.isStale
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    WidgetLineBadge(line: s.line, colorHex: s.lineColorHex, mode: s.mode)
-                        .padding(.leading, 4)
+                    LiveTripIslandLeading(state: s)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    MinutesUntil(date: s.countdownTarget, arrived: s.arrived(stale: stale), outdated: s.outdated(stale: stale))
-                        .font(.title3.weight(.semibold))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 80, alignment: .trailing)
+                    LiveTripIslandTrailing(state: s, stale: stale)
                 }
                 DynamicIslandExpandedRegion(.center) {
-                    Text(s.headline(stale: stale)).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                    LiveTripIslandCenter(state: s, stale: stale)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     LiveTripIslandBottom(state: s, stale: stale)
                 }
             } compactLeading: {
-                // Before boarding the line badge; on board just where you get off with a colon ("Rhodes:"), short so
-                // the system clock beside the island stays visible (28 Oct: "Off <station>" and "in 2 minutes" covered it).
-                if s.phase == "ride" && !s.arrived(stale: stale) {
-                    Text(s.compactStation)
-                        .font(.caption.weight(.semibold))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: 64, alignment: .leading)
-                } else {
-                    WidgetLineBadge(line: s.line, colorHex: s.lineColorHex, mode: s.mode)
-                }
+                LiveTripCompactLeading(state: s, stale: stale)
             } compactTrailing: {
-                CompactCountdown(date: s.countdownTarget, arrived: s.arrived(stale: stale), outdated: s.outdated(stale: stale))
-                    .frame(maxWidth: 40, alignment: .trailing)
+                LiveTripCompactTrailing(state: s, stale: stale)
             } minimal: {
-                CompactCountdown(date: s.countdownTarget, arrived: s.arrived(stale: stale), outdated: s.outdated(stale: stale))
-                    .frame(maxWidth: 36)
+                LiveTripMinimal(state: s, stale: stale)
             }
             .widgetURL(URL(string: "nswtransport://go"))
         }
+    }
+}
+
+// The Dynamic Island regions are plain views so the native audit (native-tests/native-audit) renders exactly these.
+
+struct LiveTripIslandLeading: View {
+    var state: LiveTripAttributes.ContentState
+    var body: some View {
+        WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode)
+            .padding(.leading, 4)
+    }
+}
+
+struct LiveTripIslandTrailing: View {
+    var state: LiveTripAttributes.ContentState
+    var stale = false
+    var body: some View {
+        MinutesUntil(date: state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
+            .font(.title3.weight(.semibold))
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .multilineTextAlignment(.trailing)
+            .frame(width: 80, alignment: .trailing)
+    }
+}
+
+struct LiveTripIslandCenter: View {
+    var state: LiveTripAttributes.ContentState
+    var stale = false
+    var body: some View {
+        Text(state.headline(stale: stale)).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+    }
+}
+
+/// Before boarding the line badge; on board just where you get off with a colon ("Rhodes:"), short so the system
+/// clock beside the island stays visible (28 Oct: "Off <station>" and "in 2 minutes" covered it).
+struct LiveTripCompactLeading: View {
+    var state: LiveTripAttributes.ContentState
+    var stale = false
+    var body: some View {
+        if state.phase == "ride" && !state.arrived(stale: stale) {
+            Text(state.compactStation)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: 64, alignment: .leading)
+        } else {
+            WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode)
+        }
+    }
+}
+
+struct LiveTripCompactTrailing: View {
+    var state: LiveTripAttributes.ContentState
+    var stale = false
+    var body: some View {
+        CompactCountdown(date: state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
+            .frame(maxWidth: 40, alignment: .trailing)
+    }
+}
+
+struct LiveTripMinimal: View {
+    var state: LiveTripAttributes.ContentState
+    var stale = false
+    var body: some View {
+        CompactCountdown(date: state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
+            .frame(maxWidth: 36)
     }
 }
 

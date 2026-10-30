@@ -69,3 +69,8 @@ test('build number 210 on version 1.0.0, runtime 1.1.0', () => {
   assert.equal(a.version, '1.0.0');
   assert.equal(a.runtimeVersion, '1.1.0');
 });
+
+test('the Lock Screen rectangle never truncates the minutes, and the status word outranks "1 change"', () => {
+  assert.match(body('private func rectangularBody'), /WaitText\(leave: t\.leave, now: entry\.date\)\.fontWeight\(\.semibold\)\.fixedSize\(\)\.layoutPriority\(2\)/);
+  assert.match(body('private func statusLine'), /Text\(status\(t\)\)[^\n]*\.layoutPriority\(1\)/);
+});

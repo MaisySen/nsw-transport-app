@@ -7,6 +7,7 @@ import WatchConnectivity
 import WatchKit
 import WidgetKit
 
+#if !SNAPSHOT_TESTS
 @main
 struct TransportWatchApp: App {
     @StateObject private var model = WatchModel.shared
@@ -22,6 +23,7 @@ struct TransportWatchApp: App {
         }
     }
 }
+#endif
 
 // MARK: Model
 

@@ -9,12 +9,14 @@
 import SwiftUI
 import WidgetKit
 
+#if !SNAPSHOT_TESTS
 @main
 struct TransportWatchWidgets: WidgetBundle {
     var body: some Widget {
         NextTrainComplication()
     }
 }
+#endif
 
 struct NextTrainComplication: Widget {
     let kind = "NextTrain"
@@ -130,9 +132,13 @@ struct NextProvider: TimelineProvider {
 }
 
 struct NextView: View {
-    @Environment(\.widgetFamily) private var family
+    @Environment(\.widgetFamily) private var hostFamily
     @Environment(\.isLuminanceReduced) private var dimmed
     let entry: NextEntry
+    /// Set by the native audit (native-tests/native-audit), which renders the view outside a widget host.
+    var familyOverride: WidgetFamily? = nil
+
+    private var family: WidgetFamily { familyOverride ?? hostFamily }
 
     var body: some View {
         Group {

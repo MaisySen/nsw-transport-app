@@ -1,0 +1,128 @@
+# Native audit: snapshot-only visual check of every native surface (30 Oct 2026). Runs before every native build.
+# Renders the shipped SwiftUI views on the iOS and watchOS simulators: Next trip and Stop board widgets in every
+# family (Home Screen, Lock Screen, StandBy), both Live Activities (Lock Screen, Dynamic Island compact, minimal,
+# expanded), the Apple Watch app and its complications; smallest, standard and largest devices; default and
+# xxxLarge text; light and dark; long names, no live data, changes, delays, cancellations. Fails when anything is
+# drawn outside its box. Contact sheets (one PNG per surface) are in the artifact.
+# No secrets, no signing, no app build, no upload. Manual trigger on any branch that carries
+# app/native-tests/native-audit, and called by the build workflow before it builds.
+name: iOS native audit (snapshots only)
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: app/native-tests/native-audit
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+      - name: Project
+        run: |
+          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip
+          unzip -q /tmp/xcodegen.zip -d /tmp/xg
+          "$(find /tmp/xg -type f -name xcodegen -perm -u+x | head -1)" generate
+      - name: iPhone simulator
+        run: |
+          xcrun simctl list devices available -j > /tmp/devs.json
+          DEV=$(python3 sim.py ios /tmp/devs.json)
+          if [ -z "$DEV" ]; then
+            RT=$(xcrun simctl list runtimes | grep -o 'com.apple.CoreSimulator.SimRuntime.iOS-[0-9-]*' | tail -1)
+            for DT in $(xcrun simctl list devicetypes | grep -o 'com.apple.CoreSimulator.SimDeviceType.iPhone[^)]*' | tail -r); do
+              DEV=$(xcrun simctl create "Audit iPhone" "$DT" "$RT" 2>/dev/null) && break
+            done
+          fi
+          echo "simulator $DEV"; test -n "$DEV"; echo "$DEV" > /tmp/sim-id.txt
+          xcrun simctl boot "$DEV" || true
+          xcrun simctl bootstatus "$DEV" -b > /dev/null
+      - name: Audit (iPhone widgets, Lock Screen, StandBy, Live Activities, Dynamic Island)
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/out/ios"
+          TEST_RUNNER_SNAPSHOT_DIR="$GITHUB_WORKSPACE/out/ios" TEST_RUNNER_TZ=Australia/Sydney \
+          xcodebuild test -project NativeAudit.xcodeproj -scheme NativeAuditTests -destination "id=$(cat /tmp/sim-id.txt)" \
+            -derivedDataPath dd CODE_SIGNING_ALLOWED=NO > "$GITHUB_WORKSPACE/out/ios-test.log" 2>&1 \
+            || { grep -E "error:|DOES NOT FIT|failed" "$GITHUB_WORKSPACE/out/ios-test.log" | sort -u | head -150; touch "$GITHUB_WORKSPACE/out/FAILED-ios"; }
+          grep -E "native audit:" "$GITHUB_WORKSPACE/out/ios-test.log" | head -3 || true
+          ls "$GITHUB_WORKSPACE/out/ios" | wc -l
+      - name: Contact sheets
+        if: always()
+        run: |
+          python3 -m venv /tmp/v && /tmp/v/bin/pip -q install pillow
+          /tmp/v/bin/python sheets.py "$GITHUB_WORKSPACE/out/ios" "$GITHUB_WORKSPACE/out/sheets" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-audit-ios
+          path: out
+          retention-days: 14
+      - name: Result
+        run: test ! -e "$GITHUB_WORKSPACE/out/FAILED-ios"
+
+  watch:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: app/native-tests/native-audit
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+          xcrun simctl list runtimes | grep -i watch || true
+      - name: Project
+        run: |
+          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip
+          unzip -q /tmp/xcodegen.zip -d /tmp/xg
+          "$(find /tmp/xg -type f -name xcodegen -perm -u+x | head -1)" generate
+      - name: Watch simulator
+        run: |
+          xcrun simctl list devices available -j > /tmp/devs.json
+          DEV=$(python3 sim.py watch /tmp/devs.json)
+          if [ -z "$DEV" ]; then
+            RT=$(xcrun simctl list runtimes | grep -o 'com.apple.CoreSimulator.SimRuntime.watchOS-[0-9-]*' | tail -1)
+            for DT in $(xcrun simctl list devicetypes | grep -o 'com.apple.CoreSimulator.SimDeviceType.Apple-Watch[^)]*' | tail -r); do
+              DEV=$(xcrun simctl create "Audit Watch" "$DT" "$RT" 2>/dev/null) && break
+            done
+          fi
+          echo "simulator $DEV"; test -n "$DEV"; echo "$DEV" > /tmp/sim-id.txt
+          xcrun simctl boot "$DEV" || true
+          xcrun simctl bootstatus "$DEV" -b > /dev/null
+      - name: Audit (Apple Watch app and complications)
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/out/watch"
+          TEST_RUNNER_SNAPSHOT_DIR="$GITHUB_WORKSPACE/out/watch" TEST_RUNNER_TZ=Australia/Sydney \
+          xcodebuild test -project NativeAudit.xcodeproj -scheme WatchAuditTests -destination "id=$(cat /tmp/sim-id.txt)" \
+            -derivedDataPath dd CODE_SIGNING_ALLOWED=NO > "$GITHUB_WORKSPACE/out/watch-test.log" 2>&1 \
+            || { grep -E "error:|DOES NOT FIT|failed" "$GITHUB_WORKSPACE/out/watch-test.log" | sort -u | head -150; touch "$GITHUB_WORKSPACE/out/FAILED-watch"; }
+          grep -E "native audit:" "$GITHUB_WORKSPACE/out/watch-test.log" | head -3 || true
+          ls "$GITHUB_WORKSPACE/out/watch" | wc -l
+      - name: Contact sheets
+        if: always()
+        run: |
+          python3 -m venv /tmp/v && /tmp/v/bin/pip -q install pillow
+          /tmp/v/bin/python sheets.py "$GITHUB_WORKSPACE/out/watch" "$GITHUB_WORKSPACE/out/sheets" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-audit-watch
+          path: out
+          retention-days: 14
+      - name: Result
+        run: test ! -e "$GITHUB_WORKSPACE/out/FAILED-watch"

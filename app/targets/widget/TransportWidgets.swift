@@ -460,8 +460,9 @@ struct NextTripView: View {
             if let t = entry.trips.first {
                 HStack(spacing: 4) {
                     Image(systemName: Mode(raw: t.mode).symbol).accessibilityHidden(true)
-                    Text(t.line).fontWeight(.bold)
-                    WaitText(leave: t.leave, now: entry.date).fontWeight(.semibold)
+                    Text(t.line).fontWeight(.bold).layoutPriority(1)
+                    // The minutes never truncate; the platform gives way first (build 210).
+                    WaitText(leave: t.leave, now: entry.date).fontWeight(.semibold).fixedSize().layoutPriority(2)
                     if let p = WidgetText.plat(t.platform) { Text(p) }
                 }
                 .lineLimit(1)
@@ -590,7 +591,8 @@ struct NextTripView: View {
     /// "On time" in its colour, then a small "1 change" and "6 min walk" when they apply.
     private func statusLine(_ t: TripLine, font: Font = .caption2) -> some View {
         HStack(spacing: 4) {
-            Text(status(t)).foregroundStyle(Self.statusColor(t)).fontWeight(.semibold)
+            // "On time" or "No live data" stays whole; "1 change" and the walk give way first (build 210).
+            Text(status(t)).foregroundStyle(Self.statusColor(t)).fontWeight(.semibold).layoutPriority(1)
             if let c = WidgetText.changes(t.changes) { Text(c).foregroundStyle(Color.secondary) }
             if t.walkMinutes > 0 { Text("\(t.walkMinutes) min walk").foregroundStyle(Color.secondary) }
         }
