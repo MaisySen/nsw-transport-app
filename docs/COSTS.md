@@ -72,7 +72,7 @@ Workers Logs moves to Cloudflare Observability pricing (50 GB ingestion and 10 G
 |---|---|---|
 | Minute cron (watches, morning checks, alerts digest, sampling, clean up) | 43,200 Worker requests (0.4%); 45 to 70 ms CPU each, 2 to 3 million ms (7 to 10%); about 0.3 to 1.9 million D1 rows written (under 4%) | kept |
 | Engine timetable load, daily workflow | 1.29 million Durable Object rows written a load: 40 million a cycle (80%) | every second day: about 20 million (40%) |
-| Engine core and shard alarms | 0 when nobody reads a board; a woken core ticks every 10 s and each woken shard about 24 object requests a minute, for 15 minutes after the last read; 16 shards | 4 shards, stop after 5 minutes |
+| Engine core and shard alarms | 0 when nobody reads a board; a woken core ticks every 15 s (10 s before 30 Oct 2026) and each woken shard about 24 object requests a minute, for 15 minutes after the last read; 16 shards | 4 shards, stop after 5 minutes |
 | Engine "learn" calls from Trip Planner boards (platform names, missing lines) | one object request per stop per Worker copy every 10 minutes, with the engine off: up to about 150,000 at 1,000 people (15%) | only while the engine serves boards (`ENGINE_LEARN`, off) |
 | Engine stand name reads by the core (`ENGINE_LEARN_CORE`, since 27 Oct) | 0 when nobody reads an engine board; else no new object or Worker request (the queue rides the shards' `/live` calls), at most 30 Trip Planner calls a minute and 2,000 a day, object rows written about 2 per read plus changed names (at most about 4,000 a day), no D1 rows | kept; `ENGINE_LEARN_CORE` "off" restores the old first read rule |
 | Live push hubs (LiveHub) | 0: alarms only while a phone's socket is open; `LIVE_PUSH` off | kept |
