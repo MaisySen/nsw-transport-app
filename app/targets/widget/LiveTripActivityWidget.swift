@@ -360,9 +360,13 @@ struct LiveTripLockCard: View {
             if state.showsTrack(stale: stale) {
                 card(lines: 2, track: true)
                 card(lines: 2, track: true, merged: true)
+                card(lines: 1, track: true, merged: true, headLines: 2)
                 card(lines: 1, track: true, merged: true)
             }
             card(lines: 2, track: false)
+            // The stop name keeps its two lines before the detail and warning do (31 Oct readiness audit: "Get off at
+            // Chatsw..." on the SE with a change warning, the owner's "Get off at Five..." case).
+            card(lines: 1, track: false, headLines: 2)
             card(lines: 1, track: false)
         }
     }
@@ -379,13 +383,13 @@ struct LiveTripLockCard: View {
         return t.font(.subheadline).lineLimit(lines).minimumScaleFactor(0.85)
     }
 
-    private func card(lines: Int, track: Bool, merged: Bool = false) -> some View {
+    private func card(lines: Int, track: Bool, merged: Bool = false, headLines: Int? = nil) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode).fixedSize()
-                        Text(state.headline(stale: stale)).font(.headline).lineLimit(lines).minimumScaleFactor(0.8)
+                        Text(state.headline(stale: stale)).font(.headline).lineLimit(headLines ?? lines).minimumScaleFactor(0.8)
                     }
                     if merged {
                         detailAndWarning(lines)
