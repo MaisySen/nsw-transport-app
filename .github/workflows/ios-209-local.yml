@@ -146,16 +146,31 @@ jobs:
 
       - name: Simulator
         run: |
-          read RT DT < <(xcrun simctl list runtimes -j | python3 -c "
-          import json,sys
-          r=[x for x in json.load(sys.stdin)['runtimes'] if x.get('platform')=='iOS' and x.get('isAvailable')]
-          r.sort(key=lambda x:[int(p) for p in x['version'].split('.')])
-          t=[d['identifier'] for d in r[-1].get('supportedDeviceTypes',[]) if d['name'].startswith('iPhone') and d['name'].endswith(' Pro')]
-          print(r[-1]['identifier'], t[-1])")
-          echo "runtime $RT, device $DT"
-          DEV=$(xcrun simctl create "Widget shots" "$DT" "$RT")
+          xcrun simctl list devices available -j > /tmp/devs.json
+          DEV=$(python3 - <<'PY'
+          import json
+          d = json.load(open('/tmp/devs.json'))['devices']
+          ios = sorted([k for k in d if '.iOS-' in k], key=lambda k: [int(p) for p in k.split('.iOS-')[1].split('-')])
+          for k in reversed(ios):
+              ph = [x for x in d[k] if x['name'].startswith('iPhone')]
+              if not ph:
+                  continue
+              pick = [x for x in ph if x['name'].endswith(' Pro')] or ph
+              print(pick[-1]['udid'])
+              import sys; sys.stderr.write('simulator: %s on %s\n' % (pick[-1]['name'], k))
+              break
+          PY
+          )
+          if [ -z "$DEV" ]; then
+            RT=$(xcrun simctl list runtimes | grep -o 'com.apple.CoreSimulator.SimRuntime.iOS-[0-9-]*' | tail -1)
+            for DT in $(xcrun simctl list devicetypes | grep -o 'com.apple.CoreSimulator.SimDeviceType.iPhone[^)]*' | tail -r); do
+              DEV=$(xcrun simctl create "Widget shots" "$DT" "$RT" 2>/dev/null) && break
+            done
+          fi
+          echo "simulator $DEV"
+          test -n "$DEV"
           echo "$DEV" > /tmp/sim-id.txt
-          xcrun simctl boot "$DEV"
+          xcrun simctl boot "$DEV" || true
           xcrun simctl bootstatus "$DEV" -b > /dev/null
 
       - name: Fit check and snapshots
