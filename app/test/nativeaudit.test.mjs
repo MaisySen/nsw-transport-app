@@ -20,6 +20,23 @@ test('audit workflow is snapshot only: no secrets, no app build, no upload', () 
   assert.match(wf, /WatchAuditTests/);
 });
 
+test('the Watch job compiles the Watch code first and picks a simulator xcodebuild can use', () => {
+  // 30 Oct: 4 of 8 runs failed on "watchOS Simulator (null)" (simctl listed the device, xcodebuild saw no runtime),
+  // and the Watch code of d0056cd went uncompiled. Compile first, for any watchOS simulator; then the simulator.
+  const wf = read('.github/workflows/ios-native-audit.yml');
+  const watch = wf.slice(wf.indexOf('\n  watch:'));
+  const compile = watch.indexOf("build-for-testing -project NativeAudit.xcodeproj -scheme WatchAuditTests");
+  assert.ok(compile > 0, 'build-for-testing of the Watch scheme');
+  assert.match(watch, /-destination 'generic\/platform=watchOS Simulator'/);
+  assert.ok(compile < watch.indexOf('bash watchsim.sh'), 'compiles before it looks for a simulator');
+  assert.match(watch, /killall -9 com\.apple\.CoreSimulator\.CoreSimulatorService/);
+  const sim = read('app/native-tests/native-audit/watchsim.sh');
+  assert.match(sim, /xcodebuild -showdestinations/);
+  assert.match(sim, /supportedDeviceTypes/);
+  assert.match(sim, /-downloadPlatform watchOS/);
+  assert.doesNotMatch(sim, /secrets|altool|upload/);
+});
+
 test('the build workflow runs the audit first', () => {
   const wf = read('.github/workflows/ios-209-local.yml');
   assert.match(wf, /uses: \.\/\.github\/workflows\/ios-native-audit\.yml/);
