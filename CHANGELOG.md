@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 30 Oct 2026
 
+### Server part of the Live Activity stop track, branch live-stops (30 Oct, about 6 PM; not deployed, not merged)
+* For build 210's stop track (native part on branch build-209): the trip card's optional `stopTrack` (`passed`, `next` up to 10 short names of at most 32 characters, `hidden`, `hiddenAt`, `live`), worked out by `stopTrackFor` in `app/platform/tripCard.ts` from the same stop list, next stop and live evidence as the countdown and "N stops", and copied into the server by `backend/tools/gen-livecard.mjs`. The push checks it (`laStopTrack`) and leaves it out of a push over 3,500 bytes. Timetable only is `live: false` and the card names no next stop as before (R1).
+* Backward compatible: builds 201 to 209 decode the card and skip the key; a card without it is byte for byte the old content state. Measured push: 409 bytes without, 588 with six stops, 1,407 at every field's limit (Apple's limit 4 KB). The app part is JS only, so it is safe over the air on every build.
+* Tests: `app/test/livestops.test.mjs` (10), `backend/test/live-stops.test.mjs` (6); `iostripcard` knows the new field.
+
 ### Past and upcoming apart now on main, plus Simple mode and the Departures hint (30 Oct, about 5:40 PM; over the air only, in tonight's update)
 * The owner picked option A at 5:24 PM ("A better"), so next-pastnow (8294aaf) is merged into main as it was built: gone services in their own card on the recessed grey zone under Earlier, the solid Now band with the clock, the next service tinted, the list opened at Now. Options B and the mocks stay in files only.
 * Simple mode's trip list now does the same (small change in the same style): once Earlier is tapped and gone trips show, they sit in their own `pastBg` card under the Earlier header with `pastText` times (slightly faded, no strikethrough; Cancelled keeps its line), the Now band goes between, and the first trip to come is on the `nextBg` tint. No open at Now in Simple mode, because gone trips only show after the reader asks for them. Same gone rule (`tripRows`), same minute tick, no new timer or request. Off with `PAST_NOW` or the server flag `pastNow`, as on the full list.
