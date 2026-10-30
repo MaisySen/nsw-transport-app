@@ -222,9 +222,12 @@ struct TrackFooter: View {
             row(state.trackNext(stale: stale), right)
             row(state.trackNext(stale: stale), rightShort)
             row(state.trackNext(stale: stale, short: true), rightShort)
-            VStack(alignment: .leading, spacing: 2) {
-                if let n = state.trackNext(stale: stale, short: true) { nextText(n) }
-                Text(rightShort).foregroundStyle(.secondary).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
+            // Last: one row whatever the width, the stop name smaller and then cut at its end, so a long name never
+            // pushes the stop track off the card (snapshot run 41016955137: the 610X card fell back to the bar).
+            HStack(spacing: 8) {
+                if let n = state.trackNext(stale: stale, short: true) { nextText(n).minimumScaleFactor(0.75).truncationMode(.tail) }
+                Spacer(minLength: 0)
+                Text(rightShort).foregroundStyle(.secondary).monospacedDigit().lineLimit(1).fixedSize()
             }
         }
     }
