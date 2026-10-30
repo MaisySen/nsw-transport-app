@@ -135,6 +135,9 @@ Measured: `app/test/ask-corpus.test.mjs`, 309 questions from all over Sydney and
 * Data for one stop, service, time or trip never shows under another one: an answer still on its way when you switch is dropped.
 
 
+## Current location in Plan (30 Oct; on main 31 Oct as a merge of next-fromloc b545d06, over the air in the next update)
+Plan > Trip: an empty From or To starts with "Current location". Tap it: the When In Use prompt (only then), one fix, and the trip is planned from where you are (a planner point, as Get me home). Not offered while typing, on Departures, or at both ends at once. Location off: a short note with Open Settings. Not kept in Recent trips or saved. Feature detected per build (`lib/hereLocation.ts`); every iPhone build from 201 and every Android build has location, so all can show it over the air. Tests: `app/test/fromloc.test.mjs`.
+
 ## New trip first look (30 Oct; server live as transport-api 80706bee since 5:05 AM, app part on main 3d00ac3 for the next update, not published)
 A brand new A to B search shows trips at once. The phone asks the server's timetable trips (`/api/trip?tt=1`, measured 0.13 to 0.28 s from Sydney once warm, up to 0.79 s cold, no Trip Planner call) beside its normal search, shows them as timetable times ("Timetable times. Getting live times.", no Live badge, no countdown from a live time), and the live answer replaces them in the same rows about a second later. Only when the server says `trip-tt` and nothing else is on screen; step free, long and via trips keep the normal search. Off with `TRIP_TT=off` or `kill.tripTt` (no deploy), and the budget guard holds it.
 

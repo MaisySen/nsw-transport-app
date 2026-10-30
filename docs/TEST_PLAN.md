@@ -25,6 +25,17 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 
 
+### `app/test/fromloc.test.mjs`: 10 tests, 10 pass (30 Oct, Current location in Plan, app; on main 31 Oct, merge of next-fromloc b545d06)
+- Hidden when the build has no location module: `hasLocation()` false, nothing loaded, nothing asked.
+- Shown only in an empty From or To in trip mode; not while typing, on Departures, or when the other end is already Current location.
+- Denied: the prompt is asked on the tap, no fix is taken, the note names Settings and carries the Settings link.
+- No prompt without a tap (the stale re-read asks nothing).
+- Granted: one Balanced fix; the point id carries the coordinates (`151.18066:-33.79677:EPSG:4326`, a Chatswood fixture) and the label Current location; a suburb point or a stop is not Current location.
+- A recent system fix is used without a new one; outside NSW and no fix give a note without the Settings link; a point older than 5 minutes is stale, a stop never.
+- Plan sends the point as the trip end and trip.tsx keeps it out of Recent at either end; no watching or background location in the reader.
+- app.json's When In Use string still says trips are planned from where you are; Always is off.
+- Browser check (web export, local mock server, 390 x 844, light and dark): the row, the tap with location allowed, the trip request `from=151.18066:-33.79677:EPSG:4326`, the denied note. Screens: `/home/user/tab/files/fromlocation-30oct.png` (not in the repo).
+
 ### `app/test/newtrip.test.mjs`: 12 tests, 12 pass (30 Oct, new trip first look, app, branch newtrip-app)
 * When it asks (served, plain, not step free, not long, nothing on screen) and the query (tt=1, never page, days, refresh or acc).
 * R1 stray live fields from a server are taken off and the answer is labelled phone built; only a timetable answer paints (a live answer, a 204, an error do not); R3 gone services drop; R4 trip id keys in time order, at most 10; arrive by and leave at windows; R5 never kept, never seeds; R6 Start trip arms timetable times; R2 cap still 5 min; paints only while nothing is on screen.
