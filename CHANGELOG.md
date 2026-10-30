@@ -2,6 +2,11 @@
 
 What changed in Transport, newest first. Times are Sydney time. Build numbers, update ids and links are in [docs/RELEASES.md](docs/RELEASES.md).
 
+## 31 Oct 2026
+
+### Live Activity stop track: server kill switch (31 Oct, branch live-stops, not deployed)
+* Found in the build 210 readiness check: the stop track in the card push had no switch of its own. `liveStops` (platform=server `flags` or `kill`, on unless `false`) now gates it in `laPushOne`; off, the push carries no `stopTrack` and every build draws the plain bar. Row added to docs/APP_REVIEW_NOTES.md (the review notes guard checks it). New test in backend/test/live-stops.test.mjs.
+
 ## 30 Oct 2026
 
 ### Server part of the Live Activity stop track, branch live-stops (30 Oct, about 6 PM; not deployed, not merged)

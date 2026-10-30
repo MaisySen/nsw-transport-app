@@ -764,3 +764,4 @@ At most 5% of tests may name the owner's own stations (Strathfield, Burwood, Kin
 3. `OFFLINE=1 node --test test/*.test.mjs` in `app/`: all pass. iPhone builds: the EAS simulator compile check is green before the production build ([Runbook](RUNBOOK.md), section 4).
 4. After publishing the web: the live checks above.
 5. grep every changed file for em dashes, en dashes and filler words.
+- 31 Oct: `liveStops` server switch off leaves `stopTrack` out of the trip card push (backend/test/live-stops.test.mjs).

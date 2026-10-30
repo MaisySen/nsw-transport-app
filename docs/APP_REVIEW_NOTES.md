@@ -47,6 +47,7 @@ The source for the Notes field. It lists every feature that appears, changes or 
 | Freshness rule | none (the phone also caps Live at 5 min) | `feedAgeCap`, `feedHeaderTime` |
 | Server built boards and trips | none | `ENGINE_BOARDS`, `OWN_PLANNER` (both off), `ENGINE_FEED_ONLY` |
 | New trip first look (timetable times shown while the live search runs, labelled Timetable) | `tripTt` (kill) | `TRIP_TT`, `TRIP_TT_OWN`, `/api/trip?tt=1` |
+| Live Activity stop track (build 210: the trip card's stops on the Lock Screen and in the Dynamic Island; builds 201 to 209 skip it, 31 Oct) | none | `liveStops` (on unless `false`; off leaves the stop list out of the card push and the card draws the bar) |
 | Past and upcoming apart on trip lists and stop boards (gone services under Earlier, a Now divider, the list opens at Now; layout only, 30 Oct) | `pastNow`, `pastNowScroll` (on unless `false`; the server can only switch them off) | none |
 
 App switches are `flags` and `kill` in `/api/app/config` (an unknown flag counts as on). Server switches are the same sections under `platform=server`, read once a minute; the budget guard holds `ENGINE_BOARDS`, `ENGINE_PUSH`, `LIVE_PUSH`, `OWN_PLANNER`, `ENGINE_LEARN`, `LOAD_TESTS` and `TRIP_TT` off when the month is projected over its line (docs/COSTS.md). The server address is `copy.api_base` (docs/API.md).
