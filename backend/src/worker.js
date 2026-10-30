@@ -4063,7 +4063,7 @@ async function sendExpo(env, target, n) {
     : (await d.prepare("SELECT * FROM expo_tokens WHERE profile = ?1").bind(target.profile).all()).results || [];
   if (!toks.length) return [];
   const msgs = toks.slice(0, 6).map((t) => ({
-    to: t.token, title: n.title, body: n.body, sound: "default", priority: "high", channelId: "default",
+    to: t.token, title: n.title, body: n.body, ...expoSound(n), priority: "high",
     ttl: n.ttl || 900, data: { url: n.url || "/", watch: n.watchId || null, id: n.id, tag: n.tag || "tb" },
   }));
   const r = await fetch("https://exp.host/--/api/v2/push/send", {
@@ -5409,6 +5409,15 @@ async function claimOnce(env, watchId, key) {
 
 const stationWord = (s) => String(s || "your stop").replace(/ Station$/, "");
 
+/** The spoken sound for a watch's "Next stop" and "Arriving" alerts: only for an app that said it has it. */
+const voiceSound = (spec) => (spec && spec.voice === "soon" ? "getoff_soon" : null);
+
+/** The Expo push sound and Android channel for an alert: the app's spoken sound when named, else the default. */
+function expoSound(n) {
+  const s = n && (n.sound === "getoff_soon" || n.sound === "getoff_now") ? n.sound : null;
+  return s ? { sound: s + ".wav", channelId: s } : { sound: "default", channelId: "default" };
+}
+
 async function processWatch(env, w, now, opts = {}) {
   const spec = JSON.parse(w.spec);
   const st = w.state ? JSON.parse(w.state) : {};
@@ -5418,7 +5427,7 @@ async function processWatch(env, w, now, opts = {}) {
   // extra.once names the alert (for example "arr:1"): it is sent once per watch, ever.
   const push = async (title, body, extra = {}) => {
     if (extra.once && !(await claimOnce(env, w.id, extra.once))) return false;
-    const r = await notify(env, target, { title, body, url, tag: "w" + w.id + (extra.tagSuffix || ""), watchId: w.id });
+    const r = await notify(env, target, { title, body, url, tag: "w" + w.id + (extra.tagSuffix || ""), watchId: w.id, ...(extra.sound ? { sound: extra.sound } : {}) });
     sent.push({ title, body, pushed: r.pushed });
     st.count = (st.count || 0) + 1;
     return true;
@@ -5545,10 +5554,10 @@ async function processWatch(env, w, now, opts = {}) {
         st.oneStop = st.oneStop || {}; st.oneStop[i] = 1;
         st.arrived = st.arrived || {}; st.arrived[i] = 1;
         const at = c.eta ? ` at ${clock(c.eta)}` : "";
-        if (i === last) await push(`Next stop: ${l.to}`, `Get ready to get off. Your ${l.line} gets in${at}.`, { tagSuffix: "a", once: `arr:${i}` });
+        if (i === last) await push(`Next stop: ${l.to}`, `Get ready to get off. Your ${l.line} gets in${at}.`, { tagSuffix: "a", once: `arr:${i}`, sound: voiceSound(spec) });
         else {
           const n = legs[i + 1], no = live[i + 1];
-          await push(`Next stop: ${l.to}, change here`, `Get off${at} for the ${clock(no.dep)} ${n.line}${no.platform ? " from " + no.platform : ""}, ${no.depLive ? lateWords(no.delay) : "scheduled"}.`, { tagSuffix: "a", once: `arr:${i}` });
+          await push(`Next stop: ${l.to}, change here`, `Get off${at} for the ${clock(no.dep)} ${n.line}${no.platform ? " from " + no.platform : ""}, ${no.depLive ? lateWords(no.delay) : "scheduled"}.`, { tagSuffix: "a", once: `arr:${i}`, sound: voiceSound(spec) });
         }
         continue;
       }
@@ -5559,10 +5568,10 @@ async function processWatch(env, w, now, opts = {}) {
     if (left <= 150000 && left > -60000) {
       st.arrived = st.arrived || {}; st.arrived[i] = 1;
       const mins = Math.max(1, Math.round(left / 60000));
-      if (i === last) await push(`Arriving at ${l.to} in ${mins} min`, `Get ready to get off. Your ${l.line} gets in at ${clock(o.arr)}.`, { tagSuffix: "a", once: `arr:${i}` });
+      if (i === last) await push(`Arriving at ${l.to} in ${mins} min`, `Get ready to get off. Your ${l.line} gets in at ${clock(o.arr)}.`, { tagSuffix: "a", once: `arr:${i}`, sound: voiceSound(spec) });
       else {
         const n = legs[i + 1], no = live[i + 1];
-        await push(`Change at ${l.to} in ${mins} min`, `Next: the ${clock(no.dep)} ${n.line}${no.platform ? " from " + no.platform : ""}, ${no.depLive ? lateWords(no.delay) : "scheduled"}.`, { tagSuffix: "a", once: `arr:${i}` });
+        await push(`Change at ${l.to} in ${mins} min`, `Next: the ${clock(no.dep)} ${n.line}${no.platform ? " from " + no.platform : ""}, ${no.depLive ? lateWords(no.delay) : "scheduled"}.`, { tagSuffix: "a", once: `arr:${i}`, sound: voiceSound(spec) });
       }
     }
   }
@@ -5641,6 +5650,9 @@ async function createWatch(env, b, now) {
     origin: b.origin ? { id: String(b.origin.id || "").slice(0, 60), name: String(b.origin.name || "").slice(0, 80) } : null,
 
     track: !!b.track,
+    // The app has the spoken alert sounds (build 210 and later, Speak alerts on): the "Next stop" alert rings with
+    // getoff_soon.wav. Never sent by older builds, so they keep the normal sound.
+    ...(b.voice === "soon" ? { voice: "soon" } : {}),
   };
   const L = legs[legs.length - 1];
   const end = Math.max(ms(L.arrPlanned || L.planned), ms(legs[0].planned)) + 3 * 3600000;

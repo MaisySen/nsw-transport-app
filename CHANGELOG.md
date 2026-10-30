@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 30 Oct 2026
 
+### Server: spoken "Next stop" alert for build 210 (30 Oct, about 5:45 PM; branch getoff-voice, not deployed)
+* Owner, 30 Oct, build 209 on a real trip: the get off alert came as a banner and was not spoken with the phone locked. Build 210 (branch build-209) bundles two voice alert sounds, `getoff_now.wav` and `getoff_soon.wav`, and rings the phone's own get off alerts with them.
+* Server part: a trip watch started with `voice: "soon"` (build 210 with Speak alerts on) stores it in the watch, and its Next stop and Arriving alerts (last leg and change) go to Expo with `sound: "getoff_soon.wav"` and Android channel `getoff_soon`. Every other push, and every watch from builds 201 to 209 (which never send `voice`), keeps `sound: "default"` and channel `default` as before. No table change, no new request.
+* Tests: `backend/test/getoff-voice-push.test.mjs` (3).
+
 ### Past and upcoming apart now on main, plus Simple mode and the Departures hint (30 Oct, about 5:40 PM; over the air only, in tonight's update)
 * The owner picked option A at 5:24 PM ("A better"), so next-pastnow (8294aaf) is merged into main as it was built: gone services in their own card on the recessed grey zone under Earlier, the solid Now band with the clock, the next service tinted, the list opened at Now. Options B and the mocks stay in files only.
 * Simple mode's trip list now does the same (small change in the same style): once Earlier is tapped and gone trips show, they sit in their own `pastBg` card under the Earlier header with `pastText` times (slightly faded, no strikethrough; Cancelled keeps its line), the Now band goes between, and the first trip to come is on the `nextBg` tint. No open at Now in Simple mode, because gone trips only show after the reader asks for them. Same gone rule (`tripRows`), same minute tick, no new timer or request. Off with `PAST_NOW` or the server flag `pastNow`, as on the full list.
