@@ -92,7 +92,7 @@ Measured from the build box (US, so 0.2 to 0.35 s of each time is the trip there
 | Crash log from his iPhone for the 27 Oct crash loop (Analytics Data, entries from 27 Oct about 10:42 AM) | 28 Oct, 7:55 AM | The one record that can name the cause |
 | Phone check of the 27 and 28 Oct updates (Home, a trip, a stop board, a live trip, the get off alert on a real ride) | 28 Oct | After tonight's update; close and reopen the app twice |
 | NSW quota increase reply (1,000,000 a day, 25 a second) | 26 Oct, 2:46 PM | When it comes: raise the server budget (RUNBOOK section 5) |
-| OK to submit iPhone 1.0.0 for App Store review | 25 Oct | Also needed first: Apple Watch screenshots (none uploaded, required), build 209 on the version (208 attached; 209 from 1 Nov) and his Crash Data answer in App Privacy if 209 carries Sentry. iPhone screenshots reshot with live data on 27 Oct. Review notes rewritten 28 Oct as a draft ([APP_REVIEW_NOTES.md](APP_REVIEW_NOTES.md)); listing, App Privacy and age rating checked 26 Oct (store/README.md) |
+| OK to submit iPhone 1.0.0 for App Store review | 25 Oct | Also needed first: Apple Watch screenshots (none uploaded, required), build 209 on the version (208 attached; 209 on TestFlight since 30 Oct, attach after his phone check and yes) and his Crash Data answer in App Privacy if 209 carries Sentry. iPhone screenshots reshot with live data on 27 Oct. Review notes rewritten 28 Oct as a draft ([APP_REVIEW_NOTES.md](APP_REVIEW_NOTES.md)); listing, App Privacy and age rating checked 26 Oct (store/README.md) |
 | Apple account conversion to Fintex (organisation, D-U-N-S 889795329) | 25 Oct | Seller shows his own name until then |
 | Google Play: create the app, invite the service account, first AAB upload, 12 testers for 14 days if personal | 24 Oct | RUNBOOK section 9 |
 | Firebase project and FCM key for Android alerts with the app closed | 24 Oct | `app/NEEDS_BIDUR.md` |
@@ -109,7 +109,7 @@ Measured from the build box (US, so 0.2 to 0.35 s of each time is the trip there
 | Nightly, 2:40 AM | Timetable workflow: planner pack, engine load only if it no longer holds today and tomorrow | GitHub Actions |
 | 29 and 30 Oct | Fixes from the owner's phone check and the crash hunt; Often does not run can first qualify about 1 AM on 30 Oct | Any worker |
 | 31 Oct | Freeze night: bug fixes only; reread the review notes against main | Any worker |
-| 1 Nov | iPhone build 209 ([ROADMAP.md](ROADMAP.md), Build 209 checklist), after the owner's go | Build worker |
+| 30 Oct (done) | iPhone build 209 on TestFlight, Internal group (docs/RELEASES.md). Next: Bidur's phone check (BUILD_209_CHECKLIST step 6), then merge build-209 into main and publish updates for both runtimes (step 9) | Root |
 | 25 Nov | Cloudflare cycle renews (US$5) | |
 
 ## Recent credentials changes
