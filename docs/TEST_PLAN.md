@@ -36,6 +36,16 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 * `CI=1 IOS_APP_GROUP=1 npx expo prebuild --platform ios --no-install`: Expo.plist runtime 1.1.0, Info.plist 1.0.0 (209) (build 210: runtime 1.2.0, Info.plist 1.0.0 (210); `app/test/widgetfit210.test.mjs` checks app.json), entitlements carry time sensitive and the App Group, privacy manifest lists Crash Data (not linked), Sentry build phases present, widget target picks up every file in targets/widget (synchronized folder).
 * Swift: all 26 Swift files under app/ parse with `swiftc -parse` (Swift 6.4.1 on Linux). A full compile needs the iOS SDK (SwiftUI, WidgetKit, ActivityKit), so the first real compile is the EAS compile check on 1 Nov (checklist step 4).
 * On a device: the 209 checks in docs/BUILD_209_CHECKLIST.md step 6.
+### `app/test/fromloc.test.mjs`: 10 tests, 10 pass (30 Oct, Current location in Plan, app, branch next-fromloc)
+- Hidden when the build has no location module: `hasLocation()` false, nothing loaded, nothing asked.
+- Shown only in an empty From or To in trip mode; not while typing, on Departures, or when the other end is already Current location.
+- Denied: the prompt is asked on the tap, no fix is taken, the note names Settings and carries the Settings link.
+- No prompt without a tap (the stale re-read asks nothing).
+- Granted: one Balanced fix; the point id carries the coordinates (`151.18066:-33.79677:EPSG:4326`, a Chatswood fixture) and the label Current location; a suburb point or a stop is not Current location.
+- A recent system fix is used without a new one; outside NSW and no fix give a note without the Settings link; a point older than 5 minutes is stale, a stop never.
+- Plan sends the point as the trip end and trip.tsx keeps it out of Recent at either end; no watching or background location in the reader.
+- app.json's When In Use string still says trips are planned from where you are; Always is off.
+- Browser check (web export, local mock server, 390 x 844, light and dark): the row, the tap with location allowed, the trip request `from=151.18066:-33.79677:EPSG:4326`, the denied note. Screens: `/home/user/tab/files/fromlocation-30oct.png` (not in the repo).
 
 ### `app/test/newtrip.test.mjs`: 12 tests, 12 pass (30 Oct, new trip first look, app, branch newtrip-app)
 * When it asks (served, plain, not step free, not long, nothing on screen) and the query (tt=1, never page, days, refresh or acc).
