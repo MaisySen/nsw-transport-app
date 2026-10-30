@@ -69,8 +69,9 @@ struct LiveTripIslandCenter: View {
     var state: LiveTripAttributes.ContentState
     var stale = false
     var body: some View {
-        // Two lines under the camera before "Get off at Sydney…" (native audit).
-        Text(state.headline(stale: stale)).font(.subheadline.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.8)
+        // Two lines under the camera before "Get off at Sydney…" (native audit), shrinking to 0.65 before it is cut
+        // (31 Oct final check: "Sydney Olym..." at the largest text, "You've arrived at Macquarie Univers..." on the 6.1 inch).
+        Text(state.headline(stale: stale)).font(.subheadline.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.65)
             .multilineTextAlignment(.center)
     }
 }
