@@ -42,7 +42,7 @@ test('native clocks follow the phone 24-Hour Time setting', () => {
   }
 });
 
-test('Info.plist answers App Review reads: when in use location only, no encryption, no tablet, write only calendar', () => {
+test('Info.plist answers App Review reads: when in use location only, no encryption, no tablet, both calendar texts', () => {
   const e = JSON.parse(read('app.json')).expo;
   assert.equal(e.ios.config.usesNonExemptEncryption, false);
   assert.equal(e.ios.infoPlist.ITSAppUsesNonExemptEncryption, false);
@@ -52,6 +52,10 @@ test('Info.plist answers App Review reads: when in use location only, no encrypt
   assert.equal(loc.locationAlwaysPermission, false);
   assert.ok(loc.locationWhenInUsePermission.length > 40);
   const cal = e.plugins.find((p) => Array.isArray(p) && p[0] === 'expo-calendar')[1];
-  assert.equal(cal.writeOnlyAccess, true);
+  // Calendar leave by (More, off by default) reads events, so it needs the full access text; Add to Calendar keeps
+  // its add only text. Build 209 had only the add only text, so turning Calendar leave by on was refused.
+  assert.equal(cal.writeOnlyAccess, false);
+  assert.ok(cal.calendarPermission.length > 40);
+  assert.ok(e.ios.infoPlist.NSCalendarsWriteOnlyAccessUsageDescription.length > 40);
   assert.equal(cal.remindersPermission, false);
 });

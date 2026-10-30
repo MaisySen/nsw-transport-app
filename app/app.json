@@ -21,6 +21,7 @@
       },
       "infoPlist": {
         "NSSupportsLiveActivities": true,
+        "NSCalendarsWriteOnlyAccessUsageDescription": "Transport adds a leave by reminder for a trip to your calendar when you ask it to.",
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivitiesFrequentUpdates": true,
         "INAlternativeAppNames": [
@@ -227,10 +228,9 @@
       [
         "expo-calendar",
         {
-          "calendarPermission": "Transport adds a leave by reminder for a trip to your calendar when you ask it to.",
+          "calendarPermission": "Transport reads the time and place of your upcoming events to show when to leave for them, if you turn on Calendar leave by. Event names and notes stay on your iPhone.",
           "remindersPermission": false,
-          "writeOnlyAccess": true,
-          "writeOnlyCalendarPermission": "Transport adds a leave by reminder for a trip to your calendar when you ask it to."
+          "writeOnlyAccess": false
         }
       ],
       "./plugins/withTransportWidget",
