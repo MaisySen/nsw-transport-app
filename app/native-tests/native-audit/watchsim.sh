@@ -5,9 +5,15 @@
 # runs. The device is therefore chosen from `xcodebuild -showdestinations` (xcodebuild's own view), not from simctl,
 # and when none is usable it climbs a short ladder, checking xcodebuild's view after each rung:
 #   1. as the runner is;  2. simulator service restarted (it must be the selected Xcode's), a fresh device on an
-#   available watchOS runtime, with a device type that runtime supports;  3. the watchOS runtime downloaded for this
-#   Xcode, service restarted, a fresh device.
+#   available watchOS runtime, with a device type that runtime supports;  3. Xcode asked to install the watchOS
+#   runtime for this Xcode, then the same wait, service restart and fresh device.
 # Prints the device id on stdout (log lines on stderr) and exits 0, or exits 1 when no rung gave a usable device.
+# Run 41018791876 (30 Oct, 07:15 UTC): the runtime came and went within the job: listed, then gone, then back after a
+# download, then "Malformed bundle does not contain an identifier at .../cryptexd/mnt/watchOS_24R362/...simruntime" a
+# minute later and no watch device for xcodebuild. So a device counts only once it is booted and xcodebuild still lists
+# it. Run 41019491136: the runner had the same watchOS runtime registered twice, one copy still "Copying" and the
+# other "Ready" but not mounted; deleting it is refused for minutes. So every rung first waits for the runtime image
+# to settle (no copy or delete in progress, one ready) before it looks for a device.
 # Usage: bash watchsim.sh <project> <scheme>
 set -u
 PROJ="$1"; SCHEME="$2"
@@ -34,9 +40,9 @@ if best:
     best.sort()
     top = [b for b in best if b[0] == best[-1][0]]
     # The smallest watch first: the audit draws every size itself, and a small screen is the strictest host.
-    pick = sorted(top, key=lambda b: ('40mm' not in b[1], '41mm' not in b[1], '42mm' not in b[1], b[1]))[0]
-    sys.stderr.write('watchsim: xcodebuild can use %s, watchOS %s (%s)\n' % (pick[1], '.'.join(map(str, pick[0])), pick[2]))
-    print(pick[2])
+    for b in sorted(top, key=lambda b: ('40mm' not in b[1], '41mm' not in b[1], '42mm' not in b[1], b[1])):
+        sys.stderr.write('watchsim: xcodebuild lists %s, watchOS %s (%s)\n' % (b[1], '.'.join(map(str, b[0])), b[2]))
+        print(b[2])
 PY
 }
 
@@ -72,17 +78,68 @@ PY
   return 1
 }
 
-log "runtimes: $(xcrun simctl list runtimes 2>/dev/null | grep -i watch | tr '\n' ' ')"
-DEV=$(usable); [ -n "$DEV" ] && { echo "$DEV"; exit 0; }
 
-log "rung 2: no watch simulator xcodebuild can use; restarting the simulator service, fresh device"
-restart_service; fresh_device || true
-DEV=$(usable); [ -n "$DEV" ] && { echo "$DEV"; exit 0; }
+diag() {
+  log "diagnostics ($1):"
+  { xcrun simctl runtime list -v 2>&1 | grep -i -B1 -A8 watch | head -60
+    mount | grep -i -E "cryptex|simruntime|CoreSimulator" | head -20
+    xcrun simctl list runtimes 2>&1 | grep -i -E "watch|malformed" | head -10; } >&2 || true
+}
 
-log "rung 3: downloading the watchOS runtime for this Xcode"
+confirm() {
+  # Boot the device and keep it booted (a booted device keeps its runtime mounted); it counts only if xcodebuild
+  # still lists it afterwards.
+  local DEV="$1"
+  xcrun simctl boot "$DEV" >/dev/null 2>&1 </dev/null || true
+  tmo 300 xcrun simctl bootstatus "$DEV" -b >/dev/null 2>&1 </dev/null || true
+  sleep 5
+  usable | grep -qx "$DEV" && xcrun simctl list devices 2>/dev/null | grep "$DEV" | grep -q Booted
+}
+
+try_rung() {
+  local DEV
+  for DEV in $(usable | head -3); do
+    if confirm "$DEV"; then log "booted and listed by xcodebuild: $DEV"; echo "$DEV"; return 0; fi
+    log "$DEV did not stay usable after booting"
+  done
+  return 1
+}
+
+wait_ready() {
+  # The watchOS runtime is a disk image the simulator service copies and mounts by itself. Run 41019491136 showed two
+  # registrations of the same runtime on the runner, one "Copying" and one "Ready" but not mounted, and xcodebuild
+  # with no watch device. Wait (up to $1 s) until no watchOS image is still copying or deleting and one is ready.
+  local limit="$1" waited=0 st
+  while :; do
+    st=$(xcrun simctl runtime list -j 2>/dev/null | python3 -c '
+import json, sys
+try: d = json.load(sys.stdin)
+except Exception: d = {}
+w = [v for v in d.values() if "watch" in json.dumps(v).lower()]
+states = sorted(str(v.get("state", "?")) for v in w)
+busy = [s for s in states if s.lower() not in ("ready", "unusable")]
+print(("busy " if busy or "Ready" not in states else "ok ") + ",".join(states or ["none"]))')
+    case "$st" in ok*) log "watchOS runtime: ${st#ok } after ${waited}s"; return 0;; esac
+    if [ "$waited" -ge "$limit" ]; then log "watchOS runtime still ${st#busy } after ${waited}s"; return 1; fi
+    [ $((waited % 60)) -eq 0 ] && log "waiting for the watchOS runtime: ${st#busy }"
+    sleep 15; waited=$((waited + 15))
+  done
+}
+
+diag start
+wait_ready 900 || true
+try_rung && exit 0
+
+log "rung 2: simulator service restarted, fresh device"
+restart_service; wait_ready 300 || true; fresh_device || true
+try_rung && exit 0
+diag "after rung 2"
+
+log "rung 3: Xcode asked to install the watchOS runtime"
 tmo 1500 sudo xcodebuild -downloadPlatform watchOS 2>&1 | tail -3 >&2 || true
-restart_service; fresh_device || true
-DEV=$(usable); [ -n "$DEV" ] && { echo "$DEV"; exit 0; }
+wait_ready 900 || true; restart_service; fresh_device || true
+try_rung && exit 0
 
-log "no usable watch simulator; xcodebuild's list was:"; cat /tmp/watch-dests.txt >&2
+diag "no usable watch simulator"
+log "xcodebuild's list was:"; cat /tmp/watch-dests.txt >&2
 exit 1

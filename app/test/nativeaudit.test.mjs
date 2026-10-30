@@ -29,10 +29,11 @@ test('the Watch job compiles the Watch code first and picks a simulator xcodebui
   assert.ok(compile > 0, 'build-for-testing of the Watch scheme');
   assert.match(watch, /-destination 'generic\/platform=watchOS Simulator'/);
   assert.ok(compile < watch.indexOf('bash watchsim.sh'), 'compiles before it looks for a simulator');
-  assert.match(watch, /killall -9 com\.apple\.CoreSimulator\.CoreSimulatorService/);
   const sim = read('app/native-tests/native-audit/watchsim.sh');
   assert.match(sim, /xcodebuild -showdestinations/);
   assert.match(sim, /supportedDeviceTypes/);
+  assert.match(sim, /killall -9 com\.apple\.CoreSimulator\.CoreSimulatorService/);
+  assert.match(sim, /wait_ready 900/);
   assert.match(sim, /-downloadPlatform watchOS/);
   assert.doesNotMatch(sim, /secrets|altool|upload/);
 });
