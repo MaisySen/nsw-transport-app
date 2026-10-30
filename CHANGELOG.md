@@ -4,11 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 30 Oct 2026
 
-### Server polls at Transport for NSW's 15 s (30 Oct, about 12:20 PM; server only, no app change)
+### Server polls at Transport for NSW's 15 s (30 Oct, 12:09 PM; server only, no app change; transport-api 4ecfebf1, roll back 80706bee)
 * Transport for NSW advises polling realtime every 15 s. Two server timings were faster and now match it exactly.
 * `backend/src/worker.js` `REFRESH_MAX_AGE_MS` 5000 to 15000: a phone's refresh (`refresh=1`, the app's polls and pull to refresh) now takes the shared Trip Planner answer for a stop or trip while it is up to 15 s old (was 5 s). One stop or trip now costs at most 4 Trip Planner calls a minute per Cloudflare location, whatever the number of phones on it (was up to 12 with 3 or more). The same window applies to the departures copy inside the server and the live hub's board. A plain open is unchanged (15 s edge copy, 12 s departures copy).
 * Live rules unchanged: an answer still carries `dataAt` from the moment the copy was made, so the app's "Live, updated" age stays true; no live time from a feed copy over 5 minutes old; the app's quick ask (a copy 20 s or older) and Not tracking rules are untouched. Phones still refresh every 15 s (20 to 30 s when nothing is due soon), so a polling phone sees new times at most about 30 s after Transport for NSW has them (was about 20 s).
 * `backend/src/engine.js` `ENGINE_TICK_MS` 10000 to 15000: the board engine (boards from the engine are off, `ENGINE_BOARDS=off`) asks the busiest feeds every 15 s (was 10 s), the other Sydney feeds every 30 s (was 20 s); regional buses 45 s and vehicle positions 30 s unchanged. Hot boards are rebuilt every 15 s, the same as their 15 s edge copy.
+* Deployed 12:09 PM as transport-api `4ecfebf1` from main 3f0b46e (this also puts the 7:53 AM privacy change on transport-api: /privacy on the API host still answers 301 to transportsydney.app/privacy/, as before). verify-deploy (not --live) all 12 ok; 15 min watch to 12:24 PM: 35 invocations, all on 4ecfebf1, 0 errors, 0 new feedback or crash rows (still 5). No NSW call by hand. Roll back: `npx wrangler@4 rollback 80706bee-c6b7-4ba2-97f4-08e120bfdc27 --name transport-api -y`, never f8c60d91.
 * Builds 201 to 208 and every app version get the same answer shapes. Tests: `fresh-refresh.test.mjs` (a 9 s old copy now serves a refresh with its true age, a 16.5 s old one does not; source checks for both values).
 
 ### tab.bot removed from the app (30 Oct, about 8:25 AM; main only, app part rides tonight's over the air update; native part needs build 209)
