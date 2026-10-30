@@ -4064,7 +4064,9 @@ async function sendExpo(env, target, n) {
   if (!toks.length) return [];
   const msgs = toks.slice(0, 6).map((t) => ({
     to: t.token, title: n.title, body: n.body, ...expoSound(n), priority: "high",
-    ttl: n.ttl || 900, data: { url: n.url || "/", watch: n.watchId || null, id: n.id, tag: n.tag || "tb" },
+    // The server's Get off now (30 Oct) breaks through a Focus like the phone's own get off alert (time sensitive).
+    ...(n.timeSensitive ? { interruptionLevel: "time-sensitive" } : {}),
+    ttl: n.ttl || 900, data: { url: n.url || "/", watch: n.watchId || null, id: n.id, tag: n.tag || "tb", ...(n.getOff ? { getOff: n.getOff } : {}) },
   }));
   const r = await fetch("https://exp.host/--/api/v2/push/send", {
     method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(msgs),
@@ -5412,6 +5414,121 @@ const stationWord = (s) => String(s || "your stop").replace(/ Station$/, "");
 /** The spoken sound for a watch's "Next stop" and "Arriving" alerts: only for an app that said it has it. */
 const voiceSound = (spec) => (spec && spec.voice === "soon" ? "getoff_soon" : null);
 
+// ---- Get off now from the server (30 Oct) ----
+// Owner testing build 209: the phone's own Get off now alert is set for the time worked out when the app was last open, so
+// with the phone locked a bus that runs late after that makes it ring early. Build 210 starts its trip watch with
+// getOff: 1 (and getOffVoice: 1 when its spoken Get off now is on); when this server says yes (createWatch, getOff:
+// true in the answer) the app takes its own Get off now off the phone and this watch sends it, from the live times
+// the minute tick already reads for the watch (liveLegs, oneStopCheck): no extra request. Builds 201 to 209 never
+// send getOff and are unchanged.
+const GETOFF_PUSH_LEAD_MS = 90000;     // live arrival this close: Get off now (the tick is a minute apart, so 30 to 90 s)
+const GETOFF_PUSH_NEXT_MS = 180000;    // the vehicle has left the stop before yours and the live arrival is this close
+const GETOFF_LAST_LEAD_MS = 90000;     // no live time this tick, the last one under 5 min old (R2): the same lead
+const GETOFF_TT_LEAD_MS = 60000;       // no live time for over 5 min (or never): a minute before the timetable arrival
+const GETOFF_LATE_MS = 60000;          // nothing is sent once the arrival is this far past
+const GETOFF_WATCH_CAP = 25;           // the minute tick reads this many watches (runTick): past it, the phone keeps its own
+
+/** Whether this watch's app handed Get off now to the server (stored only when createWatch said yes). */
+const getOffWanted = (spec) => !!(spec && spec.getOff === 1 && spec.track);
+
+/**
+ * Get off now for one leg you are on, from this tick (pure; test/getoff-push.test.mjs). o: the leg's live row (arr,
+ * arrLive: realtimeFor has already dropped feeds over 5 min old, R2), planned: the timetable arrival in ms, seen:
+ * { eta, at } the last live arrival this watch saw for the leg, c: this tick's oneStopCheck answer or null.
+ * Live: when the arrival is 90 s away or less, or the vehicle has left the stop before yours and it is 3 min away or
+ * less. No live time this tick but one under 5 min old: that arrival, 90 s before ("last"). None for over 5 min, or
+ * never: the timetable arrival, 60 s before ("timetable", worded as timetable). Never once the arrival is a minute past.
+ */
+function getOffDecide({ o, planned, seen, c, now }) {
+  if (o && o.arrLive && Number.isFinite(o.arr)) {
+    const left = o.arr - now;
+    if (left <= -GETOFF_LATE_MS) return null;
+    if (left <= GETOFF_PUSH_LEAD_MS) return { kind: "live", eta: o.arr };
+    if (c && c.nextIsYours && left <= GETOFF_PUSH_NEXT_MS) return { kind: "live", eta: o.arr };
+    return null;
+  }
+  const recent = !!seen && Number.isFinite(seen.eta) && Number.isFinite(seen.at) && now - seen.at <= FEED_LIVE_MAX_MS;
+  const eta = recent ? seen.eta : planned;
+  if (!Number.isFinite(eta)) return null;
+  const left = eta - now;
+  if (left <= -GETOFF_LATE_MS) return null;
+  if (left <= (recent ? GETOFF_LAST_LEAD_MS : GETOFF_TT_LEAD_MS)) return { kind: recent ? "last" : "timetable", eta };
+  return null;
+}
+
+/**
+ * The arrival a Start trip watch ends after (2 min past it). Before: the last leg's arrival this tick, which is the
+ * timetable when the feed misses one tick; for a watch sending Get off now a late bus would then end the watch before
+ * its stop. So for those, a live arrival under 5 min old stands when this tick has none.
+ */
+function getOffEndArr(spec, st, legs, live, now) {
+  const L = live[legs.length - 1];
+  if (!getOffWanted(spec) || L.arrLive) return L.arr;
+  const l = legs[legs.length - 1];
+  const seen = (st.offSeen || {})[`${legs.length - 1}:${l.tripId || l.planned}`];
+  return seen && Number.isFinite(seen.eta) && now - seen.at <= FEED_LIVE_MAX_MS ? Math.max(L.arr, seen.eta) : L.arr;
+}
+
+/** The words of the server's Get off now, like the phone's own (getOffCore getOffWords); the timetable one says so. */
+function getOffPushWords(legs, live, i, d) {
+  const l = legs[i], n = legs[i + 1], no = live[i + 1];
+  const stop = String(l.to || "your stop");
+  const change = n ? `Change here to the ${no && Number.isFinite(no.dep) ? clock(no.dep) + " " : ""}${n.line}${no && no.platform ? " from " + no.platform : ""}.` : "";
+  if (d.kind === "timetable") {
+    return { title: `Get off soon: ${stop}`, body: `No live times right now. By the timetable you get in at ${clock(d.eta)}.${change ? " " + change : ""}` };
+  }
+  const due = `due ${clock(d.eta)}${d.kind === "last" ? " (last live time)" : ""}`;
+  return { title: `Get off now: ${stop}`, body: n ? `${change} Due ${clock(d.eta)}${d.kind === "last" ? " (last live time)" : ""}.` : `This is your stop, ${due}.` };
+}
+
+/**
+ * Whether the server takes Get off now for a new watch: the app asked (getOff: 1, Start trip), the switch getOffPush
+ * is on, the phone has a native push token, and the minute tick will read this watch (fewer than 25 active). Else the
+ * phone keeps its own alert, as before.
+ */
+async function getOffAccept(env, b, device) {
+  if (b.getOff !== 1 || !b.track) return false;
+  if (String(env.GETOFF_PUSH || "").toLowerCase() === "off" || !(await serverOn(env, "getOffPush"))) return false;
+  const tok = await d1all(env, "SELECT COUNT(*) AS n FROM expo_tokens WHERE device = ?1", device).catch(() => []);
+  if (!(tok[0] && tok[0].n > 0)) return false;
+  const act = await d1all(env, "SELECT COUNT(*) AS n FROM watches WHERE active = 1").catch(() => []);
+  return !!(act[0] && act[0].n < GETOFF_WATCH_CAP);
+}
+
+/**
+ * Over the daily NSW call budget the minute tick reads no watch (WATCH_BUDGET), so a watch that took Get off now from
+ * the phone would send nothing. This pass makes no NSW call at all: the last live arrival the watch saw (under 5 min
+ * old) or the timetable, the same rule and claim as processWatch (getOffDecide, off:<leg>).
+ */
+async function getOffNoFeedPass(env, now) {
+  const out = [];
+  for (const w of await d1all(env, "SELECT * FROM watches WHERE active = 1 ORDER BY created LIMIT ?1", GETOFF_WATCH_CAP)) {
+    let spec, st;
+    try { spec = JSON.parse(w.spec); st = w.state ? JSON.parse(w.state) : {}; } catch { continue; }
+    if (!getOffWanted(spec)) continue;
+    const legs = spec.legs || [];
+    const rows = legs.map((l) => ({ dep: ms(l.estimated || l.planned), arr: null, arrLive: false }));
+    let changed = false;
+    for (let i = 0; i < legs.length; i++) {
+      const l = legs[i];
+      if (!l.toStopId || !(rows[i].dep <= now)) continue;
+      const offKey = `${i}:${l.tripId || l.planned}`;
+      if ((st.off || {})[offKey]) continue;
+      const d = getOffDecide({ o: rows[i], planned: ms(l.arrPlanned), seen: (st.offSeen || {})[offKey], c: null, now });
+      if (!d) continue;
+      st.off = st.off || {}; st.off[offKey] = d.kind; changed = true;
+      if (!(await claimOnce(env, w.id, `off:${offKey}`))) continue;
+      const words = getOffPushWords(legs, rows, i, d);
+      const say = spec.getOffVoice === 1 ? (d.kind === "timetable" ? "getoff_soon" : "getoff_now") : null;
+      await notify(env, { device: w.device }, { title: words.title, body: words.body, url: `/#/watch/${w.id}`, tag: `w${w.id}off${i}`, watchId: w.id,
+        ...(say ? { sound: say } : {}), getOff: String(i), timeSensitive: true, ttl: 180 });
+      out.push({ id: w.id, leg: i, kind: d.kind });
+    }
+    if (changed) await db(env).prepare("UPDATE watches SET state = ?2 WHERE id = ?1").bind(w.id, JSON.stringify(st)).run();
+  }
+  return out;
+}
+
 /** The Expo push sound and Android channel for an alert: the app's spoken sound when named, else the default. */
 function expoSound(n) {
   const s = n && (n.sound === "getoff_soon" || n.sound === "getoff_now") ? n.sound : null;
@@ -5427,7 +5544,8 @@ async function processWatch(env, w, now, opts = {}) {
   // extra.once names the alert (for example "arr:1"): it is sent once per watch, ever.
   const push = async (title, body, extra = {}) => {
     if (extra.once && !(await claimOnce(env, w.id, extra.once))) return false;
-    const r = await notify(env, target, { title, body, url, tag: "w" + w.id + (extra.tagSuffix || ""), watchId: w.id, ...(extra.sound ? { sound: extra.sound } : {}) });
+    const r = await notify(env, target, { title, body, url, tag: "w" + w.id + (extra.tagSuffix || ""), watchId: w.id, ...(extra.sound ? { sound: extra.sound } : {}),
+      ...(extra.getOff ? { getOff: extra.getOff, timeSensitive: true, ttl: 180 } : {}) });
     sent.push({ title, body, pushed: r.pushed });
     st.count = (st.count || 0) + 1;
     return true;
@@ -5443,7 +5561,7 @@ async function processWatch(env, w, now, opts = {}) {
   if (bi === 0) phase = "before";
   else if (bi > 0) phase = "between";
   else phase = legs[last].toStopId ? "riding" : "done";
-  if (live[last].arr && now > live[last].arr + 120000) phase = "done";
+  if (live[last].arr && now > getOffEndArr(spec, st, legs, live, now) + 120000) phase = "done";
   if (!legs[last].toStopId && now > live[last].dep + 120000) phase = "done";
 
   const L0 = legs[0], O0 = live[0];
@@ -5542,14 +5660,37 @@ async function processWatch(env, w, now, opts = {}) {
   // Arrival at a change or at your stop: one alert per leg, either "Next stop" (Start trip, from
   // where the vehicle really is) or "Arriving in N min", never both, and claimed so a second
   // check running at the same moment cannot send it again.
+  // Get off now from the server (30 Oct, build 210 asked with getOff: 1): from this same tick's live rows and the same
+  // oneStopCheck answer, so no extra request. Once per leg (claimed), and that leg's Next stop or Arriving alert is
+  // then not sent as well. getOffDecide has the rule.
+  const offOn = getOffWanted(spec);
+  const offSay = offOn && spec.getOffVoice === 1;
   for (let i = 0; i <= last; i++) {
     const o = live[i], l = legs[i];
     if (!l.toStopId || !o.arr) continue;
     if (o.dep > now) continue;
-    if ((st.arrived || {})[i]) continue;
+    const offKey = `${i}:${l.tripId || l.planned}`;
+    const offOpen = offOn && !(st.off || {})[offKey];
+    if (offOpen && o.arrLive && Number.isFinite(o.arr)) { st.offSeen = st.offSeen || {}; st.offSeen[offKey] = { eta: o.arr, at: now }; }
+    if ((st.arrived || {})[i] && !offOpen) continue;
     const left = o.arr - now;
-    if (spec.track && l.tripId && left > 0 && left <= 15 * 60000 && !(st.oneStop || {})[i]) {
-      const c = await oneStopCheck(env, l).catch(() => null);
+    let c = null;
+    if (!(st.arrived || {})[i] && spec.track && l.tripId && left > 0 && left <= 15 * 60000 && !(st.oneStop || {})[i]) {
+      c = await oneStopCheck(env, l).catch(() => null);
+    }
+    if (offOpen) {
+      const d = getOffDecide({ o, planned: ms(l.arrPlanned), seen: (st.offSeen || {})[offKey], c, now });
+      if (d) {
+        st.off = st.off || {}; st.off[offKey] = d.kind;
+        st.arrived = st.arrived || {}; st.arrived[i] = 1;
+        if (c && c.nextIsYours) { st.oneStop = st.oneStop || {}; st.oneStop[i] = 1; }
+        const w = getOffPushWords(legs, live, i, d);
+        await push(w.title, w.body, { tagSuffix: `off${i}`, once: `off:${offKey}`, getOff: String(i), sound: offSay ? (d.kind === "timetable" ? "getoff_soon" : "getoff_now") : null });
+        continue;
+      }
+      if ((st.arrived || {})[i]) continue;
+    }
+    {
       if (c && c.nextIsYours) {
         st.oneStop = st.oneStop || {}; st.oneStop[i] = 1;
         st.arrived = st.arrived || {}; st.arrived[i] = 1;
@@ -5564,7 +5705,8 @@ async function processWatch(env, w, now, opts = {}) {
     }
     // "Change at Town Hall in 2 min" and "Arriving" only from live times: on the timetable alone the train may be
     // nowhere near (26 Oct 2026, a T1 running 30 minutes late), so nothing is said and the phone shows "not live".
-    if (!o.arrLive) continue;
+    // With the server's Get off now still to come for this leg, it says the same a minute later, so not both.
+    if (!o.arrLive || offOpen) continue;
     if (left <= 150000 && left > -60000) {
       st.arrived = st.arrived || {}; st.arrived[i] = 1;
       const mins = Math.max(1, Math.round(left / 60000));
@@ -5578,7 +5720,7 @@ async function processWatch(env, w, now, opts = {}) {
   // A trip started with Start trip ends at your stop: one "arrived", then nothing more. It never
   // moves on to a later service.
   const fin = live[last];
-  if (spec.track && legs[last].toStopId && fin.arr && fin.dep <= now && now >= fin.arr) {
+  if (spec.track && legs[last].toStopId && fin.arr && fin.dep <= now && now >= getOffEndArr(spec, st, legs, live, now)) {
     if (now <= fin.arr + 10 * 60000 && fin.arrLive) {
       await push(`You've arrived at ${stationWord(legs[last].to)}`, `Your ${legs[last].line} got in at ${clock(fin.arr)}. The trip has ended.`, { tagSuffix: "a", once: "done" });
     }
@@ -5654,6 +5796,8 @@ async function createWatch(env, b, now) {
     // getoff_soon.wav. Never sent by older builds, so they keep the normal sound.
     ...(b.voice === "soon" ? { voice: "soon" } : {}),
   };
+  // Get off now from the server (build 210, getOffAccept): stored only when accepted, and said in the answer.
+  if (await getOffAccept(env, b, device)) { spec.getOff = 1; if (b.getOffVoice === 1) spec.getOffVoice = 1; }
   const L = legs[legs.length - 1];
   const end = Math.max(ms(L.arrPlanned || L.planned), ms(legs[0].planned)) + 3 * 3600000;
   const title = String(b.title || `${legs[0].line} ${legs[0].towards ? "to " + legs[0].towards : ""}`).slice(0, 90);
@@ -5663,7 +5807,7 @@ async function createWatch(env, b, now) {
   if (b.kind === "trip" && b.origin && b.to) await logSearch(env, { profile, device, from: b.origin, to: b.to, src: "watch", at: ms(legs[0].planned) - ((legs[0].walkBefore || 0) * 60000) });
   const w = await db(env).prepare("SELECT * FROM watches WHERE id = ?1").bind(id).first();
   const r = await processWatch(env, w, now, { silentStart: !!b.silentStart, leaveSent: !!b.leaveSent });
-  return { id, ...r };
+  return { id, ...r, ...(spec.getOff ? { getOff: true } : {}) };
 }
 
 function watchOut(w) {
@@ -6539,6 +6683,9 @@ async function runTick(env, opts = {}) {
       try { out.watches.push(await processWatch(env, w, Date.now())); }
       catch (e) { out.watches.push({ id: w.id, error: String(e && e.message || e).slice(0, 160) }); }
     }
+  } else if (!opts.device) {
+    // Over the budget: Get off now still goes to the watches that took it from the phone, with no NSW call.
+    out.getOffNoFeed = await getOffNoFeedPass(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
   }
   // Trip cards on iPhone lock screens (build 205 and later), updated by push
   if (!opts.device && !opts.skipLa) out.liveActivities = await tickLiveActivities(env, Date.now()).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));

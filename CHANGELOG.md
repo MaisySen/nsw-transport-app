@@ -4,6 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 30 Oct 2026
 
+### Server: Get off now sent by the server from live times, for build 210 (30 Oct, about 6:15 PM; branch getoff-voice, not deployed)
+* Owner, 30 Oct: with the phone locked the phone's own Get off now rang at the time worked out when the app was last open, so a bus running late after that made it ring early ("we are a live trip viewer, we can't mess up").
+* A Start trip watch from build 210 sends `getOff: 1` (`getOffVoice: 1` with spoken Get off now on). The server accepts it (`watch.getOff: true`) only with the switch `getOffPush` on, a native push token for the phone and room in the minute tick (under 25 active watches); otherwise the phone keeps its own alert as before.
+* The watch then sends "Get off now: (stop)" from the live rows the minute tick already reads (liveLegs, oneStopCheck; no extra NSW request): 90 s or less before the live arrival, or as the vehicle leaves the stop before yours when the arrival is 3 min or less away. No live time this tick but one under 5 min old (R2): that arrival. None for over 5 min, or never: "Get off soon: (stop)" a minute before the timetable arrival, saying it is the timetable. Once per leg, claimed; that leg's "Arriving in 2 min" is not sent a minute before it; Next stop still comes first when the stop before is over 3 min out.
+* Expo message: time sensitive, ttl 180 s, `data.getOff` names the leg; `getoff_now.wav` (timetable one `getoff_soon.wav`) only for a watch with `getOffVoice`, default sound otherwise.
+* A late bus whose feed misses a tick no longer ends such a watch at the timetable arrival (the last live arrival under 5 min old stands). Over the NSW call budget (watches not read) a no feed pass still sends it.
+* Builds 201 to 209 never send `getOff`: unchanged. Switches `getOffPush` (server config) and `GETOFF_PUSH=off`. No table change.
+* Tests: `backend/test/getoff-push.test.mjs` (14). Backend 651/651.
+
 ### Server: spoken "Next stop" alert for build 210 (30 Oct, about 5:45 PM; branch getoff-voice, not deployed)
 * Owner, 30 Oct, build 209 on a real trip: the get off alert came as a banner and was not spoken with the phone locked. Build 210 (branch build-209) bundles two voice alert sounds, `getoff_now.wav` and `getoff_soon.wav`, and rings the phone's own get off alerts with them.
 * Server part: a trip watch started with `voice: "soon"` (build 210 with Speak alerts on) stores it in the watch, and its Next stop and Arriving alerts (last leg and change) go to Expo with `sound: "getoff_soon.wav"` and Android channel `getoff_soon`. Every other push, and every watch from builds 201 to 209 (which never send `voice`), keeps `sound: "default"` and channel `default` as before. No table change, no new request.
