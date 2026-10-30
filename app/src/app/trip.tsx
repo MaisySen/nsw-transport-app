@@ -13,6 +13,8 @@ import { arriveByIndex, NOW, whenFromParams, type When } from '@/lib/planCore';
 import { WhenPicker } from '@/components/WhenPicker';
 import { afterBatch, canLoadEarlier, canLoadLater, chipLabel, chipsToShow, dateNeeded, earlierFloor, earlierSteps, emptyModes, filterModes, hasLeft, keepFrom, modesWords, MODE_CHIPS, nearEnd, normModes, PAGE0, PAGING, pickerDays, pinDay, queryAt, serviceDayEnd, toggleMode, whenAt, whenKeyOf, whenWords, ymd, type ModeK, type PageState } from '@/lib/tripModesCore';
 import { LeftRow } from '@/components/LeftRow';
+import { EarlierHeader, NextMark, NowDivider, useOpenAtNow, usePastNow } from '@/components/PastNow';
+import { cardEdges, nowA11y, nowLabel, pastNowSplit } from '@/lib/pastNowCore';
 import { afterPage, canPage, cursorsOf, dayPageOf, dayPrefetchPx, DAY_REVEAL_ROWS, DIR0, earlierSource, isPaged, laterSource, nearBottom, nearTop, PAGE_REACH_MS, plannedDep, type DayInfo, type PageDir } from '@/lib/tripPagesCore';
 import { SkeletonRows } from '@/components/SkeletonRows';
 import { useOnViewRef } from '@/lib/activity';
@@ -25,7 +27,7 @@ import { peekOffline } from '@/lib/offline';
 import { armFresh, armSpec, isPhoneBuilt, phoneBuiltText, tripSeed } from '@/lib/instantPaintCore';
 import { ttFirstSeed, ttFirstWanted } from '@/lib/newTripCore';
 import { usePalette, radius, modeColor } from '@/lib/theme';
-import { bestTime, durText, ms, shortName } from '@/lib/format';
+import { bestTime, clock, durText, ms, shortName } from '@/lib/format';
 import { plainText } from '@/lib/htmlTextCore';
 import { store, tripKeyOf, useStore } from '@/lib/store';
 import { safeUrl, stShort } from '@/lib/access';
@@ -495,6 +497,11 @@ export default function TripScreen() {
   // to leave, only when a trip after the peak is loaded (shown, waiting above or a later page) with the same choices.
   const opHint = offPeakHint(js, applyWalkPref(filterModes([...(data?.journeys || []), ...extra, ...heldDays], modes), wp).list, depMs, now, when.kind === 'arrive');
   const jKeys = stableKeys(js.map(jKey));
+  // Past and upcoming apart (PAST_NOW, 30 Oct): gone ones in their own muted card under Earlier, a Now divider, the next
+  // one marked, the list opened at Now (pastNowCore.ts). Gone is the same rule the rows already use (hasLeft, minute tick).
+  const pastNow = usePastNow();
+  const pn = pastNowSplit(pastNow ? js.map((j) => hasLeft(depMs(j), now)) : []);
+  const atNow = useOpenAtNow(pastNow, listKey, js.length, pn.divider);
   // A new reminder starts 15 min before the first service shown (phone time, as the reminder rings in phone time).
   const suggest = (() => { const j = js.find((x) => !hasLeft(depMs(x), now)) || js[0]; if (!j) return null; const t = new Date(depMs(j) - 15 * 60000); return { hour: t.getHours(), minute: Math.floor(t.getMinutes() / 5) * 5 }; })();
   // Last way home: the last service tonight, only when the list shows the night gap after it.
@@ -733,9 +740,9 @@ export default function TripScreen() {
           </Stack.Toolbar.Menu>
         </Stack.Toolbar>
       ) : null}
-      <Screen scrollEnabled={scrollOn} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pull} />} scrollEventThrottle={100}
+      <Screen ref={atNow.ref} scrollEnabled={scrollOn} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pull} />} scrollEventThrottle={100}
         onLayout={(e) => setViewH(e.nativeEvent.layout.height)}
-        onScrollBeginDrag={() => { dragged.current = true; }}
+        onScrollBeginDrag={() => { dragged.current = true; atNow.onDrag(); }}
         // The next page loads while the reader is still a screen and a half from either end (prefetch), so scrolling
         // does not wait. Earlier pages only on a scroll up by the reader, never by themselves on open.
         onScroll={(e) => {
@@ -832,17 +839,26 @@ export default function TripScreen() {
             )}
           </View>
         ) : null}
+        {/* Earlier (PAST_NOW): in the top part, so an earlier page going in above the gone rows never moves it. */}
+        {pn.earlier ? <EarlierHeader count={pn.pastCount} /> : null}
         {(paged ? pgE.busy : earlier.busy) && js.length ? <SkeletonRows count={3} label="Loading earlier services" /> : null}
         </View>
         {/* Each trip is its own child of the scroll view (one card drawn across them), so an earlier page can go in above
             the trip on screen without moving it (maintainVisibleContentPosition above). */}
-        {js.map((j, i) => (
-          <View key={jKeys[i]} style={{ marginHorizontal: 16, marginTop: i === 0 ? 12 : 0, backgroundColor: c.card, overflow: 'hidden',
-            borderTopLeftRadius: i === 0 ? radius : 0, borderTopRightRadius: i === 0 ? radius : 0,
-            borderBottomLeftRadius: i === js.length - 1 ? radius : 0, borderBottomRightRadius: i === js.length - 1 ? radius : 0 }}>
-            {i > 0 ? <Sep inset={0} /> : null}
-            {hasLeft(depMs(j), now)
-              ? <LeftRow j={j} arrive={arrs[i]} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />
+        {js.map((j, i) => {
+          // With PAST_NOW the card splits at Now: gone rows in one card, the rest in another, the divider between.
+          const e = cardEdges(i, js.length, pn);
+          const gone = hasLeft(depMs(j), now);
+          // Gone rows on the recessed past zone, the next one on a faint accent tint, the rest on the card colour.
+          const bg = pastNow && gone ? c.pastBg : pn.nextIdx === i && open !== i ? c.nextBg : c.card;
+          const card = (
+          <View style={{ marginHorizontal: 16, marginTop: i === 0 && !pn.earlier ? 12 : 0, backgroundColor: bg, overflow: 'hidden',
+            borderTopLeftRadius: e.top ? radius : 0, borderTopRightRadius: e.top ? radius : 0,
+            borderBottomLeftRadius: e.bottom ? radius : 0, borderBottomRightRadius: e.bottom ? radius : 0 }}>
+            {e.sep ? <Sep inset={0} /> : null}
+            {pn.nextIdx === i ? <NextMark /> : null}
+            {gone
+              ? <LeftRow j={j} arrive={arrs[i]} muted={pastNow} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />
               : <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} pressKey={i} onPress={() => { haptic.select(); setOpen((o) => (o === i ? null : i)); }} />}
             <WarnLine j={j} />
             <JourneyWhy j={j} />
@@ -850,7 +866,15 @@ export default function TripScreen() {
             {data?.accessible ? <JourneyAccessLine j={j} liftOn={liftOn} /> : null}
             {open === i ? <View><Sep inset={16} /><JourneyDetail j={j} now={now} from={from} to={to} autoStart={autoStart === i} onMapTouch={setScrollOn} fresh={armFresh({ data, updatedAt, offlineAt, staleAt, now })} /></View> : null}
           </View>
-        ))}
+          );
+          // One child per trip still (the earlier page anchor counts children): the Now divider rides in the first row to come.
+          return pn.divider && i === pn.nowIdx ? (
+            <View key={jKeys[i]} onLayout={(ev) => atNow.onDividerLayout(ev.nativeEvent.layout.y)}>
+              <NowDivider label={nowLabel(now, clock)} a11y={nowA11y(now, clock, pn.pastCount)} />
+              {card}
+            </View>
+          ) : <View key={jKeys[i]}>{card}</View>;
+        })}
         {(paged ? pgL.busy : later.busy) && js.length ? <SkeletonRows count={3} label="Loading later services" /> : null}
         {(() => {
           // The end of the list: pages stop 7 days on or when the planner has nothing more; batches (a trip via a stop)

@@ -7,19 +7,26 @@ const ios = {
     bg: '#F2F2F7', card: '#FFFFFF', card2: '#F2F2F7', fill: 'rgba(120,120,128,0.12)', text: '#000000', text2: 'rgba(60,60,67,0.6)', text3: 'rgba(60,60,67,0.3)',
     sep: 'rgba(60,60,67,0.29)', tint: '#007AFF', green: '#34C759', liveText: '#248A3D', orange: '#FF9500', lateText: '#C93400', red: '#FF3B30', yellow: '#FFCC00', indigo: '#5856D6',
     redText: '#D70015', liveBg: '#248A3D',
+    // Past and upcoming (PAST_NOW, 30 Oct): gone services sit on a recessed grey zone, the Now band is solid accent, the
+    // next service a faint accent tint. Contrast checked in test/pastnow.test.mjs.
+    pastBg: '#EDEDF1', pastText: '#55555B', nextBg: '#F3F8FF', nowBg: '#0062D6', nowText: '#FFFFFF',
   },
   dark: {
     bg: '#000000', card: '#1C1C1E', card2: '#2C2C2E', fill: 'rgba(120,120,128,0.24)', text: '#FFFFFF', text2: 'rgba(235,235,245,0.6)', text3: 'rgba(235,235,245,0.3)',
     sep: 'rgba(84,84,88,0.65)', tint: '#0A84FF', green: '#30D158', liveText: '#30D158', orange: '#FF9F0A', lateText: '#FF9F0A', red: '#FF453A', yellow: '#FFD60A', indigo: '#5E5CE6',
     redText: '#FF6961', liveBg: '#1B7431',
+    pastBg: '#101012', pastText: '#A5A5AC', nextBg: '#0B1F36', nowBg: '#0A84FF', nowText: '#000000',
   },
 };
 const md = {
   // Every text colour here is at least 4.5:1 on bg, card, card2 and fill (checked by test/a11y.test.mjs).
   light: { ...ios.light, bg: '#F7F9FC', card: '#FFFFFF', card2: '#EEF1F6', fill: '#E3E7EE', tint: '#1A5FCF', text2: '#4A5260', text3: '#5F6672', sep: '#E1E4EA',
-    liveText: '#1B7431', lateText: '#B02F00', redText: '#B3261E', liveBg: '#1B7431' },
+    liveText: '#1B7431', lateText: '#B02F00', redText: '#B3261E', liveBg: '#1B7431',
+    // Material 3: past on a surface container tone below the cards, the Now band in primary, next in a primary tint.
+    pastBg: '#E8ECF2', pastText: '#454D5A', nextBg: '#E4ECFA', nowBg: '#1A5FCF', nowText: '#FFFFFF' },
   dark: { ...ios.dark, bg: '#111317', card: '#1B1E24', card2: '#252931', fill: '#2C313A', tint: '#8AB4F8', text2: '#BCC3CE', text3: '#9099A6', sep: '#2C313A',
-    liveText: '#4ADE80', lateText: '#FFB74D', redText: '#FF8A80', liveBg: '#1B7431' },
+    liveText: '#4ADE80', lateText: '#FFB74D', redText: '#FF8A80', liveBg: '#1B7431',
+    pastBg: '#14161A', pastText: '#BCC3CE', nextBg: '#1E2B42', nowBg: '#8AB4F8', nowText: '#0B1D3A' },
 };
 
 export type Palette = typeof ios.light;

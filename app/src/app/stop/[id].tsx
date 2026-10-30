@@ -30,6 +30,8 @@ import { linesHere, stopLabel, stopNumber } from '@/lib/busCore';
 import { BOARD_EARLIER_NEEDS_NEW, BOARD_MAX_ASKS, boardEarlierRow, boardEarlierSteps, boardFloor, boardList, boardDayWord, boardMoment, boardWhenWords, fillFrom, firstDepOf, freshBefore, isGone } from '@/lib/boardTimeCore';
 import { afterBatch, canLoadEarlier, PAGE0, sydney, type PageState } from '@/lib/tripModesCore';
 import { LeftDepartureRow } from '@/components/LeftRow';
+import { EarlierHeader, NextMark, NowDivider, useOpenAtNow, usePastNow } from '@/components/PastNow';
+import { nowA11y, nowLabel, pastNowSplit } from '@/lib/pastNowCore';
 import { WhenPicker } from '@/components/WhenPicker';
 import type { When } from '@/lib/planCore';
 import type { Departure } from '@/lib/types';
@@ -161,6 +163,10 @@ export default function StopScreen() {
   // Pull down: refresh as before, and try Earlier departures again when they did not load.
   const pull = () => { refresh(); if (earlierNote) loadEarlier(); };
   const items = byRoute(board.filter((d) => !mode || d.mode === mode), route);
+  // Past and upcoming apart (PAST_NOW, pastNowCore.ts): the board's own gone rule (isGone) on the minute tick it has.
+  const pastNow = usePastNow();
+  const pn = pastNowSplit(pastNow ? items.map((d) => isGone(d, now)) : []);
+  const atNow = useOpenAtNow(pastNow, `${id}|${at ?? 'now'}`, items.length, pn.divider);
   const itemsRef = useRef(items);
   itemsRef.current = items;
   useReportCountdowns('stopscreen:' + id, items.slice(0, 6).map((d) => bestTime(d.planned, d.realtime ? d.estimated : null)));
@@ -194,7 +200,7 @@ export default function StopScreen() {
           </View>
         ),
       }} />
-      <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pull} />}>
+      <Screen ref={atNow.ref} onScrollBeginDrag={atNow.onDrag} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pull} />}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 4 }}>
           {/* The stamp wraps to a second line rather than pushing Speak and Board off the screen. */}
           <View style={{ flex: 1, marginRight: 8 }}><LiveStamp updatedAt={isSlowStandIn(data) ? null : updatedAt} error={error} offlineAt={offlineAt} staleAt={staleAt} packAt={packAt ?? (isSlowStandIn(data) ? updatedAt : null)} /></View>
@@ -306,41 +312,71 @@ export default function StopScreen() {
           </View>
         ) : null}
 
-        {items.length ? (
-          <View style={{ marginHorizontal: 16, marginTop: 14, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
-            {earlier.busy ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: 48, gap: 8 }} accessibilityLiveRegion="polite" accessibilityLabel="Loading earlier departures">
-                <ActivityIndicator size="small" />
-                <T kind="foot" tone="text2">Loading earlier departures</T>
-              </View>
-            ) : null}
-            {(() => {
-              // Earlier departures, also on Now (the trip screen's Earlier services row): each tap loads the services
-              // before the first one shown, gone ones as Left, back to 4am (pull down tries again after a miss).
-              const er = boardEarlierRow(earlier, firstDep, floor, timeOk);
-              return er.show ? (
+        {items.length ? (() => {
+          const er = boardEarlierRow(earlier, firstDep, floor, timeOk);
+          // The top of the list: Earlier departures (a tap loads the services before the first one shown, gone ones as
+          // Left, back to 4am; pull down tries again after a miss), its spinner and its note. With PAST_NOW it heads the
+          // gone services' card, since what it loads goes there.
+          const head = (
+            <>
+              {earlier.busy ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: 48, gap: 8 }} accessibilityLiveRegion="polite" accessibilityLabel="Loading earlier departures">
+                  <ActivityIndicator size="small" />
+                  <T kind="foot" tone="text2">Loading earlier departures</T>
+                </View>
+              ) : null}
+              {er.show ? (
                 <Pressable accessibilityRole="button" accessibilityLabel={`${er.label}. Loads the services before ${firstDep != null ? clock(firstDep) : 'the first one'}`} onPress={() => { haptic.select(); loadEarlier(); }}
                   android_ripple={{ color: c.fill }} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingHorizontal: 16, opacity: pressed ? 0.6 : 1 })}>
                   <Icon name={I.clock} size={14} color={c.tint} />
                   <T kind="sub" tone="tint" style={{ fontWeight: '600', marginLeft: 6 }}>{er.label}</T>
                 </Pressable>
-              ) : null;
-            })()}
-            {earlierNote && !earlier.busy ? <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}><T kind="foot" tone="text2">{earlierNote}</T></View> : null}
-            {withKeys(items, (d) => tripKey(d.tripId, d.planned, d.line)).map(({ v: d, k: rowKey }, i) => {
-              const key = tripKey(d.tripId, d.planned, d.line);
-              const top = i === 0 && !earlier.busy && !earlierNote && !boardEarlierRow(earlier, firstDep, floor, timeOk).show;
-              return (
-                <View key={rowKey}>
-                  {top ? null : <Sep inset={i ? 82 : 0} />}
-                  {isGone(d, now)
-                    ? <LeftDepartureRow d={d} stopNo={signNo ? null : stopLabel(d.stopId, d.mode) || null} onPress={() => openService({ ...d, stopName: d.stopName || stopName })} />
-                    : <DepartureRow d={d} now={now} stopNo={!signNo} alertText={noteFor(d)} why={whyOf(d)} watched={!!st.watchedTrips[key]} onPress={() => openService({ ...d, stopName: d.stopName || stopName })} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />}
+              ) : null}
+              {earlierNote && !earlier.busy ? <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}><T kind="foot" tone="text2">{earlierNote}</T></View> : null}
+            </>
+          );
+          const headShown = earlier.busy || !!(earlierNote && !earlier.busy) || er.show;
+          const keyed = withKeys(items, (d) => tripKey(d.tripId, d.planned, d.line));
+          // first: the first row of its card with nothing above it (no hairline).
+          const row = ({ v: d, k: rowKey }: { v: Departure; k: string }, i: number, first: boolean) => {
+            const key = tripKey(d.tripId, d.planned, d.line);
+            return (
+              <View key={rowKey}>
+                {first ? null : <Sep inset={i ? 82 : 0} />}
+                {pn.nextIdx === i ? <NextMark /> : null}
+                {isGone(d, now)
+                  ? <LeftDepartureRow d={d} muted={pastNow} stopNo={signNo ? null : stopLabel(d.stopId, d.mode) || null} onPress={() => openService({ ...d, stopName: d.stopName || stopName })} />
+                  : <DepartureRow d={d} now={now} next={pn.nextIdx === i} stopNo={!signNo} alertText={noteFor(d)} why={whyOf(d)} watched={!!st.watchedTrips[key]} onPress={() => openService({ ...d, stopName: d.stopName || stopName })} onWatch={() => toggleWatch(svcSpec(d), store.watchedId(key))} />}
+              </View>
+            );
+          };
+          const cardStyle = { marginHorizontal: 16, marginTop: 14, backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' as const };
+          // PAST_NOW (30 Oct): gone services in their own card under Earlier, a Now divider, then the services to come.
+          if (pn.divider) {
+            return (
+              <>
+                {pn.earlier ? <EarlierHeader count={pn.pastCount} /> : null}
+                <View style={[cardStyle, { backgroundColor: c.pastBg }, pn.earlier ? { marginTop: 0 } : null]}>
+                  {head}
+                  {keyed.slice(0, pn.nowIdx).map((x, i) => row(x, i, i === 0 && !headShown))}
                 </View>
-              );
-            })}
-          </View>
-        ) : null}
+                <NowDivider label={nowLabel(now, clock)} a11y={nowA11y(now, clock, pn.pastCount)} onLayout={atNow.onDividerLayout} />
+                <View style={[cardStyle, { marginTop: 0 }]}>
+                  {keyed.slice(pn.nowIdx).map((x, k) => row(x, pn.nowIdx + k, k === 0))}
+                </View>
+              </>
+            );
+          }
+          return (
+            <>
+              {pn.earlier ? <EarlierHeader count={pn.pastCount} /> : null}
+              <View style={[cardStyle, pn.earlier && pn.nowIdx < 0 ? { backgroundColor: c.pastBg } : null, pn.earlier ? { marginTop: 0 } : null]}>
+                {head}
+                {keyed.map((x, i) => row(x, i, i === 0 && !headShown))}
+              </View>
+            </>
+          );
+        })() : null}
         {data && !items.length ? <Empty icon={I.clock} title={route ? `No more ${route} services` : 'No more services'} body={at == null ? 'Nothing is due from here in the next few hours.' : 'Nothing is due from here around that time.'} /> : null}
 
         {!data && error && at != null ? <T kind="sub" tone="text2" style={{ marginHorizontal: 32, marginTop: 16 }} accessibilityLiveRegion="polite">{error}</T> : null}

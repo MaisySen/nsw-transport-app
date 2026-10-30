@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 30 Oct 2026
 
+### Past and upcoming apart on trip lists and stop boards (30 Oct, about 5:30 PM; branch next-pastnow, over the air only, not on main)
+* The owner, testing build 209: "Hard to differentiate past and current list here", then "Make background better". Gone services (Left rows) were grey in the same white card as the services to come, and grey already means a timetable time on these lists.
+* With `PAST_NOW` on (features.ts; the server flag `pastNow` turns it off at once): on the trip screen's list and a stop's board, gone services sit in their own card on a recessed grey zone (palette `pastBg`, text `pastText`) under an "Earlier" header, with no strikethrough and slightly faded times and line badges; a solid accent "Now, 5:08pm" band (`nowBg`/`nowText`) comes next; the services to come are on the normal card, the next one on a faint accent tint (`nextBg`) with a short accent bar. Light and dark, iPhone and Android; every text on the new surfaces is 4.5:1 or more (iPhone light's system green on the tint excepted, 4.1:1 against 4.4:1 on white).
+* The list opens at Now: once per list (trip, time, modes) and only before the reader scrolls, the Now band goes to the top of the screen, just under the see-through iPhone header. A row going on the minute tick later never moves the list. The server flag `pastNowScroll` turns only this off.
+* What counts as gone is unchanged (over a minute past, phone clock, the same `hasLeft`/`isGone`), no new timer (the screens' minute tick), no request, no native code. Earlier pages still keep the reader's place (one scroll child per trip, the Earlier header in the top part).
+* Code: `app/src/lib/pastNowCore.ts`, `app/src/components/PastNow.tsx`, `LeftRow.tsx` (`muted`), `Transit.tsx` (`DepartureRow` `next`), `theme.ts`, `trip.tsx`, `stop/[id].tsx`, `ui.tsx` (`Screen` passes a ref). Tests: `app/test/pastnow.test.mjs` (21: divider place, cards split, initial scroll, settled open, muted rows, contrast per palette, wiring).
+
 ### Native audit workflow on main (30 Oct, about 5 PM; CI only, nothing in the app changes)
 * `.github/workflows/ios-native-audit.yml` is on main so it can be started by hand; it audits the branch it is started on. The audit itself (`app/native-tests/native-audit`) and the native fixes it led to are on branch build-209 for build 210, which waits for the owner's go: every widget family, Lock Screen, StandBy, both Live Activities with every Dynamic Island presentation, the Watch app and complications, on the smallest to the largest iPhone and watch, default and xxxLarge text, light and dark. Snapshot only: no secrets, no app build, no upload. Details in build-209's CHANGELOG.
 
