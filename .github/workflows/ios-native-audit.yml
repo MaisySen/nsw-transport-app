@@ -75,7 +75,7 @@ jobs:
 
   watch:
     runs-on: xcode-27
-    timeout-minutes: 45
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: app/native-tests/native-audit
@@ -85,54 +85,56 @@ jobs:
         run: |
           sudo xcode-select -s /Applications/Xcode_27.1.app
           xcodebuild -version
+          sudo xcodebuild -runFirstLaunch 2>&1 | tail -2 || true
+          # The simulator service must be the selected Xcode's: a service left running from the image's default Xcode
+          # is the likely reason xcodebuild saw the watch simulator as "watchOS Simulator (null)" while simctl
+          # listed it booted (4 of 8 runs on 30 Oct). It starts again on the next simctl call.
+          xcrun simctl shutdown all 2>/dev/null || true
+          killall -9 com.apple.CoreSimulator.CoreSimulatorService 2>/dev/null || true
+          sleep 3
           xcrun simctl list runtimes | grep -i watch || true
       - name: Project
         run: |
           curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip
           unzip -q /tmp/xcodegen.zip -d /tmp/xg
           "$(find /tmp/xg -type f -name xcodegen -perm -u+x | head -1)" generate
+      - name: Compile the Watch code (no simulator needed)
+        run: |
+          # Always compiles the watch app's Swift and the complications, whatever simulator the runner has, so a
+          # compile error can never pass as a runner problem.
+          mkdir -p "$GITHUB_WORKSPACE/out/watch"
+          xcodebuild build-for-testing -project NativeAudit.xcodeproj -scheme WatchAuditTests \
+            -destination 'generic/platform=watchOS Simulator' -derivedDataPath dd CODE_SIGNING_ALLOWED=NO \
+            > "$GITHUB_WORKSPACE/out/watch-build.log" 2>&1 \
+            || { grep -E "error:" "$GITHUB_WORKSPACE/out/watch-build.log" | sort -u | head -150; echo "WATCH CODE DOES NOT COMPILE"; exit 1; }
+          echo "watch code compiled"
       - name: Watch simulator
         run: |
-          # Make sure Xcode's simulator services are set up and the watchOS runtime for this Xcode is there.
-          sudo xcodebuild -runFirstLaunch 2>&1 | tail -2 || true
-          sudo xcodebuild -downloadPlatform watchOS 2>&1 | tail -3 || true
-          xcrun simctl list runtimes | grep -i watch || true
-          xcrun simctl list devices available -j > /tmp/devs.json
-          DEV=$(python3 sim.py watch /tmp/devs.json)
-          if [ -z "$DEV" ]; then
-            RT=$(xcrun simctl list runtimes | grep -o 'com.apple.CoreSimulator.SimRuntime.watchOS-[0-9-]*' | tail -1)
-            for DT in $(xcrun simctl list devicetypes | grep -o 'com.apple.CoreSimulator.SimDeviceType.Apple-Watch[^)]*' | tail -r); do
-              DEV=$(xcrun simctl create "Audit Watch" "$DT" "$RT" 2>/dev/null) && break
-            done
+          # A watch simulator chosen from xcodebuild's own list of destinations (watchsim.sh: as is, then the
+          # simulator service restarted with a fresh device, then the runtime downloaded).
+          if DEV=$(bash watchsim.sh NativeAudit.xcodeproj WatchAuditTests); then
+            echo "simulator $DEV"; echo "$DEV" > /tmp/sim-id.txt
+            xcrun simctl boot "$DEV" 2>&1 || true
+            xcrun simctl bootstatus "$DEV" -b > /dev/null || true
+          else
+            echo "The Watch code compiled, but this runner has no watch simulator xcodebuild can test on."
+            touch "$GITHUB_WORKSPACE/out/FAILED-watch-simulator"
           fi
-          echo "simulator $DEV"; test -n "$DEV"; echo "$DEV" > /tmp/sim-id.txt
-          xcrun simctl boot "$DEV" 2>&1 || true
-          xcrun simctl bootstatus "$DEV" -b > /dev/null
-          xcrun simctl list devices | grep "$DEV"
       - name: Audit (Apple Watch app and complications)
+        if: hashFiles('out/FAILED-watch-simulator') == ''
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/out/watch"
           LOG="$GITHUB_WORKSPACE/out/watch-test.log"
           run_tests() {
             TEST_RUNNER_SNAPSHOT_DIR="$GITHUB_WORKSPACE/out/watch" TEST_RUNNER_TZ=Australia/Sydney \
             xcodebuild test -project NativeAudit.xcodeproj -scheme WatchAuditTests -destination "id=$1" \
-              -derivedDataPath dd CODE_SIGNING_ALLOWED=NO > "$LOG" 2>&1
+              -derivedDataPath dd CODE_SIGNING_ALLOWED=NO > "$2" 2>&1
           }
-          DEV=$(cat /tmp/sim-id.txt)
-          if ! run_tests "$DEV"; then
-            # Some runners hand Xcode the watch simulator with no runtime ("watchOS Simulator (null)"): start a fresh
-            # device on the same runtime and try once more.
-            if grep -q "Simulator (null)" "$LOG"; then
-              echo "watch simulator had no runtime, retrying on a fresh device"
-              xcrun simctl shutdown all || true
-              RT=$(xcrun simctl list runtimes | grep -o 'com.apple.CoreSimulator.SimRuntime.watchOS-[0-9-]*' | tail -1)
-              for DT in $(xcrun simctl list devicetypes | grep -o 'com.apple.CoreSimulator.SimDeviceType.Apple-Watch[^)]*' | tail -r); do
-                NEW=$(xcrun simctl create "Audit Watch 2" "$DT" "$RT" 2>/dev/null) && break
-              done
-              xcrun simctl boot "$NEW" 2>&1 || true
-              xcrun simctl bootstatus "$NEW" -b > /dev/null || true
-              sleep 20
-              run_tests "$NEW" || { grep -E "error:|DOES NOT FIT|failed" "$LOG" | sort -u | head -150; touch "$GITHUB_WORKSPACE/out/FAILED-watch"; }
+          if ! run_tests "$(cat /tmp/sim-id.txt)" "$LOG"; then
+            if grep -q "Simulator (null)" "$LOG" && DEV=$(bash watchsim.sh NativeAudit.xcodeproj WatchAuditTests); then
+              # xcodebuild lost the runtime between the pick and the test: once more on a device it lists again.
+              echo "watch simulator lost its runtime; once more on $DEV (first log: watch-test-1.log)"
+              mv "$LOG" "$GITHUB_WORKSPACE/out/watch-test-1.log"
+              run_tests "$DEV" "$LOG" || { grep -E "error:|DOES NOT FIT|failed" "$LOG" | sort -u | head -150; touch "$GITHUB_WORKSPACE/out/FAILED-watch"; }
             else
               grep -E "error:|DOES NOT FIT|failed" "$LOG" | sort -u | head -150; touch "$GITHUB_WORKSPACE/out/FAILED-watch"
             fi
@@ -151,4 +153,8 @@ jobs:
           path: out
           retention-days: 14
       - name: Result
-        run: test ! -e "$GITHUB_WORKSPACE/out/FAILED-watch"
+        run: |
+          if [ -e "$GITHUB_WORKSPACE/out/FAILED-watch-simulator" ]; then
+            echo "Watch code compiled; no watch simulator on this runner, so no Watch snapshots. Run the audit again."; exit 1
+          fi
+          test ! -e "$GITHUB_WORKSPACE/out/FAILED-watch"

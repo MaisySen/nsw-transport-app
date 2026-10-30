@@ -29,6 +29,8 @@ import { appMayWriteCard } from '@/lib/liveFreshCore';
 
 const ARRIVED_KEEP_S = 120;
 const TICK_MS = 30000;
+/** Leaving the app reloads the widgets only when the last reload from the app is older than this. */
+const WIDGET_LEAVE_RELOAD_MS = 120000;
 
 if (Platform.OS === 'ios' && iosNative.available()) {
   // Live service responses per leg, as the trip engine loads them.
@@ -197,6 +199,16 @@ if (Platform.OS === 'ios' && iosNative.available()) {
 
   // Widget data. The widgets reload when something on them changed, and each time the app comes to the front
   // (force); a store write that changed nothing they show (a recent search, a setting) no longer reloads them.
+  // When the widgets were last reloaded from here. Leaving the app reloads them once more when that was over 2 minutes
+  // ago, so their hour of minute entries starts from fresh times as you lock the phone (30 Oct, widget refresh fix;
+  // works on every build, reloadWidgets is in all of them).
+  let widgetsReloadedAt = 0;
+  function reloadWidgetsOnLeave(now = Date.now()) {
+    if (now - widgetsReloadedAt < WIDGET_LEAVE_RELOAD_MS) return;
+    widgetsReloadedAt = now;
+    iosNative.reloadWidgets();
+  }
+
   async function shareWidgetData(force = false) {
     try {
       const [profile, store] = await Promise.all([AsyncStorage.getItem('profile'), AsyncStorage.getItem('store')]);
@@ -219,6 +231,7 @@ if (Platform.OS === 'ios' && iosNative.available()) {
       }
       watchData.profile = profile || null;
       if (changed || force) iosNative.reloadWidgets();
+      if (changed || force) widgetsReloadedAt = Date.now();
       shareWatch();
     } catch {}
   }
@@ -278,5 +291,5 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   // The card refresh runs only while a trip is on and the app is in front; in the background push moves the card.
   cardPoll.setEnabled(!!trip);
   // Going to the background: the last chance to say on the card when its live times are from.
-  AppState.addEventListener('change', (s) => { if (s === 'active') { checkPending(); shareWidgetData(true); refreshCard(); sendDeviceToken(); } else if (s === 'background') refreshCard(true); });
+  AppState.addEventListener('change', (s) => { if (s === 'active') { checkPending(); shareWidgetData(true); refreshCard(); sendDeviceToken(); } else if (s === 'background') { refreshCard(true); reloadWidgetsOnLeave(); } });
 }
