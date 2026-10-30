@@ -4,6 +4,10 @@ Every step for build 209, in order. Steps 2.1 to 2.8 were run on 30 Oct (branch 
 
 Hard rules for the day: main stays over the air safe for runtime 1.0.0 until build 209 is on TestFlight and checked; no App Store submit without Bidur's written yes; no secret in the repo, a log or a commit (the repo is public); the Expo free plan allows 15 iOS builds a month and resets on 1 Nov, so plan for 2 (one simulator compile check, one production build).
 
+## 30 Oct: built early on a GitHub hosted Mac
+
+The owner asked for 209 on 30 Oct (2:44 PM). The Expo Free plan had no iOS builds left for October (15 of 15; they come back at 1 Nov 00:00 UTC, 11 AM Sydney), so steps 4 and 5 run as one `eas build --local` on GitHub Actions instead: `.github/workflows/ios-209-local.yml` (manual trigger, build-209 only, runner `xcode-27` with Xcode 27.1). There is no separate simulator compile check: the production archive is the first compile. Signing uses the app profile "Expo Transport AppStore 209" (made 30 Oct through the App Store Connect API after Time Sensitive was ticked; the old app profile went invalid) plus the unchanged widget and Watch profiles, delivered as the Actions secret `IOS209_CREDENTIALS_TGZ`. Upload is to App Store Connect for TestFlight only; steps 6 and later are unchanged (Bidur's phone check and written yes before any App Store submit).
+
 ## 0. What is ready (29 Oct)
 
 | Branch | Head | What it carries | Checked |
