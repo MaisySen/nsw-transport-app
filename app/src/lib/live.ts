@@ -9,7 +9,7 @@ import type { Fare, Place, WatchLeg } from './types';
 import type { WatchSpec } from './watch';
 import { wakeId } from './smart';
 import { getOffId } from './getOffCore';
-import { cancelGetOff } from './getOffNotify';
+import { cancelGetOff, soundChannels, voiceClips } from './getOffNotify';
 import { cancelWake } from './smartNotify';
 import { iosNative } from '../../modules/transport-ios';
 import { wantOngoing } from './leaveByCore';
@@ -28,6 +28,8 @@ export type LiveTrip = {
   wake?: boolean; wakeSet?: Record<string, number>;
   /** Get off alerts (getOffCore.ts) set on the phone: alert key to the time it is set for. */
   offSet?: Record<string, number>;
+  /** Get off alerts set on the phone with a spoken sound (getOffCore offVoice): already said when they ring. */
+  offVoice?: Record<string, 1>;
   /** Say trip alerts out loud (builds with the speech module), and the alerts already read out. */
   speak?: boolean; spoken?: Record<string, 1>;
 };
@@ -90,7 +92,11 @@ export async function liveWatch() {
   if (!g || g.watchId || g.arrivedAt) return;
   const ps = await getPushState();
   if (ps.status !== 'on' && ps.status !== 'local') return;
-  const r = await api.watch({ kind: 'trip', title: g.title, legs: g.legs, origin: g.origin, to: g.to, lead: 0, track: true, silentStart: true });
+  // voice: this build has the spoken alert sounds and Speak alerts is on, so the server's "Next stop" alert rings with
+  // "Your stop is coming up" (heard with the phone locked). Older builds never send it and get the normal sound.
+  // Android: the server's alert names the spoken sound's channel, so it is made first (made once).
+  const voice = voiceClips() && !!g.speak && (await soundChannels()) ? { voice: 'soon' } : {};
+  const r = await api.watch({ kind: 'trip', title: g.title, legs: g.legs, origin: g.origin, to: g.to, lead: 0, track: true, silentStart: true, ...voice });
   if (!r.watch?.id) return;
   if (cur && cur.id === g.id && !cur.arrivedAt) setLive({ ...cur, watchId: r.watch.id });
   else api.stopWatch(r.watch.id).catch(() => {});

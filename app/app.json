@@ -207,7 +207,11 @@
       [
         "expo-notifications",
         {
-          "color": "#0A84FF"
+          "color": "#0A84FF",
+          "sounds": [
+            "./assets/sounds/getoff_now.wav",
+            "./assets/sounds/getoff_soon.wav"
+          ]
         }
       ],
       [

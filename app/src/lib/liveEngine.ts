@@ -16,7 +16,7 @@ const tapped = new Set<string>();
 import { wakeStep } from './smart';
 import { hasSpeech, speak } from './nativeExtras';
 import { getOffStep, readGetOff, readGetOffSay } from './getOffCore';
-import { cancelGetOff, getOffNow, scheduleGetOff } from './getOffNotify';
+import { cancelGetOff, getOffNow, scheduleGetOff, voiceClips } from './getOffNotify';
 import { store } from './store';
 import { cancelWake, scheduleWake, wakeNow } from './smartNotify';
 import { endedWatches } from './push';
@@ -127,15 +127,18 @@ export async function tickLive() {
     // Wake me before my stop: one alarm per leg, set on the phone and moved with the live times.
     const w = wakeStep({ id: g.id, legs: g.legs, wake: g.wake, wakeSet: g.wakeSet, alerted: r.g.alerted }, r.s, now, fmt);
     // Get off alert (More stops before, Get off now): set on the phone beside the trip's own alerts (getOffCore.ts).
-    const o = getOffStep({ id: g.id, legs: g.legs, alerted: w.g.alerted, offSet: g.offSet, speak: g.speak && hasSpeech(), sayNow: readGetOffSay(store.getOffSay()) && hasSpeech(), spoken: r.g.spoken }, readGetOff(store.getOff()), r.s, now, fmt);
+    // Spoken alert sounds (build 210 and later): the alerts set on the phone ring with a voice, heard with the phone
+    // locked, where the app cannot speak. The same choices as reading out (spoken Get off now, Speak alerts).
+    const voice = voiceClips() ? { now: readGetOffSay(store.getOffSay()), all: !!g.speak } : null;
+    const o = getOffStep({ id: g.id, legs: g.legs, alerted: w.g.alerted, offSet: g.offSet, speak: g.speak && hasSpeech(), sayNow: readGetOffSay(store.getOffSay()) && hasSpeech(), spoken: r.g.spoken, voice, offVoice: g.offVoice }, readGetOff(store.getOff()), r.s, now, fmt);
     put({ svc: svcCache.slice(), st: r.s, offline: failed ? 'Connection lost. Showing the last live times.' : null, ...(failed ? {} : { updated: now }) });
-    if (r.g !== g || w.g.alerted !== r.g.alerted || w.g.wakeSet !== g.wakeSet || o.g.offSet !== g.offSet || o.g.alerted !== w.g.alerted || o.g.spoken !== r.g.spoken) {
-      setLive({ ...g, alerted: o.g.alerted, watchId: r.g.watchId, rode: r.g.rode, here: r.g.here, arrivedAt: r.g.arrivedAt, wakeSet: w.g.wakeSet, spoken: o.g.spoken, offSet: o.g.offSet });
+    if (r.g !== g || w.g.alerted !== r.g.alerted || w.g.wakeSet !== g.wakeSet || o.g.offSet !== g.offSet || o.g.alerted !== w.g.alerted || o.g.spoken !== r.g.spoken || o.g.offVoice !== g.offVoice) {
+      setLive({ ...g, alerted: o.g.alerted, watchId: r.g.watchId, rode: r.g.rode, here: r.g.here, arrivedAt: r.g.arrivedAt, wakeSet: w.g.wakeSet, spoken: o.g.spoken, offSet: o.g.offSet, offVoice: o.g.offVoice });
     }
     for (const a of o.actions) {
       if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, at: now });
-      if (a.t === 'offSchedule') await scheduleGetOff(a.id, a.at, a.title, a.body);
-      else if (a.t === 'offDue') { if (await getOffNow(a.id, a.title, a.body)) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); }
+      if (a.t === 'offSchedule') await scheduleGetOff(a.id, a.at, a.title, a.body, a.sound);
+      else if (a.t === 'offDue') { if (await getOffNow(a.id, a.title, a.body, a.sound)) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); }
       else if (a.t === 'offCancel') await cancelGetOff(a.id);
       else if (a.t === 'say') speak(a.text, a.quiet ? { quiet: true } : {});
     }

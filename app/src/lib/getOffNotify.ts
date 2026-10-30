@@ -1,38 +1,75 @@
 // The get off alerts (lib/getOffCore.ts) on the phone: local notifications on the trip alerts channel, set for a
 // time so they ring with the app closed, rung at once when the moment comes while the app is open, and taken back
-// when the trip moves on. expo-notifications is in every build in the field; nothing native is new.
+// when the trip moves on. expo-notifications is in every build in the field.
+// Spoken sounds (30 Oct, build 210): the app cannot speak with the phone locked (no background audio, by design), so
+// an alert can ring with a chime and a voice ("Get off at the next stop") as its own sound, bundled in the app by the
+// expo-notifications plugin (app.json "sounds"). The phone plays it like any alert sound: muted by Silent mode,
+// through headphones when they are in, and through a Focus because the alert is time sensitive.
 import { Platform } from 'react-native';
+import * as Application from 'expo-application';
 import * as Notifications from 'expo-notifications';
+import { getOffSoundChannel, voiceClipsSupported, type GetOffSound } from './getOffCore';
+import { isOn } from './config';
 
 /** The Android channel the trip's own alerts use (live.ts makes it at launch). */
 const CHANNEL = 'default';
 
-async function put(id: string, at: number | null, title: string, body: string) {
-  if (Platform.OS === 'web') { (globalThis as any).__alarmLog?.({ id, at, title, body, getOff: 1 }); return true; }
+/** True when this build has the spoken alert sounds and they are not switched off from the server (getOffVoice). */
+export function voiceClips(): boolean {
+  if (Platform.OS === 'web') return false;
+  let build: string | null = null;
+  try { build = Application.nativeBuildVersion; } catch {}
+  let on = true;
+  try { on = isOn('getOffVoice'); } catch {}
+  return on && voiceClipsSupported(Platform.OS, build);
+}
+
+let channels: Promise<boolean> | null = null;
+/** Android: one channel per spoken sound (a channel's sound is fixed once made). Made once, the first time needed. */
+export function soundChannels(): Promise<boolean> {
+  if (Platform.OS !== 'android') return Promise.resolve(true);
+  if (!channels) {
+    channels = (async () => {
+      for (const [sound, name] of [['getoff_now', 'Get off now, spoken'], ['getoff_soon', 'Stop coming up, spoken']] as [GetOffSound, string][]) {
+        await Notifications.setNotificationChannelAsync(getOffSoundChannel(sound), {
+          name, importance: Notifications.AndroidImportance.HIGH, sound: `${sound}.wav`, vibrationPattern: [0, 200, 120, 200], lightColor: '#0A84FF',
+        });
+      }
+      return true;
+    })().catch(() => { channels = null; return false; });
+  }
+  return channels;
+}
+
+async function put(id: string, at: number | null, title: string, body: string, sound?: GetOffSound) {
+  if (Platform.OS === 'web') { (globalThis as any).__alarmLog?.({ id, at, title, body, getOff: 1, ...(sound ? { sound } : {}) }); return true; }
   try {
     const p = await Notifications.getPermissionsAsync();
     if (!p.granted) return false;
+    // The spoken sound only on a build that has it; anything going wrong falls back to the normal alert sound.
+    const voice = !!sound && voiceClips() && (await soundChannels());
+    const channelId = voice && sound ? getOffSoundChannel(sound) : CHANNEL;
     await Notifications.scheduleNotificationAsync({
       identifier: id,
       // Time sensitive (iOS 15 and later) so it breaks through a Focus and lights the screen; a build without the
       // entitlement shows it as a normal alert. Other platforms ignore the field.
-      content: { title, body, data: { go: 1 }, sound: true, interruptionLevel: 'timeSensitive' },
+      content: { title, body, data: { go: 1, ...(voice ? { voice: 1 } : {}) }, sound: voice && sound ? `${sound}.wav` : true, interruptionLevel: 'timeSensitive' },
       trigger: at == null
-        ? (Platform.OS === 'android' ? { channelId: CHANNEL } : null)
-        : { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at, channelId: CHANNEL } as any,
+        ? (Platform.OS === 'android' ? { channelId } : null)
+        : { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at, channelId } as any,
     });
     return true;
   } catch { return false; }
 }
 
 /** Sets (or moves: the same id replaces) the alert for a time. A time already past is not set. */
-export async function scheduleGetOff(id: string, at: number, title: string, body: string) {
+export async function scheduleGetOff(id: string, at: number, title: string, body: string, sound?: GetOffSound) {
   if (!Number.isFinite(at) || at <= Date.now()) return false;
-  return put(id, at, title, body);
+  return put(id, at, title, body, sound);
 }
 
 /** The moment came while the app is open: show it now, unless the phone already showed the set one. */
-export async function getOffNow(id: string, title: string, body: string) {
+export async function getOffNow(id: string, title: string, body: string, sound?: GetOffSound) {
   if (Platform.OS !== 'web') {
     try {
       const shown = await Notifications.getPresentedNotificationsAsync();
@@ -40,7 +77,7 @@ export async function getOffNow(id: string, title: string, body: string) {
       await Notifications.cancelScheduledNotificationAsync(id);
     } catch {}
   }
-  return put(id, null, title, body);
+  return put(id, null, title, body, sound);
 }
 
 export async function cancelGetOff(id: string) {

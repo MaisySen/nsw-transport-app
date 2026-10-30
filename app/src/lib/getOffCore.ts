@@ -144,10 +144,25 @@ const sayStop = (n?: string | null) => String(n || '').split(',')[0].replace(/ S
  * `speak`: Speak alerts is on (every alert is read out). `sayNow`: the phone can speak and spoken Get off now is on,
  * so the final alert is read out even with Speak alerts off; that one is marked quiet (it follows Silent mode).
  */
-export type GetOffTrip = { id: string; legs: WatchLeg[]; alerted: Record<string, 1>; offSet?: Record<string, number>; speak?: boolean; sayNow?: boolean; spoken?: Record<string, 1> };
+export type GetOffTrip = {
+  id: string; legs: WatchLeg[]; alerted: Record<string, 1>; offSet?: Record<string, number>; speak?: boolean; sayNow?: boolean; spoken?: Record<string, 1>;
+  /** The phone has the spoken alert sounds (voiceClipsSupported) and they are not turned off: `now` spoken Get off now
+   * is on, `all` Speak alerts is on. Null or absent: every alert rings with the phone's normal sound, as before. */
+  voice?: { now: boolean; all: boolean } | null;
+  /** The alerts set on the phone with a spoken sound: when one rings, the phone has already said it, so the app does
+   * not read it out again when it is opened. */
+  offVoice?: Record<string, 1>;
+};
+/** The spoken alert sounds in the app (build 210 and later): a chime and a voice, played as the alert's own sound so
+ * they are heard with the phone locked, where the app itself cannot speak. */
+export type GetOffSound = 'getoff_now' | 'getoff_soon';
+export const GETOFF_SOUND_WORDS: Record<GetOffSound, string> = {
+  getoff_now: 'Get off at the next stop. Get off at the next stop.',
+  getoff_soon: 'Your stop is coming up. Get ready to get off.',
+};
 export type GetOffAction =
-  | { t: 'offSchedule'; id: string; key: string; at: number; title: string; body: string }
-  | { t: 'offDue'; id: string; key: string; title: string; body: string }
+  | { t: 'offSchedule'; id: string; key: string; at: number; title: string; body: string; sound?: GetOffSound }
+  | { t: 'offDue'; id: string; key: string; title: string; body: string; sound?: GetOffSound }
   | { t: 'offCancel'; id: string; key: string }
   | { t: 'say'; key: string; text: string; quiet?: boolean };
 
@@ -170,14 +185,36 @@ export type GetOffAction =
 export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: number, f: Fmt): { g: GetOffTrip; actions: GetOffAction[] } {
   const actions: GetOffAction[] = [];
   const set: Record<string, number> = { ...(g.offSet || {}) };
+  const voiced: Record<string, 1> = { ...(g.offVoice || {}) };
   let alerted = g.alerted || {};
   let spoken = g.spoken || {};
   const mark = (key: string) => { if (!alerted[key]) alerted = { ...alerted, [key]: 1 }; };
   const cancel = (key: string) => {
+    delete voiced[key];
     if (set[key] == null) return;
     if (!alerted[key] && set[key] > now) actions.push({ t: 'offCancel', id: getOffId(g.id, key), key });
     delete set[key];
   };
+  // The spoken sound an alert set on the phone rings with (30 Oct, Bidur: with the phone locked only the banner came;
+  // the app speaks only while it is open). The same rule as reading out: Get off now when spoken Get off now or Speak
+  // alerts is on, the heads up only with Speak alerts on.
+  const soundFor = (kind: 'early' | 'now'): GetOffSound | undefined => {
+    const v = g.voice;
+    if (!v) return undefined;
+    if (kind === 'now') return v.now || v.all ? 'getoff_now' : undefined;
+    return v.all ? 'getoff_soon' : undefined;
+  };
+  // An alert rung at once with the app open is read out by the app (richer: it names the stop); the spoken sound is
+  // used then only when the app will not read it out, so nothing is said twice.
+  const dueSound = (kind: 'early' | 'now') => (g.speak || (kind === 'now' && g.sayNow) ? undefined : soundFor(kind));
+  const schedule = (key: string, kind: 'early' | 'now', at: number, w: { title: string; body: string }) => {
+    const sound = soundFor(kind);
+    actions.push({ t: 'offSchedule', id: getOffId(g.id, key), key, at, title: w.title, body: w.body, ...(sound ? { sound } : {}) });
+    set[key] = at;
+    if (sound) voiced[key] = 1; else delete voiced[key];
+  };
+  // Set again (same time) when the spoken sound it should ring with changed: the choice was turned on or off.
+  const soundMoved = (key: string, kind: 'early' | 'now') => !!voiced[key] !== !!soundFor(kind);
   const say = (key: string, text: string, kind: 'early' | 'now') => {
     const all = !!g.speak;
     if ((!all && !(kind === 'now' && g.sayNow)) || spoken[key]) return;
@@ -206,8 +243,11 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
         const w = getOffWords(g.legs, s, k, kind, pref.stops, f);
         if (prev != null && prev <= now) {
           // The phone's alert has rung. With the app open (this refresh) it is read out too, while it is still news.
-          // Get off now is never said once the arrival has passed.
-          if (now - prev <= SAY_LATE_MS && (kind !== 'now' || nowArrival(s, k) > now)) say(key, w.say, kind);
+          // Get off now is never said once the arrival has passed. One that rang with its spoken sound has been said
+          // by the phone already (locked or not), so it is not said again.
+          if (voiced[key]) { if (!spoken[key]) spoken = { ...spoken, [key]: 1 }; }
+          else if (now - prev <= SAY_LATE_MS && (kind !== 'now' || nowArrival(s, k) > now)) say(key, w.say, kind);
+          delete voiced[key];
           mark(key); delete set[key]; continue;
         }
         if (kind === 'now') {
@@ -222,13 +262,15 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
           }
           const nat = nowTime(s, k);
           if (nat <= now) {
-            actions.push({ t: 'offDue', id: getOffId(g.id, key), key, title: w.title, body: w.body });
+            const ds = dueSound(kind);
+            actions.push({ t: 'offDue', id: getOffId(g.id, key), key, title: w.title, body: w.body, ...(ds ? { sound: ds } : {}) });
             say(key, w.say, kind);
             mark(key);
             delete set[key];
+            delete voiced[key];
             continue;
           }
-          if (prev == null || Math.abs(prev - nat) >= NOW_MOVE_MS) { actions.push({ t: 'offSchedule', id: getOffId(g.id, key), key, at: nat, title: w.title, body: w.body }); set[key] = nat; }
+          if (prev == null || Math.abs(prev - nat) >= NOW_MOVE_MS || soundMoved(key, kind)) schedule(key, kind, nat, w);
           continue;
         }
         if (!live) { cancel(key); continue; }
@@ -248,17 +290,38 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
           at = now + HOLD_MS;
         }
         if (due) {
-          actions.push({ t: 'offDue', id: getOffId(g.id, key), key, title: w.title, body: w.body });
+          const ds = dueSound(kind);
+          actions.push({ t: 'offDue', id: getOffId(g.id, key), key, title: w.title, body: w.body, ...(ds ? { sound: ds } : {}) });
           say(key, w.say, kind);
           mark(key);
           delete set[key];
+          delete voiced[key];
           continue;
         }
         if (!Number.isFinite(at)) { cancel(key); continue; }
-        if (prev == null || Math.abs(prev - at) >= MOVE_MS) { actions.push({ t: 'offSchedule', id: getOffId(g.id, key), key, at, title: w.title, body: w.body }); set[key] = at; }
+        if (prev == null || Math.abs(prev - at) >= MOVE_MS || soundMoved(key, kind)) schedule(key, kind, at, w);
       }
     }
   }
-  const same = JSON.stringify(set) === JSON.stringify(g.offSet || {}) && alerted === g.alerted && spoken === (g.spoken || {});
-  return { g: same ? g : { ...g, offSet: set, alerted, spoken }, actions };
+  for (const key of Object.keys(voiced)) if (set[key] == null) delete voiced[key];
+  const sameVoice = JSON.stringify(voiced) === JSON.stringify(g.offVoice || {});
+  const same = JSON.stringify(set) === JSON.stringify(g.offSet || {}) && alerted === g.alerted && spoken === (g.spoken || {}) && sameVoice;
+  return { g: same ? g : { ...g, offSet: set, alerted, spoken, ...(sameVoice ? {} : { offVoice: voiced }) }, actions };
 }
+
+/**
+ * Whether this phone's app has the spoken alert sounds (getoff_now.wav, getoff_soon.wav in the app, set up by the
+ * expo-notifications plugin in app.json): iPhone build 210 and later, Android versionCode 6 and later. Older builds
+ * would ring with the default sound anyway (a sound the app does not have plays the default), but on Android a
+ * channel cannot be made with a sound it does not have, so older builds are left exactly as they were.
+ */
+export function voiceClipsSupported(os: string, build: string | number | null | undefined): boolean {
+  const n = Number(build);
+  if (!Number.isFinite(n)) return false;
+  if (os === 'ios') return n >= 210;
+  if (os === 'android') return n >= 6;
+  return false;
+}
+
+/** The Android channel an alert with a spoken sound rings on (a channel's sound is fixed when it is made). */
+export const getOffSoundChannel = (sound: GetOffSound) => sound;
