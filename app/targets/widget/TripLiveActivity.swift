@@ -66,7 +66,8 @@ struct IslandTrailing: View {
 struct IslandCenter: View {
     var attrs: TripActivityAttributes
     var body: some View {
-        Text("to \(attrs.towards)").font(.subheadline.weight(.semibold)).lineLimit(1)
+        Text("to \(attrs.towards)").font(.subheadline.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.8)
+            .multilineTextAlignment(.center)
     }
 }
 
@@ -114,7 +115,7 @@ struct LockScreenCard: View {
     var attrs: TripActivityAttributes
     var state: TripActivityAttributes.ContentState
 
-    /// The countdown keeps its natural width and the left side gives way: "to <where>" may take two lines, then the
+    /// The countdown takes at most 120 pt (two lines when it needs them) and the left side gives way: "to <where>" may take two lines, then the
     /// detail goes, then the platform (native audit, 30 Oct: "in 6 minut…", "On / time" wrapping, "to Macquar…").
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -125,13 +126,14 @@ struct LockScreenCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             VStack(alignment: .trailing, spacing: 0) {
                 Text("Leaves").font(.caption2).foregroundStyle(.secondary)
+                // "in 18 minutes" takes two lines before the left side is cut (native audit).
                 MinutesUntil(date: state.departs)
                     .font(.title2.weight(.bold))
                     .monospacedDigit()
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .minimumScaleFactor(0.7)
                     .multilineTextAlignment(.trailing)
-                    .fixedSize()
+                    .frame(maxWidth: 120, alignment: .trailing)
                 Text(Clock.time(state.departs)).font(.caption).foregroundStyle(.secondary).fixedSize()
             }
             .layoutPriority(1)

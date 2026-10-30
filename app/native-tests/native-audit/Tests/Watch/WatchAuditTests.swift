@@ -43,7 +43,7 @@ final class WatchAuditTests: XCTestCase {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title).font(.headline).foregroundStyle(Color.accentColor).padding(.horizontal, 4)
                 ForEach(Array(sections.enumerated()), id: \.offset) { _, s in
-                    if let h = s.0 { Text(h).font(.footnote).foregroundStyle(.secondary).lineLimit(2).padding(.horizontal, 6) }
+                    if let h = s.0 { Text(h).font(.footnote).foregroundStyle(.secondary).lineLimit(3).padding(.horizontal, 6) }
                     ForEach(Array(s.1.enumerated()), id: \.offset) { _, row in
                         row.padding(.horizontal, 10).padding(.vertical, 8)
                             .frame(maxWidth: .infinity, alignment: .leading)

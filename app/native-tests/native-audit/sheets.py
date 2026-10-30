@@ -42,7 +42,7 @@ for s in surfaces:
         im = Image.open(os.path.join(src, r['file'])).convert('RGB')
         im = im.resize((max(1, im.width // 2), max(1, im.height // 2)))  # 2x renders back to points
         imgs[(r['scenario'], r['device'], r['type'], r['scheme'])] = (im, r)
-    cw = max(i.width for i, _ in imgs.values()) + 16
+    cw = max(max(i.width for i, _ in imgs.values()) + 16, 300)
     ch = max(i.height for i, _ in imgs.values()) + 44
     left, top = 150, 70
     W, H = left + cw * len(cols), top + ch * len(scen)

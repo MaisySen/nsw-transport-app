@@ -281,7 +281,7 @@ struct CommuteSection: View {
                 }
             } header: {
                 Text("\(c.title): \(WText.short(c.from.name)) to \(WText.short(c.to.name))")
-                    .lineLimit(2)
+                    .lineLimit(3)
             }
         } else {
             Section("Commute") {
@@ -301,6 +301,8 @@ struct LineBadge: View {
     var body: some View {
         Text(line.isEmpty ? " " : line)
             .font(.footnote.weight(.bold))
+            .lineLimit(1)
+            .fixedSize()
             .foregroundStyle(.white)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
@@ -317,13 +319,16 @@ struct ServiceRow: View {
         HStack(alignment: .center, spacing: 8) {
             LineBadge(line: service.line, colorHex: service.colorHex)
             VStack(alignment: .leading, spacing: 1) {
+                // One line each: "Cancelled" and "4:50pm" shrink a little instead of wrapping ("Can-celled"), the platform
+                // never wraps ("Plat / 2"), the destination gives way (native audit, 30 Oct).
                 Text(service.cancelled ? "Cancelled" : Clock.countdown(service.time, from: now))
                     .font(.title3.weight(.semibold).monospacedDigit())
                     .foregroundStyle(service.cancelled ? Color.red : Color.primary)
                     .strikethrough(service.cancelled)
-                    .minimumScaleFactor(0.8)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 HStack(spacing: 4) {
-                    if let p = WText.platform(service.platform) { Text(p).fontWeight(.medium) }
+                    if let p = WText.platform(service.platform) { Text(p).fontWeight(.medium).lineLimit(1).fixedSize() }
                     if let d = service.dest, !d.isEmpty { Text(WText.short(d)).lineLimit(1) }
                 }
                 .font(.caption)

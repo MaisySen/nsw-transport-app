@@ -69,7 +69,9 @@ struct LiveTripIslandCenter: View {
     var state: LiveTripAttributes.ContentState
     var stale = false
     var body: some View {
-        Text(state.headline(stale: stale)).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+        // Two lines under the camera before "Get off at Sydney…" (native audit).
+        Text(state.headline(stale: stale)).font(.subheadline.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.8)
+            .multilineTextAlignment(.center)
     }
 }
 
@@ -216,12 +218,14 @@ struct LiveTripLockCard: View {
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 0) {
                     Text(state.countdownLabel(stale: stale)).font(.caption2).foregroundStyle(.secondary)
+                    // "in 18 minutes" takes two lines before "Get off at <stop>" is cut (native audit).
                     MinutesUntil(date: state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
                         .font(.title2.weight(.bold))
                         .monospacedDigit()
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .minimumScaleFactor(0.7)
                         .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 120, alignment: .trailing)
                 }
                 .layoutPriority(1)
             }
