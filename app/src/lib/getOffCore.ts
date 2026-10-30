@@ -125,9 +125,11 @@ export function getOffWords(legs: WatchLeg[], s: LiveState, k: number, kind: 'ea
       say: `${n} stops to ${sayStop(l?.to)}.`,
     };
   }
+  // No live times for the leg (30 Oct): the alert rings from the timetable and says so, so it is never read as live.
+  const tt = !legLive(s, k);
   return {
     title: `Get off now: ${stop}`,
-    body: change ? `Change here to the ${change.line}.` : `This is your stop${at ? `, due ${at}` : ''}.`,
+    body: (change ? `Change here to the ${change.line}.` : `This is your stop${at ? `, due ${at}` : ''}.`) + (tt ? ' Timetable time, no live times.' : ''),
     say: getOffSayText(sayStop(l?.to), !!change),
   };
 }
@@ -152,6 +154,15 @@ export type GetOffTrip = {
   /** The alerts set on the phone with a spoken sound: when one rings, the phone has already said it, so the app does
    * not read it out again when it is opened. */
   offVoice?: Record<string, 1>;
+  /** The server sends Get off now for this trip (30 Oct, build 210: its watch was started with getOff: 1 and the
+   * server said yes). Get off now is then never set on the phone (what was set is taken back): set at the last app
+   * open, it rang early when the bus ran late after the phone locked. With the app open it still rings and is read
+   * out at its moment as before; the server's own push is not shown then (push.ts). */
+  server?: boolean;
+  /** Get off now alerts the server already put on the phone (gnow<leg>: 1, read from the phone's shown notifications):
+   * done, and said when it rang with its spoken sound (`serverVoice`), so neither rung nor read out again. */
+  serverRung?: Record<string, 1>;
+  serverVoice?: boolean;
 };
 /** The spoken alert sounds in the app (build 210 and later): a chime and a voice, played as the alert's own sound so
  * they are heard with the phone locked, where the app itself cannot speak. */
@@ -250,6 +261,17 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
           delete voiced[key];
           mark(key); delete set[key]; continue;
         }
+        if (kind === 'now' && g.server) {
+          // The server sends it (from the live times when it is due, worded as timetable when it has none): nothing
+          // on the phone for a time worked out now. Already shown by the server's push: done (and said, when that
+          // push spoke). Else, with the app open, it rings and is read out at its moment, as below.
+          if (prev != null) cancel(key);
+          if (g.serverRung?.[key]) {
+            if (g.serverVoice && !spoken[key]) spoken = { ...spoken, [key]: 1 };
+            mark(key);
+            continue;
+          }
+        }
         if (kind === 'now') {
           // Get off now: realtime arrival minus 30 s (timetable minus 60 s without live times), set again on every
           // refresh as the arrival moves, rung at once when that moment has come, and never after the arrival: once
@@ -270,6 +292,7 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
             delete voiced[key];
             continue;
           }
+          if (g.server) continue;
           if (prev == null || Math.abs(prev - nat) >= NOW_MOVE_MS || soundMoved(key, kind)) schedule(key, kind, nat, w);
           continue;
         }
@@ -321,6 +344,26 @@ export function voiceClipsSupported(os: string, build: string | number | null | 
   if (os === 'ios') return n >= 210;
   if (os === 'android') return n >= 6;
   return false;
+}
+
+/**
+ * Whether this build asks the server to send Get off now (30 Oct): the same builds as the spoken sounds, iPhone 210
+ * and later and Android versionCode 6 and later. Builds 201 to 209 never ask, even with this code from an update, so
+ * they keep the phone's own alert exactly as before.
+ */
+export function serverGetOffSupported(os: string, build: string | number | null | undefined): boolean {
+  return voiceClipsSupported(os, build);
+}
+
+/** The keys (gnow<leg>) of the server's Get off now pushes for this watch among the phone's shown notifications. */
+export function serverRungKeys(watchId: string | null | undefined, shown: { data?: any }[]): Record<string, 1> {
+  const out: Record<string, 1> = {};
+  if (!watchId) return out;
+  for (const n of shown) {
+    const d = n?.data || {};
+    if (d.watch === watchId && d.getOff != null && /^\d+$/.test(String(d.getOff))) out[`gnow${d.getOff}`] = 1;
+  }
+  return out;
 }
 
 /** The Android channel an alert with a spoken sound rings on (a channel's sound is fixed when it is made). */

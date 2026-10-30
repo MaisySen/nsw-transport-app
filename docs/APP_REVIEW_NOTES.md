@@ -50,6 +50,8 @@ The source for the Notes field. It lists every feature that appears, changes or 
 | New trip first look (timetable times shown while the live search runs, labelled Timetable) | `tripTt` (kill) | `TRIP_TT`, `TRIP_TT_OWN`, `/api/trip?tt=1` |
 | Crash reports to the crash reporting service (build 209 and later, errors only, cleaned on the phone; not seen by riders) | `sentry` (and `kill.sentry`; off drops every event, the feedback inbox reports carry on) | none |
 | Time Sensitive Get off now (build 209 entitlement; only the Get off now alert) | none | none |
+| Spoken alert sounds (build 210: Get off now and the heads up ring with a chime and a voice, 30 Oct) | `getOffVoice` (on unless `false`) | `voice`, `getOffVoice` on a trip watch |
+| Get off now sent by the server from live times (build 210, Start trip; the phone's own alert is taken off when the server says yes, 30 Oct) | `getOffPush` (on unless `false`) | `getOffPush`, `GETOFF_PUSH` (branch getoff-voice) |
 
 App switches are `flags` and `kill` in `/api/app/config` (an unknown flag counts as on). Server switches are the same sections under `platform=server`, read once a minute; the budget guard holds `ENGINE_BOARDS`, `ENGINE_PUSH`, `LIVE_PUSH`, `OWN_PLANNER`, `ENGINE_LEARN`, `LOAD_TESTS` and `TRIP_TT` off when the month is projected over its line (docs/COSTS.md). The server address is `copy.api_base` (docs/API.md).
 

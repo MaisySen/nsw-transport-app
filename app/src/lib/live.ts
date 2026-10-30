@@ -8,8 +8,8 @@ import { enablePush, getPushState } from './push';
 import type { Fare, Place, WatchLeg } from './types';
 import type { WatchSpec } from './watch';
 import { wakeId } from './smart';
-import { getOffId } from './getOffCore';
-import { cancelGetOff, soundChannels, voiceClips } from './getOffNotify';
+import { getOffId, readGetOff, readGetOffSay } from './getOffCore';
+import { cancelGetOff, serverGetOff, setServerGetOffWatch, soundChannels, voiceClips } from './getOffNotify';
 import { cancelWake } from './smartNotify';
 import { iosNative } from '../../modules/transport-ios';
 import { wantOngoing } from './leaveByCore';
@@ -30,6 +30,8 @@ export type LiveTrip = {
   offSet?: Record<string, number>;
   /** Get off alerts set on the phone with a spoken sound (getOffCore offVoice): already said when they ring. */
   offVoice?: Record<string, 1>;
+  /** The server sends Get off now for this trip (build 210; its watch said getOff: true): not set on the phone. */
+  offServer?: boolean;
   /** Say trip alerts out loud (builds with the speech module), and the alerts already read out. */
   speak?: boolean; spoken?: Record<string, 1>;
 };
@@ -96,10 +98,26 @@ export async function liveWatch() {
   // "Your stop is coming up" (heard with the phone locked). Older builds never send it and get the normal sound.
   // Android: the server's alert names the spoken sound's channel, so it is made first (made once).
   const voice = voiceClips() && !!g.speak && (await soundChannels()) ? { voice: 'soon' } : {};
-  const r = await api.watch({ kind: 'trip', title: g.title, legs: g.legs, origin: g.origin, to: g.to, lead: 0, track: true, silentStart: true, ...voice });
+  // Get off now from the server (30 Oct, build 210): with a native push token and Get off now on, the watch asks the
+  // server to send it from live times (getOff), with the spoken sound when the phone's own would have it (getOffVoice).
+  // Set on the phone at the last open, it rang early when the bus ran late after the phone locked.
+  let off = {};
+  try {
+    if (ps.status === 'on' && serverGetOff() && readGetOff(store.getOff()).now) {
+      const say = voiceClips() && (readGetOffSay(store.getOffSay()) || !!g.speak) && (await soundChannels());
+      off = { getOff: 1, ...(say ? { getOffVoice: 1 } : {}) };
+    }
+  } catch { off = {}; }
+  const r = await api.watch({ kind: 'trip', title: g.title, legs: g.legs, origin: g.origin, to: g.to, lead: 0, track: true, silentStart: true, ...voice, ...off });
   if (!r.watch?.id) return;
-  if (cur && cur.id === g.id && !cur.arrivedAt) setLive({ ...cur, watchId: r.watch.id });
-  else api.stopWatch(r.watch.id).catch(() => {});
+  if (cur && cur.id === g.id && !cur.arrivedAt) {
+    // The server said yes: the phone's own Get off now comes off now, before the phone is locked (getOffCore server).
+    const server = (r.watch as any).getOff === true && 'getOff' in off;
+    const offSet = { ...(cur.offSet || {}) };
+    if (server) for (const k of Object.keys(offSet)) if (/^gnow\d+$/.test(k)) { cancelGetOff(getOffId(cur.id, k)).catch(() => {}); delete offSet[k]; }
+    if (server) setServerGetOffWatch(r.watch.id);
+    setLive({ ...cur, watchId: r.watch.id, ...(server ? { offServer: true, offSet } : { offServer: false }) });
+  } else api.stopWatch(r.watch.id).catch(() => {});
 }
 
 /** Ends the trip: stops the share link and the server alerts, removes the ongoing notification. */
@@ -111,6 +129,7 @@ export async function endLive() {
   // Wake alarms still set for this trip never ring after it ends.
   for (const k of Object.keys(g.wakeSet || {})) cancelWake(wakeId(g.id, Number(k))).catch(() => {});
   for (const k of Object.keys(g.offSet || {})) cancelGetOff(getOffId(g.id, k)).catch(() => {});
+  setServerGetOffWatch(null);
   setLive(null);
   await clearOngoing();
   return g;

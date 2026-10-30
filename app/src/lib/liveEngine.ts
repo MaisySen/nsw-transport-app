@@ -16,7 +16,7 @@ const tapped = new Set<string>();
 import { wakeStep } from './smart';
 import { hasSpeech, speak } from './nativeExtras';
 import { getOffStep, readGetOff, readGetOffSay } from './getOffCore';
-import { cancelGetOff, getOffNow, scheduleGetOff, voiceClips } from './getOffNotify';
+import { cancelGetOff, getOffNow, scheduleGetOff, serverGetOffShown, setServerGetOffWatch, voiceClips } from './getOffNotify';
 import { store } from './store';
 import { cancelWake, scheduleWake, wakeNow } from './smartNotify';
 import { endedWatches } from './push';
@@ -130,7 +130,12 @@ export async function tickLive() {
     // Spoken alert sounds (build 210 and later): the alerts set on the phone ring with a voice, heard with the phone
     // locked, where the app cannot speak. The same choices as reading out (spoken Get off now, Speak alerts).
     const voice = voiceClips() ? { now: readGetOffSay(store.getOffSay()), all: !!g.speak } : null;
-    const o = getOffStep({ id: g.id, legs: g.legs, alerted: w.g.alerted, offSet: g.offSet, speak: g.speak && hasSpeech(), sayNow: readGetOffSay(store.getOffSay()) && hasSpeech(), spoken: r.g.spoken, voice, offVoice: g.offVoice }, readGetOff(store.getOff()), r.s, now, fmt);
+    // Get off now from the server (30 Oct, build 210): not set on the phone; one the server already showed is done.
+    const server = !!g.offServer && !!g.watchId;
+    setServerGetOffWatch(server ? g.watchId : null);
+    const serverRung = server ? await serverGetOffShown(g.watchId) : undefined;
+    const o = getOffStep({ id: g.id, legs: g.legs, alerted: w.g.alerted, offSet: g.offSet, speak: g.speak && hasSpeech(), sayNow: readGetOffSay(store.getOffSay()) && hasSpeech(), spoken: r.g.spoken, voice, offVoice: g.offVoice,
+      ...(server ? { server: true, serverRung, serverVoice: !!voice && (voice.now || voice.all) } : {}) }, readGetOff(store.getOff()), r.s, now, fmt);
     put({ svc: svcCache.slice(), st: r.s, offline: failed ? 'Connection lost. Showing the last live times.' : null, ...(failed ? {} : { updated: now }) });
     if (r.g !== g || w.g.alerted !== r.g.alerted || w.g.wakeSet !== g.wakeSet || o.g.offSet !== g.offSet || o.g.alerted !== w.g.alerted || o.g.spoken !== r.g.spoken || o.g.offVoice !== g.offVoice) {
       setLive({ ...g, alerted: o.g.alerted, watchId: r.g.watchId, rode: r.g.rode, here: r.g.here, arrivedAt: r.g.arrivedAt, wakeSet: w.g.wakeSet, spoken: o.g.spoken, offSet: o.g.offSet, offVoice: o.g.offVoice });

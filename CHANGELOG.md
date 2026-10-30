@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 30 Oct 2026
 
+### Get off now sent by the server, phone side (30 Oct, about 6:20 PM; build 210, branch build-209, no build)
+* Owner, 30 Oct: with the phone locked Get off now rang at the time worked out when the app was last open, so a bus running late after that made it ring early. The server can now send it from live times (server part on branch getoff-voice, not deployed).
+* Start trip's watch on build 210 (iPhone 210+, Android versionCode 6+, flag `getOffPush`) asks for it with `getOff: 1` when the phone has a native push token and Get off now is on, plus `getOffVoice: 1` when its own would ring with the spoken sound. When the server answers `getOff: true` the phone takes back the Get off now it set and sets none for this trip (getOffCore `server`); the heads up (2 or 3 stops early) stays on the phone. With the app open it still rings and is read out at its moment as before, and the server's push for this trip is kept in the list without a banner or sound then (push.ts), so it is not heard twice. A server alert already shown is not rung or read out again when the app opens. Switch to this starts a new watch and asks again; until it says yes the phone sets its own.
+* Not accepted (no token, switch off, older server, request failed): exactly as before. Builds 201 to 209 never ask.
+* A Get off now the phone keeps for a leg with no live times now says so: "Timetable time, no live times."
+* Tests `app/test/getoffpush.test.mjs` (9). App 972 pass 4 skipped, battery, tsc clean.
+
 ### Get off alert speaks with the phone locked: spoken alert sounds (30 Oct, about 5:45 PM; branch build-209, needs build 210; server part on branch getoff-voice, not deployed)
 * Owner, 30 Oct, on a real 530 bus trip with build 209: "Didn't speak for the getting off. Only the alert notification came in on top. Only spoke when I opened the app."
 * Why: the app speaks with the system speech engine from its own JavaScript, and the live trip engine runs only while the app is in front (every 15 s; nothing in the background by design, no background audio mode in any build). With the phone locked the only thing that runs is the local alert set on the phone, which rang with the default sound (`sound: true`). On opening, the engine saw the alert had rung under 45 s ago and read it out then. So the banner came on time and the voice came late.

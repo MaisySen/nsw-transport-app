@@ -320,7 +320,8 @@ export function NextOption({ g, st }: { g: LiveTrip; st: LiveState | null }) {
     for (const [k2, at] of Object.entries(cur.offSet || {})) if (Number(/(\d+)$/.exec(k2)?.[1] ?? -1) > m.i && at > Date.now()) cancelGetOff(getOffId(cur.id, k2)).catch(() => {});
     const n = switchLegs(cur, m, next);
     const oldWatch = n.watchId;
-    setLive({ ...n, watchId: null });
+    // A new watch for the new legs asks again whether the server sends Get off now; till then the phone sets its own.
+    setLive({ ...n, watchId: null, offServer: false });
     if (oldWatch) api.stopWatch(oldWatch).catch(() => {});
     resetLiveCache();
     haptic.success();

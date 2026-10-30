@@ -1,5 +1,5 @@
 import { withTimeout } from './gesture';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
@@ -8,13 +8,23 @@ import { api, watchClock } from './api';
 import { notesWaitMs } from './pollCore';
 import { noteKey } from './liveCalc';
 import { allowPushTokens } from './forgetTokens';
+import { isServerGetOffWatch } from './getOffNotify';
 
 Notifications.setNotificationHandler({
-  // The ongoing trip notification updates quietly; every other alert shows as a banner with sound.
-  handleNotification: async (n) => ((n.request.content.data as any)?.ongoing
-    ? { shouldShowBanner: false, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false }
-    : { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
+  // The ongoing trip notification updates quietly; every other alert shows as a banner with sound. The server's Get
+  // off now for the running trip (30 Oct, build 210) is kept in the list only while the app is open: the app rings
+  // and reads out its own at that moment, so it is not heard twice (getOffCore server).
+  handleNotification: async (n) => {
+    const d = (n.request.content.data as any) || {};
+    if (d.ongoing || serverGetOffQuiet(d, String(AppState.currentState || ''))) return { shouldShowBanner: false, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false };
+    return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false };
+  },
 });
+
+/** The server's Get off now for the running trip's watch, with the app in front (push.ts handler). */
+export function serverGetOffQuiet(d: any, appState: string): boolean {
+  return appState === 'active' && d && d.getOff != null && isServerGetOffWatch(d.watch);
+}
 
 export type PushState = { status: 'on' | 'off' | 'denied' | 'local'; detail?: string };
 

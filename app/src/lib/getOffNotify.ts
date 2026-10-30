@@ -8,7 +8,7 @@
 import { Platform } from 'react-native';
 import * as Application from 'expo-application';
 import * as Notifications from 'expo-notifications';
-import { getOffSoundChannel, voiceClipsSupported, type GetOffSound } from './getOffCore';
+import { getOffSoundChannel, serverGetOffSupported, serverRungKeys, voiceClipsSupported, type GetOffSound } from './getOffCore';
 import { isOn } from './config';
 
 /** The Android channel the trip's own alerts use (live.ts makes it at launch). */
@@ -83,4 +83,28 @@ export async function getOffNow(id: string, title: string, body: string, sound?:
 export async function cancelGetOff(id: string) {
   if (Platform.OS === 'web') { (globalThis as any).__alarmLog?.({ id, cancel: 1, getOff: 1 }); return; }
   try { await Notifications.cancelScheduledNotificationAsync(id); } catch {}
+}
+
+/** True when this build asks the server for Get off now (build 210+, getOffCore) and the getOffPush flag is on. */
+export function serverGetOff(): boolean {
+  if (Platform.OS === 'web') return false;
+  let build: string | null = null;
+  try { build = Application.nativeBuildVersion; } catch {}
+  let on = true;
+  try { on = isOn('getOffPush'); } catch {}
+  return on && serverGetOffSupported(Platform.OS, build);
+}
+
+/** The running trip's watch whose Get off now the server sends (push.ts hides that push while the app is open). */
+let serverWatch: string | null = null;
+export const setServerGetOffWatch = (id: string | null) => { serverWatch = id; };
+export const isServerGetOffWatch = (id: unknown) => !!serverWatch && id === serverWatch;
+
+/** The server's Get off now pushes for this watch already shown on the phone (gnow<leg>: 1). */
+export async function serverGetOffShown(watchId: string | null): Promise<Record<string, 1>> {
+  if (!watchId || Platform.OS === 'web') return {};
+  try {
+    const shown = await Notifications.getPresentedNotificationsAsync();
+    return serverRungKeys(watchId, shown.map((x) => ({ data: x.request.content.data })));
+  } catch { return {}; }
 }
