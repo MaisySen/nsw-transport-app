@@ -458,12 +458,11 @@ struct NextTripView: View {
         VStack(alignment: .leading, spacing: 1) {
             Text(title).font(.headline).lineLimit(1).minimumScaleFactor(0.8).widgetAccentable()
             if let t = entry.trips.first {
-                HStack(spacing: 4) {
-                    Image(systemName: Mode(raw: t.mode).symbol).accessibilityHidden(true)
-                    Text(t.line).fontWeight(.bold).layoutPriority(1)
-                    // The minutes never truncate; the platform gives way first (build 210).
-                    WaitText(leave: t.leave, now: entry.date).fontWeight(.semibold).fixedSize().layoutPriority(2)
-                    if let p = WidgetText.plat(t.platform) { Text(p) }
+                // The line and the minutes never truncate; the platform, then the icon, give way whole (native audit).
+                ViewThatFits(in: .horizontal) {
+                    rectangularLine(t, icon: true, platform: true)
+                    rectangularLine(t, icon: true, platform: false)
+                    rectangularLine(t, icon: false, platform: false)
                 }
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -481,6 +480,15 @@ struct NextTripView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func rectangularLine(_ t: TripLine, icon: Bool, platform: Bool) -> some View {
+        HStack(spacing: 4) {
+            if icon { Image(systemName: Mode(raw: t.mode).symbol).accessibilityHidden(true) }
+            Text(t.line).fontWeight(.bold).fixedSize()
+            WaitText(leave: t.leave, now: entry.date).fontWeight(.semibold).fixedSize()
+            if platform, let p = WidgetText.plat(t.platform) { Text(p).fixedSize() }
+        }
     }
 
     // Home Screen
@@ -505,7 +513,7 @@ struct NextTripView: View {
             Spacer(minLength: 0)
             if let t = entry.trips.first {
                 HStack(spacing: 4) {
-                    WidgetLineBadge(line: t.line, colorHex: t.colorHex, mode: t.mode)
+                    WidgetLineBadge(line: t.line, colorHex: t.colorHex, mode: t.mode).fixedSize()
                     if let p = WidgetText.plat(t.platform) { Text(p).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 WaitText(leave: t.leave, now: entry.date)
@@ -557,9 +565,19 @@ struct NextTripView: View {
     /// The title, the "from to" line when it fits on the same line, then Swap and Refresh.
     private func header(subtitle showSubtitle: Bool, button: CGFloat) -> some View {
         HStack(alignment: .center, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(title).font(.headline).lineLimit(1).minimumScaleFactor(0.85).layoutPriority(1)
-                if showSubtitle, let s = subtitle { Text(s).font(.caption).foregroundStyle(Color.secondary).lineLimit(1) }
+            // The "from to" line shows whole or not at all, never as a cut-off sliver (native audit).
+            Group {
+                if showSubtitle, let s = subtitle {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(title).font(.headline).lineLimit(1).fixedSize()
+                            Text(s).font(.caption).foregroundStyle(Color.secondary).lineLimit(1).fixedSize()
+                        }
+                        Text(title).font(.headline).lineLimit(1).minimumScaleFactor(0.85)
+                    }
+                } else {
+                    Text(title).font(.headline).lineLimit(1).minimumScaleFactor(0.85)
+                }
             }
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
@@ -590,24 +608,35 @@ struct NextTripView: View {
 
     /// "On time" in its colour, then a small "1 change" and "6 min walk" when they apply.
     private func statusLine(_ t: TripLine, font: Font = .caption2) -> some View {
-        HStack(spacing: 4) {
-            // "On time" or "No live data" stays whole; "1 change" and the walk give way first (build 210).
-            Text(status(t)).foregroundStyle(Self.statusColor(t)).fontWeight(.semibold).layoutPriority(1)
-            if let c = WidgetText.changes(t.changes) { Text(c).foregroundStyle(Color.secondary) }
-            if t.walkMinutes > 0 { Text("\(t.walkMinutes) min walk").foregroundStyle(Color.secondary) }
+        // "On time" or "No live data" stays whole; the walk, then "1 change", give way whole, never as "1 chan…"
+        // (build 210, native audit).
+        ViewThatFits(in: .horizontal) {
+            statusWords(t, changes: true, walk: true)
+            statusWords(t, changes: true, walk: false)
+            statusWords(t, changes: false, walk: false)
+            Text(status(t)).foregroundStyle(Self.statusColor(t)).fontWeight(.semibold).minimumScaleFactor(0.8)
         }
         .font(font)
         .lineLimit(1)
     }
 
+    private func statusWords(_ t: TripLine, changes: Bool, walk: Bool) -> some View {
+        HStack(spacing: 4) {
+            Text(status(t)).foregroundStyle(Self.statusColor(t)).fontWeight(.semibold).fixedSize()
+            if changes, let c = WidgetText.changes(t.changes) { Text(c).foregroundStyle(Color.secondary).fixedSize() }
+            if walk, t.walkMinutes > 0 { Text("\(t.walkMinutes) min walk").foregroundStyle(Color.secondary).fixedSize() }
+        }
+    }
+
     /// Every row has the same layout; the first is larger. Tapping a row opens that trip.
     @ViewBuilder private func row(_ t: TripLine, first: Bool) -> some View {
         let r = HStack(spacing: 8) {
-            WidgetLineBadge(line: t.line, colorHex: t.colorHex, mode: t.mode, large: first)
+            WidgetLineBadge(line: t.line, colorHex: t.colorHex, mode: t.mode, large: first).fixedSize()
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 4) {
+                    // The departure time never truncates; the platform gives way (native audit: "3:49p…" at large text).
                     Text(Clock.time(t.leave)).font((first ? Font.subheadline : .footnote).weight(.semibold)).monospacedDigit()
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(Color.primary).fixedSize()
                     if let p = WidgetText.plat(t.platform) { Text(p).font(.caption2).foregroundStyle(Color.secondary) }
                 }
                 .lineLimit(1)
@@ -619,6 +648,7 @@ struct NextTripView: View {
                 .foregroundStyle(first ? Color.primary : Color.secondary)
                 .monospacedDigit()
                 .lineLimit(1)
+                .fixedSize()
         }
         .accessibilityElement(children: .combine)
         if let u = link(t) { Link(destination: u) { r }.tint(Color.primary) } else { r }
@@ -852,20 +882,32 @@ struct StopBoardView: View {
         }
     }
 
+    /// The most rows that fit, never a fixed count: on the smallest iPhones and at large text sizes the medium and
+    /// large boards were cut off top and bottom (native audit, 30 Oct). The minutes and the line never truncate.
     private func board(rows count: Int, compact: Bool) -> some View {
+        ViewThatFits(in: .vertical) {
+            ForEach(Array(stride(from: count, through: 1, by: -1)), id: \.self) { n in
+                boardBody(rows: n, compact: compact)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func boardBody(rows count: Int, compact: Bool) -> some View {
         VStack(alignment: .leading, spacing: compact ? 5 : 6) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(entry.stopName).font(.headline).lineLimit(1)
+                Text(entry.stopName).font(.headline).lineLimit(1).minimumScaleFactor(0.75)
                 if let f = entry.filter, !compact { Text(f).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 Spacer(minLength: 0)
             }
             if entry.rows.isEmpty {
                 Spacer(minLength: 0)
                 Text(entry.message ?? "No departures soon.").font(.subheadline).foregroundStyle(.secondary)
+                    .lineLimit(4).minimumScaleFactor(0.7)
             }
             ForEach(Array(entry.rows.prefix(count).enumerated()), id: \.offset) { i, r in
                 HStack(spacing: 6) {
-                    WidgetLineBadge(line: r.line, colorHex: r.colorHex, mode: r.mode)
+                    WidgetLineBadge(line: r.line, colorHex: r.colorHex, mode: r.mode).fixedSize()
                     if !compact {
                         VStack(alignment: .leading, spacing: 0) {
                             Text(r.dest).font(.subheadline.weight(.medium)).lineLimit(1)
@@ -881,6 +923,8 @@ struct StopBoardView: View {
                         .foregroundStyle(i == 0 || r.isLive ? Color.primary : Color.secondary)
                         .monospacedDigit()
                         .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .layoutPriority(1)
                 }
             }
             Spacer(minLength: 0)

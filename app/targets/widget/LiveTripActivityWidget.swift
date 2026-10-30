@@ -54,11 +54,12 @@ struct LiveTripIslandTrailing: View {
     var state: LiveTripAttributes.ContentState
     var stale = false
     var body: some View {
+        // "in 18 minutes" goes onto two lines rather than "in 18 minut…" (native audit).
         MinutesUntil(date: state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
             .font(.title3.weight(.semibold))
             .monospacedDigit()
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
+            .lineLimit(2)
+            .minimumScaleFactor(0.6)
             .multilineTextAlignment(.trailing)
             .frame(width: 80, alignment: .trailing)
     }
@@ -95,7 +96,7 @@ struct LiveTripCompactTrailing: View {
     var stale = false
     var body: some View {
         CompactCountdown(date: state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
-            .frame(maxWidth: 40, alignment: .trailing)
+            .frame(maxWidth: 44, alignment: .trailing)
     }
 }
 
@@ -128,6 +129,7 @@ struct CompactCountdown: View {
                 .font(.caption.weight(.semibold))
                 .monospacedDigit()
                 .lineLimit(1)
+                .minimumScaleFactor(0.6)
                 .multilineTextAlignment(.trailing)
         }
     }
@@ -158,11 +160,13 @@ struct LiveTripIslandBottom: View {
     var stale = false
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
+            // The arrival time stays whole; the detail gives way first (native audit: "Arrive Macquarie University 5:0…").
             HStack {
                 Text(state.detail(stale: stale)).foregroundStyle(.secondary).lineLimit(1)
-                Spacer()
+                Spacer(minLength: 4)
                 if !state.arrived(stale: stale) {
                     Text(state.outdated(stale: stale) ? state.updatedLine : state.arriveLine).monospacedDigit().lineLimit(1)
+                        .minimumScaleFactor(0.75).layoutPriority(1)
                 }
             }
             if let w = state.warning, !state.arrived(stale: stale) {
@@ -176,28 +180,37 @@ struct LiveTripIslandBottom: View {
 }
 
 /// One card that changes with the trip: waiting, on board, at a change, then the last leg.
+/// The first layout that fits wins: the headline, detail and warning on up to two lines, then one (native audit,
+/// 30 Oct: "Get off at Syd…" on the smallest iPhone). The line badge never truncates.
 struct LiveTripLockCard: View {
     var attrs: LiveTripAttributes
     var state: LiveTripAttributes.ContentState
     var stale = false
 
     var body: some View {
+        ViewThatFits(in: .vertical) {
+            card(lines: 2)
+            card(lines: 1)
+        }
+    }
+
+    private func card(lines: Int) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode)
-                        Text(state.headline(stale: stale)).font(.headline).lineLimit(1).minimumScaleFactor(0.8)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode).fixedSize()
+                        Text(state.headline(stale: stale)).font(.headline).lineLimit(lines).minimumScaleFactor(0.8)
                     }
                     Text(state.detail(stale: stale))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(lines)
                     if let w = state.warning, !state.arrived(stale: stale) {
                         Text(w)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(state.warningIsRed ? Color.red : Color.orange)
-                            .lineLimit(1)
+                            .lineLimit(lines)
                     }
                 }
                 Spacer(minLength: 8)
@@ -210,6 +223,7 @@ struct LiveTripLockCard: View {
                         .minimumScaleFactor(0.7)
                         .multilineTextAlignment(.trailing)
                 }
+                .layoutPriority(1)
             }
             ProgressView(value: state.arrived(stale: stale) ? 1 : min(max(state.progress, 0), 1))
                 .tint(RGB(hex: state.lineColorHex).map { Color(red: $0.r, green: $0.g, blue: $0.b) } ?? Color.blue)

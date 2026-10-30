@@ -93,6 +93,10 @@ jobs:
           "$(find /tmp/xg -type f -name xcodegen -perm -u+x | head -1)" generate
       - name: Watch simulator
         run: |
+          # The image's watchOS runtime does not match Xcode 27.1 (the device boots with no architecture), so the
+          # matching runtime is downloaded first; that adds a few minutes.
+          sudo xcodebuild -downloadPlatform watchOS 2>&1 | tail -3 || true
+          xcrun simctl list runtimes | grep -i watch || true
           xcrun simctl list devices available -j > /tmp/devs.json
           DEV=$(python3 sim.py watch /tmp/devs.json)
           if [ -z "$DEV" ]; then
@@ -102,8 +106,9 @@ jobs:
             done
           fi
           echo "simulator $DEV"; test -n "$DEV"; echo "$DEV" > /tmp/sim-id.txt
-          xcrun simctl boot "$DEV" || true
+          xcrun simctl boot "$DEV" 2>&1 || true
           xcrun simctl bootstatus "$DEV" -b > /dev/null
+          xcrun simctl list devices | grep "$DEV"
       - name: Audit (Apple Watch app and complications)
         run: |
           mkdir -p "$GITHUB_WORKSPACE/out/watch"

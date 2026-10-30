@@ -52,11 +52,12 @@ struct IslandLeading: View {
 struct IslandTrailing: View {
     var state: TripActivityAttributes.ContentState
     var body: some View {
+        // "in 18 minutes" goes onto two lines rather than "in 18 minut…" (native audit).
         MinutesUntil(date: state.departs)
             .font(.title3.weight(.semibold))
             .monospacedDigit()
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
+            .lineLimit(2)
+            .minimumScaleFactor(0.6)
             .multilineTextAlignment(.trailing)
             .frame(width: 80, alignment: .trailing)
     }
@@ -83,14 +84,13 @@ struct IslandBottom: View {
     }
 }
 
+/// The tiny countdown ("6:12", counting down by itself), the same one the Start trip activity uses. "in 6 minutes"
+/// never fitted the compact island and showed as "in 6 mi…" (native audit, 30 Oct).
 struct IslandCompactTrailing: View {
     var state: TripActivityAttributes.ContentState
     var body: some View {
-        MinutesUntil(date: state.departs)
-            .monospacedDigit()
-            .lineLimit(1)
-            .minimumScaleFactor(0.6)
-            .frame(maxWidth: 56)
+        CompactCountdown(date: state.departs)
+            .frame(maxWidth: 44, alignment: .trailing)
             .foregroundStyle(activityStatusColor(state))
     }
 }
@@ -114,26 +114,15 @@ struct LockScreenCard: View {
     var attrs: TripActivityAttributes
     var state: TripActivityAttributes.ContentState
 
+    /// The countdown keeps its natural width and the left side gives way: "to <where>" may take two lines, then the
+    /// detail goes, then the platform (native audit, 30 Oct: "in 6 minut…", "On / time" wrapping, "to Macquar…").
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    WidgetLineBadge(line: attrs.line, colorHex: attrs.lineColorHex, mode: attrs.mode)
-                    Text("to \(attrs.towards)").font(.headline).lineLimit(1)
-                }
-                Text(attrs.to.map { "\(attrs.from) to \($0)" } ?? "From \(attrs.from)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                HStack(spacing: 6) {
-                    Text(state.isLive ? state.status : "Scheduled")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(activityStatusColor(state))
-                    if let p = state.platform, !p.isEmpty { Text(p).font(.caption) }
-                    if let d = state.detail { Text(d).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-                }
+            ViewThatFits(in: .vertical) {
+                left(towardsLines: 2)
+                left(towardsLines: 1)
             }
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
             VStack(alignment: .trailing, spacing: 0) {
                 Text("Leaves").font(.caption2).foregroundStyle(.secondary)
                 MinutesUntil(date: state.departs)
@@ -142,9 +131,41 @@ struct LockScreenCard: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .multilineTextAlignment(.trailing)
-                    .frame(width: 110, alignment: .trailing)
-                Text(Clock.time(state.departs)).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize()
+                Text(Clock.time(state.departs)).font(.caption).foregroundStyle(.secondary).fixedSize()
             }
+            .layoutPriority(1)
+        }
+    }
+
+    private func left(towardsLines: Int) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                WidgetLineBadge(line: attrs.line, colorHex: attrs.lineColorHex, mode: attrs.mode).fixedSize()
+                Text("to \(attrs.towards)").font(.headline).lineLimit(towardsLines).minimumScaleFactor(0.85)
+            }
+            Text(attrs.to.map { "\(attrs.from) to \($0)" } ?? "From \(attrs.from)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            ViewThatFits(in: .horizontal) {
+                statusRow(platform: true, detail: true)
+                statusRow(platform: true, detail: false)
+                statusRow(platform: false, detail: false)
+            }
+            .font(.caption)
+            .lineLimit(1)
+        }
+    }
+
+    private func statusRow(platform: Bool, detail: Bool) -> some View {
+        HStack(spacing: 6) {
+            Text(state.isLive ? state.status : "Scheduled")
+                .fontWeight(.semibold)
+                .foregroundStyle(activityStatusColor(state))
+                .fixedSize()
+            if platform, let p = state.platform, !p.isEmpty { Text(p).fixedSize() }
+            if detail, let d = state.detail { Text(d).foregroundStyle(.secondary).fixedSize() }
         }
     }
 }

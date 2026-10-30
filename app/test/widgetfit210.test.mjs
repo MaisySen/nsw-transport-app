@@ -47,9 +47,12 @@ test('no fixed heights in the trip widget views', () => {
   assert.doesNotMatch(views, /\.frame\([^)]*height: \d/);
 });
 
-test('the stop board widget is unchanged: no ViewThatFits there and its icon buttons keep 28 pt', () => {
+test('the stop board shows the most rows that fit, never a fixed count, and its icon buttons keep 28 pt (native audit)', () => {
   const board = W.slice(W.indexOf('// MARK: Stop board widget'));
-  assert.doesNotMatch(board, /ViewThatFits/);
+  assert.match(board, /ViewThatFits\(in: \.vertical\)/);
+  assert.match(board, /stride\(from: count, through: 1, by: -1\)/);
+  assert.doesNotMatch(board, /\.frame\([^)]*height: \d/);
+  assert.match(board, /WidgetLineBadge\(line: r\.line, colorHex: r\.colorHex, mode: r\.mode\)\.fixedSize\(\)/);
   assert.match(C, /var size: CGFloat = 28/);
 });
 
@@ -71,6 +74,10 @@ test('build number 210 on version 1.0.0, runtime 1.1.0', () => {
 });
 
 test('the Lock Screen rectangle never truncates the minutes, and the status word outranks "1 change"', () => {
-  assert.match(body('private func rectangularBody'), /WaitText\(leave: t\.leave, now: entry\.date\)\.fontWeight\(\.semibold\)\.fixedSize\(\)\.layoutPriority\(2\)/);
-  assert.match(body('private func statusLine'), /Text\(status\(t\)\)[^\n]*\.layoutPriority\(1\)/);
+  assert.match(body('private func rectangularBody'), /ViewThatFits\(in: \.horizontal\)/);
+  assert.match(body('private func rectangularLine'), /WaitText\(leave: t\.leave, now: entry\.date\)\.fontWeight\(\.semibold\)\.fixedSize\(\)/);
+  assert.match(body('private func rectangularLine'), /Text\(t\.line\)\.fontWeight\(\.bold\)\.fixedSize\(\)/);
+  // The walk, then "1 change", give way whole; the status word stays.
+  assert.match(body('private func statusLine'), /statusWords\(t, changes: true, walk: true\)[\s\S]*statusWords\(t, changes: false, walk: false\)/);
+  assert.match(body('private func statusWords'), /Text\(status\(t\)\)[^\n]*\.fixedSize\(\)/);
 });
