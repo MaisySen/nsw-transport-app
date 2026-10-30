@@ -74,6 +74,15 @@ jobs:
           done
           rm -f /tmp/p.plist
 
+      - name: Runtime and build number (build 210 is runtime 1.2.0, 30 Oct)
+        run: |
+          # Main's nightly update is published to runtime 1.0.0 and 1.1.0. Build 210 carries JavaScript main does not
+          # have, so it must be on its own runtime 1.2.0, or it would download main's bundle and lose that code.
+          RT=$(node -e 'const a=require("./app.json").expo; process.stdout.write(typeof a.runtimeVersion==="string"?a.runtimeVersion:JSON.stringify(a.runtimeVersion))')
+          BN=$(node -e 'process.stdout.write(require("./app.json").expo.ios.buildNumber)')
+          echo "runtime $RT, build $BN"
+          if [ "$BN" -ge 210 ] && { [ "$RT" = "1.0.0" ] || [ "$RT" = "1.1.0" ]; }; then echo "build $BN must not use runtime $RT (main publishes there)"; exit 1; fi
+
       - name: EAS local build (production profile)
         run: |
           set -o pipefail
@@ -98,7 +107,10 @@ jobs:
             done
           done
           echo "== Expo.plist"
-          /usr/libexec/PlistBuddy -c 'Print :EXUpdatesRuntimeVersion' "$APP/Expo.plist"
+          IPA_RT=$(/usr/libexec/PlistBuddy -c 'Print :EXUpdatesRuntimeVersion' "$APP/Expo.plist")
+          WANT_RT=$(node -e 'process.stdout.write(String(require(process.env.GITHUB_WORKSPACE + "/app/app.json").expo.runtimeVersion))')
+          echo "runtime $IPA_RT (app.json $WANT_RT)"
+          [ "$IPA_RT" = "$WANT_RT" ] || { echo "IPA runtime $IPA_RT is not app.json's $WANT_RT"; exit 1; }
           /usr/libexec/PlistBuddy -c 'Print :EXUpdatesRequestHeaders' "$APP/Expo.plist"
           echo "UIBackgroundModes: $(/usr/libexec/PlistBuddy -c 'Print :UIBackgroundModes' "$APP/Info.plist" 2>/dev/null || echo absent)"
           grep -c NSPrivacyCollectedDataTypeCrashData "$APP/PrivacyInfo.xcprivacy" && echo "privacy manifest: Crash Data listed"

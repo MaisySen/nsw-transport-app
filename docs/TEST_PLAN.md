@@ -28,7 +28,7 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 ### Build 209 branch `build-209` (30 Oct prep, not built)
 * App 925 tests, 921 pass, 4 skipped (kotlinc not on this box), 0 fail (`OFFLINE=1 TZ=Australia/Sydney`, includes battery); `npx tsc --noEmit` clean; backend 629 of 629 after adding `sentry` and Time Sensitive to docs/APP_REVIEW_NOTES.md (review-notes guard 3 of 3).
-* `CI=1 IOS_APP_GROUP=1 npx expo prebuild --platform ios --no-install`: Expo.plist runtime 1.1.0, Info.plist 1.0.0 (209), entitlements carry time sensitive and the App Group, privacy manifest lists Crash Data (not linked), Sentry build phases present, widget target picks up every file in targets/widget (synchronized folder).
+* `CI=1 IOS_APP_GROUP=1 npx expo prebuild --platform ios --no-install`: Expo.plist runtime 1.1.0, Info.plist 1.0.0 (209) (build 210: runtime 1.2.0, Info.plist 1.0.0 (210); `app/test/widgetfit210.test.mjs` checks app.json), entitlements carry time sensitive and the App Group, privacy manifest lists Crash Data (not linked), Sentry build phases present, widget target picks up every file in targets/widget (synchronized folder).
 * Swift: all 26 Swift files under app/ parse with `swiftc -parse` (Swift 6.4.1 on Linux). A full compile needs the iOS SDK (SwiftUI, WidgetKit, ActivityKit), so the first real compile is the EAS compile check on 1 Nov (checklist step 4).
 * On a device: the 209 checks in docs/BUILD_209_CHECKLIST.md step 6.
 

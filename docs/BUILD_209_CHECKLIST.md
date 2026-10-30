@@ -8,6 +8,15 @@ Hard rules for the day: main stays over the air safe for runtime 1.0.0 until bui
 
 The owner asked for 209 on 30 Oct (2:44 PM). The Expo Free plan had no iOS builds left for October (15 of 15; they come back at 1 Nov 00:00 UTC, 11 AM Sydney), so steps 4 and 5 run as one `eas build --local` on GitHub Actions instead: `.github/workflows/ios-209-local.yml` (manual trigger, build-209 only, runner `xcode-27` with Xcode 27.1). There is no separate simulator compile check: the production archive is the first compile. Signing uses the app profile "Expo Transport AppStore 209" (made 30 Oct through the App Store Connect API after Time Sensitive was ticked; the old app profile went invalid) plus the unchanged widget and Watch profiles, delivered as the Actions secret `IOS209_CREDENTIALS_TGZ`. Upload is to App Store Connect for TestFlight only; steps 6 and later are unchanged (Bidur's phone check and written yes before any App Store submit).
 
+## Build 210 = runtime 1.2.0 (30 Oct)
+
+Build 210 is built from `build-209` with `"runtimeVersion": "1.2.0"` in `app/app.json` (build number 210, App Store version still 1.0.0). Reason: from 30 Oct main's nightly update is published to runtime 1.0.0 (builds 201 to 208) and 1.1.0 (build 209), and `build-209` carries JavaScript main does not have yet (Live Activity stop track in `app/platform/tripCard.ts`, get off voice and server get off client, widget refresh). On 1.1.0, build 210 would download main's bundle at its first launch and lose all of that.
+
+* **OTAs for 1.2.0 must come from `build-209` (or from main after `build-209` is merged).** Never publish main as it is today to 1.2.0.
+* Main's runtime is unchanged (policy appVersion, 1.0.0). Main has no `OTA_RUNTIME` override (that lives in `app/app.config.js` on this branch only), so a 1.1.0 update from main needs the runtime set in a throwaway working copy (step 9) and the manifest read back.
+* In the steps below, "1.1.0" describes build 209. For build 210 read 1.2.0 wherever the runtime is checked: step 2.7 prebuild (`Expo.plist` EXUpdatesRuntimeVersion 1.2.0, Android `expo_runtime_version` 1.2.0) and step 5.2 (IPA runtime 1.2.0). `.github/workflows/ios-209-local.yml` stops before the build when build 210 or later is on runtime 1.0.0 or 1.1.0, and fails the IPA check when the IPA's runtime is not `app/app.json`'s.
+* Sentry release naming is `com.maisysen.nswtransport@1.0.0+210`, dist 210 (bundle id, version and build number; the runtime is not part of it), so nothing changes there.
+
 ## 0. What is ready (29 Oct)
 
 | Branch | Head | What it carries | Checked |
@@ -92,6 +101,6 @@ Before any App Store submit, send Bidur one short message with the results below
 ## 9. After 209: over the air updates to both runtimes
 
 1. Merge `build-209` into main only after 209 is on TestFlight and checked. From then main carries native code, so every JavaScript change must feature detect what 209 adds (Sentry is already guarded).
-2. Each night's update is published twice from the same commit: once as is (runtime 1.1.0, build 209) and once with `OTA_RUNTIME=1.0.0` (builds 201 to 208). Check both manifests (runtime and bundle hashes) before production, and record both group ids and both rollback targets.
+2. Each night's update is published twice from the same commit: once as is (runtime 1.1.0, build 209) and once with `OTA_RUNTIME=1.0.0` (builds 201 to 208). Until `build-209` is merged, main has neither runtime 1.1.0 nor the `OTA_RUNTIME` override: a 1.1.0 update from main is published from a throwaway working copy with `"runtimeVersion": "1.1.0"` set in `app/app.json` (not committed), and the 1.1.0 manifest is read back before production. Build 210 is runtime 1.2.0: its updates come only from `build-209` (or main after the merge), published as is. Check both manifests (runtime and bundle hashes) before production, and record both group ids and both rollback targets.
 3. After each update on 209, upload its source maps to Sentry (`npx sentry-expo-upload-sourcemaps dist`, SENTRY.md).
 4. Done 29 Oct, 9:51 AM: `raptor-status-fix` merged (main 600b5e5) and deployed as transport-api 2d6170e4 with verify-deploy and a 13 min watch (server only).

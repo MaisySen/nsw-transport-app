@@ -347,6 +347,7 @@ Opal fare card on the trip screen (29 Oct, in the 12:29 AM update 281aa87b): a t
 
 * One branch for the 1 Nov build: latest main (acba665, with the widget, Siri and Live Activity server address already api.transportsydney.app) plus Sentry crash reports, the short Dynamic Island and widgets that drop Live after the app's rule. Details in the sections above and docs/BUILD_209_CHECKLIST.md.
 * Get off now breaks through Focus as Time Sensitive (entitlement in this build; the app already asks for it over the air).
+* Build 210 has its own update line too: runtime 1.2.0 (30 Oct), because main's nightly update goes to 1.0.0 and 1.1.0 and build 210 carries JavaScript main does not have yet. Updates for 1.2.0 come from `build-209` (or main after the merge).
 * Own update line: runtime 1.1.0, App Store version still 1.0.0, build number 209. Builds 201 to 208 keep runtime 1.0.0 and get the same JavaScript published with `OTA_RUNTIME=1.0.0` once 209 is out. The only new JavaScript to native call is Sentry, which loads only after its native module is found, so builds 201 to 208 never call it.
 
 ## Not in the app

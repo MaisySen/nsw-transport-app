@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 30 Oct 2026
 
+### Build 210 = runtime 1.2.0 (30 Oct, about 7:15 PM; branch build-209, no build)
+* Build 210 = runtime 1.2.0; OTAs for 1.2.0 must come from build-209 (or main after merge).
+* Why: from tonight main's update is published to runtime 1.0.0 (builds 201 to 208) and 1.1.0 (build 209). `build-209` carries JavaScript main does not have yet: the Live Activity stop track (`app/platform/tripCard.ts`), the get off voice and the server get off client, the widget refresh. Built on 1.1.0, build 210 would download main's bundle at its first launch and lose all of it.
+* `app/app.json` `runtimeVersion` 1.1.0 to 1.2.0 (version 1.0.0, build number 210 unchanged); `app/app.config.js` comment. Main's runtime unchanged. Sentry release naming has no runtime in it (`com.maisysen.nswtransport@1.0.0+210`), so no change there.
+* `.github/workflows/ios-209-local.yml`: stops before the build when build 210 or later is on runtime 1.0.0 or 1.1.0; the IPA check fails when the IPA's runtime is not app.json's.
+* Records: BUILD_209_CHECKLIST (new "Build 210 = runtime 1.2.0" section, step 9), RELEASES, RUNBOOK, FEATURES, TEST_PLAN. Test `app/test/widgetfit210.test.mjs` now expects 1.2.0.
+* Review notes: the `getOffVoice` and `getOffPush` rows were already in `docs/APP_REVIEW_NOTES.md` since 2d02a3f; `backend/test/review-notes.test.mjs` 3 of 3.
+
 ### Native audit, Watch job: compile first, then a simulator xcodebuild can use (30 Oct, about 6:45 PM; CI only, no build)
 * The Watch half of the widget and Watch refresh fix (d0056cd) had never compiled: the Watch job failed on 4 of the last 8 runs with "Cannot test target WatchAuditTests on Apple Watch SE 3 (40mm): watchOS Simulator (null)", and the retry then created no device, so `-destination id=` was empty.
 * Cause, read on the runner: the watchOS 27.0 runtime is a disk image the simulator service copies and mounts itself, and the runner had it registered twice, one copy still "Copying" and the other "Ready" but not mounted ("Malformed bundle does not contain an identifier at .../cryptexd/mnt/watchOS_24R362"). While that settles, simctl lists the runtime and boots a device but xcodebuild sees no runtime, or no watch device at all. Restarting the simulator service made it worse and deleting the runtime is refused for minutes (runs 41018791876 and 41019491136).

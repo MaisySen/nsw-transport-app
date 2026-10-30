@@ -267,6 +267,6 @@
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
     },
-    "runtimeVersion": "1.1.0"
+    "runtimeVersion": "1.2.0"
   }
 }
