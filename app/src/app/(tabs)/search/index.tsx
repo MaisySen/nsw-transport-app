@@ -274,7 +274,7 @@ export default function Search() {
 
         {!list.length && ((mode === 'trip' && !recentTrips.length) || (mode === 'stop' && !recentStops.length)) ? (
           <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 18 }}>
-            {mode === 'stop' ? 'Try Central, Strathfield, or a stop number like 213516.' : 'Pick where from and where to. Trips show live times and every change.'}
+            {mode === 'stop' ? 'Try Central, Parramatta, or a stop number like 2150107.' : 'Pick where from and where to. Trips show live times and every change.'}
           </T>
         ) : null}
       </Screen>

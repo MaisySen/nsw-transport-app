@@ -52,6 +52,7 @@ The source for the Notes field. It lists every feature that appears, changes or 
 | Time Sensitive Get off now (build 209 entitlement; only the Get off now alert) | none | none |
 | Spoken alert sounds (build 210: Get off now and the heads up ring with a chime and a voice, 30 Oct) | `getOffVoice` (on unless `false`) | `voice`, `getOffVoice` on a trip watch |
 | Get off now sent by the server from live times (build 210, Start trip; the phone's own alert is taken off when the server says yes, 30 Oct) | `getOffPush` (on unless `false`) | `getOffPush`, `GETOFF_PUSH` (branch getoff-voice) |
+| Past and upcoming apart on trip lists and stop boards (gone services under Earlier, a Now divider, the list opens at Now; layout only, 30 Oct) | `pastNow`, `pastNowScroll` (on unless `false`; the server can only switch them off) | none |
 
 App switches are `flags` and `kill` in `/api/app/config` (an unknown flag counts as on). Server switches are the same sections under `platform=server`, read once a minute; the budget guard holds `ENGINE_BOARDS`, `ENGINE_PUSH`, `LIVE_PUSH`, `OWN_PLANNER`, `ENGINE_LEARN`, `LOAD_TESTS` and `TRIP_TT` off when the month is projected over its line (docs/COSTS.md). The server address is `copy.api_base` (docs/API.md).
 

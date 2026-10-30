@@ -31,6 +31,9 @@ import { LineBadge } from '@/components/Transit';
 import { WhenPicker } from '@/components/WhenPicker';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { font } from '@/components/ui';
+import { EarlierHeader, NowDivider, usePastNow } from '@/components/PastNow';
+import { MUTED, nowA11y, nowLabel, pastNowSplit } from '@/lib/pastNowCore';
+import { clock } from '@/lib/format';
 import { useSides } from '@/lib/layout';
 
 type Field = { loc: true } | { place: SimplePlace } | null;
@@ -159,35 +162,41 @@ function Chooser({ which, places, canLoc, onPick, onLoc, onCancel }: { which: 'f
   );
 }
 
-function ResultRow({ r, onPress }: { r: TripRow; onPress: () => void }) {
+// zone (PAST_NOW, 30 Oct): 'past' draws a gone trip on the recessed past zone (pastBg, pastText, faded times and badges,
+// no strikethrough), 'next' puts the first trip still to come on the faint accent tint, as on the full trip list.
+// first: no hairline above the first row of a card.
+function ResultRow({ r, onPress, zone = null, first = false }: { r: TripRow; onPress: () => void; zone?: 'past' | 'next' | null; first?: boolean }) {
   const c = usePalette();
   const tone = useTone();
   const dim = r.gone || r.tone === 'red';
+  const past = zone === 'past';
+  const timeColor = past ? c.pastText : dim ? c.text3 : c.text;
+  const bg = past ? c.pastBg : zone === 'next' ? c.nextBg : c.card;
   return (
     <Pressable onPress={() => { haptic.select(); onPress(); }} accessible accessibilityRole="button" accessibilityLabel={r.a11y} accessibilityHint="Shows the steps"
-      android_ripple={{ color: c.fill }} style={({ pressed }) => [s.result, { borderBottomColor: c.sep, backgroundColor: pressed && Platform.OS === 'ios' ? c.fill : c.card }]}>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline' }}>
-        <Text maxFontSizeMultiplier={BIG} style={[font.title2, { color: dim ? c.text3 : c.text, fontVariant: ['tabular-nums'], textDecorationLine: r.tone === 'red' ? 'line-through' : 'none' }]}>{r.leave}</Text>
-        <Text maxFontSizeMultiplier={BIG} style={[font.title3, { color: c.text2, fontWeight: '400' }]}>{'  to  '}</Text>
-        <Text maxFontSizeMultiplier={BIG} style={[font.title2, { color: dim ? c.text3 : c.text, fontWeight: '400', fontVariant: ['tabular-nums'] }]}>{r.arrive}</Text>
+      android_ripple={{ color: c.fill }} style={({ pressed }) => [s.result, { borderBottomColor: c.sep, borderTopColor: c.sep, borderTopWidth: first ? 0 : StyleSheet.hairlineWidth, backgroundColor: pressed && Platform.OS === 'ios' ? c.fill : bg }]}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', opacity: past ? MUTED.timeOpacity : 1 }}>
+        <Text maxFontSizeMultiplier={BIG} style={[font.title2, { color: timeColor, fontVariant: ['tabular-nums'], textDecorationLine: r.tone === 'red' ? 'line-through' : 'none' }]}>{r.leave}</Text>
+        <Text maxFontSizeMultiplier={BIG} style={[font.title3, { color: past ? c.pastText : c.text2, fontWeight: '400' }]}>{'  to  '}</Text>
+        <Text maxFontSizeMultiplier={BIG} style={[font.title2, { color: timeColor, fontWeight: '400', fontVariant: ['tabular-nums'] }]}>{r.arrive}</Text>
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 6 }}>
-        {r.lines.map((l, i) => <LineBadge key={i} line={l.line} mode={l.mode} color={l.color} />)}
-        <Text maxFontSizeMultiplier={BIG} style={[font.callout, { color: c.text2 }]}>{`${r.dur}, ${r.changes.toLowerCase()}`}</Text>
+        {r.lines.map((l, i) => <View key={i} style={{ opacity: past ? MUTED.badgeOpacity : 1 }}><LineBadge line={l.line} mode={l.mode} color={l.color} /></View>)}
+        <Text maxFontSizeMultiplier={BIG} style={[font.callout, { color: past ? c.pastText : c.text2 }]}>{`${r.dur}, ${r.changes.toLowerCase()}`}</Text>
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 12, marginTop: 6 }}>
-        <Text maxFontSizeMultiplier={BIG} style={[font.callout, { color: tone(r.tone), fontWeight: '600' }]}>{r.status}</Text>
+        <Text maxFontSizeMultiplier={BIG} style={[font.callout, { color: past && r.tone === 'gone' ? c.pastText : tone(r.tone), fontWeight: '600' }]}>{r.status}</Text>
         {r.inText ? <Text maxFontSizeMultiplier={BIG} style={[font.callout, { color: c.text, fontWeight: '600' }]}>{r.inText}</Text> : null}
       </View>
     </Pressable>
   );
 }
 
-function ListButton({ title, busy, onPress, a11y }: { title: string; busy?: boolean; onPress: () => void; a11y: string }) {
+function ListButton({ title, busy, onPress, a11y, bg }: { title: string; busy?: boolean; onPress: () => void; a11y: string; bg?: string }) {
   const c = usePalette();
   return (
     <Pressable onPress={() => { if (!busy) { haptic.select(); onPress(); } }} accessibilityRole="button" accessibilityLabel={a11y} accessibilityState={{ busy: !!busy }}
-      android_ripple={{ color: c.fill }} style={({ pressed }) => [s.listBtn, { backgroundColor: pressed && Platform.OS === 'ios' ? c.fill : c.card }]}>
+      android_ripple={{ color: c.fill }} style={({ pressed }) => [s.listBtn, { backgroundColor: pressed && Platform.OS === 'ios' ? c.fill : bg || c.card }]}>
       {busy ? <ActivityIndicator color={c.tint} /> : <Text maxFontSizeMultiplier={BIG} style={[font.headline, { color: c.tint }]}>{title}</Text>}
     </Pressable>
   );
@@ -343,6 +352,11 @@ export default function Simple() {
   const { rows, byKey } = useMemo(() => tripRows(all, now, { keepGone }), [all, now, keepGone]);
   useReportCountdowns('simple', rows.filter((r) => !r.gone).slice(0, 6).map((r) => r.dep));
   const shownJ = pick ? (byKey.get(pick.key) || pick.j) : null;
+  // Past and upcoming apart (PAST_NOW, 30 Oct), as on the full trip list: gone trips (shown after Earlier) in their own
+  // muted card under an Earlier header, the Now band, then the trips to come with the next one tinted. No open at Now
+  // here: gone trips only show after the reader taps Earlier to see them.
+  const pastNow = usePastNow();
+  const pn = pastNowSplit(pastNow ? rows.map((r) => r.gone) : []);
 
   const more = async (dir: 'earlier' | 'later') => {
     if (!query || !rows.length) return;
@@ -423,10 +437,23 @@ export default function Simple() {
               </Text>
             ) : null}
             {live.data?.tomorrow ? <Text maxFontSizeMultiplier={BIG} style={[font.callout, { color: c.text2, marginHorizontal: 20, marginBottom: 8 }]}>No more trips tonight. These are the first ones tomorrow.</Text> : null}
-            {rows.length ? (
+            {rows.length && pn.divider ? (
+              <View>
+                <EarlierHeader count={pn.pastCount} />
+                <View style={[s.group, { backgroundColor: c.pastBg }]}>
+                  <ListButton title="Earlier" a11y="Earlier trips" bg={c.pastBg} busy={busy === 'earlier'} onPress={() => more('earlier')} />
+                  {rows.slice(0, pn.nowIdx).map((r) => <ResultRow key={r.key} r={r} zone="past" onPress={() => setPick({ key: r.key, j: byKey.get(r.key)! })} />)}
+                </View>
+                <NowDivider label={nowLabel(now, clock)} a11y={nowA11y(now, clock, pn.pastCount)} />
+                <View style={[s.group, { backgroundColor: c.card }]}>
+                  {rows.slice(pn.nowIdx).map((r, i) => <ResultRow key={r.key} r={r} first={i === 0} zone={i === 0 ? 'next' : r.gone ? 'past' : null} onPress={() => setPick({ key: r.key, j: byKey.get(r.key)! })} />)}
+                  <ListButton title="Later" a11y="Later trips" busy={busy === 'later'} onPress={() => more('later')} />
+                </View>
+              </View>
+            ) : rows.length ? (
               <View style={[s.group, { backgroundColor: c.card }]}>
                 <ListButton title="Earlier" a11y="Earlier trips" busy={busy === 'earlier'} onPress={() => more('earlier')} />
-                {rows.map((r) => <ResultRow key={r.key} r={r} onPress={() => setPick({ key: r.key, j: byKey.get(r.key)! })} />)}
+                {rows.map((r, i) => <ResultRow key={r.key} r={r} zone={pastNow && i === pn.nextIdx ? 'next' : null} onPress={() => setPick({ key: r.key, j: byKey.get(r.key)! })} />)}
                 <ListButton title="Later" a11y="Later trips" busy={busy === 'later'} onPress={() => more('later')} />
               </View>
             ) : (

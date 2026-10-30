@@ -196,7 +196,9 @@ const rowA11y = (act: SwipeAct | null, why?: Why | null) => withWhyAction(swipeA
 
 type DepartureRowProps = { d: Departure; now: number; onPress: () => void; onWatch?: () => void; watched?: boolean; showStop?: boolean; alertText?: string | null; stopNo?: boolean;
   /** Why it's late: the reason from this service's own linked alert (whyLateCore.ts); shown instead of alertText. */
-  why?: Why | null };
+  why?: Why | null;
+  /** The next service on a board with PAST_NOW (pastNowCore.ts): a faint accent tint instead of the card colour. */
+  next?: boolean };
 
 /**
  * A row redraws when its departure, watch state, note or the countdown it shows changes; not on every clock tick.
@@ -204,10 +206,10 @@ type DepartureRowProps = { d: Departure; now: number; onPress: () => void; onWat
  */
 function sameDepartureRow(a: DepartureRowProps, b: DepartureRowProps) {
   return a.d === b.d && a.watched === b.watched && a.showStop === b.showStop && a.stopNo === b.stopNo && a.alertText === b.alertText && (a.why?.text || '') === (b.why?.text || '') && !!a.onWatch === !!b.onWatch
-    && depKey(a.d, a.now) === depKey(b.d, b.now);
+    && !!a.next === !!b.next && depKey(a.d, a.now) === depKey(b.d, b.now);
 }
 
-function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertText, stopNo, why }: DepartureRowProps) {
+function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertText, stopNo, why, next }: DepartureRowProps) {
   const c = usePalette();
   const live = depState(d, now);
   // Buses: "Running slow in traffic" when the live delays ahead grow (busLiveCore.ts); live rows only.
@@ -225,7 +227,7 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
     : null;
   const body = (
     <Pressable accessibilityRole="button" onPress={onPress} onPressIn={() => pressService(d)} {...rowA11y(act, why)}
-      android_ripple={{ color: c.fill }} style={({ pressed }) => [st.depRow, { backgroundColor: pressed && Platform.OS === 'ios' ? c.card2 : c.card }]}>
+      android_ripple={{ color: c.fill }} style={({ pressed }) => [st.depRow, { backgroundColor: pressed && Platform.OS === 'ios' ? c.card2 : next ? c.nextBg : c.card }]}>
       <View style={{ width: 66, alignItems: 'flex-start' }}><LineBadge line={d.line} mode={d.mode} color={d.color} kind /></View>
       <View style={{ flex: 1, marginRight: 8 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>

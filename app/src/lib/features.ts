@@ -8,3 +8,10 @@
 // makes a row younger than its answer), and the GPS age is not counted twice (liveLead). Off is this one line (false)
 // and an over the air update.
 export const LIVE_DATA_AGE = true;
+
+// PAST_NOW (30 Oct, Bidur testing build 209: "Hard to differentiate past and current list here"): on the trip screen's
+// list and a stop's board, gone services sit in their own muted card under an "Earlier" header, a "Now, 5:08pm" divider
+// marks where the services still to come start, the next one is lightly marked, and the list opens at Now (pastNowCore.ts).
+// Gone is decided exactly as before (over a minute past, phone clock) and the minute tick the screens already have
+// redraws it. Off is this one line (false) and an over the air update, or the server flag pastNow (false) at once.
+export const PAST_NOW = true;

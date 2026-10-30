@@ -1,5 +1,5 @@
-import { ReactNode, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, ScrollViewProps, StyleSheet, Text, TextProps, View, ViewStyle } from 'react-native';
+import { ReactNode, Ref, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Platform, Pressable, ScrollView, ScrollViewProps, type ScrollViewInstance, StyleSheet, Text, TextProps, View, ViewStyle } from 'react-native';
 import { androidLook, radius, usePalette } from '@/lib/theme';
 import { Icon, I, IconName } from './Icon';
 import { useSides } from '@/lib/layout';
@@ -22,12 +22,13 @@ export function T({ style, kind = 'body', tone = 'text', ...p }: TextProps & { k
   return <Text maxFontSizeMultiplier={1.6} {...p} style={[font[kind], { color: (c as any)[tone] }, style]} />;
 }
 
-export function Screen({ children, ...p }: ScrollViewProps & { children: ReactNode }) {
+export function Screen({ children, ref, ...p }: ScrollViewProps & { children: ReactNode; /** The scroll view (pastNow's open at Now). */ ref?: Ref<ScrollViewInstance> }) {
   const c = usePalette();
   // Clear of the side safe areas and at a readable width on a wide window (iPhone Duo, resized windows).
   const side = useSides();
   return (
     <ScrollView
+      ref={ref}
       contentInsetAdjustmentBehavior="automatic"
       // iPhone: the keyboard insets the scroll view, so results under a search field and the last rows stay reachable.
       automaticallyAdjustKeyboardInsets
