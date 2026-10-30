@@ -24,14 +24,14 @@ const { leaveByEvent, wantOngoing, sydClock, shortPlace } = await load('src/lib/
 test('leaveByEvent fills the calendar sheet from the trip', () => {
   const j = {
     leave: '2026-10-24T22:05:00.000Z', arrive: '2026-10-24T22:31:00.000Z',
-    legs: [{ kind: 'walk' }, { kind: 'transit', line: 'T1', mode: 'train', from: 'Strathfield Station', fromPlatform: 'Platform 2' }],
+    legs: [{ kind: 'walk' }, { kind: 'transit', line: 'T1', mode: 'train', from: 'Chatswood Station', fromPlatform: 'Platform 2' }],
   };
-  const ev = leaveByEvent(j, 'Kings Cross Station, Potts Point');
-  assert.equal(ev.title, 'Leave for Kings Cross');
+  const ev = leaveByEvent(j, 'Bondi Junction Station, Potts Point');
+  assert.equal(ev.title, 'Leave for Bondi Junction');
   assert.equal(ev.startDate.toISOString(), '2026-10-24T22:05:00.000Z');
   assert.equal(ev.endDate.toISOString(), '2026-10-24T22:31:00.000Z');
-  assert.equal(ev.location, 'Strathfield Station');
-  assert.equal(ev.notes, 'T1 from Strathfield, Platform 2. Arrive 9:31am. Live times can change, so check Transport before you go.');
+  assert.equal(ev.location, 'Chatswood Station');
+  assert.equal(ev.notes, 'T1 from Chatswood, Platform 2. Arrive 9:31am. Live times can change, so check Transport before you go.');
   assert.deepEqual(ev.alarms, [{ relativeOffset: -10 }]);
   assert.ok(!/[\u2013\u2014]/.test(ev.notes));
 });
@@ -46,7 +46,7 @@ test('leaveByEvent copes with missing parts', () => {
 
 test('sydClock and shortPlace', () => {
   assert.equal(sydClock(Date.parse('2026-10-25T07:40:00.000Z')), '6:40pm');
-  assert.equal(shortPlace('Town Hall Station, Sydney'), 'Town Hall');
+  assert.equal(shortPlace('Martin Place Station, Sydney'), 'Martin Place');
 });
 
 test('no plain trip notification on an iPhone showing the Live Activity', () => {

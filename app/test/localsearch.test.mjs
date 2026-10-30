@@ -43,7 +43,7 @@ test('every mode is covered: light rail, ferry, metro and bus stops', () => {
   assert.ok(modes('tallawong').includes(2));
   const b = C.localSearch('warnervale rd', idx);
   assert.ok(b.some((x) => x.modes.includes(5)), 'a bus stop by street');
-  assert.ok(C.localSearch('213516', idx).some((x) => x.id === '213516'), 'a stop number');
+  assert.ok(C.localSearch('206712', idx).some((x) => x.id === '206712'), 'a stop number');
   const central = C.localSearch('central station', idx)[0];
   assert.deepEqual(central.modes.slice().sort(), [1, 2, 4].filter((m) => central.modes.includes(m)).sort());
   assert.ok(central.modes.includes(1));

@@ -64,15 +64,15 @@ test('x-serves words: parsed, per server, a rollback turns them off, the config 
 
 test('ids go in headers only when the server reads them there; the address is then the same for every phone', () => {
   const ids = { device: 'dev-abc', profile: 'p1' };
-  const h = SV.placeIds('/api/departures?stop=213510', ids, true);
-  assert.equal(h.path, '/api/departures?stop=213510');
+  const h = SV.placeIds('/api/departures?stop=206710', ids, true);
+  assert.equal(h.path, '/api/departures?stop=206710');
   assert.deepEqual(h.headers, { 'x-device': 'dev-abc', 'x-profile': 'p1' });
-  const q = SV.placeIds('/api/departures?stop=213510', ids, false);
-  assert.equal(q.path, '/api/departures?stop=213510&device=dev-abc&profile=p1');
+  const q = SV.placeIds('/api/departures?stop=206710', ids, false);
+  assert.equal(q.path, '/api/departures?stop=206710&device=dev-abc&profile=p1');
   assert.deepEqual(q.headers, {});
   assert.equal(SV.placeIds('/api/trip', { device: 'd' }, false).path, '/api/trip?device=d');
   assert.deepEqual(SV.placeIds('/x', undefined, true), { path: '/x', headers: {} });
-  const other = SV.placeIds('/api/departures?stop=213510', { device: 'zzz', profile: 'p9' }, true);
+  const other = SV.placeIds('/api/departures?stop=206710', { device: 'zzz', profile: 'p9' }, true);
   assert.equal(other.path, h.path, 'two phones, one edge cache key');
 });
 
@@ -92,15 +92,15 @@ test('api.ts: departures and trips carry ids per server, read x-serves from ever
 const leg = (o) => ({ kind: 'transit', mode: 'train', line: 'T1', durationMin: 20, ...o });
 function plan() {
   return {
-    kind: 'trip', from: { id: '213510', name: 'Strathfield' }, to: { id: '201110', name: 'Kings Cross' }, now: NOW,
+    kind: 'trip', from: { id: '206710', name: 'Chatswood' }, to: { id: '202210', name: 'Bondi Junction' }, now: NOW,
     journeys: [
       { leave: iso(3), board: iso(5), arrive: iso(30), durationMin: 27, changes: 1, live: true, legs: [
         { kind: 'walk', durationMin: 2 },
         leg({ tripId: 'T1.a', stopId: '2135223', toStopId: '200060', planned: iso(5), estimated: iso(6), realtime: true, delayMin: 1, arrPlanned: iso(17), arrEstimated: iso(18) }),
-        leg({ tripId: 'T4.b', line: 'T4', stopId: '200061', toStopId: '201110', planned: iso(22), realtime: false, arrPlanned: iso(28) }),
+        leg({ tripId: 'T4.b', line: 'T4', stopId: '200061', toStopId: '202210', planned: iso(22), realtime: false, arrPlanned: iso(28) }),
       ] },
       { leave: iso(13), board: iso(15), arrive: iso(40), durationMin: 27, changes: 0, live: false, legs: [
-        leg({ tripId: 'T1.c', stopId: '2135223', toStopId: '201110', planned: iso(15), realtime: false, arrPlanned: iso(38) }),
+        leg({ tripId: 'T1.c', stopId: '2135223', toStopId: '202210', planned: iso(15), realtime: false, arrPlanned: iso(38) }),
       ] },
     ],
   };
@@ -109,7 +109,7 @@ function plan() {
 test('the legs a refresh sends: tripId@from@to@mode@line, encoded, in requests of at most 12', () => {
   const r = TL.liveRequests(plan());
   assert.equal(r.params.length, 1);
-  assert.equal(r.params[0], 'T1.a@2135223@200060@train@T1,T4.b@200061@201110@train@T4,T1.c@2135223@201110@train@T1');
+  assert.equal(r.params[0], 'T1.a@2135223@200060@train@T1,T4.b@200061@202210@train@T4,T1.c@2135223@202210@train@T1');
   assert.deepEqual(r.refs[0], [{ j: 0, l: 1 }, { j: 0, l: 2 }, { j: 1, l: 0 }]);
   assert.equal(TL.wireLeg(leg({ tripId: 'a@b,c', stopId: '1', toStopId: '2', line: 'M' })), 'a%40b%2Cc@1@2@train@M');
   const p = plan(); delete p.journeys[1].legs[0].tripId;
@@ -214,10 +214,10 @@ test('a 304 hands back the kept station list; a new answer replaces it', async (
   globalThis.fetch = async (url, init) => {
     calls.push({ url, h: (init && init.headers) || {} });
     if (mode === 'same') return { status: 304, ok: false, headers: { get: () => null }, json: async () => ({}) };
-    return { status: 200, ok: true, headers: { get: (k) => (k === 'etag' ? '"v1"' : null) }, json: async () => [['2135', 'Strathfield', 1, 2]] };
+    return { status: 200, ok: true, headers: { get: (k) => (k === 'etag' ? '"v1"' : null) }, json: async () => [['2135', 'Chatswood', 1, 2]] };
   };
   const a = await E.getJsonTagged('/api/stations?mode=train', 5000);
-  assert.deepEqual(a, [['2135', 'Strathfield', 1, 2]]);
+  assert.deepEqual(a, [['2135', 'Chatswood', 1, 2]]);
   assert.deepEqual(calls[0].h, {}, 'nothing kept yet: no tag');
   mode = 'same';
   const b = await E.getJsonTagged('/api/stations?mode=train', 5000);

@@ -22,9 +22,9 @@ async function load(rel) {
 const A = await load('src/lib/askFormat.ts');
 const MIN = 60000;
 
-// The shape /api/ask returned on 25 Oct for a Strathfield to Kings Cross question (Sydney is UTC+11).
-const KX = 'Kings Cross Station Lift 1 between the concourse and Victoria St is not available';
-const RF = 'Redfern Station Lift 7 between the southern concourse and Platform 10 is not available';
+// The shape /api/ask returned on 25 Oct for a Chatswood to Bondi Junction question (Sydney is UTC+11).
+const KX = 'Bondi Junction Station Lift 1 between the concourse and Victoria St is not available';
+const RF = 'Epping Station Lift 7 between the southern concourse and Platform 10 is not available';
 const fare = { type: 'adult', typeName: 'Adult', total: 3.76, peak: false, transfer: 0, airportFee: 0, capped: false, unknown: false, legs: [], estimate: true };
 function journey(dep, delay, opts = {}) {
   const planned = new Date(Date.parse(dep) - delay * MIN).toISOString();
@@ -33,15 +33,15 @@ function journey(dep, delay, opts = {}) {
     legs: [
       ...(opts.walk ? [{ kind: 'walk', realtime: false, delayMin: 0, cancelled: false }] : []),
       { kind: 'transit', mode: 'train', line: 'T1', color: '#F99D1C', fromPlatform: 'Platform 2', planned, estimated: dep, realtime: true, delayMin: delay, cancelled: false,
-        access: { from: { level: 'independent' }, to: { outage: opts.redfern ? RF : undefined } } },
+        access: { from: { level: 'independent' }, to: { outage: opts.epping ? RF : undefined } } },
       { kind: 'transit', mode: 'train', line: 'T4', color: '#005AA3', fromPlatform: 'Platform 11', planned: dep, estimated: dep, realtime: true, delayMin: 0, cancelled: false,
-        access: { from: { outage: opts.redfern ? RF : undefined }, to: { outage: KX } } },
+        access: { from: { outage: opts.epping ? RF : undefined }, to: { outage: KX } } },
     ],
   };
 }
-const reply = 'Strathfield Station to Kings Cross Station. Next: the T1 from Strathfield Station, Plat 2 at 7:30am (in 13 min), arriving Kings Cross Station 7:55am with 1 change. 4 min late.\n'
+const reply = 'Chatswood Station to Bondi Junction Station. Next: the T1 from Chatswood Station, Plat 2 at 7:30am (in 13 min), arriving Bondi Junction Station 7:55am with 1 change. 4 min late.\n'
   + `Lift outage on this trip: ${KX}.\nOpal fare estimate $3.76 (Adult, off peak).`;
-const msg = (j, extra = {}) => ({ text: reply, kind: 'trip', fare, cards: [{ type: 'trip', from: { id: '213510', name: 'Strathfield Station' }, to: { id: '201110', name: 'Kings Cross Station' }, journeys: j }], ...extra });
+const msg = (j, extra = {}) => ({ text: reply, kind: 'trip', fare, cards: [{ type: 'trip', from: { id: '206710', name: 'Chatswood Station' }, to: { id: '202210', name: 'Bondi Junction Station' }, journeys: j }], ...extra });
 const DEP = '2026-10-24T20:30:00.000Z'; // 7:30 am Sydney
 const NOW = Date.parse(DEP) - 13 * MIN;
 
@@ -51,9 +51,9 @@ test('trip answer becomes the card fields', () => {
   assert.equal(s.when, 'in 13 min');
   assert.deepEqual(s.lines.map((l) => l.line), ['T1', 'T4']);
   assert.equal(s.platform, 'Platform 2');
-  assert.equal(s.arrive, 'Arrives Kings Cross 7:55 am \u00b7 1 change');
+  assert.equal(s.arrive, 'Arrives Bondi Junction 7:55 am \u00b7 1 change');
   assert.deepEqual(s.status, { text: '4 min late', tone: 'lateText' });
-  assert.equal(s.liftShort, 'Lift 1 at Kings Cross not working');
+  assert.equal(s.liftShort, 'Lift 1 at Bondi Junction not working');
   assert.deepEqual(s.outages, [KX]);
   assert.equal(s.fare, 'Fare about $3.76 \u00b7 Adult off peak');
   assert.deepEqual(s.extras, []);
@@ -63,14 +63,14 @@ test('trip answer becomes the card fields', () => {
 test('no repeated header, no "Station" and no dashes in what is shown', () => {
   const s = A.tripSummary(msg([journey(DEP, 4)]), NOW);
   const shown = [s.time, s.when, s.platform, s.arrive, s.status.text, s.liftShort, s.fare, ...s.extras].join(' | ');
-  assert.ok(!/Strathfield/.test(shown));
+  assert.ok(!/Chatswood/.test(shown));
   assert.ok(!/Station/.test(shown));
   assert.ok(!/[\u2013\u2014]/.test(shown + s.spoken));
 });
 
 test('screen readers get one sentence', () => {
   const s = A.tripSummary(msg([journey(DEP, 4)]), NOW);
-  assert.equal(s.spoken, 'Next T1 then T4 at 7:30 am, in 13 minutes, from Platform 2. Arrives Kings Cross at 7:55 am, 1 change. 4 minutes late. Lift 1 at Kings Cross not working. Fare about $3.76, Adult off peak.');
+  assert.equal(s.spoken, 'Next T1 then T4 at 7:30 am, in 13 minutes, from Platform 2. Arrives Bondi Junction at 7:55 am, 1 change. 4 minutes late. Lift 1 at Bondi Junction not working. Fare about $3.76, Adult off peak.');
 });
 
 test('on time is green, cancelled and scheduled read plainly', () => {
@@ -100,13 +100,13 @@ test('a journey that has left gives way to the next one', () => {
 });
 
 test('two lift outages, same station, many', () => {
-  assert.equal(A.liftShort([RF, KX]), 'Lift 7 at Redfern and Lift 1 at Kings Cross not working');
+  assert.equal(A.liftShort([RF, KX]), 'Lift 7 at Epping and Lift 1 at Bondi Junction not working');
   assert.equal(A.liftShort(['Central Station Lift 3 is not available', 'Central Station Lift 4 is not available']), 'Lift 3 and Lift 4 at Central not working');
   assert.equal(A.liftShort([RF, KX, 'Central Station Escalator 2 is not available']), '3 lifts not working on this trip');
   assert.equal(A.liftShort(['The lift is closed for maintenance']), 'Lift not working on this trip');
   assert.equal(A.liftShort([]), null);
   assert.deepEqual(A.parseOutage('Wynyard Station Escalator 4 between X and Y is not available'), { what: 'Escalator 4', at: 'Wynyard' });
-  const s = A.tripSummary(msg([journey(DEP, 4, { redfern: true })]), NOW);
+  const s = A.tripSummary(msg([journey(DEP, 4, { epping: true })]), NOW);
   assert.deepEqual(s.outages, [RF, KX]);
 });
 
@@ -130,7 +130,7 @@ test('walk first shows when to leave; other reply lines are kept', () => {
 
 test('answers that are not a next service stay text', () => {
   assert.equal(A.tripSummary({ text: 'The T1 looks on time. All 6 live services are within 2 min.', kind: 'line', cards: [] }, NOW), null);
-  assert.equal(A.tripSummary({ ...msg([journey(DEP, 0)]), text: 'Strathfield Station to Kings Cross Station. No trips found right now.' }, NOW), null);
+  assert.equal(A.tripSummary({ ...msg([journey(DEP, 0)]), text: 'Chatswood Station to Bondi Junction Station. No trips found right now.' }, NOW), null);
   assert.equal(A.tripSummary(msg([]), NOW), null);
   // Saved chats from before this version have no kind; the reply and the card still say it is a trip.
   const old = msg([journey(DEP, 4)]); delete old.kind; delete old.fare;
@@ -138,9 +138,9 @@ test('answers that are not a next service stay text', () => {
 });
 
 test('plain answers split into short paragraphs', () => {
-  const t = 'The T1 has some delays at Strathfield: 2 of 6 live services late, the worst 6 min (7:41am to Central). 1 alert: Trackwork at Redfern. Buses replace trains. Check before you travel.';
+  const t = 'The T1 has some delays at Chatswood: 2 of 6 live services late, the worst 6 min (7:41am to Central). 1 alert: Trackwork at Epping. Buses replace trains. Check before you travel.';
   assert.deepEqual(A.splitPlain(t), [
-    'The T1 has some delays at Strathfield: 2 of 6 live services late, the worst 6 min (7:41am to Central). 1 alert: Trackwork at Redfern.',
+    'The T1 has some delays at Chatswood: 2 of 6 live services late, the worst 6 min (7:41am to Central). 1 alert: Trackwork at Epping.',
     'Buses replace trains. Check before you travel.',
   ]);
   assert.deepEqual(A.splitPlain('Bus stop on George St. near Market St. is closed. Use the next stop.'), ['Bus stop on George St. near Market St. is closed. Use the next stop.']);
@@ -152,7 +152,7 @@ test('plain answers split into short paragraphs', () => {
 });
 
 test('short place names', () => {
-  assert.equal(A.shortPlace('Kings Cross Station'), 'Kings Cross');
+  assert.equal(A.shortPlace('Bondi Junction Station'), 'Bondi Junction');
   assert.equal(A.shortPlace('Circular Quay Wharf'), 'Circular Quay');
   assert.equal(A.shortPlace('Parramatta Rd opp Stanmore Rd, Stanmore'), 'Parramatta Rd opp Stanmore Rd');
   assert.equal(A.shortPlace(null), '');

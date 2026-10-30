@@ -23,42 +23,42 @@ test("the horizon is an hour", () => {
 });
 
 test("an echoed estimate hours away is not live; its estimate and zero delay stay", () => {
-  const [l] = legsOf([[{ from: "strathfield", to: "central", dep: NOW + 3 * 60 * MIN, delay: 0 }]]);
+  const [l] = legsOf([[{ from: "chatswood", to: "central", dep: NOW + 3 * 60 * MIN, delay: 0 }]]);
   assert.equal(l.realtime, false);
   assert.equal(l.delayMin, 0);
   assert.equal(Date.parse(l.estimated), NOW + 3 * 60 * MIN);
 });
 
 test("an estimate that moved is live however far away (late and early)", () => {
-  assert.equal(legsOf([[{ from: "strathfield", to: "central", dep: NOW + 3 * 60 * MIN, delay: 4 }]])[0].realtime, true);
-  assert.equal(legsOf([[{ from: "burwood", to: "redfern", dep: NOW + 2 * 60 * MIN, delay: -2 }]])[0].realtime, true);
+  assert.equal(legsOf([[{ from: "chatswood", to: "central", dep: NOW + 3 * 60 * MIN, delay: 4 }]])[0].realtime, true);
+  assert.equal(legsOf([[{ from: "parramatta", to: "epping", dep: NOW + 2 * 60 * MIN, delay: -2 }]])[0].realtime, true);
 });
 
 test("a trip leaving within the hour is live with a zero delay; just past the hour it is not", () => {
-  assert.equal(legsOf([[{ from: "homebush", to: "townhall", dep: NOW + 20 * MIN, delay: 0 }]])[0].realtime, true);
-  assert.equal(legsOf([[{ from: "homebush", to: "townhall", dep: NOW + 60 * MIN, delay: 0 }]])[0].realtime, true);
-  assert.equal(legsOf([[{ from: "homebush", to: "townhall", dep: NOW + 61 * MIN, delay: 0 }]])[0].realtime, false);
+  assert.equal(legsOf([[{ from: "homebush", to: "martinplace", dep: NOW + 20 * MIN, delay: 0 }]])[0].realtime, true);
+  assert.equal(legsOf([[{ from: "homebush", to: "martinplace", dep: NOW + 60 * MIN, delay: 0 }]])[0].realtime, true);
+  assert.equal(legsOf([[{ from: "homebush", to: "martinplace", dep: NOW + 61 * MIN, delay: 0 }]])[0].realtime, false);
   // A late first service counts from its live time: planned 70 min out, running 15 late.
-  assert.equal(legsOf([[{ from: "homebush", to: "townhall", dep: NOW + 70 * MIN, delay: 15 }]])[0].realtime, true);
+  assert.equal(legsOf([[{ from: "homebush", to: "martinplace", dep: NOW + 70 * MIN, delay: 15 }]])[0].realtime, true);
 });
 
 test("the trip's departure counts for every leg: a second service later on a trip leaving soon stays live", () => {
   const legs = legsOf([[
-    { from: "strathfield", to: "central", dep: NOW + 10 * MIN, delay: 0, min: 15 },
-    { from: "central", to: "kingscross", dep: NOW + 80 * MIN, delay: 0, cls: 5 },
+    { from: "chatswood", to: "central", dep: NOW + 10 * MIN, delay: 0, min: 15 },
+    { from: "central", to: "bondijunction", dep: NOW + 80 * MIN, delay: 0, cls: 5 },
   ]]);
   assert.equal(legs[0].realtime, true);
   assert.equal(legs[1].realtime, true);
   const later = legsOf([[
-    { from: "strathfield", to: "central", dep: NOW + 90 * MIN, delay: 0, min: 15 },
-    { from: "central", to: "kingscross", dep: NOW + 110 * MIN, delay: 3, cls: 5 },
+    { from: "chatswood", to: "central", dep: NOW + 90 * MIN, delay: 0, min: 15 },
+    { from: "central", to: "bondijunction", dep: NOW + 110 * MIN, delay: 3, cls: 5 },
   ]]);
   assert.equal(later[0].realtime, false);
   assert.equal(later[1].realtime, true);
 });
 
 test("no estimate is never live", () => {
-  const [l] = legsOf([[{ from: "strathfield", to: "central", dep: NOW + 5 * MIN, delay: null }]]);
+  const [l] = legsOf([[{ from: "chatswood", to: "central", dep: NOW + 5 * MIN, delay: null }]]);
   assert.equal(l.realtime, false);
   assert.equal(l.delayMin, null);
   assert.equal(l.estimated, null);
@@ -66,8 +66,8 @@ test("no estimate is never live", () => {
 });
 
 test("trip: the same rule comes through the whole trip answer", async () => {
-  const far = efaLeg({ from: "redfern", to: "central", dep: NOW + 3 * 60 * MIN, delay: 0 });
-  const soon = efaLeg({ from: "redfern", to: "central", dep: NOW + 10 * MIN, delay: 0 });
+  const far = efaLeg({ from: "epping", to: "central", dep: NOW + 3 * 60 * MIN, delay: 0 });
+  const soon = efaLeg({ from: "epping", to: "central", dep: NOW + 10 * MIN, delay: 0 });
   const answer = { journeys: [{ legs: [far] }, { legs: [soon] }] };
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (u) => {
@@ -76,7 +76,7 @@ test("trip: the same rule comes through the whole trip answer", async () => {
     return new Response("{}", { status: 404 });
   };
   try {
-    const r = await W.trip({ TFNSW_API_KEY: "t" }, "201510", "200060", {});
+    const r = await W.trip({ TFNSW_API_KEY: "t" }, "212110", "200060", {});
     const byDep = new Map(r.journeys.map((j) => [Date.parse(j.legs[0].planned), j.legs[0]]));
     assert.equal(byDep.get(NOW + 3 * 60 * MIN).realtime, false);
     assert.equal(byDep.get(NOW + 10 * MIN).realtime, true);

@@ -104,10 +104,10 @@ test('honest "Updated": a cached answer keeps the time it was read', async () =>
 
 test('morning checks: copy what the new server lacks, once, within the per phone limit', () => {
   const c = (from, to, time, days = [1, 2, 3, 4, 5], extra = {}) => ({ id: 'x' + from, name: null, from: { id: from, name: 'A' }, to: { id: to, name: 'B' }, time, days, lead: 15, active: true, mode: null, ...extra });
-  const old = [c('213510', '200060', '07:30'), c('213510', '2046100', '17:10', [1, 2, 3, 4, 5], { mode: 'bus', lead: 20 })];
-  const moved = M.morningToCopy(old, [c('213510', '200060', '07:30')]);
+  const old = [c('206710', '200060', '07:30'), c('206710', '2046100', '17:10', [1, 2, 3, 4, 5], { mode: 'bus', lead: 20 })];
+  const moved = M.morningToCopy(old, [c('206710', '200060', '07:30')]);
   assert.equal(moved.length, 1);
-  assert.deepEqual(moved[0], { name: null, from: { id: '213510', name: 'A' }, to: { id: '2046100', name: 'B' }, time: '17:10', days: [1, 2, 3, 4, 5], lead: 20, active: true, mode: 'bus' });
+  assert.deepEqual(moved[0], { name: null, from: { id: '206710', name: 'A' }, to: { id: '2046100', name: 'B' }, time: '17:10', days: [1, 2, 3, 4, 5], lead: 20, active: true, mode: 'bus' });
   assert.ok(!('id' in moved[0]), 'the new server gives its own id');
   assert.equal(M.morningToCopy(old, [...old]).length, 0, 'running again copies nothing');
   assert.equal(M.morningToCopy(old, [], 1).length, 1, 'never past the limit');

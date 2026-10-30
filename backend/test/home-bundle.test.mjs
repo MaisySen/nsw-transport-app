@@ -50,7 +50,7 @@ test("x-serves lists home-bundle on every /api answer", async () => {
 });
 
 test("parts come back in order, each the same answer as its own request", async () => {
-  const paths = ["/api/departures?stop=200060", "/api/app/config?platform=android", "/api/departures?stop=213510&mode=bus"];
+  const paths = ["/api/departures?stop=200060", "/api/app/config?platform=android", "/api/departures?stop=206710&mode=bus"];
   upstream.length = 0;
   const b = await bundle(paths, baseEnv, { "x-device": "dev-home-1", "x-profile": "prof-home-1" });
   assert.equal(b.status, 200);
@@ -68,7 +68,7 @@ test("parts come back in order, each the same answer as its own request", async 
 
 test("the same read twice is run once", async () => {
   upstream.length = 0;
-  const b = await bundle(["/api/departures?stop=201110", "/api/departures?stop=201110"]);
+  const b = await bundle(["/api/departures?stop=202210", "/api/departures?stop=202210"]);
   assert.equal(b.body.parts.length, 2);
   assert.equal(upstream.filter((p) => p.endsWith("/departure_mon")).length, 1);
 });
@@ -91,7 +91,7 @@ test("a part still waiting after 2.5 s is answered late and carries on behind th
   hang = true;
   waits.length = 0;
   const t0 = Date.now();
-  const b = await bundle(["/api/trip?from=213410&to=213510&count=6&time=0930", "/api/app/config?platform=android"]);
+  const b = await bundle(["/api/trip?from=215020&to=206710&count=6&time=0930", "/api/app/config?platform=android"]);
   hang = false;
   const ms = Date.now() - t0;
   assert.ok(ms < 4000, "answered in " + ms + " ms");

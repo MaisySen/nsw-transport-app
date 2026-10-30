@@ -34,7 +34,7 @@ async function call(env, method, path, body) {
   return { status: r.status, body: await r.json() };
 }
 const DEV = "dev-lasthome-1";
-const FROM = { id: "200060", name: "Central Station" }, TO = { id: "213410", name: "Burwood Station" };
+const FROM = { id: "200060", name: "Central Station" }, TO = { id: "215020", name: "Parramatta Station" };
 async function withToken(env) {
   await W.ensureSchema3(env);
   await env.DB.prepare("INSERT INTO expo_tokens (token, device, profile, platform, created, fails) VALUES ('ExponentPushToken[lasthome12345]', ?1, '', 'ios', 0, 0)").bind(DEV).run();
@@ -49,7 +49,7 @@ test("register: the server finds the last service itself, one reminder per devic
   await withToken(env);
   const now = Date.now();
   // 40 and 70 min from now tonight, then the first one tomorrow morning: the last one tonight is the 70 min one.
-  tripAnswer = efaTrip([[{ from: "central", to: "burwood", dep: now + 40 * MIN, plat: "Platform 16" }], [{ from: "central", to: "burwood", dep: now + 70 * MIN, plat: "Platform 16" }], [{ from: "central", to: "burwood", dep: now + 7 * 60 * MIN }]]);
+  tripAnswer = efaTrip([[{ from: "central", to: "parramatta", dep: now + 40 * MIN, plat: "Platform 16" }], [{ from: "central", to: "parramatta", dep: now + 70 * MIN, plat: "Platform 16" }], [{ from: "central", to: "parramatta", dep: now + 7 * 60 * MIN }]]);
   const r = await call(env, "POST", "/api/last-home", { device: DEV, from: FROM, to: TO, mode: "train" });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.ok(Math.abs(Date.parse(r.body.item.board) - (now + 70 * MIN)) < 1000, r.body.item.board);
@@ -75,7 +75,7 @@ test("refuses honestly: no service, too soon, bad input, flag off", async () => 
   tripAnswer = { journeys: [] };
   let r = await call(env, "POST", "/api/last-home", { device: DEV, from: FROM, to: TO });
   assert.equal(r.status, 409); assert.equal(r.body.reason, "none");
-  tripAnswer = efaTrip([[{ from: "central", to: "burwood", dep: now + 9 * MIN }], [{ from: "central", to: "burwood", dep: now + 7 * 60 * MIN }]]);
+  tripAnswer = efaTrip([[{ from: "central", to: "parramatta", dep: now + 9 * MIN }], [{ from: "central", to: "parramatta", dep: now + 7 * 60 * MIN }]]);
   r = await call(env, "POST", "/api/last-home", { device: DEV, from: FROM, to: TO });
   assert.equal(r.status, 409); assert.equal(r.body.reason, "soon"); assert.match(r.body.error, /too soon/);
   assert.equal((await call(env, "POST", "/api/last-home", { device: "x", from: FROM, to: TO })).status, 400);
@@ -91,7 +91,7 @@ test("refuses honestly: no service, too soon, bad input, flag off", async () => 
 async function seed(env, leave, extra = {}) {
   await W.lastHomeSchema(env);
   await env.DB.prepare(`INSERT INTO last_home (id, device, from_id, from_name, to_id, to_name, mode, svc_mode, lead, leave, first_leave, board, line, stop, platform, status, created, checked, sent, sent_text)
-    VALUES ('lh1', ?1, '200060', 'Central Station', '213410', 'Burwood Station', NULL, 'train', 15, ?2, ?2, ?2, 'T1', 'Central', 'Platform 16', 'waiting', 0, ?3, NULL, NULL)`).bind(DEV, leave, extra.checked ?? 0).run();
+    VALUES ('lh1', ?1, '200060', 'Central Station', '215020', 'Parramatta Station', NULL, 'train', 15, ?2, ?2, ?2, 'T1', 'Central', 'Platform 16', 'waiting', 0, ?3, NULL, NULL)`).bind(DEV, leave, extra.checked ?? 0).run();
 }
 const row = async (env) => env.DB.prepare("SELECT * FROM last_home WHERE id = 'lh1'").first();
 
@@ -123,7 +123,7 @@ test("tick: quiet until 15 min before, looks again live, follows a later service
   out = await W.processLastHome(env, leave - 9 * MIN, { find });
   assert.equal(out[0].result, "sent");
   assert.equal(expoSent.length, 1);
-  assert.match(expoSent[0].title, /^Last train to Burwood$/);
+  assert.match(expoSent[0].title, /^Last train to Parramatta$/);
   assert.match(expoSent[0].body, /^Leaves in 15 min: the \d{1,2}:\d{2}(am|pm) T1 from Central, Platform 16\. It changed from \d{1,2}:\d{2}(am|pm)\.$/);
   assert.doesNotMatch(expoSent[0].body, /[\u2013\u2014]/);
   // Never twice.
@@ -155,7 +155,7 @@ test("tick: a walk first says leave by; no service any more says so once; a live
   out = await W.processLastHome(env, t0 + 15 * MIN + 30000, { find: async () => null });
   assert.equal(out[0].result, "none");
   assert.equal(expoSent.length, 1);
-  assert.match(expoSent[0].body, /^No service from Central to Burwood shows for the rest of tonight\. Open Plan for other ways home\.$/);
+  assert.match(expoSent[0].body, /^No service from Central to Parramatta shows for the rest of tonight\. Open Plan for other ways home\.$/);
 
   env = freshEnv();
   await seed(env, t0 - 10 * MIN);

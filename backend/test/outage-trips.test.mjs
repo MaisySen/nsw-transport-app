@@ -32,21 +32,21 @@ const meta = {
 };
 // [name, parent, platform code, lat, lon]
 const stops = {
-  KX: ["Kings Cross Station", "", "", -33.87448, 151.22223], KX1: ["Kings Cross Station Platform 1", "KX", "1", -33.87448, 151.22223],
+  KX: ["Martin Place Station", "", "", -33.87448, 151.22223], KX1: ["Martin Place Station Platform 1", "KX", "1", -33.87448, 151.22223],
   "200060": ["Central Station", "", "", -33.88402, 151.2062], C1: ["Central Station Platform 24", "200060", "24", -33.88402, 151.2062],
   C2: ["Central Station Platform 16", "200060", "16", -33.88402, 151.2062], C3: ["Central Station Platform 26", "200060", "26", -33.88402, 151.2062],
-  S: ["Strathfield Station", "", "", -33.87167, 151.09429], S1: ["Strathfield Station Platform 3", "S", "3", -33.87167, 151.09429],
-  M: ["Campsie Station", "", "", -33.9105, 151.1035], M1: ["Campsie Station Platform 1", "M", "1", -33.9105, 151.1035],
+  S: ["Chatswood Station", "", "", -33.87167, 151.09429], S1: ["Chatswood Station Platform 3", "S", "3", -33.87167, 151.09429],
+  M: ["Lakemba Station", "", "", -33.9105, 151.1035], M1: ["Lakemba Station Platform 1", "M", "1", -33.9105, 151.1035],
   B1: ["Oxford St at Taylor Sq", "", "", -33.8812, 151.2163], G9: ["Pitt St", "", "", -33.8841, 151.2061], "2009191": ["Pitt St Stand A", "G9", "", -33.8842, 151.2062], B2: ["Bondi Rd at Wellington St", "", "", -33.8915, 151.2620],
 };
 const rows = {
-  // T4 Kings Cross to Central (and on), every 10 minutes; one empty train that must never be offered.
+  // T4 Martin Place to Central (and on), every 10 minutes; one empty train that must never be offered.
   KX1: [[sec(4), "t4a", 0, 0, 10], [sec(14), "t4b", 0, 0, 10], [sec(24), "t4c", 0, 0, 10], [sec(9), "t4x", 0, 3, 10]],
   C1: [[sec(9), "t4a", 0, 0, 12], [sec(19), "t4b", 0, 0, 12], [sec(29), "t4c", 0, 0, 12], [sec(14), "t4x", 0, 3, 12]],
-  // T1 Central to Strathfield.
+  // T1 Central to Chatswood.
   C2: [[sec(11), "t1a", 1, 1, 5], [sec(15), "t1b", 1, 1, 5], [sec(30), "t1c", 1, 1, 5], [sec(36), "t1d", 1, 1, 5]],
   S1: [[sec(25), "t1a", 1, 1, 9], [sec(29), "t1b", 1, 1, 9], [sec(44), "t1c", 1, 1, 9], [sec(50), "t1d", 1, 1, 9]],
-  // Metro Central to Campsie (the metro keeps no stop order: the Central hub finds it).
+  // Metro Central to Lakemba (the metro keeps no stop order: the Central hub finds it).
   C3: [[sec(16), "m1", 2, 2, 3], [sec(26), "m2", 2, 2, 3]],
   M1: [[sec(34), "m1", 2, 2, 9], [sec(44), "m2", 2, 2, 9]],
   // A direct bus.
@@ -91,7 +91,7 @@ test("a direct trip on one service: departure, arrival, line and platform from t
   assert.equal(new Date(l.arrPlanned) - new Date(l.planned), 12 * 60000);
 });
 
-test("Kings Cross to Strathfield: one change at Central, enough time to change, never an Empty Train", () => {
+test("Martin Place to Chatswood: one change at Central, enough time to change, never an Empty Train", () => {
   const r = W.ttPlan(fakeSrc, { from: "KX", to: "S", at: Date.now() - 60000 });
   assert.ok(r.journeys.length >= 2);
   for (const j of r.journeys) {
@@ -101,7 +101,7 @@ test("Kings Cross to Strathfield: one change at Central, enough time to change, 
     assert.ok(new Date(j[1].planned) - new Date(j[0].arrPlanned) >= 4 * 60000, "at least 4 minutes to change");
     assert.notEqual(j[0].tripId, "t4x");
   }
-  // 4 min T4 (Central 9) -> 15 min T1 (Strathfield 29); 14 -> 30 (44); 24 -> 36 (50).
+  // 4 min T4 (Central 9) -> 15 min T1 (Chatswood 29); 14 -> 30 (44); 24 -> 36 (50).
   assert.deepEqual(r.journeys.map((j) => j[1].tripId), ["t1b", "t1c", "t1d"]);
   assert.equal(r.journeys[0][1].fromPlatform, "Platform 16");
 });
@@ -129,7 +129,7 @@ test("/api/trip with the Trip Planner refused answers 200 with labelled timetabl
   assert.equal(j.live, false); assert.equal(j.changes, 1);
   assert.equal(j.legs[0].alerts[0].title, "Live trips unavailable, showing timetable times");
   assert.ok(j.legs.every((l) => l.realtime === false && l.status.key === "scheduled"));
-  assert.equal(r.body.from.name, "Kings Cross Station");
+  assert.equal(r.body.from.name, "Martin Place Station");
 });
 
 test("/api/trip with no timetable answer is an honest error, never an empty list", async () => {
@@ -182,10 +182,10 @@ test("a timetable stand in is never kept as a copy", async () => {
 
 test("trip copies: plain trips from now are saved per from and to pair, timed or step free trips are not", () => {
   const k = (q) => W.boardKey(new URL("https://api.transportsydney.app/api/trip?" + q));
-  assert.deepEqual(k("from=201110&to=213510&count=6&fromName=Kings%20Cross"), { k: "trip:201110>213510", stop: "trip" });
-  assert.equal(k("from=201110&to=213510&time=0830"), null);
-  assert.equal(k("from=201110&to=213510&acc=1"), null);
-  assert.equal(k("from=201110&to=201110"), null);
+  assert.deepEqual(k("from=200030&to=206710&count=6&fromName=Kings%20Cross"), { k: "trip:200030>206710", stop: "trip" });
+  assert.equal(k("from=200030&to=206710&time=0830"), null);
+  assert.equal(k("from=200030&to=206710&acc=1"), null);
+  assert.equal(k("from=200030&to=200030"), null);
 });
 
 test("a saved trip copy is served only with trips still to leave, never a timetable answer", () => {

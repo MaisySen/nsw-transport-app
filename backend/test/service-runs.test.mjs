@@ -47,7 +47,7 @@ test("a T9 to Hornsby via Central from Gordon runs on past Central to Hornsby (t
   const n = names(r);
   assert.equal(n[r.mine], "Gordon");
   assert.equal(n[n.length - 1], "Hornsby");
-  assert.ok(n.includes("Central") && n.includes("Strathfield"));
+  assert.ok(n.includes("Central") && n.includes("Chatswood"));
   // The station where one trip hands over to the next is listed once.
   assert.equal(n.filter((x) => x === "Central").length, 1);
   // Times only go forward.
@@ -111,9 +111,9 @@ test("a pack built before tripNext: a split train is not followed and stays reac
 });
 
 test("runDest: a via station already passed is dropped", () => {
-  const stops = [{ name: "Strathfield Station" }, { name: "Rhodes Station" }, { name: "Hornsby Station" }];
-  assert.equal(W.runDest("Hornsby via Strathfield", stops, 0), "Hornsby");
-  assert.equal(W.runDest("Hornsby via Strathfield", [{ name: "Burwood Station" }, ...stops], 0), "Hornsby via Strathfield");
+  const stops = [{ name: "Chatswood Station" }, { name: "Rhodes Station" }, { name: "Hornsby Station" }];
+  assert.equal(W.runDest("Hornsby via Chatswood", stops, 0), "Hornsby");
+  assert.equal(W.runDest("Hornsby via Chatswood", [{ name: "Epping Station" }, ...stops], 0), "Hornsby via Chatswood");
   assert.equal(W.runDest("Blacktown", stops, 0), "Blacktown");
 });
 

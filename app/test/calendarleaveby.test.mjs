@@ -86,7 +86,7 @@ test('place cache: hits kept 30 days, misses retried after a day, capped', () =>
 });
 
 test('origin: commute start, else first trip start, else home or work', () => {
-  const H = { id: 'h', name: 'Strathfield Station' }, W = { id: 'w', name: 'Town Hall Station' }, F = { id: 'f', name: 'Burwood' };
+  const H = { id: 'h', name: 'Chatswood Station' }, W = { id: 'w', name: 'Martin Place Station' }, F = { id: 'f', name: 'Epping' };
   assert.deepEqual(m.pickOrigin(W, F, { home: H }), W);
   assert.deepEqual(m.pickOrigin(null, F, { home: H }), F);
   assert.deepEqual(m.pickOrigin(null, null, { work: W }), W);
@@ -95,7 +95,7 @@ test('origin: commute start, else first trip start, else home or work', () => {
 
 test('leave by: the last trip that still arrives by the start and has not left', () => {
   const iso = (t) => new Date(t).toISOString();
-  const J = (l, a, line = 'T1') => ({ leave: iso(l), arrive: iso(a), legs: [{ kind: 'walk' }, { kind: 'transit', line, from: 'Strathfield Station, Platform 3' }] });
+  const J = (l, a, line = 'T1') => ({ leave: iso(l), arrive: iso(a), legs: [{ kind: 'walk' }, { kind: 'transit', line, from: 'Chatswood Station, Platform 3' }] });
   const js = [J(at(7, 50), at(8, 30)), J(at(8, 12), at(8, 51)), J(at(8, 25), at(9, 4)), J(at(6, 40), at(7, 20))];
   const lb = m.leaveBy(js, at(9), NOW);
   assert.equal(lb.leave, at(8, 12));
@@ -104,15 +104,15 @@ test('leave by: the last trip that still arrives by the start and has not left',
   assert.equal(m.leaveBy([], at(9), NOW), null);
   assert.equal(m.leaveTitle('Team meeting', 'Barangaroo Wharf 1, Barangaroo', lb.leave, NOW), 'Leave by 8:12am for Team meeting (Barangaroo Wharf 1)');
   assert.equal(m.leaveTitle('', 'Central Station', at(7), NOW), 'Leave now for your event (Central)');
-  assert.equal(m.leaveSub(lb.j, lb.arrive, at(9)), 'T1 from Strathfield, arrive 8:51am. Starts 9:00am');
+  assert.equal(m.leaveSub(lb.j, lb.arrive, at(9)), 'T1 from Chatswood, arrive 8:51am. Starts 9:00am');
 });
 
 test('trip screen params: Arrive by the start, the day only when it is not today', () => {
-  const S = { id: '213510', name: 'Strathfield Station' }, B = { id: '2', name: 'Barangaroo' };
-  assert.deepEqual(m.tripParams(S, B, at(9), NOW), { from: '213510', fromName: 'Strathfield Station', to: '2', toName: 'Barangaroo', time: '0900', arriveBy: '1' });
+  const S = { id: '206710', name: 'Chatswood Station' }, B = { id: '2', name: 'Barangaroo' };
+  assert.deepEqual(m.tripParams(S, B, at(9), NOW), { from: '206710', fromName: 'Chatswood Station', to: '2', toName: 'Barangaroo', time: '0900', arriveBy: '1' });
   const late = Date.UTC(2026, 9, 25, 13, 30); // 12:30am Monday 26 Oct
   const evening = Date.UTC(2026, 9, 25, 10, 0); // 9pm Sunday
-  assert.deepEqual(m.tripParams(S, B, late, evening), { from: '213510', fromName: 'Strathfield Station', to: '2', toName: 'Barangaroo', time: '0030', arriveBy: '1', date: '20261026' });
+  assert.deepEqual(m.tripParams(S, B, late, evening), { from: '206710', fromName: 'Chatswood Station', to: '2', toName: 'Barangaroo', time: '0030', arriveBy: '1', date: '20261026' });
   assert.deepEqual(m.tripQuery(at(9), NOW), { time: '0900', arriveBy: true });
 });
 

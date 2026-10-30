@@ -25,7 +25,7 @@ globalThis.fetch = async (u, init) => {
   if (plannerDelay) await new Promise((r, j) => { const t = setTimeout(r, plannerDelay); init && init.signal && init.signal.addEventListener("abort", () => { clearTimeout(t); j(Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" })); }); });
   if (plannerFail) return new Response("upstream down", { status: 503 });
   const now = Date.now();
-  return new Response(JSON.stringify(efaTrip([3, 13, 23, 33, 43].map((m) => [{ from: "kingscross", to: "strathfield", dep: now + m * 60000, min: 20, delay: 1, trip: "live" + m }]))));
+  return new Response(JSON.stringify(efaTrip([3, 13, 23, 33, 43].map((m) => [{ from: "martinplace", to: "chatswood", dep: now + m * 60000, min: 20, delay: 1, trip: "live" + m }]))));
 };
 const edge = new Map();
 globalThis.caches = { default: { match: async (req) => (edge.has(String(req.url || req)) ? new Response(edge.get(String(req.url || req))) : undefined), put: async (req, res) => { edge.set(String(req.url || req), await res.text()); }, delete: async () => true } };
@@ -42,21 +42,21 @@ const meta = {
 };
 // [name, parent, platform code, lat, lon]
 const stops = {
-  "201110": ["Kings Cross Station", "", "", -33.87448, 151.22223], KX1: ["Kings Cross Station Platform 1", "201110", "1", -33.87448, 151.22223],
+  "200030": ["Martin Place Station", "", "", -33.87448, 151.22223], KX1: ["Martin Place Station Platform 1", "200030", "1", -33.87448, 151.22223],
   "200060": ["Central Station", "", "", -33.88402, 151.2062], C1: ["Central Station Platform 24", "200060", "24", -33.88402, 151.2062],
   C2: ["Central Station Platform 16", "200060", "16", -33.88402, 151.2062], C3: ["Central Station Platform 26", "200060", "26", -33.88402, 151.2062],
-  "213510": ["Strathfield Station", "", "", -33.87167, 151.09429], S1: ["Strathfield Station Platform 3", "213510", "3", -33.87167, 151.09429],
-  M: ["Campsie Station", "", "", -33.9105, 151.1035], M1: ["Campsie Station Platform 1", "M", "1", -33.9105, 151.1035],
+  "206710": ["Chatswood Station", "", "", -33.87167, 151.09429], S1: ["Chatswood Station Platform 3", "206710", "3", -33.87167, 151.09429],
+  M: ["Lakemba Station", "", "", -33.9105, 151.1035], M1: ["Lakemba Station Platform 1", "M", "1", -33.9105, 151.1035],
   B1: ["Oxford St at Taylor Sq", "", "", -33.8812, 151.2163], G9: ["Pitt St", "", "", -33.8841, 151.2061], "2009191": ["Pitt St Stand A", "G9", "", -33.8842, 151.2062], B2: ["Bondi Rd at Wellington St", "", "", -33.8915, 151.2620],
 };
 const rows = {
-  // T4 Kings Cross to Central (and on), every 10 minutes; one empty train that must never be offered.
+  // T4 Martin Place to Central (and on), every 10 minutes; one empty train that must never be offered.
   KX1: [[sec(4), "t4a", 0, 0, 10], [sec(14), "t4b", 0, 0, 10], [sec(24), "t4c", 0, 0, 10], [sec(9), "t4x", 0, 3, 10]],
   C1: [[sec(9), "t4a", 0, 0, 12], [sec(19), "t4b", 0, 0, 12], [sec(29), "t4c", 0, 0, 12], [sec(14), "t4x", 0, 3, 12]],
-  // T1 Central to Strathfield.
+  // T1 Central to Chatswood.
   C2: [[sec(11), "t1a", 1, 1, 5], [sec(15), "t1b", 1, 1, 5], [sec(30), "t1c", 1, 1, 5], [sec(36), "t1d", 1, 1, 5]],
   S1: [[sec(25), "t1a", 1, 1, 9], [sec(29), "t1b", 1, 1, 9], [sec(44), "t1c", 1, 1, 9], [sec(50), "t1d", 1, 1, 9]],
-  // Metro Central to Campsie (the metro keeps no stop order: the Central hub finds it).
+  // Metro Central to Lakemba (the metro keeps no stop order: the Central hub finds it).
   C3: [[sec(16), "m1", 2, 2, 3], [sec(26), "m2", 2, 2, 3]],
   M1: [[sec(34), "m1", 2, 2, 9], [sec(44), "m2", 2, 2, 9]],
   // A direct bus.
@@ -101,7 +101,7 @@ const NEW_APP = { "x-device": "d1", "x-profile": "p1" };
 const OLD_APP = {};
 
 
-const PHONE = "/api/trip?from=201110&to=213510&fromName=Kings%20Cross&toName=Strathfield&count=5&fare=adult&device=d1&profile=p1";
+const PHONE = "/api/trip?from=200030&to=206710&fromName=Kings%20Cross&toName=Chatswood&count=5&fare=adult&device=d1&profile=p1";
 // Each test its own count, so no test reads another one's copy (copies are also kept 15 s in memory).
 const phone = (n) => PHONE.replace("count=5", "count=" + n);
 

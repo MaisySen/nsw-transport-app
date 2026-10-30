@@ -74,7 +74,7 @@ test('prefetch: the same stop at most once every 10 s, the map stays small', () 
   const m = new Map();
   assert.equal(pf.prefetchDue(m, '200060', 0), true);
   assert.equal(pf.prefetchDue(m, '200060', 4000), false);
-  assert.equal(pf.prefetchDue(m, '213510', 4000), true);
+  assert.equal(pf.prefetchDue(m, '206710', 4000), true);
   assert.equal(pf.prefetchDue(m, '200060', 10000), true);
   for (let i = 0; i < 50; i++) pf.prefetchDue(m, 's' + i, 20000, 30);
   assert.ok(m.size <= 30);

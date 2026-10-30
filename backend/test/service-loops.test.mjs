@@ -27,10 +27,10 @@ const at = (m) => new Date(base + m * MIN).toISOString();
 const s = (m) => Math.floor((base + m * MIN) / 1000);
 const ST = {
   "2000323": ["Central Station, Platform 23", -33.883, 151.206], "2000317": ["Central Station, Platform 17", -33.883, 151.206],
-  "2000071": ["Town Hall Station, Platform 6", -33.873, 151.207], "2000011": ["Wynyard Station, Platform 4", -33.866, 151.206],
+  "2000071": ["Martin Place Station, Platform 6", -33.873, 151.207], "2000011": ["Wynyard Station, Platform 4", -33.866, 151.206],
   "2000021": ["Circular Quay Station, Platform 2", -33.861, 151.21], "2000271": ["St James Station, Platform 2", -33.871, 151.211],
   "2000411": ["Museum Station, Platform 2", -33.876, 151.21], "2000318": ["Central Station, Platform 18", -33.883, 151.206],
-  "2150311": ["Redfern Station, Platform 3", -33.892, 151.199], "2042111": ["Erskineville Station, Platform 1", -33.9, 151.186],
+  "2150311": ["Epping Station, Platform 3", -33.892, 151.199], "2042111": ["Erskineville Station, Platform 1", -33.9, 151.186],
   "2043111": ["St Peters Station, Platform 1", -33.907, 151.18], "2044111": ["Sydenham Station, Platform 1", -33.914, 151.167],
 };
 const lists = { "/stations/train.json": [["200060", "Central Station", -33.88, 151.2], ["200020", "Circular Quay Station", -33.86, 151.21], ["204410", "Sydenham Station", -33.91, 151.16], ["204210", "Erskineville Station", -33.9, 151.18]], "/stations/metro.json": [] };
@@ -70,11 +70,11 @@ test("City Circle at Central, named by the app: Central round the loop and back 
   feedTrips = [];
   asked.length = 0;
   planner = (p) => {
-    if (p.name_origin === "2000317" && p.name_destination === "200020") return { journeys: [{ legs: [legOf("run-cc", "City Circle via Town Hall", ["2000317", "2000071", "2000011", "2000021"], 0, true)] }] };
-    if (p.name_origin === "2000021" && p.name_destination === "200060") return { journeys: [{ legs: [legOf("run-cc", "City Circle via Town Hall", ["2000021", "2000271", "2000411", "2000318"], 6, true)] }] };
+    if (p.name_origin === "2000317" && p.name_destination === "200020") return { journeys: [{ legs: [legOf("run-cc", "City Circle via Martin Place", ["2000317", "2000071", "2000011", "2000021"], 0, true)] }] };
+    if (p.name_origin === "2000021" && p.name_destination === "200060") return { journeys: [{ legs: [legOf("run-cc", "City Circle via Martin Place", ["2000021", "2000271", "2000411", "2000318"], 6, true)] }] };
     return { journeys: [] };
   };
-  const d = await W.service(env, { trip: "run-cc", mode: "train", line: "T8", stop: "2000317", destId: "200060", dest: "City Circle via Town Hall", planned: at(0) });
+  const d = await W.service(env, { trip: "run-cc", mode: "train", line: "T8", stop: "2000317", destId: "200060", dest: "City Circle via Martin Place", planned: at(0) });
   assert.deepEqual(d.stops.map((x) => x.id), ["2000317", "2000071", "2000011", "2000021", "2000271", "2000411", "2000318"]);
   assert.equal(d.stopsStatus, "ok");
   assert.ok(d.stops.every((x) => x.name && !x.name.startsWith(",")));
@@ -84,8 +84,8 @@ test("City Circle named only by the planner (a T2 from Liverpool): the list goes
   feedTrips = [];
   planner = (p) => {
     if (p.name_origin === "2150311" && p.name_destination === "200060") return { journeys: [{ legs: [legOf("run-lv", "City Circle via Granville", ["2150311", "2000323"], 0, true)] }] };
-    if (p.name_origin === "2150311" && p.name_destination === "200020") return { journeys: [{ legs: [legOf("run-lv", "City Circle via Town Hall", ["2150311", "2000323", "2000071", "2000011", "2000021"], 0, true)] }] };
-    if (p.name_origin === "2000021" && p.name_destination === "200060") return { journeys: [{ legs: [legOf("run-lv", "City Circle via Town Hall", ["2000021", "2000271", "2000411", "2000318"], 8, true)] }] };
+    if (p.name_origin === "2150311" && p.name_destination === "200020") return { journeys: [{ legs: [legOf("run-lv", "City Circle via Martin Place", ["2150311", "2000323", "2000071", "2000011", "2000021"], 0, true)] }] };
+    if (p.name_origin === "2000021" && p.name_destination === "200060") return { journeys: [{ legs: [legOf("run-lv", "City Circle via Martin Place", ["2000021", "2000271", "2000411", "2000318"], 8, true)] }] };
     return { journeys: [] };
   };
   const d = await W.service(env, { trip: "run-lv", mode: "train", line: "T2", stop: "2150311", destId: "200060", planned: at(0) });
@@ -104,7 +104,7 @@ test("a City Circle run from the suburbs that ends at Circular Quay (the train g
   planner = (p) => {
     if (p.name_origin === "2150311" && p.name_destination === "200060") return { journeys: [{ legs: [legOf("run-t3", "City Circle via Regents Park", ["2150311", "2000323"], 0, true)] }] };
     if (p.name_origin === "2150311" && p.name_destination === "200020") {
-      const leg = legOf("run-t3", "City Circle via Town Hall", ["2150311", "2000323", "2000071", "2000011", "2000021"], 0, true);
+      const leg = legOf("run-t3", "City Circle via Martin Place", ["2150311", "2000323", "2000071", "2000011", "2000021"], 0, true);
       delete leg.stopSequence[4].departureTimePlanned;
       return { journeys: [{ legs: [leg] }] };
     }

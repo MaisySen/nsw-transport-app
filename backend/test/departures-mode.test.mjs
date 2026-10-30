@@ -14,7 +14,7 @@ const W = await import(tmp); fs.unlinkSync(tmp);
 const MIN = 60000;
 const now = Date.now();
 const ev = (line, cls, mins) => ({
-  location: { id: "213516", name: "Stand G", properties: { platformName: cls === 1 ? "Platform 1" : "Stand G" }, parent: { id: "213510", name: "Strathfield Station" } },
+  location: { id: "206712", name: "Stand G", properties: { platformName: cls === 1 ? "Platform 1" : "Stand G" }, parent: { id: "206710", name: "Chatswood Station" } },
   departureTimePlanned: new Date(now + mins * MIN).toISOString(),
   transportation: { disassembledName: line, number: line, product: { class: cls }, destination: { name: "Somewhere", id: "1" }, properties: {} },
   properties: { RealtimeTripId: line + mins },
@@ -27,7 +27,7 @@ globalThis.fetch = async (u) => {
     asked.push(q);
     const all = [ev("T1", 1, 2), ev("415", 5, 4), ev("568s", 11, 6), ev("M90", 5, 8), ev("T9", 1, 9)];
     const out = all.filter((e) => q["exclMOT_" + e.transportation.product.class] !== "1");
-    return new Response(JSON.stringify({ locations: [{ id: "213510", name: "Strathfield Station", disassembledName: "Strathfield" }], stopEvents: out }));
+    return new Response(JSON.stringify({ locations: [{ id: "206710", name: "Chatswood Station", disassembledName: "Chatswood" }], stopEvents: out }));
   }
   return new Response("{}", { status: 404 });
 };
@@ -39,7 +39,7 @@ const excl = (q) => Object.keys(q).filter((k) => k.startsWith("exclMOT_") && q[k
 
 test("no mode: the planner is asked for every mode (unchanged)", async () => {
   asked.length = 0;
-  const r = await get("/api/departures?stop=213510&n=a");
+  const r = await get("/api/departures?stop=206710&n=a");
   assert.equal(r.status, 200);
   assert.equal(asked[0].excludedMeans, undefined);
   assert.deepEqual(excl(asked[0]), []);
@@ -48,7 +48,7 @@ test("no mode: the planner is asked for every mode (unchanged)", async () => {
 
 test("mode=bus: trains, metro, light rail and ferries are left out at the planner; school buses stay", async () => {
   asked.length = 0;
-  const r = await get("/api/departures?stop=213510&mode=bus&n=b");
+  const r = await get("/api/departures?stop=206710&mode=bus&n=b");
   assert.equal(asked[0].excludedMeans, "checkbox");
   assert.deepEqual(excl(asked[0]), [1, 2, 4, 9]);
   assert.deepEqual(r.body.items.map((i) => i.line), ["415", "568s", "M90"]);
@@ -57,7 +57,7 @@ test("mode=bus: trains, metro, light rail and ferries are left out at the planne
 
 test("mode=train: only trains are asked for", async () => {
   asked.length = 0;
-  const r = await get("/api/departures?stop=213510&mode=train&n=c");
+  const r = await get("/api/departures?stop=206710&mode=train&n=c");
   assert.deepEqual(excl(asked[0]), [2, 4, 5, 7, 9, 11]);
   assert.deepEqual(r.body.items.map((i) => i.line), ["T1", "T9"]);
 });

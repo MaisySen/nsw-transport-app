@@ -33,7 +33,7 @@ test('stop ids carry the postcode', () => {
 test('long distance: regional NSW is long, Sydney, Newcastle and Wollongong are not', () => {
   assert.equal(L.isLongTrip('200060', '26401'), true, 'Central to Albury');
   assert.equal(L.isLongTrip('28301', '200060'), true, 'Dubbo to Central');
-  assert.equal(L.isLongTrip('200060', '213510'), false, 'Central to Strathfield');
+  assert.equal(L.isLongTrip('200060', '206710'), false, 'Central to Chatswood');
   assert.equal(L.isLongTrip('200060', '230010'), false, 'Central to Newcastle area');
   assert.equal(L.isLongTrip('200060', '250010'), false, 'Central to Wollongong');
   assert.equal(L.isLongTrip('278010', '200060'), false, 'Blue Mountains');
@@ -73,7 +73,7 @@ test('legs without a feed get it from the board; checked legs stay as they are',
     { mode: 'train', line: 'ST22', tripId: 'x1', stopId: '200060', planned: at(10) },
     { mode: 'metro', line: 'M1', stopId: '2000400', planned: at(40) },
     { mode: 'bus', line: '902', stopId: '26401', planned: at(500) },
-    { mode: 'train', line: 'T1', stopId: '213510', planned: at(5), feed: '' },
+    { mode: 'train', line: 'T1', stopId: '206710', planned: at(5), feed: '' },
   ];
   assert.deepEqual(F.stopsToLook(legs, NOW), ['200060']);
   const r = F.fillFeeds(legs, { '200060': [{ line: 'ST22', tripId: 'x1', planned: at(10), feed: 'nswtrains' }] });

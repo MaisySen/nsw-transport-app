@@ -69,7 +69,7 @@ test('last way home: room for a reminder and the mode to ask for', () => {
   assert.equal(lh.modeOfLegs([{ kind: 'walk' }]), null);
 });
 
-const item = (o = {}) => ({ id: 'a', from: { id: '200060', name: 'Central Station' }, to: { id: '213410', name: 'Burwood Station' }, mode: 'train', serviceMode: 'train', lead: 15,
+const item = (o = {}) => ({ id: 'a', from: { id: '200060', name: 'Central Station' }, to: { id: '215020', name: 'Parramatta Station' }, mode: 'train', serviceMode: 'train', lead: 15,
   leave: new Date(syd(26, 0, 14)).toISOString(), board: new Date(syd(26, 0, 14)).toISOString(), remindAt: new Date(syd(25, 23, 59)).toISOString(),
   line: 'T1', stop: 'Central', platform: 'Platform 16', changedFrom: null, status: 'waiting', leaveText: '12:14am', remindText: '11:59pm', ...o });
 
@@ -81,7 +81,7 @@ test('last way home: what the phone says after Remind me, per platform, plainly'
 
 test('last way home: the Home card before, at and after the time', () => {
   const before = lh.cardWords(item(), syd(25, 23, 30));
-  assert.deepEqual(before, { title: 'Last train to Burwood', line: 'Leaves 12:14am T1 from Central, Platform 16. Reminder at 11:59pm.', go: false });
+  assert.deepEqual(before, { title: 'Last train to Parramatta', line: 'Leaves 12:14am T1 from Central, Platform 16. Reminder at 11:59pm.', go: false });
   const at = lh.cardWords(item(), syd(26, 0, 2));
   assert.equal(at.go, true);
   assert.equal(at.line, 'Leave in 12 min: 12:14am T1 from Central, Platform 16.');
@@ -89,7 +89,7 @@ test('last way home: the Home card before, at and after the time', () => {
   assert.equal(lh.cardWords(item(), syd(26, 0, 20)), null, 'gone from Home once it has left');
   assert.equal(lh.cardWords(item({ status: 'gone' }), syd(25, 23, 30)), null);
   assert.equal(lh.cardWords(null, syd(25, 23, 30)), null);
-  assert.match(lh.cardWords(item({ status: 'none', text: 'No service from Central to Burwood shows for the rest of tonight. Open Plan for other ways home.' }), syd(26, 0, 0)).line, /^No service from Central/);
+  assert.match(lh.cardWords(item({ status: 'none', text: 'No service from Central to Parramatta shows for the rest of tonight. Open Plan for other ways home.' }), syd(26, 0, 0)).line, /^No service from Central/);
 });
 
 test('no dashes in the new screens and libraries', () => {

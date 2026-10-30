@@ -269,19 +269,19 @@ test('rode is only kept from live data, so a missed change is never judged on a 
   assert.equal(live.nextMemo({}, s2, t).rode[0], at(45 + 4));
 });
 
-test('owner case, 26 Oct 2026: the 8:46 T1 from Strathfield P4 running 37 min late, trip id ending at Central, change at Town Hall', () => {
-  // GTFS 150F.1324.165.12.A.8.92003946 ends at Central; Town Hall is on the next trip, so the feed has no time for it.
-  const STR = [['Strathfield', 0, -33.8717, 151.0944], ['Redfern', 10.7, -33.8917, 151.1986], ['Central', 13, -33.8832, 151.2063], ['Town Hall', 16.6, -33.8733, 151.2069]];
-  const ESL = [['Town Hall', 20, -33.8736, 151.2072], ['Martin Place', 22, -33.8679, 151.2111], ['Edgecliff', 27, -33.8794, 151.2363], ['Bondi Junction', 30, -33.8914, 151.2478]];
+test('owner case, 26 Oct 2026: the 8:46 T1 from Parramatta P4 running 37 min late, trip id ending at Central, change at Milsons Point', () => {
+  // GTFS 150F.1324.165.12.A.8.92003946 ends at Central; Milsons Point is on the next trip, so the feed has no time for it.
+  const STR = [['Parramatta', 0, -33.8717, 151.0944], ['Hornsby', 10.7, -33.8917, 151.1986], ['Central', 13, -33.8832, 151.2063], ['Milsons Point', 16.6, -33.8733, 151.2069]];
+  const ESL = [['Milsons Point', 20, -33.8736, 151.2072], ['Martin Place', 22, -33.8679, 151.2111], ['Edgecliff', 27, -33.8794, 151.2363], ['Bondi Junction', 30, -33.8914, 151.2478]];
   const legsO = [leg('T1a', 'T1', 'train', STR, 0, 3, { fromPlatform: 'Platform 4' }), leg('T4o', 'T4', 'train', ESL, 0, 3, { fromPlatform: 'Platform 5' })];
   const svcAt = (t) => [run('T1a', withDelay(STR, [37, 37, 37, null]), 0, 3, t), run('T4o', withDelay(ESL, [0, 0, 0, 0]), 0, 3, t)];
-  // Location: on the train, near Redfern at what was the timetable Town Hall arrival.
+  // Location: on the train, near Hornsby at what was the timetable Milsons Point arrival.
   const pos = (m) => (m >= 16 && m <= 30 ? { lat: -33.8905, lon: 151.1950, acc: 60, at: at(m) } : null);
   const { log } = replay(legsO, svcAt, -1, 52, 0.5, pos);
   const x0 = log.find((x) => x.m === 5);
   assert.equal(x0.s.eta > at(30 + 30), true, 'the ETA moves from the timetable arrival');
-  assert.ok(log.filter((x) => x.m <= 50).every((x) => !x.s.done && x.s.cur === 0), 'never at Town Hall before the late train gets there');
+  assert.ok(log.filter((x) => x.m <= 50).every((x) => !x.s.done && x.s.cur === 0), 'never at Milsons Point before the late train gets there');
   const change = firstAlert(log, /change here/);
-  assert.ok(!change || change.m >= 13 + 37, `"change here" not before the train nears Town Hall (minute ${change && change.m})`);
+  assert.ok(!change || change.m >= 13 + 37, `"change here" not before the train nears Milsons Point (minute ${change && change.m})`);
   assert.ok(firstAlert(log, /^Connection at risk/), 'the planned T4 is flagged as missed');
 });

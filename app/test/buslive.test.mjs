@@ -79,7 +79,7 @@ test('stop delays and the stretch to judge come from the trip itself, for any ro
   assert.equal(b.tripTraffic({ ...svc, mode: 'train' }), null);
 });
 
-test('live trips captured at Strathfield and Central on 25 Oct read honestly', () => {
+test('live trips captured at Chatswood and Central on 25 Oct read honestly', () => {
   for (const [k, v] of Object.entries(fx)) {
     const s = v.service;
     const st = b.tripStretch(s.stops, s.nextIndex);
@@ -88,7 +88,7 @@ test('live trips captured at Strathfield and Central on 25 Oct read honestly', (
     const grows = Math.min(d.at(-1), d.at(-2)) - Math.min(d[0], d[1]) >= 3;
     assert.equal(b.tripTraffic({ ...s, vehicle: s.vehicle ? {} : null }) !== null, grows && Math.min(d.at(-1), d.at(-2)) >= 3, k);
   }
-  // The 410 at Strathfield North was about 5 min late at every stop ahead: late, not slowing.
+  // The 410 at Chatswood North was about 5 min late at every stop ahead: late, not slowing.
   const s410 = fx['410@213832'].service;
   assert.equal(b.tripTraffic({ ...s410, vehicle: {} }), null);
 });

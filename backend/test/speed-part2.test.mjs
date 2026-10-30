@@ -33,10 +33,10 @@ const delayOnlyNoSeq = (tripId, stus) => [...str(1, tripId), ...bytes(3, [...byt
   ...stus.flatMap(([stopId, delay]) => bytes(2, [...str(4, stopId), ...bytes(3, vint(1, delay))]))])];
 const MIN = 60000;
 const nowS = Math.floor(Date.now() / 1000);
-const stops = { "/stops/213.json": { "2135113": ["Strathfield Station, Platform 3", -33.87, 151.09], "2135114": ["Strathfield Station, Platform 4", -33.87, 151.09] },
-  "/stops/200.json": { "2000331": ["Central Station, Platform 17", -33.88, 151.2] }, "/stops/201.json": { "2011104": ["Kings Cross Station, Platform 1", -33.87, 151.22] } };
-const lists = { "/stations/train.json": [["200060", "Central Station", -33.88, 151.2], ["213510", "Strathfield Station", -33.87, 151.09]] };
-// The board engine's timetable (/timetable): planned times and stop sequences at Strathfield P3 (seq 5), Lidcombe (seq 2)
+const stops = { "/stops/213.json": { "2135113": ["Chatswood Station, Platform 3", -33.87, 151.09], "2135114": ["Chatswood Station, Platform 4", -33.87, 151.09] },
+  "/stops/200.json": { "2000331": ["Central Station, Platform 17", -33.88, 151.2] }, "/stops/201.json": { "2011104": ["Bondi Junction Station, Platform 1", -33.87, 151.22] } };
+const lists = { "/stations/train.json": [["200060", "Central Station", -33.88, 151.2], ["206710", "Chatswood Station", -33.87, 151.09]] };
+// The board engine's timetable (/timetable): planned times and stop sequences at Chatswood P3 (seq 5), Lidcombe (seq 2)
 // and Central P17 (seq 9), for the trips in the feed.
 const dayStart = Math.floor(Date.now() / 1000) - 3600;
 const planned = { live: nowS + 4 * 60 - 120, moved: nowS + 7 * 60 - 60, delay: nowS + 8 * 60, past: nowS - 5 * 60 };
@@ -50,7 +50,7 @@ const ENGINE = { idFromName: (n) => n, get: () => ({ fetch: async (u) => {
     if (!p) return Response.json({ v: 1, trip: tr, stops: [] });
     return Response.json({ v: 1, trip: tr, stops: [
       { id: "2135101", seq: 2, planned: (p - 6 * 60) * 1000, name: "Lidcombe Station, Platform 1", lat: -33.86, lon: 151.04 },
-      { id: "2135113", seq: 5, planned: p * 1000, name: "Strathfield Station, Platform 3", lat: -33.87, lon: 151.09 },
+      { id: "2135113", seq: 5, planned: p * 1000, name: "Chatswood Station, Platform 3", lat: -33.87, lon: 151.09 },
       { id: "2000331", seq: 9, planned: (p + 16 * 60) * 1000, name: "Central Station, Platform 17", lat: -33.88, lon: 151.2 }] });
   }
   if (url.pathname !== "/timetable") return new Response("no", { status: 404 });
@@ -124,8 +124,8 @@ test("id-headers: the device comes from x-device (or device= from an old install
   assert.equal(W.reqDevice(req, new URL(req.url).searchParams), "dev-abc");
   const old = new Request("https://api.transportsydney.app/api/trip?from=1&to=2&device=dev-old");
   assert.equal(W.reqDevice(old, new URL(old.url).searchParams), "dev-old");
-  const a = W.edgeKey(new URL("https://api.transportsydney.app/api/departures?stop=213510&device=d1&profile=p1&refresh=1")).url;
-  const b = W.edgeKey(new URL("https://api.transportsydney.app/api/departures?stop=213510")).url;
+  const a = W.edgeKey(new URL("https://api.transportsydney.app/api/departures?stop=206710&device=d1&profile=p1&refresh=1")).url;
+  const b = W.edgeKey(new URL("https://api.transportsydney.app/api/departures?stop=206710")).url;
   assert.equal(a, b, "old install addresses share the new installs' copies");
   const w = fs.readFileSync(root + "src/worker.js", "utf8");
   assert.doesNotMatch(w, /device: p\.get\("device"\)/, "every trip and board log reads reqDevice");

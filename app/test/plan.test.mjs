@@ -27,7 +27,7 @@ const NOW = Date.parse('2026-10-24T23:12:00Z');
 
 test('place results: what each one is, with its suburb', () => {
   assert.equal(P.placeSubtitle({ id: 'a', name: '1 Martin Pl', kind: 'address', area: 'Sydney' }), 'Address, Sydney');
-  assert.equal(P.placeSubtitle({ id: 'b', name: 'Pitt St, Redfern', kind: 'street' }), 'Street');
+  assert.equal(P.placeSubtitle({ id: 'b', name: 'Pitt St, Epping', kind: 'street' }), 'Street');
   assert.equal(P.placeSubtitle({ id: 'c', name: 'Sydney Opera House', kind: 'place', area: 'Sydney' }), 'Place, Sydney');
   assert.equal(P.placeSubtitle({ id: 'd', name: 'Coogee', kind: 'suburb' }), 'Suburb');
   assert.equal(P.placeSubtitle({ id: '200060', name: 'Central Station', kind: 'stop' }), undefined);

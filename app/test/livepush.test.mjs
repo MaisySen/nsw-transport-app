@@ -21,9 +21,9 @@ async function load(rel) {
 const m = await load('platform/livePushCore.ts');
 
 const trip = {
-  id: 't1', title: 'Home to Work', origin: { id: '213510', name: 'Strathfield', lat: 1 }, to: { id: '201110', name: 'Kings Cross Station', lon: 2 },
+  id: 't1', title: 'Home to Work', origin: { id: '206710', name: 'Chatswood', lat: 1 }, to: { id: '200030', name: 'Martin Place Station', lon: 2 },
   legs: [
-    { mode: 'train', line: 'T1', tripId: 'A.1', stopId: '2135223', toStopId: '2000336', from: 'Strathfield', to: 'Central', planned: '2026-10-25T08:10:00+11:00', estimated: null, color: '#F99D1C', walkBefore: 3, fromParent: '213510' },
+    { mode: 'train', line: 'T1', tripId: 'A.1', stopId: '2135223', toStopId: '2000336', from: 'Chatswood', to: 'Central', planned: '2026-10-25T08:10:00+11:00', estimated: null, color: '#F99D1C', walkBefore: 3, fromParent: '206710' },
     { mode: 'train', line: 'T4', tripId: 'B.2', stopId: '2000339', toStopId: '2011131', planned: '2026-10-25T08:26:00+11:00', towards: 'Bondi Junction' },
   ],
   fare: { adult: 4.2 }, started: 1, alerted: { a: 1 }, share: null, watchId: null, rode: { 0: 1761340000000 }, arrivedAt: null,
@@ -32,7 +32,7 @@ const trip = {
 test('pushTrip keeps what the server needs and drops the rest', () => {
   const p = m.pushTrip(trip);
   assert.deepEqual(Object.keys(p).sort(), ['arrivedAt', 'id', 'legs', 'origin', 'rode', 'title', 'to']);
-  assert.deepEqual(p.origin, { id: '213510', name: 'Strathfield' });
+  assert.deepEqual(p.origin, { id: '206710', name: 'Chatswood' });
   assert.equal(p.legs.length, 2);
   assert.equal(p.legs[0].estimated, undefined);
   assert.equal(p.legs[0].walkBefore, undefined);

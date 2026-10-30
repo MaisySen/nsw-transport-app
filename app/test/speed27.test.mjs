@@ -37,7 +37,7 @@ const OFF = await load('src/lib/offline.ts');
 
 const NOW = Date.parse('2026-10-26T22:20:00Z'); // 9:20am Sydney, 27 Oct
 const iso = (min) => new Date(NOW + min * 60000).toISOString();
-const row = { tripId: 'T1.123', feed: '', line: 'T1', stopId: '2135223', planned: iso(4), mode: 'train', destId: '2077', color: '#F99D1C', dest: 'Berowra', realtime: true, estimated: iso(6), delayMin: 2, stopName: 'Strathfield Station Platform 3', seenAt: NOW - 20000 };
+const row = { tripId: 'T1.123', feed: '', line: 'T1', stopId: '2135223', planned: iso(4), mode: 'train', destId: '2077', color: '#F99D1C', dest: 'Berowra', realtime: true, estimated: iso(6), delayMin: 2, stopName: 'Chatswood Station Platform 3', seenAt: NOW - 20000 };
 
 test('one query wherever a service is read: the screen, a board line and a press in build the same keys in the same order', () => {
   const p = S.svcParams(row);
@@ -67,7 +67,7 @@ test('a service opened from a board paints its first frame from the row: line, d
   assert.equal(s.data.stops.length, 1);
   assert.equal(s.data.stops[0].mine, true);
   assert.equal(s.data.stops[0].estimated, row.estimated);
-  assert.equal(s.data.mine.name, 'Strathfield Station Platform 3');
+  assert.equal(s.data.mine.name, 'Chatswood Station Platform 3');
   assert.equal(s.data.mineIndex, 0);
   assert.equal(s.data.vehicle, undefined, 'no vehicle is made up');
 });
@@ -119,7 +119,7 @@ test('paint from cache: an answer held in memory by a press in is what the next 
   // (with the fixed NOW this test failed from 3:20 AM on 28 Oct).
   const HELD = Date.now();
   assert.equal(OFF.peekOffline(key), null);
-  const ans = { kind: 'service', line: 'T1', stops: [{ id: '2135223', name: 'Strathfield', planned: iso(4) }] };
+  const ans = { kind: 'service', line: 'T1', stops: [{ id: '2135223', name: 'Chatswood', planned: iso(4) }] };
   OFF.keepMem(key, ans, HELD - 2000);
   const p = OFF.peekOffline(key);
   assert.ok(p, 'peeked with no storage read');
@@ -201,7 +201,7 @@ test('reads go out side by side: nearby station lookups, a route opened stop bes
 });
 
 test('nearby paints the kept list at once when the phone is within 400 m of where it was made', () => {
-  const kept = { at: NOW - 3600000, lat: -33.8732, lon: 151.0827, stops: [{ id: '213510', name: 'Strathfield Station' }] };
+  const kept = { at: NOW - 3600000, lat: -33.8732, lon: 151.0827, stops: [{ id: '206710', name: 'Chatswood Station' }] };
   assert.deepEqual(S.nearFirstPaint(kept, { lat: -33.8740, lon: 151.0830 }, NOW), kept.stops);
   assert.equal(S.nearFirstPaint(kept, { lat: -33.8832, lon: 151.0827 }, NOW), null, 'about 1.1 km away');
   assert.equal(S.nearFirstPaint({ ...kept, at: NOW - 13 * 3600000 }, { lat: -33.8732, lon: 151.0827 }, NOW), null, 'too old');

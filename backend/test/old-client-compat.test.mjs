@@ -33,16 +33,16 @@ const delayOnlyNoSeq = (tripId, stus) => [...str(1, tripId), ...bytes(3, [...byt
 const nowS = Math.floor(Date.now() / 1000);
 const dayStart = nowS - 3600;
 const planned = nowS + 8 * 60;
-const stops = { "/stops/213.json": { "2135113": ["Strathfield Station, Platform 3", -33.87, 151.09], "2135101": ["Lidcombe Station, Platform 1", -33.86, 151.04] },
+const stops = { "/stops/213.json": { "2135113": ["Chatswood Station, Platform 3", -33.87, 151.09], "2135101": ["Lidcombe Station, Platform 1", -33.86, 151.04] },
   "/stops/200.json": { "2000331": ["Central Station, Platform 17", -33.88, 151.2] } };
-const lists = { "/stations/train.json": [["200060", "Central Station", -33.88, 151.2], ["213510", "Strathfield Station", -33.87, 151.09]] };
+const lists = { "/stations/train.json": [["200060", "Central Station", -33.88, 151.2], ["206710", "Chatswood Station", -33.87, 151.09]] };
 const ENGINE = { idFromName: (n) => n, get: () => ({ fetch: async (u) => {
   const url = new URL(u);
   if (url.pathname === "/trip") {
     if (url.searchParams.get("trip") !== "t1-delay") return Response.json({ v: 1, trip: url.searchParams.get("trip"), stops: [] });
     return Response.json({ v: 1, trip: "t1-delay", stops: [
       { id: "2135101", seq: 2, planned: (planned - 6 * 60) * 1000, name: "Lidcombe Station, Platform 1", lat: -33.86, lon: 151.04 },
-      { id: "2135113", seq: 5, planned: planned * 1000, name: "Strathfield Station, Platform 3", lat: -33.87, lon: 151.09 },
+      { id: "2135113", seq: 5, planned: planned * 1000, name: "Chatswood Station, Platform 3", lat: -33.87, lon: 151.09 },
       { id: "2000331", seq: 9, planned: (planned + 16 * 60) * 1000, name: "Central Station, Platform 17", lat: -33.88, lon: 151.2 }] });
   }
   if (url.pathname === "/timetable") {
@@ -129,9 +129,9 @@ async function replay() {
   const tt = await call("/api/timetable?stops=2135113,2000331&days=1" + OLD);
   got.timetable = { status: tt.status, shape: shape(tt.body) };
   // 5. Home's commute trip: one service in 20 min running 2 min late, one 3 hours out whose estimate echoes the timetable.
-  tripAnswer = efaTrip([[{ from: "strathfield", to: "kingscross", dep: Date.now() + 20 * 60000, delay: 2, line: "T2" }],
-    [{ from: "strathfield", to: "kingscross", dep: Date.now() + 180 * 60000, delay: 0, line: "T2" }]]);
-  const trip = await call("/api/trip?from=213510&to=201110&count=3" + OLD);
+  tripAnswer = efaTrip([[{ from: "chatswood", to: "bondijunction", dep: Date.now() + 20 * 60000, delay: 2, line: "T2" }],
+    [{ from: "chatswood", to: "bondijunction", dep: Date.now() + 180 * 60000, delay: 0, line: "T2" }]]);
+  const trip = await call("/api/trip?from=206710&to=202210&count=3" + OLD);
   tripAnswer = null;
   got.trip = { status: trip.status, headers: headerNames(trip.headers), shape: shape(trip.body) };
   return got;

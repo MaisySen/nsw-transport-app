@@ -24,7 +24,7 @@ globalThis.fetch = async (u, init) => {
   nswCalls++;
   if (plannerDelay) await new Promise((r, j) => { const t = setTimeout(r, plannerDelay); init && init.signal && init.signal.addEventListener("abort", () => { clearTimeout(t); j(Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" })); }); });
   const now = Date.now();
-  return new Response(JSON.stringify(efaTrip([4, 14, 24, 34].map((m) => [{ from: "central", to: "townhall", dep: now + m * 60000, min: 3, delay: 1, trip: "tt" + m }]))));
+  return new Response(JSON.stringify(efaTrip([4, 14, 24, 34].map((m) => [{ from: "central", to: "martinplace", dep: now + m * 60000, min: 3, delay: 1, trip: "tt" + m }]))));
 };
 const edge = new Map();
 globalThis.caches = { default: { match: async (req) => (edge.has(String(req.url || req)) ? new Response(edge.get(String(req.url || req))) : undefined), put: async (req, res) => { edge.set(String(req.url || req), await res.text()); }, delete: async () => true } };
@@ -37,7 +37,7 @@ const sec = (m) => nowS + m * 60 - base;
 const meta = { days: { [day]: base }, routes: [["T9", 1, "#005AA3", "train", "", "Test Line"]], heads: ["Line End"] };
 const stops = {
   "200060": ["Central Station", "", "", -33.88402, 151.2062], A1: ["Central Station Platform 18", "200060", "18", -33.88402, 151.2062],
-  "200070": ["Town Hall Station", "", "", -33.8731, 151.2066], B1: ["Town Hall Station Platform 4", "200070", "4", -33.8731, 151.2066],
+  "200030": ["Martin Place Station", "", "", -33.8731, 151.2066], B1: ["Martin Place Station Platform 4", "200030", "4", -33.8731, 151.2066],
 };
 const rows = {
   A1: [[sec(4), "tt4", 0, 0, 3], [sec(14), "tt14", 0, 0, 3], [sec(24), "tt24", 0, 0, 3], [sec(34), "tt34", 0, 0, 3]],
@@ -73,7 +73,7 @@ const call = async (path, envX = env, extra = NEW_APP) => {
   return { status: res.status, body, headers: res.headers };
 };
 // Each test its own count, so no test reads another one's copy.
-const q = (n, more = "") => `/api/trip?from=200060&to=200070&fromName=Central&toName=Town%20Hall&count=${n}&fare=adult${more}`;
+const q = (n, more = "") => `/api/trip?from=200060&to=200030&fromName=Central&toName=Town%20Hall&count=${n}&fare=adult${more}`;
 const reset = () => { edge.clear(); behind.length = 0; plannerDelay = 0; engineUp = true; W.serverCfg.budget = null; };
 
 test("tt=1, newer app: timetable trips at once, no Trip Planner call, nothing live, never stored", { timeout: 20000 }, async () => {

@@ -136,7 +136,7 @@ test('where you get on reads with its platform; where you get off reads as the p
   assert.deepEqual(R.boardParts('Lidcombe Station', 'Platform 3'), { name: 'Lidcombe', platform: 'Platform 3' });
   assert.deepEqual(R.boardParts('Lidcombe Station', ''), { name: 'Lidcombe', platform: '' });
   assert.deepEqual(R.boardParts('', 'Platform 1'), { name: 'Platform 1', platform: '' });
-  assert.equal(R.placeText('Campsie Station'), 'Campsie');
+  assert.equal(R.placeText('Lakemba Station'), 'Lakemba');
   assert.equal(R.placeText('Circular Quay, Wharf 4'), 'Circular Quay');
   assert.equal(R.placeText(null), '');
 });

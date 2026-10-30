@@ -1,6 +1,6 @@
 // Trip pages (the trip list's endless scroll): /api/trip?page=1 with after= and before= cursors, more trips per
 // planner call, and the shared window copy of each planner answer (timetable part kept 10 min, live part 15 s).
-// Transport for NSW answers are stubbed: a train every 10 minutes, 20 minutes Burwood to Central.
+// Transport for NSW answers are stubbed: a train every 10 minutes, 20 minutes Parramatta to Central.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -46,7 +46,7 @@ globalThis.fetch = async (u) => {
       let d = Math.ceil((at - base) / EVERY) * EVERY + base;
       for (let i = 0; i < n; i++, d += EVERY) deps.push(d);
     }
-    return new Response(JSON.stringify(efaTrip(deps.map((dep) => [{ from: "burwood", to: "central", dep, min: RIDE, delay, trip: "t" + dep }]))));
+    return new Response(JSON.stringify(efaTrip(deps.map((dep) => [{ from: "parramatta", to: "central", dep, min: RIDE, delay, trip: "t" + dep }]))));
   }
   return new Response("{}", { status: 404 });
 };
@@ -60,7 +60,7 @@ const get = async (path) => {
   return { status: r.status, body: await r.json() };
 };
 const dep = (j) => Date.parse(j.legs.find((l) => l.kind === "transit").planned);
-const P = "/api/trip?from=213410&to=200060&page=1";
+const P = "/api/trip?from=215020&to=200060&page=1";
 let tag = 0;
 const fresh = () => { W.tripWinMem.clear(); calls.length = 0; delay = null; shift = 0; tag++; };
 
@@ -180,7 +180,7 @@ test("n= asks the planner for that many trips a page (4 to 20), anything else is
 
 test("a plain trip request is as before (count, no page)", async () => {
   fresh();
-  const r = await get(`/api/trip?from=213410&to=200060&count=6&fromName=l${tag}`);
+  const r = await get(`/api/trip?from=215020&to=200060&count=6&fromName=l${tag}`);
   assert.equal(calls[0].get("calcNumberOfTrips"), "6");
   assert.equal(r.body.page, undefined);
   assert.ok(r.body.journeys.length <= 6);

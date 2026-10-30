@@ -36,8 +36,8 @@ test('a page with no maps list gives no button', () => {
 
 test('bus and stop guides alone are not a station map; a station guide is', () => {
   const L = (label) => ({ url: 'https://transportnsw.info/document/1/x.pdf', label });
-  assert.equal(m.pickStationMap([L('Town Hall - Bus interchange guide'), L('Town Hall - Stop guide')]), null);
-  assert.equal(m.pickStationMap([L('Redfern - Train - local area map')]), null);
+  assert.equal(m.pickStationMap([L('Bondi Junction - Bus interchange guide'), L('Bondi Junction - Stop guide')]), null);
+  assert.equal(m.pickStationMap([L('Epping - Train - local area map')]), null);
   assert.equal(m.pickStationMap([L('Martin Place station guide metro')]).label, 'Martin Place station guide metro');
   assert.equal(m.pickStationMap([L('A station guide'), L('B - Station map')]).label, 'B - Station map');
 });
@@ -48,7 +48,7 @@ test('only document PDFs on transportnsw.info, labels cleaned', () => {
 });
 
 test('stop page address and how long answers are kept', () => {
-  assert.equal(m.stopPageUrl('201510'), 'https://transportnsw.info/stop?q=201510');
+  assert.equal(m.stopPageUrl('212110'), 'https://transportnsw.info/stop?q=212110');
   const now = Date.now();
   assert.equal(m.cacheFresh({ at: now - 6 * 86400000, map: { url: 'u' } }, now), true);
   assert.equal(m.cacheFresh({ at: now - 8 * 86400000, map: { url: 'u' } }, now), false);

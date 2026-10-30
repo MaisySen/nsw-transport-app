@@ -65,9 +65,9 @@ test('boardAsk: one mode only at a stop with several, when a mode or route chip 
 });
 
 test('boardKey: a board for one mode is noted apart', () => {
-  assert.equal(s.boardKey('213510'), '213510');
-  assert.equal(s.boardKey('213510', null), '213510');
-  assert.equal(s.boardKey('213510', 'bus'), '213510|bus');
+  assert.equal(s.boardKey('206710'), '206710');
+  assert.equal(s.boardKey('206710', null), '206710');
+  assert.equal(s.boardKey('206710', 'bus'), '206710|bus');
 });
 
 test('modesServed: only a board for every mode changes the list; same list keeps its identity', () => {

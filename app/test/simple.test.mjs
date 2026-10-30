@@ -27,19 +27,19 @@ const read = (rel) => fs.readFileSync(path.join(here, '..', rel), 'utf8');
 const iso = (t) => new Date(t).toISOString();
 const NOW = Date.parse('2026-10-25T10:50:00Z'); // 9:50pm Sydney
 const min = 60000;
-const strath = { id: '213510', name: 'Strathfield Station' };
-const kx = { id: '201110', name: 'Kings Cross Station' };
-// Strathfield to Kings Cross as the planner sends it: T9 to Redfern, then T4.
+const strath = { id: '206710', name: 'Chatswood Station' };
+const kx = { id: '200030', name: 'Martin Place Station' };
+// Chatswood to Martin Place as the planner sends it: T9 to Epping, then T4.
 function commute(depMin, { delay = 0, realtime = true, cancelled = false } = {}) {
   const dep = NOW + depMin * min;
   return {
     leave: iso(dep), arrive: iso(dep + 38 * min), durationMin: 38, changes: 1,
     legs: [
-      { kind: 'transit', mode: 'train', line: 'T9', color: '#D11F2F', towards: 'Central', from: 'Strathfield Station', fromPlatform: 'Platform 2', to: 'Redfern Station', toPlatform: 'Platform 1',
-        fromParent: '213510', toParent: '201510', planned: iso(dep), estimated: iso(dep + delay * min), arrPlanned: iso(dep + 12 * min), arrEstimated: iso(dep + (12 + delay) * min),
+      { kind: 'transit', mode: 'train', line: 'T9', color: '#D11F2F', towards: 'Central', from: 'Chatswood Station', fromPlatform: 'Platform 2', to: 'Epping Station', toPlatform: 'Platform 1',
+        fromParent: '206710', toParent: '212110', planned: iso(dep), estimated: iso(dep + delay * min), arrPlanned: iso(dep + 12 * min), arrEstimated: iso(dep + (12 + delay) * min),
         realtime, delayMin: realtime ? delay : null, cancelled, stops: 2, durationMin: 12, tripId: `a${depMin}` },
-      { kind: 'transit', mode: 'train', line: 'T4', color: '#005AA3', towards: 'Bondi Junction via Central', from: 'Redfern Station', fromPlatform: 'Platform 11', to: 'Kings Cross Station', toPlatform: 'Platform 2',
-        fromParent: '201510', toParent: '201110', planned: iso(dep + 28 * min), estimated: iso(dep + 28 * min), arrPlanned: iso(dep + 38 * min), arrEstimated: iso(dep + 38 * min),
+      { kind: 'transit', mode: 'train', line: 'T4', color: '#005AA3', towards: 'Bondi Junction via Central', from: 'Epping Station', fromPlatform: 'Platform 11', to: 'Martin Place Station', toPlatform: 'Platform 2',
+        fromParent: '212110', toParent: '200030', planned: iso(dep + 28 * min), estimated: iso(dep + 28 * min), arrPlanned: iso(dep + 38 * min), arrEstimated: iso(dep + 38 * min),
         realtime, delayMin: 0, stops: 4, durationMin: 10, tripId: `b${depMin}` },
     ],
   };
@@ -49,16 +49,16 @@ test('your places: Home, Work, then recent places newest first, then starred sto
   const rows = s.simplePlaces({
     home: strath, work: kx,
     recentTrips: [
-      { from: strath, to: { id: 'G2046100', name: 'Five Dock Shops, Great North Rd, Five Dock' }, at: 100 },
+      { from: strath, to: { id: 'G2046100', name: 'Lane Cove Shops, Great North Rd, Lane Cove' }, at: 100 },
       { from: strath, to: { id: '200060', name: 'Central Station' }, at: 300 },
       { from: strath, to: kx, at: 200 },
     ],
-    starred: [{ id: '213511', name: 'Strathfield Station, Everton Rd, Stand D, Strathfield' }, { id: '200060', name: 'Central Station' }],
+    starred: [{ id: '213511', name: 'Chatswood Station, Everton Rd, Stand D, Chatswood' }, { id: '200060', name: 'Central Station' }],
   });
-  assert.deepEqual(rows.map((r) => [r.kind, r.title]), [['home', 'Home'], ['work', 'Work'], ['recent', 'Central'], ['recent', 'Five Dock Shops'], ['star', 'Strathfield']]);
-  assert.equal(rows[0].sub, 'Strathfield');
+  assert.deepEqual(rows.map((r) => [r.kind, r.title]), [['home', 'Home'], ['work', 'Work'], ['recent', 'Central'], ['recent', 'Lane Cove Shops'], ['star', 'Chatswood']]);
+  assert.equal(rows[0].sub, 'Chatswood');
   assert.equal(rows[3].sub, 'Great North Rd');
-  assert.equal(rows[4].a11y, 'Strathfield, Everton Rd, Stand D');
+  assert.equal(rows[4].a11y, 'Chatswood, Everton Rd, Stand D');
   assert.equal(s.simplePlaces({ home: strath, recentTrips: [], starred: [strath] }).length, 1);
   assert.deepEqual(s.simplePlaces({}), [], 'nothing saved, nothing shown');
   assert.equal(s.simplePlaces({ recentTrips: Array.from({ length: 6 }, (_, i) => ({ from: strath, to: { id: String(i), name: `Stop ${i}` }, at: i })), starred: [kx, { id: 'x', name: 'X' }, { id: 'y', name: 'Y' }] }).length, 8);
@@ -72,8 +72,8 @@ test('a tapped place fills To, From when To is filled and From is empty, else To
 });
 
 test('Current location is the station named like the nearest stop', () => {
-  assert.deepEqual(s.nearPlace({ id: '2135234', name: 'Strathfield Station, Platform 4, Strathfield' }, [{ id: '213710', name: 'North Strathfield Station' }, strath]), strath);
-  assert.deepEqual(s.nearPlace({ id: 'G1', name: 'Five Dock Shops, Great North Rd, Five Dock' }, [{ id: 'G1', name: 'Five Dock Shops, Great North Rd, Five Dock' }]), { id: 'G1', name: 'Five Dock Shops, Great North Rd, Five Dock' });
+  assert.deepEqual(s.nearPlace({ id: '2135234', name: 'Chatswood Station, Platform 4, Chatswood' }, [{ id: '213710', name: 'North Chatswood Station' }, strath]), strath);
+  assert.deepEqual(s.nearPlace({ id: 'G1', name: 'Lane Cove Shops, Great North Rd, Lane Cove' }, [{ id: 'G1', name: 'Lane Cove Shops, Great North Rd, Lane Cove' }]), { id: 'G1', name: 'Lane Cove Shops, Great North Rd, Lane Cove' });
   assert.equal(s.nearPlace(null, [strath]), null);
 });
 
@@ -116,37 +116,37 @@ test('steps from the real legs: walk to the platform, take, change, get off', ()
   const steps = s.buildSteps(commute(12));
   assert.deepEqual(steps.map((x) => x.text), [
     'Walk to Platform 2',
-    'Take T9 to Redfern, 2 stops',
-    'Change to T4 at Redfern, Platform 11',
-    'Get off at Kings Cross',
+    'Take T9 to Epping, 2 stops',
+    'Change to T4 at Epping, Platform 11',
+    'Get off at Martin Place',
   ]);
-  assert.equal(steps[0].sub, 'Strathfield');
+  assert.equal(steps[0].sub, 'Chatswood');
   assert.equal(steps[1].sub, `Leaves ${s.clock(NOW + 12 * min)}, towards Central`);
-  assert.equal(steps[2].sub, `Leaves ${s.clock(NOW + 40 * min)}, 4 stops to Kings Cross`);
+  assert.equal(steps[2].sub, `Leaves ${s.clock(NOW + 40 * min)}, 4 stops to Martin Place`);
   assert.equal(steps[3].sub, `Arrive ${s.clock(NOW + 50 * min)}`);
-  assert.equal(steps[1].say, `Take T9 to Redfern, 2 stops. Leaves ${s.clock(NOW + 12 * min)}, towards Central.`);
-  assert.match(s.spokenSteps(steps), /^Walk to Platform 2\. Strathfield\. Take T9/);
+  assert.equal(steps[1].say, `Take T9 to Epping, 2 stops. Leaves ${s.clock(NOW + 12 * min)}, towards Central.`);
+  assert.match(s.spokenSteps(steps), /^Walk to Platform 2\. Chatswood\. Take T9/);
 });
 
 test('steps: a bus with walks, a walk between two stops, late and cancelled services', () => {
   const dep = NOW + 6 * min;
   const j = { leave: iso(dep - 3 * min), arrive: iso(dep + 30 * min), durationMin: 33, changes: 1, legs: [
-    { kind: 'walk', durationMin: 3, to: 'Strathfield Station, Everton Rd, Stand D, Strathfield' },
-    { kind: 'transit', mode: 'bus', line: '410', from: 'Strathfield Station, Everton Rd, Stand D, Strathfield', fromPlatform: 'Stand D', to: 'Burwood Station, Burwood Rd, Burwood', planned: iso(dep), estimated: iso(dep + 3 * min), realtime: true, delayMin: 3, stops: 7, arrPlanned: iso(dep + 10 * min) },
-    { kind: 'walk', durationMin: 4, to: 'Burwood Rd at Belmore St' },
-    { kind: 'transit', mode: 'bus', line: 'D400', from: 'Burwood Rd at Belmore St, Burwood', to: 'Five Dock Shops, Great North Rd, Five Dock', planned: iso(dep + 16 * min), realtime: false, cancelled: true, stops: 1, arrPlanned: iso(dep + 25 * min) },
-    { kind: 'walk', durationMin: 5, to: 'Five Dock Library' },
+    { kind: 'walk', durationMin: 3, to: 'Chatswood Station, Everton Rd, Stand D, Chatswood' },
+    { kind: 'transit', mode: 'bus', line: '410', from: 'Chatswood Station, Everton Rd, Stand D, Chatswood', fromPlatform: 'Stand D', to: 'Parramatta Station, Parramatta Rd, Parramatta', planned: iso(dep), estimated: iso(dep + 3 * min), realtime: true, delayMin: 3, stops: 7, arrPlanned: iso(dep + 10 * min) },
+    { kind: 'walk', durationMin: 4, to: 'Parramatta Rd at Belmore St' },
+    { kind: 'transit', mode: 'bus', line: 'D400', from: 'Parramatta Rd at Belmore St, Parramatta', to: 'Lane Cove Shops, Great North Rd, Lane Cove', planned: iso(dep + 16 * min), realtime: false, cancelled: true, stops: 1, arrPlanned: iso(dep + 25 * min) },
+    { kind: 'walk', durationMin: 5, to: 'Lane Cove Library' },
   ] };
   const steps = s.buildSteps(j);
   assert.deepEqual(steps.map((x) => x.text), [
     'Walk to Stand D',
-    'Take bus 410 to Burwood, 7 stops',
-    'Walk to Burwood Rd at Belmore St',
-    'Take bus D400 to Five Dock Shops, 1 stop',
-    'Get off at Five Dock Shops',
-    'Walk to Five Dock Library',
+    'Take bus 410 to Parramatta, 7 stops',
+    'Walk to Parramatta Rd at Belmore St',
+    'Take bus D400 to Lane Cove Shops, 1 stop',
+    'Get off at Lane Cove Shops',
+    'Walk to Lane Cove Library',
   ]);
-  assert.equal(steps[0].sub, 'Strathfield, 3 min walk');
+  assert.equal(steps[0].sub, 'Chatswood, 3 min walk');
   assert.match(steps[1].sub, /3 min late$/);
   assert.match(steps[3].sub, /Cancelled$/);
   assert.equal(steps[5].sub, `5 min walk, there by ${s.clock(dep + 30 * min)}`);
@@ -182,17 +182,17 @@ test('the screen is headed Plan Your Trip, and its words name no other app or si
   for (const w of ['trip ' + 'planner', 'transport' + 'nsw', 'trip' + 'view']) assert.ok(!words.includes(w), `Simple mode does not say ${w}`);
 });
 
-// Bidur's 8:50 AM screenshot, 26 Oct: Strathfield to Five Dock Shops in the morning peak. A T2 then a bus with the
+// Bidur's 8:50 AM screenshot, 26 Oct: Chatswood to Lane Cove Shops in the morning peak. A T2 then a bus with the
 // train's own live delay, the direct 415, and the D400 on demand service the planner offers every 5 minutes.
-const fd = (o) => ({ kind: 'transit', mode: 'bus', line: '415', from: 'Strathfield Station, Albert Rd', to: 'Five Dock Shops, Great North Rd, Five Dock', realtime: true, delayMin: 0, ...o });
+const fd = (o) => ({ kind: 'transit', mode: 'bus', line: '415', from: 'Chatswood Station, Albert Rd', to: 'Lane Cove Shops, Great North Rd, Lane Cove', realtime: true, delayMin: 0, ...o });
 function t2bus(depMin, { trainLate = 0, busLate = 0, bus = '530', arrMin = 25 } = {}) {
   const dep = NOW + depMin * min, planned = dep - trainLate * min;
   return {
     leave: iso(dep), arrive: iso(dep + arrMin * min), changes: 1,
     legs: [
-      { kind: 'transit', mode: 'train', line: 'T2', from: 'Strathfield Station', to: 'Burwood Station', planned: iso(planned), estimated: iso(dep), arrPlanned: iso(planned + 2 * min), arrEstimated: iso(dep + 2 * min), realtime: true, delayMin: trainLate, tripId: `t2-${depMin}` },
+      { kind: 'transit', mode: 'train', line: 'T2', from: 'Chatswood Station', to: 'Parramatta Station', planned: iso(planned), estimated: iso(dep), arrPlanned: iso(planned + 2 * min), arrEstimated: iso(dep + 2 * min), realtime: true, delayMin: trainLate, tripId: `t2-${depMin}` },
       { kind: 'walk', durationMin: 3 },
-      fd({ line: bus, from: 'Burwood Station, Burwood Rd', planned: iso(dep + 8 * min - busLate * min), estimated: iso(dep + 8 * min), arrPlanned: iso(dep + (arrMin - busLate) * min), arrEstimated: iso(dep + arrMin * min), delayMin: busLate, tripId: `b-${depMin}` }),
+      fd({ line: bus, from: 'Parramatta Station, Parramatta Rd', planned: iso(dep + 8 * min - busLate * min), estimated: iso(dep + 8 * min), arrPlanned: iso(dep + (arrMin - busLate) * min), arrEstimated: iso(dep + arrMin * min), delayMin: busLate, tripId: `b-${depMin}` }),
     ],
   };
 }
@@ -202,7 +202,7 @@ function direct415(depMin, rideMin = 18) {
 }
 function d400(depMin) {
   const dep = NOW + depMin * min;
-  return { leave: iso(dep), arrive: iso(dep + 10 * min), changes: 0, legs: [{ kind: 'transit', mode: 'other', line: 'D400', onDemand: true, booking: true, operator: 'Bridj', from: 'Strathfield Station', to: 'Five Dock Shops, Great North Rd, Five Dock', planned: iso(dep), arrPlanned: iso(dep + 10 * min), realtime: false, delayMin: null }] };
+  return { leave: iso(dep), arrive: iso(dep + 10 * min), changes: 0, legs: [{ kind: 'transit', mode: 'other', line: 'D400', onDemand: true, booking: true, operator: 'Bridj', from: 'Chatswood Station', to: 'Lane Cove Shops, Great North Rd, Lane Cove', planned: iso(dep), arrPlanned: iso(dep + 10 * min), realtime: false, delayMin: null }] };
 }
 
 test('trip status is the first service\'s own delay; a big one names the timetable time (Bidur, 8:50 AM)', () => {

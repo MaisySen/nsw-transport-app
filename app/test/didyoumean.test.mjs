@@ -26,12 +26,12 @@ const CASES = [
 [
 "Strathfeild",
 "pick",
-"Strathfield Station"
+"Lidcombe Station"
 ],
 [
 "Kings",
 "opts",
-"Kings Cross Station"
+"Milsons Point Station"
 ],
 [
 "Richmond",

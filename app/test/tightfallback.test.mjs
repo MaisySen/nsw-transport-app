@@ -69,6 +69,7 @@ test('lib/trips.ts joins via trips with the rule, not only the change time', () 
 });
 
 test('no dashes and no station names in the new code', () => {
+  // owner-stations: guard (checks the names are absent from the code)
   for (const f of ['src/lib/tightChangeCore.ts', 'test/tightfallback.test.mjs']) assert.doesNotMatch(read(f), /[\u2013\u2014]/, f);
   assert.doesNotMatch(read('src/lib/tightChangeCore.ts'), /Strathfield|Central|Town Hall|Kings Cross|Parramatta/);
 });

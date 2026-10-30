@@ -60,7 +60,7 @@ test('device.ts has no Math.random fallback and no shared profile literal', () =
 });
 
 test('saved trips on the phone are turned into uploads for the new profile', () => {
-  const A = { id: '10101100', name: 'Central Station' }, B = { id: '10101101', name: 'Town Hall Station' }, C = { id: '2135234', name: 'Burwood Station' };
+  const A = { id: '10101100', name: 'Central Station' }, B = { id: '10101101', name: 'Martin Place Station' }, C = { id: '2135234', name: 'Parramatta Station' };
   const store = JSON.stringify({
     recents: [A],
     myTrips: [

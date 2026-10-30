@@ -26,7 +26,7 @@ const SF = {
   "Pitt St": { locations: [
     { id: "streetID:1:Pitt Street:Sydney", name: "Pitt Street, Sydney", type: "street", matchQuality: 900, coord: [-33.87, 151.208], parent: { name: "Sydney" } },
     { id: "G2370172", name: "30 Pitt St, Glen Innes", type: "stop", matchQuality: 500, modes: [5], parent: { name: "Glen Innes" } },
-    { id: "streetID:2:Pitt Street:Redfern", name: "Pitt Street, Redfern", type: "street", matchQuality: 850, parent: { name: "Redfern" } },
+    { id: "streetID:2:Pitt Street:Hornsby", name: "Pitt Street, Hornsby", type: "street", matchQuality: 850, parent: { name: "Hornsby" } },
   ] },
   "asdfgh qwerty": { locations: [
     { id: "2354131", name: "Ashfield Property, Oxley Hwy", type: "stop", matchQuality: 120, modes: [5] },
@@ -62,7 +62,7 @@ test("/api/places returns addresses, landmarks and stops with a kind, NSW only, 
 
 test("/api/places: streets keep their suburb, sorted by the planner's match", async () => {
   const { items } = await (await call("/api/places?q=Pitt%20St")).json();
-  assert.deepEqual(items.map((i) => [i.kind, i.name]), [["street", "Pitt Street"], ["street", "Pitt Street, Redfern"], ["stop", "30 Pitt St, Glen Innes"]]);
+  assert.deepEqual(items.map((i) => [i.kind, i.name]), [["street", "Pitt Street"], ["street", "Pitt Street, Hornsby"], ["stop", "30 Pitt St, Glen Innes"]]);
   assert.equal(items[0].area, "Sydney", "the suburb line when the name has none");
   assert.equal(items[1].area, undefined, "no repeat of the suburb already in the name");
 });
@@ -92,7 +92,7 @@ test("fare questions are read as trips", () => {
     ["how much is the fare from Central to Parramatta?", "Central to Parramatta"],
     ["fare Central to Parramatta", "Central to Parramatta"],
     ["Opal fare Central to Parramatta", "Central to Parramatta"],
-    ["How much does it cost to go from Burwood to Central", "Burwood to Central"],
+    ["How much does it cost to go from Epping to Central", "Epping to Central"],
     ["what's the fare to Bondi Junction from Central", "Bondi Junction from Central"],
   ];
   for (const [q, want] of cases) assert.equal(W.askFareQ(q), want, q);
@@ -119,15 +119,15 @@ test("nonsense says it did not understand instead of a far away stop", async () 
 
 test("the last service sentence names every service of the same journey", () => {
   const leg = (line, from, plat) => ({ kind: "transit", mode: "train", line, from, fromPlatform: plat });
-  const j = { legs: [leg("T4", "Kings Cross Station", "Platform 1"), { kind: "walk" }, leg("T9", "Redfern Station, Platform 7", "Platform 7")] };
-  assert.equal(W.askLinesWords(j), " (T4 then T9, Plat 1, change at Redfern)");
+  const j = { legs: [leg("T4", "Milsons Point Station", "Platform 1"), { kind: "walk" }, leg("T9", "Hornsby Station, Platform 7", "Platform 7")] };
+  assert.equal(W.askLinesWords(j), " (T4 then T9, Plat 1, change at Hornsby)");
   assert.equal(W.askLinesWords({ legs: [leg("T1", "Central Station", "Platform 6")] }), " (T1, Plat 6)");
-  assert.equal(W.askLinesWords({ legs: [leg("T4", "Kings Cross Station", "Platform 1"), leg("BMT", "Central Station", "Platform 4")] }), " (T4 then Blue Mountains Line, Plat 1, change at Central)");
+  assert.equal(W.askLinesWords({ legs: [leg("T4", "Milsons Point Station", "Platform 1"), leg("BMT", "Central Station", "Platform 4")] }), " (T4 then Blue Mountains Line, Plat 1, change at Central)");
   const now = Date.now();
   const iso = (m) => new Date(now + m * 60000).toISOString();
-  const last = { leave: iso(30), arrive: iso(55), changes: 1, legs: [{ ...leg("T4", "Kings Cross Station", "Platform 1"), planned: iso(30) }, { ...leg("T9", "Redfern Station", "Platform 7"), planned: iso(42) }] };
-  const d = W.askDecorate({ kind: "lastService", mode: "train", from: { id: "201110", name: "Kings Cross Station" }, to: { id: "213510", name: "Strathfield Station" }, last, before: null, after: null, sure: true, now }, {});
-  assert.match(d.reply, /\(T4 then T9, Plat 1, change at Redfern\)/);
+  const last = { leave: iso(30), arrive: iso(55), changes: 1, legs: [{ ...leg("T4", "Milsons Point Station", "Platform 1"), planned: iso(30) }, { ...leg("T9", "Hornsby Station", "Platform 7"), planned: iso(42) }] };
+  const d = W.askDecorate({ kind: "lastService", mode: "train", from: { id: "206110", name: "Milsons Point Station" }, to: { id: "206710", name: "Chatswood Station" }, last, before: null, after: null, sure: true, now }, {});
+  assert.match(d.reply, /\(T4 then T9, Plat 1, change at Hornsby\)/);
   assert.deepEqual(d.cards[0].journeys[0].legs.map((l) => l.line), ["T4", "T9"], "card row is the same journey");
 });
 

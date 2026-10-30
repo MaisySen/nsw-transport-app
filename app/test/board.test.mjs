@@ -72,21 +72,21 @@ test('rows: a live time gone quiet says Not tracking and shows its timetable tim
 });
 
 test('stopping pattern: only a description that reads as one; stop lists summarised', () => {
-  assert.equal(b.patternOf('Strathfield, then all stations to Central'), 'Strathfield, then all stations to Central');
+  assert.equal(b.patternOf('Chatswood, then all stations to Central'), 'Chatswood, then all stations to Central');
   assert.equal(b.patternOf('City to Emu Plains or Richmond'), '');
   assert.equal(b.patternOf('Hornsby to North Shore via City'), '');
   assert.equal(b.patternOf('Limited stops to Parramatta'), 'Limited stops to Parramatta');
   assert.equal(b.patternOf(null), '');
-  const stops = ['Strathfield Station, Platform 1', 'Burwood Station, Platform 2', 'Redfern Station, Platform 7', 'Central Station, Platform 18'].map((name) => ({ name }));
-  assert.equal(b.stopsSummary(stops, 0), 'Burwood, Redfern and Central');
+  const stops = ['Chatswood Station, Platform 1', 'Epping Station, Platform 2', 'Cronulla Station, Platform 7', 'Central Station, Platform 18'].map((name) => ({ name }));
+  assert.equal(b.stopsSummary(stops, 0), 'Epping, Cronulla and Central');
   assert.equal(b.stopsSummary(stops, 2), 'Central only');
   assert.equal(b.stopsSummary(stops, -1), '');
   assert.equal(b.stopsSummary(stops, 3), '');
   const long = Array.from({ length: 12 }, (_, i) => ({ name: `Stop ${i} Station` }));
   assert.equal(b.stopsSummary(long, 0), 'Stop 1, Stop 2, Stop 3, then 8 more to Stop 11');
-  const items = [{ line: '44T2', mode: 'bus', dest: 'Central', planned: iso(5), realtime: false, description: 'Strathfield, then all stations to Central' }];
-  assert.equal(b.boardRows(items, NOW)[0].pattern, 'Strathfield, then all stations to Central');
-  assert.match(b.boardRows(items, NOW)[0].a11y, /stops: Strathfield, then all stations to Central$/);
+  const items = [{ line: '44T2', mode: 'bus', dest: 'Central', planned: iso(5), realtime: false, description: 'Chatswood, then all stations to Central' }];
+  assert.equal(b.boardRows(items, NOW)[0].pattern, 'Chatswood, then all stations to Central');
+  assert.match(b.boardRows(items, NOW)[0].a11y, /stops: Chatswood, then all stations to Central$/);
 });
 
 test('board type size: grows with Dynamic Type, still fits rows, landscape uses the height', () => {

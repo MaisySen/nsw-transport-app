@@ -1,16 +1,18 @@
 name: backend
 
-# Server and website checks: the full test suite, both builds, the D1 migration, and no em or en dashes.
+# Server and website checks: the full test suite (with the owner stations share of app and backend tests), both builds, the D1 migration, and no em or en dashes.
 on:
   push:
     paths:
       - "backend/**"
+      - "app/test/**"
       - "site/**"
       - "docs/**"
       - ".github/workflows/backend.yml"
   pull_request:
     paths:
       - "backend/**"
+      - "app/test/**"
       - "site/**"
       - "docs/**"
       - ".github/workflows/backend.yml"

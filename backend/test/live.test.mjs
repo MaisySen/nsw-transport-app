@@ -31,8 +31,8 @@ const W = await loadWorker();
 const call = (p, init = {}, ip = "10.1.0.1") => W.__default.fetch(new Request("https://t.example" + p, { ...init, headers: { "cf-connecting-ip": ip, "content-type": "application/json", ...(init.headers || {}) } }), env, { waitUntil() {} });
 const soon = (m) => new Date(Date.now() + m * 60000).toISOString();
 const legs = [
-  { mode: "train", line: "T1", tripId: "1-A", stopId: "2000334", toStopId: "2000337", from: "Central", to: "Redfern", planned: soon(3), arrPlanned: soon(6) },
-  { mode: "bus", line: "343", tripId: "2-B", stopId: "201510", toStopId: "200060", from: "Redfern", to: "Circular Quay", planned: soon(12), arrPlanned: soon(30), walkBefore: 4 },
+  { mode: "train", line: "T1", tripId: "1-A", stopId: "2000334", toStopId: "2000337", from: "Central", to: "Epping", planned: soon(3), arrPlanned: soon(6) },
+  { mode: "bus", line: "343", tripId: "2-B", stopId: "212110", toStopId: "200060", from: "Epping", to: "Circular Quay", planned: soon(12), arrPlanned: soon(30), walkBefore: 4 },
 ];
 
 test("share a live trip, follow it, update it and stop it", async () => {
@@ -50,11 +50,11 @@ test("share a live trip, follow it, update it and stop it", async () => {
   assert.equal(JSON.stringify(g).includes("dtest"), false, "the device id is never sent to viewers");
   const bad = await call("/api/share/update", { method: "POST", body: JSON.stringify({ id: s.id, key: "wrong", pos: { lat: 1, lon: 1 } }) });
   assert.equal(bad.status, 404);
-  const up = await call("/api/share/update", { method: "POST", body: JSON.stringify({ id: s.id, key: s.key, pos: null, prog: { leg: 1, phase: "riding", next: "Town Hall", stopsLeft: 3, eta: Date.now() + 20 * 60000 } }) });
+  const up = await call("/api/share/update", { method: "POST", body: JSON.stringify({ id: s.id, key: s.key, pos: null, prog: { leg: 1, phase: "riding", next: "Martin Place", stopsLeft: 3, eta: Date.now() + 20 * 60000 } }) });
   assert.equal(up.status, 200);
   const g2 = await (await call("/api/share?id=" + s.id)).json();
   assert.equal(g2.pos, null, "turning location off removes it");
-  assert.equal(g2.prog.next, "Town Hall");
+  assert.equal(g2.prog.next, "Martin Place");
   assert.equal((await call(`/api/share?id=${s.id}&key=wrong`, { method: "DELETE" })).status, 404);
   assert.equal((await call(`/api/share?id=${s.id}`, { method: "DELETE", headers: { "x-share-key": s.key } })).status, 200);
   assert.equal(rows.has(s.id), false, "stopping deletes the row and every position");

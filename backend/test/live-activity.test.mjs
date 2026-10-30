@@ -34,10 +34,10 @@ const post = (path, body) => new Request("https://api.transportsydney.app" + pat
 
 const NOW = Date.parse("2026-10-25T08:00:00+11:00");
 const trip = (o = {}) => ({
-  id: "t1", title: "Strathfield to Kings Cross", origin: { id: "213510", name: "Strathfield" }, to: { id: "201110", name: "Kings Cross" },
+  id: "t1", title: "Chatswood to Bondi Junction", origin: { id: "206710", name: "Chatswood" }, to: { id: "202210", name: "Bondi Junction" },
   legs: [
-    { mode: "train", line: "T1", tripId: "A.1", stopId: "2135223", toStopId: "2000336", from: "Strathfield", to: "Central", planned: "2026-10-25T08:10:00+11:00", arrPlanned: "2026-10-25T08:22:00+11:00", color: "#F99D1C", towards: "Hornsby" },
-    { mode: "train", line: "T4", tripId: "B.2", stopId: "2000339", toStopId: "2011131", from: "Central", to: "Kings Cross", planned: "2026-10-25T08:26:00+11:00", arrPlanned: "2026-10-25T08:31:00+11:00", color: "#0098CD" },
+    { mode: "train", line: "T1", tripId: "A.1", stopId: "2135223", toStopId: "2000336", from: "Chatswood", to: "Central", planned: "2026-10-25T08:10:00+11:00", arrPlanned: "2026-10-25T08:22:00+11:00", color: "#F99D1C", towards: "Hornsby" },
+    { mode: "train", line: "T4", tripId: "B.2", stopId: "2000339", toStopId: "2011131", from: "Central", to: "Bondi Junction", planned: "2026-10-25T08:26:00+11:00", arrPlanned: "2026-10-25T08:31:00+11:00", color: "#0098CD" },
   ],
   rode: {}, arrivedAt: null, ...o,
 });
@@ -46,7 +46,7 @@ test("dates go to Apple as seconds since 2001, nulls are left out, required fiel
   assert.equal(W.appleDate(Date.UTC(2001, 0, 1)), 0);
   assert.equal(W.appleDate(Date.UTC(2001, 0, 1, 0, 1)), 60);
   const cs = W.laContentState({ line: "T1", lineColorHex: "#F99D1C", mode: "train", nextStop: null, stopsLeft: 3, getOffAt: "Central", arrival: NOW, phase: "ride",
-    warning: null, progress: 1.4, departs: NOW - 60000, legArrives: NOW + 60000, updated: NOW, platform: undefined, destination: "Kings Cross" });
+    warning: null, progress: 1.4, departs: NOW - 60000, legArrives: NOW + 60000, updated: NOW, platform: undefined, destination: "Bondi Junction" });
   assert.deepEqual(Object.keys(cs).sort(), ["arrival", "departs", "destination", "getOffAt", "legArrives", "line", "lineColorHex", "mode", "phase", "progress", "stopsLeft", "updated"]);
   assert.equal(cs.arrival, Math.round(NOW / 1000 - 978307200));
   assert.equal(cs.progress, 1);

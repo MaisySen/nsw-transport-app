@@ -19,8 +19,8 @@ const H = await import(pathToFileURL(path.join(out, 'homeCore.mjs')).href);
 const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
 
 test('where to board: platform for trains, stop number (and stand on the card) for buses', () => {
-  assert.equal(H.whereText('Platform 2', '213510', 'train'), 'Plat 2');
-  assert.equal(H.whereText('Platform 2', '213510', 'train', true), 'Platform 2');
+  assert.equal(H.whereText('Platform 2', '206710', 'train'), 'Plat 2');
+  assert.equal(H.whereText('Platform 2', '206710', 'train', true), 'Platform 2');
   assert.equal(H.whereText('Stand X1', '213723', 'bus'), 'Stop 213723');
   assert.equal(H.whereText('Stand X1', '213723', 'bus', true), 'Stand X1, Stop 213723');
   assert.equal(H.whereText(null, '2046100', 'bus', true), 'Stop 2046100');

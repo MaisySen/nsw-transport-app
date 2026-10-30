@@ -35,19 +35,19 @@ let ip = 1;
 const get = async (path) => { const r = await W.__default.fetch(new Request("https://t.example" + path, { headers: { "cf-connecting-ip": "10.8.0." + (ip++ % 250) } }), env, { waitUntil() {} }); return { status: r.status, body: await r.json() }; };
 const fresh = (outages, body = null) => { lifts = outages; W.liftMem.list = null; W.liftMem.at = 0; serverBody = body; W.serverCfg.at = 0; };
 
-// Three ways from Burwood to Kings Cross: via Redfern (not step free), via Central, via Town Hall.
-const viaRedfern = [{ from: "burwood", to: "redfern", dep: t0, min: 12 }, { line: "T4", from: "redfern", to: "kingscross", dep: t0 + 16 * MIN, min: 7 }];
-const viaCentral = [{ from: "burwood", to: "central", dep: t0 + 4 * MIN, min: 13 }, { line: "T4", from: "central", to: "kingscross", dep: t0 + 21 * MIN, min: 6 }];
-const viaTownHall = [{ from: "burwood", to: "townhall", dep: t0 + 8 * MIN, min: 16 }, { line: "T4", from: "townhall", to: "kingscross", dep: t0 + 28 * MIN, min: 5 }];
+// Three ways from Parramatta to Bondi Junction: via Carramar (not step free), via Central, via Martin Place.
+const viaCarramar = [{ from: "parramatta", to: "carramar", dep: t0, min: 12 }, { line: "T4", from: "carramar", to: "bondijunction", dep: t0 + 16 * MIN, min: 7 }];
+const viaCentral = [{ from: "parramatta", to: "central", dep: t0 + 4 * MIN, min: 13 }, { line: "T4", from: "central", to: "bondijunction", dep: t0 + 21 * MIN, min: 6 }];
+const viaMartinPlace = [{ from: "parramatta", to: "martinplace", dep: t0 + 8 * MIN, min: 16 }, { line: "T4", from: "martinplace", to: "bondijunction", dep: t0 + 28 * MIN, min: 5 }];
 const firstChange = (j) => j.legs.filter((l) => l.kind === "transit")[0].to;
 
 test("acc=1 drops the trip through a station with a lift out and puts step free trips first", async () => {
   fresh([liftInfo("200060")]);
-  tripAnswer = efaTrip([viaRedfern, viaCentral, viaTownHall]);
-  const r = await get("/api/trip?from=213410&to=201110&acc=1");
+  tripAnswer = efaTrip([viaCarramar, viaCentral, viaMartinPlace]);
+  const r = await get("/api/trip?from=215020&to=202210&acc=1");
   assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 300));
   const order = r.body.journeys.map(firstChange);
-  assert.deepEqual(order, ["Town Hall", "Redfern"]);
+  assert.deepEqual(order, ["Martin Place", "Carramar"]);
   assert.equal(r.body.journeys[0].stepFree, true);
   assert.equal(r.body.journeys[1].stepFree, false);
   assert.deepEqual(r.body.liftAware, { avoided: 1, allAffected: false, stations: ["Central"] });
@@ -60,58 +60,58 @@ test("acc=1 drops the trip through a station with a lift out and puts step free 
 
 test("count is kept after ranking", async () => {
   fresh([]);
-  tripAnswer = efaTrip([viaRedfern, viaCentral, viaTownHall]);
-  const r = await get("/api/trip?from=213410&to=201110&acc=1&count=1");
+  tripAnswer = efaTrip([viaCarramar, viaCentral, viaMartinPlace]);
+  const r = await get("/api/trip?from=215020&to=202210&acc=1&count=1");
   assert.equal(r.body.journeys.length, 1);
   assert.equal(firstChange(r.body.journeys[0]), "Central");
   assert.equal(r.body.liftAware.avoided, 0);
 });
 
 test("when every trip meets a lift outage, they are all kept and each says where", async () => {
-  fresh([liftInfo("201110")]);
-  tripAnswer = efaTrip([viaCentral, viaTownHall]);
-  const r = await get("/api/trip?from=213410&to=201110&acc=1&t=3");
+  fresh([liftInfo("202210")]);
+  tripAnswer = efaTrip([viaCentral, viaMartinPlace]);
+  const r = await get("/api/trip?from=215020&to=202210&acc=1&t=3");
   assert.equal(r.body.journeys.length, 2);
   assert.equal(r.body.liftAware.allAffected, true);
-  for (const j of r.body.journeys) assert.equal(j.liftOutages[0].name, "Kings Cross");
+  for (const j of r.body.journeys) assert.equal(j.liftOutages[0].name, "Bondi Junction");
 });
 
 test("an escalator outage does not count as a lift outage", async () => {
   fresh([liftInfo("200060", "ESCALATOR", "Escalator 3 is not available")]);
-  tripAnswer = efaTrip([viaCentral, viaTownHall]);
-  const r = await get("/api/trip?from=213410&to=201110&acc=1&t=4");
+  tripAnswer = efaTrip([viaCentral, viaMartinPlace]);
+  const r = await get("/api/trip?from=215020&to=202210&acc=1&t=4");
   assert.equal(r.body.journeys.length, 2);
   assert.equal(r.body.liftAware.avoided, 0);
 });
 
 test("without acc=1, or with the flag off, trips are left in time order", async () => {
   fresh([liftInfo("200060")]);
-  tripAnswer = efaTrip([viaRedfern, viaCentral, viaTownHall]);
-  const plain = await get("/api/trip?from=213410&to=201110");
-  assert.deepEqual(plain.body.journeys.map(firstChange), ["Redfern", "Central", "Town Hall"]);
+  tripAnswer = efaTrip([viaCarramar, viaCentral, viaMartinPlace]);
+  const plain = await get("/api/trip?from=215020&to=202210");
+  assert.deepEqual(plain.body.journeys.map(firstChange), ["Carramar", "Central", "Martin Place"]);
   assert.equal(plain.body.liftAware, undefined);
   fresh([liftInfo("200060")], JSON.stringify({ flags: { liftAwareRouting: false } }));
-  const off = await get("/api/trip?from=213410&to=201110&acc=1&x=off");
-  assert.deepEqual(off.body.journeys.map(firstChange), ["Redfern", "Central", "Town Hall"]);
+  const off = await get("/api/trip?from=215020&to=202210&acc=1&x=off");
+  assert.deepEqual(off.body.journeys.map(firstChange), ["Carramar", "Central", "Martin Place"]);
   assert.equal(off.body.liftAware, undefined);
   fresh([]);
 });
 
 test("/api/plan with acc=1 is lift aware too", async () => {
-  fresh([liftInfo("201510")]);
-  tripAnswer = efaTrip([viaRedfern, viaTownHall]);
-  const legs = encodeURIComponent(JSON.stringify([{ f: "213410", fn: "Burwood", t: "201110", tn: "Kings Cross" }]));
+  fresh([liftInfo("216330")]);
+  tripAnswer = efaTrip([viaCarramar, viaMartinPlace]);
+  const legs = encodeURIComponent(JSON.stringify([{ f: "215020", fn: "Parramatta", t: "202210", tn: "Bondi Junction" }]));
   const r = await get(`/api/plan?legs=${legs}&acc=1`);
   assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 300));
-  assert.deepEqual(r.body.journeys.map(firstChange), ["Town Hall"]);
+  assert.deepEqual(r.body.journeys.map(firstChange), ["Martin Place"]);
   assert.equal(r.body.liftAware.avoided, 1);
 });
 
 test("a bus from the street outside a station is not held back by the station lift", async () => {
   fresh([liftInfo("200060")]);
-  const busViaCentral = [{ line: "311", cls: 5, from: "burwood", to: "central", dep: t0 + 2 * MIN, min: 30 }, { line: "324", cls: 5, from: "central", to: "kingscross", dep: t0 + 35 * MIN, min: 10 }];
+  const busViaCentral = [{ line: "311", cls: 5, from: "parramatta", to: "central", dep: t0 + 2 * MIN, min: 30 }, { line: "324", cls: 5, from: "central", to: "bondijunction", dep: t0 + 35 * MIN, min: 10 }];
   tripAnswer = efaTrip([busViaCentral, viaCentral]);
-  const r = await get("/api/trip?from=213410&to=201110&acc=1&t=7");
+  const r = await get("/api/trip?from=215020&to=202210&acc=1&t=7");
   assert.deepEqual(r.body.journeys.map((j) => j.legs.find((l) => l.kind === "transit").line), ["311"]);
   assert.deepEqual(r.body.journeys[0].liftOutages, []);
   assert.equal(r.body.liftAware.avoided, 1);

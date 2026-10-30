@@ -72,7 +72,7 @@ test("a first open with no edge copy gets the saved board at once, with its real
   globalThis.fetch = () => new Promise((r) => { release = () => r(new Response("{}", { status: 503 })); });
   const waits = [];
   const t0 = Date.now();
-  const r = await W.__default.fetch(new Request("https://t.example/api/departures?stop=213510", { headers: { "cf-connecting-ip": "10.7.0.2" } }), env, { waitUntil(p) { waits.push(p); } });
+  const r = await W.__default.fetch(new Request("https://t.example/api/departures?stop=206710", { headers: { "cf-connecting-ip": "10.7.0.2" } }), env, { waitUntil(p) { waits.push(p); } });
   assert.ok(Date.now() - t0 < 1500, "answered without waiting for the Trip Planner");
   assert.equal(r.headers.get("x-edge-cache"), "saved");
   const d = await r.json();

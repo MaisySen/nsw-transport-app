@@ -89,13 +89,13 @@ test('Speak departures: the next two in one natural sentence, from the board', (
 
 test('Speak departures: buses, "1 minute", "now", cancelled and gone services', () => {
   const s = v.departuresSentence([
-    { line: '410', mode: 'bus', dest: 'Five Dock Shops, Great North Rd', planned: iso(-3), departed: true },
-    { line: 'D400', mode: 'bus', dest: 'Burwood Stn', planned: iso(0.5), realtime: true, estimated: iso(0.5), cancelled: true },
-    { line: '410', mode: 'bus', dest: 'Opp Five Dock Shops', planned: iso(1.2), realtime: true, estimated: iso(1.2), platform: 'Stand C' },
+    { line: '410', mode: 'bus', dest: 'Lane Cove Shops, Great North Rd', planned: iso(-3), departed: true },
+    { line: 'D400', mode: 'bus', dest: 'Parramatta Stn', planned: iso(0.5), realtime: true, estimated: iso(0.5), cancelled: true },
+    { line: '410', mode: 'bus', dest: 'Opp Lane Cove Shops', planned: iso(1.2), realtime: true, estimated: iso(1.2), platform: 'Stand C' },
     { line: 'D400', mode: 'bus', dest: 'Bondi Junction', planned: iso(0.2) },
   ], T0);
-  assert.equal(s, 'The D400 bus to Burwood Station is cancelled. The 410 bus to opposite Five Dock Shops leaves in 1 minute, from stand C. Then the D400 bus to Bondi Junction, now.');
-  assert.equal(v.departuresSentence([], T0, { stop: 'Strathfield Station' }), 'No more services from Strathfield right now.');
+  assert.equal(s, 'The D400 bus to Parramatta Station is cancelled. The 410 bus to opposite Lane Cove Shops leaves in 1 minute, from stand C. Then the D400 bus to Bondi Junction, now.');
+  assert.equal(v.departuresSentence([], T0, { stop: 'Chatswood Station' }), 'No more services from Chatswood right now.');
   assert.doesNotMatch(s + v.departuresSentence([{ line: 'T4', mode: 'train', dest: 'Bondi Junction', planned: iso(75) }], T0), /\d+m\b|min\b|\u2013|\u2014/);
 });
 
@@ -106,12 +106,12 @@ test('no hard coded times: every number said comes from the data', () => {
 
 test('Speak departures on the commute card: to where you get off, and the change', () => {
   const j = (m) => ({ legs: [
-    { kind: 'transit', line: 'T1', mode: 'train', to: 'Redfern Station', fromPlatform: 'Platform 1', planned: iso(m), realtime: true, estimated: iso(m) },
+    { kind: 'transit', line: 'T1', mode: 'train', to: 'Epping Station', fromPlatform: 'Platform 1', planned: iso(m), realtime: true, estimated: iso(m) },
     { kind: 'walk' },
-    { kind: 'transit', line: 'T4', mode: 'train', to: 'Kings Cross Station', planned: iso(m + 12) },
+    { kind: 'transit', line: 'T4', mode: 'train', to: 'Martin Place Station', planned: iso(m + 12) },
   ] });
-  assert.equal(v.tripSentence([j(4), j(11)], T0), 'The T1 line to Redfern leaves in 4 minutes, from platform 1. Change at Redfern for the T4 line. Then the T1 line to Redfern, in 11 minutes.');
-  const bus = { legs: [{ kind: 'transit', line: '410', mode: 'bus', to: 'Five Dock Shops, Great North Rd', fromPlatform: 'Stand D', planned: iso(7) }] };
-  assert.equal(v.tripSentence([bus], T0), 'The 410 bus to Five Dock Shops leaves in 7 minutes, from stand D.');
+  assert.equal(v.tripSentence([j(4), j(11)], T0), 'The T1 line to Epping leaves in 4 minutes, from platform 1. Change at Epping for the T4 line. Then the T1 line to Epping, in 11 minutes.');
+  const bus = { legs: [{ kind: 'transit', line: '410', mode: 'bus', to: 'Lane Cove Shops, Great North Rd', fromPlatform: 'Stand D', planned: iso(7) }] };
+  assert.equal(v.tripSentence([bus], T0), 'The 410 bus to Lane Cove Shops leaves in 7 minutes, from stand D.');
   assert.equal(v.tripSentence([], T0), 'No more services right now.');
 });

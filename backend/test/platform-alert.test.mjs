@@ -18,7 +18,7 @@ globalThis.fetch = async () => new Response("{}", { status: 503 });
 
 const MIN = 60000;
 const T = Date.UTC(2026, 9, 25, 21, 0, 0); // Monday 8:00am Sydney
-const legs = [{ mode: "train", line: "T1", tripId: "T1-800", stopId: "2134103", toStopId: "2135102", from: "Burwood Station", to: "Strathfield Station", towards: "Hornsby",
+const legs = [{ mode: "train", line: "T1", tripId: "T1-800", stopId: "2134103", toStopId: "2135102", from: "Parramatta Station", to: "Chatswood Station", towards: "Hornsby",
   planned: new Date(T).toISOString(), arrPlanned: new Date(T + 5 * MIN).toISOString(), fromPlatform: "Platform 3" }];
 
 function fakeDB(serverBody) {
@@ -55,7 +55,7 @@ async function run(plat, { serverBody = null, from = T - 12 * MIN, to = T + 3 * 
   });
   const f = fakeDB(serverBody);
   const env = { TFNSW_API_KEY: "t", DB: f.DB };
-  const w = { id: "wplat", device: "dPlat", spec: JSON.stringify({ legs, track: true, to: { name: "Strathfield Station" } }), state: null, expires: T + 60 * MIN, active: 1 };
+  const w = { id: "wplat", device: "dPlat", spec: JSON.stringify({ legs, track: true, to: { name: "Chatswood Station" } }), state: null, expires: T + 60 * MIN, active: 1 };
   for (let now = from; now <= to; now += 30000) {
     if (!w.active) break;
     // The minute tick and an open app can check at the same moment.

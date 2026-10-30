@@ -20,7 +20,7 @@ globalThis.fetch = async (u) => {
   W.upstream.calls++;
   if (url.pathname.endsWith("/tp/trip")) {
     const now = Date.now();
-    return new Response(JSON.stringify(efaTrip([3, 13, 23].map((m) => [{ from: "kingscross", to: "strathfield", dep: now + m * 60000, min: 20, delay: 1, trip: "t" + m }]))));
+    return new Response(JSON.stringify(efaTrip([3, 13, 23].map((m) => [{ from: "bondijunction", to: "chatswood", dep: now + m * 60000, min: 20, delay: 1, trip: "t" + m }]))));
   }
   return new Response("{}", { status: 503 });
 };
@@ -61,9 +61,9 @@ test("history keeps 7 days and a bounded number of keys; the refresh request for
   for (let i = 0; i < 400; i++) W.prewarmAdd(big, i + "|", "20261027", "8");
   assert.equal(Object.keys(W.prewarmPrune(big, "20261027")).length, 300);
   const u = (k) => { const x = W.prewarmUrl("h.example", k); return x ? x.pathname + x.search : null; };
-  assert.equal(u("trip:213510>201110"), "/api/trip?from=213510&to=201110&count=6");
-  assert.equal(u("213516|"), "/api/departures?stop=213516");
-  assert.equal(u("213510|train"), "/api/departures?stop=213510&mode=train");
+  assert.equal(u("trip:206710>202210"), "/api/trip?from=206710&to=202210&count=6");
+  assert.equal(u("206712|"), "/api/departures?stop=206712");
+  assert.equal(u("206710|train"), "/api/departures?stop=206710&mode=train");
   assert.equal(u("park:all"), "/api/parking");
   assert.equal(u("park:stop:2155384"), "/api/parking?stop=2155384");
   assert.equal(u("trip:a b>c"), null);
@@ -76,10 +76,10 @@ test("the tick warms a pair asked on 2 days at this hour, saves it, counts its c
   // The schema the worker makes on first use, and two days of the same trip at this hour by two people.
   await W.prewarm(env, exec, { calls: 0 }, { ...s, tod: 120 });
   for (const [p, day] of [["prof01", s.day], ["prof02", dayBefore(s.day, 1)]]) {
-    D.sql.prepare("INSERT INTO searches (profile, device, day, dow, tod, from_id, from_name, to_id, to_name, src, at) VALUES (?, NULL, ?, 1, ?, '201110', 'Kings Cross', '213510', 'Strathfield', 'search', ?)").run(p, day, s.tod, Date.now() - 3600000);
+    D.sql.prepare("INSERT INTO searches (profile, device, day, dow, tod, from_id, from_name, to_id, to_name, src, at) VALUES (?, NULL, ?, 1, ?, '202210', 'Bondi Junction', '206710', 'Chatswood', 'search', ?)").run(p, day, s.tod, Date.now() - 3600000);
   }
   // One asked on 1 day only stays cold.
-  D.sql.prepare("INSERT INTO searches (profile, device, day, dow, tod, from_id, from_name, to_id, to_name, src, at) VALUES ('prof03', NULL, ?, 1, ?, '200060', 'Central', '213510', 'Strathfield', 'search', ?)").run(s.day, s.tod, Date.now() - 3600000);
+  D.sql.prepare("INSERT INTO searches (profile, device, day, dow, tod, from_id, from_name, to_id, to_name, src, at) VALUES ('prof03', NULL, ?, 1, ?, '200060', 'Central', '206710', 'Chatswood', 'search', ?)").run(s.day, s.tod, Date.now() - 3600000);
   W.prewarmMem.trips = null;
   calls = [];
   const r = await W.prewarm(env, exec, { calls: 0 }, s);
@@ -87,7 +87,7 @@ test("the tick warms a pair asked on 2 days at this hour, saves it, counts its c
   assert.ok(r.due <= W.PREWARM_PER_TICK);
   assert.ok(calls.some((p) => p.endsWith("/tp/trip")), "the pair was fetched");
   await settle();
-  const row = D.sql.prepare("SELECT k, opened FROM board_copies WHERE k = 'trip:201110>213510'").get();
+  const row = D.sql.prepare("SELECT k, opened FROM board_copies WHERE k = 'trip:202210>206710'").get();
   assert.ok(row, "and saved for the next first open");
   assert.equal(Number(row.opened), 0, "a warm fetch is not an open (it does not feed its own history)");
   const count = JSON.parse(D.sql.prepare("SELECT v FROM meta WHERE k = 'prewarm_day'").get().v);
@@ -106,7 +106,7 @@ test("the daily cap and the off switch stop it", async () => {
   const s = sn();
   if (s.tod >= 50 && s.tod < 280) return;
   await W.prewarm(env, exec, { calls: 0 }, { ...s, tod: 120 });
-  for (const day of [s.day, dayBefore(s.day, 2)]) D.sql.prepare("INSERT INTO searches (profile, device, day, dow, tod, from_id, from_name, to_id, to_name, src, at) VALUES ('prof01', NULL, ?, 1, ?, '201110', 'Kings Cross', '213510', 'Strathfield', 'search', ?)").run(day, s.tod, Date.now() - 3600000);
+  for (const day of [s.day, dayBefore(s.day, 2)]) D.sql.prepare("INSERT INTO searches (profile, device, day, dow, tod, from_id, from_name, to_id, to_name, src, at) VALUES ('prof01', NULL, ?, 1, ?, '202210', 'Bondi Junction', '206710', 'Chatswood', 'search', ?)").run(day, s.tod, Date.now() - 3600000);
   W.prewarmMem.trips = null;
   D.sql.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('prewarm_day', ?)").run(JSON.stringify({ day: s.day, calls: W.PREWARM_DAY_CAP, fetches: 1 }));
   calls = [];
