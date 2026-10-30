@@ -1,0 +1,116 @@
+# Build 209 on a GitHub hosted Mac with `eas build --local` (30 Oct 2026). A local build uses none of the
+# Expo plan's monthly iOS builds. Manual trigger only (never on pull requests, so a fork never sees the secrets),
+# and only from the build-209 branch. Signing: the distribution certificate and the four App Store profiles
+# (the app's profile regenerated on 30 Oct with Time Sensitive) arrive as one secret and are deleted at the end.
+# Upload goes to App Store Connect for TestFlight only. Nothing here submits for App Review.
+name: iOS build 209 (local EAS build, TestFlight upload)
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: "Upload the signed build to App Store Connect (TestFlight only)"
+        type: choice
+        options: ["yes", "no"]
+        default: "yes"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-209
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/build-209'
+    runs-on: xcode-27
+    timeout-minutes: 120
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      NODE_OPTIONS: "--max-old-space-size=8192"
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Xcode 27.1 (iOS 27.1 SDK)
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+          xcodebuild -showsdks | grep -E 'iphoneos|watchos'
+          pod --version; fastlane --version | tail -1 || true
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Signing files (from the secret, never printed)
+        env:
+          CREDS: ${{ secrets.IOS209_CREDENTIALS_TGZ }}
+        run: |
+          printf '%s' "$CREDS" | base64 --decode | tar -xzf - -C .
+          ls credentials/ios | sed 's/^/  /'
+          for f in credentials/ios/*.mobileprovision; do
+            security cms -D -i "$f" > /tmp/p.plist
+            echo "$f: $(/usr/libexec/PlistBuddy -c 'Print :Name' /tmp/p.plist), time sensitive: $(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.usernotifications.time-sensitive' /tmp/p.plist 2>/dev/null || echo no)"
+          done
+          rm -f /tmp/p.plist
+
+      - name: EAS local build (production profile)
+        run: |
+          set -o pipefail
+          npx -y eas-cli@latest whoami
+          npx -y eas-cli@latest build --platform ios --profile production --local --non-interactive \
+            --output "$RUNNER_TEMP/Transport-209.ipa" 2>&1 | tee "$RUNNER_TEMP/build.log"
+          ls -la "$RUNNER_TEMP/Transport-209.ipa"
+
+      - name: Check the IPA
+        run: |
+          set -e
+          cd "$RUNNER_TEMP" && rm -rf ipa && mkdir ipa && cd ipa && unzip -q ../Transport-209.ipa
+          APP=$(ls -d Payload/*.app)
+          for b in "$APP" "$APP"/PlugIns/*.appex "$APP"/Watch/*.app "$APP"/Watch/*.app/PlugIns/*.appex; do
+            [ -e "$b" ] || continue
+            echo "== $b"
+            /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$b/Info.plist"
+            echo "version $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$b/Info.plist") ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$b/Info.plist"))"
+            codesign -d --entitlements :- "$b" 2>/dev/null > /tmp/e.plist || true
+            for k in aps-environment get-task-allow com.apple.developer.usernotifications.time-sensitive com.apple.security.application-groups beta-reports-active; do
+              echo "  $k: $(/usr/libexec/PlistBuddy -c "Print :$k" /tmp/e.plist 2>/dev/null | tr '\n' ' ' || echo absent)"
+            done
+          done
+          echo "== Expo.plist"
+          /usr/libexec/PlistBuddy -c 'Print :EXUpdatesRuntimeVersion' "$APP/Expo.plist"
+          /usr/libexec/PlistBuddy -c 'Print :EXUpdatesRequestHeaders' "$APP/Expo.plist"
+          echo "UIBackgroundModes: $(/usr/libexec/PlistBuddy -c 'Print :UIBackgroundModes' "$APP/Info.plist" 2>/dev/null || echo absent)"
+          grep -c NSPrivacyCollectedDataTypeCrashData "$APP/PrivacyInfo.xcprivacy" && echo "privacy manifest: Crash Data listed"
+          if grep -r -l -E 'tab\.bot|nsw-transport-bot' "$APP" >/dev/null 2>&1; then echo "OLD ADDRESS FOUND:"; grep -r -l -E 'tab\.bot|nsw-transport-bot' "$APP" | head; else echo "no old address in the IPA"; fi
+          grep -i -E 'sentry' "$RUNNER_TEMP/build.log" | grep -i -E 'upload|error|warn' | sort -u | head -20 || true
+          shasum -a 256 "$RUNNER_TEMP/Transport-209.ipa"
+
+      - name: Upload to App Store Connect (TestFlight only, no review submit)
+        if: inputs.upload == 'yes'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          set -o pipefail
+          mkdir -p ~/.appstoreconnect/private_keys
+          printf '%s\n' "$ASC_KEY_P8" > ~/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8
+          chmod 600 ~/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8
+          xcrun altool --upload-app --type ios --file "$RUNNER_TEMP/Transport-209.ipa" \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --output-format normal 2>&1 | tee "$RUNNER_TEMP/upload.log"
+          grep -q -i -E 'No errors uploading|UPLOAD SUCCEEDED|successfully uploaded' "$RUNNER_TEMP/upload.log"
+
+      - name: Clean up signing files
+        if: always()
+        run: |
+          rm -rf credentials credentials.json ~/.appstoreconnect "$RUNNER_TEMP/ipa" "$RUNNER_TEMP/Transport-209.ipa"
+          security delete-keychain "$RUNNER_TEMP"/*.keychain-db 2>/dev/null || true
