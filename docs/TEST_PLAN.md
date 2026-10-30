@@ -31,6 +31,13 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 
 
+### Build 210 readiness (31 Oct, branch `build-210-rc`, not built)
+* App (OFFLINE=1, TZ=Australia/Sydney): 1,016 tests, 1,012 pass, 4 skipped, 0 fail. Battery 17/17, tsc clean, backend 640/640, owner stations and review notes guards pass.
+* `app/test/nativeaudit.test.mjs` also pins the 31 Oct fixes: Lock Screen countdown `minimumScaleFactor(0.5)` (trip and follow cards), the `headLines: 2` middle layouts, the Watch corner timer on one line.
+* Native audit runs 41069607972, 41072915818, 41074683916, 41075080008 (final, 1cb0f32): iPhone 1,426 shots and Watch 120 shots, 0 drawn outside their box; sheets also read by eye for "..." on times and stop names.
+* `expo prebuild --platform ios --no-install` with `IOS_APP_GROUP=1 EAS_BUILD=1`: runtime 1.2.0, 1.0.0 (210), push, Time Sensitive and App Group entitlements, Watch targets, both sounds bundled. Delete `targets/watch/Assets.xcassets/AppIcon.appiconset` afterwards (press.test).
+* Server for 210 (`server-210-rc`, main + getoff-voice + live-stops): backend 658/658, including the new `liveStops` switch test.
+
 ### Build 209 branch `build-209` (30 Oct prep, not built)
 * App 925 tests, 921 pass, 4 skipped (kotlinc not on this box), 0 fail (`OFFLINE=1 TZ=Australia/Sydney`, includes battery); `npx tsc --noEmit` clean; backend 629 of 629 after adding `sentry` and Time Sensitive to docs/APP_REVIEW_NOTES.md (review-notes guard 3 of 3).
 * `CI=1 IOS_APP_GROUP=1 npx expo prebuild --platform ios --no-install`: Expo.plist runtime 1.1.0, Info.plist 1.0.0 (209) (build 210: runtime 1.2.0, Info.plist 1.0.0 (210); `app/test/widgetfit210.test.mjs` checks app.json), entitlements carry time sensitive and the App Group, privacy manifest lists Crash Data (not linked), Sentry build phases present, widget target picks up every file in targets/widget (synchronized folder).

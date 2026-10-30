@@ -18,6 +18,14 @@ Build 210 is built from `build-209` with `"runtimeVersion": "1.2.0"` in `app/app
 * Sentry release naming is `com.maisysen.nswtransport@1.0.0+210`, dist 210 (bundle id, version and build number; the runtime is not part of it), so nothing changes there.
 * Get off voice in build 210 (31 Oct): Bidur's pick, round 3 voice 3, Kylie (a warm, gentle Australian woman). `app/assets/sounds/getoff_soon.wav` says "Your stop is coming up. Please get ready to get off at the next stop." (5.2 s) and `getoff_now.wav` "Please get off at the next stop." (2.8 s), each after a soft two note chime; 16 bit mono PCM, 44.1 kHz. They replace the 30 Oct clips he turned down. Sounds reach phones only in a build, never by update. `app/test/getoffvoice31.test.mjs` pins both files. On his phone check (step 6): lock the phone on a live trip and listen for her voice.
 
+## Build 210 from `build-210-rc` (31 Oct readiness check)
+
+* Build 210 is built from `build-210-rc` (build-209 526f4f5 + main 3c79969 + next-fromloc b545d06 + three snapshot fixes). The build job runs only on `refs/heads/build-209`, so first fast forward `build-209` to `build-210-rc` (GitHub API, `force: false`; it is a plain fast forward), then dispatch `ios-209-local.yml` on `build-209`.
+* GitHub Actions secrets are all removed (checked 31 Oct, 1:50 AM). Re-add `IOS209_CREDENTIALS_TGZ`, `EXPO_TOKEN`, `SENTRY_AUTH_TOKEN`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` for the run and remove all six right after.
+* Server for 210: `server-210-rc` (main + getoff-voice + live-stops with the `liveStops` switch). Deploy with `getOffPush` and `liveStops` off (platform=server flags), verify-deploy, 15 min watch; switch them on once 210 is on the owner's phone. Either order is safe for builds 201 to 209 and for 210.
+* Bidur's phone checks after 210: Kylie's voice with the phone locked on a live trip, Get off now on time with a late service, the stop track on the Lock Screen and Island, widgets and Watch refreshing without opening the app, Current location.
+* Full list, results and rollback: the readiness checklist sent with the 31 Oct report.
+
 ## 0. What is ready (29 Oct)
 
 | Branch | Head | What it carries | Checked |

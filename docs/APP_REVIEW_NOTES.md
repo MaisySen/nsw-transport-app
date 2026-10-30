@@ -48,6 +48,7 @@ The source for the Notes field. It lists every feature that appears, changes or 
 | Freshness rule | none (the phone also caps Live at 5 min) | `feedAgeCap`, `feedHeaderTime` |
 | Server built boards and trips | none | `ENGINE_BOARDS`, `OWN_PLANNER` (both off), `ENGINE_FEED_ONLY` |
 | New trip first look (timetable times shown while the live search runs, labelled Timetable) | `tripTt` (kill) | `TRIP_TT`, `TRIP_TT_OWN`, `/api/trip?tt=1` |
+| Live Activity stop track (build 210: the trip card's stops on the Lock Screen and in the Dynamic Island; builds 201 to 209 skip it, 31 Oct) | none | `liveStops` (on unless `false`; off leaves the stop list out of the card push and the card draws the bar) |
 | Crash reports to the crash reporting service (build 209 and later, errors only, cleaned on the phone; not seen by riders) | `sentry` (and `kill.sentry`; off drops every event, the feedback inbox reports carry on) | none |
 | Time Sensitive Get off now (build 209 entitlement; only the Get off now alert) | none | none |
 | Spoken alert sounds (build 210: Get off now and the heads up ring with a chime and a voice, 30 Oct) | `getOffVoice` (on unless `false`) | `voice`, `getOffVoice` on a trip watch |
