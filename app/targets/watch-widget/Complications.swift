@@ -212,8 +212,12 @@ struct NextView: View {
     private var corner: some View {
         Group {
             if let t = entry.target {
+                // One line, shrunk before it is cut (31 Oct readiness audit: "13:..." and "1:1..." on the 40 mm corner,
+                // "13:5" over "9" on 45 mm).
                 Text(t, style: .timer)
                     .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
                     .widgetAccentable()
                     .widgetLabel { Text([entry.line, entry.plat].compactMap { $0 }.joined(separator: " ")) }
             } else {

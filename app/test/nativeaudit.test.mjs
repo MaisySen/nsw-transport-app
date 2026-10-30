@@ -95,6 +95,9 @@ test('fixes the audit found stay in: compact island countdown, Lock Screen words
   const w = read('app/targets/watch/TransportWatchApp.swift');
   assert.match(w, /\.strikethrough\(service\.cancelled\)\s*\.lineLimit\(1\)/);
   assert.match(w, /Text\(p\)\.fontWeight\(\.medium\)\.lineLimit\(1\)\.minimumScaleFactor\(0\.8\)/);
+  // 31 Oct readiness audit: the corner complication's countdown stays on one line and shrinks before it is cut.
+  const c = read('app/targets/watch-widget/Complications.swift');
+  assert.match(c, /private var corner[\s\S]*?Text\(t, style: \.timer\)[\s\S]{0,200}?\.lineLimit\(1\)\s*\.minimumScaleFactor\(0\.5\)/);
   const n = read('app/targets/widget/TransportWidgets.swift');
   assert.match(n, /Text\(Clock\.time\(t\.leave\)\)[\s\S]{0,200}\.fixedSize\(\)/);
 });
