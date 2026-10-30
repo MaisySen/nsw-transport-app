@@ -36,7 +36,7 @@ test('text: query values, positions, stop IDs, paths with IDs and quoted names a
   assert.equal(S.scrubText('No board for "Central Station"'), 'No board for "<text>"');
   assert.equal(S.scrubText("Can't find 'Parramatta' today"), "Can't find '<text>' today");
   assert.match(S.scrubText('stop: Wynyard, platform 3'), /stop: <text>/);
-  assert.match(S.scrubText('Bad leg from: Town Hall'), /from: <text>/);
+  assert.match(S.scrubText('Bad leg from: Martin Place'), /from: <text>/);
 });
 
 test('text: code and stack lines keep their shape', () => {
@@ -52,7 +52,7 @@ test('event: no user, request, phone name, time zone or IP; message, exception a
     message: 'Trip to "Bondi Junction" failed',
     user: { id: 'install-1', ip_address: '1.2.3.4' }, request: { url: '/x?stop=1' }, server_name: "Bidur's iPhone", geo: { city: 'Sydney' },
     exception: { values: [{ type: 'TypeError', value: 'Bad stop 2000338 at /stop/2000338?when=now', stacktrace: { frames: [{ filename: 'app:///index.bundle?platform=ios', vars: { stop: 'Central' }, lineno: 1 }] } }] },
-    contexts: { device: { name: "Bidur's iPhone", model: 'iPhone18,1', timezone: 'Australia/Sydney' }, os: { name: 'iOS', version: '27.1' }, culture: { timezone: 'Australia/Sydney', locale: 'en-AU' }, app: { app_version: '1.0.0', device_app_hash: 'h' }, custom: { stopName: 'Central', note: 'from: Redfern' } },
+    contexts: { device: { name: "Bidur's iPhone", model: 'iPhone18,1', timezone: 'Australia/Sydney' }, os: { name: 'iOS', version: '27.1' }, culture: { timezone: 'Australia/Sydney', locale: 'en-AU' }, app: { app_version: '1.0.0', device_app_hash: 'h' }, custom: { stopName: 'Central', note: 'from: Epping' } },
     breadcrumbs: [{ category: 'navigation', data: { to: '/stop/2000338' } }, { category: 'ui.touch', message: 'Central' }, { category: 'console', message: 'x' }, { category: 'app', message: 'opened /trip/123456' }],
     extra: { install: 'abc', stop: 'Central', count: 2, url: '/api/departures?stop=2000338' },
     tags: { where: 'screen', update: '01a17835' },

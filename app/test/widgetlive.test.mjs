@@ -140,5 +140,6 @@ test('battery: no new timer or alarm kind in the widget code', () => {
   assert.equal((kt.match(/AlarmManager\.RTC\b/g) || []).length, (kt.match(/am\.set\(/g) || []).length, 'only non waking alarms');
   const sw = fs.readdirSync(path.join(app, 'targets/widget')).filter((f) => f.endsWith('.swift')).map((f) => read(`targets/widget/${f}`)).join('\n');
   assert.doesNotMatch(sw, /Timer\.scheduledTimer|Timer\.publish|DispatchSourceTimer/);
+  // owner-stations: guard (checks the names are absent from the native code)
   assert.doesNotMatch(SWIFT + KT, /Strathfield|Burwood|Kings Cross|Redfern/);
 });

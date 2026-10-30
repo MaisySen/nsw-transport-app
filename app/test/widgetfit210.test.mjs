@@ -59,6 +59,7 @@ test('the Mac fit check renders every family at the smallest and largest widget 
   const s = read(p);
   for (const f of ['.systemSmall', '.systemMedium', '.systemLarge', '.accessoryRectangular', '.xxxLarge', 'OVERFLOWS']) assert.ok(s.includes(f), f);
   for (const d of ['"se"', '"mini"', '"promax"']) assert.ok(s.includes(d), d);
+  // owner-stations: guard (checks the names are absent from the native code)
   assert.doesNotMatch(s, /Strathfield|Burwood|Kings Cross|Redfern/);
 });
 
