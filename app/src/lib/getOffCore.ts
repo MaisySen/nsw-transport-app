@@ -168,8 +168,8 @@ export type GetOffTrip = {
  * they are heard with the phone locked, where the app itself cannot speak. */
 export type GetOffSound = 'getoff_now' | 'getoff_soon';
 export const GETOFF_SOUND_WORDS: Record<GetOffSound, string> = {
-  getoff_now: 'Get off at the next stop. Get off at the next stop.',
-  getoff_soon: 'Your stop is coming up. Get ready to get off.',
+  getoff_now: 'Please get off at the next stop.',
+  getoff_soon: 'Your stop is coming up. Please get ready to get off at the next stop.',
 };
 export type GetOffAction =
   | { t: 'offSchedule'; id: string; key: string; at: number; title: string; body: string; sound?: GetOffSound }

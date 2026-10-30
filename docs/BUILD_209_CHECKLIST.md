@@ -16,6 +16,7 @@ Build 210 is built from `build-209` with `"runtimeVersion": "1.2.0"` in `app/app
 * Main's runtime is unchanged (policy appVersion, 1.0.0). Main has no `OTA_RUNTIME` override (that lives in `app/app.config.js` on this branch only), so a 1.1.0 update from main needs the runtime set in a throwaway working copy (step 9) and the manifest read back.
 * In the steps below, "1.1.0" describes build 209. For build 210 read 1.2.0 wherever the runtime is checked: step 2.7 prebuild (`Expo.plist` EXUpdatesRuntimeVersion 1.2.0, Android `expo_runtime_version` 1.2.0) and step 5.2 (IPA runtime 1.2.0). `.github/workflows/ios-209-local.yml` stops before the build when build 210 or later is on runtime 1.0.0 or 1.1.0, and fails the IPA check when the IPA's runtime is not `app/app.json`'s.
 * Sentry release naming is `com.maisysen.nswtransport@1.0.0+210`, dist 210 (bundle id, version and build number; the runtime is not part of it), so nothing changes there.
+* Get off voice in build 210 (31 Oct): Bidur's pick, round 3 voice 3, Kylie (a warm, gentle Australian woman). `app/assets/sounds/getoff_soon.wav` says "Your stop is coming up. Please get ready to get off at the next stop." (5.2 s) and `getoff_now.wav` "Please get off at the next stop." (2.8 s), each after a soft two note chime; 16 bit mono PCM, 44.1 kHz. They replace the 30 Oct clips he turned down. Sounds reach phones only in a build, never by update. `app/test/getoffvoice31.test.mjs` pins both files. On his phone check (step 6): lock the phone on a live trip and listen for her voice.
 
 ## 0. What is ready (29 Oct)
 

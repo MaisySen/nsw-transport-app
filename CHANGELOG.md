@@ -2,6 +2,14 @@
 
 What changed in Transport, newest first. Times are Sydney time. Build numbers, update ids and links are in [docs/RELEASES.md](docs/RELEASES.md).
 
+## 31 Oct 2026
+
+### Get off voice: Bidur's pick, Kylie (31 Oct, about 1 AM; branch build-209, build 210, no build)
+* Bidur turned down the 30 Oct clips ("This is bad. Be soft female") and a second round of three ("not aussie"), then picked round 3's voice 3, Kylie, a warm, gentle Australian woman ("This is good").
+* `app/assets/sounds/getoff_soon.wav`: chime, then "Your stop is coming up. Please get ready to get off at the next stop." (5.2 s). `getoff_now.wav`: chime, then "Please get off at the next stop." once (2.8 s; was "Get off at the next stop" twice, 3.6 s). Same names, same format as before (16 bit mono linear PCM, 44.1 kHz, about -16 LUFS, no clipping), so the expo-notifications plugin bundles them as before (iPhone alert sounds under 30 s; Android raw resources `getoff_now`, `getoff_soon`). The server branch `getoff-voice` names the files only, so nothing changes there.
+* `GETOFF_SOUND_WORDS` in `app/src/lib/getOffCore.ts` and the comments that quote the clips updated. New `app/test/getoffvoice31.test.mjs` (2) pins both files to the chosen clips and their words. FEATURES, TEST_PLAN, BUILD_209_CHECKLIST.
+* Sounds reach phones only in a build: build 210. No update changes them.
+
 ## 30 Oct 2026
 
 ### Build 210 = runtime 1.2.0 (30 Oct, about 7:15 PM; branch build-209, no build)

@@ -2,7 +2,7 @@
 // time so they ring with the app closed, rung at once when the moment comes while the app is open, and taken back
 // when the trip moves on. expo-notifications is in every build in the field.
 // Spoken sounds (30 Oct, build 210): the app cannot speak with the phone locked (no background audio, by design), so
-// an alert can ring with a chime and a voice ("Get off at the next stop") as its own sound, bundled in the app by the
+// an alert can ring with a chime and a voice ("Please get off at the next stop", Kylie, chosen by the owner 31 Oct) as its own sound, bundled in the app by the
 // expo-notifications plugin (app.json "sounds"). The phone plays it like any alert sound: muted by Silent mode,
 // through headphones when they are in, and through a Focus because the alert is time sensitive.
 import { Platform } from 'react-native';

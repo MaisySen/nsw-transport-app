@@ -1,7 +1,7 @@
 // Spoken alert sounds (30 Oct, Bidur on a real trip with build 209: "Didn't speak for the getting off. Only the alert
 // notification came in on top... only spoke when I opened the app"). The app speaks only while it is open (no
 // background audio, by design), so on build 210 and later the alerts set on the phone ring with a chime and a voice
-// as their own sound ("Get off at the next stop"), heard with the phone locked. Replayed with a fake clock refreshing
+// as their own sound ("Please get off at the next stop"), heard with the phone locked. Replayed with a fake clock refreshing
 // every 15 s like the app; while the app is "closed" only the phone's set alerts ring, with the sound they were set with.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
