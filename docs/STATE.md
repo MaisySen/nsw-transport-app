@@ -20,7 +20,7 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 | Android | versionCode 2 to 5 (APK on the download page) | |
 | Public site | Pages deployment `515eb805` (30 Oct, 2:52 PM, privacy policy item 12: where each service processes data, owner approved 2:44 PM; main 5a6b662; checked 2:53 PM: /privacy/ live equals the source, terms unchanged). Before it `aa2b7ec2` (30 Oct, 7:53 AM, items 1 to 11 and 13), `202d89e9` (27 Oct, crash reports) | `aa2b7ec2` |
 | Cloudflare plan | Workers Paid since 26 Oct 9:06 AM; cycle 25 Oct to 25 Nov; invoice US$5.00 paid; usage charges US$0.00 (dashboard, 4 PM) | |
-| Owner stations in tests | 29 of 1513 tests (1.9%) name the owner's stations, limit 5%, enforced by `backend/test/owner-stations.test.mjs` (30 Oct, about 3:55 PM; was 288 of 1510, 19.1%). Same change on main and build-209; tests only | |
+| Owner stations in tests | 27 of 1513 tests (1.8%) name the owner's stations, limit 5%, enforced by `backend/test/owner-stations.test.mjs` (30 Oct, about 3:55 PM; was 344 of 1510, 22.8%). Same change on main and build-209; tests only | |
 | NSW calls today | 51,580 of 60,000 at 4:23 PM; refusals since about 1:25 PM. Resets at 1 AM AEDT | |
 
 ## Speed pass 3, every screen other than Home (27 Oct, 2:30 to 2:55 PM)

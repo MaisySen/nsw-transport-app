@@ -53,7 +53,7 @@ export function maskSource(src) {
       if (c === "\\") { i += 2; continue; }
       if (c === "`") { blank(start, i); i++; lastSig = "x"; return; }
       if (c === "$" && src[i + 1] === "{") {
-        blank(start, i); i += 2; tplStack.push(braceDepth); braceDepth++; lastSig = "{"; return;
+        blank(start, i + 2); i += 2; tplStack.push(braceDepth); braceDepth++; lastSig = "{"; return;
       }
       i++;
     }

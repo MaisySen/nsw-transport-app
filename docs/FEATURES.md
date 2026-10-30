@@ -184,7 +184,7 @@ Home Screen, Lock Screen and StandBy widgets; Siri, Spotlight and Shortcuts ("Ne
 
 ## Tests cover all of Sydney (30 Oct; tests only, nothing changes in the app)
 
-No feature changed. The app and server tests now use stations from all over Sydney and NSW: at most 5% of tests may name the owner's own stations, and `backend/test/owner-stations.test.mjs` fails if that share goes over 5% (29 of 1513, 1.9%, on 30 Oct). See [TEST_PLAN.md](TEST_PLAN.md).
+No feature changed. The app and server tests now use stations from all over Sydney and NSW: at most 5% of tests may name the owner's own stations, and `backend/test/owner-stations.test.mjs` fails if that share goes over 5% (27 of 1513, 1.8%, on 30 Oct). See [TEST_PLAN.md](TEST_PLAN.md).
 
 ## Build 207 (built, on TestFlight; not yet seen on a real iPhone)
 

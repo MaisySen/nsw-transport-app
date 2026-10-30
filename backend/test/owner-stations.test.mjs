@@ -19,8 +19,10 @@ test("the counter sees names in any case or spacing, stop ids, and constants a t
   for (const s of [name, name.toLowerCase(), name.toUpperCase(), two.replace(" ", ""), two.replace(" ", "-").toLowerCase(), `id: "${OWNER_IDS[0]}"`]) assert.ok(mentionsOwner(s), s);
   assert.ok(!mentionsOwner(`id: "${OWNER_IDS[0]}7"`), "a longer number is not the stop id");
   assert.ok(!mentionsOwner("Parramatta to Central"));
-  const src = `const T = "x";\ntest("a", () => { f("${name}"); });\ntest("b", () => { g(1 / 2); h(/re/g); });\ntest("c", () => { k(\`\${1}\`); });\n`;
-  assert.equal(findTests(src).tests.length, 3);
+  const src = `const T = "x";\ntest("a", () => { f("${name}"); });\ntest("b", () => { g(1 / 2); h(/re/g); });\ntest("c", () => { k(\`a \${1} b\`); });\ntest("d", () => {});\n`;
+  const found = findTests(src).tests;
+  assert.equal(found.length, 4);
+  assert.ok(found.every((t) => t.text.endsWith(")")) && found[2].text.length < 40, "a template with ${} does not swallow the next test");
 });
 
 test("a guard test that lists the names to check they are absent is not counted", () => {
