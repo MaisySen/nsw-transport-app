@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Keyboard, Platform, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, Keyboard, Linking, Platform, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { searchFieldProps } from '@/lib/pickerCore';
 import { HoldMenu } from '@/components/HoldMenu';
 import { menuFrom, type MenuSpec } from '@/lib/menuCore';
@@ -18,6 +18,8 @@ import { prefetchStop } from '@/lib/prefetch';
 import { localSearch, mergeSearch, searchBusy, searchKey, SEARCH_DEBOUNCE_MS } from '@/lib/localSearchCore';
 import { badgeLook } from '@/lib/lineStyle';
 import { useNow } from '@/lib/hooks';
+import { HERE_LABEL, hereStale, hereStep, isHerePlace, showHereRow } from '@/lib/hereCore';
+import { hasLocation, hereOnce } from '@/lib/hereLocation';
 import type { Place } from '@/lib/types';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { Row, Screen, Section, Sep, T, font } from '@/components/ui';
@@ -65,11 +67,12 @@ function useStopSearch(q: string, places: boolean) {
 
 const KIND_ICON = { address: I.pin, place: I.pin, street: I.route, suburb: I.location } as const;
 
-function Field({ label, value, placeholder, active, onFocus, onChange, inputRef, onClear }: any) {
+function Field({ label, value, placeholder, active, onFocus, onChange, inputRef, onClear, here }: any) {
   const c = usePalette();
   return (
     <View style={[s.field, { borderColor: active ? c.tint : 'transparent' }]}>
       <T kind="sub" tone="text2" style={{ width: 44 }}>{label}</T>
+      {here ? <Icon name={I.location} size={15} color={c.tint} style={{ marginRight: 6 }} /> : null}
       <TextInput {...searchFieldProps} ref={inputRef} value={value} placeholder={placeholder} accessibilityLabel={label} placeholderTextColor={c.text3} onFocus={onFocus} onChangeText={onChange}
         style={[font.body, { flex: 1, color: c.text, paddingVertical: Platform.OS === 'android' ? 6 : 10, minHeight: 48 }]} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing" />
       {Platform.OS === 'android' && value ? <Pressable accessibilityRole="button" accessibilityLabel={`Clear ${label}`} onPress={onClear} hitSlop={10}><Icon name={I.close} size={18} color={c.text2} /></Pressable> : null}
@@ -115,7 +118,10 @@ export default function Search() {
       router.push({ pathname: '/stop/[id]', params: { id: p.id, name: p.name } });
       return;
     }
-    if (field === 'from') {
+    choose(field === 'to' ? 'to' : 'from', p);
+  };
+  const choose = (which: 'from' | 'to', p: Place) => {
+    if (which === 'from') {
       setFrom(p); setFromText(shortName(p.name)); setField('to');
       if (to) go(p, to); else setTimeout(() => toRef.current?.focus(), 50);
     } else {
@@ -123,8 +129,30 @@ export default function Search() {
       if (from) go(from, p);
     }
   };
-  const go = (a: Place, b: Place, w: When = when) => {
+  // Current location (lib/hereCore.ts): on a build with location, the first row of an empty From or To. The
+  // When In Use prompt shows only on this tap; one fix, then the trip is planned from that point.
+  const hereOk = useMemo(() => hasLocation(), []);
+  const [hereBusy, setHereBusy] = useState(false);
+  const [hereNote, setHereNote] = useState<{ field: 'from' | 'to'; note: string; settings: boolean } | null>(null);
+  const tapHere = async () => {
+    if (hereBusy) return;
+    const which = field === 'to' ? 'to' : 'from';
+    haptic.tap(); setHereNote(null); setHereBusy(true);
+    try {
+      const step = hereStep(await hereOnce(true), Date.now());
+      if (step.kind === 'note') { setHereNote({ field: which, note: step.note, settings: step.settings }); return; }
+      choose(which, step.place);
+    } finally { setHereBusy(false); }
+  };
+  const go = async (a: Place, b: Place, w: When = when) => {
     Keyboard.dismiss();
+    // A Current location end read more than 5 minutes ago is read once more (no prompt) before the trip opens.
+    if (hereStale(a as any, Date.now()) || hereStale(b as any, Date.now())) {
+      const fresh = hereStep(await hereOnce(false), Date.now());
+      if (fresh.kind === 'place') {
+        if (isHerePlace(a)) { a = fresh.place; setFrom(fresh.place); } else { b = fresh.place; setTo(fresh.place); }
+      }
+    }
     router.push({ pathname: '/trip', params: { from: a.id, fromName: a.name, to: b.id, toName: b.name, ...whenParams(w) } });
   };
   const clearTrips = () => { store.clearRecentTrips(); haptic.select(); };
@@ -137,6 +165,7 @@ export default function Search() {
   ]) });
 
   const list = planResults(items, text, chosen);
+  const showHere = showHereRow({ available: hereOk, mode, field, text, chosen, otherIsHere: field === 'to' ? isHerePlace(from) : isHerePlace(to) });
   const noMatch = chosen ? null : noPlaceText(text, loading, items.length, failed, wide);
   const recentTrips = (st.recentTrips || []).slice(0, 6);
   const recentStops = (st.recents || []).slice(0, 6);
@@ -167,9 +196,9 @@ export default function Search() {
           ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <View style={{ flex: 1 }}>
-                <Field label="From" value={fromText} placeholder="Stop, address or place" active={field === 'from'} onFocus={() => setField('from')} onChange={(t: string) => { setFromText(t); setFrom(null); }} onClear={() => { setFromText(''); setFrom(null); setField('from'); }} />
+                <Field label="From" value={fromText} here={isHerePlace(from) && fromText === HERE_LABEL} placeholder="Stop, address or place" active={field === 'from'} onFocus={() => setField('from')} onChange={(t: string) => { setFromText(t); setFrom(null); }} onClear={() => { setFromText(''); setFrom(null); setField('from'); }} />
                 <Sep inset={60} />
-                <Field label="To" value={toText} placeholder="Stop, address or place" inputRef={toRef} active={field === 'to'} onFocus={() => setField('to')} onChange={(t: string) => { setToText(t); setTo(null); }} onClear={() => { setToText(''); setTo(null); setField('to'); }} />
+                <Field label="To" value={toText} here={isHerePlace(to) && toText === HERE_LABEL} placeholder="Stop, address or place" inputRef={toRef} active={field === 'to'} onFocus={() => setField('to')} onChange={(t: string) => { setToText(t); setTo(null); }} onClear={() => { setToText(''); setTo(null); setField('to'); }} />
               </View>
               <Pressable accessibilityRole="button" accessibilityLabel="Swap From and To" hitSlop={8} style={{ padding: 14 }} onPress={() => { setFrom(to); setTo(from); setFromText(toText); setToText(fromText); if (from && to) go(to, from); }}>
                 <Icon name={I.swap} size={20} color={c.tint} />
@@ -219,6 +248,23 @@ export default function Search() {
               <Row icon={I.route} iconBg={badgeLook(bus.route.line, 'bus', null).bg} title={`Route ${bus.route.line}`}
                 subtitle={bus.route.ends.length ? `${bus.route.ends.map((e) => shortName(e)).join(' and ')}. Stops and live buses` : 'Stops and live buses'}
                 onPress={() => { Keyboard.dismiss(); router.push({ pathname: '/route', params: { line: bus.route!.line, mode: 'bus' } }); }} />
+            ) : null}
+          </Section>
+        ) : null}
+
+        {showHere ? (
+          <Section>
+            <Row icon={I.location} iconBg={c.tint} title={HERE_LABEL} subtitle={field === 'to' ? 'Plan to where you are now' : 'Plan from where you are now'} chevron={false}
+              right={hereBusy ? <ActivityIndicator size="small" /> : undefined} onPress={tapHere} />
+            {hereNote && hereNote.field === field ? (
+              <View style={{ paddingHorizontal: 16, paddingBottom: 12 }} accessibilityLiveRegion="polite">
+                <T kind="foot" tone="text2">{hereNote.note}</T>
+                {hereNote.settings ? (
+                  <Pressable accessibilityRole="link" accessibilityLabel="Open Settings" hitSlop={8} onPress={() => { Linking.openSettings().catch(() => {}); }} style={{ alignSelf: 'flex-start', marginTop: 6, minHeight: 32, justifyContent: 'center' }}>
+                    <T kind="foot" tone="tint" style={{ fontWeight: '600' }}>Open Settings</T>
+                  </Pressable>
+                ) : null}
+              </View>
             ) : null}
           </Section>
         ) : null}

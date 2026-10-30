@@ -26,11 +26,29 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 
 
+### `app/test/fromloc.test.mjs`: 10 tests, 10 pass (30 Oct, Current location in Plan, app; on main 31 Oct, merge of next-fromloc b545d06)
+- Hidden when the build has no location module: `hasLocation()` false, nothing loaded, nothing asked.
+- Shown only in an empty From or To in trip mode; not while typing, on Departures, or when the other end is already Current location.
+- Denied: the prompt is asked on the tap, no fix is taken, the note names Settings and carries the Settings link.
+- No prompt without a tap (the stale re-read asks nothing).
+- Granted: one Balanced fix; the point id carries the coordinates (`151.18066:-33.79677:EPSG:4326`, a Chatswood fixture) and the label Current location; a suburb point or a stop is not Current location.
+- A recent system fix is used without a new one; outside NSW and no fix give a note without the Settings link; a point older than 5 minutes is stale, a stop never.
+- Plan sends the point as the trip end and trip.tsx keeps it out of Recent at either end; no watching or background location in the reader.
+- app.json's When In Use string still says trips are planned from where you are; Always is off.
+- Browser check (web export, local mock server, 390 x 844, light and dark): the row, the tap with location allowed, the trip request `from=151.18066:-33.79677:EPSG:4326`, the denied note. Screens: `/home/user/tab/files/fromlocation-30oct.png` (not in the repo).
+
 ### `app/test/newtrip.test.mjs`: 12 tests, 12 pass (30 Oct, new trip first look, app, branch newtrip-app)
 * When it asks (served, plain, not step free, not long, nothing on screen) and the query (tt=1, never page, days, refresh or acc).
 * R1 stray live fields from a server are taken off and the answer is labelled phone built; only a timetable answer paints (a live answer, a 204, an error do not); R3 gone services drop; R4 trip id keys in time order, at most 10; arrive by and leave at windows; R5 never kept, never seeds; R6 Start trip arms timetable times; R2 cap still 5 min; paints only while nothing is on screen.
 * Source checks: `api.tripFirst` is feature detected and one try; `useLive` asks it after the kept copy read and never keeps it; `trip.tsx` wiring; the new module is JavaScript only.
 * Results (30 Oct, about 4:40 AM, on newtrip-server): app 906 pass, 3 skipped offline, 0 fail (`OFFLINE=1 TZ=Australia/Sydney`), battery 17 of 17, `npx tsc --noEmit` clean. Device check after deploy and update: a pair never searched before shows timetable rows within about a quarter second, labelled "Timetable times. Getting live times.", then Live badges arrive in the same rows with no jump; with `TRIP_TT=off` the old placeholder rows show and no `tt=1` request goes out.
+
+### `backend/test/trip-point-nocache.test.mjs`: 4 tests, 4 pass (31 Oct, trips from or to a point skip the 10 min trip window, server)
+* `tripWinSkip`: a point (`lon:lat:EPSG:4326`) at either end skips the window; stop ids, empty ends and a point without EPSG:4326 do not.
+* A trip page from Current location (Chatswood fixture point) asks the planner on every ask (2 asks, 2 calls, `type_origin` coord) and keeps nothing in the window; the answer has the same shape (journeys, `page` with dir first and cursors, kind trip).
+* A trip page to Current location: the same (`type_destination` coord, nothing kept).
+* Stop to stop pages still share the window: the second phone gets the kept answer (1 call, 1 window entry).
+* Checked against the code before the change: tests 1 to 3 fail, test 4 passes.
 
 ### `backend/test/trip-tt-first.test.mjs`: 8 tests, 8 pass (30 Oct, new trip first look, server, branch newtrip-server)
 * `tt=1` from the newer app: timetable trips in under 0.8 s while the fake Trip Planner takes 8 s; no Trip Planner call and no feed read; every trip timetable, every leg Scheduled with no live fields; `no-store`, `tt-first`; nothing kept.

@@ -38,6 +38,7 @@ import { directFilter, isChain, planTrip, stName, tLegs, tripKey, viaText } from
 import { applyWalkPref, readTripWalk, walkKey, walkNote } from '@/lib/walkPrefCore';
 import { offPeakHint } from '@/lib/offPeakCore';
 import { isPointId } from '@/lib/goHomeCore';
+import { isHerePlace } from '@/lib/hereCore';
 import { WalkChoice } from '@/components/WalkChoice';
 import { StandPin } from '@/components/StandPin';
 import type { TripLeg } from '@/lib/trips';
@@ -698,8 +699,9 @@ export default function TripScreen() {
   const fromName = data?.from?.name || from.name;
   const toName = data?.to?.name || to.name;
   // Remember opened A to B trips for Home's Your trips.
-  // Get me home plans from where you are (a point, not a stop): not kept as a recent trip and not saved.
-  const here = isPointId(from.id);
+  // Get me home plans from where you are (a point, not a stop): not kept as a recent trip and not saved. Plan's
+  // Current location (lib/hereCore.ts) is the same at either end.
+  const here = isPointId(from.id) || isHerePlace(to);
   // A stand map open in a trip: while a finger is on it the page does not scroll (components/MapCard.tsx).
   const [scrollOn, setScrollOn] = useState(true);
   useEffect(() => { if (fromName && toName && !via && !here) store.addRecentTrip({ id: from.id, name: fromName }, { id: to.id, name: toName }); }, [from.id, to.id, fromName, toName, via, here]);
