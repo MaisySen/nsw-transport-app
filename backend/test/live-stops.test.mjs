@@ -85,3 +85,11 @@ test("the server works out the track exactly like the app (shared card code): li
   assert.equal(c2.stopTrack.live, false);
   assert.equal(c2.nextStop, null);
 });
+
+test("liveStops off (platform=server flags or kill) leaves the stop track out of the card push (31 Oct kill switch)", () => {
+  const w = fs.readFileSync(root + "src/worker.js", "utf8");
+  const one = w.slice(w.indexOf("async function laPushOne("), w.indexOf("const payload = laPayload(card", w.indexOf("async function laPushOne(")));
+  assert.match(one, /if \(card\.stopTrack && !\(await serverOn\(env, "liveStops"\)\)\) delete card\.stopTrack;/);
+  const cs = W.laContentState({ ...base });
+  assert.ok(!("stopTrack" in cs), "without the track the card is the old one");
+});

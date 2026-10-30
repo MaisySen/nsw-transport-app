@@ -7661,6 +7661,8 @@ const apnsGone = (res) => res.status === 410 || res.reason === "BadDeviceToken" 
 async function laPushOne(env, row, now, o = {}) {
   const trip = JSON.parse(row.trip);
   const { card, done } = await laCardFor(env, trip, now);
+  // Build 210 stop track: liveStops off (flags or kill, platform=server) leaves it out and every build draws the bar.
+  if (card.stopTrack && !(await serverOn(env, "liveStops"))) delete card.stopTrack;
   if (o.warning) card.warning = o.warning;
   const end = done || now >= Number(row.expires) || !!o.end;
   const cs = laContentState(card);
