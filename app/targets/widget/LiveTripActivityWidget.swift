@@ -361,12 +361,17 @@ struct LiveTripLockCard: View {
                 card(lines: 2, track: true)
                 card(lines: 2, track: true, merged: true)
                 card(lines: 1, track: true, merged: true, headLines: 2)
+                card(lines: 1, track: true, merged: true, headLines: 2, headScale: 0.65)
                 card(lines: 1, track: true, merged: true)
             }
             card(lines: 2, track: false)
             // The stop name keeps its two lines before the detail and warning do (31 Oct readiness audit: "Get off at
             // Chatsw..." on the SE with a change warning, the owner's "Get off at Five..." case).
             card(lines: 1, track: false, headLines: 2)
+            // Largest text (xxxLarge) with a change or late warning: the detail and warning share one line, and the stop
+            // name keeps two lines and shrinks a little before it is cut (31 Oct final check: "Get off at C..." on the
+            // SE, "Get off at Sydney Olymp..." on the 6.1 inch, both already in 209).
+            card(lines: 1, track: false, merged: true, headLines: 2, headScale: 0.65)
             card(lines: 1, track: false)
         }
     }
@@ -383,13 +388,13 @@ struct LiveTripLockCard: View {
         return t.font(.subheadline).lineLimit(lines).minimumScaleFactor(0.85)
     }
 
-    private func card(lines: Int, track: Bool, merged: Bool = false, headLines: Int? = nil) -> some View {
+    private func card(lines: Int, track: Bool, merged: Bool = false, headLines: Int? = nil, headScale: CGFloat = 0.8) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode).fixedSize()
-                        Text(state.headline(stale: stale)).font(.headline).lineLimit(headLines ?? lines).minimumScaleFactor(0.8)
+                        Text(state.headline(stale: stale)).font(.headline).lineLimit(headLines ?? lines).minimumScaleFactor(headScale)
                     }
                     if merged {
                         detailAndWarning(lines)

@@ -85,9 +85,9 @@ test('fixes the audit found stay in: compact island countdown, Lock Screen words
   const l = read('app/targets/widget/LiveTripActivityWidget.swift');
   // Build 210: the stop track layouts come first when the card carries stops; the bar layouts stay as the fallback.
   // 31 Oct readiness audit: the stop name keeps two lines before the detail and warning drop to one.
-  assert.match(l, /card\(lines: 2, track: false\)[\s\S]{0,300}?card\(lines: 1, track: false, headLines: 2\)\s*card\(lines: 1, track: false\)/);
-  assert.match(l, /card\(lines: 2, track: true\)\s*card\(lines: 2, track: true, merged: true\)\s*card\(lines: 1, track: true, merged: true, headLines: 2\)\s*card\(lines: 1, track: true, merged: true\)/);
-  assert.match(l, /lineLimit\(headLines \?\? lines\)/);
+  assert.match(l, /card\(lines: 2, track: false\)[\s\S]{0,300}?card\(lines: 1, track: false, headLines: 2\)[\s\S]{0,400}?card\(lines: 1, track: false, merged: true, headLines: 2, headScale: 0\.65\)\s*card\(lines: 1, track: false\)/);
+  assert.match(l, /card\(lines: 2, track: true\)\s*card\(lines: 2, track: true, merged: true\)\s*card\(lines: 1, track: true, merged: true, headLines: 2\)\s*card\(lines: 1, track: true, merged: true, headLines: 2, headScale: 0\.65\)\s*card\(lines: 1, track: true, merged: true\)/);
+  assert.match(l, /lineLimit\(headLines \?\? lines\)\.minimumScaleFactor\(headScale\)/);
   // 31 Oct readiness audit: the countdown shrinks before it is cut ("in 18 mi..." at xxxLarge).
   assert.match(l, /\.minimumScaleFactor\(0\.5\)/);
   assert.match(t, /\.minimumScaleFactor\(0\.5\)/);
