@@ -77,7 +77,7 @@ Example (Central to Chatswood by metro): `/api/plan?legs=[{"f":"200060","fn":"Ce
 
 | Endpoint | Method | Body or parameters | Returns |
 | --- | --- | --- | --- |
-| `/api/watch` | POST | `{device, profile, legs, lead, getOff}` | `watch` |
+| `/api/watch` | POST | `{device, profile, legs, lead, track, voice, getOff, getOffVoice}` | `watch` (with `getOff: true` when the server sends Get off now for it) |
 | `/api/watch` | GET | `id` | `watch` with recent `notes` |
 | `/api/watch` | DELETE | `id`, `device` | `ok` |
 | `/api/watches` | GET | `device`, `since` | Active watches with live snapshots, recent alerts, push counts. Runs a tick for the device if the scheduler is quiet |
@@ -116,6 +116,8 @@ A shared live trip is a link someone else can open to follow a trip. No account.
 | `DELETE /api/share?id=` | Header `x-share-key` (or `key=`). Deletes the share and every position in it. |
 
 Positions are rounded to 5 decimal places. Viewers get the vehicle from `/api/service` for the current leg.
+
+Get off now from the server (30 Oct, branch getoff-voice, not deployed): a Start trip watch from build 210 sends `getOff: 1` (and `getOffVoice: 1` when its spoken Get off now is on). The server says yes (`watch.getOff: true`) when the switch `getOffPush` is on (env `GETOFF_PUSH` not `off`), the phone has a native push token and fewer than 25 watches are active (the minute tick reads 25); the app then takes its own Get off now off the phone and the watch sends it from the live times it already reads: 90 s or less before the live arrival, or as the vehicle leaves the stop before yours when that is 3 min or less out; no live time this tick but one under 5 min old: that one; none for over 5 min: "Get off soon" a minute before the timetable arrival, worded as timetable. Once per leg (claimed `off:<leg>:<trip>`), Expo `interruptionLevel: "time-sensitive"`, ttl 180 s, `data.getOff` the leg, sound `getoff_now.wav` (`getoff_soon.wav` for the timetable one) only with `getOffVoice`. That leg's Arriving alert is not sent beside it. Over the NSW call budget a no feed pass still sends it (last live time or timetable, no request).
 
 Watches: `POST /api/watch` takes `track: true` (sent by Start trip). A tracked watch also sends "Next stop: X" one stop before you get off or change, from where the vehicle really is, instead of the 2 minute arrival alert.
 

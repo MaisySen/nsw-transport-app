@@ -164,6 +164,10 @@ Quick asks after a timeout, a 5xx or a slow answer (1.5 s, 4 s, then the failure
 Turn on Airplane mode for 20 s after opening Home with a kept copy: the card shows "Updating, times from ..." and the header "Updating", then "Offline" after the second failure. Open Home on a cold pair: "Updating" until the first answer, timetable trips with "Timetable times for now. Getting live times." if the planner is slow, live within about 10 s more.
 
 ## Get off alert and the delay once on Home (26 Oct, g32)
+### `backend/test/getoff-push.test.mjs`: 14 tests, 14 pass (30 Oct, branch getoff-voice)
+
+`cd backend && TZ=Australia/Sydney node --test test/getoff-push.test.mjs`. liveLegs and oneStopCheck stubbed, fetch answers only the Expo push service, no NSW call. A bus 6 min late after the phone locked gets Get off now within 90 s of the live arrival, once, with no Arriving beside it; the vehicle leaving the stop before yours 2.5 min out sends it at once instead of Next stop; a long gap gets Next stop then Get off now; a watch without `getOff` (builds 201 to 209) gets exactly its old alerts; the same oneStopCheck count with and without; live gone over 5 min: one "Get off soon" by the timetable; a one tick gap keeps the last live arrival and does not end the watch; spoken sound, time sensitive, ttl and `data.getOff` only where meant; a change leg names the next service; the rule's edges; accepted only when asked, switched on, with a token and under 25 watches; createWatch stores and answers it; the no feed pass over budget (no request, once).
+
 ### `backend/test/getoff-voice-push.test.mjs`: 3 tests, 3 pass (30 Oct, branch getoff-voice)
 Spoken Next stop alert for build 210: default sound and channel unless the app's own sound is named; only a watch started with `voice: "soon"` gets `getoff_soon.wav` and channel `getoff_soon`; exactly the 4 arrival alerts carry it; the Expo message takes it.
 
