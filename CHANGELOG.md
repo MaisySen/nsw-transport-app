@@ -4,6 +4,11 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 30 Oct 2026
 
+### Privacy policy item 12: where each service processes data (30 Oct, afternoon; site only, owner approved 2:44 PM; no app or server change)
+* Who else is involved now says where each service is: our hosting provider is a company in the United States, runs the site and server in data centres around the world (usually one near you; Smart Placement can run the server nearer its database), keeps the server's database in its Oceania region (D1 reads `running_in_region: OC`, read replication off) and processes records about requests, including the sampled log, in the United States and Europe; the notification relay service and the app update service are in the United States; Apple's push service is run from the United States; Google's push service can process notifications in any country where Google has data centres; the Android map tiles come from an open map tile service run by a company in Hungary, which may serve them from data centres around the world (its own pages name the company's country and a worldwide delivery network, not where its servers are).
+* Still categories, no service names; Transport for NSW (CC BY 4.0) and OpenStreetMap (ODbL, on the terms page and in the app) attribution unchanged. Same edits in store/privacy-policy.md. Sources for every sentence: privacy-item12-30oct.md in the root's files.
+* Test: `backend/test/public-site.test.mjs` checks each country line on the site and store copies, no service names, and the terms attribution.
+
 ### Server polls at Transport for NSW's 15 s (30 Oct, 12:09 PM; server only, no app change; transport-api 4ecfebf1, roll back 80706bee)
 * Transport for NSW advises polling realtime every 15 s. Two server timings were faster and now match it exactly.
 * `backend/src/worker.js` `REFRESH_MAX_AGE_MS` 5000 to 15000: a phone's refresh (`refresh=1`, the app's polls and pull to refresh) now takes the shared Trip Planner answer for a stop or trip while it is up to 15 s old (was 5 s). One stop or trip now costs at most 4 Trip Planner calls a minute per Cloudflare location, whatever the number of phones on it (was up to 12 with 3 or more). The same window applies to the departures copy inside the server and the live hub's board. A plain open is unchanged (15 s edge copy, 12 s departures copy).

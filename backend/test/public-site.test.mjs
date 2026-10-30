@@ -135,3 +135,23 @@ test("SEO: manifest, sitemap with lastmod (no redirects in it), robots, CSP lets
   assert.match(hd, /^\/\n\s+Cache-Control: [^\n]*no-transform/m);
   assert.match(read("404.html"), /href="\/"/);
 });
+
+test("privacy: where each service processes data (item 12, 30 Oct), as categories, no service names", () => {
+  const strip = (s) => s.replace(/<[^>]+>/g, "").replace(/\*\*/g, "").replace(/&#39;|&rsquo;/g, "'");
+  const store = fs.readFileSync(new URL("../../store/privacy-policy.md", import.meta.url), "utf8");
+  for (const [name, text] of [["site", strip(read("privacy/index.html"))], ["store", strip(store)]]) {
+    for (const want of [
+      "Our hosting provider, a company in the United States,",
+      "keeps the server's database in its Oceania region",
+      "including this log, in the United States and Europe",
+      "the relay service, in the United States, passes them on",
+      "Apple's push service, run from the United States,",
+      "in any country where Google has data centres",
+      "open map tile service run by a company in Hungary",
+      "Our app update service, in the United States:",
+      "Transport for NSW",
+    ]) assert.ok(text.includes(want), name + " says: " + want);
+    assert.doesNotMatch(text, /cloudflare|expo\b|sentry|firebase|openfreemap|hyperknot/i, name);
+  }
+  assert.match(read("terms/index.html"), /CC BY 4\.0[\s\S]*OpenStreetMap contributors, used under the Open Database License/);
+});

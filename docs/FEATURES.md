@@ -233,6 +233,7 @@ Many phones (server, 26 Oct, 10:44 AM): phones at the same stop share one copy a
 * Trip history (commute suggestions, 90 days) keeps stops only: a trip from a point is never logged, searched or watched.
 * Store answers and policy: store/apple/app-privacy.md, store/google/data-safety.md, https://transportsydney.app/privacy/.
 * Policy of 30 Oct (Pages aa2b7ec2): service names as categories; Transport for NSW gets a position only for a trip planned from where you are (or the nearby stops fallback), nothing that identifies you; lists alerts sent (3 days), IP request counts (within an hour) and the app update check. The policy lives only in `site/privacy/`; non API hosts redirect /privacy to it.
+* Item 12 (30 Oct, afternoon): the policy says where each service processes data: hosting provider a United States company, edge worldwide, database in Oceania, request records in the United States and Europe; relay and update services in the United States; Apple push run from the United States; Google push in any country with Google data centres; map tiles from a company in Hungary, served worldwide.
 
 ## Board engine (server, behind a flag, 26 Oct)
 
