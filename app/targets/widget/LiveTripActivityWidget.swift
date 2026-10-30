@@ -347,7 +347,9 @@ struct StopTrackView: View {
 
 /// One card that changes with the trip: waiting, on board, at a change, then the last leg.
 /// The first layout that fits wins: the headline, detail and warning on up to two lines, then one (native audit,
-/// 30 Oct: "Get off at Syd…" on the smallest iPhone). The line badge never truncates.
+/// 30 Oct: "Get off at Syd…" on the smallest iPhone). The line badge never truncates. The stop name shrinks to 0.7
+/// in every layout before it is cut (31 Oct final check: "Get off at Macquarie Univer..." on the SE at normal text,
+/// "Get off at Rand..." at the largest text; was 0.8).
 struct LiveTripLockCard: View {
     var attrs: LiveTripAttributes
     var state: LiveTripAttributes.ContentState
@@ -389,7 +391,7 @@ struct LiveTripLockCard: View {
         return t.font(.subheadline).lineLimit(lines).minimumScaleFactor(0.85)
     }
 
-    private func card(lines: Int, track: Bool, merged: Bool = false, headLines: Int? = nil, headScale: CGFloat = 0.8) -> some View {
+    private func card(lines: Int, track: Bool, merged: Bool = false, headLines: Int? = nil, headScale: CGFloat = 0.7) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
