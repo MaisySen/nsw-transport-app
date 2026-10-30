@@ -7185,6 +7185,8 @@ const LIVECARD = (() => {
       return v < 60 ? `${v} min` : `${Math.floor(v / 60)} h ${v % 60} min`;
   }
   // platform/tripCard.ts
+  const TRACK_MAX = 10;
+  const TRACK_NAME_MAX = 32;
   const shortName = (n) => String(n || '').replace(/,.*$/, '').trim().replace(/ (Station|Light Rail|Wharf)$/i, '').trim();
   const platText = (p) => (p ? p.replace(/^Platform\s*/i, 'Platform ').replace(/^Stand\s*/i, 'Stand ') : null);
   const colorOf = (l) => l.color || '#0A84FF';
@@ -7192,6 +7194,35 @@ const LIVECARD = (() => {
       const s = new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' });
       return s.replace(/\s/g, '').toLowerCase();
   };
+  const stopTimed = (st) => !!st && !!(st.planned || st.estimated) && !st.skipped;
+  const trackName = (n) => {
+      const v = shortName(n);
+      return v.length > TRACK_NAME_MAX ? v.slice(0, TRACK_NAME_MAX - 1).trimEnd() + '.' : v;
+  };
+  function stopTrackFor(d, nextIdx, phase, live) {
+      if (!d || !Array.isArray(d.stops) || !d.stops.length)
+          return null;
+      const mi = typeof d.mineIndex === 'number' ? d.mineIndex : -1;
+      const ai = typeof d.alightIndex === 'number' ? d.alightIndex : -1;
+      if (mi < 0 || ai <= mi || ai >= d.stops.length)
+          return null;
+      const leg = [];
+      for (let i = mi; i <= ai; i++)
+          if (i === mi || i === ai || stopTimed(d.stops[i]))
+              leg.push(i);
+      const n = phase === 'wait' || nextIdx < 0 ? mi + 1 : Math.min(Math.max(nextIdx, mi + 1), ai);
+      const passed = leg.filter((i) => i < n).length;
+      const up = leg.filter((i) => i >= n).map((i) => trackName(d.stops[i].name));
+      if (!up.length || up.some((x) => !x))
+          return null;
+      let next = up, hidden = 0, hiddenAt = 0;
+      if (up.length > TRACK_MAX) {
+          hiddenAt = TRACK_MAX - 2;
+          hidden = up.length - (TRACK_MAX - 1);
+          next = [...up.slice(0, hiddenAt), up[up.length - 1]];
+      }
+      return { passed, next, hidden, hiddenAt, live };
+  }
   function cardFor(g, s, now = Date.now(), o = {}) {
       const legs = g.legs;
       const last = legs[legs.length - 1];
@@ -7216,6 +7247,7 @@ const LIVECARD = (() => {
       }
       const c = s.conns.find((k) => k.i === s.cur) || s.conns[0];
       const alt = c && c.risk === 'miss' ? o.alt || null : null;
+      const track = stopTrackFor(d, s.nextIdx, s.phase, s.track !== 'timetable');
       const legNote = s.track === 'timetable' ? 'Timetable times, not live' : s.delayMin != null && s.delayMin >= 2 ? `${s.delayMin} min late` : null;
       const warning = cardWarning(c, alt, o.asOf ?? null, legNote);
       return {
@@ -7226,6 +7258,7 @@ const LIVECARD = (() => {
           departs: x.missed ? (alt ? alt.dep : null) : Number.isFinite(x.dep) ? x.dep : null,
           legArrives: x.missed ? (alt ? alt.arr : null) : Number.isFinite(x.arr) ? x.arr : null, destination,
           ...(o.updated ? { updated: o.updated } : {}),
+          ...(track && !x.missed ? { stopTrack: track } : {}),
       };
   }
   function cardWarning(c, alt, asOf, legNote = null) {
@@ -7331,8 +7364,27 @@ function laContentState(card) {
   for (const k of ["nextStop", "warning", "fareLine", "towards", "platform", "destination"]) if (card[k] !== null && card[k] !== undefined && card[k] !== "") cs[k] = String(card[k]);
   if (Number.isFinite(card.stopsLeft)) cs.stopsLeft = Math.round(card.stopsLeft);
   for (const k of ["departs", "legArrives", "updated"]) if (Number.isFinite(card[k])) cs[k] = appleDate(card[k]);
+  const st = laStopTrack(card.stopTrack);
+  if (st) cs.stopTrack = st;
   return cs;
 }
+
+/**
+ * The card's optional stop track (build 210 draws it instead of the plain bar; builds 201 to 209 decode the card and
+ * skip a key they do not know). Kept small and checked here so a bad value never reaches Apple: whole numbers, at most
+ * 10 short names, a yes or no for live. Null drops it and the card draws the bar.
+ */
+function laStopTrack(t) {
+  if (!t || typeof t !== "object" || !Array.isArray(t.next)) return null;
+  const next = t.next.slice(0, 10).map((x) => String(x == null ? "" : x).slice(0, 32));
+  if (!next.length || next.some((x) => !x.trim())) return null;
+  const whole = (v, hi) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(hi, Math.round(Number(v)))) : 0);
+  const hidden = whole(t.hidden, 300);
+  return { passed: whole(t.passed, 300), next, hidden, hiddenAt: hidden ? Math.min(whole(t.hiddenAt, 10), next.length - 1) : 0, live: t.live === true };
+}
+
+/** Apple refuses a Live Activity push over 4 KB; past this the stop track is left out and the card draws the bar. */
+const LA_PAYLOAD_SOFT_MAX = 3500;
 
 /** The APNs body for a card update or end. */
 function laPayload(card, o = {}) {
@@ -7340,6 +7392,7 @@ function laPayload(card, o = {}) {
   const aps = { timestamp: Math.floor(now / 1000), event: o.event || "update", "content-state": laContentState(card) };
   if (aps.event === "update" && Number.isFinite(o.staleMs)) aps["stale-date"] = Math.floor(o.staleMs / 1000);
   if (aps.event === "end") aps["dismissal-date"] = Math.floor((o.dismissMs || now + LA_ARRIVED_KEEP_S * 1000) / 1000);
+  if (aps["content-state"].stopTrack && new TextEncoder().encode(JSON.stringify({ aps })).length > LA_PAYLOAD_SOFT_MAX) delete aps["content-state"].stopTrack;
   return { aps };
 }
 

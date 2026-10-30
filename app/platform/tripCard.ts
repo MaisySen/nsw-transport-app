@@ -10,7 +10,25 @@ export type TripCardState = {
   towards: string | null; platform: string | null; departs: number | null; legArrives: number | null; destination: string | null;
   /** When the live times on the card were loaded. Native card version 2 (iosNative.cardVersion) shows "Updated 8:21am" once the card is stale. */
   updated?: number | null;
+  /**
+   * The stops on this leg for the stop track that replaces the plain bar (native card from build 210). Optional:
+   * older native cards ignore it and draw the bar, and a card without it draws the bar too.
+   */
+  stopTrack?: StopTrack;
 };
+
+/**
+ * The leg's stops for the Live Activity stop track, small enough for Apple's 4 KB push. passed: stops of this leg
+ * already behind you, your boarding stop included (1 while waiting). next: the stops still to come, next first and your
+ * stop off last, short names, at most TRACK_MAX. hidden: stops left out of the middle of a long ride, after the first
+ * hiddenAt names. live: where the run is comes from live data (vehicle, live times, your location or tap); false when
+ * only the timetable says, and the card then labels it as timetable (R1, never shown as live).
+ */
+export type StopTrack = { passed: number; next: string[]; hidden: number; hiddenAt: number; live: boolean };
+/** Upcoming stop names on the card at most; a longer ride keeps the first ones and your stop off. */
+export const TRACK_MAX = 10;
+/** A stop name on the card at most this long (the push stays well under 4 KB). */
+export const TRACK_NAME_MAX = 32;
 
 /** The next service for a change the live times say you will miss, from the plan the trip screen also shows. */
 export type CardAlt = { line: string; dep: number; arr: number };
@@ -31,6 +49,40 @@ const hhmm = (t: number) => {
   const s = new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' });
   return s.replace(/\s/g, '').toLowerCase();
 };
+
+/** A stop the service stops at (a time and not skipped), as liveCalc counts stops. */
+const stopTimed = (st?: { planned?: string | null; estimated?: string | null; skipped?: boolean | null } | null) =>
+  !!st && !!(st.planned || st.estimated) && !st.skipped;
+const trackName = (n?: string | null) => {
+  const v = shortName(n);
+  return v.length > TRACK_NAME_MAX ? v.slice(0, TRACK_NAME_MAX - 1).trimEnd() + '.' : v;
+};
+
+/**
+ * The stop track for the current leg, from the same stop list and next stop the countdown and "N stops" use. Null
+ * without the run's stops, or without both your boarding stop and your stop off in them.
+ */
+export function stopTrackFor(d: ServiceResp | null | undefined, nextIdx: number, phase: 'wait' | 'ride', live: boolean): StopTrack | null {
+  if (!d || !Array.isArray(d.stops) || !d.stops.length) return null;
+  const mi = typeof d.mineIndex === 'number' ? d.mineIndex : -1;
+  const ai = typeof d.alightIndex === 'number' ? d.alightIndex : -1;
+  if (mi < 0 || ai <= mi || ai >= d.stops.length) return null;
+  // The leg's stops: where you board, where it stops on the way, where you get off.
+  const leg: number[] = [];
+  for (let i = mi; i <= ai; i++) if (i === mi || i === ai || stopTimed(d.stops[i])) leg.push(i);
+  // While waiting you are at your boarding stop; on board the run is between the stops behind it and nextIdx.
+  const n = phase === 'wait' || nextIdx < 0 ? mi + 1 : Math.min(Math.max(nextIdx, mi + 1), ai);
+  const passed = leg.filter((i) => i < n).length;
+  const up = leg.filter((i) => i >= n).map((i) => trackName(d.stops[i].name));
+  if (!up.length || up.some((x) => !x)) return null;
+  let next = up, hidden = 0, hiddenAt = 0;
+  if (up.length > TRACK_MAX) {
+    hiddenAt = TRACK_MAX - 2;
+    hidden = up.length - (TRACK_MAX - 1);
+    next = [...up.slice(0, hiddenAt), up[up.length - 1]];
+  }
+  return { passed, next, hidden, hiddenAt, live };
+}
 
 /** The card for a live state. */
 export function cardFor(g: TripLike, s: LiveState, now = Date.now(), o: CardOpts = {}): TripCardState {
@@ -58,6 +110,7 @@ export function cardFor(g: TripLike, s: LiveState, now = Date.now(), o: CardOpts
   const c = s.conns.find((k) => k.i === s.cur) || s.conns[0];
   const alt = c && c.risk === 'miss' ? o.alt || null : null;
   // No change warning: say when the leg has no live data, or how late it is, so the card never reads as on time.
+  const track = stopTrackFor(d, s.nextIdx, s.phase, s.track !== 'timetable');
   const legNote = s.track === 'timetable' ? 'Timetable times, not live' : s.delayMin != null && s.delayMin >= 2 ? `${s.delayMin} min late` : null;
   const warning = cardWarning(c, alt, o.asOf ?? null, legNote);
   return {
@@ -69,6 +122,8 @@ export function cardFor(g: TripLike, s: LiveState, now = Date.now(), o: CardOpts
     departs: x.missed ? (alt ? alt.dep : null) : Number.isFinite(x.dep) ? x.dep : null,
     legArrives: x.missed ? (alt ? alt.arr : null) : Number.isFinite(x.arr) ? x.arr : null, destination,
     ...(o.updated ? { updated: o.updated } : {}),
+    // A missed change waits for a service the stop list is not for, so it keeps the plain bar.
+    ...(track && !x.missed ? { stopTrack: track } : {}),
   };
 }
 

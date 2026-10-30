@@ -36,16 +36,48 @@ public struct LiveTripAttributes: ActivityAttributes {
         public var destination: String?
         /// When the app loaded the live times on this card. Cards from older app code have none.
         public var updated: Date?
+        /// The leg's stops for the stop track that replaces the plain bar (build 210). Older app code and server pushes
+        /// send none, and the card then draws the bar as before.
+        public var stopTrack: StopTrack?
 
         public init(line: String, lineColorHex: String, mode: String, nextStop: String?, stopsLeft: Int?, getOffAt: String,
                     arrival: Date, phase: String, warning: String?, progress: Double, fareLine: String? = nil,
-                    towards: String? = nil, platform: String? = nil, departs: Date? = nil, legArrives: Date? = nil, destination: String? = nil, updated: Date? = nil) {
+                    towards: String? = nil, platform: String? = nil, departs: Date? = nil, legArrives: Date? = nil, destination: String? = nil, updated: Date? = nil,
+                    stopTrack: StopTrack? = nil) {
             self.line = line; self.lineColorHex = lineColorHex; self.mode = mode; self.nextStop = nextStop
             self.stopsLeft = stopsLeft; self.getOffAt = getOffAt; self.arrival = arrival; self.phase = phase
             self.warning = warning; self.progress = progress; self.fareLine = fareLine
             self.towards = towards; self.platform = platform; self.departs = departs; self.legArrives = legArrives
             self.destination = destination
             self.updated = updated
+            self.stopTrack = stopTrack
+        }
+    }
+
+    /// The stops on the leg (app/platform/tripCard.ts stopTrackFor, the server sends the same). `passed`: stops behind
+    /// you, your boarding stop included. `next`: the stops to come, next first and your stop off last, at most 10.
+    /// `hidden`: stops left out after the first `hiddenAt` names of a long ride. `live`: false when only the
+    /// timetable says where the run is, and the card labels it so. A missing field reads as empty, never failing the card.
+    public struct StopTrack: Codable, Hashable {
+        public var passed: Int
+        public var next: [String]
+        public var hidden: Int
+        public var hiddenAt: Int
+        public var live: Bool
+
+        public init(passed: Int, next: [String], hidden: Int = 0, hiddenAt: Int = 0, live: Bool) {
+            self.passed = passed; self.next = next; self.hidden = hidden; self.hiddenAt = hiddenAt; self.live = live
+        }
+
+        enum CodingKeys: String, CodingKey { case passed, next, hidden, hiddenAt, live }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            passed = max(0, (try? c.decode(Int.self, forKey: .passed)) ?? 0)
+            next = (try? c.decode([String].self, forKey: .next)) ?? []
+            hidden = max(0, (try? c.decode(Int.self, forKey: .hidden)) ?? 0)
+            hiddenAt = max(0, (try? c.decode(Int.self, forKey: .hiddenAt)) ?? 0)
+            live = (try? c.decode(Bool.self, forKey: .live)) ?? false
         }
     }
 

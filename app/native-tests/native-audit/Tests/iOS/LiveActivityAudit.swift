@@ -36,11 +36,13 @@ enum LiveActivityAudit {
     static func live(_ phase: String, line: String = "T9", hex: String = "#D11F2F", mode: String = "train", next: String? = "Epping",
                      left: Int? = 4, off: String = "Macquarie University", warning: String? = nil, progress: Double = 0.4,
                      towards: String? = "Hornsby", platform: String? = "Platform 16", departs: Double? = 5.5, legArrives: Double? = 18.5,
-                     dest: String? = "Macquarie University", updated: Double? = -0.5) -> LiveTripAttributes.ContentState {
+                     dest: String? = "Macquarie University", updated: Double? = -0.5,
+                     track: LiveTripAttributes.StopTrack? = nil) -> LiveTripAttributes.ContentState {
         LiveTripAttributes.ContentState(line: line, lineColorHex: hex, mode: mode, nextStop: next, stopsLeft: left, getOffAt: off,
                                         arrival: m(42), phase: phase, warning: warning, progress: progress, fareLine: nil,
                                         towards: towards, platform: platform, departs: departs.map { m($0) },
-                                        legArrives: legArrives.map { m($0) }, destination: dest, updated: updated.map { m($0) })
+                                        legArrives: legArrives.map { m($0) }, destination: dest, updated: updated.map { m($0) },
+                                        stopTrack: track)
     }
 
     static let liveTrips: [(String, LiveTripAttributes.ContentState, Bool)] = [
@@ -52,6 +54,29 @@ enum LiveActivityAudit {
                       warning: "You'll likely miss the 5:12pm T1 to Hornsby at Epping", progress: 0.8), false),
         ("stale", live("ride", next: "Epping", updated: -21), true),
         ("arrived", live("arrived", progress: 1), false),
+        // Build 210 stop track (30 Oct): the leg's stops instead of the plain bar.
+        ("stops", live("ride", line: "501", hex: "#00B5EF", mode: "bus", next: "Victoria Rd at Belmore St", left: 6, off: "Top Ryde City",
+                       warning: "4 min late", progress: 0.45, towards: "Top Ryde", legArrives: 5, dest: "Top Ryde City",
+                       track: .init(passed: 5, next: ["Victoria Rd at Belmore St", "Ryde Hospital", "Blaxland Rd at Pope St", "Church St",
+                                                      "Devlin St", "Top Ryde City"], live: true)), false),
+        ("stops-long", live("ride", line: "610X", hex: "#00B5EF", mode: "bus", next: "Windsor Rd after Old Northern Rd", left: 16,
+                            off: "Macquarie Centre and University", warning: "You'll likely miss the 5:12pm T1 to Hornsby at Epping", progress: 0.2,
+                            dest: "Macquarie University via North Ryde",
+                            track: .init(passed: 2, next: ["Windsor Rd after Old Northern Rd", "Norwest Business Park Station",
+                                                           "Showground Rd at Carrington Rd", "Castle Hill Rd at Pennant Hills", "Cherrybrook",
+                                                           "Beecroft Rd at Kandy Ave", "Epping Rd at Blaxland Rd", "Herring Rd at Waterloo",
+                                                           "Macquarie Centre and University"], hidden: 7, hiddenAt: 8, live: true)), false),
+        ("stops-timetable", live("ride", line: "T1", hex: "#F99D1C", mode: "train", next: nil, left: nil, off: "Hornsby",
+                                 warning: "Timetable times, not live", progress: 0.3, towards: "Berowra", dest: "Hornsby",
+                                 track: .init(passed: 3, next: ["Waitara", "Hornsby"], live: false)), false),
+        ("stops-wait", live("wait", line: "M1", hex: "#168388", mode: "metro", next: "Chatswood", off: "Macquarie University",
+                            towards: "Tallawong", platform: "Platform 1",
+                            track: .init(passed: 1, next: ["North Ryde", "Macquarie Park", "Macquarie University"], live: true)), false),
+        ("stops-yours", live("ride", line: "L2", hex: "#E4022D", mode: "lightrail", next: "Randwick", left: 1, off: "Randwick", progress: 0.95,
+                             towards: "Randwick", legArrives: 1.5, dest: "Randwick",
+                             track: .init(passed: 12, next: ["Randwick"], live: true)), false),
+        ("stops-stale", live("ride", next: "Epping", updated: -21,
+                             track: .init(passed: 4, next: ["Epping", "Macquarie University"], live: true)), true),
     ]
 
     static func lock<V: View>(_ v: V, surface: String, scenario: String, p: Phone) {
