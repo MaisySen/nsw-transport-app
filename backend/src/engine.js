@@ -9,7 +9,8 @@
 // This file is appended to worker.js by build.mjs (same module): it uses worker.js helpers (FEEDS, indexFeed, PB,
 // readTripUpdate, readVehiclePosition, modeOf, lineColor, statusOf, iso, vehicleOf, apiKey, API).
 
-const ENGINE_TICK_MS = 10000;          // feeds and hot boards refresh this often
+const ENGINE_TICK_MS = 15000;          // feeds and hot boards refresh this often (30 Oct: 10 s to 15 s, Transport for NSW's
+                                       // advice to poll realtime every 15 s; other feeds every 30 s, regional buses 45 s)
 const ENGINE_VP_MS = 30000;            // vehicle positions (occupancy, stops away) this often
 const ENGINE_SLOW_FEED_MS = 45000;     // regional bus feeds
 const ENGINE_FEED_HOT_MS = 5 * 60000;  // a feed is fetched while a board needed it this recently
@@ -887,8 +888,8 @@ class BoardEngine {
     const k = this.stretch(t0);
     const due = [];
     // Every wanted feed gets its turn (26 Oct, g14: ranked by use, the four busiest feeds took every call and light
-    // rail and ferry copies went 3 minutes old). The busiest feeds aim for a copy every 10 s, the others every 20 s
-    // (regional buses 45 s); the most overdue for its aim goes first, trip updates before vehicle positions. With
+    // rail and ferry copies went 3 minutes old). The busiest feeds aim for a copy every 15 s, the others every 30 s
+    // (regional buses 45 s; 30 Oct: was 10 s and 20 s, now Transport for NSW's 15 s advice); the most overdue for its aim goes first, trip updates before vehicle positions. With
     // 1,000 stops across NSW watched, 19 trip update feeds were wanted at once (26 Oct).
     let maxUses = 0, soonest = Infinity;
     const timing = engTimingOn(this.env);
@@ -950,7 +951,7 @@ class BoardEngine {
     this.alarmSet = true;
     const t0 = Date.now();
     try { if (this.loadMeta()) await this.tick(); } finally {
-      // With feed timing, the next beat is when the next feed copy is expected (1 to 10 s away).
+      // With feed timing, the next beat is when the next feed copy is expected (1 to 15 s away).
       const at = Math.min(t0 + ENGINE_TICK_MS, Number.isFinite(this.nextDue) ? this.nextDue : Infinity);
       if (Date.now() - this.lastRead < engIdleMs(this.env)) await this.state.storage.setAlarm(Math.max(Date.now() + 1000, at));
       else this.alarmSet = false;

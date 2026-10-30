@@ -28,7 +28,7 @@ The app talks to `api.transportsydney.app` (Cloudflare Worker `transport-api`). 
 
 ### Calls a minute at 10,000 phones with today's design
 
-A phone with a board open refreshes every 15 s. A refresh takes a copy up to 5 s old, so a watched key costs about 4 calls a minute with one phone on it, and at most 12 with 3 or more (per Cloudflare location). Sydney phones mostly reach the Sydney location, sometimes Melbourne or Brisbane, each with its own cache.
+A phone with a board open refreshes every 15 s. A refresh takes a copy up to 15 s old (5 s before 30 Oct 2026, Transport for NSW's 15 s polling advice), so a watched key costs at most 4 calls a minute whatever the number of phones on it (per Cloudflare location; with 5 s it was up to 12 with 3 or more phones). Sydney phones mostly reach the Sydney location, sometimes Melbourne or Brisbane, each with its own cache.
 
 | Phones with the app open at once | Keys being watched (stops, trips, services), estimated | Calls a minute needed for 5 s freshness | Key allows |
 | --- | --- | --- | --- |

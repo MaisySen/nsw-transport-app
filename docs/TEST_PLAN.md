@@ -315,7 +315,7 @@ Before 30 Oct: Start address (a stored first server is replaced once, then a sto
 Adaptive gap 15 s up to 10 minutes, 30 s to 20, a minute beyond; trip lists 15 s within 10 minutes, else 20 s, on the trip screen, Simple mode and Home cards; `retime` makes the first refresh 15 s after opening instead of 60 s, and adds no run while the app is away.
 
 ### `backend/test/fresh-refresh.test.mjs`: 4 tests (added 26 Oct, freshness)
-A stored copy carries `x-stored-at`; a cached answer carries `dataAt`; `refresh=1` takes a copy up to 5 s old and skips an older one or one with no time, while a plain open still takes the 15 s copy; the departures copy is 5 s for a refresh.
+A stored copy carries `x-stored-at`; a cached answer carries `dataAt`; `refresh=1` takes a copy up to 15 s old (a 9 s old copy now serves it, with its true `dataAt`) and skips a 16.5 s old one or one with no time, while a plain open takes the same 15 s copy; the departures copy is 15 s for a refresh (5 s before 30 Oct 2026); the board engine's tick (`ENGINE_TICK_MS`) is 15 s, so the busiest feeds are asked every 15 s and the others every 30 s (`fresh-refresh.test.mjs`, 5 tests).
 
 Live freshness check (26 Oct, 9:31 to 9:53 AM, before and after the server change): the Trip Planner and both servers asked every 3 s for Central and Strathfield for 7 minutes each; results in [PERFORMANCE.md](PERFORMANCE.md).
 

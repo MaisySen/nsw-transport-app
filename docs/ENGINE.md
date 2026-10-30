@@ -26,11 +26,11 @@ Code: `backend/src/engine.js` (appended to `worker.js` by `build.mjs`, same modu
    hint `oc`) holds the timetable. A load writes a new version next to the old one and `commit` switches to it, so
    boards never mix two timetables. R2 is not available on the account, and KV would bill a write per board every
    10 s, so SQLite in the object it is.
-3. **Live data.** An alarm every 10 s fetches the trip update feeds that boards have needed in the last 5 minutes
-   and keeps one copy of each. Each feed aims for an age (the busiest 10 s, other Sydney feeds 20 s, regional bus
+3. **Live data.** An alarm every 15 s (10 s before 30 Oct 2026; Transport for NSW advises polling realtime every 15 s) fetches the trip update feeds that boards have needed in the last 5 minutes
+   and keeps one copy of each. Each feed aims for an age (the busiest 15 s, other Sydney feeds 30 s, regional bus
    feeds 45 s, vehicle positions 30 s) and the most overdue goes first; at most 45 calls a minute (`ENGINE_PER_MIN`).
    After a refused call (429 or 403) no feed calls for 30 s, doubling to 10 minutes while refusals go on.
-   A Durable Object alarm is the only Workers timer that fires every 10 s (cron triggers are once a minute), and one
+   A Durable Object alarm is the only Workers timer that fires every 15 s (cron triggers are once a minute), and one
    object means one copy of each feed for all of Australia, so calls stay flat. The alarm stops after 15 minutes with
    no reads and starts again on the next read.
 4. **Shards (since 26 Oct, g14).** Boards are built by 16 shard objects (`BoardShard`, binding `SHARDS`, stop id

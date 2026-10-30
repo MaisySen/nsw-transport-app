@@ -9461,7 +9461,7 @@ async function prewarm(env, exec, use, sn) {
 
 // ---------- edge cache, shared limits and input checks ----------
 // Shared live answers are cached at the edge, keyed on the query without the profile and device, so many phones
-// looking at the same board cost one upstream call. A plain open takes a copy up to 15 s old, a refresh up to 5 s;
+// looking at the same board cost one upstream call. A plain open and a refresh both take a copy up to 15 s old;
 // copies are kept 120 s for a busy or failed upstream (see the upstream budget and fetch below).
 const EDGE_CACHE_RE = /^\/api\/(departures|trip|plan|service|status|alerts|stations|search|places|nearby|station|parking|topup|lifts)$/;
 const EDGE_CACHE_S = 15;
@@ -9470,10 +9470,11 @@ const EDGE_CACHE_S = 15;
 const LONG_CACHE_RE = /^\/api\/(search|places|stations)$/;
 const LONG_CACHE_S = 6 * 3600;
 // A refresh (refresh=1: the app's own polls and pull to refresh) takes a shared answer only while it is at most this
-// old, so a realtime change reaches a polling phone within seconds instead of up to 30 (edge copy plus the departures
-// copy below). Everyone at the same stop in a data centre still shares one Trip Planner call per 5 s. Measured
-// 26 Oct 2026, 9:31am: the departures lag behind the Trip Planner was 5 to 16 s median, 24 s worst, with 15 s.
-const REFRESH_MAX_AGE_MS = 5000;
+// old. 30 Oct 2026: 5 s to 15 s, Transport for NSW's advice to poll realtime every 15 s, so one stop or trip costs at
+// most 4 Trip Planner calls a minute in a data centre (with 5 s, up to 12). The answer still says when its times were
+// read (dataAt from x-stored-at), so the app's data age stays true. Measured 26 Oct 2026, 9:31am (before the 5 s rule):
+// the departures lag behind the Trip Planner was 5 to 16 s median, 24 s worst, with 15 s.
+const REFRESH_MAX_AGE_MS = 15000;
 const EDGE_SKIP = new Set(["profile", "device", "refresh", "_"]);
 function edgeKey(url) {
   const u = new URL(url.origin + url.pathname);

@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 30 Oct 2026
 
+### Server polls at Transport for NSW's 15 s (30 Oct, about 12:20 PM; server only, no app change)
+* Transport for NSW advises polling realtime every 15 s. Two server timings were faster and now match it exactly.
+* `backend/src/worker.js` `REFRESH_MAX_AGE_MS` 5000 to 15000: a phone's refresh (`refresh=1`, the app's polls and pull to refresh) now takes the shared Trip Planner answer for a stop or trip while it is up to 15 s old (was 5 s). One stop or trip now costs at most 4 Trip Planner calls a minute per Cloudflare location, whatever the number of phones on it (was up to 12 with 3 or more). The same window applies to the departures copy inside the server and the live hub's board. A plain open is unchanged (15 s edge copy, 12 s departures copy).
+* Live rules unchanged: an answer still carries `dataAt` from the moment the copy was made, so the app's "Live, updated" age stays true; no live time from a feed copy over 5 minutes old; the app's quick ask (a copy 20 s or older) and Not tracking rules are untouched. Phones still refresh every 15 s (20 to 30 s when nothing is due soon), so a polling phone sees new times at most about 30 s after Transport for NSW has them (was about 20 s).
+* `backend/src/engine.js` `ENGINE_TICK_MS` 10000 to 15000: the board engine (boards from the engine are off, `ENGINE_BOARDS=off`) asks the busiest feeds every 15 s (was 10 s), the other Sydney feeds every 30 s (was 20 s); regional buses 45 s and vehicle positions 30 s unchanged. Hot boards are rebuilt every 15 s, the same as their 15 s edge copy.
+* Builds 201 to 208 and every app version get the same answer shapes. Tests: `fresh-refresh.test.mjs` (a 9 s old copy now serves a refresh with its true age, a 16.5 s old one does not; source checks for both values).
+
 ### tab.bot removed from the app (30 Oct, about 8:25 AM; main only, app part rides tonight's over the air update; native part needs build 209)
 * Owner: Bidur, 8:10 AM, "We need to disable all tab bot domain now." The operator turned the first address (nsw-transport-bot.sites.tab.bot) into a forwarder (its /api paths to api.transportsydney.app, its pages to transportsydney.app); nothing in this repo deploys to it.
 * `app/src/lib/server.ts`: the old host is gone. `ALLOWED_DOMAINS` is api.transportsydney.app only, so remote config cannot move the app to the old address; `startBase` moves any stored old address to the new server; `fallbackFor` is always null and `readBase` is the address in use, so a read never goes to the old address (it only forwards now). `getJson` keeps its shape.
