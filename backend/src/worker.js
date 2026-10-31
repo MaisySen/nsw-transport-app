@@ -6085,7 +6085,9 @@ function tfLegRaw(l, tu, veh, info, asOf) {
     const O = byPlace && vi === o0 && !at && o0 >= 0 && seq[o0] ? info[seq[o0].stopId] : null;
     if (O && Number.isFinite(O.lat) && !(Number.isFinite(veh.ageS) && veh.ageS > 90)) {
       const dO = distM(veh.lat, veh.lon, O.lat, O.lon);
-      if (dO <= 1500) {
+      // under 1 km only: from 1.45 km out (a T1 to Lidcombe, 12:56 AM) the train took 152 s, not 103, and Get off
+      // now came 80 s early; under 1 km the 45 s + 40 ms a metre was within 22 s on all 16 reports of 1 Nov
+      if (dO <= 1000) {
         const eta = veh.ts + 45000 + Math.round(40 * dO);
         if (r.est[offIdx] == null || eta < r.est[offIdx]) { r.est[offIdx] = eta; r.etaBy = "vehicle"; }
       }

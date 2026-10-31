@@ -163,3 +163,15 @@ test("1 Nov 12:13 AM shadow trip: a train between Central and Redfern is not rea
   const r2 = W.tfLegRaw(legE, fe, p2, inf, T("13:19:10"));
   assert.deepEqual([r2.vehicle.stop, r2.vehicle.state], [0, "left"]);
 });
+
+test("1 Nov 12:56 AM shadow trip: a position 1.45 km out keeps the feed's arrival (the train took 152 s from there)", async () => {
+  const W = await loadWorker();
+  const legF = { ...leg, tripId: "852T.1417.150.128.A.8.91992569", planned: "2026-10-31T13:17:00.000Z", arrPlanned: "2026-10-31T13:22:00.000Z" };
+  const fd = { ts: T("13:21:00") / 1000, stus: [{ stopId: "213495", arr: d(22), dep: d(22) }, { stopId: "213284", arr: d(22), dep: d(22) }, { stopId: "2131123", arr: d(22), dep: d(22) }] };
+  setClock(T("13:20:00"));
+  const k = 1050 / 1248; // 198 m past Burwood
+  const p = { lat: STOPS["213284"][1] + (STOPS["213495"][1] - STOPS["213284"][1]) * k, lon: STOPS["213284"][2] + (STOPS["213495"][2] - STOPS["213284"][2]) * k, ts: T("13:19:40"), ageS: 20, stopId: "Croydon.X Loc", status: null };
+  const r = W.tfLegRaw(legF, fd, p, info, T("13:19:50"));
+  assert.equal(r.etaBy, undefined);
+  assert.equal(r.est[1], T("13:22:22"));
+});
