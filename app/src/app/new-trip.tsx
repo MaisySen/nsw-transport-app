@@ -24,6 +24,8 @@ import { REGIONAL_ROUTES, SYDNEY_TO } from '@/lib/busGroups.gen';
 import { useBusLookup } from '@/lib/busSearch';
 import { myPosition } from '@/lib/where';
 import { friendlyErr } from '@/lib/netErrCore';
+import { freshFix } from '@/lib/where';
+import { stableKeys } from '@/lib/rowKeysCore';
 
 type Leg = { mode: string; from: Place; to: Place; conn?: number; any?: boolean; walk?: number };
 type Dest = { mode: string; to: Place; conn?: number; any?: boolean; walk?: number };
@@ -313,7 +315,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
       try {
         const perm = await Location.requestForegroundPermissionsAsync();
         if (!perm.granted) { setLocErr('Allow location to sort by distance, or use A to Z or the map.'); return; }
-        const pos = (await Location.getLastKnownPositionAsync({ maxAge: 5 * 60000 }).catch(() => null)) || (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+        const pos = (await Location.getLastKnownPositionAsync({ maxAge: 5 * 60000 }).catch(() => null)) || (await freshFix(Location.Accuracy.Balanced));
         setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
       } catch (e: any) { setLocErr('Location is not available right now.'); }
     })();
@@ -327,6 +329,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
     for (const x of list) { const L = stName(x[1]).charAt(0).toUpperCase(); if (L !== last) { out.push({ t: 'h', k: L }); last = L; } out.push({ t: 's', s: x }); }
     return out;
   }, [list]);
+  const rowKeys = useMemo(() => stableKeys(rows.map((r) => (r.t === 'h' ? 'h:' + r.k : 's:' + r.s[0]))), [rows]);
   const offsets = useMemo(() => { let y = 0; return rows.map((r) => { const o = y; y += r.t === 'h' ? HEAD_H : ROW_H; return o; }); }, [rows]);
   const letters = useMemo(() => rows.map((r, i) => (r.t === 'h' ? { k: r.k, i } : null)).filter(Boolean) as { k: string; i: number }[], [rows]);
   const headerIdx = useMemo(() => letters.map((l) => l.i), [letters]);
@@ -426,7 +429,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
     <View style={box}>
       {head}
       <View style={{ flex: 1 }}>
-        <FlatList ref={listRef} data={rows} keyExtractor={(r, i) => (r.t === 'h' ? 'h' + r.k : r.s[0]) + i} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets
+        <FlatList ref={listRef} data={rows} keyExtractor={(_r, i) => rowKeys[i]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets
           stickyHeaderIndices={headerIdx} initialNumToRender={30} contentContainerStyle={{ paddingBottom: bottomPad }}
           getItemLayout={(_, i) => ({ length: rows[i]?.t === 'h' ? HEAD_H : ROW_H, offset: offsets[i] || 0, index: i })}
           ListEmptyComponent={<T kind="sub" tone="text2" style={s.note}>No {modeName(mode).toLowerCase()} stations match that</T>}
@@ -513,8 +516,9 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
   if (err) return <T kind="sub" tone="text2" style={s.note}>{err}</T>;
   if (dir) {
     const st = dir.d.stops.slice(dir.start + 1);
+    const stKeys = stableKeys(st.map((x) => String(x[0])));
     return (
-      <FlatList data={st} keyExtractor={(x, i) => x[0] + i} contentContainerStyle={{ paddingBottom: 40 }}
+      <FlatList data={st} keyExtractor={(_x, i) => stKeys[i]} contentContainerStyle={{ paddingBottom: 40 }}
         ListHeaderComponent={<T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginBottom: 7, textTransform: Platform.OS === 'ios' ? 'uppercase' : 'none' }}>{dir.start >= 0 ? `Stops after ${shortName(from?.name)} on route ${dir.r}` : `Route ${dir.r} to ${shortName(dir.d.to)}`}</T>}
         renderItem={({ item, index }) => (
           <Pressable accessibilityRole="button" onPress={() => onPick({ id: item[0], name: item[1], ctx: { route: dir.r, dir: dir.d, at: dir.start + 1 + index } })} android_ripple={{ color: c.fill }}
@@ -575,10 +579,12 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
       if (open[g]) data.push(...groups[g].map((r) => ({ t: 'r' as const, r, g })));
     }
   }
+  // Keys from the row's content (a stop listed twice gets #2), so filtering or opening a group never remounts every row.
+  const busKeys = stableKeys(data.map((x: any) => (x.t === 'h' ? 'h:' + x.k : x.t === 'g' ? 'g:' + x.g : x.t === 'r' ? 'r:' + x.r : x.t === 's' ? 's:' + x.id : String(x.t))));
   const rowStyle = [s.routeRow, { backgroundColor: c.card, marginHorizontal: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.sep }];
   const head = (k: string) => <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 14, marginBottom: 7, textTransform: Platform.OS === 'ios' ? 'uppercase' : 'none' }}>{k}</T>;
   return (
-    <FlatList data={data} keyExtractor={(x, i) => x.t + i} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets contentContainerStyle={{ paddingBottom: 40 }} initialNumToRender={20}
+    <FlatList data={data} keyExtractor={(_x, i) => busKeys[i]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets contentContainerStyle={{ paddingBottom: 40 }} initialNumToRender={20}
       ListEmptyComponent={<T kind="sub" tone="text2" style={s.note}>No routes or stops match that. Try a route (410), a stop number from the sign (2046100) or a street.</T>}
       renderItem={({ item }) => {
         if (item.t === 'h') return head(item.k);

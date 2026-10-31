@@ -104,3 +104,38 @@ test('round 2: platform change spoken on Home cards, commute switch handles fail
   const trip = fs.readFileSync(path.join(root, 'src/app/trip.tsx'), 'utf8');
   assert.ok(!/function hms\(/.test(trip) && /Updated \$\{rowTime\(updatedAt\)\}/.test(trip));
 });
+
+test('round 3: cold start alert taps open their screen once, location never spins for ever, stable list keys, one pass beaten check, Ask me rows skip ticks', () => {
+  const lay = fs.readFileSync(path.join(root, 'src/app/_layout.tsx'), 'utf8');
+  assert.match(lay, /addNotificationResponseReceivedListener\(openFromAlert\)/);
+  assert.match(lay, /getLastNotificationResponse/);
+  assert.match(lay, /handledTaps\.has\(key\)/);
+  const bad = [];
+  for (const file of SRC) {
+    const s = fs.readFileSync(file, 'utf8');
+    if (/getCurrentPositionAsync\(/.test(s) && !/lib\/(where|hereLocation)\.ts$/.test(file)) bad.push(path.relative(root, file));
+  }
+  assert.deepEqual(bad, [], 'every fresh position goes through freshFix (12 s limit)');
+  assert.match(fs.readFileSync(path.join(root, 'src/lib/hereLocation.ts'), 'utf8'), /setTimeout\(\(\) => r\(null\), 12000\)/);
+  const nt = fs.readFileSync(path.join(root, 'src/app/new-trip.tsx'), 'utf8');
+  assert.ok(!/keyExtractor=\{\([^)]*, i\) => [^}]*\+ i\}/.test(nt), 'no index in list keys');
+  const trip = fs.readFileSync(path.join(root, 'src/app/trip.tsx'), 'utf8');
+  assert.ok(!/arrs\.slice\(i \+ 1\)/.test(trip));
+  assert.match(fs.readFileSync(path.join(root, 'src/app/(tabs)/ask/index.tsx'), 'utf8'), /a\.item\.role === 'me' \|\| \(a\.last === b\.last && a\.now === b\.now\)/);
+});
+
+test('freshFix gives up after its limit with nofix, and passes a fix through', async () => {
+  const { createRequire } = await import('node:module');
+  const os = await import('node:os');
+  const { pathToFileURL } = await import('node:url');
+  const ts = createRequire(import.meta.url)(path.join(root, 'node_modules', 'typescript'));
+  let src = fs.readFileSync(path.join(root, 'src/lib/where.ts'), 'utf8').replace("import * as Location from 'expo-location';", 'const Location: any = { Accuracy: { Balanced: 3 } };');
+  const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'polish-')), 'where.mjs');
+  fs.writeFileSync(f, js);
+  const W = await import(pathToFileURL(f).href);
+  const never = { getCurrentPositionAsync: () => new Promise(() => {}) };
+  await assert.rejects(W.freshFix(3, 30, never), /nofix/);
+  const ok = { getCurrentPositionAsync: async () => ({ coords: { latitude: -33.8, longitude: 151.2 } }) };
+  assert.equal((await W.freshFix(3, 1000, ok)).coords.latitude, -33.8);
+});

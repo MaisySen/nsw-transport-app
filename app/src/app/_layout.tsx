@@ -82,6 +82,9 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   );
 }
 
+/** Alert taps already acted on (a tap seen by both the listener and the cold start read opens one screen). */
+const handledTaps = new Set<string>();
+
 function RootLayout() {
   const scheme = useColorScheme();
   const c = usePalette();
@@ -135,7 +138,11 @@ function RootLayout() {
     // Alerts for watched services and the Last way home recheck wait until the first screen has its times.
     const first = setTimeout(() => { pollNotes(); recheckLastLocal().catch(() => {}); }, STARTUP_DEFER_MS);
     setupLiveNotifications();
-    const sub = Notifications.addNotificationResponseReceivedListener((r) => {
+    // One handler for a tap, whether the app was open or the tap started it (1 Nov polish: a cold start tap was lost).
+    const openFromAlert = (r: Notifications.NotificationResponse) => {
+      const key = `${r?.notification?.request?.identifier || ''}:${r?.actionIdentifier || ''}:${r?.notification?.date || ''}`;
+      if (handledTaps.has(key)) return;
+      handledTaps.add(key);
       const d: any = r.notification.request.content.data || {};
       // Buttons on the ongoing trip notification.
       if (r.actionIdentifier === 'end') { endLive().finally(() => router.replace('/')); return; }
@@ -152,8 +159,25 @@ function RootLayout() {
         return;
       }
       if (d.watch) router.push({ pathname: '/watch/[id]', params: { id: String(d.watch) } });
-    });
-    return () => { poll.remove(); lastPoll.remove(); sub.remove(); clearTimeout(first); };
+    };
+    const sub = Notifications.addNotificationResponseReceivedListener(openFromAlert);
+    // The tap that opened a closed app arrived before this listener existed: read it once, after the first screen mounts.
+    const coldTap = setTimeout(() => {
+      try {
+        const N: any = Notifications;
+        const take = (r: any) => {
+          if (!r || !r.notification) return;
+          try { N.clearLastNotificationResponse?.(); } catch {}
+          // Only a tap from the last half hour (an old response never reopens a screen days later).
+          const dt = Number(r.notification.date); const at = dt < 1e12 ? dt * 1000 : dt;
+          if (Number.isFinite(at) && Date.now() - at > 30 * 60000) return;
+          openFromAlert(r);
+        };
+        if (typeof N.getLastNotificationResponse === 'function') take(N.getLastNotificationResponse());
+        else if (typeof N.getLastNotificationResponseAsync === 'function') N.getLastNotificationResponseAsync().then(take).catch(() => {});
+      } catch {}
+    }, 0);
+    return () => { poll.remove(); lastPoll.remove(); sub.remove(); clearTimeout(first); clearTimeout(coldTap); };
   }, [ready]);
 
   // The window behind every screen takes the theme's background (expo-system-ui, in every build), so a push, a

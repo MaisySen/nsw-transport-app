@@ -686,6 +686,9 @@ export default function TripScreen() {
   }, [probKey, !!pbShown, !!pbAll, offlineAt]);
   const [showAlerts, setShowAlerts] = useState(false);
   const arrs = js.map(arrOf);
+  // Earliest arrival of any later row (one pass, not a slice per row): a row is "beaten" when a later one gets there first.
+  const laterMin = new Array<number>(arrs.length);
+  for (let i = arrs.length - 1, m = Infinity; i >= 0; i--) { laterMin[i] = m; const a = arrs[i]; if (Number.isFinite(a) && a < m) m = a; }
   const alertList: { title: string; url?: string }[] = [];
   js.forEach((j) => j.legs.forEach((l) => (l.alerts || []).forEach((a: any) => {
     const title = typeof a === 'string' ? a : a?.title;
@@ -856,7 +859,7 @@ export default function TripScreen() {
             {pn.nextIdx === i ? <NextMark /> : null}
             {gone
               ? <LeftRow j={j} arrive={arrs[i]} muted={pastNow} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />
-              : <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} pressKey={i} onPress={() => { haptic.select(); setOpen((o) => (o === i ? null : i)); }} />}
+              : <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || laterMin[i] < arrs[i]} pressKey={i} onPress={() => { haptic.select(); setOpen((o) => (o === i ? null : i)); }} />}
             <WarnLine j={j} />
             <JourneyWhy j={j} />
             {!chain && i === lastIdx && canRemind(depMs(j), now) ? <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}><T kind="foot" tone="text2">Last service tonight</T><RemindLastButton hint={{ from, to, mode: modeOfLegs(j.legs), svc: slimLast(j) }} acc={accOn} /></View> : null}

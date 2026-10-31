@@ -38,6 +38,7 @@ import { hasSpeech, speak } from '@/lib/nativeExtras';
 import { departuresSentence, tripSentence } from '@/lib/voiceCore';
 import { takeVoicePrompt } from '@/lib/voiceHelp';
 import { reduceMotionNow } from '@/lib/motion';
+import { freshFix } from '@/lib/where';
 
 // The one time Get a better voice prompt (same rule as the Speak buttons), loaded only when it shows.
 const VoiceHelp = lazy(() => import('@/components/VoiceHelp').then((m) => ({ default: m.VoiceHelp })));
@@ -263,7 +264,7 @@ const MsgRow = memo(function MsgRow({ item, last, now, onAsk, onLocation }: { it
       ) : null}
     </View>
   );
-});
+}, (a, b) => a.item === b.item && a.onAsk === b.onAsk && a.onLocation === b.onLocation && (a.item.role === 'me' || (a.last === b.last && a.now === b.now)));
 
 export default function AskScreen() {
   const c = usePalette();
@@ -398,7 +399,7 @@ export default function AskScreen() {
       const perm = await Location.requestForegroundPermissionsAsync();
       if (perm.status !== 'granted') return;
       // A recent fix costs no GPS; otherwise about 100 m is plenty to find the nearest stop.
-      const pos = (await Location.getLastKnownPositionAsync({ maxAge: 120000 }).catch(() => null)) || (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+      const pos = (await Location.getLastKnownPositionAsync({ maxAge: 120000 }).catch(() => null)) || (await freshFix(Location.Accuracy.Balanced));
       ask(last.text, { lat: pos.coords.latitude.toFixed(5), lon: pos.coords.longitude.toFixed(5) });
     } catch { /* expo-location not in this build */ }
   }, [msgs, ask]);

@@ -26,7 +26,11 @@ export async function hereOnce(ask: boolean): Promise<HereResult | null> {
     if (!p.granted && ask && p.canAskAgain) p = await L.requestForegroundPermissionsAsync();
     if (!p.granted) return { pos: null, denied: true, canAskAgain: !!p.canAskAgain };
     let pos = await L.getLastKnownPositionAsync({ maxAge: 2 * 60000 }).catch(() => null);
-    if (!pos) pos = await L.getCurrentPositionAsync({ accuracy: L.Accuracy.Balanced });
+    if (!pos) {
+      // At most 12 s (as lib/where.ts freshFix; not imported here so expo-location stays optional): never a spinner for ever.
+      let t: ReturnType<typeof setTimeout> | undefined;
+      pos = await Promise.race([L.getCurrentPositionAsync({ accuracy: L.Accuracy.Balanced }), new Promise<null>((r) => { t = setTimeout(() => r(null), 12000); })]).finally(() => clearTimeout(t));
+    }
     return { pos: pos ? { lat: pos.coords.latitude, lon: pos.coords.longitude } : null };
   } catch {
     return { pos: null };

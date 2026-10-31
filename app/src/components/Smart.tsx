@@ -26,6 +26,7 @@ import { checkSubtitle } from '@/lib/morning';
 import { ymdSyd } from '@/lib/calendarLeaveByCore';
 import { useScreenPoll } from '@/lib/activity';
 import type { Place } from '@/lib/types';
+import { freshFix } from '@/lib/where';
 
 const short = (n?: string | null) => shortName(n || '').replace(/ Station$/, '');
 const plat = (p?: string | null) => (p ? p.replace(/^Platform\s*/i, 'Platform ').replace(/^Stand\s*/i, 'Stand ') : '');
@@ -43,7 +44,7 @@ export function useMyPos(): Pos {
     try {
       // A fix up to 2 minutes old is good enough for walking minutes, and costs no GPS at all.
       let p = await Location.getLastKnownPositionAsync({ maxAge: 120000 }).catch(() => null);
-      if (!p) p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      if (!p) p = await freshFix(Location.Accuracy.Balanced);
       if (p) setPos({ lat: p.coords.latitude, lon: p.coords.longitude });
     } catch {}
     return true;

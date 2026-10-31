@@ -49,6 +49,7 @@ import { WhereNow } from './WhereNow';
 import { boardParts, boardText, chipClock, hasLiveData, placeText, stackColumns, timeLeftBadge, tripLines } from '@/lib/rowTimeCore';
 import { phone24h, rowTime } from '@/lib/rowTime';
 import { tightA11y, tightChange } from '@/lib/tightChangeCore';
+import { freshFix } from '@/lib/where';
 
 // ---------- shared refresh signals for every card on Home ----------
 
@@ -1002,12 +1003,12 @@ export function useNearby() {
       // Still near where the kept list was made: show it now, while the fresh list loads.
       const early = pos ? nearFirstPaint(kept, { lat: pos.coords.latitude, lon: pos.coords.longitude }, Date.now()) : null;
       if (early) setSt((s) => (s.phase === 'on' && s.stops.length ? s : { phase: 'on', stops: early }));
-      if (!pos) pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      if (!pos) pos = await freshFix(Location.Accuracy.Balanced);
       const stops = await nearbyStops(pos.coords.latitude, pos.coords.longitude);
       keepNear(pos.coords.latitude, pos.coords.longitude, stops);
       setSt({ phase: 'on', stops });
     } catch (e: any) {
-      setSt((s) => (s.stops.length ? s : { phase: 'error', stops: [], error: String(e?.message || e) }));
+      setSt((s) => (s.stops.length ? s : { phase: 'error', stops: [], error: e?.message === 'nofix' ? "Can't find where you are right now. Pull down to try again." : friendlyErr(e) }));
     }
   };
 

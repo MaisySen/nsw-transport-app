@@ -15,6 +15,7 @@ import { Icon, I, modeIconName } from '@/components/Icon';
 import { nearbyStops, pullHome } from '@/components/Home';
 import { Button, Row, Screen, Section, Sep, T, font } from '@/components/ui';
 import { friendlyErr } from '@/lib/netErrCore';
+import { freshFix } from '@/lib/where';
 
 type Field = 'from' | 'to';
 
@@ -27,7 +28,7 @@ function useNearbyIfAllowed() {
         const p = await Location.getForegroundPermissionsAsync();
         if (!p.granted) return;
         let pos = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60000 }).catch(() => null);
-        if (!pos) pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (!pos) pos = await freshFix(Location.Accuracy.Balanced);
         const s = await nearbyStops(pos.coords.latitude, pos.coords.longitude);
         if (alive) setItems(s);
       } catch {}

@@ -36,6 +36,7 @@ import { MUTED, nowA11y, nowLabel, pastNowSplit } from '@/lib/pastNowCore';
 import { clock } from '@/lib/format';
 import { useSides } from '@/lib/layout';
 import { friendlyErr } from '@/lib/netErrCore';
+import { freshFix } from '@/lib/where';
 
 type Field = { loc: true } | { place: SimplePlace } | null;
 const BIG = 2; // Dynamic Type: big text grows up to twice its size, the layout wraps instead of clipping.
@@ -300,7 +301,7 @@ export default function Simple() {
       setLocAllowed(!!p.granted);
       if (!p.granted) return null;
       let pos = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60000 }).catch(() => null);
-      if (!pos) pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+      if (!pos) pos = await freshFix(Location.Accuracy.Low);
       const r = await api.nearby(pos.coords.latitude, pos.coords.longitude);
       const list = [...(r.stops || [])].sort((a: any, b: any) => Number(a.distance ?? a.distanceM ?? a.dist ?? 1e9) - Number(b.distance ?? b.distanceM ?? b.dist ?? 1e9));
       const first = list[0] ? { id: String(list[0].id), name: String(list[0].name || '') } : null;
