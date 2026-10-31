@@ -39,11 +39,18 @@ public struct LiveTripAttributes: ActivityAttributes {
         /// The leg's stops for the stop track that replaces the plain bar (build 210). Older app code and server pushes
         /// send none, and the card then draws the bar as before.
         public var stopTrack: StopTrack?
+        /// Build 212 (G31): the leg's delay in whole minutes, from the same live time the countdown uses (more than 0 late,
+        /// less than 0 early, 0 on time). Nil when not known; older app code and servers send none, and the card then
+        /// reads the delay from the warning as build 211 did.
+        public var delayMin: Int?
+        /// Build 212 (G31): whether `departs` and `legArrives` are live times (false: timetable). Nil from older senders.
+        public var departsLive: Bool?
+        public var legArrivesLive: Bool?
 
         public init(line: String, lineColorHex: String, mode: String, nextStop: String?, stopsLeft: Int?, getOffAt: String,
                     arrival: Date, phase: String, warning: String?, progress: Double, fareLine: String? = nil,
                     towards: String? = nil, platform: String? = nil, departs: Date? = nil, legArrives: Date? = nil, destination: String? = nil, updated: Date? = nil,
-                    stopTrack: StopTrack? = nil) {
+                    stopTrack: StopTrack? = nil, delayMin: Int? = nil, departsLive: Bool? = nil, legArrivesLive: Bool? = nil) {
             self.line = line; self.lineColorHex = lineColorHex; self.mode = mode; self.nextStop = nextStop
             self.stopsLeft = stopsLeft; self.getOffAt = getOffAt; self.arrival = arrival; self.phase = phase
             self.warning = warning; self.progress = progress; self.fareLine = fareLine
@@ -51,6 +58,7 @@ public struct LiveTripAttributes: ActivityAttributes {
             self.destination = destination
             self.updated = updated
             self.stopTrack = stopTrack
+            self.delayMin = delayMin; self.departsLive = departsLive; self.legArrivesLive = legArrivesLive
         }
     }
 

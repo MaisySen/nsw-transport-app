@@ -44,6 +44,20 @@ final class WidgetAuditTests: XCTestCase {
                       notice: notice, updated: at(-1), relevance: nil, commute: commute, live: live, dataAt: nil, ago: ago)
     }
 
+    /// Build 212: the card of a started trip as the app shares it (platform/widgetShare.ts liveCardFor).
+    static func liveCard(departs: Double?, legArrives: Double, updated: Double, phase: String = "wait", delay: Int? = 4,
+                         warning: String? = nil) -> SharedLiveCard {
+        let ms = { (m: Double) -> Double in at(m).timeIntervalSince1970 * 1000 }
+        return SharedLiveCard(title: "Lakemba to Circular Quay", line: "T3", lineColorHex: "#F15A22", mode: "train", phase: phase,
+                              getOffAt: "Circular Quay", destination: "Circular Quay", nextStop: "Lakemba", platform: "Platform 2",
+                              departs: departs.map(ms), legArrives: ms(legArrives), arrival: ms(legArrives), until: ms(legArrives + 2),
+                              updated: ms(updated), warning: warning, delayMin: delay, departsLive: true, legArrivesLive: true)
+    }
+
+    static func liveAt(_ c: SharedLiveCard, _ kind: TripMomentKind, target: Double?) -> NextTripEntry {
+        NextTripProvider.liveEntry(c, moment: TripMoment(at: now, kind: kind, target: target.map { at($0) }), now: now)
+    }
+
     static let nextScenarios: [(String, NextTripEntry)] = [
         ("normal", nextTrip("To work", "Bondi Junction", "Parramatta", [
             trip("T4", "#005AA3", "train", leave: 9.5, live: true, status: "On time", platform: "Platform 1", changes: 1),
@@ -69,10 +83,14 @@ final class WidgetAuditTests: XCTestCase {
         ("later", nextTrip("Gym", "Epping", "Hornsby", [
             trip("T9", "#D11F2F", "train", leave: 72.5, live: false, status: "Scheduled", platform: "Platform 3")],
             notice: WidgetNotice(text: "Trackwork this weekend: buses replace trains between Epping and Hornsby", level: .warning), commute: false)),
-        ("live", nextTrip("Your trip", "Lakemba", "Circular Quay", [
-            trip("T3", "#F15A22", "train", leave: 2.5, live: true, status: "On time", platform: "Platform 2", changes: 1)],
-            notice: WidgetNotice(text: "Trip started", level: .info), live: true)),
-        ("empty", nextTrip("To home", "Parramatta", "Bondi Junction", [], message: "Checking for the next one")),
+        // Build 212 (G4, G5, G28): a started trip at its moments, from the card the app shares (TripMoments): late and
+        // counting down, Due, on board with your stop next, Get off now, and live times 3 minutes old ("about").
+        ("live-wait", liveAt(liveCard(departs: 5.5, legArrives: 20, updated: -0.5), .wait, target: 5.5)),
+        ("live-due", liveAt(liveCard(departs: 0.3, legArrives: 15, updated: -0.5), .due, target: nil)),
+        ("live-next", liveAt(liveCard(departs: -9, legArrives: 1.5, updated: -0.5, phase: "ride"), .next, target: 1.5)),
+        ("live-getoff", liveAt(liveCard(departs: -10, legArrives: 0.4, updated: -0.3, phase: "ride", delay: 0), .getOff, target: nil)),
+        ("live-old", liveAt(liveCard(departs: 4, legArrives: 19, updated: -3), .wait, target: 4)),
+        ("empty", nextTrip("To home", "Parramatta", "Bondi Junction", [], message: "No more services right now")),
     ]
 
     // MARK: Stop board data

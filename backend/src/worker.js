@@ -6681,7 +6681,7 @@ const LIVECARD = (() => {
     const TRIP_CLIPS = {
         headsup: { file: 'getoff_soon', words: 'Your stop is coming up. Please get ready to get off at the next stop.', secs: 5.2 },
         getoff: { file: 'getoff_now', words: 'Please get off at the next stop.', secs: 2.8 },
-        arrived: { file: 'arrival', words: "You've arrived at your stop.", secs: 2.0, build: 212 },
+        arrived: { file: 'arrival', words: "You've arrived at your stop.", secs: 2.2, build: 212 },
     };
     const fmts = {};
     const fmtOf = (c24) => fmts[c24 ? 'h23' : 'h12'] ||
@@ -8171,6 +8171,9 @@ const LIVECARD = (() => {
             departs: cancelled ? null : x.missed ? (alt ? alt.dep : null) : Number.isFinite(x.dep) ? x.dep : null,
             legArrives: x.missed ? (alt ? alt.arr : null) : Number.isFinite(x.arr) ? x.arr : null, destination, updated,
             ...(track && !x.missed ? { stopTrack: track } : {}),
+            delayMin: cancelled || x.missed || s.delayMin == null || s.track === 'timetable' ? null : s.delayMin,
+            departsLive: !cancelled && !x.missed && s.depSource != null && s.depSource !== 'timetable',
+            legArrivesLive: !x.missed && s.arrSource != null && s.arrSource !== 'timetable',
         };
     }
     function legNoteFor(s, now, c24 = false) {
@@ -8216,9 +8219,11 @@ const LIVECARD = (() => {
     function staleAt(card, updated, honestStale, keepMs = 120000) {
         if (card.phase === 'arrived')
             return null;
-        if (honestStale && updated) {
+        const v = honestStale === true ? 2 : honestStale === false ? 1 : Number(honestStale) || 1;
+        if (v >= 2 && updated) {
             const dep = card.phase === 'wait' && typeof card.departs === 'number' && Number.isFinite(card.departs) ? Math.max(card.departs, updated + 1000) : Infinity;
-            return Math.min(updated + 120000, dep);
+            const off = v >= 3 && card.phase === 'ride' && typeof card.legArrives === 'number' && Number.isFinite(card.legArrives) ? Math.max(card.legArrives, updated + 1000) : Infinity;
+            return Math.min(updated + 120000, dep, off);
         }
         return card.arrival + keepMs;
     }

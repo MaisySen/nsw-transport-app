@@ -1,6 +1,6 @@
 # Build 209 on a GitHub hosted Mac with `eas build --local` (30 Oct 2026). A local build uses none of the
 # Expo plan's monthly iOS builds. Manual trigger only (never on pull requests, so a fork never sees the secrets),
-# and only from the build-209 branch. Signing: the distribution certificate and the four App Store profiles
+# and only from the build-209 branch (build 212 and later: also build-212-rc, runtime 1.3.0, 1 Nov). Signing: the distribution certificate and the four App Store profiles
 # (the app's profile regenerated on 30 Oct with Time Sensitive) arrive as one secret and are deleted at the end.
 # Upload goes to App Store Connect for TestFlight only. Nothing here submits for App Review.
 name: iOS build 209+ (local EAS build, TestFlight upload; widget snapshots)
@@ -35,7 +35,7 @@ jobs:
 
   build:
     needs: audit
-    if: github.ref == 'refs/heads/build-209' && inputs.mode != 'snapshots'
+    if: (github.ref == 'refs/heads/build-209' || github.ref == 'refs/heads/build-212-rc') && inputs.mode != 'snapshots'
     runs-on: xcode-27
     timeout-minutes: 120
     env:
@@ -82,11 +82,18 @@ jobs:
           BN=$(node -e 'process.stdout.write(require("./app.json").expo.ios.buildNumber)')
           echo "runtime $RT, build $BN"
           if [ "$BN" -ge 210 ] && { [ "$RT" = "1.0.0" ] || [ "$RT" = "1.1.0" ]; }; then echo "build $BN must not use runtime $RT (main publishes there)"; exit 1; fi
+          # Build 212 (1 Nov) has native code builds 210 and 211 do not (card version 3, arrival sound): its own runtime
+          # 1.3.0, so an update published for 1.2.0 can never land on it, and the other way round.
+          if [ "$BN" -ge 212 ] && [ "$RT" = "1.2.0" ]; then echo "build $BN must not use runtime 1.2.0 (builds 210 and 211)"; exit 1; fi
+          if [ "$BN" -ge 212 ] && [ "$GITHUB_REF" != "refs/heads/build-212-rc" ] && [ "$GITHUB_REF" != "refs/heads/build-209" ]; then echo "unexpected branch $GITHUB_REF"; exit 1; fi
 
       - name: EAS local build (production profile)
         run: |
           set -o pipefail
           npx -y eas-cli@latest whoami
+          # Build 212: keep the local build's working folder (removed in the clean up step) so every dSYM in the archive,
+          # the Watch app's included, can be sent to Sentry after the upload.
+          export EAS_LOCAL_BUILD_SKIP_CLEANUP=1 EAS_LOCAL_BUILD_WORKINGDIR="$RUNNER_TEMP/easwd"
           npx -y eas-cli@latest build --platform ios --profile production --local --non-interactive \
             --output "$RUNNER_TEMP/Transport.ipa" 2>&1 | tee "$RUNNER_TEMP/build.log"
           ls -la "$RUNNER_TEMP/Transport.ipa"
@@ -133,9 +140,46 @@ jobs:
             --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --output-format normal 2>&1 | tee "$RUNNER_TEMP/upload.log"
           grep -q -i -E 'No errors uploading|UPLOAD SUCCEEDED|successfully uploaded' "$RUNNER_TEMP/upload.log"
 
+      - name: Sentry debug symbols for every target, the Watch app included, and the JavaScript source map (build 212; never fails the build)
+        if: success()
+        continue-on-error: true
+        run: |
+          # Build 211's own "Upload Debug Symbols to Sentry" phase timed out before the dSYMs existed, so they are sent
+          # here from the archive and the kept working folder.
+          D=$( { find "$RUNNER_TEMP/easwd" -type d -name '*.dSYM' 2>/dev/null; find ~/Library/Developer/Xcode/Archives -type d -name '*.dSYM' -mmin -240 2>/dev/null; } | sort -u)
+          echo "$D" | sed 's#.*/##' | sort | uniq -c
+          if [ -n "$D" ]; then
+            mkdir -p "$RUNNER_TEMP/dsyms" && echo "$D" | while read -r d; do cp -R "$d" "$RUNNER_TEMP/dsyms/" 2>/dev/null || true; done
+            npx -y @sentry/cli@2 debug-files upload --org fintex-australia-bk --project transport-sydney-live "$RUNNER_TEMP/dsyms" 2>&1 | tail -25
+          else echo "no dSYMs found"; fi
+          # JavaScript: the bundle in the IPA carries a debug ID (metro.config.js); its source map is uploaded by that ID.
+          cd "$RUNNER_TEMP" && rm -rf ipa2 jsmap && mkdir ipa2 jsmap && cd ipa2 && unzip -q ../Transport.ipa 'Payload/*.app/main.jsbundle' || true
+          B=$(ls "$RUNNER_TEMP"/ipa2/Payload/*.app/main.jsbundle 2>/dev/null | head -1 || true)
+          ID=$( { [ -n "$B" ] && tail -c 300 "$B" | grep -o 'debugId=[0-9a-fA-F-]*' | cut -d= -f2; } || true)
+          echo "IPA bundle debug ID: ${ID:-none}"
+          M=$(find "$RUNNER_TEMP/easwd" -name 'main.jsbundle.map' 2>/dev/null | head -1)
+          if [ -n "$M" ] && [ -n "$ID" ] && grep -q "$ID" "$M"; then
+            cp "$B" "$RUNNER_TEMP/jsmap/main.jsbundle"; cp "$M" "$RUNNER_TEMP/jsmap/main.jsbundle.map"; echo "source map from the build"
+          else
+            # Same checkout, same Metro: the bundle is rebuilt and used only when its debug ID equals the IPA's.
+            cd "$GITHUB_WORKSPACE/app" && npx expo export:embed --platform ios --dev false --reset-cache \
+              --entry-file index.js --bundle-output "$RUNNER_TEMP/jsmap/main.jsbundle" \
+              --sourcemap-output "$RUNNER_TEMP/jsmap/main.jsbundle.map" --assets-dest "$RUNNER_TEMP/jsmap/assets" 2>&1 | tail -3
+            rm -rf "$RUNNER_TEMP/jsmap/assets"
+            ID2=$( { tail -c 300 "$RUNNER_TEMP/jsmap/main.jsbundle" 2>/dev/null | grep -o 'debugId=[0-9a-fA-F-]*' | cut -d= -f2; } || true)
+            echo "rebuilt bundle debug ID: ${ID2:-none}"
+            [ -n "$ID" ] && [ "$ID" = "$ID2" ] || { echo "debug IDs differ: JavaScript source map NOT uploaded"; exit 0; }
+          fi
+          BN=$(node -e 'process.stdout.write(require(process.env.GITHUB_WORKSPACE + "/app/app.json").expo.ios.buildNumber)')
+          VER=$(node -e 'process.stdout.write(require(process.env.GITHUB_WORKSPACE + "/app/app.json").expo.version)')
+          npx -y @sentry/cli@2 sourcemaps upload --org fintex-australia-bk --project transport-sydney-live \
+            --release "com.maisysen.nswtransport@$VER+$BN" --dist "$BN" "$RUNNER_TEMP/jsmap" 2>&1 | tail -15
+          rm -rf "$RUNNER_TEMP/dsyms" "$RUNNER_TEMP/jsmap" "$RUNNER_TEMP/ipa2"
+
       - name: Clean up signing files
         if: always()
         run: |
+          rm -rf "$RUNNER_TEMP/easwd" "$RUNNER_TEMP/dsyms" "$RUNNER_TEMP/jsmap" "$RUNNER_TEMP/ipa2"
           rm -rf credentials credentials.json ~/.appstoreconnect "$RUNNER_TEMP/ipa" "$RUNNER_TEMP/Transport.ipa"
           security delete-keychain "$RUNNER_TEMP"/*.keychain-db 2>/dev/null || true
 

@@ -55,7 +55,7 @@ public enum Clock {
         f.locale = Locale(identifier: "en_AU")
         f.timeZone = sydney
         f.dateFormat = phone24h ? "HH:mm:ss" : "h:mm:ss a"
-        return f.string(from: d).lowercased()
+        return f.string(from: d).lowercased().replacingOccurrences(of: " ", with: "")
     }
 
     /// Minutes after midnight in Sydney, used for commute times.

@@ -66,17 +66,17 @@ test('the Mac fit check renders every family at the smallest and largest widget 
   assert.doesNotMatch(s, /Strathfield|Burwood|Kings Cross|Redfern/);
 });
 
-test('build number 211 on version 1.0.0, runtime 1.2.0 (main publishes to 1.0.0 and 1.1.0, never to 210 or 211)', () => {
+test('build number 212 on version 1.0.0, runtime 1.3.0 (1.0.0 and 1.1.0 are main\'s, 1.2.0 is builds 210 and 211)', () => {
   const a = JSON.parse(read('app.json')).expo;
-  // Build 211 candidate (31 Oct): widget only Live Activity fixes, same runtime as 210.
-  assert.equal(a.ios.buildNumber, '211');
+  // Build 212 (1 Nov): native changes 210 and 211 do not have (card version 3, arrival sound), so its own runtime.
+  assert.equal(a.ios.buildNumber, '212');
   assert.equal(a.version, '1.0.0');
-  assert.equal(a.runtimeVersion, '1.2.0');
+  assert.equal(a.runtimeVersion, '1.3.0');
 });
 
 test('the Lock Screen rectangle never truncates the minutes, and the status word outranks "1 change"', () => {
   assert.match(body('private func rectangularBody'), /ViewThatFits\(in: \.horizontal\)/);
-  assert.match(body('private func rectangularLine'), /WaitText\(leave: t\.leave, now: entry\.date\)\.fontWeight\(\.semibold\)\.fixedSize\(\)/);
+  assert.match(body('private func rectangularLine'), /WaitText\(leave: t\.leave, now: entry\.date, word: t\.waitWord\)\.fontWeight\(\.semibold\)\.fixedSize\(\)/);
   assert.match(body('private func rectangularLine'), /Text\(t\.line\)\.fontWeight\(\.bold\)\.fixedSize\(\)/);
   // The walk, then "1 change", give way whole; the status word stays.
   assert.match(body('private func statusLine'), /statusWords\(t, changes: true, walk: true\)[\s\S]*statusWords\(t, changes: false, walk: false\)/);

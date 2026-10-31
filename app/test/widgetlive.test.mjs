@@ -111,8 +111,8 @@ test('iPhone widgets age every live time in their timelines, from the feed time 
   assert.match(WIDGETS, /let \(trips, demoted\) = settle\(e\.trips, dataAt: e\.dataAt, at: d\)/);
   assert.match(WIDGETS, /WidgetLive\.dataAt\(fetched: now, feedMs: r\.live\?\.feedTs \?\? r\.live\?\.feedAt, serverNowMs: r\.now\)/);
   assert.match(WIDGETS, /e\.dataAt = dataAt/);
-  // A trip in progress from the app ages from the card's own updated time.
-  assert.match(WIDGETS, /if let u = c\.updated, u > 0 \{ e\.dataAt = /);
+  // A trip in progress from the app ages from the card's own updated time (build 212: per moment, TripMoments.ageStep).
+  assert.match(WIDGETS, /let step = TripMoments\.ageStep\(updated: c\.updatedDate, at: now\)/);
   // Stop board: each row from its own liveAt.
   assert.match(WIDGETS, /let \(rows, oldest\) = Self\.settle\(e\.rows, at: x\.date\)/);
   assert.match(WIDGETS, /feedMs: d\.liveAt \?\? boardFeed/);

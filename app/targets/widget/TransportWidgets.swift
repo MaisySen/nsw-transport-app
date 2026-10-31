@@ -8,8 +8,9 @@ struct TransportWidgets: WidgetBundle {
     var body: some Widget {
         NextTripWidget()
         StopBoardWidget()
-        TripLiveActivity()
         LiveTripActivityWidget()
+        // Build 212 (G36): the followed-service Live Activity (TripLiveActivity) is no longer bundled: nothing ever
+        // started it. Its views stay in the source for the native audit until they are removed with their tests.
         if #available(iOS 18.0, *) {
             TrainHomeControl()
             StartCommuteControl()
@@ -53,6 +54,8 @@ struct TripLine: Hashable, Codable {
     /// `leave` by the timetable, for a live time that gets too old to call live (build 209). Nil on caches
     /// written by older builds and on rows that were never live.
     var timetable: Date?
+    /// Build 212: a word in place of the minutes on a started trip's row ("Due", "Now", "Done"); nil counts down.
+    var waitWord: String? = nil
 
     var walkMinutes: Int {
         guard let b = board else { return 0 }
@@ -120,6 +123,11 @@ struct NextTripProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: NextTripIntent, in context: Context) async -> Timeline<NextTripEntry> {
         let e = await Self.load(configuration)
+        // Build 212: a started trip has its own timeline, one entry per moment to the end (TripMoments).
+        if e.live, let card = SharedLiveCard.load() {
+            let entries = Self.liveEntries(card)
+            return Timeline(entries: entries, policy: .after(Self.liveReload(card)))
+        }
         return Timeline(entries: Self.entries(from: e), policy: .after(WidgetText.reloadDate(updated: e.updated, departures: e.trips.map(\.leave), live: e.live, failed: e.failed)))
     }
 
@@ -137,7 +145,7 @@ struct NextTripProvider: AppIntentTimelineProvider {
                 // alerts, cancellations and platform changes stay.
                 if x.notice?.level == .info || x.notice?.text.hasPrefix("Running ") == true { x.notice = nil }
             }
-            if x.trips.isEmpty, x.message == nil { x.message = "Checking for the next one" }
+            if x.trips.isEmpty, x.message == nil { x.message = "No more services right now" }
             return x
         }
     }
@@ -241,23 +249,94 @@ struct NextTripProvider: AppIntentTimelineProvider {
         return e
     }
 
-    /// A trip in progress, from the app: the next thing to do and the minutes to it.
+    /// A trip in progress, from the app: the moment showing now (build 212: TripMoments; was one waiting row that was
+    /// dropped at the departure, "Checking for the next one" and a fixed "Trip started" footer, G4, G5).
     static func liveEntry(_ c: SharedLiveCard, now: Date = Date()) -> NextTripEntry {
+        liveEntries(c, now: now).first ?? liveEntry(c, moment: TripMoment(at: now, kind: .wait, target: c.target), now: now)
+    }
+
+    /// One entry per moment of the trip from now to its end: Due, on board, your stop next, Get off now, Arrived. Each
+    /// is marked "about" (the clock time, not a countdown) once the live times behind it are over 2 minutes old, and
+    /// from 5 minutes shows the timetable time with "No live data" (spec 2.4). Waiting and on board also get one entry
+    /// a minute so the minutes stay right. The last entry is the arrival; the card itself ends 2 minutes later.
+    static func liveEntries(_ c: SharedLiveCard, now: Date = Date()) -> [NextTripEntry] {
+        let moments = TripMoments.list(phase: c.phase, departs: c.departsDate, legArrives: c.legArrivesDate,
+                                       arrival: Date(timeIntervalSince1970: c.arrival / 1000), now: now)
+        var out: [NextTripEntry] = []
+        for (i, m) in moments.enumerated() {
+            let end = i + 1 < moments.count ? moments[i + 1].at : m.at.addingTimeInterval(120)
+            var at = m.at
+            repeat {
+                out.append(liveEntry(c, moment: TripMoment(at: at, kind: m.kind, target: m.target), now: at))
+                at = at.addingTimeInterval(60)
+            } while m.target != nil && at < end && out.count < 90
+        }
+        return out
+    }
+
+    /// When the widget asks for a new timeline during a trip: soon after the card's live times are 2 minutes old (the
+    /// app writes a newer card whenever it is open), and never later than the arrival.
+    static func liveReload(_ c: SharedLiveCard, now: Date = Date()) -> Date {
+        let arrive = Date(timeIntervalSince1970: c.arrival / 1000)
+        let base = c.updatedDate.map { max($0.addingTimeInterval(TripMoments.liveFor + 30), now.addingTimeInterval(60)) }
+            ?? now.addingTimeInterval(5 * 60)
+        return min(max(base, now.addingTimeInterval(60)), max(arrive, now.addingTimeInterval(60)))
+    }
+
+    static func liveEntry(_ c: SharedLiveCard, moment m: TripMoment, now: Date) -> NextTripEntry {
         let to = Naming.compact(Naming.short(c.destination ?? c.getOffAt))
         let off = Naming.compact(Naming.short(c.getOffAt))
-        let waiting = c.phase == "wait"
-        let status: String
-        if waiting { status = "Leaves" } else if off == to { status = "Get off at \(off)" } else { status = "Change at \(off)" }
+        let lastLeg = off == to
+        let step = TripMoments.ageStep(updated: c.updatedDate, at: now)
+        let delay = step >= 2 ? nil : TripMoments.delayWords(c.delayMin)
+        let late = (c.delayMin ?? 0) > 0
+        var status: String
+        var word: String? = nil
+        var leave = m.target ?? c.target
+        switch m.kind {
+        case .wait:
+            status = delay ?? "Leaves"
+        case .due:
+            status = late && delay != nil ? "Due now · \(delay!)" : "Due now"
+            word = "Due"
+            leave = c.departsDate ?? c.target
+        case .ride:
+            status = lastLeg ? "Get off at \(off)" : "Change at \(off)"
+        case .next:
+            status = "\(off) next"
+        case .getOff:
+            status = "Get off now"
+            word = "Now"
+            leave = c.legArrivesDate ?? c.target
+        case .arrived:
+            status = lastLeg ? "Arrived \(Clock.time(c.legArrivesDate ?? c.target))" : "Change here"
+            word = lastLeg ? "Done" : "Now"
+            leave = c.legArrivesDate ?? c.target
+        }
+        // Old live times: the clock time with "about", then the timetable time with no live data (spec 2.4).
+        if step >= 1 && word == nil {
+            if step >= 2, let d = c.delayMin, d != 0 { leave = leave.addingTimeInterval(-Double(d) * 60) }
+            word = (step >= 2 ? "" : "~") + Clock.time(leave)
+            if m.kind == .wait { status = step >= 2 ? "Timetable" : "Leaves about" }
+        }
+        let waiting = m.kind == .wait || m.kind == .due
         let line = TripLine(line: c.line, colorHex: c.lineColorHex, mode: c.mode.isEmpty ? "train" : c.mode,
-                            leave: c.target, arrive: Date(timeIntervalSince1970: c.arrival / 1000), isLive: true,
-                            status: status, platform: waiting ? c.platform : nil)
+                            leave: leave, arrive: Date(timeIntervalSince1970: c.arrival / 1000),
+                            isLive: step == 0 && (waiting ? c.departsLive : c.legArrivesLive) != false,
+                            status: status, platform: waiting ? c.platform : nil, waitWord: word)
         let from = waiting ? Naming.compact(Naming.short(c.nextStop ?? "")) : "On board"
+        // Only a change, a cancellation or a missed connection goes under the row; the delay is on the row (G28) and
+        // there is no "Trip started" line (G5). With old times the footer says how old.
+        let w = c.warning?.trimmingCharacters(in: .whitespaces) ?? ""
+        let serious = w.range(of: #"(?i)miss|risk|cancel|tight|platform|plat "#, options: .regularExpression) != nil
         var e = NextTripEntry(date: now, title: "Your trip", from: from, to: to, trips: [line], message: nil,
-                              notice: WidgetNotice(text: waiting ? "Trip started" : status, level: .info), updated: now)
+                              notice: serious ? WidgetNotice(text: w, level: w.lowercased().contains("miss") || w.lowercased().contains("cancel") ? .severe : .warning) : nil,
+                              updated: c.updatedDate ?? now)
         e.live = true
-        // The app writes when the card's live times were loaded (build 207 on); a card older than the rule stops
-        // counting as live in the timeline, like a fetched trip. No timetable time travels with the card.
-        if let u = c.updated, u > 0 { e.dataAt = Date(timeIntervalSince1970: u / 1000) }
+        if step >= 1, let u = c.updatedDate {
+            e.ago = step >= 2 ? "No live data since \(Clock.time(u))" : WidgetLive.ago(u, at: now)
+        }
+        e.relevance = TimelineEntryRelevance(score: 100, duration: 10 * 60)
         return e
     }
 
@@ -363,10 +442,12 @@ struct WidgetLineBadge: View {
 struct WaitText: View {
     var leave: Date
     var now: Date
+    /// Build 212: the started trip's word ("Due", "Now") instead of minutes that would read "Now" or count past.
+    var word: String? = nil
 
     var body: some View {
-        Text(WidgetText.wait(leave, from: now))
-            .accessibilityLabel(WidgetText.spokenWait(leave, from: now))
+        Text(word ?? WidgetText.wait(leave, from: now))
+            .accessibilityLabel(word.map { $0 == "Due" ? "due now" : ($0 == "Now" ? "get off now" : $0) } ?? WidgetText.spokenWait(leave, from: now))
     }
 }
 
@@ -452,7 +533,7 @@ struct NextTripView: View {
     private var inline: some View {
         Group {
             if let t = entry.trips.first {
-                Text(WidgetText.inline(line: t.line, leave: t.leave, platform: t.platform, now: entry.date))
+                Text(t.waitWord.map { "\(t.line) \($0)" } ?? WidgetText.inline(line: t.line, leave: t.leave, platform: t.platform, now: entry.date))
             } else {
                 Text(entry.message ?? "No trips soon")
             }
@@ -466,14 +547,14 @@ struct NextTripView: View {
                 Gauge(value: min(mins, 20), in: 0...20) {
                     Text(t.line)
                 } currentValueLabel: {
-                    Text(mins < 1 ? "Now" : (mins >= 60 ? Clock.time(t.leave).replacingOccurrences(of: "am", with: "").replacingOccurrences(of: "pm", with: "") : "\(Int(mins))"))
+                    Text(t.waitWord ?? (mins < 1 ? "Now" : (mins >= 60 ? Clock.time(t.leave).replacingOccurrences(of: "am", with: "").replacingOccurrences(of: "pm", with: "") : "\(Int(mins))")))
                         .font(.system(.title3, design: .rounded).weight(.bold))
                         .monospacedDigit()
                         .minimumScaleFactor(0.6)
                 }
                 .gaugeStyle(.accessoryCircular)
                 .widgetAccentable()
-                .accessibilityLabel("\(t.line) \(WidgetText.spokenWait(t.leave, from: entry.date))")
+                .accessibilityLabel("\(t.line) \(t.waitWord ?? WidgetText.spokenWait(t.leave, from: entry.date))")
             } else {
                 ZStack {
                     AccessoryWidgetBackground()
@@ -526,7 +607,7 @@ struct NextTripView: View {
         HStack(spacing: 4) {
             if icon { Image(systemName: Mode(raw: t.mode).symbol).accessibilityHidden(true) }
             Text(t.line).fontWeight(.bold).fixedSize()
-            WaitText(leave: t.leave, now: entry.date).fontWeight(.semibold).fixedSize()
+            WaitText(leave: t.leave, now: entry.date, word: t.waitWord).fontWeight(.semibold).fixedSize()
             if platform, let p = WidgetText.plat(t.platform) { Text(p).fixedSize() }
         }
     }
@@ -556,7 +637,7 @@ struct NextTripView: View {
                     WidgetLineBadge(line: t.line, colorHex: t.colorHex, mode: t.mode).fixedSize()
                     if let p = WidgetText.plat(t.platform) { Text(p).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
                 }
-                WaitText(leave: t.leave, now: entry.date)
+                WaitText(leave: t.leave, now: entry.date, word: t.waitWord)
                     .font(.system(.title, design: .rounded).weight(.bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
@@ -581,7 +662,7 @@ struct NextTripView: View {
                     WidgetLineBadge(line: t.line, colorHex: t.colorHex, mode: t.mode, large: true)
                     Text(title).font(.headline).lineLimit(1)
                 }
-                WaitText(leave: t.leave, now: entry.date)
+                WaitText(leave: t.leave, now: entry.date, word: t.waitWord)
                     .font(.system(size: 56, weight: .bold, design: .rounded))
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
@@ -683,7 +764,7 @@ struct NextTripView: View {
                 statusLine(t)
             }
             Spacer(minLength: 4)
-            WaitText(leave: t.leave, now: entry.date)
+            WaitText(leave: t.leave, now: entry.date, word: t.waitWord)
                 .font(first ? .title3.weight(.bold) : .subheadline.weight(.semibold))
                 .foregroundStyle(first ? Color.primary : Color.secondary)
                 .monospacedDigit()
@@ -830,7 +911,7 @@ struct StopBoardProvider: AppIntentTimelineProvider {
             let (rows, oldest) = Self.settle(e.rows, at: x.date)
             x.rows = WidgetText.upcoming(rows, at: x.date) { $0.time }
             if let o = oldest { x.ago = WidgetLive.ago(o, at: x.date) }
-            if x.rows.isEmpty, x.message == nil { x.message = "Checking for the next one" }
+            if x.rows.isEmpty, x.message == nil { x.message = "No more services right now" }
             return x
         }
         return Timeline(entries: entries, policy: .after(WidgetText.reloadDate(updated: e.updated, departures: e.rows.map(\.time), failed: e.failed)))

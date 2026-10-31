@@ -34,7 +34,9 @@ const trip = (changeAt = 19) => ({ legs: legs(changeAt), to: { id: 'KXS', name: 
 const cardAt = (g, t, memo) => cardFor(g, live.computeLive(g.legs, [], t, memo), t);
 
 const SWIFT_FIELDS = new Set(['line', 'lineColorHex', 'mode', 'nextStop', 'stopsLeft', 'getOffAt', 'arrival', 'phase', 'warning', 'progress',
-  'fareLine', 'towards', 'platform', 'departs', 'legArrives', 'destination', 'updated', 'stopTrack']);
+  'fareLine', 'towards', 'platform', 'departs', 'legArrives', 'destination', 'updated', 'stopTrack',
+  // Build 212 native card (G31): optional, older native cards skip them.
+  'delayMin', 'departsLive', 'legArrivesLive']);
 const REQUIRED = ['line', 'lineColorHex', 'mode', 'getOffAt', 'arrival', 'phase', 'progress'];
 
 function checkShape(c) {

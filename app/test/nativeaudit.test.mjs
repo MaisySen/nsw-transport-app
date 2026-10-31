@@ -86,9 +86,11 @@ test('fixes the audit found stay in: compact island countdown, Lock Screen words
   // Build 210: the stop track layouts come first when the card carries stops; the bar layouts stay as the fallback.
   // Build 211 round 2: the title is one line in every layout (LiveTripTitle), so the layouts differ only in the detail
   // and warning lines: two, then one, then merged onto one, then merged without the arrival line.
-  assert.match(l, /card\(lines: 2, track: false\)\s*card\(lines: 1, track: false\)\s*\/\/[^\n]*\n\s*card\(lines: 1, track: false, merged: true\)\s*\/\/[^\n]*\n\s*card\(lines: 1, track: false, merged: true, arriveLine: false\)/);
+  // Build 212 (G24): every layout's status is one line (the two line layouts are gone).
+  assert.match(l, /card\(lines: 1, track: false\)\s*\/\/[^\n]*\n\s*card\(lines: 1, track: false, merged: true\)\s*\/\/[^\n]*\n\s*card\(lines: 1, track: false, merged: true, arriveLine: false\)/);
+  assert.doesNotMatch(l, /card\(lines: 2/);
   // Build 211: the track layouts merge the stops and the delay onto one line, so the track fits under a one line countdown.
-  assert.match(l, /card\(lines: 2, track: true, merged: true\)\s*card\(lines: 1, track: true, merged: true\)/);
+  assert.match(l, /card\(lines: 1, track: true, merged: true\)/);
   assert.doesNotMatch(l, /card\(lines: 2, track: true\)/);
   // Round 2: the stop alone shrinks to 0.7 on the Lock Screen and 0.65 in the Island before it is cut at its end.
   assert.match(l, /probe: "lock-stop", font: \.headline, minScale: 0\.7\)/);

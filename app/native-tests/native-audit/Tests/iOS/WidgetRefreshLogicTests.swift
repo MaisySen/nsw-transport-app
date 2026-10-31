@@ -54,4 +54,56 @@ final class WidgetRefreshLogicTests: XCTestCase {
         XCTAssertEqual(off[0].time, Self.now.addingTimeInterval(280), "timetable time, not the old live one")
         XCTAssertNil(off[0].liveAt)
     }
+
+    // MARK: Build 212: the Your trip widget follows the whole trip (TripMoments, G4, G5, G28)
+
+    static func card(phase: String, departs: TimeInterval?, legArrives: TimeInterval, updated: TimeInterval = 0,
+                     delay: Int? = 4, warning: String? = nil) -> SharedLiveCard {
+        let ms = { (t: TimeInterval) in (now.timeIntervalSince1970 + t) * 1000 }
+        return SharedLiveCard(title: "Your trip", line: "T9", lineColorHex: "#D11F2F", mode: "train", phase: phase,
+                              getOffAt: "Hornsby Station", destination: "Hornsby Station", nextStop: "Gordon Station",
+                              platform: "Platform 2", departs: departs.map(ms), legArrives: ms(legArrives),
+                              arrival: ms(legArrives), until: ms(legArrives + 120), updated: ms(updated),
+                              warning: warning, delayMin: delay, departsLive: true, legArrivesLive: true)
+    }
+
+    func testTripMomentsRunFromWaitingToArrivedInOrder() {
+        let m = TripMoments.list(phase: "wait", departs: Self.now.addingTimeInterval(240),
+                                 legArrives: Self.now.addingTimeInterval(1200), arrival: Self.now.addingTimeInterval(1200), now: Self.now)
+        XCTAssertEqual(m.map(\.kind), [.wait, .due, .ride, .next, .getOff, .arrived])
+        XCTAssertEqual(m[1].at, Self.now.addingTimeInterval(180), "Due a minute before the live departure")
+        XCTAssertEqual(m[4].at, Self.now.addingTimeInterval(1170), "Get off now 30 s before the live arrival")
+        for (a, b) in zip(m, m.dropFirst()) { XCTAssertLessThan(a.at, b.at) }
+    }
+
+    func testTripMomentsPastTheDepartureShowDueNeverZero() {
+        let m = TripMoments.list(phase: "wait", departs: Self.now.addingTimeInterval(-20),
+                                 legArrives: Self.now.addingTimeInterval(900), arrival: Self.now.addingTimeInterval(900), now: Self.now)
+        XCTAssertEqual(m.first?.kind, .due)
+        XCTAssertNil(m.first?.target, "Due is a word, not a countdown")
+    }
+
+    func testLiveTimelineHasNoCheckingNoTripStartedAndKeepsARowToTheEnd() {
+        let c = Self.card(phase: "wait", departs: 240, legArrives: 1200)
+        let es = NextTripProvider.liveEntries(c, now: Self.now)
+        XCTAssertGreaterThan(es.count, 5)
+        for e in es {
+            XCTAssertEqual(e.trips.count, 1, "a ride row the whole trip")
+            XCTAssertNil(e.message)
+            XCTAssertFalse((e.trips[0].status).contains("Checking"))
+            XCTAssertFalse((e.notice?.text ?? "").contains("Trip started"))
+        }
+        XCTAssertEqual(es.first?.trips.first?.status, "4 min late", "the delay is on the row (G28)")
+        XCTAssertTrue(es.contains { $0.trips[0].status.hasPrefix("Due now") })
+        XCTAssertTrue(es.contains { $0.trips[0].status == "Get off now" })
+        XCTAssertTrue(es.last?.trips[0].status.hasPrefix("Arrived") ?? false)
+        for (a, b) in zip(es, es.dropFirst()) { XCTAssertLessThan(a.date, b.date) }
+    }
+
+    func testLiveTimelineSaysAboutThenNoLiveData() {
+        let c = Self.card(phase: "ride", departs: nil, legArrives: 1500, updated: -400)
+        let e = NextTripProvider.liveEntry(c, now: Self.now)
+        XCTAssertEqual(e.ago?.hasPrefix("No live data since"), true)
+        XCTAssertFalse(e.trips[0].isLive)
+    }
 }

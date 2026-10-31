@@ -106,21 +106,19 @@ struct NextProvider: TimelineProvider {
             return [NextEntry(date: now, kind: .empty, title: "Open Transport", detail: "on your iPhone")]
         }
         if let l = c.live, l.isActive(now: now) {
-            let ride = l.phase == "ride"
-            let next: String? = ride ? l.nextStop.map { "Next: \(WText.short($0))" } : "Off at \(WText.short(l.getOffAt))"
-            let entry = NextEntry(date: now, kind: .live, line: l.line, colorHex: l.lineColorHex, target: l.target,
-                                  platform: ride ? nil : l.platform,
-                                  title: ride ? "Off at \(WText.short(l.getOffAt))" : "Your trip",
-                                  detail: l.warning ?? next,
-                                  relevance: TimelineEntryRelevance(score: 100))
-            var out = [entry]
-            if l.target > now {
-                out.append(NextEntry(date: l.target, kind: .live, line: l.line, colorHex: l.lineColorHex,
-                                     title: ride ? "Off at \(WText.short(l.getOffAt))" : "Your trip",
-                                     detail: ride ? "Get off now" : "Leaving now",
-                                     relevance: TimelineEntryRelevance(score: 100)))
+            // Build 212 (G27): one entry per moment of the trip, as the phone's widget (WTripMoments): the countdown
+            // to the live departure, "Due", on board, your stop next, "Get off now", "Arrived". Never "Leaving now" at
+            // the old time, never a timer counting past its moment; old live times show the clock time.
+            return WTripMoments.list(l, now: now).map { m in
+                let old = WTripMoments.ageStep(l, at: m.at) >= 1
+                let waiting = m.kind == .wait || m.kind == .due
+                let title = waiting ? "Your trip" : (m.kind == .arrived ? WTripMoments.big(l, m, at: m.at) : "Off at \(WText.short(l.getOffAt))")
+                var detail = WTripMoments.detail(l, m, at: m.at)
+                if m.target == nil || old { detail = [m.target == nil ? WTripMoments.big(l, m, at: m.at) : nil, detail].compactMap { $0 }.joined(separator: " · ") }
+                return NextEntry(date: m.at, kind: .live, line: l.line, colorHex: l.lineColorHex,
+                                 target: old ? nil : m.target, platform: waiting ? l.platform : nil,
+                                 title: title, detail: detail, relevance: TimelineEntryRelevance(score: 100))
             }
-            return out
         }
         guard let m = c.commute(now: now) else {
             return [NextEntry(date: now, kind: .empty, title: c.home == nil || c.work == nil ? "Set Home and Work" : "Change Home or Work", detail: "on your iPhone")]

@@ -56,10 +56,10 @@ struct LiveTripIslandTrailing: View {
     var body: some View {
         // Build 211 (31 Oct, owner's iPhone on build 210): the countdown on one line ("6 min", was "in 5 / minutes"),
         // and the delay under it ("3 min late", "On time"), which the Island did not show while the Lock Screen did.
-        let countdown = MinutesUntil.words(state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
+        let countdown = MinutesUntil.words(state.shownTarget(stale: stale), arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale), word: state.countdownWord(stale: stale))
         let delay = state.delayStatus(stale: stale)
         return VStack(alignment: .trailing, spacing: 1) {
-            MinutesUntil(date: state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
+            MinutesUntil(date: state.shownTarget(stale: stale), arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale), word: state.countdownWord(stale: stale), spoken: state.spokenCountdown(stale: stale))
                 .font(.title3.weight(.semibold))
                 .monospacedDigit()
                 .lineLimit(1)
@@ -145,11 +145,13 @@ struct LiveTripCompactLeading: View {
     var stale = false
     var body: some View {
         if state.phase == "ride" && !state.arrived(stale: stale) {
-            Text(state.compactStation)
-                .font(.caption.weight(.semibold))
+            // Build 212 (G10): the bell the stop track uses for your stop and the stop name ("🔔 Croydon"), not
+            // "Croydon:" beside a clock time, which read as the time you would get there.
+            (Text(Image(systemName: "bell.fill")).font(.caption2) + Text(" " + state.compactStop).font(.caption.weight(.semibold)))
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: 64, alignment: .leading)
+                .accessibilityLabel("Get off at \(state.getOffAt)")
         } else {
             WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode)
         }
@@ -160,7 +162,7 @@ struct LiveTripCompactTrailing: View {
     var state: LiveTripAttributes.ContentState
     var stale = false
     var body: some View {
-        CompactCountdown(date: state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
+        CompactCountdown(date: state.shownTarget(stale: stale), arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale), word: state.countdownWord(stale: stale), spoken: state.spokenCountdown(stale: stale))
             .frame(maxWidth: 44, alignment: .trailing)
     }
 }
@@ -169,7 +171,7 @@ struct LiveTripMinimal: View {
     var state: LiveTripAttributes.ContentState
     var stale = false
     var body: some View {
-        CompactCountdown(date: state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
+        CompactCountdown(date: state.shownTarget(stale: stale), arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale), word: state.countdownWord(stale: stale), spoken: state.spokenCountdown(stale: stale))
             .frame(maxWidth: 36)
     }
 }
@@ -180,9 +182,30 @@ struct CompactCountdown: View {
     var date: Date
     var arrived = false
     var outdated = false
+    /// Build 212 (G3): "Due" or "Now" once the moment is reached, drawn when the system redraws the card at its stale
+    /// date (the live departure), so the Island never sits on 0:00.
+    var word: String? = nil
+    /// VoiceOver for the countdown (G30): "Leaves in 4 minutes", "Train due now"; never "zero".
+    var spoken: String? = nil
     var body: some View {
         if arrived {
-            Image(systemName: "checkmark.circle.fill").accessibilityLabel("Arrived")
+            content.accessibilityLabel("Arrived")
+        } else if let s = spoken {
+            content.accessibilityLabel(s)
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        if arrived {
+            Image(systemName: "checkmark.circle.fill")
+        } else if let w = word {
+            Text(w)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .lineProbe("island-compact-word", text: w, lines: 1, font: .caption.weight(.semibold), minScale: 0.6)
         } else if outdated || date.timeIntervalSinceNow > 3600 {
             Text(Clock.time(date))
                 .font(.caption2.weight(.semibold))
@@ -210,9 +233,25 @@ struct MinutesUntil: View {
     var arrived = false
     /// Old live times: the clock time, never a countdown that could reach "now" on stale data.
     var outdated = false
+    /// Build 212 (G3): "Due" or "Now" in place of the minutes once the moment is reached.
+    var word: String? = nil
+    /// VoiceOver for the countdown (G30).
+    var spoken: String? = nil
     var body: some View {
         if arrived {
-            Image(systemName: "checkmark.circle.fill").accessibilityLabel("Arrived")
+            content.accessibilityLabel("Arrived")
+        } else if let s = spoken {
+            content.accessibilityLabel(s)
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        if arrived {
+            Image(systemName: "checkmark.circle.fill")
+        } else if let w = word {
+            Text(w)
         } else if outdated {
             Text(Clock.time(date))
         } else if date.timeIntervalSinceNow < 60 {
@@ -234,8 +273,9 @@ struct MinutesUntil: View {
     static let unitsLocale = Locale(identifier: "en_US")
 
     /// The words the countdown shows right now (the native audit's line check reads them).
-    static func words(_ date: Date, arrived: Bool = false, outdated: Bool = false) -> String {
+    static func words(_ date: Date, arrived: Bool = false, outdated: Bool = false, word: String? = nil) -> String {
         if arrived { return "" }
+        if let w = word { return w }
         if outdated { return Clock.time(date) }
         let now = Date()
         if date.timeIntervalSince(now) < 60 { return "Now" }
@@ -269,7 +309,7 @@ struct LiveTripIslandBottom: View {
             }
             TrackFooter(state: state, stale: stale)
             // The delay is beside the countdown now (build 211); a change or timetable warning stays here.
-            if warning, let w = state.warning, state.delayStatus(stale: stale) == nil {
+            if warning, let w = state.displayWarning(stale: stale) {
                 Label(w, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(state.warningIsRed ? Color.red : Color.orange)
                     .lineLimit(1)
@@ -284,11 +324,11 @@ struct LiveTripIslandBottom: View {
                 Text(state.detail(stale: stale)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer(minLength: 4)
                 if !state.arrived(stale: stale) {
-                    Text(state.outdated(stale: stale) ? state.updatedLine : state.arriveLine).monospacedDigit().lineLimit(1)
+                    Text(state.outdated(stale: stale) ? state.ageLine(stale: stale) : state.arriveLine).monospacedDigit().lineLimit(1)
                         .minimumScaleFactor(0.75).layoutPriority(1)
                 }
             }
-            if let w = state.warning, !state.arrived(stale: stale), state.delayStatus(stale: stale) == nil {
+            if let w = state.displayWarning(stale: stale) {
                 Label(w, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(state.warningIsRed ? Color.red : Color.orange)
                     .lineLimit(1)
@@ -304,8 +344,8 @@ struct TrackFooter: View {
     var stale = false
     var body: some View {
         let old = state.outdated(stale: stale)
-        let right = old ? "\(state.arriveTimeLine). \(state.updatedLine)" : state.arriveLine
-        let rightShort = old ? state.updatedLine : state.arriveTimeLine
+        let right = old ? "\(state.arriveTimeLine). \(state.ageLine(stale: stale))" : state.arriveLine
+        let rightShort = old ? state.ageLine(stale: stale) : state.arriveTimeLine
         ViewThatFits(in: .horizontal) {
             row(state.trackNext(stale: stale), right)
             row(state.trackNext(stale: stale), rightShort)
@@ -441,6 +481,22 @@ struct StopTrackView: View {
     }
 }
 
+/// One line of the card (build 212, G24): whole when it fits, else a little smaller, then cut at its end, which the
+/// native audit's line check reports.
+struct OneLine: View {
+    var text: String
+    var font: Font
+    var color: Color
+    var probe: String
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Text(text).font(font).foregroundStyle(color).lineLimit(1).fixedSize(horizontal: true, vertical: false)
+            Text(text).font(font).foregroundStyle(color).lineLimit(1).minimumScaleFactor(0.75).truncationMode(.tail)
+                .lineProbe(probe, text: text, lines: 1, font: font, minScale: 0.75)
+        }
+    }
+}
+
 /// One card that changes with the trip: waiting, on board, at a change, then the last leg.
 /// The first layout that fits wins: the detail and warning on up to two lines, then one (native audit, 30 Oct: "Get off
 /// at Syd…" on the smallest iPhone). The line badge never truncates. The title is always one line (round 2, build 211):
@@ -452,6 +508,13 @@ struct LiveTripLockCard: View {
     var stale = false
 
     var body: some View {
+        layouts
+            // Build 212 (G30): VoiceOver reads the card as one sentence, the countdown in words.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(state.spokenSummary(stale: stale))
+    }
+
+    private var layouts: some View {
         ViewThatFits(in: .vertical) {
             // Build 210: the stop track in place of the bar when the card carries the leg's stops. "6 stops" and the
             // late or change words share one line before the track gives way to the bar layouts.
@@ -461,11 +524,11 @@ struct LiveTripLockCard: View {
             // delay on one line ("2 stops · 3 min late"), so the track fits with room to spare.
             // Round 2: with the title on one line in every layout, a long stop name no longer needs the bar layouts'
             // extra lines at the largest text sizes (the first 211 candidate gave it up to three).
+            // Build 212 (G24, owner's 7:48 PM card: the status wrapped onto two lines): the status is one line in every
+            // layout; the line check fails the audit when it is not.
             if state.showsTrack(stale: stale) {
-                card(lines: 2, track: true, merged: true)
                 card(lines: 1, track: true, merged: true)
             }
-            card(lines: 2, track: false)
             card(lines: 1, track: false)
             // Largest text (xxxLarge) with a change or late warning: the detail and warning share one line.
             card(lines: 1, track: false, merged: true)
@@ -477,22 +540,39 @@ struct LiveTripLockCard: View {
     /// "6 stops · 4 min late" on one line: the detail in grey, the warning in its colour. With the stop track and no
     /// warning, "2 stops · On time" in green when the stops are live (build 211, the same words as the Island).
     private func detailAndWarning(_ lines: Int, track: Bool = false) -> some View {
+        // Build 212 (G24): one line, always. The detail and the warning together when they fit; else the warning alone
+        // (it is the news), else the detail alone; last both, smaller and cut at the end, which the line check fails.
         let d = state.detail(stale: stale)
-        let w = state.arrived(stale: stale) ? nil : state.warning
-        var t = Text(d).foregroundColor(.secondary)
-        if let w, !w.isEmpty {
-            let warn = Text(w).fontWeight(.semibold).foregroundColor(state.warningIsRed ? .red : .orange)
-            t = d.isEmpty ? warn : t + Text(" · ").foregroundColor(.secondary) + warn
-        } else if track, let on = state.delayStatus(stale: stale) {
-            let ok = Text(on).fontWeight(.semibold).foregroundColor(delayColor(on))
-            t = d.isEmpty ? ok : t + Text(" · ").foregroundColor(.secondary) + ok
+        let w = state.displayWarning(stale: stale)
+        let ok = w == nil && track ? state.delayStatus(stale: stale) : nil
+        let second = w ?? ok
+        let plain = [d, second ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+        return ViewThatFits(in: .horizontal) {
+            statusText(d, second, isWarning: w != nil).fixedSize(horizontal: true, vertical: false)
+            if let s = second, !d.isEmpty { statusText("", s, isWarning: w != nil).fixedSize(horizontal: true, vertical: false) }
+            if second == nil { statusText(d, nil, isWarning: false).fixedSize(horizontal: true, vertical: false) }
+            statusText(d, second, isWarning: w != nil)
+                .minimumScaleFactor(0.75)
+                .truncationMode(.tail)
+                .lineProbe("lock-status", text: plain, lines: 1, font: .subheadline, minScale: 0.75)
         }
-        return t.font(.subheadline).lineLimit(lines).minimumScaleFactor(0.85)
+    }
+
+    /// "Leaves 7:54pm, Platform 2 · 4 min late": the detail in grey, the warning in its colour (the delay in green when
+    /// on time), on one line.
+    private func statusText(_ d: String, _ second: String?, isWarning: Bool) -> some View {
+        var t = Text(d).foregroundColor(.secondary)
+        if let s = second, !s.isEmpty {
+            let color: Color = isWarning ? (state.warningIsRed ? .red : .orange) : delayColor(s)
+            let k = Text(s).fontWeight(.semibold).foregroundColor(color)
+            t = d.isEmpty ? k : t + Text(" · ").foregroundColor(.secondary) + k
+        }
+        return t.font(.subheadline).lineLimit(1)
     }
 
     private func card(lines: Int, track: Bool, merged: Bool = false, arriveLine: Bool = true) -> some View {
         // Worked out here so the view expression stays quick to type check.
-        let countdown = MinutesUntil.words(state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
+        let countdown = MinutesUntil.words(state.shownTarget(stale: stale), arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale), word: state.countdownWord(stale: stale))
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -507,16 +587,11 @@ struct LiveTripLockCard: View {
                     } else {
                         // An empty detail (no live stop count) takes no line.
                         if !track || !state.detail(stale: stale).isEmpty {
-                            Text(state.detail(stale: stale))
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(lines)
+                            OneLine(text: state.detail(stale: stale), font: .subheadline, color: .secondary, probe: "lock-detail")
                         }
-                        if let w = state.warning, !state.arrived(stale: stale) {
-                            Text(w)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(state.warningIsRed ? Color.red : Color.orange)
-                                .lineLimit(lines)
+                        if let w = state.displayWarning(stale: stale) {
+                            OneLine(text: w, font: .caption.weight(.semibold), color: state.warningIsRed ? Color.red : Color.orange,
+                                    probe: "lock-warning")
                         }
                     }
                 }
@@ -524,7 +599,7 @@ struct LiveTripLockCard: View {
                 VStack(alignment: .trailing, spacing: 0) {
                     Text(state.countdownLabel(stale: stale)).font(.caption2).foregroundStyle(.secondary)
                     // One line, "6 min" (build 211: "in 6 / minutes" on the owner's iPhone); it shrinks before it is cut.
-                    MinutesUntil(date: state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
+                    MinutesUntil(date: state.shownTarget(stale: stale), arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale), word: state.countdownWord(stale: stale), spoken: state.spokenCountdown(stale: stale))
                         .font(.title2.weight(.bold))
                         .monospacedDigit()
                         .lineLimit(1)
@@ -546,7 +621,7 @@ struct LiveTripLockCard: View {
                 ProgressView(value: state.arrived(stale: stale) ? 1 : min(max(state.progress, 0), 1))
                     .tint(RGB(hex: state.lineColorHex).map { Color(red: $0.r, green: $0.g, blue: $0.b) } ?? Color.blue)
                 if arriveLine && !state.arrived(stale: stale) {
-                    Text(state.outdated(stale: stale) ? "\(state.arriveLine). \(state.updatedLine)" : state.arriveLine)
+                    Text(state.outdated(stale: stale) ? "\(state.arriveLine). \(state.ageLine(stale: stale))" : state.arriveLine)
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
                 }
             }

@@ -49,7 +49,9 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   // Up to build 204 the card can only change while the app runs; from 205 the server also updates it by push. Builds whose card shows "Updated" when stale
   // get a stale date 2 minutes after the live times; older builds get "Updated 8:21am" written on the card itself
   // when the app goes to the background.
-  const honestStale = iosNative.cardVersion() >= 2;
+  // Native card version 3 (build 212) draws Due and Now itself and is also redrawn at the get off moment (staleAt).
+  const cardV = iosNative.cardVersion();
+  const honestStale = cardV >= 2;
 
   // The next service for a change the live times say you will miss, from the same plan the trip screen shows.
   let alt: { key: string; at: number; v: CardAlt | null; busy: boolean } = { key: '', at: 0, v: null, busy: false };
@@ -109,7 +111,7 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     if (!iosNative.activitiesEnabled() && !activityId) { shareLive(g, cardFor(g, s, Date.now(), o)); return; }
     const card = cardFor(g, s, Date.now(), o);
     shareLive(g, card);
-    const stale = staleAt(card, card.updated ?? updated, honestStale, ARRIVED_KEEP_S * 1000);
+    const stale = staleAt(card, card.updated ?? updated, cardV, ARRIVED_KEEP_S * 1000);
     if (!activityId || activityTrip !== g.id) {
       if (starting || card.phase === 'arrived') return;
       starting = true;

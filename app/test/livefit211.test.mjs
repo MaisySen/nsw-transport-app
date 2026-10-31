@@ -64,13 +64,14 @@ test('the Lock Screen card keeps the stop track: stops and delay share a line in
   const w = read(W);
   const body = w.slice(w.indexOf('struct LiveTripLockCard'));
   const track = [...body.matchAll(/card\(lines: \d, track: true[^)]*\)/g)].map((m) => m[0]);
-  assert.ok(track.length >= 2);
+  // Build 212 (G24): one track layout, its status on one line.
+  assert.ok(track.length >= 1);
   for (const c of track) assert.match(c, /merged: true/, `${c} puts the stops and the delay on separate lines (too tall, 31 Oct)`);
-  assert.ok(body.indexOf('track: true') < body.indexOf('card(lines: 2, track: false)'), 'the track layouts come before the bar');
+  assert.ok(body.indexOf('track: true') < body.indexOf('card(lines: 1, track: false)'), 'the track layouts come before the bar');
   assert.match(body, /ProgressView\(value:/);
   assert.match(body, /detailAndWarning\(lines, track: track\)/);
   // "2 stops · On time" with the track and no warning, in the same green as the Island.
-  assert.match(body, /else if track, let on = state\.delayStatus\(stale: stale\)/);
+  assert.match(body, /let ok = w == nil && track \? state\.delayStatus\(stale: stale\) : nil/);
 });
 
 test('the Island shows the delay under the countdown and does not repeat it under the stop track', () => {
@@ -80,7 +81,8 @@ test('the Island shows the delay under the countdown and does not repeat it unde
   assert.match(tr, /foregroundStyle\(delayColor\(d\)\)/);
   assert.match(w, /func delayColor\(_ words: String\) -> Color \{ words == "On time" \? \.green : \.orange \}/);
   const bottom = w.slice(w.indexOf('struct LiveTripIslandBottom'), w.indexOf('struct TrackFooter'));
-  assert.equal((bottom.match(/state\.delayStatus\(stale: stale\) == nil/g) || []).length, 2, 'both bottom layouts leave the delay to the countdown');
+  // Build 212: displayWarning drops a warning that only repeats the delay beside the countdown (both bottom layouts).
+  assert.equal((bottom.match(/state\.displayWarning\(stale: stale\)/g) || []).length, 2, 'both bottom layouts leave the delay to the countdown');
 });
 
 test('delayStatus reads the card warning the app writes: "N min late" alone, else "On time" only with live stops', async () => {

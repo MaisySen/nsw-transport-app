@@ -15,6 +15,14 @@ export type TripCardState = {
    * older native cards ignore it and draw the bar, and a card without it draws the bar too.
    */
   stopTrack?: StopTrack;
+  /**
+   * Build 212 native card (G31): the leg's delay in whole minutes from the same live time the countdown uses (more than
+   * 0 late, less than 0 early), and whether departs and legArrives are live times. Optional: older native cards ignore
+   * them (unknown keys are skipped), and the delay is then read from the warning as before.
+   */
+  delayMin?: number | null;
+  departsLive?: boolean;
+  legArrivesLive?: boolean;
 };
 
 /**
@@ -133,6 +141,11 @@ export function cardFor(g: TripLike, s: LiveState, now = Date.now(), o: CardOpts
     legArrives: x.missed ? (alt ? alt.arr : null) : Number.isFinite(x.arr) ? x.arr : null, destination, updated,
     // A missed change waits for a service the stop list is not for, so it keeps the plain bar.
     ...(track && !x.missed ? { stopTrack: track } : {}),
+    // Build 212 (G31): the delay as a number and whether each time is live, so the native card never reads the delay
+    // out of the warning's words. No delay for a cancelled run, a missed change or timetable times.
+    delayMin: cancelled || x.missed || s.delayMin == null || s.track === 'timetable' ? null : s.delayMin,
+    departsLive: !cancelled && !x.missed && s.depSource != null && s.depSource !== 'timetable',
+    legArrivesLive: !x.missed && s.arrSource != null && s.arrSource !== 'timetable',
   };
 }
 
@@ -183,11 +196,17 @@ type LiveStateConn = Extract<LiveState, { done: false }>['conns'][number];
  * departure, so a push that does not come shows "about 7:54pm" with "Updated", never a timer at 0:00 (G3, spec 2.5).
  * On board it is no longer the arrival where you get off (a wrong arrival made the Island show a past time, G10).
  */
-export function staleAt(card: TripCardState, updated: number | null, honestStale: boolean, keepMs = 120000): number | null {
+export function staleAt(card: TripCardState, updated: number | null, honestStale: boolean | number, keepMs = 120000): number | null {
   if (card.phase === 'arrived') return null;
-  if (honestStale && updated) {
+  // honestStale: true is native card version 2, a number is the version itself (iosNative.cardVersion).
+  const v = honestStale === true ? 2 : honestStale === false ? 1 : Number(honestStale) || 1;
+  if (v >= 2 && updated) {
     const dep = card.phase === 'wait' && typeof card.departs === 'number' && Number.isFinite(card.departs) ? Math.max(card.departs, updated + 1000) : Infinity;
-    return Math.min(updated + 120000, dep);
+    // Native card version 3 (build 212) also draws "Now" when the moment to get off is reached with fresh live times,
+    // so on board it is redrawn at the live arrival where you get off as well (G3, G10). Version 2 would draw that as
+    // an old card, so it keeps the 2 minutes.
+    const off = v >= 3 && card.phase === 'ride' && typeof card.legArrives === 'number' && Number.isFinite(card.legArrives) ? Math.max(card.legArrives, updated + 1000) : Infinity;
+    return Math.min(updated + 120000, dep, off);
   }
   return card.arrival + keepMs;
 }

@@ -463,27 +463,36 @@ struct LiveTripRow: View {
     let now: Date
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        // Build 212 (G27): the same moments as the phone's card and widget (WTripMoments): "Due" at the live departure,
+        // never "Leaves now" early or a timer counting up past it; "Get off now", then "Arrived".
+        let m = WTripMoments.list(card, now: now)[0]
+        let big = WTripMoments.big(card, m, at: now)
+        let detail = WTripMoments.detail(card, m, at: now)
+        let old = WTripMoments.ageStep(card, at: now) >= 1
+        return VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 LineBadge(line: card.line, colorHex: card.lineColorHex)
-                Text(card.phase == "wait" ? WText.leaves(card.target, now: now) : Clock.countdown(card.target, from: now))
+                Text(big)
                     .font(.title3.weight(.semibold).monospacedDigit())
-                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
-            Text("Get off at \(WText.short(card.getOffAt))")
+            Text(m.kind == .arrived ? WText.short(card.destination ?? card.getOffAt) : "Get off at \(WText.short(card.getOffAt))")
                 .font(.headline)
-            if card.phase == "wait", let p = WText.platform(card.platform) {
-                Text(p).font(.caption2).foregroundStyle(.secondary)
-            } else if let n = card.nextStop, !n.isEmpty {
-                Text("Next: \(WText.short(n))").font(.caption2).foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            if let d = detail, !d.isEmpty {
+                Text(d).font(.caption2)
+                    .foregroundStyle(!old && (card.delayMin ?? 0) > 0 && d.hasSuffix("late") ? Color.orange : Color.secondary)
+                    .lineLimit(1)
             }
-            if let w = card.warning, !w.isEmpty {
+            if card.phase == "wait", m.kind != .arrived, !old, card.delayMin != nil, let p = WText.platform(card.platform) {
+                Text(p).font(.caption2).foregroundStyle(.secondary)
+            }
+            if let w = card.warning, !w.isEmpty, card.isRisk {
                 Label(w, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption2)
-                    .foregroundStyle(card.isRisk ? Color.red : Color.orange)
-            }
-            if let u = card.updatedAt, now.timeIntervalSince(u) > 120 {
-                Text("Updated \(Clock.hhmm(u))").font(.caption2).foregroundStyle(.secondary)
+                    .foregroundStyle(Color.red)
             }
         }
         .accessibilityElement(children: .combine)

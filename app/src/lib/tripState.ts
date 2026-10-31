@@ -33,7 +33,7 @@ const R = TRIP_RULES;
 export const TRIP_CLIPS = {
   headsup: { file: 'getoff_soon', words: 'Your stop is coming up. Please get ready to get off at the next stop.', secs: 5.2 },
   getoff: { file: 'getoff_now', words: 'Please get off at the next stop.', secs: 2.8 },
-  arrived: { file: 'arrival', words: "You've arrived at your stop.", secs: 2.0, build: 212 },
+  arrived: { file: 'arrival', words: "You've arrived at your stop.", secs: 2.2, build: 212 },
 } as const;
 export type ClipKey = keyof typeof TRIP_CLIPS;
 

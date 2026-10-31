@@ -201,11 +201,19 @@ export type GetOffTrip = {
 };
 /** The spoken alert sounds in the app (build 210 and later): a chime and a voice, played as the alert's own sound so
  * they are heard with the phone locked, where the app itself cannot speak. */
-export type GetOffSound = 'getoff_now' | 'getoff_soon';
+export type GetOffSound = 'getoff_now' | 'getoff_soon' | 'arrival';
 export const GETOFF_SOUND_WORDS: Record<GetOffSound, string> = {
   getoff_now: 'Please get off at the next stop.',
   getoff_soon: 'Your stop is coming up. Please get ready to get off at the next stop.',
+  // Build 212 (G37): the arrival clip, same voice, chime and pipeline (assets/sounds/arrival.wav, iPhone only).
+  arrival: "You've arrived at your stop.",
 };
+
+/** Whether this build has the arrival clip (arrival.wav): iPhone build 212 and later; no Android build has it yet. */
+export function arrivalClipSupported(os: string, build: string | number | null | undefined): boolean {
+  const n = Number(build);
+  return os === 'ios' && Number.isFinite(n) && n >= 212;
+}
 export type GetOffAction =
   | { t: 'offSchedule'; id: string; key: string; at: number; title: string; body: string; sound?: GetOffSound; quiet?: boolean }
   | { t: 'regionSchedule'; id: string; key: string; lat: number; lon: number; radius: number; title: string; body: string; sound?: GetOffSound }

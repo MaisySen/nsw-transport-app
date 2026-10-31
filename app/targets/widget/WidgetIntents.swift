@@ -359,6 +359,15 @@ struct SharedLiveCard: Decodable {
     var until: Double
     /// When the card's live times were loaded, ms (app code from 25 Oct; optional, older apps leave it out).
     var updated: Double?
+    /// Build 212: the card's warning, its delay in minutes and whether its times are live (app/platform/tripCard.ts).
+    var warning: String?
+    var delayMin: Int?
+    var departsLive: Bool?
+    var legArrivesLive: Bool?
+
+    var departsDate: Date? { departs.map { Date(timeIntervalSince1970: $0 / 1000) } }
+    var legArrivesDate: Date? { legArrives.map { Date(timeIntervalSince1970: $0 / 1000) } }
+    var updatedDate: Date? { updated.flatMap { $0 > 0 ? Date(timeIntervalSince1970: $0 / 1000) : nil } }
 
     /// The card while the trip runs, nil once it has arrived or the app has not updated it for a while.
     static func load(now: Date = Date(), _ d: UserDefaults = AppIdentity.groupDefaults) -> SharedLiveCard? {

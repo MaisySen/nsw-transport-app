@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.maisysen.nswtransport",
-      "buildNumber": "211",
+      "buildNumber": "212",
       "deploymentTarget": "17.0",
       "appleTeamId": "B85KQRQZW7",
       "supportsTablet": false,
@@ -211,7 +211,8 @@
           "color": "#0A84FF",
           "sounds": [
             "./assets/sounds/getoff_now.wav",
-            "./assets/sounds/getoff_soon.wav"
+            "./assets/sounds/getoff_soon.wav",
+            "./assets/sounds/arrival.wav"
           ]
         }
       ],
@@ -267,6 +268,6 @@
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
     },
-    "runtimeVersion": "1.2.0"
+    "runtimeVersion": "1.3.0"
   }
 }

@@ -34,6 +34,10 @@ struct WLiveCard: Codable, Hashable {
     var arrival: Double
     var until: Double
     var updated: Double?
+    /// Build 212: the delay in minutes and whether the times are live (app/platform/tripCard.ts); older phones send none.
+    var delayMin: Int?
+    var departsLive: Bool?
+    var legArrivesLive: Bool?
 
     /// Leaving while you wait, getting off while on board.
     var target: Date {
@@ -450,10 +454,10 @@ enum WText {
         return s
     }
 
-    /// "Leaves in 4 min", "Leaves now", or "Leaves at 9:41am" an hour or more away.
+    /// "Leaves in 4 min", "Due now" (build 212, as the phone; was "Leaves now"), or "Leaves at 9:41am" an hour or more away.
     static func leaves(_ t: Date, now: Date = Date()) -> String {
         let m = Clock.minutes(until: t, from: now)
-        if m < 1 { return "Leaves now" }
+        if m < 1 { return "Due now" }
         if m >= 60 { return "Leaves at \(Clock.hhmm(t))" }
         return "Leaves in \(m) min"
     }
@@ -476,5 +480,87 @@ extension Color {
         if s.hasPrefix("#") { s.removeFirst() }
         guard s.count == 6, let v = UInt32(s, radix: 16) else { self = .blue; return }
         self = Color(red: Double((v >> 16) & 0xFF) / 255, green: Double((v >> 8) & 0xFF) / 255, blue: Double(v & 0xFF) / 255)
+    }
+}
+
+// MARK: The moments of a started trip (build 212)
+
+/// The same moments as the phone's "Your trip" widget (targets/widget/TripMoments.swift; keep the two in step): the
+/// countdown to the live departure, Due, on board, your stop next, Get off now, Arrived. Build 212 (G27): the watch
+/// said "Leaving now" at the old time and its timer then counted up past it.
+enum WTripKind: String, Codable, Hashable { case wait, due, ride, next, getOff, arrived }
+
+struct WTripMoment: Hashable {
+    var at: Date
+    var kind: WTripKind
+    var target: Date?
+}
+
+enum WTripMoments {
+    static let nextLead: TimeInterval = 120
+    static let getOffLead: TimeInterval = 30
+    static let dueLead: TimeInterval = 60
+    static let dueFor: TimeInterval = 60
+    static let liveFor: TimeInterval = 120
+
+    static func list(_ c: WLiveCard, now: Date) -> [WTripMoment] {
+        var all: [WTripMoment] = []
+        let off = c.getOffTime
+        if c.phase == "arrived" { return [WTripMoment(at: now, kind: .arrived, target: nil)] }
+        if c.phase == "wait" {
+            guard let d = c.departs.map({ Date(timeIntervalSince1970: $0 / 1000) }) else {
+                return [WTripMoment(at: now, kind: .wait, target: nil)]
+            }
+            all.append(WTripMoment(at: .distantPast, kind: .wait, target: d))
+            all.append(WTripMoment(at: d.addingTimeInterval(-dueLead), kind: .due, target: nil))
+            let left = d.addingTimeInterval(dueFor)
+            if left < off.addingTimeInterval(-nextLead) { all.append(WTripMoment(at: left, kind: .ride, target: off)) }
+        } else {
+            all.append(WTripMoment(at: .distantPast, kind: .ride, target: off))
+        }
+        all.append(WTripMoment(at: off.addingTimeInterval(-nextLead), kind: .next, target: off))
+        all.append(WTripMoment(at: off.addingTimeInterval(-getOffLead), kind: .getOff, target: nil))
+        all.append(WTripMoment(at: off, kind: .arrived, target: nil))
+        var sorted: [WTripMoment] = []
+        for m in all where sorted.last.map({ m.at > $0.at }) ?? true { sorted.append(m) }
+        let current = sorted.last(where: { $0.at <= now }) ?? sorted[0]
+        return [WTripMoment(at: now, kind: current.kind, target: current.target)] + sorted.filter { $0.at > now }
+    }
+
+    /// 0 live, 1 "about" (2 to 5 min old), 2 no live data (5 min on), as the phone (spec 2.4).
+    static func ageStep(_ c: WLiveCard, at: Date) -> Int {
+        guard let u = c.updatedAt else { return 0 }
+        let a = at.timeIntervalSince(u)
+        return a >= 300 ? 2 : (a >= liveFor ? 1 : 0)
+    }
+
+    /// The big words for a moment: "Leaves in 4 min", "Due", "6 min", "Get off now", "Arrived"; with old live times
+    /// the clock time with "about" (never a countdown on old data).
+    static func big(_ c: WLiveCard, _ m: WTripMoment, at: Date) -> String {
+        let step = ageStep(c, at: at)
+        switch m.kind {
+        case .due: return "Due"
+        case .getOff: return "Get off now"
+        case .arrived: return WText.short(c.getOffAt) == WText.short(c.destination ?? c.getOffAt) ? "Arrived" : "Change here"
+        case .wait, .ride, .next:
+            guard let t = m.target else { return "Leaves soon" }
+            if step >= 1 { return "About \(Clock.hhmm(t))" }
+            return m.kind == .wait ? WText.leaves(t, now: at) : Clock.countdown(t, from: at)
+        }
+    }
+
+    /// The line under it: the delay, your stop next, where you get off.
+    static func detail(_ c: WLiveCard, _ m: WTripMoment, at: Date) -> String? {
+        if ageStep(c, at: at) >= 1, let u = c.updatedAt {
+            return ageStep(c, at: at) >= 2 ? "No live data since \(Clock.hhmm(u))" : "Updated \(Clock.hhmm(u))"
+        }
+        let delay: String? = c.delayMin.map { $0 > 0 ? "\($0) min late" : ($0 < 0 ? "\(-$0) min early" : "On time") }
+        switch m.kind {
+        case .wait, .due: return delay ?? WText.platform(c.platform)
+        case .ride: return c.nextStop.map { "Next: \(WText.short($0))" } ?? delay
+        case .next: return "\(WText.short(c.getOffAt)) next"
+        case .getOff: return WText.short(c.getOffAt)
+        case .arrived: return Clock.hhmm(c.getOffTime)
+        }
     }
 }

@@ -37,12 +37,12 @@ enum LiveActivityAudit {
                      left: Int? = 4, off: String = "Macquarie University", warning: String? = nil, progress: Double = 0.4,
                      towards: String? = "Hornsby", platform: String? = "Platform 16", departs: Double? = 5.5, legArrives: Double? = 18.5,
                      dest: String? = "Macquarie University", updated: Double? = -0.5,
-                     track: LiveTripAttributes.StopTrack? = nil) -> LiveTripAttributes.ContentState {
+                     track: LiveTripAttributes.StopTrack? = nil, delay: Int? = nil, live: Bool? = nil) -> LiveTripAttributes.ContentState {
         LiveTripAttributes.ContentState(line: line, lineColorHex: hex, mode: mode, nextStop: next, stopsLeft: left, getOffAt: off,
                                         arrival: m(42), phase: phase, warning: warning, progress: progress, fareLine: nil,
                                         towards: towards, platform: platform, departs: departs.map { m($0) },
                                         legArrives: legArrives.map { m($0) }, destination: dest, updated: updated.map { m($0) },
-                                        stopTrack: track)
+                                        stopTrack: track, delayMin: delay, departsLive: live, legArrivesLive: live)
     }
 
     static let liveTrips: [(String, LiveTripAttributes.ContentState, Bool)] = [
@@ -92,6 +92,33 @@ enum LiveActivityAudit {
                       warning: "2 min late", progress: 0.1, towards: "Macarthur", platform: nil, legArrives: 65, dest: "Macarthur",
                       track: .init(passed: 2, next: ["Wolli Creek", "Turrella", "Bardwell Park", "Bexley North", "Kingsgrove", "Beverly Hills",
                                                      "Narwee", "Riverwood", "Padstow", "Macarthur"], hidden: 4, hiddenAt: 8, live: true)), false),
+        // Build 212 (1 Nov): the moment the countdown reaches the live departure (drawn when the system marks the card
+        // stale at the departure): "Due", never 0:00 (G3); on board at your stop: "Now"; the delay from the card's own
+        // number (G31) on one status line (G24); old live times at 3 and 7 minutes (spec 2.4); a live platform change at
+        // 12 min late (the largest text checks the one line status).
+        ("due-late", live("wait", line: "T2", hex: "#0098CD", mode: "train", next: "Lidcombe", left: 3, off: "Clyde",
+                          warning: "Due now · 4 min late", progress: 0, towards: "Parramatta", platform: "Platform 2", departs: -0.2,
+                          legArrives: 6, dest: "Clyde", updated: -0.3,
+                          track: .init(passed: 1, next: ["Auburn", "Granville", "Clyde"], live: true), delay: 4, live: true), true),
+        ("due-ontime", live("wait", line: "T2", hex: "#0098CD", mode: "train", next: "Lidcombe", left: 3, off: "Clyde",
+                            warning: "Due now", progress: 0, towards: "Parramatta", platform: "Platform 2", departs: -0.1,
+                            legArrives: 6, dest: "Clyde", updated: -0.2, delay: 0, live: true), true),
+        ("wait-late", live("wait", line: "T2", hex: "#0098CD", mode: "train", next: "Lidcombe", left: 3, off: "Clyde",
+                           warning: "4 min late", progress: 0, towards: "Parramatta", platform: "Platform 2", departs: 5.5,
+                           legArrives: 11, dest: "Clyde", updated: -0.2,
+                           track: .init(passed: 1, next: ["Auburn", "Granville", "Clyde"], live: true), delay: 4, live: true), false),
+        ("getoff-now", live("ride", line: "T2", hex: "#0098CD", mode: "train", next: "Clyde", left: 1, off: "Clyde",
+                            warning: "On time", progress: 0.98, towards: "Parramatta", platform: nil, legArrives: -0.05, dest: "Clyde",
+                            updated: -0.2, track: .init(passed: 3, next: ["Clyde"], live: true), delay: 0, live: true), false),
+        ("about-3min", live("ride", line: "T2", hex: "#0098CD", mode: "train", next: "Granville", left: 2, off: "Clyde",
+                            warning: "4 min late at 7:47pm", progress: 0.5, towards: "Parramatta", platform: nil, legArrives: 2, dest: "Clyde",
+                            updated: -3, track: .init(passed: 2, next: ["Granville", "Clyde"], live: true), delay: 4, live: true), true),
+        ("nolive-7min", live("wait", line: "T2", hex: "#0098CD", mode: "train", next: "Lidcombe", left: 3, off: "Clyde",
+                             warning: "No live data since 7:47pm", progress: 0, towards: "Parramatta", platform: "Platform 2", departs: 1,
+                             legArrives: 7, dest: "Clyde", updated: -7, delay: 4, live: true), true),
+        ("plat-change", live("wait", line: "T8", hex: "#00954C", mode: "train", next: "Central", left: 9, off: "Campbelltown",
+                             warning: "12 min late", progress: 0, towards: "Macarthur", platform: "Plat 10, was 12", departs: 14,
+                             legArrives: 58, dest: "Campbelltown", updated: -0.3, delay: 12, live: true), false),
     ]
 
     static func lock<V: View>(_ v: V, surface: String, scenario: String, p: Phone) {
