@@ -6855,8 +6855,10 @@ const LIVECARD = (() => {
         for (let i = 0; i < n; i++) {
             const k = map[i];
             const s = k >= 0 ? d.stops[k] : null;
-            if (s && s.estimated && !s.carried && !s.skipped)
-                est[i] = tms(s.estimated);
+            if (s && s.estimated && !s.carried && !s.skipped) {
+                const p = s.planned ? tms(s.planned) : NaN;
+                est[i] = Number.isFinite(p) && Math.abs(p - pl.stops[i].tt) <= 180000 ? pl.stops[i].tt + (tms(s.estimated) - p) : tms(s.estimated);
+            }
             const c = k >= 0 ? carried(k) : carried(map[0]);
             if (c != null) {
                 run[i] = c;

@@ -222,7 +222,13 @@ export function legReadingFrom(pl: PlanLeg, w: Pick<WatchLeg, 'stopId' | 'from' 
   for (let i = 0; i < n; i++) {
     const k = map[i];
     const s = k >= 0 ? d.stops[k] : null;
-    if (s && s.estimated && !s.carried && !s.skipped) est[i] = tms(s.estimated);
+    // The stop's own live delay on this plan stop's time: the answer's row can carry the departure time (a 30 s dwell
+    // at Croydon on 31 Oct: row 11:50:30, the arrival you get off at 11:50:00), and the server's card takes the same
+    // delay on the arrival (I6; the Get off now moment is the arrival minus 30 s).
+    if (s && s.estimated && !s.carried && !s.skipped) {
+      const p = s.planned ? tms(s.planned) : NaN;
+      est[i] = Number.isFinite(p) && Math.abs(p - pl.stops[i].tt) <= 180000 ? pl.stops[i].tt + (tms(s.estimated) - p) : tms(s.estimated);
+    }
     const c = k >= 0 ? carried(k) : carried(map[0]);
     if (c != null) { run[i] = c; anyLive = true; }
   }

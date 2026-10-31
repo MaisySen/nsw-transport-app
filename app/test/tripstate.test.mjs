@@ -117,3 +117,15 @@ test('the module is pure: no runtime imports, no clock, no timers', () => {
   assert.ok(!/^import (?!type )/m.test(src));
   assert.ok(!/Date\.now\(|new Date\(\)|setTimeout|setInterval/.test(src));
 });
+
+test('31 Oct live: the stop off row carries its departure (30 s dwell): the stop\'s own delay goes on the arrival you get off at, as the server card has it', () => {
+  // the run lists Clyde's departure 7:55:30 with the train 4 min late there (7:59:30); you arrive 7:55 planned, so 7:59
+  const d = svc({ lid: { estimated: iso('19:54:00') }, cly: { planned: iso('19:55:30'), estimated: iso('19:59:30') }, d: { live: true } });
+  const s = stateAt(leg, d, at('19:48:00'));
+  assert.equal(s.tm.arr.at, at('19:59:00'), 'arrival 7:55 + 4 min, not the row\'s departure 7:59:30');
+  assert.equal(s.tm.arr.source, 'stop');
+  assert.equal(s.tm.dep.at, at('19:54:00'));
+  // a row for another visit (more than 3 min apart) keeps its own time
+  const far = svc({ cly: { planned: iso('20:05:00'), estimated: iso('20:06:00') }, d: { live: true } });
+  assert.equal(stateAt(leg, far, at('19:48:00')).tm.arr.at, at('20:06:00'));
+});
