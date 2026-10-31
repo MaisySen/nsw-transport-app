@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { linkTs } from './tsLink.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -18,7 +19,7 @@ async function load(rel) {
   const src = fs.readFileSync(path.join(here, '..', rel), 'utf8');
   const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
   const f = path.join(out, path.basename(rel).replace(/\.ts$/, '.mjs'));
-  fs.writeFileSync(f, js);
+  fs.writeFileSync(f, linkTs(js, out, ts));
   return import(pathToFileURL(f).href);
 }
 const live = await load('src/lib/liveCalc.ts');
@@ -63,12 +64,12 @@ const busLegs = [leg('B610a', '610X', 'bus', B610, 0, 3)];
 const M1 = [['Tallawong', 0, -33.6914, 150.9061], ['Norwest', 12, -33.7314, 150.9600], ['Epping', 24, -33.7727, 151.0822], ['Macquarie Park', 28, -33.7787, 151.1235], ['Chatswood', 37, -33.7968, 151.1806]];
 const metroLegs = [leg('M1a', 'M1', 'metro', M1, 0, 4)];
 
-function replay(legs, svcAt, from, to, step = 0.5, posAt = () => null, g0 = {}) {
+function replay(legs, svcAt, from, to, step = 0.5, posAt = () => null, g0 = {}, flow = false) {
   let g = { id: 'trip', legs, alerted: {}, watchId: null, share: null, ...g0 };
   const log = [];
   for (let m = from; m <= to + 1e-9; m += step) {
     const t = at(m);
-    const r = live.stepLive(g, svcAt(t, m), t, fmt, posAt(m));
+    const r = live.stepLive(g, svcAt(t, m), t, fmt, posAt(m), null, flow ? { asOf: t, c24: false } : null);
     g = r.g;
     log.push({ m, s: r.s, alerts: r.actions.filter((a) => a.t === 'alert').map((a) => a.title), ongoing: r.actions.find((a) => a.t === 'ongoing') });
   }
@@ -98,10 +99,14 @@ test('the delayed T8: the planned T4 change is flagged as a miss straight away, 
 });
 
 test('the delayed T8 replayed: "Connection at risk" once, "Next stop: Wolli Creek, change here" only when the train is really due', () => {
-  const { log } = replay(t8legs, (t) => [run('T8a', withDelay(T8, [9, 9]), 0, 4, t), run('T4a', withDelay(T4, [0, 0, 0, 0]), 0, 3, t)], -2, 40);
+  // Phase 2: the calm sequence of the new trip flow (stepLive with the flow context, as the engine runs it).
+  const { log } = replay(t8legs, (t) => [run('T8a', withDelay(T8, [9, 9]), 0, 4, t), run('T4a', withDelay(T4, [0, 0, 0, 0]), 0, 3, t)], -2, 40, 0.5, () => null, {}, true);
+  if (process.env.T8_LOG) for (const x of log) if (x.alerts.length) console.log(x.m, x.alerts);
   const risk = log.filter((x) => x.alerts.includes('Connection at risk'));
   assert.equal(risk.length, 1);
-  const change = firstAlert(log, /^Next stop: Wolli Creek, change here/);
+  const change = firstAlert(log, /^Wolli Creek is next/);
+  const off = firstAlert(log, /^Get off now/);
+  assert.ok(off && off.m >= 36.5 && off.m < 37, 'Get off now 30 s before the live arrival');
   assert.ok(change, 'the change alert comes');
   assert.ok(change.m >= 24 + 9, `not before the late train reaches Turrella (came at minute ${change.m})`);
   // Still on the T8 at the timetable arrival time and well after it.
@@ -138,7 +143,9 @@ test('a ferry 2 minutes late: the L2 change stays on, and the ETA is the L2 arri
 
 test('no realtime on a 610X: riding by the clock reads "not live", with no next stop and no stops left', () => {
   const t = at(20);
-  const s = live.computeLive(busLegs, [run('B610a', B610.map((x) => [...x, null]), 0, 3, t)], t);
+  // Phase 2 (G6): on board only once seen riding (memo.rode); the clock alone never moves it.
+  assert.equal(live.computeLive(busLegs, [run('B610a', B610.map((x) => [...x, null]), 0, 3, t)], t).phase, 'wait');
+  const s = live.computeLive(busLegs, [run('B610a', B610.map((x) => [...x, null]), 0, 3, t)], t, { rode: { 0: at(30) } });
   assert.equal(s.done, false);
   assert.equal(s.phase, 'ride');
   assert.equal(s.track, 'timetable');
@@ -163,7 +170,9 @@ test('no realtime and no service answer at all: the leg stays on and the card sa
   assert.equal(s.track, 'timetable');
   const c = cardFor({ legs: busLegs, to: { id: 'x', name: 'Wynyard' } }, s, t);
   assert.equal(c.warning, 'Timetable times, not live');
-  assert.equal(c.nextStop, null);
+  // Phase 2 (G6): nothing showed the bus leave, so the card waits at the stop you got on at.
+  assert.equal(c.phase, 'wait');
+  assert.equal(c.nextStop, 'Castle Hill');
   assert.ok(c.progress <= 0.9);
 });
 

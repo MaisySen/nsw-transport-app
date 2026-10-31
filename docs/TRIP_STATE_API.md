@@ -41,3 +41,12 @@ The new app sends `tripFlow: 2` and `c24: <boolean>` in every trip, get off and 
 ## How the old entry points sit on it
 
 `computeLive` (liveCalc.ts) and `cardFor` / `staleAt` / `cardWarning` (platform/tripCard.ts) keep their shapes for every caller, and take their times and phase from the trip state (see CHANGELOG for the list of changes).
+
+
+## Built on it (second push)
+
+* `computeLive(legs, svc, t, memo?, pos?, o?)`: `o = { asOf, plannerAt, c24, size }`. Phase, times, track and stops left now come from the trip state. `LiveState` adds `view` (the `tripRender` model), `step` (stale step), `depSource` and `arrSource`; each leg adds `phaseEv` ('wait' | 'left' | 'at'). A leg the live train showed at your stop off is kept in `memo.here`.
+* `stepLive(g, svc, now, f, pos?, shown?, flow?)`: with `flow = { asOf, c24, voice }` it runs the new flow (`tripStep` moments as alerts, `haptic: 'light'` on the calm steps, speech through `voiceGate`, returns `voiceUntil`). `g.flow` holds the `TripMemory`. Without `flow` it runs as before. `nextFlowMoment(g, s, now)` gives the exact Get off now moment within 20 s.
+* `cardFor(g, s, now, { alt, asOf, updated, c24 })`: the words come from `s.view`; `legNoteFor(s, now, c24)` gives the leg note. `staleAt(card, updated, honestStale, keepMs)`: `updated + 2 min`, and while waiting no later than the live departure.
+* Server copy: `backend/tools/gen-livecard.mjs` runs each file in its own scope and returns `{ computeLive, cardFor, staleAt, cardWarning, legNoteFor, ...every tripState export }` as `LIVECARD`.
+* Tests that load one TS file at a time link its runtime imports with `app/test/tsLink.mjs`.

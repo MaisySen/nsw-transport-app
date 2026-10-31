@@ -6,7 +6,8 @@ import { getDevice } from '@/lib/device';
 import { iosNative } from '../modules/transport-ios';
 import type { LiveTrip } from '@/lib/live';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { cleanToken, PUSH_BASE, PUSH_FORGOTTEN_KEY, pushKey, pushTrip, shouldSendDeviceToken } from './livePushCore';
+import { cleanToken, PUSH_BASE, PUSH_FORGOTTEN_KEY, pushKey, pushTrip, shouldSendDeviceToken, TRIP_FLOW } from './livePushCore';
+import { phone24h } from '@/lib/rowTime';
 
 async function post(path: string, body: unknown): Promise<boolean> {
   const ctl = new AbortController();
@@ -28,11 +29,12 @@ let sending = false;
 export async function sendActivityToken(activityId: string, token: string | null, g: LiveTrip | null) {
   const tok = cleanToken(token);
   if (Platform.OS !== 'ios' || !tok || !g || sending) return;
-  const key = pushKey(tok, g);
+  const c24 = phone24h();
+  const key = pushKey(tok, g, c24);
   if (key === sentKey) return;
   sending = true;
   try {
-    const ok = await post('/api/live-activity', { token: tok, activity: activityId, device: await getDevice(), trip: pushTrip(g) });
+    const ok = await post('/api/live-activity', { token: tok, activity: activityId, device: await getDevice(), trip: pushTrip(g, c24), tripFlow: TRIP_FLOW, c24 });
     if (ok) sentKey = key;
   } finally {
     sending = false;

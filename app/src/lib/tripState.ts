@@ -306,8 +306,11 @@ export function tripEvidence(plan: TripPlan, M: TripMemory, snap: TripReading, l
   const age = t - snap.asOf;
   const fresh = age < R.LIVE_FRESH && !!L && !L.unmatched;
   const v = fresh && L && L.vehicle && t - L.vehicle.at < R.LIVE_FRESH ? L.vehicle : null;
+  // A fresh vehicle position is the best evidence: when there is one, a stop's own live time never moves the trip past
+  // where the vehicle is (25 Oct: a feed whose estimates were the timetable, the train 4 min behind them).
   const left = (i: number): string | null => {
     if (v && (v.stop > i || (v.stop === i && v.state === 'left'))) return 'vehicle';
+    if (v) return null;
     const e = L ? L.est[i] : null;
     if (fresh && e != null && t >= e + R.LEFT_BY) return 'stop live';
     return null;
@@ -316,6 +319,7 @@ export function tripEvidence(plan: TripPlan, M: TripMemory, snap: TripReading, l
   const at = (i: number): string | null => {
     if (v && v.stop === i && v.state === 'at') return 'vehicle';
     if (v && (v.stop > i || (v.stop === i && v.state === 'left'))) return 'vehicle';
+    if (v) return null;
     const e = L ? L.est[i] : null;
     if (fresh && e != null && t >= e) return 'stop live';
     return null;

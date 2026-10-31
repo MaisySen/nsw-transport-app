@@ -25,7 +25,7 @@ import { LineBadge } from '@/components/Transit';
 import { WhyLate } from '@/components/WhyLate';
 import { useWhyLate } from '@/lib/whyLate';
 import { Button, Sep, T } from '@/components/ui';
-import { NextOption, SpeakRow, WakeRow } from '@/components/Smart';
+import { NextOption, SpeakRow } from '@/components/Smart';
 import { GetOffRow } from '@/components/GetOffChoice';
 import { boardWords, stopNumber } from '@/lib/busCore';
 import { ageText, liveState, liveWords, STALE_DATA_MS, STALE_GPS_S, type LiveState as LabelState } from '@/lib/liveLabelCore';
@@ -232,6 +232,10 @@ function Sheet({ st, legs, g, me, locDenied, push, offline, updated, onLoc, onSh
     // A bus: which stop and stand to wait at, with the number on the sign (stands at one stop can be across the road).
     if (stopNumber(l.stopId, l.mode)) now3 = `From ${boardWords(short(l.from), l.fromPlatform, l.stopId, l.mode)}`;
     now2 = `${lk.kind === 'stale' ? `Not tracking, timetable ${clock(lk.t)}` : dm <= 0 ? (x.live ? 'Due now' : `Timetable ${clock(x.dep)}`) : `Leaves in ${dm} min, ${clock(x.dep)}${x.live ? '' : ', timetable'}`}${l.fromPlatform && !now3 ? ' \u00b7 ' + plat(l.fromPlatform) : ''}${d && d.stopsAway != null && d.vehicle ? ` \u00b7 ${d.stopsAway === 0 ? 'arriving' : `${d.stopsAway} stop${d.stopsAway > 1 ? 's' : ''} away`}` : ''}`;
+    // Phase 2 (G25, G26): once the live data is not fresh, the words come from the trip state's render model ("Due
+    // about 7:54pm", "Leaves about 7:54pm · Updated 7:52pm", "No live data since 7:47pm"), so "Due now" never stays on.
+    const v = st.view;
+    if (v && v.li === st.cur && v.step && v.step !== 'live' && v.inApp && lk.kind !== 'stale') now2 = v.inApp;
   } else if (notLive) {
     // No live data: no next stop from the clock, the timetable time named as such, and the trip waits for you.
     now1 = `On the ${l.line} to ${short(l.towards || l.to)}`;
@@ -276,7 +280,6 @@ function Sheet({ st, legs, g, me, locDenied, push, offline, updated, onLoc, onSh
         </View>
       </View>
 
-      <WakeRow g={g} st={st} />
       <GetOffRow g={g} st={st} />
       <SpeakRow g={g} />
 

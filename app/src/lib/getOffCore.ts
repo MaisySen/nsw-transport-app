@@ -165,6 +165,9 @@ const sayStop = (n?: string | null) => String(n || '').split(',')[0].replace(/ S
  */
 export type GetOffTrip = {
   id: string; legs: WatchLeg[]; alerted: Record<string, 1>; offSet?: Record<string, number>; speak?: boolean; sayNow?: boolean; spoken?: Record<string, 1>;
+  /** The new trip flow (phase 2): the calm sequence comes from the trip state; this sets only the backup Get off now
+   * location alert when the server has not taken it, and takes back the old quiet note and heads-up alerts. */
+  flow2?: boolean;
   /** The phone has the spoken alert sounds (voiceClipsSupported) and they are not turned off: `now` spoken Get off now
    * is on, `all` Speak alerts is on. Null or absent: every alert rings with the phone's normal sound, as before. */
   voice?: { now: boolean; all: boolean } | null;
@@ -301,7 +304,9 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
 
   // Location alerts (with location allowed, precise, on a build with the native part).
   const wantNowRegion = pref.now && !g.server;
-  const wantSoonRegion = wantEarly || (!g.serverNext && !g.wake);
+  // The new trip flow (phase 2): the heads-up comes from the live train (the app while open, the server push while
+  // locked), so no location heads-up is set; only the backup Get off now location alert when the server has not taken it.
+  const wantSoonRegion = !g.flow2 && (wantEarly || (!g.serverNext && !g.wake));
   const wantRegion = new Set<string>();
   if (g.backup === 'region' && !s.done) {
     for (const r of tripRegions(g.legs, s, pref.stops, { now: wantNowRegion, soon: wantSoonRegion })) {
@@ -330,7 +335,7 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
   // The quiet note (no location): no sound, not time sensitive, never "get off".
   const fresh = typeof g.liveAt === 'number' && Number.isFinite(g.liveAt) && now - g.liveAt <= QUIET_FRESH_MS;
   const wantQuiet = new Set<string>();
-  if (g.backup !== 'region' && !s.done && !g.server) {
+  if (!g.flow2 && g.backup !== 'region' && !s.done && !g.server) {
     for (let k = Math.max(0, s.cur); k < g.legs.length; k++) {
       const key = 'quiet' + k;
       if (alerted[key] || alerted['gnow' + k]) continue;
@@ -359,7 +364,8 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
   for (const key of Object.keys(set)) if (/^quiet\d+$/.test(key) && !wantQuiet.has(key)) cancel(key);
 
   // The app is open now with live times just read: the moments that come now ring here, read out as chosen.
-  if (!s.done && (wantEarly || pref.now)) {
+  // The new trip flow rings these moments itself (liveCalc stepFlow, tripState.tripStep), so nothing here then.
+  if (!g.flow2 && !s.done && (wantEarly || pref.now)) {
     for (let k = Math.max(0, s.cur); k < g.legs.length; k++) {
       const live = legLive(s, k);
       if (pref.now) {
@@ -478,8 +484,12 @@ export function getOffTrigger(os: string, at: number | null, now: number, channe
  * app reads the same moment out itself (Speak alerts): shown, but without its sound, so it is not heard twice
  * (31 Oct). iOS reports a bundled sound as "custom" (or its file name); "default" and none are the normal sound.
  */
-export function tripPushSoundless(o: { watch: unknown; sound: unknown; appState: string; tripWatch: string | null; speaks: boolean }): boolean {
-  if (o.appState !== 'active' || !o.speaks || !o.tripWatch || o.watch !== o.tripWatch) return false;
+export function tripPushSoundless(o: { watch: unknown; sound: unknown; appState: string; tripWatch: string | null; speaks: boolean; flow2?: boolean }): boolean {
+  if (o.appState !== 'active' || !o.tripWatch || o.watch !== o.tripWatch) return false;
+  // The new trip flow (phase 2): with the app open the phone rings every trip moment itself (banner, one light tap,
+  // in-app voice), so the server's push for the same moment is shown without its sound (spec 2.6): never rung twice.
+  if (o.flow2) return true;
+  if (!o.speaks) return false;
   const snd = typeof o.sound === 'string' ? o.sound : '';
   return snd === 'custom' || /^getoff_(now|soon)(\.wav)?$/.test(snd);
 }

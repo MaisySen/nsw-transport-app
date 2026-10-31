@@ -159,53 +159,22 @@ export type WakeAction =
 
 export const wakeId = (gid: string, k: number) => `wake-${gid}-${k}`;
 
-function wakeWords(legs: WatchLeg[], s: LiveState, k: number, f: Fmt) {
-  const l = legs[k];
-  const last = legs.length - 1;
-  const arr = s.L2[k]?.arr;
-  const at = Number.isFinite(arr) ? ` at ${f.clock(arr)}` : '';
-  if (k < last) return { title: `Wake up, change at ${f.short(l.to)} next`, body: `Next stop is ${f.short(l.to)}${at}. Get ready to change to the ${legs[k + 1].line}.` };
-  return { title: `Wake up, ${f.short(l.to)} is next`, body: `Get ready to get off. Next stop is ${f.short(l.to)}${at}.` };
-}
-
 /**
- * One refresh of "Wake me before my stop". Each leg still ahead gets one alarm, scheduled on the phone for its wake
- * time (so it rings with the app closed) and moved when live times move it. An alarm whose time has passed counts as
- * rung, so it never rings twice. If the time is already past when it was never set (turned on late, or the app was
- * open and the phone's alarm runs late), it rings now. Turning it off or arriving cancels what is left.
+ * "Wake me before my stop" is gone (31 Oct, phase 2 of docs/TRIP_FLOW_SPEC.md, G9): it was an alarm set on the phone
+ * ahead of time from stop times (timetable ones when that was all there was), with sudden "Wake up" words. The calm
+ * sequence from the live train replaces it (heads-up, Get off now 30 s before the live arrival, arrived). This only takes
+ * back an alarm an earlier version set for a trip still running, and never sets one.
  */
-export function wakeStep(g: WakeTrip, s: LiveState, now: number, f: Fmt): { g: WakeTrip; actions: WakeAction[] } {
+export function wakeStep(g: WakeTrip, _s: LiveState, now: number, _f?: Fmt): { g: WakeTrip; actions: WakeAction[] } {
   const actions: WakeAction[] = [];
   const set = { ...(g.wakeSet || {}) };
-  let alerted = g.alerted || {};
-  const mark = (key: string) => { alerted = { ...alerted, [key]: 1 }; };
-  if (!g.wake || s.done) {
-    for (const k of Object.keys(set)) {
-      if (!alerted['wake' + k] && set[k] > now) actions.push({ t: 'wakeCancel', id: wakeId(g.id, Number(k)) });
-      delete set[k];
-    }
-    const changed = Object.keys(g.wakeSet || {}).length > 0;
-    return { g: changed ? { ...g, wakeSet: set } : g, actions };
+  const alerted = g.alerted || {};
+  for (const k of Object.keys(set)) {
+    if (!alerted['wake' + k] && set[k] > now) actions.push({ t: 'wakeCancel', id: wakeId(g.id, Number(k)) });
+    delete set[k];
   }
-  for (let k = s.cur; k < g.legs.length; k++) {
-    const key = 'wake' + k;
-    if (alerted[key]) continue;
-    const at = wakeTime(s, k);
-    if (!Number.isFinite(at)) continue;
-    const prev = set[k];
-    const w = wakeWords(g.legs, s, k, f);
-    if (prev != null && prev <= now) { mark(key); continue; } // the phone's alarm has rung
-    if (at <= now) {
-      // Rings now only while the stop is still ahead by the clock (R3): opened after that arrival, it is kept as rung,
-      // quietly (31 Oct: nothing posted for a moment that passed while the app was closed).
-      const arr = s.L2[k]?.arr;
-      if (!(typeof arr === 'number' && Number.isFinite(arr) && arr <= now)) actions.push({ t: 'wakeDue', id: wakeId(g.id, k), title: w.title, body: w.body });
-      mark(key); delete set[k]; continue;
-    }
-    if (prev == null || Math.abs(prev - at) >= 15000) { actions.push({ t: 'wakeSchedule', id: wakeId(g.id, k), at, title: w.title, body: w.body }); set[k] = at; }
-  }
-  const same = JSON.stringify(set) === JSON.stringify(g.wakeSet || {}) && alerted === g.alerted;
-  return { g: same ? g : { ...g, wakeSet: set, alerted }, actions };
+  const changed = Object.keys(g.wakeSet || {}).length > 0;
+  return { g: changed ? { ...g, wakeSet: set } : g, actions };
 }
 
 // ---------- Missed connection ----------

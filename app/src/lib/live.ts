@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { api } from './api';
+import { phone24h } from './rowTime';
 import { enablePush, getPushState } from './push';
 import type { Fare, Place, WatchLeg } from './types';
 import type { WatchSpec } from './watch';
@@ -37,6 +38,8 @@ export type LiveTrip = {
   offServer?: boolean;
   /** Say trip alerts out loud (builds with the speech module), and the alerts already read out. */
   speak?: boolean; spoken?: Record<string, 1>;
+  /** The trip state's memory (tripState.TripMemory, phase 2): phases from the live train and the calm steps rung. */
+  flow?: import('./tripState').TripMemory;
 };
 
 const KEY = 'liveTrip';
@@ -125,7 +128,10 @@ export async function liveWatch() {
       off = { getOff: 1, ...(say ? { getOffVoice: 1 } : {}) };
     }
   } catch { off = {}; }
-  const r = await api.watch({ kind: 'trip', title: g.title, legs: g.legs, origin: g.origin, to: g.to, lead: 0, track: true, silentStart: true, ...voice, ...off });
+  // tripFlow 2 (phase 2): the server runs the new trip flow for this watch when its tripflow2 switch is on; c24: its
+  // words follow the phone's 12 or 24 hour clock; started: when the planner estimate on the legs was read.
+  const r = await api.watch({ kind: 'trip', title: g.title, legs: g.legs, origin: g.origin, to: g.to, lead: 0, track: true, silentStart: true, ...voice, ...off,
+    tripFlow: 2, c24: phone24h(), ...(typeof g.started === 'number' ? { started: g.started } : {}) });
   if (!r.watch?.id) return;
   if (cur && cur.id === g.id && !cur.arrivedAt) {
     // The server said yes: the phone's own Get off now comes off now, before the phone is locked (getOffCore server).

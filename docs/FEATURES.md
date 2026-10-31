@@ -4,6 +4,10 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## New live trip flow, app side (31 Oct, branch `tripflow-p2`, not released)
+
+The trip screen, Lock Screen card, Island and alerts work from one live trip state (`app/src/lib/tripState.ts`). Times come from the live train and never move by the timetable clock. The app rings heads-up, Get off now (30 s before the live arrival) and arrived itself while open, with one light tap. Speech waits 10 s and two refreshes after opening. "Wake me before my stop" is removed. The card shows Due, the live platform, cancellations and how old the data is, on the phone's 12 or 24 hour clock. The server uses the same code when its `tripflow2` switch is on and the app sends `tripFlow: 2`. Spec: docs/TRIP_FLOW_SPEC.md; API: docs/TRIP_STATE_API.md.
+
 ## Journey simulator (31 Oct, branch `tripflow-sim`, no app change)
 
 A second by second simulation of a started trip under the new live trip rules (docs/TRIP_FLOW_SPEC.md): what the Lock Screen card, Island, widget, Watch and app show, what rings and what is spoken, and when, for 30 cases. It is the target for the app and server changes in phases 2 and 3. How to run it and add a case: docs/JOURNEY_SIM.md.

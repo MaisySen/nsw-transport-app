@@ -3,22 +3,24 @@
 // carries out what stepLive returns: the ongoing notification, each trip alert once, the share link, and the end
 // of all trip alerts the moment you arrive. The live trip screen only reads its state.
 import { useEffect, useSyncExternalStore } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { startAppPoll } from './activity';
 import * as Haptics from 'expo-haptics';
 import { api } from './api';
 import { clock, shortName } from './format';
 import { clearOngoing, endLive, getLive, liveAlert, loadLive, setLive, showOngoing, useLiveTrip } from './live';
-import { LiveState, Pos, progOf as progOfCalc, stepLive, tapMoments } from './liveCalc';
+import { LiveState, Pos, nextFlowMoment, progOf as progOfCalc, stepLive } from './liveCalc';
+import { backupGetOff, newTripMemory, tripPlanFrom, tripReadingFrom } from './tripState';
+import { phone24h } from './rowTime';
 import { haptic } from './haptic';
 
 const tapped = new Set<string>();
 import { wakeStep } from './smart';
 import { hasSpeech, speak } from './nativeExtras';
 import { getOffStep, readGetOff, readGetOffSay } from './getOffCore';
-import { cancelGetOff, getOffBackup, getOffNow, ownGetOffShown, scheduleGetOff, scheduleQuiet, scheduleRegion, serverGetOffShown, setServerGetOffWatch, setTripWatch, sweepRegions, voiceClips } from './getOffNotify';
+import { cancelGetOff, getOffBackup, getOffNow, ownGetOffShown, scheduleGetOff, scheduleQuiet, scheduleRegion, serverGetOffShown, setServerGetOffWatch, setTripFlow2, setTripWatch, sweepRegions, voiceClips } from './getOffNotify';
 import { store } from './store';
-import { cancelWake, scheduleWake, wakeNow } from './smartNotify';
+import { cancelWake } from './smartNotify';
 import { endedWatches } from './push';
 import { badgeLook } from './lineStyle';
 import type { ServiceResp, WatchLeg } from './types';
@@ -93,10 +95,20 @@ async function backfillLiveFeeds(id: string) {
 /** One refresh of the trip you are on. Safe to call any time; does nothing without a trip. */
 /** When the live times were last read without a failure (the quiet get off note needs them at most 5 min old). */
 let liveOkAt = 0;
+/** When the live answers in svcCache were loaded: the trip state's reading time (its age drives the stale words). */
+let svcAt = 0;
+// Speech (spec 2.7): when the app last came to the front, refreshes since then, and when the speech queue is free.
+let openSince = Date.now();
+let refreshes = 0;
+let speakingUntil = 0;
+// The precise moment the open app steps the trip again (Get off now at the live arrival minus 30 s).
+let momentTimer: ReturnType<typeof setTimeout> | null = null;
+/** The phone's backup Get off now set when the app went to the background (only when the server has not taken it). */
+let backupId: string | null = null;
 /** The trip whose leftover location alerts from other trips were last swept (once per trip, and once with none). */
 let sweptFor: string | null | undefined;
 
-export async function tickLive() {
+export async function tickLive(opts: { noFetch?: boolean } = {}) {
   // The saved trip is read first (31 Oct): at launch the engine's first refresh ran before it was loaded, saw no trip
   // and swept the running trip's own location alerts as left over.
   const cur = await loadLive().catch(() => getLive());
@@ -111,7 +123,7 @@ export async function tickLive() {
     const L = (getLive() || cur).legs;
     const gen = cacheGen;
     let failed = 0;
-    if (!cur.arrivedAt) {
+    if (!cur.arrivedAt && !opts.noFetch) {
       const full = Date.now() - lastFull > 60000;
       const prev = state.st && !state.st.done ? state.st.cur : 0;
       const next = svcCache.slice();
@@ -129,6 +141,8 @@ export async function tickLive() {
       if (full) lastFull = Date.now();
       svcCache = next;
       if (!failed) liveOkAt = Date.now();
+      if (!failed || !svcAt) svcAt = Date.now();
+      refreshes++;
     }
     const g = getLive();
     if (!g || g.id !== cur.id) return;
@@ -138,9 +152,14 @@ export async function tickLive() {
     const server = !!g.offServer && !!g.watchId;
     const serverRung = server ? await serverGetOffShown(g.watchId) : undefined;
     const rung = Object.keys(g.offRegion || {}).length || Object.keys(g.offSet || {}).some((k) => k.startsWith('quiet')) ? await ownGetOffShown(g.id) : undefined;
-    const r = stepLive(g, svcCache, now, fmt, pos, { ...(serverRung || {}), ...(rung || {}) });
-    // Wake me before my stop: one alarm per leg, set on the phone and moved with the live times.
-    const w = wakeStep({ id: g.id, legs: g.legs, wake: g.wake, wakeSet: g.wakeSet, alerted: r.g.alerted }, r.s, now, fmt);
+    // The new trip flow (phase 2, tripState.ts): one trip state from the live train; the calm sequence and in-app speech
+    // (V1 to V5) come from it. The server's push for a moment the app rings itself is shown without sound.
+    setTripFlow2(true);
+    const r = stepLive(g, svcCache, now, fmt, pos, { ...(serverRung || {}), ...(rung || {}) },
+      { asOf: svcAt || now, c24: phone24h(now), voice: { open: AppState.currentState === 'active', silent: false, openSince, refreshes, speakingUntil } });
+    if (r.voiceUntil != null) speakingUntil = r.voiceUntil;
+    // Wake me before my stop is gone (G9): an alarm an earlier version set for this trip is taken back.
+    const w = wakeStep({ id: g.id, legs: g.legs, wake: false, wakeSet: g.wakeSet, alerted: r.g.alerted }, r.s, now, fmt);
     // Get off alert (More stops before, Get off now): set on the phone beside the trip's own alerts (getOffCore.ts).
     // Spoken alert sounds (build 210 and later): the alerts set on the phone ring with a voice, heard with the phone
     // locked, where the app cannot speak. The same choices as reading out (spoken Get off now, Speak alerts).
@@ -151,13 +170,13 @@ export async function tickLive() {
     // The phone's own backup (31 Oct): location alerts when location is allowed and precise (build 211+), else the
     // quiet note. Its alerts already shown (a location alert that rang, read above) are done.
     const backup = getOffBackup();
-    const o = getOffStep({ id: g.id, legs: g.legs, alerted: w.g.alerted, offSet: g.offSet, speak: g.speak && hasSpeech(), sayNow: readGetOffSay(store.getOffSay()) && hasSpeech(), spoken: r.g.spoken, voice, offVoice: g.offVoice,
+    const o = getOffStep({ id: g.id, legs: g.legs, flow2: true, alerted: w.g.alerted, offSet: g.offSet, speak: g.speak && hasSpeech(), sayNow: readGetOffSay(store.getOffSay()) && hasSpeech(), spoken: r.g.spoken, voice, offVoice: g.offVoice,
       // A server watch sends "Next stop" (its push), else the phone sets its own ahead (31 Oct, getOffCore next<leg>).
       serverNext: !!g.watchId, wake: !!g.wake, backup, offRegion: g.offRegion, rung, liveAt: liveOkAt || null,
       ...(server ? { server: true, serverRung, serverVoice: !!voice && (voice.now || voice.all) } : {}) }, readGetOff(store.getOff()), r.s, now, fmt);
     put({ svc: svcCache.slice(), st: r.s, offline: failed ? 'Connection lost. Showing the last live times.' : null, ...(failed ? {} : { updated: now }) });
     if (r.g !== g || w.g.alerted !== r.g.alerted || w.g.wakeSet !== g.wakeSet || o.g.offSet !== g.offSet || o.g.alerted !== w.g.alerted || o.g.spoken !== r.g.spoken || o.g.offVoice !== g.offVoice || o.g.offRegion !== g.offRegion) {
-      setLive({ ...g, alerted: o.g.alerted, watchId: r.g.watchId, rode: r.g.rode, here: r.g.here, arrivedAt: r.g.arrivedAt, wakeSet: w.g.wakeSet, spoken: o.g.spoken, offSet: o.g.offSet, offVoice: o.g.offVoice, offRegion: o.g.offRegion });
+      setLive({ ...g, alerted: o.g.alerted, watchId: r.g.watchId, rode: r.g.rode, here: r.g.here, arrivedAt: r.g.arrivedAt, wake: false, wakeSet: w.g.wakeSet, spoken: o.g.spoken, offSet: o.g.offSet, offVoice: o.g.offVoice, offRegion: o.g.offRegion, flow: r.g.flow });
     }
     for (const a of o.actions) {
       if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, at: now });
@@ -168,21 +187,18 @@ export async function tickLive() {
       else if (a.t === 'offCancel') await cancelGetOff(a.id);
       else if (a.t === 'say') speak(a.text, { alert: true, ...(a.quiet ? { quiet: true } : {}) });
     }
-    for (const a of w.actions) {
-      if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, ...(a.t === 'wakeSchedule' ? { alarmAt: a.at } : {}), at: now });
-      if (a.t === 'wakeSchedule') await scheduleWake(a.id, a.at, a.title, a.body);
-      else if (a.t === 'wakeDue') await wakeNow(a.id, a.title, a.body);
-      else if (a.t === 'wakeCancel') await cancelWake(a.id);
-    }
-    // One light tap at "leave now" and on arrival, once each per trip (expo-haptics is in every build).
-    for (const k of tapMoments(r.s, now)) { const id = `${g.id}:${k}`; if (!tapped.has(id)) { tapped.add(id); haptic.light(); } }
-    let buzzed = false;
+    for (const a of w.actions) if (a.t === 'wakeCancel') await cancelWake(a.id);
+    // The open app steps the trip again at the exact Get off now moment (live arrival minus 30 s), not up to 15 s late.
+    if (momentTimer) { clearTimeout(momentTimer); momentTimer = null; }
+    const due = nextFlowMoment(r.g, r.s, now);
+    if (due != null) momentTimer = setTimeout(() => { momentTimer = null; tickLive({ noFetch: true }).catch(() => {}); }, Math.max(0, due - Date.now()) + 50);
     for (const a of r.actions) {
       // The web preview logs every action, so a browser replay can check each alert and the end of the trip.
       if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, at: now });
       // Spoken trip alerts follow the Silent switch (build 211+, nativeExtras alertAudio).
       if (a.t === 'say') speak(a.text, { alert: true });
-      else if (a.t === 'alert') { liveAlert(a.title, a.body, a.id); if (!buzzed) { buzzed = true; Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); } }
+      // One light tap for the calm steps (heads-up, Get off now), nothing for the others: never a buzz of scare.
+      else if (a.t === 'alert') { liveAlert(a.title, a.body, a.id); if (a.haptic === 'light') { const id = `${g.id}:${a.key}`; if (!tapped.has(id)) { tapped.add(id); haptic.light(); } } }
       else if (a.t === 'ongoing') showOngoing(a.title, a.body, legColor(L[a.leg]));
       else if (a.t === 'clearOngoing') await clearOngoing();
       else if (a.t === 'stopWatch') { endedWatches.add(a.id); api.stopWatch(a.id).catch(() => {}); }
@@ -194,6 +210,30 @@ export async function tickLive() {
   } finally { busy = false; }
 }
 
+/**
+ * The app going to the background or coming back (spec 2.6, 2.7): back in front, speech waits 10 s and two refreshes
+ * (V1, V4) and the phone's own backup Get off now is taken back; going away, the backup is set only when the server
+ * has not taken Get off now, from a reading under 20 s old and with the live arrival under 5 min away (G39).
+ */
+export async function onAppState(next: string) {
+  const g = getLive();
+  if (next === 'active') {
+    openSince = Date.now(); refreshes = 0;
+    if (backupId) { const id = backupId; backupId = null; await cancelGetOff(id).catch(() => {}); }
+    return;
+  }
+  if (!g || g.arrivedAt || backupId) return;
+  const serverTakes = !!g.offServer && !!g.watchId;
+  const plan = tripPlanFrom(g.legs, svcCache);
+  const reading = tripReadingFrom(plan, g.legs, svcCache, svcAt || 0, { plannerAt: g.started ?? null });
+  const M = g.flow && g.flow.legs.length === plan.legs.length ? g.flow : newTripMemory(plan);
+  const b = backupGetOff(plan, M, reading, Date.now(), serverTakes);
+  if (!b) return;
+  const off = short(g.legs[b.li]?.to);
+  backupId = `getoff-backup-${g.id}-${b.li}`;
+  await scheduleGetOff(backupId, b.at, 'Get off now', `Get off now. ${off}, arriving ${clock(b.arrAt)}.`, 'getoff_now').catch(() => {});
+}
+
 /** Mounted once at the root: runs the engine while a trip is in progress. */
 export function LiveTripEngine() {
   const g = useLiveTrip();
@@ -203,7 +243,8 @@ export function LiveTripEngine() {
     // Every 15 seconds while the app is in front; nothing in the background (push moves the lock screen card).
     // Back in front after 5 seconds or more it refreshes at once.
     const p = startAppPoll(async () => { await tickLive(); return true; }, 15000, { runAtStart: false, staleMs: 5000 });
-    return () => p.remove();
+    const sub = AppState.addEventListener('change', (s) => { onAppState(s).catch(() => {}); });
+    return () => { p.remove(); sub.remove(); };
   }, [g?.id]);
   return null;
 }

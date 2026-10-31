@@ -15,6 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { linkTs } from './tsLink.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, '..');
@@ -26,7 +27,7 @@ const tr = (src) => ts.transpileModule(src, { compilerOptions: { module: ts.Modu
 let seq = 0;
 async function load(rel) {
   const f = path.join(out, path.basename(rel).replace(/\.ts$/, '') + '-' + (seq++) + '.mjs');
-  fs.writeFileSync(f, tr(fs.readFileSync(path.join(root, rel), 'utf8')));
+  fs.writeFileSync(f, linkTs(tr(fs.readFileSync(path.join(root, rel), 'utf8')), out, ts));
   return import(pathToFileURL(f).href);
 }
 const src = (f) => fs.readFileSync(path.join(root, 'src', f), 'utf8');
@@ -62,7 +63,7 @@ async function loadPush() {
     const rel = `src/lib/${spec.slice(2)}.ts`;
     if (!has(rel)) continue;
     const f = path.join(dir, spec.slice(2) + '.mjs');
-    fs.writeFileSync(f, tr(fs.readFileSync(path.join(root, rel), 'utf8')));
+    fs.writeFileSync(f, linkTs(tr(fs.readFileSync(path.join(root, rel), 'utf8')), dir, ts));
     map[spec] = f;
   }
   let js = tr(src('lib/push.ts'));
@@ -222,7 +223,7 @@ function feed(t) {
 const g0 = () => ({ id: 'g1', legs: [LEG], alerted: {}, watchId: null, share: null, speak: true, spoken: {}, offRegion: { rsoon0: 'x', rnow0: 'y' } });
 
 test('(3) opened at the stop before yours after the heads up location alert rang: no second "Next stop", nothing said', () => {
-  const t = at(7) + 30000; // left Ashfield, Central next
+  const t = at(7) + 65000; // left Ashfield (phase 2: its own live time 60 s past), Central next
   const r = live.stepLive(g0(), [feed(t)], t, fmt, null, { rsoon0: 1 });
   assert.deepEqual(r.actions.filter((a) => a.t === 'alert' || a.t === 'say'), []);
   // Nothing shown yet: the app says it (the moment is now).
@@ -250,15 +251,12 @@ test('(4) the app\'s own "You\'ve arrived": within 45 s a banner and the voice, 
   }
 });
 
-test('(1) Wake me before my stop: opened after that stop\'s arrival, the alarm is kept as rung, not rung late', () => {
-  const t = at(10) + 20000; // past Central's arrival, the refresh before done
+test('(1) Wake me before my stop is gone (phase 2, G9): never rings, before or after the stop', () => {
   const s = live.computeLive([LEG], [feed(at(9) + 50000)], at(9) + 50000, {}, null);
-  const w = smart.wakeStep({ id: 'g1', legs: [LEG], wake: true, wakeSet: {}, alerted: {} }, { ...s, done: false, L2: s.L2.map((x) => ({ ...x, arr: at(10) })) }, t, fmt);
-  assert.deepEqual(w.actions.filter((a) => a.t === 'wakeDue'), []);
-  assert.equal(w.g.alerted.wake0, 1);
-  // Still before the stop: it rings now, as before.
-  const w2 = smart.wakeStep({ id: 'g1', legs: [LEG], wake: true, wakeSet: {}, alerted: {} }, { ...s, done: false, L2: s.L2.map((x) => ({ ...x, arr: at(10) })) }, at(9) + 50000, fmt);
-  assert.equal(w2.actions.filter((a) => a.t === 'wakeDue').length, 1);
+  for (const t of [at(9) + 50000, at(10) + 20000]) {
+    const w = smart.wakeStep({ id: 'g1', legs: [LEG], wake: true, wakeSet: {}, alerted: {} }, { ...s, done: false, L2: s.L2.map((x) => ({ ...x, arr: at(10) })) }, t, fmt);
+    assert.deepEqual(w.actions, []);
+  }
 });
 
 test('(5) every alert a trip set ahead that belongs to no running trip is taken back (launch, trip end)', { skip: !G.staleTripIds && 'staleTripIds not on this commit' }, () => {

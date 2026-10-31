@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { linkTs } from './tsLink.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -17,7 +18,7 @@ async function load(rel) {
   const src = fs.readFileSync(path.join(here, '..', rel), 'utf8');
   const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
   const f = path.join(out, path.basename(rel).replace(/\.ts$/, '.mjs'));
-  fs.writeFileSync(f, js);
+  fs.writeFileSync(f, linkTs(js, out, ts));
   return import(pathToFileURL(f).href);
 }
 const live = await load('src/lib/liveCalc.ts');
@@ -129,99 +130,21 @@ const legBS = { mode: 'train', line: 'T1', tripId: 'T1.short', stopId: 'BWD', to
 const T1three = { line: 'T1', stops: [['Summer Hill', -2], ['Ashfield', 0], ['Croydon', 3], ['Parramatta', 5], ['Chatswood', 8], ['Homebush', 10]], mine: 1, off: 4 };
 const legAS = { mode: 'train', line: 'T1', tripId: 'T1.three', stopId: 'ASH', toStopId: 'STR', from: 'Ashfield Station', to: 'Chatswood Station', planned: iso(at(0)), arrPlanned: iso(at(8)), fromPlatform: 'Platform 3', towards: 'Penrith Station' };
 
-/**
- * Replays a trip with Wake me on, refreshing every 15 s like the app. The phone side is simulated: a scheduled
- * alarm rings at its time unless cancelled or moved; a "ring now" is skipped if that alarm already rang (the app
- * checks the presented notifications). `appOpen` false means the app sleeps and only the phone's alarm can ring.
- * Returns every ring with its time.
- */
-function wakeReplay({ run, leg, delay = 0, lateDelay = null, lateFrom = -3, wakeFrom = -5, appOpen = true, offAt = null }) {
-  let g = { id: 'g1', legs: [leg], alerted: {}, watchId: null, share: null, wake: false, wakeSet: {} };
-  const alarms = new Map(); // id -> at
-  const rang = [];
-  const presented = new Set();
-  const cancels = [];
-  const schedules = [];
-  let ended = false;
-  for (let t = at(-5); t <= at(30) && !ended; t += 15000) {
-    // The phone's own alarms ring when their time comes, app open or not.
-    for (const [id, when] of [...alarms]) if (when <= t) { rang.push({ id, t: when, by: 'phone' }); presented.add(id); alarms.delete(id); }
-    if (t >= at(wakeFrom) && !g.wake && (offAt == null || t < at(offAt))) g = { ...g, wake: true };
-    if (offAt != null && t >= at(offAt)) g = { ...g, wake: false };
-    if (!appOpen && t > at(-5) + 15000) continue; // only the first refresh ran, then the phone slept
-    const d = lateDelay != null && t >= at(lateFrom) ? lateDelay : delay;
-    const svc = [feed(run, d, t)];
-    const r = live.stepLive(g, svc, t, fmt);
-    const w = smart.wakeStep({ ...r.g, wake: g.wake, wakeSet: g.wakeSet }, r.s, t, fmt);
-    g = { ...r.g, wake: g.wake, wakeSet: w.g.wakeSet, alerted: w.g.alerted };
-    for (const a of w.actions) {
-      if (a.t === 'wakeSchedule') { alarms.set(a.id, a.at); schedules.push({ ...a, t }); }
-      else if (a.t === 'wakeCancel') { alarms.delete(a.id); cancels.push({ ...a, t }); }
-      else if (a.t === 'wakeDue') { if (!presented.has(a.id)) { alarms.delete(a.id); rang.push({ id: a.id, t, by: 'app', title: a.title }); presented.add(a.id); } }
-    }
-    for (const a of r.actions) {
-      if (a.t === 'alert' && a.key.startsWith('off')) rang.push({ id: a.id, t, by: 'plainAlert' });
-      if (a.t === 'end') ended = true;
-    }
+// Wake me before my stop is gone (phase 2, G9): a timed alarm with "Wake up" words, set from stop times ahead. The
+// calm sequence from the live train replaces it. wakeStep only takes back an alarm an earlier version set.
+test('Wake me is gone: wakeStep never sets an alarm, even turned on, and takes back one an earlier version set', () => {
+  const g = { id: 'g1', legs: [legBS], alerted: {}, watchId: null, share: null, wake: true, wakeSet: {} };
+  for (const m of [-2, 0, 1, 2, 3]) {
+    const t = at(m);
+    const r = live.stepLive(g, [feed(T1s, 0, t)], t, fmt);
+    const w = smart.wakeStep({ ...r.g, wake: true, wakeSet: {} }, r.s, t, fmt);
+    assert.deepEqual(w.actions, [], `minute ${m}`);
   }
-  return { rang, schedules, cancels, g };
-}
-
-const depOf = (run, d) => at(run.stops[run.off - 1][1]) + d * 60000;
-
-for (const [name, run, leg] of [['Parramatta to Chatswood (one stop)', T1s, legBS], ['Ashfield to Chatswood (3 stops)', T1three, legAS]]) {
-  for (const delay of [0, 3, -1]) {
-    test(`wake me, ${name}, ${delay === 0 ? 'on time' : delay > 0 ? delay + ' min late' : 'early'}: rings once as the train leaves the stop before`, () => {
-      const r = wakeReplay({ run, leg, delay });
-      const wakes = r.rang.filter((x) => x.id.startsWith('wake-'));
-      assert.equal(wakes.length, 1, `rang ${wakes.length} times: ${JSON.stringify(r.rang)}`);
-      const want = depOf(run, delay);
-      assert.equal(wakes[0].t, want, `rang at ${format.clockSec(wakes[0].t)}, train leaves ${run.stops[run.off - 1][0]} at ${format.clockSec(want)}`);
-      // Before the get off stop, never after.
-      assert.ok(wakes[0].t < at(run.stops[run.off][1]) + delay * 60000);
-      // The plain "Next stop" alert is replaced by the alarm, not doubled.
-      assert.equal(r.rang.filter((x) => x.by === 'plainAlert').length, 0, 'no second Next stop alert');
-      // Nothing left set after the trip.
-      assert.equal(Object.keys(r.g.wakeSet || {}).length, 0);
-    });
-  }
-  test(`wake me, ${name}: a delay that shows up after the alarm is set moves it`, () => {
-    // One stop: the delay shows before boarding. Three stops: it grows mid ride, after Croydon.
-    const r = wakeReplay({ run, leg, delay: 0, lateDelay: 4, lateFrom: run === T1s ? -3 : 3.5 });
-    const wakes = r.rang.filter((x) => x.id.startsWith('wake-'));
-    assert.equal(wakes.length, 1);
-    assert.equal(wakes[0].t, depOf(run, 4));
-    assert.ok(r.schedules.length >= 2, 'rescheduled when the live time moved');
-  });
-  test(`wake me, ${name}: with the app asleep the phone's own alarm rings, once`, () => {
-    const r = wakeReplay({ run, leg, appOpen: false });
-    const wakes = r.rang.filter((x) => x.id.startsWith('wake-'));
-    assert.equal(wakes.length, 1);
-    assert.equal(wakes[0].by, 'phone');
-    assert.equal(wakes[0].t, depOf(run, 0));
-  });
-}
-
-test('wake me turned on after the moment (already past the stop before) rings at once, once', () => {
-  const r = wakeReplay({ run: T1three, leg: legAS, wakeFrom: 6 });
-  const wakes = r.rang.filter((x) => x.id.startsWith('wake-'));
-  assert.equal(wakes.length, 1);
-  assert.equal(wakes[0].by, 'app');
-  assert.ok(wakes[0].t >= at(6) && wakes[0].t <= at(6) + 15000);
-  assert.match(wakes[0].title, /^Wake up, Chatswood is next/);
-});
-
-test('wake me turned off before it rings cancels the alarm', () => {
-  const r = wakeReplay({ run: T1three, leg: legAS, wakeFrom: -5, offAt: 2 });
-  assert.equal(r.rang.filter((x) => x.id.startsWith('wake-')).length, 0);
-  assert.equal(r.cancels.length, 1);
-  // With it off, the plain Next stop alert is back.
-  assert.equal(r.rang.filter((x) => x.by === 'plainAlert').length, 1);
-});
-
-test('wake time without a live feed: 2 minutes before arrival', () => {
-  const s = live.computeLive([legAS], [null], at(1), null);
-  assert.equal(smart.wakeTime(s, 0), at(6));
+  const old = smart.wakeStep({ id: 'g1', legs: [legBS], wake: true, wakeSet: { 0: at(5) }, alerted: {} }, live.computeLive([legBS], [], at(1)), at(1), fmt);
+  assert.deepEqual(old.actions, [{ t: 'wakeCancel', id: 'wake-g1-0' }]);
+  assert.deepEqual(old.g.wakeSet, {});
+  const src = fs.readFileSync(path.join(here, '..', 'src/lib/smart.ts'), 'utf8');
+  assert.doesNotMatch(src, /Wake up,/);
 });
 
 // ---------- 5: Missed connection ----------

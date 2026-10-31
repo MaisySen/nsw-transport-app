@@ -192,4 +192,7 @@ let tripWatch: string | null = null;
 let tripSpeaks = false;
 export const setTripWatch = (id: string | null, speaks: boolean) => { tripWatch = id; tripSpeaks = !!id && speaks; };
 /** push.ts: this push is the running trip's, rings with a spoken sound, and the app is saying the same thing now. */
-export const tripPushQuiet = (watch: unknown, sound: unknown, appState: string) => tripPushSoundless({ watch, sound, appState, tripWatch, speaks: tripSpeaks });
+export const tripPushQuiet = (watch: unknown, sound: unknown, appState: string) => tripPushSoundless({ watch, sound, appState, tripWatch, speaks: tripSpeaks, flow2: tripFlow2 });
+/** The running trip uses the new trip flow (phase 2): the app rings its moments itself while open. */
+let tripFlow2 = false;
+export function setTripFlow2(on: boolean) { tripFlow2 = on; }

@@ -196,44 +196,6 @@ function MiniAction({ icon, title, label, onPress }: { icon: IconName; title: st
   );
 }
 
-/** Live trip: Wake me before my stop. A strong buzz one stop before you get off, even with the app closed. */
-export function WakeRow({ g, st }: { g: LiveTrip; st: LiveState | null }) {
-  const c = usePalette();
-  const [busy, setBusy] = useState(false);
-  const legs = g.legs;
-  const k = st && !st.done ? st.cur : legs.length - 1;
-  const stop = short(legs[k]?.to);
-  const toggle = async (on: boolean) => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      if (on && !(await canNotify(true))) {
-        Alert.alert('Notifications are off', 'Wake me needs notifications. Turn them on for Transport in your phone settings.');
-        return;
-      }
-      const cur = getLive();
-      if (!cur || cur.id !== g.id) return;
-      setLive({ ...cur, wake: on });
-      haptic.select();
-      await tickLive();
-    } finally { setBusy(false); }
-  };
-  const done = !!st?.done;
-  return (
-    <View style={[s.wake, { backgroundColor: c.card }]}>
-      <View style={[s.wakeIcon, { backgroundColor: g.wake ? c.tint : c.fill }]}>
-        <Icon name={I.bell} size={16} color={g.wake ? (androidLook && c.dark ? '#062E6F' : '#fff') : c.tint} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <T kind="body">Wake me before my stop</T>
-        <T kind="foot" tone="text2" numberOfLines={2}>{done ? 'Trip finished' : g.wake ? `A strong buzz one stop before ${stop}` : `Buzz one stop before ${stop}, so you can doze`}</T>
-      </View>
-      <Switch value={!!g.wake} onValueChange={toggle} disabled={busy || done} accessibilityLabel="Wake me before my stop"
-        trackColor={Platform.OS === 'android' ? { true: c.tint, false: c.fill } : undefined}
-        thumbColor={Platform.OS === 'android' ? (g.wake ? (c.dark ? '#062E6F' : '#fff') : c.text3) : undefined} />
-    </View>
-  );
-}
 
 /** Say trip alerts out loud, in headphones when they are in. Only on builds with the speech module (206 and later). */
 export function SpeakRow({ g }: { g: LiveTrip }) {

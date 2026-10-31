@@ -154,8 +154,11 @@ export function evidence(P, M, snap, li, t) {
   const age = t - snap.asOf;
   const fresh = age < RULES.LIVE_FRESH && L && !L.unmatched;
   const v = fresh && L.vehicle && t - L.vehicle.at < RULES.LIVE_FRESH ? L.vehicle : null;
+  // A fresh vehicle position is the best evidence: when it has one, a stop's own live time never moves the trip past
+  // where the vehicle is (25 Oct: a feed whose estimates were the timetable, the train 4 min behind them).
   const left = (i) => {
     if (v && (v.stop > i || (v.stop === i && v.state === 'left'))) return 'vehicle';
+    if (v) return null;
     if (fresh && L.est[i] != null && t >= L.est[i] + RULES.LEFT_BY) return 'stop live';
     return null;
   };
@@ -163,6 +166,7 @@ export function evidence(P, M, snap, li, t) {
   const at = (i) => {
     if (v && v.stop === i && v.state === 'at') return 'vehicle';
     if (v && (v.stop > i || (v.stop === i && v.state === 'left'))) return 'vehicle';
+    if (v) return null;
     if (fresh && L.est[i] != null && t >= L.est[i]) return 'stop live';
     return null;
   };

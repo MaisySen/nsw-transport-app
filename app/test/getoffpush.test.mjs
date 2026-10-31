@@ -10,6 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { linkTs } from './tsLink.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, '..');
@@ -20,7 +21,7 @@ async function load(rel) {
   const src = fs.readFileSync(path.join(root, rel), 'utf8');
   const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
   const f = path.join(out, path.basename(rel).replace(/\.ts$/, '.mjs'));
-  fs.writeFileSync(f, js);
+  fs.writeFileSync(f, linkTs(js, out, ts));
   return import(pathToFileURL(f).href);
 }
 const live = await load('src/lib/liveCalc.ts');

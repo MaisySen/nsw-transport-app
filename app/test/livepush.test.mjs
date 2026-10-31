@@ -31,7 +31,9 @@ const trip = {
 
 test('pushTrip keeps what the server needs and drops the rest', () => {
   const p = m.pushTrip(trip);
-  assert.deepEqual(Object.keys(p).sort(), ['arrivedAt', 'id', 'legs', 'origin', 'rode', 'title', 'to']);
+  // Phase 2: tripFlow 2 and c24 ride every registration (and started, when the trip has it).
+  assert.deepEqual(Object.keys(p).sort(), ['arrivedAt', 'c24', 'id', 'legs', 'origin', 'rode', 'title', 'to', 'tripFlow', ...(typeof trip.started === 'number' ? ['started'] : [])].sort());
+  assert.equal(p.tripFlow, 2);
   assert.deepEqual(p.origin, { id: '206710', name: 'Chatswood' });
   assert.equal(p.legs.length, 2);
   assert.equal(p.legs[0].estimated, undefined);

@@ -81,7 +81,9 @@ test("the server works out the track exactly like the app (shared card code): li
   assert.deepEqual(c.stopTrack, { passed: 2, next: ["Ryde Hospital", "Church St", "Top Ryde City"], hidden: 0, hiddenAt: 0, live: true });
   assert.equal(c.stopsLeft, 3);
   const tt = { ...d, live: false, progress: "timetable", nextIndex: 3, stops: d.stops.map(({ estimated, ...s }) => s) };
-  const c2 = W.LIVECARD.cardFor({ legs: [leg], to: { id: "S4", name: names[4] } }, W.LIVECARD.computeLive([leg], [tt], t), t);
+  // Phase 2: with no live data the card is on board only when it was seen riding before (rode), never by the clock.
+  const c2 = W.LIVECARD.cardFor({ legs: [leg], to: { id: "S4", name: names[4] } }, W.LIVECARD.computeLive([leg], [tt], t, { rode: { 0: NOW + 8 * 60000 } }), t);
+  assert.equal(c2.phase, "ride");
   assert.equal(c2.stopTrack.live, false);
   assert.equal(c2.nextStop, null);
 });

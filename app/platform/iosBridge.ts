@@ -26,6 +26,7 @@ import { endActivityToken, sendActivityToken, sendDeviceToken } from './livePush
 import { pendingOpenURL } from './intentInboxCore';
 import { startAppPoll } from '@/lib/activity';
 import { appMayWriteCard } from '@/lib/liveFreshCore';
+import { phone24h } from '@/lib/rowTime';
 
 const ARRIVED_KEEP_S = 120;
 const TICK_MS = 30000;
@@ -92,19 +93,23 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   }
   iosNative.onActivityPushToken((id, token) => { tokens.set(id, token); if (id === activityId) shareToken(); });
 
+  // The one trip state (tripState.ts, phase 2): times from when the live answers were loaded (lastSvcAt), the planner
+  // estimate from Start trip with its own age, legs finished by live evidence (here) kept, words on the phone's clock.
   const stateFor = (g: LiveTrip) =>
-    computeLive(g.legs, g.legs.map((l) => svcByKey.get(legKey(l)) || null), Date.now(), { rode: g.rode, arrivedAt: g.arrivedAt });
+    computeLive(g.legs, g.legs.map((l) => svcByKey.get(legKey(l)) || null), Date.now(), { rode: g.rode, here: g.here, arrivedAt: g.arrivedAt }, null,
+      { asOf: lastSvcAt || null, plannerAt: g.started ?? null, c24: phone24h() });
 
   async function refreshCard(background = false) {
     const g = trip;
     if (!g) return;
     const s = stateFor(g);
     const updated = lastSvcAt || null;
-    const o: CardOpts = { alt: altFor(g, s), updated, asOf: background && !honestStale ? updated || Date.now() : null };
+    // updated is always sent (G7): a stale card then reads "Updated 7:47pm", never "You've arrived".
+    const o: CardOpts = { alt: altFor(g, s), updated: updated || g.started || Date.now(), asOf: background && !honestStale ? updated || Date.now() : null, c24: phone24h() };
     if (!iosNative.activitiesEnabled() && !activityId) { shareLive(g, cardFor(g, s, Date.now(), o)); return; }
     const card = cardFor(g, s, Date.now(), o);
     shareLive(g, card);
-    const stale = staleAt(card, updated, honestStale, ARRIVED_KEEP_S * 1000);
+    const stale = staleAt(card, card.updated ?? updated, honestStale, ARRIVED_KEEP_S * 1000);
     if (!activityId || activityTrip !== g.id) {
       if (starting || card.phase === 'arrived') return;
       starting = true;

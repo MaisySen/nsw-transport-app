@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { linkTs } from './tsLink.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -17,7 +18,7 @@ async function load(rel) {
   const src = fs.readFileSync(path.join(here, '..', rel), 'utf8');
   const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
   const f = path.join(out, path.basename(rel).replace(/\.ts$/, '.mjs'));
-  fs.writeFileSync(f, js);
+  fs.writeFileSync(f, linkTs(js, out, ts));
   return import(pathToFileURL(f).href);
 }
 const live = await load('src/lib/liveCalc.ts');
@@ -36,7 +37,7 @@ const svc = (o = {}) => ({
 });
 const leg = { mode: 'bus', line: '501', tripId: 'B501.1', stopId: 'S0', toStopId: 'S6', from: NAMES[0], to: NAMES[6], planned: iso(at(0)), arrPlanned: iso(at(12)), color: '#00B5EF', towards: 'Top Ryde' };
 const trip = { legs: [leg], to: { id: 'S6', name: NAMES[6] } };
-const cardAt = (d, t) => cardFor(trip, live.computeLive(trip.legs, [d], t), t);
+const cardAt = (d, t, memo) => cardFor(trip, live.computeLive(trip.legs, [d], t, memo), t);
 
 test('on board with live times: passed stops, next first, your stop last, count matches "N stops"', () => {
   // Live times run 4 min late: at +9 the bus has left stop 2 (live 8) and stop 3 (live 10) is next.
@@ -55,14 +56,17 @@ test('on board with live times: passed stops, next first, your stop last, count 
 
 test('timetable only: the track is marked not live and the card still names no next stop (R1)', () => {
   const d = svc({ live: false, progress: 'timetable', nextIndex: 4, estimated: false });
-  const c = cardAt(d, at(7));
+  // Phase 2 (G6): with nothing live the card is on board only when it was seen riding before (memo.rode), and the stop
+  // list is never moved along by the timetable: it stays at the first stop after yours.
+  assert.equal(cardAt(d, at(7)).phase, 'wait');
+  const c = cardAt(d, at(7), { rode: { 0: at(20) } });
   assert.equal(c.phase, 'ride');
   assert.equal(c.nextStop, null);
   assert.equal(c.stopsLeft, null);
   assert.equal(c.warning, 'Timetable times, not live');
   assert.ok(c.stopTrack);
   assert.equal(c.stopTrack.live, false);
-  assert.equal(c.stopTrack.passed, 4);
+  assert.equal(c.stopTrack.passed, 1);
 });
 
 test('waiting: you are at your boarding stop, every stop of the leg still to come', () => {

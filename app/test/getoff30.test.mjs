@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { linkTs } from './tsLink.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, '..');
@@ -19,7 +20,7 @@ async function load(rel) {
   const src = fs.readFileSync(path.join(root, rel), 'utf8');
   const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
   const f = path.join(out, path.basename(rel).replace(/\.ts$/, '.mjs'));
-  fs.writeFileSync(f, js);
+  fs.writeFileSync(f, linkTs(js, out, ts));
   return import(pathToFileURL(f).href);
 }
 const live = await load('src/lib/liveCalc.ts');
@@ -146,11 +147,14 @@ test('every set time is before the arrival it was set for', () => {
   }
 });
 
-test('the trip card goes stale at the arrival where you get off, so the island stops counting', () => {
+test('the trip card goes stale 2 minutes after the live times, and while waiting no later than the live departure (phase 2, G3 G10)', () => {
+  // Before phase 2 the card went stale at the arrival where you get off; a wrong arrival then showed a past time (G10).
   const base = { phase: 'ride', arrival: at(30), legArrives: at(10), progress: 0.5 };
-  assert.equal(tripCard.staleAt(base, at(9), true), at(10));
-  assert.equal(tripCard.staleAt({ ...base, legArrives: at(20) }, at(9), true), at(11), '2 minutes after the live times when that is sooner');
-  assert.equal(tripCard.staleAt({ ...base, phase: 'wait' }, at(9), true), at(11), 'waiting: unchanged');
+  assert.equal(tripCard.staleAt(base, at(9), true), at(11), 'on board: 2 minutes after the live times');
+  assert.equal(tripCard.staleAt({ ...base, legArrives: at(20) }, at(9), true), at(11));
+  assert.equal(tripCard.staleAt({ ...base, phase: 'wait' }, at(9), true), at(11), 'waiting with no departure: 2 minutes');
+  assert.equal(tripCard.staleAt({ ...base, phase: 'wait', departs: at(10) }, at(9), true), at(10), 'waiting: at the live departure, never a timer at 0:00');
+  assert.equal(tripCard.staleAt({ ...base, phase: 'wait', departs: at(8) }, at(9), true), at(9) + 1000, 'a departure already passed: stale at once');
   assert.equal(tripCard.staleAt(base, at(9), false), at(32), 'builds without the honest stale card: unchanged');
 });
 

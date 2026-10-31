@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { linkTs } from './tsLink.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -16,7 +17,7 @@ async function load(rel) {
   const src = fs.readFileSync(path.join(here, '..', rel), 'utf8');
   const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
   const f = path.join(out, path.basename(rel).replace(/\.ts$/, '.mjs'));
-  fs.writeFileSync(f, js);
+  fs.writeFileSync(f, linkTs(js, out, ts));
   return import(pathToFileURL(f).href);
 }
 const live = await load('src/lib/liveCalc.ts');
@@ -62,7 +63,8 @@ test('waiting for the first leg: board details, no timer text', () => {
 });
 
 test('on board: ride phase with progress between 0 and 1', () => {
-  const c = cardAt(trip(), at(6));
+  // Phase 2: on board only once something live showed the train left your stop (here memo.rode, seen riding before).
+  const c = cardAt(trip(), at(6), { rode: { 0: at(13) } });
   checkShape(c);
   assert.equal(c.phase, 'ride');
   assert.ok(c.progress > 0.3 && c.progress < 0.7, String(c.progress));
@@ -94,10 +96,14 @@ test('no live data and nothing from you: the card stays on the leg you are on, n
   const c = cardAt(trip(), at(20));
   checkShape(c);
   assert.equal(c.line, 'T2');
-  assert.equal(c.phase, 'ride');
-  assert.equal(c.nextStop, null);
+  // Phase 2 (G6): nothing live showed the train leave, so the card holds where it was (waiting), never moved by the clock.
+  assert.equal(c.phase, 'wait');
   assert.equal(c.warning, 'Timetable times, not live');
-  assert.ok(c.progress <= 0.9);
+  assert.equal(c.progress, 0);
+  const r = cardAt(trip(), at(20), { rode: { 0: at(13) } });
+  assert.equal(r.phase, 'ride');
+  assert.equal(r.nextStop, null, 'no next stop without live data');
+  assert.ok(r.progress <= 0.9);
 });
 
 test('arrived: one final card, nothing after', () => {

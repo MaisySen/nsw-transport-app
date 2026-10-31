@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { linkTs } from './tsLink.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -17,7 +18,7 @@ async function load(rel) {
   const src = fs.readFileSync(path.join(here, '..', rel), 'utf8');
   const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
   const f = path.join(out, path.basename(rel).replace(/\.ts$/, '.mjs'));
-  fs.writeFileSync(f, js);
+  fs.writeFileSync(f, linkTs(js, out, ts));
   return import(pathToFileURL(f).href);
 }
 const live = await load('src/lib/liveCalc.ts');
@@ -141,7 +142,8 @@ test('a change already missed: no countdown to the train that left, and the trip
   // The T1 got to Epping at 8:29 (rode records it); the T4 left at 8:26.
   const t = at(20);
   const f4 = feed(T4, t);
-  const s = live.computeLive(legs, [null, f4], t, { rode: { 0: at(19) } });
+  // Phase 2: a leg ends on evidence only (the train seen at Epping, kept as memo.here), not 45 s after rode by the clock.
+  const s = live.computeLive(legs, [null, f4], t, { rode: { 0: at(19) }, here: { 0: at(19) } });
   assert.equal(s.done, false);
   assert.equal(s.cur, 1);
   assert.equal(s.phase, 'wait');

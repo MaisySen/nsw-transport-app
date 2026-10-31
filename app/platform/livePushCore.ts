@@ -11,7 +11,15 @@ export type PushTrip = {
   legs: WatchLeg[]; rode: Record<number, number>; arrivedAt: number | null;
   /** When you got off each leg by your tap or location, so the locked card moves on with you (only when there is one). */
   here?: Record<number, number>;
+  /** The new trip flow (phase 2): the server applies it only when this is 2 or more and its tripflow2 switch is on. */
+  tripFlow: 2;
+  /** The phone shows 24 hour time: the card's words follow it. */
+  c24: boolean;
+  /** When the trip was started: the planner estimate on the legs is from then (it ages out after 5 min). */
+  started?: number;
 };
+/** The trip flow version this app speaks (docs/TRIP_FLOW_SPEC.md phase 2): sent in every trip, get-off and card registration. */
+export const TRIP_FLOW = 2 as const;
 
 const LEG_KEYS: (keyof WatchLeg)[] = ['mode', 'line', 'tripId', 'stopId', 'toStopId', 'from', 'to', 'planned', 'arrPlanned', 'estimated',
   'fromPlatform', 'toPlatform', 'color', 'towards', 'destId', 'feed'];
@@ -19,7 +27,7 @@ const LEG_KEYS: (keyof WatchLeg)[] = ['mode', 'line', 'tripId', 'stopId', 'toSto
 const place = (p: any) => (p ? { id: p.id ? String(p.id) : undefined, name: p.name ? String(p.name) : undefined } : null);
 
 /** The parts of a live trip the server needs to work out the card: legs, what was ridden and the arrival. */
-export function pushTrip(g: LiveTrip): PushTrip {
+export function pushTrip(g: LiveTrip, c24 = false): PushTrip {
   return {
     id: g.id,
     title: g.title || '',
@@ -33,13 +41,15 @@ export function pushTrip(g: LiveTrip): PushTrip {
     rode: { ...(g.rode || {}) },
     arrivedAt: g.arrivedAt ?? null,
     ...(g.here && Object.keys(g.here).length ? { here: { ...g.here } } : {}),
+    tripFlow: TRIP_FLOW, c24: !!c24,
+    ...(typeof g.started === 'number' ? { started: g.started } : {}),
   };
 }
 
 /** Changes when the server should hear about the trip again: a new token, a leg ridden, a replan or arrival. */
-export function pushKey(token: string, g: LiveTrip): string {
-  const t = pushTrip(g);
-  return JSON.stringify([token, t.id, t.legs.map((l) => [l.tripId, l.stopId, l.planned]), t.rode, t.arrivedAt, ...(t.here ? [t.here] : [])]);
+export function pushKey(token: string, g: LiveTrip, c24 = false): string {
+  const t = pushTrip(g, c24);
+  return JSON.stringify([token, t.id, t.legs.map((l) => [l.tripId, l.stopId, l.planned]), t.rode, t.arrivedAt, ...(t.here ? [t.here] : []), ...(t.c24 ? ['c24'] : [])]);
 }
 
 /** A hex APNs token, or null. */

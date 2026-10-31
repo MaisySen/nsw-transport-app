@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { linkTs } from './tsLink.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, '..');
@@ -18,7 +19,7 @@ async function load(rel) {
   const src = fs.readFileSync(path.join(root, rel), 'utf8');
   const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
   const f = path.join(out, path.basename(rel).replace(/\.ts$/, '.mjs'));
-  fs.writeFileSync(f, js);
+  fs.writeFileSync(f, linkTs(js, out, ts));
   return import(pathToFileURL(f).href);
 }
 const live = await load('src/lib/liveCalc.ts');
@@ -102,7 +103,8 @@ test('default (1 stop, Get off now): the Next stop alert as before, and Get off 
   assert.equal(r.schedules.length, 0, 'nothing set on the phone from a clock (31 Oct: position or the server only)');
   assert.equal(r.next.length, 1, 'the Next stop alert, once');
   assert.match(r.next[0].title, /^Next stop: Central/);
-  assert.ok(r.next[0].t >= leaves(5) && r.next[0].t <= leaves(5) + 30000, 'as the train leaves Epping');
+  // Phase 2 (tripState): a stop counts as left once its own live time is 60 s past (TRIP_RULES.LEFT_BY).
+  assert.ok(r.next[0].t >= leaves(5) + 60000 && r.next[0].t <= leaves(5) + 90000, 'as the train leaves Epping');
 });
 
 for (const n of [2, 3]) {
@@ -110,7 +112,8 @@ for (const n of [2, 3]) {
     test(`${n} stops before, ${delay ? delay + ' min late' : 'on time'}: one heads up as the train leaves the stop ${n} before, then Next stop`, () => {
       const r = replay({ pref: { stops: n, now: false }, delay });
       assert.equal(r.early.length, 1, JSON.stringify(r.rang));
-      const want = leaves(RUN.off - n, delay);
+      // Phase 2 (tripState): left once the stop's own live time is 60 s past (TRIP_RULES.LEFT_BY).
+      const want = leaves(RUN.off - n, delay) + 60000;
       assert.ok(r.early[0].t >= want && r.early[0].t <= want + 30000, `rang ${format.clockSec(r.early[0].t)}, want ${format.clockSec(want)}`);
       assert.equal(r.next.length, 1);
       assert.ok(r.early[0].t < r.next[0].t);
