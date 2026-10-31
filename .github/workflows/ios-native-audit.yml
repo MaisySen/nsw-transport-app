@@ -4,7 +4,7 @@
 # expanded), the Apple Watch app and its complications; smallest, standard and largest devices; default and
 # xxxLarge text; light and dark; long names, no live data, changes, delays, cancellations. Fails when anything is
 # drawn outside its box. Contact sheets (one PNG per surface) are in the artifact.
-# No secrets, no signing, no app build, no upload. Manual trigger on any branch that carries
+# No secrets, no signing, no upload. From build 211 the module job also compiles the app (simulator, unsigned). Manual trigger on any branch that carries
 # app/native-tests/native-audit, and called by the build workflow before it builds.
 name: iOS native audit (snapshots only)
 
@@ -72,6 +72,51 @@ jobs:
           retention-days: 14
       - name: Result
         run: test ! -e "$GITHUB_WORKSPACE/out/FAILED-ios"
+
+  module:
+    # From build 211 (31 Oct 2026): the app's own native module (app/modules/transport-ios: TransportIOSModule.swift,
+    # region get off alerts, alert audio, widgets, Live Activity) is compiled with the whole app for the simulator,
+    # against the real Expo and React Native pods, so a Swift error fails here and never first in the signed build.
+    # Unsigned simulator build, no JavaScript bundle, no secrets, no upload.
+    runs-on: xcode-27
+    timeout-minutes: 75
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+          pod --version
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Native project (expo prebuild, pod install)
+        run: |
+          npx expo prebuild --platform ios --clean --no-install
+          cd ios && pod install
+      - name: Compile the app and its native module (simulator, unsigned)
+        env:
+          SKIP_BUNDLING: "1"
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          WS=$(ls -d ios/*.xcworkspace | head -1)
+          SCHEME=$(basename "$WS" .xcworkspace)
+          echo "workspace $WS, scheme $SCHEME"
+          xcodebuild build -workspace "$WS" -scheme "$SCHEME" -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath ios/dd \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO > "$GITHUB_WORKSPACE/out/module-build.log" 2>&1 \
+            || { grep -E "error:" "$GITHUB_WORKSPACE/out/module-build.log" | sort -u | head -150; tail -40 "$GITHUB_WORKSPACE/out/module-build.log"; echo "APP NATIVE CODE DOES NOT COMPILE"; exit 1; }
+          grep -c "TransportIOSModule.swift" "$GITHUB_WORKSPACE/out/module-build.log" || { echo "TransportIOSModule.swift was not compiled"; exit 1; }
+          echo "app and native module compiled"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-audit-module
+          path: out
+          retention-days: 14
 
   watch:
     runs-on: xcode-27
