@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 31 Oct 2026
 
+### Build 211 on TestFlight (31 Oct, 7:10 to 7:45 PM; build-209 fast forwarded to build-211-rc e4b7f52)
+* Owner's go at 7:02 PM. build-209 fast forwarded from a9541f1 to e4b7f52 (force false). GitHub Actions run 41183457194 (`ios-209-local.yml`): audit gate passed (iPhone, Watch, full app module compile), then `eas build --local` on Xcode 27.1 (no Expo cloud build used) and the altool upload (UPLOAD SUCCEEDED).
+* IPA checked: 1.0.0 (211) on all four targets, runtime 1.2.0 (equals app.json), channel production, aps-environment production, Time Sensitive, App Group, get-task-allow false, no UIBackgroundModes, Crash Data listed, no old address.
+* App Store Connect build 01823c15-dd7b-442e-adbc-7189695b335d: VALID, no non exempt encryption, Internal group In Beta Testing. Not attached to version 1.0.0, no Beta App Review, not submitted.
+* Sentry: dSYMs uploaded at 7:39 PM (Transport, TransportWidget, MapLibre, ExpoModulesJSI); no JavaScript source maps and no release 1.0.0+211 in Sentry (auto upload off, as 209 and 210).
+* The six build secrets were added for the run and deleted right after it (each reads 404). No server deploy (live server stays server-211-rc b1feea1d; build-211-rc's worker.js is not deployed from here).
+
 ### Build 211 candidate, round 4: tonight's polish from main, and the quiet note never early (31 Oct, about 4:25 to 5:00 PM; branch build-211-rc, no build, no upload, no update, no deploy)
 * main's three polish commits cherry picked onto build-211-rc (not a merge: the build 209 line was never merged into main): 4257d51 (notstopping test on a fixed noon), e743cde (Home stop card says Timetable) and c7dde16 (in app clocks follow the phone's 12 or 24 hour setting, Reduce Motion, Dynamic Type caps, syssettings31). Without this, builds 210 and 211 (runtime 1.2.0) would never get them; tonight's update only goes to runtimes 1.0.0 and 1.1.0. Conflicts only in CHANGELOG, TEST_PLAN and one import line in `app/_layout.tsx` (Sentry and the phone clock, both kept). backend/src/worker.js untouched.
 * Follow up: syssettings31's check that no file writes a 12 hour clock without asking the phone flagged build 211's `noteShowCore.ts`. Its `serverClock` writes the server's own words ("12:06pm") only to read "got in at" in a server note back to a time; it is never shown and must match the server whatever the phone shows, so the check now knows that file. App code unchanged.
