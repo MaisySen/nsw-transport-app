@@ -8,6 +8,12 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 
 ## Live now
 
+### Trip flow 2 live (31 Oct, 11:28 PM)
+* Server transport-api 9250ee58-1361-4000-bc80-42093664f888 (server-tripflow 93f2c8c); roll back b1feea1d-ec97-4676-bca5-cf34796173d7.
+* Runtime 1.2.0 production update group 6496b2d0-edf2-443d-969a-4f985671fcdf (tripflow-p2 e442b73); roll back to embedded.
+* Switches on: tripflow2, apnsAlerts (with getOffPush, liveStops and the rest as before).
+* main does not have this server or app code: never deploy the server from main, never publish main to runtime 1.2.0.
+
 | What | Value | Rollback |
 | --- | --- | --- |
 | Production over the air group | Runtime 1.0.0 (builds 201 to 208, Android): `3f0e261a-86c8-4411-b752-58e7d087fcae` (30 Oct, 11:31 PM, from main `db72d3a`, preview `c216c672-bbc7-4936-99e8-831a744f08a3`; iOS `01a18cca-d2e7-7273-a869-5499eb9d9810`, Android `01a18cca-d2e7-7b3f-bf3b-df95a3a59264`). Runtime 1.1.0 (build 209, iOS): `9dd81bbd-5329-418e-a607-e81974d1cb16` (same commit, throwaway copy with runtimeVersion "1.1.0", preview `d73b0d62-3b4c-4a89-a0aa-d72492901d19`; iOS `01a18cca-de2f-73f4-b264-0a27c76caed8`). Runtime 1.2.0 (build 210): nothing published. Manifests and launch asset hashes checked on preview and production. 15 min watch 11:31 to 11:46 PM: 0 new feedback rows (still 5, all from 28 Oct), 0 crash or error screen rows, 10 searches from 2 profiles (phones active; which bundle they ran is not known). | 1.0.0: republish `f41a1eb2-edc4-4c2c-9c7f-46308883a178`. 1.1.0: `update:roll-back-to-embedded --branch production --runtime-version 1.1.0 --platform ios` |
