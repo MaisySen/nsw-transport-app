@@ -13,9 +13,15 @@ import SwiftUI
 enum LineCheck {
     static var probed = 0
     /// Titles: one line at most, a wrap fails like a countdown on two lines does. The followed service's "to Hornsby"
-    /// titles are held to the same rule so both Live Activities read alike.
+    /// titles are held to the same rule so both Live Activities read alike. A title whose last form (the stop alone at
+    /// its smallest size) still does not fit is cut at its end: allowed, as the last resort, and listed as shortened
+    /// (TITLE SHORTENED in the log) rather than failed.
     static let titles: Set<String> = ["island-stop", "lock-stop", "follow-island-to", "follow-lock-to"]
     static func allowed(_ r: LineProbe.Reading) -> Int { titles.contains(r.id) ? min(r.allowed, 1) : r.allowed }
+    /// Titles cut at their end in the last check, for the shot's log line.
+    static var shortened: [String] = []
+    static var shortenedTotal = 0
+    static func takeShortened() -> [String] { defer { shortened = [] }; return shortened }
 
     static func install() {
         Audit.lineCheck = (start: {
@@ -33,6 +39,9 @@ enum LineCheck {
                 let may = allowed(r)
                 if l.used > may {
                     out.append("\(r.id) '\(r.text)' on \(l.used) lines, may use \(may)")
+                } else if l.needed > may && titles.contains(r.id) {
+                    shortened.append("\(r.id) '\(r.text)' cut at its end (needs \(l.needed) lines at its smallest size)")
+                    shortenedTotal += 1
                 } else if l.needed > may {
                     out.append("\(r.id) '\(r.text)' cut: needs \(l.needed) lines at its smallest size, has \(may)")
                 }

@@ -170,6 +170,7 @@ final class WidgetAuditTests: XCTestCase {
         XCTAssertGreaterThan(LineCheck.probed, 100, "the line probes reported nothing: the check is not running")
         // Round 2 (build 211): Start trip titles on one line, and the expanded Island clear of its rounded corners.
         XCTAssertGreaterThan(IslandEdge.checked, 40, "the Island edge check did not run")
+        print("native audit titles: \(LineCheck.shortenedTotal) titles cut at their end as the last resort (TITLE SHORTENED lines)")
         let cut = Audit.records.filter { !($0.lines ?? []).isEmpty }
         XCTAssertTrue(cut.isEmpty, "Wraps or cut, or too close to the Island's edge:\n" + cut.map { "\($0.file) \(($0.lines ?? []).joined(separator: "; "))" }.joined(separator: "\n"))
     }

@@ -98,8 +98,9 @@ enum LiveActivityAudit {
         // The system pads the card by 16 pt (the activity sets .padding(16)); the card may be up to 160 pt tall.
         let inner = CGSize(width: p.lock - 32, height: lockMaxHeight - 32)
         for t in Audit.types {
-            Audit.shot(v.environment(\.colorScheme, .dark), surface: surface, scenario: scenario, device: p.name, type: t, scheme: .dark, box: inner,
-                       picture: LockCardFrame(content: v.environment(\.colorScheme, .dark), width: p.lock))
+            let rec = Audit.shot(v.environment(\.colorScheme, .dark), surface: surface, scenario: scenario, device: p.name, type: t, scheme: .dark, box: inner,
+                                 picture: LockCardFrame(content: v.environment(\.colorScheme, .dark), width: p.lock))
+            for n in LineCheck.takeShortened() { print("TITLE SHORTENED \(rec.file): \(n)") }
         }
     }
 
@@ -131,8 +132,9 @@ enum LiveActivityAudit {
         // fails when anything comes within IslandEdge.clearance of the rounded outline or the trailing side keeps less
         // inset than the leading side.
         for t in Audit.types {
-            Audit.shot(layout.environment(\.colorScheme, .dark), surface: surface, scenario: scenario, device: p.name, type: t, scheme: .dark, box: inner,
-                       picture: IslandPill(content: layout.environment(\.colorScheme, .dark), box: inner, round: IslandEdge.corner, inset: IslandEdge.inset))
+            let rec = Audit.shot(layout.environment(\.colorScheme, .dark), surface: surface, scenario: scenario, device: p.name, type: t, scheme: .dark, box: inner,
+                                 picture: IslandPill(content: layout.environment(\.colorScheme, .dark), box: inner, round: IslandEdge.corner, inset: IslandEdge.inset))
+            for n in LineCheck.takeShortened() { print("TITLE SHORTENED \(rec.file): \(n)") }
             if let res = IslandEdge.check(layout: layout, leading: l, trailing: tr, box: inner, side: side, type: t.1) {
                 let (e, fails) = res
                 IslandEdge.checked += 1
