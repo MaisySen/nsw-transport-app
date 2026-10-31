@@ -305,7 +305,7 @@ export function NextOption({ g, st }: { g: LiveTrip; st: LiveState | null }) {
         </View>
       ) : j && l ? (
         <>
-          <T kind="foot" tone="text2" style={{ marginTop: 10 }}>NEXT OPTION</T>
+          <T kind="foot" tone="text2" style={{ textTransform: androidLook ? 'none' : 'uppercase', marginTop: 10 }} accessibilityRole="header">Next option</T>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }} accessible
             accessibilityLabel={`Next option: ${tl.map((x) => x.line).join(' then ')} at ${clock(boardTime(j))}${l.fromPlatform ? ', ' + plat(l.fromPlatform) : ''}. Arrive ${short(m.toName)} at ${clock(arr)}.`}>
             <View style={{ flexDirection: 'row', gap: 4 }}>

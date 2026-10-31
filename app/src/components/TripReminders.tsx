@@ -7,7 +7,7 @@ import { SHEET_RADIUS, SheetGrabber, useSheetDrag } from './EditorSheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSides } from '@/lib/layout';
 import { haptic } from '@/lib/haptic';
-import { radius, usePalette } from '@/lib/theme';
+import { radius, usePalette, androidLook } from '@/lib/theme';
 import { from12, to12 } from '@/lib/planCore';
 import { DAY_LONG, DAY_NAMES, MAX_PER_TRIP, newReminder, reminderText, type Reminder } from '@/lib/reminderCore';
 import { remindersSupported, setTripReminders, useTripReminders } from '@/lib/reminders';
@@ -40,7 +40,7 @@ export function TripReminders({ tripKey, name, open, suggest }: { tripKey: strin
 
   return (
     <View style={{ marginHorizontal: 16, marginTop: 18 }}>
-      <T kind="foot" tone="text2" style={{ marginLeft: 16, marginBottom: 6, fontWeight: '600', letterSpacing: 0.4 }} accessibilityRole="header">REMINDERS</T>
+      <T kind="foot" tone="text2" style={{ textTransform: androidLook ? 'none' : 'uppercase', marginLeft: 16, marginBottom: 6, fontWeight: '600', letterSpacing: 0.4 }} accessibilityRole="header">Reminders</T>
       <View style={{ backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
         {list.map((r, i) => (
           <View key={r.id}>

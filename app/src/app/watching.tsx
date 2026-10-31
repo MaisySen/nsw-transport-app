@@ -10,6 +10,8 @@ import { Icon, I } from '@/components/Icon';
 import { WatchLineText } from '@/components/Cards';
 import { LineBadge, LiveStamp } from '@/components/Transit';
 import { Button, Empty, Row, Screen, Section, Sep, T } from '@/components/ui';
+import { SkeletonRows } from '@/components/SkeletonRows';
+import { friendlyErr } from '@/lib/netErrCore';
 
 export default function Watching() {
   const c = usePalette();
@@ -23,6 +25,8 @@ export default function Watching() {
       <Stack.Screen options={{ title: 'Watching' }} />
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
         <View style={{ paddingHorizontal: 20, paddingTop: 4 }}><LiveStamp updatedAt={updatedAt} error={error} staleAt={staleAt} offlineAt={offlineAt} /></View>
+        {!data && !error ? <SkeletonRows count={2} label="Loading your watches" /> : null}
+        {!data && error ? <Empty icon={I.warn} title="Can't load your watches" body={error} action={<Button title="Try again" onPress={() => refresh()} />} /> : null}
         {active.map((w) => {
           const L = w.legs?.[0];
           return (
@@ -37,7 +41,7 @@ export default function Watching() {
                 {w.legs.length > 1 ? <T kind="foot" tone="text2" style={{ marginTop: 3 }}>{w.legs.map((l) => l.line).join(', then ')}{w.replanned ? ' \u00b7 replanned' : ''}</T> : null}
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
                   <View style={{ flex: 1 }}><Button title="Details" kind="tinted" onPress={() => router.push({ pathname: '/watch/[id]', params: { id: w.id } })} /></View>
-                  <View style={{ flex: 1 }}><Button title="Stop" kind="tinted" onPress={() => Alert.alert('Stop watching?', w.title, [{ text: 'Cancel', style: 'cancel' }, { text: 'Stop', style: 'destructive', onPress: () => stopWatch(w.id).then(refresh) }])} /></View>
+                  <View style={{ flex: 1 }}><Button title="Stop" kind="tinted" onPress={() => Alert.alert('Stop watching?', w.title, [{ text: 'Cancel', style: 'cancel' }, { text: 'Stop', style: 'destructive', onPress: () => { stopWatch(w.id).then(refresh, (e: any) => Alert.alert("Couldn't stop it", friendlyErr(e))); } }])} /></View>
                 </View>
               </View>
             </View>

@@ -139,3 +139,20 @@ test('freshFix gives up after its limit with nofix, and passes a fix through', a
   const ok = { getCurrentPositionAsync: async () => ({ coords: { latitude: -33.8, longitude: 151.2 } }) };
   assert.equal((await W.freshFix(3, 1000, ok)).coords.latitude, -33.8);
 });
+
+test('round 4: watching loading and error states, Stop handles failure, undo announced, Get off alerts channel name, Live badge colour, sentence case headers, picker retries', () => {
+  const w = fs.readFileSync(path.join(root, 'src/app/watching.tsx'), 'utf8');
+  assert.match(w, /<SkeletonRows count=\{2\} label="Loading your watches" \/>/);
+  assert.match(w, /title="Can't load your watches"/);
+  assert.match(w, /stopWatch\(w\.id\)\.then\(refresh, \(e: any\) => Alert\.alert\("Couldn't stop it", friendlyErr\(e\)\)\)/);
+  assert.match(fs.readFileSync(path.join(root, 'src/app/(tabs)/home/index.tsx'), 'utf8'), /announceForAccessibility\(`\$\{u\.text\}\. Undo is at the bottom of the screen\.`\)/);
+  assert.match(fs.readFileSync(path.join(root, 'src/lib/smartNotify.ts'), 'utf8'), /name: 'Get off alerts'/);
+  assert.match(fs.readFileSync(path.join(root, 'src/app/go.tsx'), 'utf8'), /\{ t: 'Live', bg: c\.liveBg \}/);
+  for (const [f, word] of [['src/app/route.tsx', 'Your stop'], ['src/app/service.tsx', 'Bus is here'], ['src/components/Smart.tsx', 'Next option'], ['src/components/TripReminders.tsx', 'Reminders'], ['src/app/go.tsx', 'Your trip']]) {
+    const s = fs.readFileSync(path.join(root, f), 'utf8');
+    assert.ok(s.includes(`>${word}</T>`) && s.includes("textTransform: androidLook ? 'none' : 'uppercase'"), f);
+  }
+  const nt = fs.readFileSync(path.join(root, 'src/app/new-trip.tsx'), 'utf8');
+  assert.equal((nt.match(/setTries\(\(n\) => n \+ 1\)/g) || []).length, 2);
+  assert.ok(!/setErr\(String\(e/.test(nt));
+});

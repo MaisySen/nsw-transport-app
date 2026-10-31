@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, PanResponder, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Alert, AppState, PanResponder, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { CARD_SWIPE, SwipeRow, type SwipeAct } from '@/components/Swipe';
 import { haptic } from '@/lib/haptic';
 import { gripStep, type GripEvent, type GripState } from '@/lib/gesture';
@@ -126,7 +126,11 @@ export default function Home() {
   const [snack, setSnack] = useState<{ text: string; undo: () => void; commit: () => void; id: number } | null>(null);
   const snackRef = useRef(snack);
   snackRef.current = snack;
-  useEffect(() => onTripDeleted((u) => { snackRef.current?.commit(); setSnack({ ...u, id: Date.now() }); }), []);
+  useEffect(() => onTripDeleted((u) => {
+    snackRef.current?.commit(); setSnack({ ...u, id: Date.now() });
+    // iOS ignores the bar's live region: VoiceOver hears the delete and where Undo is (1 Nov polish).
+    try { AccessibilityInfo.announceForAccessibility(`${u.text}. Undo is at the bottom of the screen.`); } catch {}
+  }), []);
   useEffect(() => { if (!snack) return; const t = setTimeout(() => setSnack(null), UNDO_MS); return () => clearTimeout(t); }, [snack]);
   // Going to the background ends the chance to undo, so the server delete is sent now rather than lost.
   useEffect(() => { const sub = AppState.addEventListener('change', (a) => { if (a === 'background') { snackRef.current?.commit(); setSnack(null); } }); return () => sub.remove(); }, []);
@@ -306,7 +310,7 @@ export default function Home() {
         <TabBarSafe overlay style={StyleSheet.absoluteFill}>
         <View style={[hs.snack, { marginLeft: 16 + side.left, marginRight: 16 + side.right, backgroundColor: c.dark ? '#E6E1E5' : '#313033' }]} accessibilityLiveRegion="polite">
           <Text maxFontSizeMultiplier={1.4} style={{ color: c.dark ? '#313033' : '#F4EFF4', fontSize: 14, flex: 1 }}>{snack.text}</Text>
-          <Pressable onPress={() => { snack.undo(); setSnack(null); haptic.select(); }} hitSlop={10} accessibilityRole="button">
+          <Pressable onPress={() => { snack.undo(); setSnack(null); haptic.select(); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Undo, ${snack.text}`}>
             <Text maxFontSizeMultiplier={1.4} style={{ color: c.dark ? '#1F6FEB' : '#8AB4F8', fontSize: 14, fontWeight: '700' }}>Undo</Text>
           </Pressable>
         </View>

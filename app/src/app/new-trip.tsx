@@ -212,7 +212,7 @@ function WalkPicker({ from, onPick }: { from: Place; onPick: (p: Place) => void 
     // An answer for what was typed before (slower than the newer one) is dropped, not shown over it.
     let live = true;
     const t = setTimeout(() => {
-      api.search(v).then((d) => { if (!live) return; setErr(''); setItems((d.items || []).filter((x) => String(x.id) !== String(from.id)).slice(0, 8)); }).catch((e) => { if (live) setErr(String(e?.message || e)); });
+      api.search(v).then((d) => { if (!live) return; setErr(''); setItems((d.items || []).filter((x) => String(x.id) !== String(from.id)).slice(0, 8)); }).catch((e) => { if (live) setErr(friendlyErr(e)); });
     }, 250);
     return () => { live = false; clearTimeout(t); };
   }, [q, from.id]);
@@ -304,10 +304,12 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
   const isBus = mode === 'bus';
   const color = modeColor[mode];
 
+  // A failed load gets Try again (1 Nov polish): the picker was a dead end offline on first use.
+  const [tries, setTries] = useState(0);
   useEffect(() => {
     if (isBus) return;
-    stationsFor(mode).then((l) => setAll(l.filter((x) => !from || x[0] !== from.id).sort((x, y) => stName(x[1]).localeCompare(stName(y[1]))))).catch((e) => setErr(String(e.message || e)));
-  }, [mode, isBus, from]);
+    stationsFor(mode).then((l) => setAll(l.filter((x) => !from || x[0] !== from.id).sort((x, y) => stName(x[1]).localeCompare(stName(y[1]))))).catch((e) => setErr(friendlyErr(e)));
+  }, [mode, isBus, from, tries]);
 
   useEffect(() => {
     if (tab !== 'dist' || coords) return;
@@ -381,7 +383,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
   );
 
   if (isBus) return <View style={box}>{head}<BusPicker q={q} from={from} onPick={onPick} /></View>;
-  if (err) return <View style={box}>{head}<T kind="sub" tone="text2" style={s.note}>{err}</T></View>;
+  if (err) return <View style={box}>{head}<T kind="sub" tone="text2" style={s.note}>{err}</T><View style={{ marginHorizontal: 32, marginTop: 12 }}><Button title="Try again" kind="tinted" onPress={() => { setErr(null); setTries((n) => n + 1); }} /></View></View>;
   if (!all) return <View style={box}>{head}<ActivityIndicator style={{ marginTop: 30 }} color={c.tint} /></View>;
 
   // Full width rows with the separator inset from the leading edge, like a system list. With the A to Z index
@@ -472,7 +474,8 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
   const [err, setErr] = useState<string | null>(null);
   const { stop: numHit } = useBusLookup(q);
   const color = modeColor.bus;
-  useEffect(() => { busRoutes().then(setRoutes).catch((e) => setErr(String(e.message || e))); }, []);
+  const [tries, setTries] = useState(0);
+  useEffect(() => { busRoutes().then(setRoutes).catch((e) => setErr(friendlyErr(e))); }, [tries]);
   useEffect(() => { if (q) { setRoute(null); setDir(null); } }, [q]);
   useEffect(() => {
     if (q.trim().length < 3 || !/[a-z]{3}/i.test(q)) { setStops([]); return; }
@@ -513,7 +516,7 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
     return g;
   }, [routes]);
 
-  if (err) return <T kind="sub" tone="text2" style={s.note}>{err}</T>;
+  if (err) return <View><T kind="sub" tone="text2" style={s.note}>{err}</T><View style={{ marginHorizontal: 32, marginTop: 12 }}><Button title="Try again" kind="tinted" onPress={() => { setErr(null); setTries((n) => n + 1); }} /></View></View>;
   if (dir) {
     const st = dir.d.stops.slice(dir.start + 1);
     const stKeys = stableKeys(st.map((x) => String(x[0])));

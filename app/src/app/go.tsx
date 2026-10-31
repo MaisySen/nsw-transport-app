@@ -12,7 +12,7 @@ import * as Location from 'expo-location';
 import { api } from '@/lib/api';
 import { useNow } from '@/lib/hooks';
 import { appActive } from '@/lib/activity';
-import { onColor, radius, usePalette } from '@/lib/theme';
+import { onColor, radius, usePalette, androidLook } from '@/lib/theme';
 import { clock } from '@/lib/format';
 import { endLive, getLive, liveWatch, setLive, useLiveTrip } from '@/lib/live';
 import { legColor, markHere, plat, progOf, setEnginePos, short, tickLive, useLiveEngineState } from '@/lib/liveEngine';
@@ -219,7 +219,7 @@ function Sheet({ st, legs, g, me, locDenied, push, offline, updated, onLoc, onSh
   const notLive = st.track === 'timetable';
   // Honest label (liveLabelCore.ts): waiting, the leg's live departure time; riding, the vehicle's GPS age and our copy's age.
   const lk = liveKind(st.phase, l, x, d, updated, now);
-  const badge = notLive ? { t: 'Timetable', bg: c.text3 } : lk.kind === 'stale' ? { t: 'Not tracking', bg: c.orange } : x.live || st.delayMin != null ? (late >= 2 ? { t: `${late} min late`, bg: c.orange } : { t: 'Live', bg: c.green }) : { t: 'Timetable', bg: c.text3 };
+  const badge = notLive ? { t: 'Timetable', bg: c.text3 } : lk.kind === 'stale' ? { t: 'Not tracking', bg: c.orange } : x.live || st.delayMin != null ? (late >= 2 ? { t: `${late} min late`, bg: c.orange } : { t: 'Live', bg: c.liveBg }) : { t: 'Timetable', bg: c.text3 };
   // You can say you are there: always when the leg has no live data, and when its live arrival is 2 minutes past.
   const canMark = st.phase === 'ride' && !x.missed && (notLive || now > x.arr + 120000);
   let now1 = '', now2 = '', now3 = '';
@@ -331,7 +331,7 @@ function Sheet({ st, legs, g, me, locDenied, push, offline, updated, onLoc, onSh
         <View style={{ flex: 1 }}><Button title="End trip" icon={I.stop} kind="filled" onPress={onEnd} /></View>
       </View>
 
-      <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 22, marginBottom: 6, fontWeight: '600' }}>YOUR TRIP</T>
+      <T kind="foot" tone="text2" style={{ textTransform: androidLook ? 'none' : 'uppercase', marginHorizontal: 20, marginTop: 22, marginBottom: 6, fontWeight: '600' }} accessibilityRole="header">Your trip</T>
       <View style={[sx.group, { backgroundColor: c.card2, marginTop: 0 }]}>
         {legs.map((ll, i) => {
           const y2 = st.L2[i], state = i < st.cur ? 'done' : i === st.cur ? 'now' : 'next';
