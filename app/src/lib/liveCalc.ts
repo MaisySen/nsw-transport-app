@@ -480,6 +480,18 @@ export function cueStale(key: string, s: LiveState, now: number): boolean {
   return typeof a === 'number' && Number.isFinite(a) && a <= now;
 }
 
+/**
+ * "Next stop" / "change here" for leg k (off<k>) when that stop's alert is already on the phone (31 Oct, Bidur: one
+ * moment, one alert): the server's Get off now push (gnow<k>), or a location alert that rang while the app was closed
+ * (rsoon<k>, rnow<k>). `shown` is what the phone shows now (getOffCore serverRungKeys, ownRungKeys), read before the
+ * refresh, so the first refresh after opening the app does not post it a second time.
+ */
+export function offShownFor(shown: Record<string, 1> | null | undefined, key: string): boolean {
+  const m = /^off(\d+)$/.exec(key);
+  if (!m || !shown) return false;
+  return !!(shown['gnow' + m[1]] || shown['rnow' + m[1]] || shown['rsoon' + m[1]]);
+}
+
 /** The phone's own "Next stop" alert for leg k (getOffCore next<k>, set ahead so it rings locked) has rung. */
 function nextRung(g: LiveTripLike, k: string, now: number): boolean {
   const key = 'next' + k;
@@ -552,7 +564,7 @@ export function liveWords(legs: WatchLeg[], s: LiveState, now: number, f: Fmt) {
  * (update the ongoing notification, show an alert, stop the server alerts, update a share link, end the trip).
  * The live trip engine runs the actions; the replay tests check them.
  */
-export function stepLive(g: LiveTripLike, svc: (ServiceResp | null | undefined)[], now: number, f: Fmt, pos?: Pos | null): { g: LiveTripLike; s: LiveState; actions: LiveAction[] } {
+export function stepLive(g: LiveTripLike, svc: (ServiceResp | null | undefined)[], now: number, f: Fmt, pos?: Pos | null, shown?: Record<string, 1> | null): { g: LiveTripLike; s: LiveState; actions: LiveAction[] } {
   const actions: LiveAction[] = [];
   const memo: LiveMemo = { rode: g.rode, here: g.here, arrivedAt: g.arrivedAt };
   const s = computeLive(g.legs, svc, now, memo, pos);
@@ -568,7 +580,7 @@ export function stepLive(g: LiveTripLike, svc: (ServiceResp | null | undefined)[
       // Not shown when its moment has gone (the app was in the background, 31 Oct): no late "You've arrived" banner
       // minutes after, and no "Next stop" once the stop is behind you by the phone's clock. Also not when the phone's
       // own "Next stop" alert set for this leg (getOffCore next<k>) has already rung: one moment, one alert.
-      if (cueStale(a.key, s, now) || nextRang(g, a.key, now)) continue;
+      if (cueStale(a.key, s, now) || nextRang(g, a.key, now) || offShownFor(shown, a.key)) continue;
       actions.push({ t: 'alert', id: `trip-${g.id}-${a.key}`, key: a.key, title: a.title, body: a.body });
     }
     n = { ...n, alerted };
@@ -584,7 +596,7 @@ export function stepLive(g: LiveTripLike, svc: (ServiceResp | null | undefined)[
       const spoken = { ...said };
       for (const a of say) {
         spoken[a.key] = 1;
-        if (cueStale(a.key, s, now) || nextSaid(g, a.key, now)) continue;
+        if (cueStale(a.key, s, now) || nextSaid(g, a.key, now) || offShownFor(shown, a.key)) continue;
         actions.push({ t: 'say', key: a.key, text: a.text });
       }
       n = { ...n, spoken };

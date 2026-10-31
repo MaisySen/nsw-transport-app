@@ -9,6 +9,8 @@ import { notesWaitMs } from './pollCore';
 import { noteKey } from './liveCalc';
 import { allowPushTokens } from './forgetTokens';
 import { isServerGetOffWatch, tripPushQuiet } from './getOffNotify';
+import { ownRungKeys, serverRungKeys } from './getOffCore';
+import { noteVerdict, type NoteCtx, type NoteTrip } from './noteShowCore';
 
 Notifications.setNotificationHandler({
   // The ongoing trip notification updates quietly; every other alert shows as a banner with sound. The server's Get
@@ -135,11 +137,17 @@ async function pollOnce() {
       lastId = notes.length ? notes[notes.length - 1].id : 0;
     } else {
       const hasToken = !!(await AsyncStorage.getItem('expoPushToken'));
-      for (const n of notes.filter((x) => x.id > (lastId || 0))) {
+      const fresh = notes.filter((x) => x.id > (lastId || 0));
+      // Found when the app opens, an alert whose moment has passed is kept as seen, quietly (31 Oct, Bidur on build
+      // 210: "Leave now", "Arriving in 2 min" and "You've arrived" all at once on opening the app after arriving).
+      const ctx = fresh.length ? await noteCtx(r) : null;
+      for (const n of fresh) {
         const k = noteKey(n);
         if ((!hasToken || !n.pushed) && !shown!.includes(k.key) && !(n.watch_id && endedWatches.has(n.watch_id))) {
           shown!.push(k.key);
-          await Notifications.scheduleNotificationAsync({ identifier: k.id, content: { title: n.title, body: n.body, data: { url: n.url, watch: n.watch_id } }, trigger: Platform.OS === 'android' ? { channelId: 'default' } : null });
+          if (ctx && noteVerdict(n, ctx).show) {
+            await Notifications.scheduleNotificationAsync({ identifier: k.id, content: { title: n.title, body: n.body, data: { url: n.url, watch: n.watch_id } }, trigger: Platform.OS === 'android' ? { channelId: 'default' } : null });
+          }
         }
         lastId = Math.max(lastId || 0, n.id);
       }
@@ -151,4 +159,25 @@ async function pollOnce() {
   } catch {
     return null;
   }
+}
+
+/**
+ * What the alert check needs (noteShowCore): both clocks, the trip running on this phone (read from its saved record,
+ * so it is known at the first ask after launch, before the trip screen runs) and its get off alerts already shown.
+ */
+async function noteCtx(r: any): Promise<NoteCtx> {
+  const now = Date.now();
+  let trip: NoteTrip | null = null;
+  try {
+    const g = JSON.parse((await AsyncStorage.getItem('liveTrip')) || 'null');
+    if (g && g.id) trip = { id: String(g.id), watchId: g.watchId || null, started: Number(g.started) || 0, arrivedAt: g.arrivedAt || null };
+  } catch {}
+  let offShown: Record<string, 1> = {};
+  if (trip && Platform.OS !== 'web') {
+    try {
+      const shownNow = await Notifications.getPresentedNotificationsAsync();
+      offShown = { ...serverRungKeys(trip.watchId, shownNow.map((x) => ({ data: x.request.content.data }))), ...ownRungKeys(trip.id, shownNow.map((x) => x.request.identifier)) };
+    } catch {}
+  }
+  return { now, serverNow: Number(r?.now) || null, trip, offShown };
 }

@@ -10,7 +10,8 @@ import type { WatchSpec } from './watch';
 import { wakeId } from './smart';
 import { getOffId, readGetOff, readGetOffSay } from './getOffCore';
 import { cancelGetOff, serverGetOff, setServerGetOffWatch, setTripWatch, soundChannels, voiceClips } from './getOffNotify';
-import { cancelWake } from './smartNotify';
+import { cancelLeave, cancelWake } from './smartNotify';
+import { startCancels } from './noteShowCore';
 import { iosNative } from '../../modules/transport-ios';
 import { wantOngoing } from './leaveByCore';
 import { store } from './store';
@@ -78,6 +79,9 @@ export async function startLive(spec: WatchSpec, fare?: Fare | null) {
   const g: LiveTrip = { id: 'g' + Date.now().toString(36), title: spec.title, origin: spec.origin || null, to: spec.to || null, legs, fare: fare && fare.total != null ? fare : null,
     started: Date.now(), alerted: {}, share: null, watchId: null, ...(speakDefault() ? { speak: true } : {}) };
   setLive(g);
+  // Start trip means you have left (31 Oct, Bidur: "Leave now, 0 min away" rang during the ride): the phone's own
+  // departure reminders for it come off at once.
+  takeBackLeave(g).catch(() => {});
   // The ongoing notification starts with the trip: ask for notifications once, if never asked, then let the
   // server follow the trip. This runs after Start trip has returned, so the live trip opens at once and the
   // button never waits on the permission dialog or the network.
@@ -88,6 +92,17 @@ export async function startLive(spec: WatchSpec, fare?: Fare | null) {
     await liveWatch();
   })().catch(() => {});
   return g;
+}
+
+/** The Remind me leave alert, and the Last way home reminder when this trip goes where it was for (noteShowCore). */
+async function takeBackLeave(g: LiveTrip) {
+  let lastHome: any = null;
+  try { lastHome = await (await import('./lastHome')).lastLocalItem(); } catch {}
+  const leave = !!store.snapshot().leaveReminder;
+  for (const c of startCancels({ to: g.to, legs: g.legs }, { leave, lastHome })) {
+    if (c === 'leave') { await cancelLeave(); store.setLeaveReminder(null); }
+    else if (c === 'lastHome') { try { await (await import('./lastHome')).cancelLastLocal(); } catch {} }
+  }
 }
 
 /** With notifications on, the server also sends next stop, change and connection alerts while the app is closed. */

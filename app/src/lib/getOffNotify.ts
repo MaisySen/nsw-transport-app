@@ -12,7 +12,7 @@
 import { Platform } from 'react-native';
 import * as Application from 'expo-application';
 import * as Notifications from 'expo-notifications';
-import { backupOf, getOffSoundChannel, getOffTrigger, ownRungKeys, staleRegionIds, tripPushSoundless, serverGetOffSupported, serverRungKeys, voiceClipsSupported, type GetOffBackup, type GetOffSound } from './getOffCore';
+import { backupOf, getOffSoundChannel, getOffTrigger, ownRungKeys, staleTripIds, tripPushSoundless, serverGetOffSupported, serverRungKeys, voiceClipsSupported, type GetOffBackup, type GetOffSound } from './getOffCore';
 import { isOn } from './config';
 import { iosNative } from '../../modules/transport-ios';
 
@@ -150,10 +150,11 @@ export async function ownGetOffShown(gid: string): Promise<Record<string, 1>> {
 /** Location alerts left waiting by a trip that is no longer running (given up without opening the app): taken back at
  * every refresh and at launch, so "Get off now" never rings near that stop another day. */
 export async function sweepRegions(liveGid: string | null) {
-  if (Platform.OS !== 'ios' || !iosNative.hasRegionAlerts()) return;
+  if (Platform.OS === 'web') return;
   try {
     const pending = await Notifications.getAllScheduledNotificationsAsync();
-    for (const id of staleRegionIds(pending.map((x) => x.identifier), liveGid)) await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
+    // Since 31 Oct every alert a trip set ahead (quiet note, wake alarm, older timed ones), not only location alerts.
+    for (const id of staleTripIds(pending.map((x) => x.identifier), liveGid)) await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
   } catch {}
 }
 

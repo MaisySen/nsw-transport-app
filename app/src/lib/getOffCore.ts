@@ -614,6 +614,18 @@ export function staleRegionIds(pendingIds: string[], liveGid: string | null): st
   return pendingIds.filter((id) => { if (!isRegionAlertId(id)) return false; const p = parseGetOffId(id); return !p || p.gid !== liveGid; });
 }
 
+/** Every alert a trip set on the phone ahead (location alerts, the quiet note, earlier builds' timed get off alerts, the
+ * wake alarm) that belongs to no running trip: taken back at launch and when a trip starts or ends (31 Oct: nothing
+ * left from an ended or given up trip may ring later). */
+export function staleTripIds(pendingIds: string[], liveGid: string | null): string[] {
+  return pendingIds.filter((id) => {
+    const p = parseGetOffId(id);
+    if (p) return p.gid !== liveGid;
+    const w = /^wake-(.+)-\d+$/.exec(String(id || ''));
+    return !!w && w[1] !== liveGid;
+  });
+}
+
 /** What the phone can use for the backup: `region` (location alerts), else `quiet` (the quiet note). */
 export type GetOffBackup = 'region' | 'quiet';
 /** Location alerts need the native part (build 211 and later), location allowed (When In Use or Always) and precise

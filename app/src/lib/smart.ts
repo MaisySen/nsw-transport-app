@@ -195,7 +195,13 @@ export function wakeStep(g: WakeTrip, s: LiveState, now: number, f: Fmt): { g: W
     const prev = set[k];
     const w = wakeWords(g.legs, s, k, f);
     if (prev != null && prev <= now) { mark(key); continue; } // the phone's alarm has rung
-    if (at <= now) { actions.push({ t: 'wakeDue', id: wakeId(g.id, k), title: w.title, body: w.body }); mark(key); delete set[k]; continue; }
+    if (at <= now) {
+      // Rings now only while the stop is still ahead by the clock (R3): opened after that arrival, it is kept as rung,
+      // quietly (31 Oct: nothing posted for a moment that passed while the app was closed).
+      const arr = s.L2[k]?.arr;
+      if (!(typeof arr === 'number' && Number.isFinite(arr) && arr <= now)) actions.push({ t: 'wakeDue', id: wakeId(g.id, k), title: w.title, body: w.body });
+      mark(key); delete set[k]; continue;
+    }
     if (prev == null || Math.abs(prev - at) >= 15000) { actions.push({ t: 'wakeSchedule', id: wakeId(g.id, k), at, title: w.title, body: w.body }); set[k] = at; }
   }
   const same = JSON.stringify(set) === JSON.stringify(g.wakeSet || {}) && alerted === g.alerted;

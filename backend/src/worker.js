@@ -7093,6 +7093,12 @@ const LIVECARD = (() => {
       const a = s.L2[Number(m[1])]?.arr;
       return typeof a === 'number' && Number.isFinite(a) && a <= now;
   }
+  function offShownFor(shown, key) {
+      const m = /^off(\d+)$/.exec(key);
+      if (!m || !shown)
+          return false;
+      return !!(shown['gnow' + m[1]] || shown['rnow' + m[1]] || shown['rsoon' + m[1]]);
+  }
   function nextRung(g, k, now) {
       const key = 'next' + k;
       const at = g.offSet?.[key];
@@ -7136,7 +7142,7 @@ const LIVECARD = (() => {
       const left = s.stopsLeft != null ? `${s.stopsLeft} stop${s.stopsLeft === 1 ? '' : 's'} to ${f.short(l.to)}` : `to ${f.short(l.to)}`;
       return { title: `${l.line} to ${f.short(l.towards || l.to)}`, body: `${yours ? `Get off at ${f.short(l.to)}, next stop` : ns ? `Next stop: ${f.short(ns.name)}, ${left}` : `On the ${l.line}, ${left}`}. ${late}${arrive}` };
   }
-  function stepLive(g, svc, now, f, pos) {
+  function stepLive(g, svc, now, f, pos, shown) {
       const actions = [];
       const memo = { rode: g.rode, here: g.here, arrivedAt: g.arrivedAt };
       const s = computeLive(g.legs, svc, now, memo, pos);
@@ -7151,7 +7157,7 @@ const LIVECARD = (() => {
           const alerted = { ...(n.alerted || {}) };
           for (const a of list) {
               alerted[a.key] = 1;
-              if (cueStale(a.key, s, now) || nextRang(g, a.key, now))
+              if (cueStale(a.key, s, now) || nextRang(g, a.key, now) || offShownFor(shown, a.key))
                   continue;
               actions.push({ t: 'alert', id: `trip-${g.id}-${a.key}`, key: a.key, title: a.title, body: a.body });
           }
@@ -7164,7 +7170,7 @@ const LIVECARD = (() => {
               const spoken = { ...said };
               for (const a of say) {
                   spoken[a.key] = 1;
-                  if (cueStale(a.key, s, now) || nextSaid(g, a.key, now))
+                  if (cueStale(a.key, s, now) || nextSaid(g, a.key, now) || offShownFor(shown, a.key))
                       continue;
                   actions.push({ t: 'say', key: a.key, text: a.text });
               }

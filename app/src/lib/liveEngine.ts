@@ -8,7 +8,7 @@ import { startAppPoll } from './activity';
 import * as Haptics from 'expo-haptics';
 import { api } from './api';
 import { clock, shortName } from './format';
-import { clearOngoing, endLive, getLive, liveAlert, setLive, showOngoing, useLiveTrip } from './live';
+import { clearOngoing, endLive, getLive, liveAlert, loadLive, setLive, showOngoing, useLiveTrip } from './live';
 import { LiveState, Pos, progOf as progOfCalc, stepLive, tapMoments } from './liveCalc';
 import { haptic } from './haptic';
 
@@ -97,7 +97,9 @@ let liveOkAt = 0;
 let sweptFor: string | null | undefined;
 
 export async function tickLive() {
-  const cur = getLive();
+  // The saved trip is read first (31 Oct): at launch the engine's first refresh ran before it was loaded, saw no trip
+  // and swept the running trip's own location alerts as left over.
+  const cur = await loadLive().catch(() => getLive());
   // Location alerts a given up trip left on the phone are taken back (31 Oct): at launch with no trip, and once per trip.
   if (sweptFor !== (cur?.id ?? null)) { sweptFor = cur?.id ?? null; sweepRegions(sweptFor).catch(() => {}); }
   if (!cur) { if (state.gid) put({ gid: null, svc: [], st: null, offline: null, updated: 0 }); return; }
@@ -131,7 +133,12 @@ export async function tickLive() {
     const g = getLive();
     if (!g || g.id !== cur.id) return;
     const now = Date.now();
-    const r = stepLive(g, svcCache, now, fmt, pos);
+    // What the phone already shows for this trip (the server's Get off now, a location alert that rang while the app was
+    // closed), read before the refresh so its first pass after opening the app posts and says none of it again.
+    const server = !!g.offServer && !!g.watchId;
+    const serverRung = server ? await serverGetOffShown(g.watchId) : undefined;
+    const rung = Object.keys(g.offRegion || {}).length || Object.keys(g.offSet || {}).some((k) => k.startsWith('quiet')) ? await ownGetOffShown(g.id) : undefined;
+    const r = stepLive(g, svcCache, now, fmt, pos, { ...(serverRung || {}), ...(rung || {}) });
     // Wake me before my stop: one alarm per leg, set on the phone and moved with the live times.
     const w = wakeStep({ id: g.id, legs: g.legs, wake: g.wake, wakeSet: g.wakeSet, alerted: r.g.alerted }, r.s, now, fmt);
     // Get off alert (More stops before, Get off now): set on the phone beside the trip's own alerts (getOffCore.ts).
@@ -139,14 +146,11 @@ export async function tickLive() {
     // locked, where the app cannot speak. The same choices as reading out (spoken Get off now, Speak alerts).
     const voice = voiceClips() ? { now: readGetOffSay(store.getOffSay()), all: !!g.speak } : null;
     // Get off now from the server (30 Oct, build 210): not set on the phone; one the server already showed is done.
-    const server = !!g.offServer && !!g.watchId;
     setServerGetOffWatch(server ? g.watchId : null);
     setTripWatch(g.arrivedAt ? null : g.watchId, !!g.speak && hasSpeech());
-    const serverRung = server ? await serverGetOffShown(g.watchId) : undefined;
     // The phone's own backup (31 Oct): location alerts when location is allowed and precise (build 211+), else the
-    // quiet note. Its alerts already shown (a location alert that rang) are done.
+    // quiet note. Its alerts already shown (a location alert that rang, read above) are done.
     const backup = getOffBackup();
-    const rung = Object.keys(g.offRegion || {}).length || Object.keys(g.offSet || {}).some((k) => k.startsWith('quiet')) ? await ownGetOffShown(g.id) : undefined;
     const o = getOffStep({ id: g.id, legs: g.legs, alerted: w.g.alerted, offSet: g.offSet, speak: g.speak && hasSpeech(), sayNow: readGetOffSay(store.getOffSay()) && hasSpeech(), spoken: r.g.spoken, voice, offVoice: g.offVoice,
       // A server watch sends "Next stop" (its push), else the phone sets its own ahead (31 Oct, getOffCore next<leg>).
       serverNext: !!g.watchId, wake: !!g.wake, backup, offRegion: g.offRegion, rung, liveAt: liveOkAt || null,
