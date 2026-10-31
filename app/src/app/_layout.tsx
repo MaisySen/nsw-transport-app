@@ -25,12 +25,16 @@ import { TripAlertSync } from '@/lib/tripAlerts';
 import { LiveTripEngine } from '@/lib/liveEngine';
 import { orientationFor } from '@/lib/layoutCore';
 import { clearKeptAndReload, installCrashReporter, reportCrash } from '@/lib/crash';
+import { installPhoneClock } from '@/lib/rowTime';
 
 /** Startup work that is not the first screen's own data waits this long after the app is ready. */
 const STARTUP_DEFER_MS = 1500;
 
 // Fatal errors outside the screens are reported before the app closes (lib/crash.ts).
 installCrashReporter();
+
+// Every clock in the app follows the phone's 12 or 24 hour setting (lib/rowTime.ts).
+installPhoneClock();
 
 // The phone's own data for the first screen starts loading as soon as this file runs, before React draws anything.
 bootLocal();

@@ -4,6 +4,11 @@
 // same journey (fare.offPeak.save, an estimate, never the card's charge). Nothing is guessed on the phone: a server or
 // journey without fare.offPeak shows nothing. Never hides or moves a trip. No React here (test/offpeak.test.mjs).
 
+// The phone's 24-Hour Time setting (iPhone Settings, General, Date and Time): lib/rowTime.ts installs the reader
+// at start (installPhoneClock). Until then, and in tests, the 12 hour clock the app has always used.
+const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
+const HM24 = (h: number, m: number): string => `${String(((h % 24) + 24) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
 type F = { total?: number | null; peak?: boolean | null; offPeak?: { from?: string | null; save?: number | null } | null } | null | undefined;
 type J = { fare?: F };
 
@@ -63,6 +68,7 @@ export function parseFrom(from?: string | null): { h: number; m: number } | null
 
 /** "10:00am", the app's 12 hour clock. */
 export function clockWords(h: number, m: number): string {
+  if (PHONE24()) return HM24(h, m);
   return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')}${h < 12 ? 'am' : 'pm'}`;
 }
 

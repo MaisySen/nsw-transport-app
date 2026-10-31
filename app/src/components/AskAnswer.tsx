@@ -20,7 +20,7 @@ export function PlainAnswer({ text }: { text: string }) {
   const paras = splitPlain(text);
   return (
     <View accessible accessibilityLabel={paras.join(' ')} style={[st.bubble, { backgroundColor: c.dark ? '#26252A' : '#E9E9EB' }]}>
-      {paras.map((p, i) => <Text key={i} style={[st.botText, { color: c.text }, i > 0 && st.para]}>{p}</Text>)}
+      {paras.map((p, i) => <Text maxFontSizeMultiplier={1.6} key={i} style={[st.botText, { color: c.text }, i > 0 && st.para]}>{p}</Text>)}
     </View>
   );
 }
@@ -50,13 +50,13 @@ export function TripAnswer({ s }: { s: TripSummary }) {
         </View>
         <View style={st.chipRow}>
           {s.lines.map((l, i) => <LineBadge key={i} line={l.line} mode={l.mode} color={l.color} />)}
-          {s.platform ? <Text style={[st.plat, { color: c.text }]}>{s.platform}</Text> : null}
+          {s.platform ? <Text maxFontSizeMultiplier={1.6} style={[st.plat, { color: c.text }]}>{s.platform}</Text> : null}
           <View style={[st.status, { backgroundColor: tintBg(tone, c.fill) }]}>
             <Text maxFontSizeMultiplier={1.8} style={[st.statusText, { color: tone }]}>{s.status.text}</Text>
           </View>
         </View>
-        <Text style={[st.arrive, { color: c.text }]}>{s.arrive}</Text>
-        {s.leaveAt ? <Text style={[st.small, { color: c.text2 }]}>Leave {s.leaveAt} to walk to the stop</Text> : null}
+        <Text maxFontSizeMultiplier={1.6} style={[st.arrive, { color: c.text }]}>{s.arrive}</Text>
+        {s.leaveAt ? <Text maxFontSizeMultiplier={1.6} style={[st.small, { color: c.text2 }]}>Leave {s.leaveAt} to walk to the stop</Text> : null}
       </View>
       {hasWarn ? (
         <Pressable accessibilityRole="button"
@@ -68,16 +68,16 @@ export function TripAnswer({ s }: { s: TripSummary }) {
         >
           <View style={st.warnHead}>
             <Icon name={I.warn} size={17} color={c.orange} />
-            <Text style={[st.warnText, { color: c.text }]}>{s.liftShort}</Text>
+            <Text maxFontSizeMultiplier={1.6} style={[st.warnText, { color: c.text }]}>{s.liftShort}</Text>
             <Icon name={open ? I.up : I.down} size={16} color={c.text2} />
           </View>
-          {open ? s.outages.map((o, i) => <Text key={i} style={[st.warnFull, { color: c.text2 }]}>{o.replace(/\.?$/, '.')}</Text>) : null}
+          {open ? s.outages.map((o, i) => <Text maxFontSizeMultiplier={1.6} key={i} style={[st.warnFull, { color: c.text2 }]}>{o.replace(/\.?$/, '.')}</Text>) : null}
         </Pressable>
       ) : null}
       {s.fare || s.extras.length ? (
         <View style={[st.foot, { borderTopColor: c.sep }]}>
-          {s.fare ? <Text style={[st.small, { color: c.text2 }]}>{s.fare}</Text> : null}
-          {s.extras.map((x, i) => <Text key={i} style={[st.small, { color: c.text2 }]}>{x}</Text>)}
+          {s.fare ? <Text maxFontSizeMultiplier={1.6} style={[st.small, { color: c.text2 }]}>{s.fare}</Text> : null}
+          {s.extras.map((x, i) => <Text maxFontSizeMultiplier={1.6} key={i} style={[st.small, { color: c.text2 }]}>{x}</Text>)}
         </View>
       ) : null}
     </View>

@@ -1,3 +1,13 @@
+// The phone's 24-Hour Time setting (iPhone Settings, General, Date and Time): lib/rowTime.ts installs the reader
+// at start (installPhoneClock). Until then, and in tests, the 12 hour clock the app has always used.
+export const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
+/** "07:55" (or "07:55:30"), Sydney time, for a phone set to 24 hour time. */
+export const C24 = (t: number, sec = false): string => {
+  try { return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', ...(sec ? { second: '2-digit' } : {}), hourCycle: 'h23', timeZone: 'Australia/Sydney' } as Intl.DateTimeFormatOptions).format(new Date(t)); }
+  catch { const d = new Date(t); return [d.getHours(), d.getMinutes(), ...(sec ? [d.getSeconds()] : [])].map((n) => String(n).padStart(2, '0')).join(':'); }
+};
+export const HM24 = (h: number, m: number): string => `${String(((h % 24) + 24) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
 export const ms = (s?: string | null) => (s ? new Date(s).getTime() : NaN);
 
 export function bestTime(planned?: string | null, estimated?: string | null) {
@@ -7,8 +17,9 @@ export function bestTime(planned?: string | null, estimated?: string | null) {
 
 export function clock(t: number) {
   if (!Number.isFinite(t)) return '';
+  // Always Sydney time, whatever the phone is set to; 24 hour ("19:52") when the phone is (31 Oct).
+  if (PHONE24()) return C24(t);
   const d = new Date(t);
-  // Always Sydney time, whatever the phone is set to.
   try {
     return d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, (m) => m.trim().toLowerCase());
   } catch {
@@ -17,10 +28,11 @@ export function clock(t: number) {
   }
 }
 
-/** Home's header stamp, "Live 9:52am": the same 12 hour clock as the rows. */
+/** Home's header stamp, "Live 9:52am" ("Live 21:52" on a 24 hour phone): the same clock as the rows. */
 export const liveStamp = (t: number) => `Live ${clock(t)}`;
 
 export function clockSec(t: number) {
+  if (PHONE24() && Number.isFinite(t)) return C24(t, true);
   try {
     return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, (m) => m.trim().toLowerCase());
   } catch {
@@ -71,6 +83,7 @@ export function delayWords(d?: number | null, realtime?: boolean, cancelled?: bo
 
 export const todText = (tod: number) => {
   const h = Math.floor(tod / 60), m = tod % 60;
+  if (PHONE24()) return HM24(h, m);
   return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')}${h < 12 ? 'am' : 'pm'}`;
 };
 

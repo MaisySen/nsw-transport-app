@@ -1,5 +1,10 @@
 // Trip reminders, the parts with no phone dependencies (unit tested): several reminders per saved trip, each
 // on chosen weekdays at a clock time, scheduled on the phone as weekly local notifications (no polling, no server).
+
+// The phone's 24-Hour Time setting (iPhone Settings, General, Date and Time): lib/rowTime.ts installs the reader
+// at start (installPhoneClock). Until then, and in tests, the 12 hour clock the app has always used.
+const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
+const HM24 = (h: number, m: number): string => `${String(((h % 24) + 24) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 export type Reminder = { id: string; hour: number; minute: number; days: number[] };
 /** Weekdays as expo-notifications counts them: 1 Sunday ... 7 Saturday. */
 export const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -19,6 +24,7 @@ export function cleanReminder(r: any): Reminder | null {
 
 /** "7:30am" */
 export function clockText(hour: number, minute: number) {
+  if (PHONE24()) return HM24(hour, minute);
   const h = hour % 12 === 0 ? 12 : hour % 12;
   return `${h}:${String(minute).padStart(2, '0')}${hour < 12 ? 'am' : 'pm'}`;
 }

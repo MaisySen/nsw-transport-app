@@ -20,7 +20,7 @@ import { haptic } from '@/lib/haptic';
 import { apiBase } from '@/lib/server';
 import { getDevice, PROFILE } from '@/lib/device';
 import { usePalette } from '@/lib/theme';
-import { durText } from '@/lib/format';
+import { C24, PHONE24, durText } from '@/lib/format';
 import { useNow } from '@/lib/hooks';
 import { store, useStore } from '@/lib/store';
 import type { Fare } from '@/lib/types';
@@ -37,6 +37,7 @@ import { api, departuresAt } from '@/lib/api';
 import { hasSpeech, speak } from '@/lib/nativeExtras';
 import { departuresSentence, tripSentence } from '@/lib/voiceCore';
 import { takeVoicePrompt } from '@/lib/voiceHelp';
+import { reduceMotionNow } from '@/lib/motion';
 
 // The one time Get a better voice prompt (same rule as the Speak buttons), loaded only when it shows.
 const VoiceHelp = lazy(() => import('@/components/VoiceHelp').then((m) => ({ default: m.VoiceHelp })));
@@ -49,6 +50,7 @@ type Card = { type: 'departures' | 'trip' | 'alerts' | 'stops' | 'parking' | 'st
 type Msg = { id: string; role: 'me' | 'bot'; text: string; heard?: string | null; choices?: Choice[]; kind?: string | null; fare?: AskFare | null; cards?: Card[]; links?: Link[]; suggestions?: string[]; ask?: string | null; t: number; lastHome?: LastHomeHint | null };
 
 function clock(t: string) {
+  if (PHONE24() && Number.isFinite(Date.parse(t))) return C24(Date.parse(t));
   return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, (_m, p) => ' ' + p.toLowerCase());
 }
 function cd(t: string, now: number) {
@@ -84,8 +86,8 @@ function Count({ t, live, now }: { t: string; live?: boolean; now: number }) {
     return (
       // Read as "4 minutes", not "4, min" (VoiceOver and TalkBack).
       <View style={st.cd} accessible accessibilityLabel={spokenTime(x)}>
-        <Text style={[x.unit || x.big === 'Now' ? st.cdBig : st.cdClock, { color: live ? c.liveText : c.text }]}>{x.big}</Text>
-        {x.unit ? <Text style={[st.cdUnit, { color: c.text2 }]}>{x.unit}</Text> : null}
+        <Text maxFontSizeMultiplier={1.3} style={[x.unit || x.big === 'Now' ? st.cdBig : st.cdClock, { color: live ? c.liveText : c.text }]}>{x.big}</Text>
+        {x.unit ? <Text maxFontSizeMultiplier={1.3} style={[st.cdUnit, { color: c.text2 }]}>{x.unit}</Text> : null}
       </View>
     );
 }
@@ -95,8 +97,8 @@ function CardView({ card, now }: { card: Card; now: number }) {
     <View style={[st.card, { backgroundColor: c.card, borderColor: c.sep }]}>
       {card.type !== 'alerts' && card.type !== 'stops' ? (
         <Pressable onPress={() => open(card.link)} disabled={!card.link} accessibilityRole={card.link ? 'button' : 'header'} style={st.head}>
-          <Text numberOfLines={1} style={[st.headText, { color: c.text2 }]}>{card.type === 'trip' ? (card.titleOnly && card.title ? card.title : `${card.title ? card.title + ': ' : ''}${shortPlace(card.from?.name)} to ${shortPlace(card.to?.name)}`) : card.type === 'station' ? card.station?.name : card.title}</Text>
-          {card.link ? <Text style={{ color: c.text3, fontSize: 17 }}>{'\u203a'}</Text> : null}
+          <Text maxFontSizeMultiplier={1.6} numberOfLines={1} style={[st.headText, { color: c.text2 }]}>{card.type === 'trip' ? (card.titleOnly && card.title ? card.title : `${card.title ? card.title + ': ' : ''}${shortPlace(card.from?.name)} to ${shortPlace(card.to?.name)}`) : card.type === 'station' ? card.station?.name : card.title}</Text>
+          {card.link ? <Text maxFontSizeMultiplier={1.3} style={{ color: c.text3, fontSize: 17 }}>{'\u203a'}</Text> : null}
         </Pressable>
       ) : null}
       {card.type === 'departures' && (card.items as Dep[]).map((it, i) => {
@@ -105,8 +107,8 @@ function CardView({ card, now }: { card: Card; now: number }) {
           <Row key={i} onPress={() => open(it.link)} dim={it.cancelled || cd(t, now).past}>
             <LineBadge line={it.line} mode={it.mode} color={it.color} />
             <View style={st.mid}>
-              <Text numberOfLines={1} style={[st.t1, { color: c.text }]}>{it.dest}</Text>
-              <Text numberOfLines={1} style={[st.t2, { color: c.text2 }]}>{[it.platform?.replace(/^Platform /, 'Plat '), clock(t)].filter(Boolean).join(' \u00b7 ')}  <Text style={{ color: (c as any)[s.tone], fontWeight: '600' }}>{s.text}</Text></Text>
+              <Text maxFontSizeMultiplier={1.6} numberOfLines={1} style={[st.t1, { color: c.text }]}>{it.dest}</Text>
+              <Text maxFontSizeMultiplier={1.6} numberOfLines={1} style={[st.t2, { color: c.text2 }]}>{[it.platform?.replace(/^Platform /, 'Plat '), clock(t)].filter(Boolean).join(' \u00b7 ')}  <Text maxFontSizeMultiplier={1.6} style={{ color: (c as any)[s.tone], fontWeight: '600' }}>{s.text}</Text></Text>
             </View>
             <Count now={now} t={t} live={it.realtime && !it.cancelled} />
           </Row>
@@ -117,13 +119,13 @@ function CardView({ card, now }: { card: Card; now: number }) {
         return (
           <Row key={i} onPress={() => open(card.link || f?.link)} dim={cd(j.leave, now).past}>
             <View style={st.mid}>
-              <Text style={[st.t1, { color: c.text, fontVariant: ['tabular-nums'] }]}>{clock(j.leave)} to {clock(j.arrive)}</Text>
+              <Text maxFontSizeMultiplier={1.6} style={[st.t1, { color: c.text, fontVariant: ['tabular-nums'] }]}>{clock(j.leave)} to {clock(j.arrive)}</Text>
               <View style={st.legs}>
                 {tl.map((l, k) => <LineBadge key={k} line={l.line} mode={l.mode} color={l.color} />)}
-                <Text style={[st.t2, { color: c.text2 }]}>{durText(j.durationMin)} {'\u00b7'} {j.changes ? `${j.changes} change${j.changes > 1 ? 's' : ''}` : 'Direct'}</Text>
+                <Text maxFontSizeMultiplier={1.6} style={[st.t2, { color: c.text2 }]}>{durText(j.durationMin)} {'\u00b7'} {j.changes ? `${j.changes} change${j.changes > 1 ? 's' : ''}` : 'Direct'}</Text>
               </View>
-              {s ? <Text style={[st.t2, { color: (c as any)[s.tone], fontWeight: '600' }]}>{s.text}</Text> : null}
-              {j.warn ? <Text style={[st.t2, { color: c.orange, fontWeight: '600' }]}>{j.warn}</Text> : null}
+              {s ? <Text maxFontSizeMultiplier={1.6} style={[st.t2, { color: (c as any)[s.tone], fontWeight: '600' }]}>{s.text}</Text> : null}
+              {j.warn ? <Text maxFontSizeMultiplier={1.6} style={[st.t2, { color: c.orange, fontWeight: '600' }]}>{j.warn}</Text> : null}
             </View>
             <Count now={now} t={j.leave} live={f?.realtime} />
           </Row>
@@ -131,13 +133,13 @@ function CardView({ card, now }: { card: Card; now: number }) {
       })}
       {card.type === 'alerts' && (card.items || []).map((a: any, i: number) => (
         <Row key={i} onPress={() => { const u = safeUrl(a.url); if (u) Linking.openURL(u); }}>
-          <Text style={{ color: c.orange, fontSize: 16 }}>{'\u26a0\ufe0e'}</Text>
-          <View style={st.mid}><Text numberOfLines={3} style={[st.t3, { color: c.text }]}>{a.title}</Text></View>
+          <Text maxFontSizeMultiplier={1.3} style={{ color: c.orange, fontSize: 16 }}>{'\u26a0\ufe0e'}</Text>
+          <View style={st.mid}><Text maxFontSizeMultiplier={1.6} numberOfLines={3} style={[st.t3, { color: c.text }]}>{a.title}</Text></View>
         </Row>
       ))}
       {card.type === 'stops' && (card.items || []).map((s: any, i: number) => (
         <Row key={i} onPress={() => open(s.link)}>
-          <View style={st.mid}><Text style={[st.t1, { color: c.text }]}>{s.name}</Text><Text style={[st.t2, { color: c.text2 }]}>{s.distance} m</Text></View>
+          <View style={st.mid}><Text maxFontSizeMultiplier={1.6} style={[st.t1, { color: c.text }]}>{s.name}</Text><Text maxFontSizeMultiplier={1.6} style={[st.t2, { color: c.text2 }]}>{s.distance} m</Text></View>
         </Row>
       ))}
       {card.type === 'parking' && (card.items || []).map((p: CarPark, i: number) => {
@@ -145,8 +147,8 @@ function CardView({ card, now }: { card: Card; now: number }) {
         return (
           <Row key={i} onPressIn={() => { if (p.station) prefetchStop(p.station); }} onPress={() => p.station && router.push({ pathname: '/stop/[id]', params: { id: p.station, name: '' } })}>
             <View style={st.mid}>
-              <Text style={[st.t1, { color: c.text }]}>{p.name}</Text>
-              <Text style={[st.t2, { color: b.tone === 'green' ? c.liveText : b.tone === 'orange' ? c.lateText : b.tone === 'red' ? c.redText : c.text2, fontWeight: '600' }]}>
+              <Text maxFontSizeMultiplier={1.6} style={[st.t1, { color: c.text }]}>{p.name}</Text>
+              <Text maxFontSizeMultiplier={1.6} style={[st.t2, { color: b.tone === 'green' ? c.liveText : b.tone === 'orange' ? c.lateText : b.tone === 'red' ? c.redText : c.text2, fontWeight: '600' }]}>
                 {b.text}{p.free != null ? ` \u00b7 ${p.free} of ${p.spots} free` : ` \u00b7 ${p.spots} spaces`}
               </Text>
             </View>
@@ -160,20 +162,20 @@ function CardView({ card, now }: { card: Card; now: number }) {
           <>
             <Row onPressIn={() => prefetchStop(sx.id)} onPress={() => router.push({ pathname: '/stop/[id]', params: { id: sx.id, name: sx.name } })}>
               <View style={st.mid}>
-                <Text style={[st.t1, { color: c.text }]}>{sx.access?.label || ACC_LABEL[sx.access?.level || 'unknown']}</Text>
-                <Text style={[st.t2, { color: c.text2 }]}>{accessKit(sx.access) || tk.title}</Text>
+                <Text maxFontSizeMultiplier={1.6} style={[st.t1, { color: c.text }]}>{sx.access?.label || ACC_LABEL[sx.access?.level || 'unknown']}</Text>
+                <Text maxFontSizeMultiplier={1.6} style={[st.t2, { color: c.text2 }]}>{accessKit(sx.access) || tk.title}</Text>
               </View>
             </Row>
             {(sx.outages || []).map((o, i) => (
               <Row key={i} onPress={() => { const u = safeUrl(o.url); if (u) Linking.openURL(u); }}>
                 <View style={st.mid}>
-                  <Text style={[st.t1, { color: c.redText }]}>{o.kind === 'escalator' ? 'Escalator' : 'Lift'} out of service</Text>
-                  <Text numberOfLines={3} style={[st.t2, { color: c.text2 }]}>{outageText(o.title, sx.name)}</Text>
+                  <Text maxFontSizeMultiplier={1.6} style={[st.t1, { color: c.redText }]}>{o.kind === 'escalator' ? 'Escalator' : 'Lift'} out of service</Text>
+                  <Text maxFontSizeMultiplier={1.6} numberOfLines={3} style={[st.t2, { color: c.text2 }]}>{outageText(o.title, sx.name)}</Text>
                 </View>
               </Row>
             ))}
             <Row onPressIn={() => prefetchStop(sx.id)} onPress={() => router.push({ pathname: '/stop/[id]', params: { id: sx.id, name: sx.name } })}>
-              <View style={st.mid}><Text style={[st.t1, { color: c.text }]}>{tk.title}</Text><Text style={[st.t2, { color: c.text2 }]}>{tk.sub}</Text></View>
+              <View style={st.mid}><Text maxFontSizeMultiplier={1.6} style={[st.t1, { color: c.text }]}>{tk.title}</Text><Text maxFontSizeMultiplier={1.6} style={[st.t2, { color: c.text2 }]}>{tk.sub}</Text></View>
             </Row>
           </>
         );
@@ -185,7 +187,7 @@ function Chip({ label, onPress }: { label: string; onPress: () => void }) {
   const c = usePalette();
   return (
     <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [st.chip, { backgroundColor: pressed ? c.fill : c.card, borderColor: c.sep }]}>
-      <Text style={{ color: c.tint, fontSize: 15 }}>{label}</Text>
+      <Text maxFontSizeMultiplier={1.6} style={{ color: c.tint, fontSize: 15 }}>{label}</Text>
     </Pressable>
   );
 }
@@ -226,7 +228,7 @@ function Actions({ item, now }: { item: Msg; now: number }) {
           accessibilityHint={a.kind === 'speak' ? 'Reads the next services out loud' : a.kind === 'directions' ? 'Opens directions in your maps app' : undefined}
           style={({ pressed }) => [st.act, { backgroundColor: pressed ? c.fill : c.card, borderColor: c.sep }]}>
           <Icon name={a.kind === 'speak' ? I.speaker : a.kind === 'directions' ? I.nav : a.label === 'Open trip' ? I.route : I.list} size={15} color={c.tint} />
-          <Text style={{ color: c.tint, fontSize: 15, fontWeight: '600' }}>{a.label}</Text>
+          <Text maxFontSizeMultiplier={1.6} style={{ color: c.tint, fontSize: 15, fontWeight: '600' }}>{a.label}</Text>
         </Pressable>
       ))}
       {help ? <Suspense fallback={null}><VoiceHelp visible start="prompt" onClose={() => setHelp(false)} /></Suspense> : null}
@@ -243,10 +245,10 @@ let brainLast: Last | null = null;
 const MsgRow = memo(function MsgRow({ item, last, now, onAsk, onLocation }: { item: Msg; last: boolean; now: number; onAsk: (q: string) => void; onLocation: () => void }) {
   const c = usePalette();
   return item.role === 'me' ? (
-    <View style={[st.bubble, st.me, { backgroundColor: c.tint }]}><Text style={st.meText}>{item.text}</Text></View>
+    <View style={[st.bubble, st.me, { backgroundColor: c.tint }]}><Text maxFontSizeMultiplier={1.6} style={st.meText}>{item.text}</Text></View>
   ) : (
     <View style={{ alignItems: 'flex-start', marginTop: 6 }}>
-      {item.heard ? <Text accessibilityRole="text" style={[st.heard, { color: c.text2 }]}>{item.heard}</Text> : null}
+      {item.heard ? <Text maxFontSizeMultiplier={1.6} accessibilityRole="text" style={[st.heard, { color: c.text2 }]}>{item.heard}</Text> : null}
       {(() => { const sum = tripSummary(item, now); return sum ? <TripAnswer s={sum} /> : <PlainAnswer text={item.text} />; })()}
       {(item.cards || []).map((card, i) => <CardView key={i} card={card} now={now} />)}
       {item.lastHome && canRemind(Date.parse(item.lastHome.leave || item.lastHome.svc?.leave || ''), now) ? <RemindLastButton hint={item.lastHome} known={!item.lastHome.svc} acc={store.accOn()} /> : null}
@@ -400,7 +402,8 @@ export default function AskScreen() {
   // comes up and while the answer's cards lay out. Scrolling up to read older messages stops that until you are back
   // at the end. The list follows its content size, so a long history is shown from the end once it has laid out.
   const stick = useRef(true);
-  const toEnd = useCallback((animated = false) => { stick.current = true; requestAnimationFrame(() => list.current?.scrollToEnd({ animated })); }, []);
+  // Reduce Motion: new answers appear at the bottom without the scroll animation.
+  const toEnd = useCallback((animated = false) => { stick.current = true; requestAnimationFrame(() => list.current?.scrollToEnd({ animated: animated && !reduceMotionNow() })); }, []);
   useFocusEffect(useCallback(() => { toEnd(false); }, [toEnd]));
   useEffect(() => { toEnd(true); }, [msgs.length, busy, toEnd]);
   // Only your own scrolling decides (a drag and its glide), not the list's own scroll to the end.
@@ -458,14 +461,14 @@ export default function AskScreen() {
         ListHeaderComponent={more ? (
           <Pressable onPress={loadEarlier} accessibilityRole="button" accessibilityLabel={more} hitSlop={6}
             style={({ pressed }) => [st.earlier, { backgroundColor: pressed ? c.fill : 'transparent' }]}>
-            <Text style={{ color: c.tint, fontSize: 15, fontWeight: '600' }}>{more}</Text>
+            <Text maxFontSizeMultiplier={1.6} style={{ color: c.tint, fontSize: 15, fontWeight: '600' }}>{more}</Text>
           </Pressable>
         ) : undefined}
         contentContainerStyle={{ padding: 12, paddingBottom: 16, paddingLeft: 12 + side.left, paddingRight: 12 + side.right }}
         ListEmptyComponent={
           <View style={{ alignItems: 'center', paddingTop: 24 }}>
-            <Text style={[st.helloTitle, { color: c.text }]}>Ask about any trip</Text>
-            <Text style={[st.helloBody, { color: c.text2 }]}>Type a stop, a line or two places, like next train from one station to another.</Text>
+            <Text maxFontSizeMultiplier={1.6} style={[st.helloTitle, { color: c.text }]}>Ask about any trip</Text>
+            <Text maxFontSizeMultiplier={1.6} style={[st.helloBody, { color: c.text2 }]}>Type a stop, a line or two places, like next train from one station to another.</Text>
             {starters.length ? <View style={{ alignSelf: 'stretch', alignItems: 'flex-end', gap: 8, marginTop: 18 }}>{starters.map((s) => <Chip key={s} label={s} onPress={() => ask(s)} />)}</View> : null}
           </View>
         }
@@ -489,7 +492,7 @@ export default function AskScreen() {
           style={[st.input, { color: c.text, backgroundColor: c.bg, borderColor: c.sep }]}
         />
         <Pressable accessibilityRole="button" accessibilityLabel="Send" accessibilityState={{ disabled: !text.trim() || busy }} hitSlop={6} disabled={!text.trim() || busy} onPress={() => ask(text)} style={[st.send, { backgroundColor: text.trim() ? c.tint : c.fill }]}>
-          <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>{'\u2191'}</Text>
+          <Text maxFontSizeMultiplier={1.2} style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>{'\u2191'}</Text>
         </Pressable>
       </View>
     </View>

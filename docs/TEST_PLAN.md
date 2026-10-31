@@ -25,6 +25,19 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 
 
+### `app/test/syssettings31.test.mjs`: 8 tests, 8 pass (31 Oct, system settings pass, app)
+- Before the app hands over the phone's setting (and in every other test) every clock stays 12 hour; a reader that throws keeps 12 hour.
+- 24 hour phone: the shared clock, seconds stamp, Live stamp, board time, timetable label and its VoiceOver words, Plan, Leave at, board From time, offline stamp, off peak, reminders, car parks, leave by, Ask, last way home and Simple mode say "19:52" and midnight "00:05"; 12 hour phone the old "7:52pm".
+- The Plan rows and the rest read one setting: `installPhoneClock` in `lib/rowTime.ts`, called in `app/_layout.tsx`; the stop board's "Live, updated" uses the shared clock; no file writes a 12 hour clock without asking the phone.
+- Home stop card: honest label per row (`depState`), "Timetable" under any time that is not fresh live, "timetable time, no live data" for VoiceOver, the Updating line on a kept copy; an hour old kept live time is not live and stands for its timetable time.
+- Reduce Motion: sheets fade, the wheel and Ask do not animate, a sheet drag goes straight back, no `animationType="slide"` left in the four sheets.
+- Dynamic Type: every text on the main screens has `maxFontSizeMultiplier` or a parent text with one; no `allowFontScaling`.
+- VoiceOver: every Pressable or Touchable on the main screens has a role and its own label or text.
+- Dark mode: no light only grey or black written into a style on the main screens.
+
+### `app/test/notstopping.test.mjs`: 7 tests, 7 pass (31 Oct, clock flake fixed)
+- The tests run on a fixed noon instead of the real clock (the trip leg test failed within 25 minutes of midnight). New: a time after midnight names the next day, one before it is today. Proven 20 runs on the real clock plus 21 on faked clocks around midnight, New Year's Eve and both daylight saving changes, 0 fails.
+
 ### `app/test/fromloc.test.mjs`: 10 tests, 10 pass (30 Oct, Current location in Plan, app; on main 31 Oct, merge of next-fromloc b545d06)
 - Hidden when the build has no location module: `hasLocation()` false, nothing loaded, nothing asked.
 - Shown only in an empty From or To in trip mode; not while typing, on Departures, or when the other end is already Current location.

@@ -304,9 +304,9 @@ export default function Home() {
         // bottom safe area (TabBarSafe) instead of a fixed 16 pt from the screen edge, where it sat behind the bar.
         <TabBarSafe overlay style={StyleSheet.absoluteFill}>
         <View style={[hs.snack, { marginLeft: 16 + side.left, marginRight: 16 + side.right, backgroundColor: c.dark ? '#E6E1E5' : '#313033' }]} accessibilityLiveRegion="polite">
-          <Text style={{ color: c.dark ? '#313033' : '#F4EFF4', fontSize: 14, flex: 1 }}>{snack.text}</Text>
+          <Text maxFontSizeMultiplier={1.4} style={{ color: c.dark ? '#313033' : '#F4EFF4', fontSize: 14, flex: 1 }}>{snack.text}</Text>
           <Pressable onPress={() => { snack.undo(); setSnack(null); haptic.select(); }} hitSlop={10} accessibilityRole="button">
-            <Text style={{ color: c.dark ? '#1F6FEB' : '#8AB4F8', fontSize: 14, fontWeight: '700' }}>Undo</Text>
+            <Text maxFontSizeMultiplier={1.4} style={{ color: c.dark ? '#1F6FEB' : '#8AB4F8', fontSize: 14, fontWeight: '700' }}>Undo</Text>
           </Pressable>
         </View>
         </TabBarSafe>
@@ -322,7 +322,7 @@ function LiveBar({ title, line, mode, color }: { title: string; line?: string; m
     <Pressable onPress={() => router.push('/go')} accessibilityRole="button" accessibilityLabel={`In transit, ${title}${line ? `, ${line}` : ''}`} accessibilityHint="Opens the live trip" android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
       style={({ pressed }) => [hs.live, { backgroundColor: c.liveBg, opacity: pressed ? 0.85 : 1 }]}>
       <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff', marginRight: 8 }} />
-      <Text style={{ color: '#fff', fontSize: 15, flex: 1 }} numberOfLines={2}>
+      <Text maxFontSizeMultiplier={1.4} style={{ color: '#fff', fontSize: 15, flex: 1 }} numberOfLines={2}>
         <Text style={{ fontWeight: '700' }}>In transit</Text>{` \u00b7 ${title}`}
       </Text>
       {line ? <View style={{ marginLeft: 8 }}><LineBadge line={line} mode={mode} color={color} /></View> : null}

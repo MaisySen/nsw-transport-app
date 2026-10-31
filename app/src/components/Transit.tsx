@@ -12,7 +12,7 @@ import { HoldMenu } from './HoldMenu';
 import { departureMenu } from '@/lib/menuCore';
 import { usePalette } from '@/lib/theme';
 import { BADGE, badgeLook } from '@/lib/lineStyle';
-import { clock, delayWords, durText, ms, shortName } from '@/lib/format';
+import { clock, clockSec, delayWords, durText, ms, shortName } from '@/lib/format';
 import { rowTime } from '@/lib/rowTime';
 import type { Departure, Journey, Leg } from '@/lib/types';
 import { Icon, I, modeIconName } from './Icon';
@@ -152,7 +152,7 @@ export function LiveStamp({ updatedAt, error, offlineAt, staleAt, packAt }: { up
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       <LiveDot beat={updatedAt} color={error ? c.orange : undefined} />
       <T kind="foot" tone="text2" style={{ marginLeft: 2, flexShrink: 1 }}>
-        {error ? `Offline, last update ${clock(updatedAt)}` : `Live, updated ${new Date(updatedAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(' ', '')}`}
+        {error ? `Offline, last update ${clock(updatedAt)}` : `Live, updated ${clockSec(updatedAt)}`}
       </T>
     </View>
   );
@@ -286,7 +286,7 @@ export function JourneyCard({ j, now, onPress, best }: { j: Journey; now: number
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text maxFontSizeMultiplier={1.3} style={[font.title3, { color: j.live ? (mins <= 3 ? c.liveText : c.text) : c.text, fontVariant: ['tabular-nums'] }]}>{leaveText}</Text>
-            {best ? <View style={[st.tag, { backgroundColor: c.fill }]}><Text style={[font.caption, { color: c.tint, fontWeight: '700' }]}>BEST</Text></View> : null}
+            {best ? <View style={[st.tag, { backgroundColor: c.fill }]}><Text maxFontSizeMultiplier={1.3} style={[font.caption, { color: c.tint, fontWeight: '700' }]}>BEST</Text></View> : null}
           </View>
           <T kind="sub" tone="text2" style={{ marginTop: 2, fontVariant: ['tabular-nums'] }}>
             {rowTime(ms(j.board))} to {rowTime(ms(j.arrive))} {'\u00b7'} {durText(j.durationMin)}{j.changes ? ` \u00b7 ${j.changes} change${j.changes > 1 ? 's' : ''}` : ''}

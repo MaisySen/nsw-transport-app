@@ -3,6 +3,15 @@
 // the event's place, as a place search (the same search as typing it into Plan), and the trip query to the
 // place it found. The event's name, notes, people and calendar never leave the phone. No imports.
 
+// The phone's 24-Hour Time setting (iPhone Settings, General, Date and Time): lib/rowTime.ts installs the reader
+// at start (installPhoneClock). Until then, and in tests, the 12 hour clock the app has always used.
+const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
+/** "07:55" (or "07:55:30"), Sydney time, for a phone set to 24 hour time. */
+const C24 = (t: number, sec = false): string => {
+  try { return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', ...(sec ? { second: '2-digit' } : {}), hourCycle: 'h23', timeZone: 'Australia/Sydney' } as Intl.DateTimeFormatOptions).format(new Date(t)); }
+  catch { const d = new Date(t); return [d.getHours(), d.getMinutes(), ...(sec ? [d.getSeconds()] : [])].map((n) => String(n).padStart(2, '0')).join(':'); }
+};
+
 /** An event as read from the phone's calendar, cut down to what this feature uses. */
 export type CalEvent = { id: string; title: string; start: number; end: number; location: string; allDay?: boolean; status?: string | null };
 
@@ -138,6 +147,7 @@ export function leaveBy<J extends JLike>(js: J[] | null | undefined, eventStart:
 
 /** "8:12am" in Sydney time. */
 export function calClock(t: number): string {
+  if (PHONE24() && Number.isFinite(t)) return C24(t);
   try {
     return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, (m) => m.trim().toLowerCase());
   } catch {

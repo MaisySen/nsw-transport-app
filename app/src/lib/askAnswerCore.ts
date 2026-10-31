@@ -2,6 +2,15 @@
 // planner's own answer, trips with no change, the first and last times shown (for "the one after"), and the
 // actions under the card. Pure: no React Native, no network. Every time and number here is copied from live data.
 
+// The phone's 24-Hour Time setting (iPhone Settings, General, Date and Time): lib/rowTime.ts installs the reader
+// at start (installPhoneClock). Until then, and in tests, the 12 hour clock the app has always used.
+const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
+/** "07:55" (or "07:55:30"), Sydney time, for a phone set to 24 hour time. */
+const C24 = (t: number, sec = false): string => {
+  try { return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', ...(sec ? { second: '2-digit' } : {}), hourCycle: 'h23', timeZone: 'Australia/Sydney' } as Intl.DateTimeFormatOptions).format(new Date(t)); }
+  catch { const d = new Date(t); return [d.getHours(), d.getMinutes(), ...(sec ? [d.getSeconds()] : [])].map((n) => String(n).padStart(2, '0')).join(':'); }
+};
+
 export type ALeg = { kind: string; mode?: string; line?: string; color?: string; from?: string; to?: string; fromPlatform?: string | null; planned?: string; estimated?: string | null; realtime?: boolean; delayMin?: number | null; cancelled?: boolean; durationMin?: number; link?: any; access?: any };
 export type AJourney = { leave: string; arrive: string; durationMin?: number; changes: number; legs: ALeg[]; warn?: string | null; fare?: any; board?: string };
 export type ACard = { type: string; title?: string; titleOnly?: boolean; link?: any; items?: any[]; journeys?: AJourney[]; from?: { id: string; name: string }; to?: { id: string; name: string }; [k: string]: any };
@@ -32,6 +41,7 @@ export function directFirst(journeys: AJourney[]): { journeys: AJourney[]; note:
 function clock(iso: string): string {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return '';
+  if (PHONE24()) return C24(d.getTime());
   return d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, (_m, p) => ' ' + p.toLowerCase());
 }
 const short = (n?: string) => String(n || '').split(',')[0].replace(/ (Station|Light Rail)$/, '');

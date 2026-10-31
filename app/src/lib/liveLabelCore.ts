@@ -3,6 +3,15 @@
 // when there is no live time, or "Not tracking" when the live time has gone stale. A row never counts down to 0
 // and then says the service left: that is only said where a live time confirmed it (recentCore.ts).
 
+// The phone's 24-Hour Time setting (iPhone Settings, General, Date and Time): lib/rowTime.ts installs the reader
+// at start (installPhoneClock). Until then, and in tests, the 12 hour clock the app has always used.
+const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
+/** "07:55" (or "07:55:30"), Sydney time, for a phone set to 24 hour time. */
+const C24 = (t: number, sec = false): string => {
+  try { return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', ...(sec ? { second: '2-digit' } : {}), hourCycle: 'h23', timeZone: 'Australia/Sydney' } as Intl.DateTimeFormatOptions).format(new Date(t)); }
+  catch { const d = new Date(t); return [d.getHours(), d.getMinutes(), ...(sec ? [d.getSeconds()] : [])].map((n) => String(n).padStart(2, '0')).join(':'); }
+};
+
 export type LiveKind = 'live' | 'timetable' | 'stale' | 'cancelled';
 
 export type LiveInput = {
@@ -75,6 +84,7 @@ const ms = (s?: string | null) => (s ? new Date(s).getTime() : NaN);
 
 function clockText(t: number) {
   if (!Number.isFinite(t)) return '';
+  if (PHONE24()) return C24(t);
   try {
     return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, (m) => m.trim().toLowerCase());
   } catch {

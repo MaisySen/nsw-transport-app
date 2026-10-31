@@ -1,4 +1,4 @@
-// The phone's clock setting for the Plan tab trip rows (rules and formats in lib/rowTimeCore.ts).
+// The phone's clock setting for every time in the app, first the Plan tab trip rows (rules and formats in lib/rowTimeCore.ts).
 // iPhone: Settings, General, Date and Time, 24-Hour Time, read from the app's settings copy react-native already
 // keeps (no new native module). Elsewhere, and when that key is missing, the locale's hour cycle from Intl.
 // Read at most once a minute, on demand while rows draw: no timer, no listener.
@@ -45,6 +45,15 @@ export function phone24h(now = Date.now()): boolean {
   try { h24 = uses24h(signals()); } catch {}
   cached = { at: now, h24 };
   return h24;
+}
+
+/**
+ * Hands the phone's setting to every clock in the app (lib/format.ts clock, the board, trip, Plan, Ask and offline
+ * stamps): they read it through globalThis so the pure modules stay free of react-native and testable in Node.
+ * Called once at start from app/_layout.tsx (31 Oct, in-app 24 hour time).
+ */
+export function installPhoneClock(): void {
+  try { (globalThis as any).__tslPhone24h = () => phone24h(); } catch {}
 }
 
 /** A trip row's time in the phone's clock: "12:56 pm" or "12:56". Sydney time. */

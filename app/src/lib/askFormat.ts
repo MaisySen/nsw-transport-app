@@ -3,6 +3,15 @@
 // instead of the long reply paragraph. Any other answer is split into short paragraphs.
 // No React Native imports here, so the unit tests can load this file directly.
 
+// The phone's 24-Hour Time setting (iPhone Settings, General, Date and Time): lib/rowTime.ts installs the reader
+// at start (installPhoneClock). Until then, and in tests, the 12 hour clock the app has always used.
+const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
+/** "07:55" (or "07:55:30"), Sydney time, for a phone set to 24 hour time. */
+const C24 = (t: number, sec = false): string => {
+  try { return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', ...(sec ? { second: '2-digit' } : {}), hourCycle: 'h23', timeZone: 'Australia/Sydney' } as Intl.DateTimeFormatOptions).format(new Date(t)); }
+  catch { const d = new Date(t); return [d.getHours(), d.getMinutes(), ...(sec ? [d.getSeconds()] : [])].map((n) => String(n).padStart(2, '0')).join(':'); }
+};
+
 export type AskAccessEnd = { outage?: string | null } | null | undefined;
 export type AskLeg = {
   kind: string; mode?: string; line?: string; color?: string; fromPlatform?: string | null;
@@ -49,6 +58,7 @@ export function shortPlace(name?: string | null): string {
 
 /** "7:30 am" in Sydney time. */
 export function clock12(iso: string): string {
+  if (PHONE24() && Number.isFinite(Date.parse(iso))) return C24(Date.parse(iso));
   return new Date(iso).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' })
     .replace(/\s?(am|pm)/i, (_m, p) => ' ' + p.toLowerCase());
 }

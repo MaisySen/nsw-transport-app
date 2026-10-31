@@ -7,6 +7,7 @@ import { haptic } from '@/lib/haptic';
 import { usePalette } from '@/lib/theme';
 import { Icon, IconName } from './Icon';
 import { Sep, T } from './ui';
+import { useReduceMotion } from '@/lib/motion';
 
 export type SheetAction = { text: string; icon?: IconName; destructive?: boolean; onPress: () => void };
 
@@ -59,6 +60,8 @@ export function ActionSheet({ visible, title, message, actions, onClose, anchor 
   // opened while the sheet's window is still closing can vanish with it, which felt like a dead button.
   // Above the iPhone return so every render calls the same hooks.
   const pending = useRef<(() => void) | null>(null);
+  // Reduce Motion: the sheet fades in instead of sliding up, as iOS does with its own sheets.
+  const still = useReduceMotion();
   if (ios) return null;
   const choose = (a: SheetAction) => {
     if (pending.current) return;
@@ -68,7 +71,7 @@ export function ActionSheet({ visible, title, message, actions, onClose, anchor 
     haptic.select();
   };
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} onDismiss={() => pending.current?.()} statusBarTranslucent navigationBarTranslucent>
+    <Modal visible={visible} transparent animationType={still ? 'fade' : 'slide'} onRequestClose={onClose} onDismiss={() => pending.current?.()} statusBarTranslucent navigationBarTranslucent>
       <View style={s.wrap}>
         <Pressable accessibilityRole="button" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.32)' }]} onPress={onClose} accessibilityLabel="Close" />
         <View style={[s.sheet, { marginLeft: side.left, marginRight: side.right, backgroundColor: ios ? 'transparent' : c.dark ? '#22262E' : '#F3F5FA', paddingBottom: Math.max(ins.bottom, 12) }]}>

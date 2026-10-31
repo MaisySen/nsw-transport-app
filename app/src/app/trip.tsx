@@ -27,7 +27,7 @@ import { peekOffline } from '@/lib/offline';
 import { armFresh, armSpec, isPhoneBuilt, phoneBuiltText, tripSeed } from '@/lib/instantPaintCore';
 import { ttFirstSeed, ttFirstWanted } from '@/lib/newTripCore';
 import { usePalette, radius, modeColor } from '@/lib/theme';
-import { bestTime, clock, durText, ms, shortName } from '@/lib/format';
+import { C24, PHONE24, bestTime, clock, durText, ms, shortName } from '@/lib/format';
 import { plainText } from '@/lib/htmlTextCore';
 import { store, tripKeyOf, useStore } from '@/lib/store';
 import { safeUrl, stShort } from '@/lib/access';
@@ -82,8 +82,9 @@ function hhmm(t: number) {
   }
 }
 
-/** "8:00:30", Sydney time. */
+/** "8:00:30" ("20:00:30" on a 24 hour phone), Sydney time. */
 function hms(t: number) {
+  if (PHONE24() && Number.isFinite(t)) return C24(t, true);
   try { return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, ''); }
   catch { return new Date(t).toLocaleTimeString(); }
 }

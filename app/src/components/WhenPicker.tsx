@@ -8,6 +8,7 @@ import { usePalette } from '@/lib/theme';
 import { defaultClock, from12, isTomorrow, NOW, snapMinute, to12, wrapStep, type When } from '@/lib/planCore';
 import { Segmented } from './Segmented';
 import { T } from './ui';
+import { useReduceMotion } from '@/lib/motion';
 
 // Leave now, Leave at or Arrive by, with a time wheel. Built in JS (no native picker), so it works on every
 // installed build: an iOS style wheel in a sheet with Cancel and Done, a Material 3 dialog style on Android.
@@ -23,7 +24,9 @@ export function Wheel({ values, value, onChange, text, label, width }: { values:
   const ref = useRef<any>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const idx = Math.max(0, values.indexOf(value));
-  const scrollTo = (i: number, animated: boolean) => ref.current?.scrollTo({ x: 0, y: i * ITEM, animated });
+  // Reduce Motion: the wheel jumps to the value instead of scrolling to it.
+  const still = useReduceMotion();
+  const scrollTo = (i: number, animated: boolean) => ref.current?.scrollTo({ x: 0, y: i * ITEM, animated: animated && !still });
   useEffect(() => { scrollTo(idx, true); }, [idx]);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
   const settle = (y: number) => {
@@ -56,6 +59,8 @@ const KINDS: { k: When['kind']; label: string }[] = [{ k: 'now', label: 'Now' },
  * replaces the Today or Tomorrow line under the wheels (the board's times stay in the service day). */
 export function WhenPicker({ visible, value, now, onDone, onClose, days, kinds = KINDS, nowText = 'Trips leaving from now, with live times.', dayNote }: { visible: boolean; value: When; now: number; onDone: (w: When) => void; onClose: () => void; days?: { day: string; label: string; a11y: string }[]; kinds?: { k: When['kind']; label: string }[]; nowText?: string; dayNote?: (w: When) => string }) {
   const c = usePalette();
+  // Reduce Motion: the sheet fades in instead of sliding up.
+  const still = useReduceMotion();
   const ins = useSafeAreaInsets();
   const side = useSides();
   const ios = Platform.OS === 'ios';
@@ -115,7 +120,7 @@ export function WhenPicker({ visible, value, now, onDone, onClose, days, kinds =
     </View>
   );
   return (
-    <Modal visible={visible} transparent animationType={ios ? 'slide' : 'fade'} onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
+    <Modal visible={visible} transparent animationType={ios && !still ? 'slide' : 'fade'} onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
       <View style={[s.wrap, !ios && { justifyContent: 'center' }]}>
         <Pressable accessibilityRole="button" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.32)' }]} onPress={onClose} accessibilityLabel="Close" />
         {ios ? (
