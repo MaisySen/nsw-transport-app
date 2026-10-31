@@ -169,6 +169,9 @@ export function vehicleOnRun(d: ServiceResp | null | undefined): { k: number; at
   return null;
 }
 
+/** A departure board row for the boarding stop (an app Departure, or the /api/service answer's board, board=1). */
+export type BoardRow = { planned?: string; estimated?: string | null; realtime?: boolean; tripId?: string | null; platform?: string | null; cancelled?: boolean };
+
 /**
  * One live answer (the app's /api/service ServiceResp, plus optionally the departure board row and the planner's
  * estimate captured at Start trip) as a reading for one plan leg. All three feed shapes of spec section 0 land here:
@@ -179,18 +182,21 @@ export function vehicleOnRun(d: ServiceResp | null | undefined): { k: number; at
  * run time, not the stop's own.
  */
 export function legReadingFrom(pl: PlanLeg, w: Pick<WatchLeg, 'stopId' | 'from' | 'toStopId' | 'to' | 'planned' | 'estimated' | 'tripId'> | null, d: ServiceResp | null | undefined,
-  o: { asOf?: number; board?: Pick<Departure, 'planned' | 'estimated' | 'realtime' | 'tripId'> | null; plannerAt?: number | null; next?: string | null } = {}): LegReading | null {
+  o: { asOf?: number; board?: BoardRow | null; plannerAt?: number | null; next?: string | null } = {}): LegReading | null {
   const n = pl.stops.length;
   const est: (number | null)[] = new Array(n).fill(null);
   const run: (number | null)[] = new Array(n).fill(null);
   let runAsOf: number | null = null;
   let board: number | null = null;
+  // the board row: given by the caller, or riding the /api/service answer (board=1, trip flow 2)
+  if (!o.board && d && d.board) o = { ...o, board: d.board };
+  const boardPlat = pl.mode === 'bus' ? null : platNum(o.board?.platform ?? null);
   if (o.board && o.board.realtime && o.board.estimated && (!o.board.tripId || !w?.tripId || o.board.tripId === w.tripId)) board = tms(o.board.estimated);
   const planner = w && w.estimated && w.planned && o.plannerAt != null ? tms(w.estimated) - tms(w.planned) : null;
   if (!d || !d.stops || !d.stops.length) {
     if (planner == null && board == null) return d ? { est, run, runAsOf, board, vehicle: null, platform: null, cancelled: !!d.cancelled, next: o.next ?? null, unmatched: true } : null;
     if (planner != null && Number.isFinite(planner)) { run.fill(planner); runAsOf = o.plannerAt ?? null; }
-    return { est, run, runAsOf, board, vehicle: null, platform: null, cancelled: false, next: o.next ?? null, unmatched: false };
+    return { est, run, runAsOf, board, vehicle: null, platform: boardPlat, cancelled: !!o.board?.cancelled, next: o.next ?? null, unmatched: false };
   }
   // map every plan stop to the answer's stop list
   const first = w ? boardIndexOf(w, d) : findStop(d, pl.stops[0].id, pl.stops[0].name, 0, pl.stops[0].alias);
@@ -238,8 +244,8 @@ export function legReadingFrom(pl: PlanLeg, w: Pick<WatchLeg, 'stopId' | 'from' 
     }
   }
   const mineS = d.stops[map[0]];
-  const platform = pl.mode === 'bus' ? null : platNum(mineS?.platform) || null;
-  return { est, run, runAsOf, board, vehicle, platform, cancelled: !!d.cancelled, next: o.next ?? null, unmatched: false };
+  const platform = pl.mode === 'bus' ? null : platNum(mineS?.platform) || boardPlat || null;
+  return { est, run, runAsOf, board, vehicle, platform, cancelled: !!d.cancelled || !!o.board?.cancelled, next: o.next ?? null, unmatched: false };
 }
 
 /**
@@ -247,7 +253,7 @@ export function legReadingFrom(pl: PlanLeg, w: Pick<WatchLeg, 'stopId' | 'from' 
  * data was made or loaded; a vehicle position is that minus its own age.
  */
 export function tripReadingFrom(plan: TripPlan, legs: (WatchLeg | null)[], svc: (ServiceResp | null | undefined)[], asOf: number,
-  o: { boards?: (Departure | null | undefined)[]; plannerAt?: number | null; next?: (string | null | undefined)[] } = {}): TripReading {
+  o: { boards?: (BoardRow | null | undefined)[]; plannerAt?: number | null; next?: (string | null | undefined)[] } = {}): TripReading {
   return {
     asOf,
     legs: plan.legs.map((pl, i) => {

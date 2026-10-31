@@ -216,6 +216,26 @@ export function checkPushes(id, server, simRun) {
   return bad;
 }
 
+
+/**
+ * One /api/service answer for a case's leg at case time tSec, as the app asks it (board=1 for a trip flow 2 app before
+ * the train leaves). For the board row contract test (backend/test/service-board.test.mjs).
+ */
+export async function serviceAt(id, tSec, extra = {}, li = 0) {
+  await startFake();
+  await freshWorker();
+  const net = caseNet(caseById(id));
+  caught = { apple: [], expo: [], nsw: 0, other: [] };
+  clock = at(tSec);
+  await realFetch(`${FAKE}/__mode?set=case&case=${encodeURIComponent(id)}&base=${BASE}`);
+  const env = makeEnv(net, { tripflow2: true, getOffPush: true, liveStops: true });
+  W.serverCfg.at = 0;
+  const l = legsFor(net)[li];
+  const q = { trip: l.tripId, stop: l.stopId, planned: l.planned, mode: l.mode, line: l.line, to: l.toStopId, ...extra };
+  const r = await call(env, "GET", "/api/service?" + new URLSearchParams(Object.entries(q).filter(([, v]) => v != null && v !== "")).toString());
+  return { leg: l, status: r.status, body: r.body, nsw: caught.nswBy || {} };
+}
+
 /** Cases where the server acts (a server it can reach). */
 export const SERVER_CASES = CASES.filter((c) => !(c.server && c.server.reachable === false)).map((c) => c.id);
 
