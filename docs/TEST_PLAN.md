@@ -32,6 +32,9 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 
 ### Build 211 candidate (31 Oct, branch `build-211-rc`, not built)
+* Round 3, getoff-bg merged in (about 4:15 PM): app 1,078 tests, 1,074 pass, 4 skipped, 0 fail (OFFLINE=1, TZ=Australia/Sydney); staleopen31 15/15, getoffregion31 20/20, getoffbg31 12/12, livefit211 8/8, livefit211r2 4/4; battery 17/17; tsc clean; backend 644/644 (review notes and owner station guards pass). Owner stations 28 of 1,687 tests (1.66%).
+* Round 3 native audit with the new `module` job (the whole app compiled for the simulator, `TransportIOSModule.swift` included): runs 41165839487 and 41169237896, iPhone 1,578 shots and Watch 120 shots with 0 cut off or wrapping, BUILD SUCCEEDED both times.
+* Not provable on the simulator: an iOS location trigger ringing on a real ride (entering the circle with the phone locked), and the Silent switch muting the app's voice. Both need the phone check on build 211.
 * Round 2 (about 2:40 PM): app 1,031 tests, 1,027 pass, 4 skipped, 0 fail (new `livefit211r2.test.mjs`, 4 tests). Battery 17/17, tsc clean. Owner stations 28 of 1,640 tests (1.71%).
 * Round 2 audit: titles (`lock-stop`, `island-stop`, `follow-lock-to`, `follow-island-to`) one line, a cut at the end listed as TITLE SHORTENED; `IslandEdge.swift` checks every expanded Island shot against the rounded outline (8 pt) and the left and right insets, with the margins measured on Bidur's build 210 iPhone. On 97b2d03 run 41163775482: 129 of 210 probed shots fail. With the fixes run 41163777706: 1,578 iPhone shots, 0 fail, 21 titles shortened (listed in the log). Watch job passed on both.
 * App (OFFLINE=1, TZ=Australia/Sydney): 1,028 tests, 1,024 pass, 4 skipped, 0 fail (new `livefit211.test.mjs`, 8 tests). Battery 17/17, tsc clean.
