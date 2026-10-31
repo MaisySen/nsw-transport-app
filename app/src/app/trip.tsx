@@ -27,7 +27,7 @@ import { peekOffline } from '@/lib/offline';
 import { armFresh, armSpec, isPhoneBuilt, phoneBuiltText, tripSeed } from '@/lib/instantPaintCore';
 import { ttFirstSeed, ttFirstWanted } from '@/lib/newTripCore';
 import { usePalette, radius, modeColor } from '@/lib/theme';
-import { C24, PHONE24, bestTime, clock, durText, ms, shortName } from '@/lib/format';
+import { bestTime, clock, durText, ms, shortName } from '@/lib/format';
 import { plainText } from '@/lib/htmlTextCore';
 import { store, tripKeyOf, useStore } from '@/lib/store';
 import { safeUrl, stShort } from '@/lib/access';
@@ -82,12 +82,6 @@ function hhmm(t: number) {
   }
 }
 
-/** "8:00:30" ("20:00:30" on a 24 hour phone), Sydney time. */
-function hms(t: number) {
-  if (PHONE24() && Number.isFinite(t)) return C24(t, true);
-  try { return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, ''); }
-  catch { return new Date(t).toLocaleTimeString(); }
-}
 
 const isBus = (m?: string | null) => m === 'bus' || m === 'coach' || m === 'school';
 
@@ -898,7 +892,7 @@ export default function TripScreen() {
         })()}
         {offlineAt ? null : updatedAt ? (
           <T kind="foot" tone={error ? 'lateText' : 'text2'} style={{ textAlign: 'center', marginTop: 14, fontVariant: ['tabular-nums'] }}>
-            {error ? `${failWhy() === 'server' ? 'Live data unavailable right now' : 'Offline'}. Live data updated ${hms(updatedAt)}` : (data as any)?.source === 'timetable' ? TIMETABLE_TRIPS_NOTE : `Live data updated ${hms(updatedAt)}`}
+            {error ? `${failWhy() === 'server' ? 'Live data unavailable right now' : 'Offline'}. Updated ${rowTime(updatedAt)}` : (data as any)?.source === 'timetable' ? TIMETABLE_TRIPS_NOTE : `Updated ${rowTime(updatedAt)}`}
           </T>
         ) : null}
         {data && !js.length && modes.length ? (() => { const e = emptyModes(modes, data.modesBy === 'server'); return <Empty icon={I.route} title={e.title} body={e.body} action={<Button title="Any" kind="tinted" onPress={() => { haptic.select(); store.setTripModes(tkey, []); }} />} />; })() : null}
@@ -953,7 +947,7 @@ function ModeChips({ chips, modes, onChange }: { chips: ModeK[]; modes: ModeK[];
   const chip = (key: string, name: string, on: boolean, press: () => void, mode?: ModeK) => (
     <Pressable key={key} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={chipLabel(name, on)} onPress={press}
       android_ripple={{ color: c.fill }}
-      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: 36, paddingHorizontal: 12, borderRadius: ios ? 18 : 8, marginVertical: 4,
+      hitSlop={{ top: 4, bottom: 4 }} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: 36, paddingHorizontal: 12, borderRadius: ios ? 18 : 8, marginVertical: 4,
         backgroundColor: on ? c.tint : c.card, borderWidth: on || ios ? 0 : 1, borderColor: c.sep, opacity: pressed ? 0.75 : 1 })}>
       {mode ? <Icon name={modeIconName(mode)} size={14} color={on ? '#FFFFFF' : modeColor[mode] || c.text2} /> : null}
       <T kind="sub" style={{ marginLeft: mode ? 5 : 0, color: on ? '#FFFFFF' : c.text, fontWeight: on ? '600' : '400' }}>{name}</T>

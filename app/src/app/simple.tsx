@@ -433,7 +433,7 @@ export default function Simple() {
         {!hasList ? <Places rows={places} onPick={onPlace} /> : (
           <View style={{ marginTop: 18 }}>
             {live.data && (live.offlineAt || (live.staleAt && !live.updatedAt)) ? (
-              <Text maxFontSizeMultiplier={BIG} accessibilityLiveRegion="polite" style={[font.callout, { color: live.offlineAt ? c.lateText : c.text2, marginHorizontal: 20, marginBottom: 8, fontVariant: ['tabular-nums'] }]}>
+              <Text maxFontSizeMultiplier={BIG} accessibilityLiveRegion={live.offlineAt ? 'polite' : 'none'} style={[font.callout, { color: live.offlineAt ? c.lateText : c.text2, marginHorizontal: 20, marginBottom: 8, fontVariant: ['tabular-nums'] }]}>
                 {live.offlineAt ? offlineText(live.offlineAt, now) : staleText(live.staleAt!, now)}
               </Text>
             ) : null}

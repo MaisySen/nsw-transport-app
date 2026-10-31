@@ -126,7 +126,7 @@ export function LeaveLine({ js, now, me, compact, ends }: { js: Journey[]; now: 
   if (compact) {
     const fg = set ? c.tint : androidLook && c.dark ? '#062E6F' : '#fff';
     return (
-      <View style={s.leaveMini} accessibilityLiveRegion="polite">
+      <View style={s.leaveMini} accessibilityLiveRegion={urgent ? 'polite' : 'none'}>
         <Icon name={I.walk} size={16} color={urgent ? c.red : c.tint} />
         <View style={{ flex: 1, marginLeft: 8, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline' }} accessible accessibilityLabel={`${words}, ${p.walk} minute walk to ${station}, for the ${label}${set ? `. Reminder at ${clock(rem!.at)}` : ''}`}>
           <T kind="sub" style={{ fontWeight: '600', color: urgent ? c.redText : c.text }}>{words}</T>
@@ -143,7 +143,7 @@ export function LeaveLine({ js, now, me, compact, ends }: { js: Journey[]; now: 
     );
   }
   return (
-    <View style={s.leave} accessibilityLiveRegion="polite">
+    <View style={s.leave} accessibilityLiveRegion={urgent ? 'polite' : 'none'}>
       <Icon name={I.walk} size={18} color={urgent ? c.red : c.tint} />
       <View style={{ flex: 1, marginLeft: 10 }} accessible accessibilityLabel={`${words}, ${p.walk} minute walk to ${station}, for the ${label}`}>
         <T kind="headline" style={{ color: urgent ? c.redText : c.text }}>{words}</T>

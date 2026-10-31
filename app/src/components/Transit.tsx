@@ -99,7 +99,7 @@ export function KeptBanner({ offlineAt, staleAt, now, style }: { offlineAt?: num
   if (!offlineAt && !staleAt) return null;
   const text = offlineAt ? offlineText(offlineAt, now) : staleText(staleAt!, now);
   return (
-    <View accessibilityRole="text" accessibilityLiveRegion="polite" accessibilityLabel={text}
+    <View accessibilityRole="text" accessibilityLiveRegion={offlineAt ? 'polite' : 'none'} accessibilityLabel={text}
       style={[{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 12, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: offlineAt ? c.card : 'transparent' }, style]}>
       {offlineAt ? <Icon name={I.warn} size={13} color={c.orange} /> : <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: c.text3 }} />}
       <T kind="foot" style={{ color: offlineAt ? c.lateText : c.text2, marginLeft: 7, flexShrink: 1, fontVariant: ['tabular-nums'] }}>{text}</T>
@@ -218,7 +218,7 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
   const noStop = notStoppingText(d, now);
   const noStopWhy = noStop ? notStoppingWhy(d) : null;
   const extra: string[] = [];
-  if (d.platform) extra.push(d.platform.replace(/^Platform /, 'Plat. '));
+  if (d.platform) extra.push(d.platform.replace(/^Platform /, 'Plat '));
   // The number on the bus stop sign, unless the screen is that one stop (its number is in the header).
   if (stopNo !== false) { const n = stopLabel(d.stopId, d.mode); if (n) extra.push(n); }
   if (d.stopsAway != null && live.kind === 'live' && d.stopsAway >= 0 && d.stopsAway <= 15) extra.push(d.stopsAway === 0 ? 'At the stop' : `${d.stopsAway} stop${d.stopsAway === 1 ? '' : 's'} away`);

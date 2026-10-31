@@ -6,7 +6,7 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
-import { useStopSearch } from '@/lib/stopSearch';
+import { SEARCH_FAILED_TEXT, useStopSearch } from '@/lib/stopSearch';
 import { usePalette, radius } from '@/lib/theme';
 import { MODE_BY_CODE, shortName } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
@@ -53,7 +53,7 @@ export default function AddTrip() {
   const fromRef = useRef<any>(null);
   const toRef = useRef<any>(null);
   const text = field === 'from' ? fromText : toText;
-  const { items, loading } = useStopSearch(from && to ? '' : text);
+  const { items, loading, failed } = useStopSearch(from && to ? '' : text);
   const near = useNearbyIfAllowed();
   const ready = !!(from && to && from.id !== to.id);
 
@@ -153,7 +153,7 @@ export default function AddTrip() {
         ) : null}
 
         {list.length ? <Section>{list.map(resultRow)}</Section> : null}
-        {!ready && text.trim().length >= 2 && !loading && !list.length ? <T kind="sub" tone="text2" style={{ marginHorizontal: 32, marginTop: 20 }}>No stops match that</T> : null}
+        {!ready && text.trim().length >= 2 && !loading && !list.length ? <T kind="sub" tone="text2" style={{ marginHorizontal: 32, marginTop: 20 }}>{failed ? SEARCH_FAILED_TEXT : 'No stops match that'}</T> : null}
         {showHelp && near.length ? <Section title="Nearby">{near.map(resultRow)}</Section> : null}
         {showHelp && recents.length ? <Section title="Recent">{recents.map(resultRow)}</Section> : null}
       </Screen>

@@ -250,7 +250,7 @@ export default function Settings() {
               <View key={cm.id}>
                 {i ? <Sep inset={57} /> : null}
                 <RowMenu icon={I.clock} sf="clock" iconBg={c.indigo} title={cm.name} subtitle={`${daysText(cm.days)}, ${cm.todText}`} menu={commuteMenu(cm)}
-                  right={<Switch value={cm.active} onValueChange={(v) => api.saveCommute({ ...cm, active: v }).then(refresh)} accessibilityLabel={`${cm.name} alerts`} />} />
+                  right={sw(cm.active, (v) => { haptic.select(); api.saveCommute({ ...cm, active: v }).then(refresh).catch((e: any) => Alert.alert("Couldn't change it", friendlyErr(e))); }, `${cm.name} alerts`)} />
               </View>
             ))}
           </Section>

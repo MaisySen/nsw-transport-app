@@ -584,7 +584,7 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
         if (item.t === 'h') return head(item.k);
         if (item.t === 'g') return (
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: item.open }} accessibilityLabel={`${item.k}, ${item.n} routes`}
-            onPress={() => { haptic.select(); setOpen({ ...open, [item.g]: !item.open }); }} style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 32, marginTop: 18, marginBottom: 7, minHeight: 28 }}>
+            onPress={() => { haptic.select(); setOpen({ ...open, [item.g]: !item.open }); }} style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 32, marginTop: 10, marginBottom: 0, minHeight: 44 }}>
             <T kind="foot" tone="text2" style={{ flex: 1, textTransform: Platform.OS === 'ios' ? 'uppercase' : 'none' }}>{`${item.k} (${item.n})`}</T>
             <T kind="foot" style={{ color: c.tint }}>{item.open ? 'Hide' : 'Show'}</T>
           </Pressable>

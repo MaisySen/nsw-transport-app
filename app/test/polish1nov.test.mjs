@@ -87,3 +87,20 @@ test('header pills and the bus stop list grow with Dynamic Type instead of clipp
   assert.match(fs.readFileSync(path.join(root, 'src/app/new-trip.tsx'), 'utf8'), /lineRow: \{[^}]*minHeight: 50/);
   assert.match(fs.readFileSync(path.join(root, 'src/components/Transit.tsx'), 'utf8'), /accessibilityLabel=\{a11y\} accessibilityHint="Opens the trip"/);
 });
+
+test('round 2: platform change spoken on Home cards, commute switch handles failure, no per-minute TalkBack chatter, stop retry, Plat wording, search failure honest', () => {
+  const home = fs.readFileSync(path.join(root, 'src/components/Home.tsx'), 'utf8');
+  assert.match(home, /\$\{stt\.text\}\$\{l\?\.platformChangedFrom \? `, platform changed from/);
+  const set = fs.readFileSync(path.join(root, 'src/app/(tabs)/settings/index.tsx'), 'utf8');
+  assert.match(set, /right=\{sw\(cm\.active, /);
+  const smart = fs.readFileSync(path.join(root, 'src/components/Smart.tsx'), 'utf8');
+  assert.equal((smart.match(/accessibilityLiveRegion=\{urgent \? 'polite' : 'none'\}/g) || []).length, 2);
+  assert.match(fs.readFileSync(path.join(root, 'src/components/Transit.tsx'), 'utf8'), /accessibilityLiveRegion=\{offlineAt \? 'polite' : 'none'\}/);
+  assert.ok(!/'Plat\. '/.test(fs.readFileSync(path.join(root, 'src/components/Transit.tsx'), 'utf8')));
+  assert.match(fs.readFileSync(path.join(root, 'src/app/stop/[id].tsx'), 'utf8'), /title="Can't load this stop" body=\{error\} action=\{<Button title="Try again"/);
+  const ss = fs.readFileSync(path.join(root, 'src/lib/stopSearch.ts'), 'utf8');
+  assert.match(ss, /\.catch\(\(\) => \{ if \(live\) setFailed\(key\); \}\)/);
+  for (const f of ['src/app/add-trip.tsx', 'src/app/welcome.tsx']) assert.match(fs.readFileSync(path.join(root, f), 'utf8'), /failed \? SEARCH_FAILED_TEXT : 'No stops match that'/, f);
+  const trip = fs.readFileSync(path.join(root, 'src/app/trip.tsx'), 'utf8');
+  assert.ok(!/function hms\(/.test(trip) && /Updated \$\{rowTime\(updatedAt\)\}/.test(trip));
+});

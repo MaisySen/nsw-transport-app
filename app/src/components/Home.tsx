@@ -810,7 +810,7 @@ function ServiceRowView({ j, now, arrive, beaten, onPress, showTravel }: Service
   const tc = cancelled || j.warn ? null : tightChange(j.legs);
   return (
     <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }}
-      accessibilityLabel={`Leaves ${fromText ? `${fromText} at ` : ''}${depT}, ${showTravel ? `${t.big} ${t.unit}` : left.a11y}, arrives ${toText ? `${toText} at ` : ''}${arrT}, ${stt.text}${lineWords ? `, ${lineWords}` : ''}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}${tc ? `, ${tightA11y(tc)}` : ''}${wn ? `. ${wn.a11y}` : ''}${rel ? `. ${rel}` : ''}`}
+      accessibilityLabel={`Leaves ${fromText ? `${fromText} at ` : ''}${depT}, ${showTravel ? `${t.big} ${t.unit}` : left.a11y}, arrives ${toText ? `${toText} at ` : ''}${arrT}, ${stt.text}${l?.platformChangedFrom ? `, platform changed from ${plat(l.platformChangedFrom)}${boardAt ? ` to ${boardAt}` : ''}` : ''}${lineWords ? `, ${lineWords}` : ''}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}${tc ? `, ${tightA11y(tc)}` : ''}${wn ? `. ${wn.a11y}` : ''}${rel ? `. ${rel}` : ''}`}
       style={({ pressed }) => [s.svc, (beaten || dep < now - 30000) && { opacity: 0.45 }, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
       <View style={[s.block, { backgroundColor: chip + (c.dark ? '33' : '1F') }]}>
         <Text maxFontSizeMultiplier={1.3} style={{ color: cdText(chip, c), fontSize: bigSize, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }} numberOfLines={1} adjustsFontSizeToFit>{t.big}</Text>
@@ -843,7 +843,7 @@ function ServiceRowView({ j, now, arrive, beaten, onPress, showTravel }: Service
             ) : null}
           </View>
         </View>
-        {l?.platformChangedFrom ? <T kind="foot" numberOfLines={1} style={{ color: c.lateText, marginTop: 2 }}>Platform changed from {plat(l.platformChangedFrom)}{boardAt ? ` to ${boardAt}` : ''}</T> : null}
+        {l?.platformChangedFrom ? <T kind="foot" numberOfLines={2} style={{ color: c.lateText, marginTop: 2 }}>Platform changed from {plat(l.platformChangedFrom)}{boardAt ? ` to ${boardAt}` : ''}</T> : null}
         {tc ? <TightLabel style={{ marginTop: 2 }} /> : null}
         <WhereNow w={wn} style={{ marginTop: 2 }} />
         <OccupancyChip o={l?.occupancy} style={{ marginTop: 3 }} />

@@ -386,7 +386,7 @@ function SetupRow({ icon, title, sub, action, onPress }: { icon: any; title: str
         <T kind="foot" tone="text2">{sub}</T>
       </View>
       {action ? (
-        <Pressable onPress={onPress} hitSlop={6} style={({ pressed }) => [{ backgroundColor: c.tint, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6, opacity: pressed ? 0.7 : 1 }]} accessibilityRole="button">
+        <Pressable onPress={onPress} hitSlop={8} style={({ pressed }) => [{ backgroundColor: c.tint, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6, minHeight: 32, justifyContent: 'center', opacity: pressed ? 0.7 : 1 }]} accessibilityRole="button" accessibilityLabel={`${action}, ${title}`}>
           <Text maxFontSizeMultiplier={1.4} style={{ color: Platform.OS === 'android' && c.dark ? '#062E6F' : '#fff', fontWeight: '600', fontSize: 14 }}>{action}</Text>
         </Pressable>
       ) : null}

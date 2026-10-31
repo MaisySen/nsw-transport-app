@@ -35,7 +35,7 @@ import { nowA11y, nowLabel, pastNowSplit } from '@/lib/pastNowCore';
 import { WhenPicker } from '@/components/WhenPicker';
 import type { When } from '@/lib/planCore';
 import type { Departure } from '@/lib/types';
-import { Chip, Empty, Screen, Sep, T } from '@/components/ui';
+import { Button, Chip, Empty, Screen, Sep, T } from '@/components/ui';
 import { StationInfo } from '@/components/Access';
 import { CarParkRow } from '@/components/CarParkRow';
 import * as WebBrowser from 'expo-web-browser';
@@ -380,7 +380,7 @@ export default function StopScreen() {
         {data && !items.length ? <Empty icon={I.clock} title={route ? `No more ${route} services` : 'No more services'} body={at == null ? 'Nothing is due from here in the next few hours.' : 'Nothing is due from here around that time.'} /> : null}
 
         {!data && error && at != null ? <T kind="sub" tone="text2" style={{ marginHorizontal: 32, marginTop: 16 }} accessibilityLiveRegion="polite">{error}</T> : null}
-        {!data && error && at == null ? <Empty icon={I.warn} title="Can't load this stop" body={error} /> : null}
+        {!data && error && at == null ? <Empty icon={I.warn} title="Can't load this stop" body={error} action={<Button title="Try again" onPress={() => refresh()} />} /> : null}
         {/* Instant paint (30 Oct): placeholder rows of a fixed height while the first board is on its way (a first open
             with no kept copy and no timetable pack, or another time), never a spinner on an empty screen. */}
         {!data && !error ? <SkeletonRows count={5} label={at != null ? 'Loading departures at that time' : 'Loading departures'} /> : null}

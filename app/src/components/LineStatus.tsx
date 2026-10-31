@@ -34,7 +34,7 @@ export function LineStatusStrip({ now }: { now: number }) {
           const tap = r.status !== 'good' && !!safeUrl(r.url);
           return (
             <Pressable key={r.line} disabled={!tap} onPress={() => open(r)} accessibilityRole={tap ? 'link' : 'text'}
-              accessibilityLabel={`${r.line}: ${r.label}${r.title ? '. ' + r.title : ''}`} android_ripple={tap ? { color: c.fill } : undefined}
+              hitSlop={{ top: 4, bottom: 4 }} accessibilityLabel={`${r.line}: ${r.label}${r.title ? '. ' + r.title : ''}`} android_ripple={tap ? { color: c.fill } : undefined}
               style={({ pressed }) => [st.chip, { backgroundColor: c.card, borderRadius: Platform.OS === 'android' ? 8 : radius, opacity: pressed && Platform.OS !== 'android' ? 0.6 : 1 }]}>
               <LineBadge line={r.line} mode={r.mode} color={r.color} />
               <T kind="foot" style={{ marginLeft: 6, color: tone(c, r), fontWeight: r.status === 'good' ? '400' : '600' }}>{r.label}</T>
