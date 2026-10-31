@@ -412,7 +412,167 @@ export function forecastPhase(P, Mw, snap, t, reloadT = -Infinity) {
   return f;
 }
 
-export function simulate(caseDef) {
+// One step of the trip on reading S (the reference engine). env: { c24, lead (s the server sends early), reread(),
+// deliver(ring, age, byVehicle), log(t, what) }. M is updated in place.
+export function refStepTrip(P, M, t, S, env) {
+  const ph = { c24: !!env.c24 };
+  const deliver = (_t, ring, age, byVehicle) => env.deliver(ring, age, byVehicle);
+  const rereadFor = () => (env.reread ? env.reread() : null);
+  const setPhase = (li, name, tt, why) => {
+    const m = M.legs[li];
+    if (P_[name] > m.phase) {
+      for (let k = m.phase + 1; k <= P_[name]; k++) if (m.phaseAt[PHASES[k]] == null) { m.phaseAt[PHASES[k]] = tt; m.phaseWhy[PHASES[k]] = k === P_[name] ? why : `with ${name}`; }
+      m.phase = P_[name];
+      env.log(tt, `leg ${li + 1}: ${name} (${why})`);
+    }
+  };
+  const li = M.current;
+  const m = M.legs[li];
+  if (m.phase >= P_.ended) return;
+  const leg0 = P.legs[li];
+  const isLast = li === lastLeg(P);
+  // trip end
+  if (m.phase >= P_.arrived) {
+    if (isLast && t >= m.arrivedAt + RULES.ENDED_AFTER) setPhase(li, 'ended', t, '2 min after Arrived');
+    return;
+  }
+  const L = S.legs[li];
+  const age = t - S.asOf;
+  const fresh = age < RULES.LIVE_FRESH;
+  // cancellation (live only)
+  if (fresh && L && L.cancelled && !m.cancelAlerted && m.phase < P_.left) {
+    m.cancelAlerted = true;
+    const alt = L.next != null ? P.legs.findIndex((x) => x.id === L.next) : -1;
+    const C = (x) => clock(x, ph.c24);
+    let body = 'No next service found yet.', say = `Your ${C(leg0.stops[0].tt)} ${leg0.line} is cancelled.`;
+    if (alt >= 0) {
+      m.replaced = alt; M.legs[li].replacedWhy = 'cancelled';
+      const at = legTimes(P, M, S, li, t);
+      body = `Next ${P.legs[alt].line} ${C(at.dep.at)}, Platform ${at.platform}.`;
+      say += ` The next ${P.legs[alt].line} leaves at ${C(at.dep.at)}, from Platform ${at.platform}.`;
+    }
+    deliver(t, { kind: 'cancelled', title: `${C(leg0.stops[0].tt)} ${leg0.line} cancelled`, body, level: 'normal', say, moment: `cancel:${li}` }, age, false);
+  }
+  const e = evidence(P, M, S, li, t);
+  const tm = legTimes(P, M, S, li, t);
+  const leg = P.legs[eff(M, li)];
+  const C = (x) => clock(x, ph.c24);
+  const offName = leg.stops[leg.off].name;
+  const nextVis = isLast ? null : P.legs[eff(M, li + 1)];
+  // missed change: live times say the change will be missed -> count to the next found service
+  if (!isLast && fresh && M.legs[li + 1].replaced == null) {
+    const ntm = legTimes(P, M, S, li + 1, t);
+    if (isLive(tm.arr) && isLive(ntm.dep) && tm.arr.at + RULES.CHANGE_MIN > ntm.dep.at) {
+      const alt = P.legs.findIndex((x) => x.alt && x.forLeg === li + 1);
+      if (alt >= 0) {
+        const missed = P.legs[li + 1];
+        M.legs[li + 1].replaced = alt; M.legs[li + 1].replacedWhy = 'missed';
+        const a2 = legTimes(P, M, S, li + 1, t);
+        const dl = isLive(tm.dep) && m.phase < P_.left ? delayMin(tm.dep) : 0;
+        const lateWords = Math.abs(dl) >= RULES.DELAY_ALERT ? `Your ${leg.line} is running ${dl} min late. ` : '';
+        if (lateWords) m.delayAlerted = dl; // one alert carries both
+        deliver(t, { kind: 'missed', title: `You'll miss the ${C(missed.stops[0].tt)} ${missed.line}`, body: `${lateWords}Next ${P.legs[alt].line} ${C(a2.dep.at)}, Platform ${a2.platform}.`, level: 'normal', say: `You'll miss the ${C(missed.stops[0].tt)} ${missed.line}. The next one leaves at ${C(a2.dep.at)}, from Platform ${a2.platform}.`, moment: `missed:${li + 1}` }, age, false);
+      }
+    }
+  }
+  // before the train leaves: delay and platform alerts, one per change (spec 2.3)
+  if (m.phase < P_.left && fresh && !(L && L.cancelled && m.replaced == null)) {
+    if (isLive(tm.dep)) {
+      const d = delayMin(tm.dep);
+      const prev = m.delayAlerted;
+      if ((prev == null && Math.abs(d) >= RULES.DELAY_ALERT) || (prev != null && Math.abs(d - prev) >= RULES.DELAY_ALERT)) {
+        m.delayAlerted = d;
+        const words = d === 0 ? 'back on time' : d > 0 ? `running ${d} min late` : `running ${-d} min early`;
+        deliver(t, { kind: 'delay', title: `${leg.line} ${words}`, body: `Now leaves ${C(tm.dep.at)}${leg.mode === 'bus' ? ` from ${leg.stand || 'the stand'}` : ` from Platform ${tm.platform}`}.`, level: 'normal', say: `Your ${leg.line} is ${words.replace('min', 'minutes')}. It now leaves at ${C(tm.dep.at)}${leg.mode === 'bus' ? '' : `, from Platform ${tm.platform}`}.`, moment: `delay:${li}:${d}` }, age, false);
+      }
+    }
+    if (tm.platformChanged && m.platformAlerted !== tm.platform) {
+      m.platformAlerted = tm.platform;
+      deliver(t, { kind: 'platform', title: `Platform change: now Platform ${tm.platform}`, body: `${leg.line} ${C(tm.dep.at)} now leaves from Platform ${tm.platform} (was ${leg.platform}).`, level: 'normal', say: `Platform change. Your ${leg.line} now leaves from Platform ${tm.platform}.`, moment: `platform:${li}:${tm.platform}` }, age, false);
+    }
+  }
+  // phases from the live train (spec 2.2)
+  if (m.phase < P_.due && e.fresh && isLive(tm.dep) && t >= tm.dep.at) setPhase(li, 'due', t, `live departure ${clockSec(tm.dep.at)} (${tm.dep.source}) came, reading ${age}s old`);
+  if (m.phase < P_.onTheWay && e.leftBoard) setPhase(li, 'onTheWay', t, `left ${leg.stops[0].name}: ${e.leftBoard}`);
+  if (m.phase < P_.onTheWay) return;
+  const moment = (k) => m.rung[k];
+  const changeWords = nextVis ? { head: `${offName} is next. Change there for the ${nextVis.line}.`, off: `Get off now. ${offName}, change for the ${nextVis.line}.` } : null;
+  // 1) already past the stop before anything rang: quiet note, trip ends
+  if (e.passed && !moment('getoff') && !moment('arrived')) {
+    m.rung.passed = t; m.rung.headsup = m.rung.headsup || 'skipped'; m.rung.getoff = 'skipped'; m.rung.arrived = 'skipped';
+    deliver(t, { kind: 'passed', quiet: true, title: `Your ${leg.mode === 'bus' ? 'bus' : 'train'} passed ${offName}`, body: `Your ${leg.mode === 'bus' ? 'bus' : 'train'} passed ${offName} at ${C(tm.arr.at)}.`, level: 'passive', moment: `passed:${li}` }, age, false);
+    m.arrivedAt = t; m.arrivedTime = tm.arr.at;
+    setPhase(li, 'arrived', t, `passed ${offName}: ${e.passed}`);
+    if (isLast) setPhase(li, 'ended', t, 'passed the stop: trip ends');
+    return;
+  }
+  // 2) at the stop
+  if (e.arrived) {
+    const arrivedTime = e.arrived === 'vehicle' ? Math.min(t, isLive(tm.arr) ? Math.max(tm.arr.at, t - RULES.LIVE_FRESH) : t) : tm.arr.at;
+    m.arrivedAt = t; m.arrivedTime = arrivedTime;
+    if (!moment('getoff')) {
+      m.rung.getoff = t; m.rung.arrived = 'with getoff'; if (!moment('headsup')) m.rung.headsup = 'skipped';
+      deliver(t, { kind: 'atstop', title: `${offName} now`, body: `${offName} now. Get off here.`, level: 'time sensitive', clip: 'getoff', say: `${offName} now. Get off here.`, moment: `getoff:${li}`, expires: t + RULES.GETOFF_EXPIRE }, age, e.arrived === 'vehicle');
+    } else {
+      m.rung.arrived = t;
+      const say = nextVis ? `You're at ${offName}. Change to the ${nextVis.line}.` : `You've arrived at ${offName}.`;
+      const nt = nextVis ? legTimes(P, M, S, li + 1, t) : null;
+      deliver(t, { kind: 'arrived', title: nextVis ? `At ${offName}: change here` : `Arrived at ${offName}`, body: nextVis ? `Change to the ${nextVis.line}, Platform ${nt.platform}, leaves ${C(nt.dep.at)}.` : `You've arrived at ${offName}. ${C(arrivedTime)}.`, level: 'normal', clip: nextVis ? null : 'arrived', say, moment: `arrived:${li}`, expires: t + RULES.ENDED_AFTER }, age, e.arrived === 'vehicle');
+    }
+    setPhase(li, 'arrived', t, `at ${offName}: ${e.arrived}`);
+    if (!isLast) { M.current = li + 1; env.log(t, `now on leg ${li + 2}`); }
+    return;
+  }
+  // 3) Get off now at the live arrival minus 30 s
+  const lead = env.lead ?? 0;
+  const prevArr = m.lastArrAt; m.lastArrAt = isLive(tm.arr) ? tm.arr.at : prevArr;
+  if (!moment('getoff') && !moment('getoffQuiet') && isLive(tm.arr) && t >= tm.arr.at - RULES.GETOFF_LEAD - lead) {
+    // read once more at the fire moment, so a jump in the last seconds moves the timer
+    const S2 = rereadFor(t) || S;
+    const tm2 = legTimes(P, M, S2, li, t);
+    const age2 = t - S2.asOf;
+    const e2 = evidence(P, M, S2, li, t);
+    if (e2.arrived || e2.passed) return; // handled next second as at-the-stop / passed
+    if (isLive(tm2.arr) && t >= tm2.arr.at - RULES.GETOFF_LEAD - lead) {
+      if (age2 < RULES.LIVE_FRESH) {
+        m.rung.getoff = t; if (!moment('headsup')) m.rung.headsup = 'skipped';
+        deliver(t, { kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}, arriving ${C(tm2.arr.at)}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + RULES.GETOFF_EXPIRE, target: tm2.arr.at - RULES.GETOFF_LEAD, arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - RULES.GETOFF_LEAD - lead > t - 1 && tm2.arr.at < prevArr }, age2, false);
+        setPhase(li, 'getOff', t, `live arrival ${clockSec(tm2.arr.at)} minus 30 s, reading ${age2}s old`);
+      } else if (age2 < RULES.LIVE_CAP) {
+        m.rung.getoffQuiet = t;
+        deliver(t, { kind: 'quiet', quiet: true, title: `${offName} about ${C(tm2.arr.at)}`, body: `${offName} about ${C(tm2.arr.at)}. No live update since ${C(S2.asOf)}.`, level: 'passive', moment: `quiet:${li}` }, age2, false);
+      }
+      return;
+    }
+  }
+  // 4) heads-up: the stop before is left, or the live arrival is 2 min away (never before leaving)
+  const headsUpNow = e.leftBefore || (e.fresh && isLive(tm.arr) && tm.arr.at - t <= RULES.HEADSUP_WINDOW);
+  if (!moment('headsup') && headsUpNow) {
+    m.rung.headsup = t;
+    deliver(t, { kind: 'headsup', title: `${offName} is next`, body: changeWords ? changeWords.head : `${offName} is next. Arriving about ${C(tm.arr.at)}. Get ready to get off.`, level: 'normal', clip: 'headsup', say: changeWords ? changeWords.head : `${offName} is next. Get ready to get off.`, moment: `headsup:${li}`, expires: tm.arr.at, arrSource: tm.arr.source }, age, false);
+    setPhase(li, 'nextStop', t, e.leftBefore ? `left ${leg.stops[leg.off - 1]?.name || leg.stops[0].name}: ${e.leftBefore}` : `live arrival ${clockSec(tm.arr.at)} is 2 min away`);
+  }
+}
+
+// In-app speech for one moment (spec 2.7 V1 to V5), the reference rule.
+export function refVoiceGate(v, t, say, readingAge, byVehicle) {
+  const no = (why) => ({ words: null, why, start: t, until: v.speakingUntil });
+  if (!say) return no('no spoken cue for this alert');
+  if (v.silent) return no('Silent switch on (ambient session)');
+  if (t - v.openSince < RULES.VOICE_OPEN_FOR) return no('app open under 10 s (V1)');
+  if (v.refreshes <= RULES.VOICE_SILENT_REFRESHES) return no('first two refreshes after opening (V4)');
+  if (!byVehicle && readingAge >= RULES.VOICE_FRESH) return no('live reading over 60 s old (V2)');
+  const start = Math.max(t, v.speakingUntil);
+  if (start - t > RULES.VOICE_QUEUE_MAX) return no('waited over 30 s in the speech queue (V5)');
+  return { words: say, why: null, start, until: start + Math.ceil(say.length / 14) };
+}
+
+// The engine a run is played on. The reference engine is this file; sim/realEngine.mjs gives the same shape from the
+// app's real trip code (app/src/lib/tripState.ts) so the cases run on what ships.
+export const referenceEngine = { name: 'reference', legTimes, evidence, renderModel, forecastPhase, sig, stepTrip: refStepTrip, voiceGate: refVoiceGate };
+
+// engine: the trip code the run is played on: referenceEngine (this file) or the real app code (sim/realEngine.mjs).
+export function simulate(caseDef, engine = referenceEngine) {
   const P = prepare(caseDef);
   const M = newMemory(P);
   const out = { id: P.id, P, M, frames: [], rings: [], voice: [], pushes: [], log: [] };
@@ -423,15 +583,6 @@ export function simulate(caseDef) {
   let speakingUntil = -1;
   let backup = null; // the phone's own Get off now, only when the server cannot take it
   const log = (t, what) => out.log.push({ t, what });
-
-  const setPhase = (li, name, t, why) => {
-    const m = M.legs[li];
-    if (P_[name] > m.phase) {
-      for (let k = m.phase + 1; k <= P_[name]; k++) if (m.phaseAt[PHASES[k]] == null) { m.phaseAt[PHASES[k]] = t; m.phaseWhy[PHASES[k]] = k === P_[name] ? why : `with ${name}`; }
-      m.phase = P_[name];
-      log(t, `leg ${li + 1}: ${name} (${why})`);
-    }
-  };
 
   // ---- delivering one moment to the person (spec 2.6 who rings; 2.7 voice) ----
   function deliver(t, ring, readingAge, byVehicle) {
@@ -460,17 +611,9 @@ export function simulate(caseDef) {
     // voice
     let v = null;
     if (!ring.quiet && open && ring.say) {
-      let why = null;
-      if (ph.silent) why = 'Silent switch on (ambient session)';
-      else if (t - openSince < RULES.VOICE_OPEN_FOR) why = 'app open under 10 s (V1)';
-      else if (refreshes <= RULES.VOICE_SILENT_REFRESHES) why = 'first two refreshes after opening (V4)';
-      else if (!byVehicle && readingAge >= RULES.VOICE_FRESH) why = 'live reading over 60 s old (V2)';
-      if (why) v = { t, kind: ring.kind, words: null, why };
-      else {
-        const start = Math.max(t, speakingUntil);
-        if (start - t > RULES.VOICE_QUEUE_MAX) v = { t, kind: ring.kind, words: null, why: 'waited over 30 s in the speech queue (V5)' };
-        else { v = { t: start, kind: ring.kind, words: ring.say, by: 'in-app voice' }; speakingUntil = start + Math.ceil(ring.say.length / 14); }
-      }
+      const g = engine.voiceGate({ open, silent: ph.silent, openSince, refreshes, speakingUntil }, t, ring.say, readingAge, byVehicle);
+      if (g.words) { v = { t: g.start, kind: ring.kind, words: g.words, by: 'in-app voice' }; speakingUntil = g.until; }
+      else v = { t, kind: ring.kind, words: null, why: g.why };
     } else if (!ring.quiet && !open && server && ring.clip) {
       v = ph.silent ? { t, kind: ring.kind, words: null, why: 'Silent switch on: clip muted' } : { t: r.lands ?? t, kind: ring.kind, words: CLIPS[ring.clip].words, by: `alert sound ${CLIPS[ring.clip].file}` };
     } else if (!ring.quiet) {
@@ -487,135 +630,6 @@ export function simulate(caseDef) {
     return null;
   };
 
-  function stepTrip(t, S) {
-    const li = M.current;
-    const m = M.legs[li];
-    if (m.phase >= P_.ended) return;
-    const leg0 = P.legs[li];
-    const isLast = li === lastLeg(P);
-    // trip end
-    if (m.phase >= P_.arrived) {
-      if (isLast && t >= m.arrivedAt + RULES.ENDED_AFTER) setPhase(li, 'ended', t, '2 min after Arrived');
-      return;
-    }
-    const L = S.legs[li];
-    const age = t - S.asOf;
-    const fresh = age < RULES.LIVE_FRESH;
-    // cancellation (live only)
-    if (fresh && L && L.cancelled && !m.cancelAlerted && m.phase < P_.left) {
-      m.cancelAlerted = true;
-      const alt = L.next != null ? P.legs.findIndex((x) => x.id === L.next) : -1;
-      const C = (x) => clock(x, ph.c24);
-      let body = 'No next service found yet.', say = `Your ${C(leg0.stops[0].tt)} ${leg0.line} is cancelled.`;
-      if (alt >= 0) {
-        m.replaced = alt; M.legs[li].replacedWhy = 'cancelled';
-        const at = legTimes(P, M, S, li, t);
-        body = `Next ${P.legs[alt].line} ${C(at.dep.at)}, Platform ${at.platform}.`;
-        say += ` The next ${P.legs[alt].line} leaves at ${C(at.dep.at)}, from Platform ${at.platform}.`;
-      }
-      deliver(t, { kind: 'cancelled', title: `${C(leg0.stops[0].tt)} ${leg0.line} cancelled`, body, level: 'normal', say, moment: `cancel:${li}` }, age, false);
-    }
-    const e = evidence(P, M, S, li, t);
-    const tm = legTimes(P, M, S, li, t);
-    const leg = P.legs[eff(M, li)];
-    const C = (x) => clock(x, ph.c24);
-    const offName = leg.stops[leg.off].name;
-    const nextVis = isLast ? null : P.legs[eff(M, li + 1)];
-    // missed change: live times say the change will be missed -> count to the next found service
-    if (!isLast && fresh && M.legs[li + 1].replaced == null) {
-      const ntm = legTimes(P, M, S, li + 1, t);
-      if (isLive(tm.arr) && isLive(ntm.dep) && tm.arr.at + RULES.CHANGE_MIN > ntm.dep.at) {
-        const alt = P.legs.findIndex((x) => x.alt && x.forLeg === li + 1);
-        if (alt >= 0) {
-          const missed = P.legs[li + 1];
-          M.legs[li + 1].replaced = alt; M.legs[li + 1].replacedWhy = 'missed';
-          const a2 = legTimes(P, M, S, li + 1, t);
-          const dl = isLive(tm.dep) && m.phase < P_.left ? delayMin(tm.dep) : 0;
-          const lateWords = Math.abs(dl) >= RULES.DELAY_ALERT ? `Your ${leg.line} is running ${dl} min late. ` : '';
-          if (lateWords) m.delayAlerted = dl; // one alert carries both
-          deliver(t, { kind: 'missed', title: `You'll miss the ${C(missed.stops[0].tt)} ${missed.line}`, body: `${lateWords}Next ${P.legs[alt].line} ${C(a2.dep.at)}, Platform ${a2.platform}.`, level: 'normal', say: `You'll miss the ${C(missed.stops[0].tt)} ${missed.line}. The next one leaves at ${C(a2.dep.at)}, from Platform ${a2.platform}.`, moment: `missed:${li + 1}` }, age, false);
-        }
-      }
-    }
-    // before the train leaves: delay and platform alerts, one per change (spec 2.3)
-    if (m.phase < P_.left && fresh && !(L && L.cancelled && m.replaced == null)) {
-      if (isLive(tm.dep)) {
-        const d = delayMin(tm.dep);
-        const prev = m.delayAlerted;
-        if ((prev == null && Math.abs(d) >= RULES.DELAY_ALERT) || (prev != null && Math.abs(d - prev) >= RULES.DELAY_ALERT)) {
-          m.delayAlerted = d;
-          const words = d === 0 ? 'back on time' : d > 0 ? `running ${d} min late` : `running ${-d} min early`;
-          deliver(t, { kind: 'delay', title: `${leg.line} ${words}`, body: `Now leaves ${C(tm.dep.at)}${leg.mode === 'bus' ? ` from ${leg.stand || 'the stand'}` : ` from Platform ${tm.platform}`}.`, level: 'normal', say: `Your ${leg.line} is ${words.replace('min', 'minutes')}. It now leaves at ${C(tm.dep.at)}${leg.mode === 'bus' ? '' : `, from Platform ${tm.platform}`}.`, moment: `delay:${li}:${d}` }, age, false);
-        }
-      }
-      if (tm.platformChanged && m.platformAlerted !== tm.platform) {
-        m.platformAlerted = tm.platform;
-        deliver(t, { kind: 'platform', title: `Platform change: now Platform ${tm.platform}`, body: `${leg.line} ${C(tm.dep.at)} now leaves from Platform ${tm.platform} (was ${leg.platform}).`, level: 'normal', say: `Platform change. Your ${leg.line} now leaves from Platform ${tm.platform}.`, moment: `platform:${li}:${tm.platform}` }, age, false);
-      }
-    }
-    // phases from the live train (spec 2.2)
-    if (m.phase < P_.due && e.fresh && isLive(tm.dep) && t >= tm.dep.at) setPhase(li, 'due', t, `live departure ${clockSec(tm.dep.at)} (${tm.dep.source}) came, reading ${age}s old`);
-    if (m.phase < P_.onTheWay && e.leftBoard) setPhase(li, 'onTheWay', t, `left ${leg.stops[0].name}: ${e.leftBoard}`);
-    if (m.phase < P_.onTheWay) return;
-    const moment = (k) => m.rung[k];
-    const changeWords = nextVis ? { head: `${offName} is next. Change there for the ${nextVis.line}.`, off: `Get off now. ${offName}, change for the ${nextVis.line}.` } : null;
-    // 1) already past the stop before anything rang: quiet note, trip ends
-    if (e.passed && !moment('getoff') && !moment('arrived')) {
-      m.rung.passed = t; m.rung.headsup = m.rung.headsup || 'skipped'; m.rung.getoff = 'skipped'; m.rung.arrived = 'skipped';
-      deliver(t, { kind: 'passed', quiet: true, title: `Your ${leg.mode === 'bus' ? 'bus' : 'train'} passed ${offName}`, body: `Your ${leg.mode === 'bus' ? 'bus' : 'train'} passed ${offName} at ${C(tm.arr.at)}.`, level: 'passive', moment: `passed:${li}` }, age, false);
-      m.arrivedAt = t; m.arrivedTime = tm.arr.at;
-      setPhase(li, 'arrived', t, `passed ${offName}: ${e.passed}`);
-      if (isLast) setPhase(li, 'ended', t, 'passed the stop: trip ends');
-      return;
-    }
-    // 2) at the stop
-    if (e.arrived) {
-      const arrivedTime = e.arrived === 'vehicle' ? Math.min(t, isLive(tm.arr) ? Math.max(tm.arr.at, t - RULES.LIVE_FRESH) : t) : tm.arr.at;
-      m.arrivedAt = t; m.arrivedTime = arrivedTime;
-      if (!moment('getoff')) {
-        m.rung.getoff = t; m.rung.arrived = 'with getoff'; if (!moment('headsup')) m.rung.headsup = 'skipped';
-        deliver(t, { kind: 'atstop', title: `${offName} now`, body: `${offName} now. Get off here.`, level: 'time sensitive', clip: 'getoff', say: `${offName} now. Get off here.`, moment: `getoff:${li}`, expires: t + RULES.GETOFF_EXPIRE }, age, e.arrived === 'vehicle');
-      } else {
-        m.rung.arrived = t;
-        const say = nextVis ? `You're at ${offName}. Change to the ${nextVis.line}.` : `You've arrived at ${offName}.`;
-        const nt = nextVis ? legTimes(P, M, S, li + 1, t) : null;
-        deliver(t, { kind: 'arrived', title: nextVis ? `At ${offName}: change here` : `Arrived at ${offName}`, body: nextVis ? `Change to the ${nextVis.line}, Platform ${nt.platform}, leaves ${C(nt.dep.at)}.` : `You've arrived at ${offName}. ${C(arrivedTime)}.`, level: 'normal', clip: nextVis ? null : 'arrived', say, moment: `arrived:${li}`, expires: t + RULES.ENDED_AFTER }, age, e.arrived === 'vehicle');
-      }
-      setPhase(li, 'arrived', t, `at ${offName}: ${e.arrived}`);
-      if (!isLast) { M.current = li + 1; log(t, `now on leg ${li + 2}`); }
-      return;
-    }
-    // 3) Get off now at the live arrival minus 30 s
-    const lead = ph.app === 'open' ? 0 : P.server.reachable ? RULES.SERVER_DELIVERY : 0;
-    const prevArr = m.lastArrAt; m.lastArrAt = isLive(tm.arr) ? tm.arr.at : prevArr;
-    if (!moment('getoff') && !moment('getoffQuiet') && isLive(tm.arr) && t >= tm.arr.at - RULES.GETOFF_LEAD - lead) {
-      // read once more at the fire moment, so a jump in the last seconds moves the timer
-      const S2 = rereadFor(t) || S;
-      const tm2 = legTimes(P, M, S2, li, t);
-      const age2 = t - S2.asOf;
-      const e2 = evidence(P, M, S2, li, t);
-      if (e2.arrived || e2.passed) return; // handled next second as at-the-stop / passed
-      if (isLive(tm2.arr) && t >= tm2.arr.at - RULES.GETOFF_LEAD - lead) {
-        if (age2 < RULES.LIVE_FRESH) {
-          m.rung.getoff = t; if (!moment('headsup')) m.rung.headsup = 'skipped';
-          deliver(t, { kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}, arriving ${C(tm2.arr.at)}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + RULES.GETOFF_EXPIRE, target: tm2.arr.at - RULES.GETOFF_LEAD, arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - RULES.GETOFF_LEAD - lead > t - 1 && tm2.arr.at < prevArr }, age2, false);
-          setPhase(li, 'getOff', t, `live arrival ${clockSec(tm2.arr.at)} minus 30 s, reading ${age2}s old`);
-        } else if (age2 < RULES.LIVE_CAP) {
-          m.rung.getoffQuiet = t;
-          deliver(t, { kind: 'quiet', quiet: true, title: `${offName} about ${C(tm2.arr.at)}`, body: `${offName} about ${C(tm2.arr.at)}. No live update since ${C(S2.asOf)}.`, level: 'passive', moment: `quiet:${li}` }, age2, false);
-        }
-        return;
-      }
-    }
-    // 4) heads-up: the stop before is left, or the live arrival is 2 min away (never before leaving)
-    const headsUpNow = e.leftBefore || (e.fresh && isLive(tm.arr) && tm.arr.at - t <= RULES.HEADSUP_WINDOW);
-    if (!moment('headsup') && headsUpNow) {
-      m.rung.headsup = t;
-      deliver(t, { kind: 'headsup', title: `${offName} is next`, body: changeWords ? changeWords.head : `${offName} is next. Arriving about ${C(tm.arr.at)}. Get ready to get off.`, level: 'normal', clip: 'headsup', say: changeWords ? changeWords.head : `${offName} is next. Get ready to get off.`, moment: `headsup:${li}`, expires: tm.arr.at, arrSource: tm.arr.source }, age, false);
-      setPhase(li, 'nextStop', t, e.leftBefore ? `left ${leg.stops[leg.off - 1]?.name || leg.stops[0].name}: ${e.leftBefore}` : `live arrival ${clockSec(tm.arr.at)} is 2 min away`);
-    }
-  }
-
   for (let t = P.start; t <= P.end; t++) {
     // phone state
     let justOpened = false, wentAway = false;
@@ -631,7 +645,7 @@ export function simulate(caseDef) {
     if (ph.app === 'open' && (justOpened || t - lastPhonePoll >= RULES.PHONE_POLL)) { phoneSnap = snapshot(P, t); lastPhonePoll = t; refreshes++; }
     if (P.server.reachable && !serverDone) {
       const ref = newest(serverSnap, phoneSnap);
-      const near = ref && (() => { const tm = legTimes(P, M, ref, M.current, t); return isLive(tm.arr) && tm.arr.at - t < RULES.NEAR && M.legs[M.current].phase >= P_.onTheWay; })();
+      const near = ref && (() => { const tm = engine.legTimes(P, M, ref, M.current, t); return isLive(tm.arr) && tm.arr.at - t < RULES.NEAR && M.legs[M.current].phase >= P_.onTheWay; })();
       const every = near ? RULES.SERVER_POLL_NEAR : RULES.SERVER_POLL;
       if (serverSnap == null || (t % every === 0 && t > lastServerPoll)) { serverSnap = snapshot(P, t); lastServerPoll = t; }
     }
@@ -641,12 +655,15 @@ export function simulate(caseDef) {
     }
     // backup on the phone, only when the server cannot take Get off now
     if (wentAway && !P.server.reachable && phoneSnap && t - phoneSnap.asOf < RULES.PHONE_WRITE_MAX_AGE) {
-      const tm = legTimes(P, M, phoneSnap, M.current, t);
+      const tm = engine.legTimes(P, M, phoneSnap, M.current, t);
       if (isLive(tm.arr) && tm.arr.at - t < RULES.NEAR && !M.legs[M.current].rung.getoff) { backup = { at: tm.arr.at - RULES.GETOFF_LEAD, arrAt: tm.arr.at, li: M.current }; log(t, `backup Get off now set on the phone for ${clockSec(backup.at)}`); }
     }
     if (ph.app === 'open') backup = null;
     const S = newest(phoneSnap, P.server.reachable ? serverSnap : null);
-    if (S) stepTrip(t, S);
+    if (S) {
+      const lead = ph.app === 'open' ? 0 : P.server.reachable ? RULES.SERVER_DELIVERY : 0;
+      engine.stepTrip(P, M, t, S, { c24: ph.c24, lead, reread: () => rereadFor(t), deliver: (ring, age, byVehicle) => deliver(t, ring, age, byVehicle), log });
+    }
     if (backup && t >= backup.at && !M.legs[backup.li].rung.getoff) {
       const leg = P.legs[eff(M, backup.li)];
       M.legs[backup.li].rung.getoff = t;
@@ -659,8 +676,8 @@ export function simulate(caseDef) {
     const opts = { c24: ph.c24, size: ph.size };
     if (ph.app === 'open' && phoneSnap && t - phoneSnap.asOf < RULES.PHONE_WRITE_MAX_AGE) phoneCard = phoneSnap;
     if (P.server.reachable && serverSnap && !serverDone) {
-      const r = renderModel(P, M, serverSnap, t, opts);
-      const s = sig(r);
+      const r = engine.renderModel(P, M, serverSnap, t, opts);
+      const s = engine.sig(r);
       if (s !== lastPush.sig || t - lastPush.t >= RULES.PUSH_AT_LEAST) {
         const alertRing = out.rings.find((x) => x.t === t && x.via === 'Live Activity push carrying the alert');
         out.pushes.push({ t, kind: r.ended ? 'end' : 'update', status: r.status || null, warn: r.warn || null, arrive: r.arrive || null, sub: r.sub || null, timer: r.timer ?? null, staleDate: r.staleDate ?? null, phase: r.phase, step: r.step, alert: alertRing ? alertRing.title : null, asOf: serverSnap.asOf });
@@ -670,12 +687,12 @@ export function simulate(caseDef) {
       }
     }
     const cardSnap = newest(phoneCard, serverCard);
-    const card = cardSnap ? renderModel(P, M, cardSnap, t, opts) : null;
+    const card = cardSnap ? engine.renderModel(P, M, cardSnap, t, opts) : null;
     // I6: the phone's card equals the server's push when both rest on the same reading
     let serverView = null;
-    if (P.server.reachable && serverSnap && phoneCard && phoneCard.asOf === serverSnap.asOf) serverView = renderModel(P, M, serverSnap, t, opts);
+    if (P.server.reachable && serverSnap && phoneCard && phoneCard.asOf === serverSnap.asOf) serverView = engine.renderModel(P, M, serverSnap, t, opts);
     // the widget: reloaded by the open app on every change; while locked, every 5 min from the server
-    const cs = card ? sig(card) : null;
+    const cs = card ? engine.sig(card) : null;
     // build 212: a server alert also refreshes the widget (the notification extension writes the trip
     // state and reloads the widget), so the widget is in step at every alert even while locked
     const alertNow = ph.app !== 'open' && P.server.reachable && out.rings.some((x) => x.t === t && x.via && x.via.startsWith('server') || (x.t === t && x.via === 'Live Activity push carrying the alert'));
@@ -686,17 +703,17 @@ export function simulate(caseDef) {
     lastCardSig = cs;
     let wtext = null, wphase = null, wtrunc = false;
     if (widget.snap) {
-      let f = forecastPhase(P, widget.mem, widget.snap, t, widget.t);
+      let f = engine.forecastPhase(P, widget.mem, widget.snap, t, widget.t);
       if (f >= P_.arrived && widget.mem.current < lastLeg(P)) {
         // the widget's timeline carries on to the next leg of the trip (a change of trains)
-        const arrAt = legTimes(P, widget.mem, widget.snap, widget.mem.current, t).arr.at;
+        const arrAt = engine.legTimes(P, widget.mem, widget.snap, widget.mem.current, t).arr.at;
         widget.mem.legs[widget.mem.current].phase = P_.arrived; widget.mem.legs[widget.mem.current].arrivedAt = arrAt;
         widget.mem.current += 1;
-        f = forecastPhase(P, widget.mem, widget.snap, t, widget.t);
+        f = engine.forecastPhase(P, widget.mem, widget.snap, t, widget.t);
       }
       if (f >= P_.ended && widget.mem.current === lastLeg(P)) { wtext = null; wphase = 'ended'; }
       else {
-        const wr = renderModel(P, widget.mem, widget.snap, t, { ...opts, forecastPhase: f, forecast: true });
+        const wr = engine.renderModel(P, widget.mem, widget.snap, t, { ...opts, forecastPhase: f, forecast: true });
         wtext = wr.ended ? null : wr.widget; wphase = wr.phase; wtrunc = !!wr.widgetTruncated;
       }
     }
@@ -706,7 +723,7 @@ export function simulate(caseDef) {
       tripPhase: PHASES[M.legs[M.current].phase], leg: M.current, effLeg: eff(M, M.current),
       card, widget: wtext, widgetPhase: wphase, widgetTruncated: wtrunc, widgetReloadedAt: widget.t,
       watch: card && !card.ended ? card.watch : null,
-      inApp: ph.app === 'open' && phoneSnap ? (renderModel(P, M, phoneSnap, t, opts).inApp || 'Trip ended') : null,
+      inApp: ph.app === 'open' && phoneSnap ? (engine.renderModel(P, M, phoneSnap, t, opts).inApp || 'Trip ended') : null,
       serverView,
       ages: { phone: phoneSnap ? t - phoneSnap.asOf : null, server: serverSnap ? t - serverSnap.asOf : null, card: cardSnap ? t - cardSnap.asOf : null },
     });
