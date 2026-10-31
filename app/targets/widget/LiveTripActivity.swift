@@ -221,6 +221,9 @@ extension LiveTripAttributes.ContentState {
            w.range(of: #"^(Due now)?( · )?([0-9]+ min (late|early)|On time)?$"#, options: .regularExpression) != nil {
             return nil
         }
+        // The card draws its own age from `updated` (ageLine, the Island's age label), so the server's age words
+        // ("No live data since 7:47pm", "Updated 7:47pm") would say it twice.
+        if updated != nil, w.range(of: #"^(No live data since|Updated) "#, options: .regularExpression) != nil { return nil }
         return w
     }
 

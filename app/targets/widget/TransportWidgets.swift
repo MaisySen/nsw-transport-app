@@ -56,6 +56,9 @@ struct TripLine: Hashable, Codable {
     var timetable: Date?
     /// Build 212: a word in place of the minutes on a started trip's row ("Due", "Now", "Done"); nil counts down.
     var waitWord: String? = nil
+    /// Build 212: a started trip's row. Its status words are the trip's own ("Leaves about", "Get off at Croydon") and
+    /// stay when the times are old; only their colour goes grey (the footer says how old).
+    var tripRow: Bool? = nil
 
     var walkMinutes: Int {
         guard let b = board else { return 0 }
@@ -323,7 +326,7 @@ struct NextTripProvider: AppIntentTimelineProvider {
         let line = TripLine(line: c.line, colorHex: c.lineColorHex, mode: c.mode.isEmpty ? "train" : c.mode,
                             leave: leave, arrive: Date(timeIntervalSince1970: c.arrival / 1000),
                             isLive: step == 0 && (waiting ? c.departsLive : c.legArrivesLive) != false,
-                            status: status, platform: waiting ? c.platform : nil, waitWord: word)
+                            status: status, platform: waiting ? c.platform : nil, waitWord: word, tripRow: true)
         let from = waiting ? Naming.compact(Naming.short(c.nextStop ?? "")) : "On board"
         // Only a change, a cancellation or a missed connection goes under the row; the delay is on the row (G28) and
         // there is no "Trip started" line (G5). With old times the footer says how old.
@@ -507,7 +510,7 @@ struct NextTripView: View {
         return s == title ? nil : s
     }
 
-    private func status(_ t: TripLine) -> String { WidgetText.status(isLive: t.isLive, status: t.status) }
+    private func status(_ t: TripLine) -> String { t.tripRow == true ? t.status : WidgetText.status(isLive: t.isLive, status: t.status) }
 
     private func link(_ t: TripLine) -> URL? { WidgetText.tripURL(from: entry.fromID, to: entry.toID, leave: t.leave, fromName: entry.from, toName: entry.to) }
     private var alertsLink: URL? { WidgetText.alertsURL(from: entry.fromID, to: entry.toID, fromName: entry.from, toName: entry.to) }

@@ -310,9 +310,7 @@ struct LiveTripIslandBottom: View {
             TrackFooter(state: state, stale: stale)
             // The delay is beside the countdown now (build 211); a change or timetable warning stays here.
             if warning, let w = state.displayWarning(stale: stale) {
-                Label(w, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(state.warningIsRed ? Color.red : Color.orange)
-                    .lineLimit(1)
+                IslandWarning(text: w, red: state.warningIsRed)
             }
         }
     }
@@ -320,20 +318,60 @@ struct LiveTripIslandBottom: View {
     private var plain: some View {
         VStack(alignment: .leading, spacing: 4) {
             // The arrival time stays whole; the detail gives way first (native audit: "Arrive Macquarie University 5:0…").
-            HStack {
-                Text(state.detail(stale: stale)).foregroundStyle(.secondary).lineLimit(1)
-                Spacer(minLength: 4)
-                if !state.arrived(stale: stale) {
-                    Text(state.outdated(stale: stale) ? state.ageLine(stale: stale) : state.arriveLine).monospacedDigit().lineLimit(1)
-                        .minimumScaleFactor(0.75).layoutPriority(1)
+            // Build 212: the detail tries its shorter words first ("Leaves 12:35am, Plat 10, was 12" was cut to
+            // "…Plat 10, w…" in the expanded Island: a live platform change must stay whole), then the arrival shortens to
+            // its time, then gives way.
+            let d = state.detail(stale: stale)
+            let alts = ShortText.variants(d)
+            let dShort = alts.last ?? d
+            let arrived = state.arrived(stale: stale)
+            let right = arrived ? "" : (state.outdated(stale: stale) ? state.ageLine(stale: stale) : state.arriveLine)
+            let rightShort = arrived ? "" : (state.outdated(stale: stale) ? state.ageLine(stale: stale) : state.arriveTimeLine)
+            ViewThatFits(in: .horizontal) {
+                detailRow(d, right)
+                if alts.count > 0 { detailRow(alts[0], right) }
+                detailRow(dShort, right)
+                detailRow(dShort, rightShort)
+                detailRow(dShort, "")
+                HStack {
+                    Text(dShort).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
+                        .lineProbe("island-detail", text: dShort, lines: 1, font: .caption, minScale: 0.8)
+                    Spacer(minLength: 0)
                 }
             }
             if let w = state.displayWarning(stale: stale) {
-                Label(w, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(state.warningIsRed ? Color.red : Color.orange)
-                    .lineLimit(1)
+                IslandWarning(text: w, red: state.warningIsRed)
             }
         }
+    }
+
+    private func detailRow(_ d: String, _ right: String) -> some View {
+        HStack(spacing: 4) {
+            Text(d).foregroundStyle(.secondary).lineLimit(1).fixedSize()
+            Spacer(minLength: 4)
+            if !right.isEmpty { Text(right).monospacedDigit().lineLimit(1).fixedSize() }
+        }
+    }
+}
+
+/// A change, cancellation or missed service in the expanded Island (build 212): whole on one line, else the same words
+/// shorter, else on two lines; the line check reports anything cut.
+struct IslandWarning: View {
+    var text: String
+    var red: Bool
+    var body: some View {
+        let short = ShortText.variants(text).last ?? text
+        ViewThatFits(in: .horizontal) {
+            label(text).lineLimit(1).fixedSize()
+            label(short).lineLimit(1).fixedSize()
+            label(short).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                .lineProbe("island-warning", text: short, lines: 2, font: .caption, minScale: 1)
+        }
+        .foregroundStyle(red ? Color.red : Color.orange)
+    }
+
+    private func label(_ s: String) -> some View {
+        Label(s, systemImage: "exclamationmark.triangle.fill")
     }
 }
 
@@ -481,18 +519,53 @@ struct StopTrackView: View {
     }
 }
 
-/// One line of the card (build 212, G24): whole when it fits, else a little smaller, then cut at its end, which the
-/// native audit's line check reports.
+/// The same words, shorter, in the order a line tries them when the whole line does not fit (build 212, G24 native
+/// audit): "Plat" for "Platform", the first sentence only, a delay without its "at 7:47pm", no "Leaves" before a time.
+enum ShortText {
+    static func variants(_ s: String) -> [String] {
+        var out: [String] = []
+        func add(_ x: String) {
+            let t = x.trimmingCharacters(in: .whitespaces)
+            if !t.isEmpty && t != s && !out.contains(t) { out.append(t) }
+        }
+        var t = s.replacingOccurrences(of: "Platform ", with: "Plat ")
+            .replacingOccurrences(of: "You'll likely miss the ", with: "Likely miss the ")
+            .replacingOccurrences(of: " min to walk to ", with: " min walk to ")
+        add(t)
+        if let r = t.range(of: ". ") { t = String(t[..<r.lowerBound]); add(t) }
+        if t.contains("late") || t.contains("early"),
+           let r = t.range(of: #" at \d{1,2}:\d{2}(am|pm)?$"#, options: .regularExpression) {
+            t = String(t[..<r.lowerBound]); add(t)
+        }
+        if t.hasPrefix("Leaves ") { t = String(t.dropFirst(7)); add(t) }
+        return out
+    }
+}
+
+/// One line of the card (build 212, G24): whole when it fits, else the same words shorter (ShortText), else a little
+/// smaller, then cut at its end, which the native audit's line check reports. A warning (a change at risk, a missed
+/// service) is news and may take a second line, `lines: 2`, rather than lose its words.
 struct OneLine: View {
     var text: String
     var font: Font
     var color: Color
     var probe: String
+    var lines: Int = 1
     var body: some View {
+        let alts = ShortText.variants(text)
+        let last = alts.last ?? text
         ViewThatFits(in: .horizontal) {
             Text(text).font(font).foregroundStyle(color).lineLimit(1).fixedSize(horizontal: true, vertical: false)
-            Text(text).font(font).foregroundStyle(color).lineLimit(1).minimumScaleFactor(0.75).truncationMode(.tail)
-                .lineProbe(probe, text: text, lines: 1, font: font, minScale: 0.75)
+            if alts.count > 0 { Text(alts[0]).font(font).foregroundStyle(color).lineLimit(1).fixedSize(horizontal: true, vertical: false) }
+            if alts.count > 1 { Text(alts[1]).font(font).foregroundStyle(color).lineLimit(1).fixedSize(horizontal: true, vertical: false) }
+            if alts.count > 2 { Text(alts[2]).font(font).foregroundStyle(color).lineLimit(1).fixedSize(horizontal: true, vertical: false) }
+            if lines > 1 {
+                Text(alts.first ?? text).font(font).foregroundStyle(color).lineLimit(lines).minimumScaleFactor(0.75)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineProbe(probe, text: alts.first ?? text, lines: lines, font: font, minScale: 0.75)
+            }
+            Text(last).font(font).foregroundStyle(color).lineLimit(1).minimumScaleFactor(0.75).truncationMode(.tail)
+                .lineProbe(probe, text: last, lines: 1, font: font, minScale: 0.75)
         }
     }
 }
@@ -540,21 +613,30 @@ struct LiveTripLockCard: View {
     /// "6 stops · 4 min late" on one line: the detail in grey, the warning in its colour. With the stop track and no
     /// warning, "2 stops · On time" in green when the stops are live (build 211, the same words as the Island).
     private func detailAndWarning(_ lines: Int, track: Bool = false) -> some View {
-        // Build 212 (G24): one line, always. The detail and the warning together when they fit; else the warning alone
-        // (it is the news), else the detail alone; last both, smaller and cut at the end, which the line check fails.
+        // Build 212 (G24): one line. The detail and the warning together when they fit, then the same words shorter
+        // (ShortText), else the warning alone (it is the news), else the detail alone; a warning that still does not fit
+        // takes a second line rather than lose its words; last both, smaller and cut at the end, which the line check fails.
         let d = state.detail(stale: stale)
         let w = state.displayWarning(stale: stale)
         let ok = w == nil && track ? state.delayStatus(stale: stale) : nil
         let second = w ?? ok
-        let plain = [d, second ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+        let dShort = ShortText.variants(d).last ?? d
+        let sShort = second.map { ShortText.variants($0).last ?? $0 }
         return ViewThatFits(in: .horizontal) {
             statusText(d, second, isWarning: w != nil).fixedSize(horizontal: true, vertical: false)
-            if let s = second, !d.isEmpty { statusText("", s, isWarning: w != nil).fixedSize(horizontal: true, vertical: false) }
-            if second == nil { statusText(d, nil, isWarning: false).fixedSize(horizontal: true, vertical: false) }
-            statusText(d, second, isWarning: w != nil)
+            statusText(dShort, sShort, isWarning: w != nil).fixedSize(horizontal: true, vertical: false)
+            if let s = sShort, !d.isEmpty { statusText("", s, isWarning: w != nil).fixedSize(horizontal: true, vertical: false) }
+            if second == nil { statusText(dShort, nil, isWarning: false).fixedSize(horizontal: true, vertical: false) }
+            // A warning is news: on its own, it may take a second line rather than lose its words.
+            if w != nil, let s = sShort {
+                statusText("", s, isWarning: true).lineLimit(2).minimumScaleFactor(0.75)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineProbe("lock-status", text: s, lines: 2, font: .subheadline, minScale: 0.75)
+            }
+            statusText(dShort, sShort, isWarning: w != nil)
                 .minimumScaleFactor(0.75)
                 .truncationMode(.tail)
-                .lineProbe("lock-status", text: plain, lines: 1, font: .subheadline, minScale: 0.75)
+                .lineProbe("lock-status", text: [dShort, sShort ?? ""].filter { !$0.isEmpty }.joined(separator: " · "), lines: 1, font: .subheadline, minScale: 0.75)
         }
     }
 
@@ -591,7 +673,7 @@ struct LiveTripLockCard: View {
                         }
                         if let w = state.displayWarning(stale: stale) {
                             OneLine(text: w, font: .caption.weight(.semibold), color: state.warningIsRed ? Color.red : Color.orange,
-                                    probe: "lock-warning")
+                                    probe: "lock-warning", lines: 2)
                         }
                     }
                 }

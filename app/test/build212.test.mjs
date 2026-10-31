@@ -115,10 +115,11 @@ test('Live Activity: Due at the live departure and Now at the get off moment, ne
 
 test('Live Activity: one line status, Island wording, VoiceOver for the countdown and the whole card (G10, G24, G30)', () => {
   const w = read('targets/widget/LiveTripActivityWidget.swift');
-  assert.doesNotMatch(w, /lineLimit\(lines\)/);
+  assert.equal((w.match(/lineLimit\(lines\)/g) || []).length, 1, 'only a warning line (OneLine lines: 2) may take a second line');
   assert.doesNotMatch(w, /card\(lines: 2/);
   assert.match(w, /lineProbe\("lock-status"/);
-  assert.match(w, /lineProbe\(probe, text: text, lines: 1/);
+  assert.match(w, /lineProbe\(probe, text: last, lines: 1/);
+  assert.doesNotMatch(w, /probe: "lock-detail", lines: 2/);
   assert.match(w, /Text\(Image\(systemName: "bell\.fill"\)\)\.font\(\.caption2\) \+ Text\(" " \+ state\.compactStop\)/);
   assert.match(w, /\.accessibilityLabel\(state\.spokenSummary\(stale: stale\)\)/);
   assert.equal((w.match(/spoken: state\.spokenCountdown\(stale: stale\)/g) || []).length, 4);
@@ -190,4 +191,18 @@ test('the build sends Sentry every dSYM (Watch included) and the JavaScript sour
   assert.match(step, /sourcemaps upload/);
   assert.match(step, /"\$ID" = "\$ID2"/, 'a rebuilt bundle is used only when its debug ID equals the IPA one');
   assert.match(wf, /rm -rf "\$RUNNER_TEMP\/easwd"/, 'the kept working folder is removed');
+});
+
+test('native audit round 1 fixes: shorter words before a cut, warnings may take two lines, no age said twice, trip rows keep their words (G24, G25)', () => {
+  const w = read('targets/widget/LiveTripActivityWidget.swift');
+  assert.match(w, /enum ShortText/);
+  assert.match(w, /"Platform ", with: "Plat "/);
+  assert.match(w, /probe: "lock-warning", lines: 2\)/, 'a warning may take a second line on the Lock Screen');
+  assert.match(w, /lineProbe\("lock-status", text: s, lines: 2/);
+  assert.match(w, /struct IslandWarning/);
+  assert.match(w, /lineProbe\("island-detail"/);
+  assert.match(read('targets/widget/LiveTripActivity.swift'), /\^\(No live data since\|Updated\) /);
+  const t = read('targets/widget/TransportWidgets.swift');
+  assert.match(t, /t\.tripRow == true \? t\.status : WidgetText\.status/);
+  assert.match(t, /waitWord: word, tripRow: true\)/);
 });
