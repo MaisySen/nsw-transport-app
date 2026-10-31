@@ -42,8 +42,8 @@ enum IslandEdge {
         }
         guard ok else { return nil }
         var on = [Bool](repeating: false, count: w * h)
-        // CGContext rows start at the bottom: flip so row 0 is the top.
-        for y in 0..<h { for x in 0..<w where px[(y * w + x) * 4 + 3] >= 48 { on[(h - 1 - y) * w + x] = true } }
+        // Row 0 of the bitmap's memory is the top of the picture (checked against the saved PNGs of run 41162476491).
+        for y in 0..<h { for x in 0..<w where px[(y * w + x) * 4 + 3] >= 48 { on[y * w + x] = true } }
         return (w, h, on)
     }
 
