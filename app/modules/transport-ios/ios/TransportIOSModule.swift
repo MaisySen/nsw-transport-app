@@ -101,8 +101,10 @@ public class TransportIOSModule: Module {
     }
 
     /// Lets the alert audio session go once the last spoken alert is done, so other audio resumes as it was.
-    Function("endAlertAudio") { () in
-      try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    Function("endAlertAudio") { () -> Void in
+      do {
+        try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+      } catch {}
     }
 
     /// From build 211 (31 Oct): whether get off alerts from the phone's position can ring. "ok" needs location
