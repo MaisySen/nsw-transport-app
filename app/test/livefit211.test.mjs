@@ -124,7 +124,7 @@ test('the native audit line check: probes in the views, off in the app, and a fa
 test('very large text keeps names whole: the stop name alone, the next stop alone, short destinations', () => {
   const w = read(W);
   assert.match(w, /typeSize >= \.xxLarge \? state\.bareHeadline\(stale: stale\) : state\.headline\(stale: stale\)/);
-  assert.equal((w.match(/bareHeadline\(stale: stale\)/g) || []).length, 2, 'Lock Screen and Island');
+  assert.equal((w.match(/typeSize >= \.xxLarge \? state\.bareHeadline\(stale: stale\)/g) || []).length, 2, 'Lock Screen and Island');
   assert.equal((w.match(/\.accessibilityLabel\(state\.headline\(stale: stale\)\)/g) || []).length, 2, 'VoiceOver reads the whole line');
   const s = read('targets/widget/LiveTripActivity.swift');
   assert.match(s, /public func bareHeadline\(stale: Bool = false\) -> String \{\s*if arrived\(stale: stale\) \{ return destination \?\? getOffAt \}\s*if phase == "wait" \{ return "To \\\(towards \?\? getOffAt\)" \}\s*return getOffAt/);
@@ -138,4 +138,10 @@ test('very large text keeps names whole: the stop name alone, the next stop alon
   const short = (x) => (x.length > 28 && x.includes(' via ') ? x.slice(0, x.indexOf(' via ')) : x);
   assert.equal(short('Macquarie University via Epping and North Ryde'), 'Macquarie University');
   assert.equal(short('Hornsby via Strathfield'), 'Hornsby via Strathfield', 'short ones keep their via');
+});
+
+test('at the largest text sizes a long stop name keeps the bar layouts, so it is never cut beside the track', () => {
+  const w = read(W);
+  assert.match(w, /private var showsTrack: Bool \{\s*guard state\.showsTrack\(stale: stale\) else \{ return false \}\s*return typeSize < \.xxLarge \|\| state\.bareHeadline\(stale: stale\)\.count <= 16/);
+  assert.match(w, /if showsTrack \{\s*card\(lines: 2, track: true, merged: true\)/);
 });

@@ -411,6 +411,13 @@ struct LiveTripLockCard: View {
     var stale = false
     @Environment(\.dynamicTypeSize) private var typeSize
 
+    /// The stop track, except at the largest text sizes with a long stop name: there the name stays whole on the bar
+    /// layouts (build 211 line check: "Macquarie Centre and University" was cut beside the track at xxxLarge).
+    private var showsTrack: Bool {
+        guard state.showsTrack(stale: stale) else { return false }
+        return typeSize < .xxLarge || state.bareHeadline(stale: stale).count <= 16
+    }
+
     var body: some View {
         ViewThatFits(in: .vertical) {
             // Build 210: the stop track in place of the bar when the card carries the leg's stops. The stop off
@@ -420,7 +427,7 @@ struct LiveTripLockCard: View {
             // "2 stops" and "3 min late" on their own lines under a two line "in 6 / minutes": that card was too tall
             // for the Lock Screen. Now the countdown is one line ("6 min") and the track layouts put the stops and the
             // delay on one line ("2 stops · 3 min late"), so the track fits with room to spare.
-            if state.showsTrack(stale: stale) {
+            if showsTrack {
                 card(lines: 2, track: true, merged: true)
                 card(lines: 1, track: true, merged: true, headLines: 2)
                 card(lines: 1, track: true, merged: true, headLines: 2, headScale: 0.65)

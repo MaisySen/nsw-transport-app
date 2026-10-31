@@ -66,9 +66,10 @@ test('the Mac fit check renders every family at the smallest and largest widget 
   assert.doesNotMatch(s, /Strathfield|Burwood|Kings Cross|Redfern/);
 });
 
-test('build number 210 on version 1.0.0, runtime 1.2.0 (main publishes to 1.0.0 and 1.1.0, never to 210)', () => {
+test('build number 211 on version 1.0.0, runtime 1.2.0 (main publishes to 1.0.0 and 1.1.0, never to 210 or 211)', () => {
   const a = JSON.parse(read('app.json')).expo;
-  assert.equal(a.ios.buildNumber, '210');
+  // Build 211 candidate (31 Oct): widget only Live Activity fixes, same runtime as 210.
+  assert.equal(a.ios.buildNumber, '211');
   assert.equal(a.version, '1.0.0');
   assert.equal(a.runtimeVersion, '1.2.0');
 });

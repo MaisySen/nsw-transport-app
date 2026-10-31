@@ -4,6 +4,10 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Live Activity on the Lock Screen and in the Island (build 211 candidate, 31 Oct)
+
+The countdown reads "6 min" (or "1 hr, 5 min", "Now") on one line and keeps counting by itself. On a live trip the Lock Screen card shows the same stop track as the Island (your stops as dots, the train, a bell at your stop, "Next:" and the arrival), with "2 stops · 3 min late" or "2 stops · On time" on one line. The Island shows "3 min late" or "On time" under its countdown. At the largest text sizes the card shows just the stop name, so it is never cut. Needs build 211 (not over the air).
+
 ## System settings (31 Oct, build 210)
 
 Light and dark follow the phone everywhere (app, widgets, Lock Screen, Island, Watch). Text size, Bold Text, Reduce Motion, Reduce Transparency and Increase Contrast are followed. From build 210 the widgets, Live Activities, Siri answers and the Watch follow 24-Hour Time; in the app only the Plan tab trip rows do so far. Calendar leave by works again on build 210 (full access text restored).
