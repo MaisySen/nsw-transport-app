@@ -117,3 +117,31 @@ test("1 Nov 12:04 AM shadow trip: a train still short of your stop (the feed lis
   const atS = W.tfLegRaw(legC, fromS, veh("2135237", T("13:05:08")), info, T("13:05:20"));
   assert.deepEqual([atS.vehicle.stop, atS.vehicle.state], [0, "at"]);
 });
+
+test("1 Nov 12:21 AM shadow trip: on the last stretch the train's position gives the arrival when the feed's is later (owner's rule 3)", async () => {
+  const W = await loadWorker();
+  const legF = { ...leg, tripId: "852T.1417.150.128.A.8.91992569", planned: "2026-10-31T13:17:00.000Z", arrPlanned: "2026-10-31T13:22:00.000Z" };
+  // after Strathfield the feed lists Burwood on; its arrival at Croydon said 12:22:22 while the train reached it 12:21:34
+  const fd = { ts: T("13:21:00") / 1000, stus: [{ stopId: "213495", arr: d(22), dep: d(22) }, { stopId: "213284", arr: d(22), dep: d(22) }, { stopId: "2131123", arr: d(22), dep: d(22) }] };
+  setClock(T("13:21:19"));
+  // the position report 406 m short of Croydon, between Burwood and Croydon
+  const k = 406 / 1248; // Burwood is 1248 m from Croydon along the line
+  const p = { lat: STOPS["213284"][1] + (STOPS["213495"][1] - STOPS["213284"][1]) * k, lon: STOPS["213284"][2] + (STOPS["213495"][2] - STOPS["213284"][2]) * k, ts: T("13:20:34"), ageS: 30, stopId: "Croydon.X Loc", status: null };
+  const r = W.tfLegRaw(legF, fd, p, info, T("13:21:00"));
+  assert.deepEqual([r.vehicle.stop, r.vehicle.state], [0, "left"]);
+  assert.equal(r.etaBy, "vehicle");
+  assert.ok(Math.abs(r.est[1] - T("13:21:35")) < 6000, `arrival from the position about 12:21:35, got ${new Date(r.est[1]).toISOString()}`);
+  // Get off now from it: arrival minus 30 s, before the train is at the platform (12:21:34)
+  const pl = W.tfPlanLeg(legF, r, { li: 0 });
+  const L = W.tfLegReading(pl, r, null);
+  const plan = { legs: [pl] };
+  const tm = W.LIVECARD.tripLegTimes(plan, W.LIVECARD.newTripMemory(plan), { asOf: T("13:21:00"), legs: [L] }, 0, T("13:21:19"));
+  assert.ok(tm.arr.at - 30000 < T("13:21:34") - 20000, "Get off now lands 20 s or more before the platform report");
+  // the feed's earlier arrival is kept; a position far out or stale changes nothing
+  const early = W.tfLegRaw(legF, { ...fd, stus: fd.stus.map((u) => ({ ...u, arr: d(-60), dep: d(-60) })) }, p, info, T("13:21:00"));
+  assert.equal(early.est[1], T("13:21:00"), "feed 12:21:00 is earlier than the position's");
+  const stale = W.tfLegRaw(legF, fd, { ...p, ageS: 200 }, info, T("13:21:00"));
+  assert.equal(stale.est[1], T("13:22:22"));
+  const atB = W.tfLegRaw(legF, fd, veh("213495", T("13:19:22")), info, T("13:19:40"));
+  assert.equal(atB.est[1], T("13:22:22"), "at Burwood (not on the last stretch yet by position): the feed's arrival");
+});

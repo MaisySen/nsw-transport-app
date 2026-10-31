@@ -6062,8 +6062,8 @@ function tfLegRaw(l, tu, veh, info, asOf) {
     const depDue = Number.isFinite(ms(l.planned)) ? ms(l.planned) + (r.est[0] != null ? r.est[0] - ms(l.planned) : (r.runDelay || 0) * 1000) - 60000 : Infinity;
     if (bi < 0 && oi >= 0 && info[l.stopId] && Math.max(asOf, veh.ts) >= depDue) { seq = [{ stopId: l.stopId }, ...stus]; b0 = 0; o0 = oi + 1; }
     let vi = veh.stopId ? seq.findIndex((u) => u.stopId === veh.stopId) : -1;
-    let at = veh.status === 1;
-    if (vi < 0) { const g = tfVehOnRun(veh, seq, info); if (g) { vi = g.k; at = g.at; } }
+    let at = veh.status === 1, byPlace = false;
+    if (vi < 0) { const g = tfVehOnRun(veh, seq, info); if (g) { vi = g.k; at = g.at; byPlace = true; } }
     let v = null;
     if (vi >= 0 && b0 >= 0) {
       const before = r.before ? o0 - 1 : -1;
@@ -6076,6 +6076,20 @@ function tfLegRaw(l, tu, veh, info, asOf) {
       else v = { stop: -1, state: "left" };
     }
     if (v) { v.at = veh.ts; r.vehicle = v; }
+    // The train's position beats the stop's own time on the last stretch (owner's rule 3, 31 Oct 11:07 PM), for a feed
+    // that gives positions only (Sydney Trains: a place, no stop id). Heading to your stop and under 1.5 km out, the
+    // arrival is the position's own (45 s plus 40 ms a metre, from the shadow trips of 1 Nov 12:00 to 12:25 AM: 406 m
+    // out came 60 to 71 s before the at-platform report, 231 m 58 s, 986 m 82 s) when that is earlier than the feed's.
+    // The feed's arrival ran 22 s to over 3 min late on all six (a T1 Redfern to Ashfield ran early on a timetable
+    // arrival), so Get off now landed with the train at the platform or never rang.
+    const O = byPlace && vi === o0 && !at && o0 >= 0 && seq[o0] ? info[seq[o0].stopId] : null;
+    if (O && Number.isFinite(O.lat) && !(Number.isFinite(veh.ageS) && veh.ageS > 90)) {
+      const dO = distM(veh.lat, veh.lon, O.lat, O.lon);
+      if (dO <= 1500) {
+        const eta = veh.ts + 45000 + Math.round(40 * dO);
+        if (r.est[offIdx] == null || eta < r.est[offIdx]) { r.est[offIdx] = eta; r.etaBy = "vehicle"; }
+      }
+    }
   }
   return r;
 }
