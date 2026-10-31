@@ -48,7 +48,7 @@ for s in surfaces:
     W, H = left + cw * len(cols), top + ch * len(scen)
     sheet = Image.new('RGB', (W, H), 'white')
     d = ImageDraw.Draw(sheet)
-    bad = [r for r in rs if not r['fits']]
+    bad = [r for r in rs if not r['fits'] or r.get('lines')]
     d.text((16, 16), f"{s}   ({len(rs)} shots, {'all fit' if not bad else str(len(bad)) + ' cut off'})", fill='black' if not bad else (200, 0, 0), font=f_title)
     for j, sc in enumerate(scen):
         y = top + j * ch
@@ -61,14 +61,18 @@ for s in surfaces:
             x = left + i * cw
             sheet.paste(im, (x + 8, y + 4))
             lab = f"{NAMES.get(c[0], c[0])} · {c[1]} · {c[2]}"
-            ok = r['fits']
+            ok = r['fits'] and not r.get('lines')
             o = r['overflow']
-            if not ok:
+            if not r['fits']:
                 lab += "  CUT t%s l%s b%s r%s" % tuple(o)
+            if r.get('lines'):
+                # Line check (31 Oct, build 211): a countdown on two lines or a cut stop name.
+                lab += "  WRAPS/CUT: " + ", ".join(sorted({x.split(' ')[0] for x in r['lines']}))
+            if not ok:
                 d.rectangle([x + 6, y + 2, x + 10 + im.width, y + 6 + im.height], outline=(220, 0, 0), width=3)
             d.text((x + 8, y + 8 + im.height), lab, fill=(0, 120, 0) if ok else (200, 0, 0), font=f_lab)
     sheet.save(os.path.join(out, s + '.png'), optimize=True)
-    summary.append(f"{s}: {len(rs)} shots, {len(bad)} cut off")
+    summary.append(f"{s}: {len(rs)} shots, {len(bad)} cut off or wrapping")
 extra = [r for r in recs if not r.get('file') and not r['fits']]
 for r in extra:
     summary.append(f"{r['surface']} {r['scenario']} {r['device']} {r['type']}: region cut off {r['overflow']}")

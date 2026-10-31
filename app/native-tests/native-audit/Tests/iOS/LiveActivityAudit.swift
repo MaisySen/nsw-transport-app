@@ -77,6 +77,21 @@ enum LiveActivityAudit {
                              track: .init(passed: 12, next: ["Randwick"], live: true)), false),
         ("stops-stale", live("ride", next: "Epping", updated: -21,
                              track: .init(passed: 4, next: ["Epping", "Macquarie University"], live: true)), true),
+        // Build 211 (31 Oct): the owner's build 210 trip on his iPhone (T1, 2 stops, 3 min late), the same on time,
+        // one stop with a 1 minute countdown, and an hour long ride with many stops.
+        ("owner-late", live("ride", line: "T1", hex: "#F99D1C", mode: "train", next: "Burwood", left: 2, off: "Croydon",
+                            warning: "3 min late", progress: 0.6, towards: "Emu Plains", platform: nil, legArrives: 6.5, dest: "Croydon",
+                            track: .init(passed: 3, next: ["Burwood", "Croydon"], live: true)), false),
+        ("owner-ontime", live("ride", line: "T1", hex: "#F99D1C", mode: "train", next: "Burwood", left: 2, off: "Croydon",
+                              warning: nil, progress: 0.6, towards: "Emu Plains", platform: nil, legArrives: 6.5, dest: "Croydon",
+                              track: .init(passed: 3, next: ["Burwood", "Croydon"], live: true)), false),
+        ("one-stop", live("ride", line: "M1", hex: "#168388", mode: "metro", next: "Chatswood", left: 1, off: "Chatswood",
+                          warning: nil, progress: 0.9, towards: "Sydenham", platform: nil, legArrives: 1.3, dest: "Chatswood",
+                          track: .init(passed: 6, next: ["Chatswood"], live: true)), false),
+        ("hour", live("ride", line: "T8", hex: "#00954C", mode: "train", next: "Wolli Creek", left: 14, off: "Macarthur",
+                      warning: "2 min late", progress: 0.1, towards: "Macarthur", platform: nil, legArrives: 65, dest: "Macarthur",
+                      track: .init(passed: 2, next: ["Wolli Creek", "Turrella", "Bardwell Park", "Bexley North", "Kingsgrove", "Beverly Hills",
+                                                     "Narwee", "Riverwood", "Padstow", "Macarthur"], hidden: 4, hiddenAt: 8, live: true)), false),
     ]
 
     static func lock<V: View>(_ v: V, surface: String, scenario: String, p: Phone) {

@@ -19,7 +19,14 @@ enum Audit {
         var overflow: [Double]   // points drawn past the box: top, left, bottom, right
         var fits: Bool
         var file: String
+        /// Line check (31 Oct, build 211): countdowns and stop names that use more lines than they may, or are cut
+        /// ("lock-countdown 'in 6 minutes' 2 of 1 lines"). Empty when all are whole.
+        var lines: [String]? = nil
     }
+
+    /// Set by the iPhone audit: switches the line probes on around a check and returns what they found (the shared
+    /// file has no widget code, so the Watch audit leaves it unset).
+    static var lineCheck: (start: () -> Void, finish: () -> [String]?)?
 
     static let types: [(String, DynamicTypeSize)] = [("default", .large), ("xxxl", .xxxLarge)]
     static var records: [Record] = []
@@ -82,7 +89,9 @@ enum Audit {
         let typed = v.environment(\.dynamicTypeSize, type.1).environment(\.colorScheme, scheme)
             .environment(\.timeZone, TimeZone(identifier: "Australia/Sydney")!)
             .environment(\.locale, Locale(identifier: "en_AU"))
+        lineCheck?.start()
         let o = overflow(typed, box: box)
+        let lines = lineCheck?.finish() ?? nil
         let fits = o.allSatisfy { $0 >= 0 && $0 <= 0.5 }
         let s = scheme == .dark ? "dark" : "light"
         let name = "\(surface)__\(scenario)__\(device)__\(type.0)__\(s)"
@@ -91,7 +100,7 @@ enum Audit {
         r.scale = scale
         if let cg = r.cgImage { savePNG(cg, name) }
         let rec = Record(surface: surface, scenario: scenario, device: device, type: type.0, scheme: s,
-                         box: [Double(box.width), Double(box.height)], overflow: o, fits: fits, file: name + ".png")
+                         box: [Double(box.width), Double(box.height)], overflow: o, fits: fits, file: name + ".png", lines: lines)
         records.append(rec)
         return rec
     }
@@ -103,6 +112,9 @@ enum Audit {
         let bad = records.filter { !$0.fits }
         print("native audit: \(records.count) shots, \(bad.count) do not fit")
         for b in bad { print("DOES NOT FIT \(b.file) overflow t/l/b/r \(b.overflow)") }
+        let cut = records.filter { !($0.lines ?? []).isEmpty }
+        print("native audit line check: \(records.filter { $0.lines != nil }.count) shots with probed countdowns or stop names, \(cut.count) with a countdown or stop name on too many lines or cut")
+        for c in cut { print("WRAPS OR CUT \(c.file): " + (c.lines ?? []).joined(separator: "; ")) }
     }
 }
 
