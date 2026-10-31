@@ -69,9 +69,9 @@ export function LiveCountdown({ state, planned, align = 'right' }: { state: Live
         {state.unit ? <Text maxFontSizeMultiplier={1.3} style={[font.foot, { color, marginLeft: 2, fontWeight: '600' }]}>{state.unit}</Text> : null}
       </View>
       <View style={{ flexDirection: 'row', gap: 4 }}>
-        {changed ? <Text style={[font.caption, { color: c.text3, textDecorationLine: 'line-through' }]}>{clock(p)}</Text> : null}
-        {state.counting ? <Text style={[font.caption, { color: c.text2, fontVariant: ['tabular-nums'] }]}>{clock(state.t)}</Text> : null}
-        {!state.counting && state.kind === 'stale' ? <Text style={[font.caption, { color: c.text2 }]}>timetable</Text> : null}
+        {changed ? <Text maxFontSizeMultiplier={1.3} style={[font.caption, { color: c.text3, textDecorationLine: 'line-through' }]}>{clock(p)}</Text> : null}
+        {state.counting ? <Text maxFontSizeMultiplier={1.3} style={[font.caption, { color: c.text2, fontVariant: ['tabular-nums'] }]}>{clock(state.t)}</Text> : null}
+        {!state.counting && state.kind === 'stale' ? <Text maxFontSizeMultiplier={1.3} style={[font.caption, { color: c.text2 }]}>timetable</Text> : null}
       </View>
     </View>
   );

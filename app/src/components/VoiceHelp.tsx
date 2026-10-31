@@ -15,6 +15,7 @@ import { openVoiceDownload, openVoiceSettings, playFound, useVoiceReturn } from 
 import { SHEET_RADIUS, SheetGrabber, useSheetDrag } from './EditorSheet';
 import { Icon, I } from './Icon';
 import { Button, T } from './ui';
+import { useReduceMotion } from '@/lib/motion';
 
 type Stop = { id: string; name: string } | null | undefined;
 const STEP_ICON: Record<HelpStep['icon'], typeof I.gear> = { gear: I.gear, list: I.list, download: I.download };
@@ -25,6 +26,8 @@ const STEP_ICON: Record<HelpStep['icon'], typeof I.gear> = { gear: I.gear, list:
  */
 export function VoiceHelp({ visible, onClose, start = 'steps', stop, os = Platform.OS }: { visible: boolean; onClose: () => void; start?: 'prompt' | 'steps'; stop?: Stop; os?: string }) {
   const c = usePalette();
+  // Reduce Motion: the sheet fades in instead of sliding up.
+  const still = useReduceMotion();
   const ins = useSafeAreaInsets();
   const side = useSides();
   const drag = useSheetDrag(onClose);
@@ -92,7 +95,7 @@ export function VoiceHelp({ visible, onClose, start = 'steps', stop, os = Platfo
 
   const steps = iosVoiceSteps(Platform.OS === 'ios' ? Platform.Version : null);
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={close} statusBarTranslucent navigationBarTranslucent>
+    <Modal visible={visible} transparent animationType={still ? 'fade' : 'slide'} onRequestClose={close} statusBarTranslucent navigationBarTranslucent>
       <View style={s.wrap}>
         <Pressable accessibilityRole="button" accessibilityLabel="Close" style={[StyleSheet.absoluteFill, s.dim]} onPress={close} />
         <Animated.View style={[s.sheet, { marginLeft: side.left, marginRight: side.right, backgroundColor: c.card, paddingBottom: Math.max(ins.bottom, 16) }, drag.style]}>

@@ -1,6 +1,11 @@
 // Plan tab logic with no app imports, so it is unit tested as is: place search results (stops, addresses,
 // streets, landmarks, suburbs), the Leave at / Arrive by choice, and Clear all.
 
+// The phone's 24-Hour Time setting (iPhone Settings, General, Date and Time): lib/rowTime.ts installs the reader
+// at start (installPhoneClock). Until then, and in tests, the 12 hour clock the app has always used.
+const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
+const HM24 = (h: number, m: number): string => `${String(((h % 24) + 24) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
 export type PlaceKind = 'stop' | 'address' | 'street' | 'place' | 'suburb';
 export type PlaceItem = { id: string; name: string; kind?: PlaceKind; modes?: number[]; area?: string; lat?: number; lon?: number };
 
@@ -61,8 +66,9 @@ export function defaultClock(now: number, step = 5): { h: number; m: number } {
 export const to12 = (h: number) => ({ h12: ((h + 11) % 12) + 1, pm: h >= 12 });
 export const from12 = (h12: number, pm: boolean) => (h12 % 12) + (pm ? 12 : 0);
 
-/** "9:05am", the format the rows use. */
+/** "9:05am" ("09:05" on a 24 hour phone), the clock the rows use. */
 export function clock12(h: number, m: number): string {
+  if (PHONE24()) return HM24(h, m);
   const { h12, pm } = to12(h);
   return `${h12}:${String(m).padStart(2, '0')}${pm ? 'pm' : 'am'}`;
 }

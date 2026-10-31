@@ -2,6 +2,15 @@
 // where the new server has /api/last-home, the server finds the last service, looks again live and sends one push
 // 15 min before (docs/API.md, Last way home reminder); everywhere else the phone schedules one local notification and
 // looks at live times again whenever the app is open (docs/LAST-WAY-HOME.md).
+
+// The phone's 24-Hour Time setting (iPhone Settings, General, Date and Time): lib/rowTime.ts installs the reader
+// at start (installPhoneClock). Until then, and in tests, the 12 hour clock the app has always used.
+const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
+/** "07:55" (or "07:55:30"), Sydney time, for a phone set to 24 hour time. */
+const C24 = (t: number, sec = false): string => {
+  try { return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', ...(sec ? { second: '2-digit' } : {}), hourCycle: 'h23', timeZone: 'Australia/Sydney' } as Intl.DateTimeFormatOptions).format(new Date(t)); }
+  catch { const d = new Date(t); return [d.getHours(), d.getMinutes(), ...(sec ? [d.getSeconds()] : [])].map((n) => String(n).padStart(2, '0')).join(':'); }
+};
 export const LAST_HOME_LEAD = 15;
 /** The last service as the phone keeps it: small, so Ask answers saved on the phone stay small. */
 export type LastSvc = { leave: string; board: string; line: string | null; mode: string | null; stop: string | null; platform: string | null; tripId: string | null; planned: string | null; cancelled?: boolean };
@@ -102,6 +111,7 @@ const iso = (t: number) => new Date(t).toISOString();
 const msOf = (s?: string | null) => (s ? Date.parse(s) : NaN);
 const transitLegs = (j: any): any[] => (j?.legs || []).filter((l: any) => l && l.kind !== 'walk' && (l.line || l.mode));
 function clock(t: number) {
+  if (PHONE24() && Number.isFinite(t)) return C24(t);
   try { return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: SYD }).replace(/\s?(am|pm)/i, (m) => m.trim().toLowerCase()); }
   catch { const d = new Date(t), h = d.getHours(); return `${((h + 11) % 12) + 1}:${String(d.getMinutes()).padStart(2, '0')}${h < 12 ? 'am' : 'pm'}`; }
 }

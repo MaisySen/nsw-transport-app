@@ -260,8 +260,8 @@ function Sheet({ st, legs, g, me, locDenied, push, offline, updated, onLoc, onSh
         <View style={{ alignItems: 'flex-end' }}>
           <Text style={{ fontSize: 28, fontWeight: '700', color: c.tint, fontVariant: ['tabular-nums'] }} maxFontSizeMultiplier={1.3} accessibilityLabel={`in ${minsWords(m)}`}>{minsWords(m)}</Text>
           <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
-            <View style={[sx.badge, { backgroundColor: badge.bg }]}><Text style={[sx.badgeT, { color: onColor(badge.bg) }]}>{badge.t}</Text></View>
-            {g.share ? <View style={[sx.badge, { backgroundColor: c.indigo }]}><Text style={[sx.badgeT, { color: onColor(c.indigo) }]}>Sharing</Text></View> : null}
+            <View style={[sx.badge, { backgroundColor: badge.bg }]}><Text maxFontSizeMultiplier={1.3} style={[sx.badgeT, { color: onColor(badge.bg) }]}>{badge.t}</Text></View>
+            {g.share ? <View style={[sx.badge, { backgroundColor: c.indigo }]}><Text maxFontSizeMultiplier={1.3} style={[sx.badgeT, { color: onColor(c.indigo) }]}>Sharing</Text></View> : null}
           </View>
         </View>
       </View>
@@ -383,7 +383,7 @@ function SetupRow({ icon, title, sub, action, onPress }: { icon: any; title: str
       </View>
       {action ? (
         <Pressable onPress={onPress} hitSlop={6} style={({ pressed }) => [{ backgroundColor: c.tint, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6, opacity: pressed ? 0.7 : 1 }]} accessibilityRole="button">
-          <Text style={{ color: Platform.OS === 'android' && c.dark ? '#062E6F' : '#fff', fontWeight: '600', fontSize: 14 }}>{action}</Text>
+          <Text maxFontSizeMultiplier={1.4} style={{ color: Platform.OS === 'android' && c.dark ? '#062E6F' : '#fff', fontWeight: '600', fontSize: 14 }}>{action}</Text>
         </Pressable>
       ) : null}
     </View>

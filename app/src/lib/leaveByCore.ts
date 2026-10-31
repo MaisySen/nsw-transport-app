@@ -1,6 +1,15 @@
 // The calendar event for "Add to Calendar" on a trip: leave by the trip's leave time, with an alert 10 minutes
 // before. Pure, so it is unit tested. No imports.
 
+// The phone's 24-Hour Time setting (iPhone Settings, General, Date and Time): lib/rowTime.ts installs the reader
+// at start (installPhoneClock). Until then, and in tests, the 12 hour clock the app has always used.
+const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
+/** "07:55" (or "07:55:30"), Sydney time, for a phone set to 24 hour time. */
+const C24 = (t: number, sec = false): string => {
+  try { return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', ...(sec ? { second: '2-digit' } : {}), hourCycle: 'h23', timeZone: 'Australia/Sydney' } as Intl.DateTimeFormatOptions).format(new Date(t)); }
+  catch { const d = new Date(t); return [d.getHours(), d.getMinutes(), ...(sec ? [d.getSeconds()] : [])].map((n) => String(n).padStart(2, '0')).join(':'); }
+};
+
 export type LeaveByEvent = {
   title: string;
   startDate: Date;
@@ -17,6 +26,7 @@ const ms = (v: string | number | undefined) => (typeof v === 'number' ? v : v ? 
 
 /** "8:12am" in Sydney time. */
 export function sydClock(t: number): string {
+  if (PHONE24() && Number.isFinite(t)) return C24(t);
   return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', timeZone: 'Australia/Sydney' })
     .replace(/\s/g, '').toLowerCase();
 }

@@ -14,6 +14,7 @@ import { remindersSupported, setTripReminders, useTripReminders } from '@/lib/re
 import { HALVES, HOURS, ITEM, MINUTES, Wheel } from './WhenPicker';
 import { Icon, I } from './Icon';
 import { Sep, T } from './ui';
+import { useReduceMotion } from '@/lib/motion';
 
 const ORDER = [2, 3, 4, 5, 6, 7, 1]; // Mon first, as Sydney calendars show the week
 
@@ -78,6 +79,8 @@ export function TripReminders({ tripKey, name, open, suggest }: { tripKey: strin
 
 function ReminderSheet({ value, isNew, onClose, onSave, onDelete }: { value: Reminder | null; isNew: boolean; onClose: () => void; onSave: (r: Reminder) => void; onDelete: (r: Reminder) => void }) {
   const c = usePalette();
+  // Reduce Motion: the sheet fades in instead of sliding up.
+  const still = useReduceMotion();
   const ins = useSafeAreaInsets();
   const side = useSides();
   const ios = Platform.OS === 'ios';
@@ -127,7 +130,7 @@ function ReminderSheet({ value, isNew, onClose, onSave, onDelete }: { value: Rem
     </>
   );
   return (
-    <Modal visible transparent animationType={ios ? 'slide' : 'fade'} onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
+    <Modal visible transparent animationType={ios && !still ? 'slide' : 'fade'} onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
       <View style={[st.wrap, !ios && { justifyContent: 'center' }]}>
         <Pressable accessibilityRole="button" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.32)' }]} onPress={onClose} accessibilityLabel="Close" />
         {ios ? (

@@ -2,6 +2,11 @@
 // notifications. The server does the checking (docs/API.md, Morning check).
 import type { MorningCheck, MorningMode, MorningPreview, Place, PushCount } from './types';
 
+// The phone's 24-Hour Time setting (iPhone Settings, General, Date and Time): lib/rowTime.ts installs the reader
+// at start (installPhoneClock). Until then, and in tests, the 12 hour clock the app has always used.
+const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
+const HM24 = (h: number, m: number): string => `${String(((h % 24) + 24) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
 export const LEADS = [5, 10, 15, 20, 30] as const;
 export const DEFAULT_LEAD = 15;
 export const MODES: { key: MorningMode | null; label: string }[] = [
@@ -34,6 +39,7 @@ export function timeText(t: string) {
   const m = minutesOf(t);
   if (!Number.isFinite(m)) return t;
   const h = Math.floor(m / 60), mi = m % 60;
+  if (PHONE24()) return HM24(h, mi);
   return `${h % 12 || 12}:${String(mi).padStart(2, '0')}${h < 12 ? 'am' : 'pm'}`;
 }
 /** "Mon to Fri", "Every day", "Sat and Sun", or "Mon, Wed, Fri". Days are 1 (Monday) to 7. */

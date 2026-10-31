@@ -1,5 +1,10 @@
 // Mode chips and the endless list on the trip screen. Pure logic, no imports, so tests load it on their own.
 
+// The phone's 24-Hour Time setting (iPhone Settings, General, Date and Time): lib/rowTime.ts installs the reader
+// at start (installPhoneClock). Until then, and in tests, the 12 hour clock the app has always used.
+const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
+const HM24 = (h: number, m: number): string => `${String(((h % 24) + 24) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
 export type ModeK = 'train' | 'metro' | 'bus' | 'lightrail' | 'ferry';
 /** The chips, in the order they show. "Any" is the empty choice. */
 export const MODE_CHIPS: { k: ModeK; name: string }[] = [
@@ -261,7 +266,7 @@ export const isPastWhen = (w: WhenLike, now: number) => w.kind !== 'now' && when
 export function whenWords(w: WhenLike, now: number): string {
   if (w.kind === 'now') return 'Leave now';
   const p = pinDay(w, now);
-  const t = `${w.h % 12 || 12}:${String(w.m).padStart(2, '0')}${w.h < 12 ? 'am' : 'pm'}`;
+  const t = PHONE24() ? HM24(w.h, w.m) : `${w.h % 12 || 12}:${String(w.m).padStart(2, '0')}${w.h < 12 ? 'am' : 'pm'}`;
   const today = ymd(now);
   const tomorrow = ymd(sydneyTime(today, 12, 0) + 86400000);
   const d = p.day === today ? '' : p.day === tomorrow ? ' tomorrow' : ` ${dayShortOf(p.day as string)}`;

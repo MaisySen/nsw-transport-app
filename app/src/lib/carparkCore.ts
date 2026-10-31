@@ -3,6 +3,15 @@
 // Native imports, so test/carparks.test.mjs runs it in Node. Only numbers the server sent are shown; a car park
 // without a live count says so, and a station without a car park shows nothing.
 
+// The phone's 24-Hour Time setting (iPhone Settings, General, Date and Time): lib/rowTime.ts installs the reader
+// at start (installPhoneClock). Until then, and in tests, the 12 hour clock the app has always used.
+const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
+/** "07:55" (or "07:55:30"), Sydney time, for a phone set to 24 hour time. */
+const C24 = (t: number, sec = false): string => {
+  try { return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', ...(sec ? { second: '2-digit' } : {}), hourCycle: 'h23', timeZone: 'Australia/Sydney' } as Intl.DateTimeFormatOptions).format(new Date(t)); }
+  catch { const d = new Date(t); return [d.getHours(), d.getMinutes(), ...(sec ? [d.getSeconds()] : [])].map((n) => String(n).padStart(2, '0')).join(':'); }
+};
+
 export type ParkLike = { id: string; name: string; spots: number; free: number | null; stale?: boolean; updated?: string | null;
   status?: string; lat?: number; lon?: number; address?: string };
 
@@ -11,6 +20,7 @@ const isLive = (p: ParkLike) => p.free != null && Number.isFinite(p.free) && !p.
 /** "9:31pm" in Sydney time. */
 export function parkClock(t: number): string {
   if (!Number.isFinite(t)) return '';
+  if (PHONE24()) return C24(t);
   try { return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, (m) => m.trim().toLowerCase()); }
   catch { const d = new Date(t); return `${((d.getHours() + 11) % 12) + 1}:${String(d.getMinutes()).padStart(2, '0')}${d.getHours() < 12 ? 'am' : 'pm'}`; }
 }

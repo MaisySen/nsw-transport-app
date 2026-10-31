@@ -3,6 +3,11 @@
 // the service day (4am), gone services shown as Left with the live delay they left with, Now as before.
 import { earlierRow, earlierSteps, hasLeft, leftWords, serviceDayStart, sydney, sydneyTime, ymd, type PageState } from './tripModesCore';
 
+// The phone's 24-Hour Time setting (iPhone Settings, General, Date and Time): lib/rowTime.ts installs the reader
+// at start (installPhoneClock). Until then, and in tests, the 12 hour clock the app has always used.
+const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
+const HM24 = (h: number, m: number): string => `${String(((h % 24) + 24) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
 type DepLike = { line?: string; planned?: string | null; estimated?: string | null; realtime?: boolean; delayMin?: number | null; cancelled?: boolean; stopId?: string | null };
 
 /** What the board says when the server that answers earlier times did not answer. */
@@ -53,7 +58,7 @@ export function boardDayWord(at: number, now: number): string {
 export function boardWhenWords(at: number | null, now: number): string {
   if (at == null) return 'Now';
   const p = sydney(at);
-  const t = `${p.h % 12 || 12}:${String(p.m).padStart(2, '0')}${p.h < 12 ? 'am' : 'pm'}`;
+  const t = PHONE24() ? HM24(p.h, p.m) : `${p.h % 12 || 12}:${String(p.m).padStart(2, '0')}${p.h < 12 ? 'am' : 'pm'}`;
   const d = boardDayWord(at, now);
   return `From ${t}${d === 'Today' ? '' : ` ${d.toLowerCase()}`}`;
 }

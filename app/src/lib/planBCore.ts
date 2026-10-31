@@ -2,12 +2,22 @@
 // live times say you will miss, or buses replacing trains (trackwork), the best other way from the planner results.
 // Pure logic; the cards are in app/trip.tsx and components/Home.tsx (docs/PLAN-B.md).
 
+// The phone's 24-Hour Time setting (iPhone Settings, General, Date and Time): lib/rowTime.ts installs the reader
+// at start (installPhoneClock). Until then, and in tests, the 12 hour clock the app has always used.
+const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
+/** "07:55" (or "07:55:30"), Sydney time, for a phone set to 24 hour time. */
+const C24 = (t: number, sec = false): string => {
+  try { return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', ...(sec ? { second: '2-digit' } : {}), hourCycle: 'h23', timeZone: 'Australia/Sydney' } as Intl.DateTimeFormatOptions).format(new Date(t)); }
+  catch { const d = new Date(t); return [d.getHours(), d.getMinutes(), ...(sec ? [d.getSeconds()] : [])].map((n) => String(n).padStart(2, '0')).join(':'); }
+};
+
 export type Problem = { kind: 'cancelled' | 'suspended' | 'missed' | 'trackwork'; line?: string; mode?: string; tripId?: string; text: string };
 
 const t = (s?: string | null) => (s ? new Date(s).getTime() : NaN);
 const best = (p?: string | null, e?: string | null, live?: boolean) => { const x = live === false ? NaN : t(e); return Number.isFinite(x) ? x : t(p); };
 const transit = (j: any): any[] => (j?.legs || []).filter((l: any) => l && l.kind !== 'walk' && l.line);
 const clock = (ms: number) => {
+  if (PHONE24() && Number.isFinite(ms)) return C24(ms);
   try { return new Date(ms).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, (m) => m.trim().toLowerCase()); }
   catch { const d = new Date(ms), h = d.getHours(); return `${((h + 11) % 12) + 1}:${String(d.getMinutes()).padStart(2, '0')}${h < 12 ? 'am' : 'pm'}`; }
 };
