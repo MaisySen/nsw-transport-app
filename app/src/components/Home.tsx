@@ -33,7 +33,7 @@ import { openService } from './Cards';
 import { pressService } from '@/lib/prefetch';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { allSettledMap, nearFirstPaint, type NearKept } from '@/lib/speedCore';
-import { LineBadge, OccupancyChip } from './Transit';
+import { LineBadge, OccupancyChip, depState } from './Transit';
 import { swipeA11y, type SwipeAct } from './Swipe';
 import { useReliabilityText } from '@/lib/reliability';
 import { font, Sep, T } from './ui';
@@ -897,19 +897,31 @@ export function StopBoard({ stop, now, starred, distance, menu }: { stop: Place;
       {packAt && !offlineAt ? <T kind="foot" tone="text2" style={s.note}>{packStampText(!!error)}</T> : null}
       {(data as any)?.source === 'timetable' && !packAt && !offlineAt && groups.length ? <T kind="foot" tone="text2" style={s.note}>{TIMETABLE_BOARD_NOTE}</T> : null}
       {data && !groups.length ? <T kind="foot" tone="text2" style={s.note}>{boardNote({ offlineAt, error, staleAt, why: failWhy() })}</T> : null}
+      {staleAt && !offlineAt && !packAt && groups.length ? <T kind="foot" tone="text2" style={s.note}>{updatingText(stampText(staleAt, now))}</T> : null}
       {withKeys(groups, (g) => `${g.d.line}|${g.d.dest}`).map(({ v: { d, next }, k: rowKey }) => {
-        const t = cd(bestTime(d.planned, d.realtime ? d.estimated : null), now);
-        const n = next ? cd(bestTime(next.planned, next.realtime ? next.estimated : null), now) : null;
+        // Honest labels on the stop card (31 Oct, R1): only a fresh live time counts down in green. A kept copy whose
+        // live time has aged, a timetable pack row or a row with no live time shows its timetable time, says
+        // "Timetable" under it, and is read as a timetable time. Cancelled says so.
+        const ls = depState(d, now);
+        const live = ls.kind === 'live';
+        const tag = live ? '' : ls.kind === 'cancelled' ? 'Cancelled' : 'Timetable';
+        const t = cd(live ? bestTime(d.planned, d.estimated) : ls.t, now);
+        const nls = next ? depState(next, now) : null;
+        const n = next && nls ? cd(nls.kind === 'live' ? bestTime(next.planned, next.estimated) : nls.t, now) : null;
+        const said = live ? 'live' : tag === 'Cancelled' ? 'cancelled' : 'timetable time, no live data';
         return (
           <View key={rowKey}>
             <Sep inset={16} />
-            <Pressable accessibilityRole="button" onPress={() => openService({ ...d, stopName: d.stopName || data?.stop?.name || stop.name })} onPressIn={() => pressService(d)} android_ripple={{ color: c.fill }} accessibilityLabel={`${d.line} to ${d.dest}, ${t.big} ${t.unit}${d.realtime ? ', live' : ', scheduled'}`}
+            <Pressable accessibilityRole="button" onPress={() => openService({ ...d, stopName: d.stopName || data?.stop?.name || stop.name })} onPressIn={() => pressService(d)} android_ripple={{ color: c.fill }} accessibilityLabel={`${d.line} to ${d.dest}, ${t.big} ${t.unit}, ${said}`}
               style={({ pressed }) => [s.dep, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
               <LineBadge line={d.line} mode={d.mode} color={d.color} kind />
               <T kind="body" numberOfLines={1} style={{ flex: 1, marginLeft: 10 }}>{shortName(d.dest)}</T>
-              <Text maxFontSizeMultiplier={1.4} style={[font.callout, { fontWeight: '600', color: d.realtime ? c.liveText : c.text, fontVariant: ['tabular-nums'], marginLeft: 8 }]}>
-                {t.big}{t.unit ? ` ${t.unit}` : ''}
-              </Text>
+              <View style={{ alignItems: 'flex-end', marginLeft: 8 }}>
+                <Text maxFontSizeMultiplier={1.4} style={[font.callout, { fontWeight: '600', color: live ? c.liveText : tag === 'Cancelled' ? c.redText : c.text2, fontVariant: ['tabular-nums'] }]}>
+                  {t.big}{t.unit ? ` ${t.unit}` : ''}
+                </Text>
+                {tag ? <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={[font.caption, { color: tag === 'Cancelled' ? c.redText : c.text2 }]}>{tag}</Text> : null}
+              </View>
               {n ? <T kind="foot" tone="text2" style={{ marginLeft: 8, minWidth: 22, textAlign: 'right', fontVariant: ['tabular-nums'] }}>{n.big}</T> : null}
             </Pressable>
           </View>
