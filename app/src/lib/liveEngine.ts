@@ -26,7 +26,7 @@ import { badgeLook } from './lineStyle';
 import type { ServiceResp, WatchLeg } from './types';
 import { fillFeeds, needsFeed, stopsToLook } from './feedCore';
 import { apiBase, NEW_API_BASE } from './server';
-import { liveServiceQuery } from './liveFreshCore';
+import { liveServiceQuery, wantsBoard } from './liveFreshCore';
 
 export const short = (n?: string | null) => shortName(n || '').replace(/ Station$/, '');
 export const plat = (p?: string | null) => (p ? p.replace(/^Platform\s*/i, 'Platform ').replace(/^Stand\s*/i, 'Stand ') : '');
@@ -131,7 +131,7 @@ export async function tickLive(opts: { noFetch?: boolean } = {}) {
         if (!(full || i === prev || i === prev + 1)) return;
         try {
           // A leg already answered asks as a refresh (liveFreshCore.ts): live feed times, not a copy up to a minute old.
-          next[i] = await api.service(liveServiceQuery({ trip: l.tripId || undefined, mode: l.mode, line: l.line, stop: l.stopId, destId: l.destId || undefined, planned: l.planned, to: l.toStopId || undefined, dest: l.towards || undefined, stopName: l.from || undefined, color: l.color || undefined, feed: l.feed || undefined }, !!svcCache[i]));
+          next[i] = await api.service(liveServiceQuery({ trip: l.tripId || undefined, mode: l.mode, line: l.line, stop: l.stopId, destId: l.destId || undefined, planned: l.planned, to: l.toStopId || undefined, dest: l.towards || undefined, stopName: l.from || undefined, color: l.color || undefined, feed: l.feed || undefined }, !!svcCache[i], { board: wantsBoard(l.planned, (cur.rode || {})[i] != null, Date.now()) }));
         } catch { failed++; }
       }));
       // The trip or its legs changed while these were on their way (Switch to this, a new trip): drop them; the next

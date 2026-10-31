@@ -8,8 +8,22 @@
  * Before 29 Oct every ask was a plain open, which takes a copy up to a minute old at once, so the trip screen, the
  * get off alert and the trip card ran 15 to 45 seconds behind the live feed.
  */
-export function liveServiceQuery<T extends Record<string, string | undefined>>(q: T, held: boolean): T & { refresh?: string } {
-  return held ? { ...q, refresh: '1' } : q;
+export function liveServiceQuery<T extends Record<string, string | undefined>>(q: T, held: boolean, o: { board?: boolean } = {}): T & { refresh?: string; board?: string } {
+  const r: T & { refresh?: string; board?: string } = held ? { ...q, refresh: '1' } : { ...q };
+  if (o.board) r.board = '1';
+  return r;
+}
+
+/**
+ * Trip flow 2 (31 Oct): whether the ask for a leg also asks for the boarding stop's departure board row (board=1), so
+ * the open app counts to the same board live time and shows the same live platform as the server's card (G19, G21,
+ * I6). Only before the train has left (not ridden yet) and inside the server's board window (planned under 45 min
+ * ahead, under 30 min past), so it costs one shared board read per stop per 14 s and only while waiting.
+ */
+export function wantsBoard(planned: string | undefined | null, ridden: boolean, now: number): boolean {
+  if (ridden || !planned) return false;
+  const p = new Date(planned).getTime();
+  return Number.isFinite(p) && p - now < 45 * 60000 && p > now - 30 * 60000;
 }
 
 /** How recent the app's own live times must be for it to write the trip card when it comes back to the front. */

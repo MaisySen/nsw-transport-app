@@ -74,7 +74,18 @@ export function makeRealEngine(ts) {
         else if (run != null) { s.estimated = iso(tt + run); s.carried = true; }
       });
       if (run != null || Object.values(L.est).some((x) => x != null)) { d.live = true; if (run != null) d.delayMin = Math.round(run / 60); }
-      if (!L.unmatched) stops[1].platform = leg.mode === 'bus' ? undefined : (L.platform || leg.platform) ? `Platform ${L.platform || leg.platform}` : undefined;
+      // The real /api/service stop rows carry no platform (backend/src/worker.js service()): the live platform and the
+      // board's live time come in the answer's board row, which a trip flow 2 app asks for (board=1) before the train
+      // leaves, inside the server's board window; the row is built as the departure board serves it (tools/case-feed.mjs
+      // caseBoard): the stop's own live time, else the board's, else the run's delay; the live platform, else the planned.
+      const tt0 = leg.stops[0].tt;
+      const bEst = L.est[0] != null ? L.est[0] : L.board != null ? L.board : run != null ? tt0 + run : null;
+      const gone = (bEst != null ? bEst : tt0) + 60;
+      if (tt0 - snap.asOf < 45 * 60 && tt0 > snap.asOf - 30 * 60 && snap.asOf < gone) {
+        const bLive = !L.unmatched && bEst != null;
+        d.board = { planned: iso(tt0), estimated: bLive ? iso(bEst) : null, realtime: bLive, tripId: c.watch[li].tripId,
+          platform: leg.mode === 'bus' ? null : (L.platform || leg.platform) ? `Platform ${L.platform || leg.platform}` : null, cancelled: !!L.cancelled };
+      }
       if (L.cancelled) d.cancelled = true;
       if (L.vehicle && L.vehicle.stop >= 0) {
         const k = L.vehicle.stop + 1;
@@ -91,8 +102,8 @@ export function makeRealEngine(ts) {
     let r = c.readings.get(snap);
     if (!r) {
       const ans = answersFor(P, snap);
-      const boards = P.legs.map((leg, li) => { const L = snap.legs[li]; return L && L.board != null ? { planned: iso(leg.stops[0].tt), estimated: iso(L.board), realtime: true, tripId: c.watch[li].tripId } : null; });
-      r = ts.tripReadingFrom(c.plan, c.watch, ans, toMs(snap.asOf), { boards, next: snap.legs.map((L) => (L && L.next) || null) });
+      // the board row rides each answer (d.board), as the real server sends it for board=1 asks
+      r = ts.tripReadingFrom(c.plan, c.watch, ans, toMs(snap.asOf), { next: snap.legs.map((L) => (L && L.next) || null) });
       c.readings.set(snap, r);
     }
     return r;

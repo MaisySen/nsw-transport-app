@@ -6,7 +6,7 @@ The iPhone and Android apps are one Expo app (`app/`). Anything below marked "ov
 
 ## New live trip flow, app side (31 Oct, branch `tripflow-p2`, not released)
 
-The trip screen, Lock Screen card, Island and alerts work from one live trip state (`app/src/lib/tripState.ts`). Times come from the live train and never move by the timetable clock. The app rings heads-up, Get off now (30 s before the live arrival) and arrived itself while open, with one light tap. Speech waits 10 s and two refreshes after opening. "Wake me before my stop" is removed. The card shows Due, the live platform, cancellations and how old the data is, on the phone's 12 or 24 hour clock. The server uses the same code when its `tripflow2` switch is on and the app sends `tripFlow: 2`. Spec: docs/TRIP_FLOW_SPEC.md; API: docs/TRIP_STATE_API.md.
+The trip screen, Lock Screen card, Island and alerts work from one live trip state (`app/src/lib/tripState.ts`). Times come from the live train and never move by the timetable clock. The app rings heads-up, Get off now (30 s before the live arrival) and arrived itself while open, with one light tap. Speech waits 10 s and two refreshes after opening. "Wake me before my stop" is removed. The card shows Due, the live platform, cancellations and how old the data is, on the phone's 12 or 24 hour clock. The server uses the same code when its `tripflow2` switch is on and the app sends `tripFlow: 2`. Spec: docs/TRIP_FLOW_SPEC.md; API: docs/TRIP_STATE_API.md. Before the train leaves, the live platform and the departure board's live time come with the service answer (the server's board row), the same ones the server's card uses.
 
 ## Journey simulator (31 Oct, branch `tripflow-sim`, no app change)
 

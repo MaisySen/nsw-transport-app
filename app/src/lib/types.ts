@@ -111,6 +111,8 @@ export type ServiceResp = {
   vehicle?: Vehicle; where?: { text?: string; near?: string; next?: string } | null; nextIndex?: number; mineIndex?: number; alightIndex?: number; stopsAway?: number | null;
   /** What nextIndex rests on (api.transportsydney.app): the vehicle, live times, or only the timetable clock. */ progress?: 'vehicle' | 'live' | 'timetable';
   mine?: { name: string; planned?: string; estimated?: string; passed?: boolean } | null; stops: ServiceStop[]; path?: [number, number][]; alerts?: Alert[]; pred?: Prediction; error?: string;
+  /** Trip flow 2 (board=1 asks, before the train leaves): the boarding stop's departure board row for this trip; null when none. */
+  board?: { planned?: string; estimated?: string | null; realtime?: boolean; tripId?: string | null; platform?: string | null; cancelled?: boolean } | null;
 };
 
 export type SearchItem = { id: string; name: string; modes?: number[] };

@@ -6809,6 +6809,9 @@ const LIVECARD = (() => {
         const run = new Array(n).fill(null);
         let runAsOf = null;
         let board = null;
+        if (!o.board && d && d.board)
+            o = { ...o, board: d.board };
+        const boardPlat = pl.mode === 'bus' ? null : platNum(o.board?.platform ?? null);
         if (o.board && o.board.realtime && o.board.estimated && (!o.board.tripId || !w?.tripId || o.board.tripId === w.tripId))
             board = tms(o.board.estimated);
         const planner = w && w.estimated && w.planned && o.plannerAt != null ? tms(w.estimated) - tms(w.planned) : null;
@@ -6819,7 +6822,7 @@ const LIVECARD = (() => {
                 run.fill(planner);
                 runAsOf = o.plannerAt ?? null;
             }
-            return { est, run, runAsOf, board, vehicle: null, platform: null, cancelled: false, next: o.next ?? null, unmatched: false };
+            return { est, run, runAsOf, board, vehicle: null, platform: boardPlat, cancelled: !!o.board?.cancelled, next: o.next ?? null, unmatched: false };
         }
         const first = w ? boardIndexOf(w, d) : findStop(d, pl.stops[0].id, pl.stops[0].name, 0, pl.stops[0].alias);
         const map = [];
@@ -6885,8 +6888,8 @@ const LIVECARD = (() => {
             }
         }
         const mineS = d.stops[map[0]];
-        const platform = pl.mode === 'bus' ? null : platNum(mineS?.platform) || null;
-        return { est, run, runAsOf, board, vehicle, platform, cancelled: !!d.cancelled, next: o.next ?? null, unmatched: false };
+        const platform = pl.mode === 'bus' ? null : platNum(mineS?.platform) || boardPlat || null;
+        return { est, run, runAsOf, board, vehicle, platform, cancelled: !!d.cancelled || !!o.board?.cancelled, next: o.next ?? null, unmatched: false };
     }
     function tripReadingFrom(plan, legs, svc, asOf, o = {}) {
         return {

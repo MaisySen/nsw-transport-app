@@ -5,6 +5,7 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 ## New live trip flow (31 Oct, branch tripflow-p2)
 
 * `app/test/journeysim-real.test.mjs`: the 30 journey cases and invariants I1 to I10, checked every second on the real app code (tripState, liveCalc, tripCard) and compared frame by frame with the reference engine; the I3 timetable shift; the build 211 failure replays still fail.
+* `app/test/tripflow2-board.test.mjs` (5): the board row ask (`board=1` only before the train has left, inside the 45 min window) and the trip state taking the board's live time and live platform from the answer; a board row for another trip, or none, is not used.
 * `app/test/tripstate.test.mjs`: feed shapes (planner estimate, carried run delay, unmatched stops), vehicle evidence, 24 hour words, the voice gate, purity.
 * `app/test/tripflow2-app.test.mjs`: tripFlow 2 and c24 in registrations, the calm sequence and the exact Get off now timer, the voice gate, get off with flow2, soundless server push while open, card words, Wake me removed, the server copy carrying tripState.
 * Run: `cd app && OFFLINE=1 TZ=Australia/Sydney node --test test/*.test.mjs`.
