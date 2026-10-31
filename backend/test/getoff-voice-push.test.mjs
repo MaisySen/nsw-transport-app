@@ -35,6 +35,7 @@ test("the wiring: stored from the request, carried on the arrival alerts only, i
   assert.equal(arrivals.length, 4, "Next stop and Arriving, last leg and change");
   assert.equal((raw.match(/sound: voiceSound\(spec\)/g) || []).length, 4, "no other alert speaks");
   assert.match(raw, /watchId: w\.id, \.\.\.\(extra\.sound \? \{ sound: extra\.sound \} : \{\}\)/);
-  assert.match(raw, /to: t\.token, title: n\.title, body: n\.body, \.\.\.expoSound\(n\), priority: "high",/);
+  // A passive note of the new trip flow has no sound; every other alert keeps expoSound.
+  assert.match(raw, /to: t\.token, title: n\.title, body: n\.body, \.\.\.\(n\.passive \? \{ sound: null, channelId: "default", interruptionLevel: "passive" \} : expoSound\(n\)\), priority: n\.passive \? "normal" : "high",/);
   assert.doesNotMatch(raw, /sound: "default", priority: "high", channelId: "default"/);
 });

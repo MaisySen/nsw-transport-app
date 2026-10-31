@@ -637,22 +637,25 @@ function feedFreshness(now = Date.now()) {
   return { at: now, maxAgeS: FEED_LIVE_MAX_MS / 1000, headerTime: FEED_HEADER_USE, isolate: feedStats.isolate, byMode, feeds };
 }
 
-async function loadFeed(env, path, kind) {
+async function loadFeed(env, path, kind, maxAgeMs) {
   const now = Date.now();
   const hit = feedMem.get(path);
-  if (hit && hit.buf && now - hit.at < FEED_TTL_MS) { feedStats.memHits++; return hit; }
+  // maxAgeMs (the new trip flow's read at a Get off now moment): a copy older than that is fetched again, past the
+  // shared 15 s copy, so the alert rests on what the feed says now.
+  const fresh = Number.isFinite(maxAgeMs) && maxAgeMs > 0 && maxAgeMs < FEED_TTL_MS;
+  if (hit && hit.buf && now - hit.at < (fresh ? maxAgeMs : FEED_TTL_MS)) { feedStats.memHits++; return hit; }
   // A fetch still running after FEED_JOB_MAX_MS is taken as lost and asked again: the request that started it may have
   // answered before it finished (realtimeFor waits FEED_WAIT_MS at most), and the runtime can drop its unfinished work.
   // Before 26 Oct (g28) such a fetch stayed in feedMem for the life of the copy: no fresh feed again, and every later
   // board waited FEED_WAIT_MS for it.
-  if (hit && hit.job && (hit.job.done || now - hit.job.at < FEED_JOB_MAX_MS)) return joinJob(hit.job, FEED_JOB_MAX_MS);
+  if (hit && hit.job && !fresh && (hit.job.done || now - hit.job.at < FEED_JOB_MAX_MS)) return joinJob(hit.job, FEED_JOB_MAX_MS);
   const promise = (async () => {
     // One copy per location is shared through Cloudflare's own fetch cache (good answers only): the same 15 s
     // sharing the Cache API gave, but the copy is stored outside this isolate, so it costs no CPU here.
     // Putting a 2.3 MB feed into the Cache API took about 25 ms of CPU on every fresh fetch, and most
     // requests run in a fresh isolate. A copy from that cache says how old it is in Age.
     const f0 = Date.now();
-    const res = await fetch(API + path, { headers: { Authorization: "apikey " + apiKey(env) }, signal: AbortSignal.timeout(FEED_JOB_MAX_MS - 2000), cf: { cacheEverything: true, cacheTtlByStatus: { "200-299": Math.round(FEED_TTL_MS / 1000), "300-599": 0 } } }).finally(() => reqUpstream(Date.now() - f0));
+    const res = await fetch(API + path, { headers: { Authorization: "apikey " + apiKey(env) }, signal: AbortSignal.timeout(FEED_JOB_MAX_MS - 2000), cf: fresh ? { cacheTtl: 0 } : { cacheEverything: true, cacheTtlByStatus: { "200-299": Math.round(FEED_TTL_MS / 1000), "300-599": 0 } } }).finally(() => reqUpstream(Date.now() - f0));
     const shared = res.headers && res.headers.get("cf-cache-status") === "HIT";
     if (shared) feedStats.edgeHits++; else { upstream.calls++; feedStats.fetched++; }
     if (!res.ok) { upstreamRefused(res.status, res.headers && res.headers.get("x-error-detail")); throw new Error(`Realtime feed ${path} answered ${res.status}`); }
@@ -689,7 +692,7 @@ function decodeFrom(feed, tripId) {
 }
 
 // Loads the trip update and vehicle feeds needed for a set of (mode, line) pairs.
-async function realtimeFor(env, pairs) {
+async function realtimeFor(env, pairs, o = {}) {
   const keys = new Set();
   for (const [mode, line, feed] of pairs) for (const k of feedKeys(mode, line, feed)) keys.add(k);
   const out = {};
@@ -706,8 +709,8 @@ async function realtimeFor(env, pairs) {
     const f = FEEDS[k];
     const late = () => new Promise((r) => setTimeout(() => r(null), FEED_WAIT_MS));
     const [tu, vp] = await Promise.all([
-      Promise.race([loadFeed(env, f.tu, "tu").catch(() => null), late()]),
-      Promise.race([loadFeed(env, f.vp, "vp").catch(() => null), late()]),
+      Promise.race([loadFeed(env, f.tu, "tu", o.maxAgeMs).catch(() => null), late()]),
+      Promise.race([loadFeed(env, f.vp, "vp", o.maxAgeMs).catch(() => null), late()]),
     ]);
     out[k] = { tu: fresh(tu, f.tu, "tu"), vp: fresh(vp, f.vp, "vp") };
   }));
@@ -4058,7 +4061,7 @@ async function notify(env, target, n) {
   // others): the alert goes straight to Apple on the phone's own push token (apns_devices), with the apnsAlerts flag on.
   const apns = expo.some((x) => x === "ok") ? [] : await sendApnsAlert(env, target, { ...n, id: noteId, at: now }).catch((e) => ["error: " + String(e && e.message || e).slice(0, 80)]);
   const okCount = results.filter((x) => x === 201 || x === 200).length + expo.filter((x) => x === "ok").length + apns.filter((x) => x === "ok").length;
-  const status = { web: results, expo, ...(apns.length ? { apns, apnsDevice: target.device || null } : {}) };
+  const status = { web: results, expo, ...(apns.length ? { apns, apnsDevice: target.device || null } : {}), ...(n.tf ? { tf: 1, exp: n.tf.exp || null, apnsDevice: target.device || null } : {}) };
   await d.prepare("UPDATE notes SET pushed = ?2, push_status = ?3 WHERE id = ?1").bind(noteId, okCount, JSON.stringify(status)).run();
   return { noteId, pushed: results, expo, apns };
 }
@@ -4089,6 +4092,9 @@ function alertKind(once, tagSuffix, getOff) {
  * 2 minutes. Never less than 30 s from now.
  */
 function alertExpiry(n, now) {
+  // The new trip flow names each alert's own end (G33): heads-up at the live arrival, Get off now 30 s after it, the
+  // arrival 2 min after it.
+  if (n.expiresAt != null && Number.isFinite(Number(n.expiresAt))) return Math.max(now + 5000, Number(n.expiresAt));
   const at = Number(n.dueAt);
   const kind = String(n.kind || "");
   let until = now + (Number(n.ttl) > 0 ? Number(n.ttl) * 1000 : 120000);
@@ -4113,8 +4119,8 @@ async function sendApnsAlert(env, target, n) {
   const now = Date.now();
   const data = { url: n.url || "/", watch: n.watchId || null, id: n.id, tag: n.tag || "tb", ...(n.getOff ? { getOff: n.getOff } : {}) };
   const s = n && (n.sound === "getoff_soon" || n.sound === "getoff_now") ? n.sound + ".wav" : "default";
-  const payload = { aps: { alert: { title: n.title, body: n.body }, sound: s, "thread-id": n.watchId ? "w" + n.watchId : "tb",
-    ...(n.timeSensitive ? { "interruption-level": "time-sensitive" } : {}) }, body: data, ...data };
+  const payload = { aps: { alert: { title: n.title, body: n.body }, ...(n.passive ? { "interruption-level": "passive" } : { sound: s }), "thread-id": n.watchId ? "w" + n.watchId : "tb",
+    ...(n.timeSensitive && !n.passive ? { "interruption-level": "time-sensitive" } : {}) }, body: data, ...data };
   const o = { topic: env.APNS_BUNDLE, pushType: "alert", priority: 10, expiresMs: alertExpiry(n, now),
     ...(n.watchId && n.kind ? { collapseId: `w${n.watchId}-${n.kind}` } : {}) };
   const out = [];
@@ -4135,7 +4141,7 @@ async function sendExpo(env, target, n) {
     : (await d.prepare("SELECT * FROM expo_tokens WHERE profile = ?1").bind(target.profile).all()).results || []).filter(expoLive);
   if (!toks.length) return [];
   const msgs = toks.slice(0, 6).map((t) => ({
-    to: t.token, title: n.title, body: n.body, ...expoSound(n), priority: "high",
+    to: t.token, title: n.title, body: n.body, ...(n.passive ? { sound: null, channelId: "default", interruptionLevel: "passive" } : expoSound(n)), priority: n.passive ? "normal" : "high",
     // The server's Get off now (30 Oct) breaks through a Focus like the phone's own get off alert (time sensitive).
     ...(n.timeSensitive ? { interruptionLevel: "time-sensitive" } : {}),
     ttl: n.ttl || 900, data: { url: n.url || "/", watch: n.watchId || null, id: n.id, tag: n.tag || "tb", ...(n.getOff ? { getOff: n.getOff } : {}) },
@@ -5570,6 +5576,10 @@ function noteForCatchUp(n, now, device) {
   let ps = null;
   try { ps = n.push_status ? JSON.parse(n.push_status) : null; } catch { ps = null; }
   if (ps && Array.isArray(ps.apns) && ps.apns.includes("ok") && ps.apnsDevice && ps.apnsDevice === device) return false;
+  // The new trip flow (G32): an alert the card's push already brought to this phone is not shown again; the rest only
+  // while still true (not past its own end) and under 90 s old.
+  if (ps && ps.la === "ok" && ps.apnsDevice && ps.apnsDevice === device) return false;
+  if (ps && ps.tf) { const at0 = Number(n.at); return Number.isFinite(at0) && now - at0 <= TF.CATCHUP_MAX && !(Number(ps.exp) > 0 && now > Number(ps.exp)); }
   const at = Number(n.at);
   if (!Number.isFinite(at) || at <= 0) return true;
   const title = String(n.title || ""), body = String(n.body || "");
@@ -5612,6 +5622,8 @@ async function getOffNoFeedPass(env, now) {
     let spec, st;
     try { spec = JSON.parse(w.spec); st = w.state ? JSON.parse(w.state) : {}; } catch { continue; }
     if (!getOffWanted(spec)) continue;
+    // The new trip flow never rings from a timetable guess or data over 5 min old (G23).
+    if (await tfOn(env, spec)) continue;
     const legs = spec.legs || [];
     const rows = legs.map((l) => ({ dep: ms(l.estimated || l.planned), arr: null, arrLive: false }));
     let changed = false;
@@ -5644,6 +5656,12 @@ function expoSound(n) {
 async function processWatch(env, w, now, opts = {}) {
   const spec = JSON.parse(w.spec);
   const st = w.state ? JSON.parse(w.state) : {};
+  // The new trip flow: the trip flow pass (tfPass) reads these watches on its own cadence; an open app's tick (device)
+  // steps one when it is due. None of the old alerts below (Leave now, the 90 s and timetable Get off, Next stop).
+  if (await tfOn(env, spec)) {
+    if (!opts.device || !tfDue(st, now)) return { id: w.id, flow: 2, skipped: opts.device ? "not due" : "trip flow pass" };
+    return tfStepWatch(env, w, now, opts);
+  }
   const sent = [];
   const target = { device: w.device };
   const url = `/#/watch/${w.id}`;
@@ -5843,6 +5861,521 @@ async function processWatch(env, w, now, opts = {}) {
   return { id: w.id, phase, ended, sent };
 }
 
+// ---- trip flow 2 start
+// The new live trip flow (docs/TRIP_FLOW_SPEC.md sections 2.1 to 2.9, owner's OK 31 Oct 2026, 9:12 PM), server side.
+// Only for registrations that carry tripFlow >= 2 (the new app sends it with every trip, get off and card registration)
+// AND while the server switch tripflow2 is on (SERVER_OPT_IN: off until an admin turns it on). Everything else keeps
+// the old path unchanged, so a deploy changes nothing for any phone until the switch and the app update go together.
+// Every decision (phases from the live train, the calm sequence, delay, platform, cancellation and missed change
+// alerts, their words and moment keys, the card's times and words) is the app's own trip state (app/src/lib/
+// tripState.ts, inlined in LIVECARD by tools/gen-livecard.mjs), so the phone and the server never disagree (I6). This
+// part reads the live data into that state's reading, sends what it says when, and pushes the card.
+const TF = {
+  READ: 30000,            // a live trip is read every 30 s
+  READ_NEAR: 15000,       // and every 15 s once the live arrival is under 5 min away (LIVECARD.serverPollMs)
+  PUSH_AT_LEAST: 60000,   // the card is pushed on every change and at least every 60 s while live
+  CATCHUP_MAX: 90000,     // catch-up on open: alerts under 90 s old that are still true
+  PASS_SPAN: 62000,       // one cron run holds reads and timers up to this long (the next run takes over)
+  BOARD_WINDOW: 45 * 60000,
+  FRESH_AT_MOMENT: 5000,  // at a named moment the feed copy read is under 5 s old
+};
+// Kylie clips in build 211 (getoff_soon, getoff_now); the arrival clip needs build 212 (or the sound folder copy), so
+// the arrival alert rings with the default sound until then.
+const TF_SOUND = { headsup: "getoff_soon", getoff: "getoff_now", arrived: null };
+
+/** This registration asked for the new trip flow (the new app sends tripFlow: 2). */
+const tfWanted = (spec) => !!(spec && Number(spec.tripFlow) >= 2);
+/** The new flow runs for this registration: it asked, and the server switch tripflow2 is on. */
+async function tfOn(env, spec) { return tfWanted(spec) && (await serverOn(env, "tripflow2")); }
+const tfNorm = (s) => String(s || "").toLowerCase().replace(/,.*$/, "").replace(/\s+(station|wharf|light rail)$/, "").replace(/[^a-z0-9]+/g, " ").trim();
+const tfPI = () => LIVECARD.PHASE_INDEX;
+
+/**
+ * One live reading of the trip (G18 to G22), raw: per leg the stop's own live times (boarding stop, the stop before
+ * yours, your stop) from the trip update feed, matched by stop id or by station name (a platform id that differs from
+ * the one the app registered, and stops with no coordinates, still match); the carried delay (also behind the first
+ * stop the feed has news for, G20); the vehicle against those stops; the departure board's live time, platform,
+ * cancellation and next services for the leg about to be boarded and the next leg of a change (G19, G21, G22). The
+ * services the trip switched to (st.tfAlts) are read the same way. asOf: when the feed copy was made (null when no
+ * copy under 5 min old exists). o.fresh: read the feed past the shared 15 s copy (a named moment).
+ */
+async function tfRead(env, spec, st, now, o = {}) {
+  const legs = spec.legs;
+  const alts = (st.tfAlts || []).map((a) => a.leg);
+  const all = legs.concat(alts);
+  let rt = null;
+  try { rt = await realtimeFor(env, all.map((l) => [l.mode, l.line, l.feed]), o.fresh ? { maxAgeMs: TF.FRESH_AT_MOMENT } : undefined); } catch (e) { rt = null; }
+  const asOf = rt ? rt.dataTs() : null;
+  const tus = all.map((l) => (rt && asOf ? rt.tu(l.mode, l.line, l.tripId, l.feed) : null));
+  const ids = new Set();
+  all.forEach((l, i) => { ids.add(l.stopId); if (l.toStopId) ids.add(l.toStopId); for (const u of (tus[i] && tus[i].stus) || []) ids.add(u.stopId); });
+  ids.delete(null); ids.delete(undefined);
+  const info = await stopInfo(env, [...ids]).catch(() => ({}));
+  const raw = all.map((l, i) => tfLegRaw(l, tus[i], rt && asOf ? vehicleOf(rt.vp(l.mode, l.line, l.tripId, l.feed)) : null, info, asOf));
+  const M = st.tf;
+  const cur = M && Number.isInteger(M.current) ? Math.min(M.current, legs.length - 1) : 0;
+  const left = M && M.legs[cur] && M.legs[cur].phase >= tfPI().left;
+  const boardLegs = [];
+  if (!left) boardLegs.push(cur);
+  if (cur + 1 < legs.length) boardLegs.push(cur + 1);
+  for (const bi of boardLegs) await tfBoard(env, legs[bi], raw[bi], now, o);
+  // Candidate services to switch to (not yet chosen): the next one on the board of a cancelled leg, and of the next
+  // leg of a change.
+  const cands = [];
+  for (const bi of boardLegs) {
+    if ((st.tfAlts || []).some((a) => a.forLeg === bi)) continue;
+    const alt = (raw[bi].alts || [])[0];
+    if (!alt) continue;
+    const l = legs[bi];
+    const shift = ms(alt.planned) - ms(l.planned);
+    const wl = { ...l, tripId: alt.tripId || null, planned: alt.planned, estimated: alt.estimated || null, fromPlatform: alt.platform || l.fromPlatform, feed: alt.feed !== undefined ? cleanFeed(alt.feed) ?? l.feed : l.feed,
+      arrPlanned: l.arrPlanned ? iso(ms(l.arrPlanned) + shift) : l.arrPlanned };
+    const tu = rt && asOf ? rt.tu(wl.mode, wl.line, wl.tripId, wl.feed) : null;
+    const r = tfLegRaw(wl, tu, rt && asOf ? vehicleOf(rt.vp(wl.mode, wl.line, wl.tripId, wl.feed)) : null, info, asOf);
+    if (alt.estimated && !r.unmatched) r.board = ms(alt.estimated);
+    if (alt.platform) { r.platform = LIVECARD.platNum(alt.platform); }
+    cands.push({ forLeg: bi, leg: wl, raw: r, id: "alt:" + bi + ":" + (wl.tripId || wl.planned) });
+  }
+  return { asOf, at: now, legs: raw.slice(0, legs.length), alts: raw.slice(legs.length), cands };
+}
+
+/** The departure board's live time, platform, cancellation and next services for one leg (G19, G21, G22). */
+async function tfBoard(env, bl, r, now, o = {}) {
+  if (!bl || o.board === false || !(ms(bl.planned) - now < TF.BOARD_WINDOW) || !(ms(bl.planned) > now - 30 * 60000)) return;
+  try {
+    const b = await departures(env, bl.stopId, { log: false, timetable: false });
+    const items = (b && b.items) || [];
+    const hit = items.find((x) => (bl.tripId && x.tripId === bl.tripId) || (x.line === bl.line && Math.abs(ms(x.planned) - ms(bl.planned)) < 90000));
+    if (hit) {
+      if (hit.realtime && hit.estimated && !r.unmatched) r.board = ms(hit.estimated);
+      if (hit.platform && bl.mode !== "bus") { r.platform = LIVECARD.platNum(hit.platform); r.platformSeen = true; }
+      if (hit.cancelled) r.cancelled = true;
+    }
+    r.alts = items.filter((x) => x.line === bl.line && !x.cancelled && x.tripId !== bl.tripId && ms(x.planned) > ms(bl.planned) + 30000)
+      .slice(0, 3).map((x) => ({ tripId: x.tripId || null, planned: x.planned, estimated: x.realtime ? x.estimated : null, platform: x.platform || null, line: x.line, feed: x.feed }));
+  } catch (e) { /* board unavailable: the feed still counts */ }
+}
+
+/** One leg's raw live reading from its trip update and vehicle (see tfRead): indexes 0 boarding, then before, then yours. */
+function tfLegRaw(l, tu, veh, info, asOf) {
+  const r = { est: {}, runDelay: null, board: null, vehicle: null, platform: null, platformSeen: false, cancelled: false, unmatched: false, before: null, alts: [] };
+  if (!asOf || !tu) { r.unmatched = true; return r; }
+  if (tu.rel === 3) { r.cancelled = true; return r; }
+  if (!tu.ts || !tu.stus.length) { r.unmatched = true; return r; }
+  const nameOf = (id) => (info[id] && info[id].name) || "";
+  const same = (u, id, name) => u.stopId === id || (!!tfNorm(nameOf(u.stopId)) && tfNorm(nameOf(u.stopId)) === tfNorm(name || nameOf(id)));
+  const stus = tu.stus;
+  const bi = stus.findIndex((u) => same(u, l.stopId, l.from));
+  const oi = l.toStopId ? stus.findIndex((u, k) => k > bi && same(u, l.toStopId, l.to)) : -1;
+  // A stop event with a time is that stop's own live time; one with only a delay carries the run's delay.
+  const timeOf = (u, arr) => {
+    if (!u || u.rel === 1 || u.rel === 2) return null;
+    const ev = arr ? (u.arr && (u.arr.time || u.arr.delay != null) ? u.arr : u.dep) : (u.dep && (u.dep.time || u.dep.delay != null) ? u.dep : u.arr);
+    if (!ev) return null;
+    return { t: ev.time ? ev.time * 1000 : null, delay: ev.delay != null ? ev.delay : null };
+  };
+  let nearest = null;
+  for (let k = 0; k < stus.length; k++) {
+    const x = timeOf(stus[k], false);
+    if (x && x.delay != null && (nearest == null || Math.abs(k - Math.max(0, bi)) < Math.abs(nearest.k - Math.max(0, bi)))) nearest = { k, d: x.delay };
+  }
+  if (nearest) r.runDelay = nearest.d;
+  const b = bi >= 0 ? timeOf(stus[bi], false) : null;
+  if (b && b.t != null) r.est[0] = b.t;
+  if (oi > 0 && oi - 1 > bi && bi >= 0) {
+    const u = stus[oi - 1], x = timeOf(u, false), nm = nameOf(u.stopId);
+    if (x && nm && x.t != null) { r.before = { id: u.stopId, name: nm, planned: x.t - (x.delay || 0) * 1000 }; r.est[1] = x.t; }
+  }
+  const offIdx = r.before ? 2 : 1;
+  const a = oi >= 0 ? timeOf(stus[oi], true) : null;
+  if (a && a.t != null) r.est[offIdx] = a.t;
+  if (veh && veh.stopId && Number.isFinite(veh.ts)) {
+    const vi = stus.findIndex((u) => u.stopId === veh.stopId);
+    const at = veh.status === 1;
+    let v = null;
+    if (vi >= 0 && bi >= 0) {
+      const before = r.before ? oi - 1 : -1;
+      if (oi >= 0 && vi > oi) v = { stop: offIdx, state: "left" };
+      else if (oi >= 0 && vi === oi) v = at ? { stop: offIdx, state: "at" } : { stop: offIdx - 1, state: "left" };
+      else if (before >= 0 && vi === before) v = at ? { stop: 1, state: "at" } : { stop: 0, state: "left" };
+      else if (vi > bi) v = { stop: 0, state: "left" };
+      else if (vi === bi && at) v = { stop: 0, state: "at" };
+    }
+    if (v) { v.at = veh.ts; r.vehicle = v; }
+  }
+  return r;
+}
+
+/** The plan leg (tripState) for one registered leg and its raw reading: boarding, the stop before yours when known, yours. */
+function tfPlanLeg(wl, raw, extra) {
+  const pl = LIVECARD.planLegFrom(wl, null, extra);
+  if (raw && raw.before && Number.isFinite(raw.before.planned)) {
+    pl.stops = [pl.stops[0], { name: LIVECARD.stopShort(raw.before.name), tt: raw.before.planned, id: raw.before.id || null }, pl.stops[pl.stops.length - 1]];
+    pl.off = 2;
+  }
+  return pl;
+}
+/** The tripState LegReading from a raw reading, against its plan leg. */
+function tfLegReading(pl, raw, next) {
+  if (!raw) return null;
+  const n = pl.stops.length;
+  const est = new Array(n).fill(null), run = new Array(n).fill(null);
+  if (raw.est[0] != null) est[0] = raw.est[0];
+  if (n === 3 && raw.est[1] != null) est[1] = raw.est[1];
+  const off = raw.before ? 2 : 1;
+  if (raw.est[off] != null) est[n - 1] = raw.est[off];
+  if (raw.runDelay != null) run.fill(raw.runDelay * 1000);
+  const vehicle = raw.vehicle ? { stop: raw.vehicle.stop === off ? n - 1 : raw.vehicle.stop, state: raw.vehicle.state, at: raw.vehicle.at } : null;
+  return { est, run, runAsOf: null, board: raw.board, vehicle, platform: pl.mode === "bus" ? null : raw.platform, cancelled: !!raw.cancelled, next: next || null, unmatched: !!raw.unmatched };
+}
+
+/**
+ * The trip state's inputs for a watch: the plan (its legs, then the services it switched to, then the candidates it can
+ * switch to now), the reading, and the memory (st.tf, grown with the plan). No live copy under 5 min: the reading keeps
+ * the last live time it had (so the stale ladder says "No live data since 7:47pm"), with every leg timetable only.
+ */
+function tfState(spec, st, raw) {
+  const legs = spec.legs;
+  const chosen = st.tfAlts || [];
+  const cands = raw.cands || [];
+  const plan = { legs: [] };
+  legs.forEach((wl, i) => plan.legs.push(tfPlanLeg(wl, raw.legs[i], { li: i })));
+  chosen.forEach((a, k) => plan.legs.push(tfPlanLeg(a.leg, raw.alts[k], { li: plan.legs.length, id: a.id, alt: true, forLeg: a.forLeg })));
+  cands.forEach((c) => plan.legs.push(tfPlanLeg(c.leg, c.raw, { li: plan.legs.length, id: c.id, alt: true, forLeg: c.forLeg })));
+  const raws = [...raw.legs, ...raw.alts, ...cands.map((c) => c.raw)];
+  const nextFor = (i) => { const c = cands.find((x) => x.forLeg === i); return i < legs.length && raws[i] && raws[i].cancelled && c ? c.id : null; };
+  if (raw.asOf && (!st.tfAsOf || raw.asOf > st.tfAsOf)) st.tfAsOf = raw.asOf;
+  const asOf = raw.asOf || st.tfAsOf || 0;
+  const reading = { asOf, legs: plan.legs.map((pl, i) => tfLegReading(pl, raws[i] || { est: {}, unmatched: true }, nextFor(i))) };
+  if (!st.tf || st.tf.v !== 3) st.tf = { v: 3, ...LIVECARD.newTripMemory({ legs: plan.legs.slice(0, legs.length) }) };
+  const M = st.tf;
+  while (M.legs.length < plan.legs.length) M.legs.push(LIVECARD.newTripMemory({ legs: [plan.legs[M.legs.length]] }).legs[0]);
+  M.legs.length = plan.legs.length;
+  return { plan, reading, M, nVis: legs.length, nChosen: chosen.length, cands };
+}
+
+/** After a step: a candidate the trip switched to becomes a chosen service, at a fixed place in the plan from now on. */
+function tfKeepChosen(st, S) {
+  const M = S.M;
+  const base = S.nVis + S.nChosen;
+  for (let v = 0; v < S.nVis; v++) {
+    const r = M.legs[v].replaced;
+    if (r == null || r < base) continue;
+    const c = S.cands[r - base];
+    st.tfAlts = st.tfAlts || [];
+    st.tfAlts.push({ forLeg: c.forLeg, leg: c.leg, id: c.id, why: M.legs[v].replacedWhy || null });
+    const to = S.nVis + st.tfAlts.length - 1;
+    const mem = M.legs[r];
+    M.legs.splice(r, 1); M.legs.splice(to, 0, mem);
+    for (let k = 0; k < S.nVis; k++) if (M.legs[k].replaced === r) M.legs[k].replaced = to;
+  }
+  M.legs.length = S.nVis + (st.tfAlts || []).length;
+}
+
+/**
+ * When the trip should be read next (LIVECARD.serverPollMs, on the clock's 15 s or 30 s grid), the one Get off now
+ * timer (live arrival minus 30 s minus 2 s, moved on every reading) and the other moments this reading names (a live
+ * time coming or passing: Due, left, heads-up, arrived), at which the trip is read again right then.
+ */
+function tfNext(S, now) {
+  const { plan, reading, M } = S;
+  const PI = tfPI(), R = LIVECARD.TRIP_RULES;
+  const li = M.current;
+  const m = M.legs[li];
+  if (!m || (m.phase >= PI.ended && li === LIVECARD.lastLegOf(plan))) return { readAt: null, timerAt: null, momentAt: null };
+  const every = LIVECARD.serverPollMs(plan, M, reading, now);
+  const readAt = Math.floor(now / every) * every + every;
+  const tm = LIVECARD.tripLegTimes(plan, M, reading, li, now);
+  const live = (x) => LIVECARD.isLiveTime(x);
+  let timerAt = null;
+  if (m.phase >= PI.onTheWay && m.phase < PI.arrived && live(tm.arr) && !m.rung.getoff && !m.rung.getoffQuiet) timerAt = Math.max(now, tm.arr.at - R.GETOFF_LEAD - R.SERVER_DELIVERY);
+  const moments = [];
+  const ei = LIVECARD.effLeg(M, li);
+  const L = reading.legs[ei];
+  const off = plan.legs[ei].off;
+  if (m.phase < PI.due && live(tm.dep)) moments.push(tm.dep.at);
+  if (L && !L.unmatched) {
+    if (m.phase < PI.onTheWay && L.est[0] != null) moments.push(L.est[0] + R.LEFT_BY);
+    if (m.phase >= PI.onTheWay && m.phase < PI.nextStop && off > 1 && L.est[off - 1] != null) moments.push(L.est[off - 1] + R.LEFT_BY);
+    if (m.phase >= PI.onTheWay && m.phase < PI.nextStop && live(tm.arr)) moments.push(tm.arr.at - R.HEADSUP_WINDOW);
+    if (m.phase >= PI.onTheWay && m.phase < PI.arrived && L.est[off] != null) moments.push(L.est[off]);
+  }
+  if (m.phase >= PI.arrived && m.arrivedAt) moments.push(m.arrivedAt + R.ENDED_AFTER);
+  const soon = moments.filter((x) => x > now + 250).sort((a, b) => a - b)[0];
+  const wake = Math.min(readAt, timerAt != null ? timerAt : Infinity, soon != null ? soon : Infinity);
+  return { readAt: wake, gridAt: readAt, timerAt, momentAt: soon != null && soon < readAt ? soon : null, near: every < TF.READ };
+}
+
+const tfDelayText = (d) => (d === 0 ? "On time" : d > 0 ? `${d} min late` : `${-d} min early`);
+/**
+ * The Live Activity card (the build 211 content state, so no new build is needed) from the trip state's render model
+ * (LIVECARD.tripRender) and times (tripLegTimes). The countdown is always to the live time (G1, G19); the platform is
+ * the live one (G21); a cancelled train never counts down (G22); "updated" is the reading's own time, never the time
+ * of the push (G25); the stale date is the reading plus 2 min and, while waiting, the live departure, and while
+ * riding the live arrival, so a card that misses a push shows "about 7:54pm" and never 0:00 (G3 interim; a Due train
+ * is stale at once, so it shows its time). Returns { card, staleMs, phase, step, end }.
+ */
+function tfCard(spec, S, now, o = {}) {
+  const { plan, reading, M } = S;
+  const PI = tfPI();
+  const legs = spec.legs;
+  const li = Math.min(M.current, legs.length - 1);
+  const m = M.legs[li];
+  const ei = LIVECARD.effLeg(M, li);
+  const alts = o.alts || [];
+  const wl = ei < legs.length ? legs[ei] : (alts[ei - legs.length] && alts[ei - legs.length].leg) || legs[li];
+  const r = LIVECARD.tripRender(plan, M, reading, now, { c24: !!o.c24 });
+  const tm = LIVECARD.tripLegTimes(plan, M, reading, li, now);
+  const last = legs.length - 1;
+  const lastTm = li === last ? tm : LIVECARD.tripLegTimes(plan, M, reading, last, now);
+  const asOf = reading.asOf || null;
+  const offName = plan.legs[ei].stops[plan.legs[ei].off].name;
+  const base = { line: wl.line || "", lineColorHex: wl.color || "#0A84FF", mode: wl.mode || "train", towards: LIVECARD.stopShort(wl.towards) || null,
+    destination: LIVECARD.stopShort((spec.to && spec.to.name) || legs[last].to || ""), getOffAt: offName, arrival: lastTm.arr.at, ...(asOf ? { updated: asOf } : {}) };
+  if (legs.length > 1) base.legArrives = tm.arr.at;
+  const step = r.step || LIVECARD.staleStepOf(now - (asOf || 0), tm.timetableOnly);
+  if (r.ended || (m.phase >= PI.arrived && li === last && r.phase === "ended")) return { card: { ...base, phase: "arrived", arrival: m.arrivedTime || tm.arr.at, progress: 1, warning: null }, staleMs: null, phase: "ended", step, end: true };
+  if (r.phase === "arrived" || m.phase >= PI.arrived) return { card: { ...base, phase: "arrived", arrival: m.arrivedTime || tm.arr.at, progress: 1, warning: null }, staleMs: null, phase: "arrived", step, end: false };
+  const fin = (card, staleMs) => ({ card: { ...base, ...card }, staleMs, phase: r.phase, step, end: false });
+  // The words are the phone card's own (platform/tripCard.ts cardFor and legNoteFor) on the same trip state.
+  const plat = plan.legs[ei].mode === "bus" ? (wl.fromPlatform || null) : r.platform ? (r.platformWas ? `Plat ${r.platform}, was ${r.platformWas}` : `Platform ${r.platform}`) : null;
+  const dw = (x) => { const d = Math.round((x.at - x.planned) / 60000); return d === 0 ? "On time" : d > 0 ? `${d} min late` : `${-d} min early`; };
+  const risk = r.warn && /^(Change at risk|You'll likely miss|Tight change)/.test(r.warn) ? r.warn : null;
+  const note = (wait) => {
+    if (step === "timetable-only") return "Timetable times, not live";
+    if (step === "no-data") return "No live data. Open the app to refresh.";
+    if (step === "timetable") return r.sub || "No live data";
+    if (step === "about") return r.warn || r.sub || null;
+    const x = wait ? tm.dep : tm.arr;
+    if (!LIVECARD.isLiveTime(x)) return "Timetable times, not live";
+    if (!wait) return dw(x);
+    const d = Math.round((x.at - x.planned) / 60000);
+    return now >= x.at ? (d !== 0 ? `Due now · ${dw(x)}` : "Due now") : dw(x);
+  };
+  if (/^Cancelled/.test(r.status || "")) return fin({ phase: "wait", departs: null, nextStop: LIVECARD.stopShort(wl.from) || null, platform: plat, warning: "Cancelled. No next service found yet", progress: 0 }, now);
+  if (r.phase === "waiting" || r.phase === "due") {
+    let departs = r.depAt ?? tm.dep.at, staleMs = now;
+    if (step === "live" && r.phase === "waiting") staleMs = r.staleDate != null ? r.staleDate : now;
+    else if (step === "live") staleMs = Math.min(now, departs);
+    else if (step === "about") staleMs = (asOf || now) + LIVECARD.TRIP_RULES.LIVE_FRESH;
+    else { departs = tm.dep.planned; if (step === "timetable-only") staleMs = Math.max(now, Math.min(departs, now + LIVECARD.TRIP_RULES.LIVE_FRESH)); }
+    return fin({ phase: "wait", departs, nextStop: LIVECARD.stopShort(wl.from) || null, platform: plat, warning: risk || note(true), progress: 0 }, staleMs);
+  }
+  let staleMs = now;
+  if (step === "live") staleMs = Math.min(asOf + LIVECARD.TRIP_RULES.LIVE_FRESH, LIVECARD.isLiveTime(tm.arr) ? Math.max(tm.arr.at, asOf + 1000) : asOf + LIVECARD.TRIP_RULES.LIVE_FRESH);
+  else if (step === "about") staleMs = asOf + LIVECARD.TRIP_RULES.LIVE_FRESH;
+  const span = tm.arr.at - tm.dep.at;
+  let progress = span > 0 ? Math.min(1, Math.max(0, (now - tm.dep.at) / span)) : 0;
+  if (step !== "live") progress = Math.min(progress, 0.9);
+  return fin({ phase: "ride", nextStop: r.nextStop || null, legArrives: tm.arr.at, warning: risk || note(false), progress, platform: null }, staleMs);
+}
+/** What changes a card push (spec: a push on every change of target, delay, platform, phase or stale step). */
+const tfCardSig = (c) => JSON.stringify([c.phase, c.card.phase, c.card.departs, c.card.legArrives, c.card.arrival, c.card.platform, c.card.warning, c.card.nextStop, c.step, c.end]);
+/** The alert kinds a person must see now: their card push goes at priority 10 (the 60 s refresh at 5). */
+const TF_MUST_SEE = new Set(["headsup", "getoff", "atstop", "arrived", "delay", "platform", "cancelled", "missed"]);
+
+/**
+ * A working route for a server alert to this phone: an Expo token not marked dead, or (apnsAlerts on) its own Apple
+ * token. Without one the alert rides the Live Activity push (spec 2.6, S16b) when the phone has a card.
+ */
+async function tfRoute(env, device) {
+  const toks = await d1all(env, "SELECT last_status FROM expo_tokens WHERE device = ?1", device).catch(() => []);
+  const expo = toks.some(expoLive);
+  const apns = expo ? false : await apnsAlertRoute(env, device).catch(() => false);
+  await ensureLiveActivities(env).catch(() => false);
+  const la = await d1all(env, "SELECT COUNT(*) AS n FROM live_activities WHERE device = ?1 AND active = 1", device).catch(() => []);
+  const card = !!(la[0] && la[0].n > 0);
+  return { expo, apns, la: card, any: expo || apns || card };
+}
+
+/** The Live Activity rows of this watch's trip: the same phone, the same boarding stop and the same stop off. */
+async function tfCardRows(env, w, spec) {
+  if (!(await ensureLiveActivities(env).catch(() => false))) return [];
+  const rows = await d1all(env, "SELECT * FROM live_activities WHERE device = ?1 AND active = 1", w.device).catch(() => []);
+  const first = spec.legs[0], last = spec.legs[spec.legs.length - 1];
+  return rows.filter((r) => {
+    let t = null; try { t = JSON.parse(r.trip); } catch { return false; }
+    if (!t || !Array.isArray(t.legs) || !t.legs.length || !tfWanted(t)) return false;
+    return t.legs[0].stopId === first.stopId && (t.legs[t.legs.length - 1].toStopId || null) === (last.toStopId || null);
+  });
+}
+
+/** One card push for the new flow. alert: { title, body, sound } rides the push when no other route reaches the phone. */
+async function tfPushCard(env, row, c, now, o = {}) {
+  const end = !!c.end || !!o.end;
+  const payload = laPayload(c.card, { event: end ? "end" : "update", now, staleMs: Number.isFinite(c.staleMs) ? c.staleMs : undefined, dismissMs: now });
+  if (o.alert) payload.aps.alert = { title: o.alert.title, body: o.alert.body, sound: o.alert.sound || "default" };
+  const priority = end || o.mustSee ? 10 : 5;
+  const res = await apnsSend(env, row.token, payload, { priority, expiresMs: o.alert && Number.isFinite(o.alert.expires) ? Math.max(now + 5000, o.alert.expires) : now + 120000 });
+  const gone = apnsGone(res);
+  laSentMem.set(row.token, now);
+  const look = laLook(payload.aps["content-state"]);
+  await db(env).prepare("UPDATE live_activities SET last_push = ?2, last_state = ?3, last_status = ?4, last_reason = ?5, pushes = COALESCE(pushes, 0) + 1, active = ?6 WHERE token = ?1")
+    .bind(row.token, now, res.status === 200 ? look : row.last_state, res.status, res.reason, end || gone ? 0 : 1).run().catch(() => null);
+  return { token: row.token.slice(0, 8), status: res.status, reason: res.reason, priority, event: payload.aps.event, alert: o.alert ? o.alert.title : null, contentState: payload.aps["content-state"], staleMs: c.staleMs };
+}
+
+/** Sends one alert of the new flow: Expo or Apple when the phone has a working route (the card's push carries it otherwise). */
+async function tfSendAlert(env, w, r, now) {
+  const sound = r.quiet ? null : (r.clip && TF_SOUND[r.clip]) || "default";
+  const legOf = Number(String(r.moment || "").split(":")[1]) || 0;
+  const n = { title: r.title, body: r.body, url: `/#/watch/${w.id}`, tag: `w${w.id}${r.kind}`, watchId: w.id, kind: "tf" + r.kind, dueAt: r.arrAt, expiresAt: r.expires,
+    ttl: Math.max(5, Math.ceil(((r.expires || now + 120000) - now) / 1000)),
+    ...(sound && sound !== "default" ? { sound } : {}), ...(r.quiet ? { passive: true } : {}), ...(r.level === "time sensitive" ? { timeSensitive: true } : {}),
+    ...(r.kind === "getoff" || r.kind === "atstop" ? { getOff: String(legOf) } : {}), tf: { exp: r.expires || null, moment: r.moment } };
+  const res = await notify(env, { device: w.device }, n);
+  const ok = (res.expo || []).includes("ok") || (res.apns || []).includes("ok") || (res.pushed || []).some((s) => s === 200 || s === 201);
+  return { kind: r.kind, title: r.title, body: r.body, moment: r.moment, quiet: !!r.quiet, sound, noteId: res.noteId, delivered: ok ? "server alert" : null, expires: r.expires || null };
+}
+
+/**
+ * One step of a new flow watch: read the trip, run the trip state (LIVECARD.tripStep: phases from the live train and
+ * the moments to ring), send what is due now (once per moment key, claimed in watch_sent), push the card when it
+ * changed (or at least every 60 s), and set when to read it next and the one Get off now timer. Called by the trip flow
+ * pass (tfPass) every 30 s, every 15 s near the stop and at each named moment; by createWatch at Start trip; by an open
+ * app's tick.
+ */
+async function tfStepWatch(env, w, now, opts = {}) {
+  const spec = JSON.parse(w.spec);
+  const st = w.state ? JSON.parse(w.state) : {};
+  const c24 = !!spec.c24;
+  if ((spec.legs || []).some((l) => l.feed === undefined || l.feed === null)) await backfillFeeds(env, spec, now).catch(() => false);
+  // At a Get off now timer or another named moment the feed is read fresh (a copy under 5 s old), so a jump in the last
+  // seconds is seen (spec 2.6 jump table).
+  const n0 = st.tfNext;
+  const atTimer = !!(n0 && n0.timerAt && now >= n0.timerAt - 250);
+  // A named moment between reads (a live time coming or passing) steps the trip on the reading it already has, as the
+  // phone does between its reads; only the Get off now moment reads again (fresh, so a jump in the last seconds is seen).
+  const momentOnly = !!(n0 && !atTimer && n0.momentAt && now >= n0.momentAt - 250 && !(Number.isFinite(n0.gridAt) && now >= n0.gridAt - 250) && st.tfRaw && !opts.read);
+  let raw = momentOnly ? st.tfRaw : await tfRead(env, spec, st, now, { fresh: atTimer });
+  if (!momentOnly) st.tfRaw = raw;
+  let S = tfState(spec, st, raw);
+  const PI = tfPI();
+  const rings = [], log = [];
+  for (let k = 0; k < spec.legs.length + 1; k++) {
+    const cur = S.M.current, ph = S.M.legs[cur] ? S.M.legs[cur].phase : null;
+    const res = LIVECARD.tripStep(S.plan, S.M, now, S.reading, { c24, lead: LIVECARD.TRIP_RULES.SERVER_DELIVERY, reread: () => S.reading });
+    for (const x of res.moments) rings.push(x.ring);
+    for (const x of res.log) log.push(x.what);
+    if (S.M.current === cur && (!S.M.legs[cur] || S.M.legs[cur].phase === ph)) break;
+  }
+  const switched = rings.some((r) => r.kind === "cancelled" || r.kind === "missed");
+  tfKeepChosen(st, S);
+  // The trip now follows another service (a cancellation or a missed change): the card reads that one.
+  if (switched) { raw = await tfRead(env, spec, st, now); st.tfRaw = raw; S = tfState(spec, st, raw); }
+  const route = rings.length || !st.tfRoute || now - st.tfRoute.at > 300000 ? { ...(await tfRoute(env, w.device)), at: now } : st.tfRoute;
+  st.tfRoute = route;
+  const sent = [];
+  let carry = null;
+  for (const r of rings) {
+    if (!(await claimOnce(env, w.id, "tf:" + r.moment))) continue;
+    const s = await tfSendAlert(env, w, r, now);
+    if (!s.delivered && !r.quiet && (!carry || TF_MUST_SEE.has(r.kind))) carry = { r, s };
+    sent.push(s);
+  }
+  // The card: one push on every change, at least every 60 s, at once when an alert rides it or a must-see moment came.
+  const c = tfCard(spec, S, now, { c24, alts: st.tfAlts });
+  const sig = tfCardSig(c);
+  const mustSee = rings.some((r) => TF_MUST_SEE.has(r.kind));
+  const pushes = [];
+  const cardRows = await tfCardRows(env, w, spec);
+  st.tfPush = st.tfPush || {};
+  for (const row of cardRows) {
+    const lp = st.tfPush[row.token.slice(0, 16)] || {};
+    // 30 s: with reads at most 30 s apart the card is never more than 60 s without a push.
+    if (!(sig !== lp.sig || now - (lp.at || 0) >= TF.PUSH_AT_LEAST - TF.READ || carry || c.end)) continue;
+    const alert = carry ? { title: carry.r.title, body: carry.r.body, sound: carry.s.sound && carry.s.sound !== "default" ? carry.s.sound + ".wav" : "default", expires: carry.r.expires } : null;
+    try {
+      const p = await tfPushCard(env, row, c, now, { alert, mustSee: mustSee || !!carry });
+      pushes.push(p);
+      st.tfPush[row.token.slice(0, 16)] = { sig, at: now };
+      if (alert && p.status === 200) { carry.s.delivered = "Live Activity push carrying the alert"; await tfMarkCarried(env, carry.s.noteId, w.device); }
+    } catch (e) { pushes.push({ token: row.token.slice(0, 8), error: String(e && e.message || e).slice(0, 120) }); }
+  }
+  const next = tfNext(S, now);
+  st.tfNext = next;
+  const lastI = spec.legs.length - 1;
+  const lastM = S.M.legs[lastI];
+  const lastL = spec.legs[lastI];
+  const noLiveEnd = !st.tfAsOf && now > (ms(lastL.arrPlanned) || ms(lastL.planned)) + 60 * 60000;
+  const ended = (lastM && lastM.phase >= PI.ended) || now > w.expires || noLiveEnd;
+  st.started = st.started || now; st.leaveSent = true;
+  if (log.length) st.tfLog = [...(st.tfLog || []), ...log.map((x) => [now, x])].slice(-30);
+  await db(env).prepare("UPDATE watches SET spec = ?2, state = ?3, updated = ?4, active = ?5, ended = ?6 WHERE id = ?1")
+    .bind(w.id, JSON.stringify(spec), JSON.stringify(st), now, ended ? 0 : 1, ended ? (now > w.expires || noLiveEnd ? "expired" : "trip ended") : null).run();
+  const cur = S.M.legs[S.M.current];
+  return { id: w.id, flow: 2, phase: LIVECARD.TRIP_PHASES[cur ? cur.phase : 7], leg: S.M.current, ended, sent, pushes, next, log, card: c };
+}
+
+/** The alert rode the card's push: the app's catch-up does not show it again. */
+async function tfMarkCarried(env, noteId, device) {
+  if (!noteId) return;
+  const row = await db(env).prepare("SELECT push_status FROM notes WHERE id = ?1").bind(noteId).first().catch(() => null);
+  let ps = {}; try { ps = row && row.push_status ? JSON.parse(row.push_status) : {}; } catch { ps = {}; }
+  ps.la = "ok"; ps.apnsDevice = device;
+  await db(env).prepare("UPDATE notes SET pushed = COALESCE(pushed, 0) + 1, push_status = ?2 WHERE id = ?1").bind(noteId, JSON.stringify(ps)).run().catch(() => null);
+}
+
+/** Due for a step: never stepped, its next read has come, or its Get off now timer or another moment has. */
+function tfDue(st, now) { return tfWakeAt(st) <= now + 250; }
+function tfWakeAt(st) {
+  const n = st && st.tfNext;
+  if (!n) return 0;
+  return Math.min(Number.isFinite(n.readAt) ? n.readAt : Infinity, Number.isFinite(n.timerAt) ? n.timerAt : Infinity);
+}
+
+/** One look over the new flow watches (tfPass and the tests call it): steps every watch that is due, says when the next one is. */
+const TF_PASS_MAX = 100;
+async function tfPassStep(env, now) {
+  const rows = await d1all(env, "SELECT * FROM watches WHERE active = 1 ORDER BY created LIMIT ?1", TF_PASS_MAX).catch(() => []);
+  const out = [];
+  let wake = Infinity;
+  for (const w of rows) {
+    let spec, st;
+    try { spec = JSON.parse(w.spec); st = w.state ? JSON.parse(w.state) : {}; } catch { continue; }
+    if (!tfWanted(spec)) continue;
+    if (tfDue(st, now)) {
+      try { const r = await tfStepWatch(env, w, now); out.push(r); if (!r.ended) wake = Math.min(wake, tfWakeAt({ tfNext: r.next })); }
+      catch (e) { out.push({ id: w.id, error: String(e && e.message || e).slice(0, 160) }); wake = Math.min(wake, now + TF.READ); }
+    } else wake = Math.min(wake, tfWakeAt(st));
+  }
+  return { steps: out, wake };
+}
+
+/**
+ * The cron's trip flow pass (tripflow2 on): every new flow watch is read every 30 s, every 15 s once its live arrival
+ * is under 5 min away, and once more at its Get off now moment (one timer per trip, moved on every reading) and at
+ * each moment a live time names. One cron run holds this up to TF.PASS_SPAN (62 s); the next run takes over; the moment
+ * keys (watch_sent) stop anything ringing twice where two runs overlap. No Durable Object is needed: the wait costs no
+ * CPU and no request.
+ */
+async function tfPass(env, startedAt = Date.now(), wait = (ms) => new Promise((r) => setTimeout(r, ms))) {
+  if (!(await serverOn(env, "tripflow2"))) return { off: true };
+  const end = startedAt + TF.PASS_SPAN;
+  let steps = 0, loops = 0;
+  const items = [];
+  while (loops++ < 200) {
+    const now = Date.now();
+    const r = await tfPassStep(env, now);
+    steps += r.steps.length;
+    for (const s of r.steps) if (s.sent && s.sent.length) items.push({ id: s.id, sent: s.sent.map((x) => x.kind) });
+    if (!Number.isFinite(r.wake) || r.wake > end) break;
+    await wait(Math.max(250, r.wake - Date.now()));
+  }
+  return { steps, loops, items: items.slice(0, 20) };
+}
+
+/** A new flow card with no watch behind it (the app registered only the card): its state from one reading, no alerts. */
+async function tfCardAlone(env, trip, now) {
+  const spec = { legs: trip.legs, to: trip.to, c24: !!trip.c24, tripFlow: 2 };
+  const st = {};
+  const raw = await tfRead(env, spec, st, now);
+  const S = tfState(spec, st, raw);
+  for (let k = 0; k < spec.legs.length + 1; k++) { const cur = S.M.current; LIVECARD.tripStep(S.plan, S.M, now, S.reading, { c24: spec.c24, lead: LIVECARD.TRIP_RULES.SERVER_DELIVERY }); if (S.M.current === cur) break; }
+  return tfCard(spec, S, now, { c24: spec.c24 });
+}
+// ---- trip flow 2 end
+
 function legFromInput(l) {
   const s = (v, n = 80) => (v == null ? null : String(v).slice(0, n));
   return {
@@ -5905,9 +6438,13 @@ async function createWatch(env, b, now) {
     // The app has the spoken alert sounds (build 210 and later, Speak alerts on): the "Next stop" alert rings with
     // getoff_soon.wav. Never sent by older builds, so they keep the normal sound.
     ...(b.voice === "soon" ? { voice: "soon" } : {}),
+    // The new trip flow (tfOn): the app says so with every registration, and whether the phone uses 24 hour time.
+    ...(Number(b.tripFlow) >= 2 ? { tripFlow: 2, c24: b.c24 === true } : {}),
   };
-  // Get off now from the server (build 210, getOffAccept): stored only when accepted, and said in the answer.
-  if (await getOffAccept(env, b, device)) { spec.getOff = 1; if (b.getOffVoice === 1) spec.getOffVoice = 1; }
+  const tf = await tfOn(env, spec);
+  // Get off now from the server (build 210, getOffAccept): stored only when accepted, and said in the answer. The new
+  // flow takes it only with a route that works today (G14): a live Expo token, Apple straight (apnsAlerts), or the card.
+  if (tf ? (b.getOff === 1 && !!b.track && (await tfRoute(env, device)).any) : await getOffAccept(env, b, device)) { spec.getOff = 1; if (b.getOffVoice === 1) spec.getOffVoice = 1; }
   const L = legs[legs.length - 1];
   const end = Math.max(ms(L.arrPlanned || L.planned), ms(legs[0].planned)) + 3 * 3600000;
   const title = String(b.title || `${legs[0].line} ${legs[0].towards ? "to " + legs[0].towards : ""}`).slice(0, 90);
@@ -5916,8 +6453,9 @@ async function createWatch(env, b, now) {
     .bind(id, device, profile, legs.length > 1 || b.kind === "trip" ? "trip" : "svc", title, JSON.stringify(spec), JSON.stringify({}), now, Math.min(end, now + 6 * 3600000)).run();
   if (b.kind === "trip" && b.origin && b.to) await logSearch(env, { profile, device, from: b.origin, to: b.to, src: "watch", at: ms(legs[0].planned) - ((legs[0].walkBefore || 0) * 60000) });
   const w = await db(env).prepare("SELECT * FROM watches WHERE id = ?1").bind(id).first();
-  const r = await processWatch(env, w, now, { silentStart: !!b.silentStart, leaveSent: !!b.leaveSent });
-  return { id, ...r, ...(spec.getOff ? { getOff: true } : {}) };
+  // The new flow sends no "Watching the ..." note at Start trip (G35); a train already late gets its delay alert (G34).
+  const r = tf ? await tfStepWatch(env, w, now) : await processWatch(env, w, now, { silentStart: !!b.silentStart, leaveSent: !!b.leaveSent });
+  return { id, ...r, ...(r && r.card ? { card: undefined } : {}), ...(spec.getOff ? { getOff: true } : {}), ...(tf ? { tripFlow: 2 } : {}) };
 }
 
 function watchOut(w) {
@@ -6103,7 +6641,7 @@ async function serverConfig(env) {
 }
 // Build 210 server switches that stay off until an admin turns them on (platform=server flags, true): a deploy alone
 // never starts them, and with no config (no table, a failed read) they are off (31 Oct, final check before build 210).
-const SERVER_OPT_IN = new Set(["getOffPush", "liveStops", "apnsAlerts"]);
+const SERVER_OPT_IN = new Set(["getOffPush", "liveStops", "apnsAlerts", "tripflow2"]);
 async function serverOn(env, flag) {
   const c = await serverConfig(env).catch(() => null);
   if (SERVER_OPT_IN.has(flag)) return !!(c && c.flags[flag] === true && !c.kill[flag]);
@@ -6923,638 +7461,1574 @@ function serviceQuery(p) {
 
 // ---- live card start (generated by tools/gen-livecard.mjs, do not edit by hand)
 const LIVECARD = (() => {
+  // src/lib/tripState.ts
+  const tripState = (() => {
+    const TRIP_RULES = {
+        LIVE_FRESH: 120000,
+        LIVE_CAP: 300000,
+        NO_DATA: 600000,
+        LEFT_BY: 60000,
+        GETOFF_LEAD: 30000,
+        SERVER_DELIVERY: 2000,
+        GETOFF_EXPIRE: 30000,
+        HEADSUP_WINDOW: 120000,
+        ENDED_AFTER: 120000,
+        NEAR: 300000,
+        PHONE_WRITE_MAX_AGE: 20000,
+        VOICE_OPEN_FOR: 10000,
+        VOICE_FRESH: 60000,
+        VOICE_SILENT_REFRESHES: 2,
+        VOICE_QUEUE_MAX: 30000,
+        DELAY_ALERT: 3,
+        CHANGE_MIN: 180000,
+        VEHICLE_MAX_AGE: 180000,
+        AT_STOP_M: 150,
+    };
+    const R = TRIP_RULES;
+    const TRIP_CLIPS = {
+        headsup: { file: 'getoff_soon', words: 'Your stop is coming up. Please get ready to get off at the next stop.', secs: 5.2 },
+        getoff: { file: 'getoff_now', words: 'Please get off at the next stop.', secs: 2.8 },
+        arrived: { file: 'arrival', words: "You've arrived at your stop.", secs: 2.0, build: 212 },
+    };
+    const fmts = {};
+    const fmtOf = (c24) => fmts[c24 ? 'h23' : 'h12'] ||
+        (fmts[c24 ? 'h23' : 'h12'] = new Intl.DateTimeFormat('en-AU', c24
+            ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Australia/Sydney' }
+            : { hour: 'numeric', minute: '2-digit', hourCycle: 'h12', timeZone: 'Australia/Sydney' }));
+    function tripClock(t, c24 = false) {
+        if (!Number.isFinite(t))
+            return '';
+        const s = fmtOf(c24).format(t).replace(/\s/g, '').toLowerCase();
+        return c24 ? s.replace(/^24:/, '00:') : s;
+    }
+    function tripClockSec(t) {
+        const s = Math.floor(t / 1000) % 60;
+        const base = tripClock(t).replace(/[ap]m$/, '');
+        return s ? `${base}:${String(s).padStart(2, '0')}` : base;
+    }
+    const mins = (ms) => Math.max(1, Math.ceil(ms / 60000));
+    const tms = (s) => (s ? Date.parse(s) : NaN);
+    const stopShort = (n) => String(n || '').replace(/,.*$/, '').trim().replace(/ (Station|Light Rail|Wharf)$/i, '').trim();
+    const normName = (s) => stopShort(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const platNum = (p) => {
+        const v = String(p || '').trim();
+        return v ? v.replace(/^(platform|plat)\s*/i, '') : null;
+    };
+    const timedStop = (s) => !!s && !!(s.planned || s.estimated) && !s.skipped;
+    const idxOf = (v) => (typeof v === 'number' ? v : -1);
+    function findStop(d, id, name, from = 0, alias) {
+        if (!d.stops)
+            return -1;
+        if (id) {
+            const k = d.stops.findIndex((s, i) => i >= from && s.id === id);
+            if (k >= 0)
+                return k;
+        }
+        const n = normName(name), a = alias ? normName(alias) : '';
+        if (!n && !a)
+            return -1;
+        return d.stops.findIndex((s, i) => i >= from && (normName(s.name) === n || (!!a && normName(s.name) === a)));
+    }
+    function boardIndexOf(w, d) {
+        if (!d || !d.stops || !d.stops.length)
+            return -1;
+        const mi = idxOf(d.mineIndex);
+        if (mi >= 0 && mi < d.stops.length)
+            return mi;
+        return findStop(d, w.stopId, w.from);
+    }
+    function offIndexOf(w, d, mi) {
+        if (!d || !d.stops || mi < 0)
+            return -1;
+        const ai = idxOf(d.alightIndex);
+        if (ai > mi && ai < d.stops.length)
+            return ai;
+        return findStop(d, w.toStopId, w.to, mi + 1);
+    }
+    function planLegFrom(w, d, extra = {}) {
+        const bus = w.mode === 'bus' || w.mode === 'school' || w.mode === 'coach';
+        const base = { id: extra.id ?? w.tripId ?? null, mode: bus ? 'bus' : w.mode, line: w.line, platform: bus ? null : platNum(w.fromPlatform), stand: bus ? (w.fromPlatform || null) : null, alt: !!extra.alt, forLeg: extra.forLeg ?? null, li: extra.li ?? 0 };
+        const mi = boardIndexOf(w, d);
+        const ai = d ? offIndexOf(w, d, mi) : -1;
+        if (d && mi >= 0 && ai > mi) {
+            const stops = [];
+            for (let k = mi; k <= ai; k++) {
+                const s = d.stops[k];
+                if (k !== mi && k !== ai && !timedStop(s))
+                    continue;
+                const tt = Number.isFinite(tms(s.planned)) ? tms(s.planned) : k === mi ? tms(w.planned) : k === ai ? tms(w.arrPlanned) : NaN;
+                stops.push({ name: stopShort(s.name), tt, id: s.id || null });
+            }
+            return { ...base, stops, off: stops.length - 1 };
+        }
+        const dep = tms(w.planned);
+        const arr = Number.isFinite(tms(w.arrPlanned)) ? tms(w.arrPlanned) : dep + 10 * 60000;
+        return { ...base, stops: [{ name: stopShort(w.from), tt: dep, id: w.stopId || null }, { name: stopShort(w.to), tt: arr, id: w.toStopId || null }], off: 1 };
+    }
+    const hasXY = (s) => !!s && typeof s.lat === 'number' && typeof s.lon === 'number';
+    function metres(a, b) {
+        const r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lon - a.lon) * r;
+        const h = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) ** 2;
+        return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(h)));
+    }
+    function vehicleOnRun(d) {
+        const v = d?.vehicle;
+        if (!d || !d.stops)
+            return null;
+        const ageS = v && typeof v.ageS === 'number' ? v.ageS : 0;
+        if (v && hasXY(v) && !(ageS * 1000 > R.VEHICLE_MAX_AGE)) {
+            const st = d.stops;
+            let best = Infinity, bi = -1, near = -1, nd = Infinity;
+            for (let i = 0; i < st.length; i++) {
+                const a = st[i];
+                if (!hasXY(a))
+                    continue;
+                const da = metres(v, a);
+                if (da < nd) {
+                    nd = da;
+                    near = i;
+                }
+                let j = i + 1;
+                while (j < st.length && !hasXY(st[j]))
+                    j++;
+                const b = st[j];
+                if (!hasXY(b))
+                    continue;
+                const ex = da + metres(v, b) - metres(a, b);
+                if (ex < best) {
+                    best = ex;
+                    bi = j;
+                }
+            }
+            if (near >= 0 && nd < R.AT_STOP_M)
+                return { k: near, at: true };
+            if (bi >= 0 && best <= 1500)
+                return { k: bi, at: false };
+            return null;
+        }
+        if (d.progress === 'vehicle' && idxOf(d.nextIndex) >= 0)
+            return { k: idxOf(d.nextIndex), at: false };
+        return null;
+    }
+    function legReadingFrom(pl, w, d, o = {}) {
+        const n = pl.stops.length;
+        const est = new Array(n).fill(null);
+        const run = new Array(n).fill(null);
+        let runAsOf = null;
+        let board = null;
+        if (o.board && o.board.realtime && o.board.estimated && (!o.board.tripId || !w?.tripId || o.board.tripId === w.tripId))
+            board = tms(o.board.estimated);
+        const planner = w && w.estimated && w.planned && o.plannerAt != null ? tms(w.estimated) - tms(w.planned) : null;
+        if (!d || !d.stops || !d.stops.length) {
+            if (planner == null && board == null)
+                return d ? { est, run, runAsOf, board, vehicle: null, platform: null, cancelled: !!d.cancelled, next: o.next ?? null, unmatched: true } : null;
+            if (planner != null && Number.isFinite(planner)) {
+                run.fill(planner);
+                runAsOf = o.plannerAt ?? null;
+            }
+            return { est, run, runAsOf, board, vehicle: null, platform: null, cancelled: false, next: o.next ?? null, unmatched: false };
+        }
+        const first = w ? boardIndexOf(w, d) : findStop(d, pl.stops[0].id, pl.stops[0].name, 0, pl.stops[0].alias);
+        const map = [];
+        let from = first < 0 ? 0 : first;
+        for (let i = 0; i < n; i++) {
+            const s = pl.stops[i];
+            const k = i === 0 && first >= 0 ? first : findStop(d, s.id, s.name, from, s.alias);
+            map.push(k);
+            if (k >= 0)
+                from = k;
+        }
+        if (first < 0 || map[0] < 0) {
+            return { est, run, runAsOf, board, vehicle: null, platform: null, cancelled: !!d.cancelled, next: o.next ?? null, unmatched: true };
+        }
+        const delayAt = (s) => (s && s.estimated && s.planned && !s.skipped ? tms(s.estimated) - tms(s.planned) : null);
+        const carried = (k) => {
+            for (let j = Math.min(k, d.stops.length - 1); j >= 0; j--) {
+                const v = delayAt(d.stops[j]);
+                if (v != null && Number.isFinite(v))
+                    return v;
+            }
+            for (let j = Math.max(0, k + 1); j < d.stops.length; j++) {
+                const v = delayAt(d.stops[j]);
+                if (v != null && Number.isFinite(v))
+                    return v;
+            }
+            return null;
+        };
+        let anyLive = false;
+        for (let i = 0; i < n; i++) {
+            const k = map[i];
+            const s = k >= 0 ? d.stops[k] : null;
+            if (s && s.estimated && !s.carried && !s.skipped)
+                est[i] = tms(s.estimated);
+            const c = k >= 0 ? carried(k) : carried(map[0]);
+            if (c != null) {
+                run[i] = c;
+                anyLive = true;
+            }
+        }
+        if (!anyLive && d.live && typeof d.delayMin === 'number') {
+            run.fill(d.delayMin * 60000);
+            anyLive = true;
+        }
+        if (!anyLive && planner != null && Number.isFinite(planner)) {
+            run.fill(planner);
+            runAsOf = o.plannerAt ?? null;
+        }
+        let vehicle = null;
+        const vr = vehicleOnRun(d);
+        if (vr) {
+            const ageS = typeof d.vehicle?.ageS === 'number' ? d.vehicle.ageS : 0;
+            const vAt = o.asOf ?? 0;
+            const exact = map.indexOf(vr.k);
+            if (vr.at && exact >= 0)
+                vehicle = { stop: exact, state: 'at', at: vAt - ageS * 1000 };
+            else {
+                let p = -1;
+                for (let i = 0; i < n; i++)
+                    if (map[i] >= 0 && (vr.at ? map[i] <= vr.k : map[i] < vr.k))
+                        p = i;
+                vehicle = { stop: p, state: 'left', at: vAt - ageS * 1000 };
+            }
+        }
+        const mineS = d.stops[map[0]];
+        const platform = pl.mode === 'bus' ? null : platNum(mineS?.platform) || null;
+        return { est, run, runAsOf, board, vehicle, platform, cancelled: !!d.cancelled, next: o.next ?? null, unmatched: false };
+    }
+    function tripReadingFrom(plan, legs, svc, asOf, o = {}) {
+        return {
+            asOf,
+            legs: plan.legs.map((pl, i) => {
+                return legReadingFrom(pl, legs[i] || null, svc[i], { asOf, board: o.boards?.[i] || null, plannerAt: o.plannerAt ?? null, next: o.next?.[i] ?? null });
+            }),
+        };
+    }
+    const TRIP_PHASES = ['waiting', 'due', 'left', 'onTheWay', 'nextStop', 'getOff', 'arrived', 'ended'];
+    const PHASE_INDEX = Object.fromEntries(TRIP_PHASES.map((p, i) => [p, i]));
+    const PI = PHASE_INDEX;
+    function newTripMemory(plan) {
+        return {
+            legs: plan.legs.map(() => ({ phase: 0, phaseAt: { waiting: null }, phaseWhy: {}, arrivedAt: null, arrivedTime: null, rung: {}, platformAlerted: null, delayAlerted: null, cancelAlerted: false, replaced: null })),
+            current: 0,
+        };
+    }
+    const lastLegOf = (plan) => plan.legs.filter((l) => !l.alt).length - 1;
+    const effLeg = (M, li) => (M.legs[li].replaced != null ? M.legs[li].replaced : li);
+    function stopTime(leg, L, i, t, asOf, isDep) {
+        const planned = leg.stops[i].tt;
+        if (L && !L.unmatched) {
+            if (t - asOf < R.LIVE_CAP) {
+                const e = L.est[i];
+                if (e != null)
+                    return { at: e, planned, source: 'stop', asOf };
+                if (isDep && i === 0 && L.board != null)
+                    return { at: L.board, planned, source: 'board', asOf };
+            }
+            const ra = L.runAsOf ?? asOf;
+            const rd = L.run[i];
+            if (rd != null && t - ra < R.LIVE_CAP)
+                return { at: planned + rd, planned, source: 'run', asOf: ra };
+        }
+        return { at: planned, planned, source: 'timetable', asOf: null };
+    }
+    const isLiveTime = (x) => !!x && x.source !== 'timetable';
+    const delayMinOf = (x) => Math.round((x.at - x.planned) / 60000);
+    function tripEvidence(plan, M, snap, li, t) {
+        const ei = effLeg(M, li);
+        const leg = plan.legs[ei];
+        const L = snap.legs[ei];
+        const age = t - snap.asOf;
+        const fresh = age < R.LIVE_FRESH && !!L && !L.unmatched;
+        const v = fresh && L && L.vehicle && t - L.vehicle.at < R.LIVE_FRESH ? L.vehicle : null;
+        const left = (i) => {
+            if (v && (v.stop > i || (v.stop === i && v.state === 'left')))
+                return 'vehicle';
+            if (v)
+                return null;
+            const e = L ? L.est[i] : null;
+            if (fresh && e != null && t >= e + R.LEFT_BY)
+                return 'stop live';
+            return null;
+        };
+        const off = leg.off;
+        const at = (i) => {
+            if (v && v.stop === i && v.state === 'at')
+                return 'vehicle';
+            if (v && (v.stop > i || (v.stop === i && v.state === 'left')))
+                return 'vehicle';
+            if (v)
+                return null;
+            const e = L ? L.est[i] : null;
+            if (fresh && e != null && t >= e)
+                return 'stop live';
+            return null;
+        };
+        const passed = v && (v.stop > off || (v.stop === off && v.state === 'left')) ? 'vehicle' : null;
+        let next = 1;
+        while (next < off && left(next))
+            next++;
+        return { age, fresh, leftBoard: left(0), leftBefore: off - 1 > 0 ? left(off - 1) : null, arrived: at(off), passed, next };
+    }
+    function tripLegTimes(plan, M, snap, li, t) {
+        const leg = plan.legs[effLeg(M, li)];
+        const L = snap.legs[effLeg(M, li)];
+        const age = t - snap.asOf;
+        const dep = stopTime(leg, L, 0, t, snap.asOf, true);
+        const arr = stopTime(leg, L, leg.off, t, snap.asOf, false);
+        const before = leg.off > 1 ? stopTime(leg, L, leg.off - 1, t, snap.asOf, false) : null;
+        const platform = L && L.platform && age < R.LIVE_CAP ? L.platform : leg.platform;
+        return { dep, arr, before, platform, platformChanged: !!(platform && leg.platform && platform !== leg.platform), age, asOf: snap.asOf, timetableOnly: !L || L.unmatched };
+    }
+    function staleStepOf(age, timetableOnly) {
+        if (timetableOnly)
+            return 'timetable-only';
+        if (age < R.LIVE_FRESH)
+            return 'live';
+        if (age < R.LIVE_CAP)
+            return 'about';
+        if (age < R.NO_DATA)
+            return 'timetable';
+        return 'no-data';
+    }
+    const LINE_BUDGET = {
+        status: { normal: 38, largest: 26 }, warn: { normal: 30, largest: 24 }, arrive: { normal: 32, largest: 26 },
+        islandTrailing: { normal: 7, largest: 7 }, islandMinimal: { normal: 5, largest: 5 }, widget: { normal: 44, largest: 34 }, watch: { normal: 24, largest: 18 },
+    };
+    function fitLine(variants, kind, size) {
+        const max = LINE_BUDGET[kind][size];
+        const list = (Array.isArray(variants) ? variants : [variants]).filter((v) => v != null && v !== '');
+        if (!list.length)
+            return { text: '', truncated: false };
+        for (const v of list)
+            if (v.length <= max)
+                return { text: v, truncated: false };
+        const last = list[list.length - 1];
+        return { text: last.slice(0, max - 3) + '...', truncated: true };
+    }
+    function whereWords(leg, platform, short) {
+        if (leg.mode === 'bus')
+            return leg.stand || 'Stand';
+        if (!platform)
+            return null;
+        return short ? `Plat ${platform}` : `Platform ${platform}`;
+    }
+    function delayWords(d) {
+        if (d === 0)
+            return 'On time';
+        return d > 0 ? `${d} min late` : `${-d} min early`;
+    }
+    function tripRender(plan, M, snap, t, opts = {}) {
+        const c24 = !!opts.c24, size = opts.size || 'normal';
+        const C = (x) => tripClock(x, c24);
+        const li = M.current;
+        const m = M.legs[li];
+        if (m.phase >= PI.ended && li === lastLegOf(plan))
+            return { ended: true, phase: 'ended' };
+        const ei = effLeg(M, li);
+        const leg = plan.legs[ei], base = plan.legs[li];
+        const tm = tripLegTimes(plan, M, snap, li, t);
+        const step = staleStepOf(tm.age, tm.timetableOnly);
+        let phase = TRIP_PHASES[m.phase];
+        if (m.phase <= PI.due)
+            phase = tm.age < R.LIVE_FRESH && isLiveTime(tm.dep) && t >= tm.dep.at ? 'due' : 'waiting';
+        if (opts.forecastPhase != null && opts.forecastPhase > m.phase)
+            phase = TRIP_PHASES[opts.forecastPhase];
+        const off = leg.stops[leg.off].name, board = leg.stops[0].name;
+        const lineTitle = `${leg.line} ${board} to ${off}`;
+        const p = tm.platform;
+        const isChange = li > 0 && M.legs[li - 1].phase >= PI.arrived && m.phase < PI.left;
+        const nextLeg = li < lastLegOf(plan) ? plan.legs[effLeg(M, li + 1)] : null;
+        const asOfT = C(tm.asOf);
+        const d = isLiveTime(tm.dep) ? delayMinOf(tm.dep) : null;
+        const dArr = isLiveTime(tm.arr) ? delayMinOf(tm.arr) : null;
+        const L = snap.legs[li];
+        const cancelledNoAlt = !!(L && L.cancelled && m.replaced == null && step !== 'timetable' && step !== 'no-data');
+        const replacedWhy = m.replaced != null ? (M.legs[li].replacedWhy || 'missed') : null;
+        let status = '', warn = null, arrive = null, sub = null, timer = null;
+        let trailing = '', minimal = '', inApp = '', voiceOver = '', nextStop = null;
+        const prefix = isChange ? 'Change: ' : '';
+        const W = (short) => whereWords(leg, p, short);
+        const was = tm.platformChanged ? leg.platform : null;
+        const arrLabel = (x) => (x.source === 'timetable' ? `${C(x.at)} (timetable)` : C(x.at));
+        if (cancelledNoAlt) {
+            status = ['Cancelled', 'Cancelled'];
+            warn = 'No next service found yet';
+            trailing = 'Cancel';
+            minimal = 'X';
+            inApp = `Your ${C(base.stops[0].tt)} ${base.line} is cancelled. Looking for the next one on this line.`;
+        }
+        else if (phase === 'waiting' || phase === 'due') {
+            const depT = C(tm.dep.at);
+            const wl = W(false), ws = W(true);
+            const wasL = was ? `, was ${was}` : '', wasS = was ? ` (was ${was})` : '';
+            const due = phase === 'due' || (step === 'about' && t >= tm.dep.at);
+            if (step === 'live' && !due) {
+                status = [`${prefix}Leaves ${depT} · ${wl}${wasL}`, `${prefix}Leaves ${depT} · ${ws}${wasL}`, `${depT} · ${ws}${wasS}`, `${depT} · ${ws}`];
+                warn = d != null ? delayWords(d) : 'Timetable time';
+                timer = tm.dep.at > t ? tm.dep.at : null;
+                trailing = `${mins(tm.dep.at - t)} min`;
+                minimal = `${mins(tm.dep.at - t)}m`;
+                inApp = `${prefix}Leaves in ${mins(tm.dep.at - t)} min, ${depT} · ${ws}${wasS}${warn ? ' · ' + warn : ''}`;
+                voiceOver = `${leg.line} to ${off}, leaves ${depT} in ${mins(tm.dep.at - t)} minutes, ${wl}${d ? `, ${Math.abs(d)} minutes ${d > 0 ? 'late' : 'early'}` : ''}`;
+            }
+            else if (step === 'live' || (due && step === 'about')) {
+                const about = step === 'about';
+                status = [`${prefix}Due ${about ? 'about ' + depT : 'now'} · ${wl}${wasL}`, `${prefix}Due ${about ? 'about ' + depT : 'now'} · ${ws}${wasS}`, `Due · ${ws}`];
+                warn = d != null ? (about ? `${delayWords(d)} at ${asOfT}` : delayWords(d)) : null;
+                if (about)
+                    sub = `Updated ${asOfT}`;
+                trailing = 'Due';
+                minimal = 'Due';
+                inApp = `${prefix}Due ${about ? 'about ' + depT : 'now'} · ${ws}${warn ? ' · ' + warn : ''}`;
+                voiceOver = `${leg.line} to ${off}, due now, ${wl}`;
+            }
+            else if (step === 'about') {
+                status = [`${prefix}Leaves about ${depT} · ${wl}${wasL}`, `${prefix}Leaves about ${depT} · ${ws}${wasS}`, `About ${depT} · ${ws}`];
+                warn = d != null ? `${delayWords(d)} at ${asOfT}` : null;
+                sub = `Updated ${asOfT}`;
+                trailing = C(tm.dep.at).replace(/[ap]m$/, '');
+                minimal = trailing.length <= 5 ? trailing : 'Soon';
+                inApp = `${prefix}Leaves about ${depT} · ${ws} · Updated ${asOfT}`;
+            }
+            else if (step === 'timetable' || step === 'timetable-only') {
+                const tt = C(leg.stops[0].tt);
+                status = [`${prefix}Timetable ${tt} · ${wl}`, `${prefix}Timetable ${tt} · ${ws}`, `TT ${tt} · ${ws}`];
+                sub = step === 'timetable' ? `No live data since ${asOfT}` : 'No live data for this service';
+                trailing = tt.replace(/[ap]m$/, '');
+                minimal = trailing.length <= 5 ? trailing : 'TT';
+                inApp = `${prefix}Timetable ${tt} · ${ws} · ${sub}`;
+            }
+            else {
+                status = ['No live data. Open the app to refresh.', 'No live data. Open the app.', 'No live data'];
+                sub = `Timetable ${C(leg.stops[0].tt)}`;
+                trailing = '--';
+                minimal = '--';
+                inApp = `No live data. Open the app to refresh. Timetable ${C(leg.stops[0].tt)}`;
+            }
+            if (replacedWhy === 'cancelled')
+                warn = `${C(base.stops[0].tt)} cancelled`;
+            if (replacedWhy === 'missed')
+                warn = `Next ${leg.line}, ${C(base.stops[0].tt)} missed`;
+            if (replacedWhy === 'cancelled' && step === 'live')
+                inApp = `Cancelled. Next ${leg.line} ${depT}, ${ws}`;
+            arrive = step === 'live' ? `Arrive ${off} ${arrLabel(tm.arr)}` : step === 'about' ? `${off} about ${C(tm.arr.at)}` : `${off} ${C(leg.stops[leg.off].tt)} (timetable)`;
+            nextStop = board;
+        }
+        else if (phase === 'left' || phase === 'onTheWay' || phase === 'nextStop' || phase === 'getOff') {
+            const e = tripEvidence(plan, M, snap, li, t);
+            let nextIdx = e.next;
+            if (opts.forecast) {
+                nextIdx = 1;
+                while (nextIdx < leg.off) {
+                    const st = stopTime(leg, snap.legs[ei], nextIdx, t, snap.asOf, false);
+                    if (isLiveTime(st) && t >= st.at + R.LEFT_BY)
+                        nextIdx++;
+                    else
+                        break;
+                }
+                nextIdx = Math.max(nextIdx, e.next);
+            }
+            const nextName = leg.stops[Math.min(nextIdx, leg.off)].name;
+            nextStop = nextName;
+            const arrT = C(tm.arr.at);
+            if (phase === 'getOff') {
+                status = [`Get off now · ${off}`, `Get off · ${off}`, 'Get off now'];
+                trailing = 'Off now';
+                minimal = 'Off';
+                arrive = step === 'live' || step === 'about' ? `Arriving ${arrT}` : null;
+                inApp = `Get off now · ${off}${nextLeg ? `, change for the ${nextLeg.line}` : ''}`;
+                voiceOver = `Get off now, ${off}`;
+            }
+            else if (phase === 'nextStop') {
+                status = [`${off} next`, `${off} next`];
+                trailing = step === 'live' && tm.arr.at > t ? `${mins(tm.arr.at - t)} min` : 'Next';
+                minimal = trailing === 'Next' ? 'Next' : `${mins(tm.arr.at - t)}m`;
+                inApp = `${off} next · arriving ${step === 'live' ? '' : 'about '}${arrT}`;
+                voiceOver = `${off} is next, arriving ${arrT}`;
+            }
+            else {
+                status = [`Next: ${nextName}`, `Next: ${nextName}`, nextName];
+                trailing = step === 'live' && tm.arr.at > t ? `${mins(tm.arr.at - t)} min` : C(tm.arr.at).replace(/[ap]m$/, '');
+                minimal = step === 'live' && tm.arr.at > t ? `${mins(tm.arr.at - t)}m` : '--';
+                inApp = `Next: ${nextName} · ${off} ${step === 'live' ? '' : 'about '}${arrT}`;
+                voiceOver = `Next stop ${nextName}, arriving ${off} ${arrT}`;
+            }
+            if (phase !== 'getOff') {
+                if (step === 'live') {
+                    arrive = `${off} ${arrLabel(tm.arr)}`;
+                    timer = tm.arr.at > t && isLiveTime(tm.arr) ? tm.arr.at : null;
+                    warn = dArr != null && dArr !== 0 ? delayWords(dArr) : dArr === 0 ? 'On time' : null;
+                }
+                else if (step === 'about') {
+                    arrive = `${off} about ${arrT}`;
+                    sub = `Updated ${asOfT}`;
+                }
+                else if (step === 'timetable') {
+                    arrive = `${off} ${C(leg.stops[leg.off].tt)} (timetable)`;
+                    sub = `No live data since ${asOfT}`;
+                }
+                else {
+                    arrive = `${off} ${C(leg.stops[leg.off].tt)} (timetable)`;
+                    sub = 'No live data. Open the app to refresh.';
+                }
+            }
+            else if (step !== 'live')
+                sub = `Updated ${asOfT}`;
+            if (nextLeg && phase !== 'getOff') {
+                const ntm = tripLegTimes(plan, M, snap, li + 1, t);
+                warn = `Then ${nextLeg.line} ${C(ntm.dep.at)}${nextLeg.platform ? ` · Plat ${ntm.platform}` : ''}`;
+            }
+        }
+        else if (phase === 'arrived') {
+            const at = C(m.arrivedTime ?? tm.arr.at);
+            status = [`Arrived ${off} ${at}`, `Arrived ${off}`, 'Arrived'];
+            trailing = 'Here';
+            minimal = 'Here';
+            inApp = `You've arrived at ${off}. ${at}`;
+            voiceOver = `Arrived at ${off}, ${at}`;
+        }
+        const S = fitLine(status, 'status', size);
+        const Wn = fitLine(warn, 'warn', size);
+        const A = fitLine(arrive, 'arrive', size);
+        const T = fitLine(trailing || '', 'islandTrailing', size);
+        const Mi = fitLine(minimal || '', 'islandMinimal', size);
+        const forecastAbout = !!opts.forecast && t - tm.asOf >= R.LIVE_FRESH;
+        const aboutTag = forecastAbout && !/about|Timetable|No live data/i.test(S.text) ? ' (about)' : '';
+        const second = forecastAbout ? `Updated ${mins(t - tm.asOf)} min ago` : (Wn.text || A.text || sub || '');
+        const WG = fitLine([`${leg.line} · ${S.text}${aboutTag}${second ? ' · ' + second : ''}`, `${S.text}${aboutTag}${second ? ' · ' + second : ''}`, `${S.text}${aboutTag}`], 'widget', size);
+        const WA = fitLine([`${S.text}`], 'watch', size);
+        const staleDate = tm.age < R.LIVE_FRESH ? Math.min(tm.asOf + R.LIVE_FRESH, ...(phase === 'waiting' && isLiveTime(tm.dep) ? [Math.max(tm.dep.at, tm.asOf + 1000)] : [])) : null;
+        return {
+            phase, step, li, leg: leg.line, title: lineTitle,
+            status: S.text, warn: Wn.text || null, arrive: A.text || null, sub, timer, staleDate,
+            island: { leading: leg.line, trailing: T.text || '', minimal: Mi.text, timer },
+            widget: WG.text, watch: WA.text + (timer ? ` · ${mins(timer - t)} min` : ''),
+            inApp, voiceOver: voiceOver || [S.text, Wn.text, A.text, sub].filter(Boolean).join(', '),
+            truncated: [S, Wn, A, T, Mi].filter((x) => x.truncated).length, widgetTruncated: WG.truncated,
+            delayShown: (step === 'live' || step === 'about') && d != null && (phase === 'waiting' || phase === 'due') ? d : null,
+            depAt: tm.dep.at, depPlanned: tm.dep.planned, depSource: tm.dep.source, arrAt: tm.arr.at, arrSource: tm.arr.source, asOf: tm.asOf,
+            platform: p, platformWas: was, nextStop, offName: off, boardName: board,
+        };
+    }
+    const BANNED_WORDS = ['0:00', 'Trip started', 'Checking for the next one', 'Next one', 'Wake up'];
+    const renderSig = (r) => (r.ended ? 'ended' : [r.phase, r.status, r.warn, r.arrive, r.sub, r.timer, (r.island?.minimal || '').replace(/^\d+m$/, 'Nm'), r.step].join('|'));
+    function forecastPhaseOf(plan, Mw, snap, t, reloadT = -Infinity) {
+        const li = Mw.current;
+        const tm = tripLegTimes(plan, Mw, snap, li, t);
+        let f = Mw.legs[li].phase;
+        if (f >= PI.arrived)
+            return t >= (Mw.legs[li].arrivedAt ?? Infinity) + R.ENDED_AFTER ? PI.ended : f;
+        const up = (p) => { if (p > f)
+            f = p; };
+        const due = (x, at) => isLiveTime(x) && at > reloadT && t >= at;
+        if (isLiveTime(tm.dep) && t >= tm.dep.at)
+            up(PI.due);
+        if (due(tm.dep, tm.dep.at + R.LEFT_BY))
+            up(PI.onTheWay);
+        if (f >= PI.onTheWay && tm.before && due(tm.before, tm.before.at + R.LEFT_BY))
+            up(PI.nextStop);
+        if (f >= PI.onTheWay && due(tm.arr, tm.arr.at - R.HEADSUP_WINDOW))
+            up(PI.nextStop);
+        return f;
+    }
+    function setPhase(M, li, name, t, why, log) {
+        const m = M.legs[li];
+        if (PI[name] > m.phase) {
+            for (let k = m.phase + 1; k <= PI[name]; k++)
+                if (m.phaseAt[TRIP_PHASES[k]] == null) {
+                    m.phaseAt[TRIP_PHASES[k]] = t;
+                    m.phaseWhy[TRIP_PHASES[k]] = k === PI[name] ? why : `with ${name}`;
+                }
+            m.phase = PI[name];
+            log.push({ t, what: `leg ${li + 1}: ${name} (${why})` });
+        }
+    }
+    function tripStep(plan, M, t, S, env = {}) {
+        const res = { moments: [], log: [] };
+        const deliver = (ring, age, byVehicle) => res.moments.push({ ring, age, byVehicle });
+        const li = M.current;
+        const m = M.legs[li];
+        if (m.phase >= PI.ended)
+            return res;
+        const leg0 = plan.legs[li];
+        const isLast = li === lastLegOf(plan);
+        const C = (x) => tripClock(x, !!env.c24);
+        if (m.phase >= PI.arrived) {
+            if (isLast && t >= (m.arrivedAt ?? Infinity) + R.ENDED_AFTER)
+                setPhase(M, li, 'ended', t, '2 min after Arrived', res.log);
+            return res;
+        }
+        const L = S.legs[li];
+        const age = t - S.asOf;
+        const fresh = age < R.LIVE_FRESH;
+        if (fresh && L && L.cancelled && !m.cancelAlerted && m.phase < PI.left) {
+            m.cancelAlerted = true;
+            const alt = L.next != null ? plan.legs.findIndex((x) => x.id === L.next && x.alt) : -1;
+            let body = 'No next service found yet.', say = `Your ${C(leg0.stops[0].tt)} ${leg0.line} is cancelled.`;
+            if (alt >= 0) {
+                m.replaced = alt;
+                m.replacedWhy = 'cancelled';
+                const at = tripLegTimes(plan, M, S, li, t);
+                body = `Next ${plan.legs[alt].line} ${C(at.dep.at)}, Platform ${at.platform}.`;
+                say += ` The next ${plan.legs[alt].line} leaves at ${C(at.dep.at)}, from Platform ${at.platform}.`;
+            }
+            deliver({ kind: 'cancelled', title: `${C(leg0.stops[0].tt)} ${leg0.line} cancelled`, body, level: 'normal', say, moment: `cancel:${li}` }, age, false);
+        }
+        const e = tripEvidence(plan, M, S, li, t);
+        const tm = tripLegTimes(plan, M, S, li, t);
+        const leg = plan.legs[effLeg(M, li)];
+        const offName = leg.stops[leg.off].name;
+        const nextVis = isLast ? null : plan.legs[effLeg(M, li + 1)];
+        if (!isLast && fresh && M.legs[li + 1].replaced == null) {
+            const ntm = tripLegTimes(plan, M, S, li + 1, t);
+            if (isLiveTime(tm.arr) && isLiveTime(ntm.dep) && tm.arr.at + R.CHANGE_MIN > ntm.dep.at) {
+                const alt = plan.legs.findIndex((x) => !!x.alt && x.forLeg === li + 1);
+                if (alt >= 0) {
+                    const missed = plan.legs[li + 1];
+                    M.legs[li + 1].replaced = alt;
+                    M.legs[li + 1].replacedWhy = 'missed';
+                    const a2 = tripLegTimes(plan, M, S, li + 1, t);
+                    const dl = isLiveTime(tm.dep) && m.phase < PI.left ? delayMinOf(tm.dep) : 0;
+                    const lateWords = Math.abs(dl) >= R.DELAY_ALERT ? `Your ${leg.line} is running ${dl} min late. ` : '';
+                    if (lateWords)
+                        m.delayAlerted = dl;
+                    deliver({ kind: 'missed', title: `You'll miss the ${C(missed.stops[0].tt)} ${missed.line}`, body: `${lateWords}Next ${plan.legs[alt].line} ${C(a2.dep.at)}, Platform ${a2.platform}.`, level: 'normal', say: `You'll miss the ${C(missed.stops[0].tt)} ${missed.line}. The next one leaves at ${C(a2.dep.at)}, from Platform ${a2.platform}.`, moment: `missed:${li + 1}` }, age, false);
+                }
+            }
+        }
+        if (m.phase < PI.left && fresh && !(L && L.cancelled && m.replaced == null)) {
+            if (isLiveTime(tm.dep)) {
+                const d = delayMinOf(tm.dep);
+                const prev = m.delayAlerted;
+                if ((prev == null && Math.abs(d) >= R.DELAY_ALERT) || (prev != null && Math.abs(d - prev) >= R.DELAY_ALERT)) {
+                    m.delayAlerted = d;
+                    const words = d === 0 ? 'back on time' : d > 0 ? `running ${d} min late` : `running ${-d} min early`;
+                    deliver({ kind: 'delay', title: `${leg.line} ${words}`, body: `Now leaves ${C(tm.dep.at)}${leg.mode === 'bus' ? ` from ${leg.stand || 'the stand'}` : ` from Platform ${tm.platform}`}.`, level: 'normal', say: `Your ${leg.line} is ${words.replace('min', 'minutes')}. It now leaves at ${C(tm.dep.at)}${leg.mode === 'bus' ? '' : `, from Platform ${tm.platform}`}.`, moment: `delay:${li}:${d}` }, age, false);
+                }
+            }
+            if (tm.platformChanged && m.platformAlerted !== tm.platform) {
+                m.platformAlerted = tm.platform;
+                deliver({ kind: 'platform', title: `Platform change: now Platform ${tm.platform}`, body: `${leg.line} ${C(tm.dep.at)} now leaves from Platform ${tm.platform} (was ${leg.platform}).`, level: 'normal', say: `Platform change. Your ${leg.line} now leaves from Platform ${tm.platform}.`, moment: `platform:${li}:${tm.platform}` }, age, false);
+            }
+        }
+        if (m.phase < PI.due && e.fresh && isLiveTime(tm.dep) && t >= tm.dep.at)
+            setPhase(M, li, 'due', t, `live departure ${tripClockSec(tm.dep.at)} (${tm.dep.source}) came, reading ${Math.round(age / 1000)}s old`, res.log);
+        if (m.phase < PI.onTheWay && e.leftBoard)
+            setPhase(M, li, 'onTheWay', t, `left ${leg.stops[0].name}: ${e.leftBoard}`, res.log);
+        if (m.phase < PI.onTheWay)
+            return res;
+        const rung = (k) => m.rung[k];
+        const changeWords = nextVis ? { head: `${offName} is next. Change there for the ${nextVis.line}.`, off: `Get off now. ${offName}, change for the ${nextVis.line}.` } : null;
+        const vehicleWord = leg.mode === 'bus' ? 'bus' : 'train';
+        if (e.passed && !rung('getoff') && !rung('arrived')) {
+            m.rung.passed = t;
+            m.rung.headsup = m.rung.headsup || 'skipped';
+            m.rung.getoff = 'skipped';
+            m.rung.arrived = 'skipped';
+            deliver({ kind: 'passed', quiet: true, title: `Your ${vehicleWord} passed ${offName}`, body: `Your ${vehicleWord} passed ${offName} at ${C(tm.arr.at)}.`, level: 'passive', moment: `passed:${li}` }, age, false);
+            m.arrivedAt = t;
+            m.arrivedTime = tm.arr.at;
+            setPhase(M, li, 'arrived', t, `passed ${offName}: ${e.passed}`, res.log);
+            if (isLast)
+                setPhase(M, li, 'ended', t, 'passed the stop: trip ends', res.log);
+            return res;
+        }
+        if (e.arrived) {
+            const arrivedTime = e.arrived === 'vehicle' ? Math.min(t, isLiveTime(tm.arr) ? Math.max(tm.arr.at, t - R.LIVE_FRESH) : t) : tm.arr.at;
+            m.arrivedAt = t;
+            m.arrivedTime = arrivedTime;
+            if (!rung('getoff')) {
+                m.rung.getoff = t;
+                m.rung.arrived = 'with getoff';
+                if (!rung('headsup'))
+                    m.rung.headsup = 'skipped';
+                deliver({ kind: 'atstop', title: `${offName} now`, body: `${offName} now. Get off here.`, level: 'time sensitive', clip: 'getoff', say: `${offName} now. Get off here.`, moment: `getoff:${li}`, expires: t + R.GETOFF_EXPIRE }, age, e.arrived === 'vehicle');
+            }
+            else {
+                m.rung.arrived = t;
+                const say = nextVis ? `You're at ${offName}. Change to the ${nextVis.line}.` : `You've arrived at ${offName}.`;
+                const nt = nextVis ? tripLegTimes(plan, M, S, li + 1, t) : null;
+                deliver({ kind: 'arrived', title: nextVis ? `At ${offName}: change here` : `Arrived at ${offName}`, body: nextVis && nt ? `Change to the ${nextVis.line}, Platform ${nt.platform}, leaves ${C(nt.dep.at)}.` : `You've arrived at ${offName}. ${C(arrivedTime)}.`, level: 'normal', clip: nextVis ? null : 'arrived', say, moment: `arrived:${li}`, expires: t + R.ENDED_AFTER }, age, e.arrived === 'vehicle');
+            }
+            setPhase(M, li, 'arrived', t, `at ${offName}: ${e.arrived}`, res.log);
+            if (!isLast) {
+                M.current = li + 1;
+                res.log.push({ t, what: `now on leg ${li + 2}` });
+            }
+            return res;
+        }
+        const lead = env.lead ?? 0;
+        const prevArr = m.lastArrAt ?? null;
+        m.lastArrAt = isLiveTime(tm.arr) ? tm.arr.at : prevArr;
+        if (!rung('getoff') && !rung('getoffQuiet') && isLiveTime(tm.arr) && t >= tm.arr.at - R.GETOFF_LEAD - lead) {
+            const S2 = (env.reread && env.reread()) || S;
+            const tm2 = tripLegTimes(plan, M, S2, li, t);
+            const age2 = t - S2.asOf;
+            const e2 = tripEvidence(plan, M, S2, li, t);
+            if (e2.arrived || e2.passed)
+                return res;
+            if (isLiveTime(tm2.arr) && t >= tm2.arr.at - R.GETOFF_LEAD - lead) {
+                if (age2 < R.LIVE_FRESH) {
+                    m.rung.getoff = t;
+                    if (!rung('headsup'))
+                        m.rung.headsup = 'skipped';
+                    deliver({ kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}, arriving ${C(tm2.arr.at)}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + R.GETOFF_EXPIRE, target: tm2.arr.at - R.GETOFF_LEAD, arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - R.GETOFF_LEAD - lead > t - 1000 && tm2.arr.at < prevArr }, age2, false);
+                    setPhase(M, li, 'getOff', t, `live arrival ${tripClockSec(tm2.arr.at)} minus 30 s, reading ${Math.round(age2 / 1000)}s old`, res.log);
+                }
+                else if (age2 < R.LIVE_CAP) {
+                    m.rung.getoffQuiet = t;
+                    deliver({ kind: 'quiet', quiet: true, title: `${offName} about ${C(tm2.arr.at)}`, body: `${offName} about ${C(tm2.arr.at)}. No live update since ${C(S2.asOf)}.`, level: 'passive', moment: `quiet:${li}` }, age2, false);
+                }
+                return res;
+            }
+        }
+        const headsUpNow = e.leftBefore || (e.fresh && isLiveTime(tm.arr) && tm.arr.at - t <= R.HEADSUP_WINDOW);
+        if (!rung('headsup') && headsUpNow) {
+            m.rung.headsup = t;
+            deliver({ kind: 'headsup', title: `${offName} is next`, body: changeWords ? changeWords.head : `${offName} is next. Arriving about ${C(tm.arr.at)}. Get ready to get off.`, level: 'normal', clip: 'headsup', say: changeWords ? changeWords.head : `${offName} is next. Get ready to get off.`, moment: `headsup:${li}`, expires: tm.arr.at, arrSource: tm.arr.source }, age, false);
+            setPhase(M, li, 'nextStop', t, e.leftBefore ? `left ${leg.stops[leg.off - 1]?.name || leg.stops[0].name}: ${e.leftBefore}` : `live arrival ${tripClockSec(tm.arr.at)} is 2 min away`, res.log);
+        }
+        return res;
+    }
+    function voiceGate(v, t, say, readingAge, byVehicle) {
+        const no = (why) => ({ words: null, why, start: t, until: v.speakingUntil });
+        if (!say)
+            return no('no spoken cue for this alert');
+        if (!v.open)
+            return no('app not in front (V1)');
+        if (v.silent)
+            return no('Silent switch on (ambient session)');
+        if (v.openSince == null || t - v.openSince < R.VOICE_OPEN_FOR)
+            return no('app open under 10 s (V1)');
+        if (v.refreshes <= R.VOICE_SILENT_REFRESHES)
+            return no('first two refreshes after opening (V4)');
+        if (!byVehicle && readingAge >= R.VOICE_FRESH)
+            return no('live reading over 60 s old (V2)');
+        const start = Math.max(t, v.speakingUntil);
+        if (start - t > R.VOICE_QUEUE_MAX)
+            return no('waited over 30 s in the speech queue (V5)');
+        return { words: say, why: null, start, until: start + Math.ceil(say.length / 14) * 1000 };
+    }
+    function ringRoute(s, ring, t) {
+        const calm = ring.kind === 'headsup' || ring.kind === 'getoff' || ring.kind === 'atstop';
+        if (ring.quiet) {
+            return { via: s.open ? 'in-app note' : s.serverReachable ? 'server alert (passive, no sound)' : 'none (no route to the phone)', sound: null, haptic: 'none',
+                lands: !s.open && s.serverReachable && ring.kind === 'quiet' ? t + R.SERVER_DELIVERY : null, serverCopy: null };
+        }
+        if (s.open)
+            return { via: 'in-app banner', sound: null, haptic: calm ? 'one light tap' : 'none', lands: null, serverCopy: s.serverReachable ? 'server alert shown in the app without sound' : null };
+        if (s.serverReachable) {
+            let sound = ring.clip ? `Kylie ${TRIP_CLIPS[ring.clip].file} clip` : 'default sound';
+            if (s.silent)
+                sound = `${sound} muted by the Silent switch`;
+            return { via: s.direct ? 'server alert' : 'Live Activity push carrying the alert', sound, haptic: 'one buzz', lands: t + (ring.kind === 'getoff' ? R.SERVER_DELIVERY : 0), serverCopy: null };
+        }
+        return { via: 'none (no route to the phone)', sound: null, haptic: 'none', lands: null, serverCopy: null };
+    }
+    function backupGetOff(plan, M, snap, t, serverTakes) {
+        if (serverTakes || !snap || t - snap.asOf >= R.PHONE_WRITE_MAX_AGE)
+            return null;
+        const li = M.current;
+        if (M.legs[li].rung.getoff || M.legs[li].phase >= PI.arrived)
+            return null;
+        const tm = tripLegTimes(plan, M, snap, li, t);
+        if (!isLiveTime(tm.arr) || tm.arr.at - t >= R.NEAR)
+            return null;
+        return { at: tm.arr.at - R.GETOFF_LEAD, arrAt: tm.arr.at, li };
+    }
+    function tripPlanFrom(legs, svc = [], alts = []) {
+        const out = legs.map((w, i) => planLegFrom(w, svc[i] || null, { li: i }));
+        alts.forEach((a, k) => out.push(planLegFrom(a.leg, a.svc || null, { li: legs.length + k, id: a.id, alt: true, forLeg: a.forLeg })));
+        return { legs: out };
+    }
+    function serverPollMs(plan, M, snap, t) {
+        if (!snap)
+            return 30000;
+        const tm = tripLegTimes(plan, M, snap, M.current, t);
+        return isLiveTime(tm.arr) && tm.arr.at - t < R.NEAR && M.legs[M.current].phase >= PI.onTheWay ? 15000 : 30000;
+    }
+    return { TRIP_RULES, TRIP_CLIPS, tripClock, tripClockSec, stopShort, platNum, boardIndexOf, offIndexOf, planLegFrom, vehicleOnRun, legReadingFrom, tripReadingFrom, TRIP_PHASES, PHASE_INDEX, newTripMemory, lastLegOf, effLeg, isLiveTime, tripEvidence, tripLegTimes, staleStepOf, LINE_BUDGET, delayWords, tripRender, BANNED_WORDS, renderSig, forecastPhaseOf, tripStep, voiceGate, ringRoute, backupGetOff, tripPlanFrom, serverPollMs };
+  })();
+  const { TRIP_RULES, TRIP_CLIPS, tripClock, tripClockSec, stopShort, platNum, boardIndexOf, offIndexOf, planLegFrom, vehicleOnRun, legReadingFrom, tripReadingFrom, TRIP_PHASES, PHASE_INDEX, newTripMemory, lastLegOf, effLeg, isLiveTime, tripEvidence, tripLegTimes, staleStepOf, LINE_BUDGET, delayWords, tripRender, BANNED_WORDS, renderSig, forecastPhaseOf, tripStep, voiceGate, ringRoute, backupGetOff, tripPlanFrom, serverPollMs } = tripState;
   // src/lib/liveCalc.ts
-  const tms = (s) => (s ? new Date(s).getTime() : NaN);
-  const tOf = (s) => (s ? tms(s.estimated || s.planned) : NaN);
-  const timed = (s) => !!s && !!(s.planned || s.estimated) && !s.skipped;
-  const idx = (v) => (typeof v === 'number' ? v : -1);
-  const hasXY = (s) => !!s && typeof s.lat === 'number' && typeof s.lon === 'number';
-  function distM(a, b) {
-      const r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lon - a.lon) * r;
-      const h = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) ** 2;
-      return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(h)));
-  }
-  function carriedDelay(d, k) {
-      if (!d || !d.stops || !d.stops.length)
-          return null;
-      const at = (s) => (s && s.estimated && s.planned && !s.skipped ? tms(s.estimated) - tms(s.planned) : null);
-      for (let j = Math.min(k, d.stops.length - 1); j >= 0; j--) {
-          const v = at(d.stops[j]);
-          if (v != null && Number.isFinite(v))
-              return v;
-      }
-      for (let j = Math.max(0, k + 1); j < d.stops.length; j++) {
-          const v = at(d.stops[j]);
-          if (v != null && Number.isFinite(v))
-              return v;
-      }
-      return null;
-  }
-  function liveAt(d, k) {
-      const s = d.stops[k];
-      if (!s || s.skipped)
-          return NaN;
-      if (s.estimated)
-          return tms(s.estimated);
-      const dl = carriedDelay(d, k);
-      return s.planned ? tms(s.planned) + (dl ?? 0) : NaN;
-  }
-  function vehicleNext(d) {
-      const v = d?.vehicle;
-      if (!d || !v || (typeof v.ageS === 'number' && v.ageS > 180) || !hasXY(v))
-          return -1;
-      const st = d.stops;
-      let best = Infinity, bi = -1, near = -1, nd = Infinity;
-      for (let i = 0; i < st.length; i++) {
-          const a = st[i];
-          if (!hasXY(a))
-              continue;
-          const da = distM(v, a);
-          if (da < nd) {
-              nd = da;
-              near = i;
-          }
-          let j = i + 1;
-          while (j < st.length && !hasXY(st[j]))
-              j++;
-          const b = st[j];
-          if (!hasXY(b))
-              continue;
-          const ex = da + distM(v, b) - distM(a, b);
-          if (ex < best) {
-              best = ex;
-              bi = j;
-          }
-      }
-      if (near >= 0 && nd < 150)
-          return near;
-      if (bi < 0 || best > 1500)
-          return -1;
-      return bi;
-  }
-  function trackOf(d, t) {
-      if (!d || !d.stops || !d.stops.length)
-          return { ni: -1, how: 'timetable' };
-      const sn = idx(d.nextIndex);
-      const p = d.progress;
-      if (p === 'vehicle' && sn >= 0)
-          return { ni: sn, how: 'vehicle' };
-      const g = vehicleNext(d);
-      if (g >= 0)
-          return { ni: g, how: 'vehicle' };
-      if (p === 'timetable')
-          return { ni: sn, how: 'timetable' };
-      if (d.stops.some((s) => !!s.estimated)) {
-          const k = d.stops.findIndex((s, i) => timed(s) && liveAt(d, i) >= t - 20000);
-          return { ni: k < 0 ? d.stops.length : k, how: 'live' };
-      }
-      return { ni: sn, how: 'timetable' };
-  }
-  function gpsOnRun(pos, d, mi, ai, t) {
-      if (!pos || !hasXY(pos) || !d || ai < 0 || !hasXY(d.stops[ai]))
-          return null;
-      if (pos.at != null && t - pos.at > 120000)
-          return null;
-      if (pos.acc != null && pos.acc > 500)
-          return null;
-      const thr = Math.max(300, Math.min(pos.acc || 0, 500));
-      if (distM(pos, d.stops[ai]) <= thr)
-          return 'at';
-      let k = -1, dk = Infinity;
-      for (let i = Math.max(0, mi); i < d.stops.length; i++) {
-          const s = d.stops[i];
-          if (!hasXY(s))
-              continue;
-          const m = distM(pos, s);
-          if (m < dk) {
-              dk = m;
-              k = i;
-          }
-      }
-      if (k < 0 || dk > 800)
-          return null;
-      return k < ai ? 'before' : k > ai ? 'after' : 'at';
-  }
-  function computeLive(legs, svc, t, memo, pos) {
-      const last = legs.length - 1;
-      const rode = memo?.rode || {};
-      const here = memo?.here || {};
-      if (memo?.arrivedAt) {
-          const L0 = legs.map((l, i) => {
-              const arr = here[i] ?? rode[i] ?? (l.arrPlanned ? tms(l.arrPlanned) : tms(l.planned));
-              return { dep: tms(l.estimated || l.planned), arr, delay: 0, live: false, d: svc[i] || null };
-          });
-          return { done: true, L2: L0, eta: here[last] ?? rode[last] ?? memo.arrivedAt };
-      }
-      const fin = [];
-      const L2 = legs.map((l, i) => {
-          let d = svc[i] || null;
-          if (d && !sameRun(d, l, rode[i] != null))
-              d = null;
-          if (here[i] != null) {
-              fin[i] = true;
-              return { dep: tms(l.estimated || l.planned), arr: here[i], delay: 0, live: !!d?.live, d, arrLive: true, track: 'tap', ni: -1 };
-          }
-          if (!d && rode[i] != null) {
-              const a = rode[i];
-              fin[i] = t >= a + 45000;
-              return { dep: tms(l.estimated || l.planned), arr: a, delay: 0, live: false, d: null, arrLive: true, track: 'live', ni: -1 };
-          }
-          const mi = idx(d?.mineIndex), ai = idx(d?.alightIndex);
-          const mineS = d && mi >= 0 ? d.stops[mi] : null, offS = d && ai >= 0 ? d.stops[ai] : null;
-          const trk = trackOf(d, t);
-          const dMine = mineS && mineS.estimated && mineS.planned ? tms(mineS.estimated) - tms(mineS.planned) : null;
-          const dOff = d ? carriedDelay(d, ai >= 0 ? ai : d.stops.length - 1) : null;
-          const dPlan = l.estimated ? tms(l.estimated) - tms(l.planned) : null;
-          const delay = dMine ?? dOff ?? dPlan ?? 0;
-          const dep = mineS && Number.isFinite(tOf(mineS)) ? tOf(mineS) : tms(l.estimated || l.planned);
-          let arr0, arrLive = false, arrDelay;
-          if (offS && offS.estimated) {
-              arr0 = tms(offS.estimated);
-              arrLive = true;
-              arrDelay = offS.planned ? arr0 - tms(offS.planned) : undefined;
-          }
-          else if (offS && offS.planned) {
-              arr0 = tms(offS.planned) + (dOff ?? 0);
-              arrLive = dOff != null;
-              arrDelay = dOff ?? undefined;
-          }
-          else if (l.arrPlanned) {
-              const dl = dOff ?? dMine;
-              arr0 = tms(l.arrPlanned) + (dl ?? dPlan ?? 0);
-              arrLive = dl != null;
-              arrDelay = dl ?? undefined;
-          }
-          else
-              arr0 = dep + 10 * 60000;
-          if (!Number.isFinite(arr0) && l.arrPlanned)
-              arr0 = tms(l.arrPlanned) + (dOff ?? dMine ?? 0);
-          const short = vehicleShort(d, mi, ai);
-          const ni = trk.ni;
-          const trusted = trk.how !== 'timetable';
-          const past = !!d && ai >= 0 && trusted && ni > ai && !short;
-          const arr = heldArrival(d, ai, arr0, t, short, trusted ? ni : -1);
-          let gps = gpsOnRun(pos, d, mi, ai, t);
-          if (!gps && pos && i < last) {
-              const n = svc[i + 1] || null, nmi = idx(n?.mineIndex);
-              if (n && nmi >= 0 && hasXY(n.stops[nmi]) && hasXY(pos) && (pos.at == null || t - pos.at <= 120000) && (pos.acc == null || pos.acc <= 500)
-                  && distM(pos, n.stops[nmi]) <= Math.max(300, Math.min(pos.acc || 0, 500)))
-                  gps = 'at';
-          }
-          let done = false;
-          if (gps === 'at' || gps === 'after')
-              done = true;
-          else if (gps === 'before')
-              done = false;
-          else if (past)
-              done = true;
-          else if (arrLive && t >= arr + 45000 && !short)
-              done = true;
-          fin[i] = done;
-          const track = gps === 'at' || gps === 'after' ? 'gps' : trk.how;
-          return { dep, arr, delay: delay || 0, live: !!d?.live, d, gone: past, arrLive, arrDelay, track, ni,
-              ...(gps === 'at' || gps === 'after' ? { gpsHere: true } : {}), ...(gps === 'before' ? { gpsBefore: true } : {}) };
-      });
-      for (let i = 1; i < L2.length; i++) {
-          const prev = here[i - 1] ?? rode[i - 1];
-          if (prev == null || here[i] != null || !Number.isFinite(L2[i].dep))
-              continue;
-          const ready = prev + (legs[i].walkBefore || 0) * 60000;
-          if (connRisk(Math.round((L2[i].dep - ready) / 60000)) !== 'miss')
-              continue;
-          const lateBy = ready - L2[i].dep;
-          L2[i] = { ...L2[i], dep: ready, arr: L2[i].arr + lateBy, gone: false, missed: true, was: L2[i].dep };
-          fin[i] = false;
-      }
-      const cur = L2.findIndex((_, i) => !fin[i]);
-      if (cur < 0)
-          return { done: true, L2, eta: L2[last].arr };
-      const x = L2[cur], d = x.d;
-      const mi = idx(d?.mineIndex), ai = idx(d?.alightIndex);
-      const ni0 = x.ni ?? -1;
-      const how = x.track || 'timetable';
-      let phase = 'wait';
-      if (x.missed)
-          phase = 'wait';
-      else if (d && mi >= 0 && how !== 'timetable')
-          phase = ni0 > mi || how === 'gps' ? 'ride' : 'wait';
-      else
-          phase = t >= x.dep ? 'ride' : 'wait';
-      let nextIdx = d ? ni0 : -1;
-      if (d && nextIdx >= 0) {
-          while (nextIdx < d.stops.length - 1 && nextIdx !== ai && !timed(d.stops[nextIdx]))
-              nextIdx++;
-      }
-      const stopsLeft = d && ai >= 0 && phase === 'ride' && how !== 'timetable' ? d.stops.slice(Math.max(nextIdx, mi + 1), ai + 1).filter(timed).length : null;
-      const conns = [];
-      if (x.missed && cur > 0) {
-          conns.push({ i: cur - 1, at: legs[cur - 1].to || '', spare: -1, risk: 'miss', next: legs[cur], nextDep: x.was ?? x.dep });
-      }
-      for (let i = cur; i < last; i++) {
-          const a = L2[i], b = L2[i + 1];
-          const spare = Math.round((b.dep - a.arr) / 60000 - (legs[i + 1].walkBefore || 0));
-          conns.push({ i, at: legs[i].to || '', spare, risk: connRisk(spare), next: legs[i + 1], nextDep: b.dep });
-      }
-      const e = etaFrom(legs, L2, cur);
-      const lateMs = phase === 'ride' ? (x.arrLive ? x.arrDelay : undefined) : (x.live ? x.delay : undefined);
-      const delayMin = how !== 'timetable' && lateMs != null && Number.isFinite(lateMs) ? Math.round(lateMs / 60000) : null;
-      return { done: false, cur, phase, nextIdx, stopsLeft, L2, conns, eta: e.eta, live: x.live, track: how, delayMin, ...(e.late ? { etaLate: true } : {}) };
-  }
-  const connRisk = (spare) => (spare < 0 ? 'miss' : spare < 2 ? 'tight' : 'ok');
-  function heldArrival(d, ai, arr, t, short = false, next) {
-      if (!d || ai < 0 || !Number.isFinite(arr))
-          return arr;
-      if (!short) {
-          if (!d.live)
-              return arr;
-          const ni = next != null && next >= 0 ? next : idx(d.nextIndex);
-          if (ni < 0 || ni > ai || d.stops[ai]?.passed)
-              return arr;
-      }
-      if (t - arr < 30000 || t - arr > 10 * 60000)
-          return arr;
-      return t + 30000;
-  }
-  function vehicleShort(d, mi, ai) {
-      const v = d?.vehicle;
-      if (!d || !v || ai < 0 || mi < 0 || ai <= mi)
-          return false;
-      if (typeof v.lat !== 'number' || typeof v.lon !== 'number' || (typeof v.ageS === 'number' && v.ageS > 180))
-          return false;
-      const A = d.stops[mi], B = d.stops[ai];
-      if (typeof A?.lat !== 'number' || typeof A?.lon !== 'number' || typeof B?.lat !== 'number' || typeof B?.lon !== 'number')
-          return false;
-      const k = Math.cos((B.lat * Math.PI) / 180);
-      const ax = A.lon * k, ay = A.lat, bx = B.lon * k, by = B.lat, vx = v.lon * k, vy = v.lat;
-      const L2 = (bx - ax) ** 2 + (by - ay) ** 2;
-      if (!(L2 > 0))
-          return false;
-      const f = ((vx - ax) * (bx - ax) + (vy - ay) * (by - ay)) / L2;
-      const distM = Math.hypot(vx - bx, vy - by) * 111320;
-      return f < 0.9 && distM > 500;
-  }
-  function etaFrom(legs, L2, cur) {
-      let end = L2[cur].arr;
-      let late = false;
-      for (let i = cur + 1; i < L2.length; i++) {
-          const b = L2[i];
-          const ready = end + (legs[i].walkBefore || 0) * 60000;
-          const spare = Math.round((b.dep - ready) / 60000);
-          if (connRisk(spare) !== 'miss' || !Number.isFinite(b.dep)) {
-              end = b.arr;
-              continue;
-          }
-          late = true;
-          end = b.arr + (ready - b.dep);
-      }
-      return { eta: end, late };
-  }
-  function sameRun(d, l, boarded = true) {
-      if (d.tripId && l.tripId && d.tripId !== l.tripId)
-          return false;
-      const mi = idx(d.mineIndex), ni = idx(d.nextIndex);
-      const mineS = mi >= 0 ? d.stops[mi] : null;
-      if (mineS?.planned && l.planned && Math.abs(tms(mineS.planned) - tms(l.planned)) > 5 * 60000)
-          return false;
-      if (boarded && mi >= 0 && ni >= 0 && ni <= mi)
-          return false;
-      return true;
-  }
-  function nextMemo(memo, s, now) {
-      const m = { rode: { ...(memo?.rode || {}) }, arrivedAt: memo?.arrivedAt ?? null };
-      const here = { ...(memo?.here || {}) };
-      s.L2.forEach((x, i) => { if (x.gpsHere && here[i] == null && now != null)
-          here[i] = now; });
-      if (Object.keys(here).length)
-          m.here = here;
-      if (!s.done && s.phase === 'ride' && s.track !== 'timetable' && s.L2[s.cur].arrLive !== false && Number.isFinite(s.L2[s.cur].arr))
-          m.rode[s.cur] = s.L2[s.cur].arr;
-      return m;
-  }
-  const notLive = (s) => !s.done && s.track === 'timetable';
-  function tripAlerts(legs, s, alerted, serverWatching, f) {
-      const out = [];
-      const add = (key, title, body) => { if (!alerted[key] && !out.some((a) => a.key === key))
-          out.push({ key, title, body }); };
-      const last = legs.length - 1;
-      if (serverWatching)
-          return out;
-      if (s.done) {
-          add('arrived', "You've arrived", `${f.short(legs[last]?.to)} at ${f.clock(s.eta)}. Trip alerts are off.`);
-          return out;
-      }
-      if (s.phase === 'ride' && !notLive(s)) {
-          const d = s.L2[s.cur].d, l = legs[s.cur];
-          if (d && (d.alightIndex ?? -1) > 0 && s.nextIdx === d.alightIndex) {
-              if (s.cur === last)
-                  add('off' + s.cur, `Next stop: ${f.short(l.to)}`, `Get ready to get off. You arrive at ${f.clock(s.eta)}.`);
-              else {
-                  const n = legs[s.cur + 1];
-                  add('off' + s.cur, `Next stop: ${f.short(l.to)}, change here`, `Then the ${f.clock(s.L2[s.cur + 1].dep)} ${n.line}${n.fromPlatform ? ' from ' + f.plat(n.fromPlatform) : ''}.`);
-              }
-          }
-      }
-      for (const cn of s.conns) {
-          if (cn.risk === 'miss')
-              add('conn' + cn.i, 'Connection at risk', `With live times you'll likely miss the ${f.clock(new Date(cn.next.planned).getTime())} ${cn.next.line} at ${f.short(cn.at)}.`);
-          else if (cn.risk === 'tight')
-              add('conn' + cn.i, `Tight change at ${f.short(cn.at)}`, `${Math.max(0, cn.spare)} min to catch the ${cn.next.line}.`);
-      }
-      return out;
-  }
-  function sayName(n) {
-      const words = [[/\bStn\b/g, 'Station'], [/\bRd\b/g, 'Road'], [/\bSt\b(?!\.)/g, 'Street'], [/\bAve?\b/g, 'Avenue'], [/\bPde\b/g, 'Parade'],
-          [/\bHwy\b/g, 'Highway'], [/\bDr\b/g, 'Drive'], [/\bPl\b/g, 'Place'], [/\bCres\b/g, 'Crescent'], [/\bBvd\b/g, 'Boulevard'], [/\bNr\b/g, 'near'], [/\bOpp\b/g, 'opposite'], [/\bAt\b/g, 'at'], [/\bBefore\b/g, 'before'], [/\bAfter\b/g, 'after']];
-      let v = String(n || '').split(',')[0].replace(/ Station$/, '').trim();
-      for (const [re, w] of words)
-          v = v.replace(re, w);
-      return v;
-  }
-  const NOUN = { train: 'train', metro: 'metro', bus: 'bus', school: 'bus', coach: 'coach', ferry: 'ferry', lightrail: 'light rail' };
-  const sayPlat = (p) => {
-      const v = String(p || '').trim();
-      if (!v)
-          return '';
-      return /^(platform|stand|wharf|side)\b/i.test(v) ? v.charAt(0).toLowerCase() + v.slice(1) : /^\d+$/.test(v) ? `platform ${v}` : v;
-  };
-  function sayLineName(line, mode) {
-      const l = String(line || '').trim();
-      const noun = NOUN[String(mode || '')] || '';
-      if (!l)
-          return noun ? `the ${noun}` : 'the next service';
-      if (noun === 'train' || noun === 'metro')
-          return `the ${l} line`;
-      return noun ? `the ${l} ${noun}` : `the ${l}`;
-  }
-  function speechCues(legs, s, now, f) {
-      const out = [];
-      const last = legs.length - 1;
-      if (s.done) {
-          out.push({ key: 'arrived', text: `You've arrived at ${sayName(legs[last]?.to)}.` });
-          return out;
-      }
-      const i = s.cur, l = legs[i], x = s.L2[i];
-      if (!l || !x)
-          return out;
-      const noun = NOUN[l.mode] || 'service';
-      if (s.phase === 'ride' && !notLive(s)) {
-          const d = x.d;
-          if (d && (d.alightIndex ?? -1) > 0 && s.nextIdx === d.alightIndex) {
-              if (i === last)
-                  out.push({ key: 'off' + i, text: `Your stop is next. ${sayName(l.to)}.` });
-              else {
-                  const n = legs[i + 1];
-                  out.push({ key: 'off' + i, text: `Next stop, ${sayName(l.to)}. Change here for ${sayLineName(n.line, n.mode)}.` });
-              }
-          }
-      }
-      for (const cn of s.conns) {
-          const nl = sayLineName(cn.next.line, cn.next.mode);
-          if (cn.risk === 'miss')
-              out.push({ key: 'conn' + cn.i, text: `You may miss ${nl} at ${sayName(cn.at)}.` });
-          else if (cn.risk === 'tight') {
-              const m = Math.max(0, cn.spare);
-              out.push({ key: 'conn' + cn.i, text: `Tight change at ${sayName(cn.at)}. ${m} minute${m === 1 ? '' : 's'} to catch ${nl}.` });
-          }
-      }
-      if (s.phase !== 'wait' || x.missed || !Number.isFinite(x.dep))
-          return out;
-      const d = x.d, mi = idx(d?.mineIndex);
-      const livePlat = d && mi >= 0 ? String(d.stops[mi]?.platform || '').trim() : '';
-      const norm = (p) => String(p || '').toLowerCase().replace(/^(platform|stand|wharf|side)\s*/, '').trim();
-      const plat = livePlat || l.fromPlatform || '';
-      if (livePlat && l.fromPlatform && norm(livePlat) !== norm(l.fromPlatform)) {
-          const kind = /^stand/i.test(livePlat) ? 'Stand' : 'Platform';
-          out.push({ key: `plat${i}:${norm(livePlat)}`, text: `${kind} change. Your ${noun} now leaves from ${sayPlat(livePlat)}.` });
-      }
-      const late = Math.round(x.delay / 60000);
-      if (x.live && late >= 3) {
-          const step = late >= 15 ? 15 : late >= 10 ? 10 : late >= 5 ? 5 : 3;
-          out.push({ key: `late${i}:${step}`, text: `Your ${noun} is running ${late} minutes late. It now leaves at ${f.clock(x.dep)}.` });
-      }
-      const dm = (x.dep - now) / 60000;
-      if (dm <= 3.5 && dm > -0.5) {
-          const m = Math.round(dm);
-          const to = sayName(l.to);
-          const where = plat ? `, from ${sayPlat(plat)}` : '';
-          out.push({ key: `soon${i}`, text: m <= 0 ? `Your ${noun} to ${to} is leaving now${where}.` : `Your ${noun} to ${to} leaves in ${m} minute${m === 1 ? '' : 's'}${where}.` });
-      }
-      return out;
-  }
-  function tapMoments(s, now) {
-      if (s.done)
-          return ['arrived'];
-      const x = s.L2[s.cur];
-      if (s.phase !== 'wait' || !x || x.missed || !Number.isFinite(x.dep))
-          return [];
-      const left = x.dep - now;
-      return left <= 60000 && left > -30000 ? ['leave' + s.cur] : [];
-  }
-  function progOf(s, f) {
-      if (!s || s.done)
-          return { phase: 'done' };
-      const d = s.L2[s.cur].d, ns = d && s.nextIdx >= 0 ? d.stops[s.nextIdx] : null;
-      return { leg: s.cur, phase: s.phase, next: ns ? f.short(ns.name) : null, stopsLeft: s.stopsLeft, eta: s.eta };
-  }
-  function liveWords(legs, s, now, f) {
-      const last = legs.length - 1;
-      if (s.done)
-          return { title: "You've arrived", body: `${f.short(legs[last].to)} at ${f.clock(s.eta)}` };
-      const l = legs[s.cur], x = s.L2[s.cur], d = x.d;
-      const arrive = `Arrive ${f.clock(s.eta)} (${minsWords((s.eta - now) / 60000)})`;
-      if (x.missed)
-          return { title: `Change at risk at ${f.short(l.from)}`, body: `The ${x.was ? f.clock(x.was) + ' ' : ''}${l.line} has likely left. Open the app for the next way on. Arrive about ${f.clock(s.eta)}` };
-      const late = s.delayMin != null && s.delayMin >= 2 ? `${s.delayMin} min late. ` : '';
-      if (s.phase === 'wait') {
-          const dm = Math.round((x.dep - now) / 60000);
-          return { title: `${l.line} to ${f.short(l.towards || l.to)}`, body: `${s.cur ? 'Change to' : 'Board'} the ${l.line} ${dm <= 0 ? 'now' : `at ${f.clock(x.dep)}`}${l.fromPlatform ? `, ${f.plat(l.fromPlatform)}` : ''}. ${late}${arrive}` };
-      }
-      if (notLive(s))
-          return { title: `${l.line} to ${f.short(l.towards || l.to)}`, body: `Not live, running to timetable: due at ${f.short(l.to)} ${f.clock(x.arr)}. Arrive about ${f.clock(s.eta)}` };
-      const ns = d && s.nextIdx >= 0 ? d.stops[s.nextIdx] : null;
-      const yours = !!d && s.nextIdx === d.alightIndex;
-      const left = s.stopsLeft != null ? `${s.stopsLeft} stop${s.stopsLeft === 1 ? '' : 's'} to ${f.short(l.to)}` : `to ${f.short(l.to)}`;
-      return { title: `${l.line} to ${f.short(l.towards || l.to)}`, body: `${yours ? `Get off at ${f.short(l.to)}, next stop` : ns ? `Next stop: ${f.short(ns.name)}, ${left}` : `On the ${l.line}, ${left}`}. ${late}${arrive}` };
-  }
-  function stepLive(g, svc, now, f, pos) {
-      const actions = [];
-      const memo = { rode: g.rode, here: g.here, arrivedAt: g.arrivedAt };
-      const s = computeLive(g.legs, svc, now, memo, pos);
-      let n = g;
-      const m = nextMemo(memo, s, now);
-      if (JSON.stringify(m.rode || {}) !== JSON.stringify(g.rode || {}))
-          n = { ...n, rode: m.rode };
-      if (JSON.stringify(m.here || {}) !== JSON.stringify(g.here || {}))
-          n = { ...n, here: m.here };
-      const list = tripAlerts(g.legs, s, n.alerted || {}, !!n.watchId, f).filter((a) => !(g.wake && a.key.startsWith('off')));
-      if (list.length) {
-          const alerted = { ...(n.alerted || {}) };
-          for (const a of list) {
-              alerted[a.key] = 1;
-              actions.push({ t: 'alert', id: `trip-${g.id}-${a.key}`, key: a.key, title: a.title, body: a.body });
-          }
-          n = { ...n, alerted };
-      }
-      if (g.speak) {
-          const said = n.spoken || {};
-          const say = speechCues(g.legs, s, now, f).filter((a) => !said[a.key]);
-          if (say.length) {
-              const spoken = { ...said };
-              for (const a of say) {
-                  spoken[a.key] = 1;
-                  actions.push({ t: 'say', key: a.key, text: a.text });
-              }
-              n = { ...n, spoken };
-          }
-      }
-      if (s.done) {
-          if (!n.arrivedAt) {
-              if (n.share)
-                  actions.push({ t: 'share', prog: progOf(s, f) });
-              actions.push({ t: 'clearOngoing' });
-              n = { ...n, arrivedAt: now };
-          }
-          if (now > (n.arrivedAt || now) + 10 * 60000)
-              actions.push({ t: 'end' });
-          return { g: n, s, actions };
-      }
-      const w = liveWords(g.legs, s, now, f);
-      actions.push({ t: 'ongoing', title: w.title, body: w.body, leg: s.cur });
-      if (n.share)
-          actions.push({ t: 'share', prog: progOf(s, f) });
-      return { g: n, s, actions };
-  }
-  function noteKey(n) {
-      const w = n.watch_id || '';
-      const m = /^(?:Next stop: |Arriving at |Change at )(.+?)(?:, change here| in \d+ min)?$/.exec(n.title || '');
-      if (w && m) {
-          const place = m[1].replace(/ Station$/i, '').trim().toLowerCase();
-          return { key: `${w}|stop|${place}`, id: `w${w}-stop` };
-      }
-      if (w && /^(Connection at risk|Tight change)/i.test(n.title || ''))
-          return { key: `${w}|conn|${n.title}`, id: `w${w}-conn` };
-      return { key: `note|${n.id}`, id: `note-${n.id}` };
-  }
-  function cutPath(path, a, b) {
-      if (!path || path.length < 2)
-          return path || [];
-      const near = (s) => {
-          if (!s || s.lat == null || s.lon == null)
-              return -1;
-          let best = -1, bd = Infinity;
-          path.forEach(([la, lo], k) => { const dd = (la - s.lat) ** 2 + (lo - s.lon) ** 2; if (dd < bd) {
-              bd = dd;
-              best = k;
-          } });
-          return best;
-      };
-      const i = near(a), j = near(b);
-      if (i < 0 || j < 0 || j <= i)
-          return path;
-      return path.slice(i, j + 1);
-  }
-  function minsWords(m) {
-      const v = Math.max(0, Math.round(m));
-      return v < 60 ? `${v} min` : `${Math.floor(v / 60)} h ${v % 60} min`;
-  }
+  const liveCalc = (() => {
+    const tms = (s) => (s ? new Date(s).getTime() : NaN);
+    const tOf = (s) => (s ? tms(s.estimated || s.planned) : NaN);
+    const timed = (s) => !!s && !!(s.planned || s.estimated) && !s.skipped;
+    const idx = (v) => (typeof v === 'number' ? v : -1);
+    const hasXY = (s) => !!s && typeof s.lat === 'number' && typeof s.lon === 'number';
+    function distM(a, b) {
+        const r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lon - a.lon) * r;
+        const h = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) ** 2;
+        return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(h)));
+    }
+    function carriedDelay(d, k) {
+        if (!d || !d.stops || !d.stops.length)
+            return null;
+        const at = (s) => (s && s.estimated && s.planned && !s.skipped ? tms(s.estimated) - tms(s.planned) : null);
+        for (let j = Math.min(k, d.stops.length - 1); j >= 0; j--) {
+            const v = at(d.stops[j]);
+            if (v != null && Number.isFinite(v))
+                return v;
+        }
+        for (let j = Math.max(0, k + 1); j < d.stops.length; j++) {
+            const v = at(d.stops[j]);
+            if (v != null && Number.isFinite(v))
+                return v;
+        }
+        return null;
+    }
+    function liveAt(d, k) {
+        const s = d.stops[k];
+        if (!s || s.skipped)
+            return NaN;
+        if (s.estimated)
+            return tms(s.estimated);
+        const dl = carriedDelay(d, k);
+        return s.planned ? tms(s.planned) + (dl ?? 0) : NaN;
+    }
+    function vehicleNext(d) {
+        const v = d?.vehicle;
+        if (!d || !v || (typeof v.ageS === 'number' && v.ageS > 180) || !hasXY(v))
+            return -1;
+        const st = d.stops;
+        let best = Infinity, bi = -1, near = -1, nd = Infinity;
+        for (let i = 0; i < st.length; i++) {
+            const a = st[i];
+            if (!hasXY(a))
+                continue;
+            const da = distM(v, a);
+            if (da < nd) {
+                nd = da;
+                near = i;
+            }
+            let j = i + 1;
+            while (j < st.length && !hasXY(st[j]))
+                j++;
+            const b = st[j];
+            if (!hasXY(b))
+                continue;
+            const ex = da + distM(v, b) - distM(a, b);
+            if (ex < best) {
+                best = ex;
+                bi = j;
+            }
+        }
+        if (near >= 0 && nd < 150)
+            return near;
+        if (bi < 0 || best > 1500)
+            return -1;
+        return bi;
+    }
+    function trackOf(d, t) {
+        if (!d || !d.stops || !d.stops.length)
+            return { ni: -1, how: 'timetable' };
+        const sn = idx(d.nextIndex);
+        const p = d.progress;
+        if (p === 'vehicle' && sn >= 0)
+            return { ni: sn, how: 'vehicle' };
+        const g = vehicleNext(d);
+        if (g >= 0)
+            return { ni: g, how: 'vehicle' };
+        if (p === 'timetable')
+            return { ni: sn, how: 'timetable' };
+        if (d.stops.some((s) => !!s.estimated)) {
+            const k = d.stops.findIndex((s, i) => timed(s) && liveAt(d, i) >= t - 20000);
+            return { ni: k < 0 ? d.stops.length : k, how: 'live' };
+        }
+        return { ni: sn, how: 'timetable' };
+    }
+    function gpsOnRun(pos, d, mi, ai, t) {
+        if (!pos || !hasXY(pos) || !d || ai < 0 || !hasXY(d.stops[ai]))
+            return null;
+        if (pos.at != null && t - pos.at > 120000)
+            return null;
+        if (pos.acc != null && pos.acc > 500)
+            return null;
+        const thr = Math.max(300, Math.min(pos.acc || 0, 500));
+        if (distM(pos, d.stops[ai]) <= thr)
+            return 'at';
+        let k = -1, dk = Infinity;
+        for (let i = Math.max(0, mi); i < d.stops.length; i++) {
+            const s = d.stops[i];
+            if (!hasXY(s))
+                continue;
+            const m = distM(pos, s);
+            if (m < dk) {
+                dk = m;
+                k = i;
+            }
+        }
+        if (k < 0 || dk > 800)
+            return null;
+        return k < ai ? 'before' : k > ai ? 'after' : 'at';
+    }
+    function computeLive(legs, svc, t, memo, pos, o = {}) {
+        const last = legs.length - 1;
+        const rode = memo?.rode || {};
+        const here = memo?.here || {};
+        if (memo?.arrivedAt) {
+            const L0 = legs.map((l, i) => {
+                const arr = here[i] ?? rode[i] ?? (l.arrPlanned ? tms(l.arrPlanned) : tms(l.planned));
+                return { dep: tms(l.estimated || l.planned), arr, delay: 0, live: false, d: svc[i] || null };
+            });
+            return { done: true, L2: L0, eta: here[last] ?? rode[last] ?? memo.arrivedAt };
+        }
+        const asOf = o.asOf ?? t;
+        const use = legs.map((l, i) => { const d = svc[i] || null; return d && !sameRun(d, l, rode[i] != null) ? null : d; });
+        const plan = tripPlanFrom(legs, use);
+        const reading = tripReadingFrom(plan, legs, use, asOf, { plannerAt: o.plannerAt ?? null });
+        const M = newTripMemory(plan);
+        const fin = [];
+        const rideEv = [];
+        const L2 = legs.map((l, i) => {
+            const d = use[i];
+            if (here[i] != null) {
+                fin[i] = true;
+                rideEv[i] = true;
+                return { dep: tms(l.estimated || l.planned), arr: here[i], delay: 0, live: !!d?.live, d, arrLive: true, track: 'tap', ni: -1 };
+            }
+            M.legs[i].phase = rode[i] != null ? PHASE_INDEX.onTheWay : PHASE_INDEX.waiting;
+            M.current = i;
+            const tm = tripLegTimes(plan, M, reading, i, t);
+            const e = tripEvidence(plan, M, reading, i, t);
+            const LR = reading.legs[i];
+            const mi = d ? boardIndexOf(l, d) : -1, ai = d ? offIndexOf(l, d, mi) : -1;
+            const vFresh = !!(LR && LR.vehicle && t - LR.vehicle.at < TRIP_RULES.LIVE_FRESH && t - asOf < TRIP_RULES.LIVE_FRESH);
+            const anyLive = isLiveTime(tm.dep) || isLiveTime(tm.arr);
+            let track = LR && !LR.unmatched && vFresh ? 'vehicle' : anyLive ? 'live' : 'timetable';
+            const dep = tm.dep.at;
+            let arr = tm.arr.at;
+            const arrLive = isLiveTime(tm.arr);
+            const arrDelay = arrLive ? tm.arr.at - tm.arr.planned : undefined;
+            const delay = isLiveTime(tm.dep) ? tm.dep.at - tm.dep.planned : 0;
+            const pi = Math.min(e.next, plan.legs[i].off);
+            const sid = plan.legs[i].stops[pi]?.id;
+            let ni = d && sid ? d.stops.findIndex((s) => s.id === sid) : -1;
+            let gps = gpsOnRun(pos, d, mi, ai, t);
+            if (!gps && pos && i < last) {
+                const n = use[i + 1] || null, nmi = n ? boardIndexOf(legs[i + 1], n) : -1;
+                if (n && nmi >= 0 && hasXY(n.stops[nmi]) && hasXY(pos) && (pos.at == null || t - pos.at <= 120000) && (pos.acc == null || pos.acc <= 500)
+                    && distM(pos, n.stops[nmi]) <= Math.max(300, Math.min(pos.acc || 0, 500)))
+                    gps = 'at';
+            }
+            const past = !!e.passed;
+            let done = false;
+            if (!(e.passed || e.arrived) && gps !== 'at' && gps !== 'after' && arrLive && t - arr >= 30000)
+                arr = t + 30000;
+            if (gps === 'at' || gps === 'after')
+                done = true;
+            else if (gps === 'before')
+                done = false;
+            else if (e.passed || e.arrived)
+                done = true;
+            fin[i] = done;
+            rideEv[i] = done || !!e.leftBoard || rode[i] != null || gps === 'before' && !!e.leftBoard;
+            if (gps === 'at' || gps === 'after')
+                track = 'gps';
+            if (!rideEv[i])
+                ni = mi;
+            return { dep, arr, delay, live: anyLive, d, gone: past, arrLive, arrDelay, track, ni, phaseEv: e.arrived ? 'at' : e.leftBoard || rode[i] != null ? 'left' : 'wait',
+                ...(gps === 'at' || gps === 'after' ? { gpsHere: true } : {}), ...(gps === 'before' ? { gpsBefore: true } : {}) };
+        });
+        for (let i = 1; i < L2.length; i++) {
+            const prev = here[i - 1] ?? rode[i - 1];
+            if (prev == null || here[i] != null || !Number.isFinite(L2[i].dep))
+                continue;
+            const ready = prev + (legs[i].walkBefore || 0) * 60000;
+            if (connRisk(Math.round((L2[i].dep - ready) / 60000)) !== 'miss')
+                continue;
+            const lateBy = ready - L2[i].dep;
+            L2[i] = { ...L2[i], dep: ready, arr: L2[i].arr + lateBy, gone: false, missed: true, was: L2[i].dep };
+            fin[i] = false;
+            rideEv[i] = false;
+        }
+        const cur = L2.findIndex((_, i) => !fin[i]);
+        if (cur < 0)
+            return { done: true, L2, eta: L2[last].arr };
+        const x = L2[cur], d = x.d;
+        const ai = d ? offIndexOf(legs[cur], d, boardIndexOf(legs[cur], d)) : -1;
+        const mi = d ? boardIndexOf(legs[cur], d) : -1;
+        const how = x.track || 'timetable';
+        const phase = x.missed ? 'wait' : rideEv[cur] ? 'ride' : 'wait';
+        let nextIdx = d ? (x.ni ?? -1) : -1;
+        if (d && nextIdx >= 0) {
+            while (nextIdx < d.stops.length - 1 && nextIdx !== ai && !timed(d.stops[nextIdx]))
+                nextIdx++;
+        }
+        const stopsLeft = d && ai >= 0 && phase === 'ride' && how !== 'timetable' ? d.stops.slice(Math.max(nextIdx, mi + 1), ai + 1).filter(timed).length : null;
+        const conns = [];
+        if (x.missed && cur > 0) {
+            conns.push({ i: cur - 1, at: legs[cur - 1].to || '', spare: -1, risk: 'miss', next: legs[cur], nextDep: x.was ?? x.dep });
+        }
+        for (let i = cur; i < last; i++) {
+            const a = L2[i], b = L2[i + 1];
+            const spare = Math.round((b.dep - a.arr) / 60000 - (legs[i + 1].walkBefore || 0));
+            conns.push({ i, at: legs[i].to || '', spare, risk: connRisk(spare), next: legs[i + 1], nextDep: b.dep });
+        }
+        const e = etaFrom(legs, L2, cur);
+        const lateMs = phase === 'ride' ? (x.arrLive ? x.arrDelay : undefined) : (x.live ? x.delay : undefined);
+        const delayMin = how !== 'timetable' && lateMs != null && Number.isFinite(lateMs) ? Math.round(lateMs / 60000) : null;
+        for (let i = 0; i < legs.length; i++) {
+            M.legs[i].phase = fin[i] ? PHASE_INDEX.arrived : rideEv[i] && !L2[i].missed ? PHASE_INDEX.onTheWay : PHASE_INDEX.waiting;
+            if (fin[i]) {
+                M.legs[i].arrivedAt = here[i] ?? t;
+                M.legs[i].arrivedTime = here[i] ?? L2[i].arr;
+            }
+        }
+        M.current = cur;
+        const view = tripRender(plan, M, reading, t, { c24: !!o.c24, size: o.size || 'normal' });
+        const tmc = tripLegTimes(plan, M, reading, cur, t);
+        return { done: false, cur, phase, nextIdx, stopsLeft, L2, conns, eta: e.eta, live: x.live, track: how, delayMin, view, step: view.step || null,
+            depSource: tmc.dep.source, arrSource: tmc.arr.source, ...(e.late ? { etaLate: true } : {}) };
+    }
+    const connRisk = (spare) => (spare < 0 ? 'miss' : spare < 2 ? 'tight' : 'ok');
+    function heldArrival(d, ai, arr, t, short = false, next) {
+        if (!d || ai < 0 || !Number.isFinite(arr))
+            return arr;
+        if (!short) {
+            if (!d.live)
+                return arr;
+            const ni = next != null && next >= 0 ? next : idx(d.nextIndex);
+            if (ni < 0 || ni > ai || d.stops[ai]?.passed)
+                return arr;
+        }
+        if (t - arr < 30000 || t - arr > 10 * 60000)
+            return arr;
+        return t + 30000;
+    }
+    function vehicleShort(d, mi, ai) {
+        const v = d?.vehicle;
+        if (!d || !v || ai < 0 || mi < 0 || ai <= mi)
+            return false;
+        if (typeof v.lat !== 'number' || typeof v.lon !== 'number' || (typeof v.ageS === 'number' && v.ageS > 180))
+            return false;
+        const A = d.stops[mi], B = d.stops[ai];
+        if (typeof A?.lat !== 'number' || typeof A?.lon !== 'number' || typeof B?.lat !== 'number' || typeof B?.lon !== 'number')
+            return false;
+        const k = Math.cos((B.lat * Math.PI) / 180);
+        const ax = A.lon * k, ay = A.lat, bx = B.lon * k, by = B.lat, vx = v.lon * k, vy = v.lat;
+        const L2 = (bx - ax) ** 2 + (by - ay) ** 2;
+        if (!(L2 > 0))
+            return false;
+        const f = ((vx - ax) * (bx - ax) + (vy - ay) * (by - ay)) / L2;
+        const distM = Math.hypot(vx - bx, vy - by) * 111320;
+        return f < 0.9 && distM > 500;
+    }
+    function etaFrom(legs, L2, cur) {
+        let end = L2[cur].arr;
+        let late = false;
+        for (let i = cur + 1; i < L2.length; i++) {
+            const b = L2[i];
+            const ready = end + (legs[i].walkBefore || 0) * 60000;
+            const spare = Math.round((b.dep - ready) / 60000);
+            if (connRisk(spare) !== 'miss' || !Number.isFinite(b.dep)) {
+                end = b.arr;
+                continue;
+            }
+            late = true;
+            end = b.arr + (ready - b.dep);
+        }
+        return { eta: end, late };
+    }
+    function sameRun(d, l, boarded = true) {
+        if (d.tripId && l.tripId && d.tripId !== l.tripId)
+            return false;
+        const mi = idx(d.mineIndex), ni = idx(d.nextIndex);
+        const mineS = mi >= 0 ? d.stops[mi] : null;
+        if (mineS?.planned && l.planned && Math.abs(tms(mineS.planned) - tms(l.planned)) > 5 * 60000)
+            return false;
+        if (boarded && mi >= 0 && ni >= 0 && ni <= mi)
+            return false;
+        return true;
+    }
+    function nextMemo(memo, s, now) {
+        const m = { rode: { ...(memo?.rode || {}) }, arrivedAt: memo?.arrivedAt ?? null };
+        const here = { ...(memo?.here || {}) };
+        s.L2.forEach((x, i) => { if (x.gpsHere && here[i] == null && now != null)
+            here[i] = now; });
+        s.L2.forEach((x, i) => { if (x.phaseEv === 'at' && here[i] == null && now != null)
+            here[i] = Number.isFinite(x.arr) ? Math.min(now, x.arr) : now; });
+        if (Object.keys(here).length)
+            m.here = here;
+        if (!s.done && s.phase === 'ride' && s.track !== 'timetable' && s.L2[s.cur].arrLive !== false && Number.isFinite(s.L2[s.cur].arr))
+            m.rode[s.cur] = s.L2[s.cur].arr;
+        return m;
+    }
+    const notLive = (s) => !s.done && s.track === 'timetable';
+    function tripAlerts(legs, s, alerted, serverWatching, f) {
+        const out = [];
+        const add = (key, title, body) => { if (!alerted[key] && !out.some((a) => a.key === key))
+            out.push({ key, title, body }); };
+        const last = legs.length - 1;
+        if (serverWatching)
+            return out;
+        if (s.done) {
+            add('arrived', "You've arrived", `${f.short(legs[last]?.to)} at ${f.clock(s.eta)}. Trip alerts are off.`);
+            return out;
+        }
+        if (s.phase === 'ride' && !notLive(s)) {
+            const d = s.L2[s.cur].d, l = legs[s.cur];
+            if (d && (d.alightIndex ?? -1) > 0 && s.nextIdx === d.alightIndex) {
+                if (s.cur === last)
+                    add('off' + s.cur, `Next stop: ${f.short(l.to)}`, `Get ready to get off. You arrive at ${f.clock(s.eta)}.`);
+                else {
+                    const n = legs[s.cur + 1];
+                    add('off' + s.cur, `Next stop: ${f.short(l.to)}, change here`, `Then the ${f.clock(s.L2[s.cur + 1].dep)} ${n.line}${n.fromPlatform ? ' from ' + f.plat(n.fromPlatform) : ''}.`);
+                }
+            }
+        }
+        for (const cn of s.conns) {
+            if (cn.risk === 'miss')
+                add('conn' + cn.i, 'Connection at risk', `With live times you'll likely miss the ${f.clock(new Date(cn.next.planned).getTime())} ${cn.next.line} at ${f.short(cn.at)}.`);
+            else if (cn.risk === 'tight')
+                add('conn' + cn.i, `Tight change at ${f.short(cn.at)}`, `${Math.max(0, cn.spare)} min to catch the ${cn.next.line}.`);
+        }
+        return out;
+    }
+    function sayName(n) {
+        const words = [[/\bStn\b/g, 'Station'], [/\bRd\b/g, 'Road'], [/\bSt\b(?!\.)/g, 'Street'], [/\bAve?\b/g, 'Avenue'], [/\bPde\b/g, 'Parade'],
+            [/\bHwy\b/g, 'Highway'], [/\bDr\b/g, 'Drive'], [/\bPl\b/g, 'Place'], [/\bCres\b/g, 'Crescent'], [/\bBvd\b/g, 'Boulevard'], [/\bNr\b/g, 'near'], [/\bOpp\b/g, 'opposite'], [/\bAt\b/g, 'at'], [/\bBefore\b/g, 'before'], [/\bAfter\b/g, 'after']];
+        let v = String(n || '').split(',')[0].replace(/ Station$/, '').trim();
+        for (const [re, w] of words)
+            v = v.replace(re, w);
+        return v;
+    }
+    const NOUN = { train: 'train', metro: 'metro', bus: 'bus', school: 'bus', coach: 'coach', ferry: 'ferry', lightrail: 'light rail' };
+    const sayPlat = (p) => {
+        const v = String(p || '').trim();
+        if (!v)
+            return '';
+        return /^(platform|stand|wharf|side)\b/i.test(v) ? v.charAt(0).toLowerCase() + v.slice(1) : /^\d+$/.test(v) ? `platform ${v}` : v;
+    };
+    function sayLineName(line, mode) {
+        const l = String(line || '').trim();
+        const noun = NOUN[String(mode || '')] || '';
+        if (!l)
+            return noun ? `the ${noun}` : 'the next service';
+        if (noun === 'train' || noun === 'metro')
+            return `the ${l} line`;
+        return noun ? `the ${l} ${noun}` : `the ${l}`;
+    }
+    function speechCues(legs, s, now, f) {
+        const out = [];
+        const last = legs.length - 1;
+        if (s.done) {
+            out.push({ key: 'arrived', text: `You've arrived at ${sayName(legs[last]?.to)}.` });
+            return out;
+        }
+        const i = s.cur, l = legs[i], x = s.L2[i];
+        if (!l || !x)
+            return out;
+        const noun = NOUN[l.mode] || 'service';
+        if (s.phase === 'ride' && !notLive(s)) {
+            const d = x.d;
+            if (d && (d.alightIndex ?? -1) > 0 && s.nextIdx === d.alightIndex) {
+                if (i === last)
+                    out.push({ key: 'off' + i, text: `Your stop is next. ${sayName(l.to)}.` });
+                else {
+                    const n = legs[i + 1];
+                    out.push({ key: 'off' + i, text: `Next stop, ${sayName(l.to)}. Change here for ${sayLineName(n.line, n.mode)}.` });
+                }
+            }
+        }
+        for (const cn of s.conns) {
+            const nl = sayLineName(cn.next.line, cn.next.mode);
+            if (cn.risk === 'miss')
+                out.push({ key: 'conn' + cn.i, text: `You may miss ${nl} at ${sayName(cn.at)}.` });
+            else if (cn.risk === 'tight') {
+                const m = Math.max(0, cn.spare);
+                out.push({ key: 'conn' + cn.i, text: `Tight change at ${sayName(cn.at)}. ${m} minute${m === 1 ? '' : 's'} to catch ${nl}.` });
+            }
+        }
+        if (s.phase !== 'wait' || x.missed || !Number.isFinite(x.dep))
+            return out;
+        const d = x.d, mi = idx(d?.mineIndex);
+        const livePlat = d && mi >= 0 ? String(d.stops[mi]?.platform || '').trim() : '';
+        const norm = (p) => String(p || '').toLowerCase().replace(/^(platform|stand|wharf|side)\s*/, '').trim();
+        const plat = livePlat || l.fromPlatform || '';
+        if (livePlat && l.fromPlatform && norm(livePlat) !== norm(l.fromPlatform)) {
+            const kind = /^stand/i.test(livePlat) ? 'Stand' : 'Platform';
+            out.push({ key: `plat${i}:${norm(livePlat)}`, text: `${kind} change. Your ${noun} now leaves from ${sayPlat(livePlat)}.` });
+        }
+        const late = Math.round(x.delay / 60000);
+        if (x.live && late >= 3) {
+            const step = late >= 15 ? 15 : late >= 10 ? 10 : late >= 5 ? 5 : 3;
+            out.push({ key: `late${i}:${step}`, text: `Your ${noun} is running ${late} minutes late. It now leaves at ${f.clock(x.dep)}.` });
+        }
+        const dm = (x.dep - now) / 60000;
+        if (dm <= 3.5 && dm > -0.5) {
+            const m = Math.round(dm);
+            const to = sayName(l.to);
+            const where = plat ? `, from ${sayPlat(plat)}` : '';
+            out.push({ key: `soon${i}`, text: m <= 0 ? `Your ${noun} to ${to} is leaving now${where}.` : `Your ${noun} to ${to} leaves in ${m} minute${m === 1 ? '' : 's'}${where}.` });
+        }
+        return out;
+    }
+    function tapMoments(s, now) {
+        if (s.done)
+            return ['arrived'];
+        const x = s.L2[s.cur];
+        if (s.phase !== 'wait' || !x || x.missed || !Number.isFinite(x.dep))
+            return [];
+        const left = x.dep - now;
+        return left <= 60000 && left > -30000 ? ['leave' + s.cur] : [];
+    }
+    const CUE_LATE_MS = 45000;
+    function cueStale(key, s, now) {
+        if (key === 'arrived')
+            return !(s.done && Number.isFinite(s.eta) && now - s.eta <= CUE_LATE_MS);
+        const m = /^off(\d+)$/.exec(key);
+        if (!m)
+            return false;
+        if (s.done)
+            return true;
+        const a = s.L2[Number(m[1])]?.arr;
+        return typeof a === 'number' && Number.isFinite(a) && a <= now;
+    }
+    function offShownFor(shown, key) {
+        const m = /^off(\d+)$/.exec(key);
+        if (!m || !shown)
+            return false;
+        return !!(shown['gnow' + m[1]] || shown['rnow' + m[1]] || shown['rsoon' + m[1]]);
+    }
+    function nextRung(g, k, now) {
+        const key = 'next' + k;
+        const at = g.offSet?.[key];
+        return !!g.alerted?.[key] || (typeof at === 'number' && at <= now);
+    }
+    function nextRang(g, key, now) {
+        const m = /^off(\d+)$/.exec(key);
+        return !!m && nextRung(g, m[1], now);
+    }
+    function nextSaid(g, key, now) {
+        const m = /^off(\d+)$/.exec(key);
+        if (!m)
+            return false;
+        const k2 = 'next' + m[1];
+        const at = g.offSet?.[k2];
+        return !!g.spoken?.[k2] || (typeof at === 'number' && at <= now && !!g.offVoice?.[k2]);
+    }
+    function progOf(s, f) {
+        if (!s || s.done)
+            return { phase: 'done' };
+        const d = s.L2[s.cur].d, ns = d && s.nextIdx >= 0 ? d.stops[s.nextIdx] : null;
+        return { leg: s.cur, phase: s.phase, next: ns ? f.short(ns.name) : null, stopsLeft: s.stopsLeft, eta: s.eta };
+    }
+    function liveWords(legs, s, now, f) {
+        const last = legs.length - 1;
+        if (s.done)
+            return { title: "You've arrived", body: `${f.short(legs[last].to)} at ${f.clock(s.eta)}` };
+        const l = legs[s.cur], x = s.L2[s.cur], d = x.d;
+        const arrive = `Arrive ${f.clock(s.eta)} (${minsWords((s.eta - now) / 60000)})`;
+        if (x.missed)
+            return { title: `Change at risk at ${f.short(l.from)}`, body: `The ${x.was ? f.clock(x.was) + ' ' : ''}${l.line} has likely left. Open the app for the next way on. Arrive about ${f.clock(s.eta)}` };
+        const late = s.delayMin != null && s.delayMin >= 2 ? `${s.delayMin} min late. ` : '';
+        if (s.phase === 'wait') {
+            const dm = Math.round((x.dep - now) / 60000);
+            return { title: `${l.line} to ${f.short(l.towards || l.to)}`, body: `${s.cur ? 'Change to' : 'Board'} the ${l.line} ${dm <= 0 ? 'now' : `at ${f.clock(x.dep)}`}${l.fromPlatform ? `, ${f.plat(l.fromPlatform)}` : ''}. ${late}${arrive}` };
+        }
+        if (notLive(s))
+            return { title: `${l.line} to ${f.short(l.towards || l.to)}`, body: `Not live, running to timetable: due at ${f.short(l.to)} ${f.clock(x.arr)}. Arrive about ${f.clock(s.eta)}` };
+        const ns = d && s.nextIdx >= 0 ? d.stops[s.nextIdx] : null;
+        const yours = !!d && s.nextIdx === d.alightIndex;
+        const left = s.stopsLeft != null ? `${s.stopsLeft} stop${s.stopsLeft === 1 ? '' : 's'} to ${f.short(l.to)}` : `to ${f.short(l.to)}`;
+        return { title: `${l.line} to ${f.short(l.towards || l.to)}`, body: `${yours ? `Get off at ${f.short(l.to)}, next stop` : ns ? `Next stop: ${f.short(ns.name)}, ${left}` : `On the ${l.line}, ${left}`}. ${late}${arrive}` };
+    }
+    function stepLive(g, svc, now, f, pos, shown, flow) {
+        const actions = [];
+        const memo = { rode: g.rode, here: g.here, arrivedAt: g.arrivedAt };
+        const s = computeLive(g.legs, svc, now, memo, pos, flow ? { asOf: flow.asOf ?? now, plannerAt: g.started ?? null, c24: !!flow.c24 } : {});
+        let n = g;
+        const m = nextMemo(memo, s, now);
+        if (JSON.stringify(m.rode || {}) !== JSON.stringify(g.rode || {}))
+            n = { ...n, rode: m.rode };
+        if (JSON.stringify(m.here || {}) !== JSON.stringify(g.here || {}))
+            n = { ...n, here: m.here };
+        if (flow)
+            return stepFlow(g, n, s, svc, now, f, flow, actions);
+        const list = tripAlerts(g.legs, s, n.alerted || {}, !!n.watchId, f).filter((a) => !(g.wake && a.key.startsWith('off')));
+        if (list.length) {
+            const alerted = { ...(n.alerted || {}) };
+            for (const a of list) {
+                alerted[a.key] = 1;
+                if (cueStale(a.key, s, now) || nextRang(g, a.key, now) || offShownFor(shown, a.key))
+                    continue;
+                actions.push({ t: 'alert', id: `trip-${g.id}-${a.key}`, key: a.key, title: a.title, body: a.body });
+            }
+            n = { ...n, alerted };
+        }
+        if (g.speak) {
+            const said = n.spoken || {};
+            const say = speechCues(g.legs, s, now, f).filter((a) => !said[a.key]);
+            if (say.length) {
+                const spoken = { ...said };
+                for (const a of say) {
+                    spoken[a.key] = 1;
+                    if (cueStale(a.key, s, now) || nextSaid(g, a.key, now) || offShownFor(shown, a.key))
+                        continue;
+                    actions.push({ t: 'say', key: a.key, text: a.text });
+                }
+                n = { ...n, spoken };
+            }
+        }
+        if (s.done) {
+            if (!n.arrivedAt) {
+                if (n.share)
+                    actions.push({ t: 'share', prog: progOf(s, f) });
+                actions.push({ t: 'clearOngoing' });
+                n = { ...n, arrivedAt: now };
+            }
+            if (now > (n.arrivedAt || now) + 10 * 60000)
+                actions.push({ t: 'end' });
+            return { g: n, s, actions };
+        }
+        const w = liveWords(g.legs, s, now, f);
+        actions.push({ t: 'ongoing', title: w.title, body: w.body, leg: s.cur });
+        if (n.share)
+            actions.push({ t: 'share', prog: progOf(s, f) });
+        return { g: n, s, actions };
+    }
+    function stepFlow(g, n, s, svc, now, f, flow, actions) {
+        const legs = g.legs;
+        const use = legs.map((l, i) => { const d = svc[i] || null; return d && !sameRun(d, l, (g.rode || {})[i] != null) ? null : d; });
+        const plan = tripPlanFrom(legs, use);
+        const reading = tripReadingFrom(plan, legs, use, flow.asOf ?? now, { plannerAt: g.started ?? null });
+        let M = g.flow && g.flow.legs.length === plan.legs.length ? JSON.parse(JSON.stringify(g.flow)) : newTripMemory(plan);
+        for (let i = 0; i < legs.length; i++) {
+            const h = (n.here || {})[i];
+            if (h != null && M.legs[i].phase < PHASE_INDEX.arrived) {
+                M.legs[i].phase = PHASE_INDEX.arrived;
+                M.legs[i].arrivedAt = h;
+                M.legs[i].arrivedTime = h;
+                M.legs[i].rung.getoff = M.legs[i].rung.getoff || 'skipped';
+                M.legs[i].rung.arrived = M.legs[i].rung.arrived || 'skipped';
+                if (M.current === i && i < legs.length - 1)
+                    M.current = i + 1;
+            }
+        }
+        const res = tripStep(plan, M, now, reading, { c24: !!flow.c24, lead: 0 });
+        let alerted = n.alerted || {};
+        let spoken = n.spoken || {};
+        let voiceUntil = flow.voice ? flow.voice.speakingUntil : 0;
+        for (const mo of res.moments) {
+            const key = 'f:' + mo.ring.moment;
+            if (alerted[key])
+                continue;
+            alerted = { ...alerted, [key]: 1 };
+            const calm = mo.ring.kind === 'headsup' || mo.ring.kind === 'getoff' || mo.ring.kind === 'atstop';
+            actions.push({ t: 'alert', id: `trip-${g.id}-${mo.ring.moment}`, key, title: mo.ring.title, body: mo.ring.body, ...(calm ? { haptic: 'light' } : {}), ...(mo.ring.quiet ? { quiet: true } : {}), ...(mo.ring.expires ? { expires: mo.ring.expires } : {}) });
+            if (g.speak && flow.voice && mo.ring.say && !mo.ring.quiet) {
+                const v = voiceGate({ ...flow.voice, speakingUntil: voiceUntil }, now, mo.ring.say, mo.age, mo.byVehicle);
+                spoken = { ...spoken, [key]: 1 };
+                if (v.words) {
+                    actions.push({ t: 'say', key, text: v.words });
+                    voiceUntil = v.until;
+                }
+            }
+        }
+        const conn = tripAlerts(legs, s, alerted, false, f).filter((a) => a.key.startsWith('conn'));
+        for (const a of conn) {
+            alerted = { ...alerted, [a.key]: 1 };
+            actions.push({ t: 'alert', id: `trip-${g.id}-${a.key}`, key: a.key, title: a.title, body: a.body });
+        }
+        n = { ...n, alerted, spoken, flow: M };
+        if (s.done) {
+            if (!n.arrivedAt) {
+                if (n.share)
+                    actions.push({ t: 'share', prog: progOf(s, f) });
+                actions.push({ t: 'clearOngoing' });
+                n = { ...n, arrivedAt: now };
+            }
+            if (now > (n.arrivedAt || now) + 10 * 60000)
+                actions.push({ t: 'end' });
+            return { g: n, s, actions, voiceUntil };
+        }
+        const w = liveWords(legs, s, now, f);
+        actions.push({ t: 'ongoing', title: w.title, body: w.body, leg: s.cur });
+        if (n.share)
+            actions.push({ t: 'share', prog: progOf(s, f) });
+        return { g: n, s, actions, voiceUntil };
+    }
+    function nextFlowMoment(g, s, now) {
+        if (s.done)
+            return null;
+        const M = g.flow;
+        const x = s.L2[s.cur];
+        if (!M || !x || !x.arrLive || !Number.isFinite(x.arr))
+            return null;
+        if (M.legs[s.cur]?.rung?.getoff)
+            return null;
+        const at = x.arr - TRIP_RULES.GETOFF_LEAD;
+        return at > now && at - now <= 20000 ? at : null;
+    }
+    function noteKey(n) {
+        const w = n.watch_id || '';
+        const m = /^(?:Next stop: |Arriving at |Change at )(.+?)(?:, change here| in \d+ min)?$/.exec(n.title || '');
+        if (w && m) {
+            const place = m[1].replace(/ Station$/i, '').trim().toLowerCase();
+            return { key: `${w}|stop|${place}`, id: `w${w}-stop` };
+        }
+        if (w && /^(Connection at risk|Tight change)/i.test(n.title || ''))
+            return { key: `${w}|conn|${n.title}`, id: `w${w}-conn` };
+        return { key: `note|${n.id}`, id: `note-${n.id}` };
+    }
+    function cutPath(path, a, b) {
+        if (!path || path.length < 2)
+            return path || [];
+        const near = (s) => {
+            if (!s || s.lat == null || s.lon == null)
+                return -1;
+            let best = -1, bd = Infinity;
+            path.forEach(([la, lo], k) => { const dd = (la - s.lat) ** 2 + (lo - s.lon) ** 2; if (dd < bd) {
+                bd = dd;
+                best = k;
+            } });
+            return best;
+        };
+        const i = near(a), j = near(b);
+        if (i < 0 || j < 0 || j <= i)
+            return path;
+        return path.slice(i, j + 1);
+    }
+    function minsWords(m) {
+        const v = Math.max(0, Math.round(m));
+        return v < 60 ? `${v} min` : `${Math.floor(v / 60)} h ${v % 60} min`;
+    }
+    return { tOf, timed, distM, carriedDelay, liveAt, vehicleNext, trackOf, gpsOnRun, computeLive, connRisk, heldArrival, vehicleShort, etaFrom, sameRun, nextMemo, notLive, tripAlerts, sayName, sayLineName, speechCues, tapMoments, CUE_LATE_MS, cueStale, offShownFor, progOf, liveWords, stepLive, nextFlowMoment, noteKey, cutPath, minsWords };
+  })();
   // platform/tripCard.ts
-  const TRACK_MAX = 10;
-  const TRACK_NAME_MAX = 32;
-  const shortName = (n) => String(n || '').replace(/,.*$/, '').trim().replace(/ (Station|Light Rail|Wharf)$/i, '').trim();
-  const platText = (p) => (p ? p.replace(/^Platform\s*/i, 'Platform ').replace(/^Stand\s*/i, 'Stand ') : null);
-  const colorOf = (l) => l.color || '#0A84FF';
-  const hhmm = (t) => {
-      const s = new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' });
-      return s.replace(/\s/g, '').toLowerCase();
-  };
-  const stopTimed = (st) => !!st && !!(st.planned || st.estimated) && !st.skipped;
-  const trackName = (n) => {
-      const v = shortName(n);
-      return v.length > TRACK_NAME_MAX ? v.slice(0, TRACK_NAME_MAX - 1).trimEnd() + '.' : v;
-  };
-  function stopTrackFor(d, nextIdx, phase, live) {
-      if (!d || !Array.isArray(d.stops) || !d.stops.length)
-          return null;
-      const mi = typeof d.mineIndex === 'number' ? d.mineIndex : -1;
-      const ai = typeof d.alightIndex === 'number' ? d.alightIndex : -1;
-      if (mi < 0 || ai <= mi || ai >= d.stops.length)
-          return null;
-      const leg = [];
-      for (let i = mi; i <= ai; i++)
-          if (i === mi || i === ai || stopTimed(d.stops[i]))
-              leg.push(i);
-      const n = phase === 'wait' || nextIdx < 0 ? mi + 1 : Math.min(Math.max(nextIdx, mi + 1), ai);
-      const passed = leg.filter((i) => i < n).length;
-      const up = leg.filter((i) => i >= n).map((i) => trackName(d.stops[i].name));
-      if (!up.length || up.some((x) => !x))
-          return null;
-      let next = up, hidden = 0, hiddenAt = 0;
-      if (up.length > TRACK_MAX) {
-          hiddenAt = TRACK_MAX - 2;
-          hidden = up.length - (TRACK_MAX - 1);
-          next = [...up.slice(0, hiddenAt), up[up.length - 1]];
-      }
-      return { passed, next, hidden, hiddenAt, live };
-  }
-  function cardFor(g, s, now = Date.now(), o = {}) {
-      const legs = g.legs;
-      const last = legs[legs.length - 1];
-      const destination = shortName(g.to?.name || last?.to) || null;
-      if (s.done) {
-          return {
-              line: last?.line || '', lineColorHex: last ? colorOf(last) : '#0A84FF', mode: last?.mode || '', nextStop: null, stopsLeft: null,
-              getOffAt: shortName(last?.to), arrival: s.eta, phase: 'arrived', warning: null, progress: 1,
-              towards: null, platform: null, departs: null, legArrives: s.eta, destination,
-          };
-      }
-      const l = legs[s.cur];
-      const x = s.L2[s.cur];
-      const d = x?.d || null;
-      const next = d && s.nextIdx >= 0 ? d.stops[s.nextIdx] : null;
-      let progress = 0;
-      if (s.phase === 'ride') {
-          const span = x.arr - x.dep;
-          progress = span > 0 ? Math.min(1, Math.max(0, (now - x.dep) / span)) : 0;
-          if (s.track === 'timetable')
-              progress = Math.min(progress, 0.9);
-      }
-      const c = s.conns.find((k) => k.i === s.cur) || s.conns[0];
-      const alt = c && c.risk === 'miss' ? o.alt || null : null;
-      const track = stopTrackFor(d, s.nextIdx, s.phase, s.track !== 'timetable');
-      const legNote = s.track === 'timetable' ? 'Timetable times, not live' : s.delayMin != null && s.delayMin >= 2 ? `${s.delayMin} min late` : null;
-      const warning = cardWarning(c, alt, o.asOf ?? null, legNote);
-      return {
-          line: l.line, lineColorHex: colorOf(l), mode: l.mode,
-          nextStop: s.phase === 'wait' ? shortName(l.from) || null : next && s.track !== 'timetable' ? shortName(next.name) : null,
-          stopsLeft: s.stopsLeft, getOffAt: shortName(l.to), arrival: alt && Number.isFinite(alt.arr) ? alt.arr : s.eta, phase: s.phase, warning, progress,
-          towards: shortName(l.towards || d?.dest) || null, platform: platText(l.fromPlatform),
-          departs: x.missed ? (alt ? alt.dep : null) : Number.isFinite(x.dep) ? x.dep : null,
-          legArrives: x.missed ? (alt ? alt.arr : null) : Number.isFinite(x.arr) ? x.arr : null, destination,
-          ...(o.updated ? { updated: o.updated } : {}),
-          ...(track && !x.missed ? { stopTrack: track } : {}),
-      };
-  }
-  function cardWarning(c, alt, asOf, legNote = null) {
-      let w = null;
-      if (c && c.risk === 'miss')
-          w = alt ? `Change at risk. Next ${alt.line} ${hhmm(alt.dep)}` : `You'll likely miss the ${hhmm(c.nextDep)} ${c.next.line}`;
-      else if (c && c.risk === 'tight')
-          w = `Tight change at ${shortName(c.at)}`;
-      else if (legNote)
-          w = legNote;
-      if (asOf == null)
-          return w;
-      return w ? `${w}. Updated ${hhmm(asOf)}` : `Updated ${hhmm(asOf)}. Open the app for live times`;
-  }
-  function staleAt(card, updated, honestStale, keepMs = 120000) {
-      if (card.phase === 'arrived')
-          return null;
-      const off = card.phase === 'ride' && typeof card.legArrives === 'number' && Number.isFinite(card.legArrives) ? card.legArrives : Infinity;
-      if (honestStale && updated)
-          return Math.min(updated + 120000, card.arrival + keepMs, off);
-      return card.arrival + keepMs;
-  }
-  return { computeLive, cardFor, staleAt, cardWarning };
+  const tripCard = (() => {
+    const TRACK_MAX = 10;
+    const TRACK_NAME_MAX = 32;
+    const shortName = (n) => String(n || '').replace(/,.*$/, '').trim().replace(/ (Station|Light Rail|Wharf)$/i, '').trim();
+    const platText = (p) => (p ? p.replace(/^Platform\s*/i, 'Platform ').replace(/^Stand\s*/i, 'Stand ') : null);
+    const colorOf = (l) => l.color || '#0A84FF';
+    const hhmm = (t, c24 = false) => {
+        const s = new Date(t).toLocaleTimeString('en-AU', c24 ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Australia/Sydney' } : { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' });
+        return s.replace(/\s/g, '').toLowerCase();
+    };
+    const stopTimed = (st) => !!st && !!(st.planned || st.estimated) && !st.skipped;
+    const trackName = (n) => {
+        const v = shortName(n);
+        return v.length > TRACK_NAME_MAX ? v.slice(0, TRACK_NAME_MAX - 1).trimEnd() + '.' : v;
+    };
+    function stopTrackFor(d, nextIdx, phase, live) {
+        if (!d || !Array.isArray(d.stops) || !d.stops.length)
+            return null;
+        const mi = typeof d.mineIndex === 'number' ? d.mineIndex : -1;
+        const ai = typeof d.alightIndex === 'number' ? d.alightIndex : -1;
+        if (mi < 0 || ai <= mi || ai >= d.stops.length)
+            return null;
+        const leg = [];
+        for (let i = mi; i <= ai; i++)
+            if (i === mi || i === ai || stopTimed(d.stops[i]))
+                leg.push(i);
+        const n = phase === 'wait' || nextIdx < 0 ? mi + 1 : Math.min(Math.max(nextIdx, mi + 1), ai);
+        const passed = leg.filter((i) => i < n).length;
+        const up = leg.filter((i) => i >= n).map((i) => trackName(d.stops[i].name));
+        if (!up.length || up.some((x) => !x))
+            return null;
+        let next = up, hidden = 0, hiddenAt = 0;
+        if (up.length > TRACK_MAX) {
+            hiddenAt = TRACK_MAX - 2;
+            hidden = up.length - (TRACK_MAX - 1);
+            next = [...up.slice(0, hiddenAt), up[up.length - 1]];
+        }
+        return { passed, next, hidden, hiddenAt, live };
+    }
+    function cardFor(g, s, now = Date.now(), o = {}) {
+        const legs = g.legs;
+        const last = legs[legs.length - 1];
+        const destination = shortName(g.to?.name || last?.to) || null;
+        const updated = o.updated ?? now;
+        if (s.done) {
+            return {
+                line: last?.line || '', lineColorHex: last ? colorOf(last) : '#0A84FF', mode: last?.mode || '', nextStop: null, stopsLeft: null,
+                getOffAt: shortName(last?.to), arrival: s.eta, phase: 'arrived', warning: null, progress: 1,
+                towards: null, platform: null, departs: null, legArrives: s.eta, destination, updated,
+            };
+        }
+        const l = legs[s.cur];
+        const x = s.L2[s.cur];
+        const d = x?.d || null;
+        const v = s.view || null;
+        const next = d && s.nextIdx >= 0 ? d.stops[s.nextIdx] : null;
+        let progress = 0;
+        if (s.phase === 'ride') {
+            const span = x.arr - x.dep;
+            progress = span > 0 ? Math.min(1, Math.max(0, (now - x.dep) / span)) : 0;
+            if (s.track === 'timetable' || (s.step && s.step !== 'live'))
+                progress = Math.min(progress, 0.9);
+        }
+        const c = s.conns.find((k) => k.i === s.cur) || s.conns[0];
+        const alt = c && c.risk === 'miss' ? o.alt || null : null;
+        const track = stopTrackFor(d, s.nextIdx, s.phase, s.track !== 'timetable');
+        const cancelled = !!(d && d.cancelled) && !x.missed;
+        const warning = cancelled ? 'Cancelled. No next service found yet' : cardWarning(c, alt, o.asOf ?? null, legNoteFor(s, now, !!o.c24), !!o.c24);
+        const platform = v && v.platform && l.mode !== 'bus' ? (v.platformWas ? `Plat ${v.platform}, was ${v.platformWas}` : `Platform ${v.platform}`) : platText(l.fromPlatform);
+        return {
+            line: l.line, lineColorHex: colorOf(l), mode: l.mode,
+            nextStop: s.phase === 'wait' ? shortName(l.from) || null : next && s.track !== 'timetable' ? shortName(next.name) : null,
+            stopsLeft: s.stopsLeft, getOffAt: shortName(l.to), arrival: alt && Number.isFinite(alt.arr) ? alt.arr : s.eta, phase: s.phase, warning, progress,
+            towards: shortName(l.towards || d?.dest) || null, platform,
+            departs: cancelled ? null : x.missed ? (alt ? alt.dep : null) : Number.isFinite(x.dep) ? x.dep : null,
+            legArrives: x.missed ? (alt ? alt.arr : null) : Number.isFinite(x.arr) ? x.arr : null, destination, updated,
+            ...(track && !x.missed ? { stopTrack: track } : {}),
+        };
+    }
+    function legNoteFor(s, now, c24 = false) {
+        if (s.done)
+            return null;
+        const v = s.view;
+        const x = s.L2[s.cur];
+        if (s.track === 'timetable' || s.step === 'timetable-only')
+            return 'Timetable times, not live';
+        if (!v)
+            return s.delayMin != null && s.delayMin >= 2 ? `${s.delayMin} min late` : null;
+        if (s.step === 'no-data')
+            return 'No live data. Open the app to refresh.';
+        if (s.step === 'timetable')
+            return v.sub || 'No live data';
+        if (s.step === 'about')
+            return v.warn || v.sub || null;
+        if (s.phase === 'wait') {
+            if (s.depSource === 'timetable')
+                return 'Timetable times, not live';
+            const due = x && Number.isFinite(x.dep) && now >= x.dep;
+            const dl = s.delayMin;
+            const dw = dl == null ? null : dl === 0 ? 'On time' : dl > 0 ? `${dl} min late` : `${-dl} min early`;
+            return due ? (dw && dl !== 0 ? `Due now · ${dw}` : 'Due now') : dw;
+        }
+        if (s.arrSource === 'timetable')
+            return 'Timetable times, not live';
+        return s.delayMin != null && s.delayMin !== 0 ? (s.delayMin > 0 ? `${s.delayMin} min late` : `${-s.delayMin} min early`) : s.delayMin === 0 ? 'On time' : null;
+    }
+    function cardWarning(c, alt, asOf, legNote = null, c24 = false) {
+        let w = null;
+        const hm = (t) => hhmm(t, c24);
+        if (c && c.risk === 'miss')
+            w = alt ? `Change at risk. Next ${alt.line} ${hm(alt.dep)}` : `You'll likely miss the ${hm(c.nextDep)} ${c.next.line}`;
+        else if (c && c.risk === 'tight')
+            w = `Tight change at ${shortName(c.at)}`;
+        else if (legNote)
+            w = legNote;
+        if (asOf == null)
+            return w;
+        return w ? `${w}. Updated ${hm(asOf)}` : `Updated ${hm(asOf)}. Open the app for live times`;
+    }
+    function staleAt(card, updated, honestStale, keepMs = 120000) {
+        if (card.phase === 'arrived')
+            return null;
+        if (honestStale && updated) {
+            const dep = card.phase === 'wait' && typeof card.departs === 'number' && Number.isFinite(card.departs) ? Math.max(card.departs, updated + 1000) : Infinity;
+            return Math.min(updated + 120000, dep);
+        }
+        return card.arrival + keepMs;
+    }
+    return { TRACK_MAX, TRACK_NAME_MAX, shortName, stopTrackFor, cardFor, legNoteFor, cardWarning, staleAt };
+  })();
+  return { computeLive: liveCalc.computeLive, cardFor: tripCard.cardFor, staleAt: tripCard.staleAt, cardWarning: tripCard.cardWarning, legNoteFor: tripCard.legNoteFor, TRIP_RULES, TRIP_CLIPS, tripClock, tripClockSec, stopShort, platNum, boardIndexOf, offIndexOf, planLegFrom, vehicleOnRun, legReadingFrom, tripReadingFrom, TRIP_PHASES, PHASE_INDEX, newTripMemory, lastLegOf, effLeg, isLiveTime, tripEvidence, tripLegTimes, staleStepOf, LINE_BUDGET, delayWords, tripRender, BANNED_WORDS, renderSig, forecastPhaseOf, tripStep, voiceGate, ringRoute, backupGetOff, tripPlanFrom, serverPollMs };
 })();
 // ---- live card end
 
@@ -7621,7 +9095,8 @@ function laTripFrom(t) {
   // When the person got off each leg (their tap or their location on the phone): the card moves on with them.
   const here = {};
   if (t.here && typeof t.here === "object") for (const [k, v] of Object.entries(t.here)) if (/^\d$/.test(k) && Number.isFinite(Number(v)) && Number(v) > 0) here[k] = Number(v);
-  return { id: laStr(t.id, 64) || "", title: laStr(t.title) || "", origin: place(t.origin), to: place(t.to), legs, rode, arrivedAt, ...(Object.keys(here).length ? { here } : {}) };
+  return { id: laStr(t.id, 64) || "", title: laStr(t.title) || "", origin: place(t.origin), to: place(t.to), legs, rode, arrivedAt, ...(Object.keys(here).length ? { here } : {}),
+    ...(Number(t.tripFlow) >= 2 ? { tripFlow: 2, c24: t.c24 === true } : {}) };
 }
 
 /** Seconds since 1 Jan 2001: how Swift's default Codable reads a Date in the card's content state. */
@@ -7775,6 +9250,13 @@ const apnsGone = (res) => res.status === 410 || res.reason === "BadDeviceToken" 
 /** Sends one card its current state (or its final state on arrival). Updates the row with what Apple said. */
 async function laPushOne(env, row, now, o = {}) {
   const trip = JSON.parse(row.trip);
+  // The new trip flow with no watch behind the card: its state from one reading (tfCardAlone), the honest stale date.
+  if (tfWanted(trip) && (await serverOn(env, "tripflow2"))) {
+    const c = await tfCardAlone(env, trip, now);
+    let lastPhase = null; try { lastPhase = JSON.parse(row.last_state || "null").phase; } catch { lastPhase = null; }
+    const r = await tfPushCard(env, row, c, now, { mustSee: c.end || c.card.phase !== lastPhase });
+    return { ...r, phase: c.card.phase, flow: 2 };
+  }
   const { card, done } = await laCardFor(env, trip, now);
   // Build 210 stop track: liveStops off (flags or kill, platform=server) leaves it out and every build draws the bar.
   if (card.stopTrack && !(await serverOn(env, "liveStops"))) delete card.stopTrack;
@@ -7800,12 +9282,37 @@ async function laPushOne(env, row, now, o = {}) {
   return { token: row.token.slice(0, 8), status: res.status, reason: res.reason, event: payload.aps.event, phase: card.phase, warning: card.warning || null, changed, priority, apnsId: res.id, contentState: cs };
 }
 
+/** Card tokens of new flow trips that an active new flow watch pushes (tfStepWatch), when tripflow2 is on. */
+async function tfWatchedTokens(env, rows) {
+  const out = new Set();
+  const tfRows = rows.filter((r) => { try { return tfWanted(JSON.parse(r.trip)); } catch { return false; } });
+  if (!tfRows.length || !(await serverOn(env, "tripflow2"))) return out;
+  const devices = [...new Set(tfRows.map((r) => r.device).filter(Boolean))];
+  for (const d of devices) {
+    const ws = await d1all(env, "SELECT * FROM watches WHERE device = ?1 AND active = 1", d).catch(() => []);
+    for (const w of ws) {
+      let spec = null; try { spec = JSON.parse(w.spec); } catch { continue; }
+      if (!tfWanted(spec)) continue;
+      const first = spec.legs[0], last = spec.legs[spec.legs.length - 1];
+      for (const r of tfRows) {
+        if (r.device !== d) continue;
+        const t = JSON.parse(r.trip);
+        if (t.legs[0].stopId === first.stopId && (t.legs[t.legs.length - 1].toStopId || null) === (last.toStopId || null)) out.add(r.token);
+      }
+    }
+  }
+  return out;
+}
+
 /** The minute tick's part: every due card gets its live state. */
 async function tickLiveActivities(env, now = Date.now()) {
   if (!env.APNS_KEY || !env.APNS_BUNDLE || !(await ensureLiveActivities(env))) return { skipped: "no push key" };
   await db(env).prepare("UPDATE live_activities SET active = 0 WHERE active = 1 AND expires < ?1").bind(now - 3600000).run().catch(() => null);
   const all = await d1all(env, "SELECT * FROM live_activities WHERE active = 1 AND expires > ?1 ORDER BY last_push LIMIT ?2", now - 600000, LA_PER_TICK * 2);
-  const rows = laDue(all, now);
+  // New trip flow cards whose trip has a watch are pushed by the trip flow pass from the watch's own reading (one
+  // state for card and alerts, I6): not here.
+  const tfDriven = await tfWatchedTokens(env, all).catch(() => new Set());
+  const rows = laDue(all.filter((r) => !tfDriven.has(r.token)), now);
   const out = [];
   let next = 0;
   const worker = async () => {
@@ -9071,8 +10578,9 @@ async function handleRequest(request, env, exec) {
           if (!device || !/^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]{10,}\]$/.test(token)) return json({ error: "device and Expo push token needed" }, 400);
           const prof = profileId(b.profile || profile);
           await db(env).prepare(`INSERT INTO expo_tokens (token, device, profile, platform, created, fails) VALUES (?1, ?2, ?3, ?4, ?5, 0)
-            ON CONFLICT (token) DO UPDATE SET device = excluded.device, profile = excluded.profile, platform = excluded.platform, fails = 0, last_status = NULL`)
-            .bind(token, device, prof, String(b.platform || "").slice(0, 20), Date.now()).run();
+            ON CONFLICT (token) DO UPDATE SET device = excluded.device, profile = excluded.profile, platform = excluded.platform, fails = 0,
+              last_status = CASE WHEN ?6 = 1 AND expo_tokens.last_status LIKE 'dead: %' THEN expo_tokens.last_status ELSE NULL END`)
+            .bind(token, device, prof, String(b.platform || "").slice(0, 20), Date.now(), (await serverOn(env, "tripflow2")) ? 1 : 0).run();
           let test = null;
           if (b.welcome) test = await notify(env, { device }, { title: "Notifications are on", body: "Swipe left on any service or tap Watch this trip and I'll tell you when to leave, if it runs late, and if a connection is at risk.", url: "/", tag: "welcome" });
           return json({ ok: true, test });
@@ -9163,7 +10671,8 @@ async function handleRequest(request, env, exec) {
           // to this phone (31 Oct, a real trip on build 210: three old alerts at once on opening the app). The Watching
           // screen's list (since 0) is unchanged. Same fields as before.
           const nowMs = Date.now();
-          const notes = rows.filter((n) => !(since > 0) || noteForCatchUp(n, nowMs, device)).map(({ push_status, ...n }) => n);
+          // New trip flow alerts in the catch-up never ring or speak (G32): marked silent for the app.
+          const notes = rows.filter((n) => !(since > 0) || noteForCatchUp(n, nowMs, device)).map(({ push_status, ...n }) => (since > 0 && /"tf":1/.test(String(push_status || "")) ? { ...n, silent: true } : n));
           const subs = await d1all(env, "SELECT COUNT(*) AS n FROM push_subs WHERE device = ?1", device);
           const exs = await d1all(env, "SELECT COUNT(*) AS n FROM expo_tokens WHERE device = ?1", device).catch(() => [{ n: 0 }]);
           return json({ items, notes, push: subs[0] ? subs[0].n : 0, expo: exs[0] ? exs[0].n : 0, lastTick: lt ? Number(lt.v) : null, ticked, now: Date.now() });
@@ -9895,7 +11404,9 @@ export default {
     const startedAt = Number(event && event.scheduledTime) || Date.now();
     const la = laPasses(env, startedAt).catch(() => null);
     const run = runTick(env, { exec, skipLa: true }).catch(() => null);
-    if (exec && exec.waitUntil) { exec.waitUntil(la); exec.waitUntil(run); } else await Promise.all([la, run]);
+    // The new trip flow's reads and Get off now timers (tripflow2 on; nothing at all when off).
+    const tf = tfPass(env, startedAt).catch(() => null);
+    if (exec && exec.waitUntil) { exec.waitUntil(la); exec.waitUntil(run); exec.waitUntil(tf); } else await Promise.all([la, run, tf]);
   },
   fetch(request, env, exec) { return reqLogged(request, env, exec, edgeFetch); },
 };

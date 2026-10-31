@@ -160,7 +160,9 @@ test("(c) an Expo token answering InvalidCredentials is marked dead, skipped aft
   const r2 = await ride({ db: { expoRows: [{ token: "ExponentPushToken[olderolder12]", device: "app11493p230x136d1h241h5b6r", last_status: "InvalidCredentials" }] } });
   assert.equal(r2.expo.length, 0);
   // The phone registering the token again clears the mark (POST /api/expo).
-  assert.match(raw, /fails = 0, last_status = NULL`\)/);
+  // With the trip flow switch off (every phone today) a register again still clears the mark; with tripflow2 on a dead
+  // token stays dead (G14, 31 Oct phase 2).
+  assert.match(raw, /fails = 0,\s*last_status = CASE WHEN \?6 = 1 AND expo_tokens\.last_status LIKE 'dead: %' THEN expo_tokens\.last_status ELSE NULL END`\)/);
 });
 
 test("(a) server Get off now is accepted with the phone's own token (flag on), time sensitive, Kylie's sound, collapse per leg", async () => {
@@ -216,5 +218,5 @@ test("catch-up ask: Bidur's three at 12:07:10 are not news; fresh ones are; one 
   assert.equal(W.noteForCatchUp({ ...notes[1], push_status: JSON.stringify({ web: [], expo: [], apns: ["ok"], apnsDevice: "other" }) }, at("12:04:00"), dev), true, "another phone of the same profile");
   assert.equal(W.noteForCatchUp({ id: 1, at: null, title: "x", body: "" }, at("12:04:00"), dev), true, "no time: as before");
   // Only the catch-up ask is filtered (the Watching list asks with since 0), and the answer keeps its fields.
-  assert.match(raw, /rows\.filter\(\(n\) => !\(since > 0\) \|\| noteForCatchUp\(n, nowMs, device\)\)\.map\(\(\{ push_status, \.\.\.n \}\) => n\)/);
+  assert.match(raw, /rows\.filter\(\(n\) => !\(since > 0\) \|\| noteForCatchUp\(n, nowMs, device\)\)\.map\(\(\{ push_status, \.\.\.n \}\) => \(since > 0 && \/"tf":1\/\.test\(String\(push_status \|\| ""\)\) \? \{ \.\.\.n, silent: true \} : n\)\)/);
 });

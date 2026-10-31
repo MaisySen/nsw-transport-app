@@ -137,8 +137,9 @@ test("the Cron Trigger runs the minute tick", async () => {
   try { DB.sql.exec("UPDATE meta SET v = '0' WHERE k = 'lease'"); } catch (e) { /* no table yet */ }
   const waits = [];
   await W.__default.scheduled({ cron: "* * * * *", scheduledTime: Date.now() }, baseEnv, { waitUntil: (p) => waits.push(p) });
-  // Two jobs (29 Oct): the trip card passes and the minute tick, side by side.
-  assert.equal(waits.length, 2);
+  // Three jobs: the trip card passes and the minute tick, side by side (29 Oct), and the new trip flow pass (31 Oct,
+  // phase 2), which does nothing while tripflow2 is off.
+  assert.equal(waits.length, 3);
   await Promise.all(waits);
   const row = DB.sql.prepare("SELECT v FROM meta WHERE k = 'lease'").get();
   assert.ok(row && Number(row.v) > Date.now() - 60000, "the tick took its lease, so it ran");

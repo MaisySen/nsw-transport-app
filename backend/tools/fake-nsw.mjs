@@ -7,9 +7,14 @@
 // at=MS (the moment the network is made for, so a load into the local engine agrees with the feed), ts=MS (the feed's
 // own time, for stale feed runs) and late=S (seconds added to every trip's delay); tools/sim210.mjs drives both. In mode trains
 // the departure board of a network station (ST0, ST1, ...) is that network's (plannerBoard): tools/match_x.mjs --dry.
+// case: a journey simulator case (app/sim/cases.mjs) played as its feeds and boarding stop board (tools/case-feed.mjs):
+// /__mode?set=case&case=S2&base=MS (base: the Sydney midnight the case's times count from); each request names the
+// moment it is made at in the x-sim-now header (ms), since the run moves its own clock (tools/simtrip.mjs).
 // backend/tools/local-dev.mjs builds a worker that talks to this and runs it under wrangler dev.
 import http from "node:http";
 import { trainNetwork, plannerBoard } from "./fake-feed.mjs";
+import { caseById, caseNet, caseFeed, caseBoard } from "./case-feed.mjs";
+let caseRun = null;
 const PORT = +process.argv[2] || 8799;
 let mode = "ok"; const hits = []; let net = {};
 const STOPS = [["200060","Central Station"],["2000338","Central Station, Platform 16"],["200070","Town Hall Station"],["213510","Strathfield Station"],["2150106","Parramatta Station"],["10101100","Manly Wharf"],["10101101","Circular Quay"],["2067141","Chatswood Station"],["2022100","Bondi Junction Station"],["2000441","Wynyard Station"]];
@@ -81,6 +86,7 @@ http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   if (u.pathname === "/__mode") {
     if (u.searchParams.get("set")) { mode = u.searchParams.get("set"); net = {}; for (const k of ["trips", "stations", "perTrip", "unknown", "empty", "stands", "at", "ts", "late"]) if (u.searchParams.get(k)) net[k] = +u.searchParams.get(k); }
+    if (mode === "case" && u.searchParams.get("case")) caseRun = { net: caseNet(caseById(u.searchParams.get("case"))), base: +u.searchParams.get("base") };
     res.end(JSON.stringify({ mode, hits: hits.length, last: hits.slice(-20) })); return; }
   hits.push({ t: Date.now(), p: u.pathname, auth: req.headers.authorization ? "apikey set" : "none", mode });
   const isFeed = u.pathname.includes("/gtfs/");
@@ -92,6 +98,13 @@ http.createServer((req, res) => {
   if (mode === "slowfeed" && isFeed) { setTimeout(() => send(200, Buffer.alloc(0), "application/x-google-protobuf"), 8000); return; }
   if (mode === "planner" && u.pathname.includes("/tp/trip") && PLANNER_LAT_MS) { setTimeout(() => send(200, JSON.stringify(body(u.pathname, u.searchParams) || {})), PLANNER_LAT_MS); return; }
   if (mode === "slow") { setTimeout(() => send(200, JSON.stringify(body(u.pathname, u.searchParams) || {})), 20000); return; }
+  if (mode === "case" && caseRun) {
+    const at = Math.floor((Number(req.headers["x-sim-now"]) || Date.now()) - caseRun.base) / 1000;
+    const t = Math.floor(at);
+    if (isFeed) return send(200, Buffer.from(caseFeed(caseRun.net, caseRun.base, t, u.pathname.includes("/vehiclepos/") ? "vp" : "tu")), "application/x-google-protobuf");
+    if (u.pathname.includes("/tp/departure_mon")) { const id = u.searchParams.get("name_dm"); return send(200, JSON.stringify({ locations: [{ id, name: "Sample stop", type: "stop" }], stopEvents: caseBoard(caseRun.net, caseRun.base, t, id) })); }
+    if (u.pathname.includes("/tp/")) return send(200, "{}");
+  }
   if (mode === "trains" && isFeed) return send(200, u.pathname.endsWith("/realtime/sydneytrains") ? Buffer.from(trainNetwork(net).tu) : Buffer.alloc(0), "application/x-google-protobuf");
   if (isFeed) return send(200, mode === "malformed" ? Buffer.from([0x0a, 0xff, 0xff, 0xff, 0x0f, 1, 2]) : Buffer.alloc(0), "application/x-google-protobuf");
   if (mode === "empty") return send(200, "{}");

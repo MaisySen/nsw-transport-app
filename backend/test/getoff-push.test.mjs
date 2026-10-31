@@ -281,7 +281,8 @@ test("over the NSW budget: the no feed pass still sends it, with no request", as
 });
 
 test("the wiring", () => {
-  assert.match(raw, /if \(await getOffAccept\(env, b, device\)\) \{ spec\.getOff = 1; if \(b\.getOffVoice === 1\) spec\.getOffVoice = 1; \}/);
+  // The old path unchanged; the new trip flow (tripFlow 2 and tripflow2 on) takes it only with a working route (G14).
+  assert.match(raw, /if \(tf \? \(b\.getOff === 1 && !!b\.track && \(await tfRoute\(env, device\)\)\.any\) : await getOffAccept\(env, b, device\)\) \{ spec\.getOff = 1; if \(b\.getOffVoice === 1\) spec\.getOffVoice = 1; \}/);
   assert.match(raw, /\.\.\.\(n\.timeSensitive \? \{ interruptionLevel: "time-sensitive" \} : \{\}\)/);
   assert.match(raw, /out\.getOffNoFeed = await getOffNoFeedPass\(env, Date\.now\(\)\)/);
 });
