@@ -5878,7 +5878,9 @@ const TF = {
   PASS_SPAN: 62000,       // one cron run holds reads and timers up to this long (the next run takes over)
   BOARD_WINDOW: 45 * 60000,
   FRESH_AT_MOMENT: 5000,  // at a named moment the feed copy read is under 5 s old
+  BOARD_REUSE: 14000,     // a stop's departure board read serves every trip read in the next 14 s (the feed copy is 15 s)
 };
+const tfBoardMem = new Map();
 // Kylie clips in build 211 (getoff_soon, getoff_now); the arrival clip needs build 212 (or the sound folder copy), so
 // the arrival alert rings with the default sound until then.
 const TF_SOUND = { headsup: "getoff_soon", getoff: "getoff_now", arrived: null };
@@ -5943,7 +5945,11 @@ async function tfRead(env, spec, st, now, o = {}) {
 async function tfBoard(env, bl, r, now, o = {}) {
   if (!bl || o.board === false || !(ms(bl.planned) - now < TF.BOARD_WINDOW) || !(ms(bl.planned) > now - 30 * 60000)) return;
   try {
-    const b = await departures(env, bl.stopId, { log: false, timetable: false });
+    // One board read per stop serves every trip read within TF.BOARD_REUSE (one cron run steps every trip in one
+    // isolate), so 100 trips from 20 stops cost about 20 board reads a read cycle, not 100.
+    const hit0 = tfBoardMem.get(bl.stopId);
+    const b = hit0 && now - hit0.at < TF.BOARD_REUSE && now >= hit0.at ? hit0.b : await departures(env, bl.stopId, { log: false, timetable: false });
+    if (!hit0 || hit0.b !== b) { tfBoardMem.set(bl.stopId, { at: now, b }); if (tfBoardMem.size > 500) tfBoardMem.delete(tfBoardMem.keys().next().value); }
     const items = (b && b.items) || [];
     const hit = items.find((x) => (bl.tripId && x.tripId === bl.tripId) || (x.line === bl.line && Math.abs(ms(x.planned) - ms(bl.planned)) < 90000));
     if (hit) {
