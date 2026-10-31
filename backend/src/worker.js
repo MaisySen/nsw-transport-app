@@ -4054,17 +4054,85 @@ async function notify(env, target, n) {
   }
   // Native app phones: Expo push service (APNs for iPhone, FCM for Android).
   const expo = await sendExpo(env, target, { ...n, id: noteId, at: now }).catch((e) => ["error: " + String(e && e.message || e).slice(0, 80)]);
-  const okCount = results.filter((x) => x === 201 || x === 200).length + expo.filter((x) => x === "ok").length;
-  await d.prepare("UPDATE notes SET pushed = ?2, push_status = ?3 WHERE id = ?1").bind(noteId, okCount, JSON.stringify({ web: results, expo })).run();
-  return { noteId, pushed: results, expo };
+  // No working Expo token (31 Oct: the owner's iPhone has none, and the Expo project answers InvalidCredentials for the
+  // others): the alert goes straight to Apple on the phone's own push token (apns_devices), with the apnsAlerts flag on.
+  const apns = expo.some((x) => x === "ok") ? [] : await sendApnsAlert(env, target, { ...n, id: noteId, at: now }).catch((e) => ["error: " + String(e && e.message || e).slice(0, 80)]);
+  const okCount = results.filter((x) => x === 201 || x === 200).length + expo.filter((x) => x === "ok").length + apns.filter((x) => x === "ok").length;
+  const status = { web: results, expo, ...(apns.length ? { apns, apnsDevice: target.device || null } : {}) };
+  await d.prepare("UPDATE notes SET pushed = ?2, push_status = ?3 WHERE id = ?1").bind(noteId, okCount, JSON.stringify(status)).run();
+  return { noteId, pushed: results, expo, apns };
 }
 
 
+/** Expo answers that mean this token can never work as things stand (31 Oct: InvalidCredentials on every iPhone token). */
+const EXPO_DEAD = new Set(["InvalidCredentials"]);
+const EXPO_DEAD_MARK = "dead: ";
+/** A token still worth trying: not marked dead (and not an older row that only says InvalidCredentials). */
+const expoLive = (t) => { const s = String((t && t.last_status) || ""); return !s.startsWith(EXPO_DEAD_MARK) && !EXPO_DEAD.has(s); };
+
+/** The kind of a watch alert, from its once key or tag (one collapse id per watch and kind, so a newer one replaces). */
+function alertKind(once, tagSuffix, getOff) {
+  if (getOff != null && getOff !== false) return "off" + getOff;
+  const o = String(once || "");
+  if (/^(delay|ontime):/.test(o)) return "delay";
+  if (/^plat:/.test(o)) return "plat";
+  if (/^arr:/.test(o)) return "arr" + o.slice(4);
+  if (/^off:/.test(o)) return "off";
+  if (o) return o.replace(/[^a-z0-9]/gi, "").slice(0, 16);
+  return tagSuffix === "r" ? "conn" : "note";
+}
+
+/**
+ * When an alert stops being news (31 Oct): Apple keeps a push for a phone that is off or out of signal until then, and
+ * drops it after, so a phone back online minutes later gets no "Leave now" for a train that has gone. Leave now: the
+ * departure; Arriving / Next stop: the arrival; Get off now: the arrival plus a minute; You've arrived: 45 s; the rest:
+ * 2 minutes. Never less than 30 s from now.
+ */
+function alertExpiry(n, now) {
+  const at = Number(n.dueAt);
+  const kind = String(n.kind || "");
+  let until = now + (Number(n.ttl) > 0 ? Number(n.ttl) * 1000 : 120000);
+  if (kind === "leave" && Number.isFinite(at)) until = at;
+  else if (/^arr\d+$/.test(kind) && Number.isFinite(at)) until = at;
+  else if (/^off/.test(kind) && Number.isFinite(at)) until = at + 60000;
+  else if (kind === "done") until = now + 45000;
+  return Math.max(now + 30000, until);
+}
+
+/**
+ * The alert straight to Apple on this phone's own push token (apns_devices, saved by builds 205 and later), when it has
+ * no working Expo token. The same words, sound (Kylie's, when asked), time sensitive Get off now and data as the Expo
+ * message, so the app reads it the same way (data under "body", as Expo sends it, and at the top level). Off unless
+ * the apnsAlerts flag is on (platform=server), so a deploy changes nothing for any phone until it is switched on.
+ */
+async function sendApnsAlert(env, target, n) {
+  if (!target.device || !env.APNS_KEY || !env.APNS_BUNDLE) return [];
+  if (!(await serverOn(env, "apnsAlerts"))) return [];
+  const toks = await d1all(env, "SELECT token FROM apns_devices WHERE device = ?1 ORDER BY updated DESC LIMIT 3", target.device).catch(() => []);
+  if (!toks.length) return [];
+  const now = Date.now();
+  const data = { url: n.url || "/", watch: n.watchId || null, id: n.id, tag: n.tag || "tb", ...(n.getOff ? { getOff: n.getOff } : {}) };
+  const s = n && (n.sound === "getoff_soon" || n.sound === "getoff_now") ? n.sound + ".wav" : "default";
+  const payload = { aps: { alert: { title: n.title, body: n.body }, sound: s, "thread-id": n.watchId ? "w" + n.watchId : "tb",
+    ...(n.timeSensitive ? { "interruption-level": "time-sensitive" } : {}) }, body: data, ...data };
+  const o = { topic: env.APNS_BUNDLE, pushType: "alert", priority: 10, expiresMs: alertExpiry(n, now),
+    ...(n.watchId && n.kind ? { collapseId: `w${n.watchId}-${n.kind}` } : {}) };
+  const out = [];
+  for (const t of toks) {
+    try {
+      const res = await apnsSend(env, t.token, payload, o);
+      out.push(res.status === 200 ? "ok" : "error: " + (res.reason || res.status));
+      if (apnsGone(res)) await db(env).prepare("DELETE FROM apns_devices WHERE token = ?1").bind(t.token).run().catch(() => null);
+    } catch (e) { out.push("error: " + String(e && e.message || e).slice(0, 80)); }
+  }
+  return out;
+}
+
 async function sendExpo(env, target, n) {
   const d = db(env);
-  const toks = target.device
+  const toks = (target.device
     ? (await d.prepare("SELECT * FROM expo_tokens WHERE device = ?1").bind(target.device).all()).results || []
-    : (await d.prepare("SELECT * FROM expo_tokens WHERE profile = ?1").bind(target.profile).all()).results || [];
+    : (await d.prepare("SELECT * FROM expo_tokens WHERE profile = ?1").bind(target.profile).all()).results || []).filter(expoLive);
   if (!toks.length) return [];
   const msgs = toks.slice(0, 6).map((t) => ({
     to: t.token, title: n.title, body: n.body, ...expoSound(n), priority: "high",
@@ -4088,7 +4156,9 @@ async function sendExpo(env, target, n) {
       const why = (t.details && t.details.error) || t.message || ("http " + r.status);
       out.push("error: " + String(why).slice(0, 80));
       if (why === "DeviceNotRegistered") await d.prepare("DELETE FROM expo_tokens WHERE token = ?1").bind(tok).run();
-      else await d.prepare("UPDATE expo_tokens SET last_status = ?2, fails = fails + 1 WHERE token = ?1").bind(tok, String(why).slice(0, 120)).run();
+      // The Expo project has no Apple credentials for this app: every send fails the same way, so the token is marked
+      // dead and not tried again until the phone registers it again (POST /api/expo clears the mark).
+      else await d.prepare("UPDATE expo_tokens SET last_status = ?2, fails = fails + 1 WHERE token = ?1").bind(tok, EXPO_DEAD.has(why) ? EXPO_DEAD_MARK + why : String(why).slice(0, 120)).run();
     }
   }
   return out;
@@ -5490,11 +5560,43 @@ function getOffPushWords(legs, live, i, d) {
  * is on, the phone has a native push token, and the minute tick will read this watch (fewer than 25 active). Else the
  * phone keeps its own alert, as before.
  */
+/**
+ * Whether the app's catch-up ask should still show an alert (31 Oct; the same rule as the app's noteShowCore from build
+ * 211, so builds 209 and 210 stop showing stale alerts on opening without a build): not one Apple brought to this
+ * phone already; not over 90 s old; "You've arrived" not over 45 s after the arrival it names; Leave now and
+ * "Arriving in N min" not after the moment they name (half a minute of grace for the rounding).
+ */
+function noteForCatchUp(n, now, device) {
+  let ps = null;
+  try { ps = n.push_status ? JSON.parse(n.push_status) : null; } catch { ps = null; }
+  if (ps && Array.isArray(ps.apns) && ps.apns.includes("ok") && ps.apnsDevice && ps.apnsDevice === device) return false;
+  const at = Number(n.at);
+  if (!Number.isFinite(at) || at <= 0) return true;
+  const title = String(n.title || ""), body = String(n.body || "");
+  const arrived = /^You've arrived\b/.test(title);
+  if (now - at > (arrived ? 45000 : 90000)) return false;
+  if (arrived) {
+    const m = /\bgot in at (\d{1,2}:\d{2}[ap]m)\b/i.exec(body);
+    if (m) for (let d = 0; d <= 90; d++) { const t = Math.floor(at / 60000) * 60000 - d * 60000; if (clock(t) === m[1].toLowerCase()) { if (now - t > 45000) return false; break; } }
+  }
+  const mm = /\bin (\d+) min\b/.exec(title) || (/^Leave (now|in\b)/i.test(title) ? /\b(\d+) min away\b/.exec(body) : null);
+  if (mm && at + Number(mm[1]) * 60000 + 30000 < now) return false;
+  return true;
+}
+
+/** This phone can get alerts straight from Apple: apnsAlerts on, the push key set, and its own token saved. */
+async function apnsAlertRoute(env, device) {
+  if (!device || !env.APNS_KEY || !env.APNS_BUNDLE || !(await serverOn(env, "apnsAlerts"))) return false;
+  const r = await d1all(env, "SELECT COUNT(*) AS n FROM apns_devices WHERE device = ?1", device).catch(() => []);
+  return !!(r[0] && r[0].n > 0);
+}
+
 async function getOffAccept(env, b, device) {
   if (b.getOff !== 1 || !b.track) return false;
   if (String(env.GETOFF_PUSH || "").toLowerCase() === "off" || !(await serverOn(env, "getOffPush"))) return false;
-  const tok = await d1all(env, "SELECT COUNT(*) AS n FROM expo_tokens WHERE device = ?1", device).catch(() => []);
-  if (!(tok[0] && tok[0].n > 0)) return false;
+  // A push route that works: an Expo token not marked dead, or (apnsAlerts on) the phone's own Apple token (31 Oct).
+  const toks = await d1all(env, "SELECT last_status FROM expo_tokens WHERE device = ?1", device).catch(() => []);
+  if (!toks.some(expoLive) && !(await apnsAlertRoute(env, device))) return false;
   const act = await d1all(env, "SELECT COUNT(*) AS n FROM watches WHERE active = 1").catch(() => []);
   return !!(act[0] && act[0].n < GETOFF_WATCH_CAP);
 }
@@ -5525,7 +5627,7 @@ async function getOffNoFeedPass(env, now) {
       const words = getOffPushWords(legs, rows, i, d);
       const say = spec.getOffVoice === 1 ? (d.kind === "timetable" ? "getoff_soon" : "getoff_now") : null;
       await notify(env, { device: w.device }, { title: words.title, body: words.body, url: `/#/watch/${w.id}`, tag: `w${w.id}off${i}`, watchId: w.id,
-        ...(say ? { sound: say } : {}), getOff: String(i), timeSensitive: true, ttl: 180 });
+        ...(say ? { sound: say } : {}), getOff: String(i), timeSensitive: true, ttl: 180, kind: "off" + i, dueAt: d.eta });
       out.push({ id: w.id, leg: i, kind: d.kind });
     }
     if (changed) await db(env).prepare("UPDATE watches SET state = ?2 WHERE id = ?1").bind(w.id, JSON.stringify(st)).run();
@@ -5549,7 +5651,9 @@ async function processWatch(env, w, now, opts = {}) {
   const push = async (title, body, extra = {}) => {
     if (extra.once && !(await claimOnce(env, w.id, extra.once))) return false;
     const r = await notify(env, target, { title, body, url, tag: "w" + w.id + (extra.tagSuffix || ""), watchId: w.id, ...(extra.sound ? { sound: extra.sound } : {}),
-      ...(extra.getOff ? { getOff: extra.getOff, timeSensitive: true, ttl: 180 } : {}) });
+      ...(extra.getOff ? { getOff: extra.getOff, timeSensitive: true, ttl: 180 } : {}),
+      // What it is about and when that happens: Apple drops it after (sendApnsAlert), one collapse id per kind.
+      kind: alertKind(extra.once, extra.tagSuffix, extra.getOff), ...(Number.isFinite(extra.dueAt) ? { dueAt: extra.dueAt } : {}) });
     sent.push({ title, body, pushed: r.pushed });
     st.count = (st.count || 0) + 1;
     return true;
@@ -5577,7 +5681,9 @@ async function processWatch(env, w, now, opts = {}) {
     const away = minsFrom(O0.dep, now);
     const lineTxt = `${L0.line} to ${L0.towards || (spec.to && spec.to.name) || L0.to || ""}`.trim();
     let body = `Leaves ${clock(O0.dep)}${where}, ${O0.depLive ? lateWords(O0.delay) : "scheduled time, no live data yet"}. I'll tell you when to leave, and about delays, platform changes and missed connections.`;
-    if (O0.dep - leadMs - now <= 60000 && O0.dep > now) { body = `Leave now: it's ${away} min away${where}, ${O0.depLive ? lateWords(O0.delay) : "scheduled"}.`; st.leaveSent = true; }
+    if (!spec.track && O0.dep - leadMs - now <= 60000 && O0.dep > now) { body = `Leave now: it's ${away} min away${where}, ${O0.depLive ? lateWords(O0.delay) : "scheduled"}.`; st.leaveSent = true; }
+    // Start trip (track) means the rider has left (31 Oct, a real ride on build 210: "Leave now, 0 min away" during the ride): no Leave now.
+    if (spec.track) st.leaveSent = true;
     if (O0.dep < now - 30000) {
       const lastLeg = legs[last];
       body = lastLeg.toStopId ? `On board. I'll tell you 2 minutes before ${lastLeg.to || "your stop"}${last > 0 ? ", and about your connections" : ""}.` : "It has already left this stop.";
@@ -5589,9 +5695,9 @@ async function processWatch(env, w, now, opts = {}) {
 
   if (phase === "before" && !O0.cancelled) {
     // Leave now
-    if (!st.leaveSent && O0.dep - leadMs - now <= 60000) {
+    if (!st.leaveSent && !spec.track && O0.dep - leadMs - now <= 60000) {
       const away = minsFrom(O0.dep, now);
-      await push("Leave now", `${cap(legLabel(L0))} is ${away} min away, ${O0.depLive ? lateWords(O0.delay) : "on the timetable (no live data)"}${where ? "." + where.replace(" from", " From") : ""}.`.replace("..", "."), { once: "leave" });
+      await push("Leave now", `${cap(legLabel(L0))} is ${away} min away, ${O0.depLive ? lateWords(O0.delay) : "on the timetable (no live data)"}${where ? "." + where.replace(" from", " From") : ""}.`.replace("..", "."), { once: "leave", dueAt: O0.dep });
       st.leaveSent = true;
     }
     // Delay changes
@@ -5689,7 +5795,7 @@ async function processWatch(env, w, now, opts = {}) {
         st.arrived = st.arrived || {}; st.arrived[i] = 1;
         if (c && c.nextIsYours) { st.oneStop = st.oneStop || {}; st.oneStop[i] = 1; }
         const w = getOffPushWords(legs, live, i, d);
-        await push(w.title, w.body, { tagSuffix: `off${i}`, once: `off:${offKey}`, getOff: String(i), sound: offSay ? (d.kind === "timetable" ? "getoff_soon" : "getoff_now") : null });
+        await push(w.title, w.body, { tagSuffix: `off${i}`, once: `off:${offKey}`, getOff: String(i), sound: offSay ? (d.kind === "timetable" ? "getoff_soon" : "getoff_now") : null, dueAt: d.eta });
         continue;
       }
       if ((st.arrived || {})[i]) continue;
@@ -5699,10 +5805,10 @@ async function processWatch(env, w, now, opts = {}) {
         st.oneStop = st.oneStop || {}; st.oneStop[i] = 1;
         st.arrived = st.arrived || {}; st.arrived[i] = 1;
         const at = c.eta ? ` at ${clock(c.eta)}` : "";
-        if (i === last) await push(`Next stop: ${l.to}`, `Get ready to get off. Your ${l.line} gets in${at}.`, { tagSuffix: "a", once: `arr:${i}`, sound: voiceSound(spec) });
+        if (i === last) await push(`Next stop: ${l.to}`, `Get ready to get off. Your ${l.line} gets in${at}.`, { tagSuffix: "a", once: `arr:${i}`, sound: voiceSound(spec), dueAt: c.eta });
         else {
           const n = legs[i + 1], no = live[i + 1];
-          await push(`Next stop: ${l.to}, change here`, `Get off${at} for the ${clock(no.dep)} ${n.line}${no.platform ? " from " + no.platform : ""}, ${no.depLive ? lateWords(no.delay) : "scheduled"}.`, { tagSuffix: "a", once: `arr:${i}`, sound: voiceSound(spec) });
+          await push(`Next stop: ${l.to}, change here`, `Get off${at} for the ${clock(no.dep)} ${n.line}${no.platform ? " from " + no.platform : ""}, ${no.depLive ? lateWords(no.delay) : "scheduled"}.`, { tagSuffix: "a", once: `arr:${i}`, sound: voiceSound(spec), dueAt: c.eta });
         }
         continue;
       }
@@ -5714,10 +5820,10 @@ async function processWatch(env, w, now, opts = {}) {
     if (left <= 150000 && left > -60000) {
       st.arrived = st.arrived || {}; st.arrived[i] = 1;
       const mins = Math.max(1, Math.round(left / 60000));
-      if (i === last) await push(`Arriving at ${l.to} in ${mins} min`, `Get ready to get off. Your ${l.line} gets in at ${clock(o.arr)}.`, { tagSuffix: "a", once: `arr:${i}`, sound: voiceSound(spec) });
+      if (i === last) await push(`Arriving at ${l.to} in ${mins} min`, `Get ready to get off. Your ${l.line} gets in at ${clock(o.arr)}.`, { tagSuffix: "a", once: `arr:${i}`, sound: voiceSound(spec), dueAt: o.arr });
       else {
         const n = legs[i + 1], no = live[i + 1];
-        await push(`Change at ${l.to} in ${mins} min`, `Next: the ${clock(no.dep)} ${n.line}${no.platform ? " from " + no.platform : ""}, ${no.depLive ? lateWords(no.delay) : "scheduled"}.`, { tagSuffix: "a", once: `arr:${i}`, sound: voiceSound(spec) });
+        await push(`Change at ${l.to} in ${mins} min`, `Next: the ${clock(no.dep)} ${n.line}${no.platform ? " from " + no.platform : ""}, ${no.depLive ? lateWords(no.delay) : "scheduled"}.`, { tagSuffix: "a", once: `arr:${i}`, sound: voiceSound(spec), dueAt: o.arr });
       }
     }
   }
@@ -5997,7 +6103,7 @@ async function serverConfig(env) {
 }
 // Build 210 server switches that stay off until an admin turns them on (platform=server flags, true): a deploy alone
 // never starts them, and with no config (no table, a failed read) they are off (31 Oct, final check before build 210).
-const SERVER_OPT_IN = new Set(["getOffPush", "liveStops"]);
+const SERVER_OPT_IN = new Set(["getOffPush", "liveStops", "apnsAlerts"]);
 async function serverOn(env, flag) {
   const c = await serverConfig(env).catch(() => null);
   if (SERVER_OPT_IN.has(flag)) return !!(c && c.flags[flag] === true && !c.kill[flag]);
@@ -7654,6 +7760,7 @@ async function apnsSend(env, token, payload, o = {}) {
     headers: {
       authorization: `bearer ${jwt}`, "apns-topic": o.topic || apnsLaTopic(env), "apns-push-type": o.pushType || "liveactivity",
       "apns-priority": String(o.priority || 10), "apns-expiration": String(Math.floor((o.expiresMs || Date.now() + 120000) / 1000)), "content-type": "application/json",
+      ...(o.collapseId ? { "apns-collapse-id": String(o.collapseId).slice(0, 64) } : {}),
     },
     body: JSON.stringify(payload),
   });
@@ -8964,7 +9071,7 @@ async function handleRequest(request, env, exec) {
           if (!device || !/^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]{10,}\]$/.test(token)) return json({ error: "device and Expo push token needed" }, 400);
           const prof = profileId(b.profile || profile);
           await db(env).prepare(`INSERT INTO expo_tokens (token, device, profile, platform, created, fails) VALUES (?1, ?2, ?3, ?4, ?5, 0)
-            ON CONFLICT (token) DO UPDATE SET device = excluded.device, profile = excluded.profile, platform = excluded.platform, fails = 0`)
+            ON CONFLICT (token) DO UPDATE SET device = excluded.device, profile = excluded.profile, platform = excluded.platform, fails = 0, last_status = NULL`)
             .bind(token, device, prof, String(b.platform || "").slice(0, 20), Date.now()).run();
           let test = null;
           if (b.welcome) test = await notify(env, { device }, { title: "Notifications are on", body: "Swipe left on any service or tap Watch this trip and I'll tell you when to leave, if it runs late, and if a connection is at risk.", url: "/", tag: "welcome" });
@@ -9051,7 +9158,12 @@ async function handleRequest(request, env, exec) {
           }
           const since = Number(p.get("since") || 0);
           const items = (await d1all(env, "SELECT * FROM watches WHERE device = ?1 AND (active = 1 OR updated > ?2) ORDER BY created DESC LIMIT 12", device, Date.now() - 20 * 60000)).map(watchOut);
-          const notes = await d1all(env, "SELECT id, watch_id, at, title, body, url, pushed FROM notes WHERE (device = ?1 OR (?3 <> '' AND profile = ?3)) AND id > ?2 AND at > ?4 ORDER BY id DESC LIMIT 5", device, since, profile, Date.now() - 30 * 60000);
+          const rows = await d1all(env, "SELECT id, watch_id, at, title, body, url, pushed, push_status FROM notes WHERE (device = ?1 OR (?3 <> '' AND profile = ?3)) AND id > ?2 AND at > ?4 ORDER BY id DESC LIMIT 5", device, since, profile, Date.now() - 30 * 60000);
+          // The app's catch-up ask (since > 0) gets only alerts that are still news and that Apple did not already bring
+          // to this phone (31 Oct, a real trip on build 210: three old alerts at once on opening the app). The Watching
+          // screen's list (since 0) is unchanged. Same fields as before.
+          const nowMs = Date.now();
+          const notes = rows.filter((n) => !(since > 0) || noteForCatchUp(n, nowMs, device)).map(({ push_status, ...n }) => n);
           const subs = await d1all(env, "SELECT COUNT(*) AS n FROM push_subs WHERE device = ?1", device);
           const exs = await d1all(env, "SELECT COUNT(*) AS n FROM expo_tokens WHERE device = ?1", device).catch(() => [{ n: 0 }]);
           return json({ items, notes, push: subs[0] ? subs[0].n : 0, expo: exs[0] ? exs[0].n : 0, lastTick: lt ? Number(lt.v) : null, ticked, now: Date.now() });

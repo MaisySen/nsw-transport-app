@@ -26,6 +26,11 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 
 
+### `backend/test/apns-alerts.test.mjs`: 8 tests, 8 pass (31 Oct, trip alerts straight to Apple, server, branch server-211-rc)
+* The real 31 Oct watch (Start trip, T1 to Ashfield, no Expo token, the phone's Apple token on file) over the minute tick: no Leave now on a track watch (Watch this trip still gets one); every alert goes to Apple with push type alert, the app's topic, collapse id per watch and kind, expiry at the arrival, data under body and at the top level, marked pushed with the device; switch off or no config: nothing to Apple; a working Expo token: Expo only; InvalidCredentials marks the token dead, it is skipped after and Apple carries the alerts; server Get off now accepted with the Apple token only with the switch on, time sensitive with Kylie's sound; expiry and kind rules; the catch-up filter (the three 31 Oct alerts at 12:07:10 all dropped, fresh ones kept, one Apple brought to this phone dropped, another phone's kept, no time as before, only for since above 0).
+* Failing first on ca56b90: 3 of 3 behaviour tests fail (Leave now sent, 0 of 3 to Apple, dead token tried 3 times).
+* Backend 674/674 (TZ=Australia/Sydney, OFFLINE=1), build ok.
+
 ### `backend/test/sim210.test.mjs`: 4 tests, 4 pass (31 Oct, build 210 end to end on this machine, server, branch server-210-rc)
 - `tools/sim210.mjs` against `tools/fake-nsw.mjs` (mode trains): trip watch plus Live Activity token through the worker's routes and minute tick, Apple and Expo caught, no Transport for NSW call.
 - Switches on: stop track on the card pushes under 4 KB; one Get off now at 90 s or less before the live arrival; no Arriving alert beside it.
