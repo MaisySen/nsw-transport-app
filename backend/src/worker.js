@@ -6110,9 +6110,14 @@ function tfVehOnRun(veh, stus, info) {
     if (i + 1 < pts.length) {
       const b = pts[i + 1].s, seg = distM(a.lat, a.lon, b.lat, b.lon);
       const ex = da + distM(veh.lat, veh.lon, b.lat, b.lon) - seg;
-      // On a segment only when the detour is small for its length: a train 700 m short of the first listed stop is not
-      // between it and the next (1 Nov 12:04 AM shadow trip: approaching Strathfield, read as left it).
-      if (ex <= Math.min(1500, Math.max(250, 0.3 * seg)) && ex < best) { best = ex; bk = pts[i + 1].k; }
+      // On a segment only when the position lies along it (not behind its first stop) and the detour is small for its
+      // length: a train short of the first listed stop is not between it and the next (1 Nov 12:04 AM shadow trip,
+      // 700 m short of Strathfield; 12:13 AM, between Central and Redfern on a 6 km Redfern to Ashfield run: both
+      // read as left).
+      const kx = Math.cos((a.lat * Math.PI) / 180) * 111320, ky = 110540;
+      const bx = (b.lon - a.lon) * kx, by = (b.lat - a.lat) * ky, vx = (veh.lon - a.lon) * kx, vy = (veh.lat - a.lat) * ky;
+      const along = bx * bx + by * by > 0 ? (vx * bx + vy * by) / (bx * bx + by * by) : -1;
+      if (along * seg >= -50 && (along - 1) * seg <= 50 && ex <= Math.min(1500, Math.max(250, 0.3 * seg)) && ex < best) { best = ex; bk = pts[i + 1].k; }
     }
   }
   if (near >= 0 && nd < LIVECARD.TRIP_RULES.AT_STOP_M) return { k: near, at: true };

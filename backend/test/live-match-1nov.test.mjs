@@ -145,3 +145,21 @@ test("1 Nov 12:21 AM shadow trip: on the last stretch the train's position gives
   const atB = W.tfLegRaw(legF, fd, veh("213495", T("13:19:22")), info, T("13:19:40"));
   assert.equal(atB.est[1], T("13:22:22"), "at Burwood (not on the last stretch yet by position): the feed's arrival");
 });
+
+test("1 Nov 12:13 AM shadow trip: a train between Central and Redfern is not read as left Redfern on a long Redfern to Ashfield run", async () => {
+  const W = await loadWorker();
+  const C = [-33.8832, 151.2063], R = [-33.8917, 151.1988], A = [-33.8879, 151.1259];
+  const inf = { "2015136": { name: "Redfern Station", lat: R[0], lon: R[1] }, "2131125": { name: "Ashfield Station", lat: A[0], lon: A[1] } };
+  const legE = { mode: "train", line: "T1", tripId: "871S", stopId: "2015136", toStopId: "2131125", from: "Redfern Station", to: "Ashfield Station", planned: "2026-10-31T13:17:00.000Z", arrPlanned: "2026-10-31T13:28:00.000Z" };
+  const fe = { ts: T("13:12:40") / 1000, stus: [{ stopId: "2015136", arr: d(0), dep: d(0) }, { stopId: "2131125", arr: d(0), dep: d(0) }] };
+  setClock(T("13:13:02"));
+  for (const f of [0.35, 0.6, 0.85]) { // 400 m to 1 km short of Redfern
+    const p = { lat: C[0] + (R[0] - C[0]) * f, lon: C[1] + (R[1] - C[1]) * f, ts: T("13:12:42"), ageS: 20, stopId: "Central.X Loc", status: null };
+    const r = W.tfLegRaw(legE, fe, p, inf, T("13:12:40"));
+    assert.deepEqual([r.vehicle.stop, r.vehicle.state], [-1, "left"], `at ${f} of the way from Central to Redfern`);
+  }
+  // past Redfern towards Ashfield: left
+  const p2 = { lat: R[0] + (A[0] - R[0]) * 0.3, lon: R[1] + (A[1] - R[1]) * 0.3, ts: T("13:19:00"), ageS: 20, stopId: "Redfern.X Loc", status: null };
+  const r2 = W.tfLegRaw(legE, fe, p2, inf, T("13:19:10"));
+  assert.deepEqual([r2.vehicle.stop, r2.vehicle.state], [0, "left"]);
+});
