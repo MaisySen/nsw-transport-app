@@ -148,5 +148,7 @@ test('at the largest text sizes a long stop name keeps the bar layouts, so it is
 
 test('at the largest text sizes the stop name may take three lines on the bar card before it is cut', () => {
   const w = read(W);
-  assert.match(w, /if typeSize >= \.xxLarge \{\s*card\(lines: 1, track: false, merged: true, headLines: 3, headScale: 0\.65\)\s*\}\s*card\(lines: 2, track: false\)/);
+  assert.match(w, /if typeSize >= \.xxLarge \{\s*card\(lines: 1, track: false, merged: true, headLines: 3, headScale: 0\.65\)\s*card\(lines: 1, track: false, merged: true, headLines: 3, headScale: 0\.65, arriveLine: false\)\s*\}\s*card\(lines: 2, track: false\)/);
+  // The arrival line goes first in that last resort (it was cut there anyway).
+  assert.match(w, /if arriveLine && !state\.arrived\(stale: stale\) \{/);
 });

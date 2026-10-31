@@ -437,6 +437,7 @@ struct LiveTripLockCard: View {
             // "Macquarie Centre and University" on the SE at xxxLarge).
             if typeSize >= .xxLarge {
                 card(lines: 1, track: false, merged: true, headLines: 3, headScale: 0.65)
+                card(lines: 1, track: false, merged: true, headLines: 3, headScale: 0.65, arriveLine: false)
             }
             card(lines: 2, track: false)
             // The stop name keeps its two lines before the detail and warning do (31 Oct readiness audit: "Get off at
@@ -466,7 +467,8 @@ struct LiveTripLockCard: View {
         return t.font(.subheadline).lineLimit(lines).minimumScaleFactor(0.85)
     }
 
-    private func card(lines: Int, track: Bool, merged: Bool = false, headLines: Int? = nil, headScale: CGFloat = 0.7) -> some View {
+    private func card(lines: Int, track: Bool, merged: Bool = false, headLines: Int? = nil, headScale: CGFloat = 0.7,
+                      arriveLine: Bool = true) -> some View {
         // Worked out here so the view expression stays quick to type check.
         // Very large text (build 211 line check): the stop name alone ("Macquarie University"); the label over the
         // countdown already says "Get off" or "Arrived", and VoiceOver still reads the whole line.
@@ -525,7 +527,7 @@ struct LiveTripLockCard: View {
             } else {
                 ProgressView(value: state.arrived(stale: stale) ? 1 : min(max(state.progress, 0), 1))
                     .tint(RGB(hex: state.lineColorHex).map { Color(red: $0.r, green: $0.g, blue: $0.b) } ?? Color.blue)
-                if !state.arrived(stale: stale) {
+                if arriveLine && !state.arrived(stale: stale) {
                     Text(state.outdated(stale: stale) ? "\(state.arriveLine). \(state.updatedLine)" : state.arriveLine)
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
                 }
