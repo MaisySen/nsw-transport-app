@@ -11,7 +11,8 @@
 // JavaScript main does not have yet (stop track, get off voice and server get off, widget refresh), so it must not take
 // main's bundle. Updates for 1.2.0 come from build-209 (or from main once build-209 is merged). OTA_RUNTIME publishes
 // the same JavaScript to an older runtime (docs/BUILD_209_CHECKLIST.md); its JavaScript must feature detect what each
-// newer build adds.
+// newer build adds. Build 212 (1 Nov) has runtime "1.3.0": card version 3, the whole trip widget and the arrival
+// sound are native, so updates for 1.2.0 must never reach it and updates for 1.3.0 come from build-212-rc.
 //
 // iPhone app group: the widgets read the app's profile id through group.com.maisysen.nswtransport. The group is
 // registered and ticked on both App IDs since 25 Oct 2026; the production profile builds with it (IOS_APP_GROUP=1

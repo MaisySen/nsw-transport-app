@@ -4,6 +4,17 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 1 Nov 2026
 
+### Build 212, native (1 Nov, branch `build-212-rc` from tripflow-p2 f5e86fd plus polish-1nov; runtime 1.3.0; TestFlight Internal only)
+Own runtime 1.3.0, so an update published for 1.2.0 (builds 210, 211) never reaches it. Carries trip flow 2 and the polish pass.
+* Your trip widget (Home Screen and Lock Screen) follows the whole trip: one timeline entry per moment (waiting with the countdown to the live departure, Due, on board, your stop next, Get off now, Arrived). The delay is on the row. It never drops the row when a time passes, never says "Checking for the next one" or "Trip started" during a trip, and says "about" then "No live data since" as the live times age (G4, G5, G11, G28). Empty widgets say "No more services right now".
+* Live Activity and Dynamic Island: Due at the live departure and "Now" at get off, never a timer frozen at 0:00 (G3); the age steps on its own (about 2 min, no live data 5 min, open the app 10 min, G25); the status line stays on one line at the largest text with audit probes (G24); Island wording (bell and stop name on board, G10); one VoiceOver sentence for the whole card and a spoken countdown (G30).
+* Card version 3 fields: delay in minutes and a live flag per time (`delayMin`, `departsLive`, `legArrivesLive`), optional, so older payloads still decode (G31).
+* Apple Watch app and complications use the same moments; never "Leaving now" early or a timer counting up; a service under a minute away is "Due now" (G27).
+* Kylie arrival clip `arrival.wav` ("You've arrived at your stop.") bundled as a notification sound, same voice and chime as the get off clips (G37). The server sends it by name to builds 212 and later.
+* The followed service Live Activity, never started by the app, is no longer bundled (G36). Seconds read "8:00:30pm" like every other time.
+* Build: the build workflow accepts build-212-rc on runtime 1.3.0 only, and sends Sentry every dSYM (the Watch app's included) and the JavaScript source map matched by debug ID.
+* No new background mode, no Always location, no Critical Alerts.
+
 ### Whole app polish pass (1 Nov, branch `polish-1nov` from tripflow-p2 f5e86fd, not released)
 JavaScript only, for the next update to runtime 1.2.0 or build 212. Nothing published.
 * Reliability: an alert tap that starts a closed app opens its trip, check or watch (it opened Home before). Every fresh position gives up after 12 s instead of spinning for ever, and Home says so in plain words. Links never throw when no app can open them. Alerts after a failed action show the app's own words, never a raw error (friendlyErr).

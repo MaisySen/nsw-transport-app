@@ -2,6 +2,12 @@
 
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
+## Build 212 (1 Nov, branch build-212-rc)
+
+* `app/test/build212.test.mjs`: runtime 1.3.0 and the workflow guard, the arrival clip (format, name, words), card version 3 redraws, the new card fields in both Swift copies and tripCard.ts, Due/Now never 0:00, one line status and VoiceOver probes, the whole trip widget, Watch moments, G36, battery, the polish audit native strings (N1, N2, N4), the Sentry step.
+* Native audit (`ios-native-audit.yml`): new Live Activity fixtures (Due late, Due on time, waiting late, Get off now, about 3 min, no live data 7 min, platform change), whole trip widget fixtures at each moment, and `WidgetRefreshLogicTests` for TripMoments (order, Due never zero, no Checking or Trip started, a row to the end, about then no live data).
+* On the phone (TestFlight): start a trip from home with a live train and lock the phone; the widget, Lock Screen card, Island and Watch must show the same moment at each step, the arrival clip plays at the stop, and nothing shows 0:00.
+
 ## Polish pass (1 Nov, branch polish-1nov)
 
 * `app/test/polish1nov.test.mjs`: links handle a refusal, no raw error in alerts (friendlyErr unit), 24 hour time wheels, live trip header sentence and Updated wording, Ask colours, chips and announcements, Dynamic Type pills and rows, Home platform change label, TalkBack live regions, stop retry, search failure text, cold start alert tap, every fresh position through freshFix (12 s, unit tested with a position that never comes), content keys in new trip lists, one pass beaten check, Watching states, undo announcement, channel name, Live badge colour, sentence case headers, picker retries, countdown redraw batching (unit tested), stand pin row.

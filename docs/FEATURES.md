@@ -4,6 +4,10 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Build 212 (1 Nov, branch `build-212-rc`, runtime 1.3.0, TestFlight)
+
+The Your trip widget follows a started trip from start to end: countdown to the live departure, Due, on board, your stop next, Get off now, Arrived, with the delay on the row and "about" or "No live data since" when the live times are old. The Lock Screen card and Dynamic Island show Due instead of a timer stuck at 0:00, keep the status on one line at every text size, and read the whole card as one sentence to VoiceOver. The Apple Watch shows the same moments. Arrival is spoken by Kylie ("You've arrived at your stop.") even when the phone is locked.
+
 ## Polish pass (1 Nov, branch `polish-1nov`, not released)
 
 Opening the app from an alert while it was closed opens the trip, morning check or watch the alert was about. Finding your location gives up after 12 seconds with a plain message. Time pickers follow a 24 hour phone. Plan rows, the live trip header and Home cards read as one sentence with VoiceOver and TalkBack, and Ask answers are announced. Buttons and chips grow with large text. Old data reads "Updated 7:47pm" on the live trip and trip results. Over the air (runtime 1.2.0) once released.
