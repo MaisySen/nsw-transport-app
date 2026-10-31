@@ -8,7 +8,7 @@ import { api, watchClock } from './api';
 import { notesWaitMs } from './pollCore';
 import { noteKey } from './liveCalc';
 import { allowPushTokens } from './forgetTokens';
-import { isServerGetOffWatch } from './getOffNotify';
+import { isServerGetOffWatch, tripPushQuiet } from './getOffNotify';
 
 Notifications.setNotificationHandler({
   // The ongoing trip notification updates quietly; every other alert shows as a banner with sound. The server's Get
@@ -17,6 +17,9 @@ Notifications.setNotificationHandler({
   handleNotification: async (n) => {
     const d = (n.request.content.data as any) || {};
     if (d.ongoing || serverGetOffQuiet(d, String(AppState.currentState || ''))) return { shouldShowBanner: false, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false };
+    // The running trip's "Next stop" push with its spoken sound while the app is open and reading it out (31 Oct): shown
+    // without the sound, so the moment is not heard twice.
+    if (tripPushQuiet(d.watch, (n.request.content as any).sound, String(AppState.currentState || ''))) return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false };
     return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false };
   },
 });

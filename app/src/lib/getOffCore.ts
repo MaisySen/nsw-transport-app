@@ -21,6 +21,10 @@ const NOW_MOVE_MS = 10000;
 const HOLD_MS = 30000;
 /** A rung alert found on the next refresh is still read out when it rang at most this long ago. */
 const SAY_LATE_MS = 45000;
+/** The phone's own "Next stop" (next<leg>) without a live stop list: this long before the live arrival (31 Oct). */
+export const NEXT_LEAD_MS = 90000;
+/** The phone's own "Next stop" is set this long after the service is due to leave the stop before (31 Oct). */
+export const NEXT_HOLD_MS = 40000;
 
 /**
  * The stored value, made safe: anything unknown is the default (1 stop, Get off now on). Get off now is on unless
@@ -134,6 +138,18 @@ export function getOffWords(legs: WatchLeg[], s: LiveState, k: number, kind: 'ea
   };
 }
 
+/** The words of the phone's own "Next stop" (next<leg>): the same as the trip's "Next stop" alert (liveCalc tripAlerts). */
+export function nextWords(legs: WatchLeg[], s: LiveState, k: number, f: Fmt) {
+  const l = legs[k];
+  const stop = f.short(l?.to);
+  const arr = s.L2[k]?.arr;
+  const at = Number.isFinite(arr) ? f.clock(arr) : '';
+  const change = k < legs.length - 1 ? legs[k + 1] : null;
+  return change
+    ? { title: `Next stop: ${stop}, change here`, body: `Get ready to change to the ${change.line}${at ? `. You get to ${stop} at ${at}` : ''}.` }
+    : { title: `Next stop: ${stop}`, body: `Get ready to get off${at ? `. You arrive at ${at}` : ''}.` };
+}
+
 /** The spoken Get off now: "Get off now at Central." (and "Change here." when another leg follows). */
 export function getOffSayText(stop: string, change: boolean): string {
   return `Get off now${stop ? ` at ${stop}` : ''}.${change ? ' Change here.' : ''}`;
@@ -163,6 +179,12 @@ export type GetOffTrip = {
    * done, and said when it rang with its spoken sound (`serverVoice`), so neither rung nor read out again. */
   serverRung?: Record<string, 1>;
   serverVoice?: boolean;
+  /** A server watch follows this trip, so its own "Next stop" push is the heads up (31 Oct). Without one (no push
+   * token, notifications only on the phone) the phone sets its own "Next stop" alert ahead (next<leg>), so the heads up
+   * rings with the phone locked too; before this it came only while the app was open. */
+  serverNext?: boolean;
+  /** Wake me before my stop is on: its alarm is the heads up, so no "Next stop" alert is set here. */
+  wake?: boolean;
 };
 /** The spoken alert sounds in the app (build 210 and later): a chime and a voice, played as the alert's own sound so
  * they are heard with the phone locked, where the app itself cannot speak. */
@@ -178,8 +200,9 @@ export type GetOffAction =
   | { t: 'say'; key: string; text: string; quiet?: boolean };
 
 /**
- * One refresh of the get off alerts, beside the trip's own alerts. With the default (1 stop, no Get off now) it does
- * nothing, so the alerts are exactly as before. Otherwise, for each leg still ahead:
+ * One refresh of the get off alerts, beside the trip's own alerts. For each leg still ahead:
+ * - "Next stop" (1 stop before, the default) is set on the phone as next<leg> when no server watch sends it and no
+ *   wake alarm stands in (31 Oct: with the phone locked it used to come only when the app was opened);
  * - "N stops to Central" (2 or 3 stops before) and "Get off now" are each set once as a local alert for the time
  *   the live stop times give, and moved when those times move;
  * - on the leg you are on, with live tracking, the service's real position decides the heads up: it comes once the
@@ -232,13 +255,45 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
     spoken = { ...spoken, [key]: 1 };
     actions.push(all ? { t: 'say', key, text } : { t: 'say', key, text, quiet: true });
   };
+  // "Next stop" set on the phone for each leg ahead (next<leg>, 31 Oct): when the service leaves the stop before yours
+  // (live stop list), else 90 s before the live arrival. Moved with the live times like the others. With the app open
+  // at the stop before, the trip's own "Next stop" alert and spoken line take over (liveCalc tripAlerts, speechCues)
+  // and the set one is taken back; one that has rung keeps those from repeating it (liveCalc nextRang, nextSaid).
+  function nextStep() {
+    if (s.done) return;
+    for (let k = s.cur; k < g.legs.length; k++) {
+      const key = 'next' + k;
+      if (alerted[key]) continue;
+      const prev = set[key];
+      if (prev != null && prev <= now) { delete voiced[key]; mark(key); delete set[key]; continue; }
+      const live = legLive(s, k);
+      if (!live) { cancel(key); continue; }
+      const riding = k === s.cur && s.phase === 'ride';
+      if (riding && s.stopsLeft != null && s.stopsLeft <= 1) { cancel(key); continue; }
+      // Set a little after the service is due to leave the stop before (NEXT_HOLD_MS), so with the app open the trip's
+      // own "Next stop", from live evidence that it has left, comes first and this one is taken back; never later than
+      // a minute before the arrival, so it always comes before Get off now.
+      const arr = nowArrival(s, k);
+      const dep = earlyTime(s, k, 1);
+      let at = Number.isFinite(dep) ? Math.max(dep, Math.min(dep + NEXT_HOLD_MS, Number.isFinite(arr) ? arr - 60000 : dep + NEXT_HOLD_MS))
+        : Number.isFinite(arr) ? arr - NEXT_LEAD_MS : NaN;
+      if (!Number.isFinite(at)) { cancel(key); continue; }
+      if (at <= now) at = now + HOLD_MS;
+      const w = nextWords(g.legs, s, k, f);
+      if (prev == null || Math.abs(prev - at) >= MOVE_MS || soundMoved(key, 'early')) schedule(key, 'early', at, w);
+    }
+  }
   const wantEarly = pref.stops > 1;
+  // The phone's own "Next stop" (1 stop before), set ahead so it rings locked: only when nothing else gives that heads
+  // up with the phone locked (no server watch, no wake alarm) and the choice is 1 stop (2 or 3 stops set early<leg>).
+  const wantNext = pref.stops === 1 && !g.serverNext && !g.wake;
   for (const key of Object.keys(set)) {
-    const m = /^(early|gnow)(\d+)$/.exec(key);
+    const m = /^(early|gnow|next)(\d+)$/.exec(key);
     const k = m ? Number(m[2]) : -1;
-    const off = !m || s.done || k < s.cur || (m[1] === 'early' ? !wantEarly : !pref.now);
+    const off = !m || s.done || k < s.cur || (m[1] === 'early' ? !wantEarly : m[1] === 'next' ? !wantNext : !pref.now);
     if (off) cancel(key);
   }
+  if (!s.done && wantNext) nextStep();
   if (!s.done && (wantEarly || pref.now)) {
     for (let k = s.cur; k < g.legs.length; k++) {
       const live = legLive(s, k);
@@ -368,3 +423,26 @@ export function serverRungKeys(watchId: string | null | undefined, shown: { data
 
 /** The Android channel an alert with a spoken sound rings on (a channel's sound is fixed when it is made). */
 export const getOffSoundChannel = (sound: GetOffSound) => sound;
+
+/**
+ * The trigger a get off alert is set with (31 Oct). iPhone: a time interval (seconds from now, at least 1) to the
+ * best known moment, which iOS counts down on its own with the app suspended or closed; set again (same identifier)
+ * on every live refresh, so it follows the live times while the app runs. Android keeps its date trigger. Null time:
+ * shown now.
+ */
+export function getOffTrigger(os: string, at: number | null, now: number, channelId: string): any {
+  if (at == null) return os === 'android' ? { channelId } : null;
+  if (os === 'ios') return { type: 'timeInterval', seconds: Math.max(1, Math.round((at - now) / 1000)), repeats: false };
+  return { type: 'date', date: at, channelId };
+}
+
+/**
+ * A trip push (the running trip's own watch) arriving with the app in front that rings with a spoken sound, while the
+ * app reads the same moment out itself (Speak alerts): shown, but without its sound, so it is not heard twice
+ * (31 Oct). iOS reports a bundled sound as "custom" (or its file name); "default" and none are the normal sound.
+ */
+export function tripPushSoundless(o: { watch: unknown; sound: unknown; appState: string; tripWatch: string | null; speaks: boolean }): boolean {
+  if (o.appState !== 'active' || !o.speaks || !o.tripWatch || o.watch !== o.tripWatch) return false;
+  const snd = typeof o.sound === 'string' ? o.sound : '';
+  return snd === 'custom' || /^getoff_(now|soon)(\.wav)?$/.test(snd);
+}

@@ -9,7 +9,7 @@ import type { Fare, Place, WatchLeg } from './types';
 import type { WatchSpec } from './watch';
 import { wakeId } from './smart';
 import { getOffId, readGetOff, readGetOffSay } from './getOffCore';
-import { cancelGetOff, serverGetOff, setServerGetOffWatch, soundChannels, voiceClips } from './getOffNotify';
+import { cancelGetOff, serverGetOff, setServerGetOffWatch, setTripWatch, soundChannels, voiceClips } from './getOffNotify';
 import { cancelWake } from './smartNotify';
 import { iosNative } from '../../modules/transport-ios';
 import { wantOngoing } from './leaveByCore';
@@ -129,6 +129,7 @@ export async function endLive() {
   // Wake alarms still set for this trip never ring after it ends.
   for (const k of Object.keys(g.wakeSet || {})) cancelWake(wakeId(g.id, Number(k))).catch(() => {});
   for (const k of Object.keys(g.offSet || {})) cancelGetOff(getOffId(g.id, k)).catch(() => {});
+  setTripWatch(null, false);
   setServerGetOffWatch(null);
   setLive(null);
   await clearOngoing();

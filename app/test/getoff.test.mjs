@@ -173,7 +173,9 @@ test('turning it back to 1 stop before it rings takes the set alerts back', () =
   const r = replay({ pref: { stops: 3, now: true }, prefAt: 2, pref2: { stops: 1, now: false } });
   assert.equal(r.early.length, 0);
   assert.equal(r.now.length, 0);
-  assert.equal(r.cancels.length, 2);
+  // The 2 alerts the 3 stop choice set; the phone's own Next stop (next0, 31 Oct) is set and taken back at the stop
+  // before, where the app's own Next stop alert says it.
+  assert.equal(r.cancels.filter((c) => /-(early|gnow)\d+$/.test(c.id)).length, 2);
   assert.equal(r.next.length, 1, 'the Next stop alert stays');
 });
 

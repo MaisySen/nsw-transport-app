@@ -16,7 +16,7 @@ const tapped = new Set<string>();
 import { wakeStep } from './smart';
 import { hasSpeech, speak } from './nativeExtras';
 import { getOffStep, readGetOff, readGetOffSay } from './getOffCore';
-import { cancelGetOff, getOffNow, scheduleGetOff, serverGetOffShown, setServerGetOffWatch, voiceClips } from './getOffNotify';
+import { cancelGetOff, getOffNow, scheduleGetOff, serverGetOffShown, setServerGetOffWatch, setTripWatch, voiceClips } from './getOffNotify';
 import { store } from './store';
 import { cancelWake, scheduleWake, wakeNow } from './smartNotify';
 import { endedWatches } from './push';
@@ -133,8 +133,11 @@ export async function tickLive() {
     // Get off now from the server (30 Oct, build 210): not set on the phone; one the server already showed is done.
     const server = !!g.offServer && !!g.watchId;
     setServerGetOffWatch(server ? g.watchId : null);
+    setTripWatch(g.arrivedAt ? null : g.watchId, !!g.speak && hasSpeech());
     const serverRung = server ? await serverGetOffShown(g.watchId) : undefined;
     const o = getOffStep({ id: g.id, legs: g.legs, alerted: w.g.alerted, offSet: g.offSet, speak: g.speak && hasSpeech(), sayNow: readGetOffSay(store.getOffSay()) && hasSpeech(), spoken: r.g.spoken, voice, offVoice: g.offVoice,
+      // A server watch sends "Next stop" (its push), else the phone sets its own ahead (31 Oct, getOffCore next<leg>).
+      serverNext: !!g.watchId, wake: !!g.wake,
       ...(server ? { server: true, serverRung, serverVoice: !!voice && (voice.now || voice.all) } : {}) }, readGetOff(store.getOff()), r.s, now, fmt);
     put({ svc: svcCache.slice(), st: r.s, offline: failed ? 'Connection lost. Showing the last live times.' : null, ...(failed ? {} : { updated: now }) });
     if (r.g !== g || w.g.alerted !== r.g.alerted || w.g.wakeSet !== g.wakeSet || o.g.offSet !== g.offSet || o.g.alerted !== w.g.alerted || o.g.spoken !== r.g.spoken || o.g.offVoice !== g.offVoice) {

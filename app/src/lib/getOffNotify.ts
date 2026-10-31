@@ -8,7 +8,7 @@
 import { Platform } from 'react-native';
 import * as Application from 'expo-application';
 import * as Notifications from 'expo-notifications';
-import { getOffSoundChannel, serverGetOffSupported, serverRungKeys, voiceClipsSupported, type GetOffSound } from './getOffCore';
+import { getOffSoundChannel, getOffTrigger, tripPushSoundless, serverGetOffSupported, serverRungKeys, voiceClipsSupported, type GetOffSound } from './getOffCore';
 import { isOn } from './config';
 
 /** The Android channel the trip's own alerts use (live.ts makes it at launch). */
@@ -54,9 +54,7 @@ async function put(id: string, at: number | null, title: string, body: string, s
       // Time sensitive (iOS 15 and later) so it breaks through a Focus and lights the screen; a build without the
       // entitlement shows it as a normal alert. Other platforms ignore the field.
       content: { title, body, data: { go: 1, ...(voice ? { voice: 1 } : {}) }, sound: voice && sound ? `${sound}.wav` : true, interruptionLevel: 'timeSensitive' },
-      trigger: at == null
-        ? (Platform.OS === 'android' ? { channelId } : null)
-        : { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at, channelId } as any,
+      trigger: getOffTrigger(Platform.OS, at, Date.now(), channelId) as any,
     });
     return true;
   } catch { return false; }
@@ -108,3 +106,10 @@ export async function serverGetOffShown(watchId: string | null): Promise<Record<
     return serverRungKeys(watchId, shown.map((x) => ({ data: x.request.content.data })));
   } catch { return {}; }
 }
+
+/** The running trip's watch and whether the app reads its moments out (Speak alerts, with speech): liveEngine sets it. */
+let tripWatch: string | null = null;
+let tripSpeaks = false;
+export const setTripWatch = (id: string | null, speaks: boolean) => { tripWatch = id; tripSpeaks = !!id && speaks; };
+/** push.ts: this push is the running trip's, rings with a spoken sound, and the app is saying the same thing now. */
+export const tripPushQuiet = (watch: unknown, sound: unknown, appState: string) => tripPushSoundless({ watch, sound, appState, tripWatch, speaks: tripSpeaks });

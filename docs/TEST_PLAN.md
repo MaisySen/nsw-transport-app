@@ -31,6 +31,10 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 
 
+### Get off alert locked and never late (31 Oct, branch `getoff-bg` from build-210-rc a9541f1)
+* App (OFFLINE=1, TZ=Australia/Sydney): 1,031 tests, 1,027 pass, 4 skipped, 0 fail. Battery 17/17, tsc clean, backend 644/644 (guards pass). getoffbg31 12/12, getoff 20/20, getoffpush 9/9, getoffvoice 12/12.
+* `app/test/getoffbg31.test.mjs`: locked after Start trip with no server watch, Next stop and Get off now ring from the phone with `getoff_soon` and `getoff_now`, Next stop first; a delay seen while open moves both under the same id; app open, the phone's Next stop is taken back and the app says it once; a server watch means no phone Next stop, and one arriving later takes it back; server Get off now sets nothing on the phone and its push is done once shown; opened 3 min after the arrival nothing is said or rung and the trip is arrived with nothing left set (fails on a9541f1: "You've arrived at Central." said 3 min late); opened after the phone's voiced Next stop, not said again; `cueStale`, `getOffTrigger`, `tripPushSoundless`; wiring (time sensitive, sound names, stable ids, token registered at Start trip).
+
 ### Build 210 final check (31 Oct morning, branch `build-210-rc` at 1e823a4, not built)
 * App (OFFLINE=1, TZ=Australia/Sydney): 1,016 tests, 1,012 pass, 4 skipped, 0 fail. Battery 17/17, tsc clean, backend 644/644 (guards pass). instantpaint R1 to R6 9/9, fromloc 10/10, pastnow 21/21, trippages 9/9, widgetleave 3/3, livestops 11/11, getoffpush 9/9, getoffvoice 12/12, getoffvoice31 2/2, widgetfit210 8/8, nativeaudit 6/6.
 * Native audit final run 41137445922 (1e823a4): iPhone 1,426 shots, Watch 120 shots, 0 drawn outside their box; sheets read by eye.

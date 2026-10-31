@@ -463,6 +463,42 @@ export function tapMoments(s: LiveState, now: number): string[] {
   return left <= 60000 && left > -30000 ? ['leave' + s.cur] : [];
 }
 
+/** A moment read out or shown this long after it happened is still news; later it is not (getOffCore SAY_LATE_MS). */
+export const CUE_LATE_MS = 45000;
+
+/**
+ * Whether a trip alert or spoken cue (by key) is too late to give (31 Oct): "You've arrived" more than 45 s after the
+ * arrival, and "Next stop" / "Your stop is next" (off<k>) once the arrival at that stop has passed by the phone's clock
+ * (R3, the same rule as departed services). Every other cue is about the state right now, so it is never stale.
+ */
+export function cueStale(key: string, s: LiveState, now: number): boolean {
+  if (key === 'arrived') return !(s.done && Number.isFinite(s.eta) && now - s.eta <= CUE_LATE_MS);
+  const m = /^off(\d+)$/.exec(key);
+  if (!m) return false;
+  if (s.done) return true;
+  const a = s.L2[Number(m[1])]?.arr;
+  return typeof a === 'number' && Number.isFinite(a) && a <= now;
+}
+
+/** The phone's own "Next stop" alert for leg k (getOffCore next<k>, set ahead so it rings locked) has rung. */
+function nextRung(g: LiveTripLike, k: string, now: number): boolean {
+  const key = 'next' + k;
+  const at = g.offSet?.[key];
+  return !!g.alerted?.[key] || (typeof at === 'number' && at <= now);
+}
+function nextRang(g: LiveTripLike, key: string, now: number): boolean {
+  const m = /^off(\d+)$/.exec(key);
+  return !!m && nextRung(g, m[1], now);
+}
+/** Not read out again when that alert rang with its spoken sound, or the app already read it out. */
+function nextSaid(g: LiveTripLike, key: string, now: number): boolean {
+  const m = /^off(\d+)$/.exec(key);
+  if (!m) return false;
+  const k2 = 'next' + m[1];
+  const at = g.offSet?.[k2];
+  return !!g.spoken?.[k2] || (typeof at === 'number' && at <= now && !!g.offVoice?.[k2]);
+}
+
 export type LiveTripLike = {
   id: string; legs: WatchLeg[]; alerted: Record<string, 1>; watchId: string | null; share: { id: string; key: string; pos: boolean } | null;
   rode?: Record<number, number>; arrivedAt?: number | null;
@@ -472,6 +508,8 @@ export type LiveTripLike = {
   wake?: boolean;
   /** Speak alerts is on, and the alerts already read out (their own memory, apart from the notifications). */
   speak?: boolean; spoken?: Record<string, 1>;
+  /** The get off alerts set on the phone (getOffCore offSet, offVoice): read here only for "Next stop" (next<k>). */
+  offSet?: Record<string, number>; offVoice?: Record<string, 1>;
 };
 export type LiveAction =
   | { t: 'ongoing'; title: string; body: string; leg: number }
@@ -525,17 +563,30 @@ export function stepLive(g: LiveTripLike, svc: (ServiceResp | null | undefined)[
   const list = tripAlerts(g.legs, s, n.alerted || {}, !!n.watchId, f).filter((a) => !(g.wake && a.key.startsWith('off')));
   if (list.length) {
     const alerted = { ...(n.alerted || {}) };
-    for (const a of list) { alerted[a.key] = 1; actions.push({ t: 'alert', id: `trip-${g.id}-${a.key}`, key: a.key, title: a.title, body: a.body }); }
+    for (const a of list) {
+      alerted[a.key] = 1;
+      // Not shown when its moment has gone (the app was in the background, 31 Oct): no late "You've arrived" banner
+      // minutes after, and no "Next stop" once the stop is behind you by the phone's clock. Also not when the phone's
+      // own "Next stop" alert set for this leg (getOffCore next<k>) has already rung: one moment, one alert.
+      if (cueStale(a.key, s, now) || nextRang(g, a.key, now)) continue;
+      actions.push({ t: 'alert', id: `trip-${g.id}-${a.key}`, key: a.key, title: a.title, body: a.body });
+    }
     n = { ...n, alerted };
   }
   // Speak alerts reads out the same moments on its own: also when the server sends the notifications (the phone
   // then shows none, so before this nothing was ever said) and when the wake alarm stands in for "Next stop".
+  // Never late (31 Oct, Bidur on build 210: "If i open app now. It will speak now", minutes after he arrived): the app
+  // cannot speak in the background, so a moment that passed while it was there is kept as said, quietly.
   if (g.speak) {
     const said = n.spoken || {};
     const say = speechCues(g.legs, s, now, f).filter((a) => !said[a.key]);
     if (say.length) {
       const spoken = { ...said };
-      for (const a of say) { spoken[a.key] = 1; actions.push({ t: 'say', key: a.key, text: a.text }); }
+      for (const a of say) {
+        spoken[a.key] = 1;
+        if (cueStale(a.key, s, now) || nextSaid(g, a.key, now)) continue;
+        actions.push({ t: 'say', key: a.key, text: a.text });
+      }
       n = { ...n, spoken };
     }
   }
