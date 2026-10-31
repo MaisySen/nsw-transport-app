@@ -2,6 +2,12 @@
 
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
+## Polish pass (1 Nov, branch polish-1nov)
+
+* `app/test/polish1nov.test.mjs`: links handle a refusal, no raw error in alerts (friendlyErr unit), 24 hour time wheels, live trip header sentence and Updated wording, Ask colours, chips and announcements, Dynamic Type pills and rows, Home platform change label, TalkBack live regions, stop retry, search failure text, cold start alert tap, every fresh position through freshFix (12 s, unit tested with a position that never comes), content keys in new trip lists, one pass beaten check.
+* `app/test/askbrain.test.mjs`: what Ask heard follows a 24 hour phone while the question text to the server keeps its clock.
+* Latency from Sydney (globalping, 3 probes, cold then warm) for each screen's endpoint: files/night-1nov/polish-latency-sydney.json on the worker box; summary in the polish report.
+
 ## New live trip flow (31 Oct, branch tripflow-p2)
 
 * `app/test/journeysim-real.test.mjs`: the 30 journey cases and invariants I1 to I10, checked every second on the real app code (tripState, liveCalc, tripCard) and compared frame by frame with the reference engine; the I3 timetable shift; the build 211 failure replays still fail.

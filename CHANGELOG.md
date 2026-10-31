@@ -2,6 +2,18 @@
 
 What changed in Transport, newest first. Times are Sydney time. Build numbers, update ids and links are in [docs/RELEASES.md](docs/RELEASES.md).
 
+## 1 Nov 2026
+
+### Whole app polish pass (1 Nov, branch `polish-1nov` from tripflow-p2 f5e86fd, not released)
+JavaScript only, for the next update to runtime 1.2.0 or build 212. Nothing published.
+* Reliability: an alert tap that starts a closed app opens its trip, check or watch (it opened Home before). Every fresh position gives up after 12 s instead of spinning for ever, and Home says so in plain words. Links never throw when no app can open them. Alerts after a failed action show the app's own words, never a raw error (friendlyErr).
+* 24 hour phones: the time wheels in Plan and trip reminders show one 00 to 23 hour wheel and no am/pm wheel; what Ask heard follows the phone.
+* VoiceOver and TalkBack: Plan rows and the live trip arrival header read as one sentence; Home cards say a platform change; Ask answers are announced once; TalkBack no longer re-reads "Leave in" and "Updated" every minute.
+* Dynamic Type: Ask chips, header pills (Speak, Board, Direction, Route) and bus stop rows grow with text instead of clipping; route group headers, mode chips, line chips and live trip setup pills reach 44 pt.
+* Wording: one "Updated 7:47pm" wording for old data on the live trip and trip results; "Timetable only" instead of a second "due" meaning on the live trip; "Plat 4" everywhere; search says when the server cannot be reached instead of "No stops match that"; stop board gets Try again; commute alert switch handles a failed save.
+* Speed: trip results check "beaten" rows in one pass; new trip lists keyed by content (no remount on filter); Ask user bubbles skip the minute tick.
+* Security audit (no change needed in the app): no secrets in the tree or history, dependency advisories are build tools only. Notes for the server in the polish report.
+
 ## 31 Oct 2026
 
 ### Trip flow 2 shipped (31 Oct, 11:11 to 11:28 PM; owner's yes 11:07 PM)
