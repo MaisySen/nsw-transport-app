@@ -27,7 +27,7 @@ globalThis.Date = SimDate;
 const raw = fs.readFileSync(path.join(backend, "src/worker.js"), "utf8").replace(/export default\s*\{/, "const __default = {");
 // Only the names this worker has (an older branch has no trip flow pass: the run then drives its minute tick, which is
 // how a failing-first run on server-211-rc shows what the old server does with each case).
-const WANT = ["tfPass", "tfPassStep", "serverCfg", "TF", "LIVECARD", "tfLegRaw", "tfLegReading", "tfPlanLeg", "tfState", "tfCard", "tfNext", "runTick"];
+const WANT = ["tfPass", "tfPassStep", "serverCfg", "TF", "LIVECARD", "tfLegRaw", "tfLegReading", "tfPlanLeg", "tfState", "tfCard", "tfNext", "runTick", "svcOffIndex"];
 const src = raw + "\nexport { __default, " + WANT.filter((n) => new RegExp("\\n(?:async )?(?:function|const|let) " + n + "\\b").test(raw)).join(", ") + " };\n";
 // A fresh copy of the worker for each case: its feed copies and shared jobs are kept in memory by the clock, and each
 // case starts its clock again.
@@ -221,10 +221,12 @@ export function checkPushes(id, server, simRun) {
  * One /api/service answer for a case's leg at case time tSec, as the app asks it (board=1 for a trip flow 2 app before
  * the train leaves). For the board row contract test (backend/test/service-board.test.mjs).
  */
-export async function serviceAt(id, tSec, extra = {}, li = 0) {
+export async function serviceAt(id, tSec, extra = {}, li = 0, opts = {}) {
   await startFake();
   await freshWorker();
   const net = caseNet(caseById(id));
+  // opts.names: more stop index entries (a stop id the case's feed does not list, for matching by name)
+  if (opts.names) Object.assign(net.names, opts.names);
   caught = { apple: [], expo: [], nsw: 0, other: [] };
   clock = at(tSec);
   await realFetch(`${FAKE}/__mode?set=case&case=${encodeURIComponent(id)}&base=${BASE}`);

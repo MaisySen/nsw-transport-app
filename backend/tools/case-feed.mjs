@@ -60,6 +60,10 @@ export function caseFeed(net, base, t, kind) {
           // Stops in between carry a projected time (the stop before yours needs its timetable time for "Next: X").
           const own = k <= leg.off && L.est[k] != null ? L.est[k] : (k > 0 && k < leg.off && L.runDelay != null ? tt + L.runDelay : null);
           if (own == null && L.runDelay == null) continue;
+          // A plan stop with no news of its own is listed with no times (the run's delay rides the other stops): Sydney
+          // Trains' delay with no clock time at a stop is that stop's own estimate (the open app reads it as one through
+          // /api/service, so the server does too, 31 Oct 2026), so a carried delay is never put on a plan stop.
+          if (own == null && k <= leg.off) { stus.push(msg(2, [...num(1, k + 1), ...str(4, stopIdOf(leg, k))])); continue; }
           const ev = own != null ? [...num(1, own - tt), ...num(2, Math.floor(base / 1000) + own)] : [...num(1, L.runDelay)];
           stus.push(msg(2, [...num(1, k + 1), ...msg(2, ev), ...msg(3, ev), ...str(4, stopIdOf(leg, k))]));
         }

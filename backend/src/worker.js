@@ -2189,6 +2189,21 @@ function distM(aLat, aLon, bLat, bLon) {
 }
 function baseName(n) { return String(n || "").split(",")[0].trim().toLowerCase(); }
 
+/**
+ * The stop off in a service answer's stop list: the id asked for (after your stop when it is listed twice), else, given
+ * the stop's name, the first stop of that station after your stop (a station id like Croydon's 213210, or another
+ * platform's id, for the platform 213284 the run lists: 31 Oct 2026 live check). -1 when neither is there.
+ */
+function svcOffIndex(stops, to, mine, toName) {
+  if (!to) return -1;
+  let k = stops.findIndex((s, i) => s.id === to && i > mine);
+  if (k < 0) k = stops.findIndex((s) => s.id === to);
+  if (k >= 0 || !toName) return k;
+  k = stops.findIndex((s, i) => i > mine && baseName(s.name) === baseName(toName));
+  if (k < 0 && mine < 0) k = stops.findIndex((s) => baseName(s.name) === baseName(toName));
+  return k;
+}
+
 async function service(env, q) {
   const mode = q.mode || "bus", line = q.line || "", tripId = q.trip || null;
   const feed = q.feed && (own(FEEDS, q.feed) || own(FEED_GROUPS, q.feed)) ? q.feed : null;
@@ -2373,12 +2388,20 @@ async function service(env, q) {
   let mine = q.stop ? stops.findIndex((s) => s.id === q.stop) : -1;
   // On a run the stop asked about is the visit nearest the planned time (a loop calls at a stop twice).
   if (source === "own" && plannerFrom >= 0 && stops[plannerFrom] && (mine < 0 || stops[plannerFrom].id === q.stop)) mine = plannerFrom;
-  if (mine < 0 && q.stopName) mine = stops.findIndex((s) => baseName(s.name) === baseName(q.stopName));
+  // A station id (213510) or another platform's id names the same stop as the platform the run lists (2135237): matched
+  // by the station's name, from the name the app sent or the stop index (31 Oct 2026 live check: Croydon's station id
+  // found no stop off, its platform id did).
+  let idNames = null;
+  const namesOf = async () => (idNames = idNames || (await stopInfo(env, [q.stop, q.to].filter(Boolean)).catch(() => ({}))));
+  const stopName = q.stopName || (mine < 0 && q.stop && ((await namesOf())[q.stop] || {}).name) || "";
+  if (mine < 0 && stopName) mine = stops.findIndex((s) => baseName(s.name) === baseName(stopName));
   // The planner's run starts where it was asked from: your stop, even when it names another platform of the station
   // (a platform change, or a City Circle run asked from Central to Central).
   if (mine < 0 && plannerFrom >= 0 && stops[plannerFrom]) mine = plannerFrom;
   if (mine >= 0) stops[mine].mine = true;
-  let alight = q.to ? stops.findIndex((s) => s.id === q.to) : -1;
+  let alight = svcOffIndex(stops, q.to, mine, null);
+  // The stop off by station: its name (the name the app sent, else the stop index's name for the id) after your stop.
+  if (alight < 0 && q.to) alight = svcOffIndex(stops, q.to, mine, q.toName || ((await namesOf())[q.to] || {}).name || null);
   if (alight >= 0) stops[alight].alight = true;
 
   let where = null;
@@ -6012,8 +6035,14 @@ function tfLegRaw(l, tu, veh, info, asOf) {
     if (x && x.delay != null && (nearest == null || Math.abs(k - Math.max(0, bi)) < Math.abs(nearest.k - Math.max(0, bi)))) nearest = { k, d: x.delay };
   }
   if (nearest) r.runDelay = nearest.d;
+  // Sydney Trains publishes a delay with no clock time: that delay at your stop is still your stop's own live time
+  // (planned plus delay, as /api/service gives the open app, so the phone and the card agree, I6). Without it the card
+  // fell back to the departure board's time: 31 Oct 2026 11:17 PM T1 at Strathfield, board 11:29:06 while the stop's
+  // own delay (and the train, at Lidcombe 3.5 min late) said 11:20:30.
+  const plannedPlus = (t, x) => (x && x.t == null && x.delay != null && Number.isFinite(ms(t)) ? ms(t) + x.delay * 1000 : null);
   const b = bi >= 0 ? timeOf(stus[bi], false) : null;
   if (b && b.t != null) r.est[0] = b.t;
+  else if (plannedPlus(l.planned, b) != null) r.est[0] = plannedPlus(l.planned, b);
   if (oi > 0 && oi - 1 > bi && bi >= 0) {
     const u = stus[oi - 1], x = timeOf(u, false), nm = nameOf(u.stopId);
     if (x && nm && x.t != null) { r.before = { id: u.stopId, name: nm, planned: x.t - (x.delay || 0) * 1000 }; r.est[1] = x.t; }
@@ -6021,9 +6050,14 @@ function tfLegRaw(l, tu, veh, info, asOf) {
   const offIdx = r.before ? 2 : 1;
   const a = oi >= 0 ? timeOf(stus[oi], true) : null;
   if (a && a.t != null) r.est[offIdx] = a.t;
-  if (veh && veh.stopId && Number.isFinite(veh.ts)) {
-    const vi = stus.findIndex((u) => u.stopId === veh.stopId);
-    const at = veh.status === 1;
+  else if (plannedPlus(l.arrPlanned || null, a) != null) r.est[offIdx] = plannedPlus(l.arrPlanned, a);
+  if (veh && Number.isFinite(veh.ts) && !(Number.isFinite(veh.ageS) && veh.ageS * 1000 > LIVECARD.TRIP_RULES.VEHICLE_MAX_AGE)) {
+    // The vehicle's stop: the feed's stop id when it is one of the trip's stops; else where its position lies along the
+    // trip's stops (Sydney Trains names a place, "Lidcombe.ST406S Loc", not a stop id, so without this the server never
+    // saw the train move and the trip never left or arrived on the card; the open app already places it this way).
+    let vi = veh.stopId ? stus.findIndex((u) => u.stopId === veh.stopId) : -1;
+    let at = veh.status === 1;
+    if (vi < 0) { const g = tfVehOnRun(veh, stus, info); if (g) { vi = g.k; at = g.at; } }
     let v = null;
     if (vi >= 0 && bi >= 0) {
       const before = r.before ? oi - 1 : -1;
@@ -6032,10 +6066,36 @@ function tfLegRaw(l, tu, veh, info, asOf) {
       else if (before >= 0 && vi === before) v = at ? { stop: 1, state: "at" } : { stop: 0, state: "left" };
       else if (vi > bi) v = { stop: 0, state: "left" };
       else if (vi === bi && at) v = { stop: 0, state: "at" };
+      // still on its way to your stop: a fresh position says it has not left yet (as the open app reads it)
+      else v = { stop: -1, state: "left" };
     }
     if (v) { v.at = veh.ts; r.vehicle = v; }
   }
   return r;
+}
+
+/**
+ * Where a vehicle's position lies along a trip update's stops (their coordinates from the stop index): { k, at } with
+ * at true within LIVECARD's AT_STOP_M of stop k, else heading to stop k (the nearest segment, at most 1.5 km off the
+ * line). The open app's vehicleOnRun, on the server's stops. null when it is not on this part of the route.
+ */
+function tfVehOnRun(veh, stus, info) {
+  if (!veh || !Number.isFinite(veh.lat) || !Number.isFinite(veh.lon)) return null;
+  const pts = stus.map((u, k) => ({ k, s: info[u.stopId], skip: u.rel === 1 })).filter((x) => x.s && Number.isFinite(x.s.lat) && Number.isFinite(x.s.lon));
+  if (!pts.length) return null;
+  let near = -1, nd = Infinity, best = Infinity, bk = -1;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i].s, da = distM(veh.lat, veh.lon, a.lat, a.lon);
+    if (da < nd) { nd = da; near = pts[i].k; }
+    if (i + 1 < pts.length) {
+      const b = pts[i + 1].s;
+      const ex = da + distM(veh.lat, veh.lon, b.lat, b.lon) - distM(a.lat, a.lon, b.lat, b.lon);
+      if (ex < best) { best = ex; bk = pts[i + 1].k; }
+    }
+  }
+  if (near >= 0 && nd < LIVECARD.TRIP_RULES.AT_STOP_M) return { k: near, at: true };
+  if (bk >= 0 && best <= 1500) return { k: bk, at: false };
+  return null;
 }
 
 /** The plan leg (tripState) for one registered leg and its raw reading: boarding, the stop before yours when known, yours. */
@@ -7487,7 +7547,7 @@ function json(obj, status = 200) {
 function textRes(s) { return new Response(s, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "*", ...API_SEC_HEADERS } }); }
 function serviceQuery(p) {
   const q = {};
-  for (const k of ["trip", "mode", "line", "feed", "stop", "destId", "planned", "to", "stopName", "dest", "color"]) if (p.get(k)) q[k] = p.get(k);
+  for (const k of ["trip", "mode", "line", "feed", "stop", "destId", "planned", "to", "stopName", "toName", "dest", "color"]) if (p.get(k)) q[k] = p.get(k);
   // board=1: trip flow 2 apps before the train leaves ask for the boarding stop's board row too (serviceBoardRow)
   if (p.get("board") === "1") q.board = "1";
   return q;
