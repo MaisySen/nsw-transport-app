@@ -6,7 +6,7 @@ The iPhone and Android apps are one Expo app (`app/`). Anything below marked "ov
 
 ## Live Activity on the Lock Screen and in the Island (build 211 candidate, 31 Oct)
 
-The countdown reads "6 min" (or "1 hr, 5 min", "Now") on one line and keeps counting by itself. On a live trip the Lock Screen card shows the same stop track as the Island (your stops as dots, the train, a bell at your stop, "Next:" and the arrival), with "2 stops · 3 min late" or "2 stops · On time" on one line. The Island shows "3 min late" or "On time" under its countdown. At the largest text sizes the card shows just the stop name, so it is never cut. Needs build 211 (not over the air).
+The countdown reads "6 min" (or "1 hr, 5 min", "Now") on one line and keeps counting by itself. On a live trip the Lock Screen card shows the same stop track as the Island (your stops as dots, the train, a bell at your stop, "Next:" and the arrival), with "2 stops · 3 min late" or "2 stops · On time" on one line. The Island shows "3 min late" or "On time" under its countdown. Titles are always one line: "Get off at Croydon", or just the stop when space is short, and only a very long name at the largest text sizes is cut at its end. In the Island the countdown keeps the same inset from the right edge as the line badge has on the left. Needs build 211 (not over the air).
 
 ## System settings (31 Oct, build 210)
 
