@@ -74,6 +74,9 @@ struct LiveTripIslandTrailing: View {
                     .lineProbe("island-delay", text: d, lines: 1, font: .caption2.weight(.semibold), minScale: 0.8)
             }
         }
+        // Round 2 (build 211): 4 pt in from the right edge, the same as the line badge keeps on the left, so the countdown
+        // stays clear of the Island's rounded corner (native audit IslandEdge; 97b2d03 drew it flush with the edge).
+        .padding(.trailing, 4)
         .frame(minWidth: 80, maxWidth: 104, alignment: .trailing)
     }
 }
@@ -84,16 +87,54 @@ func delayColor(_ words: String) -> Color { words == "On time" ? .green : .orang
 struct LiveTripIslandCenter: View {
     var state: LiveTripAttributes.ContentState
     var stale = false
-    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
-        // Two lines under the camera before "Get off at Sydney…" (native audit), shrinking to 0.65 before it is cut
-        // (31 Oct final check: "Sydney Olym..." at the largest text, "You've arrived at Macquarie Univers..." on the 6.1 inch).
-        // Very large text (build 211 line check): just the stop name, "Macquarie University", so it stays whole.
-        let headline = typeSize >= .xxLarge ? state.bareHeadline(stale: stale) : state.headline(stale: stale)
-        return Text(headline).font(.subheadline.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.65)
-            .lineProbe("island-stop", text: headline, lines: 2, font: .subheadline.weight(.semibold), minScale: 0.65)
-            .accessibilityLabel(state.headline(stale: stale))
-            .multilineTextAlignment(.center)
+        // One line under the camera (round 2, build 211): the first 211 candidate wrapped "Get off at / Croydon" in every
+        // Island shot, where the owner's build 210 iPhone showed one line. The whole title, then the same a size smaller,
+        // then the stop alone after the bell the stop track uses for it ("Croydon"), then the stop alone shrinking to
+        // 0.65 before it is cut at its end. Never two lines. VoiceOver reads the whole title.
+        LiveTripTitle(full: state.headline(stale: stale), bare: state.bareHeadline(stale: stale), probe: "island-stop",
+                      font: .subheadline.weight(.semibold), smaller: .footnote.weight(.semibold),
+                      symbol: state.arrived(stale: stale) ? "checkmark.circle.fill" : "bell.fill", minScale: 0.65)
+    }
+}
+
+/// A Live Activity title on exactly one line (round 2, build 211): the first that fits of the whole title ("Get off at
+/// Croydon"), the whole title in `smaller`, the stop alone after `symbol`, and last the stop alone, shrinking to
+/// `minScale` and then cut at its end. `full` and `bare` are the same when there is nothing to drop ("To Hornsby").
+struct LiveTripTitle: View {
+    var full: String
+    var bare: String
+    var probe: String
+    var font: Font
+    var smaller: Font? = nil
+    var symbol: String? = nil
+    var minScale: CGFloat = 0.7
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            if bare != full {
+                line(full, font)
+                if let smaller { line(full, smaller) }
+                if let symbol {
+                    // Unscaled and only used when it fits whole, so it needs no probe.
+                    (Text(Image(systemName: symbol)).foregroundColor(.secondary) + Text(" " + bare))
+                        .font(font)
+                        .lineLimit(1)
+                }
+            }
+            Text(bare)
+                .font(font)
+                .lineLimit(1)
+                .minimumScaleFactor(minScale)
+                .truncationMode(.tail)
+                .lineProbe(probe, text: bare, lines: 1, font: font, minScale: minScale)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(full)
+    }
+
+    private func line(_ t: String, _ f: Font) -> some View {
+        Text(t).font(f).lineLimit(1).lineProbe(probe, text: t, lines: 1, font: f)
     }
 }
 
@@ -401,53 +442,35 @@ struct StopTrackView: View {
 }
 
 /// One card that changes with the trip: waiting, on board, at a change, then the last leg.
-/// The first layout that fits wins: the headline, detail and warning on up to two lines, then one (native audit,
-/// 30 Oct: "Get off at Syd…" on the smallest iPhone). The line badge never truncates. The stop name shrinks to 0.7
-/// in every layout before it is cut (31 Oct final check: "Get off at Macquarie Univer..." on the SE at normal text,
-/// "Get off at Rand..." at the largest text; was 0.8).
+/// The first layout that fits wins: the detail and warning on up to two lines, then one (native audit, 30 Oct: "Get off
+/// at Syd…" on the smallest iPhone). The line badge never truncates. The title is always one line (round 2, build 211):
+/// "Get off at Croydon", or the stop alone ("Macarthur") when the whole title does not fit beside the countdown, the
+/// "Get off" over the countdown saying the rest; the stop shrinks to 0.7 before it is cut at its end.
 struct LiveTripLockCard: View {
     var attrs: LiveTripAttributes
     var state: LiveTripAttributes.ContentState
     var stale = false
-    @Environment(\.dynamicTypeSize) private var typeSize
-
-    /// The stop track, except at the largest text sizes with a long stop name: there the name stays whole on the bar
-    /// layouts (build 211 line check: "Macquarie Centre and University" was cut beside the track at xxxLarge).
-    private var showsTrack: Bool {
-        guard state.showsTrack(stale: stale) else { return false }
-        return typeSize < .xxLarge || state.bareHeadline(stale: stale).count <= 16
-    }
 
     var body: some View {
         ViewThatFits(in: .vertical) {
-            // Build 210: the stop track in place of the bar when the card carries the leg's stops. The stop off
-            // name stays whole first (owner, 30 Oct: "Get off at Five..."): "6 stops" and the late or change words
-            // share one line before the headline is cut, and the track stays before the bar layouts are used.
+            // Build 210: the stop track in place of the bar when the card carries the leg's stops. "6 stops" and the
+            // late or change words share one line before the track gives way to the bar layouts.
             // Build 211 (31 Oct): the owner's build 210 iPhone showed the bar, not the stop track, on a T1 trip with
             // "2 stops" and "3 min late" on their own lines under a two line "in 6 / minutes": that card was too tall
             // for the Lock Screen. Now the countdown is one line ("6 min") and the track layouts put the stops and the
             // delay on one line ("2 stops · 3 min late"), so the track fits with room to spare.
-            if showsTrack {
+            // Round 2: with the title on one line in every layout, a long stop name no longer needs the bar layouts'
+            // extra lines at the largest text sizes (the first 211 candidate gave it up to three).
+            if state.showsTrack(stale: stale) {
                 card(lines: 2, track: true, merged: true)
-                card(lines: 1, track: true, merged: true, headLines: 2)
-                card(lines: 1, track: true, merged: true, headLines: 2, headScale: 0.65)
                 card(lines: 1, track: true, merged: true)
             }
-            // Largest text sizes: a long stop name may take three lines before it is cut (build 211 line check:
-            // "Macquarie Centre and University" on the SE at xxxLarge).
-            if typeSize >= .xxLarge {
-                card(lines: 1, track: false, merged: true, headLines: 3, headScale: 0.65)
-                card(lines: 1, track: false, merged: true, headLines: 3, headScale: 0.65, arriveLine: false)
-            }
             card(lines: 2, track: false)
-            // The stop name keeps its two lines before the detail and warning do (31 Oct readiness audit: "Get off at
-            // Chatsw..." on the SE with a change warning, the owner's "Get off at Five..." case).
-            card(lines: 1, track: false, headLines: 2)
-            // Largest text (xxxLarge) with a change or late warning: the detail and warning share one line, and the stop
-            // name keeps two lines and shrinks a little before it is cut (31 Oct final check: "Get off at C..." on the
-            // SE, "Get off at Sydney Olymp..." on the 6.1 inch, both already in 209).
-            card(lines: 1, track: false, merged: true, headLines: 2, headScale: 0.65)
             card(lines: 1, track: false)
+            // Largest text (xxxLarge) with a change or late warning: the detail and warning share one line.
+            card(lines: 1, track: false, merged: true)
+            // Last resort: the arrival line gives way (it was already cut there in the first 211 candidate).
+            card(lines: 1, track: false, merged: true, arriveLine: false)
         }
     }
 
@@ -467,22 +490,17 @@ struct LiveTripLockCard: View {
         return t.font(.subheadline).lineLimit(lines).minimumScaleFactor(0.85)
     }
 
-    private func card(lines: Int, track: Bool, merged: Bool = false, headLines: Int? = nil, headScale: CGFloat = 0.7,
-                      arriveLine: Bool = true) -> some View {
+    private func card(lines: Int, track: Bool, merged: Bool = false, arriveLine: Bool = true) -> some View {
         // Worked out here so the view expression stays quick to type check.
-        // Very large text (build 211 line check): the stop name alone ("Macquarie University"); the label over the
-        // countdown already says "Get off" or "Arrived", and VoiceOver still reads the whole line.
-        let headline = typeSize >= .xxLarge ? state.bareHeadline(stale: stale) : state.headline(stale: stale)
-        let headMax: Int = headLines ?? lines
         let countdown = MinutesUntil.words(state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    HStack(alignment: .center, spacing: 6) {
                         WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode).fixedSize()
-                        Text(headline).font(.headline).lineLimit(headMax).minimumScaleFactor(headScale)
-                            .lineProbe("lock-stop", text: headline, lines: headMax, font: .headline, minScale: headScale)
-                            .accessibilityLabel(state.headline(stale: stale))
+                        // One line (round 2, build 211): was "Get off at / Macarthur" beside "1 hr, 4 min".
+                        LiveTripTitle(full: state.headline(stale: stale), bare: state.bareHeadline(stale: stale),
+                                      probe: "lock-stop", font: .headline, minScale: 0.7)
                     }
                     if merged {
                         detailAndWarning(lines, track: track)

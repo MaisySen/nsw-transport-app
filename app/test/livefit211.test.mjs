@@ -64,7 +64,7 @@ test('the Lock Screen card keeps the stop track: stops and delay share a line in
   const w = read(W);
   const body = w.slice(w.indexOf('struct LiveTripLockCard'));
   const track = [...body.matchAll(/card\(lines: \d, track: true[^)]*\)/g)].map((m) => m[0]);
-  assert.ok(track.length >= 3);
+  assert.ok(track.length >= 2);
   for (const c of track) assert.match(c, /merged: true/, `${c} puts the stops and the delay on separate lines (too tall, 31 Oct)`);
   assert.ok(body.indexOf('track: true') < body.indexOf('card(lines: 2, track: false)'), 'the track layouts come before the bar');
   assert.match(body, /ProgressView\(value:/);
@@ -103,7 +103,7 @@ test('the native audit line check: probes in the views, off in the app, and a fa
   assert.match(p, /nonisolated\(unsafe\) static var on = false/);
   assert.match(p, /if LineProbe\.on && !text\.isEmpty \{[\s\S]*\} else \{\s*content\s*\}/);
   const w = read(W);
-  for (const id of ['island-countdown', 'island-stop', 'island-delay', 'lock-stop', 'lock-countdown', 'next-stop']) assert.ok(w.includes(`lineProbe("${id}"`), id);
+  for (const id of ['island-countdown', 'island-stop', 'island-delay', 'lock-stop', 'lock-countdown', 'next-stop']) assert.ok(w.includes(`lineProbe("${id}"`) || w.includes(`probe: "${id}"`), id);
   const f = read(F);
   for (const id of ['follow-island-countdown', 'follow-island-to', 'follow-lock-countdown', 'follow-lock-to']) assert.ok(f.includes(`lineProbe("${id}"`), id);
   // Countdowns may use one line.
@@ -113,7 +113,7 @@ test('the native audit line check: probes in the views, off in the app, and a fa
   assert.match(t, /LineCheck\.install\(\)\s*LiveActivityAudit\.run\(\)/);
   assert.match(t, /XCTAssertGreaterThan\(LineCheck\.probed, 100/);
   assert.match(t, /XCTAssertTrue\(cut\.isEmpty, "Wraps or cut/);
-  assert.match(read(`${dir}/iOS/LineCheck.swift`), /l\.used > r\.allowed[\s\S]*l\.needed > r\.allowed/);
+  assert.match(read(`${dir}/iOS/LineCheck.swift`), /let may = allowed\(r\)[\s\S]*l\.used > may[\s\S]*l\.needed > may/);
   // The shared kit has no widget code (the Watch audit compiles it too).
   assert.doesNotMatch(read(`${dir}/Shared/AuditKit.swift`), /LineProbe/);
   const a = read(`${dir}/iOS/LiveActivityAudit.swift`);
@@ -123,9 +123,9 @@ test('the native audit line check: probes in the views, off in the app, and a fa
 
 test('very large text keeps names whole: the stop name alone, the next stop alone, short destinations', () => {
   const w = read(W);
-  assert.match(w, /typeSize >= \.xxLarge \? state\.bareHeadline\(stale: stale\) : state\.headline\(stale: stale\)/);
-  assert.equal((w.match(/typeSize >= \.xxLarge \? state\.bareHeadline\(stale: stale\)/g) || []).length, 2, 'Lock Screen and Island');
-  assert.equal((w.match(/\.accessibilityLabel\(state\.headline\(stale: stale\)\)/g) || []).length, 2, 'VoiceOver reads the whole line');
+  // Round 2: the title picks its one line form by what fits (LiveTripTitle), on the Lock Screen and in the Island.
+  assert.equal((w.match(/LiveTripTitle\(full: state\.headline\(stale: stale\), bare: state\.bareHeadline\(stale: stale\)/g) || []).length, 2, 'Lock Screen and Island');
+  assert.match(w, /\.accessibilityLabel\(full\)/, 'VoiceOver reads the whole line');
   const s = read('targets/widget/LiveTripActivity.swift');
   assert.match(s, /public func bareHeadline\(stale: Bool = false\) -> String \{\s*if arrived\(stale: stale\) \{ return destination \?\? getOffAt \}\s*if phase == "wait" \{ return "To \\\(towards \?\? getOffAt\)" \}\s*return getOffAt/);
   // The Lock Screen countdown is only as wide as it needs, so the name gets the rest.
@@ -140,15 +140,8 @@ test('very large text keeps names whole: the stop name alone, the next stop alon
   assert.equal(short('Hornsby via Strathfield'), 'Hornsby via Strathfield', 'short ones keep their via');
 });
 
-test('at the largest text sizes a long stop name keeps the bar layouts, so it is never cut beside the track', () => {
+test('the last resort Lock Screen card drops the arrival line', () => {
   const w = read(W);
-  assert.match(w, /private var showsTrack: Bool \{\s*guard state\.showsTrack\(stale: stale\) else \{ return false \}\s*return typeSize < \.xxLarge \|\| state\.bareHeadline\(stale: stale\)\.count <= 16/);
-  assert.match(w, /if showsTrack \{\s*card\(lines: 2, track: true, merged: true\)/);
-});
-
-test('at the largest text sizes the stop name may take three lines on the bar card before it is cut', () => {
-  const w = read(W);
-  assert.match(w, /if typeSize >= \.xxLarge \{\s*card\(lines: 1, track: false, merged: true, headLines: 3, headScale: 0\.65\)\s*card\(lines: 1, track: false, merged: true, headLines: 3, headScale: 0\.65, arriveLine: false\)\s*\}\s*card\(lines: 2, track: false\)/);
-  // The arrival line goes first in that last resort (it was cut there anyway).
+  assert.match(w, /card\(lines: 1, track: false, merged: true, arriveLine: false\)\s*\}/);
   assert.match(w, /if arriveLine && !state\.arrived\(stale: stale\) \{/);
 });
