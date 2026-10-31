@@ -4137,6 +4137,19 @@ function alertExpiry(n, now) {
  * message, so the app reads it the same way (data under "body", as Expo sends it, and at the top level). Off unless
  * the apnsAlerts flag is on (platform=server), so a deploy changes nothing for any phone until it is switched on.
  */
+// The app's own alert sounds a push may name (each is a .wav in the app): anything else rings with the default sound.
+// "arrival" is only named for iPhone build 212 and later (tfSound).
+const ALERT_SOUNDS = new Set(["getoff_soon", "getoff_now", "arrival"]);
+/**
+ * The iPhone app's build number from the request's User-Agent, or null. The app sets no User-Agent of its own, so iOS
+ * sends its default, "<app name>/<build> CFNetwork/<v> Darwin/<v>" (the build is CFBundleVersion, 212 for build 212).
+ * Android (okhttp), browsers and anything else give null.
+ */
+function iosBuildOf(request) {
+  const ua = String((request && request.headers && request.headers.get("user-agent")) || "");
+  const m = /^[^\s/]+\/(\d{1,6}) CFNetwork\/[\d.]+ Darwin\//.exec(ua);
+  return m ? Number(m[1]) : null;
+}
 async function sendApnsAlert(env, target, n) {
   if (!target.device || !env.APNS_KEY || !env.APNS_BUNDLE) return [];
   if (!(await serverOn(env, "apnsAlerts"))) return [];
@@ -4144,7 +4157,7 @@ async function sendApnsAlert(env, target, n) {
   if (!toks.length) return [];
   const now = Date.now();
   const data = { url: n.url || "/", watch: n.watchId || null, id: n.id, tag: n.tag || "tb", ...(n.getOff ? { getOff: n.getOff } : {}) };
-  const s = n && (n.sound === "getoff_soon" || n.sound === "getoff_now") ? n.sound + ".wav" : "default";
+  const s = n && ALERT_SOUNDS.has(n.sound) ? n.sound + ".wav" : "default";
   const payload = { aps: { alert: { title: n.title, body: n.body }, ...(n.passive ? { "interruption-level": "passive" } : { sound: s }), "thread-id": n.watchId ? "w" + n.watchId : "tb",
     ...(n.timeSensitive && !n.passive ? { "interruption-level": "time-sensitive" } : {}) }, body: data, ...data };
   const o = { topic: env.APNS_BUNDLE, pushType: "alert", priority: 10, expiresMs: alertExpiry(n, now),
@@ -5675,8 +5688,9 @@ async function getOffNoFeedPass(env, now) {
 
 /** The Expo push sound and Android channel for an alert: the app's spoken sound when named, else the default. */
 function expoSound(n) {
-  const s = n && (n.sound === "getoff_soon" || n.sound === "getoff_now") ? n.sound : null;
-  return s ? { sound: s + ".wav", channelId: s } : { sound: "default", channelId: "default" };
+  const s = n && ALERT_SOUNDS.has(n.sound) ? n.sound : null;
+  // The arrival clip is iPhone only (build 212): no Android channel is named after it, so it rides the default channel.
+  return s ? { sound: s + ".wav", channelId: s === "arrival" ? "default" : s } : { sound: "default", channelId: "default" };
 }
 
 async function processWatch(env, w, now, opts = {}) {
@@ -5907,9 +5921,20 @@ const TF = {
   BOARD_REUSE: 14000,     // a stop's departure board read serves every trip read in the next 14 s (the feed copy is 15 s)
 };
 const tfBoardMem = new Map();
-// Kylie clips in build 211 (getoff_soon, getoff_now); the arrival clip needs build 212 (or the sound folder copy), so
-// the arrival alert rings with the default sound until then.
-const TF_SOUND = { headsup: "getoff_soon", getoff: "getoff_now", arrived: null };
+// Kylie clips in build 211 (getoff_soon, getoff_now). The arrival clip (arrival.wav, "You've arrived at your stop.") is
+// bundled from iPhone build 212 (runtime 1.3.0, 1 Nov): the arrival alert names it only for a watch registered by build
+// 212 or later (spec.iosBuild, from the app's User-Agent at Start trip); every other build and Android keep the default
+// sound, because they do not have the file.
+const TF_SOUND = { headsup: "getoff_soon", getoff: "getoff_now", arrived: "arrival" };
+const TF_SOUND_BUILD = { arrived: 212 };
+/** The sound for a trip flow clip on this watch: the clip's file when this build has it, else the default. */
+function tfSound(clip, spec) {
+  const s = clip && TF_SOUND[clip];
+  if (!s) return "default";
+  const need = TF_SOUND_BUILD[clip];
+  if (need && !(spec && Number.isInteger(spec.iosBuild) && spec.iosBuild >= need)) return "default";
+  return s;
+}
 
 /** This registration asked for the new trip flow (the new app sends tripFlow: 2). */
 const tfWanted = (spec) => !!(spec && Number(spec.tripFlow) >= 2);
@@ -6340,7 +6365,9 @@ async function tfPushCard(env, row, c, now, o = {}) {
 
 /** Sends one alert of the new flow: Expo or Apple when the phone has a working route (the card's push carries it otherwise). */
 async function tfSendAlert(env, w, r, now) {
-  const sound = r.quiet ? null : (r.clip && TF_SOUND[r.clip]) || "default";
+  let spec = null;
+  try { spec = typeof w.spec === "string" ? JSON.parse(w.spec) : w.spec; } catch {}
+  const sound = r.quiet ? null : tfSound(r.clip, spec);
   const legOf = Number(String(r.moment || "").split(":")[1]) || 0;
   const n = { title: r.title, body: r.body, url: `/#/watch/${w.id}`, tag: `w${w.id}${r.kind}`, watchId: w.id, kind: "tf" + r.kind, dueAt: r.arrAt, expiresAt: r.expires,
     ttl: Math.max(5, Math.ceil(((r.expires || now + 120000) - now) / 1000)),
@@ -6547,7 +6574,7 @@ async function backfillFeeds(env, spec, now, board = (stopId) => departures(env,
   return changed;
 }
 
-async function createWatch(env, b, now) {
+async function createWatch(env, b, now, meta = {}) {
   const device = cleanId(b.device), profile = profileId(b.profile);
   if (!device) throw new Error("device needed");
   const legs = (b.legs || []).slice(0, 6).map(legFromInput).filter((l) => l.stopId && l.planned);
@@ -6563,6 +6590,8 @@ async function createWatch(env, b, now) {
     ...(b.voice === "soon" ? { voice: "soon" } : {}),
     // The new trip flow (tfOn): the app says so with every registration, and whether the phone uses 24 hour time.
     ...(Number(b.tripFlow) >= 2 ? { tripFlow: 2, c24: b.c24 === true } : {}),
+    // The iPhone build that started it (from its User-Agent, iosBuildOf; never from the body): which alert sounds it has.
+    ...(Number.isInteger(meta.iosBuild) ? { iosBuild: meta.iosBuild } : {}),
   };
   const tf = await tfOn(env, spec);
   // Get off now from the server (build 210, getOffAccept): stored only when accepted, and said in the answer. The new
@@ -11405,7 +11434,7 @@ async function handleRequest(request, env, exec) {
           await ensureSchema3(env);
           if (request.method === "POST") {
             const b = await request.json().catch(() => ({}));
-            try { return json({ ok: true, watch: await createWatch(env, { ...b, profile: b.profile || profile }, Date.now()) }); }
+            try { return json({ ok: true, watch: await createWatch(env, { ...b, profile: b.profile || profile }, Date.now(), { iosBuild: iosBuildOf(request) }) }); }
             catch (e) { return json({ error: String(e && e.message || e) }, 400); }
           }
           if (request.method === "DELETE") {
@@ -12711,6 +12740,9 @@ function reqLine(request, env, res, ms, st) {
   const line = { t: "req", p: url.pathname, m: request.method, s: res ? res.status : 500, ms, up: st.up, un: st.n, c: (res && res.headers.get("x-edge-cache")) || "-",
     k: url.searchParams.get("profile") || request.headers.get("x-profile") ? "app" : "ext", colo: (request.cf && request.cf.colo) || null };
   if (loadOk(request, env)) line.test = 1;
+  // The iPhone build (iosBuildOf), so the logs show which builds call and that the User-Agent reads as expected.
+  const ib = iosBuildOf(request);
+  if (ib) line.ib = ib;
   return line;
 }
 function reqLog(request, env, res, ms, st) {
