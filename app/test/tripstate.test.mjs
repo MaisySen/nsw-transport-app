@@ -117,3 +117,28 @@ test('the module is pure: no runtime imports, no clock, no timers', () => {
   assert.ok(!/^import (?!type )/m.test(src));
   assert.ok(!/Date\.now\(|new Date\(\)|setTimeout|setInterval/.test(src));
 });
+
+test('31 Oct live: the stop off row carries its departure (30 s dwell): the stop\'s own delay goes on the arrival you get off at, as the server card has it', () => {
+  // the run lists Clyde's departure 7:55:30 with the train 4 min late there (7:59:30); you arrive 7:55 planned, so 7:59
+  const d = svc({ lid: { estimated: iso('19:54:00') }, cly: { planned: iso('19:55:30'), estimated: iso('19:59:30') }, d: { live: true } });
+  const s = stateAt(leg, d, at('19:48:00'));
+  assert.equal(s.tm.arr.at, at('19:59:00'), 'arrival 7:55 + 4 min, not the row\'s departure 7:59:30');
+  assert.equal(s.tm.arr.source, 'stop');
+  assert.equal(s.tm.dep.at, at('19:54:00'));
+  // a row for another visit (more than 3 min apart) keeps its own time
+  const far = svc({ cly: { planned: iso('20:05:00'), estimated: iso('20:06:00') }, d: { live: true } });
+  assert.equal(stateAt(leg, far, at('19:48:00')).tm.arr.at, at('20:06:00'));
+});
+
+test('1 Nov live: a position-only feed heading to your stop under 1.5 km out gives the arrival from the position when the feed\'s is later (as the server card)', () => {
+  // Clyde at -33.83, 151.02; the train 406 m short of it, between Auburn and Clyde, 30 s old; the stop says 7:59
+  const geo = { lid: { lat: -33.8649, lon: 151.0471, estimated: iso('19:54:00') }, aub: { lat: -33.8492, lon: 151.0329, estimated: iso('19:57:00') }, cly: { lat: -33.8350, lon: 151.0180, estimated: iso('19:59:00') } };
+  const k = 406 / 2050, vlat = -33.8350 + (-33.8492 + 33.8350) * k, vlon = 151.0180 + (151.0329 - 151.0180) * k;
+  const d = svc({ ...geo, d: { live: true, vehicle: { lat: vlat, lon: vlon, ageS: 30, stopId: 'Auburn.X Loc' } } });
+  const s = stateAt(leg, d, at('19:57:30'), at('19:57:30'));
+  const want = at('19:57:00') + 45000 + 40 * 406;
+  assert.ok(Math.abs(s.tm.arr.at - want) < 3000, `arrival from the position, got ${new Date(s.tm.arr.at).toISOString()}`);
+  // a feed with stop ids (the vehicle names one of the stops) keeps the stop's time
+  const d2 = svc({ ...geo, d: { live: true, vehicle: { lat: vlat, lon: vlon, ageS: 30, stopId: 'AUB' } } });
+  assert.equal(stateAt(leg, d2, at('19:57:30'), at('19:57:30')).tm.arr.at, at('19:59:00'));
+});

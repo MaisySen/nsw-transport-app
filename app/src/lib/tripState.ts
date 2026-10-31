@@ -222,7 +222,13 @@ export function legReadingFrom(pl: PlanLeg, w: Pick<WatchLeg, 'stopId' | 'from' 
   for (let i = 0; i < n; i++) {
     const k = map[i];
     const s = k >= 0 ? d.stops[k] : null;
-    if (s && s.estimated && !s.carried && !s.skipped) est[i] = tms(s.estimated);
+    // The stop's own live delay on this plan stop's time: the answer's row can carry the departure time (a 30 s dwell
+    // at Croydon on 31 Oct: row 11:50:30, the arrival you get off at 11:50:00), and the server's card takes the same
+    // delay on the arrival (I6; the Get off now moment is the arrival minus 30 s).
+    if (s && s.estimated && !s.carried && !s.skipped) {
+      const p = s.planned ? tms(s.planned) : NaN;
+      est[i] = Number.isFinite(p) && Math.abs(p - pl.stops[i].tt) <= 180000 ? pl.stops[i].tt + (tms(s.estimated) - p) : tms(s.estimated);
+    }
     const c = k >= 0 ? carried(k) : carried(map[0]);
     if (c != null) { run[i] = c; anyLive = true; }
   }
@@ -241,6 +247,18 @@ export function legReadingFrom(pl: PlanLeg, w: Pick<WatchLeg, 'stopId' | 'from' 
       let p = -1;
       for (let i = 0; i < n; i++) if (map[i] >= 0 && (vr.at ? map[i] <= vr.k : map[i] < vr.k)) p = i;
       vehicle = { stop: p, state: 'left', at: vAt - ageS * 1000 };
+    }
+  }
+  // Owner's rule 3 on the last stretch, as the server's card has it (backend tfLegRaw, 1 Nov 2026): a position-only feed
+  // (a place, no stop id: Sydney Trains) heading to your stop and under 1.5 km out gives the arrival from the position,
+  // 45 s plus 40 ms a metre, when that is earlier than the stop's own time (the feed's ran 22 s to 3 min late).
+  const vv = d.vehicle as { lat?: number | null; lon?: number | null; stopId?: string | null; ageS?: number | null } | null | undefined;
+  const offK = map[n - 1];
+  if (vr && !vr.at && o.asOf && offK >= 0 && vr.k === offK && hasXY(vv) && hasXY(d.stops[offK]) && !!vv.stopId && !d.stops.some((s) => s.id === vv.stopId) && !((vv.ageS ?? 0) > 90)) {
+    const dO = metres(vv, d.stops[offK] as { lat: number; lon: number });
+    if (dO <= 1500) {
+      const eta = o.asOf - (vv.ageS ?? 0) * 1000 + 45000 + Math.round(40 * dO);
+      if (est[n - 1] == null || eta < (est[n - 1] as number)) est[n - 1] = eta;
     }
   }
   const mineS = d.stops[map[0]];

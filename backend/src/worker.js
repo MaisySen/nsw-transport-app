@@ -6855,8 +6855,10 @@ const LIVECARD = (() => {
         for (let i = 0; i < n; i++) {
             const k = map[i];
             const s = k >= 0 ? d.stops[k] : null;
-            if (s && s.estimated && !s.carried && !s.skipped)
-                est[i] = tms(s.estimated);
+            if (s && s.estimated && !s.carried && !s.skipped) {
+                const p = s.planned ? tms(s.planned) : NaN;
+                est[i] = Number.isFinite(p) && Math.abs(p - pl.stops[i].tt) <= 180000 ? pl.stops[i].tt + (tms(s.estimated) - p) : tms(s.estimated);
+            }
             const c = k >= 0 ? carried(k) : carried(map[0]);
             if (c != null) {
                 run[i] = c;
@@ -6885,6 +6887,16 @@ const LIVECARD = (() => {
                     if (map[i] >= 0 && (vr.at ? map[i] <= vr.k : map[i] < vr.k))
                         p = i;
                 vehicle = { stop: p, state: 'left', at: vAt - ageS * 1000 };
+            }
+        }
+        const vv = d.vehicle;
+        const offK = map[n - 1];
+        if (vr && !vr.at && o.asOf && offK >= 0 && vr.k === offK && hasXY(vv) && hasXY(d.stops[offK]) && !!vv.stopId && !d.stops.some((s) => s.id === vv.stopId) && !((vv.ageS ?? 0) > 90)) {
+            const dO = metres(vv, d.stops[offK]);
+            if (dO <= 1500) {
+                const eta = o.asOf - (vv.ageS ?? 0) * 1000 + 45000 + Math.round(40 * dO);
+                if (est[n - 1] == null || eta < est[n - 1])
+                    est[n - 1] = eta;
             }
         }
         const mineS = d.stops[map[0]];
