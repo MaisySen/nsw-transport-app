@@ -1,8 +1,8 @@
 // getoffbg31 (31 Oct, Bidur on build 210: "Sound still plays only when i open app. Even if i arrived few minutes ago.
-// If i open app now. It will speak now."). The app cannot run or speak in the background, so: the alerts are set on
-// the phone ahead (Next stop next<leg> when no server watch sends it, Get off now gnow<leg>) with the spoken sounds and
-// time sensitive, moved on every live refresh while the app runs; one moment is one alert (server push or phone,
-// never both); and nothing is read out or rung late when the app is opened after the moment.
+// If i open app now. It will speak now."). The app cannot run or speak in the background, so the phone's own alerts
+// are set ahead with the spoken sounds and time sensitive: since 31 Oct as location alerts (rsoon<leg>, rnow<leg>,
+// getoffregion31), never for a time; one moment is one alert (server push or phone, never both); and nothing is read
+// out or rung late when the app is opened after the moment.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -36,8 +36,16 @@ const T0 = Date.parse('2026-10-26T21:00:00Z'); // Tue 27 Oct, 8:00am Sydney
 const at = (min) => T0 + min * 60000;
 const iso = (t) => new Date(t).toISOString();
 
+// Stops on a line east about 1.4 km apart (31 Oct, location alerts); the train moves between them on its live times.
+const POS = (k) => ({ lat: -33.8, lon: 151.0 + k * 0.0155 });
+function trainAt(run, t, delay) {
+  const times = run.stops.map(([, m]) => at(m) + delay * 60000);
+  if (t <= times[0]) return POS(0);
+  for (let k = 0; k < times.length - 1; k++) if (t <= times[k + 1]) { const f = (t - times[k]) / (times[k + 1] - times[k]); const a = POS(k), b = POS(k + 1); return { lat: a.lat, lon: a.lon + (b.lon - a.lon) * f }; }
+  return POS(times.length - 1);
+}
 function feed(run, delay, t, isLive = true) {
-  const stops = run.stops.map(([name, m], k) => ({ id: name.slice(0, 3).toUpperCase() + k, name: name + ' Station', planned: iso(at(m)), estimated: iso(at(m) + delay * 60000), mine: k === run.mine, alight: k === run.off }));
+  const stops = run.stops.map(([name, m], k) => ({ id: name.slice(0, 3).toUpperCase() + k, name: name + ' Station', ...POS(k), planned: iso(at(m)), estimated: iso(at(m) + delay * 60000), mine: k === run.mine, alight: k === run.off }));
   let nextIndex = stops.findIndex((s) => Date.parse(s.estimated) > t - 20000);
   if (nextIndex < 0) nextIndex = stops.length;
   return { kind: 'service', live: isLive, line: run.line, mode: 'train', mineIndex: run.mine, alightIndex: run.off, nextIndex, stops };
@@ -51,28 +59,36 @@ const leaves = (k, d = 0) => at(RUN.stops[k][1]) + d * 60000;
 /**
  * One trip, refreshed every 15 s while the app is open (`open(t)`), the way liveEngine runs it: stepLive, then
  * getOffStep with the spoken sounds (`voice`), the server watch (`watchId`: its Next stop push) and server Get off now
- * (`server`). Alarms set on the phone ring at their time whether the app is open or not. `delayAt(t)` is the live delay.
+ * (`server`). Since 31 Oct the phone's own alerts are location alerts (`backup` 'region'): they ring when the train
+ * (moving on its live times, `delayAt(t)`) enters the circle, whether the app is open or not.
  */
-function replay({ pref = G.GETOFF_DEFAULT, delayAt = () => 0, open = () => true, speak = true, voice = { now: true, all: true }, watchId = null, server = false, serverPushAt = null, t1 = at(40) } = {}) {
-  let g = { id: 'g1', legs: [LEG], alerted: {}, watchId, share: null, speak, spoken: {}, offSet: {}, offVoice: {} };
+function replay({ pref = G.GETOFF_DEFAULT, delayAt = () => 0, open = () => true, speak = true, voice = { now: true, all: true }, watchId = null, server = false, serverPushAt = null, t1 = at(40), backup = 'region' } = {}) {
+  let g = { id: 'g1', legs: [LEG], alerted: {}, watchId, share: null, speak, spoken: {}, offSet: {}, offVoice: {}, offRegion: {} };
   const alarms = new Map();
+  const regions = new Map();
   const log = { rang: [], said: [], alerts: [], schedules: [], cancels: [] };
   const presented = new Set();
   let ended = false;
   let pushed = false;
   for (let t = at(-3); t <= t1 && !ended; t += 15000) {
     for (const [id, a] of [...alarms]) if (a.at <= t) { log.rang.push({ id, t: a.at, by: 'phone', sound: a.sound, title: a.title }); presented.add(id); alarms.delete(id); }
+    for (let u = t - 14000; u <= t; u += 1000) {
+      const p = trainAt(RUN, u, delayAt(u));
+      for (const [id, a] of [...regions]) if (G.metres(p, a) <= a.radius) { log.rang.push({ id, t: u, by: 'phone', sound: a.sound, title: a.title }); presented.add(id); regions.delete(id); }
+    }
     if (server && serverPushAt != null && !pushed && t >= serverPushAt) { pushed = true; log.rang.push({ id: 'server:gnow0', t, by: 'server' }); }
     if (!open(t)) continue;
     const r = live.stepLive(g, [feed(RUN, delayAt(t), t)], t, fmt);
     const serverRung = server && pushed ? { gnow0: 1 } : {};
     const o = G.getOffStep({ id: g.id, legs: g.legs, alerted: r.g.alerted, offSet: g.offSet, speak, sayNow: true, spoken: r.g.spoken, voice, offVoice: g.offVoice,
-      serverNext: !!g.watchId, wake: false, ...(server ? { server: true, serverRung, serverVoice: true } : {}) }, pref, r.s, t, fmt);
-    g = { ...r.g, alerted: o.g.alerted, spoken: o.g.spoken, offSet: o.g.offSet, offVoice: o.g.offVoice };
+      serverNext: !!g.watchId, wake: false, backup, offRegion: g.offRegion, rung: G.ownRungKeys(g.id, [...presented]), liveAt: t,
+      ...(server ? { server: true, serverRung, serverVoice: true } : {}) }, pref, r.s, t, fmt);
+    g = { ...r.g, alerted: o.g.alerted, spoken: o.g.spoken, offSet: o.g.offSet, offVoice: o.g.offVoice, offRegion: o.g.offRegion };
     for (const a of o.actions) {
       if (a.t === 'offSchedule') { alarms.set(a.id, { at: a.at, sound: a.sound, title: a.title }); log.schedules.push({ ...a, t }); }
-      else if (a.t === 'offCancel') { alarms.delete(a.id); log.cancels.push({ ...a, t }); }
-      else if (a.t === 'offDue') { if (!presented.has(a.id)) { alarms.delete(a.id); log.rang.push({ id: a.id, t, by: 'app', title: a.title, sound: a.sound }); presented.add(a.id); } }
+      else if (a.t === 'regionSchedule') { regions.set(a.id, { lat: a.lat, lon: a.lon, radius: a.radius, sound: a.sound, title: a.title }); log.schedules.push({ ...a, t }); }
+      else if (a.t === 'offCancel' || a.t === 'regionCancel') { alarms.delete(a.id); regions.delete(a.id); log.cancels.push({ ...a, t }); }
+      else if (a.t === 'offDue') { if (!presented.has(a.id)) { alarms.delete(a.id); regions.delete(a.id); log.rang.push({ id: a.id, t, by: 'app', title: a.title, sound: a.sound }); presented.add(a.id); } }
       else if (a.t === 'say') log.said.push({ ...a, t });
     }
     for (const a of r.actions) {
@@ -82,61 +98,63 @@ function replay({ pref = G.GETOFF_DEFAULT, delayAt = () => 0, open = () => true,
     }
   }
   const of = (re) => log.rang.filter((x) => re.test(x.id));
-  return { ...log, g, alarms, next: of(/-next\d+$/), now: of(/-gnow\d+$/), server: of(/^server:/) };
+  return { ...log, g, alarms, regions, next: of(/-(next|rsoon)\d+$/), now: of(/-(gnow|rnow)\d+$/), server: of(/^server:/) };
 }
 const ARR = at(16);
 
-test('locked after Start trip, no server watch: Next stop and Get off now ring from the phone, ahead, with the spoken sounds', () => {
-  // Bidur's trip: the app opened at the start, then the phone locked until after the arrival.
+test('locked after Start trip, no server watch: Next stop and Get off now ring from the phone by position, with the spoken sounds', () => {
+  // Bidur's trip: the app opened at the start, then the phone locked until after the arrival (31 Oct: location alerts).
   const r = replay({ open: (t) => t < at(1) });
   assert.equal(r.next.length, 1, JSON.stringify(r.rang));
   assert.equal(r.next[0].by, 'phone');
   assert.equal(r.next[0].sound, 'getoff_soon');
   assert.match(r.next[0].title, /^Next stop: Central/);
-  assert.ok(r.next[0].t >= leaves(5) && r.next[0].t <= ARR - 60000, 'after it is due to leave Epping, a minute or more before the arrival');
+  assert.ok(r.next[0].t > leaves(5) - 120000 && r.next[0].t <= leaves(5), 'as the train reaches the stop before (300 m out)');
   assert.equal(r.now.length, 1);
   assert.equal(r.now[0].by, 'phone');
   assert.equal(r.now[0].sound, 'getoff_now');
-  assert.equal(r.now[0].t, ARR - G.GETOFF_NOW_LEAD_MS);
+  assert.ok(r.now[0].t > ARR - 60000 && r.now[0].t < ARR, 'as the train reaches Central');
   assert.ok(r.next[0].t < r.now[0].t);
+  assert.equal(r.schedules.filter((s) => s.t === 'offSchedule').length, 0, 'nothing set for a time');
 });
 
-test('a delay seen while the app is open moves both alerts set on the phone (rescheduled, same identifier)', () => {
-  const r = replay({ delayAt: (t) => (t >= at(5) ? 4 : 0), open: (t) => t < at(8) });
+test('late after the phone locked: the location alerts come late with the train, never early (Bidur, 31 Oct)', () => {
+  // On time while open, then 4 min late with the phone locked: the old clock alert would have said "get off" 4 min early.
+  const r = replay({ delayAt: (t) => (t >= at(5) ? 4 : 0), open: (t) => t < at(2) });
   assert.equal(r.now.length, 1);
-  assert.equal(r.now[0].t, ARR + 4 * 60000 - G.GETOFF_NOW_LEAD_MS, 'at the late arrival');
+  assert.ok(r.now[0].t > ARR + 4 * 60000 - 60000 && r.now[0].t < ARR + 4 * 60000, 'at the late arrival');
   assert.equal(r.next.length, 1);
-  assert.ok(r.next[0].t >= leaves(5, 4), 'not at the old time');
-  const ids = new Set(r.schedules.map((s) => s.id));
-  assert.ok(r.schedules.length > ids.size, 'set again under the same id when the time moved');
-  assert.equal(r.alarms.size, 0);
+  assert.ok(r.next[0].t > leaves(5, 4) - 120000, 'not at the old time');
+  assert.equal(r.schedules.length, 2, 'each set once: a place does not move when the times do');
 });
 
-test('app open the whole ride: the phone\'s own Next stop is taken back and the app says it once; nothing twice', () => {
+test('app open the whole ride: Next stop and Get off now are each heard exactly once', () => {
   const r = replay({});
-  assert.equal(r.next.length, 0, 'taken back at the stop before');
-  assert.ok(r.cancels.some((c) => /-next0$/.test(c.id)));
-  assert.equal(r.alerts.filter((a) => a.key === 'off0').length, 1, 'the app\'s Next stop alert, once');
-  assert.equal(r.said.filter((s) => s.key === 'off0').length, 1);
+  const nextHeard = r.next.filter((x) => x.sound).length + r.said.filter((s) => s.key === 'off0' || s.key === 'next0').length;
+  assert.equal(nextHeard, 1, JSON.stringify({ next: r.next, said: r.said }));
+  assert.ok(r.next.length + r.alerts.filter((a) => a.key === 'off0').length === 1, 'one Next stop banner');
+  const nowHeard = r.now.filter((x) => x.sound).length + r.said.filter((s) => s.key === 'gnow0').length;
   assert.equal(r.now.length, 1);
+  assert.equal(nowHeard, 1);
   assert.equal(r.said.filter((s) => s.key === 'arrived').length, 1, 'said at the arrival, while it is news');
 });
 
-test('a server watch sends Next stop: the phone sets none of its own (one moment, one alert)', () => {
+test('a server watch sends Next stop: the phone sets no Next stop of its own (one moment, one alert)', () => {
   const r = replay({ watchId: 'w1', open: (t) => t < at(1) });
-  assert.equal(r.schedules.filter((s) => /-next\d+$/.test(s.id)).length, 0);
+  assert.equal(r.schedules.filter((s) => /-(next|rsoon)\d+$/.test(s.id)).length, 0);
   assert.equal(r.next.length, 0);
-  assert.equal(r.now.length, 1, 'Get off now still set on the phone while the server does not send it');
+  assert.equal(r.now.length, 1, 'Get off now still set by position while the server does not send it');
 });
 
-test('a server watch that arrives after the phone set its Next stop takes it back', () => {
-  const g0 = { id: 'g1', legs: [LEG], alerted: {}, offSet: {}, voice: { now: true, all: true } };
+test('a server watch that arrives after the phone set its Next stop takes the location alert back', () => {
+  const g0 = { id: 'g1', legs: [LEG], alerted: {}, offSet: {}, voice: { now: true, all: true }, backup: 'region' };
   const s0 = live.computeLive([LEG], [feed(RUN, 0, at(2))], at(2), {});
   const a = G.getOffStep(g0, G.GETOFF_DEFAULT, s0, at(2), fmt);
-  assert.ok(a.actions.some((x) => x.t === 'offSchedule' && x.key === 'next0'));
+  assert.ok(a.actions.some((x) => x.t === 'regionSchedule' && x.key === 'rsoon0'));
   const b = G.getOffStep({ ...g0, ...a.g, serverNext: true }, G.GETOFF_DEFAULT, s0, at(2) + 15000, fmt);
-  assert.ok(b.actions.some((x) => x.t === 'offCancel' && x.key === 'next0'));
-  assert.equal(b.g.offSet.next0, undefined);
+  assert.ok(b.actions.some((x) => x.t === 'regionCancel' && x.key === 'rsoon0'));
+  assert.equal(b.g.offRegion.rsoon0, undefined);
+  assert.ok(b.g.offRegion.rnow0, 'Get off now stays');
 });
 
 test('server Get off now: nothing set on the phone; its push, once shown, is done and never rung or said again', () => {
@@ -162,6 +180,7 @@ test('no stale speech on resume: opened 3 min after the arrival, nothing is read
 test('no stale speech on resume, mid ride: what the phone already rang with its voice is not read out again', () => {
   // Opened 20 s after the phone's own Next stop rang (with its spoken sound): the app does not say "Your stop is next".
   const lock = replay({ open: (t) => t < at(1) });
+  assert.equal(lock.next.length, 1);
   const rangAt = lock.next[0].t;
   const r = replay({ open: (t) => t < at(1) || t >= rangAt + 15000 });
   assert.equal(r.said.filter((s) => s.key === 'off0').length, 0, JSON.stringify(r.said));

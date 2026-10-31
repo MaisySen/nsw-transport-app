@@ -79,11 +79,15 @@ test('the lead times: 30 s before the realtime arrival, a minute before the time
   assert.equal(G.GETOFF_DEFAULT.now, true, 'on for everyone unless turned off');
 });
 
-test('on time: Get off now rings once, in the 30 s before arrival, app open or closed', () => {
-  for (const closeAt of [Infinity, -2.5, 5]) {
-    const r = replay({ closeAt });
-    assert.equal(r.now.length, 1, `closeAt ${closeAt}: ${JSON.stringify(r.now)}`);
-    assert.ok(inWindow(r.now[0].t, ARR, 30000), `rang ${sec(r.now[0].t)} for ${sec(ARR)}`);
+test('on time: Get off now rings once, in the 30 s before arrival, with the app open; closed, never from a clock', () => {
+  const r = replay({});
+  assert.equal(r.now.length, 1, JSON.stringify(r.now));
+  assert.ok(inWindow(r.now[0].t, ARR, 30000), `rang ${sec(r.now[0].t)} for ${sec(ARR)}`);
+  // Closed (31 Oct): the phone sets nothing for a time; the server's push or a location alert stands in.
+  for (const closeAt of [-2.5, 5]) {
+    const c = replay({ closeAt });
+    assert.equal(c.now.length, 0, `closeAt ${closeAt}: ${JSON.stringify(c.now)}`);
+    assert.equal(c.schedules.length, 0);
   }
 });
 
@@ -98,7 +102,7 @@ test('running late: it follows the realtime arrival, not the timetable', () => {
   const r = replay({ delay: late });
   assert.equal(r.now.length, 1);
   assert.ok(inWindow(r.now[0].t, ARR + 3 * 60000, 30000), `rang ${sec(r.now[0].t)}`);
-  assert.ok(r.schedules.length >= 2, 'set again when the arrival moved');
+  assert.equal(r.schedules.length, 0, 'nothing set from a clock (31 Oct)');
 });
 
 test('running early: it moves earlier and still rings before the arrival', () => {
@@ -120,10 +124,10 @@ test('opened inside the last 30 s: it rings at once, before the arrival', () => 
   assert.ok(r.now[0].t < ARR && r.now[0].by === 'app');
 });
 
-test('no live times: a minute before the timetable arrival', () => {
+test('no live times: no Get off now from the timetable clock (31 Oct, a guess never says get off)', () => {
   const r = replay({ isLive: false });
-  assert.equal(r.now.length, 1);
-  assert.ok(inWindow(r.now[0].t, ARR, 60000 + 15000), `rang ${sec(r.now[0].t)}`);
+  assert.equal(r.now.length, 0, JSON.stringify(r.now));
+  assert.equal(r.schedules.length, 0);
 });
 
 test('turned off from this version: nothing is set', () => {

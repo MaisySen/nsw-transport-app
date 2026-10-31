@@ -260,7 +260,7 @@ export function legsOf(j: Journey, short: (n?: string | null) => string): WatchL
  * The trip after you switch to the next option: legs up to the change stay, the rest are the new journey's. Alerts
  * and alarms for the replaced legs are cleared so they can ring for the new ones.
  */
-export function switchLegs<T extends { legs: WatchLeg[]; alerted: Record<string, 1>; wakeSet?: Record<string, number>; rode?: Record<number, number>; offSet?: Record<string, number> }>(g: T, m: Missed, next: WatchLeg[]): T {
+export function switchLegs<T extends { legs: WatchLeg[]; alerted: Record<string, 1>; wakeSet?: Record<string, number>; rode?: Record<number, number>; offSet?: Record<string, number>; offRegion?: Record<string, string> }>(g: T, m: Missed, next: WatchLeg[]): T {
   const keep = g.legs.slice(0, m.i + 1);
   if (next.length && keep.length) next = [{ ...next[0], walkBefore: next[0].walkBefore || g.legs[m.i + 1]?.walkBefore || 0 }, ...next.slice(1)];
   const legs = [...keep, ...next].slice(0, 6);
@@ -278,5 +278,8 @@ export function switchLegs<T extends { legs: WatchLeg[]; alerted: Record<string,
   // Get off alerts set for the legs that are replaced are dropped (the caller takes them off the phone).
   const offSet: Record<string, number> = {};
   for (const [k, v] of Object.entries(g.offSet || {})) { const mm = /(\d+)$/.exec(k); if (mm && Number(mm[1]) <= m.i) offSet[k] = v; }
-  return { ...g, legs, alerted, wakeSet, rode, ...(g.offSet ? { offSet } : {}) };
+  // Location alerts (31 Oct) for the legs that change are dropped the same way (Smart.tsx takes them off the phone).
+  const offRegion: Record<string, string> = {};
+  for (const [k, v] of Object.entries(g.offRegion || {})) { const mm = /(\d+)$/.exec(k); if (mm && Number(mm[1]) <= m.i) offRegion[k] = v; }
+  return { ...g, legs, alerted, wakeSet, rode, ...(g.offSet ? { offSet } : {}), ...(g.offRegion ? { offRegion } : {}) };
 }

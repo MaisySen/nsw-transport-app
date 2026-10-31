@@ -24,6 +24,9 @@ type Native = {
   sendWatchContext?: (json: string) => boolean;
   /** From build 206: reads a string from the app group and removes it (links left by Siri). */
   takeSharedString?: (key: string) => string | null;
+  /** From build 211 (31 Oct): get off alerts from the phone's position (UNLocationNotificationTrigger). Absent before. */
+  regionAlertStatus?: () => string;
+  scheduleRegionAlert?: (id: string, title: string, body: string, lat: number, lon: number, radius: number, sound: string | null, dataJSON: string) => Promise<boolean>;
 };
 
 const native: Native | null = Platform.OS === 'ios' ? requireOptionalNativeModule<Native>('TransportIOS') : null;
@@ -64,6 +67,17 @@ export const iosNative = {
       const sub = (native?.addListener as any)?.('onIntentQueued', () => cb());
       return () => { try { sub?.remove(); } catch {} };
     } catch { return () => {}; }
+  },
+  /** True on builds that can set get off alerts from the phone's position (211 and later). */
+  hasRegionAlerts: (): boolean => typeof native?.scheduleRegionAlert === 'function' && typeof native?.regionAlertStatus === 'function',
+  /** "ok" when location alerts can ring: location allowed (When In Use or Always), precise, region monitoring available.
+   * Else "notDetermined", "denied", "reduced" (approximate location only) or "unavailable". Null before build 211. */
+  regionAlertStatus(): string | null {
+    try { return typeof native?.regionAlertStatus === 'function' ? String(native.regionAlertStatus()) : null; } catch { return null; }
+  },
+  /** Sets (or replaces: the same id) a location alert. False on builds before 211 or when iOS refuses it. */
+  async scheduleRegionAlert(id: string, title: string, body: string, lat: number, lon: number, radius: number, sound: string | null, data: Record<string, unknown>): Promise<boolean> {
+    try { return typeof native?.scheduleRegionAlert === 'function' ? !!(await native.scheduleRegionAlert(id, title, body, lat, lon, radius, sound, JSON.stringify(data))) : false; } catch { return false; }
   },
   /** True on builds that carry the Apple Watch app. */
   hasWatch: (): boolean => typeof native?.sendWatchContext === 'function',

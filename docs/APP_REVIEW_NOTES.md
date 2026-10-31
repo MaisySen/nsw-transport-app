@@ -74,8 +74,8 @@ HOW TO TEST
 7. More > Delete all my data removes what the server keeps for this install.
 
 PERMISSIONS
-Location: optional, only on a location button tap, foreground only.
-Notifications: never at launch; asked when you first turn on an alert. Only Get off now is Time Sensitive.
+Location: optional, only on a location button tap; if allowed, get off alerts use iOS location triggers.
+Notifications: never at launch; asked when you first turn on an alert. Only get off alerts are Time Sensitive.
 Calendar: only for Calendar leave by in More (off by default), read only.
 Crash reports: errors only, cleaned on the phone, no tracking.
 

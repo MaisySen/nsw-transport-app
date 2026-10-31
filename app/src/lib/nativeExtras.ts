@@ -77,6 +77,22 @@ function speechAudio(): { start?: () => boolean; end?: () => void } | null {
   } catch { return null; }
 }
 
+/**
+ * From build 211 (31 Oct): the ambient audio session for spoken trip alerts. Muted by the Silent switch and by screen
+ * lock, the same as the notification's own sound (Bidur on Silent: the banner came, but the app's voice played on
+ * open). Absent before: those builds use the system's speech session, which speaks in Silent mode.
+ */
+function alertAudio(): { start?: () => boolean; end?: () => void } | null {
+  if (Platform.OS !== 'ios') return null;
+  try {
+    const m: any = requireOptionalNativeModule('TransportIOS');
+    return m && typeof m.startAlertAudio === 'function' ? { start: () => !!m.startAlertAudio(), end: () => { try { m.endAlertAudio?.(); } catch {} } } : null;
+  } catch { return null; }
+}
+
+/** True on builds whose spoken trip alerts follow the Silent switch (211 and later). */
+export function alertsFollowSilent(): boolean { return !!alertAudio(); }
+
 /** True on builds with the app's own spoken audio session (207 and later). */
 export function hasSpeechSession(): boolean { return !!speechAudio(); }
 
@@ -137,9 +153,10 @@ export async function currentVoice(): Promise<RankedVoice | null> {
  * each uses the same best voice and pace. Queued after anything still being said unless `interrupt` (a button the
  * person pressed: what they asked for now replaces what was being said). `quiet`: said through the system's own
  * speech session, not the app's (207 and later), so Silent mode mutes it like any other sound (spoken Get off now
- * with Speak alerts off; the rider never chose to hear it in Silent mode).
+ * with Speak alerts off; the rider never chose to hear it in Silent mode). `alert`: a spoken trip alert (Next stop, Get
+ * off now, You've arrived): from build 211 said through the ambient session, which the Silent switch mutes.
  */
-export async function speak(text: string, opts: { interrupt?: boolean; voice?: string | null; quiet?: boolean } = {}) {
+export async function speak(text: string, opts: { interrupt?: boolean; voice?: string | null; quiet?: boolean; alert?: boolean } = {}) {
   const S = speechModule();
   if (!S || !text) return;
   let voice: string | null = null;
@@ -148,6 +165,16 @@ export async function speak(text: string, opts: { interrupt?: boolean; voice?: s
     if (opts.interrupt) { try { S.stop(); } catch {} }
     // Queued after anything still being said (two moments in one refresh are both heard). The app's own audio
     // session, where there is one, is let go only when the last queued alert is done.
+    const amb = opts.alert ? alertAudio() : null;
+    if (amb) {
+      // Trip alerts (build 211+): the ambient session, muted by the Silent switch like the alert's own sound.
+      const ok = !!amb.start?.();
+      if (ok) pendingAlert++;
+      const fin = ok ? () => { pendingAlert = Math.max(0, pendingAlert - 1); if (!pendingAlert) amb.end?.(); } : undefined;
+      try { S.speak(text, speechOptions(ok, fin, voice)); }
+      catch { if (voice) S.speak(text, speechOptions(ok, fin, null)); else throw new Error('speak'); }
+      return;
+    }
     const a = speechAudio();
     const own = !opts.quiet && !!a?.start?.();
     if (own) pending++;
@@ -157,6 +184,7 @@ export async function speak(text: string, opts: { interrupt?: boolean; voice?: s
   } catch {}
 }
 let pending = 0;
+let pendingAlert = 0;
 
 /** Stops anything being said (the Speak departures button pressed again). */
 export function stopSpeaking() { try { speechModule()?.stop(); } catch {} }

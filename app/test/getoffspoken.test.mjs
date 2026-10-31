@@ -141,12 +141,12 @@ test('never after arrival: opened after the arrival, nothing rings and nothing i
   assert.equal(r.said.length, 0);
 });
 
-test('never after arrival: the phone rang it with the app closed, the app opened after arrival does not say it late', () => {
+test('never after arrival: app closed before the moment and opened after arrival, nothing is said or rung late', () => {
+  // Since 31 Oct the phone sets nothing for a time, so with the app closed (no location, no server) nothing rang; the
+  // app opened after the arrival says nothing late either.
   const r = replay({ pref: { stops: 1, now: true }, closeAt: 9, openAt: 10.25 });
-  assert.equal(r.now.length, 1);
-  assert.equal(r.now[0].by, 'phone');
-  assert.ok(r.now[0].t < ARR);
-  assert.equal(r.said.length, 0, 'news that came 45 s ago is not said once the train is there');
+  assert.equal(r.now.length, 0);
+  assert.equal(r.said.length, 0, 'the moment has gone once the train is there');
 });
 
 test('the phone rang it and the app opens before arrival: said then, still before arrival', () => {
@@ -155,10 +155,9 @@ test('the phone rang it and the app opens before arrival: said then, still befor
   assert.ok(r.saidNow[0].t < ARR);
 });
 
-test('no live times: said with the timetable Get off now, a minute before, never after', () => {
+test('no live times: Get off now is never said from the timetable clock (31 Oct)', () => {
   const r = replay({ pref: { stops: 1, now: true }, isLive: false });
-  assert.equal(r.saidNow.length, 1);
-  assert.ok(r.saidNow[0].t >= ARR - G.GETOFF_NOW_TIMETABLE_LEAD_MS - 15000 && r.saidNow[0].t < ARR);
+  assert.equal(r.saidNow.length, 0);
 });
 
 test('the words, the stored choice and the menu labels', () => {
@@ -177,7 +176,7 @@ test('the words, the stored choice and the menu labels', () => {
 test('the app wiring: speech feature detected, quiet speech skips the app session, menu item only where it can speak', () => {
   const eng = src('lib/liveEngine.ts');
   assert.match(eng, /sayNow: readGetOffSay\(store\.getOffSay\(\)\) && hasSpeech\(\)/);
-  assert.match(eng, /speak\(a\.text, a\.quiet \? \{ quiet: true \} : \{\}\)/);
+  assert.match(eng, /speak\(a\.text, \{ alert: true, \.\.\.\(a\.quiet \? \{ quiet: true \} : \{\}\) \}\)/, 'quiet kept; from 211 every trip alert follows the Silent switch');
   const nx = src('lib/nativeExtras.ts');
   assert.match(nx, /const own = !opts\.quiet && !!a\?\.start\?\.\(\)/);
   const menu = src('components/GetOffChoice.tsx');

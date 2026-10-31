@@ -218,7 +218,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Transport uses your location to show stops near you, plan trips from where you are and show where you are on a live trip map.",
+          "locationWhenInUsePermission": "Transport uses your location to show stops near you, plan trips from where you are, show where you are on a live trip map and alert you as you near your stop.",
           "locationAlwaysAndWhenInUsePermission": false,
           "locationAlwaysPermission": false,
           "motionUsagePermission": false,

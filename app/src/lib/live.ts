@@ -30,6 +30,8 @@ export type LiveTrip = {
   offSet?: Record<string, number>;
   /** Get off alerts set on the phone with a spoken sound (getOffCore offVoice): already said when they ring. */
   offVoice?: Record<string, 1>;
+  /** Get off alerts set from the phone's position (getOffCore offRegion, rnow<leg> and rsoon<leg>, 31 Oct). */
+  offRegion?: Record<string, string>;
   /** The server sends Get off now for this trip (build 210; its watch said getOff: true): not set on the phone. */
   offServer?: boolean;
   /** Say trip alerts out loud (builds with the speech module), and the alerts already read out. */
@@ -114,9 +116,12 @@ export async function liveWatch() {
     // The server said yes: the phone's own Get off now comes off now, before the phone is locked (getOffCore server).
     const server = (r.watch as any).getOff === true && 'getOff' in off;
     const offSet = { ...(cur.offSet || {}) };
-    if (server) for (const k of Object.keys(offSet)) if (/^gnow\d+$/.test(k)) { cancelGetOff(getOffId(cur.id, k)).catch(() => {}); delete offSet[k]; }
+    if (server) for (const k of Object.keys(offSet)) if (/^(gnow|quiet)\d+$/.test(k)) { cancelGetOff(getOffId(cur.id, k)).catch(() => {}); delete offSet[k]; }
+    // The server sends Get off now from the live times: the location alert for it comes off too (one voice, 31 Oct).
+    const offRegion = { ...(cur.offRegion || {}) };
+    if (server) for (const k of Object.keys(offRegion)) if (/^rnow\d+$/.test(k)) { cancelGetOff(getOffId(cur.id, k)).catch(() => {}); delete offRegion[k]; }
     if (server) setServerGetOffWatch(r.watch.id);
-    setLive({ ...cur, watchId: r.watch.id, ...(server ? { offServer: true, offSet } : { offServer: false }) });
+    setLive({ ...cur, watchId: r.watch.id, ...(server ? { offServer: true, offSet, offRegion } : { offServer: false }) });
   } else api.stopWatch(r.watch.id).catch(() => {});
 }
 
@@ -129,6 +134,7 @@ export async function endLive() {
   // Wake alarms still set for this trip never ring after it ends.
   for (const k of Object.keys(g.wakeSet || {})) cancelWake(wakeId(g.id, Number(k))).catch(() => {});
   for (const k of Object.keys(g.offSet || {})) cancelGetOff(getOffId(g.id, k)).catch(() => {});
+  for (const k of Object.keys(g.offRegion || {})) cancelGetOff(getOffId(g.id, k)).catch(() => {});
   setTripWatch(null, false);
   setServerGetOffWatch(null);
   setLive(null);
