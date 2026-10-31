@@ -84,16 +84,15 @@ test('fixes the audit found stay in: compact island countdown, Lock Screen words
   assert.match(t, /\.frame\(maxWidth: 100, alignment: \.trailing\)/);
   const l = read('app/targets/widget/LiveTripActivityWidget.swift');
   // Build 210: the stop track layouts come first when the card carries stops; the bar layouts stay as the fallback.
-  // 31 Oct readiness audit: the stop name keeps two lines before the detail and warning drop to one.
-  assert.match(l, /card\(lines: 2, track: false\)[\s\S]{0,300}?card\(lines: 1, track: false, headLines: 2\)[\s\S]{0,400}?card\(lines: 1, track: false, merged: true, headLines: 2, headScale: 0\.65\)\s*card\(lines: 1, track: false\)/);
+  // Build 211 round 2: the title is one line in every layout (LiveTripTitle), so the layouts differ only in the detail
+  // and warning lines: two, then one, then merged onto one, then merged without the arrival line.
+  assert.match(l, /card\(lines: 2, track: false\)\s*card\(lines: 1, track: false\)\s*\/\/[^\n]*\n\s*card\(lines: 1, track: false, merged: true\)\s*\/\/[^\n]*\n\s*card\(lines: 1, track: false, merged: true, arriveLine: false\)/);
   // Build 211: the track layouts merge the stops and the delay onto one line, so the track fits under a one line countdown.
-  assert.match(l, /card\(lines: 2, track: true, merged: true\)\s*card\(lines: 1, track: true, merged: true, headLines: 2\)\s*card\(lines: 1, track: true, merged: true, headLines: 2, headScale: 0\.65\)\s*card\(lines: 1, track: true, merged: true\)/);
+  assert.match(l, /card\(lines: 2, track: true, merged: true\)\s*card\(lines: 1, track: true, merged: true\)/);
   assert.doesNotMatch(l, /card\(lines: 2, track: true\)/);
-  // Build 211: the line count is worked out above the view (headMax = headLines ?? lines) to keep type checking quick.
-  assert.match(l, /let headMax: Int = headLines \?\? lines/);
-  assert.match(l, /lineLimit\(headMax\)\.minimumScaleFactor\(headScale\)/);
-  assert.match(l, /headLines: Int\? = nil, headScale: CGFloat = 0\.7[,)]/, "the stop name shrinks to 0.7 before it is cut, every layout (31 Oct)");
-  assert.match(l, /struct LiveTripIslandCenter[\s\S]{0,900}?\.lineLimit\(2\)\.minimumScaleFactor\(0\.65\)/, "the island headline shrinks before it is cut (31 Oct)");
+  // Round 2: the stop alone shrinks to 0.7 on the Lock Screen and 0.65 in the Island before it is cut at its end.
+  assert.match(l, /probe: "lock-stop", font: \.headline, minScale: 0\.7\)/);
+  assert.match(l, /struct LiveTripIslandCenter[\s\S]{0,1200}?minScale: 0\.65\)/, "the island title shrinks before it is cut");
   // 31 Oct readiness audit: the countdown shrinks before it is cut ("in 18 mi..." at xxxLarge).
   assert.match(l, /\.minimumScaleFactor\(0\.5\)/);
   assert.match(t, /\.minimumScaleFactor\(0\.5\)/);

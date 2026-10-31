@@ -60,6 +60,8 @@ struct IslandTrailing: View {
             .minimumScaleFactor(0.6)
             .lineProbe("follow-island-countdown", text: MinutesUntil.words(state.departs), lines: 1, font: .title3.weight(.semibold).monospacedDigit(), minScale: 0.6)
             .multilineTextAlignment(.trailing)
+            // Round 2 (build 211): 4 pt in from the right edge like the badge on the left, clear of the rounded corner.
+            .padding(.trailing, 4)
             .frame(minWidth: 80, maxWidth: 104, alignment: .trailing)
     }
 }
@@ -67,9 +69,10 @@ struct IslandTrailing: View {
 struct IslandCenter: View {
     var attrs: TripActivityAttributes
     var body: some View {
+        // One line under the camera (round 2, build 211), shrinking to 0.7 before it is cut at its end; was two lines.
         let to = "to \(shortTowards(attrs.towards))"
-        return Text(to).font(.subheadline.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.8)
-            .lineProbe("follow-island-to", text: to, lines: 2, font: .subheadline.weight(.semibold), minScale: 0.8)
+        return Text(to).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7).truncationMode(.tail)
+            .lineProbe("follow-island-to", text: to, lines: 1, font: .subheadline.weight(.semibold), minScale: 0.7)
             .multilineTextAlignment(.center)
             .accessibilityLabel("to \(attrs.towards)")
     }
@@ -126,15 +129,12 @@ struct LockScreenCard: View {
     var attrs: TripActivityAttributes
     var state: TripActivityAttributes.ContentState
 
-    /// The countdown takes at most 100 pt on one line, shrinking before it is cut (build 211), and the left side gives way: "to <where>" may take two lines, then the
-    /// detail goes, then the platform (native audit, 30 Oct: "in 6 minut…", "On / time" wrapping, "to Macquar…").
+    /// The countdown takes at most 100 pt on one line, shrinking before it is cut (build 211), and the left side gives way: "to <where>" stays on one line
+    /// (round 2), then the detail goes, then the platform (native audit, 30 Oct: "in 6 minut…", "On / time" wrapping, "to Macquar…").
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            ViewThatFits(in: .vertical) {
-                left(towardsLines: 2)
-                left(towardsLines: 1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            left()
+                .frame(maxWidth: .infinity, alignment: .leading)
             VStack(alignment: .trailing, spacing: 0) {
                 Text("Leaves").font(.caption2).foregroundStyle(.secondary)
                 // One line, "18 min" (build 211; was "in 18 minutes" on two lines); it shrinks before it is cut.
@@ -153,12 +153,13 @@ struct LockScreenCard: View {
         }
     }
 
-    private func left(towardsLines: Int) -> some View {
+    private func left() -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 WidgetLineBadge(line: attrs.line, colorHex: attrs.lineColorHex, mode: attrs.mode).fixedSize()
-                Text("to \(shortTowards(attrs.towards))").font(.headline).lineLimit(towardsLines).minimumScaleFactor(0.85)
-                    .lineProbe("follow-lock-to", text: "to \(shortTowards(attrs.towards))", lines: towardsLines, font: .headline, minScale: 0.85)
+                // One line (round 2, build 211; it could take two), shrinking to 0.7 before it is cut at its end.
+                Text("to \(shortTowards(attrs.towards))").font(.headline).lineLimit(1).minimumScaleFactor(0.7).truncationMode(.tail)
+                    .lineProbe("follow-lock-to", text: "to \(shortTowards(attrs.towards))", lines: 1, font: .headline, minScale: 0.7)
                     .accessibilityLabel("to \(attrs.towards)")
             }
             Text(attrs.to.map { "\(attrs.from) to \($0)" } ?? "From \(attrs.from)")
