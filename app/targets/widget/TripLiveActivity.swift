@@ -52,11 +52,11 @@ struct IslandLeading: View {
 struct IslandTrailing: View {
     var state: TripActivityAttributes.ContentState
     var body: some View {
-        // "in 18 minutes" goes onto two lines rather than "in 18 minut…" (native audit).
+        // One line, "6 min" (build 211; was "in 18 minutes" on two lines).
         MinutesUntil(date: state.departs)
             .font(.title3.weight(.semibold))
             .monospacedDigit()
-            .lineLimit(2)
+            .lineLimit(1)
             .minimumScaleFactor(0.6)
             .lineProbe("follow-island-countdown", text: MinutesUntil.words(state.departs), lines: 1, font: .title3.weight(.semibold).monospacedDigit(), minScale: 0.6)
             .multilineTextAlignment(.trailing)
@@ -117,7 +117,7 @@ struct LockScreenCard: View {
     var attrs: TripActivityAttributes
     var state: TripActivityAttributes.ContentState
 
-    /// The countdown takes at most 100 pt (two lines when it needs them) and the left side gives way: "to <where>" may take two lines, then the
+    /// The countdown takes at most 100 pt on one line, shrinking before it is cut (build 211), and the left side gives way: "to <where>" may take two lines, then the
     /// detail goes, then the platform (native audit, 30 Oct: "in 6 minut…", "On / time" wrapping, "to Macquar…").
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -128,11 +128,11 @@ struct LockScreenCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             VStack(alignment: .trailing, spacing: 0) {
                 Text("Leaves").font(.caption2).foregroundStyle(.secondary)
-                // "in 18 minutes" takes two lines before the left side is cut (native audit).
+                // One line, "18 min" (build 211; was "in 18 minutes" on two lines); it shrinks before it is cut.
                 MinutesUntil(date: state.departs)
                     .font(.title2.weight(.bold))
                     .monospacedDigit()
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .minimumScaleFactor(0.5)  // xxxLarge with a warning: shrink, never "in 18 mi…" (31 Oct readiness audit)
                     .lineProbe("follow-lock-countdown", text: MinutesUntil.words(state.departs), lines: 1, font: .title2.weight(.bold).monospacedDigit(), minScale: 0.5)
                     .multilineTextAlignment(.trailing)

@@ -54,18 +54,31 @@ struct LiveTripIslandTrailing: View {
     var state: LiveTripAttributes.ContentState
     var stale = false
     var body: some View {
-        // "in 18 minutes" goes onto two lines rather than "in 18 minut…" (native audit).
-        MinutesUntil(date: state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
-            .font(.title3.weight(.semibold))
-            .monospacedDigit()
-            .lineLimit(2)
-            .minimumScaleFactor(0.6)
-            .lineProbe("island-countdown", text: MinutesUntil.words(state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale)),
-                       lines: 1, font: .title3.weight(.semibold).monospacedDigit(), minScale: 0.6)
-            .multilineTextAlignment(.trailing)
-            .frame(width: 80, alignment: .trailing)
+        // Build 211 (31 Oct, owner's iPhone on build 210): the countdown on one line ("6 min", was "in 5 / minutes"),
+        // and the delay under it ("3 min late", "On time"), which the Island did not show while the Lock Screen did.
+        VStack(alignment: .trailing, spacing: 1) {
+            MinutesUntil(date: state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
+                .font(.title3.weight(.semibold))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .lineProbe("island-countdown", text: MinutesUntil.words(state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale)),
+                           lines: 1, font: .title3.weight(.semibold).monospacedDigit(), minScale: 0.6)
+            if let d = state.delayStatus(stale: stale) {
+                Text(d)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(delayColor(d))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .lineProbe("island-delay", text: d, lines: 1, font: .caption2.weight(.semibold), minScale: 0.8)
+            }
+        }
+        .frame(width: 80, alignment: .trailing)
     }
 }
+
+/// Late in orange, on time in green: the Lock Screen's colours, both clear on the black Island.
+func delayColor(_ words: String) -> Color { words == "On time" ? .green : .orange }
 
 struct LiveTripIslandCenter: View {
     var state: LiveTripAttributes.ContentState
@@ -141,8 +154,11 @@ struct CompactCountdown: View {
     }
 }
 
-/// "26 min", "1 min", "Now": whole minutes that keep counting on the Lock Screen (iOS 18), or
-/// the clock time on iOS 17, which has no minutes only countdown. Never a seconds timer.
+/// "6 min", "1 hr, 5 min", "Now": whole minutes that keep counting by themselves on the Lock Screen and in the Island
+/// (iOS 18), on one line, or the clock time on iOS 17, which has no minutes only countdown. Never a seconds timer.
+/// Build 211 (31 Oct): was "in 6 minutes", which went onto two lines on the owner's iPhone ("Get off / in 6 / minutes"
+/// on the Lock Screen, "in 5 / minutes" in the Island) and pushed the stop track off the Lock Screen card.
+/// Rounded down like the widgets' "5 min" (WidgetText.wait): "5 min" at 5:59 to go.
 struct MinutesUntil: View {
     var date: Date
     var arrived = false
@@ -153,20 +169,26 @@ struct MinutesUntil: View {
             Image(systemName: "checkmark.circle.fill").accessibilityLabel("Arrived")
         } else if outdated {
             Text(Clock.time(date))
+        } else if date.timeIntervalSinceNow < 60 {
+            Text("Now")
         } else if #available(iOS 18.0, *) {
-            Text(.currentDate, format: .reference(to: date, allowedFields: [.hour, .minute]))
+            Text(TimeDataSource<Range<Date>>.dateRange(endingAt: date), format: Self.style)
         } else {
             Text(Clock.time(date))
         }
     }
 
+    /// Hours and minutes with short units: "6 min", "1 hr, 5 min".
+    @available(iOS 18.0, *)
+    static var style: Date.ComponentsFormatStyle { Date.ComponentsFormatStyle(style: .abbreviated, fields: [.hour, .minute]) }
+
     /// The words the countdown shows right now (the native audit's line check reads them).
     static func words(_ date: Date, arrived: Bool = false, outdated: Bool = false) -> String {
         if arrived { return "" }
         if outdated { return Clock.time(date) }
-        if #available(iOS 18.0, *) {
-            return String(SystemFormatStyle.DateReference(to: date, allowedFields: [.hour, .minute]).format(Date()).characters)
-        }
+        let now = Date()
+        if date.timeIntervalSince(now) < 60 { return "Now" }
+        if #available(iOS 18.0, *) { return style.format(now..<date) }
         return Clock.time(date)
     }
 }
@@ -195,7 +217,8 @@ struct LiveTripIslandBottom: View {
                     .accessibilityLabel(state.trackAccessibility)
             }
             TrackFooter(state: state, stale: stale)
-            if warning, let w = state.warning {
+            // The delay is beside the countdown now (build 211); a change or timetable warning stays here.
+            if warning, let w = state.warning, state.delayStatus(stale: stale) == nil {
                 Label(w, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(state.warningIsRed ? Color.red : Color.orange)
                     .lineLimit(1)
@@ -214,7 +237,7 @@ struct LiveTripIslandBottom: View {
                         .minimumScaleFactor(0.75).layoutPriority(1)
                 }
             }
-            if let w = state.warning, !state.arrived(stale: stale) {
+            if let w = state.warning, !state.arrived(stale: stale), state.delayStatus(stale: stale) == nil {
                 Label(w, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(state.warningIsRed ? Color.red : Color.orange)
                     .lineLimit(1)
@@ -376,8 +399,11 @@ struct LiveTripLockCard: View {
             // Build 210: the stop track in place of the bar when the card carries the leg's stops. The stop off
             // name stays whole first (owner, 30 Oct: "Get off at Five..."): "6 stops" and the late or change words
             // share one line before the headline is cut, and the track stays before the bar layouts are used.
+            // Build 211 (31 Oct): the owner's build 210 iPhone showed the bar, not the stop track, on a T1 trip with
+            // "2 stops" and "3 min late" on their own lines under a two line "in 6 / minutes": that card was too tall
+            // for the Lock Screen. Now the countdown is one line ("6 min") and the track layouts put the stops and the
+            // delay on one line ("2 stops · 3 min late"), so the track fits with room to spare.
             if state.showsTrack(stale: stale) {
-                card(lines: 2, track: true)
                 card(lines: 2, track: true, merged: true)
                 card(lines: 1, track: true, merged: true, headLines: 2)
                 card(lines: 1, track: true, merged: true, headLines: 2, headScale: 0.65)
@@ -395,14 +421,18 @@ struct LiveTripLockCard: View {
         }
     }
 
-    /// "6 stops · 4 min late" on one line: the detail in grey, the warning in its colour.
-    private func detailAndWarning(_ lines: Int) -> some View {
+    /// "6 stops · 4 min late" on one line: the detail in grey, the warning in its colour. With the stop track and no
+    /// warning, "2 stops · On time" in green when the stops are live (build 211, the same words as the Island).
+    private func detailAndWarning(_ lines: Int, track: Bool = false) -> some View {
         let d = state.detail(stale: stale)
         let w = state.arrived(stale: stale) ? nil : state.warning
         var t = Text(d).foregroundColor(.secondary)
         if let w, !w.isEmpty {
             let warn = Text(w).fontWeight(.semibold).foregroundColor(state.warningIsRed ? .red : .orange)
             t = d.isEmpty ? warn : t + Text(" · ").foregroundColor(.secondary) + warn
+        } else if track, let on = state.delayStatus(stale: stale) {
+            let ok = Text(on).fontWeight(.semibold).foregroundColor(delayColor(on))
+            t = d.isEmpty ? ok : t + Text(" · ").foregroundColor(.secondary) + ok
         }
         return t.font(.subheadline).lineLimit(lines).minimumScaleFactor(0.85)
     }
@@ -417,7 +447,7 @@ struct LiveTripLockCard: View {
                             .lineProbe("lock-stop", text: state.headline(stale: stale), lines: headLines ?? lines, font: .headline, minScale: headScale)
                     }
                     if merged {
-                        detailAndWarning(lines)
+                        detailAndWarning(lines, track: track)
                     } else {
                         // An empty detail (no live stop count) takes no line.
                         if !track || !state.detail(stale: stale).isEmpty {
@@ -437,11 +467,11 @@ struct LiveTripLockCard: View {
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 0) {
                     Text(state.countdownLabel(stale: stale)).font(.caption2).foregroundStyle(.secondary)
-                    // "in 18 minutes" takes two lines before "Get off at <stop>" is cut (native audit).
+                    // One line, "6 min" (build 211: "in 6 / minutes" on the owner's iPhone); it shrinks before it is cut.
                     MinutesUntil(date: state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
                         .font(.title2.weight(.bold))
                         .monospacedDigit()
-                        .lineLimit(2)
+                        .lineLimit(1)
                         .minimumScaleFactor(0.5)  // xxxLarge with a warning: shrink, never "in 18 mi…" (31 Oct readiness audit)
                         .lineProbe("lock-countdown", text: MinutesUntil.words(state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale)),
                                    lines: 1, font: .title2.weight(.bold).monospacedDigit(), minScale: 0.5)

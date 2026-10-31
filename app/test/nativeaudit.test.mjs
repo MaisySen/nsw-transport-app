@@ -86,7 +86,9 @@ test('fixes the audit found stay in: compact island countdown, Lock Screen words
   // Build 210: the stop track layouts come first when the card carries stops; the bar layouts stay as the fallback.
   // 31 Oct readiness audit: the stop name keeps two lines before the detail and warning drop to one.
   assert.match(l, /card\(lines: 2, track: false\)[\s\S]{0,300}?card\(lines: 1, track: false, headLines: 2\)[\s\S]{0,400}?card\(lines: 1, track: false, merged: true, headLines: 2, headScale: 0\.65\)\s*card\(lines: 1, track: false\)/);
-  assert.match(l, /card\(lines: 2, track: true\)\s*card\(lines: 2, track: true, merged: true\)\s*card\(lines: 1, track: true, merged: true, headLines: 2\)\s*card\(lines: 1, track: true, merged: true, headLines: 2, headScale: 0\.65\)\s*card\(lines: 1, track: true, merged: true\)/);
+  // Build 211: the track layouts merge the stops and the delay onto one line, so the track fits under a one line countdown.
+  assert.match(l, /card\(lines: 2, track: true, merged: true\)\s*card\(lines: 1, track: true, merged: true, headLines: 2\)\s*card\(lines: 1, track: true, merged: true, headLines: 2, headScale: 0\.65\)\s*card\(lines: 1, track: true, merged: true\)/);
+  assert.doesNotMatch(l, /card\(lines: 2, track: true\)/);
   assert.match(l, /lineLimit\(headLines \?\? lines\)\.minimumScaleFactor\(headScale\)/);
   assert.match(l, /headLines: Int\? = nil, headScale: CGFloat = 0\.7\)/, "the stop name shrinks to 0.7 before it is cut, every layout (31 Oct)");
   assert.match(l, /struct LiveTripIslandCenter[\s\S]{0,500}?\.lineLimit\(2\)\.minimumScaleFactor\(0\.65\)/, "the island headline shrinks before it is cut (31 Oct)");

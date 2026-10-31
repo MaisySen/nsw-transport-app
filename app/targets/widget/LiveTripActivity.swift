@@ -109,6 +109,18 @@ extension LiveTripAttributes.ContentState {
         return outdated(stale: stale) ? "\(base) about" : base
     }
 
+    /// The delay beside the Dynamic Island countdown and after "2 stops" on the Lock Screen (build 211, owner's build 210
+    /// iPhone, 31 Oct: the Lock Screen said "3 min late", the Island did not): "3 min late" when that is the card's whole
+    /// warning (app/platform/tripCard.ts legNote), "On time" when the card's stops are live and it has no warning.
+    /// Nothing for old times, an arrived card, a timetable card or a change warning (those stay where they were).
+    public func delayStatus(stale: Bool) -> String? {
+        if arrived(stale: stale) || outdated(stale: stale) { return nil }
+        if let w = warning?.trimmingCharacters(in: .whitespaces), !w.isEmpty {
+            return w.range(of: #"^[0-9]+ min late$"#, options: .regularExpression) != nil ? w : nil
+        }
+        return stopTrack?.live == true ? "On time" : nil
+    }
+
     /// A missed or at risk change shows red, a tight one orange.
     public var warningIsRed: Bool { (warning ?? "").contains("miss") || (warning ?? "").contains("risk") }
 
