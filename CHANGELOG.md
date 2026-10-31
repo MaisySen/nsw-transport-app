@@ -2,6 +2,19 @@
 
 What changed in Transport, newest first. Times are Sydney time. Build numbers, update ids and links are in [docs/RELEASES.md](docs/RELEASES.md).
 
+## 1 Nov 2026
+
+### Trip flow 2: live correctness from real trains (11:54 PM 31 Oct to 1:12 AM 1 Nov; owner's yes for deploys)
+Eleven shadow trips (test devices, no phone alerts) were followed through the deployed server on real Sydney Trains services between Strathfield, Croydon, Lidcombe, Ashfield and Redfern, polling the watch, the trip state and `/api/service` every 15 s. What they showed, and what changed:
+* **Delay-only stop events.** Sydney Trains sends a delay with no clock time for most stops. The server now gives the boarding stop and your stop the planned time plus that delay (it used to fall back to the board time). This explains the 11:17 PM T1 case: the board said 11:29:06, the stop row 11:20:30, and the train's own position at Lidcombe confirmed 11:20:30. The board copy was stale.
+* **Train positions.** Sydney Trains gives a place name ("Lidcombe.Lidcombe 3 Loc") instead of a stop id, so the server never placed the train and trips never left or arrived. Positions are now placed on the run by geometry: at a stop within 150 m; between two stops only when the position lies along that stretch; up to 180 s old. A train behind the boarding stop counts as not yet there. Two shadow trips caught false "left" readings this way, at 12:04 AM and 12:13 AM, both fixed.
+* **The boarding stop drops out of the feed** once the train leaves. It is now put back when its departure is due.
+* **Your stop matched** by stop id, platform id, parent station and name (`svcOffIndex`, new `toName` query on `/api/service`). Station id 213110 gave no match before.
+* **Get off now from the train's position on the last stretch** (owner's rule 3: GPS beats the stop's time). The feed's arrival ran 22 s to over 3 min later than the train on every trip, so Get off now arrived with the train already at the platform, or never rang (a T1 Redfern to Ashfield ran 3 min early against a timetable arrival). On feeds that give positions only, once the train is heading to your stop and under 1 km out, the arrival is now 45 s plus 40 ms a metre from the position's time, whenever that is earlier than the feed's. Before (12:10 to 12:22 AM) Get off now landed between 9 s before and 4 s after the at-platform report, or not at all. After (12:36 to 12:51 AM) it landed 15 to 25 s before. The first version used positions up to 1.5 km out. On a T1 to Lidcombe at 12:56 AM the train took 152 s from 1.45 km, so Get off now came 80 s early. Since 1:12 AM only positions under 1 km count, which was within 22 s on all 16 reports. Feeds that give stop ids (buses, the simulator) are unchanged.
+* Server versions, from server-tripflow: 07423792 (b8db62f, 11:54 PM), 203dd435 (b72da6e, 12:00 AM), ee87bf7f (bda6191, 12:11 AM), cfaa9516 (14745cf, 12:30 AM), a4fd39b0 (f62b276, 12:44 AM), 2a37431b (0fb4016, 1:12 AM). Each passed backend tests (723/723 at the last), verify-deploy, and an error watch over analytics (0 errors). Ids and rollback are in [docs/RELEASES.md](docs/RELEASES.md).
+* App, not published: tripflow-p2 83b09aa and later. A stop row's delay now applies to the plan stop when they are within 3 min (fixes a 30 s dwell difference). The app also gets the same last-stretch arrival from position, so the open app and the server agree on Get off now (I6). This needs an app update; until then, an open app on runtime 1.2.0 can say Get off now up to about 30 s after the server's alert.
+* Tests: `backend/test/live-match-1nov.test.mjs` (8, each failing first on the code before it), `app/test/tripstate.test.mjs` (two new). Every simulator case with a server still passes.
+
 ## 31 Oct 2026
 
 ### Trip flow 2 shipped (31 Oct, 11:11 to 11:28 PM; owner's yes 11:07 PM)

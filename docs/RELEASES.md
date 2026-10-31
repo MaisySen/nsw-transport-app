@@ -53,6 +53,18 @@ Public TestFlight (since 25 Oct, 8:41 AM): external group "Public" `36f40c38-274
 | Update, production, runtime 1.2.0, iOS | group 6496b2d0-edf2-443d-969a-4f985671fcdf (update 01a191ed-a63a-72f1-b8c5-27c9e5e433c2), republished from preview; roll back: roll-back-to-embedded | 11:27 PM | tripflow-p2 e442b73 |
 | Server switches | tripflow2 true (11:27:30 PM), apnsAlerts true (11:27:35 PM), other flags unchanged | 11:27 PM | D1 app_config platform=server |
 
+## Trip flow 2 live fixes (11:54 PM 31 Oct to 1:12 AM 1 Nov 2026)
+
+| What | Id | When | From |
+| --- | --- | --- | --- |
+| Server deploy | transport-api 07423792-d03b-467e-b32d-0b98cf086985 | 11:54 PM | server-tripflow b8db62f |
+| Server deploy | transport-api 203dd435-1f3f-456f-92c6-42ab4e19f8ed | 12:00 AM | server-tripflow b72da6e |
+| Server deploy | transport-api ee87bf7f-b08f-481f-9f4a-e834fe546809 | 12:11 AM | server-tripflow bda6191 |
+| Server deploy | transport-api cfaa9516-46f6-4f93-8b46-1e3fbf80716b | 12:30 AM | server-tripflow 14745cf |
+| Server deploy | transport-api a4fd39b0-7092-4a6d-a95a-8aff2f09e762 | 12:44 AM | server-tripflow f62b276 |
+| Server deploy (current) | transport-api 2a37431b-10ca-4d69-a2bd-71a11cd70882; roll back in order to a4fd39b0, cfaa9516, ee87bf7f, 203dd435, 07423792, 9250ee58, b1feea1d | 1:12 AM | server-tripflow 0fb4016 |
+| App (not published) | tripflow-p2 (see CHANGELOG) | 1:15 AM | no update sent |
+
 ## iPhone (native SwiftUI)
 
 Unsigned builds from CI, attached to GitHub releases. Install with Sideloadly or AltStore ([ios-native/INSTALL.md](../ios-native/INSTALL.md)). Version 1.0 throughout. Builds 1 to 6 used a temporary bundle id; build 7 and later use `com.maisysen.nswtransport`.
