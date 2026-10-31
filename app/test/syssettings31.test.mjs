@@ -106,11 +106,14 @@ test('the Plan rows and every other clock read the same phone setting, once a mi
   // The stop board's "Live, updated" line uses the shared clock, not its own 12 hour one.
   assert.match(read('src/components/Transit.tsx'), /Live, updated \$\{clockSec\(updatedAt\)\}/);
   // Every file that still writes a 12 hour clock asks the phone first (the server's copy of the trip card excepted:
-  // it is generated into backend/src/worker.js, where there is no phone).
+  // it is generated into backend/src/worker.js, where there is no phone). On build 211 noteShowCore.ts also writes the
+  // server's own 12 hour words (serverClock), never shown: only to read "got in at 12:06pm" in a server note back to a
+  // time, so it must match the server whatever the phone shows.
   const files = [];
   const walk = (d) => { for (const e of fs.readdirSync(path.join(root, d), { withFileTypes: true })) { const r = path.join(d, e.name); if (e.isDirectory()) walk(r); else if (/\.tsx?$/.test(e.name)) files.push(r); } };
   walk('src');
-  const bad = files.filter((f) => read(f).includes('hour12: true') && !read(f).includes('PHONE24'));
+  const readsServerWords = (f) => /export function serverClock\(/.test(read(f)) && read(f).split('hour12: true').length === 2;
+  const bad = files.filter((f) => read(f).includes('hour12: true') && !read(f).includes('PHONE24') && !readsServerWords(f));
   assert.deepEqual(bad, []);
 });
 
