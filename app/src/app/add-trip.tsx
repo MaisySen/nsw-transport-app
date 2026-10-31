@@ -6,7 +6,7 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
-import { useStopSearch } from '@/lib/stopSearch';
+import { SEARCH_FAILED_TEXT, useStopSearch } from '@/lib/stopSearch';
 import { usePalette, radius } from '@/lib/theme';
 import { MODE_BY_CODE, shortName } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
@@ -14,6 +14,8 @@ import type { Place } from '@/lib/types';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { nearbyStops, pullHome } from '@/components/Home';
 import { Button, Row, Screen, Section, Sep, T, font } from '@/components/ui';
+import { friendlyErr } from '@/lib/netErrCore';
+import { freshFix } from '@/lib/where';
 
 type Field = 'from' | 'to';
 
@@ -26,7 +28,7 @@ function useNearbyIfAllowed() {
         const p = await Location.getForegroundPermissionsAsync();
         if (!p.granted) return;
         let pos = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60000 }).catch(() => null);
-        if (!pos) pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (!pos) pos = await freshFix(Location.Accuracy.Balanced);
         const s = await nearbyStops(pos.coords.latitude, pos.coords.longitude);
         if (alive) setItems(s);
       } catch {}
@@ -52,7 +54,7 @@ export default function AddTrip() {
   const fromRef = useRef<any>(null);
   const toRef = useRef<any>(null);
   const text = field === 'from' ? fromText : toText;
-  const { items, loading } = useStopSearch(from && to ? '' : text);
+  const { items, loading, failed } = useStopSearch(from && to ? '' : text);
   const near = useNearbyIfAllowed();
   const ready = !!(from && to && from.id !== to.id);
 
@@ -85,7 +87,7 @@ export default function AddTrip() {
       pullHome();
       goBack();
     } catch (e: any) {
-      Alert.alert("Couldn't save it", String(e?.message || e));
+      Alert.alert("Couldn't save it", friendlyErr(e));
     } finally {
       setSaving(false);
     }
@@ -152,7 +154,7 @@ export default function AddTrip() {
         ) : null}
 
         {list.length ? <Section>{list.map(resultRow)}</Section> : null}
-        {!ready && text.trim().length >= 2 && !loading && !list.length ? <T kind="sub" tone="text2" style={{ marginHorizontal: 32, marginTop: 20 }}>No stops match that</T> : null}
+        {!ready && text.trim().length >= 2 && !loading && !list.length ? <T kind="sub" tone="text2" style={{ marginHorizontal: 32, marginTop: 20 }}>{failed ? SEARCH_FAILED_TEXT : 'No stops match that'}</T> : null}
         {showHelp && near.length ? <Section title="Nearby">{near.map(resultRow)}</Section> : null}
         {showHelp && recents.length ? <Section title="Recent">{recents.map(resultRow)}</Section> : null}
       </Screen>

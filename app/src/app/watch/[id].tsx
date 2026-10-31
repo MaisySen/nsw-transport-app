@@ -15,6 +15,7 @@ import { WatchLineText, openService } from '@/components/Cards';
 import { LineBadge, LiveStamp } from '@/components/Transit';
 import { I } from '@/components/Icon';
 import { Button, Empty, Row, Screen, Section, Sep, T } from '@/components/ui';
+import { friendlyErr } from '@/lib/netErrCore';
 
 export default function WatchDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -68,7 +69,7 @@ export default function WatchDetail() {
                 ))}
               </Section>
             ) : null}
-            {w.active ? <View style={{ margin: 16, marginTop: 24 }}><Button title="Stop watching" kind="tinted" onPress={() => stopWatch(w.id).then(() => goBack('/watching'), (e: any) => Alert.alert("Couldn't stop watching", String(e?.message || e)))} /></View> : null}
+            {w.active ? <View style={{ margin: 16, marginTop: 24 }}><Button title="Stop watching" kind="tinted" onPress={() => stopWatch(w.id).then(() => goBack('/watching'), (e: any) => Alert.alert("Couldn't stop watching", friendlyErr(e)))} /></View> : null}
           </>
         ) : null}
       </Screen>

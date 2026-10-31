@@ -8,6 +8,7 @@ import { enablePush, getPushState } from '@/lib/push';
 import { ACC_COLOR, accChip, accessKit, outageText, parkBadge, parkFill, parkName, parkTotals, safeUrl, ticketText, usualLine, type CarPark, type LegAccess, type Station } from '@/lib/access';
 import { Icon, I } from './Icon';
 import { Sep, T } from './ui';
+import { friendlyErr } from '@/lib/netErrCore';
 
 type Tone = 'green' | 'orange' | 'red' | 'grey';
 function toneColor(c: ReturnType<typeof usePalette>, t: Tone) {
@@ -45,7 +46,7 @@ async function watchCarPark(p: CarPark, done: () => void) {
     const st = r.now?.status;
     Alert.alert('Alert set', (st === 'nearly' || st === 'full' ? `${name} is already ${st === 'full' ? 'full' : 'nearly full'}. I'll still tell you.` : `I'll tell you if ${name} gets nearly full in the next 3 hours.`) + (ps.status === 'local' ? ' Alerts need the app open.' : ''));
   } catch (e: any) {
-    Alert.alert("Couldn't set the alert", e.message);
+    Alert.alert("Couldn't set the alert", friendlyErr(e));
   }
 }
 
@@ -133,7 +134,7 @@ export function StationInfo({ st }: { st?: Station | null }) {
             return (
               <View key={i}>
                 <Sep inset={61} />
-                <Pressable accessibilityRole="link" disabled={!u} onPress={() => u && Linking.openURL(u)} android_ripple={{ color: c.fill }} style={s.row}>
+                <Pressable accessibilityRole="link" disabled={!u} onPress={() => u && Linking.openURL(u).catch(() => {})} android_ripple={{ color: c.fill }} style={s.row}>
                   <Sym icon={I.access} bg={c.red} />
                   <View style={{ flex: 1 }}>
                     <T kind="body" style={{ color: c.redText }}>{o.kind === 'escalator' ? 'Escalator' : 'Lift'} out of service</T>

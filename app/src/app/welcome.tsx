@@ -7,7 +7,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { haptic } from '@/lib/haptic';
 import { MODE_BY_CODE, shortName } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
-import { useStopSearch } from '@/lib/stopSearch';
+import { SEARCH_FAILED_TEXT, useStopSearch } from '@/lib/stopSearch';
 import { radius, usePalette } from '@/lib/theme';
 import type { Place, SearchItem } from '@/lib/types';
 import { Icon, I, modeIconName } from '@/components/Icon';
@@ -23,7 +23,7 @@ export default function Welcome() {
   const [step, setStep] = useState<Step>('home');
   const [q, setQ] = useState('');
   const input = useRef<any>(null);
-  const { items, loading } = useStopSearch(q);
+  const { items, loading, failed } = useStopSearch(q);
   const cur = (st.places || {})[step];
 
   // Leaving this screen any way at all (Skip, Done, back) counts as answered, so it is asked once.
@@ -90,7 +90,7 @@ export default function Welcome() {
         </View>
 
         {list.length ? <Section>{list.slice(0, 8).map(row)}</Section> : null}
-        {q.trim().length >= 2 && !loading && !list.length ? <T kind="sub" tone="text2" style={{ marginHorizontal: 32, marginTop: 16 }}>No stops match that</T> : null}
+        {q.trim().length >= 2 && !loading && !list.length ? <T kind="sub" tone="text2" style={{ marginHorizontal: 32, marginTop: 16 }}>{failed ? SEARCH_FAILED_TEXT : 'No stops match that'}</T> : null}
         {q.trim().length < 2 && recents.length ? <Section title="Recent">{recents.map(row)}</Section> : null}
 
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: 16, marginTop: 24 }}>

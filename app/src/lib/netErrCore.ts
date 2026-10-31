@@ -16,6 +16,17 @@ export const MSG = {
   failed: "That didn't work. Try again in a moment.",
 } as const;
 
+/**
+ * Words for an alert after a failed action (1 Nov polish): the app's own message when the error carries one written
+ * for people (api.ts builds them from MSG and the server's words), never a raw "TypeError: ..." or a JSON body.
+ */
+export function friendlyErr(e: any): string {
+  const m = typeof e === 'string' ? e : typeof e?.message === 'string' ? e.message : '';
+  const t = m.trim();
+  if (!t || t.length > 200 || /^[A-Z][A-Za-z]*Error\b|\bundefined\b|\bnull\b|[{}<>\[\]]|\bstatus\s*\d{3}\b|^\d{3}\b|is not a function|Cannot read prop/.test(t)) return MSG.failed;
+  return t;
+}
+
 /** Read deadlines (docs/DIAGNOSIS_LAG.md item 6): shorter with a kept copy or pack on screen. Trips have one deadline. */
 export const READ_MS_WITH_COPY = 8000;
 export const READ_MS_EMPTY = 15000;

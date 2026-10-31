@@ -7,11 +7,12 @@ import { SHEET_RADIUS, SheetGrabber, useSheetDrag } from './EditorSheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSides } from '@/lib/layout';
 import { haptic } from '@/lib/haptic';
-import { radius, usePalette } from '@/lib/theme';
+import { radius, usePalette, androidLook } from '@/lib/theme';
 import { from12, to12 } from '@/lib/planCore';
 import { DAY_LONG, DAY_NAMES, MAX_PER_TRIP, newReminder, reminderText, type Reminder } from '@/lib/reminderCore';
 import { remindersSupported, setTripReminders, useTripReminders } from '@/lib/reminders';
-import { HALVES, HOURS, ITEM, MINUTES, Wheel } from './WhenPicker';
+import { HALVES, HOURS, HOURS24, ITEM, MINUTES, Wheel } from './WhenPicker';
+import { phone24h } from '@/lib/rowTime';
 import { Icon, I } from './Icon';
 import { Sep, T } from './ui';
 import { useReduceMotion } from '@/lib/motion';
@@ -39,7 +40,7 @@ export function TripReminders({ tripKey, name, open, suggest }: { tripKey: strin
 
   return (
     <View style={{ marginHorizontal: 16, marginTop: 18 }}>
-      <T kind="foot" tone="text2" style={{ marginLeft: 16, marginBottom: 6, fontWeight: '600', letterSpacing: 0.4 }} accessibilityRole="header">REMINDERS</T>
+      <T kind="foot" tone="text2" style={{ textTransform: androidLook ? 'none' : 'uppercase', marginLeft: 16, marginBottom: 6, fontWeight: '600', letterSpacing: 0.4 }} accessibilityRole="header">Reminders</T>
       <View style={{ backgroundColor: c.card, borderRadius: radius, overflow: 'hidden' }}>
         {list.map((r, i) => (
           <View key={r.id}>
@@ -95,6 +96,8 @@ function ReminderSheet({ value, isNew, onClose, onSave, onDelete }: { value: Rem
   }, [value]);
   if (!value) return null;
   const { h12, pm } = to12(h);
+  // The phone's 24-Hour Time setting: one 00 to 23 hour wheel and no am/pm wheel, as the system picker does (1 Nov).
+  const h24 = phone24h();
   const toggle = (d: number) => { haptic.select(); setDays(days.includes(d) ? days.filter((x) => x !== d) : [...days, d]); };
   const done = () => { if (!days.length) return; haptic.select(); onSave({ id: value.id, hour: h, minute: m, days: [...days].sort((a, b) => a - b) }); };
   const body = (
@@ -103,10 +106,10 @@ function ReminderSheet({ value, isNew, onClose, onSave, onDelete }: { value: Rem
         <View style={[StyleSheet.absoluteFill, { justifyContent: 'center' }]} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
           <View style={ios ? { height: ITEM, borderRadius: 10, backgroundColor: c.fill, marginHorizontal: 12 } : { height: ITEM, borderTopWidth: 2, borderBottomWidth: 2, borderColor: c.tint, marginHorizontal: 24 }} />
         </View>
-        <Wheel label="Hour" width={72} values={HOURS} value={h12} text={(v) => String(v)} onChange={(v) => setH(from12(v, pm))} />
+        {h24 ? <Wheel label="Hour" width={72} values={HOURS24} value={h} text={(v) => String(v).padStart(2, '0')} onChange={setH} /> : <Wheel label="Hour" width={72} values={HOURS} value={h12} text={(v) => String(v)} onChange={(v) => setH(from12(v, pm))} />}
         <T kind="title3" style={{ fontSize: 22 }}>:</T>
         <Wheel label="Minute" width={72} values={MINUTES} value={m} text={(v) => String(v).padStart(2, '0')} onChange={setM} />
-        <Wheel label="Morning or afternoon" width={72} values={HALVES} value={pm ? 1 : 0} text={(v) => (v ? 'pm' : 'am')} onChange={(v) => setH(from12(h12, !!v))} />
+        {h24 ? null : <Wheel label="Morning or afternoon" width={72} values={HALVES} value={pm ? 1 : 0} text={(v) => (v ? 'pm' : 'am')} onChange={(v) => setH(from12(h12, !!v))} />}
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 14, paddingHorizontal: 12 }}>
         {ORDER.map((d) => {

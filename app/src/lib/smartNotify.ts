@@ -16,7 +16,7 @@ export function setupSmartChannels() {
     if (Platform.OS !== 'android') return;
     try {
       await Notifications.setNotificationChannelAsync(WAKE_CHANNEL, {
-        name: 'Wake me before my stop', description: 'A strong buzz one stop before you get off',
+        name: 'Get off alerts', description: 'Heads-up, Get off now and arrival for a started trip',
         importance: Notifications.AndroidImportance.MAX, vibrationPattern: WAKE_BUZZ, enableVibrate: true,
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, lightColor: '#0A84FF',
       });

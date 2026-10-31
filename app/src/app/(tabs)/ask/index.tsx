@@ -6,7 +6,7 @@ import { askFailText, httpError, isNetErr, noAnswerError, noteReach, READ_MS_EMP
 import { spokenTime } from '@/lib/homeCore';
 import { prefetchStop } from '@/lib/prefetch';
 import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, FlatList, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { router, Stack, useFocusEffect } from 'expo-router';
 import { TabBarSafe } from '@/components/TabBarSafe';
 import { useKeyboardPad } from '@/lib/keyboard';
@@ -19,7 +19,7 @@ import { Icon, I } from '@/components/Icon';
 import { haptic } from '@/lib/haptic';
 import { apiBase } from '@/lib/server';
 import { getDevice, PROFILE } from '@/lib/device';
-import { usePalette } from '@/lib/theme';
+import { onColor, usePalette } from '@/lib/theme';
 import { C24, PHONE24, durText } from '@/lib/format';
 import { useNow } from '@/lib/hooks';
 import { store, useStore } from '@/lib/store';
@@ -38,6 +38,7 @@ import { hasSpeech, speak } from '@/lib/nativeExtras';
 import { departuresSentence, tripSentence } from '@/lib/voiceCore';
 import { takeVoicePrompt } from '@/lib/voiceHelp';
 import { reduceMotionNow } from '@/lib/motion';
+import { freshFix } from '@/lib/where';
 
 // The one time Get a better voice prompt (same rule as the Speak buttons), loaded only when it shows.
 const VoiceHelp = lazy(() => import('@/components/VoiceHelp').then((m) => ({ default: m.VoiceHelp })));
@@ -71,7 +72,7 @@ function open(l?: Link | null) {
   if (l.kind === 'saveTrip' && l.legs) return router.push({ pathname: '/new-trip', params: { legs: String(l.legs) } });
   if (l.kind === 'service') return router.push({ pathname: '/service', params: { trip: l.trip || '', line: l.line || '', stop: l.stop || '', planned: l.planned || '', mode: l.mode || '', destId: l.destId || '', color: l.color || '', dest: l.dest || '' } });
   const u = safeUrl(l.href);
-  if (u) Linking.openURL(u);
+  if (u) Linking.openURL(u).catch(() => {});
 }
 
 function Row({ onPress, onPressIn, children, dim }: { onPress?: () => void; onPressIn?: () => void; children: any; dim?: boolean }) {
@@ -132,7 +133,7 @@ function CardView({ card, now }: { card: Card; now: number }) {
         );
       })}
       {card.type === 'alerts' && (card.items || []).map((a: any, i: number) => (
-        <Row key={i} onPress={() => { const u = safeUrl(a.url); if (u) Linking.openURL(u); }}>
+        <Row key={i} onPress={() => { const u = safeUrl(a.url); if (u) Linking.openURL(u).catch(() => {}); }}>
           <Text maxFontSizeMultiplier={1.3} style={{ color: c.orange, fontSize: 16 }}>{'\u26a0\ufe0e'}</Text>
           <View style={st.mid}><Text maxFontSizeMultiplier={1.6} numberOfLines={3} style={[st.t3, { color: c.text }]}>{a.title}</Text></View>
         </Row>
@@ -167,7 +168,7 @@ function CardView({ card, now }: { card: Card; now: number }) {
               </View>
             </Row>
             {(sx.outages || []).map((o, i) => (
-              <Row key={i} onPress={() => { const u = safeUrl(o.url); if (u) Linking.openURL(u); }}>
+              <Row key={i} onPress={() => { const u = safeUrl(o.url); if (u) Linking.openURL(u).catch(() => {}); }}>
                 <View style={st.mid}>
                   <Text maxFontSizeMultiplier={1.6} style={[st.t1, { color: c.redText }]}>{o.kind === 'escalator' ? 'Escalator' : 'Lift'} out of service</Text>
                   <Text maxFontSizeMultiplier={1.6} numberOfLines={3} style={[st.t2, { color: c.text2 }]}>{outageText(o.title, sx.name)}</Text>
@@ -186,7 +187,7 @@ function CardView({ card, now }: { card: Card; now: number }) {
 function Chip({ label, onPress }: { label: string; onPress: () => void }) {
   const c = usePalette();
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [st.chip, { backgroundColor: pressed ? c.fill : c.card, borderColor: c.sep }]}>
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} hitSlop={{ top: 5, bottom: 5 }} style={({ pressed }) => [st.chip, { backgroundColor: pressed ? c.fill : c.card, borderColor: c.sep }]}>
       <Text maxFontSizeMultiplier={1.6} style={{ color: c.tint, fontSize: 15 }}>{label}</Text>
     </Pressable>
   );
@@ -214,7 +215,7 @@ function Actions({ item, now }: { item: Msg; now: number }) {
   const go = (a: CardAction) => {
     haptic.select();
     if (a.kind === 'open') open(a.link);
-    else if (a.kind === 'directions' && a.url) { const u = safeUrl(a.url); if (u) Linking.openURL(u); }
+    else if (a.kind === 'directions' && a.url) { const u = safeUrl(a.url); if (u) Linking.openURL(u).catch(() => {}); }
     else if (a.kind === 'speak') {
       const words = sayFor(item, Date.now());
       if (words) speak(words, { interrupt: true });
@@ -245,7 +246,7 @@ let brainLast: Last | null = null;
 const MsgRow = memo(function MsgRow({ item, last, now, onAsk, onLocation }: { item: Msg; last: boolean; now: number; onAsk: (q: string) => void; onLocation: () => void }) {
   const c = usePalette();
   return item.role === 'me' ? (
-    <View style={[st.bubble, st.me, { backgroundColor: c.tint }]}><Text maxFontSizeMultiplier={1.6} style={st.meText}>{item.text}</Text></View>
+    <View style={[st.bubble, st.me, { backgroundColor: c.tint }]}><Text maxFontSizeMultiplier={1.6} style={[st.meText, { color: onColor(c.tint) }]}>{item.text}</Text></View>
   ) : (
     <View style={{ alignItems: 'flex-start', marginTop: 6 }}>
       {item.heard ? <Text maxFontSizeMultiplier={1.6} accessibilityRole="text" style={[st.heard, { color: c.text2 }]}>{item.heard}</Text> : null}
@@ -263,7 +264,7 @@ const MsgRow = memo(function MsgRow({ item, last, now, onAsk, onLocation }: { it
       ) : null}
     </View>
   );
-});
+}, (a, b) => a.item === b.item && a.onAsk === b.onAsk && a.onLocation === b.onLocation && (a.item.role === 'me' || (a.last === b.last && a.now === b.now)));
 
 export default function AskScreen() {
   const c = usePalette();
@@ -297,7 +298,12 @@ export default function AskScreen() {
     if (!q || busy) return;
     setMsgs((m) => [...m, { id: 'u' + Date.now(), role: 'me', text: q, t: Date.now() }]);
     setText(''); setBusy(true);
-    const bot = (x: Partial<Msg>) => setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: '', t: Date.now(), ...x }]);
+    const bot = (x: Partial<Msg>) => {
+      setMsgs((m) => [...m, { id: 'b' + Date.now(), role: 'bot', text: '', t: Date.now(), ...x }]);
+      // VoiceOver and TalkBack hear the answer once when it lands (1 Nov polish); never on ticks.
+      const said = String(x.text || '').trim();
+      if (said) AccessibilityInfo.isScreenReaderEnabled().then((on) => { if (on) AccessibilityInfo.announceForAccessibility(said.slice(0, 240)); }).catch(() => {});
+    };
     try {
       let at = Date.now();
       let u = understand(q, brainCtx(at, !!extra.lat));
@@ -393,7 +399,7 @@ export default function AskScreen() {
       const perm = await Location.requestForegroundPermissionsAsync();
       if (perm.status !== 'granted') return;
       // A recent fix costs no GPS; otherwise about 100 m is plenty to find the nearest stop.
-      const pos = (await Location.getLastKnownPositionAsync({ maxAge: 120000 }).catch(() => null)) || (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+      const pos = (await Location.getLastKnownPositionAsync({ maxAge: 120000 }).catch(() => null)) || (await freshFix(Location.Accuracy.Balanced));
       ask(last.text, { lat: pos.coords.latitude.toFixed(5), lon: pos.coords.longitude.toFixed(5) });
     } catch { /* expo-location not in this build */ }
   }, [msgs, ask]);
@@ -472,7 +478,7 @@ export default function AskScreen() {
             {starters.length ? <View style={{ alignSelf: 'stretch', alignItems: 'flex-end', gap: 8, marginTop: 18 }}>{starters.map((s) => <Chip key={s} label={s} onPress={() => ask(s)} />)}</View> : null}
           </View>
         }
-        ListFooterComponent={busy ? <View style={[st.bubble, st.bot, { backgroundColor: c.dark ? '#26252A' : '#E9E9EB', marginTop: 6 }]}><ActivityIndicator size="small" /></View> : undefined}
+        ListFooterComponent={busy ? <View style={[st.bubble, st.bot, { backgroundColor: c.dark ? '#26252A' : '#E9E9EB', marginTop: 6 }]}><ActivityIndicator size="small" accessibilityLabel="Looking that up" /></View> : undefined}
       />
       {msgs.length && !text && !busy && starters.length ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ flexGrow: 0 }}
@@ -492,7 +498,7 @@ export default function AskScreen() {
           style={[st.input, { color: c.text, backgroundColor: c.bg, borderColor: c.sep }]}
         />
         <Pressable accessibilityRole="button" accessibilityLabel="Send" accessibilityState={{ disabled: !text.trim() || busy }} hitSlop={6} disabled={!text.trim() || busy} onPress={() => ask(text)} style={[st.send, { backgroundColor: text.trim() ? c.tint : c.fill }]}>
-          <Text maxFontSizeMultiplier={1.2} style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>{'\u2191'}</Text>
+          <Text maxFontSizeMultiplier={1.2} style={{ color: text.trim() ? onColor(c.tint) : c.text3, fontSize: 18, fontWeight: '700' }}>{'\u2191'}</Text>
         </Pressable>
       </View>
     </View>
@@ -525,7 +531,7 @@ const st = StyleSheet.create({
   cdClock: { fontSize: 16, fontWeight: '600', fontVariant: ['tabular-nums'] },
   cdUnit: { fontSize: 12, fontWeight: '500' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  chip: { height: 34, paddingHorizontal: 14, borderRadius: 17, justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth },
+  chip: { minHeight: 34, paddingVertical: 6, paddingHorizontal: 14, borderRadius: 17, justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth },
   helloTitle: { fontSize: 20, fontWeight: '700' },
   helloBody: { fontSize: 15, marginTop: 6, textAlign: 'center', maxWidth: 300 },
   bar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth },

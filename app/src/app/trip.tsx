@@ -1,4 +1,4 @@
-import { failWhy, TIMETABLE_TRIPS_NOTE } from '@/lib/netErrCore';
+import { failWhy, TIMETABLE_TRIPS_NOTE, friendlyErr } from '@/lib/netErrCore';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWhyLate } from '@/lib/whyLate';
 import { JourneyWhy, WhyLate, withWhyAction } from '@/components/WhyLate';
@@ -27,7 +27,7 @@ import { peekOffline } from '@/lib/offline';
 import { armFresh, armSpec, isPhoneBuilt, phoneBuiltText, tripSeed } from '@/lib/instantPaintCore';
 import { ttFirstSeed, ttFirstWanted } from '@/lib/newTripCore';
 import { usePalette, radius, modeColor } from '@/lib/theme';
-import { C24, PHONE24, bestTime, clock, durText, ms, shortName } from '@/lib/format';
+import { bestTime, clock, durText, ms, shortName } from '@/lib/format';
 import { plainText } from '@/lib/htmlTextCore';
 import { store, tripKeyOf, useStore } from '@/lib/store';
 import { safeUrl, stShort } from '@/lib/access';
@@ -82,12 +82,6 @@ function hhmm(t: number) {
   }
 }
 
-/** "8:00:30" ("20:00:30" on a 24 hour phone), Sydney time. */
-function hms(t: number) {
-  if (PHONE24() && Number.isFinite(t)) return C24(t, true);
-  try { return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, ''); }
-  catch { return new Date(t).toLocaleTimeString(); }
-}
 
 const isBus = (m?: string | null) => m === 'bus' || m === 'coach' || m === 'school';
 
@@ -315,7 +309,7 @@ function JourneyDetail({ j, now, from, to, autoStart, onMapTouch, fresh = true }
       setBusy(true);
       // R6: from a fresh live answer only; else the trip starts on its timetable times and reads live times itself.
       try { await withTimeout(startLive(armSpec(spec, fresh), j.fare), 5000, null); router.push('/go'); haptic.success(); }
-      catch (e: any) { Alert.alert("Couldn't start it", e.message); }
+      catch (e: any) { Alert.alert("Couldn't start it", friendlyErr(e)); }
       finally { setBusy(false); }
     };
     const cur = getLive();
@@ -692,6 +686,9 @@ export default function TripScreen() {
   }, [probKey, !!pbShown, !!pbAll, offlineAt]);
   const [showAlerts, setShowAlerts] = useState(false);
   const arrs = js.map(arrOf);
+  // Earliest arrival of any later row (one pass, not a slice per row): a row is "beaten" when a later one gets there first.
+  const laterMin = new Array<number>(arrs.length);
+  for (let i = arrs.length - 1, m = Infinity; i >= 0; i--) { laterMin[i] = m; const a = arrs[i]; if (Number.isFinite(a) && a < m) m = a; }
   const alertList: { title: string; url?: string }[] = [];
   js.forEach((j) => j.legs.forEach((l) => (l.alerts || []).forEach((a: any) => {
     const title = typeof a === 'string' ? a : a?.title;
@@ -712,7 +709,7 @@ export default function TripScreen() {
   // A trip with legs has one way to save (New trip), so its star saves at once.
   const doSave = async (name: string) => {
     try { await api.saveTrip(name, from, to); haptic.success(); Alert.alert('Saved', `It's on your Home screen as "${name}".`); }
-    catch (e: any) { Alert.alert("Couldn't save it", e.message); }
+    catch (e: any) { Alert.alert("Couldn't save it", friendlyErr(e)); }
   };
   const saveMenu: MenuSpec | null = !chain && !here ? { title: 'Save this trip', message: 'Saved trips show live on Home.', items: menuOf([
     { text: 'Save trip', sf: 'star', icon: 'starOpen', onPress: () => save() },
@@ -779,7 +776,7 @@ export default function TripScreen() {
             {showAlerts ? alertList.map((a, k) => (
               <View key={k}>
                 <Sep inset={16} />
-                <Pressable accessibilityRole="link" disabled={!safeUrl(a.url)} onPress={() => { const u = safeUrl(a.url); if (u) Linking.openURL(u); }} style={{ paddingHorizontal: 16, paddingVertical: 10 }}>
+                <Pressable accessibilityRole="link" disabled={!safeUrl(a.url)} onPress={() => { const u = safeUrl(a.url); if (u) Linking.openURL(u).catch(() => {}); }} style={{ paddingHorizontal: 16, paddingVertical: 10 }}>
                   <T kind="sub" style={{ color: a.url ? c.tint : c.text }}>{plainText(a.title)}</T>
                 </Pressable>
               </View>
@@ -862,7 +859,7 @@ export default function TripScreen() {
             {pn.nextIdx === i ? <NextMark /> : null}
             {gone
               ? <LeftRow j={j} arrive={arrs[i]} muted={pastNow} onPress={() => { haptic.select(); setOpen(open === i ? null : i); }} />
-              : <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || arrs.slice(i + 1).some((a) => a < arrs[i])} pressKey={i} onPress={() => { haptic.select(); setOpen((o) => (o === i ? null : i)); }} />}
+              : <ServiceRow j={j} now={now} showTravel={showTravel} arrive={arrs[i]} beaten={!!(j as any).beaten || laterMin[i] < arrs[i]} pressKey={i} onPress={() => { haptic.select(); setOpen((o) => (o === i ? null : i)); }} />}
             <WarnLine j={j} />
             <JourneyWhy j={j} />
             {!chain && i === lastIdx && canRemind(depMs(j), now) ? <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}><T kind="foot" tone="text2">Last service tonight</T><RemindLastButton hint={{ from, to, mode: modeOfLegs(j.legs), svc: slimLast(j) }} acc={accOn} /></View> : null}
@@ -898,7 +895,7 @@ export default function TripScreen() {
         })()}
         {offlineAt ? null : updatedAt ? (
           <T kind="foot" tone={error ? 'lateText' : 'text2'} style={{ textAlign: 'center', marginTop: 14, fontVariant: ['tabular-nums'] }}>
-            {error ? `${failWhy() === 'server' ? 'Live data unavailable right now' : 'Offline'}. Live data updated ${hms(updatedAt)}` : (data as any)?.source === 'timetable' ? TIMETABLE_TRIPS_NOTE : `Live data updated ${hms(updatedAt)}`}
+            {error ? `${failWhy() === 'server' ? 'Live data unavailable right now' : 'Offline'}. Updated ${rowTime(updatedAt)}` : (data as any)?.source === 'timetable' ? TIMETABLE_TRIPS_NOTE : `Updated ${rowTime(updatedAt)}`}
           </T>
         ) : null}
         {data && !js.length && modes.length ? (() => { const e = emptyModes(modes, data.modesBy === 'server'); return <Empty icon={I.route} title={e.title} body={e.body} action={<Button title="Any" kind="tinted" onPress={() => { haptic.select(); store.setTripModes(tkey, []); }} />} />; })() : null}
@@ -953,7 +950,7 @@ function ModeChips({ chips, modes, onChange }: { chips: ModeK[]; modes: ModeK[];
   const chip = (key: string, name: string, on: boolean, press: () => void, mode?: ModeK) => (
     <Pressable key={key} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={chipLabel(name, on)} onPress={press}
       android_ripple={{ color: c.fill }}
-      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: 36, paddingHorizontal: 12, borderRadius: ios ? 18 : 8, marginVertical: 4,
+      hitSlop={{ top: 4, bottom: 4 }} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: 36, paddingHorizontal: 12, borderRadius: ios ? 18 : 8, marginVertical: 4,
         backgroundColor: on ? c.tint : c.card, borderWidth: on || ios ? 0 : 1, borderColor: c.sep, opacity: pressed ? 0.75 : 1 })}>
       {mode ? <Icon name={modeIconName(mode)} size={14} color={on ? '#FFFFFF' : modeColor[mode] || c.text2} /> : null}
       <T kind="sub" style={{ marginLeft: mode ? 5 : 0, color: on ? '#FFFFFF' : c.text, fontWeight: on ? '600' : '400' }}>{name}</T>

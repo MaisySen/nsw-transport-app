@@ -701,7 +701,13 @@ export function clockWord(hhmm: string): string {
   const [h, m] = hhmm.split(':').map(Number);
   return `${h % 12 || 12}:${pad(m)}${h < 12 ? 'am' : 'pm'}`;
 }
-function clockSay(hhmm: string): string { return clockWord(hhmm).replace(/(am|pm)$/, ' $1'); }
+// The phone's 24-Hour Time setting (lib/rowTime.ts installs the reader); the server's question text keeps clockWord.
+const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
+/** What the chat shows it heard: "6:00 pm", or "18:00" on a 24 hour phone (1 Nov polish). */
+function clockSay(hhmm: string): string {
+  if (PHONE24()) { const [h, m] = hhmm.split(':').map(Number); return `${pad(h)}:${pad(m)}`; }
+  return clockWord(hhmm).replace(/(am|pm)$/, ' $1');
+}
 function addMin(hhmm: string, n: number): string {
   const [h, m] = hhmm.split(':').map(Number); const t = ((h * 60 + m + n) % 1440 + 1440) % 1440;
   return `${pad(Math.floor(t / 60))}:${pad(t % 60)}`;

@@ -10,7 +10,7 @@ import { useLive, useNow } from '@/lib/hooks';
 import { cacheKey } from '@/lib/offlineCore';
 import { keptRoute } from '@/lib/prefetch';
 import { isSeeded, serviceQuery, serviceSeed, svcCacheId } from '@/lib/speedCore';
-import { usePalette } from '@/lib/theme';
+import { usePalette, androidLook } from '@/lib/theme';
 import { badgeLook } from '@/lib/lineStyle';
 import { bestTime, clock, ms, shortName } from '@/lib/format';
 import { useStore } from '@/lib/store';
@@ -89,7 +89,7 @@ export default function ServiceScreen() {
               {busLike ? (
                 <Pressable onPress={() => router.push({ pathname: '/route', params: { line: String(p.line || data?.line || ''), mode: busMode, stop: p.stop || '', towards: p.dest || data?.dest || '', color: data?.color || p.color || '' } })}
                   accessibilityRole="button" accessibilityLabel={`Route ${p.line || data?.line}, all stops`} hitSlop={8}
-                  style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 16, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>
+                  style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, minHeight: 32, paddingVertical: 4, borderRadius: 16, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>
                   <Icon name={I.route} size={14} color={c.tint} />
                   <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Route</T>
                 </Pressable>
@@ -157,9 +157,9 @@ export default function ServiceScreen() {
                           {isNext ? <T kind="caption" style={{ color, fontWeight: '700' }}>{mk && mk.at && mk.index === i ? 'BUS IS HERE' : 'NEXT STOP'}</T> : null}
                         </View>
                       ) : null}
-                      {s.mine && !isNext && !tag ? <T kind="caption" tone="tint" style={{ fontWeight: '700', marginTop: 1 }}>YOUR STOP</T> : null}
+                      {s.mine && !isNext && !tag ? <T kind="caption" tone="tint" style={{ textTransform: androidLook ? 'none' : 'uppercase', fontWeight: '700', marginTop: 1 }}>Your stop</T> : null}
                       {skip ? <T kind="caption" style={{ color: c.lateText, fontWeight: '600', marginTop: 1 }}>Not stopping</T> : null}
-                      {mk && mk.at && mk.index === i && !isNext ? <T kind="caption" style={{ color, fontWeight: '700', marginTop: 1 }}>BUS IS HERE</T> : null}
+                      {mk && mk.at && mk.index === i && !isNext ? <T kind="caption" style={{ textTransform: androidLook ? 'none' : 'uppercase', color, fontWeight: '700', marginTop: 1 }}>Bus is here</T> : null}
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
                       {skip ? null : <T kind="sub" tone={dim ? 'text3' : live ? 'text' : 'text2'} style={{ fontVariant: ['tabular-nums'], fontWeight: s.mine ? '600' : '400' }}>{clock(t)}</T>}

@@ -12,7 +12,7 @@ import { adaptiveGapMs } from '@/lib/pollCore';
 const nextDep = (ts: number[]) => { const n = Date.now() - 30000; let b = NaN; for (const t of ts) if (t > n && !(t >= b)) b = t; return b; };
 import { cacheKey, offlineText, offlineWord, stampText, staleText } from '@/lib/offlineCore';
 import { homeHeader, STAND_IN_UPDATING_NOTE, UPDATING_WORD, updatingText } from '@/lib/coldOpenCore';
-import { boardNote, failWhy, TIMETABLE_BOARD_NOTE, TIMETABLE_TRIPS_NOTE, tripNote } from '@/lib/netErrCore';
+import { boardNote, failWhy, TIMETABLE_BOARD_NOTE, TIMETABLE_TRIPS_NOTE, tripNote, friendlyErr } from '@/lib/netErrCore';
 import { packStampText, packTarget } from '@/lib/timetablePackCore';
 import { foldNear, type NearPick } from '@/lib/nearCore';
 import { stopNumber } from '@/lib/busCore';
@@ -49,6 +49,7 @@ import { WhereNow } from './WhereNow';
 import { boardParts, boardText, chipClock, hasLiveData, placeText, stackColumns, timeLeftBadge, tripLines } from '@/lib/rowTimeCore';
 import { phone24h, rowTime } from '@/lib/rowTime';
 import { tightA11y, tightChange } from '@/lib/tightChangeCore';
+import { freshFix } from '@/lib/where';
 
 // ---------- shared refresh signals for every card on Home ----------
 
@@ -447,7 +448,7 @@ export function tripMenuSpec(trip: TripItem, route?: string, onTop?: () => void)
   if (trip.kind === 'commute') {
     return { title: trip.name || title, message: 'Your commute: a leave now alert on the days you set.', items: menuFrom([
       ...top,
-      { text: 'Delete commute', style: 'destructive', onPress: () => { if (trip.id) api.deleteCommute(trip.id).then(pullHome).catch((e) => Alert.alert("Couldn't delete it", e.message)); } },
+      { text: 'Delete commute', style: 'destructive', onPress: () => { if (trip.id) api.deleteCommute(trip.id).then(pullHome).catch((e) => Alert.alert("Couldn't delete it", friendlyErr(e))); } },
     ]) };
   }
   if (trip.kind === 'place') {
@@ -810,7 +811,7 @@ function ServiceRowView({ j, now, arrive, beaten, onPress, showTravel }: Service
   const tc = cancelled || j.warn ? null : tightChange(j.legs);
   return (
     <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }}
-      accessibilityLabel={`Leaves ${fromText ? `${fromText} at ` : ''}${depT}, ${showTravel ? `${t.big} ${t.unit}` : left.a11y}, arrives ${toText ? `${toText} at ` : ''}${arrT}, ${stt.text}${lineWords ? `, ${lineWords}` : ''}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}${tc ? `, ${tightA11y(tc)}` : ''}${wn ? `. ${wn.a11y}` : ''}${rel ? `. ${rel}` : ''}`}
+      accessibilityLabel={`Leaves ${fromText ? `${fromText} at ` : ''}${depT}, ${showTravel ? `${t.big} ${t.unit}` : left.a11y}, arrives ${toText ? `${toText} at ` : ''}${arrT}, ${stt.text}${l?.platformChangedFrom ? `, platform changed from ${plat(l.platformChangedFrom)}${boardAt ? ` to ${boardAt}` : ''}` : ''}${lineWords ? `, ${lineWords}` : ''}${changes ? `, ${changes} change${changes > 1 ? 's' : ''}` : ''}${tc ? `, ${tightA11y(tc)}` : ''}${wn ? `. ${wn.a11y}` : ''}${rel ? `. ${rel}` : ''}`}
       style={({ pressed }) => [s.svc, (beaten || dep < now - 30000) && { opacity: 0.45 }, pressed && Platform.OS !== 'android' ? { backgroundColor: c.card2 } : null]}>
       <View style={[s.block, { backgroundColor: chip + (c.dark ? '33' : '1F') }]}>
         <Text maxFontSizeMultiplier={1.3} style={{ color: cdText(chip, c), fontSize: bigSize, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.4 }} numberOfLines={1} adjustsFontSizeToFit>{t.big}</Text>
@@ -843,7 +844,7 @@ function ServiceRowView({ j, now, arrive, beaten, onPress, showTravel }: Service
             ) : null}
           </View>
         </View>
-        {l?.platformChangedFrom ? <T kind="foot" numberOfLines={1} style={{ color: c.lateText, marginTop: 2 }}>Platform changed from {plat(l.platformChangedFrom)}{boardAt ? ` to ${boardAt}` : ''}</T> : null}
+        {l?.platformChangedFrom ? <T kind="foot" numberOfLines={2} style={{ color: c.lateText, marginTop: 2 }}>Platform changed from {plat(l.platformChangedFrom)}{boardAt ? ` to ${boardAt}` : ''}</T> : null}
         {tc ? <TightLabel style={{ marginTop: 2 }} /> : null}
         <WhereNow w={wn} style={{ marginTop: 2 }} />
         <OccupancyChip o={l?.occupancy} style={{ marginTop: 3 }} />
@@ -1002,12 +1003,12 @@ export function useNearby() {
       // Still near where the kept list was made: show it now, while the fresh list loads.
       const early = pos ? nearFirstPaint(kept, { lat: pos.coords.latitude, lon: pos.coords.longitude }, Date.now()) : null;
       if (early) setSt((s) => (s.phase === 'on' && s.stops.length ? s : { phase: 'on', stops: early }));
-      if (!pos) pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      if (!pos) pos = await freshFix(Location.Accuracy.Balanced);
       const stops = await nearbyStops(pos.coords.latitude, pos.coords.longitude);
       keepNear(pos.coords.latitude, pos.coords.longitude, stops);
       setSt({ phase: 'on', stops });
     } catch (e: any) {
-      setSt((s) => (s.stops.length ? s : { phase: 'error', stops: [], error: String(e?.message || e) }));
+      setSt((s) => (s.stops.length ? s : { phase: 'error', stops: [], error: e?.message === 'nofix' ? "Can't find where you are right now. Pull down to try again." : friendlyErr(e) }));
     }
   };
 

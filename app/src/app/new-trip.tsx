@@ -23,6 +23,9 @@ import { busGroup, matchRoutes, regionDirs, routeCmp, routeEnds, stopLabel, stop
 import { REGIONAL_ROUTES, SYDNEY_TO } from '@/lib/busGroups.gen';
 import { useBusLookup } from '@/lib/busSearch';
 import { myPosition } from '@/lib/where';
+import { friendlyErr } from '@/lib/netErrCore';
+import { freshFix } from '@/lib/where';
+import { stableKeys } from '@/lib/rowKeysCore';
 
 type Leg = { mode: string; from: Place; to: Place; conn?: number; any?: boolean; walk?: number };
 type Dest = { mode: string; to: Place; conn?: number; any?: boolean; walk?: number };
@@ -209,7 +212,7 @@ function WalkPicker({ from, onPick }: { from: Place; onPick: (p: Place) => void 
     // An answer for what was typed before (slower than the newer one) is dropped, not shown over it.
     let live = true;
     const t = setTimeout(() => {
-      api.search(v).then((d) => { if (!live) return; setErr(''); setItems((d.items || []).filter((x) => String(x.id) !== String(from.id)).slice(0, 8)); }).catch((e) => { if (live) setErr(String(e?.message || e)); });
+      api.search(v).then((d) => { if (!live) return; setErr(''); setItems((d.items || []).filter((x) => String(x.id) !== String(from.id)).slice(0, 8)); }).catch((e) => { if (live) setErr(friendlyErr(e)); });
     }, 250);
     return () => { live = false; clearTimeout(t); };
   }, [q, from.id]);
@@ -301,10 +304,12 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
   const isBus = mode === 'bus';
   const color = modeColor[mode];
 
+  // A failed load gets Try again (1 Nov polish): the picker was a dead end offline on first use.
+  const [tries, setTries] = useState(0);
   useEffect(() => {
     if (isBus) return;
-    stationsFor(mode).then((l) => setAll(l.filter((x) => !from || x[0] !== from.id).sort((x, y) => stName(x[1]).localeCompare(stName(y[1]))))).catch((e) => setErr(String(e.message || e)));
-  }, [mode, isBus, from]);
+    stationsFor(mode).then((l) => setAll(l.filter((x) => !from || x[0] !== from.id).sort((x, y) => stName(x[1]).localeCompare(stName(y[1]))))).catch((e) => setErr(friendlyErr(e)));
+  }, [mode, isBus, from, tries]);
 
   useEffect(() => {
     if (tab !== 'dist' || coords) return;
@@ -312,7 +317,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
       try {
         const perm = await Location.requestForegroundPermissionsAsync();
         if (!perm.granted) { setLocErr('Allow location to sort by distance, or use A to Z or the map.'); return; }
-        const pos = (await Location.getLastKnownPositionAsync({ maxAge: 5 * 60000 }).catch(() => null)) || (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+        const pos = (await Location.getLastKnownPositionAsync({ maxAge: 5 * 60000 }).catch(() => null)) || (await freshFix(Location.Accuracy.Balanced));
         setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
       } catch (e: any) { setLocErr('Location is not available right now.'); }
     })();
@@ -326,6 +331,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
     for (const x of list) { const L = stName(x[1]).charAt(0).toUpperCase(); if (L !== last) { out.push({ t: 'h', k: L }); last = L; } out.push({ t: 's', s: x }); }
     return out;
   }, [list]);
+  const rowKeys = useMemo(() => stableKeys(rows.map((r) => (r.t === 'h' ? 'h:' + r.k : 's:' + r.s[0]))), [rows]);
   const offsets = useMemo(() => { let y = 0; return rows.map((r) => { const o = y; y += r.t === 'h' ? HEAD_H : ROW_H; return o; }); }, [rows]);
   const letters = useMemo(() => rows.map((r, i) => (r.t === 'h' ? { k: r.k, i } : null)).filter(Boolean) as { k: string; i: number }[], [rows]);
   const headerIdx = useMemo(() => letters.map((l) => l.i), [letters]);
@@ -377,7 +383,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
   );
 
   if (isBus) return <View style={box}>{head}<BusPicker q={q} from={from} onPick={onPick} /></View>;
-  if (err) return <View style={box}>{head}<T kind="sub" tone="text2" style={s.note}>{err}</T></View>;
+  if (err) return <View style={box}>{head}<T kind="sub" tone="text2" style={s.note}>{err}</T><View style={{ marginHorizontal: 32, marginTop: 12 }}><Button title="Try again" kind="tinted" onPress={() => { setErr(null); setTries((n) => n + 1); }} /></View></View>;
   if (!all) return <View style={box}>{head}<ActivityIndicator style={{ marginTop: 30 }} color={c.tint} /></View>;
 
   // Full width rows with the separator inset from the leading edge, like a system list. With the A to Z index
@@ -425,7 +431,7 @@ function StationPicker({ mode, which, from, onPick }: { mode: ModeKey; which: 'f
     <View style={box}>
       {head}
       <View style={{ flex: 1 }}>
-        <FlatList ref={listRef} data={rows} keyExtractor={(r, i) => (r.t === 'h' ? 'h' + r.k : r.s[0]) + i} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets
+        <FlatList ref={listRef} data={rows} keyExtractor={(_r, i) => rowKeys[i]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets
           stickyHeaderIndices={headerIdx} initialNumToRender={30} contentContainerStyle={{ paddingBottom: bottomPad }}
           getItemLayout={(_, i) => ({ length: rows[i]?.t === 'h' ? HEAD_H : ROW_H, offset: offsets[i] || 0, index: i })}
           ListEmptyComponent={<T kind="sub" tone="text2" style={s.note}>No {modeName(mode).toLowerCase()} stations match that</T>}
@@ -468,7 +474,8 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
   const [err, setErr] = useState<string | null>(null);
   const { stop: numHit } = useBusLookup(q);
   const color = modeColor.bus;
-  useEffect(() => { busRoutes().then(setRoutes).catch((e) => setErr(String(e.message || e))); }, []);
+  const [tries, setTries] = useState(0);
+  useEffect(() => { busRoutes().then(setRoutes).catch((e) => setErr(friendlyErr(e))); }, [tries]);
   useEffect(() => { if (q) { setRoute(null); setDir(null); } }, [q]);
   useEffect(() => {
     if (q.trim().length < 3 || !/[a-z]{3}/i.test(q)) { setStops([]); return; }
@@ -491,7 +498,7 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
     try {
       const dirs = regionDirs(await busRoute(r));
       if (dirs.length === 1) setDir({ r, d: dirs[0], start: -1 }); else setRoute({ r, dirs });
-    } catch (e: any) { Alert.alert("Couldn't load that route", String(e?.message || e)); }
+    } catch (e: any) { Alert.alert("Couldn't load that route", friendlyErr(e)); }
   };
   const badge = (r: string) => <View style={s.badge}><LineBadge line={r} mode="bus" /></View>;
 
@@ -509,11 +516,12 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
     return g;
   }, [routes]);
 
-  if (err) return <T kind="sub" tone="text2" style={s.note}>{err}</T>;
+  if (err) return <View><T kind="sub" tone="text2" style={s.note}>{err}</T><View style={{ marginHorizontal: 32, marginTop: 12 }}><Button title="Try again" kind="tinted" onPress={() => { setErr(null); setTries((n) => n + 1); }} /></View></View>;
   if (dir) {
     const st = dir.d.stops.slice(dir.start + 1);
+    const stKeys = stableKeys(st.map((x) => String(x[0])));
     return (
-      <FlatList data={st} keyExtractor={(x, i) => x[0] + i} contentContainerStyle={{ paddingBottom: 40 }}
+      <FlatList data={st} keyExtractor={(_x, i) => stKeys[i]} contentContainerStyle={{ paddingBottom: 40 }}
         ListHeaderComponent={<T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginBottom: 7, textTransform: Platform.OS === 'ios' ? 'uppercase' : 'none' }}>{dir.start >= 0 ? `Stops after ${shortName(from?.name)} on route ${dir.r}` : `Route ${dir.r} to ${shortName(dir.d.to)}`}</T>}
         renderItem={({ item, index }) => (
           <Pressable accessibilityRole="button" onPress={() => onPick({ id: item[0], name: item[1], ctx: { route: dir.r, dir: dir.d, at: dir.start + 1 + index } })} android_ripple={{ color: c.fill }}
@@ -574,16 +582,18 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
       if (open[g]) data.push(...groups[g].map((r) => ({ t: 'r' as const, r, g })));
     }
   }
+  // Keys from the row's content (a stop listed twice gets #2), so filtering or opening a group never remounts every row.
+  const busKeys = stableKeys(data.map((x: any) => (x.t === 'h' ? 'h:' + x.k : x.t === 'g' ? 'g:' + x.g : x.t === 'r' ? 'r:' + x.r : x.t === 's' ? 's:' + x.id : String(x.t))));
   const rowStyle = [s.routeRow, { backgroundColor: c.card, marginHorizontal: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.sep }];
   const head = (k: string) => <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 14, marginBottom: 7, textTransform: Platform.OS === 'ios' ? 'uppercase' : 'none' }}>{k}</T>;
   return (
-    <FlatList data={data} keyExtractor={(x, i) => x.t + i} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets contentContainerStyle={{ paddingBottom: 40 }} initialNumToRender={20}
+    <FlatList data={data} keyExtractor={(_x, i) => busKeys[i]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets contentContainerStyle={{ paddingBottom: 40 }} initialNumToRender={20}
       ListEmptyComponent={<T kind="sub" tone="text2" style={s.note}>No routes or stops match that. Try a route (410), a stop number from the sign (2046100) or a street.</T>}
       renderItem={({ item }) => {
         if (item.t === 'h') return head(item.k);
         if (item.t === 'g') return (
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: item.open }} accessibilityLabel={`${item.k}, ${item.n} routes`}
-            onPress={() => { haptic.select(); setOpen({ ...open, [item.g]: !item.open }); }} style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 32, marginTop: 18, marginBottom: 7, minHeight: 28 }}>
+            onPress={() => { haptic.select(); setOpen({ ...open, [item.g]: !item.open }); }} style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 32, marginTop: 10, marginBottom: 0, minHeight: 44 }}>
             <T kind="foot" tone="text2" style={{ flex: 1, textTransform: Platform.OS === 'ios' ? 'uppercase' : 'none' }}>{`${item.k} (${item.n})`}</T>
             <T kind="foot" style={{ color: c.tint }}>{item.open ? 'Hide' : 'Show'}</T>
           </Pressable>
@@ -632,7 +642,7 @@ const s = StyleSheet.create({
   idx: { position: 'absolute', right: 0, top: 8, width: INDEX_W, alignItems: 'center', justifyContent: 'center' },
   mapBar: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginBottom: 24, paddingHorizontal: 16, paddingVertical: 10, minHeight: 60 },
   routeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, minHeight: 52, paddingVertical: 8 },
-  lineRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, height: 50, marginHorizontal: 16 },
+  lineRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, minHeight: 50, paddingVertical: 4, marginHorizontal: 16 },
   badge: { minWidth: 44, alignItems: 'flex-start', justifyContent: 'center' },
   connRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 12 },
   stepper: { flexDirection: 'row', alignItems: 'center', height: 34 },

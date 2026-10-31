@@ -4,6 +4,10 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Polish pass (1 Nov, branch `polish-1nov`, not released)
+
+Opening the app from an alert while it was closed opens the trip, morning check or watch the alert was about. Finding your location gives up after 12 seconds with a plain message. Time pickers follow a 24 hour phone. Plan rows, the live trip header and Home cards read as one sentence with VoiceOver and TalkBack, and Ask answers are announced. Buttons and chips grow with large text. Old data reads "Updated 7:47pm" on the live trip and trip results. Over the air (runtime 1.2.0) once released.
+
 ## New live trip flow, app side (31 Oct, branch `tripflow-p2`, not released)
 
 The trip screen, Lock Screen card, Island and alerts work from one live trip state (`app/src/lib/tripState.ts`). Times come from the live train and never move by the timetable clock. The app rings heads-up, Get off now (30 s before the live arrival) and arrived itself while open, with one light tap. Speech waits 10 s and two refreshes after opening. "Wake me before my stop" is removed. The card shows Due, the live platform, cancellations and how old the data is, on the phone's 12 or 24 hour clock. The server uses the same code when its `tripflow2` switch is on and the app sends `tripFlow: 2`. Spec: docs/TRIP_FLOW_SPEC.md; API: docs/TRIP_STATE_API.md. Before the train leaves, the live platform and the departure board's live time come with the service answer (the server's board row), the same ones the server's card uses.

@@ -99,7 +99,7 @@ export function KeptBanner({ offlineAt, staleAt, now, style }: { offlineAt?: num
   if (!offlineAt && !staleAt) return null;
   const text = offlineAt ? offlineText(offlineAt, now) : staleText(staleAt!, now);
   return (
-    <View accessibilityRole="text" accessibilityLiveRegion="polite" accessibilityLabel={text}
+    <View accessibilityRole="text" accessibilityLiveRegion={offlineAt ? 'polite' : 'none'} accessibilityLabel={text}
       style={[{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 12, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: offlineAt ? c.card : 'transparent' }, style]}>
       {offlineAt ? <Icon name={I.warn} size={13} color={c.orange} /> : <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: c.text3 }} />}
       <T kind="foot" style={{ color: offlineAt ? c.lateText : c.text2, marginLeft: 7, flexShrink: 1, fontVariant: ['tabular-nums'] }}>{text}</T>
@@ -218,7 +218,7 @@ function DepartureRowView({ d, now, onPress, onWatch, watched, showStop, alertTe
   const noStop = notStoppingText(d, now);
   const noStopWhy = noStop ? notStoppingWhy(d) : null;
   const extra: string[] = [];
-  if (d.platform) extra.push(d.platform.replace(/^Platform /, 'Plat. '));
+  if (d.platform) extra.push(d.platform.replace(/^Platform /, 'Plat '));
   // The number on the bus stop sign, unless the screen is that one stop (its number is in the header).
   if (stopNo !== false) { const n = stopLabel(d.stopId, d.mode); if (n) extra.push(n); }
   if (d.stopsAway != null && live.kind === 'live' && d.stopsAway >= 0 && d.stopsAway <= 15) extra.push(d.stopsAway === 0 ? 'At the stop' : `${d.stopsAway} stop${d.stopsAway === 1 ? '' : 's'} away`);
@@ -280,8 +280,14 @@ export function JourneyCard({ j, now, onPress, best }: { j: Journey; now: number
   const first = j.legs.find((l) => l.kind === 'transit');
   const firstLive = first ? liveState({ planned: first.planned, estimated: first.estimated, realtime: first.realtime, cancelled: j.anyCancelled, seenAt: first.seenAt ?? j.seenAt }, now) : undefined;
   const leaveText = mins <= 0 ? 'Leave now' : mins < 60 ? `Leave in ${mins} min` : `Leave ${rowTime(leave)}`;
+  // One sentence for VoiceOver and TalkBack (1 Nov polish): the pieces read alone were "5", "BEST", a bare walk number.
+  const a11y = [leaveText, best ? 'best option' : '', `${rowTime(ms(j.board))} to ${rowTime(ms(j.arrive))}`, durText(j.durationMin),
+    j.changes ? `${j.changes} change${j.changes > 1 ? 's' : ''}` : 'no changes',
+    j.legs.map((l) => (l.kind === 'walk' ? `walk ${l.durationMin} min` : `${l.line || ''}`.trim())).filter(Boolean).join(', then '),
+    firstLive?.a11y || '', first?.fromPlatform ? `from ${shortName(first.from)}, ${first.fromPlatform}` : '', j.risk ? j.riskText || 'Tight change' : '',
+  ].filter(Boolean).join(', ');
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }} style={({ pressed }) => [st.jRow, pressed && Platform.OS === 'ios' ? { backgroundColor: c.card2 } : null]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={a11y} accessibilityHint="Opens the trip" onPress={onPress} android_ripple={{ color: c.fill }} style={({ pressed }) => [st.jRow, pressed && Platform.OS === 'ios' ? { backgroundColor: c.card2 } : null]}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

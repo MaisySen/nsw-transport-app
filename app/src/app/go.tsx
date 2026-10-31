@@ -12,7 +12,7 @@ import * as Location from 'expo-location';
 import { api } from '@/lib/api';
 import { useNow } from '@/lib/hooks';
 import { appActive } from '@/lib/activity';
-import { onColor, radius, usePalette } from '@/lib/theme';
+import { onColor, radius, usePalette, androidLook } from '@/lib/theme';
 import { clock } from '@/lib/format';
 import { endLive, getLive, liveWatch, setLive, useLiveTrip } from '@/lib/live';
 import { legColor, markHere, plat, progOf, setEnginePos, short, tickLive, useLiveEngineState } from '@/lib/liveEngine';
@@ -43,6 +43,7 @@ function liveKind(phase: 'wait' | 'ride', l: WatchLeg, x: { live: boolean; dep: 
   return { ...base, kind: stale ? 'stale' : 'live', label: stale ? 'Not tracking' : 'Live', age: updated ? ageText(dataAge + (vehicleAgeS ?? 0) * 1000) : null };
 }
 import { shareLink } from '@/lib/server';
+import { friendlyErr } from '@/lib/netErrCore';
 
 const noun = (m?: string) => (m === 'bus' || m === 'coach' ? 'bus' : m === 'ferry' ? 'ferry' : m === 'lightrail' ? 'tram' : m === 'metro' ? 'metro' : 'train');
 
@@ -132,7 +133,7 @@ export default function LiveTripScreen() {
         setLive({ ...c2, share: { id: r.id, key: r.key, url: link, pos: withPos } });
         haptic.success();
         await Share.share({ message: `Follow my trip live: ${cur.title} ${link}` });
-      } catch (e: any) { Alert.alert("Couldn't make a link", String(e?.message || e)); }
+      } catch (e: any) { Alert.alert("Couldn't make a link", friendlyErr(e)); }
     };
     const body = `Anyone with the link can see your trip, the live position of your ${noun(cur.legs[0]?.mode)}, the next stop and your arrival time. No account needed. The link stops working when the trip ends, and everything it showed is deleted.`;
     const opts: any[] = [{ text: 'Cancel', style: 'cancel' }];
@@ -218,7 +219,7 @@ function Sheet({ st, legs, g, me, locDenied, push, offline, updated, onLoc, onSh
   const notLive = st.track === 'timetable';
   // Honest label (liveLabelCore.ts): waiting, the leg's live departure time; riding, the vehicle's GPS age and our copy's age.
   const lk = liveKind(st.phase, l, x, d, updated, now);
-  const badge = notLive ? { t: 'Timetable', bg: c.text3 } : lk.kind === 'stale' ? { t: 'Not tracking', bg: c.orange } : x.live || st.delayMin != null ? (late >= 2 ? { t: `${late} min late`, bg: c.orange } : { t: 'Live', bg: c.green }) : { t: 'Timetable', bg: c.text3 };
+  const badge = notLive ? { t: 'Timetable', bg: c.text3 } : lk.kind === 'stale' ? { t: 'Not tracking', bg: c.orange } : x.live || st.delayMin != null ? (late >= 2 ? { t: `${late} min late`, bg: c.orange } : { t: 'Live', bg: c.liveBg }) : { t: 'Timetable', bg: c.text3 };
   // You can say you are there: always when the leg has no live data, and when its live arrival is 2 minutes past.
   const canMark = st.phase === 'ride' && !x.missed && (notLive || now > x.arr + 120000);
   let now1 = '', now2 = '', now3 = '';
@@ -239,7 +240,7 @@ function Sheet({ st, legs, g, me, locDenied, push, offline, updated, onLoc, onSh
   } else if (notLive) {
     // No live data: no next stop from the clock, the timetable time named as such, and the trip waits for you.
     now1 = `On the ${l.line} to ${short(l.towards || l.to)}`;
-    now2 = `Not live, running to timetable \u00b7 due at ${short(l.to)} ${clock(x.arr)}`;
+    now2 = `Timetable only \u00b7 ${st.cur < last ? 'change at' : 'arrive'} ${short(l.to)} ${clock(x.arr)}`;
   } else {
     const ns = d && st.nextIdx >= 0 ? d.stops[st.nextIdx] : null;
     const yours = !!d && st.nextIdx === d.alightIndex;
@@ -250,13 +251,13 @@ function Sheet({ st, legs, g, me, locDenied, push, offline, updated, onLoc, onSh
   const list = d && st.phase === 'ride' && (d.alightIndex ?? -1) >= 0
     ? d.stops.slice(Math.max(d.mineIndex ?? 0, notLive ? (d.mineIndex ?? 0) + 1 : Math.min(st.nextIdx, d.alightIndex!)), d.alightIndex! + 1).filter(timed) : [];
   const show: (typeof list[number] | null)[] = list.length > 7 ? [...list.slice(0, 5), null, list[list.length - 1]] : list;
-  const ago = updated ? Math.round((now - updated) / 1000) : null;
   // Why it's late: the reason from this service's own linked alert (the live service answer, else the planned leg).
   const whyRow = useMemo(() => [{ line: l.line, delayMin: late, realtime: !!x.live && lk.kind !== 'stale', cancelled: !!d?.cancelled, alerts: d?.alerts?.length ? d.alerts : (l as any).alerts }], [l, late, x.live, lk.kind, d]);
   const why = useWhyLate(whyRow)(whyRow[0]);
   return (
     <View>
-      <View style={{ paddingHorizontal: 20, paddingTop: 2, flexDirection: 'row', alignItems: 'flex-end' }}>
+      <View accessible accessibilityLabel={`${st.etaLate || x.missed ? 'Arrive about' : 'Arrive'} at ${short(legs[last].to)}, ${clock(st.eta)}, in ${minsWords(m)}, ${badge.t}${g.share ? ', sharing' : ''}`}
+        style={{ paddingHorizontal: 20, paddingTop: 2, flexDirection: 'row', alignItems: 'flex-end' }}>
         <View style={{ flex: 1 }}>
           <T kind="foot" tone="text2">{st.etaLate || x.missed ? `Arrive at ${short(legs[last].to)}, about` : `Arrive at ${short(legs[last].to)}`}</T>
           <Text style={{ fontSize: 34, fontWeight: '700', color: c.text, fontVariant: ['tabular-nums'], letterSpacing: -0.5 }} maxFontSizeMultiplier={1.3}>{clock(st.eta)}</Text>
@@ -284,8 +285,8 @@ function Sheet({ st, legs, g, me, locDenied, push, offline, updated, onLoc, onSh
       <SpeakRow g={g} />
 
       {!offline && lk.kind === 'live' && lk.age ? <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 6 }}>{liveWords(lk)}</T> : null}
-      {offline ? <Warn tone="grey" title={offline} body={ago != null ? `Last update ${ago < 90 ? `${ago} s` : `${Math.round(ago / 60)} min`} ago. Trying again.` : 'Trying again.'} /> : null}
-      {(notLive || !x.live) && !offline && !(x.arrLive && st.phase === 'ride') ? <Warn tone="grey" title="No live data for this service" body={st.phase === 'ride' ? `Running to timetable, not live. The trip moves on when ${me ? 'your location shows you at' : 'you tap that you are at'} ${short(l.to)}.` : 'Times are from the timetable.'} /> : null}
+      {offline ? <Warn tone="grey" title={offline} body={updated ? `Updated ${clock(updated)}. Trying again.` : 'Trying again.'} /> : null}
+      {(notLive || !x.live) && !offline && !(x.arrLive && st.phase === 'ride') ? <Warn tone="grey" title="No live data for this service" body={st.phase === 'ride' ? `The trip moves on when ${me ? 'your location shows you at' : 'you tap that you are at'} ${short(l.to)}.` : 'Times are from the timetable.'} /> : null}
       {canMark ? (
         <View style={{ marginHorizontal: 20, marginTop: 10 }}>
           <Button kind="tinted" title={st.cur < last ? `I'm at ${short(l.to)}` : `I've arrived at ${short(l.to)}`} onPress={() => { haptic.select(); markHere(st.cur).catch(() => {}); }} />
@@ -330,7 +331,7 @@ function Sheet({ st, legs, g, me, locDenied, push, offline, updated, onLoc, onSh
         <View style={{ flex: 1 }}><Button title="End trip" icon={I.stop} kind="filled" onPress={onEnd} /></View>
       </View>
 
-      <T kind="foot" tone="text2" style={{ marginHorizontal: 20, marginTop: 22, marginBottom: 6, fontWeight: '600' }}>YOUR TRIP</T>
+      <T kind="foot" tone="text2" style={{ textTransform: androidLook ? 'none' : 'uppercase', marginHorizontal: 20, marginTop: 22, marginBottom: 6, fontWeight: '600' }} accessibilityRole="header">Your trip</T>
       <View style={[sx.group, { backgroundColor: c.card2, marginTop: 0 }]}>
         {legs.map((ll, i) => {
           const y2 = st.L2[i], state = i < st.cur ? 'done' : i === st.cur ? 'now' : 'next';
@@ -385,7 +386,7 @@ function SetupRow({ icon, title, sub, action, onPress }: { icon: any; title: str
         <T kind="foot" tone="text2">{sub}</T>
       </View>
       {action ? (
-        <Pressable onPress={onPress} hitSlop={6} style={({ pressed }) => [{ backgroundColor: c.tint, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6, opacity: pressed ? 0.7 : 1 }]} accessibilityRole="button">
+        <Pressable onPress={onPress} hitSlop={8} style={({ pressed }) => [{ backgroundColor: c.tint, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6, minHeight: 32, justifyContent: 'center', opacity: pressed ? 0.7 : 1 }]} accessibilityRole="button" accessibilityLabel={`${action}, ${title}`}>
           <Text maxFontSizeMultiplier={1.4} style={{ color: Platform.OS === 'android' && c.dark ? '#062E6F' : '#fff', fontWeight: '600', fontSize: 14 }}>{action}</Text>
         </Pressable>
       ) : null}

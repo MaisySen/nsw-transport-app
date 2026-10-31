@@ -13,7 +13,7 @@ import { createCapped } from '@/lib/speedCore';
 import { useSides } from '@/lib/layout';
 import { api } from '@/lib/api';
 import { useScreenPoll, useNow } from '@/lib/activity';
-import { usePalette } from '@/lib/theme';
+import { usePalette, androidLook } from '@/lib/theme';
 import { badgeLook } from '@/lib/lineStyle';
 import { clock, shortName } from '@/lib/format';
 import { haptic } from '@/lib/haptic';
@@ -143,7 +143,7 @@ export default function RouteScreen() {
               <T kind="title3" numberOfLines={2} style={{ flex: 1 }} accessibilityRole="header">{dir ? `to ${shortName(dir.to)}` : `Route ${line}`}</T>
               {dirs && dirs.length > 1 ? (
                 <Pressable onPress={swap} accessibilityRole="button" accessibilityLabel={`Other direction, to ${shortName(dirs[(di + 1) % dirs.length].to)}`} hitSlop={8}
-                  style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 34, borderRadius: 17, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>
+                  style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, minHeight: 34, paddingVertical: 4, borderRadius: 17, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>
                   <Icon name={I.swap} size={14} color={c.tint} />
                   <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Direction</T>
                 </Pressable>
@@ -195,7 +195,7 @@ export default function RouteScreen() {
                       Stop {s.id}{here.length ? ` \u00b7 Bus at this stop${here[0].delayMin ? `, ${here[0].delayMin} min late` : ''}` : nb && !last ? ` \u00b7 Next bus ${awayWords(nb.away).toLowerCase()}` : ''}
                     </T>
                     {skip ? <T kind="caption" style={{ color: c.lateText, fontWeight: '600', marginTop: 2 }}>Not stopping today</T> : null}
-                    {mine ? <T kind="caption" tone="tint" style={{ fontWeight: '700', marginTop: 2 }}>YOUR STOP</T> : null}
+                    {mine ? <T kind="caption" tone="tint" style={{ textTransform: androidLook ? 'none' : 'uppercase', fontWeight: '700', marginTop: 2 }}>Your stop</T> : null}
                     {isOpen ? (
                       <View style={{ marginTop: 8, gap: 6 }}>
                         {times[s.id] === undefined ? <T kind="sub" tone="text2">Loading times</T> : null}

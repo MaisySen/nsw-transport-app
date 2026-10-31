@@ -9,6 +9,7 @@ import { defaultClock, from12, isTomorrow, NOW, snapMinute, to12, wrapStep, type
 import { Segmented } from './Segmented';
 import { T } from './ui';
 import { useReduceMotion } from '@/lib/motion';
+import { phone24h } from '@/lib/rowTime';
 
 // Leave now, Leave at or Arrive by, with a time wheel. Built in JS (no native picker), so it works on every
 // installed build: an iOS style wheel in a sheet with Cancel and Done, a Material 3 dialog style on Android.
@@ -18,6 +19,8 @@ const ROWS = 5;
 export const HOURS = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 export const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5);
 export const HALVES = [0, 1];
+/** The hour wheel on a 24 hour phone. */
+export const HOURS24 = Array.from({ length: 24 }, (_, i) => i);
 
 export function Wheel({ values, value, onChange, text, label, width }: { values: number[]; value: number; onChange: (v: number) => void; text: (v: number) => string; label: string; width: number }) {
   const c = usePalette();
@@ -85,6 +88,8 @@ export function WhenPicker({ visible, value, now, onDone, onClose, days, kinds =
     setKind(k);
   };
   const { h12, pm } = to12(h);
+  // The phone's 24-Hour Time setting: one 00 to 23 hour wheel and no am/pm wheel, as the system picker does (1 Nov).
+  const h24 = phone24h();
   const pick: When = kind === 'now' ? NOW : { kind, h, m, ...(days?.length && day ? { day } : {}) };
   const dayText = kind === 'now' || days?.length ? '' : dayNote ? dayNote(pick) : isTomorrow(pick, now) ? 'Tomorrow' : 'Today';
   const done = () => { haptic.select(); onDone(pick); };
@@ -97,10 +102,10 @@ export function WhenPicker({ visible, value, now, onDone, onClose, days, kinds =
         <View style={[StyleSheet.absoluteFill, { justifyContent: 'center' }]} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
           <View style={ios ? { height: ITEM, borderRadius: 10, backgroundColor: c.fill, marginHorizontal: 12 } : { height: ITEM, borderTopWidth: 2, borderBottomWidth: 2, borderColor: c.tint, marginHorizontal: 24 }} />
         </View>
-        <Wheel label="Hour" width={72} values={HOURS} value={h12} text={(v) => String(v)} onChange={(v) => setH(from12(v, pm))} />
+        {h24 ? <Wheel label="Hour" width={72} values={HOURS24} value={h} text={(v) => String(v).padStart(2, '0')} onChange={setH} /> : <Wheel label="Hour" width={72} values={HOURS} value={h12} text={(v) => String(v)} onChange={(v) => setH(from12(v, pm))} />}
         <T kind="title3" style={{ fontSize: 22 }}>:</T>
         <Wheel label="Minute" width={72} values={MINUTES} value={m} text={(v) => String(v).padStart(2, '0')} onChange={setM} />
-        <Wheel label="Morning or afternoon" width={72} values={HALVES} value={pm ? 1 : 0} text={(v) => (v ? 'pm' : 'am')} onChange={(v) => setH(from12(h12, !!v))} />
+        {h24 ? null : <Wheel label="Morning or afternoon" width={72} values={HALVES} value={pm ? 1 : 0} text={(v) => (v ? 'pm' : 'am')} onChange={(v) => setH(from12(h12, !!v))} />}
       </View>
       {dayText ? <T kind="foot" tone="text2" style={{ marginTop: 6 }} accessibilityLiveRegion="polite">{dayText}</T> : null}
       {days?.length ? (
@@ -108,7 +113,7 @@ export function WhenPicker({ visible, value, now, onDone, onClose, days, kinds =
           {days.map((d) => {
             const on = d.day === day;
             return (
-              <Pressable key={d.day} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={d.a11y} onPress={() => { haptic.select(); setDay(d.day); }}
+              <Pressable key={d.day} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={d.a11y} hitSlop={{ top: 2, bottom: 2 }} onPress={() => { haptic.select(); setDay(d.day); }}
                 android_ripple={{ color: c.fill }}
                 style={({ pressed }) => ({ minHeight: 40, paddingHorizontal: 14, borderRadius: ios ? 20 : 8, justifyContent: 'center', backgroundColor: on ? c.tint : c.fill, borderWidth: ios ? 0 : on ? 0 : 1, borderColor: c.sep, opacity: pressed ? 0.8 : 1 })}>
                 <T kind="sub" style={{ color: on ? '#FFFFFF' : c.text, fontWeight: on ? '600' : '400' }}>{d.label}</T>

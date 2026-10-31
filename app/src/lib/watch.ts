@@ -9,6 +9,7 @@ import { apiBase, NEW_API_BASE } from './server';
  * so it is looked up once the app has moved to the server that reads them. */
 export const legFeed = (f?: string | null) => f || (apiBase() === NEW_API_BASE ? '' : undefined);
 import type { Departure, Journey, Place, WatchLeg } from './types';
+import { friendlyErr } from './netErrCore';
 
 export type WatchSpec = { kind: 'svc' | 'trip'; title: string; legs: WatchLeg[]; origin?: Place | null; to?: Place | null; lead: number; key: string };
 
@@ -55,7 +56,7 @@ export async function toggleWatch(spec: WatchSpec, watchedId?: string) {
     if (watchedId) { await stopWatch(watchedId); return null; }
     return await startWatch(spec);
   } catch (e: any) {
-    Alert.alert("Couldn't do that", String(e?.message || e));
+    Alert.alert("Couldn't do that", friendlyErr(e));
     return null;
   }
 }

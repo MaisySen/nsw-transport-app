@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, PanResponder, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Alert, AppState, PanResponder, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { CARD_SWIPE, SwipeRow, type SwipeAct } from '@/components/Swipe';
 import { haptic } from '@/lib/haptic';
 import { gripStep, type GripEvent, type GripState } from '@/lib/gesture';
@@ -38,6 +38,7 @@ import { CalendarLeaveByCard } from '@/components/CalendarLeaveBy';
 import { pickOrigin } from '@/lib/calendarLeaveByCore';
 import { commuteDir, halfDayKey } from '@/lib/smart';
 import { useLoaded } from '@/lib/store';
+import { friendlyErr } from '@/lib/netErrCore';
 
 export default function Home() {
   const c = usePalette();
@@ -125,7 +126,11 @@ export default function Home() {
   const [snack, setSnack] = useState<{ text: string; undo: () => void; commit: () => void; id: number } | null>(null);
   const snackRef = useRef(snack);
   snackRef.current = snack;
-  useEffect(() => onTripDeleted((u) => { snackRef.current?.commit(); setSnack({ ...u, id: Date.now() }); }), []);
+  useEffect(() => onTripDeleted((u) => {
+    snackRef.current?.commit(); setSnack({ ...u, id: Date.now() });
+    // iOS ignores the bar's live region: VoiceOver hears the delete and where Undo is (1 Nov polish).
+    try { AccessibilityInfo.announceForAccessibility(`${u.text}. Undo is at the bottom of the screen.`); } catch {}
+  }), []);
   useEffect(() => { if (!snack) return; const t = setTimeout(() => setSnack(null), UNDO_MS); return () => clearTimeout(t); }, [snack]);
   // Going to the background ends the chance to undo, so the server delete is sent now rather than lost.
   useEffect(() => { const sub = AppState.addEventListener('change', (a) => { if (a === 'background') { snackRef.current?.commit(); setSnack(null); } }); return () => sub.remove(); }, []);
@@ -149,7 +154,7 @@ export default function Home() {
     try {
       await api.saveCommute({ name: sugg.name || 'Morning trip', from: sugg.from, to: sugg.to, tod: sugg.tod, days: '12345', active: true } as any);
       live.refresh();
-    } catch (e: any) { Alert.alert("Couldn't save it", e.message); }
+    } catch (e: any) { Alert.alert("Couldn't save it", friendlyErr(e)); }
     setBusy(false);
   };
 
@@ -254,7 +259,7 @@ export default function Home() {
               </T>
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
                 <View style={{ flex: 1 }}><Button title="Make it my commute" onPress={acceptSuggestion} disabled={busy} /></View>
-                <Button title="Not now" kind="tinted" disabled={busy} onPress={() => api.dismissSuggestion(sugg.key).then(live.refresh, (e: any) => Alert.alert("Couldn't hide it", String(e?.message || e)))} />
+                <Button title="Not now" kind="tinted" disabled={busy} onPress={() => api.dismissSuggestion(sugg.key).then(live.refresh, (e: any) => Alert.alert("Couldn't hide it", friendlyErr(e)))} />
               </View>
             </View>
           </Section>
@@ -305,7 +310,7 @@ export default function Home() {
         <TabBarSafe overlay style={StyleSheet.absoluteFill}>
         <View style={[hs.snack, { marginLeft: 16 + side.left, marginRight: 16 + side.right, backgroundColor: c.dark ? '#E6E1E5' : '#313033' }]} accessibilityLiveRegion="polite">
           <Text maxFontSizeMultiplier={1.4} style={{ color: c.dark ? '#313033' : '#F4EFF4', fontSize: 14, flex: 1 }}>{snack.text}</Text>
-          <Pressable onPress={() => { snack.undo(); setSnack(null); haptic.select(); }} hitSlop={10} accessibilityRole="button">
+          <Pressable onPress={() => { snack.undo(); setSnack(null); haptic.select(); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Undo, ${snack.text}`}>
             <Text maxFontSizeMultiplier={1.4} style={{ color: c.dark ? '#1F6FEB' : '#8AB4F8', fontSize: 14, fontWeight: '700' }}>Undo</Text>
           </Pressable>
         </View>

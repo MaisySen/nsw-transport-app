@@ -26,6 +26,7 @@ import { checkSubtitle } from '@/lib/morning';
 import { ymdSyd } from '@/lib/calendarLeaveByCore';
 import { useScreenPoll } from '@/lib/activity';
 import type { Place } from '@/lib/types';
+import { freshFix } from '@/lib/where';
 
 const short = (n?: string | null) => shortName(n || '').replace(/ Station$/, '');
 const plat = (p?: string | null) => (p ? p.replace(/^Platform\s*/i, 'Platform ').replace(/^Stand\s*/i, 'Stand ') : '');
@@ -43,7 +44,7 @@ export function useMyPos(): Pos {
     try {
       // A fix up to 2 minutes old is good enough for walking minutes, and costs no GPS at all.
       let p = await Location.getLastKnownPositionAsync({ maxAge: 120000 }).catch(() => null);
-      if (!p) p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      if (!p) p = await freshFix(Location.Accuracy.Balanced);
       if (p) setPos({ lat: p.coords.latitude, lon: p.coords.longitude });
     } catch {}
     return true;
@@ -126,7 +127,7 @@ export function LeaveLine({ js, now, me, compact, ends }: { js: Journey[]; now: 
   if (compact) {
     const fg = set ? c.tint : androidLook && c.dark ? '#062E6F' : '#fff';
     return (
-      <View style={s.leaveMini} accessibilityLiveRegion="polite">
+      <View style={s.leaveMini} accessibilityLiveRegion={urgent ? 'polite' : 'none'}>
         <Icon name={I.walk} size={16} color={urgent ? c.red : c.tint} />
         <View style={{ flex: 1, marginLeft: 8, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline' }} accessible accessibilityLabel={`${words}, ${p.walk} minute walk to ${station}, for the ${label}${set ? `. Reminder at ${clock(rem!.at)}` : ''}`}>
           <T kind="sub" style={{ fontWeight: '600', color: urgent ? c.redText : c.text }}>{words}</T>
@@ -143,7 +144,7 @@ export function LeaveLine({ js, now, me, compact, ends }: { js: Journey[]; now: 
     );
   }
   return (
-    <View style={s.leave} accessibilityLiveRegion="polite">
+    <View style={s.leave} accessibilityLiveRegion={urgent ? 'polite' : 'none'}>
       <Icon name={I.walk} size={18} color={urgent ? c.red : c.tint} />
       <View style={{ flex: 1, marginLeft: 10 }} accessible accessibilityLabel={`${words}, ${p.walk} minute walk to ${station}, for the ${label}`}>
         <T kind="headline" style={{ color: urgent ? c.redText : c.text }}>{words}</T>
@@ -304,7 +305,7 @@ export function NextOption({ g, st }: { g: LiveTrip; st: LiveState | null }) {
         </View>
       ) : j && l ? (
         <>
-          <T kind="foot" tone="text2" style={{ marginTop: 10 }}>NEXT OPTION</T>
+          <T kind="foot" tone="text2" style={{ textTransform: androidLook ? 'none' : 'uppercase', marginTop: 10 }} accessibilityRole="header">Next option</T>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }} accessible
             accessibilityLabel={`Next option: ${tl.map((x) => x.line).join(' then ')} at ${clock(boardTime(j))}${l.fromPlatform ? ', ' + plat(l.fromPlatform) : ''}. Arrive ${short(m.toName)} at ${clock(arr)}.`}>
             <View style={{ flexDirection: 'row', gap: 4 }}>
