@@ -10,6 +10,8 @@ Every countdown in the app says where its time comes from. Written 25 Oct 2026 f
 | Timetable | No live time for this service | Minutes to the timetable time, grey. Once that time has passed: the time itself (8:42am), never "Gone" or "Left" |
 | Not tracking | It had a live time, but the GPS position is over 3 min old, or our copy is over 2 min old and the service is due within 10 min, or the live time passed over a minute ago and the service is still listed | The timetable time (8:42am) with "timetable" under it. No countdown to 0 |
 
+The Home stop cards follow the same rule (31 Oct): their rows are compact, so a time that is not fresh live (Timetable or Not tracking) shows the timetable time in grey with the word "Timetable" under it.
+
 Cancelled services say Cancelled. The age is our copy's age plus the GPS position's own age, in 15 s steps under a minute ("just now", "15 s ago", "30 s ago", "45 s ago"), then minutes, so rows redraw at most every 15 s.
 
 Code: `app/src/lib/liveLabelCore.ts` (`liveState`, `liveKey`, `liveWords`, `stampSeen`, unit tests in `app/test/livelabel.test.mjs`) and `app/src/components/LiveLabel.tsx` (`LiveStatus`, `LiveCountdown`, `LivePill`). Every answer read through `app/src/lib/api.ts` is stamped with `seenAt` (the moment this phone received it) on each departure row and each trip leg, so a copy kept for offline use keeps its true age.
