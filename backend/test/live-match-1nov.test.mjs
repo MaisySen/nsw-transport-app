@@ -87,3 +87,20 @@ test("/api/service: the stop off is found by the station's id (Croydon 213210) o
   assert.equal(W.svcOffIndex(loop, "2135237", 0, null), 3);
   assert.equal(W.svcOffIndex(loop, "2135237", 4, null), 7);
 });
+
+test("31 Oct 11:51 PM shadow trip: after the train leaves your stop the feed drops it; the position still says left, then at your stop", async () => {
+  const W = await loadWorker();
+  // T1 820R planned 11:45 PM Strathfield, Croydon arrival 11:50 PM; the feed after it left lists Burwood on only
+  const legA = { ...leg, tripId: "820R.1417.150.128.A.8.91992563", planned: "2026-10-31T12:45:00.000Z", arrPlanned: "2026-10-31T12:50:00.000Z" };
+  const after = { ts: T("12:51:30") / 1000, stus: [{ stopId: "213495", arr: d(352), dep: d(352) }, { stopId: "213284", arr: d(347), dep: d(347) }, { stopId: "2131123", arr: d(347), dep: d(347) }] };
+  setClock(T("12:52:00"));
+  const midSB = { lat: (STOPS["2135237"][1] + STOPS["213495"][1]) / 2, lon: (STOPS["2135237"][2] + STOPS["213495"][2]) / 2, ts: T("12:51:17"), ageS: 40, stopId: "Strathfield.X Loc", status: null };
+  const r1 = W.tfLegRaw(legA, after, midSB, info, T("12:51:30"));
+  assert.equal(r1.est[1], T("12:55:47"), "Croydon 11:50 + 347 s");
+  assert.deepEqual([r1.vehicle.stop, r1.vehicle.state], [0, "left"], "between Strathfield and Burwood: left your stop");
+  const r2 = W.tfLegRaw(legA, after, veh("213284", T("12:55:50")), info, T("12:55:55"));
+  assert.deepEqual([r2.vehicle.stop, r2.vehicle.state], [1, "at"], "at Croydon");
+  // long before the live departure a feed without your stop says nothing about the train against it
+  const early = W.tfLegRaw(legA, after, veh("214074", T("12:30:00")), info, T("12:30:10"));
+  assert.equal(early.vehicle, null);
+});

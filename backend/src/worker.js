@@ -6055,17 +6055,23 @@ function tfLegRaw(l, tu, veh, info, asOf) {
     // The vehicle's stop: the feed's stop id when it is one of the trip's stops; else where its position lies along the
     // trip's stops (Sydney Trains names a place, "Lidcombe.ST406S Loc", not a stop id, so without this the server never
     // saw the train move and the trip never left or arrived on the card; the open app already places it this way).
-    let vi = veh.stopId ? stus.findIndex((u) => u.stopId === veh.stopId) : -1;
+    // Once the train has left your stop Sydney Trains drops it from the trip update (it lists the stops still to come),
+    // so the vehicle is placed on your stop followed by the listed ones, from when the live departure is due on (31 Oct
+    // 11:50 PM shadow trip: the train left Strathfield at 11:51 and the card stayed on Due to the end).
+    let seq = stus, b0 = bi, o0 = oi;
+    const depDue = Number.isFinite(ms(l.planned)) ? ms(l.planned) + (r.est[0] != null ? r.est[0] - ms(l.planned) : (r.runDelay || 0) * 1000) - 60000 : Infinity;
+    if (bi < 0 && oi >= 0 && info[l.stopId] && Math.max(asOf, veh.ts) >= depDue) { seq = [{ stopId: l.stopId }, ...stus]; b0 = 0; o0 = oi + 1; }
+    let vi = veh.stopId ? seq.findIndex((u) => u.stopId === veh.stopId) : -1;
     let at = veh.status === 1;
-    if (vi < 0) { const g = tfVehOnRun(veh, stus, info); if (g) { vi = g.k; at = g.at; } }
+    if (vi < 0) { const g = tfVehOnRun(veh, seq, info); if (g) { vi = g.k; at = g.at; } }
     let v = null;
-    if (vi >= 0 && bi >= 0) {
-      const before = r.before ? oi - 1 : -1;
-      if (oi >= 0 && vi > oi) v = { stop: offIdx, state: "left" };
-      else if (oi >= 0 && vi === oi) v = at ? { stop: offIdx, state: "at" } : { stop: offIdx - 1, state: "left" };
+    if (vi >= 0 && b0 >= 0) {
+      const before = r.before ? o0 - 1 : -1;
+      if (o0 >= 0 && vi > o0) v = { stop: offIdx, state: "left" };
+      else if (o0 >= 0 && vi === o0) v = at ? { stop: offIdx, state: "at" } : { stop: offIdx - 1, state: "left" };
       else if (before >= 0 && vi === before) v = at ? { stop: 1, state: "at" } : { stop: 0, state: "left" };
-      else if (vi > bi) v = { stop: 0, state: "left" };
-      else if (vi === bi && at) v = { stop: 0, state: "at" };
+      else if (vi > b0) v = { stop: 0, state: "left" };
+      else if (vi === b0 && at) v = { stop: 0, state: "at" };
       // still on its way to your stop: a fresh position says it has not left yet (as the open app reads it)
       else v = { stop: -1, state: "left" };
     }
