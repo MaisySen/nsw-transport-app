@@ -12,7 +12,7 @@
 import { Platform } from 'react-native';
 import * as Application from 'expo-application';
 import * as Notifications from 'expo-notifications';
-import { backupOf, getOffSoundChannel, serverClipsFor, getOffTrigger, ownRungKeys, staleTripIds, tripPushSoundless, serverGetOffSupported, serverRungKeys, voiceClipsSupported, type GetOffBackup, type GetOffSound } from './getOffCore';
+import { backupOf, getOffSoundChannel, getOffTrigger, ownRungKeys, staleTripIds, tripPushSoundless, serverGetOffSupported, serverRungKeys, voiceClipsSupported, type GetOffBackup, type GetOffSound } from './getOffCore';
 import { isOn } from './config';
 import { iosNative } from '../../modules/transport-ios';
 
@@ -27,15 +27,6 @@ export function voiceClips(): boolean {
   let on = true;
   try { on = isOn('getOffVoice'); } catch {}
   return on && voiceClipsSupported(Platform.OS, build);
-}
-
-/** The trip flow clips the server's push plays for this trip on this build (getOffCore serverClipsFor); none when the
- * spoken sounds are off or missing, so the open app then reads every moment out itself. */
-export function serverClips(server: boolean): string[] {
-  if (!voiceClips()) return [];
-  let build: string | null = null;
-  try { build = Application.nativeBuildVersion; } catch {}
-  return serverClipsFor(Platform.OS, build, server);
 }
 
 let channels: Promise<boolean> | null = null;

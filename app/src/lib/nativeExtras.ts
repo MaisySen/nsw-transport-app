@@ -79,8 +79,10 @@ function speechAudio(): { start?: () => boolean; end?: () => void } | null {
 
 /**
  * From build 211 (31 Oct): the ambient audio session for spoken trip alerts. Muted by the Silent switch and by screen
- * lock, the same as the notification's own sound (Bidur on Silent: the banner came, but the app's voice played on
- * open). Absent before: those builds use the system's speech session, which speaks in Silent mode.
+ * lock on the speaker, the same as the notification's own sound (Bidur on Silent: the banner came, but the app's voice
+ * played on open). In headphones iOS still plays an ambient session in Silent mode (1 Nov follow-up, sources in
+ * docs/TRIP_FLOW_SPEC.md 2.7), so a rider with headphones hears the open app. Absent before: those builds use the
+ * system's speech session, which speaks in Silent mode.
  */
 function alertAudio(): { start?: () => boolean; end?: () => void } | null {
   if (Platform.OS !== 'ios') return null;
@@ -88,6 +90,39 @@ function alertAudio(): { start?: () => boolean; end?: () => void } | null {
     const m: any = requireOptionalNativeModule('TransportIOS');
     return m && typeof m.startAlertAudio === 'function' ? { start: () => !!m.startAlertAudio(), end: () => { try { m.endAlertAudio?.(); } catch {} } } : null;
   } catch { return null; }
+}
+
+/**
+ * From build 213 (proposed 1 Nov, "Was in silent. But headphone on"; absent in 212 and earlier): Kylie's clips played
+ * by the app itself (TransportIOS.playAlertClip, an AVAudioPlayer on the bundled .wav) and the audio route
+ * (TransportIOS.audioRoute: "headphones", "speaker" or "other"). With headphones the clip plays even in Silent mode;
+ * on the speaker the Silent switch mutes it. Feature detected: null on a build without them.
+ */
+function clipAudio(): { play: (file: string, force: boolean) => boolean; route: () => string } | null {
+  if (Platform.OS !== 'ios') return null;
+  try {
+    const m: any = requireOptionalNativeModule('TransportIOS');
+    if (!m || typeof m.playAlertClip !== 'function' || typeof m.audioRoute !== 'function') return null;
+    return { play: (file, force) => !!m.playAlertClip(file, force), route: () => { try { return String(m.audioRoute() || 'other'); } catch { return 'other'; } } };
+  } catch { return null; }
+}
+
+/** True on builds that play Kylie's clips in the app (213 and later); 212 says those moments in the phone's voice. */
+export function hasClipPlayer(): boolean { return !!clipAudio(); }
+
+/**
+ * One of Kylie's clips with the app open (heads-up, Get off now, arrival). Headphones: played even in Silent mode
+ * (Bidur, 1 Nov); speaker: the Silent switch mutes it. A build without the clip player, or a clip that will not play,
+ * says the words through the ambient session instead (heard in headphones in Silent mode, quiet on the speaker).
+ */
+export async function playClip(file: string, text: string) {
+  const c = clipAudio();
+  if (c) {
+    let ok = false;
+    try { ok = c.play(file, c.route() === 'headphones'); } catch { ok = false; }
+    if (ok) return;
+  }
+  await speak(text, { alert: true });
 }
 
 /** True on builds whose spoken trip alerts follow the Silent switch (211 and later). */

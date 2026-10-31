@@ -7,7 +7,8 @@ import * as Notifications from 'expo-notifications';
 import { pollNotes, pollNotesTick } from '@/lib/push';
 import { startAppPoll } from '@/lib/activity';
 import { startPacks } from '@/lib/timetablePack';
-import { endLive, setupLiveNotifications } from '@/lib/live';
+import { endLive, getLive, setupLiveNotifications } from '@/lib/live';
+import { alertTapRoute } from '@/lib/alertTapCore';
 import { finishProfileMove } from '@/lib/device';
 import { finishServerMove } from '@/lib/serverMove';
 import { configDue, refreshConfig } from '@/lib/config';
@@ -147,7 +148,10 @@ function RootLayout() {
       // Buttons on the ongoing trip notification.
       if (r.actionIdentifier === 'end') { endLive().finally(() => router.replace('/')); return; }
       if (r.actionIdentifier === 'share') { router.push({ pathname: '/go', params: { share: '1' } }); return; }
-      if (d.go) { router.push('/go'); return; }
+      // The live trip's own alerts (the phone's, and the server's for its watch) open the live trip (1 Nov: a server
+      // trip alert opened the Watching screen and its Stop watching ended a trip mid-change).
+      const to = alertTapRoute(d, getLive());
+      if (to === 'go') { router.push('/go'); return; }
       // A trip reminder opens its saved trip with live times.
       if (d.tripOpen && typeof d.tripOpen === 'object') { router.push({ pathname: '/trip', params: d.tripOpen }); return; }
       // The weekend trackwork heads up and a Last way home reminder from a spot on the map open Home, where their cards are.
@@ -158,7 +162,7 @@ function RootLayout() {
         if (open) router.push({ pathname: '/trip', params: open }); else router.push('/morning');
         return;
       }
-      if (d.watch) router.push({ pathname: '/watch/[id]', params: { id: String(d.watch) } });
+      if (to === 'watch') router.push({ pathname: '/watch/[id]', params: { id: String(d.watch) } });
     };
     const sub = Notifications.addNotificationResponseReceivedListener(openFromAlert);
     // The tap that opened a closed app arrived before this listener existed: read it once, after the first screen mounts.

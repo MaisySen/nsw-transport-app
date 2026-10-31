@@ -18,9 +18,8 @@ export const TRIP_RULES = {
   ENDED_AFTER: 120000, // the card goes 2 min after Arrived
   NEAR: 300000, // the server reads every 15 s once the live arrival is under 5 min away
   PHONE_WRITE_MAX_AGE: 20000, // the phone writes the card (and sets its backup) only from readings under 20 s old
-  VOICE_OPEN_FOR: 10000, // V1
   VOICE_FRESH: 60000, // V2
-  VOICE_SILENT_REFRESHES: 2, // V4
+  VOICE_CATCHUP_GRACE: 5000, // V4: a moment due more than 5 s before the app came to the front is catch-up (never said)
   VOICE_QUEUE_MAX: 30000, // V5
   DELAY_ALERT: 3, // minutes: one alert when the delay first reaches 3 min, and per 3 min change
   CHANGE_MIN: 180000, // minimum time to change platforms at an interchange
@@ -253,11 +252,13 @@ export function legReadingFrom(pl: PlanLeg, w: Pick<WatchLeg, 'stopId' | 'from' 
   // (a place, no stop id: Sydney Trains) heading to your stop and under 1.5 km out gives the arrival from the position,
   // 45 s plus 40 ms a metre, when that is earlier than the stop's own time (the feed's ran 22 s to 3 min late).
   const vv = d.vehicle as { lat?: number | null; lon?: number | null; stopId?: string | null; ageS?: number | null } | null | undefined;
+  // read before hasXY narrows vv to its position (the 4 tsc errors on build-212-rc)
+  const vStop = vv?.stopId ?? null, vAge = vv?.ageS ?? 0;
   const offK = map[n - 1];
-  if (vr && !vr.at && o.asOf && offK >= 0 && vr.k === offK && hasXY(vv) && hasXY(d.stops[offK]) && !!vv.stopId && !d.stops.some((s) => s.id === vv.stopId) && !((vv.ageS ?? 0) > 90)) {
+  if (vr && !vr.at && o.asOf && offK >= 0 && vr.k === offK && hasXY(vv) && hasXY(d.stops[offK]) && !!vStop && !d.stops.some((s) => s.id === vStop) && !(vAge > 90)) {
     const dO = metres(vv, d.stops[offK] as { lat: number; lon: number });
     if (dO <= 1500) {
-      const eta = o.asOf - (vv.ageS ?? 0) * 1000 + 45000 + Math.round(40 * dO);
+      const eta = o.asOf - vAge * 1000 + 45000 + Math.round(40 * dO);
       if (est[n - 1] == null || eta < (est[n - 1] as number)) est[n - 1] = eta;
     }
   }
@@ -749,25 +750,42 @@ export function tripStep(plan: TripPlan, M: TripMemory, t: number, S: TripReadin
 }
 
 // ---------- who rings, and what is heard (spec 2.6 who rings, 2.7 voice) ----------
-/** The phone's state for voice: app in front, Silent switch, when it came to the front, refreshes since then, the speech queue. */
-export type VoiceState = { open: boolean; silent: boolean; openSince: number | null; refreshes: number; speakingUntil: number };
+/** The phone's state for voice: app in front, Silent switch, headphones, when it came to the front, refreshes since
+ * then, the speech queue. The app knows neither the Silent switch nor the route (no API in build 212): it passes
+ * silent false and lets the ambient session do it; the simulator passes both to check what is heard. */
+export type VoiceState = { open: boolean; silent: boolean; headphones?: boolean | null; openSince: number | null; refreshes: number; speakingUntil: number };
 export type VoiceDecision = { words: string | null; why: string | null; start: number; until: number };
 /**
- * In-app speech for one moment (V1 to V5): spoken only when the app has been in front at least 10 s, after the first
- * two refreshes, from a live reading under 60 s old (or a vehicle position), not on Silent (ambient session), and not
- * after waiting over 30 s behind another cue (one queue, nothing cut off).
+ * In-app speech for one moment (V1 to V6, 1 Nov "Never spoke" follow-up): said at its moment while the app is in front
+ * (V1, no wait after opening); from a live reading under 60 s old or a vehicle position (V2); never a catch-up (V4): a
+ * moment due more than 5 s before the app came to the front, or, with no known due time (dueAt null), one found on the
+ * first refresh after opening; not after waiting over 30 s behind another cue (V5); and heard on the speaker only with
+ * Silent off, in headphones always (V6, the ambient session as iOS routes it).
  */
-export function voiceGate(v: VoiceState, t: number, say: string | null | undefined, readingAge: number, byVehicle: boolean): VoiceDecision {
+export function voiceGate(v: VoiceState, t: number, say: string | null | undefined, readingAge: number, byVehicle: boolean, dueAt: number | null = null): VoiceDecision {
   const no = (why: string): VoiceDecision => ({ words: null, why, start: t, until: v.speakingUntil });
   if (!say) return no('no spoken cue for this alert');
   if (!v.open) return no('app not in front (V1)');
-  if (v.silent) return no('Silent switch on (ambient session)');
-  if (v.openSince == null || t - v.openSince < R.VOICE_OPEN_FOR) return no('app open under 10 s (V1)');
-  if (v.refreshes <= R.VOICE_SILENT_REFRESHES) return no('first two refreshes after opening (V4)');
+  if (v.silent && !v.headphones) return no('Silent switch on, speaker: the ambient session mutes it (V6)');
+  if (v.openSince == null) return no('app not in front (V1)');
+  if (dueAt != null && dueAt < v.openSince - R.VOICE_CATCHUP_GRACE) return no('due before the app came to the front (V4)');
+  if (dueAt == null && v.refreshes <= 1) return no('found on the first refresh after opening, moment unknown (V4)');
   if (!byVehicle && readingAge >= R.VOICE_FRESH) return no('live reading over 60 s old (V2)');
   const start = Math.max(t, v.speakingUntil);
   if (start - t > R.VOICE_QUEUE_MAX) return no('waited over 30 s in the speech queue (V5)');
   return { words: say, why: null, start, until: start + Math.ceil(say.length / 14) * 1000 };
+}
+
+/**
+ * When a moment was due, for the catch-up rule (V4): Get off now at its fire time (live arrival minus 30 s); the
+ * heads-up 2 min before the live arrival when that is how it came (left the stop before: unknown); arrival at the time
+ * the leg got in (arrivedTime). Null when not known.
+ */
+export function ringDue(ring: Pick<TripRing, 'kind' | 'target' | 'expires'>, t: number, arrivedTime?: number | null): number | null {
+  if (ring.kind === 'getoff') return typeof ring.target === 'number' ? ring.target : null;
+  if (ring.kind === 'headsup') { const d = typeof ring.expires === 'number' ? ring.expires - R.HEADSUP_WINDOW : NaN; return Number.isFinite(d) && d <= t ? d : null; }
+  if (ring.kind === 'arrived') return typeof arrivedTime === 'number' ? arrivedTime : null;
+  return null;
 }
 
 export type RouteState = { open: boolean; serverReachable: boolean; direct: boolean; silent: boolean };

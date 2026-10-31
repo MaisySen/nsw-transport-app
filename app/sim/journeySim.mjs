@@ -42,9 +42,8 @@ export const RULES = {
   PHONE_POLL: 15,         // the open app reads every 15 s
   PHONE_WRITE_MAX_AGE: 20,// the phone writes the card only from readings under 20 s old
   PUSH_AT_LEAST: 60,      // server pushes the card at least every 60 s while live
-  VOICE_OPEN_FOR: 10,     // V1
   VOICE_FRESH: 60,        // V2
-  VOICE_SILENT_REFRESHES: 2, // V4
+  VOICE_CATCHUP_GRACE: 5, // V4: a moment due more than 5 s before the app came to the front is catch-up (never said)
   VOICE_QUEUE_MAX: 30,    // V5
   DELAY_ALERT: 3,         // one alert when the delay first reaches 3 min, and per 3 min change
   WIDGET_RELOAD: 300,     // build 212 widget reload while locked
@@ -558,17 +557,29 @@ export function refStepTrip(P, M, t, S, env) {
   }
 }
 
-// In-app speech for one moment (spec 2.7 V1 to V5), the reference rule.
-export function refVoiceGate(v, t, say, readingAge, byVehicle) {
+// In-app speech for one moment (spec 2.7 V1 to V6, 1 Nov follow-up), the reference rule: said at its moment (no wait
+// after opening), never a catch-up (due before the app came to the front, or unknown and on the first refresh), from a
+// fresh reading, one queue; the ambient session is muted by the Silent switch on the speaker, not in headphones.
+export function refVoiceGate(v, t, say, readingAge, byVehicle, dueAt = null) {
   const no = (why) => ({ words: null, why, start: t, until: v.speakingUntil });
   if (!say) return no('no spoken cue for this alert');
-  if (v.silent) return no('Silent switch on (ambient session)');
-  if (t - v.openSince < RULES.VOICE_OPEN_FOR) return no('app open under 10 s (V1)');
-  if (v.refreshes <= RULES.VOICE_SILENT_REFRESHES) return no('first two refreshes after opening (V4)');
+  if (v.silent && !v.headphones) return no('Silent switch on, speaker: the ambient session mutes it (V6)');
+  if (v.openSince == null) return no('app not in front (V1)');
+  if (dueAt != null && dueAt < v.openSince - RULES.VOICE_CATCHUP_GRACE) return no('due before the app came to the front (V4)');
+  if (dueAt == null && v.refreshes <= 1) return no('found on the first refresh after opening, moment unknown (V4)');
   if (!byVehicle && readingAge >= RULES.VOICE_FRESH) return no('live reading over 60 s old (V2)');
   const start = Math.max(t, v.speakingUntil);
   if (start - t > RULES.VOICE_QUEUE_MAX) return no('waited over 30 s in the speech queue (V5)');
   return { words: say, why: null, start, until: start + Math.ceil(say.length / 14) };
+}
+
+// When a moment was due (V4): Get off now at its fire time, the heads-up 2 min before the live arrival when that is how
+// it came, the arrival when the leg got in. Null when not known (the same rule as tripState ringDue).
+export function ringDueS(ring, t, M) {
+  if (ring.kind === 'getoff') return typeof ring.target === 'number' ? ring.target : null;
+  if (ring.kind === 'headsup') { const d = typeof ring.expires === 'number' ? ring.expires - RULES.HEADSUP_WINDOW : NaN; return Number.isFinite(d) && d <= t ? d : null; }
+  if (ring.kind === 'arrived') { const li = Number(String(ring.moment).split(':')[1]); const a = M && M.legs[li] ? M.legs[li].arrivedTime : null; return typeof a === 'number' ? a : null; }
+  return null;
 }
 
 // The engine a run is played on. The reference engine is this file; sim/realEngine.mjs gives the same shape from the
@@ -580,7 +591,7 @@ export function simulate(caseDef, engine = referenceEngine) {
   const P = prepare(caseDef);
   const M = newMemory(P);
   const out = { id: P.id, P, M, frames: [], rings: [], voice: [], pushes: [], log: [] };
-  const ph = { app: 'locked', silent: false, location: false, c24: false, size: 'normal' };
+  const ph = { app: 'locked', silent: false, headphones: false, location: false, c24: false, size: 'normal' };
   let pi = 0, openSince = null, refreshes = 0, phoneSnap = null, lastPhonePoll = -1e9, serverSnap = null, lastServerPoll = -1e9;
   let phoneCard = null, serverCard = null, lastPush = { sig: null, t: -1e9 }, serverDone = false;
   let widget = { mem: null, snap: null, t: -1e9, cleared: false }, lastCardSig = null;
@@ -615,8 +626,9 @@ export function simulate(caseDef, engine = referenceEngine) {
     // voice
     let v = null;
     if (!ring.quiet && open && ring.say) {
-      const g = engine.voiceGate({ open, silent: ph.silent, openSince, refreshes, speakingUntil }, t, ring.say, readingAge, byVehicle);
-      if (g.words) { v = { t: g.start, kind: ring.kind, words: g.words, by: 'in-app voice' }; speakingUntil = g.until; }
+      const due = ringDueS(ring, t, M);
+      const g = engine.voiceGate({ open, silent: ph.silent, headphones: !!ph.headphones, openSince, refreshes, speakingUntil }, t, ring.say, readingAge, byVehicle, due);
+      if (g.words) { v = { t: g.start, kind: ring.kind, words: g.words, by: 'in-app voice', due, openAt: openSince, refresh: refreshes }; speakingUntil = g.until; }
       else v = { t, kind: ring.kind, words: null, why: g.why };
     } else if (!ring.quiet && !open && server && ring.clip) {
       v = ph.silent ? { t, kind: ring.kind, words: null, why: 'Silent switch on: clip muted' } : { t: r.lands ?? t, kind: ring.kind, words: CLIPS[ring.clip].words, by: `alert sound ${CLIPS[ring.clip].file}` };
@@ -722,7 +734,7 @@ export function simulate(caseDef, engine = referenceEngine) {
       }
     }
     out.frames.push({
-      t, app: ph.app, silent: ph.silent, openSince: ph.app === 'open' ? openSince : null, refreshes: ph.app === 'open' ? refreshes : null,
+      t, app: ph.app, silent: ph.silent, headphones: !!ph.headphones, openSince: ph.app === 'open' ? openSince : null, refreshes: ph.app === 'open' ? refreshes : null,
       phase: card ? card.phase : 'waiting',
       tripPhase: PHASES[M.legs[M.current].phase], leg: M.current, effLeg: eff(M, M.current),
       card, widget: wtext, widgetPhase: wphase, widgetTruncated: wtrunc, widgetReloadedAt: widget.t,
@@ -847,11 +859,8 @@ export function checkInvariants(out) {
     const f = out.frames.find((x) => x.t === s.t) || out.frames[out.frames.length - 1];
     if (s.by === 'in-app voice') {
       if (f.app !== 'open') bad('V', s.t, 'in-app voice while the app is not open');
-      else {
-        if (s.t - f.openSince < RULES.VOICE_OPEN_FOR) bad('I4', s.t, `spoke ${s.t - f.openSince}s after opening: ${s.words}`);
-        if (f.refreshes <= RULES.VOICE_SILENT_REFRESHES) bad('I4', s.t, `spoke on refresh ${f.refreshes} after opening: ${s.words}`);
-      }
-      if (f.silent) bad('V6', s.t, 'spoke with the Silent switch on');
+      else if (s.due != null ? s.due < s.openAt - RULES.VOICE_CATCHUP_GRACE : s.refresh <= 1) bad('I4', s.t, `spoke a catch-up moment (due ${s.due}, opened ${s.openAt}, refresh ${s.refresh}): ${s.words}`);
+      if (f.silent && !f.headphones) bad('V6', s.t, 'spoke on the speaker with the Silent switch on');
     } else if (f.silent) bad('V8', s.t, 'alert clip played with the Silent switch on');
   }
   return v;

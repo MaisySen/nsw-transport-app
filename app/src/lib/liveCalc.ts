@@ -1,7 +1,7 @@
 // Live trip maths, shared by the live trip screen and its tests. No React Native imports here.
 import type { ServiceResp, ServiceStop, WatchLeg } from './types';
 import type { TextSize, TimeSource, TripRender, StaleStep, TripMemory, VoiceState } from './tripState';
-import { boardIndexOf, isLiveTime, newTripMemory, offIndexOf, PHASE_INDEX, tripEvidence, tripLegTimes, tripPlanFrom, tripReadingFrom, tripRender, tripStep, TRIP_RULES, voiceGate } from './tripState';
+import { boardIndexOf, isLiveTime, newTripMemory, offIndexOf, PHASE_INDEX, ringDue, TRIP_CLIPS, tripEvidence, tripLegTimes, tripPlanFrom, tripReadingFrom, tripRender, tripStep, TRIP_RULES, voiceGate, type ClipKey } from './tripState';
 
 export type LegLive = { dep: number; arr: number; delay: number; live: boolean; d: ServiceResp | null; gone?: boolean;
   /** The change to this leg was missed: dep and arr are the earliest you could go, not this service's times. */
@@ -555,6 +555,7 @@ export type LiveAction =
   | { t: 'say'; key: string; text: string }
   | { t: 'clearOngoing' }
   | { t: 'stopWatch'; id: string }
+  | { t: 'clip'; key: string; clip: ClipKey; file: string; text: string }
   | { t: 'share'; prog: any }
   | { t: 'end' };
 
@@ -649,13 +650,15 @@ export function stepLive(g: LiveTripLike, svc: (ServiceResp | null | undefined)[
  * The new trip flow (phase 2, docs/TRIP_FLOW_SPEC.md 2.6 and 2.7) for one refresh with the app open. The calm sequence
  * (heads-up, Get off now at the live arrival minus 30 s, arrived), delay, platform, cancellation and missed change all
  * come from tripState.tripStep on the live train only, each once per stop (one moment key per step), and in-app speech
- * from voiceGate (V1 to V5: nothing in the first 10 s in front or the first two refreshes, nothing on Silent, nothing
- * from a reading over 60 s old, one queue). There is no timed "Wake me" alarm and no "Wake up" wording (G9).
+ * from voiceGate (V1 to V6: said at its moment, never a catch-up from before the app came to the front, nothing from a
+ * reading over 60 s old, one queue, the Silent switch mutes the speaker but not headphones). There is no timed "Wake me" alarm and no "Wake up" wording (G9).
  * asOf: when the live answers were loaded; voice: the speech state the engine keeps.
  */
-// serverClips (1 Nov): the clips the server's push plays for this trip (getOffCore serverClipsFor); a moment with one of
-// those clips is not read out by the app, so Kylie's clip from the push is heard with the app open too.
-export type FlowCtx = { asOf?: number | null; c24?: boolean; voice?: VoiceState | null; plannerAt?: number | null; serverClips?: string[] | null };
+// clipPlayer (1 Nov follow-up): this build can play Kylie's clips in the app (native playAlertClip, 213 and later); the
+// clip moments then play the clip, else the app says them in the phone's voice. Either way through a session the
+// Silent switch mutes on the speaker only. (The morning's serverClips, which left clip moments to the push, is gone: a
+// push's clip is muted in Silent mode even with headphones, so it cannot stand in for the open app's voice.)
+export type FlowCtx = { asOf?: number | null; c24?: boolean; voice?: VoiceState | null; plannerAt?: number | null; clipPlayer?: boolean | null };
 function stepFlow(g: LiveTripLike, n: LiveTripLike, s: LiveState, svc: (ServiceResp | null | undefined)[], now: number, f: Fmt, flow: FlowCtx, actions: LiveAction[]): { g: LiveTripLike; s: LiveState; actions: LiveAction[]; voiceUntil?: number } {
   const legs = g.legs;
   const use = legs.map((l, i) => { const d = svc[i] || null; return d && !sameRun(d, l, (g.rode || {})[i] != null) ? null : d; });
@@ -682,12 +685,18 @@ function stepFlow(g: LiveTripLike, n: LiveTripLike, s: LiveState, svc: (ServiceR
     alerted = { ...alerted, [key]: 1 };
     const calm = mo.ring.kind === 'headsup' || mo.ring.kind === 'getoff' || mo.ring.kind === 'atstop';
     actions.push({ t: 'alert', id: `trip-${g.id}-${mo.ring.moment}`, key, title: mo.ring.title, body: mo.ring.body, ...(calm ? { haptic: 'light' as const } : {}), ...(mo.ring.quiet ? { quiet: true } : {}), ...(mo.ring.expires ? { expires: mo.ring.expires } : {}) });
-    const byClip = !!mo.ring.clip && !!flow.serverClips && flow.serverClips.includes(mo.ring.clip);
-    if (byClip) spoken = { ...spoken, [key]: 1 };
-    else if (g.speak && flow.voice && mo.ring.say && !mo.ring.quiet) {
-      const v = voiceGate({ ...flow.voice, speakingUntil: voiceUntil }, now, mo.ring.say, mo.age, mo.byVehicle);
+    // 1 Nov follow-up ("Was in silent. But headphone on"): with the app open the app voices every moment itself, at its
+    // moment, through the ambient session (heard in headphones in Silent mode, quiet on the speaker), and the running
+    // trip's push stays soundless (getOffCore tripPushSoundless): one voice, never twice. A build with the native clip
+    // player (213, feature detected) plays Kylie's clip for the clip moments instead of the phone's voice.
+    if (g.speak && flow.voice && mo.ring.say && !mo.ring.quiet) {
+      const li = Number(String(mo.ring.moment).split(':')[1]);
+      const due = ringDue(mo.ring, now, Number.isFinite(li) && M.legs[li] ? M.legs[li].arrivedTime : null);
+      const clip = flow.clipPlayer && mo.ring.clip ? TRIP_CLIPS[mo.ring.clip] : null;
+      const v = voiceGate({ ...flow.voice, speakingUntil: voiceUntil }, now, clip ? clip.words : mo.ring.say, mo.age, mo.byVehicle, due);
       spoken = { ...spoken, [key]: 1 };
-      if (v.words) { actions.push({ t: 'say', key, text: v.words }); voiceUntil = v.until; }
+      if (v.words && clip && mo.ring.clip) { actions.push({ t: 'clip', key, clip: mo.ring.clip, file: clip.file, text: mo.ring.say }); voiceUntil = v.start + Math.ceil(clip.secs * 1000); }
+      else if (v.words) { actions.push({ t: 'say', key, text: v.words }); voiceUntil = v.until; }
     }
   }
   // Tight and missed changes from the live times stay as before (each once per trip); "Next stop" and "You've

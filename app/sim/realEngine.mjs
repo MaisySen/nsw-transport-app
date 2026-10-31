@@ -145,8 +145,8 @@ export function makeRealEngine(ts) {
       }
       for (const l of res.log) env.log(toS(l.t), l.what);
     },
-    voiceGate(v, t, say, age, byVehicle) {
-      const g = ts.voiceGate({ open: true, silent: !!v.silent, openSince: v.openSince == null ? null : toMs(v.openSince), refreshes: v.refreshes, speakingUntil: toMs(v.speakingUntil) }, toMs(t), say, age * 1000, byVehicle);
+    voiceGate(v, t, say, age, byVehicle, due = null) {
+      const g = ts.voiceGate({ open: true, silent: !!v.silent, headphones: !!v.headphones, openSince: v.openSince == null ? null : toMs(v.openSince), refreshes: v.refreshes, speakingUntil: toMs(v.speakingUntil) }, toMs(t), say, age * 1000, byVehicle, due == null ? null : toMs(due));
       return { ...g, start: toS(g.start), until: toS(g.until) };
     },
   };

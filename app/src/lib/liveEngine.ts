@@ -16,9 +16,9 @@ import { haptic } from './haptic';
 
 const tapped = new Set<string>();
 import { wakeStep } from './smart';
-import { hasSpeech, speak } from './nativeExtras';
+import { hasClipPlayer, hasSpeech, playClip, speak } from './nativeExtras';
 import { getOffStep, readGetOff, readGetOffSay } from './getOffCore';
-import { cancelGetOff, getOffBackup, getOffNow, ownGetOffShown, scheduleGetOff, scheduleQuiet, scheduleRegion, serverGetOffShown, serverClips, setServerGetOffWatch, setTripFlow2, setTripWatch, sweepRegions, voiceClips } from './getOffNotify';
+import { cancelGetOff, getOffBackup, getOffNow, ownGetOffShown, scheduleGetOff, scheduleQuiet, scheduleRegion, serverGetOffShown, setServerGetOffWatch, setTripFlow2, setTripWatch, sweepRegions, voiceClips } from './getOffNotify';
 import { store } from './store';
 import { cancelWake } from './smartNotify';
 import { endedWatches } from './push';
@@ -153,10 +153,11 @@ export async function tickLive(opts: { noFetch?: boolean } = {}) {
     const serverRung = server ? await serverGetOffShown(g.watchId) : undefined;
     const rung = Object.keys(g.offRegion || {}).length || Object.keys(g.offSet || {}).some((k) => k.startsWith('quiet')) ? await ownGetOffShown(g.id) : undefined;
     // The new trip flow (phase 2, tripState.ts): one trip state from the live train; the calm sequence and in-app speech
-    // (V1 to V5) come from it. The server's push for a moment the app rings itself is shown without sound.
+    // (V1 to V6) come from it. The server's push for a moment the app rings itself is shown without sound. clipPlayer:
+    // this build plays Kylie's clips in the app (213 and later); 212 says those moments in the phone's voice.
     setTripFlow2(true);
     const r = stepLive(g, svcCache, now, fmt, pos, { ...(serverRung || {}), ...(rung || {}) },
-      { asOf: svcAt || now, c24: phone24h(now), voice: { open: AppState.currentState === 'active', silent: false, openSince, refreshes, speakingUntil }, serverClips: serverClips(!!g.offServer && !!g.watchId) });
+      { asOf: svcAt || now, c24: phone24h(now), voice: { open: AppState.currentState === 'active', silent: false, openSince, refreshes, speakingUntil }, clipPlayer: hasClipPlayer() });
     if (r.voiceUntil != null) speakingUntil = r.voiceUntil;
     // Wake me before my stop is gone (G9): an alarm an earlier version set for this trip is taken back.
     const w = wakeStep({ id: g.id, legs: g.legs, wake: false, wakeSet: g.wakeSet, alerted: r.g.alerted }, r.s, now, fmt);
@@ -195,8 +196,10 @@ export async function tickLive(opts: { noFetch?: boolean } = {}) {
     for (const a of r.actions) {
       // The web preview logs every action, so a browser replay can check each alert and the end of the trip.
       if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, at: now });
-      // Spoken trip alerts follow the Silent switch (build 211+, nativeExtras alertAudio).
+      // Spoken trip alerts follow the Silent switch on the speaker and play in headphones (build 211+, the ambient
+      // session in nativeExtras alertAudio); Kylie's clip the same way where the build can play it (213+).
       if (a.t === 'say') speak(a.text, { alert: true });
+      else if (a.t === 'clip') playClip(a.file, a.text);
       // One light tap for the calm steps (heads-up, Get off now), nothing for the others: never a buzz of scare.
       else if (a.t === 'alert') { liveAlert(a.title, a.body, a.id); if (a.haptic === 'light') { const id = `${g.id}:${a.key}`; if (!tapped.has(id)) { tapped.add(id); haptic.light(); } } }
       else if (a.t === 'ongoing') showOngoing(a.title, a.body, legColor(L[a.leg]));
@@ -211,8 +214,8 @@ export async function tickLive(opts: { noFetch?: boolean } = {}) {
 }
 
 /**
- * The app going to the background or coming back (spec 2.6, 2.7): back in front, speech waits 10 s and two refreshes
- * (V1, V4) and the phone's own backup Get off now is taken back; going away, the backup is set only when the server
+ * The app going to the background or coming back (spec 2.6, 2.7): back in front, a moment that was due before is never
+ * said (V4, catch-up), a new one is said at its moment, and the phone's own backup Get off now is taken back; going away, the backup is set only when the server
  * has not taken Get off now, from a reading under 20 s old and with the live arrival under 5 min away (G39).
  */
 export async function onAppState(next: string) {

@@ -63,9 +63,17 @@ test('journey sim checks: arriving by the timetable clock fails I3', () => {
   const rules = mutate((o) => { o.M.legs[0].phaseAt.arrived = hms('19:55'); o.M.legs[0].phaseWhy.arrived = 'timetable time passed'; });
   assert.ok(rules.includes('I3'));
 });
-test('journey sim checks: speaking when the app opens fails I4', () => {
-  const rules = mutate((o) => { const f = frameAt(o, '19:49'); f.app = 'open'; f.openSince = hms('19:49'); f.refreshes = 1; o.voice.push({ t: hms('19:49'), kind: 'delay', words: 'From Platform 7', by: 'in-app voice' }); });
-  assert.ok(rules.includes('I4'));
+test('journey sim checks: speaking a catch-up when the app opens fails I4 (due before opening, or unknown on the first refresh)', () => {
+  const open = (o) => { const f = frameAt(o, '19:49'); f.app = 'open'; f.openSince = hms('19:49'); f.refreshes = 1; };
+  assert.ok(mutate((o) => { open(o); o.voice.push({ t: hms('19:49'), kind: 'getoff', words: 'Get off now for Clyde.', by: 'in-app voice', due: hms('19:48:30'), openAt: hms('19:49'), refresh: 1 }); }).includes('I4'));
+  assert.ok(mutate((o) => { open(o); o.voice.push({ t: hms('19:49'), kind: 'delay', words: 'From Platform 7', by: 'in-app voice', due: null, openAt: hms('19:49'), refresh: 1 }); }).includes('I4'));
+  // a moment due after opening is said at once: not a catch-up
+  assert.ok(!mutate((o) => { open(o); o.voice.push({ t: hms('19:49'), kind: 'getoff', words: 'Get off now for Clyde.', by: 'in-app voice', due: hms('19:49'), openAt: hms('19:49'), refresh: 1 }); }).includes('I4'));
+});
+test('journey sim checks: in-app voice on the speaker with Silent on fails V6; in headphones it is heard', () => {
+  const at = (o, hp) => { const f = frameAt(o, '19:49'); f.app = 'open'; f.silent = true; f.headphones = hp; o.voice.push({ t: hms('19:49'), kind: 'getoff', words: 'x', by: 'in-app voice', due: hms('19:49'), openAt: hms('19:40'), refresh: 5 }); };
+  assert.ok(mutate((o) => at(o, false)).includes('V6'));
+  assert.ok(!mutate((o) => at(o, true)).includes('V6'));
 });
 test('journey sim checks: a get off from an old reading, at the wrong time, twice, or as "Wake up" fails I5, I8 and I9', () => {
   const rules = mutate((o) => {
@@ -90,7 +98,7 @@ test('journey sim: same inputs, same outputs (deterministic)', () => {
 test('journey sim: rule numbers match the spec (30 s get off, 2/5/10 min stale, 15 s near the stop)', () => {
   assert.equal(RULES.GETOFF_LEAD, 30); assert.equal(RULES.GETOFF_EXPIRE, 30); assert.equal(RULES.SERVER_DELIVERY, 2);
   assert.deepEqual([RULES.LIVE_FRESH, RULES.LIVE_CAP, RULES.NO_DATA], [120, 300, 600]);
-  assert.equal(RULES.SERVER_POLL_NEAR, 15); assert.equal(RULES.ENDED_AFTER, 120); assert.equal(RULES.VOICE_OPEN_FOR, 10);
+  assert.equal(RULES.SERVER_POLL_NEAR, 15); assert.equal(RULES.ENDED_AFTER, 120); assert.equal(RULES.VOICE_CATCHUP_GRACE, 5); assert.equal(RULES.VOICE_OPEN_FOR, undefined);
   assert.ok(BANNED.includes('Checking for the next one') && BANNED.includes('Wake up'));
 });
 test('journey sim: the simulator is offline and dependency free', () => {

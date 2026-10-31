@@ -80,7 +80,7 @@ test('real code checks: build 211 behaviour fed in fails I1, I2, I3, I4, I5, I6,
   const r2 = mutate((o) => { const f = frameAt(o, '19:50:30'); f.card.timer = hms('19:50'); f.widget = 'Checking for the next one'; });
   assert.ok(r2.includes('I2') && r2.includes('I10'));
   assert.ok(mutate((o) => { o.M.legs[0].phaseAt.arrived = hms('19:55'); o.M.legs[0].phaseWhy.arrived = 'timetable time passed'; }).includes('I3'));
-  assert.ok(mutate((o) => { const f = frameAt(o, '19:49'); f.app = 'open'; f.openSince = hms('19:49'); f.refreshes = 1; o.voice.push({ t: hms('19:49'), kind: 'delay', words: 'From Platform 7', by: 'in-app voice' }); }).includes('I4'));
+  assert.ok(mutate((o) => { const f = frameAt(o, '19:49'); f.app = 'open'; f.openSince = hms('19:49'); f.refreshes = 1; o.voice.push({ t: hms('19:49'), kind: 'delay', words: 'From Platform 7', by: 'in-app voice', due: null, openAt: hms('19:49'), refresh: 1 }); }).includes('I4'));
   const r5 = mutate((o) => { const g = o.rings.find((r) => r.kind === 'getoff'); o.rings.push({ ...g, t: g.t - 60, lands: g.t - 58, age: 400, title: 'Wake up', jumped: false }); });
   for (const r of ['I5', 'I8', 'I9']) assert.ok(r5.includes(r), r);
   const r7 = mutate((o) => { const f = frameAt(o, '19:48'); f.card.truncated = 1; f.serverView = { ...f.card, status: 'Leaves 7:50pm · Platform 7' }; });

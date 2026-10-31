@@ -101,17 +101,25 @@ test('24 hour phones get 24 hour words; Due never counts to 0:00', () => {
   assert.equal(T.tripClock(at('07:05:00'), true), '07:05');
   assert.equal(T.tripClock(at('00:05:00'), false), '12:05am');
 });
-test('voice: never in the first 10 s or the first two refreshes, never on Silent, never from an old reading, one queue', () => {
+test('voice: at its moment (no wait after opening), never a catch-up, Silent mutes the speaker not headphones, never from an old reading, one queue', () => {
   const t = at('19:58:30');
   const v = { open: true, silent: false, openSince: t - 60000, refreshes: 5, speakingUntil: 0 };
   assert.equal(T.voiceGate(v, t, 'Get off now for Clyde.', 5000, false).words, 'Get off now for Clyde.');
-  assert.match(T.voiceGate({ ...v, openSince: t - 5000 }, t, 'x', 0, false).why, /V1/);
-  assert.match(T.voiceGate({ ...v, refreshes: 2 }, t, 'x', 0, false).why, /V4/);
+  // 1 Nov follow-up: 5 s after opening, a moment due now is said (the 10 s and two-refresh wait is gone)
+  assert.equal(T.voiceGate({ ...v, openSince: t - 5000, refreshes: 1 }, t, 'x', 0, false, t).words, 'x');
+  assert.match(T.voiceGate({ ...v, openSince: t - 5000, refreshes: 1 }, t, 'x', 0, false, t - 30000).why, /V4/);
+  assert.match(T.voiceGate({ ...v, refreshes: 1 }, t, 'x', 0, false).why, /V4/);
   assert.match(T.voiceGate({ ...v, silent: true }, t, 'x', 0, false).why, /Silent/);
+  assert.equal(T.voiceGate({ ...v, silent: true, headphones: true }, t, 'x', 0, false).words, 'x');
   assert.match(T.voiceGate(v, t, 'x', 61000, false).why, /V2/);
   assert.equal(T.voiceGate(v, t, 'x', 61000, true).words, 'x');
   assert.match(T.voiceGate({ ...v, speakingUntil: t + 31000 }, t, 'x', 0, false).why, /V5/);
   assert.equal(T.voiceGate({ ...v, speakingUntil: t + 3000 }, t, 'x', 0, false).start, t + 3000);
+  assert.equal(T.ringDue({ kind: 'getoff', target: t - 1000 }, t), t - 1000);
+  assert.equal(T.ringDue({ kind: 'headsup', expires: t + 60000 }, t), t - 60000);
+  assert.equal(T.ringDue({ kind: 'headsup', expires: t + 300000 }, t), null, 'came by leaving the stop before: unknown');
+  assert.equal(T.ringDue({ kind: 'arrived' }, t, t - 9000), t - 9000);
+  assert.equal(T.ringDue({ kind: 'delay' }, t), null);
 });
 test('the module is pure: no runtime imports, no clock, no timers', () => {
   assert.ok(!/^import (?!type )/m.test(src));

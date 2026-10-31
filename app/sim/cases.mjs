@@ -325,6 +325,30 @@ export const CASES = [
     checks: [{ at: '20:25', card: 'status', is: 'Next: Redfern' }, { at: '20:25', card: 'warn', is: 'Then T4 8:36pm · Plat 10' }, { at: '20:33:20', card: 'status', is: 'Change: Leaves 8:36pm · Platform 10' }, { at: '20:45', card: 'status', is: 'Arrived Kings Cross 8:44pm' }],
     order: ['headsup', 'getoff', 'arrived', 'headsup', 'getoff', 'arrived'],
   },
+  {
+    id: 'XB', title: 'Bus then train: the change is announced and the train leg runs (1 Nov)',
+    story: 'Bus 400 from Lidcombe Stand B to Auburn Stand A, then the T1 from Auburn Platform 2 to Granville (sample stops and times). The app is opened at the change (as when the change alert is tapped) and stays open: the trip goes on to the train leg, whose heads-up, Get off now and arrival are said in the app at their moments; nothing ends the trip at the change.',
+    legs: [
+      { mode: 'bus', line: '400', stand: 'Stand B', stops: [{ name: 'Lidcombe', tt: '19:30', id: 'B1' }, { name: 'Mona St', tt: '19:35', note: 'assumed' }, { name: 'Auburn', tt: '19:40', id: 'B3' }] },
+      { mode: 'train', line: 'T1', platform: '2', stops: [{ name: 'Auburn', tt: '19:50' }, { name: 'Clyde', tt: '19:52' }, { name: 'Granville', tt: '19:55' }] },
+    ],
+    start: '19:26', end: '20:00',
+    feed: { events: [
+      { at: '19:25', leg: 0, delay: 1 }, { at: '19:25', leg: 1, delay: 0 },
+      ...vehicle(0, [['Lidcombe', '19:30:40', '19:31'], ['Mona St', '19:35:40', '19:36'], ['Auburn', '19:41', null]]),
+      ...vehicle(1, [['Auburn', '19:49', '19:50:20'], ['Clyde', '19:51:40', '19:52'], ['Granville', '19:55', null]]),
+    ] },
+    phone: [{ at: '19:26', app: 'open' }, { at: '19:26:20', app: 'locked' }, { at: '19:41:10', app: 'open' }],
+    checks: [{ at: '19:45', tripPhase: 'waiting' }, { at: '19:56', card: 'status', is: 'Arrived Granville 7:55pm' }],
+    order: ['headsup', 'getoff', 'arrived', 'headsup', 'getoff', 'arrived'], spoken: ['headsup', 'getoff', 'arrived'],
+  },
+  {
+    id: 'S10h', title: 'Silent switch on, headphones in, app open (1 Nov)',
+    story: '4 min late, Silent on, headphones in. Locked until 7:56, then open: the app voices heads-up, Get off now and arrival at their moments (the ambient session plays in headphones in Silent mode); nothing from before 7:56 is said.',
+    legs: [sample()], start: '19:46', end: '20:02', feed: { events: late4() },
+    phone: [{ at: '19:46', app: 'open', silent: true, headphones: true }, { at: '19:46:20', app: 'locked' }, { at: '19:56', app: 'open' }],
+    order: ['delay', 'headsup', 'getoff', 'arrived'], spoken: ['headsup', 'getoff', 'arrived'],
+  },
 ];
 
 export const byId = (id) => CASES.find((c) => c.id === id);

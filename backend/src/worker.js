@@ -6668,9 +6668,8 @@ const LIVECARD = (() => {
         ENDED_AFTER: 120000,
         NEAR: 300000,
         PHONE_WRITE_MAX_AGE: 20000,
-        VOICE_OPEN_FOR: 10000,
         VOICE_FRESH: 60000,
-        VOICE_SILENT_REFRESHES: 2,
+        VOICE_CATCHUP_GRACE: 5000,
         VOICE_QUEUE_MAX: 30000,
         DELAY_ALERT: 3,
         CHANGE_MIN: 180000,
@@ -6890,11 +6889,12 @@ const LIVECARD = (() => {
             }
         }
         const vv = d.vehicle;
+        const vStop = vv?.stopId ?? null, vAge = vv?.ageS ?? 0;
         const offK = map[n - 1];
-        if (vr && !vr.at && o.asOf && offK >= 0 && vr.k === offK && hasXY(vv) && hasXY(d.stops[offK]) && !!vv.stopId && !d.stops.some((s) => s.id === vv.stopId) && !((vv.ageS ?? 0) > 90)) {
+        if (vr && !vr.at && o.asOf && offK >= 0 && vr.k === offK && hasXY(vv) && hasXY(d.stops[offK]) && !!vStop && !d.stops.some((s) => s.id === vStop) && !(vAge > 90)) {
             const dO = metres(vv, d.stops[offK]);
             if (dO <= 1500) {
-                const eta = o.asOf - (vv.ageS ?? 0) * 1000 + 45000 + Math.round(40 * dO);
+                const eta = o.asOf - vAge * 1000 + 45000 + Math.round(40 * dO);
                 if (est[n - 1] == null || eta < est[n - 1])
                     est[n - 1] = eta;
             }
@@ -7398,24 +7398,37 @@ const LIVECARD = (() => {
         }
         return res;
     }
-    function voiceGate(v, t, say, readingAge, byVehicle) {
+    function voiceGate(v, t, say, readingAge, byVehicle, dueAt = null) {
         const no = (why) => ({ words: null, why, start: t, until: v.speakingUntil });
         if (!say)
             return no('no spoken cue for this alert');
         if (!v.open)
             return no('app not in front (V1)');
-        if (v.silent)
-            return no('Silent switch on (ambient session)');
-        if (v.openSince == null || t - v.openSince < R.VOICE_OPEN_FOR)
-            return no('app open under 10 s (V1)');
-        if (v.refreshes <= R.VOICE_SILENT_REFRESHES)
-            return no('first two refreshes after opening (V4)');
+        if (v.silent && !v.headphones)
+            return no('Silent switch on, speaker: the ambient session mutes it (V6)');
+        if (v.openSince == null)
+            return no('app not in front (V1)');
+        if (dueAt != null && dueAt < v.openSince - R.VOICE_CATCHUP_GRACE)
+            return no('due before the app came to the front (V4)');
+        if (dueAt == null && v.refreshes <= 1)
+            return no('found on the first refresh after opening, moment unknown (V4)');
         if (!byVehicle && readingAge >= R.VOICE_FRESH)
             return no('live reading over 60 s old (V2)');
         const start = Math.max(t, v.speakingUntil);
         if (start - t > R.VOICE_QUEUE_MAX)
             return no('waited over 30 s in the speech queue (V5)');
         return { words: say, why: null, start, until: start + Math.ceil(say.length / 14) * 1000 };
+    }
+    function ringDue(ring, t, arrivedTime) {
+        if (ring.kind === 'getoff')
+            return typeof ring.target === 'number' ? ring.target : null;
+        if (ring.kind === 'headsup') {
+            const d = typeof ring.expires === 'number' ? ring.expires - R.HEADSUP_WINDOW : NaN;
+            return Number.isFinite(d) && d <= t ? d : null;
+        }
+        if (ring.kind === 'arrived')
+            return typeof arrivedTime === 'number' ? arrivedTime : null;
+        return null;
     }
     function ringRoute(s, ring, t) {
         const calm = ring.kind === 'headsup' || ring.kind === 'getoff' || ring.kind === 'atstop';
@@ -7455,9 +7468,9 @@ const LIVECARD = (() => {
         const tm = tripLegTimes(plan, M, snap, M.current, t);
         return isLiveTime(tm.arr) && tm.arr.at - t < R.NEAR && M.legs[M.current].phase >= PI.onTheWay ? 15000 : 30000;
     }
-    return { TRIP_RULES, TRIP_CLIPS, tripClock, tripClockSec, stopShort, platNum, boardIndexOf, offIndexOf, planLegFrom, vehicleOnRun, legReadingFrom, tripReadingFrom, TRIP_PHASES, PHASE_INDEX, newTripMemory, lastLegOf, effLeg, isLiveTime, tripEvidence, tripLegTimes, staleStepOf, LINE_BUDGET, delayWords, tripRender, BANNED_WORDS, renderSig, forecastPhaseOf, tripStep, voiceGate, ringRoute, backupGetOff, tripPlanFrom, serverPollMs };
+    return { TRIP_RULES, TRIP_CLIPS, tripClock, tripClockSec, stopShort, platNum, boardIndexOf, offIndexOf, planLegFrom, vehicleOnRun, legReadingFrom, tripReadingFrom, TRIP_PHASES, PHASE_INDEX, newTripMemory, lastLegOf, effLeg, isLiveTime, tripEvidence, tripLegTimes, staleStepOf, LINE_BUDGET, delayWords, tripRender, BANNED_WORDS, renderSig, forecastPhaseOf, tripStep, voiceGate, ringDue, ringRoute, backupGetOff, tripPlanFrom, serverPollMs };
   })();
-  const { TRIP_RULES, TRIP_CLIPS, tripClock, tripClockSec, stopShort, platNum, boardIndexOf, offIndexOf, planLegFrom, vehicleOnRun, legReadingFrom, tripReadingFrom, TRIP_PHASES, PHASE_INDEX, newTripMemory, lastLegOf, effLeg, isLiveTime, tripEvidence, tripLegTimes, staleStepOf, LINE_BUDGET, delayWords, tripRender, BANNED_WORDS, renderSig, forecastPhaseOf, tripStep, voiceGate, ringRoute, backupGetOff, tripPlanFrom, serverPollMs } = tripState;
+  const { TRIP_RULES, TRIP_CLIPS, tripClock, tripClockSec, stopShort, platNum, boardIndexOf, offIndexOf, planLegFrom, vehicleOnRun, legReadingFrom, tripReadingFrom, TRIP_PHASES, PHASE_INDEX, newTripMemory, lastLegOf, effLeg, isLiveTime, tripEvidence, tripLegTimes, staleStepOf, LINE_BUDGET, delayWords, tripRender, BANNED_WORDS, renderSig, forecastPhaseOf, tripStep, voiceGate, ringDue, ringRoute, backupGetOff, tripPlanFrom, serverPollMs } = tripState;
   // src/lib/liveCalc.ts
   const liveCalc = (() => {
     const tms = (s) => (s ? new Date(s).getTime() : NaN);
@@ -8027,13 +8040,17 @@ const LIVECARD = (() => {
             alerted = { ...alerted, [key]: 1 };
             const calm = mo.ring.kind === 'headsup' || mo.ring.kind === 'getoff' || mo.ring.kind === 'atstop';
             actions.push({ t: 'alert', id: `trip-${g.id}-${mo.ring.moment}`, key, title: mo.ring.title, body: mo.ring.body, ...(calm ? { haptic: 'light' } : {}), ...(mo.ring.quiet ? { quiet: true } : {}), ...(mo.ring.expires ? { expires: mo.ring.expires } : {}) });
-            const byClip = !!mo.ring.clip && !!flow.serverClips && flow.serverClips.includes(mo.ring.clip);
-            if (byClip)
+            if (g.speak && flow.voice && mo.ring.say && !mo.ring.quiet) {
+                const li = Number(String(mo.ring.moment).split(':')[1]);
+                const due = ringDue(mo.ring, now, Number.isFinite(li) && M.legs[li] ? M.legs[li].arrivedTime : null);
+                const clip = flow.clipPlayer && mo.ring.clip ? TRIP_CLIPS[mo.ring.clip] : null;
+                const v = voiceGate({ ...flow.voice, speakingUntil: voiceUntil }, now, clip ? clip.words : mo.ring.say, mo.age, mo.byVehicle, due);
                 spoken = { ...spoken, [key]: 1 };
-            else if (g.speak && flow.voice && mo.ring.say && !mo.ring.quiet) {
-                const v = voiceGate({ ...flow.voice, speakingUntil: voiceUntil }, now, mo.ring.say, mo.age, mo.byVehicle);
-                spoken = { ...spoken, [key]: 1 };
-                if (v.words) {
+                if (v.words && clip && mo.ring.clip) {
+                    actions.push({ t: 'clip', key, clip: mo.ring.clip, file: clip.file, text: mo.ring.say });
+                    voiceUntil = v.start + Math.ceil(clip.secs * 1000);
+                }
+                else if (v.words) {
                     actions.push({ t: 'say', key, text: v.words });
                     voiceUntil = v.until;
                 }
@@ -8245,7 +8262,7 @@ const LIVECARD = (() => {
     }
     return { TRACK_MAX, TRACK_NAME_MAX, shortName, stopTrackFor, cardFor, legNoteFor, cardWarning, staleAt };
   })();
-  return { computeLive: liveCalc.computeLive, cardFor: tripCard.cardFor, staleAt: tripCard.staleAt, cardWarning: tripCard.cardWarning, legNoteFor: tripCard.legNoteFor, TRIP_RULES, TRIP_CLIPS, tripClock, tripClockSec, stopShort, platNum, boardIndexOf, offIndexOf, planLegFrom, vehicleOnRun, legReadingFrom, tripReadingFrom, TRIP_PHASES, PHASE_INDEX, newTripMemory, lastLegOf, effLeg, isLiveTime, tripEvidence, tripLegTimes, staleStepOf, LINE_BUDGET, delayWords, tripRender, BANNED_WORDS, renderSig, forecastPhaseOf, tripStep, voiceGate, ringRoute, backupGetOff, tripPlanFrom, serverPollMs };
+  return { computeLive: liveCalc.computeLive, cardFor: tripCard.cardFor, staleAt: tripCard.staleAt, cardWarning: tripCard.cardWarning, legNoteFor: tripCard.legNoteFor, TRIP_RULES, TRIP_CLIPS, tripClock, tripClockSec, stopShort, platNum, boardIndexOf, offIndexOf, planLegFrom, vehicleOnRun, legReadingFrom, tripReadingFrom, TRIP_PHASES, PHASE_INDEX, newTripMemory, lastLegOf, effLeg, isLiveTime, tripEvidence, tripLegTimes, staleStepOf, LINE_BUDGET, delayWords, tripRender, BANNED_WORDS, renderSig, forecastPhaseOf, tripStep, voiceGate, ringDue, ringRoute, backupGetOff, tripPlanFrom, serverPollMs };
 })();
 // ---- live card end
 

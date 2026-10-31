@@ -10,6 +10,7 @@ import type { Watch } from '@/lib/types';
 import { usePalette } from '@/lib/theme';
 import { clock, ms, shortName } from '@/lib/format';
 import { stopWatch } from '@/lib/watch';
+import { getLive } from '@/lib/live';
 import { pressService } from '@/lib/prefetch';
 import { WatchLineText, openService } from '@/components/Cards';
 import { LineBadge, LiveStamp } from '@/components/Transit';
@@ -29,6 +30,9 @@ export default function WatchDetail() {
   const { data, error, updatedAt, staleAt, offlineAt } = useLive(() => api.watchDetail(String(id)).catch((e: any) => { if (e?.http === 404) setGone(true); throw e; }), 15000, [id],
     { enabled: !gone, cacheKey: id ? LIST_KEYS.watch(String(id)) : undefined, seed });
   const w = gone ? null : data?.watch;
+  // The trip in progress on this phone (1 Nov: its "Stop watching" ended a bus then T4 trip at the change): this screen
+  // opens the live trip instead, where End trip asks first. Its alerts open the live trip directly (alertTapCore).
+  const ours = !!w && w.kind === 'trip' && getLive()?.watchId === w.id;
   return (
     <>
       <Stack.Screen options={{ title: w?.title || 'Watching' }} />
@@ -69,7 +73,8 @@ export default function WatchDetail() {
                 ))}
               </Section>
             ) : null}
-            {w.active ? <View style={{ margin: 16, marginTop: 24 }}><Button title="Stop watching" kind="tinted" onPress={() => stopWatch(w.id).then(() => goBack('/watching'), (e: any) => Alert.alert("Couldn't stop watching", friendlyErr(e)))} /></View> : null}
+            {ours ? <View style={{ margin: 16, marginTop: 24 }}><Button title="Open trip" onPress={() => router.replace('/go')} /></View> : null}
+            {w.active && !ours ? <View style={{ margin: 16, marginTop: 24 }}><Button title="Stop watching" kind="tinted" onPress={() => stopWatch(w.id).then(() => goBack('/watching'), (e: any) => Alert.alert("Couldn't stop watching", friendlyErr(e)))} /></View> : null}
           </>
         ) : null}
       </Screen>
