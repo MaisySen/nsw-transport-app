@@ -130,8 +130,9 @@ test('the voice choice decides each circle\'s sound; a change sets it again in t
 });
 
 test('no location: one quiet note at the live arrival less 2 min, no sound, never "get off"; moved on a live update', () => {
-  const g = base({ backup: 'quiet', liveAt: at(0) });
-  const a = G.getOffStep(g, G.GETOFF_DEFAULT, state(), at(0), fmt);
+  // Read 6 min in: the note (10 min) rings within 5 min of that read (quietnote31: never set further ahead).
+  const g = base({ backup: 'quiet', liveAt: at(6) });
+  const a = G.getOffStep(g, G.GETOFF_DEFAULT, state({ t: at(6) }), at(6), fmt);
   const q = a.actions.filter((x) => x.t === 'offSchedule');
   assert.equal(q.length, 1);
   assert.equal(q[0].key, 'quiet0');
@@ -141,17 +142,19 @@ test('no location: one quiet note at the live arrival less 2 min, no sound, neve
   assert.equal(q[0].title, 'Your stop is coming up soon');
   assert.doesNotMatch(q[0].title + q[0].body, GETOFF);
   assert.equal(keys(a.actions, 'regionSchedule').length, 0);
-  const b = G.getOffStep({ ...g, ...a.g, liveAt: at(1) }, G.GETOFF_DEFAULT, state({ delay: 3, t: at(1) }), at(1), fmt);
+  const b = G.getOffStep({ ...g, ...a.g, liveAt: at(7) }, G.GETOFF_DEFAULT, state({ delay: 1, t: at(7) }), at(7), fmt);
   const m = b.actions.find((x) => x.t === 'offSchedule');
-  assert.equal(m.at, ARR + 3 * 60000 - 120000, 'follows the live arrival');
+  assert.equal(m.at, ARR + 1 * 60000 - 120000, 'follows the live arrival');
   assert.equal(m.id, 'getoff-g1-quiet0', 'same id replaces it');
 });
 
 test('no location: never set from live times older than 5 min, taken back when they go stale, none without live times', () => {
   const stale = G.getOffStep(base({ backup: 'quiet', liveAt: at(0) - 6 * 60000 }), G.GETOFF_DEFAULT, state(), at(0), fmt);
   assert.equal(stale.actions.length, 0);
-  const a = G.getOffStep(base({ backup: 'quiet', liveAt: at(0) }), G.GETOFF_DEFAULT, state(), at(0), fmt);
-  const b = G.getOffStep({ ...base({ backup: 'quiet' }), ...a.g, liveAt: at(0) }, G.GETOFF_DEFAULT, state({ t: at(6) }), at(6), fmt);
+  const a = G.getOffStep(base({ backup: 'quiet', liveAt: at(6) }), G.GETOFF_DEFAULT, state({ t: at(6) }), at(6), fmt);
+  assert.deepEqual(keys(a.actions, 'offSchedule'), ['quiet0']);
+  // The reads stop (6 min ago by 9 min in): taken back, though its time (10 min) has not come.
+  const b = G.getOffStep({ ...base({ backup: 'quiet' }), ...a.g, liveAt: at(3) }, G.GETOFF_DEFAULT, state({ t: at(9) }), at(9), fmt);
   assert.ok(b.actions.some((x) => x.t === 'offCancel' && x.key === 'quiet0'), JSON.stringify(b.actions));
   const tt = G.getOffStep(base({ backup: 'quiet', liveAt: at(0) }), G.GETOFF_DEFAULT, state({ isLive: false }), at(0), fmt);
   assert.equal(tt.actions.length, 0, 'a timetable guess sets nothing');
@@ -166,7 +169,7 @@ test('the server sends Get off now: no Get off now circle and no quiet note from
   const a = G.getOffStep(base({ backup: 'region' }), G.GETOFF_DEFAULT, s, at(0), fmt);
   const b = G.getOffStep({ ...base({ backup: 'region' }), ...a.g, server: true }, G.GETOFF_DEFAULT, state({ t: at(1) }), at(1), fmt);
   assert.deepEqual(keys(b.actions, 'regionCancel'), ['rnow0']);
-  const q = G.getOffStep(base({ backup: 'quiet', liveAt: at(0), server: true }), G.GETOFF_DEFAULT, s, at(0), fmt);
+  const q = G.getOffStep(base({ backup: 'quiet', liveAt: at(6), server: true }), G.GETOFF_DEFAULT, state({ t: at(6) }), at(6), fmt);
   assert.equal(q.actions.length, 0);
 });
 

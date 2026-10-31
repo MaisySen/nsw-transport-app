@@ -220,8 +220,9 @@ export type GetOffAction =
  *   late service brings them late with it. Get off now is not set when the server sends it (`server`), and "Next stop"
  *   not when a server watch sends it (`serverNext`) or the wake alarm stands in (`wake`): one moment, one voice;
  * - without location (backup `quiet`): one quiet note, no sound, not time sensitive, never "get off", for the live
- *   arrival less 2 minutes, only from live times read in the last 5 minutes, moved on every refresh, not set when the
- *   server sends Get off now;
+ *   arrival less 2 minutes, only from live times read in the last 5 minutes and only when it rings within 5 minutes of
+ *   that read (the app cannot read again while the phone is locked), moved on every refresh that shows a later
+ *   arrival, not set when the server sends Get off now;
  * - nothing is ever set on the phone for a time to say "get off" (alerts an earlier version set that way are taken
  *   back);
  * - while the app is open (this refresh, live times just read), Get off now rings 30 s before the live arrival and the
@@ -338,9 +339,17 @@ export function getOffStep(g: GetOffTrip, pref: GetOffPref, s: LiveState, now: n
       const at = arr - QUIET_LEAD_MS;
       // That moment is now, with the app open: the trip screen shows it; nothing is posted late.
       if (at <= now) { mark(key); continue; }
+      // Bidur's rule (31 Oct): never from live times over 5 minutes old, never before the live arrival less 2 min. With
+      // the phone locked the app cannot read live times again, so a note set further ahead would ring from old times,
+      // early when the service then runs late. It is set only when it rings within 5 minutes of the read it comes from
+      // (quietWithinFresh); further ahead nothing waits on the phone (one set earlier is taken back) and the next
+      // refresh with the app open sets it.
+      if (!quietWithinFresh(at, g.liveAt)) continue;
       wantQuiet.add(key);
       const prev = set[key];
-      if (prev == null || Math.abs(prev - at) >= MOVE_MS) {
+      // Moved whenever the live arrival is later (by any amount: kept, it would ring early); kept when it is earlier
+      // by under 15 s (it then rings up to 15 s after the live arrival less 2 min, never before).
+      if (prev == null || at > prev || prev - at >= MOVE_MS) {
         const w = quietWords(f.short(g.legs[k]?.to));
         actions.push({ t: 'offSchedule', id: getOffId(g.id, key), key, at, title: w.title, body: w.body, quiet: true });
         set[key] = at;
@@ -492,8 +501,13 @@ export function tripPushSoundless(o: { watch: unknown; sound: unknown; appState:
 export const MAX_REGIONS = 6;
 /** The quiet note (no location) comes this long before the live arrival, never sooner. */
 export const QUIET_LEAD_MS = 120000;
-/** The quiet note is set only from live times read at most this long ago. */
+/** The quiet note is set only from live times read at most this long ago, counted to the moment it rings. */
 export const QUIET_FRESH_MS = 5 * 60000;
+/** The quiet note may wait on the phone for `at` only when it then rings from live times read at most QUIET_FRESH_MS
+ * before (31 Oct): the read at `liveAt` is the last one the app gets until it is opened again. */
+export function quietWithinFresh(at: number, liveAt: number | null | undefined): boolean {
+  return typeof liveAt === 'number' && Number.isFinite(liveAt) && Number.isFinite(at) && at - liveAt <= QUIET_FRESH_MS;
+}
 
 type Mode = 'rail' | 'ferry' | 'tram' | 'bus';
 export function modeClass(mode?: string | null): Mode {
