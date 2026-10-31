@@ -4,6 +4,14 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 31 Oct 2026
 
+### Server: get off alert from the server and stops on the trip card turned on (31 Oct, 11:34 AM)
+* The owner sent build 210 Live Activity screenshots at 11:31 AM (stop track, "Next: Burwood", live arrival), so build 210 is on his phone. `getOffPush` and `liveStops` were turned on for transport-api `678a5191` (server-210-rc ca56b90). No deploy, no code change.
+* Before: `GET /api/app/config?platform=server` was the code defaults (no stored platform=server row). After: the same config plus `flags.getOffPush: true` and `flags.liveStops: true`. The readback was compared key by key: only those two keys differ.
+* The admin key is not on the build machine, so the row was written straight into the `app_config` table with the same statement the admin config POST runs (the whole config, not a patch). Each copy of the server picks it up within a minute.
+* 15 min watch 11:34 to 11:49 AM: 44 invocations, all on 678a5191, 0 errors; 0 new feedback or crash rows (still 5); no trip card or trip watch was active, so no push was sent in the window (nothing to fail); verify-deploy (not --live) all 12 ok before and after.
+* Kill switch: `npx wrangler@4 d1 execute transport --remote --command "DELETE FROM app_config WHERE platform='server'"` (from backend/, Cloudflare token in env) puts back exactly the config from before (both off). The config from before and after is kept with the release files, not in the repo.
+* Docs only: CHANGELOG, STATE.
+
 ### Build 210 on TestFlight (internal only) and the build 210 server with both new switches off (31 Oct, 10:09 to 10:38 AM)
 * The owner said go at 9:42 AM ("Yea"), on the condition of the system settings and App Store check, which passed (build-210-rc a9541f1). build-209 was fast forwarded from 526f4f5 to a9541f1 through the GitHub API (force false) and read back.
 * GitHub Actions run 41142713618 (`ios-209-local.yml`, upload yes): native audit iPhone and Watch passed, then `eas build --local` on Xcode 27.1, no EAS build used. IPA checks: version 1.0.0 (210) on the app, widget, Watch app and Watch complications; runtime 1.2.0 (app.json 1.2.0); app `aps-environment` production, Time Sensitive on, App Group on app and widget, `get-task-allow` false on all four, `beta-reports-active` true; no `UIBackgroundModes`; privacy manifest lists Crash Data; no old address in the IPA.
