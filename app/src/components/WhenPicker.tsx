@@ -113,7 +113,7 @@ export function WhenPicker({ visible, value, now, onDone, onClose, days, kinds =
           {days.map((d) => {
             const on = d.day === day;
             return (
-              <Pressable key={d.day} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={d.a11y} onPress={() => { haptic.select(); setDay(d.day); }}
+              <Pressable key={d.day} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={d.a11y} hitSlop={{ top: 2, bottom: 2 }} onPress={() => { haptic.select(); setDay(d.day); }}
                 android_ripple={{ color: c.fill }}
                 style={({ pressed }) => ({ minHeight: 40, paddingHorizontal: 14, borderRadius: ios ? 20 : 8, justifyContent: 'center', backgroundColor: on ? c.tint : c.fill, borderWidth: ios ? 0 : on ? 0 : 1, borderColor: c.sep, opacity: pressed ? 0.8 : 1 })}>
                 <T kind="sub" style={{ color: on ? '#FFFFFF' : c.text, fontWeight: on ? '600' : '400' }}>{d.label}</T>
