@@ -183,14 +183,13 @@ test('native strings from the polish audit: no "Checking for the next one" anywh
   assert.match(sec.slice(0, 400), /replacingOccurrences\(of: " ", with: ""\)/);
 });
 
-test('the build sends Sentry every dSYM (Watch included) and the JavaScript source map matched by debug ID, never failing the build', () => {
+test('the build sends Sentry every dSYM (Watch included), never failing the build; the JavaScript map comes from the Xcode phase', () => {
   const wf = fs.readFileSync(path.join(root, '.github/workflows/ios-209-local.yml'), 'utf8');
   const step = wf.slice(wf.indexOf('- name: Sentry debug symbols'), wf.indexOf('- name: Clean up signing files'));
   assert.match(step, /continue-on-error: true/);
   assert.match(step, /debug-files upload/);
   assert.match(step, /Xcode\/Archives/);
-  assert.match(step, /sourcemaps upload/);
-  assert.match(step, /"\$ID" = "\$ID2"/, 'a rebuilt bundle is used only when its debug ID equals the IPA one');
+  assert.match(step, /Hermes bytecode/);
   assert.match(wf, /rm -rf "\$RUNNER_TEMP\/easwd"/, 'the kept working folder is removed');
 });
 
