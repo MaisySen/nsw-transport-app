@@ -60,17 +60,26 @@ struct IslandTrailing: View {
             .minimumScaleFactor(0.6)
             .lineProbe("follow-island-countdown", text: MinutesUntil.words(state.departs), lines: 1, font: .title3.weight(.semibold).monospacedDigit(), minScale: 0.6)
             .multilineTextAlignment(.trailing)
-            .frame(width: 80, alignment: .trailing)
+            .frame(minWidth: 80, maxWidth: 104, alignment: .trailing)
     }
 }
 
 struct IslandCenter: View {
     var attrs: TripActivityAttributes
     var body: some View {
-        Text("to \(attrs.towards)").font(.subheadline.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.8)
-            .lineProbe("follow-island-to", text: "to \(attrs.towards)", lines: 2, font: .subheadline.weight(.semibold), minScale: 0.8)
+        let to = "to \(shortTowards(attrs.towards))"
+        return Text(to).font(.subheadline.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.8)
+            .lineProbe("follow-island-to", text: to, lines: 2, font: .subheadline.weight(.semibold), minScale: 0.8)
             .multilineTextAlignment(.center)
+            .accessibilityLabel("to \(attrs.towards)")
     }
+}
+
+/// A long destination drops its "via" part on the Lock Screen and in the Island ("to Macquarie University via Epping
+/// and North Ryde" was cut on every phone, build 211 line check); the line badge and the stops tell the service apart.
+func shortTowards(_ s: String) -> String {
+    guard s.count > 28, let r = s.range(of: " via ") else { return s }
+    return String(s[..<r.lowerBound])
 }
 
 struct IslandBottom: View {
@@ -137,6 +146,7 @@ struct LockScreenCard: View {
                     .lineProbe("follow-lock-countdown", text: MinutesUntil.words(state.departs), lines: 1, font: .title2.weight(.bold).monospacedDigit(), minScale: 0.5)
                     .multilineTextAlignment(.trailing)
                     .frame(maxWidth: 100, alignment: .trailing)
+                    .fixedSize(horizontal: true, vertical: false)
                 Text(Clock.time(state.departs)).font(.caption).foregroundStyle(.secondary).fixedSize()
             }
             .layoutPriority(1)
@@ -147,8 +157,9 @@ struct LockScreenCard: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 WidgetLineBadge(line: attrs.line, colorHex: attrs.lineColorHex, mode: attrs.mode).fixedSize()
-                Text("to \(attrs.towards)").font(.headline).lineLimit(towardsLines).minimumScaleFactor(0.85)
-                    .lineProbe("follow-lock-to", text: "to \(attrs.towards)", lines: towardsLines, font: .headline, minScale: 0.85)
+                Text("to \(shortTowards(attrs.towards))").font(.headline).lineLimit(towardsLines).minimumScaleFactor(0.85)
+                    .lineProbe("follow-lock-to", text: "to \(shortTowards(attrs.towards))", lines: towardsLines, font: .headline, minScale: 0.85)
+                    .accessibilityLabel("to \(attrs.towards)")
             }
             Text(attrs.to.map { "\(attrs.from) to \($0)" } ?? "From \(attrs.from)")
                 .font(.caption)

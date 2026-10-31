@@ -89,9 +89,11 @@ test('fixes the audit found stay in: compact island countdown, Lock Screen words
   // Build 211: the track layouts merge the stops and the delay onto one line, so the track fits under a one line countdown.
   assert.match(l, /card\(lines: 2, track: true, merged: true\)\s*card\(lines: 1, track: true, merged: true, headLines: 2\)\s*card\(lines: 1, track: true, merged: true, headLines: 2, headScale: 0\.65\)\s*card\(lines: 1, track: true, merged: true\)/);
   assert.doesNotMatch(l, /card\(lines: 2, track: true\)/);
-  assert.match(l, /lineLimit\(headLines \?\? lines\)\.minimumScaleFactor\(headScale\)/);
+  // Build 211: the line count is worked out above the view (headMax = headLines ?? lines) to keep type checking quick.
+  assert.match(l, /let headMax: Int = headLines \?\? lines/);
+  assert.match(l, /lineLimit\(headMax\)\.minimumScaleFactor\(headScale\)/);
   assert.match(l, /headLines: Int\? = nil, headScale: CGFloat = 0\.7\)/, "the stop name shrinks to 0.7 before it is cut, every layout (31 Oct)");
-  assert.match(l, /struct LiveTripIslandCenter[\s\S]{0,500}?\.lineLimit\(2\)\.minimumScaleFactor\(0\.65\)/, "the island headline shrinks before it is cut (31 Oct)");
+  assert.match(l, /struct LiveTripIslandCenter[\s\S]{0,900}?\.lineLimit\(2\)\.minimumScaleFactor\(0\.65\)/, "the island headline shrinks before it is cut (31 Oct)");
   // 31 Oct readiness audit: the countdown shrinks before it is cut ("in 18 mi..." at xxxLarge).
   assert.match(l, /\.minimumScaleFactor\(0\.5\)/);
   assert.match(t, /\.minimumScaleFactor\(0\.5\)/);

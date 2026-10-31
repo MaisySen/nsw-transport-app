@@ -34,7 +34,10 @@ test('the countdown is "6 min" on one line: hours and minutes with short units, 
   const w = read(W);
   const mu = w.slice(w.indexOf('struct MinutesUntil: View'), w.indexOf('struct LiveTripIslandBottom'));
   assert.match(mu, /TimeDataSource<Range<Date>>\.dateRange\(endingAt: date\), format: Self\.style/);
-  assert.match(mu, /Date\.ComponentsFormatStyle\(style: \.abbreviated, fields: \[\.hour, \.minute\]\)/);
+  assert.match(mu, /Date\.ComponentsFormatStyle\(style: \.abbreviated, locale: unitsLocale, fields: \[\.hour, \.minute\]\)/);
+  // US English units: the phone's Australian English writes "6 min." (audit run 41153220659 drew "6 min." and "1 hr, 24 min.").
+  assert.match(mu, /static let unitsLocale = Locale\(identifier: "en_US"\)/);
+  assert.match(mu, /format: Self\.style\)\s*\.environment\(\\\.locale, Self\.unitsLocale\)/);
   assert.match(mu, /timeIntervalSinceNow < 60 \{\s*Text\("Now"\)/, 'under a minute: "Now"');
   // Old times keep the clock time, iOS 17 too (no minutes only countdown there).
   assert.match(mu, /else if outdated \{\s*Text\(Clock\.time\(date\)\)/);
@@ -116,4 +119,23 @@ test('the native audit line check: probes in the views, off in the app, and a fa
   const a = read(`${dir}/iOS/LiveActivityAudit.swift`);
   for (const s of ['"owner-late"', '"owner-ontime"', '"one-stop"', '"hour"']) assert.ok(a.includes(s), s);
   assert.match(read('native-tests/native-audit/sheets.py'), /WRAPS\/CUT/);
+});
+
+test('very large text keeps names whole: the stop name alone, the next stop alone, short destinations', () => {
+  const w = read(W);
+  assert.match(w, /typeSize >= \.xxLarge \? state\.bareHeadline\(stale: stale\) : state\.headline\(stale: stale\)/);
+  assert.equal((w.match(/bareHeadline\(stale: stale\)/g) || []).length, 2, 'Lock Screen and Island');
+  assert.equal((w.match(/\.accessibilityLabel\(state\.headline\(stale: stale\)\)/g) || []).length, 2, 'VoiceOver reads the whole line');
+  const s = read('targets/widget/LiveTripActivity.swift');
+  assert.match(s, /public func bareHeadline\(stale: Bool = false\) -> String \{\s*if arrived\(stale: stale\) \{ return destination \?\? getOffAt \}\s*if phase == "wait" \{ return "To \\\(towards \?\? getOffAt\)" \}\s*return getOffAt/);
+  // The Lock Screen countdown is only as wide as it needs, so the name gets the rest.
+  assert.match(w, /\.frame\(maxWidth: 100, alignment: \.trailing\)\s*\/\/[^\n]*\n\s*\.fixedSize\(horizontal: true, vertical: false\)/);
+  // The arrival time gives way before the next stop is cut.
+  const footer = w.slice(w.indexOf('struct TrackFooter'), w.indexOf('struct StopTrackView'));
+  assert.match(footer, /HStack\(spacing: 0\) \{ nextText\(n\)\.fixedSize\(\); Spacer\(minLength: 0\) \}/);
+  const f = read(F);
+  assert.match(f, /func shortTowards\(_ s: String\) -> String \{\s*guard s\.count > 28, let r = s\.range\(of: " via "\)/);
+  const short = (x) => (x.length > 28 && x.includes(' via ') ? x.slice(0, x.indexOf(' via ')) : x);
+  assert.equal(short('Macquarie University via Epping and North Ryde'), 'Macquarie University');
+  assert.equal(short('Hornsby via Strathfield'), 'Hornsby via Strathfield', 'short ones keep their via');
 });

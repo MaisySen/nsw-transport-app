@@ -56,15 +56,16 @@ struct LiveTripIslandTrailing: View {
     var body: some View {
         // Build 211 (31 Oct, owner's iPhone on build 210): the countdown on one line ("6 min", was "in 5 / minutes"),
         // and the delay under it ("3 min late", "On time"), which the Island did not show while the Lock Screen did.
-        VStack(alignment: .trailing, spacing: 1) {
+        let countdown = MinutesUntil.words(state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
+        let delay = state.delayStatus(stale: stale)
+        return VStack(alignment: .trailing, spacing: 1) {
             MinutesUntil(date: state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
                 .font(.title3.weight(.semibold))
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
-                .lineProbe("island-countdown", text: MinutesUntil.words(state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale)),
-                           lines: 1, font: .title3.weight(.semibold).monospacedDigit(), minScale: 0.6)
-            if let d = state.delayStatus(stale: stale) {
+                .lineProbe("island-countdown", text: countdown, lines: 1, font: .title3.weight(.semibold).monospacedDigit(), minScale: 0.6)
+            if let d = delay {
                 Text(d)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(delayColor(d))
@@ -73,7 +74,7 @@ struct LiveTripIslandTrailing: View {
                     .lineProbe("island-delay", text: d, lines: 1, font: .caption2.weight(.semibold), minScale: 0.8)
             }
         }
-        .frame(width: 80, alignment: .trailing)
+        .frame(minWidth: 80, maxWidth: 104, alignment: .trailing)
     }
 }
 
@@ -83,11 +84,15 @@ func delayColor(_ words: String) -> Color { words == "On time" ? .green : .orang
 struct LiveTripIslandCenter: View {
     var state: LiveTripAttributes.ContentState
     var stale = false
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         // Two lines under the camera before "Get off at Sydney…" (native audit), shrinking to 0.65 before it is cut
         // (31 Oct final check: "Sydney Olym..." at the largest text, "You've arrived at Macquarie Univers..." on the 6.1 inch).
-        Text(state.headline(stale: stale)).font(.subheadline.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.65)
-            .lineProbe("island-stop", text: state.headline(stale: stale), lines: 2, font: .subheadline.weight(.semibold), minScale: 0.65)
+        // Very large text (build 211 line check): just the stop name, "Macquarie University", so it stays whole.
+        let headline = typeSize >= .xxLarge ? state.bareHeadline(stale: stale) : state.headline(stale: stale)
+        return Text(headline).font(.subheadline.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.65)
+            .lineProbe("island-stop", text: headline, lines: 2, font: .subheadline.weight(.semibold), minScale: 0.65)
+            .accessibilityLabel(state.headline(stale: stale))
             .multilineTextAlignment(.center)
     }
 }
@@ -172,7 +177,9 @@ struct MinutesUntil: View {
         } else if date.timeIntervalSinceNow < 60 {
             Text("Now")
         } else if #available(iOS 18.0, *) {
+            // The units in US English: "6 min", "1 hr, 5 min" (the phone's Australian English writes "6 min.").
             Text(TimeDataSource<Range<Date>>.dateRange(endingAt: date), format: Self.style)
+                .environment(\.locale, Self.unitsLocale)
         } else {
             Text(Clock.time(date))
         }
@@ -180,7 +187,10 @@ struct MinutesUntil: View {
 
     /// Hours and minutes with short units: "6 min", "1 hr, 5 min".
     @available(iOS 18.0, *)
-    static var style: Date.ComponentsFormatStyle { Date.ComponentsFormatStyle(style: .abbreviated, fields: [.hour, .minute]) }
+    static var style: Date.ComponentsFormatStyle {
+        Date.ComponentsFormatStyle(style: .abbreviated, locale: unitsLocale, fields: [.hour, .minute])
+    }
+    static let unitsLocale = Locale(identifier: "en_US")
 
     /// The words the countdown shows right now (the native audit's line check reads them).
     static func words(_ date: Date, arrived: Bool = false, outdated: Bool = false) -> String {
@@ -259,15 +269,21 @@ struct TrackFooter: View {
             row(state.trackNext(stale: stale), right)
             row(state.trackNext(stale: stale), rightShort)
             row(state.trackNext(stale: stale, short: true), rightShort)
+            // Very large text (build 211 line check): the next stop alone, the arrival time gives way before the name is cut.
+            if let n = state.trackNext(stale: stale, short: true) {
+                HStack(spacing: 0) { nextText(n).fixedSize(); Spacer(minLength: 0) }
+            }
             // Last: one row whatever the width, the stop name smaller and then cut at its end, so a long name never
             // pushes the stop track off the card (snapshot run 41016955137: the 610X card fell back to the bar).
             HStack(spacing: 8) {
                 if let n = state.trackNext(stale: stale, short: true) {
                     nextText(n).minimumScaleFactor(0.75).truncationMode(.tail)
                         .lineProbe("next-stop", text: n, lines: 1, font: .caption.weight(.semibold), minScale: 0.75)
+                    Spacer(minLength: 0)
+                } else {
+                    Spacer(minLength: 0)
+                    Text(rightShort).foregroundStyle(.secondary).monospacedDigit().lineLimit(1).fixedSize()
                 }
-                Spacer(minLength: 0)
-                Text(rightShort).foregroundStyle(.secondary).monospacedDigit().lineLimit(1).fixedSize()
             }
         }
     }
@@ -393,6 +409,7 @@ struct LiveTripLockCard: View {
     var attrs: LiveTripAttributes
     var state: LiveTripAttributes.ContentState
     var stale = false
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         ViewThatFits(in: .vertical) {
@@ -438,13 +455,20 @@ struct LiveTripLockCard: View {
     }
 
     private func card(lines: Int, track: Bool, merged: Bool = false, headLines: Int? = nil, headScale: CGFloat = 0.7) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        // Worked out here so the view expression stays quick to type check.
+        // Very large text (build 211 line check): the stop name alone ("Macquarie University"); the label over the
+        // countdown already says "Get off" or "Arrived", and VoiceOver still reads the whole line.
+        let headline = typeSize >= .xxLarge ? state.bareHeadline(stale: stale) : state.headline(stale: stale)
+        let headMax: Int = headLines ?? lines
+        let countdown = MinutesUntil.words(state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale))
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode).fixedSize()
-                        Text(state.headline(stale: stale)).font(.headline).lineLimit(headLines ?? lines).minimumScaleFactor(headScale)
-                            .lineProbe("lock-stop", text: state.headline(stale: stale), lines: headLines ?? lines, font: .headline, minScale: headScale)
+                        Text(headline).font(.headline).lineLimit(headMax).minimumScaleFactor(headScale)
+                            .lineProbe("lock-stop", text: headline, lines: headMax, font: .headline, minScale: headScale)
+                            .accessibilityLabel(state.headline(stale: stale))
                     }
                     if merged {
                         detailAndWarning(lines, track: track)
@@ -473,10 +497,11 @@ struct LiveTripLockCard: View {
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)  // xxxLarge with a warning: shrink, never "in 18 mi…" (31 Oct readiness audit)
-                        .lineProbe("lock-countdown", text: MinutesUntil.words(state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale)),
-                                   lines: 1, font: .title2.weight(.bold).monospacedDigit(), minScale: 0.5)
+                        .lineProbe("lock-countdown", text: countdown, lines: 1, font: .title2.weight(.bold).monospacedDigit(), minScale: 0.5)
                         .multilineTextAlignment(.trailing)
                         .frame(maxWidth: 100, alignment: .trailing)
+                        // Only as wide as "6 min" needs, so the stop name gets the rest (build 211).
+                        .fixedSize(horizontal: true, vertical: false)
                 }
                 .layoutPriority(1)
             }

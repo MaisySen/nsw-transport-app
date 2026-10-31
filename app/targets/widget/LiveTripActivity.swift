@@ -131,6 +131,14 @@ extension LiveTripAttributes.ContentState {
         return "Get off at \(getOffAt)"
     }
 
+    /// For very large text (build 211): just the stop, "Redfern", or where you arrived; the label over the countdown
+    /// says "Get off" or "Arrived". Waiting keeps "To Central" (its label says "Leaves").
+    public func bareHeadline(stale: Bool = false) -> String {
+        if arrived(stale: stale) { return destination ?? getOffAt }
+        if phase == "wait" { return "To \(towards ?? getOffAt)" }
+        return getOffAt
+    }
+
     /// Waiting: "Leaves 9:51pm, Platform 2". On board: "3 stops" or "Next stop". At the end: the time.
     public func detail(stale: Bool = false) -> String {
         if arrived(stale: stale) { return "Got in at \(Clock.time(arrival)). The trip has ended." }
