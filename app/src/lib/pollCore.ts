@@ -234,6 +234,7 @@ export function tripGapMs(firstInMs: number | null | undefined): number {
  */
 export function nextChangeMs(now: number, times: Iterable<number>): number {
   let best = 60000 - (now % 60000);
+  const waits: number[] = [best];
   for (const t of times) {
     if (!Number.isFinite(t)) continue;
     const d = t - now;
@@ -241,10 +242,17 @@ export function nextChangeMs(now: number, times: Iterable<number>): number {
     // The next whole minute boundary of (t - now) below the current one, i.e. when floor((t - now) / 60000) changes.
     const r = ((d % 60000) + 60000) % 60000;
     const wait = r === 0 ? 60000 : r;
+    waits.push(wait);
     if (wait < best) best = wait;
   }
-  return Math.max(1000, best + 50);
+  // Changes within BATCH_MS of the first one draw together (1 Nov polish): Home redrew once per card per minute (10 to
+  // 14 times) because live times carry seconds; a countdown is at most BATCH_MS late, as with the old 5 s tick.
+  let fire = best;
+  for (const w of waits) if (w > fire && w <= best + COUNTDOWN_BATCH_MS) fire = w;
+  return Math.max(1000, fire + 50);
 }
+/** How late a countdown may turn so that nearby changes share one redraw. */
+export const COUNTDOWN_BATCH_MS = 5000;
 
 /** Milliseconds from `now` to the next service still ahead on a board (live time where there is one), or null. */
 export function nextInMs(items: { planned?: string | null; estimated?: string | null; realtime?: boolean; departed?: boolean; cancelled?: boolean }[] | null | undefined, now: number): number | null {

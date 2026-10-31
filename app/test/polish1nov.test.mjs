@@ -156,3 +156,23 @@ test('round 4: watching loading and error states, Stop handles failure, undo ann
   assert.equal((nt.match(/setTries\(\(n\) => n \+ 1\)/g) || []).length, 2);
   assert.ok(!/setErr\(String\(e/.test(nt));
 });
+
+test('round 5: Home countdown changes within 5 s share one redraw; stand pin row 44 pt with Android ripple', async () => {
+  const { createRequire } = await import('node:module');
+  const os = await import('node:os');
+  const { pathToFileURL } = await import('node:url');
+  const ts = createRequire(import.meta.url)(path.join(root, 'node_modules', 'typescript'));
+  const src = fs.readFileSync(path.join(root, 'src/lib/pollCore.ts'), 'utf8').replace(/^import .*$/gm, '');
+  const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'polish-')), 'pollCore.mjs');
+  fs.writeFileSync(f, js);
+  const P = await import(pathToFileURL(f).href);
+  const now = Date.parse('2026-10-25T10:00:10Z');
+  // Three cards change at +20 s, +22 s and +24 s: one redraw at +24 s, not three.
+  assert.equal(P.nextChangeMs(now, [now + 20000, now + 22000, now + 24000]), 24000 + 50);
+  // A change 10 s after the first is not pulled in.
+  assert.equal(P.nextChangeMs(now, [now + 20000, now + 30000]), 20000 + 50);
+  const pin = fs.readFileSync(path.join(root, 'src/components/StandPin.tsx'), 'utf8');
+  assert.match(pin, /android_ripple=\{\{ color: c\.fill \}\}/);
+  assert.match(pin, /minHeight: 44/);
+});

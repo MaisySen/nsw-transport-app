@@ -32,8 +32,8 @@ export function StandPin({ leg, prev, onScrollChange }: { leg: Leg; prev?: Leg; 
   return (
     <View style={{ marginLeft: 36, marginBottom: 6 }}>
       <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${title}${hint ? `. ${hint}` : ''}`}
-        onPress={() => { haptic.select(); setOpen(!open); }} hitSlop={6}
-        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 32, opacity: pressed && Platform.OS !== 'android' ? 0.6 : 1 })}>
+        onPress={() => { haptic.select(); setOpen(!open); }} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }} android_ripple={{ color: c.fill }}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, opacity: pressed && Platform.OS !== 'android' ? 0.6 : 1 })}>
         <Icon name={I.pin} size={14} color={c.tint} />
         <T kind="foot" tone="tint" style={{ fontWeight: '600', flexShrink: 1 }}>{title}</T>
         <Icon name={I.chevron} size={11} color={c.tint} style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }} />
