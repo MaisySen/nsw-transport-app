@@ -2,6 +2,10 @@
 
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
+## "Never spoke" fix (1 Nov, branch fix-never-spoke-1nov)
+- `app/test/neverspoke1nov.test.mjs` (8): with a server watch on 212 the open app leaves heads-up, Get off now and arrival to the Kylie push (no phone-voice line); on 211 the arrival is still said by the app; with no server clips everything is said, the arrival included; the open app rings "Arrived at …" in the refresh that sees the train at the stop; opening the app after the stop says nothing and posts no late Arrived; the push handler plays clip sounds (custom, getoff_now/soon, arrival) with the app open and keeps default-sound trip pushes quiet; `serverClipsFor` by platform, build and server watch; the engine passes `serverClips`. Failing first: files/day-1nov/failing-first-never-spoke.txt (7 of 8 fail on 1112abb).
+- Phone check (Bidur): Silent off, ringer volume up. (a) App open on the live trip screen: Kylie says "Your stop is coming up…", "Please get off at the next stop", "You've arrived at your stop", each once, no phone-voice repeat. (b) Phone locked: the same three from the alerts.
+
 ## Build 212 (1 Nov, branch build-212-rc)
 
 * `app/test/build212.test.mjs`: runtime 1.3.0 and the workflow guard, the arrival clip (format, name, words), card version 3 redraws, the new card fields in both Swift copies and tripCard.ts, Due/Now never 0:00, one line status and VoiceOver probes, the whole trip widget, Watch moments, G36, battery, the polish audit native strings (N1, N2, N4), the Sentry step.

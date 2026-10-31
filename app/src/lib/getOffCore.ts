@@ -496,10 +496,29 @@ export function tripPushSoundless(o: { watch: unknown; sound: unknown; appState:
   if (o.appState !== 'active' || !o.tripWatch || o.watch !== o.tripWatch) return false;
   // The new trip flow (phase 2): with the app open the phone rings every trip moment itself (banner, one light tap,
   // in-app voice), so the server's push for the same moment is shown without its sound (spec 2.6): never rung twice.
-  if (o.flow2) return true;
+  // A Kylie clip (heads-up, Get off now, arrival on 212+) still plays with the app open (1 Nov, "Never spoke"): the app
+  // does not read those moments out itself when the server sends them (serverClipsFor), so the clip is the one voice.
+  if (o.flow2) return !isClipSound(o.sound);
   if (!o.speaks) return false;
   const snd = typeof o.sound === 'string' ? o.sound : '';
   return snd === 'custom' || /^getoff_(now|soon)(\.wav)?$/.test(snd);
+}
+
+/** A push sound that is one of the app's Kylie clips. iOS reports a bundled sound as "custom" or by its file name. */
+export function isClipSound(sound: unknown): boolean {
+  const snd = typeof sound === 'string' ? sound : '';
+  return snd === 'custom' || /^(getoff_(now|soon)|arrival)(\.wav)?$/.test(snd);
+}
+
+/**
+ * The trip flow clips (tripState TRIP_CLIPS keys) the server's push plays for this trip (1 Nov, "Never spoke"): with a
+ * server watch that sends Get off now (offServer) on a build with the spoken sounds, heads-up and Get off now; arrival
+ * too from iPhone build 212 (the server names arrival.wav only for 212+). The open app leaves those moments to the
+ * push's Kylie clip instead of reading them out in the phone's voice. Empty: the app reads everything out as before.
+ */
+export function serverClipsFor(os: string, build: string | number | null | undefined, server: boolean): string[] {
+  if (!server || !voiceClipsSupported(os, build)) return [];
+  return os === 'ios' && Number(build) >= 212 ? ['headsup', 'getoff', 'arrived'] : ['headsup', 'getoff'];
 }
 
 // ---------- Location alerts and the quiet note (31 Oct) ----------

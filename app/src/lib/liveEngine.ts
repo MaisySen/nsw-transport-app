@@ -18,7 +18,7 @@ const tapped = new Set<string>();
 import { wakeStep } from './smart';
 import { hasSpeech, speak } from './nativeExtras';
 import { getOffStep, readGetOff, readGetOffSay } from './getOffCore';
-import { cancelGetOff, getOffBackup, getOffNow, ownGetOffShown, scheduleGetOff, scheduleQuiet, scheduleRegion, serverGetOffShown, setServerGetOffWatch, setTripFlow2, setTripWatch, sweepRegions, voiceClips } from './getOffNotify';
+import { cancelGetOff, getOffBackup, getOffNow, ownGetOffShown, scheduleGetOff, scheduleQuiet, scheduleRegion, serverGetOffShown, serverClips, setServerGetOffWatch, setTripFlow2, setTripWatch, sweepRegions, voiceClips } from './getOffNotify';
 import { store } from './store';
 import { cancelWake } from './smartNotify';
 import { endedWatches } from './push';
@@ -156,7 +156,7 @@ export async function tickLive(opts: { noFetch?: boolean } = {}) {
     // (V1 to V5) come from it. The server's push for a moment the app rings itself is shown without sound.
     setTripFlow2(true);
     const r = stepLive(g, svcCache, now, fmt, pos, { ...(serverRung || {}), ...(rung || {}) },
-      { asOf: svcAt || now, c24: phone24h(now), voice: { open: AppState.currentState === 'active', silent: false, openSince, refreshes, speakingUntil } });
+      { asOf: svcAt || now, c24: phone24h(now), voice: { open: AppState.currentState === 'active', silent: false, openSince, refreshes, speakingUntil }, serverClips: serverClips(!!g.offServer && !!g.watchId) });
     if (r.voiceUntil != null) speakingUntil = r.voiceUntil;
     // Wake me before my stop is gone (G9): an alarm an earlier version set for this trip is taken back.
     const w = wakeStep({ id: g.id, legs: g.legs, wake: false, wakeSet: g.wakeSet, alerted: r.g.alerted }, r.s, now, fmt);

@@ -653,7 +653,9 @@ export function stepLive(g: LiveTripLike, svc: (ServiceResp | null | undefined)[
  * from a reading over 60 s old, one queue). There is no timed "Wake me" alarm and no "Wake up" wording (G9).
  * asOf: when the live answers were loaded; voice: the speech state the engine keeps.
  */
-export type FlowCtx = { asOf?: number | null; c24?: boolean; voice?: VoiceState | null; plannerAt?: number | null };
+// serverClips (1 Nov): the clips the server's push plays for this trip (getOffCore serverClipsFor); a moment with one of
+// those clips is not read out by the app, so Kylie's clip from the push is heard with the app open too.
+export type FlowCtx = { asOf?: number | null; c24?: boolean; voice?: VoiceState | null; plannerAt?: number | null; serverClips?: string[] | null };
 function stepFlow(g: LiveTripLike, n: LiveTripLike, s: LiveState, svc: (ServiceResp | null | undefined)[], now: number, f: Fmt, flow: FlowCtx, actions: LiveAction[]): { g: LiveTripLike; s: LiveState; actions: LiveAction[]; voiceUntil?: number } {
   const legs = g.legs;
   const use = legs.map((l, i) => { const d = svc[i] || null; return d && !sameRun(d, l, (g.rode || {})[i] != null) ? null : d; });
@@ -663,7 +665,12 @@ function stepFlow(g: LiveTripLike, n: LiveTripLike, s: LiveState, svc: (ServiceR
   // A leg the trip already finished by evidence (memo.here) is done in the trip state too.
   for (let i = 0; i < legs.length; i++) {
     const h = (n.here || {})[i];
-    if (h != null && M.legs[i].phase < PHASE_INDEX.arrived) { M.legs[i].phase = PHASE_INDEX.arrived; M.legs[i].arrivedAt = h; M.legs[i].arrivedTime = h; M.legs[i].rung.getoff = M.legs[i].rung.getoff || 'skipped'; M.legs[i].rung.arrived = M.legs[i].rung.arrived || 'skipped'; if (M.current === i && i < legs.length - 1) M.current = i + 1; }
+    // 1 Nov ("Never spoke"): a leg marked here in THIS refresh, while the app was following the approach (its own Get
+    // off now rang under 3 min ago), is left to tripStep so the arrival is rung and said. Before, the same refresh's
+    // here mark made it "skipped", so the open app never said "You've arrived". A leg finished earlier, or found
+    // finished on opening the app, is still done quietly (no stale catch-up).
+    const fresh = (g.here || {})[i] == null && typeof M.legs[i].rung.getoff === 'number' && now - (M.legs[i].rung.getoff as number) < 180000;
+    if (h != null && !fresh && M.legs[i].phase < PHASE_INDEX.arrived) { M.legs[i].phase = PHASE_INDEX.arrived; M.legs[i].arrivedAt = h; M.legs[i].arrivedTime = h; M.legs[i].rung.getoff = M.legs[i].rung.getoff || 'skipped'; M.legs[i].rung.arrived = M.legs[i].rung.arrived || 'skipped'; if (M.current === i && i < legs.length - 1) M.current = i + 1; }
   }
   const res = tripStep(plan, M, now, reading, { c24: !!flow.c24, lead: 0 });
   let alerted = n.alerted || {};
@@ -675,7 +682,9 @@ function stepFlow(g: LiveTripLike, n: LiveTripLike, s: LiveState, svc: (ServiceR
     alerted = { ...alerted, [key]: 1 };
     const calm = mo.ring.kind === 'headsup' || mo.ring.kind === 'getoff' || mo.ring.kind === 'atstop';
     actions.push({ t: 'alert', id: `trip-${g.id}-${mo.ring.moment}`, key, title: mo.ring.title, body: mo.ring.body, ...(calm ? { haptic: 'light' as const } : {}), ...(mo.ring.quiet ? { quiet: true } : {}), ...(mo.ring.expires ? { expires: mo.ring.expires } : {}) });
-    if (g.speak && flow.voice && mo.ring.say && !mo.ring.quiet) {
+    const byClip = !!mo.ring.clip && !!flow.serverClips && flow.serverClips.includes(mo.ring.clip);
+    if (byClip) spoken = { ...spoken, [key]: 1 };
+    else if (g.speak && flow.voice && mo.ring.say && !mo.ring.quiet) {
       const v = voiceGate({ ...flow.voice, speakingUntil: voiceUntil }, now, mo.ring.say, mo.age, mo.byVehicle);
       spoken = { ...spoken, [key]: 1 };
       if (v.words) { actions.push({ t: 'say', key, text: v.words }); voiceUntil = v.until; }

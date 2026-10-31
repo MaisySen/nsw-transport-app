@@ -6,6 +6,8 @@ The iPhone and Android apps are one Expo app (`app/`). Anything below marked "ov
 
 ## Build 212 (1 Nov, branch `build-212-rc`, runtime 1.3.0, TestFlight)
 
+* Pending (branch `fix-never-spoke-1nov`, not published): with the app open, Kylie's clip from the server's push is the voice for heads-up, Get off now and arrival (the app no longer reads those out in the phone voice), and the open app rings and says the arrival in the refresh that sees it.
+
 The Your trip widget follows a started trip from start to end: countdown to the live departure, Due, on board, your stop next, Get off now, Arrived, with the delay on the row and "about" or "No live data since" when the live times are old. The Lock Screen card and Dynamic Island show Due instead of a timer stuck at 0:00, keep the status on one line at every text size, and read the whole card as one sentence to VoiceOver. The Apple Watch shows the same moments. Arrival is spoken by Kylie ("You've arrived at your stop.") even when the phone is locked.
 
 ## Polish pass (1 Nov, branch `polish-1nov`, not released)

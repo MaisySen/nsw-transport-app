@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 1 Nov 2026
 
+### "Never spoke" fix (1 Nov, 10:30 AM, branch `fix-never-spoke-1nov` from build-212-rc 1112abb; JS only; NOT published)
+Bidur, 10:00 AM: "Never spoke". The server sent all six alerts of his two trips straight to Apple with Kylie's clips (Apple 200); the app came to the front 5 s after the arrival alert, so the phone rang them (Silent switch or alert volume is the likely mute; files/day-1nov/never-spoke.md). Two app gaps with the app OPEN were found and fixed:
+* Kylie with the app open: a running trip's push whose sound is a Kylie clip (heads-up, Get off now, arrival on 212+) now plays its sound with the app in front; the app no longer reads those same moments out in the phone's own voice (getOffCore `isClipSound`, `serverClipsFor`; liveCalc `FlowCtx.serverClips`). Moments without a clip (delay, platform, cancelled, change here, arrival on 211) are still read out by the app. Silent still mutes everything (no Critical Alerts). Spec 2.6 change: needs Bidur's OK.
+* Arrival with the app open: the arrival was marked "skipped" in the same refresh that first saw the train at the stop, so the open app never rang or said "You've arrived". A leg first marked here in this refresh while the app was following the approach (its Get off now rang under 3 min ago) now goes through the trip step. A leg found finished on opening the app is still done quietly.
+* LIVECARD regenerated (liveCalc changed). Tests: new app/test/neverspoke1nov.test.mjs (8; 7 fail on 1112abb), app 1,297 (1,293 pass, 4 skipped, 0 fail), journey sim on real code 153/153, backend copy 644/644.
+
 ### Build 212, native (1 Nov, branch `build-212-rc` from tripflow-p2 (to 64af4ef) plus polish-1nov; runtime 1.3.0; on TestFlight Internal 1 Nov, 1:30 AM)
 Own runtime 1.3.0, so an update published for 1.2.0 (builds 210, 211) never reaches it. Carries trip flow 2 and the polish pass.
 * Your trip widget (Home Screen and Lock Screen) follows the whole trip: one timeline entry per moment (waiting with the countdown to the live departure, Due, on board, your stop next, Get off now, Arrived). The delay is on the row. It never drops the row when a time passes, never says "Checking for the next one" or "Trip started" during a trip, and says "about" then "No live data since" as the live times age (G4, G5, G11, G28). Empty widgets say "No more services right now".

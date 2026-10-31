@@ -8005,7 +8005,8 @@ const LIVECARD = (() => {
         let M = g.flow && g.flow.legs.length === plan.legs.length ? JSON.parse(JSON.stringify(g.flow)) : newTripMemory(plan);
         for (let i = 0; i < legs.length; i++) {
             const h = (n.here || {})[i];
-            if (h != null && M.legs[i].phase < PHASE_INDEX.arrived) {
+            const fresh = (g.here || {})[i] == null && typeof M.legs[i].rung.getoff === 'number' && now - M.legs[i].rung.getoff < 180000;
+            if (h != null && !fresh && M.legs[i].phase < PHASE_INDEX.arrived) {
                 M.legs[i].phase = PHASE_INDEX.arrived;
                 M.legs[i].arrivedAt = h;
                 M.legs[i].arrivedTime = h;
@@ -8026,7 +8027,10 @@ const LIVECARD = (() => {
             alerted = { ...alerted, [key]: 1 };
             const calm = mo.ring.kind === 'headsup' || mo.ring.kind === 'getoff' || mo.ring.kind === 'atstop';
             actions.push({ t: 'alert', id: `trip-${g.id}-${mo.ring.moment}`, key, title: mo.ring.title, body: mo.ring.body, ...(calm ? { haptic: 'light' } : {}), ...(mo.ring.quiet ? { quiet: true } : {}), ...(mo.ring.expires ? { expires: mo.ring.expires } : {}) });
-            if (g.speak && flow.voice && mo.ring.say && !mo.ring.quiet) {
+            const byClip = !!mo.ring.clip && !!flow.serverClips && flow.serverClips.includes(mo.ring.clip);
+            if (byClip)
+                spoken = { ...spoken, [key]: 1 };
+            else if (g.speak && flow.voice && mo.ring.say && !mo.ring.quiet) {
                 const v = voiceGate({ ...flow.voice, speakingUntil: voiceUntil }, now, mo.ring.say, mo.age, mo.byVehicle);
                 spoken = { ...spoken, [key]: 1 };
                 if (v.words) {
