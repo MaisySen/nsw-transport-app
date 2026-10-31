@@ -31,6 +31,10 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 
 
+### Journey simulator (31 Oct, branch `tripflow-sim`, no app change)
+* `app/test/journeysim.test.mjs`: 30 cases (S1 to S20 with variants, the owner's 7:48 trip, a 415 bus, a T1 to T4 change) played second by second; invariants I1 to I10 checked on every second; named second expectations per case; I3 by moving the timetable 7 min either way; seven negative tests (build 211's behaviour must fail the checks). Run: `cd app && OFFLINE=1 TZ=Australia/Sydney node --test test/journeysim.test.mjs`.
+* Results: app 1,161 tests, 1,157 pass, 4 skipped, 0 fail (journeysim 66/66); backend 644/644; owner stations 32 of 1,722 tests (1.86%, limit 5%). All offline (OFFLINE=1, TZ=Australia/Sydney). No app or server code changed.
+
 ### Build 211 candidate (31 Oct, branch `build-211-rc`, not built)
 * Round 4, main's polish cherry picked and the quiet note fix (about 5:00 PM): app 1,095 tests, 1,091 pass, 4 skipped, 0 fail (OFFLINE=1, TZ=Australia/Sydney); quietnote31 8/8, getoffregion31 20/20, getoffbg31 12/12, staleopen31 15/15, livefit211 8/8, livefit211r2 4/4, syssettings31 8/8, notstopping 7/7; battery 17/17; tsc clean; backend 644/644. Owner stations 28 of 1,704 tests (1.64%).
 * Round 4 native audit run 41173076134 (82c0aed): iPhone 1,578 shots and Watch 120 shots, 0 do not fit, 0 lines too many; app and module BUILD SUCCEEDED.

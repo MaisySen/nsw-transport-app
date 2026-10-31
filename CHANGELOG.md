@@ -4,6 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 31 Oct 2026
 
+### Journey simulator: the new live trip flow as code, 30 cases, what shows and rings when (31 Oct, about 8:31 to 9:15 PM; branch tripflow-sim from build-211-rc d44d715; no app change, no build, no update, no deploy)
+* Owner's ask at 8:31 PM: "Create a full journey simulation and cases to plan what and when". Phase 1 of docs/TRIP_FLOW_SPEC.md (copied into docs/ on this branch).
+* `app/sim/journeySim.mjs`: a pure, dependency free reference of the new rules (one trip state; Waiting, Due, on the way, next stop, Get off now at the live arrival minus 30 s, arrived, ended; stale steps at 2, 5 and 10 min; voice rules V1 to V8; the calm sequence; the widget for the whole trip; never a move on the timetable clock). It plays a trip second by second from a scripted live feed (delays, stop times, vehicle positions, platform changes, cancellations, gaps) and phone timeline (open, locked, background, killed, Silent, location, 12 or 24 hour, text size) and gives, for every second, the in-app line, Lock Screen card and timer target, Island compact and minimal, widget, Watch, every alert (route, sound, haptic), every spoken cue or why none, and every server push.
+* `app/sim/cases.mjs`: S1 to S20 (with variants: S2-open, S15a/b, S16b, S17a to d, S18a to c), the owner's 7:48 trip (S2), a 415 bus from Stand G (BUS) and a T1 to T4 change at Redfern (X). Most cases use a sample trip with the same minutes, so only four cases use the owner's stations.
+* `app/test/journeysim.test.mjs` (66 tests): every case against I1 to I10 on every second plus its named second expectations; I3 also proven by moving every timetable time 7 min either way with the live train unchanged; seven tests feed build 211's behaviour into the checks and assert they fail.
+* `app/sim/report.mjs` writes one timeline table per case. Owner copies: Journey-Simulation.pdf and a timeline picture of his trip.
+* Choices made where the spec was open are listed in docs/JOURNEY_SIM.md (for the owner to confirm).
+* Tests: app 1,161 tests, 1,157 pass, 4 skipped, 0 fail (journeysim 66/66); backend 644/644; owner stations 32 of 1,722 tests (1.86%, limit 5%). All offline (OFFLINE=1, TZ=Australia/Sydney). No app or server code changed.
+
 ### Build 211 on TestFlight (31 Oct, 7:10 to 7:45 PM; build-209 fast forwarded to build-211-rc e4b7f52)
 * Owner's go at 7:02 PM. build-209 fast forwarded from a9541f1 to e4b7f52 (force false). GitHub Actions run 41183457194 (`ios-209-local.yml`): audit gate passed (iPhone, Watch, full app module compile), then `eas build --local` on Xcode 27.1 (no Expo cloud build used) and the altool upload (UPLOAD SUCCEEDED).
 * IPA checked: 1.0.0 (211) on all four targets, runtime 1.2.0 (equals app.json), channel production, aps-environment production, Time Sensitive, App Group, get-task-allow false, no UIBackgroundModes, Crash Data listed, no old address.

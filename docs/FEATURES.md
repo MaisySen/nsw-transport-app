@@ -4,6 +4,10 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Journey simulator (31 Oct, branch `tripflow-sim`, no app change)
+
+A second by second simulation of a started trip under the new live trip rules (docs/TRIP_FLOW_SPEC.md): what the Lock Screen card, Island, widget, Watch and app show, what rings and what is spoken, and when, for 30 cases. It is the target for the app and server changes in phases 2 and 3. How to run it and add a case: docs/JOURNEY_SIM.md.
+
 ## Live Activity on the Lock Screen and in the Island (build 211 candidate, 31 Oct)
 
 The countdown reads "6 min" (or "1 hr, 5 min", "Now") on one line and keeps counting by itself. On a live trip the Lock Screen card shows the same stop track as the Island (your stops as dots, the train, a bell at your stop, "Next:" and the arrival), with "2 stops · 3 min late" or "2 stops · On time" on one line. The Island shows "3 min late" or "On time" under its countdown. Titles are always one line: "Get off at Croydon", or just the stop when space is short, and only a very long name at the largest text sizes is cut at its end. In the Island the countdown keeps the same inset from the right edge as the line badge has on the left. Needs build 211 (not over the air).
