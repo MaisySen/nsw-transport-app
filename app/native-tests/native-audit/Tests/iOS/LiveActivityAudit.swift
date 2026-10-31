@@ -126,9 +126,22 @@ enum LiveActivityAudit {
         }
         .frame(width: w, height: inner.height, alignment: .top)
         // Each region is also checked on its own in its box.
+        // Round 2 (build 211): the picture has the expanded Island's margins as on the owner's iPhone (IslandEdge.inset,
+        // was 10 pt at the sides and 6 pt at the top, which drew the content into the rounded corners), and each shot
+        // fails when anything comes within IslandEdge.clearance of the rounded outline or the trailing side keeps less
+        // inset than the leading side.
         for t in Audit.types {
             Audit.shot(layout.environment(\.colorScheme, .dark), surface: surface, scenario: scenario, device: p.name, type: t, scheme: .dark, box: inner,
-                       picture: IslandPill(content: layout.environment(\.colorScheme, .dark), box: inner, round: 44))
+                       picture: IslandPill(content: layout.environment(\.colorScheme, .dark), box: inner, round: IslandEdge.corner, inset: IslandEdge.inset))
+            if let res = IslandEdge.check(layout: layout, leading: l, trailing: tr, box: inner, side: side, type: t.1) {
+                let (e, fails) = res
+                IslandEdge.checked += 1
+                print(String(format: "EDGE %@ %@ %@ %@ nearest %.1f pt (%@) leading %.1f trailing %.1f", surface, scenario, p.name, t.0, e.nearest, e.at, e.left, e.right))
+                if !fails.isEmpty, !Audit.records.isEmpty {
+                    let i = Audit.records.count - 1
+                    Audit.records[i].lines = (Audit.records[i].lines ?? []) + fails
+                }
+            }
         }
         for (name, v, box) in [("leading", AnyView(l), CGSize(width: side, height: 52)), ("trailing", AnyView(tr), CGSize(width: side, height: 52)),
                                ("center", AnyView(c), CGSize(width: w - 2 * side - 12, height: 52)), ("bottom", AnyView(b), CGSize(width: w, height: 70))] {
@@ -190,11 +203,11 @@ struct IslandPill<V: View>: View {
     var content: V
     var box: CGSize
     var round: CGFloat
+    var inset = EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10)
     var body: some View {
         content
             .frame(width: box.width, height: box.height)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(inset)
             .background(Color.black)
             .clipShape(RoundedRectangle(cornerRadius: round, style: .continuous))
             .padding(16)
