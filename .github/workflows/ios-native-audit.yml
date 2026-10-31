@@ -79,7 +79,7 @@ jobs:
     # against the real Expo and React Native pods, so a Swift error fails here and never first in the signed build.
     # Unsigned simulator build, no JavaScript bundle, no secrets, no upload.
     runs-on: xcode-27
-    timeout-minutes: 75
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: app
@@ -95,7 +95,8 @@ jobs:
       - name: Native project (expo prebuild, pod install)
         run: |
           npx expo prebuild --platform ios --clean --no-install
-          cd ios && pod install
+          # React Native's own prebuilt core and dependencies, so only the app's code and the Expo modules compile here.
+          cd ios && RCT_USE_RN_DEP=1 RCT_USE_PREBUILT_RNCORE=1 pod install
       - name: Compile the app and its native module (simulator, unsigned)
         env:
           SKIP_BUNDLING: "1"
@@ -107,7 +108,7 @@ jobs:
           echo "workspace $WS, scheme $SCHEME"
           xcodebuild build -workspace "$WS" -scheme "$SCHEME" -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath ios/dd \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO > "$GITHUB_WORKSPACE/out/module-build.log" 2>&1 \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO > "$GITHUB_WORKSPACE/out/module-build.log" 2>&1 \
             || { grep -E "error:" "$GITHUB_WORKSPACE/out/module-build.log" | sort -u | head -150; tail -40 "$GITHUB_WORKSPACE/out/module-build.log"; echo "APP NATIVE CODE DOES NOT COMPILE"; exit 1; }
           grep -c "TransportIOSModule.swift" "$GITHUB_WORKSPACE/out/module-build.log" || { echo "TransportIOSModule.swift was not compiled"; exit 1; }
           echo "app and native module compiled"
