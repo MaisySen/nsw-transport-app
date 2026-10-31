@@ -11,7 +11,8 @@ JavaScript only, for the next update to runtime 1.2.0 or build 212. Nothing publ
 * VoiceOver and TalkBack: Plan rows and the live trip arrival header read as one sentence; Home cards say a platform change; Ask answers are announced once; TalkBack no longer re-reads "Leave in" and "Updated" every minute.
 * Dynamic Type: Ask chips, header pills (Speak, Board, Direction, Route) and bus stop rows grow with text instead of clipping; route group headers, mode chips, line chips and live trip setup pills reach 44 pt.
 * Wording: one "Updated 7:47pm" wording for old data on the live trip and trip results; "Timetable only" instead of a second "due" meaning on the live trip; "Plat 4" everywhere; search says when the server cannot be reached instead of "No stops match that"; stop board gets Try again; commute alert switch handles a failed save.
-* Speed: trip results check "beaten" rows in one pass; new trip lists keyed by content (no remount on filter); Ask user bubbles skip the minute tick.
+* Speed: trip results check "beaten" rows in one pass; new trip lists keyed by content (no remount on filter); Ask user bubbles skip the minute tick; Home countdowns that change within 5 s share one redraw.
+* More states: Watching shows loading and error with Try again, Stop handles a failure; station and bus pickers get Try again; VoiceOver hears a trip deleted and where Undo is; the Android notification channel is renamed Get off alerts; the live trip Live badge uses the same green as every Live pill; section labels in sentence case on Android and marked as headers; bus stand pin row 44 pt with a ripple.
 * Security audit (no change needed in the app): no secrets in the tree or history, dependency advisories are build tools only. Notes for the server in the polish report.
 
 ## 31 Oct 2026
