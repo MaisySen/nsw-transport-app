@@ -32,7 +32,7 @@ Every decision is the app's own trip state, `app/src/lib/tripState.ts`, inlined 
 ## Alerts
 
 * G38 heads-up and G37 arrival from the live train; G40 once per moment key; G33 expiry: heads-up at the live arrival, Get off now at the arrival plus 30 s, arrival at plus 2 min (Apple `apns-expiration`, Expo `ttl`).
-* Sounds: Kylie `getoff_soon` for the heads-up and `getoff_now` for Get off now (both in build 211). The Kylie arrival clip is not in build 211: the arrival rings with the default sound until build 212 or the sound folder copy.
+* Sounds: Kylie `getoff_soon` for the heads-up and `getoff_now` for Get off now (both in build 211). The Kylie arrival clip `arrival` ("You've arrived at your stop.") is in build 212 and later only: the arrival rings with it when the watch's `iosBuild` (read at Start trip from the iOS User-Agent, `<name>/<build> CFNetwork/...`) is 212 or more (`tfSound`, 1 Nov), and with the default sound otherwise (build 211 and older, Android, unknown build).
 * G34: a train already late at Start trip gets its delay alert at once; G35: no "Watching the ..." note at Start trip.
 * G32 catch-up on open (`/api/watches?since=`): only alerts under 90 s old that have not expired, marked `silent: true` (never a sound or speech), and none the card push already carried.
 * Passive ("quiet") alerts go with no sound at the passive interruption level.

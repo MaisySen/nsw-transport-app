@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 1 Nov 2026
 
+### Arrival clip on build 212 (server, 1:46 AM)
+* The trip flow's arrival alert ("Arrived at ...") now rings with Kylie's "You've arrived at your stop." (`arrival.wav`) on iPhone build 212 and later, which bundle the clip. The Live Activity push that carries the alert names the same sound. Build 211 and older, Android, and any phone whose build is not known keep the default sound, because they do not have the file. Heads-up and Get off now keep their clips.
+* How the server knows the build: the app sets no User-Agent, so iOS sends its own, `<app name>/<build> CFNetwork/... Darwin/...`. Start trip reads the build from it and keeps it on the watch (`iosBuild`); a build in the request body is ignored. Request log lines now carry `ib` (the iPhone build), so the logs show which builds call.
+* `arrival` is on both allowed-sound lists (Apple and Expo; on Expo it keeps the default Android channel).
+* Server version 279d1e44 from server-tripflow e1b3d47. Backend 730/730, verify-deploy all ok, error watch 1:46 to 2:02 AM: 0 errors in 78 requests, /api/status, /api/app/config and /api/lines 200 every minute. Roll back to 2a37431b.
+* Tests: `backend/test/arrival-sound.test.mjs` (7; 4 failed first on the code before it).
+
 ### Trip flow 2: live correctness from real trains (11:54 PM 31 Oct to 1:12 AM 1 Nov; owner's yes for deploys)
 Thirteen shadow trips (test devices, no phone alerts) were followed, 11:45 PM to 1:30 AM, through the deployed server on real Sydney Trains services between Strathfield, Croydon, Lidcombe, Ashfield and Redfern, polling the watch, the trip state and `/api/service` every 15 s. What they showed, and what changed:
 * **Delay-only stop events.** Sydney Trains sends a delay with no clock time for most stops. The server now gives the boarding stop and your stop the planned time plus that delay (it used to fall back to the board time). This explains the 11:17 PM T1 case: the board said 11:29:06, the stop row 11:20:30, and the train's own position at Lidcombe confirmed 11:20:30. The board copy was stale.

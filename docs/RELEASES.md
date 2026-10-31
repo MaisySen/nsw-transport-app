@@ -62,7 +62,8 @@ Public TestFlight (since 25 Oct, 8:41 AM): external group "Public" `36f40c38-274
 | Server deploy | transport-api ee87bf7f-b08f-481f-9f4a-e834fe546809 | 12:11 AM | server-tripflow bda6191 |
 | Server deploy | transport-api cfaa9516-46f6-4f93-8b46-1e3fbf80716b | 12:30 AM | server-tripflow 14745cf |
 | Server deploy | transport-api a4fd39b0-7092-4a6d-a95a-8aff2f09e762 | 12:44 AM | server-tripflow f62b276 |
-| Server deploy (current) | transport-api 2a37431b-10ca-4d69-a2bd-71a11cd70882; roll back in order to a4fd39b0, cfaa9516, ee87bf7f, 203dd435, 07423792, 9250ee58, b1feea1d | 1:12 AM | server-tripflow 0fb4016 |
+| Server deploy | transport-api 2a37431b-10ca-4d69-a2bd-71a11cd70882 | 1:12 AM | server-tripflow 0fb4016 |
+| Server deploy (current) | transport-api 279d1e44-24b2-40f0-b0c1-64b9f571697c (arrival clip for build 212); roll back in order to 2a37431b, a4fd39b0, cfaa9516, ee87bf7f, 203dd435, 07423792, 9250ee58, b1feea1d | 1:46 AM | server-tripflow e1b3d47 |
 | App (not published) | tripflow-p2 (see CHANGELOG) | 1:15 AM | no update sent |
 
 ## iPhone (native SwiftUI)
