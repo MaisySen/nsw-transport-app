@@ -6889,6 +6889,16 @@ const LIVECARD = (() => {
                 vehicle = { stop: p, state: 'left', at: vAt - ageS * 1000 };
             }
         }
+        const vv = d.vehicle;
+        const offK = map[n - 1];
+        if (vr && !vr.at && o.asOf && offK >= 0 && vr.k === offK && hasXY(vv) && hasXY(d.stops[offK]) && !!vv.stopId && !d.stops.some((s) => s.id === vv.stopId) && !((vv.ageS ?? 0) > 90)) {
+            const dO = metres(vv, d.stops[offK]);
+            if (dO <= 1500) {
+                const eta = o.asOf - (vv.ageS ?? 0) * 1000 + 45000 + Math.round(40 * dO);
+                if (est[n - 1] == null || eta < est[n - 1])
+                    est[n - 1] = eta;
+            }
+        }
         const mineS = d.stops[map[0]];
         const platform = pl.mode === 'bus' ? null : platNum(mineS?.platform) || boardPlat || null;
         return { est, run, runAsOf, board, vehicle, platform, cancelled: !!d.cancelled || !!o.board?.cancelled, next: o.next ?? null, unmatched: false };

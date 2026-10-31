@@ -249,6 +249,18 @@ export function legReadingFrom(pl: PlanLeg, w: Pick<WatchLeg, 'stopId' | 'from' 
       vehicle = { stop: p, state: 'left', at: vAt - ageS * 1000 };
     }
   }
+  // Owner's rule 3 on the last stretch, as the server's card has it (backend tfLegRaw, 1 Nov 2026): a position-only feed
+  // (a place, no stop id: Sydney Trains) heading to your stop and under 1.5 km out gives the arrival from the position,
+  // 45 s plus 40 ms a metre, when that is earlier than the stop's own time (the feed's ran 22 s to 3 min late).
+  const vv = d.vehicle as { lat?: number | null; lon?: number | null; stopId?: string | null; ageS?: number | null } | null | undefined;
+  const offK = map[n - 1];
+  if (vr && !vr.at && o.asOf && offK >= 0 && vr.k === offK && hasXY(vv) && hasXY(d.stops[offK]) && !!vv.stopId && !d.stops.some((s) => s.id === vv.stopId) && !((vv.ageS ?? 0) > 90)) {
+    const dO = metres(vv, d.stops[offK] as { lat: number; lon: number });
+    if (dO <= 1500) {
+      const eta = o.asOf - (vv.ageS ?? 0) * 1000 + 45000 + Math.round(40 * dO);
+      if (est[n - 1] == null || eta < (est[n - 1] as number)) est[n - 1] = eta;
+    }
+  }
   const mineS = d.stops[map[0]];
   const platform = pl.mode === 'bus' ? null : platNum(mineS?.platform) || boardPlat || null;
   return { est, run, runAsOf, board, vehicle, platform, cancelled: !!d.cancelled || !!o.board?.cancelled, next: o.next ?? null, unmatched: false };
