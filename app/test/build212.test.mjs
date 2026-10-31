@@ -115,7 +115,8 @@ test('Live Activity: Due at the live departure and Now at the get off moment, ne
 
 test('Live Activity: one line status, Island wording, VoiceOver for the countdown and the whole card (G10, G24, G30)', () => {
   const w = read('targets/widget/LiveTripActivityWidget.swift');
-  assert.equal((w.match(/lineLimit\(lines\)/g) || []).length, 1, 'only a warning line (OneLine lines: 2) may take a second line');
+  assert.equal((w.match(/lineLimit\(lines\)/g) || []).length, 2, 'only a warning (OneLine lines: 2, statusText lines: 2) may take a second line');
+  assert.match(w, /statusText\("", s, isWarning: true, lines: 2\)/);
   assert.doesNotMatch(w, /card\(lines: 2/);
   assert.match(w, /lineProbe\("lock-status"/);
   assert.match(w, /lineProbe\(probe, text: last, lines: 1/);

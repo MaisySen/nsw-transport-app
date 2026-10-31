@@ -477,14 +477,21 @@ struct LiveTripRow: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
             }
-            Text(m.kind == .arrived ? WText.short(card.destination ?? card.getOffAt) : "Get off at \(WText.short(card.getOffAt))")
-                .font(.headline)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+            // Build 212 (native audit, 40 mm): "Get off at Sydney O…" and "No live data since…" were cut. The whole
+            // words when they fit, then shorter words ("Off at", "No live data"), then a little smaller.
+            let stop = WText.short(card.getOffAt)
+            ViewThatFits(in: .horizontal) {
+                Text(m.kind == .arrived ? WText.short(card.destination ?? card.getOffAt) : "Get off at \(stop)").font(.headline).lineLimit(1).fixedSize()
+                Text(m.kind == .arrived ? WText.short(card.destination ?? card.getOffAt) : "Off at \(stop)").font(.headline).lineLimit(1).fixedSize()
+                Text(m.kind == .arrived ? WText.short(card.destination ?? card.getOffAt) : stop).font(.headline).lineLimit(1).minimumScaleFactor(0.7)
+            }
             if let d = detail, !d.isEmpty {
-                Text(d).font(.caption2)
-                    .foregroundStyle(!old && (card.delayMin ?? 0) > 0 && d.hasSuffix("late") ? Color.orange : Color.secondary)
-                    .lineLimit(1)
+                let color: Color = !old && (card.delayMin ?? 0) > 0 && d.hasSuffix("late") ? .orange : .secondary
+                let short = d.hasPrefix("No live data since") ? "No live data" : d
+                ViewThatFits(in: .horizontal) {
+                    Text(d).font(.caption2).foregroundStyle(color).lineLimit(1).fixedSize()
+                    Text(short).font(.caption2).foregroundStyle(color).lineLimit(1).minimumScaleFactor(0.8)
+                }
             }
             if card.phase == "wait", m.kind != .arrived, !old, card.delayMin != nil, let p = WText.platform(card.platform) {
                 Text(p).font(.caption2).foregroundStyle(.secondary)

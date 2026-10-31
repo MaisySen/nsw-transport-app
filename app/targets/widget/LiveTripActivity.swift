@@ -277,7 +277,8 @@ extension LiveTripAttributes.ContentState {
     public func detail(stale: Bool = false) -> String {
         if arrived(stale: stale) { return "Got in at \(Clock.time(arrival)). The trip has ended." }
         if phase == "wait" {
-            var t = departs.map { "Leaves \(Clock.time($0))" } ?? "Board at \(nextStop ?? "")"
+            // From 5 min without live data the big number is the timetable time (oldTarget); the detail says the same.
+            var t = departs.map { "Leaves \(Clock.time(ageStep(stale: stale) >= 2 ? oldTarget(stale: stale) : $0))" } ?? "Board at \(nextStop ?? "")"
             if let p = platform, !p.isEmpty { t += ", \(p)" }
             return t
         }

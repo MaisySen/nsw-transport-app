@@ -559,13 +559,16 @@ struct OneLine: View {
             if alts.count > 0 { Text(alts[0]).font(font).foregroundStyle(color).lineLimit(1).fixedSize(horizontal: true, vertical: false) }
             if alts.count > 1 { Text(alts[1]).font(font).foregroundStyle(color).lineLimit(1).fixedSize(horizontal: true, vertical: false) }
             if alts.count > 2 { Text(alts[2]).font(font).foregroundStyle(color).lineLimit(1).fixedSize(horizontal: true, vertical: false) }
+            // The last candidate is the one drawn when nothing above fits (a wrapped Text never "fits" across, its
+            // ideal width is one line): a warning wraps onto its second line, anything else shrinks and is cut.
             if lines > 1 {
                 Text(alts.first ?? text).font(font).foregroundStyle(color).lineLimit(lines).minimumScaleFactor(0.75)
                     .fixedSize(horizontal: false, vertical: true)
                     .lineProbe(probe, text: alts.first ?? text, lines: lines, font: font, minScale: 0.75)
+            } else {
+                Text(last).font(font).foregroundStyle(color).lineLimit(1).minimumScaleFactor(0.75).truncationMode(.tail)
+                    .lineProbe(probe, text: last, lines: 1, font: font, minScale: 0.75)
             }
-            Text(last).font(font).foregroundStyle(color).lineLimit(1).minimumScaleFactor(0.75).truncationMode(.tail)
-                .lineProbe(probe, text: last, lines: 1, font: font, minScale: 0.75)
         }
     }
 }
@@ -627,29 +630,31 @@ struct LiveTripLockCard: View {
             statusText(dShort, sShort, isWarning: w != nil).fixedSize(horizontal: true, vertical: false)
             if let s = sShort, !d.isEmpty { statusText("", s, isWarning: w != nil).fixedSize(horizontal: true, vertical: false) }
             if second == nil { statusText(dShort, nil, isWarning: false).fixedSize(horizontal: true, vertical: false) }
-            // A warning is news: on its own, it may take a second line rather than lose its words.
+            // Drawn when nothing above fits (a wrapped Text never "fits" across): a warning is news, so on its own it
+            // takes a second line rather than lose its words; otherwise both, smaller and cut at the end.
             if w != nil, let s = sShort {
-                statusText("", s, isWarning: true).lineLimit(2).minimumScaleFactor(0.75)
+                statusText("", s, isWarning: true, lines: 2).minimumScaleFactor(0.75)
                     .fixedSize(horizontal: false, vertical: true)
                     .lineProbe("lock-status", text: s, lines: 2, font: .subheadline, minScale: 0.75)
+            } else {
+                statusText(dShort, sShort, isWarning: w != nil)
+                    .minimumScaleFactor(0.75)
+                    .truncationMode(.tail)
+                    .lineProbe("lock-status", text: [dShort, sShort ?? ""].filter { !$0.isEmpty }.joined(separator: " · "), lines: 1, font: .subheadline, minScale: 0.75)
             }
-            statusText(dShort, sShort, isWarning: w != nil)
-                .minimumScaleFactor(0.75)
-                .truncationMode(.tail)
-                .lineProbe("lock-status", text: [dShort, sShort ?? ""].filter { !$0.isEmpty }.joined(separator: " · "), lines: 1, font: .subheadline, minScale: 0.75)
         }
     }
 
     /// "Leaves 7:54pm, Platform 2 · 4 min late": the detail in grey, the warning in its colour (the delay in green when
     /// on time), on one line.
-    private func statusText(_ d: String, _ second: String?, isWarning: Bool) -> some View {
+    private func statusText(_ d: String, _ second: String?, isWarning: Bool, lines: Int = 1) -> some View {
         var t = Text(d).foregroundColor(.secondary)
         if let s = second, !s.isEmpty {
             let color: Color = isWarning ? (state.warningIsRed ? .red : .orange) : delayColor(s)
             let k = Text(s).fontWeight(.semibold).foregroundColor(color)
             t = d.isEmpty ? k : t + Text(" · ").foregroundColor(.secondary) + k
         }
-        return t.font(.subheadline).lineLimit(1)
+        return t.font(.subheadline).lineLimit(lines)
     }
 
     private func card(lines: Int, track: Bool, merged: Bool = false, arriveLine: Bool = true) -> some View {
