@@ -23,7 +23,11 @@ async function load(rel) {
 }
 const N = await load('src/lib/notStoppingCore.ts');
 const read = (rel) => fs.readFileSync(path.join(here, '..', rel), 'utf8');
-const NOW = Date.now();
+// A fixed noon in the zone the tests run in (TZ=Australia/Sydney), not the real clock: "today" against a time 5 or
+// 25 minutes on flipped to "on Saturday" when the suite ran within 25 minutes of midnight (seen 30 Oct 11:47 PM,
+// line 47). Midnight itself is pinned by the test at the end of this file.
+const NOON = new Date(); NOON.setHours(12, 0, 0, 0);
+const NOW = NOON.getTime();
 const iso = (m) => new Date(NOW + m * 60000).toISOString();
 const MARK = { stop: 'Main St opp Park Rd, Townsville', id: 'a1', title: 'Route X91 detour.', url: null };
 
@@ -92,4 +96,13 @@ test('screens: the stop board row, the trip leg and the route view use it; the r
   assert.match(route, /api\.detours\(line, mode\)\.then\([^\n]*\)\.catch\(\(\) => \{\}\)/);
   const api = read('src/lib/api.ts');
   assert.match(api, /\/api\/detours\?/);
+});
+
+test('near midnight: a stop time after midnight names the next day, one before it is today (fixed clock, never the real one)', () => {
+  const late = new Date(NOW); late.setHours(23, 50, 0, 0);
+  const t = late.getTime();
+  const at = (m) => new Date(t + m * 60000).toISOString();
+  const next = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(t + 25 * 60000).getDay()];
+  assert.equal(N.notStoppingText({ mode: 'bus', planned: at(5), notStopping: MARK }, t), 'Not stopping at Main St opp Park Rd today');
+  assert.equal(N.notStoppingText({ mode: 'bus', planned: at(5), arrPlanned: at(25), notStopping: { at: 'to', stop: 'Park Rd' } }, t), `Not stopping at Park Rd on ${next}`);
 });
