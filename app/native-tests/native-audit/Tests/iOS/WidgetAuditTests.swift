@@ -160,9 +160,15 @@ final class WidgetAuditTests: XCTestCase {
                 }
             }
         }
+        LineCheck.install()
         LiveActivityAudit.run()
+        Audit.lineCheck = nil
         Audit.writeManifest("manifest-ios.jsonl")
         let bad = Audit.records.filter { !$0.fits }
         XCTAssertTrue(bad.isEmpty, "Does not fit:\n" + bad.map { "\($0.file) \($0.overflow)" }.joined(separator: "\n"))
+        // Line check (31 Oct, build 211): a countdown on two lines or a cut stop name fails like a cut-off does.
+        XCTAssertGreaterThan(LineCheck.probed, 100, "the line probes reported nothing: the check is not running")
+        let cut = Audit.records.filter { !($0.lines ?? []).isEmpty }
+        XCTAssertTrue(cut.isEmpty, "Wraps or cut:\n" + cut.map { "\($0.file) \(($0.lines ?? []).joined(separator: "; "))" }.joined(separator: "\n"))
     }
 }

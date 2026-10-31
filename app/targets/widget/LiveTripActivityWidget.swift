@@ -60,6 +60,8 @@ struct LiveTripIslandTrailing: View {
             .monospacedDigit()
             .lineLimit(2)
             .minimumScaleFactor(0.6)
+            .lineProbe("island-countdown", text: MinutesUntil.words(state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale)),
+                       lines: 1, font: .title3.weight(.semibold).monospacedDigit(), minScale: 0.6)
             .multilineTextAlignment(.trailing)
             .frame(width: 80, alignment: .trailing)
     }
@@ -72,6 +74,7 @@ struct LiveTripIslandCenter: View {
         // Two lines under the camera before "Get off at Sydney…" (native audit), shrinking to 0.65 before it is cut
         // (31 Oct final check: "Sydney Olym..." at the largest text, "You've arrived at Macquarie Univers..." on the 6.1 inch).
         Text(state.headline(stale: stale)).font(.subheadline.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.65)
+            .lineProbe("island-stop", text: state.headline(stale: stale), lines: 2, font: .subheadline.weight(.semibold), minScale: 0.65)
             .multilineTextAlignment(.center)
     }
 }
@@ -156,6 +159,16 @@ struct MinutesUntil: View {
             Text(Clock.time(date))
         }
     }
+
+    /// The words the countdown shows right now (the native audit's line check reads them).
+    static func words(_ date: Date, arrived: Bool = false, outdated: Bool = false) -> String {
+        if arrived { return "" }
+        if outdated { return Clock.time(date) }
+        if #available(iOS 18.0, *) {
+            return String(SystemFormatStyle.DateReference(to: date, allowedFields: [.hour, .minute]).format(Date()).characters)
+        }
+        return Clock.time(date)
+    }
 }
 
 struct LiveTripIslandBottom: View {
@@ -226,7 +239,10 @@ struct TrackFooter: View {
             // Last: one row whatever the width, the stop name smaller and then cut at its end, so a long name never
             // pushes the stop track off the card (snapshot run 41016955137: the 610X card fell back to the bar).
             HStack(spacing: 8) {
-                if let n = state.trackNext(stale: stale, short: true) { nextText(n).minimumScaleFactor(0.75).truncationMode(.tail) }
+                if let n = state.trackNext(stale: stale, short: true) {
+                    nextText(n).minimumScaleFactor(0.75).truncationMode(.tail)
+                        .lineProbe("next-stop", text: n, lines: 1, font: .caption.weight(.semibold), minScale: 0.75)
+                }
                 Spacer(minLength: 0)
                 Text(rightShort).foregroundStyle(.secondary).monospacedDigit().lineLimit(1).fixedSize()
             }
@@ -398,6 +414,7 @@ struct LiveTripLockCard: View {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode).fixedSize()
                         Text(state.headline(stale: stale)).font(.headline).lineLimit(headLines ?? lines).minimumScaleFactor(headScale)
+                            .lineProbe("lock-stop", text: state.headline(stale: stale), lines: headLines ?? lines, font: .headline, minScale: headScale)
                     }
                     if merged {
                         detailAndWarning(lines)
@@ -426,6 +443,8 @@ struct LiveTripLockCard: View {
                         .monospacedDigit()
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)  // xxxLarge with a warning: shrink, never "in 18 mi…" (31 Oct readiness audit)
+                        .lineProbe("lock-countdown", text: MinutesUntil.words(state.countdownTarget, arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale)),
+                                   lines: 1, font: .title2.weight(.bold).monospacedDigit(), minScale: 0.5)
                         .multilineTextAlignment(.trailing)
                         .frame(maxWidth: 100, alignment: .trailing)
                 }

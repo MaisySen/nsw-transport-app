@@ -58,6 +58,7 @@ struct IslandTrailing: View {
             .monospacedDigit()
             .lineLimit(2)
             .minimumScaleFactor(0.6)
+            .lineProbe("follow-island-countdown", text: MinutesUntil.words(state.departs), lines: 1, font: .title3.weight(.semibold).monospacedDigit(), minScale: 0.6)
             .multilineTextAlignment(.trailing)
             .frame(width: 80, alignment: .trailing)
     }
@@ -67,6 +68,7 @@ struct IslandCenter: View {
     var attrs: TripActivityAttributes
     var body: some View {
         Text("to \(attrs.towards)").font(.subheadline.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.8)
+            .lineProbe("follow-island-to", text: "to \(attrs.towards)", lines: 2, font: .subheadline.weight(.semibold), minScale: 0.8)
             .multilineTextAlignment(.center)
     }
 }
@@ -132,6 +134,7 @@ struct LockScreenCard: View {
                     .monospacedDigit()
                     .lineLimit(2)
                     .minimumScaleFactor(0.5)  // xxxLarge with a warning: shrink, never "in 18 mi…" (31 Oct readiness audit)
+                    .lineProbe("follow-lock-countdown", text: MinutesUntil.words(state.departs), lines: 1, font: .title2.weight(.bold).monospacedDigit(), minScale: 0.5)
                     .multilineTextAlignment(.trailing)
                     .frame(maxWidth: 100, alignment: .trailing)
                 Text(Clock.time(state.departs)).font(.caption).foregroundStyle(.secondary).fixedSize()
@@ -145,6 +148,7 @@ struct LockScreenCard: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 WidgetLineBadge(line: attrs.line, colorHex: attrs.lineColorHex, mode: attrs.mode).fixedSize()
                 Text("to \(attrs.towards)").font(.headline).lineLimit(towardsLines).minimumScaleFactor(0.85)
+                    .lineProbe("follow-lock-to", text: "to \(attrs.towards)", lines: towardsLines, font: .headline, minScale: 0.85)
             }
             Text(attrs.to.map { "\(attrs.from) to \($0)" } ?? "From \(attrs.from)")
                 .font(.caption)
