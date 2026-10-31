@@ -280,8 +280,14 @@ export function JourneyCard({ j, now, onPress, best }: { j: Journey; now: number
   const first = j.legs.find((l) => l.kind === 'transit');
   const firstLive = first ? liveState({ planned: first.planned, estimated: first.estimated, realtime: first.realtime, cancelled: j.anyCancelled, seenAt: first.seenAt ?? j.seenAt }, now) : undefined;
   const leaveText = mins <= 0 ? 'Leave now' : mins < 60 ? `Leave in ${mins} min` : `Leave ${rowTime(leave)}`;
+  // One sentence for VoiceOver and TalkBack (1 Nov polish): the pieces read alone were "5", "BEST", a bare walk number.
+  const a11y = [leaveText, best ? 'best option' : '', `${rowTime(ms(j.board))} to ${rowTime(ms(j.arrive))}`, durText(j.durationMin),
+    j.changes ? `${j.changes} change${j.changes > 1 ? 's' : ''}` : 'no changes',
+    j.legs.map((l) => (l.kind === 'walk' ? `walk ${l.durationMin} min` : `${l.line || ''}`.trim())).filter(Boolean).join(', then '),
+    firstLive?.a11y || '', first?.fromPlatform ? `from ${shortName(first.from)}, ${first.fromPlatform}` : '', j.risk ? j.riskText || 'Tight change' : '',
+  ].filter(Boolean).join(', ');
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} android_ripple={{ color: c.fill }} style={({ pressed }) => [st.jRow, pressed && Platform.OS === 'ios' ? { backgroundColor: c.card2 } : null]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={a11y} accessibilityHint="Opens the trip" onPress={onPress} android_ripple={{ color: c.fill }} style={({ pressed }) => [st.jRow, pressed && Platform.OS === 'ios' ? { backgroundColor: c.card2 } : null]}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

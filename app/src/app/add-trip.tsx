@@ -14,6 +14,7 @@ import type { Place } from '@/lib/types';
 import { Icon, I, modeIconName } from '@/components/Icon';
 import { nearbyStops, pullHome } from '@/components/Home';
 import { Button, Row, Screen, Section, Sep, T, font } from '@/components/ui';
+import { friendlyErr } from '@/lib/netErrCore';
 
 type Field = 'from' | 'to';
 
@@ -85,7 +86,7 @@ export default function AddTrip() {
       pullHome();
       goBack();
     } catch (e: any) {
-      Alert.alert("Couldn't save it", String(e?.message || e));
+      Alert.alert("Couldn't save it", friendlyErr(e));
     } finally {
       setSaving(false);
     }

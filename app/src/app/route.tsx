@@ -143,7 +143,7 @@ export default function RouteScreen() {
               <T kind="title3" numberOfLines={2} style={{ flex: 1 }} accessibilityRole="header">{dir ? `to ${shortName(dir.to)}` : `Route ${line}`}</T>
               {dirs && dirs.length > 1 ? (
                 <Pressable onPress={swap} accessibilityRole="button" accessibilityLabel={`Other direction, to ${shortName(dirs[(di + 1) % dirs.length].to)}`} hitSlop={8}
-                  style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 34, borderRadius: 17, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>
+                  style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, minHeight: 34, paddingVertical: 4, borderRadius: 17, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>
                   <Icon name={I.swap} size={14} color={c.tint} />
                   <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Direction</T>
                 </Pressable>

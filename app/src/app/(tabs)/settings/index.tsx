@@ -36,6 +36,7 @@ import { setTrackworkHeadsUp } from '@/lib/trackwork';
 import { forgetPushTokens, PUSH_FORGOTTEN_KEY } from '@/lib/forgetTokens';
 import { askCalendarRead, calendarReadSupported } from '@/lib/calendarLeaveBy';
 import { hasSpeech } from '@/lib/nativeExtras';
+import { friendlyErr } from '@/lib/netErrCore';
 
 /** "1.0.0 (204) · update 01a16ff7": the build on the phone and the update it runs, for support. */
 function versionText() {
@@ -70,7 +71,7 @@ export default function Settings() {
         const n = r.deleted?.searches ?? 0;
         haptic.success();
         Alert.alert('Done', `Deleted ${n} trip search${n === 1 ? '' : 'es'}.`);
-      } catch (e: any) { Alert.alert("Couldn't delete it", e.message); }
+      } catch (e: any) { Alert.alert("Couldn't delete it", friendlyErr(e)); }
     } },
   ]);
   const deleteAll = () => Alert.alert('Delete all your data?', 'This deletes your saved trips, starred stops, commutes, watched trips, alerts and trip history, on this phone and on the server. Alerts on this phone turn off. This cannot be undone.', [
@@ -80,7 +81,7 @@ export default function Settings() {
         await api.deleteHistory('all');
         // The server removes morning checks with scope all too; this makes sure, and does not block.
         await api.morningDelete().catch(() => {});
-      } catch (e: any) { Alert.alert("Couldn't reach the server", `${e.message} Nothing was deleted. Try again when you're online.`); return; }
+      } catch (e: any) { Alert.alert("Couldn't reach the server", `${friendlyErr(e)} Nothing was deleted. Try again when you're online.`); return; }
       await endLive().catch(() => {});
       await disablePush().catch(() => {});
       // iPhone trip card and phone push tokens live on the push server; a server without the route is skipped.
@@ -115,17 +116,17 @@ export default function Settings() {
     if (r.status === 'denied') Alert.alert('Notifications are off', 'Open Settings, find Transport, and allow notifications.', [{ text: 'Not now', style: 'cancel' }, { text: 'Open Settings', onPress: () => Linking.openSettings() }]);
   };
   const test = async () => {
-    try { await api.testPush(); Alert.alert('Sent', 'A test alert is on its way.'); } catch (e: any) { Alert.alert("Couldn't send", e.message); }
+    try { await api.testPush(); Alert.alert('Sent', 'A test alert is on its way.'); } catch (e: any) { Alert.alert("Couldn't send", friendlyErr(e)); }
   };
   // Menus with more choices than an Android dialog shows go in a bottom sheet.
   const [sheet, setSheet] = useState<{ title: string; message?: string; actions: SheetAction[] } | null>(null);
   const commuteActions = (cm: Commute): SheetAction[] => {
-    const move = (d: number) => api.saveCommute({ ...cm, tod: (cm.tod + d + 1440) % 1440 }).then(refresh).catch((e: any) => Alert.alert("Couldn't change it", e.message));
+    const move = (d: number) => api.saveCommute({ ...cm, tod: (cm.tod + d + 1440) % 1440 }).then(refresh).catch((e: any) => Alert.alert("Couldn't change it", friendlyErr(e)));
     return [
       { text: `Earlier (${todText((cm.tod - 15 + 1440) % 1440)})`, icon: I.up, onPress: () => move(-15) },
       { text: `Later (${todText((cm.tod + 15) % 1440)})`, icon: I.down, onPress: () => move(15) },
-      { text: cm.days === '12345' ? 'Every day' : 'Weekdays only', icon: I.clock, onPress: () => api.saveCommute({ ...cm, days: cm.days === '12345' ? '1234567' : '12345' }).then(refresh).catch((e: any) => Alert.alert("Couldn't change it", e.message)) },
-      { text: 'Delete', icon: I.trash, destructive: true, onPress: () => api.deleteCommute(cm.id).then(refresh).catch((e: any) => Alert.alert("Couldn't delete it", e.message)) },
+      { text: cm.days === '12345' ? 'Every day' : 'Weekdays only', icon: I.clock, onPress: () => api.saveCommute({ ...cm, days: cm.days === '12345' ? '1234567' : '12345' }).then(refresh).catch((e: any) => Alert.alert("Couldn't change it", friendlyErr(e))) },
+      { text: 'Delete', icon: I.trash, destructive: true, onPress: () => api.deleteCommute(cm.id).then(refresh).catch((e: any) => Alert.alert("Couldn't delete it", friendlyErr(e))) },
     ];
   };
   // iPhone: these rows open the system pull-down menu from the row (RowMenu); Android: the Material 3 menu under it.
@@ -166,7 +167,7 @@ export default function Settings() {
       const now = (r as any)?.now || [];
       Alert.alert('Lift outage alerts on', now.length ? `Out of service now on your saved trips: ${now.map((x: any) => x.title).join('. ')}.${ps.status === 'local' ? ' Alerts need the app open.' : ''}` : "No lifts are out on your saved trips right now. I'll tell you if one goes out." + (ps.status === 'local' ? ' Alerts need the app open.' : ''));
     } catch (e: any) {
-      Alert.alert("Couldn't turn it on", e.message);
+      Alert.alert("Couldn't turn it on", friendlyErr(e));
     } finally { setLiftBusy(false); }
   };
   const sw = (v: boolean, onChange: (v: boolean) => void, label: string, disabled?: boolean) => (

@@ -207,14 +207,14 @@ export default function StopScreen() {
           {canSpeak && at == null ? (
             <Pressable onPress={() => { haptic.select(); speak(departuresSentence(itemsRef.current, Date.now(), { stop: stopName }), { interrupt: true }); }} hitSlop={8}
               accessibilityRole="button" accessibilityLabel="Speak departures" accessibilityHint="Reads the next two services out loud"
-              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 16, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1, marginRight: 8 })}>
+              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, minHeight: 32, paddingVertical: 4, borderRadius: 16, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1, marginRight: 8 })}>
               <Icon name={I.speaker} size={14} color={c.tint} />
               <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Speak</T>
             </Pressable>
           ) : null}
           <Pressable onPress={() => { haptic.tap(); router.push({ pathname: '/board', params: { id: String(id), name: stopName } }); }} hitSlop={8}
             accessibilityRole="button" accessibilityLabel="Open departure board, full screen"
-            style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 16, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>
+            style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, minHeight: 32, paddingVertical: 4, borderRadius: 16, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>
             <Icon name={I.clock} size={14} color={c.tint} />
             <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Board</T>
           </Pressable>

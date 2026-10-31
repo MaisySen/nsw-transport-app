@@ -89,7 +89,7 @@ export default function ServiceScreen() {
               {busLike ? (
                 <Pressable onPress={() => router.push({ pathname: '/route', params: { line: String(p.line || data?.line || ''), mode: busMode, stop: p.stop || '', towards: p.dest || data?.dest || '', color: data?.color || p.color || '' } })}
                   accessibilityRole="button" accessibilityLabel={`Route ${p.line || data?.line}, all stops`} hitSlop={8}
-                  style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 16, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>
+                  style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, minHeight: 32, paddingVertical: 4, borderRadius: 16, backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 })}>
                   <Icon name={I.route} size={14} color={c.tint} />
                   <T kind="sub" tone="tint" style={{ fontWeight: '600' }}>Route</T>
                 </Pressable>

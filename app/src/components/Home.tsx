@@ -12,7 +12,7 @@ import { adaptiveGapMs } from '@/lib/pollCore';
 const nextDep = (ts: number[]) => { const n = Date.now() - 30000; let b = NaN; for (const t of ts) if (t > n && !(t >= b)) b = t; return b; };
 import { cacheKey, offlineText, offlineWord, stampText, staleText } from '@/lib/offlineCore';
 import { homeHeader, STAND_IN_UPDATING_NOTE, UPDATING_WORD, updatingText } from '@/lib/coldOpenCore';
-import { boardNote, failWhy, TIMETABLE_BOARD_NOTE, TIMETABLE_TRIPS_NOTE, tripNote } from '@/lib/netErrCore';
+import { boardNote, failWhy, TIMETABLE_BOARD_NOTE, TIMETABLE_TRIPS_NOTE, tripNote, friendlyErr } from '@/lib/netErrCore';
 import { packStampText, packTarget } from '@/lib/timetablePackCore';
 import { foldNear, type NearPick } from '@/lib/nearCore';
 import { stopNumber } from '@/lib/busCore';
@@ -447,7 +447,7 @@ export function tripMenuSpec(trip: TripItem, route?: string, onTop?: () => void)
   if (trip.kind === 'commute') {
     return { title: trip.name || title, message: 'Your commute: a leave now alert on the days you set.', items: menuFrom([
       ...top,
-      { text: 'Delete commute', style: 'destructive', onPress: () => { if (trip.id) api.deleteCommute(trip.id).then(pullHome).catch((e) => Alert.alert("Couldn't delete it", e.message)); } },
+      { text: 'Delete commute', style: 'destructive', onPress: () => { if (trip.id) api.deleteCommute(trip.id).then(pullHome).catch((e) => Alert.alert("Couldn't delete it", friendlyErr(e))); } },
     ]) };
   }
   if (trip.kind === 'place') {

@@ -18,7 +18,7 @@ export function WhyLate({ why, style, big }: { why: Why | null | undefined; styl
   return (
     <Pressable accessibilityRole="link" accessibilityLabel={whyA11y(why)} accessibilityHint={url ? undefined : 'No alert page for this one'}
       disabled={!url} hitSlop={{ top: 8, bottom: 8 }}
-      onPress={() => { if (url) { haptic.tap(); Linking.openURL(url); } }}
+      onPress={() => { if (url) { haptic.tap(); Linking.openURL(url).catch(() => {}); } }}
       style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', minHeight: big ? 28 : 22, opacity: pressed ? 0.6 : 1 }, style]}>
       <Icon name={I.warn} size={big ? 15 : 12} color={c.orange} />
       <View style={{ flex: 1, marginLeft: 5 }}>
@@ -40,7 +40,7 @@ export function withWhyAction<P extends { accessibilityActions?: { name: string;
     ...base,
     accessibilityActions: [...(base.accessibilityActions || []), { name: 'whyLate', label: "Why it's late" }],
     onAccessibilityAction: (e: { nativeEvent: { actionName: string } }) => {
-      if (e.nativeEvent.actionName === 'whyLate') Linking.openURL(url);
+      if (e.nativeEvent.actionName === 'whyLate') Linking.openURL(url).catch(() => {});
       else base.onAccessibilityAction?.(e);
     },
   };

@@ -35,6 +35,7 @@ import { EarlierHeader, NowDivider, usePastNow } from '@/components/PastNow';
 import { MUTED, nowA11y, nowLabel, pastNowSplit } from '@/lib/pastNowCore';
 import { clock } from '@/lib/format';
 import { useSides } from '@/lib/layout';
+import { friendlyErr } from '@/lib/netErrCore';
 
 type Field = { loc: true } | { place: SimplePlace } | null;
 const BIG = 2; // Dynamic Type: big text grows up to twice its size, the layout wraps instead of clipping.
@@ -371,7 +372,7 @@ export default function Simple() {
       if (!still()) return;
       setExtra((e) => [...e, ...(r.journeys || [])]);
       if (dir === 'earlier') setKeepGone(true);
-    } catch (e: any) { if (still()) Alert.alert(dir === 'earlier' ? 'Could not load earlier trips' : 'Could not load later trips', String(e?.message || e)); }
+    } catch (e: any) { if (still()) Alert.alert(dir === 'earlier' ? 'Could not load earlier trips' : 'Could not load later trips', friendlyErr(e)); }
     finally { setBusy(null); }
   };
 

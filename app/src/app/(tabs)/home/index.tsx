@@ -38,6 +38,7 @@ import { CalendarLeaveByCard } from '@/components/CalendarLeaveBy';
 import { pickOrigin } from '@/lib/calendarLeaveByCore';
 import { commuteDir, halfDayKey } from '@/lib/smart';
 import { useLoaded } from '@/lib/store';
+import { friendlyErr } from '@/lib/netErrCore';
 
 export default function Home() {
   const c = usePalette();
@@ -149,7 +150,7 @@ export default function Home() {
     try {
       await api.saveCommute({ name: sugg.name || 'Morning trip', from: sugg.from, to: sugg.to, tod: sugg.tod, days: '12345', active: true } as any);
       live.refresh();
-    } catch (e: any) { Alert.alert("Couldn't save it", e.message); }
+    } catch (e: any) { Alert.alert("Couldn't save it", friendlyErr(e)); }
     setBusy(false);
   };
 
@@ -254,7 +255,7 @@ export default function Home() {
               </T>
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
                 <View style={{ flex: 1 }}><Button title="Make it my commute" onPress={acceptSuggestion} disabled={busy} /></View>
-                <Button title="Not now" kind="tinted" disabled={busy} onPress={() => api.dismissSuggestion(sugg.key).then(live.refresh, (e: any) => Alert.alert("Couldn't hide it", String(e?.message || e)))} />
+                <Button title="Not now" kind="tinted" disabled={busy} onPress={() => api.dismissSuggestion(sugg.key).then(live.refresh, (e: any) => Alert.alert("Couldn't hide it", friendlyErr(e)))} />
               </View>
             </View>
           </Section>

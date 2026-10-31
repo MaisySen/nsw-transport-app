@@ -1,4 +1,4 @@
-import { failWhy, TIMETABLE_TRIPS_NOTE } from '@/lib/netErrCore';
+import { failWhy, TIMETABLE_TRIPS_NOTE, friendlyErr } from '@/lib/netErrCore';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWhyLate } from '@/lib/whyLate';
 import { JourneyWhy, WhyLate, withWhyAction } from '@/components/WhyLate';
@@ -315,7 +315,7 @@ function JourneyDetail({ j, now, from, to, autoStart, onMapTouch, fresh = true }
       setBusy(true);
       // R6: from a fresh live answer only; else the trip starts on its timetable times and reads live times itself.
       try { await withTimeout(startLive(armSpec(spec, fresh), j.fare), 5000, null); router.push('/go'); haptic.success(); }
-      catch (e: any) { Alert.alert("Couldn't start it", e.message); }
+      catch (e: any) { Alert.alert("Couldn't start it", friendlyErr(e)); }
       finally { setBusy(false); }
     };
     const cur = getLive();
@@ -712,7 +712,7 @@ export default function TripScreen() {
   // A trip with legs has one way to save (New trip), so its star saves at once.
   const doSave = async (name: string) => {
     try { await api.saveTrip(name, from, to); haptic.success(); Alert.alert('Saved', `It's on your Home screen as "${name}".`); }
-    catch (e: any) { Alert.alert("Couldn't save it", e.message); }
+    catch (e: any) { Alert.alert("Couldn't save it", friendlyErr(e)); }
   };
   const saveMenu: MenuSpec | null = !chain && !here ? { title: 'Save this trip', message: 'Saved trips show live on Home.', items: menuOf([
     { text: 'Save trip', sf: 'star', icon: 'starOpen', onPress: () => save() },
@@ -779,7 +779,7 @@ export default function TripScreen() {
             {showAlerts ? alertList.map((a, k) => (
               <View key={k}>
                 <Sep inset={16} />
-                <Pressable accessibilityRole="link" disabled={!safeUrl(a.url)} onPress={() => { const u = safeUrl(a.url); if (u) Linking.openURL(u); }} style={{ paddingHorizontal: 16, paddingVertical: 10 }}>
+                <Pressable accessibilityRole="link" disabled={!safeUrl(a.url)} onPress={() => { const u = safeUrl(a.url); if (u) Linking.openURL(u).catch(() => {}); }} style={{ paddingHorizontal: 16, paddingVertical: 10 }}>
                   <T kind="sub" style={{ color: a.url ? c.tint : c.text }}>{plainText(a.title)}</T>
                 </Pressable>
               </View>

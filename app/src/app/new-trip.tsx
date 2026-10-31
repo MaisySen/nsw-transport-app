@@ -23,6 +23,7 @@ import { busGroup, matchRoutes, regionDirs, routeCmp, routeEnds, stopLabel, stop
 import { REGIONAL_ROUTES, SYDNEY_TO } from '@/lib/busGroups.gen';
 import { useBusLookup } from '@/lib/busSearch';
 import { myPosition } from '@/lib/where';
+import { friendlyErr } from '@/lib/netErrCore';
 
 type Leg = { mode: string; from: Place; to: Place; conn?: number; any?: boolean; walk?: number };
 type Dest = { mode: string; to: Place; conn?: number; any?: boolean; walk?: number };
@@ -491,7 +492,7 @@ function BusPicker({ q, from, onPick }: { q: string; from?: Pick; onPick: (p: Pi
     try {
       const dirs = regionDirs(await busRoute(r));
       if (dirs.length === 1) setDir({ r, d: dirs[0], start: -1 }); else setRoute({ r, dirs });
-    } catch (e: any) { Alert.alert("Couldn't load that route", String(e?.message || e)); }
+    } catch (e: any) { Alert.alert("Couldn't load that route", friendlyErr(e)); }
   };
   const badge = (r: string) => <View style={s.badge}><LineBadge line={r} mode="bus" /></View>;
 
@@ -632,7 +633,7 @@ const s = StyleSheet.create({
   idx: { position: 'absolute', right: 0, top: 8, width: INDEX_W, alignItems: 'center', justifyContent: 'center' },
   mapBar: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginBottom: 24, paddingHorizontal: 16, paddingVertical: 10, minHeight: 60 },
   routeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, minHeight: 52, paddingVertical: 8 },
-  lineRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, height: 50, marginHorizontal: 16 },
+  lineRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, minHeight: 50, paddingVertical: 4, marginHorizontal: 16 },
   badge: { minWidth: 44, alignItems: 'flex-start', justifyContent: 'center' },
   connRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 12 },
   stepper: { flexDirection: 'row', alignItems: 'center', height: 34 },

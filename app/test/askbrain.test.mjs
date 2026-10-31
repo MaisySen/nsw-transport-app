@@ -164,3 +164,13 @@ test('fast and light: pure, no timers, no network in the engine; a question read
   assert.ok(!/setInterval|useNow\(1000\)|Accuracy\.High/.test(screen));
   assert.match(screen, /getForegroundPermissionsAsync/);
 });
+
+test('1 Nov polish: what the chat heard follows a 24 hour phone; the question text to the server keeps its clock', () => {
+  globalThis.__tslPhone24h = () => true;
+  try {
+    const a = act('gosford to central tomorrow at 7pm');
+    assert.match(a.heard, /tomorrow, from 19:00/);
+    assert.equal(a.refine.time, '19:00');
+  } finally { delete globalThis.__tslPhone24h; }
+  assert.match(act('gosford to central tomorrow at 7pm').heard, /from 7:00 pm/);
+});
