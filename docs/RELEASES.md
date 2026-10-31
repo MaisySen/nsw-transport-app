@@ -45,6 +45,16 @@ App group (since build 203): Bidur registered `group.com.maisysen.nswtransport` 
 
 Public TestFlight (since 25 Oct, 8:41 AM): external group "Public" `36f40c38-274e-4854-86ab-61f03138d216`, public link https://testflight.apple.com/join/ZKZY7PKX (no tester limit, feedback on). Build 204 (1.0.0) added and submitted for Beta App Review at 8:41 AM, approved the same minute (BETA_APPROVED). Test Information (en-AU and en-US): feedback email support@transportsydney.app, marketing https://transportsydney.app, privacy https://transportsydney.app/privacy; beta review contact Bidur Khatri, no login. To ship a later build to the public: add it to this group (`POST /v1/betaGroups/<id>/relationships/builds`), set whatsNew, then `POST /v1/betaAppReviewSubmissions`. The older "External tester" group `0422061b-bca9-4790-982a-a9f632d271fa` has no public link and is unchanged. Only Beta App Review was used; no App Store version was submitted.
 
+
+## Trip flow 2 (31 Oct 2026, 11:11 to 11:28 PM)
+
+| What | Id | When | From |
+| --- | --- | --- | --- |
+| Server deploy | transport-api 9250ee58-1361-4000-bc80-42093664f888 (roll back to b1feea1d-ec97-4676-bca5-cf34796173d7) | 11:11 PM | server-tripflow 93f2c8c |
+| Update, preview, runtime 1.2.0, iOS | group 50051800-0979-4dc9-ac39-d734f68fe6b7 (update 01a191e3-a29c-724e-856a-6a6621b2e127) | 11:16 PM | tripflow-p2 e442b73 |
+| Update, production, runtime 1.2.0, iOS | group 6496b2d0-edf2-443d-969a-4f985671fcdf (update 01a191ed-a63a-72f1-b8c5-27c9e5e433c2), republished from preview; roll back: roll-back-to-embedded | 11:27 PM | tripflow-p2 e442b73 |
+| Server switches | tripflow2 true (11:27:30 PM), apnsAlerts true (11:27:35 PM), other flags unchanged | 11:27 PM | D1 app_config platform=server |
+
 ## iPhone (native SwiftUI)
 
 Unsigned builds from CI, attached to GitHub releases. Install with Sideloadly or AltStore ([ios-native/INSTALL.md](../ios-native/INSTALL.md)). Version 1.0 throughout. Builds 1 to 6 used a temporary bundle id; build 7 and later use `com.maisysen.nswtransport`.

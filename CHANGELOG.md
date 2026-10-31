@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 31 Oct 2026
 
+### Trip flow 2 shipped (31 Oct, 11:11 to 11:28 PM; owner's yes 11:07 PM)
+* Server: transport-api version 9250ee58-1361-4000-bc80-42093664f888 from server-tripflow 93f2c8c, deployed 11:11 PM (backend 715/715 with TZ=Australia/Sydney OFFLINE=1; verify-deploy 12 ok, then once with --live: live board and trip ok; 15 min watch 11:11 to 11:26 PM: 0 errors, no new feedback or crash rows, every probe 200). Old apps keep the frozen 211 card code; an /api/service read without board=1 has no board row.
+* App update for runtime 1.2.0 only (builds 210 and 211, iPhone): tripflow-p2 e442b73. Preview group 50051800-0979-4dc9-ac39-d734f68fe6b7 (11:16 PM), production group 6496b2d0-edf2-443d-969a-4f985671fcdf (11:27 PM, republished from preview, same bundle). Manifests read back: runtime 1.2.0, launch asset hash equal to the local export. Runtimes 1.0.0 and 1.1.0 not touched by this update. App 1,261 tests (1,257 pass, 4 skipped, 0 fail), tsc clean.
+* Server switches (platform=server, every other flag kept): tripflow2 on at 11:27:30 PM, apnsAlerts on at 11:27:35 PM. One test alert to the owner's phone straight from Apple: status 200.
+* Live check: an /api/service read with board=1 for a Strathfield service matched the boarding stop by platform id and by station id (mineIndex found); the stop you get off at matches by the stop's platform id, not by the station id.
+* Roll back: server `npx wrangler@4 rollback b1feea1d-ec97-4676-bca5-cf34796173d7 --name transport-api -y`; app update `eas update:roll-back-to-embedded` on runtime 1.2.0, production branch, iOS (no earlier 1.2.0 update exists); switches: set tripflow2 and apnsAlerts false in the platform=server row (the rest unchanged).
+
 ### New live trip flow, app side (phase 2 of docs/TRIP_FLOW_SPEC.md; 31 Oct, about 9:15 to 10:15 PM; branch tripflow-p2 from tripflow-sim 47f56ed; JavaScript only: no native change, no build, no update, no deploy)
 * One trip state: `app/src/lib/tripState.ts` (pure, the reference engine ported; API in docs/TRIP_STATE_API.md). `computeLive` (liveCalc.ts) and `cardFor` / `staleAt` (platform/tripCard.ts) are rebuilt on it, with the same shapes for their callers.
 * Departure, delay and arrival come from one live time (stop live, board live, run live, else timetable; live readings over 5 min old are not used). The countdown and "4 min late" always agree (G1, G2, G17).
