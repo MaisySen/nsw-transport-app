@@ -6094,13 +6094,17 @@ function tfVehOnRun(veh, stus, info) {
     const a = pts[i].s, da = distM(veh.lat, veh.lon, a.lat, a.lon);
     if (da < nd) { nd = da; near = pts[i].k; }
     if (i + 1 < pts.length) {
-      const b = pts[i + 1].s;
-      const ex = da + distM(veh.lat, veh.lon, b.lat, b.lon) - distM(a.lat, a.lon, b.lat, b.lon);
-      if (ex < best) { best = ex; bk = pts[i + 1].k; }
+      const b = pts[i + 1].s, seg = distM(a.lat, a.lon, b.lat, b.lon);
+      const ex = da + distM(veh.lat, veh.lon, b.lat, b.lon) - seg;
+      // On a segment only when the detour is small for its length: a train 700 m short of the first listed stop is not
+      // between it and the next (1 Nov 12:04 AM shadow trip: approaching Strathfield, read as left it).
+      if (ex <= Math.min(1500, Math.max(250, 0.3 * seg)) && ex < best) { best = ex; bk = pts[i + 1].k; }
     }
   }
   if (near >= 0 && nd < LIVECARD.TRIP_RULES.AT_STOP_M) return { k: near, at: true };
-  if (bk >= 0 && best <= 1500) return { k: bk, at: false };
+  if (bk >= 0) return { k: bk, at: false };
+  // short of the first listed stop: heading to it
+  if (near === pts[0].k) return { k: near, at: false };
   return null;
 }
 

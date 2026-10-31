@@ -104,3 +104,16 @@ test("31 Oct 11:51 PM shadow trip: after the train leaves your stop the feed dro
   const early = W.tfLegRaw(legA, after, veh("214074", T("12:30:00")), info, T("12:30:10"));
   assert.equal(early.vehicle, null);
 });
+
+test("1 Nov 12:04 AM shadow trip: a train still short of your stop (the feed lists your stop first) is not read as left", async () => {
+  const W = await loadWorker();
+  const legC = { ...leg, tripId: "808T.1417.150.128.A.8.91992567", planned: "2026-10-31T13:00:30.000Z", arrPlanned: "2026-10-31T13:05:00.000Z" };
+  const fromS = { ts: T("13:04:30") / 1000, stus: [{ stopId: "2135237", arr: d(341), dep: d(341) }, { stopId: "213495", arr: d(341), dep: d(341) }, { stopId: "213284", arr: d(341), dep: d(341) }] };
+  setClock(T("13:04:47"));
+  // between Homebush and Strathfield, about 700 m short of Strathfield
+  const approach = { lat: (STOPS["214074"][1] + STOPS["2135237"][1]) / 2, lon: (STOPS["214074"][2] + STOPS["2135237"][2]) / 2, ts: T("13:03:43"), ageS: 60, stopId: "Homebush.X Loc", status: null };
+  const r = W.tfLegRaw(legC, fromS, approach, info, T("13:04:30"));
+  assert.deepEqual([r.vehicle.stop, r.vehicle.state], [-1, "left"], "on its way to your stop, not left");
+  const atS = W.tfLegRaw(legC, fromS, veh("2135237", T("13:05:08")), info, T("13:05:20"));
+  assert.deepEqual([atS.vehicle.stop, atS.vehicle.state], [0, "at"]);
+});
