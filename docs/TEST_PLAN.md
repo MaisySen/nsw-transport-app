@@ -32,6 +32,8 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 
 ### Build 211 candidate (31 Oct, branch `build-211-rc`, not built)
+* Round 4, main's polish cherry picked and the quiet note fix (about 5:00 PM): app 1,095 tests, 1,091 pass, 4 skipped, 0 fail (OFFLINE=1, TZ=Australia/Sydney); quietnote31 8/8, getoffregion31 20/20, getoffbg31 12/12, staleopen31 15/15, livefit211 8/8, livefit211r2 4/4, syssettings31 8/8, notstopping 7/7; battery 17/17; tsc clean; backend 644/644. Owner stations 28 of 1,704 tests (1.64%).
+* Round 4 native audit run 41173076134 (82c0aed): iPhone 1,578 shots and Watch 120 shots, 0 do not fit, 0 lines too many; app and module BUILD SUCCEEDED.
 * Round 3, getoff-bg merged in (about 4:15 PM): app 1,078 tests, 1,074 pass, 4 skipped, 0 fail (OFFLINE=1, TZ=Australia/Sydney); staleopen31 15/15, getoffregion31 20/20, getoffbg31 12/12, livefit211 8/8, livefit211r2 4/4; battery 17/17; tsc clean; backend 644/644 (review notes and owner station guards pass). Owner stations 28 of 1,687 tests (1.66%).
 * Round 3 native audit with the new `module` job (the whole app compiled for the simulator, `TransportIOSModule.swift` included): runs 41165839487 and 41169237896, iPhone 1,578 shots and Watch 120 shots with 0 cut off or wrapping, BUILD SUCCEEDED both times.
 * Not provable on the simulator: an iOS location trigger ringing on a real ride (entering the circle with the phone locked), and the Silent switch muting the app's voice. Both need the phone check on build 211.
@@ -74,6 +76,14 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 * `CI=1 IOS_APP_GROUP=1 npx expo prebuild --platform ios --no-install`: Expo.plist runtime 1.1.0, Info.plist 1.0.0 (209) (build 210: runtime 1.2.0, Info.plist 1.0.0 (210); `app/test/widgetfit210.test.mjs` checks app.json), entitlements carry time sensitive and the App Group, privacy manifest lists Crash Data (not linked), Sentry build phases present, widget target picks up every file in targets/widget (synchronized folder).
 * Swift: all 26 Swift files under app/ parse with `swiftc -parse` (Swift 6.4.1 on Linux). A full compile needs the iOS SDK (SwiftUI, WidgetKit, ActivityKit), so the first real compile is the EAS compile check on 1 Nov (checklist step 4).
 * On a device: the 209 checks in docs/BUILD_209_CHECKLIST.md step 6.
+### `app/test/quietnote31.test.mjs`: 8 tests, 8 pass (31 Oct, quiet note never early, build 211)
+- Replays a trip on a phone in 15 s steps: open (reads live times) until a lock time, then only what is set on the phone rings.
+- Bidur's case: locked a minute in, the train 4 min late from 6 min: no note rings before the live arrival less 2 min (rang 4 min early before the fix).
+- Every lock time from 15 s to 11 min: any note that rings does so within 5 min of the read it came from; a slip more than 5 min after the last read never makes it early (1, 3 and 8 min slips).
+- Used within 5 min of the note: it rings once at the live arrival less 2 min, quiet, no sound, never "get off". Locked further ahead: nothing waits; opened again, the next read sets it at the late arrival less 2 min.
+- One set earlier is taken back when a later arrival would put it over 5 min from the read; a 10 s later arrival moves it, a 10 s earlier one keeps it; `quietWithinFresh` bounds.
+- Failing first on f453d58 (the code before the fix): 1 of 8 pass.
+
 ### `app/test/syssettings31.test.mjs`: 8 tests, 8 pass (31 Oct, system settings pass, app)
 - Before the app hands over the phone's setting (and in every other test) every clock stays 12 hour; a reader that throws keeps 12 hour.
 - 24 hour phone: the shared clock, seconds stamp, Live stamp, board time, timetable label and its VoiceOver words, Plan, Leave at, board From time, offline stamp, off peak, reminders, car parks, leave by, Ask, last way home and Simple mode say "19:52" and midnight "00:05"; 12 hour phone the old "7:52pm".
