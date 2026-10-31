@@ -7,12 +7,14 @@ import SwiftUI
 /// Round 2 (31 Oct, build 211): the Start trip titles are one line on the Lock Screen and in the Island, whatever
 /// the view allows. The first 211 candidate (97b2d03) drew "Get off at / Croydon" under the camera in every Island
 /// shot and "Get off at / Macarthur" on the Lock Screen beside "1 hr, 4 min", and passed because those views let the
-/// title use two lines; on the owner's build 210 iPhone the Island title was one line.
+/// title use two lines; on the owner's build 210 iPhone the Island title was one line. The same holds for the followed
+/// service's titles.
 @MainActor
 enum LineCheck {
     static var probed = 0
-    /// Titles: one line at most, a wrap fails like a countdown on two lines does.
-    static let titles: Set<String> = ["island-stop", "lock-stop"]
+    /// Titles: one line at most, a wrap fails like a countdown on two lines does. The followed service's "to Hornsby"
+    /// titles are held to the same rule so both Live Activities read alike.
+    static let titles: Set<String> = ["island-stop", "lock-stop", "follow-island-to", "follow-lock-to"]
     static func allowed(_ r: LineProbe.Reading) -> Int { titles.contains(r.id) ? min(r.allowed, 1) : r.allowed }
 
     static func install() {
