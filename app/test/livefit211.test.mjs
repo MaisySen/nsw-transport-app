@@ -145,3 +145,8 @@ test('at the largest text sizes a long stop name keeps the bar layouts, so it is
   assert.match(w, /private var showsTrack: Bool \{\s*guard state\.showsTrack\(stale: stale\) else \{ return false \}\s*return typeSize < \.xxLarge \|\| state\.bareHeadline\(stale: stale\)\.count <= 16/);
   assert.match(w, /if showsTrack \{\s*card\(lines: 2, track: true, merged: true\)/);
 });
+
+test('at the largest text sizes the stop name may take three lines on the bar card before it is cut', () => {
+  const w = read(W);
+  assert.match(w, /if typeSize >= \.xxLarge \{\s*card\(lines: 1, track: false, merged: true, headLines: 3, headScale: 0\.65\)\s*\}\s*card\(lines: 2, track: false\)/);
+});

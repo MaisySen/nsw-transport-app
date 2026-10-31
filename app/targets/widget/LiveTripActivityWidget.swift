@@ -433,6 +433,11 @@ struct LiveTripLockCard: View {
                 card(lines: 1, track: true, merged: true, headLines: 2, headScale: 0.65)
                 card(lines: 1, track: true, merged: true)
             }
+            // Largest text sizes: a long stop name may take three lines before it is cut (build 211 line check:
+            // "Macquarie Centre and University" on the SE at xxxLarge).
+            if typeSize >= .xxLarge {
+                card(lines: 1, track: false, merged: true, headLines: 3, headScale: 0.65)
+            }
             card(lines: 2, track: false)
             // The stop name keeps its two lines before the detail and warning do (31 Oct readiness audit: "Get off at
             // Chatsw..." on the SE with a change warning, the owner's "Get off at Five..." case).
