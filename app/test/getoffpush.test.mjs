@@ -80,17 +80,20 @@ test('server from the start: Get off now is never set on the phone', () => {
   assert.equal(r.rang.filter(isNow).length, 0, 'nothing of its own rings with the phone locked: the server sends it');
 });
 
-test('the server says yes after the phone set one: it is taken back', () => {
+test('the server says yes: nothing rings from the phone for a time, before or after the yes (31 Oct)', () => {
+  // Before 31 Oct the phone set its own Get off now for a time and took it back on the yes. Since 31 Oct it sets none
+  // for a time at all (location alerts are taken back on the yes instead: getoffregion31).
   const r = replay({ serverFrom: 1, closeAt: 2 });
-  assert.ok(r.sets.some(isNow), 'set before the yes');
-  assert.ok(r.cancels.some(isNow), 'taken back');
+  assert.equal(r.sets.filter(isNow).length, 0);
   assert.equal(r.rang.filter(isNow).length, 0);
 });
 
-test('a bus running late after lock no longer rings early on the phone (the bug), without the server it still would', () => {
-  // Same replay with the app closed from minute 2: no server, the phone rings at its old time.
-  const old = replay({ closeAt: 2, delay: 0 });
-  assert.equal(old.rang.filter(isNow).length, 1, 'today: the phone rings its own');
+test('a bus running late after lock never rings early on the phone, with or without the server (31 Oct)', () => {
+  // App closed from minute 2: before 31 Oct, with no server, the phone rang at its old time. Now it never rings from a
+  // clock; the server's push (live) or a location alert (position) is what rings.
+  const noServer = replay({ closeAt: 2, delay: 0 });
+  assert.equal(noServer.rang.filter(isNow).length, 0);
+  assert.equal(noServer.sets.filter(isNow).length, 0);
   const now = replay({ serverFrom: -3, closeAt: 2 });
   assert.equal(now.rang.filter(isNow).length, 0);
 });
@@ -123,13 +126,12 @@ test('the heads up (2 or 3 stops early) stays on the phone', () => {
   assert.equal(r.sets.filter(isNow).length, 0);
 });
 
-test('no live times, phone keeps its own: the alert says it is the timetable', () => {
-  const r = replay({ isLive: false, closeAt: 1 });
-  const s = r.sets.find(isNow);
-  assert.ok(s, 'set');
-  assert.match(s.body, /Timetable time, no live times\.$/);
-  const l = replay({ closeAt: 1 });
-  assert.doesNotMatch(l.sets.find(isNow).body, /Timetable/);
+test('no live times: the words say it is the timetable, and the phone sets nothing for that time (31 Oct)', () => {
+  const s = live.computeLive([LEG], [feed(0, at(1), false)], at(1), null);
+  assert.match(G.getOffWords([LEG], s, 0, 'now', 1, fmt).body, /Timetable time, no live times\.$/);
+  const l = live.computeLive([LEG], [feed(0, at(1), true)], at(1), null);
+  assert.doesNotMatch(G.getOffWords([LEG], l, 0, 'now', 1, fmt).body, /Timetable/);
+  assert.equal(replay({ isLive: false, closeAt: 1 }).sets.filter(isNow).length, 0);
 });
 
 test('only build 210 and later ask; the shown server alerts are read by watch and leg', () => {
@@ -149,7 +151,8 @@ test('the wiring: asked only with a push token and Get off now on, taken off on 
   assert.match(l, /ps\.status === 'on' && serverGetOff\(\) && readGetOff\(store\.getOff\(\)\)\.now/);
   assert.match(l, /off = \{ getOff: 1, \.\.\.\(say \? \{ getOffVoice: 1 \} : \{\}\) \}/);
   assert.match(l, /\(r\.watch as any\)\.getOff === true && 'getOff' in off/);
-  assert.match(l, /if \(server\) for \(const k of Object\.keys\(offSet\)\) if \(\/\^gnow\\d\+\$\/\.test\(k\)\) \{ cancelGetOff/);
+  assert.match(l, /if \(server\) for \(const k of Object\.keys\(offSet\)\) if \(\/\^\(gnow\|quiet\)\\d\+\$\/\.test\(k\)\) \{ cancelGetOff/);
+  assert.match(l, /if \(server\) for \(const k of Object\.keys\(offRegion\)\) if \(\/\^rnow\\d\+\$\/\.test\(k\)\) \{ cancelGetOff/);
   assert.match(l, /setServerGetOffWatch\(null\);\n  setLive\(null\);/);
   const e = src('lib/liveEngine.ts');
   assert.match(e, /const server = !!g\.offServer && !!g\.watchId;/);

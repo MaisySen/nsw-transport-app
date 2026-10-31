@@ -99,7 +99,7 @@ test('default (1 stop, Get off now): the Next stop alert as before, and Get off 
   const r = replay({});
   assert.equal(r.early.length, 0);
   assert.equal(r.now.length, 1);
-  assert.ok(r.schedules.length >= 1);
+  assert.equal(r.schedules.length, 0, 'nothing set on the phone from a clock (31 Oct: position or the server only)');
   assert.equal(r.next.length, 1, 'the Next stop alert, once');
   assert.match(r.next[0].title, /^Next stop: Central/);
   assert.ok(r.next[0].t >= leaves(5) && r.next[0].t <= leaves(5) + 30000, 'as the train leaves Epping');
@@ -120,11 +120,12 @@ for (const n of [2, 3]) {
   }
 }
 
-test('2 stops before with the app closed: the phone rings it at the live time it was set for', () => {
+test('2 stops before with the app closed and no location: nothing rings from a clock (31 Oct)', () => {
+  // Before 31 Oct the phone rang it at the live time last seen, early when the train ran late after locking. Now the
+  // heads up with the app closed comes from a location alert (getoffregion31) or not at all.
   const r = replay({ pref: { stops: 2, now: false }, appOpen: false });
-  assert.equal(r.early.length, 1);
-  assert.equal(r.early[0].by, 'phone');
-  assert.equal(r.early[0].t, leaves(4));
+  assert.equal(r.early.length, 0);
+  assert.equal(r.schedules.length, 0);
 });
 
 test('a delay that shows up mid ride moves the heads up and Get off now', () => {
@@ -133,17 +134,17 @@ test('a delay that shows up mid ride moves the heads up and Get off now', () => 
   assert.ok(r.early[0].t >= leaves(3, 5), 'not at the timetable time');
   assert.equal(r.now.length, 1);
   assert.ok(r.now[0].t >= at(16 + 5) - 60000 && r.now[0].t < at(16 + 5), 'within the minute before the late arrival');
-  assert.ok(r.schedules.length >= 4, 'moved when the live times moved');
+  assert.equal(r.schedules.length, 0, 'nothing set from a clock');
 });
 
 test('Get off now: once, after Next stop, in the minute before arrival, never before the train leaves the stop before', () => {
-  for (const appOpen of [true, false]) {
-    const r = replay({ pref: { stops: 1, now: true }, appOpen });
-    assert.equal(r.now.length, 1, JSON.stringify(r.rang));
-    assert.ok(r.now[0].t >= leaves(5));
-    assert.ok(r.now[0].t >= at(16) - 60000 && r.now[0].t < at(16));
-    if (appOpen) { assert.equal(r.next.length, 1); assert.ok(r.next[0].t <= r.now[0].t); }
-  }
+  const r = replay({ pref: { stops: 1, now: true }, appOpen: true });
+  assert.equal(r.now.length, 1, JSON.stringify(r.rang));
+  assert.ok(r.now[0].t >= leaves(5));
+  assert.ok(r.now[0].t >= at(16) - 60000 && r.now[0].t < at(16));
+  assert.equal(r.next.length, 1); assert.ok(r.next[0].t <= r.now[0].t);
+  // App closed, no location, no server: the phone never rings Get off now from a clock (31 Oct).
+  assert.equal(replay({ pref: { stops: 1, now: true }, appOpen: false }).now.length, 0);
 });
 
 test('Get off now on a short last stretch waits for the train to leave the stop before', () => {
@@ -162,18 +163,20 @@ test('a ride shorter than the choice: no heads up (the Next stop alert covers it
   assert.equal(r.next.length, 1);
 });
 
-test('no live times: no heads up from the timetable clock; Get off now a minute before the timetable arrival', () => {
+test('no live times: no heads up and no Get off now from the timetable clock (31 Oct: a guess never says get off)', () => {
   const r = replay({ pref: { stops: 3, now: true }, isLive: false });
   assert.equal(r.early.length, 0);
-  assert.equal(r.now.length, 1);
-  assert.ok(r.now[0].t >= at(16) - 60000 - 15000 && r.now[0].t < at(16), JSON.stringify(r.now));
+  assert.equal(r.now.length, 0, JSON.stringify(r.now));
+  assert.equal(r.said.filter((x) => /Get off now/.test(x.text)).length, 0);
+  assert.equal(r.schedules.length, 0);
 });
 
 test('turning it back to 1 stop before it rings takes the set alerts back', () => {
   const r = replay({ pref: { stops: 3, now: true }, prefAt: 2, pref2: { stops: 1, now: false } });
   assert.equal(r.early.length, 0);
   assert.equal(r.now.length, 0);
-  assert.equal(r.cancels.length, 2);
+  // Nothing is set on the phone from a clock (31 Oct), so there is nothing to take back.
+  assert.equal(r.schedules.length, 0);
   assert.equal(r.next.length, 1, 'the Next stop alert stays');
 });
 

@@ -8,7 +8,7 @@ import { startAppPoll } from './activity';
 import * as Haptics from 'expo-haptics';
 import { api } from './api';
 import { clock, shortName } from './format';
-import { clearOngoing, endLive, getLive, liveAlert, setLive, showOngoing, useLiveTrip } from './live';
+import { clearOngoing, endLive, getLive, liveAlert, loadLive, setLive, showOngoing, useLiveTrip } from './live';
 import { LiveState, Pos, progOf as progOfCalc, stepLive, tapMoments } from './liveCalc';
 import { haptic } from './haptic';
 
@@ -16,7 +16,7 @@ const tapped = new Set<string>();
 import { wakeStep } from './smart';
 import { hasSpeech, speak } from './nativeExtras';
 import { getOffStep, readGetOff, readGetOffSay } from './getOffCore';
-import { cancelGetOff, getOffNow, scheduleGetOff, serverGetOffShown, setServerGetOffWatch, voiceClips } from './getOffNotify';
+import { cancelGetOff, getOffBackup, getOffNow, ownGetOffShown, scheduleGetOff, scheduleQuiet, scheduleRegion, serverGetOffShown, setServerGetOffWatch, setTripWatch, sweepRegions, voiceClips } from './getOffNotify';
 import { store } from './store';
 import { cancelWake, scheduleWake, wakeNow } from './smartNotify';
 import { endedWatches } from './push';
@@ -91,13 +91,22 @@ async function backfillLiveFeeds(id: string) {
 }
 
 /** One refresh of the trip you are on. Safe to call any time; does nothing without a trip. */
+/** When the live times were last read without a failure (the quiet get off note needs them at most 5 min old). */
+let liveOkAt = 0;
+/** The trip whose leftover location alerts from other trips were last swept (once per trip, and once with none). */
+let sweptFor: string | null | undefined;
+
 export async function tickLive() {
-  const cur = getLive();
+  // The saved trip is read first (31 Oct): at launch the engine's first refresh ran before it was loaded, saw no trip
+  // and swept the running trip's own location alerts as left over.
+  const cur = await loadLive().catch(() => getLive());
+  // Location alerts a given up trip left on the phone are taken back (31 Oct): at launch with no trip, and once per trip.
+  if (sweptFor !== (cur?.id ?? null)) { sweptFor = cur?.id ?? null; sweepRegions(sweptFor).catch(() => {}); }
   if (!cur) { if (state.gid) put({ gid: null, svc: [], st: null, offline: null, updated: 0 }); return; }
   if (busy) return;
   busy = true;
   try {
-    if (cacheFor !== cur.id) { cacheFor = cur.id; svcCache = []; lastFull = 0; put({ gid: cur.id, svc: [], st: null, offline: null, updated: 0 }); }
+    if (cacheFor !== cur.id) { cacheFor = cur.id; svcCache = []; lastFull = 0; liveOkAt = 0; put({ gid: cur.id, svc: [], st: null, offline: null, updated: 0 }); }
     if (!cur.arrivedAt && apiBase() === NEW_API_BASE && cur.legs.some(needsFeed)) await backfillLiveFeeds(cur.id).catch(() => {});
     const L = (getLive() || cur).legs;
     const gen = cacheGen;
@@ -119,11 +128,17 @@ export async function tickLive() {
       if (gen !== cacheGen || !g0 || g0.id !== cur.id) return;
       if (full) lastFull = Date.now();
       svcCache = next;
+      if (!failed) liveOkAt = Date.now();
     }
     const g = getLive();
     if (!g || g.id !== cur.id) return;
     const now = Date.now();
-    const r = stepLive(g, svcCache, now, fmt, pos);
+    // What the phone already shows for this trip (the server's Get off now, a location alert that rang while the app was
+    // closed), read before the refresh so its first pass after opening the app posts and says none of it again.
+    const server = !!g.offServer && !!g.watchId;
+    const serverRung = server ? await serverGetOffShown(g.watchId) : undefined;
+    const rung = Object.keys(g.offRegion || {}).length || Object.keys(g.offSet || {}).some((k) => k.startsWith('quiet')) ? await ownGetOffShown(g.id) : undefined;
+    const r = stepLive(g, svcCache, now, fmt, pos, { ...(serverRung || {}), ...(rung || {}) });
     // Wake me before my stop: one alarm per leg, set on the phone and moved with the live times.
     const w = wakeStep({ id: g.id, legs: g.legs, wake: g.wake, wakeSet: g.wakeSet, alerted: r.g.alerted }, r.s, now, fmt);
     // Get off alert (More stops before, Get off now): set on the phone beside the trip's own alerts (getOffCore.ts).
@@ -131,21 +146,27 @@ export async function tickLive() {
     // locked, where the app cannot speak. The same choices as reading out (spoken Get off now, Speak alerts).
     const voice = voiceClips() ? { now: readGetOffSay(store.getOffSay()), all: !!g.speak } : null;
     // Get off now from the server (30 Oct, build 210): not set on the phone; one the server already showed is done.
-    const server = !!g.offServer && !!g.watchId;
     setServerGetOffWatch(server ? g.watchId : null);
-    const serverRung = server ? await serverGetOffShown(g.watchId) : undefined;
+    setTripWatch(g.arrivedAt ? null : g.watchId, !!g.speak && hasSpeech());
+    // The phone's own backup (31 Oct): location alerts when location is allowed and precise (build 211+), else the
+    // quiet note. Its alerts already shown (a location alert that rang, read above) are done.
+    const backup = getOffBackup();
     const o = getOffStep({ id: g.id, legs: g.legs, alerted: w.g.alerted, offSet: g.offSet, speak: g.speak && hasSpeech(), sayNow: readGetOffSay(store.getOffSay()) && hasSpeech(), spoken: r.g.spoken, voice, offVoice: g.offVoice,
+      // A server watch sends "Next stop" (its push), else the phone sets its own ahead (31 Oct, getOffCore next<leg>).
+      serverNext: !!g.watchId, wake: !!g.wake, backup, offRegion: g.offRegion, rung, liveAt: liveOkAt || null,
       ...(server ? { server: true, serverRung, serverVoice: !!voice && (voice.now || voice.all) } : {}) }, readGetOff(store.getOff()), r.s, now, fmt);
     put({ svc: svcCache.slice(), st: r.s, offline: failed ? 'Connection lost. Showing the last live times.' : null, ...(failed ? {} : { updated: now }) });
-    if (r.g !== g || w.g.alerted !== r.g.alerted || w.g.wakeSet !== g.wakeSet || o.g.offSet !== g.offSet || o.g.alerted !== w.g.alerted || o.g.spoken !== r.g.spoken || o.g.offVoice !== g.offVoice) {
-      setLive({ ...g, alerted: o.g.alerted, watchId: r.g.watchId, rode: r.g.rode, here: r.g.here, arrivedAt: r.g.arrivedAt, wakeSet: w.g.wakeSet, spoken: o.g.spoken, offSet: o.g.offSet, offVoice: o.g.offVoice });
+    if (r.g !== g || w.g.alerted !== r.g.alerted || w.g.wakeSet !== g.wakeSet || o.g.offSet !== g.offSet || o.g.alerted !== w.g.alerted || o.g.spoken !== r.g.spoken || o.g.offVoice !== g.offVoice || o.g.offRegion !== g.offRegion) {
+      setLive({ ...g, alerted: o.g.alerted, watchId: r.g.watchId, rode: r.g.rode, here: r.g.here, arrivedAt: r.g.arrivedAt, wakeSet: w.g.wakeSet, spoken: o.g.spoken, offSet: o.g.offSet, offVoice: o.g.offVoice, offRegion: o.g.offRegion });
     }
     for (const a of o.actions) {
       if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, at: now });
-      if (a.t === 'offSchedule') await scheduleGetOff(a.id, a.at, a.title, a.body, a.sound);
+      if (a.t === 'offSchedule') { if (a.quiet) await scheduleQuiet(a.id, a.at, a.title, a.body); else await scheduleGetOff(a.id, a.at, a.title, a.body, a.sound); }
+      else if (a.t === 'regionSchedule') await scheduleRegion(a.id, a.lat, a.lon, a.radius, a.title, a.body, a.sound);
+      else if (a.t === 'regionCancel') await cancelGetOff(a.id);
       else if (a.t === 'offDue') { if (await getOffNow(a.id, a.title, a.body, a.sound)) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); }
       else if (a.t === 'offCancel') await cancelGetOff(a.id);
-      else if (a.t === 'say') speak(a.text, a.quiet ? { quiet: true } : {});
+      else if (a.t === 'say') speak(a.text, { alert: true, ...(a.quiet ? { quiet: true } : {}) });
     }
     for (const a of w.actions) {
       if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, ...(a.t === 'wakeSchedule' ? { alarmAt: a.at } : {}), at: now });
@@ -159,7 +180,8 @@ export async function tickLive() {
     for (const a of r.actions) {
       // The web preview logs every action, so a browser replay can check each alert and the end of the trip.
       if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, at: now });
-      if (a.t === 'say') speak(a.text);
+      // Spoken trip alerts follow the Silent switch (build 211+, nativeExtras alertAudio).
+      if (a.t === 'say') speak(a.text, { alert: true });
       else if (a.t === 'alert') { liveAlert(a.title, a.body, a.id); if (!buzzed) { buzzed = true; Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); } }
       else if (a.t === 'ongoing') showOngoing(a.title, a.body, legColor(L[a.leg]));
       else if (a.t === 'clearOngoing') await clearOngoing();

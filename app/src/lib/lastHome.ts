@@ -162,6 +162,12 @@ export async function remindLastLocal(hint: LastHomeHint, acc = false): Promise<
   return { ok: true, item };
 }
 
+/** The Last way home reminder set on this phone, if any (Start trip reads it: live.ts). */
+export async function lastLocalItem(): Promise<LocalLast | null> {
+  await loadLocal();
+  return state.local || null;
+}
+
 export async function cancelLastLocal() {
   await cancelLocalAlert(LAST_LOCAL_ID);
   set({ local: null });

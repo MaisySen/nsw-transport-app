@@ -79,7 +79,7 @@ test('speech asks for the system speech session on builds without their own (206
   assert.match(src, /useApplicationAudioSession: false/);
   assert.match(src, /typeof m\.startSpeechAudio === 'function'/, 'the new native call is feature detected');
   const engine = fs.readFileSync(path.join(here, '..', 'src/lib/liveEngine.ts'), 'utf8');
-  assert.match(engine, /a\.t === 'say'\) speak\(a\.text\)/);
+  assert.match(engine, /a\.t === 'say'\) speak\(a\.text, \{ alert: true \}\)/, 'trip lines are alerts: from 211 they follow the Silent switch (getoffregion31)');
   assert.match(engine, /spoken: r\.g\.spoken/, 'what was said is kept with the trip');
   const smart = fs.readFileSync(path.join(here, '..', 'src/components/Smart.tsx'), 'utf8');
   assert.doesNotMatch(smart, /Test voice/, 'no test button in the shipping app');

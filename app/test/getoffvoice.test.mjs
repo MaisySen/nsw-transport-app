@@ -42,37 +42,58 @@ const LEG = { mode: 'train', line: 'T9', tripId: 'T9.x', stopId: 'EPP', toStopId
 const ARR = at(MIN[OFF]);
 
 function feed(delayMin, t, isLive, skip = SKIP) {
-  const stops = NAMES.map((name, k) => ({ id: name.slice(0, 3).toUpperCase() + k, name: name + ' Station', planned: iso(at(MIN[k])), estimated: iso(at(MIN[k]) + delayMin * 60000), mine: k === MINE, alight: k === OFF, ...(skip.has(k) ? { skipped: true } : {}) }));
+  const stops = NAMES.map((name, k) => ({ id: name.slice(0, 3).toUpperCase() + k, name: name + ' Station', lat: -33.8, lon: 151.0 + k * 0.0155, planned: iso(at(MIN[k])), estimated: iso(at(MIN[k]) + delayMin * 60000), mine: k === MINE, alight: k === OFF, ...(skip.has(k) ? { skipped: true } : {}) }));
   let nextIndex = stops.findIndex((s, k) => !skip.has(k) && Date.parse(s.estimated) > t - 20000);
   if (nextIndex < 0) nextIndex = stops.length;
   return { kind: 'service', live: isLive, line: 'T9', mode: 'train', mineIndex: MINE, alightIndex: OFF, nextIndex, stops };
 }
 
-/** One trip refreshed every 15 s. The app runs before `closeAt` and from `openAt` (minutes); between, only the phone's set alerts ring. */
-function replay({ pref = G.GETOFF_DEFAULT, delay = 0, isLive = true, speak = false, sayNow = true, voice = { now: true, all: false }, from = -3, closeAt = Infinity, openAt = Infinity, skip = SKIP, flipAt = null, flipTo = null } = {}) {
-  let g = { id: 'g1', legs: [LEG], alerted: {}, watchId: null, share: null, speak, spoken: {}, offSet: {}, offVoice: {} };
+// Where each stop is (31 Oct, location alerts): on a line east, about 1.4 km apart; the train moves between stops at
+// a steady speed on its live times, so a late train reaches each circle late.
+const POS = NAMES.map((_, k) => ({ lat: -33.8, lon: 151.0 + k * 0.0155 }));
+function trainAt(t, delayMin) {
+  const times = MIN.map((m) => at(m) + delayMin * 60000);
+  if (t <= times[0]) return POS[0];
+  for (let k = 0; k < times.length - 1; k++) {
+    if (t <= times[k + 1]) { const f = (t - times[k]) / (times[k + 1] - times[k]); return { lat: POS[k].lat, lon: POS[k].lon + (POS[k + 1].lon - POS[k].lon) * f }; }
+  }
+  return POS[POS.length - 1];
+}
+const metres = (a, b) => G.metres(a, b);
+
+/** One trip refreshed every 15 s. The app runs before `closeAt` and from `openAt` (minutes); between, only the phone's
+ * set alerts ring: since 31 Oct those are location alerts (backup 'region'), rung when the train enters the circle. */
+function replay({ pref = G.GETOFF_DEFAULT, delay = 0, isLive = true, speak = false, sayNow = true, voice = { now: true, all: false }, from = -3, closeAt = Infinity, openAt = Infinity, skip = SKIP, flipAt = null, flipTo = null, backup = 'region' } = {}) {
+  let g = { id: 'g1', legs: [LEG], alerted: {}, watchId: null, share: null, speak, spoken: {}, offSet: {}, offVoice: {}, offRegion: {} };
   const alarms = new Map();
+  const regions = new Map();
   const rang = [], said = [], sets = [];
   const presented = new Set();
   let ended = false;
   for (let t = at(from); t <= at(20) && !ended; t += 15000) {
     for (const [id, a] of [...alarms]) if (a.at <= t) { rang.push({ id, t: a.at, by: 'phone', sound: a.sound }); presented.add(id); alarms.delete(id); }
+    for (let u = t - 14000; u <= t; u += 1000) {
+      const p = trainAt(u, delay);
+      for (const [id, a] of [...regions]) if (metres(p, a) <= a.radius) { rang.push({ id, t: u, by: 'phone', sound: a.sound }); presented.add(id); regions.delete(id); }
+    }
     if (t >= at(closeAt) && t < at(openAt)) continue;
     const v = flipAt != null && t >= at(flipAt) ? flipTo : voice;
     const r = live.stepLive(g, [feed(delay, t, isLive, skip)], t, fmt);
-    const o = G.getOffStep({ id: g.id, legs: g.legs, alerted: r.g.alerted, offSet: g.offSet, speak, sayNow, spoken: r.g.spoken, voice: v, offVoice: g.offVoice }, pref, r.s, t, fmt);
-    g = { ...r.g, alerted: o.g.alerted, spoken: o.g.spoken, offSet: o.g.offSet, offVoice: o.g.offVoice };
+    const rung = G.ownRungKeys(g.id, [...presented]);
+    const o = G.getOffStep({ id: g.id, legs: g.legs, alerted: r.g.alerted, offSet: g.offSet, speak, sayNow, spoken: r.g.spoken, voice: v, offVoice: g.offVoice, backup, offRegion: g.offRegion, rung, liveAt: t }, pref, r.s, t, fmt);
+    g = { ...r.g, alerted: o.g.alerted, spoken: o.g.spoken, offSet: o.g.offSet, offVoice: o.g.offVoice, offRegion: o.g.offRegion };
     for (const a of o.actions) {
-      if (a.t === 'offSchedule') { alarms.set(a.id, { at: a.at, sound: a.sound }); sets.push({ ...a, t }); }
-      else if (a.t === 'offCancel') alarms.delete(a.id);
+      if (a.t === 'offSchedule') { alarms.set(a.id, { at: a.at, sound: a.sound, quiet: a.quiet }); sets.push({ ...a, t }); }
+      else if (a.t === 'regionSchedule') { regions.set(a.id, { lat: a.lat, lon: a.lon, radius: a.radius, sound: a.sound }); sets.push({ ...a, t }); }
+      else if (a.t === 'offCancel' || a.t === 'regionCancel') { alarms.delete(a.id); regions.delete(a.id); }
       else if (a.t === 'offDue') { if (!presented.has(a.id)) { alarms.delete(a.id); rang.push({ id: a.id, t, by: 'app', sound: a.sound }); presented.add(a.id); } }
       else if (a.t === 'say') said.push({ ...a, t });
     }
     for (const a of r.actions) if (a.t === 'end') ended = true;
   }
   return {
-    early: rang.filter((x) => /-early\d+$/.test(x.id)),
-    now: rang.filter((x) => /-gnow\d+$/.test(x.id)),
+    early: rang.filter((x) => /-(early|rsoon)\d+$/.test(x.id)),
+    now: rang.filter((x) => /-(gnow|rnow)\d+$/.test(x.id)),
     said, saidNow: said.filter((x) => /^gnow/.test(x.key)), saidEarly: said.filter((x) => /^early/.test(x.key)), sets, g,
   };
 }
@@ -80,11 +101,21 @@ function replay({ pref = G.GETOFF_DEFAULT, delay = 0, isLive = true, speak = fal
 const leaves = (k, d = 0) => at(MIN[k]) + d * 60000;
 
 test('phone locked the whole ride (Bidur, 30 Oct): Get off now rings once with the spoken sound, before the arrival', () => {
+  // 31 Oct: it rings from the phone's position (the location alert around Rhodes), not a clock.
   const r = replay({ pref: { stops: 1, now: true }, closeAt: 1, openAt: 30 });
   assert.equal(r.now.length, 1, JSON.stringify(r));
   assert.equal(r.now[0].by, 'phone');
+  assert.match(r.now[0].id, /-rnow0$/);
   assert.equal(r.now[0].sound, 'getoff_now', 'the alert itself speaks: the app is not running to do it');
-  assert.ok(r.now[0].t < ARR);
+  assert.ok(r.now[0].t < ARR && r.now[0].t > ARR - 60000, 'as the train reaches the stop');
+  // Running 4 min late: it comes with the train, 4 min later, never at the timetable time.
+  const late = replay({ pref: { stops: 1, now: true }, closeAt: 1, openAt: 30, delay: 4 });
+  assert.equal(late.now.length, 1);
+  assert.ok(late.now[0].t > ARR + 4 * 60000 - 60000 && late.now[0].t < ARR + 4 * 60000);
+  // Without location (quiet backup): nothing is voiced from the phone while locked.
+  const q = replay({ pref: { stops: 1, now: true }, closeAt: 1, openAt: 30, backup: 'quiet' });
+  assert.equal(q.now.length, 0);
+  assert.ok(q.sets.every((a) => !a.sound));
 });
 
 test('builds without the sounds (209 and older): exactly as before, normal alert sound, no sound named', () => {
@@ -146,9 +177,9 @@ test('rung at once with the app open but app speech unavailable: the alert carri
   assert.equal(r.said.length, 0);
 });
 
-test('turning the voice off mid trip sets the alert again (same time) without the sound, and on again with it', () => {
+test('turning the voice off mid trip sets the location alert again (same place) without the sound, and on again with it', () => {
   const r = replay({ pref: { stops: 1, now: true }, flipAt: 2, flipTo: { now: false, all: false }, sayNow: false });
-  const nowSets = r.sets.filter((a) => /gnow/.test(a.key));
+  const nowSets = r.sets.filter((a) => /rnow/.test(a.key));
   assert.ok(nowSets.length >= 2, JSON.stringify(nowSets));
   assert.equal(nowSets[0].sound, 'getoff_now');
   assert.equal(nowSets[nowSets.length - 1].sound, undefined);

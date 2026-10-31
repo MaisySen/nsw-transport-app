@@ -1,6 +1,9 @@
 import ExpoModulesCore
 import Foundation
 import WidgetKit
+import CoreLocation
+import AVFoundation
+import UserNotifications
 #if canImport(ActivityKit)
 import ActivityKit
 #endif
@@ -81,6 +84,71 @@ public class TransportIOSModule: Module {
         for a in Activity<LiveTripAttributes>.activities where a.activityState == .active { self.follow(a) }
       }
       #endif
+    }
+
+    /// From build 211 (31 Oct, Bidur: on Silent the banner came but the app's voice still played on open): the audio
+    /// session the app's spoken trip alerts use. Ambient: muted by the Silent switch and by screen lock, like the
+    /// notification's own sound, and mixed with music instead of stopping it. False when iOS refuses it.
+    Function("startAlertAudio") { () -> Bool in
+      let s = AVAudioSession.sharedInstance()
+      do {
+        try s.setCategory(.ambient, mode: .default, options: [])
+        try s.setActive(true)
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    /// Lets the alert audio session go once the last spoken alert is done, so other audio resumes as it was.
+    Function("endAlertAudio") { () -> Void in
+      do {
+        try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+      } catch {}
+    }
+
+    /// From build 211 (31 Oct): whether get off alerts from the phone's position can ring. "ok" needs location
+    /// allowed (When In Use is enough for a location notification trigger), precise location (iOS does not
+    /// monitor regions with approximate location) and region monitoring on this device.
+    Function("regionAlertStatus") { () -> String in
+      let m = CLLocationManager()
+      switch m.authorizationStatus {
+      case .notDetermined: return "notDetermined"
+      case .denied, .restricted: return "denied"
+      case .authorizedAlways, .authorizedWhenInUse: break
+      @unknown default: return "denied"
+      }
+      if m.accuracyAuthorization != .fullAccuracy { return "reduced" }
+      if !CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) { return "unavailable" }
+      return "ok"
+    }
+
+    /// From build 211 (31 Oct): a get off alert iOS rings itself on entering a circle (UNLocationNotificationTrigger,
+    /// notify on entry only, once), with the app closed or the phone locked. The same id replaces it; the app
+    /// takes it back with expo-notifications' cancel (a pending request like any other). Time sensitive, with the
+    /// bundled spoken sound when given (file name, e.g. "getoff_now.wav"). dataJSON is the notification's data.
+    AsyncFunction("scheduleRegionAlert") { (id: String, title: String, body: String, lat: Double, lon: Double, radius: Double, sound: String?, dataJSON: String) async throws -> Bool in
+      let content = UNMutableNotificationContent()
+      content.title = title
+      content.body = body
+      if let sound, !sound.isEmpty {
+        content.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: sound))
+      } else {
+        content.sound = .default
+      }
+      content.interruptionLevel = .timeSensitive
+      if let d = dataJSON.data(using: .utf8),
+         let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+        content.userInfo = obj
+      }
+      let maxR = CLLocationManager().maximumRegionMonitoringDistance
+      let r = max(100, min(radius, maxR > 0 ? maxR : radius))
+      let region = CLCircularRegion(center: CLLocationCoordinate2D(latitude: lat, longitude: lon), radius: r, identifier: id)
+      region.notifyOnEntry = true
+      region.notifyOnExit = false
+      let trigger = UNLocationNotificationTrigger(region: region, repeats: false)
+      try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+      return true
     }
 
     /// From the build with the Apple Watch app: the watch's context (JSON from platform/watchShare.ts). False when

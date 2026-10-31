@@ -9,8 +9,9 @@ import type { Fare, Place, WatchLeg } from './types';
 import type { WatchSpec } from './watch';
 import { wakeId } from './smart';
 import { getOffId, readGetOff, readGetOffSay } from './getOffCore';
-import { cancelGetOff, serverGetOff, setServerGetOffWatch, soundChannels, voiceClips } from './getOffNotify';
-import { cancelWake } from './smartNotify';
+import { cancelGetOff, serverGetOff, setServerGetOffWatch, setTripWatch, soundChannels, voiceClips } from './getOffNotify';
+import { cancelLeave, cancelWake } from './smartNotify';
+import { startCancels } from './noteShowCore';
 import { iosNative } from '../../modules/transport-ios';
 import { wantOngoing } from './leaveByCore';
 import { store } from './store';
@@ -30,6 +31,8 @@ export type LiveTrip = {
   offSet?: Record<string, number>;
   /** Get off alerts set on the phone with a spoken sound (getOffCore offVoice): already said when they ring. */
   offVoice?: Record<string, 1>;
+  /** Get off alerts set from the phone's position (getOffCore offRegion, rnow<leg> and rsoon<leg>, 31 Oct). */
+  offRegion?: Record<string, string>;
   /** The server sends Get off now for this trip (build 210; its watch said getOff: true): not set on the phone. */
   offServer?: boolean;
   /** Say trip alerts out loud (builds with the speech module), and the alerts already read out. */
@@ -76,6 +79,9 @@ export async function startLive(spec: WatchSpec, fare?: Fare | null) {
   const g: LiveTrip = { id: 'g' + Date.now().toString(36), title: spec.title, origin: spec.origin || null, to: spec.to || null, legs, fare: fare && fare.total != null ? fare : null,
     started: Date.now(), alerted: {}, share: null, watchId: null, ...(speakDefault() ? { speak: true } : {}) };
   setLive(g);
+  // Start trip means you have left (31 Oct, Bidur: "Leave now, 0 min away" rang during the ride): the phone's own
+  // departure reminders for it come off at once.
+  takeBackLeave(g).catch(() => {});
   // The ongoing notification starts with the trip: ask for notifications once, if never asked, then let the
   // server follow the trip. This runs after Start trip has returned, so the live trip opens at once and the
   // button never waits on the permission dialog or the network.
@@ -86,6 +92,17 @@ export async function startLive(spec: WatchSpec, fare?: Fare | null) {
     await liveWatch();
   })().catch(() => {});
   return g;
+}
+
+/** The Remind me leave alert, and the Last way home reminder when this trip goes where it was for (noteShowCore). */
+async function takeBackLeave(g: LiveTrip) {
+  let lastHome: any = null;
+  try { lastHome = await (await import('./lastHome')).lastLocalItem(); } catch {}
+  const leave = !!store.snapshot().leaveReminder;
+  for (const c of startCancels({ to: g.to, legs: g.legs }, { leave, lastHome })) {
+    if (c === 'leave') { await cancelLeave(); store.setLeaveReminder(null); }
+    else if (c === 'lastHome') { try { await (await import('./lastHome')).cancelLastLocal(); } catch {} }
+  }
 }
 
 /** With notifications on, the server also sends next stop, change and connection alerts while the app is closed. */
@@ -114,9 +131,12 @@ export async function liveWatch() {
     // The server said yes: the phone's own Get off now comes off now, before the phone is locked (getOffCore server).
     const server = (r.watch as any).getOff === true && 'getOff' in off;
     const offSet = { ...(cur.offSet || {}) };
-    if (server) for (const k of Object.keys(offSet)) if (/^gnow\d+$/.test(k)) { cancelGetOff(getOffId(cur.id, k)).catch(() => {}); delete offSet[k]; }
+    if (server) for (const k of Object.keys(offSet)) if (/^(gnow|quiet)\d+$/.test(k)) { cancelGetOff(getOffId(cur.id, k)).catch(() => {}); delete offSet[k]; }
+    // The server sends Get off now from the live times: the location alert for it comes off too (one voice, 31 Oct).
+    const offRegion = { ...(cur.offRegion || {}) };
+    if (server) for (const k of Object.keys(offRegion)) if (/^rnow\d+$/.test(k)) { cancelGetOff(getOffId(cur.id, k)).catch(() => {}); delete offRegion[k]; }
     if (server) setServerGetOffWatch(r.watch.id);
-    setLive({ ...cur, watchId: r.watch.id, ...(server ? { offServer: true, offSet } : { offServer: false }) });
+    setLive({ ...cur, watchId: r.watch.id, ...(server ? { offServer: true, offSet, offRegion } : { offServer: false }) });
   } else api.stopWatch(r.watch.id).catch(() => {});
 }
 
@@ -129,6 +149,8 @@ export async function endLive() {
   // Wake alarms still set for this trip never ring after it ends.
   for (const k of Object.keys(g.wakeSet || {})) cancelWake(wakeId(g.id, Number(k))).catch(() => {});
   for (const k of Object.keys(g.offSet || {})) cancelGetOff(getOffId(g.id, k)).catch(() => {});
+  for (const k of Object.keys(g.offRegion || {})) cancelGetOff(getOffId(g.id, k)).catch(() => {});
+  setTripWatch(null, false);
   setServerGetOffWatch(null);
   setLive(null);
   await clearOngoing();
