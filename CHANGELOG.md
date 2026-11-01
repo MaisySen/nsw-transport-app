@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 1 Nov 2026
 
+### Server for build 214 (1 Nov, branch `server-214` from server-fixall-1nov a9a75e6; NOT deployed, deploy window 11 PM to 5 AM)
+* Get off now: the trip flow's one timer is the live arrival minus 40 s (LIVECARD.getOffLeadMs: 30 s plus the feed's 8 s lag plus the 2 s delivery lead, capped at 40 s), so the alert lands 38 s before the live arrival, about 30 s before the train really stops. Was minus 32 s (landed 13 to 25 s early on the shadow trips).
+* "Held, stay on": the trip flow wakes a minute after Get off now; when the train is held outside the stop (still not in, live arrival 15 s+ away and 30 s+ later than at Get off now) one quiet alert goes (no sound, passive, once per stop), and the Lock Screen card's warning line says "Held, stay on" (builds 211 and later show it, no new build needed).
+* Error words without the data provider's name: Ask ("Live data isn't answering right now..."), trips ("Live trips are unavailable right now."), boards ("Live data isn't available right now.") and the timetable note.
+* LIVECARD regenerated from this branch's app/src/lib/tripState.ts (same changes as the app's build-214-rc). Simulator S21 (held), S22f, S22s on the server. Backend 742/742; build214-server.test.mjs 4 of 5 fail on a9a75e6.
+
 ### Request size cap and unsubscribe clamp (server, fix-all 1 Nov, NOT deployed)
 * The server refuses a request body over 128 KB with 413 ("Request too big.") before any route reads it, so a large POST cannot fill the Worker's memory (polish security note 1). Read from content-length. Admin, engine load, planner and budget routes carry files and timetables and are not capped. The app's largest bodies (a long regional trip) are well under 64 KB.
 * `/api/push/unsubscribe` clamps the endpoint at 1000 characters, like `/api/push/subscribe` (note 4).

@@ -64,7 +64,7 @@ export const CASES = [
       { at: '19:58', card: 'status', is: 'Croydon next' }, { at: '19:58:31', card: 'status', is: 'Get off now · Croydon' },
       { at: '19:59:20', card: 'status', is: 'Arrived Croydon 7:59pm' }, { at: '20:01:30', ended: true },
     ],
-    ring: [{ kind: 'headsup', between: ['19:57', '19:57:31'] }, { kind: 'getoff', lands: '19:58:30' }, { kind: 'arrived', between: ['19:59', '19:59:16'] }],
+    ring: [{ kind: 'headsup', between: ['19:57', '19:57:31'] }, { kind: 'getoff', lands: '19:58:22' }, { kind: 'arrived', between: ['19:59', '19:59:16'] }],
     order: ['delay', 'headsup', 'getoff', 'arrived'],
   },
   {
@@ -75,7 +75,7 @@ export const CASES = [
     feed: { events: [{ at: '19:44', leg: 0, delay: 4 }, ...vehicle(0, [['Strathfield', '19:52', '19:54:20'], ['Burwood', '19:56:30', '19:57'], ['Croydon', '19:59', null]])] },
     phone: [{ at: '19:46', app: 'open' }, { at: '19:47', app: 'locked' }, { at: '19:56', app: 'open' }],
     order: ['delay', 'headsup', 'getoff', 'arrived'], spoken: ['headsup', 'getoff', 'arrived'],
-    ring: [{ kind: 'getoff', lands: '19:58:30' }],
+    ring: [{ kind: 'getoff', lands: '19:58:22' }],
   },
   {
     id: 'S3', title: 'Delay grows after the phone locks',
@@ -85,7 +85,7 @@ export const CASES = [
     phone: lockedFrom('19:46', '19:47'),
     checks: [{ at: '19:49', card: 'timer', is: '19:50' }, { at: '19:51:50', card: 'status', is: 'Due now · Platform 7' }, { at: '19:52:30', card: 'status', is: 'Leaves 7:56pm · Platform 7' }, { at: '19:52:30', card: 'timer', is: '19:56' }, { at: '19:52:30', card: 'warn', is: '6 min late' }],
     pushWithin: { at: '19:52', secs: 30, status: 'Leaves 7:56pm · Platform 7' },
-    ring: [{ kind: 'getoff', lands: '20:00:30' }],
+    ring: [{ kind: 'getoff', lands: '20:00:22' }],
     order: ['delay', 'headsup', 'getoff', 'arrived'],
   },
   {
@@ -213,10 +213,10 @@ export const CASES = [
     order: [],
   },
   {
-    id: 'S16', title: 'Get off now 30 s before, phone locked',
-    story: 'On time, locked. The server reads every 15 s from 5 min out, sends Get off now 32 s before the live arrival so it lands 30 s before, expiring 30 s after.',
+    id: 'S16', title: 'Get off now 38 s before (30 s plus the feed lag), phone locked',
+    story: 'On time, locked. The server reads every 15 s from 5 min out, sends Get off now 40 s before the live arrival so it lands 38 s before (build 214: 30 s plus the feed lag, about 30 s before the train really stops), expiring 30 s after.',
     legs: [sample()], start: '19:46', end: '19:58', feed: { events: onTime() }, phone: lockedFrom('19:46', '19:46:20'),
-    ring: [{ kind: 'getoff', lands: '19:54:30', sentAt: '19:54:28', expires: '19:55:30' }],
+    ring: [{ kind: 'getoff', lands: '19:54:22', sentAt: '19:54:20', expires: '19:55:30' }],
     order: ['headsup', 'getoff', 'arrived'],
   },
   {
@@ -224,16 +224,16 @@ export const CASES = [
     story: 'As S16 but direct alerts are not working: the Live Activity push carries the alert and its sound, so the phone still rings once.',
     legs: [sample()], start: '19:46', end: '19:58', feed: { events: onTime() }, phone: lockedFrom('19:46', '19:46:20'),
     server: { direct: false },
-    ring: [{ kind: 'getoff', lands: '19:54:30', via: 'Live Activity push carrying the alert' }],
+    ring: [{ kind: 'getoff', lands: '19:54:22', via: 'Live Activity push carrying the alert' }],
     order: ['headsup', 'getoff', 'arrived'],
   },
   {
     id: 'S17a', title: 'Arrival jumps 2 min later at 7:58:20',
-    story: '4 min late, then held: at 7:58:20 the live arrival moves from 7:59 to 8:01. Get off now moves to 8:00:30; no second heads-up.',
+    story: '4 min late, then held: at 7:58:20 the live arrival moves from 7:59 to 8:01. Get off now moves to 8:00:22; no second heads-up.',
     legs: [sample()], start: '19:46', end: '20:05',
     feed: { events: [{ at: '19:44', leg: 0, delay: 4 }, ...vehicle(0, [['Lidcombe', '19:52', '19:54:30'], ['Auburn', '19:56:30', '19:57']]), { at: '19:58:20', leg: 0, est: { Clyde: '20:01' } }, { at: '20:01', leg: 0, vehicle: { stop: 'Clyde', state: 'at' } }] },
     phone: lockedFrom('19:46', '19:46:20'),
-    ring: [{ kind: 'getoff', lands: '20:00:30' }],
+    ring: [{ kind: 'getoff', lands: '20:00:22' }],
     order: ['delay', 'headsup', 'getoff', 'arrived'],
   },
   {
@@ -247,7 +247,7 @@ export const CASES = [
   },
   {
     id: 'S17c', title: 'Train shown at the platform before Get off now',
-    story: '4 min late; the vehicle is reported at Clyde at 7:58:10, before the 7:58:30 moment. One alert "Clyde now. Get off here." and no separate arrival sound.',
+    story: '4 min late; the vehicle is reported at Clyde at 7:58:10, before the 7:58:22 moment. One alert "Clyde now. Get off here." and no separate arrival sound.',
     legs: [sample()], start: '19:46', end: '20:03',
     feed: { events: [{ at: '19:44', leg: 0, delay: 4 }, ...vehicle(0, [['Lidcombe', '19:52', '19:54:30'], ['Auburn', '19:56:30', '19:57'], ['Clyde', '19:58:10', null]])] },
     phone: lockedFrom('19:46', '19:46:20'),
@@ -291,7 +291,7 @@ export const CASES = [
   },
   {
     id: 'S20', title: 'Live data lost 3 min before the stop',
-    story: '4 min late; the feed stops at 7:56. The card holds with "about" and "Updated 7:55pm" (the last reading); no Get off now with sound, no arrival claim; a quiet note at 7:58:30 because the reading is under 5 min old.',
+    story: '4 min late; the feed stops at 7:56. The card holds with "about" and "Updated 7:55pm" (the last reading); no Get off now with sound, no arrival claim; a quiet note at 7:58:22 because the reading is under 5 min old.',
     legs: [sample()], start: '19:46', end: '20:06',
     feed: { events: late4(), gaps: [['19:56', null]] },
     phone: lockedFrom('19:46', '19:46:20'),
@@ -324,6 +324,33 @@ export const CASES = [
     phone: lockedFrom('20:16', '20:16:20'),
     checks: [{ at: '20:25', card: 'status', is: 'Next: Redfern' }, { at: '20:25', card: 'warn', is: 'Then T4 8:36pm · Plat 10' }, { at: '20:33:20', card: 'status', is: 'Change: Leaves 8:36pm · Platform 10' }, { at: '20:45', card: 'status', is: 'Arrived Kings Cross 8:44pm' }],
     order: ['headsup', 'getoff', 'arrived', 'headsup', 'getoff', 'arrived'],
+  },
+  {
+    id: 'S21', title: 'Held outside the stop after Get off now (1 Nov shadow trip L)',
+    story: '4 min late; Get off now at 7:58:22 for a 7:59 arrival, then the train is held: at 7:59 the live arrival moves to 8:02 and it reaches Clyde at 8:02. One Get off now, no second one; a minute after it one quiet "Held, stay on" (build 214, no sound), and no Arrived until the train is at the stop.',
+    legs: [sample()], start: '19:46', end: '20:06',
+    feed: { events: [{ at: '19:44', leg: 0, delay: 4 }, ...vehicle(0, [['Lidcombe', '19:52', '19:54:30'], ['Auburn', '19:56:30', '19:57']]), { at: '19:59', leg: 0, est: { Clyde: '20:02' } }, { at: '20:02', leg: 0, vehicle: { stop: 'Clyde', state: 'at' } }] },
+    phone: lockedFrom('19:46', '19:46:20'),
+    ring: [{ kind: 'getoff', lands: '19:58:22' }, { kind: 'held', between: ['19:59:20', '19:59:40'] }, { kind: 'arrived', between: ['20:02', '20:02:30'] }],
+    order: ['delay', 'headsup', 'getoff', 'held', 'arrived'],
+  },
+  {
+    id: 'S22f', title: 'Fast feed: Get off now lands 38 s before the live arrival, never over 40 s (build 214)',
+    story: '4 min late, the live arrival steady at 7:59 from fresh position reports. The server sends Get off now at 7:58:20 so it lands at 7:58:22: 38 s before the live arrival (30 s plus the 8 s the feed lags by, so about 30 s before the train really stops), within the 40 s cap.',
+    legs: [sample()], start: '19:46', end: '20:02',
+    feed: { events: [{ at: '19:44', leg: 0, delay: 4 }, ...vehicle(0, [['Lidcombe', '19:52', '19:54:30'], ['Auburn', '19:56:30', '19:57'], ['Clyde', '19:59', null]])] },
+    phone: lockedFrom('19:46', '19:46:20'),
+    ring: [{ kind: 'getoff', lands: '19:58:22', sentAt: '19:58:20' }, { kind: 'arrived', between: ['19:59', '19:59:16'] }],
+    order: ['delay', 'headsup', 'getoff', 'arrived'],
+  },
+  {
+    id: 'S22s', title: 'Slow feed: the earlier arrival reaches the server late, Get off now goes at once (build 214)',
+    story: '4 min late, but the stop feed runs late and says 7:59:40; at 7:58:40 a late position reading puts the arrival at 7:59:05. Get off now goes at once (about 23 s before the train stops, the most the feed allows), once, never early, and no Held because the train comes in.',
+    legs: [sample()], start: '19:46', end: '20:02',
+    feed: { events: [{ at: '19:44', leg: 0, delay: 4 }, ...vehicle(0, [['Lidcombe', '19:52', '19:54:30'], ['Auburn', '19:56:30', '19:57']]), { at: '19:57:10', leg: 0, est: { Clyde: '19:59:40' } }, { at: '19:58:40', leg: 0, est: { Clyde: '19:59:05' } }, { at: '19:59:05', leg: 0, vehicle: { stop: 'Clyde', state: 'at' } }] },
+    phone: lockedFrom('19:46', '19:46:20'),
+    ring: [{ kind: 'getoff', between: ['19:58:40', '19:58:47'] }, { kind: 'arrived', between: ['19:59:05', '19:59:25'] }],
+    order: ['delay', 'headsup', 'getoff', 'arrived'],
   },
 ];
 

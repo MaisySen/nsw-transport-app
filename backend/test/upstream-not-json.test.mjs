@@ -34,13 +34,14 @@ for (const [name, page] of pages) {
   });
 }
 
-test("a board over a hub answering an HTML page says Transport for NSW, not our side", async () => {
+test("a board over a hub answering an HTML page says live data is down, not our side (no provider name, build 214)", async () => {
   answer = pages[0][1];
   const r = await call("/api/departures?stop=2000441&mode=train&count=3");
   const b = await r.json();
   assert.notEqual(r.status, 500);
   assert.equal(b.upstream, true, JSON.stringify(b).slice(0, 200));
   assert.doesNotMatch(String(b.text || ""), /our side/);
+  assert.doesNotMatch(String(b.text || "") + String(b.error || ""), /Transport for NSW|TfNSW/);
 });
 
 test("a good JSON answer still parses", async () => {

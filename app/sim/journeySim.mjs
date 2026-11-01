@@ -26,12 +26,19 @@ export function clockSec(t) {
 const mins = (sec) => Math.max(1, Math.ceil(sec / 60));
 
 // ---------- rule numbers (spec 2.2, 2.4, 2.5, 2.6, 2.7) ----------
+/** Build 214: how long before the live arrival Get off now is sent with this delivery lead (38 s, at most 40 s). */
+export const offLead = (lead = 0) => Math.min(RULES.GETOFF_LEAD + RULES.GETOFF_LAG + Math.max(0, lead), RULES.GETOFF_MAX_LEAD);
 export const RULES = {
   LIVE_FRESH: 120,        // under 2 min: live (evidence, countdown)
   LIVE_CAP: 300,          // R2: live readings over 5 min old are not used for times
   NO_DATA: 600,           // over 10 min: "No live data. Open the app to refresh."
   LEFT_BY: 60,            // the stop's own live time passed by 60 s = left
-  GETOFF_LEAD: 30,        // Get off now at live arrival minus 30 s
+  GETOFF_LEAD: 30,        // Get off now at live arrival minus 30 s (the owner's rule)
+  GETOFF_LAG: 8,          // build 214: plus the feed's lag (shadow trips G-M landed 13-25 s early on 30), so it lands at 38 s
+  GETOFF_MAX_LEAD: 40,    // and never more than 40 s before the live arrival, the delivery lead included
+  HELD_AFTER: 60,         // build 214: "Held, stay on" a minute after Get off now when the train is not in,
+  HELD_AHEAD: 15,         //   the live arrival still 15 s or more away
+  HELD_MOVED: 30,         //   and 30 s or more later than the one Get off now came from (once per stop, no sound)
   SERVER_DELIVERY: 2,     // server sends 2 s early for delivery
   GETOFF_EXPIRE: 30,      // Get off now expires at live arrival + 30 s
   HEADSUP_WINDOW: 120,    // heads-up when the live arrival is 2 min away (or the stop before is left)
@@ -323,7 +330,14 @@ export function renderModel(P, M, snap, t, opts = {}) {
     }
     const nextName = leg.stops[Math.min(nextIdx, leg.off)].name;
     const arrT = C(tm.arr.at);
-    if (phase === 'getOff') {
+    if (phase === 'getOff' && typeof m.rung.held === 'number') {
+      // build 214: held after Get off now
+      status = [`Held · stay on for ${off}`, `Held · stay on`, 'Held, stay on'];
+      trailing = 'Stay on'; minimal = 'Held';
+      arrive = step === 'live' || step === 'about' ? `Arriving about ${arrT}` : null;
+      inApp = `Held before ${off} · stay on${step === 'live' || step === 'about' ? `, arriving about ${arrT}` : ''}`;
+      voiceOver = `Held before ${off}, stay on`;
+    } else if (phase === 'getOff') {
       status = [`Get off now · ${off}`, `Get off · ${off}`, 'Get off now'];
       trailing = 'Off now'; minimal = 'Off';
       arrive = step === 'live' || step === 'about' ? `Arriving ${arrT}` : null;
@@ -527,27 +541,38 @@ export function refStepTrip(P, M, t, S, env) {
     if (!isLast) { M.current = li + 1; env.log(t, `now on leg ${li + 2}`); }
     return;
   }
-  // 3) Get off now at the live arrival minus 30 s
+  // 3) Get off now at the live arrival minus 30 s plus the feed's lag (build 214: 38 s, never over 40 s)
   const lead = env.lead ?? 0;
+  const oL = offLead(lead);
   const prevArr = m.lastArrAt; m.lastArrAt = isLive(tm.arr) ? tm.arr.at : prevArr;
-  if (!moment('getoff') && !moment('getoffQuiet') && isLive(tm.arr) && t >= tm.arr.at - RULES.GETOFF_LEAD - lead) {
+  if (!moment('getoff') && !moment('getoffQuiet') && isLive(tm.arr) && t >= tm.arr.at - oL) {
     // read once more at the fire moment, so a jump in the last seconds moves the timer
     const S2 = rereadFor(t) || S;
     const tm2 = legTimes(P, M, S2, li, t);
     const age2 = t - S2.asOf;
     const e2 = evidence(P, M, S2, li, t);
     if (e2.arrived || e2.passed) return; // handled next second as at-the-stop / passed
-    if (isLive(tm2.arr) && t >= tm2.arr.at - RULES.GETOFF_LEAD - lead) {
+    if (isLive(tm2.arr) && t >= tm2.arr.at - oL) {
       if (age2 < RULES.LIVE_FRESH) {
-        m.rung.getoff = t; if (!moment('headsup')) m.rung.headsup = 'skipped';
-        deliver(t, { kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}, arriving ${C(tm2.arr.at)}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + RULES.GETOFF_EXPIRE, target: tm2.arr.at - RULES.GETOFF_LEAD, arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - RULES.GETOFF_LEAD - lead > t - 1 && tm2.arr.at < prevArr }, age2, false);
-        setPhase(li, 'getOff', t, `live arrival ${clockSec(tm2.arr.at)} minus 30 s, reading ${age2}s old`);
+        m.rung.getoff = t; m.offArrAt = tm2.arr.at; if (!moment('headsup')) m.rung.headsup = 'skipped';
+        deliver(t, { kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}, arriving ${C(tm2.arr.at)}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + RULES.GETOFF_EXPIRE, target: tm2.arr.at - offLead(0), arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - oL > t - 1 && tm2.arr.at < prevArr }, age2, false);
+        setPhase(li, 'getOff', t, `live arrival ${clockSec(tm2.arr.at)} minus ${offLead(0)} s, reading ${age2}s old`);
       } else if (age2 < RULES.LIVE_CAP) {
         m.rung.getoffQuiet = t;
         deliver(t, { kind: 'quiet', quiet: true, title: `${offName} about ${C(tm2.arr.at)}`, body: `${offName} about ${C(tm2.arr.at)}. No live update since ${C(S2.asOf)}.`, level: 'passive', moment: `quiet:${li}` }, age2, false);
       }
       return;
     }
+  }
+  // 3b) held after Get off now (build 214): a minute on, not at the stop, a live reading under 2 min old puts the
+  // arrival 15 s or more away and 30 s or more later than at Get off now: one quiet "Held, stay on", once per stop
+  const gAt = moment('getoff');
+  if (typeof gAt === 'number' && !moment('held') && m.phase === P_.getOff && t >= gAt + RULES.HELD_AFTER && age < RULES.LIVE_FRESH && isLive(tm.arr)
+    && typeof m.offArrAt === 'number' && tm.arr.at - t >= RULES.HELD_AHEAD && tm.arr.at - m.offArrAt >= RULES.HELD_MOVED) {
+    m.rung.held = t;
+    deliver(t, { kind: 'held', quiet: true, title: 'Held, stay on', body: `Held before ${offName}. Stay on, arriving about ${C(tm.arr.at)}.`, level: 'passive', moment: `held:${li}`, expires: tm.arr.at + RULES.GETOFF_EXPIRE, arrAt: tm.arr.at, arrSource: tm.arr.source }, age, false);
+    env.log(t, `leg ${li + 1}: held (live arrival ${clockSec(tm.arr.at)}, ${tm.arr.at - m.offArrAt} s later than at Get off now)`);
+    return;
   }
   // 4) heads-up: the stop before is left, or the live arrival is 2 min away (never before leaving)
   const headsUpNow = e.leftBefore || (e.fresh && isLive(tm.arr) && tm.arr.at - t <= RULES.HEADSUP_WINDOW);
@@ -660,7 +685,7 @@ export function simulate(caseDef, engine = referenceEngine) {
     // backup on the phone, only when the server cannot take Get off now
     if (wentAway && !P.server.reachable && phoneSnap && t - phoneSnap.asOf < RULES.PHONE_WRITE_MAX_AGE) {
       const tm = engine.legTimes(P, M, phoneSnap, M.current, t);
-      if (isLive(tm.arr) && tm.arr.at - t < RULES.NEAR && !M.legs[M.current].rung.getoff) { backup = { at: tm.arr.at - RULES.GETOFF_LEAD, arrAt: tm.arr.at, li: M.current }; log(t, `backup Get off now set on the phone for ${clockSec(backup.at)}`); }
+      if (isLive(tm.arr) && tm.arr.at - t < RULES.NEAR && !M.legs[M.current].rung.getoff) { backup = { at: tm.arr.at - offLead(0), arrAt: tm.arr.at, li: M.current }; log(t, `backup Get off now set on the phone for ${clockSec(backup.at)}`); }
     }
     if (ph.app === 'open') backup = null;
     const S = newest(phoneSnap, P.server.reachable ? serverSnap : null);
@@ -756,7 +781,7 @@ export function rawEvidence(P, t, li, kind, stopIndex) {
     if (kind === 'left' && ((v && (v.stop > stopIndex || (v.stop === stopIndex && v.state === 'left'))) || (est != null && t >= est + RULES.LEFT_BY))) return true;
     if (kind === 'at' && ((v && v.stop >= stopIndex) || (est != null && t >= est))) return true;
     if (kind === 'near' && live != null && live - t <= RULES.HEADSUP_WINDOW + 1) return true;
-    if (kind === 'getoff' && live != null && t >= live - RULES.GETOFF_LEAD - RULES.SERVER_DELIVERY - 1) return true;
+    if (kind === 'getoff' && live != null && t >= live - offLead(RULES.SERVER_DELIVERY) - 1) return true;
   }
   return false;
 }
@@ -821,10 +846,12 @@ export function checkInvariants(out) {
       if ((r.kind === 'getoff' || r.kind === 'headsup') && r.age >= RULES.LIVE_FRESH) bad('I5', r.t, `${r.kind} with sound from a reading ${r.age}s old`);
     }
     if (r.backup && r.age > RULES.PHONE_WRITE_MAX_AGE) bad('I5', r.t, 'backup set from an old reading');
-    // I8: Get off now at the live arrival minus 30 s (within 5 s), or at once after a jump
+    // I8: Get off now lands at the live arrival minus 38 s (build 214, within 5 s), or at once after a jump
     if (r.kind === 'getoff' && r.target != null) {
       const lands = r.lands ?? r.t;
-      if (Math.abs(lands - r.target) > 5 && !(lands > r.target && r.jumped)) bad('I8', r.t, `Get off now lands ${clockSec(lands)}, should be ${clockSec(r.target)} (live arrival ${clockSec(r.arrAt)} minus 30 s)`);
+      if (Math.abs(lands - r.target) > 5 && !(lands > r.target && r.jumped)) bad('I8', r.t, `Get off now lands ${clockSec(lands)}, should be ${clockSec(r.target)} (live arrival ${clockSec(r.arrAt)} minus ${offLead(0)} s)`);
+      // build 214 cap: never more than 40 s before the live arrival it came from
+      if (r.arrAt != null && r.arrAt - lands > RULES.GETOFF_MAX_LEAD) bad('I8', r.t, `Get off now lands ${r.arrAt - lands} s before the live arrival (cap ${RULES.GETOFF_MAX_LEAD} s)`);
     }
     // I9: each calm step at most once per stop, never "Wake up", one vibration at most
     const key = r.moment ? r.moment.split(':').slice(0, 2).join(':').replace('atstop', 'getoff') : r.kind;

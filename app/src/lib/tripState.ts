@@ -11,7 +11,19 @@ export const TRIP_RULES = {
   LIVE_CAP: 300000, // R2: live readings over 5 min old are not used for times
   NO_DATA: 600000, // over 10 min: "No live data. Open the app to refresh."
   LEFT_BY: 60000, // the stop's own live time passed by 60 s = left
-  GETOFF_LEAD: 30000, // Get off now at live arrival minus 30 s
+  GETOFF_LEAD: 30000, // Get off now at live arrival minus 30 s (the owner's rule: it should land 30 s before the stop)
+  // Build 214 (1 Nov 2026, Bidur OK 2:31 PM): the feed's lag, made up for. Shadow trips G, H, I, K, M (31 Oct) landed
+  // 13 to 25 s before the train stopped (mean 20 s) on the 30 s timer: the position-based arrival ran up to 15 s late
+  // and a reading reached the server up to 15 s after its timer. Aiming 8 s earlier lands about 30 s before the stop;
+  // never more than 40 s before the live arrival it was worked out from (GETOFF_MAX_LEAD, delivery lead included).
+  GETOFF_LAG: 8000,
+  GETOFF_MAX_LEAD: 40000,
+  // Build 214: a train held after Get off now (shadow trip L, 31 Oct: held 2 min 43 s outside Lidcombe). One calm note
+  // "Held, stay on" (no sound) when, 60 s after Get off now, the train is not at the stop, the live arrival is still at
+  // least 15 s away and has moved at least 30 s later than the one Get off now came from. Never twice; Arrived still comes.
+  HELD_AFTER: 60000,
+  HELD_AHEAD: 15000,
+  HELD_MOVED: 30000,
   SERVER_DELIVERY: 2000, // the server sends 2 s early for delivery
   GETOFF_EXPIRE: 30000, // Get off now expires at live arrival + 30 s
   HEADSUP_WINDOW: 120000, // heads-up when the live arrival is 2 min away (or the stop before is left)
@@ -28,6 +40,13 @@ export const TRIP_RULES = {
   AT_STOP_M: 150, // a vehicle under 150 m from a stop is at it
 };
 const R = TRIP_RULES;
+/**
+ * How long before the live arrival Get off now is sent (build 214): the 30 s rule plus the feed's lag (8 s), plus this
+ * side's delivery lead (0 in the app, 2 s on the server), never over 40 s. It lands 38 s before the live arrival.
+ */
+export const getOffLeadMs = (deliveryLead = 0) => Math.min(R.GETOFF_LEAD + R.GETOFF_LAG + Math.max(0, deliveryLead), R.GETOFF_MAX_LEAD);
+/** When Get off now is due for a live arrival (it lands then): the arrival less 38 s. */
+export const getOffDueAt = (arr: number) => arr - getOffLeadMs(0);
 
 // Kylie clips in the app bundle (spec 2.6, 2.7 V8). arrival is new in build 212.
 export const TRIP_CLIPS = {
@@ -273,6 +292,8 @@ export type LegMemory = {
   phase: number; phaseAt: Partial<Record<TripPhase, number | null>>; phaseWhy: Partial<Record<TripPhase, string>>;
   arrivedAt: number | null; arrivedTime: number | null; rung: Record<string, number | string>;
   platformAlerted: string | null; delayAlerted: number | null; cancelAlerted: boolean; replaced: number | null; replacedWhy?: 'cancelled' | 'missed' | null; lastArrAt?: number | null;
+  /** Build 214: the live arrival Get off now came from (the held check compares the arrival with it). */
+  offArrAt?: number | null;
 };
 export type TripMemory = { legs: LegMemory[]; current: number };
 export function newTripMemory(plan: TripPlan): TripMemory {
@@ -389,7 +410,9 @@ export type RenderOpts = { c24?: boolean; size?: TextSize; forecast?: boolean; f
 export type TripRender = {
   ended?: boolean; phase: TripPhase; step?: StaleStep; li?: number; leg?: string; title?: string;
   status?: string; warn?: string | null; arrive?: string | null; sub?: string | null; timer?: number | null; staleDate?: number | null;
-  island?: { leading: string; trailing: string; minimal: string; timer: number | null }; widget?: string; watch?: string; inApp?: string; voiceOver?: string;
+  island?: { leading: string; trailing: string; minimal: string; timer: number | null };
+  /** Build 214: held after Get off now (the calm "Held, stay on" note rang); the card says so. */
+  held?: boolean; widget?: string; watch?: string; inApp?: string; voiceOver?: string;
   truncated?: number; widgetTruncated?: boolean; delayShown?: number | null;
   depAt?: number; depPlanned?: number; depSource?: TimeSource; arrAt?: number; arrSource?: TimeSource; asOf?: number;
   platform?: string | null; platformWas?: string | null; nextStop?: string | null; offName?: string; boardName?: string;
@@ -422,6 +445,7 @@ export function tripRender(plan: TripPlan, M: TripMemory, snap: TripReading, t: 
   const L = snap.legs[li];
   const cancelledNoAlt = !!(L && L.cancelled && m.replaced == null && step !== 'timetable' && step !== 'no-data');
   const replacedWhy = m.replaced != null ? (M.legs[li].replacedWhy || 'missed') : null;
+  const held = typeof m.rung.held === 'number' && m.phase === PI.getOff;
   let status: string[] | string = '', warn: string | null = null, arrive: string | null = null, sub: string | null = null, timer: number | null = null;
   let trailing = '', minimal = '', inApp = '', voiceOver = '', nextStop: string | null = null;
   const prefix = isChange ? 'Change: ' : '';
@@ -488,7 +512,14 @@ export function tripRender(plan: TripPlan, M: TripMemory, snap: TripReading, t: 
     const nextName = leg.stops[Math.min(nextIdx, leg.off)].name;
     nextStop = nextName;
     const arrT = C(tm.arr.at);
-    if (phase === 'getOff') {
+    if (phase === 'getOff' && held) {
+      // Build 214: held after Get off now (the one calm note rang): stay on, the arrival from the live times.
+      status = [`Held · stay on for ${off}`, `Held · stay on`, 'Held, stay on'];
+      trailing = 'Stay on'; minimal = 'Held';
+      arrive = step === 'live' || step === 'about' ? `Arriving about ${arrT}` : null;
+      inApp = `Held before ${off} · stay on${step === 'live' || step === 'about' ? `, arriving about ${arrT}` : ''}`;
+      voiceOver = `Held before ${off}, stay on`;
+    } else if (phase === 'getOff') {
       status = [`Get off now · ${off}`, `Get off · ${off}`, 'Get off now'];
       trailing = 'Off now'; minimal = 'Off';
       arrive = step === 'live' || step === 'about' ? `Arriving ${arrT}` : null;
@@ -544,7 +575,7 @@ export function tripRender(plan: TripPlan, M: TripMemory, snap: TripReading, t: 
     truncated: [S, Wn, A, T, Mi].filter((x) => x.truncated).length, widgetTruncated: WG.truncated,
     delayShown: (step === 'live' || step === 'about') && d != null && (phase === 'waiting' || phase === 'due') ? d : null,
     depAt: tm.dep.at, depPlanned: tm.dep.planned, depSource: tm.dep.source, arrAt: tm.arr.at, arrSource: tm.arr.source, asOf: tm.asOf,
-    platform: p, platformWas: was, nextStop, offName: off, boardName: board,
+    platform: p, platformWas: was, nextStop, offName: off, boardName: board, ...(held ? { held: true } : {}),
   };
 }
 
@@ -574,7 +605,7 @@ export function forecastPhaseOf(plan: TripPlan, Mw: TripMemory, snap: TripReadin
 // ---------- what moves the trip and what rings (spec 2.2, 2.3, 2.6) ----------
 /** One moment to deliver to the person: an alert, maybe with a Kylie clip and in-app words (say). Times in ms. */
 export type TripRing = {
-  kind: 'cancelled' | 'missed' | 'delay' | 'platform' | 'passed' | 'atstop' | 'arrived' | 'getoff' | 'quiet' | 'headsup';
+  kind: 'cancelled' | 'missed' | 'delay' | 'platform' | 'passed' | 'atstop' | 'arrived' | 'getoff' | 'quiet' | 'headsup' | 'held';
   title: string; body: string; level: 'normal' | 'time sensitive' | 'passive'; moment: string; clip?: ClipKey | null; say?: string; quiet?: boolean;
   expires?: number; target?: number; arrAt?: number; arrSource?: TimeSource; jumped?: boolean;
 };
@@ -698,27 +729,40 @@ export function tripStep(plan: TripPlan, M: TripMemory, t: number, S: TripReadin
     if (!isLast) { M.current = li + 1; res.log.push({ t, what: `now on leg ${li + 2}` }); }
     return res;
   }
-  // 3) Get off now at the live arrival minus 30 s
+  // 3) Get off now at the live arrival minus 30 s, plus the feed's lag (build 214: it lands 38 s before the live
+  // arrival, about 30 s before the train stops; never over 40 s before it, getOffLeadMs)
   const lead = env.lead ?? 0;
+  const offLead = getOffLeadMs(lead);
   const prevArr = m.lastArrAt ?? null; m.lastArrAt = isLiveTime(tm.arr) ? tm.arr.at : prevArr;
-  if (!rung('getoff') && !rung('getoffQuiet') && isLiveTime(tm.arr) && t >= tm.arr.at - R.GETOFF_LEAD - lead) {
+  if (!rung('getoff') && !rung('getoffQuiet') && isLiveTime(tm.arr) && t >= tm.arr.at - offLead) {
     // read once more at the fire moment, so a jump in the last seconds moves the timer
     const S2 = (env.reread && env.reread()) || S;
     const tm2 = tripLegTimes(plan, M, S2, li, t);
     const age2 = t - S2.asOf;
     const e2 = tripEvidence(plan, M, S2, li, t);
     if (e2.arrived || e2.passed) return res; // at the stop / passed: the next step says so
-    if (isLiveTime(tm2.arr) && t >= tm2.arr.at - R.GETOFF_LEAD - lead) {
+    if (isLiveTime(tm2.arr) && t >= tm2.arr.at - offLead) {
       if (age2 < R.LIVE_FRESH) {
-        m.rung.getoff = t; if (!rung('headsup')) m.rung.headsup = 'skipped';
-        deliver({ kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}, arriving ${C(tm2.arr.at)}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + R.GETOFF_EXPIRE, target: tm2.arr.at - R.GETOFF_LEAD, arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - R.GETOFF_LEAD - lead > t - 1000 && tm2.arr.at < prevArr }, age2, false);
-        setPhase(M, li, 'getOff', t, `live arrival ${tripClockSec(tm2.arr.at)} minus 30 s, reading ${Math.round(age2 / 1000)}s old`, res.log);
+        m.rung.getoff = t; m.offArrAt = tm2.arr.at; if (!rung('headsup')) m.rung.headsup = 'skipped';
+        deliver({ kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}, arriving ${C(tm2.arr.at)}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + R.GETOFF_EXPIRE, target: getOffDueAt(tm2.arr.at), arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - offLead > t - 1000 && tm2.arr.at < prevArr }, age2, false);
+        setPhase(M, li, 'getOff', t, `live arrival ${tripClockSec(tm2.arr.at)} minus ${Math.round(getOffLeadMs(0) / 1000)} s, reading ${Math.round(age2 / 1000)}s old`, res.log);
       } else if (age2 < R.LIVE_CAP) {
         m.rung.getoffQuiet = t;
         deliver({ kind: 'quiet', quiet: true, title: `${offName} about ${C(tm2.arr.at)}`, body: `${offName} about ${C(tm2.arr.at)}. No live update since ${C(S2.asOf)}.`, level: 'passive', moment: `quiet:${li}` }, age2, false);
       }
       return res;
     }
+  }
+  // 3b) Held after Get off now (build 214, Bidur OK 1 Nov 2:31 PM): a minute on, the train is not at the stop, a live
+  // reading under 2 min old puts it at least 15 s away and at least 30 s later than the arrival Get off now came from.
+  // One calm note, no sound, never twice for this stop; Arrived comes as usual when the train gets in.
+  const gAt = rung('getoff');
+  if (typeof gAt === 'number' && !rung('held') && m.phase === PI.getOff && t >= gAt + R.HELD_AFTER && fresh && isLiveTime(tm.arr)
+    && typeof m.offArrAt === 'number' && tm.arr.at - t >= R.HELD_AHEAD && tm.arr.at - m.offArrAt >= R.HELD_MOVED) {
+    m.rung.held = t;
+    deliver({ kind: 'held', quiet: true, title: 'Held, stay on', body: `Held before ${offName}. Stay on, arriving about ${C(tm.arr.at)}.`, level: 'passive', moment: `held:${li}`, expires: tm.arr.at + R.GETOFF_EXPIRE, arrAt: tm.arr.at, arrSource: tm.arr.source }, age, false);
+    res.log.push({ t, what: `leg ${li + 1}: held (live arrival ${tripClockSec(tm.arr.at)}, ${Math.round((tm.arr.at - m.offArrAt) / 1000)} s later than at Get off now)` });
+    return res;
   }
   // 4) heads-up: the stop before is left, or the live arrival is 2 min away (never before leaving)
   const headsUpNow = e.leftBefore || (e.fresh && isLiveTime(tm.arr) && tm.arr.at - t <= R.HEADSUP_WINDOW);
@@ -777,7 +821,7 @@ export function ringRoute(s: RouteState, ring: TripRing, t: number): RingRoute {
 /**
  * The phone's own backup Get off now (G39, spec 2.6): only when the server has not taken it, set from a reading under
  * 20 s old when the app goes to the background, only when the live arrival is under 5 min away, at the live arrival
- * minus 30 s. Null otherwise.
+ * minus 38 s (getOffDueAt, build 214). Null otherwise.
  */
 export function backupGetOff(plan: TripPlan, M: TripMemory, snap: TripReading | null, t: number, serverTakes: boolean): { at: number; arrAt: number; li: number } | null {
   if (serverTakes || !snap || t - snap.asOf >= R.PHONE_WRITE_MAX_AGE) return null;
@@ -785,7 +829,7 @@ export function backupGetOff(plan: TripPlan, M: TripMemory, snap: TripReading | 
   if (M.legs[li].rung.getoff || M.legs[li].phase >= PI.arrived) return null;
   const tm = tripLegTimes(plan, M, snap, li, t);
   if (!isLiveTime(tm.arr) || tm.arr.at - t >= R.NEAR) return null;
-  return { at: tm.arr.at - R.GETOFF_LEAD, arrAt: tm.arr.at, li };
+  return { at: getOffDueAt(tm.arr.at), arrAt: tm.arr.at, li };
 }
 
 /** The plan for a trip: one plan leg per trip leg (from the service answers when loaded), then any alternatives. */

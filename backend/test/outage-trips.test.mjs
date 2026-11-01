@@ -162,7 +162,8 @@ test("errors never carry a bare status, and an upstream failure does not blame t
   const r = await call("/api/nearby?lat=-33.70&lon=151.10");
   engineUp = true;
   assert.ok(r.status >= 500);
-  assert.match(r.body.error, /Transport for NSW/);
+  assert.match(r.body.error, /^Live data isn't available right now/, "build 214: plain words, no provider name");
+  assert.doesNotMatch(r.body.error, /Transport for NSW|TfNSW/);
   assert.doesNotMatch(r.body.error, /\(\d{3}\)|signal/);
 });
 

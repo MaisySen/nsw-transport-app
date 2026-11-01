@@ -1,7 +1,7 @@
 // Live trip maths, shared by the live trip screen and its tests. No React Native imports here.
 import type { ServiceResp, ServiceStop, WatchLeg } from './types';
 import type { TextSize, TimeSource, TripRender, StaleStep, TripMemory, VoiceState } from './tripState';
-import { boardIndexOf, isLiveTime, newTripMemory, offIndexOf, PHASE_INDEX, tripEvidence, tripLegTimes, tripPlanFrom, tripReadingFrom, tripRender, tripStep, TRIP_RULES, voiceGate } from './tripState';
+import { boardIndexOf, getOffDueAt, isLiveTime, newTripMemory, offIndexOf, PHASE_INDEX, tripEvidence, tripLegTimes, tripPlanFrom, tripReadingFrom, tripRender, tripStep, TRIP_RULES, voiceGate } from './tripState';
 
 export type LegLive = { dep: number; arr: number; delay: number; live: boolean; d: ServiceResp | null; gone?: boolean;
   /** The change to this leg was missed: dep and arr are the earliest you could go, not this service's times. */
@@ -711,7 +711,7 @@ export function nextFlowMoment(g: LiveTripLike, s: LiveState, now: number): numb
   const x = s.L2[s.cur];
   if (!M || !x || !x.arrLive || !Number.isFinite(x.arr)) return null;
   if (M.legs[s.cur]?.rung?.getoff) return null;
-  const at = x.arr - TRIP_RULES.GETOFF_LEAD;
+  const at = getOffDueAt(x.arr);
   return at > now && at - now <= 20000 ? at : null;
 }
 
