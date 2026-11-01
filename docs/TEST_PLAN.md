@@ -3,6 +3,10 @@
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
 
+## Get off now timing race, server (1 Nov, branch server-getoff-1nov)
+* `backend/test/getoff-race-1nov.test.mjs`: 5 tests, 5 pass (0 of 5 on the merge dc902d3, evidence in files/day-1nov/failing-first-getoff.txt). S17a and S17b each run through the real worker's trip flow on the virtual clock of tools/simtrip.mjs with feed answers 0 to 2.4 s and the pass's timers 0 to 0.6 s late (15 runs each), and with seeded timer jitter (20 seeds x 2 answer times each); S16, S17c, S17d, S2, S1 with slow answers; /api/service refresh=1&at=. Deterministic, no real sleeps, no Transport for NSW.
+* Real-time harness (tools/rt-harness on the app branch fix-getoff-1nov): S17a and S17b 20 times each at speed 30, and 20 times each under CPU load: 0 flakes. Full 46 scenarios: no failing check beyond e0bf4652's "after" list.
+
 ## Cut-off realtime feed, server hotfix (1 Nov, branch server-lockedlive-hang)
 * `backend/test/feed-truncated.test.mjs` (5): every parse runs in a worker thread with a watchdog (a call past 1.5 s is a hang and fails the test; each call must take under 50 ms). The 4-byte repro [10,127,1,2]; every prefix of a synthetic feed with 6 trip updates and 4 vehicles (a whole-field cut parses, any other cut throws "truncated feed"); every prefix of a trip update, a vehicle position and an alerts feed; 2,000 random garbage buffers (seed 20261101) through indexFeed, the trip and vehicle readers and decodeAlerts; loadFeed serving the last good copy to the fetching and the joining request. All 5 fail or hang on 51b46a4. Run: `OFFLINE=1 TZ=Australia/Sydney node --test backend/test/feed-truncated.test.mjs`.
 * Before/after check (not in the suite): 3,000 random well-formed feeds and 3,000 alert feeds read identically by 51b46a4 and this branch.

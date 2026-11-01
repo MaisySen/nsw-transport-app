@@ -41,11 +41,18 @@ async function freshWorker() {
 let fake = null, FAKE = null;
 async function startFake() {
   if (fake) return;
-  const PORT = 8900 + Math.floor(Math.random() * 90);
-  FAKE = `http://127.0.0.1:${PORT}`;
-  fake = spawn(process.execPath, [path.join(backend, "tools/fake-nsw.mjs"), String(PORT)], { stdio: ["ignore", "pipe", "inherit"] });
-  process.on("exit", () => { try { fake.kill(); } catch {} });
-  await new Promise((r) => fake.stdout.once("data", r));
+  // Test files run side by side, each with its own fake: a port another one holds makes the fake exit at once, and the
+  // run then waited for it forever (1 Nov). Another port is tried then.
+  for (let tries = 0; tries < 8; tries++) {
+    const PORT = 8900 + Math.floor(Math.random() * 1000);
+    const child = spawn(process.execPath, [path.join(backend, "tools/fake-nsw.mjs"), String(PORT)], { stdio: ["ignore", "pipe", "ignore"] });
+    const up = await new Promise((r) => { child.stdout.once("data", () => r(true)); child.once("exit", () => r(false)); });
+    if (!up) continue;
+    fake = child; FAKE = `http://127.0.0.1:${PORT}`;
+    process.on("exit", () => { try { child.kill(); } catch {} });
+    return;
+  }
+  throw new Error("the fake feed server did not start");
 }
 /** A fresh copy of the worker with the trip flow parts exported (for unit tests). */
 export async function loadWorker() { await freshWorker(); return W; }
@@ -55,9 +62,19 @@ export function stopFake() { if (fake) { fake.kill(); fake = null; } }
 
 const realFetch = globalThis.fetch;
 let caught = null;
+let feedMs = 0;
 globalThis.fetch = async (url, init = {}) => {
   const u = String(url instanceof Request ? url.url : url);
-  if (u.startsWith("https://api.transport.nsw.gov.au/")) { caught.nsw++; const k = u.slice(31).split("?")[0].replace(/\/[^/]*$/, (x) => (/departure_mon|trip|stop_finder/.test(x) ? x : "")); caught.nswBy = caught.nswBy || {}; caught.nswBy[k] = (caught.nswBy[k] || 0) + 1; return realFetch(FAKE + u.slice("https://api.transport.nsw.gov.au".length), { headers: { ...(init.headers || {}), "x-sim-now": String(clock) } }); }
+  if (u.startsWith("https://api.transport.nsw.gov.au/")) {
+    caught.nsw++; const k = u.slice(31).split("?")[0].replace(/\/[^/]*$/, (x) => (/departure_mon|trip|stop_finder/.test(x) ? x : "")); caught.nswBy = caught.nswBy || {}; caught.nswBy[k] = (caught.nswBy[k] || 0) + 1;
+    const asked = clock;
+    const r = await realFetch(FAKE + u.slice("https://api.transport.nsw.gov.au".length), { headers: { ...(init.headers || {}), "x-sim-now": String(asked) } });
+    // runCase opts.feedMs: a feed answer arrives this long after it was asked on the virtual clock (made at the moment it
+    // was asked), as a real fetch does, so the copy a step reads can be older than the moment the step is for (1 Nov,
+    // S17a/S17b). Fetches asked together (trip updates and vehicles) arrive together.
+    if (feedMs > 0 && /\/gtfs\//.test(u)) clock = Math.max(clock, asked + feedMs);
+    return r;
+  }
   if (/^https:\/\/api(\.sandbox|\.development)?\.push\.apple\.com\//.test(u)) {
     caught.apple.push({ at: clock, headers: init.headers, body: JSON.parse(init.body) });
     return new Response(null, { status: 200, headers: { "apns-id": "sim-" + caught.apple.length } });
@@ -112,6 +129,7 @@ function legsFor(net) {
 }
 
 /** Runs one case through the server. opts: { flags } (server switches), { flow: 1 } registers as an old app,
+ * { feedMs } each live feed answer takes that long, { lateMs } each of the pass's waits ends that much late,
  * { handover: { leg, at } } splits that leg's run into two trip ids (the test supplies the run: globalThis.ownRun). */
 export async function runCase(id, opts = {}) {
   await startFake();
@@ -122,6 +140,7 @@ export async function runCase(id, opts = {}) {
   const P = net.P;
   caught = { apple: [], expo: [], nsw: 0, other: [] };
   clock = at(P.start);
+  feedMs = Number(opts.feedMs) || 0;
   // opts.handover { leg, at }: the leg's train carries on under another trip id from stop index at (case-feed.mjs)
   const ho = (opts.handover ? `&handover=${opts.handover.leg}:${opts.handover.at}` : "") + (opts.tripId ? `&tripid=${opts.tripId.leg}:${encodeURIComponent(opts.tripId.id)}` : "");
   await realFetch(`${FAKE}/__mode?set=case&case=${encodeURIComponent(id)}&base=${BASE}${ho}`);
@@ -140,7 +159,11 @@ export async function runCase(id, opts = {}) {
   const cardOnly = opts.cardOnly || null;
   await call(env, "POST", "/api/live-activity", { token: LA_TOKEN, device: DEVICE, activity: "sim", trip: { id: "sim", title: "sim", to: { id: "x", name: legs[legs.length - 1].to }, legs, rode: {}, ...flow, ...(cardOnly && cardOnly.arrivedAt != null ? { arrivedAt: at(cardOnly.arrivedAt) } : {}) } });
   const reg = cardOnly ? { body: null } : await call(env, "POST", "/api/watch", { device: DEVICE, kind: "trip", legs, track: true, getOff: 1, getOffVoice: 1, to: { id: "x", name: legs[legs.length - 1].to }, ...flow, ...(opts.profile ? { profile: opts.profile } : {}) });
-  const wait = async (msW) => { clock += Math.max(0, msW); };
+  // opts.lateMs: every wait of the pass ends this much late (a busy server copy: its timers fire after their moment)
+  // (a list: the waits end that late in turn, cycled, a box whose timers are late by different amounts)
+  const lateList = Array.isArray(opts.lateMs) ? opts.lateMs.map(Number) : [Number(opts.lateMs) || 0];
+  let waits = 0;
+  const wait = async (msW) => { clock += Math.max(0, msW) + (lateList[waits++ % lateList.length] || 0); };
   let minute = Math.ceil(clock / 60000) * 60000;
   let catchUp = null;
   // opts.endAt (seconds since midnight): stop the run there (opts.get then reads routes at that moment)
@@ -156,6 +179,7 @@ export async function runCase(id, opts = {}) {
     const open = (P.phone || []).find((p) => p.app === "open" && at(p.at) > at(P.start) + 1000 && at(p.at) <= clock && at(p.at) > clock - 60000);
     if (open && !catchUp) { const r = await call(env, "GET", `/api/watches?device=${DEVICE}&since=1`); catchUp = { at: clock, notes: r.body ? r.body.notes : null }; }
   }
+  feedMs = 0;
   const got = opts.get ? await call(env, "GET", opts.get) : null;
   return { id, net, reg: reg.body, caught, catchUp, got, ...summarise(caught, P) };
 }

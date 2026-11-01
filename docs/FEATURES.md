@@ -4,6 +4,9 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Get off now follows the newest live arrival at its moment (server, 1 Nov, branch server-getoff-1nov, not yet deployed)
+The trip flow decides Get off now (and every 15 s step near the stop) only on a feed copy asked for at or after that moment, so an arrival that moves in that very second moves Get off now with it: never rung on the old arrival, never missed. The open app's own Get off now read (`/api/service?refresh=1&at=`) gets the same. Builds 211 to 214, no build needed.
+
 ## Realtime feed safety (server, 1 Nov hotfix, branch server-lockedlive-hang, not yet deployed)
 * A realtime feed that arrives cut off or corrupted is refused ("truncated feed") and the last good copy keeps serving, labelled with its own time (it stops counting as live after 5 min, as before). Before, such a feed could freeze a server copy until it was killed, stopping boards, trips and the minute's Lock Screen card and alert pushes. Nothing changes for a normal feed.
 

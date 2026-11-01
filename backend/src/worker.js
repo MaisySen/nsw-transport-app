@@ -658,13 +658,32 @@ function feedFreshness(now = Date.now()) {
   return { at: now, maxAgeS: FEED_LIVE_MAX_MS / 1000, headerTime: FEED_HEADER_USE, isolate: feedStats.isolate, byMode, feeds };
 }
 
-async function loadFeed(env, path, kind, maxAgeMs) {
+async function loadFeed(env, path, kind, maxAgeMs, notBefore) {
   const now = Date.now();
   const hit = feedMem.get(path);
   // maxAgeMs (the new trip flow's read at a Get off now moment): a copy older than that is fetched again, past the
   // shared 15 s copy, so the alert rests on what the feed says now.
-  const fresh = Number.isFinite(maxAgeMs) && maxAgeMs > 0 && maxAgeMs < FEED_TTL_MS;
-  if (hit && hit.buf && now - hit.at < (fresh ? maxAgeMs : FEED_TTL_MS)) { feedStats.memHits++; return hit; }
+  // notBefore (1 Nov, Get off now race S17a/S17b): only a copy ASKED FOR at or after that moment will do (a copy's `at`
+  // is when it was asked, below). The trip flow's step at a moment (its Get off now timer, its 15 s reads near the stop)
+  // reads what the feed said at that moment, never a copy from just before it: a copy 4.7 s old at the timer missed an
+  // arrival that moved in that second and Get off now rang 160 s early; a copy 14.7 s old at the 15 s read missed an
+  // earlier arrival and Get off now never rang.
+  const nb = Number.isFinite(notBefore) && notBefore > 0 ? Math.min(notBefore, now) : null;
+  const fresh = nb != null || (Number.isFinite(maxAgeMs) && maxAgeMs > 0 && maxAgeMs < FEED_TTL_MS);
+  // (a fetch asked at or after the moment that failed counts as that moment's read: the last good copy stands, with its
+  // own time, and the feed is not asked again for every trip and every step while it is down)
+  const okHit = (e) => !!e && !!e.buf && (nb != null ? e.at >= nb || (e.triedAt || 0) >= nb : now - e.at < (fresh ? maxAgeMs : FEED_TTL_MS));
+  if (okHit(hit)) { feedStats.memHits++; return hit; }
+  // A fetch for a moment that is already running (asked at or after it) is joined: one fetch serves every trip due then.
+  // A feed answering slowly (a fetch still out after FEED_WAIT_MS) is not asked again on top of it at every moment:
+  // that fetch is joined (the stale ladder speaks for its age), so a slow feed never gets more than one fetch at a time.
+  const slowJob = hit && hit.job && !hit.job.done && now - hit.job.at >= FEED_WAIT_MS && now - hit.job.at < FEED_JOB_MAX_MS;
+  if (hit && hit.job && nb != null && ((hit.job.at >= nb && !hit.job.done && now - hit.job.at < FEED_JOB_MAX_MS) || slowJob)) {
+    return joinJob(hit.job, FEED_JOB_MAX_MS).catch((e) => {
+      if (hit.buf && hit.idx) { feedFreshRow(path, kind).servedOld++; return hit; }
+      throw e;
+    });
+  }
   // A fetch still running after FEED_JOB_MAX_MS is taken as lost and asked again: the request that started it may have
   // answered before it finished (realtimeFor waits FEED_WAIT_MS at most), and the runtime can drop its unfinished work.
   // Before 26 Oct (g28) such a fetch stayed in feedMem for the life of the copy: no fresh feed again, and every later
@@ -689,9 +708,15 @@ async function loadFeed(env, path, kind, maxAgeMs) {
     if (!res.ok) { upstreamRefused(res.status, res.headers && res.headers.get("x-error-detail")); throw new Error(`Realtime feed ${path} answered ${res.status}`); }
     const buf = new Uint8Array(await res.arrayBuffer());
     const age = shared ? Number(res.headers.get("age")) || 0 : 0;
-    const at = Date.now() - Math.min(age, FEED_TTL_MS / 1000) * 1000;
+    // The copy's time is when it was asked for (f0), not when its answer arrived: what the feed said at f0, received a
+    // moment later (1 Nov: an answer that came in after a moment held what the feed said before it).
+    const at = f0 - Math.min(age, FEED_TTL_MS / 1000) * 1000;
     const { idx, headerTs } = indexFeed(buf, kind);
     const entry = { at, buf, idx, headerTs, kind, cache: new Map() };
+    // An answer asked for before a newer copy that is already in (a slow fetch overtaken by a moment's fresh one) does
+    // not replace it: the copy kept is always the newest asked for.
+    const cur = feedMem.get(path);
+    if (cur && cur.buf && cur.at > at) { feedNoteOk(path, kind, entry, Date.now() - f0); return entry; }
     feedMem.set(path, entry);
     feedNoteOk(path, kind, entry, Date.now() - f0);
     return entry;
@@ -703,7 +728,7 @@ async function loadFeed(env, path, kind, maxAgeMs) {
   catch (e) {
     feedNoteErr(path, kind, e);
     // The last good copy, with its own time: realtimeFor gives no live times from it once it is FEED_LIVE_MAX_MS old.
-    if (hit && hit.buf) { feedMem.set(path, hit); feedFreshRow(path, kind).servedOld++; return hit; }
+    if (hit && hit.buf) { const cur = feedMem.get(path); if (!(cur && cur.buf && cur.at > hit.at)) feedMem.set(path, { ...hit, triedAt: Math.max(hit.triedAt || 0, now) }); feedFreshRow(path, kind).servedOld++; return hit; }
     feedMem.delete(path);
     throw e;
   }
@@ -742,8 +767,8 @@ async function realtimeFor(env, pairs, o = {}) {
     const f = FEEDS[k];
     const late = () => new Promise((r) => setTimeout(() => r(null), FEED_WAIT_MS));
     const [tu, vp] = await Promise.all([
-      Promise.race([loadFeed(env, f.tu, "tu", o.maxAgeMs).catch(() => null), late()]),
-      Promise.race([loadFeed(env, f.vp, "vp", o.maxAgeMs).catch(() => null), late()]),
+      Promise.race([loadFeed(env, f.tu, "tu", o.maxAgeMs, o.notBefore).catch(() => null), late()]),
+      Promise.race([loadFeed(env, f.vp, "vp", o.maxAgeMs, o.notBefore).catch(() => null), late()]),
     ]);
     out[k] = { tu: fresh(tu, f.tu, "tu"), vp: fresh(vp, f.vp, "vp") };
   }));
@@ -2255,7 +2280,7 @@ async function service(env, q) {
   // Only for a phone that says it has the newer app (q.ttQuick, x-device or x-profile header): an older app gets the quick
   // answer exactly as server B gave it (27 Oct crash review, docs/API.md "Old apps").
   const engP = q.quick && q.ttQuick && mode === "train" && tripId ? engineTrip(env, null, tripId).catch(() => null) : null;
-  const rt = await realtimeFor(env, [[mode, line, feed]]);
+  const rt = await realtimeFor(env, [[mode, line, feed]], Number.isFinite(q.at) ? { notBefore: q.at } : undefined);
   const tu = tripId ? rt.tu(mode, line, tripId, feed) : null;
   const veh = tripId ? vehicleOf(rt.vp(mode, line, tripId, feed)) : null;
   const now = Date.now();
@@ -6001,7 +6026,8 @@ async function tfRead(env, spec, st, now, o = {}) {
   const alts = (st.tfAlts || []).map((a) => a.leg);
   const all = legs.concat(alts);
   let rt = null;
-  try { rt = await realtimeFor(env, all.map((l) => [l.mode, l.line, l.feed]), o.fresh ? { maxAgeMs: TF.FRESH_AT_MOMENT } : undefined); } catch (e) { rt = null; }
+  const ro = o.notBefore != null ? { notBefore: o.notBefore } : o.fresh ? { maxAgeMs: TF.FRESH_AT_MOMENT } : undefined;
+  try { rt = await realtimeFor(env, all.map((l) => [l.mode, l.line, l.feed]), ro); } catch (e) { rt = null; }
   const asOf = rt ? rt.dataTs() : null;
   const tus = all.map((l) => (rt && asOf ? rt.tu(l.mode, l.line, l.tripId, l.feed) : null));
   const ids = new Set();
@@ -6579,7 +6605,10 @@ async function tfStepWatch(env, w, now, opts = {}) {
   // A named moment between reads (a live time coming or passing) steps the trip on the reading it already has, as the
   // phone does between its reads; only the Get off now moment reads again (fresh, so a jump in the last seconds is seen).
   const momentOnly = !!(n0 && !atTimer && n0.momentAt && now >= n0.momentAt - 250 && !(Number.isFinite(n0.gridAt) && now >= n0.gridAt - 250) && st.tfRaw && !opts.read);
-  let raw = momentOnly ? st.tfRaw : await tfRead(env, spec, st, now, { fresh: atTimer });
+  // 1 Nov (Get off now race, harness S17a/S17b): the read for a moment is a feed copy asked for at or after that moment
+  // (tfReadFrom), never one from just before it, so an arrival that moves in that second moves Get off now with it.
+  const notBefore = momentOnly ? null : tfReadFrom(n0, now, atTimer);
+  let raw = momentOnly ? st.tfRaw : await tfRead(env, spec, st, now, { fresh: atTimer, notBefore });
   if (!momentOnly) st.tfRaw = raw;
   let S = tfState(spec, st, raw);
   const PI = tfPI();
@@ -6648,6 +6677,18 @@ async function tfMarkCarried(env, noteId, device) {
   await db(env).prepare("UPDATE notes SET pushed = COALESCE(pushed, 0) + 1, push_status = ?2 WHERE id = ?1").bind(noteId, JSON.stringify(ps)).run().catch(() => null);
 }
 
+/**
+ * The moment a step's feed copy must be asked for at or after (1 Nov, Get off now race): its Get off now timer, or its
+ * 15 s read on the clock's grid once the live arrival is under 5 min away (n.near), never later than now (a step may run
+ * up to 250 ms before its moment: it then reads at now, and the timer is due again at its moment). Null: any copy the
+ * usual 15 s sharing gives (the 30 s reads far from the stop, a first step, an open app's tick).
+ */
+function tfReadFrom(n, now, atTimer) {
+  if (!n) return null;
+  if (atTimer && Number.isFinite(n.timerAt)) return Math.min(now, n.timerAt);
+  if (n.near && Number.isFinite(n.gridAt) && now >= n.gridAt - 250) return Math.min(now, n.gridAt);
+  return null;
+}
 /** Due for a step: never stepped, its next read has come, or its Get off now timer or another moment has. */
 function tfDue(st, now) { return tfWakeAt(st) <= now + 250; }
 function tfWakeAt(st) {
@@ -7854,7 +7895,23 @@ function serviceQuery(p) {
   for (const k of ["trip", "mode", "line", "feed", "stop", "destId", "planned", "to", "stopName", "toName", "dest", "color"]) if (p.get(k)) q[k] = p.get(k);
   // board=1: trip flow 2 apps before the train leaves ask for the boarding stop's board row too (serviceBoardRow)
   if (p.get("board") === "1") q.board = "1";
+  const at = serviceMomentOf(p);
+  if (at != null) q.at = at;
   return q;
+}
+
+/**
+ * The open app's read at its Get off now moment (1 Nov, Get off now race; app fix-getoff-1nov): refresh=1 with at=<the
+ * moment, ms>. The answer then rests on feed copies asked for at or after that second (never a copy or an answer from
+ * before it), so an arrival that moved in that second moves the app's Get off now too. Only a moment in the last 30 s
+ * (or 5 s ahead, a phone clock a little fast); rounded down to its second, so at most one fresh feed read per feed per
+ * second in a server copy however many phones ask. Older apps never send it: unchanged for them.
+ */
+function serviceMomentOf(p, now = Date.now()) {
+  if (!p || p.get("refresh") !== "1" || !p.get("at")) return null;
+  const at = Number(p.get("at"));
+  if (!Number.isFinite(at) || at > now + 5000 || at < now - 30000) return null;
+  return Math.floor(Math.min(at, now) / 1000) * 1000;
 }
 
 // ---- live card start (generated by tools/gen-livecard.mjs, do not edit by hand)
@@ -12563,7 +12620,9 @@ async function edgeFetchInner(request, env, exec) {
     // New trip first look (30 Oct, x-serves trip-tt): tt=1 answers from our timetable only, never a Trip Planner call, never
     // a copy. The newer app sends it beside its normal trip request for a search it has nothing on screen for.
     if (request.method === "GET" && url.pathname === "/api/trip" && url.searchParams.get("tt") === "1") return tripTtFirst(request, env, exec, url);
-    const cache = request.method === "GET" && EDGE_CACHE_RE.test(url.pathname) && !badInput(url.searchParams) ? edgeCache() : null;
+    // An app's read at its Get off now moment (serviceMomentOf) never takes a copied answer from before that moment.
+    const moment = url.pathname === "/api/service" && serviceMomentOf(url.searchParams) != null;
+    const cache = request.method === "GET" && EDGE_CACHE_RE.test(url.pathname) && !badInput(url.searchParams) && !moment ? edgeCache() : null;
     if (!cache) return handleRequest(request, env, exec);
     const key = edgeKey(url);
     const refresh = url.searchParams.get("refresh") === "1";
