@@ -57,6 +57,7 @@ final class EntryBackTests: XCTestCase {
 
     private func record(_ d: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: d), var line = String(data: data, encoding: .utf8) else { return }
+        let a = XCTAttachment(string: line); a.name = "result-\(d["name"] ?? "")"; a.lifetime = .keepAlways; add(a)
         line += "\n"
         let f = out.appendingPathComponent("results.jsonl")
         if let h = try? FileHandle(forWritingTo: f) { h.seekToEndOfFile(); h.write(line.data(using: .utf8)!); try? h.close() }
@@ -79,7 +80,7 @@ final class EntryBackTests: XCTestCase {
 
     /// The app's own first-run questions (home and work), skipped once so they do not cover the screens.
     private func skipFirstRun() {
-        for label in ["Skip", "Not now", "Done"] {
+        for label in ["Continue", "Skip", "Not now", "Done"] {
             let b = app.buttons[label]
             if b.exists && b.isHittable { b.tap(); sleep(2) }
         }
@@ -88,16 +89,26 @@ final class EntryBackTests: XCTestCase {
     /// The screen's way back: the header's back button (UIKit names it "BackButton"; with the minimal style its label
     /// is "Back"), or the screen's own Back (the live trip, shared trips, profiles). Nothing else on the left counts.
     private func backButton() -> XCUIElement? {
-        let bar = app.navigationBars.firstMatch
-        if bar.exists {
-            for id in ["BackButton", "Back"] {
-                let b = bar.buttons[id]
-                if b.exists && b.isHittable { return b }
-            }
-        }
-        let own = app.buttons["Back"]
-        if own.exists && own.isHittable { return own }
+        let back = NSPredicate(format: "identifier CONTAINS[c] 'back' OR label == 'Back'")
+        let inBar = app.navigationBars.buttons.matching(back).firstMatch
+        if inBar.exists { return inBar }
+        let own = app.buttons.matching(back).firstMatch
+        if own.exists { return own }
         return nil
+    }
+
+    /// The app's tabs: the tab bar (Home, Plan, Ask, More).
+    private func tabsShown() -> Bool {
+        if app.tabBars.firstMatch.exists { return true }
+        return app.buttons["Home"].exists && app.buttons["Plan"].exists
+    }
+
+    private func tap(_ e: XCUIElement) {
+        if e.isHittable { e.tap() } else { e.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+    }
+
+    private func tree(_ name: String) {
+        let a = XCTAttachment(string: app.debugDescription); a.name = name + "-tree"; a.lifetime = .keepAlways; add(a)
     }
 
     private func check(_ name: String, _ link: String, _ what: String, cold: Bool) {
@@ -105,16 +116,18 @@ final class EntryBackTests: XCTestCase {
         sleep(cold ? 14 : 6)
         clearPrompts()
         shot(tag)
-        let tabsUnder = app.tabBars.firstMatch.exists
+        tree(tag)
+        let tabsUnder = tabsShown()
         let back = backButton()
         var tabsAfter = false
         if let b = back {
-            b.tap()
+            tap(b)
             sleep(3)
             clearPrompts()
             sleep(2)
-            tabsAfter = app.tabBars.firstMatch.exists
+            tabsAfter = tabsShown()
             shot(tag + "-after-back")
+            if !tabsAfter { tree(tag + "-after-back") }
         }
         record(["name": tag, "url": link, "what": what, "back": back != nil, "tabsAfterBack": tabsAfter, "tabBarOnScreen": tabsUnder])
         XCTAssertNotNil(back, "\(tag): \(link) opened a screen with no Back")
@@ -129,9 +142,11 @@ final class EntryBackTests: XCTestCase {
         clearPrompts()
         shot("00-first-open")
         skipFirstRun()
-        shot("00-first-open-after-skip")
+        skipFirstRun()
         sleep(3)
-        XCTAssertTrue(app.tabBars.firstMatch.exists, "the app's normal start shows the tab bar")
+        shot("00-first-open-after-skip")
+        tree("00-first-open-after-skip")
+        XCTAssertTrue(tabsShown(), "the app's normal start shows the tab bar")
     }
 
     func test2Cold() {
