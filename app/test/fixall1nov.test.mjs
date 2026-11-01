@@ -143,6 +143,7 @@ test('Apple Watch: old live times never say Get off now, Arrived or Due (A1)', {
   const R = run('watchmoments', watchProgram());
   checkKinds(R, 'watch');
   assert.equal(R['fresh-getoff'].big, 'Get off now');
+  assert.match(R['fresh-getoff'].detail, /^Arriving \d/, 'audit review: the stop is on the line above, the detail says when');
   assert.match(R['old-getoff'].big, /^About \d/, 'the stop time with about');
   assert.match(R['old-getoff'].detail, /^Updated /);
   assert.match(R['old-arrived'].big, /^About \d/);
@@ -190,6 +191,7 @@ test('Watch complications: commute times over 5 min old show the clock time and 
   assert.match(ent, /if old, let u = snapshot\.commuteAt \{ detail = "Updated \\\(Clock\.hhmm\(u\)\)" \}/);
   assert.match(COMP, /\(old \? Text\(Clock\.hhmm\(t\)\) : Text\(t, style: \.timer\)\.monospacedDigit\(\)\)/, 'rectangular and inline: clock time');
   assert.match(COMP, /if let r = entry\.ringRange, let t = entry\.target, !entry\.old \{/, 'circular: no ring countdown');
+  assert.match(COMP, /\} else if entry\.old, let t = entry\.target \{/, 'circular: the line and the clock time, not a bare icon (audit review)');
   assert.match(COMP, /if let t = entry\.target, entry\.old \{/, 'corner: clock time');
   assert.match(read('native-tests/native-audit/Tests/Watch/WatchAuditTests.swift'), /\("commute-old", NextEntry\(/, 'the native audit draws it');
 });

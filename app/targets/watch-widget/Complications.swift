@@ -214,6 +214,18 @@ struct NextView: View {
                         .minimumScaleFactor(0.5)
                 }
                 .padding(.horizontal, 6)
+            } else if entry.old, let t = entry.target {
+                // Build 214 (A6): old commute times keep the line and show the clock time, with no ring countdown.
+                AccessoryWidgetBackground()
+                VStack(spacing: 0) {
+                    Text(entry.line).font(.system(size: 12, weight: .bold, design: .rounded))
+                    Text(Clock.hhmm(t))
+                        .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                }
+                .padding(.horizontal, 6)
+                .widgetAccentable()
             } else {
                 AccessoryWidgetBackground()
                 Image(systemName: "tram.fill").font(.title3)

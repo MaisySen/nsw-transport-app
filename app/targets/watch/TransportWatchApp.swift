@@ -481,7 +481,8 @@ struct LiveTripPanel: View {
                 let color: Color = !old && (card.delayMin ?? 0) > 0 && d.hasSuffix("late") ? .orange : .secondary
                 Text(d).font(.footnote).foregroundStyle(color).lineLimit(2)
             }
-            if m.kind == .ride, let n = card.stopsLeft, n > 1 {
+            // Build 214: no stop count from old live times (it was counted when they were new).
+            if m.kind == .ride, !old, let n = card.stopsLeft, n > 1 {
                 Text("\(n) stops to go").font(.footnote).foregroundStyle(.secondary).lineLimit(1)
             }
             // Build 213 audit: once only ("Plat 16" was on the detail and on its own line).

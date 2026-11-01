@@ -595,7 +595,8 @@ enum WTripMoments {
         case .wait, .due: return delay ?? WText.platform(c.platform)
         case .ride: return c.nextStop.map { "Next: \(WText.short($0))" } ?? delay
         case .next: return "\(WText.short(c.getOffAt)) next"
-        case .getOff: return WText.short(c.getOffAt)
+        // Build 214 (audit review): the stop is already on the line above ("Get off at" / the stop name); say when.
+        case .getOff: return "Arriving \(Clock.hhmm(c.getOffTime))"
         case .arrived: return Clock.hhmm(c.getOffTime)
         }
     }

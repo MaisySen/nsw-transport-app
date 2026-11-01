@@ -102,7 +102,7 @@ final class WatchAuditTests: XCTestCase {
                                   title: "To work", detail: "Sydney Olympic Park to Macquarie University")),
             // Build 214 (A6): commute times over 5 min old show the clock time and when they are from, no countdown.
             ("commute-old", NextEntry(date: n, kind: .commute, line: "T1", colorHex: "#F99D1C", target: n.addingTimeInterval(9.5 * 60), platform: "Platform 2",
-                                      title: "To work", detail: "Updated 3:21pm", old: true)),
+                                      title: "To work", detail: "Updated \(Clock.hhmm(n.addingTimeInterval(-6 * 60)))", old: true)),
             ("live", NextEntry(date: n, kind: .live, line: "610X", colorHex: "#00B5EF", target: n.addingTimeInterval(14 * 60), platform: "Stand D",
                                title: "Off at Macquarie Centre", detail: "You'll likely miss the 5:12pm T1 at Epping")),
             ("later", NextEntry(date: n, kind: .commute, line: "M1", colorHex: "#168388", target: n.addingTimeInterval(75 * 60), platform: "Platform 1",
