@@ -940,6 +940,12 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 
 At most 5% of tests may name the owner's own stations (Strathfield, Burwood, Kings Cross, Redfern, Town Hall, Flemington, Campsie, Five Dock, Chiswick; stop ids 213510, 213516, 201110, 214020, 219410), so the suites cover Sydney and NSW and not one commute. `backend/test/owner-stations.test.mjs` fails over the limit. It counts each `test(` in `app/test/*.test.mjs` and `backend/test/*.test.mjs` once; a test counts when its own code names a station (any case, spaced or joined) or one of the ids, or uses a top level constant, a top level set up or a fixture file of its test file that does. A test that lists the names to check they are absent carries the comment `owner-stations: guard` and is not counted (at most 5 may). New fixtures: use other real stations with their real ids from `backend/src/public/stations`. On 30 Oct: before 344 of 1510 (22.8%), after 27 of 1513 (1.8%); left are real station search and typo tests on the owner's names, `backend/test/ask.test.mjs`, the Ask corpus share test and fixtures captured from live answers. The browser scripts in `app/test/e2e/` are not counted.
 
+## Real-time harness fixes, app (1 Nov, fix-rt-1nov)
+
+* `cd app && OFFLINE=1 TZ=Australia/Sydney node --test test/rtfix1nov.test.mjs` (7, all fail on fix-lockedlive-1nov 5f4fa2e): tripRegCore outcomes, backoff, keys in the server's shape, the native queue entries; live.ts retries, AppState return, End trip by key; the card registration handed to the native queue before the card starts; TripOutbox.swift compiled on its own (queue, backoff, card token after lock, stop over watch, Get off now answer); native wiring (background session, app delegate subscriber, widget flush).
+* Real-time harness, all 48 scenarios: `node tools/rt-harness/run.mjs --server <server-rt-1nov checkout>`; before/after: `RT_APP_OLD=1` with server-lockedlive. F-TOKEN-LATE, F-OFFLINE-START, F-SERVER-START (card token, locked card, Get off now), F-NSW*-START/SLOW/TIMEOUT (registration), F-NSWDOWN12 (stale words), S5 (cadence).
+* On a device (build after 214): Start trip, lock within 2 s; Start trip in Airplane mode, lock, signal back after 2 min; the Lock Screen card must move within a minute of signal and Get off now must come from the server.
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).

@@ -412,6 +412,11 @@ Opal fare card on the trip screen (29 Oct, in the 12:29 AM update 281aa87b): a t
 * Build 210 has its own update line too: runtime 1.2.0 (30 Oct), because main's nightly update goes to 1.0.0 and 1.1.0 and build 210 carries JavaScript main does not have yet. Updates for 1.2.0 come from `build-209` (or main after the merge).
 * Own update line: runtime 1.1.0, App Store version still 1.0.0, build number 209. Builds 201 to 208 keep runtime 1.0.0 and get the same JavaScript published with `OTA_RUNTIME=1.0.0` once 209 is out. The only new JavaScript to native call is Sentry, which loads only after its native module is found, so builds 201 to 208 never call it.
 
+## Trip registrations that reach the server (1 Nov, fix-rt-1nov, not built)
+
+* Start trip's trip watch and the Lock Screen card's push token are sent until the server has them: again with backoff while the app is open, at once when it comes back, and on iPhone by a background upload iOS runs while the phone is locked (also the widget's reload during a trip). No signal or a server blip at Start trip no longer means a frozen Lock Screen card and no Get off now from the server.
+* End trip stops the server's alerts even when Start trip never heard back.
+
 ## Not in the app
 
 No accounts or login, no ads, no analytics or tracking, no Opal card balance. Crash reports are sent only to fix faults (the crash safety net, and Sentry from build 209); the privacy policy lists them. Privacy details: [STORE_PRIVACY.md](STORE_PRIVACY.md) and https://transportsydney.app/privacy/.
