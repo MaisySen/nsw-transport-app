@@ -6893,7 +6893,7 @@ const LIVECARD = (() => {
         const offK = map[n - 1];
         if (vr && !vr.at && o.asOf && offK >= 0 && vr.k === offK && hasXY(vv) && hasXY(d.stops[offK]) && !!vStop && !d.stops.some((s) => s.id === vStop) && !(vAge > 90)) {
             const dO = metres(vv, d.stops[offK]);
-            if (dO <= 1500) {
+            if (dO <= 1000) {
                 const eta = o.asOf - vAge * 1000 + 45000 + Math.round(40 * dO);
                 if (est[n - 1] == null || eta < est[n - 1])
                     est[n - 1] = eta;

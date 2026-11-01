@@ -249,7 +249,7 @@ export function legReadingFrom(pl: PlanLeg, w: Pick<WatchLeg, 'stopId' | 'from' 
     }
   }
   // Owner's rule 3 on the last stretch, as the server's card has it (backend tfLegRaw, 1 Nov 2026): a position-only feed
-  // (a place, no stop id: Sydney Trains) heading to your stop and under 1.5 km out gives the arrival from the position,
+  // (a place, no stop id: Sydney Trains) heading to your stop and under 1 km out gives the arrival from the position,
   // 45 s plus 40 ms a metre, when that is earlier than the stop's own time (the feed's ran 22 s to 3 min late).
   const vv = d.vehicle as { lat?: number | null; lon?: number | null; stopId?: string | null; ageS?: number | null } | null | undefined;
   // read before hasXY narrows vv to its position (the 4 tsc errors on build-212-rc)
@@ -257,7 +257,7 @@ export function legReadingFrom(pl: PlanLeg, w: Pick<WatchLeg, 'stopId' | 'from' 
   const offK = map[n - 1];
   if (vr && !vr.at && o.asOf && offK >= 0 && vr.k === offK && hasXY(vv) && hasXY(d.stops[offK]) && !!vStop && !d.stops.some((s) => s.id === vStop) && !(vAge > 90)) {
     const dO = metres(vv, d.stops[offK] as { lat: number; lon: number });
-    if (dO <= 1500) {
+    if (dO <= 1000) {
       const eta = o.asOf - vAge * 1000 + 45000 + Math.round(40 * dO);
       if (est[n - 1] == null || eta < (est[n - 1] as number)) est[n - 1] = eta;
     }
