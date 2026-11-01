@@ -253,7 +253,7 @@ export async function onAppState(next: string) {
   if (!b) return;
   const off = short(g.legs[b.li]?.to);
   backupId = `getoff-backup-${g.id}-${b.li}`;
-  await scheduleGetOff(backupId, b.at, 'Get off now', `Get off now. ${off}, arriving ${clock(b.arrAt)}.`, 'getoff_now').catch(() => {});
+  await scheduleGetOff(backupId, b.at, 'Get off now', `Get off now. ${off}.`, 'getoff_now').catch(() => {});
 }
 
 /** Mounted once at the root: runs the engine while a trip is in progress. */

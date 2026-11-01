@@ -72,3 +72,13 @@ test('B4: a change keeps its words ("change for the L9") and no clock', () => {
   assert.match(go.body, /change for the L9/);
   assert.doesNotMatch(go.body, CLOCK);
 });
+
+test('B4: the phone\'s own backup Get off now (set ahead, rings while locked) has the same words, no clock time', () => {
+  const src = fs.readFileSync(path.join(root, 'src/lib/liveEngine.ts'), 'utf8');
+  const m = /scheduleGetOff\(backupId, b\.at, 'Get off now', `([^`]*)`/.exec(src);
+  assert.ok(m, 'the backup alert is set');
+  assert.equal(m[1], 'Get off now. ${off}.');
+  // the journey simulator says the same (its server and backup rings)
+  const sim = fs.readFileSync(path.join(root, 'sim/journeySim.mjs'), 'utf8');
+  assert.doesNotMatch(sim, /Get off now\. \$\{[^}]+\}, arriving/);
+});

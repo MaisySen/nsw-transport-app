@@ -554,7 +554,7 @@ export function refStepTrip(P, M, t, S, env) {
     if (isLive(tm2.arr) && t >= tm2.arr.at - oL) {
       if (age2 < RULES.LIVE_FRESH) {
         m.rung.getoff = t; m.offArrAt = tm2.arr.at; if (!moment('headsup')) m.rung.headsup = 'skipped';
-        deliver(t, { kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}, arriving ${C(tm2.arr.at)}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + RULES.GETOFF_EXPIRE, target: tm2.arr.at - offLead(0), arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - oL > t - 1 && tm2.arr.at < prevArr }, age2, false);
+        deliver(t, { kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + RULES.GETOFF_EXPIRE, target: tm2.arr.at - offLead(0), arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - oL > t - 1 && tm2.arr.at < prevArr }, age2, false);
         setPhase(li, 'getOff', t, `live arrival ${clockSec(tm2.arr.at)} minus ${offLead(0)} s, reading ${age2}s old`);
       } else if (age2 < RULES.LIVE_CAP) {
         m.rung.getoffQuiet = t;
@@ -708,7 +708,7 @@ export function simulate(caseDef, engine = referenceEngine) {
     if (backup && t >= backup.at && !M.legs[backup.li].rung.getoff) {
       const leg = P.legs[eff(M, backup.li)];
       M.legs[backup.li].rung.getoff = t;
-      const r = deliver(t, { kind: 'getoff', title: 'Get off now', body: `Get off now. ${leg.stops[leg.off].name}, arriving ${clock(backup.arrAt, ph.c24)}.`, level: 'time sensitive', clip: 'getoff', moment: `getoff:${backup.li}`, expires: backup.arrAt + RULES.GETOFF_EXPIRE, target: backup.at, arrAt: backup.arrAt, backup: true }, 0, false);
+      const r = deliver(t, { kind: 'getoff', title: 'Get off now', body: `Get off now. ${leg.stops[leg.off].name}.`, level: 'time sensitive', clip: 'getoff', moment: `getoff:${backup.li}`, expires: backup.arrAt + RULES.GETOFF_EXPIRE, target: backup.at, arrAt: backup.arrAt, backup: true }, 0, false);
       r.via = 'local backup alert on the phone'; r.sound = ph.silent ? 'Kylie getoff_now clip muted by the Silent switch' : 'Kylie getoff_now clip'; r.haptic = 'one buzz';
       if (r.voice && !ph.silent) { r.voice.words = CLIPS.getoff.words; r.voice.why = undefined; r.voice.by = 'alert sound getoff_now'; }
       backup = null;
