@@ -10,6 +10,11 @@ name: iOS native audit (snapshots only)
 
 on:
   workflow_dispatch:
+    inputs:
+      entry:
+        description: "Also run the app on the simulator and open every outside link (back paths, about 60 min)"
+        type: boolean
+        default: true
   workflow_call:
 
 permissions:
@@ -197,3 +202,70 @@ jobs:
             echo "Watch code compiled; no watch simulator on this runner, so no Watch snapshots. Run the audit again."; exit 1
           fi
           test ! -e "$GITHUB_WORKSPACE/out/FAILED-watch"
+
+  entry:
+    # 1 Nov 2026 (Bidur on build 214: "Widget missing back button or app screen?"): the whole app, JavaScript bundle
+    # included, built for the simulator (Release, unsigned, updates off so it runs this branch's code), then every link
+    # the widgets, Lock Screen, StandBy, Live Activity, Dynamic Island, Control Center and Siri open, with the app closed
+    # and open (entry.sh). Pictures of each landed screen in the artifact. Manual runs only; the build's call skips it.
+    if: github.event_name == 'workflow_dispatch' && inputs.entry
+    runs-on: xcode-27
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+      - name: No live data from the runner
+        run: |
+          # The app's server, updates and crash reports are blocked: the screens open with no times, nothing is fetched.
+          printf '0.0.0.0 api.transportsydney.app\n0.0.0.0 u.expo.dev\n0.0.0.0 transportsydney.app\n' | sudo tee -a /etc/hosts
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Native project (expo prebuild, pod install)
+        run: |
+          npx expo prebuild --platform ios --clean --no-install
+          cd ios && RCT_USE_RN_DEP=1 RCT_USE_PREBUILT_RNCORE=1 pod install
+      - name: Build the app with its JavaScript (simulator, Release, unsigned)
+        env:
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+          NODE_OPTIONS: "--max-old-space-size=8192"
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          WS=$(ls -d ios/*.xcworkspace | head -1); SCHEME=$(basename "$WS" .xcworkspace)
+          xcodebuild build -workspace "$WS" -scheme "$SCHEME" -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath ios/dd \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO > "$GITHUB_WORKSPACE/out/entry-build.log" 2>&1 \
+            || { grep -E "error:" "$GITHUB_WORKSPACE/out/entry-build.log" | sort -u | head -80; tail -40 "$GITHUB_WORKSPACE/out/entry-build.log"; exit 1; }
+          APP=$(ls -d ios/dd/Build/Products/Release-iphonesimulator/*.app | head -1)
+          ls "$APP"/main.jsbundle >/dev/null && echo "JavaScript bundle in $APP"
+          # This branch's own JavaScript, never an update from the server.
+          plutil -replace EXUpdatesEnabled -bool NO "$APP/Expo.plist" || true
+          echo "$PWD/$APP" > /tmp/app-path.txt
+      - name: iPhone simulator
+        working-directory: app/native-tests/native-audit
+        run: |
+          xcrun simctl list devices available -j > /tmp/devs.json
+          DEV=$(python3 sim.py ios /tmp/devs.json)
+          test -n "$DEV"; echo "$DEV" > /tmp/sim-id.txt
+          xcrun simctl boot "$DEV" || true
+          xcrun simctl bootstatus "$DEV" -b > /dev/null
+      - name: Open every outside link, app closed and open
+        working-directory: app/native-tests/native-audit
+        run: bash entry.sh "$(cat /tmp/app-path.txt)" "$GITHUB_WORKSPACE/out/entry" "$(cat /tmp/sim-id.txt)"
+      - name: Contact sheet
+        if: always()
+        working-directory: app/native-tests/native-audit
+        run: |
+          python3 -m venv /tmp/v && /tmp/v/bin/pip -q install pillow
+          /tmp/v/bin/python entry_sheet.py "$GITHUB_WORKSPACE/out/entry" "$GITHUB_WORKSPACE/out/entry-sheet.png" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-audit-entry
+          path: out
+          retention-days: 14
