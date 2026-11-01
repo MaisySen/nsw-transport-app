@@ -27,7 +27,7 @@ globalThis.Date = SimDate;
 const raw = fs.readFileSync(path.join(backend, "src/worker.js"), "utf8").replace(/export default\s*\{/, "const __default = {");
 // Only the names this worker has (an older branch has no trip flow pass: the run then drives its minute tick, which is
 // how a failing-first run on server-211-rc shows what the old server does with each case).
-const WANT = ["tfPass", "tfPassStep", "serverCfg", "TF", "LIVECARD", "tfLegRaw", "tfLegReading", "tfPlanLeg", "tfState", "tfCard", "tfNext", "runTick", "svcOffIndex"];
+const WANT = ["tfPass", "tfPassStep", "tfRunTu", "tfArrivedOnPhone", "tickLiveActivities", "tfNextRunPrefix", "tfFeedRun", "serverCfg", "TF", "LIVECARD", "tfLegRaw", "tfLegReading", "tfPlanLeg", "tfState", "tfCard", "tfNext", "runTick", "svcOffIndex"];
 const src = raw + "\nexport { __default, " + WANT.filter((n) => new RegExp("\\n(?:async )?(?:function|const|let) " + n + "\\b").test(raw)).join(", ") + " };\n";
 // A fresh copy of the worker for each case: its feed copies and shared jobs are kept in memory by the clock, and each
 // case starts its clock again.
@@ -111,16 +111,20 @@ function legsFor(net) {
   }));
 }
 
-/** Runs one case through the server. opts: { flags } (server switches), { flow: 1 } registers as an old app. */
+/** Runs one case through the server. opts: { flags } (server switches), { flow: 1 } registers as an old app,
+ * { handover: { leg, at } } splits that leg's run into two trip ids (the test supplies the run: globalThis.ownRun). */
 export async function runCase(id, opts = {}) {
   await startFake();
   await freshWorker();
   const c = caseById(id);
-  const net = caseNet(c);
+  // opts.tripId { leg, id }: the leg's trip id as Sydney Trains names it (its split carries on as the next run letter)
+  const net = caseNet(c, opts.tripId ? { tripId: opts.tripId } : {});
   const P = net.P;
   caught = { apple: [], expo: [], nsw: 0, other: [] };
   clock = at(P.start);
-  await realFetch(`${FAKE}/__mode?set=case&case=${encodeURIComponent(id)}&base=${BASE}`);
+  // opts.handover { leg, at }: the leg's train carries on under another trip id from stop index at (case-feed.mjs)
+  const ho = (opts.handover ? `&handover=${opts.handover.leg}:${opts.handover.at}` : "") + (opts.tripId ? `&tripid=${opts.tripId.leg}:${encodeURIComponent(opts.tripId.id)}` : "");
+  await realFetch(`${FAKE}/__mode?set=case&case=${encodeURIComponent(id)}&base=${BASE}${ho}`);
   const direct = P.server.direct !== false;
   const reachable = P.server.reachable !== false;
   const flags = opts.flags || { tripflow2: true, getOffPush: true, liveStops: true, ...(direct ? {} : { apnsAlerts: false }) };
@@ -131,22 +135,29 @@ export async function runCase(id, opts = {}) {
   const flow = opts.flow === 1 ? {} : { tripFlow: 2, c24 };
   if (!reachable) return { id, skipped: "server not reachable in this case" };
   if (direct) await call(env, "POST", "/api/push/expo", { device: DEVICE, token: EXPO, platform: "ios" });
-  await call(env, "POST", "/api/live-activity", { token: LA_TOKEN, device: DEVICE, activity: "sim", trip: { id: "sim", title: "sim", to: { id: "x", name: legs[legs.length - 1].to }, legs, rode: {}, ...flow } });
-  const reg = await call(env, "POST", "/api/watch", { device: DEVICE, kind: "trip", legs, track: true, getOff: 1, getOffVoice: 1, to: { id: "x", name: legs[legs.length - 1].to }, ...flow });
+  // opts.cardOnly { arrivedAt }: only the Lock Screen card is registered (no watch), as a phone does when it registers
+  // a card again after the trip; the card passes (tickLiveActivities) push it.
+  const cardOnly = opts.cardOnly || null;
+  await call(env, "POST", "/api/live-activity", { token: LA_TOKEN, device: DEVICE, activity: "sim", trip: { id: "sim", title: "sim", to: { id: "x", name: legs[legs.length - 1].to }, legs, rode: {}, ...flow, ...(cardOnly && cardOnly.arrivedAt != null ? { arrivedAt: at(cardOnly.arrivedAt) } : {}) } });
+  const reg = cardOnly ? { body: null } : await call(env, "POST", "/api/watch", { device: DEVICE, kind: "trip", legs, track: true, getOff: 1, getOffVoice: 1, to: { id: "x", name: legs[legs.length - 1].to }, ...flow, ...(opts.profile ? { profile: opts.profile } : {}) });
   const wait = async (msW) => { clock += Math.max(0, msW); };
   let minute = Math.ceil(clock / 60000) * 60000;
   let catchUp = null;
-  while (clock < at(P.end)) {
+  // opts.endAt (seconds since midnight): stop the run there (opts.get then reads routes at that moment)
+  const endAt = Number.isFinite(opts.endAt) ? at(opts.endAt) : at(P.end);
+  while (clock < endAt) {
     if (clock < minute) clock = minute;
     W.serverCfg.at = 0;
-    if (W.tfPass) await W.tfPass(env, minute, wait);
+    if (cardOnly && W.tickLiveActivities) await W.tickLiveActivities(env, clock);
+    else if (W.tfPass) await W.tfPass(env, minute, wait);
     else await W.runTick(env, { skipLa: true });
     minute += 60000;
     // the app opened: its catch-up ask (spec 2.6 G32), once, at the first open after locking
     const open = (P.phone || []).find((p) => p.app === "open" && at(p.at) > at(P.start) + 1000 && at(p.at) <= clock && at(p.at) > clock - 60000);
     if (open && !catchUp) { const r = await call(env, "GET", `/api/watches?device=${DEVICE}&since=1`); catchUp = { at: clock, notes: r.body ? r.body.notes : null }; }
   }
-  return { id, net, reg: reg.body, caught, catchUp, ...summarise(caught, P) };
+  const got = opts.get ? await call(env, "GET", opts.get) : null;
+  return { id, net, reg: reg.body, caught, catchUp, got, ...summarise(caught, P) };
 }
 
 /** The server's alerts (Expo, Apple alert pushes, card pushes carrying an alert) and card pushes, in case time. */

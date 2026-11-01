@@ -86,7 +86,9 @@ http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   if (u.pathname === "/__mode") {
     if (u.searchParams.get("set")) { mode = u.searchParams.get("set"); net = {}; for (const k of ["trips", "stations", "perTrip", "unknown", "empty", "stands", "at", "ts", "late"]) if (u.searchParams.get(k)) net[k] = +u.searchParams.get(k); }
-    if (mode === "case" && u.searchParams.get("case")) caseRun = { net: caseNet(caseById(u.searchParams.get("case"))), base: +u.searchParams.get("base") };
+    if (mode === "case" && u.searchParams.get("case")) caseRun = { net: caseNet(caseById(u.searchParams.get("case")), /^\d+:[A-Za-z0-9.]+$/.test(u.searchParams.get("tripid") || "") ? { tripId: { leg: +u.searchParams.get("tripid").split(":")[0], id: u.searchParams.get("tripid").split(":").slice(1).join(":") } } : {}), base: +u.searchParams.get("base"),
+      // handover=LEG:AT: that leg's train carries on under another trip id from stop index AT (case-feed.mjs caseFeed)
+      handover: /^\d+:\d+$/.test(u.searchParams.get("handover") || "") ? { leg: +u.searchParams.get("handover").split(":")[0], at: +u.searchParams.get("handover").split(":")[1] } : null };
     res.end(JSON.stringify({ mode, hits: hits.length, last: hits.slice(-20) })); return; }
   hits.push({ t: Date.now(), p: u.pathname, auth: req.headers.authorization ? "apikey set" : "none", mode });
   const isFeed = u.pathname.includes("/gtfs/");
@@ -101,7 +103,7 @@ http.createServer((req, res) => {
   if (mode === "case" && caseRun) {
     const at = Math.floor((Number(req.headers["x-sim-now"]) || Date.now()) - caseRun.base) / 1000;
     const t = Math.floor(at);
-    if (isFeed) return send(200, Buffer.from(caseFeed(caseRun.net, caseRun.base, t, u.pathname.includes("/vehiclepos/") ? "vp" : "tu")), "application/x-google-protobuf");
+    if (isFeed) return send(200, Buffer.from(caseFeed(caseRun.net, caseRun.base, t, u.pathname.includes("/vehiclepos/") ? "vp" : "tu", caseRun.handover)), "application/x-google-protobuf");
     if (u.pathname.includes("/tp/departure_mon")) { const id = u.searchParams.get("name_dm"); return send(200, JSON.stringify({ locations: [{ id, name: "Sample stop", type: "stop" }], stopEvents: caseBoard(caseRun.net, caseRun.base, t, id) })); }
     if (u.pathname.includes("/tp/")) return send(200, "{}");
   }

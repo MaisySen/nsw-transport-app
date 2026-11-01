@@ -723,6 +723,17 @@ async function realtimeFor(env, pairs, o = {}) {
     feeds: out,
     tu(mode, line, tripId, feed) { return pick(mode, line, tripId, feed, "tu"); },
     vp(mode, line, tripId, feed) { return pick(mode, line, tripId, feed, "vp"); },
+    // The trip ids in the trip update feeds that start with `prefix` (at most 5): a train's next trip (tfFeedRun).
+    idsLike(mode, line, feed, prefix) {
+      const ids = [];
+      if (!prefix) return ids;
+      for (const k of feedKeys(mode, line, feed)) {
+        const f = out[k] && out[k].tu;
+        if (!f || !f.idx) continue;
+        for (const id of f.idx.keys()) { if (String(id).startsWith(prefix)) { ids.push(String(id)); if (ids.length >= 5) return ids; } }
+      }
+      return ids;
+    },
     fetchedAt() { let m = 0; for (const k in out) { if (out[k].tu) m = Math.max(m, out[k].tu.at); if (out[k].vp) m = Math.max(m, out[k].vp.at); } return m || null; },
     // The oldest trip update copy in use, by its own time (feedDataTs): what a live time from these feeds is as of.
     dataTs() { let m = Infinity; for (const k in out) if (out[k].tu) m = Math.min(m, feedDataTs(out[k].tu)); return Number.isFinite(m) && m > 0 ? m : null; },
@@ -5964,7 +5975,33 @@ async function tfRead(env, spec, st, now, o = {}) {
   all.forEach((l, i) => { ids.add(l.stopId); if (l.toStopId) ids.add(l.toStopId); for (const u of (tus[i] && tus[i].stus) || []) ids.add(u.stopId); });
   ids.delete(null); ids.delete(undefined);
   const info = await stopInfo(env, [...ids]).catch(() => ({}));
-  const raw = all.map((l, i) => tfLegRaw(l, tus[i], rt && asOf ? vehicleOf(rt.vp(l.mode, l.line, l.tripId, l.feed)) : null, info, asOf));
+  const vehs = all.map((l) => (rt && asOf ? vehicleOf(rt.vp(l.mode, l.line, l.tripId, l.feed)) : null));
+  const raw = all.map((l, i) => tfLegRaw(l, tus[i], vehs[i], info, asOf));
+  // A train whose run carries on under another trip id (Sydney Trains splits one train's run at Central: 1 Nov 2026
+  // 6:30 PM, the owner's T1 858N from Town Hall became 858P after Central): the feed drops the first id once the train
+  // is past the change, so its leg read "Timetable times, not live" for 32 min on the Lock Screen card and no heads-up,
+  // Get off now or arrival came. The open app already follows the run (/api/service, ownRun + runStops); the trip
+  // flow now does too, with the trips of the run read from our own timetable (no Transport for NSW call), once per
+  // trip id per watch (st.tfRuns), and only for a leg whose own trip update does not reach its stop.
+  if (rt && asOf) {
+    for (let i = 0; i < all.length; i++) {
+      const l = all[i];
+      if (!tfRunNeeded(raw[i])) continue;
+      const trips = await tfRunTrips(env, st, l, now, rt);
+      if (!trips || trips.length < 2) continue;
+      const followed = tfRunTu(trips, l.tripId, (t) => rt.tu(l.mode, l.line, t, l.feed), tus[i]);
+      if (!followed) continue;
+      const more = followed.tu.stus.map((u) => u.stopId).filter((id) => id && !info[id]);
+      if (more.length) Object.assign(info, await stopInfo(env, [...new Set(more)]).catch(() => ({})));
+      let veh = vehs[i];
+      if (!veh) for (const t of followed.trips) { veh = vehicleOf(rt.vp(l.mode, l.line, t, l.feed)); if (veh) break; }
+      const r2 = tfLegRaw(l, followed.tu, veh, info, asOf);
+      // never a train an hour away from the leg's own timetable arrival (a wrong run)
+      const off2 = tfOffEst(r2), arrP = ms(l.arrPlanned);
+      if (off2 != null && Number.isFinite(arrP) && Math.abs(off2 - arrP) > 60 * 60000) continue;
+      if (tfRawScore(r2) > tfRawScore(raw[i])) { r2.run = followed.trips; raw[i] = r2; }
+    }
+  }
   const M = st.tf;
   const cur = M && Number.isInteger(M.current) ? Math.min(M.current, legs.length - 1) : 0;
   const left = M && M.legs[cur] && M.legs[cur].phase >= tfPI().left;
@@ -5990,6 +6027,97 @@ async function tfRead(env, spec, st, now, o = {}) {
     cands.push({ forLeg: bi, leg: wl, raw: r, id: "alt:" + bi + ":" + (wl.tripId || wl.planned) });
   }
   return { asOf, at: now, legs: raw.slice(0, legs.length), alts: raw.slice(legs.length), cands };
+}
+
+/** A leg reading that may need its train's run followed: no trip update, or one that does not reach the stop off. */
+const tfRunNeeded = (r) => !!r && !r.cancelled && (r.unmatched || tfOffEst(r) == null);
+const tfOffEst = (r) => r.est[r.before ? 2 : 1];
+/** How much a leg reading knows: its trip in the feed, the stop off's own live time, the train's position. */
+const tfRawScore = (r) => (r && !r.unmatched ? 1 : 0) + (r && tfOffEst(r) != null ? 2 : 0) + (r && r.vehicle ? 1 : 0);
+
+/** The trip ids of a leg's train run from its own trip on (our own timetable, raptor.js ownRun), kept per watch. */
+const TF_RUN_RETRY_MS = 10 * 60000;
+async function tfRunTrips(env, st, l, now, rt = null) {
+  if (!l || !l.tripId || !l.stopId) return null;
+  const pack = await tfPackRun(env, st, l, now);
+  if (pack && pack.length >= 2) return pack;
+  // Our timetable does not link every split (1 Nov 2026: 858N's run ended at Central in our pack), so the feed is asked
+  // for the train's next trip by Sydney Trains' own naming (tfFeedRun).
+  return rt ? tfFeedRun(l.tripId, (prefix) => rt.idsLike(l.mode, l.line, l.feed, prefix)) : pack;
+}
+async function tfPackRun(env, st, l, now) {
+  if (typeof ownRun !== "function") return null;
+  st.tfRuns = st.tfRuns || {};
+  const kept = st.tfRuns[l.tripId];
+  if (kept && (kept.trips.length || now - kept.at < TF_RUN_RETRY_MS)) return kept.trips;
+  let run = null;
+  try { run = await ownRun(env, l.tripId, l.stopId, ms(l.planned)); } catch { run = null; }
+  let trips = run && Array.isArray(run.trips) ? run.trips.map(String) : run && Array.isArray(run.stops) ? [...new Set(run.stops.map((x) => x && x.trip).filter(Boolean).map(String))] : [];
+  const k = trips.indexOf(String(l.tripId));
+  trips = k >= 0 ? trips.slice(k, k + 4) : [];
+  const keys = Object.keys(st.tfRuns);
+  if (keys.length >= 8) delete st.tfRuns[keys[0]];
+  st.tfRuns[l.tripId] = { trips, at: now };
+  return trips;
+}
+
+/**
+ * A Sydney Trains run's next trip by its id: one train set's trips through the day share the run number and the
+ * timetable part, lettered A, B, C ... with I and O left out (1 Nov 2026 in the feed: 858H then 858J, 858N then 858P,
+ * 859L then 859M, 871N then 871P); the last part differs. "858N.1417.150.2.A.8.92149684" -> "858P.1417.150.2.A.8.".
+ * null for an id not shaped like that (other modes, other operators).
+ */
+const TF_RUN_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+function tfNextRunPrefix(tripId) {
+  const m = /^(\d{1,4})([A-HJ-NP-Z])(\.\d+\.\d+\.\d+\.[A-Z]\.\d+)\.\d+$/.exec(String(tripId || ""));
+  if (!m) return null;
+  const k = TF_RUN_LETTERS.indexOf(m[2]);
+  if (k < 0 || k + 1 >= TF_RUN_LETTERS.length) return null;
+  return m[1] + TF_RUN_LETTERS[k + 1] + m[3] + ".";
+}
+/** The run from a trip on, by tfNextRunPrefix, as far as the feed lists it (at most 3 trips); [] when nothing follows. */
+function tfFeedRun(tripId, idsLike) {
+  const trips = [String(tripId)];
+  let cur = String(tripId);
+  for (let hop = 0; hop < 2; hop++) {
+    const pre = tfNextRunPrefix(cur);
+    const ids = pre ? idsLike(pre) : [];
+    if (ids.length !== 1) break; // none, or not one train: never guessed
+    trips.push(ids[0]);
+    cur = ids[0];
+  }
+  return trips.length >= 2 ? trips : [];
+}
+
+/**
+ * One trip update for a train's whole run from a leg's trip on: the stop events of each trip of the run in order (a
+ * stop listed by two trips, the change station, keeps the first one that has a time). The leg's own trip says whether
+ * it is cancelled; null when no trip after the first is in the feed.
+ */
+function tfRunTu(trips, tripId, tuOf, ownTu) {
+  if (!Array.isArray(trips) || trips.length < 2 || trips[0] !== String(tripId)) return null;
+  if (ownTu && ownTu.rel === 3) return null;
+  const stus = [], seen = new Map();
+  let ts = 0, rel = ownTu ? ownTu.rel : undefined, later = 0;
+  const used = [];
+  trips.forEach((t, k) => {
+    const tu = k === 0 ? ownTu : tuOf(t);
+    if (!tu || !Array.isArray(tu.stus)) return;
+    if (k > 0 && tu.rel === 3) return;
+    if (k > 0 && tu.stus.length) later++;
+    used.push(t);
+    ts = Math.max(ts, Number(tu.ts) || 0);
+    if (rel === undefined) rel = tu.rel;
+    for (const u of tu.stus) {
+      const has = (x) => !!(x && (x.time || x.delay != null));
+      const j = seen.get(u.stopId);
+      if (j != null) { if (!(has(stus[j].arr) || has(stus[j].dep)) && (has(u.arr) || has(u.dep))) stus[j] = u; continue; }
+      seen.set(u.stopId, stus.length);
+      stus.push(u);
+    }
+  });
+  if (!later || !ts) return null;
+  return { tu: { ...(ownTu || {}), stus, ts, rel: rel === 3 ? 0 : rel }, trips: used };
 }
 
 /** A stop's departure board, one read per stop per TF.BOARD_REUSE (shared by the trip flow pass and /api/service board=1). */
@@ -6527,8 +6655,17 @@ async function tfCardAlone(env, trip, now) {
   const raw = await tfRead(env, spec, st, now);
   const S = tfState(spec, st, raw);
   for (let k = 0; k < spec.legs.length + 1; k++) { const cur = S.M.current; LIVECARD.tripStep(S.plan, S.M, now, S.reading, { c24: spec.c24, lead: LIVECARD.TRIP_RULES.SERVER_DELIVERY }); if (S.M.current === cur) break; }
-  return tfCard(spec, S, now, { c24: spec.c24 });
+  const c = tfCard(spec, S, now, { c24: spec.c24 });
+  // No live reading of any leg and the last planned arrival 30 min gone: the trip is over, whatever the timetable step
+  // says (one reading of a train that has left the feed starts the trip again at "Due now").
+  const lastL = spec.legs[spec.legs.length - 1];
+  const lastAt = ms(lastL.arrPlanned) || ms(lastL.planned);
+  if (!c.end && Number.isFinite(lastAt) && now > lastAt + TF_ALONE_END_MS && raw.legs.every((r) => !r || r.unmatched)) c.end = true;
+  return c;
 }
+const TF_ALONE_END_MS = 30 * 60000;
+/** The phone's card says its trip has arrived (arrivedAt, set by the app at arrival; never a time to come). */
+const tfArrivedOnPhone = (trip, now) => Number.isFinite(Number(trip && trip.arrivedAt)) && Number(trip.arrivedAt) > 0 && Number(trip.arrivedAt) <= now + 60000;
 // ---- trip flow 2 end
 
 function legFromInput(l) {
@@ -10080,7 +10217,11 @@ async function laPushOne(env, row, now, o = {}) {
   if (tfWanted(trip) && (await serverOn(env, "tripflow2"))) {
     const c = await tfCardAlone(env, trip, now);
     let lastPhase = null; try { lastPhase = JSON.parse(row.last_state || "null").phase; } catch { lastPhase = null; }
-    const r = await tfPushCard(env, row, c, now, { mustSee: c.end || c.card.phase !== lastPhase });
+    // The phone said the trip has arrived (its card registered again with arrivedAt): the card ends now. 1 Nov 2026: a
+    // card the owner's phone registered at 6:23 PM, just after its 6:04 PM trip arrived, was pushed "Due now, Kings
+    // Cross" every 30 s for over an hour, as the reading of a train long gone starts the trip again from the timetable.
+    if (tfArrivedOnPhone(trip, now)) c.end = true;
+    const r = await tfPushCard(env, row, c, now, { mustSee: c.end || c.card.phase !== lastPhase, end: c.end });
     return { ...r, phase: c.card.phase, flow: 2 };
   }
   const { card, done } = await laCardFor(env, trip, now);
@@ -10248,6 +10389,37 @@ async function liveActivityRoute(env, request, path, now = Date.now()) {
     ON CONFLICT(token) DO UPDATE SET activity = excluded.activity, device = excluded.device, trip = excluded.trip, updated = excluded.updated, expires = excluded.expires, active = 1`)
     .bind(token, cleanId(b.activity, 80) || null, cleanId(b.device) || null, JSON.stringify(trip), now, expires).run();
   return json({ ok: true, push: !!env.APNS_KEY });
+}
+
+/**
+ * GET /api/live-card?profile=P[&line=T1&off=Strathfield]: the trip card the server's trip flow has for this install's
+ * trip in progress, in the shape the app writes to its widgets (liveCard: times in ms, until), from the watch's last
+ * reading (no Transport for NSW call, no new reading). For the iPhone widgets and the Watch complication, which cannot
+ * run the app's code on a locked phone (1 Nov 2026: the "Your trip" widget and the Watch read only the card the app
+ * saved, so on a locked phone they froze while the Lock Screen card moved on). card null when no trip is in progress.
+ * line and off (the stop off) pick the trip the widget shows when the profile has more than one.
+ */
+const LIVE_CARD_KEEP_MS = 30 * 60000;
+async function liveCardRoute(env, url, now = Date.now()) {
+  const q = url.searchParams;
+  const profile = profileId(q.get("profile"));
+  if (!profile || profile.length < 12) return json({ error: "profile needed" }, 400);
+  if (!(await serverOn(env, "tripflow2"))) return json({ card: null, off: true });
+  const rows = await d1all(env, "SELECT * FROM watches WHERE active = 1 AND profile = ?1 AND kind = 'trip' ORDER BY created DESC LIMIT 5", profile).catch(() => []);
+  const line = String(q.get("line") || "").slice(0, 12), off = LIVECARD.stopShort(String(q.get("off") || "").slice(0, 80));
+  for (const w of rows) {
+    let spec, st;
+    try { spec = JSON.parse(w.spec); st = w.state ? JSON.parse(w.state) : {}; } catch { continue; }
+    if (!tfWanted(spec) || !st.tfRaw || !st.tf) continue;
+    const S = tfState(spec, st, st.tfRaw);
+    const c = tfCard(spec, S, now, { c24: !!spec.c24, alts: st.tfAlts });
+    if (line && off && !(c.card.line === line || spec.legs.some((l) => l.line === line))) continue;
+    if (line && off && c.card.getOffAt !== off && LIVECARD.stopShort(spec.legs[spec.legs.length - 1].to || "") !== off && !spec.legs.some((l) => LIVECARD.stopShort(l.to || "") === off)) continue;
+    const until = Math.min(Number(w.expires) || now + LIVE_CARD_KEEP_MS, (Number(c.card.arrival) || now) + LIVE_CARD_KEEP_MS);
+    const ended = !!c.end || c.card.phase === "arrived";
+    return json({ card: { title: w.title || null, ...c.card, until, ...(c.step && c.step !== "live" ? { step: c.step } : {}) }, ended, asOf: st.tfAsOf || null, readAt: st.tfRaw.at || null });
+  }
+  return json({ card: null });
 }
 
 /** Admin: the latest cards (tokens cut short), or a test push to the newest active card (or one by token start). */
@@ -11432,6 +11604,8 @@ async function handleRequest(request, env, exec) {
         case "/api/live-activity/forget":
         case "/api/apns/device":
           return await liveActivityRoute(env, request, url.pathname);
+        case "/api/live-card":
+          return await liveCardRoute(env, url);
         case "/api/admin/live-activity": {
           if (!adminOk(request)) return json({ error: "forbidden" }, 403);
           return await liveActivityAdmin(env, request, p);

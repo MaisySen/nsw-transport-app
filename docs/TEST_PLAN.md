@@ -2,6 +2,10 @@
 
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
+
+## Locked screens live, server (1 Nov, branch server-lockedlive)
+* `backend/test/locked-live-1nov.test.mjs` (8): run split followed in the server simulation (tools/case-feed.mjs `handover`, simtrip opts `handover`/`tripId`/`cardOnly`/`get`), the next-run-letter rule, `/api/live-card`, cards ended after arrival. 7 of 8 fail on server-214 8fa2b4c; the 8th is the no-split check.
+
 ## Levels
 
 | Level | Where | Runs |

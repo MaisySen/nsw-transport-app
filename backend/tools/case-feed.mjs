@@ -22,11 +22,13 @@ const tripIdOf = (leg) => "SIM." + (leg.id || "leg" + leg.li);
 export function caseById(id) { const c = CASES.find((x) => x.id === id); if (!c) throw new Error("no case " + id); return c; }
 
 /** Everything the fake needs about one case: the prepared case, the stop names (asset shard) and the trips. */
-export function caseNet(c) {
+export function caseNet(c, o = {}) {
   const P = prepare(c);
   const names = {};
   for (const leg of P.legs) {
     leg.tripId = tripIdOf(leg);
+    // o.tripId { leg, id }: that leg's trip id as the feed would name it (a run split test)
+    if (o.tripId && o.tripId.leg === leg.li) leg.tripId = o.tripId.id;
     leg.stops.forEach((s, k) => {
       const nm = s.name.replace(/,.*$/, "");
       names[stationId(s.name)] = [leg.mode === "bus" ? nm : nm + " Station", -33.8 - k * 0.01, 151 + k * 0.01];
@@ -41,7 +43,18 @@ export function caseNet(c) {
 const stopIdOf = (leg, k) => (k === 0 ? platformId(leg.stops[0].name, leg) : k > leg.off ? stationId(leg.stops[leg.off].name) + "_beyond" : stationId(leg.stops[k].name));
 
 /** The trip update feed (kind "tu") or vehicle position feed ("vp") at time t (seconds since midnight). */
-export function caseFeed(net, base, t, kind) {
+// handover { leg, at }: that leg's train carries on under another trip id from stop index `at` (Sydney Trains splits a
+// run at Central: 858N becomes 858P). The first id lists the stops up to the change and leaves the feed once the train
+// has left it; the second id (tripId + ".b") lists the change stop onwards; the vehicle reports the second id from then.
+// A Sydney Trains shaped id ("858N.1417.150.2.A.8.92149684") carries on as the run's next letter ("858P....2"), as
+// in the feed; any other id as id + ".b".
+export const handoverTrip = (leg) => {
+  const m = /^(\d+)([A-Z])(\..*)\.(\d+)$/.exec(leg.tripId);
+  if (!m) return leg.tripId + ".b";
+  const L = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  return m[1] + L[L.indexOf(m[2]) + 1] + m[3] + ".92107490";
+};
+export function caseFeed(net, base, t, kind, handover = null) {
   const { P } = net;
   const S = snapshot(P, t);
   const tsS = Math.floor(base / 1000) + S.asOf;
@@ -49,35 +62,51 @@ export function caseFeed(net, base, t, kind) {
   P.legs.forEach((leg, li) => {
     const L = S.legs[li];
     if (L.unmatched) return;
+    const ho = handover && handover.leg === li ? handover.at : null;
+    const past = ho != null && !!L.vehicle && (L.vehicle.stop > ho || (L.vehicle.stop === ho && L.vehicle.state === "left"));
+    if (ho != null && kind === "tu") {
+      // the first trip id: stops up to the change, gone once the train has left it
+      if (!past) ents.push(...tripEnt(leg, L, li, base, tsS, leg.tripId, 0, ho, "e"));
+      ents.push(...tripEnt(leg, L, li, base, tsS, handoverTrip(leg), ho, leg.off + 1, "h"));
+      return;
+    }
     if (kind === "tu") {
-      const trip = [...str(1, leg.tripId), ...num(4, L.cancelled ? 3 : 0), ...str(5, "SIM_" + leg.line)];
-      const stus = [];
-      if (!L.cancelled) {
-        for (let k = 0; k <= leg.off + 1; k++) {
-          const tt = k <= leg.off ? leg.stops[k].tt : leg.stops[leg.off].tt + 120;
-          // A stop's own live time is a time; the run's carried delay is a delay with no time (as the simulator tells
-          // them apart: only a time counts as that stop's own evidence).
-          // Stops in between carry a projected time (the stop before yours needs its timetable time for "Next: X").
-          const own = k <= leg.off && L.est[k] != null ? L.est[k] : (k > 0 && k < leg.off && L.runDelay != null ? tt + L.runDelay : null);
-          if (own == null && L.runDelay == null) continue;
-          // A plan stop with no news of its own is listed with no times (the run's delay rides the other stops): Sydney
-          // Trains' delay with no clock time at a stop is that stop's own estimate (the open app reads it as one through
-          // /api/service, so the server does too, 31 Oct 2026), so a carried delay is never put on a plan stop.
-          if (own == null && k <= leg.off) { stus.push(msg(2, [...num(1, k + 1), ...str(4, stopIdOf(leg, k))])); continue; }
-          const ev = own != null ? [...num(1, own - tt), ...num(2, Math.floor(base / 1000) + own)] : [...num(1, L.runDelay)];
-          stus.push(msg(2, [...num(1, k + 1), ...msg(2, ev), ...msg(3, ev), ...str(4, stopIdOf(leg, k))]));
-        }
-      }
-      ents.push(msg(2, [...str(1, "e" + li), ...msg(3, [...msg(1, trip), ...stus.flat(), ...num(4, tsS)])]));
+      ents.push(...tripEnt(leg, L, li, base, tsS, leg.tripId, 0, leg.off + 1, "e"));
     } else if (L.vehicle && !L.cancelled) {
       const v = L.vehicle;
       const k = v.state === "at" ? v.stop : v.stop + 1;
-      const vp = [...msg(1, str(1, leg.tripId)), ...msg(2, [...f32(1, -33.8 - k * 0.01), ...f32(2, 151 + k * 0.01)]), ...num(3, k + 1), ...num(4, v.state === "at" ? 1 : 2), ...num(5, Math.floor(base / 1000) + v.at), ...str(7, stopIdOf(leg, k))];
+      const id = ho != null && (k > ho || (k === ho && v.state === "left") || past) ? handoverTrip(leg) : leg.tripId;
+      const vp = [...msg(1, str(1, id)), ...msg(2, [...f32(1, -33.8 - k * 0.01), ...f32(2, 151 + k * 0.01)]), ...num(3, k + 1), ...num(4, v.state === "at" ? 1 : 2), ...num(5, Math.floor(base / 1000) + v.at), ...str(7, stopIdOf(leg, k))];
       ents.push(msg(2, [...str(1, "v" + li), ...msg(4, vp)]));
     }
   });
   const header = [...str(1, "2.0"), ...num(3, tsS)];
   return new Uint8Array([...msg(1, header), ...ents.flat()]);
+}
+
+/** One trip update entity: the leg's stop events from stop index k0 to k1 under trip id `id`. */
+function tripEnt(leg, L, li, base, tsS, id, k0, k1, tag) {
+  const ents = [];
+  const trip = [...str(1, id), ...num(4, L.cancelled ? 3 : 0), ...str(5, "SIM_" + leg.line)];
+  const stus = [];
+  if (!L.cancelled) {
+    for (let k = k0; k <= k1; k++) {
+      const tt = k <= leg.off ? leg.stops[k].tt : leg.stops[leg.off].tt + 120;
+      // A stop's own live time is a time; the run's carried delay is a delay with no time (as the simulator tells
+      // them apart: only a time counts as that stop's own evidence).
+      // Stops in between carry a projected time (the stop before yours needs its timetable time for "Next: X").
+      const own = k <= leg.off && L.est[k] != null ? L.est[k] : (k > 0 && k < leg.off && L.runDelay != null ? tt + L.runDelay : null);
+      if (own == null && L.runDelay == null) continue;
+      // A plan stop with no news of its own is listed with no times (the run's delay rides the other stops): Sydney
+      // Trains' delay with no clock time at a stop is that stop's own estimate (the open app reads it as one through
+      // /api/service, so the server does too, 31 Oct 2026), so a carried delay is never put on a plan stop.
+      if (own == null && k <= leg.off) { stus.push(msg(2, [...num(1, k + 1), ...str(4, stopIdOf(leg, k))])); continue; }
+      const ev = own != null ? [...num(1, own - tt), ...num(2, Math.floor(base / 1000) + own)] : [...num(1, L.runDelay)];
+      stus.push(msg(2, [...num(1, k + 1), ...msg(2, ev), ...msg(3, ev), ...str(4, stopIdOf(leg, k))]));
+    }
+  }
+  ents.push(msg(2, [...str(1, tag + li), ...msg(3, [...msg(1, trip), ...stus.flat(), ...num(4, tsS)])]));
+  return ents;
 }
 
 /** The Trip Planner departure board (departure_mon) of a boarding stop at time t: the case's services from it. */
