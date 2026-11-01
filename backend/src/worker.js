@@ -5987,7 +5987,7 @@ async function tfRead(env, spec, st, now, o = {}) {
     for (let i = 0; i < all.length; i++) {
       const l = all[i];
       if (!tfRunNeeded(raw[i])) continue;
-      const trips = await tfRunTrips(env, st, l, now, rt);
+      const trips = await tfRunTrips(env, st, l, now, rt, { pack: o.pack });
       if (!trips || trips.length < 2) continue;
       const followed = tfRunTu(trips, l.tripId, (t) => rt.tu(l.mode, l.line, t, l.feed), tus[i]);
       if (!followed) continue;
@@ -6037,9 +6037,11 @@ const tfRawScore = (r) => (r && !r.unmatched ? 1 : 0) + (r && tfOffEst(r) != nul
 
 /** The trip ids of a leg's train run from its own trip on (our own timetable, raptor.js ownRun), kept per watch. */
 const TF_RUN_RETRY_MS = 10 * 60000;
-async function tfRunTrips(env, st, l, now, rt = null) {
+async function tfRunTrips(env, st, l, now, rt = null, o = {}) {
   if (!l || !l.tripId || !l.stopId) return null;
-  const pack = await tfPackRun(env, st, l, now);
+  // o.pack false: a card with no watch (tfCardAlone) keeps nothing between reads, so it does not ask the planner object
+  // every 30 s; the feed's own naming still applies.
+  const pack = o.pack === false ? null : await tfPackRun(env, st, l, now);
   if (pack && pack.length >= 2) return pack;
   // Our timetable does not link every split (1 Nov 2026: 858N's run ended at Central in our pack), so the feed is asked
   // for the train's next trip by Sydney Trains' own naming (tfFeedRun).
@@ -6652,7 +6654,7 @@ async function tfPass(env, startedAt = Date.now(), wait = (ms) => new Promise((r
 async function tfCardAlone(env, trip, now) {
   const spec = { legs: trip.legs, to: trip.to, c24: !!trip.c24, tripFlow: 2 };
   const st = {};
-  const raw = await tfRead(env, spec, st, now);
+  const raw = await tfRead(env, spec, st, now, { pack: false });
   const S = tfState(spec, st, raw);
   for (let k = 0; k < spec.legs.length + 1; k++) { const cur = S.M.current; LIVECARD.tripStep(S.plan, S.M, now, S.reading, { c24: spec.c24, lead: LIVECARD.TRIP_RULES.SERVER_DELIVERY }); if (S.M.current === cur) break; }
   const c = tfCard(spec, S, now, { c24: spec.c24 });

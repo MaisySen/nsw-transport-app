@@ -100,7 +100,9 @@ test("a card registered again with arrivedAt (the owner's 6:23 PM card) ends at 
 });
 
 test("a card alone whose train has left the feed ends 30 min after its planned arrival, not 2 h later", { timeout: 120000 }, async () => {
+  runs.length = 0;
   const r = await runCase("S8", { cardOnly: {}, endAt: hms("20:40") });
+  assert.equal(runs.length, 0, "a card with no watch never asks the planner object for the run (it keeps nothing between reads)");
   const end = r.pushes.findIndex((p) => p.event === "end");
   assert.ok(end >= 0, `an end push: last ${JSON.stringify(r.pushes.slice(-2))}`);
   assert.ok(r.pushes[end].t <= hms("20:27") && r.pushes[end].t >= hms("19:55"), `ended at ${r.pushes[end].t}`);
