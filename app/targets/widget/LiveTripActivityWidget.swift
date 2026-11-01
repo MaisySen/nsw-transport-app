@@ -136,10 +136,14 @@ struct LiveTripWatchCard: View {
     }
 
     private var stop: some View {
-        ViewThatFits(in: .horizontal) {
-            Text(state.headline(stale: stale)).lineLimit(1)
-            Text(state.bareHeadline(stale: stale)).lineLimit(1)
-            Text(Naming.short(state.bareHeadline(stale: stale))).lineLimit(1).minimumScaleFactor(0.7)
+        let bare = Naming.short(state.bareHeadline(stale: stale))
+        return ViewThatFits(in: .horizontal) {
+            Text(state.headline(stale: stale)).lineLimit(1).fixedSize()
+            Text(state.bareHeadline(stale: stale)).lineLimit(1).fixedSize()
+            Text(bare).lineLimit(1).fixedSize()
+            // Build 213 audit round 2: the short words before the name shrinks ("Macquarie Ctr & Uni").
+            Text(IslandName.abbreviate(bare)).lineLimit(1).minimumScaleFactor(0.7)
+                .lineProbe("watch-card-stop", text: IslandName.abbreviate(bare), lines: 1, font: .footnote.weight(.semibold), minScale: 0.7)
         }
         .font(.footnote.weight(.semibold))
     }
@@ -169,7 +173,7 @@ struct LiveTripWatchCard: View {
             countdown
             stop
             if withStatus, let s = status {
-                Text(s.0).font(.caption2).foregroundStyle(s.1).lineLimit(1).minimumScaleFactor(0.7)
+                WatchCardLine(text: s.0, color: s.1)
             }
         }
     }
@@ -181,8 +185,47 @@ struct LiveTripWatchCard: View {
                 WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode)
                 countdown
             }
-            Text(Naming.short(state.bareHeadline(stale: stale))).font(.footnote.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.6)
+            Text(IslandName.abbreviate(Naming.short(state.bareHeadline(stale: stale)))).font(.footnote.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.6)
         }
+    }
+}
+
+/// Build 213 audit round 2: the watch card's status line is whole or shorter, never cut mid-word ("Tight change at
+/// Chatswood, 3 min to walk to P..." on the 40 mm watch). The words as the Lock Screen shortens them (ShortText), then
+/// up to the first comma, then before " at " or " to " ("Likely miss the 5:12pm T1"), then a little smaller.
+struct WatchCardLine: View {
+    var text: String
+    var color: Color
+
+    static func variants(_ s: String) -> [String] {
+        var out = ShortText.variants(s)
+        func add(_ x: String) {
+            let t = x.trimmingCharacters(in: .whitespaces)
+            if !t.isEmpty && t != s && !out.contains(t) { out.append(t) }
+        }
+        var t = out.last ?? s
+        if let r = t.range(of: ", ") { t = String(t[..<r.lowerBound]); add(t) }
+        if let r = t.range(of: " to ") { t = String(t[..<r.lowerBound]); add(t) }
+        if let r = t.range(of: " at ") { t = String(t[..<r.lowerBound]); add(t) }
+        return out
+    }
+
+    var body: some View {
+        let alts = Self.variants(text)
+        let last = alts.last ?? text
+        ViewThatFits(in: .horizontal) {
+            Text(text).lineLimit(1).fixedSize()
+            if alts.count > 1 { Text(alts[0]).lineLimit(1).fixedSize() }
+            if alts.count > 2 { Text(alts[1]).lineLimit(1).fixedSize() }
+            if alts.count > 3 { Text(alts[2]).lineLimit(1).fixedSize() }
+            if alts.count > 4 { Text(alts[3]).lineLimit(1).fixedSize() }
+            if alts.count > 5 { Text(alts[4]).lineLimit(1).fixedSize() }
+            if alts.count > 6 { Text(alts[5]).lineLimit(1).fixedSize() }
+            Text(last).lineLimit(1).minimumScaleFactor(0.7)
+                .lineProbe("watch-card-status", text: last, lines: 1, font: .caption2, minScale: 0.7)
+        }
+        .font(.caption2)
+        .foregroundStyle(color)
     }
 }
 

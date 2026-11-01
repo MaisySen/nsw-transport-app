@@ -484,7 +484,8 @@ struct LiveTripPanel: View {
             if m.kind == .ride, let n = card.stopsLeft, n > 1 {
                 Text("\(n) stops to go").font(.footnote).foregroundStyle(.secondary).lineLimit(1)
             }
-            if card.phase == "wait", m.kind != .arrived, let p = WText.platform(card.platform) {
+            // Build 213 audit: once only ("Plat 16" was on the detail and on its own line).
+            if card.phase == "wait", m.kind != .arrived, let p = WText.platform(card.platform), !(detail ?? "").contains(p) {
                 Text(p).font(.footnote.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
             }
             if let w = card.warning, !w.isEmpty, card.isRisk {
@@ -519,7 +520,8 @@ struct ServicePanel: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 LineBadge(line: service.line, colorHex: service.colorHex)
-                if let d = service.dest, !d.isEmpty { Text(WText.short(d)).font(.footnote).lineLimit(2) }
+                // Build 213 audit: the whole destination, on as many lines as it needs ("Emu Plains via Parramatta an...").
+                if let d = service.dest, !d.isEmpty { Text(WText.short(d)).font(.footnote).lineLimit(nil).fixedSize(horizontal: false, vertical: true) }
             }
             Text(service.cancelled ? "Cancelled" : Clock.countdown(service.time, from: now))
                 .font(.system(.title2, design: .rounded).weight(.bold).monospacedDigit())

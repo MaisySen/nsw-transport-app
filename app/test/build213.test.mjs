@@ -56,3 +56,17 @@ test('widget bundle: no if/else (WidgetBundleBuilder cannot take one; audit run 
   const w = read('targets/widget/LiveTripActivityWidget.swift');
   assert.match(w, /if #available\(iOS 18\.0, \*\) \{\s*return config\.supplementalActivityFamilies\(\[\.small\]\)\s*\} else \{\s*return config\s*\}/);
 });
+
+test('native audit fixes (build 213): watch card lines shorten, never cut mid-word; Watch trip and service screens', () => {
+  const w = read('targets/widget/LiveTripActivityWidget.swift');
+  assert.match(w, /WatchCardLine\(text: s\.0, color: s\.1\)/);
+  assert.match(w, /lineProbe\("watch-card-status"/);
+  assert.match(w, /lineProbe\("watch-card-stop"/);
+  // JS mirror of WatchCardLine.variants after ShortText: first comma, then before " to ", then before " at "
+  const cut = (t) => { const out = [t]; for (const sep of [', ', ' to ', ' at ']) { const i = t.indexOf(sep); if (i > 0) { t = t.slice(0, i); out.push(t); } } return out; };
+  assert.deepEqual(cut('Tight change at Chatswood, 3 min walk to Plat 1'), ['Tight change at Chatswood, 3 min walk to Plat 1', 'Tight change at Chatswood', 'Tight change']);
+  assert.deepEqual(cut('Likely miss the 5:12pm T1 to Hornsby at Epping'), ['Likely miss the 5:12pm T1 to Hornsby at Epping', 'Likely miss the 5:12pm T1']);
+  const a = read('targets/watch/TransportWatchApp.swift');
+  assert.match(a, /let p = WText\.platform\(card\.platform\), !\(detail \?\? ""\)\.contains\(p\)/, 'the platform once');
+  assert.match(a, /Text\(WText\.short\(d\)\)\.font\(\.footnote\)\.lineLimit\(nil\)\.fixedSize\(horizontal: false, vertical: true\)/, 'whole destination');
+});
