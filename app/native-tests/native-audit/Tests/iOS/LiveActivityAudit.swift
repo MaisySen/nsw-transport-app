@@ -208,6 +208,18 @@ enum LiveActivityAudit {
                          LiveTripIslandBottom(state: st, stale: stale), surface: "trip-expanded", scenario: s, p: p)
             }
         }
+        // Build 213: the trip card on the Apple Watch Smart Stack (activity family small), on the smallest, a standard and
+        // the largest watch. Boxes are the watch's rectangular widget sizes less a 4 pt margin, smaller than the Smart
+        // Stack's own, so a card that fits here fits there.
+        for (name, size) in [("40mm", CGSize(width: 158, height: 65)), ("45mm", CGSize(width: 180, height: 73)), ("49mm", CGSize(width: 187, height: 77))] {
+            for (s, st, stale) in liveTrips {
+                let v = LiveTripWatchCard(state: st, stale: stale)
+                for t in Audit.types {
+                    Audit.shot(v.environment(\.colorScheme, .dark), surface: "trip-watch", scenario: s, device: name, type: t, scheme: .dark, box: size,
+                               picture: IslandPill(content: v.environment(\.colorScheme, .dark), box: size, round: 14))
+                }
+            }
+        }
     }
 }
 

@@ -123,7 +123,8 @@ test('Live Activity: one line status, Island wording, VoiceOver for the countdow
   assert.doesNotMatch(w, /probe: "lock-detail", lines: 2/);
   assert.match(w, /Text\(Image\(systemName: "bell\.fill"\)\)\.font\(\.caption2\) \+ Text\(" " \+ state\.compactStop\)/);
   assert.match(w, /\.accessibilityLabel\(state\.spokenSummary\(stale: stale\)\)/);
-  assert.equal((w.match(/spoken: state\.spokenCountdown\(stale: stale\)/g) || []).length, 4);
+  // 4 on the Lock Screen card and the Island, 1 on the Apple Watch card (build 213).
+  assert.equal((w.match(/spoken: state\.spokenCountdown\(stale: stale\)/g) || []).length, 5);
   const s = read('targets/widget/LiveTripActivity.swift');
   assert.match(s, /w == "Due" \? "\\\(modeNoun\) due now" : "Get off now"/);
 });

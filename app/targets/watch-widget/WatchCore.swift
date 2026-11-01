@@ -69,6 +69,9 @@ struct WatchContext: Codable, Hashable {
     var flip: String?
     var starred: [WStop]
     var live: WLiveCard?
+    /// Build 213: the phone's id for the trip in progress, so End trip on the watch ends that trip only. Absent from
+    /// phones before 213 (no End trip button then).
+    var trip: String?
 
     static func decode(_ json: String) -> WatchContext? {
         guard let data = json.data(using: .utf8) else { return nil }

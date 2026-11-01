@@ -20,7 +20,7 @@ import type { ServiceResp, WatchLeg } from '@/lib/types';
 import { boardTime, missedConn, missedPlanLegs, pickNextOption, sydHHMM } from '@/lib/smart';
 import { cardFor, shortName, staleAt, type CardAlt, type CardOpts } from './tripCard';
 import { homeWorkFor, liveCardFor, starredFor, type HomeWork, type LiveCardShare, type SharedStop } from './widgetShare';
-import { watchContextFor, watchContextJSON } from './watchShare';
+import { watchActionFor, watchContextFor, watchContextJSON } from './watchShare';
 import { apiBase } from '@/lib/server';
 import { endActivityToken, sendActivityToken, sendDeviceToken } from './livePush';
 import { pendingOpenURL } from './intentInboxCore';
@@ -159,12 +159,12 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   function shareLive(g: LiveTrip | null, card: TripCardState | null) {
     if (!g || !card) {
       if (liveKey) { liveKey = ''; putJSON('liveCard', null); iosNative.reloadWidgets('NextTrip'); }
-      watchData.live = null; shareWatch();
+      watchData.live = null; watchData.trip = null; shareWatch();
       return;
     }
     const share = liveCardFor(g.title || `${shortName(g.origin?.name)} to ${shortName(g.to?.name)}`, card, ARRIVED_KEEP_S * 1000);
     putJSON('liveCard', share);
-    watchData.live = share; shareWatch();
+    watchData.live = share; watchData.trip = g.id || null; shareWatch();
     const k = [card.phase, card.line, card.getOffAt, card.departs, card.legArrives, card.platform].join('|');
     if (k !== liveKey) { liveKey = k; iosNative.reloadWidgets('NextTrip'); }
   }
@@ -187,8 +187,8 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   }
 
   // Apple Watch (builds with the watch app): Home, Work, starred stops and the trip card, sent when they change.
-  const watchData: { profile: string | null; hw: HomeWork; starred: SharedStop[]; live: LiveCardShare | null } =
-    { profile: null, hw: homeWorkFor(null), starred: [], live: null };
+  const watchData: { profile: string | null; hw: HomeWork; starred: SharedStop[]; live: LiveCardShare | null; trip: string | null } =
+    { profile: null, hw: homeWorkFor(null), starred: [], live: null, trip: null };
   let watchJSON = '';
   let watchTimer: ReturnType<typeof setTimeout> | null = null;
   // Sent at most once every 2 seconds, and only when the context differs from the last one sent.
@@ -196,7 +196,7 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     if (!iosNative.hasWatch() || watchTimer) return;
     watchTimer = setTimeout(() => {
       watchTimer = null;
-      const c = watchContextFor(apiBase(), watchData.profile, watchData.hw, watchData.starred, watchData.live);
+      const c = watchContextFor(apiBase(), watchData.profile, watchData.hw, watchData.starred, watchData.live, watchData.trip);
       if (!c) return;
       const j = watchContextJSON(c);
       if (j === watchJSON) return;
@@ -290,8 +290,21 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     const url = pendingOpenURL(iosNative.takeString('intentPendingOpen'), Date.now());
     if (url) Linking.openURL(url).catch(() => {});
   };
-  const checkPending = () => { takePending(); setTimeout(takePending, 800); setTimeout(takePending, 2500); };
+  const checkPending = () => { takePending(); setTimeout(takePending, 800); setTimeout(takePending, 2500); takeWatchAction().catch(() => {}); };
   iosNative.onIntentQueued(takePending);
+
+  // Build 213: End trip from the Apple Watch. The watch's tap waits in the native module (it may arrive while the app is
+  // asleep); it ends the trip only when it names the trip in progress (watchActionFor), exactly as the app's End trip.
+  const takeWatchAction = async () => {
+    const raw = iosNative.takeWatchAction();
+    if (!raw) return;
+    // Loaded only when the watch asked for something, so the app's start does not change.
+    const live = await import('@/lib/live');
+    const g = await live.loadLive();
+    const a = watchActionFor(raw, Date.now(), g?.id ?? null);
+    if (a?.kind === 'endTrip') await live.endLive().catch(() => null);
+  };
+  iosNative.onWatchAction(() => { takeWatchAction().catch(() => {}); });
 
   boot();
   checkPending();

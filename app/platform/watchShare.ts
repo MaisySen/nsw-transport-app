@@ -23,6 +23,9 @@ export type WatchContext = {
   flip: string | null;
   starred: SharedStop[];
   live: WatchLiveCard | null;
+  /** Build 213: the id of the trip in progress (with its card only), so an End trip from the watch ends that trip and
+   * never a later one. Watches before 213 ignore it. */
+  trip: string | null;
 };
 
 const okBase = (b: unknown): string | null => {
@@ -37,6 +40,7 @@ export function watchContextFor(
   hw: HomeWork,
   starred: SharedStop[],
   live: LiveCardShare | null,
+  tripId: string | null = null,
 ): WatchContext | null {
   const b = okBase(base);
   if (!b) return null;
@@ -57,6 +61,7 @@ export function watchContextFor(
     flip: hw.flip,
     starred: stars,
     live: live && live.phase !== 'arrived' ? watchCard(live) : null,
+    trip: live && live.phase !== 'arrived' && tripId ? String(tripId) : null,
   };
 }
 
@@ -68,3 +73,28 @@ function watchCard(c: LiveCardShare): WatchLiveCard {
 
 /** The same context as JSON, the form the native call takes. Equal contexts give equal strings. */
 export const watchContextJSON = (c: WatchContext) => JSON.stringify(c);
+
+/** What the watch asked the phone to do (build 213), as the native module keeps it: JSON {do, trip, at} with `at` in
+ * seconds since 1970. Only End trip so far. */
+export type WatchAction = { kind: 'endTrip'; trip: string };
+
+/** A watch action is acted on within 10 minutes of the tap (the phone may be asleep when it arrives), never later. */
+export const WATCH_ACTION_MAX_AGE_S = 600;
+
+/**
+ * The action to carry out now, or null. End trip only ends the trip the watch showed: the same trip id as the trip in
+ * progress on the phone. A tap with no trip id, for another trip, too old, or from the future is dropped.
+ */
+export function watchActionFor(raw: string | null | undefined, nowMs: number, currentTrip: string | null): WatchAction | null {
+  if (!raw || typeof raw !== 'string' || !currentTrip) return null;
+  let v: any;
+  try { v = JSON.parse(raw); } catch { return null; }
+  if (!v || v.do !== 'endTrip') return null;
+  const trip = typeof v.trip === 'string' ? v.trip : '';
+  if (!trip || trip !== currentTrip) return null;
+  const at = Number(v.at);
+  if (!Number.isFinite(at)) return null;
+  const age = nowMs / 1000 - at;
+  if (age > WATCH_ACTION_MAX_AGE_S || age < -60) return null;
+  return { kind: 'endTrip', trip };
+}

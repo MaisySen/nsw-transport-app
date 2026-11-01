@@ -10,6 +10,10 @@ import WatchConnectivity
 final class WatchLink: NSObject {
   static let shared = WatchLink()
   private static let lastKey = "watch.lastContext"
+  /// Build 213: what the watch asked the phone to do (End trip), kept until JavaScript takes it (takeAction).
+  private static let actionKey = "watch.action"
+  /// Posted when the watch asks for something; the module passes it to JavaScript (onWatchAction).
+  static let actionNote = Notification.Name("TransportWatchAction")
 
   private let lock = NSLock()
   private var pending: String?
@@ -46,6 +50,27 @@ final class WatchLink: NSObject {
     #else
     return false
     #endif
+  }
+
+  /// Build 213: the watch's last ask as JSON {do, trip, at}, taken once. JavaScript checks the trip and the age.
+  func takeAction() -> String? {
+    lock.lock(); defer { lock.unlock() }
+    let v = UserDefaults.standard.string(forKey: Self.actionKey)
+    if v != nil { UserDefaults.standard.removeObject(forKey: Self.actionKey) }
+    return v
+  }
+
+  /// Keeps an ask from the watch (only End trip is known) and tells the app. False for anything else.
+  @discardableResult
+  fileprivate func keepAction(_ message: [String: Any]) -> Bool {
+    guard let what = message["do"] as? String, what == "endTrip" else { return false }
+    let trip = (message["trip"] as? String) ?? ""
+    let at = (message["at"] as? Double) ?? Date().timeIntervalSince1970
+    let obj: [String: Any] = ["do": what, "trip": String(trip.prefix(80)), "at": at]
+    guard let data = try? JSONSerialization.data(withJSONObject: obj), let json = String(data: data, encoding: .utf8) else { return false }
+    lock.lock(); UserDefaults.standard.set(json, forKey: Self.actionKey); lock.unlock()
+    DispatchQueue.main.async { NotificationCenter.default.post(name: Self.actionNote, object: nil) }
+    return true
   }
 
   private func flush() {
@@ -86,9 +111,21 @@ extension WatchLink: WCSessionDelegate {
   func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
     if message["want"] as? String == "context", let l = last {
       replyHandler(["json": l, "sentAt": Date().timeIntervalSince1970])
+    } else if keepAction(message) {
+      replyHandler(["ok": true])
     } else {
       replyHandler([:])
     }
+  }
+
+  /// Build 213: an ask from the watch sent with no reply wanted.
+  func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+    keepAction(message)
+  }
+
+  /// Build 213: the watch queues its ask this way when the phone was out of reach; it arrives when the phone is back.
+  func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
+    keepAction(userInfo)
   }
 }
 #endif

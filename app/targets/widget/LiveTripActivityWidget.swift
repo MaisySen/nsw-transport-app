@@ -6,12 +6,8 @@ import SwiftUI
 struct LiveTripActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: LiveTripAttributes.self) { context in
-            LiveTripLockCard(attrs: context.attributes, state: context.state, stale: context.isStale)
-                .padding(16)
-                .environment(\.colorScheme, .dark)
-                .activityBackgroundTint(Color.black.opacity(0.6))
-                .activitySystemActionForegroundColor(.white)
-                .widgetURL(URL(string: "nswtransport://go"))
+            // Build 213: the Apple Watch Smart Stack (iOS 18 with watchOS 11) gets its own layout, the Lock Screen keeps its card.
+            LiveTripActivityContent(attrs: context.attributes, state: context.state, stale: context.isStale)
         } dynamicIsland: { context in
             let s = context.state
             let stale = context.isStale
@@ -36,6 +32,155 @@ struct LiveTripActivityWidget: Widget {
                 LiveTripMinimal(state: s, stale: stale)
             }
             .widgetURL(URL(string: "nswtransport://go"))
+        }
+    }
+}
+
+/// Build 213: the same trip card with the Apple Watch layout (Smart Stack, watchOS 11 with iOS 18). Before, the watch
+/// drew the Dynamic Island's compact views (badge and a countdown) and nothing said where to get off. Registered in
+/// place of LiveTripActivityWidget on iOS 18 (TransportWidgets); the server's pushes move it with the phone locked.
+@available(iOS 18.0, *)
+struct LiveTripActivityWidgetWatch: Widget {
+    var body: some WidgetConfiguration {
+        LiveTripActivityWidget().body.supplementalActivityFamilies([.small])
+    }
+}
+
+/// The Lock Screen card, or on the watch (activity family small) the watch card.
+struct LiveTripActivityContent: View {
+    var attrs: LiveTripAttributes
+    var state: LiveTripAttributes.ContentState
+    var stale = false
+    var body: some View {
+        if #available(iOS 18.0, *) {
+            LiveTripFamilyContent(attrs: attrs, state: state, stale: stale)
+        } else {
+            LiveTripLockContent(attrs: attrs, state: state, stale: stale)
+        }
+    }
+}
+
+/// The Lock Screen card as before build 213, unchanged.
+struct LiveTripLockContent: View {
+    var attrs: LiveTripAttributes
+    var state: LiveTripAttributes.ContentState
+    var stale = false
+    var body: some View {
+        LiveTripLockCard(attrs: attrs, state: state, stale: stale)
+            .padding(16)
+            .environment(\.colorScheme, .dark)
+            .activityBackgroundTint(Color.black.opacity(0.6))
+            .activitySystemActionForegroundColor(.white)
+            .widgetURL(URL(string: "nswtransport://go"))
+    }
+}
+
+@available(iOS 18.0, *)
+struct LiveTripFamilyContent: View {
+    @Environment(\.activityFamily) private var family
+    var attrs: LiveTripAttributes
+    var state: LiveTripAttributes.ContentState
+    var stale = false
+    var body: some View {
+        if family == .small {
+            LiveTripWatchCard(state: state, stale: stale)
+                .padding(.horizontal, 2)
+                .environment(\.colorScheme, .dark)
+                .activityBackgroundTint(Color.black.opacity(0.6))
+                .activitySystemActionForegroundColor(.white)
+                .widgetURL(URL(string: "nswtransport://go"))
+        } else {
+            LiveTripLockContent(attrs: attrs, state: state, stale: stale)
+        }
+    }
+}
+
+/// Build 213: the trip on the Apple Watch Smart Stack. The same words as the Lock Screen and the watch app: the label
+/// ("Leaves", "Get off", "Train" over "Due"), the countdown or the word in its place (never 0:00), where you get off and
+/// one status line (late, a change at risk, or how old the live times are). Shorter words before anything is cut.
+struct LiveTripWatchCard: View {
+    var state: LiveTripAttributes.ContentState
+    var stale = false
+
+    var body: some View {
+        ViewThatFits(in: .vertical) {
+            card(status: true)
+            card(status: false)
+            compact
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(state.spokenSummary(stale: stale))
+    }
+
+    private var countdown: some View {
+        MinutesUntil(date: state.shownTarget(stale: stale), arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale),
+                     word: bigWord, spoken: state.spokenCountdown(stale: stale))
+            .font(.title3.weight(.bold))
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+    }
+
+    /// On board at your stop the watch says "Get off now" in full (the Island's "Now" sits under a "Get off" label).
+    private var bigWord: String? {
+        guard let w = state.countdownWord(stale: stale) else { return nil }
+        return w == "Now" ? "Get off now" : w
+    }
+
+    private var label: String? {
+        if state.arrived(stale: stale) { return nil }
+        if bigWord == "Get off now" { return nil }
+        return state.countdownLabel(stale: stale)
+    }
+
+    private var stop: some View {
+        ViewThatFits(in: .horizontal) {
+            Text(state.headline(stale: stale)).lineLimit(1)
+            Text(state.bareHeadline(stale: stale)).lineLimit(1)
+            Text(Naming.short(state.bareHeadline(stale: stale))).lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .font(.footnote.weight(.semibold))
+    }
+
+    /// One line: old live times first (spec 2.4), then a change at risk, then late or on time, then another note, then
+    /// the detail ("Leaves 9:51pm, Platform 2", "3 stops").
+    private var status: (String, Color)? {
+        if state.outdated(stale: stale) { return (state.ageLine(stale: stale), .secondary) }
+        let w = state.displayWarning(stale: stale)
+        let d = state.delayStatus(stale: stale)
+        if let w, state.warningIsRed { return (w, .red) }
+        if let d { return (d, delayColor(d)) }
+        if let w { return (w, .orange) }
+        let det = state.detail(stale: stale)
+        return det.isEmpty || state.arrived(stale: stale) ? nil : (det, .secondary)
+    }
+
+    private func card(status withStatus: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 5) {
+                WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode)
+                if let l = label {
+                    Text(l).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
+                }
+                Spacer(minLength: 0)
+            }
+            countdown
+            stop
+            if withStatus, let s = status {
+                Text(s.0).font(.caption2).foregroundStyle(s.1).lineLimit(1).minimumScaleFactor(0.7)
+            }
+        }
+    }
+
+    /// Largest text: the badge and the countdown on one line, then the stop.
+    private var compact: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 5) {
+                WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode)
+                countdown
+            }
+            Text(Naming.short(state.bareHeadline(stale: stale))).font(.footnote.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.6)
         }
     }
 }

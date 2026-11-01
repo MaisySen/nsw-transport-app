@@ -38,6 +38,7 @@ public class TransportIOSModule: Module {
   private var following = Set<String>()
   /// Siri's "Start my commute" (in the app's own process) posts this after leaving a link in the app group.
   private var intentObserver: NSObjectProtocol?
+  private var watchObserver: NSObjectProtocol?
   private let followingLock = NSLock()
 
   private func claim(_ id: String) -> Bool {
@@ -69,7 +70,7 @@ public class TransportIOSModule: Module {
   public func definition() -> ModuleDefinition {
     Name("TransportIOS")
 
-    Events("onActivityPushToken", "onIntentQueued")
+    Events("onActivityPushToken", "onIntentQueued", "onWatchAction")
 
     OnCreate {
       WatchLink.shared.start()
@@ -78,6 +79,12 @@ public class TransportIOSModule: Module {
       ) { _ in
         // The module lives as long as the app; the observer is removed in OnDestroy.
         self.sendEvent("onIntentQueued", [:])
+      }
+      // Build 213: End trip from the Apple Watch (WatchLink keeps it; JavaScript takes it with takeWatchAction).
+      self.watchObserver = NotificationCenter.default.addObserver(
+        forName: WatchLink.actionNote, object: nil, queue: .main
+      ) { _ in
+        self.sendEvent("onWatchAction", [:])
       }
       #if canImport(ActivityKit)
       if #available(iOS 16.2, *) {
@@ -153,6 +160,11 @@ public class TransportIOSModule: Module {
 
     /// From the build with the Apple Watch app: the watch's context (JSON from platform/watchShare.ts). False when
     /// this phone cannot talk to a watch.
+    /// Build 213: what the Apple Watch asked for (End trip), as JSON {do, trip, at}, taken once; nil when nothing waits.
+    Function("takeWatchAction") { () -> String? in
+      WatchLink.shared.takeAction()
+    }
+
     Function("sendWatchContext") { (json: String) -> Bool in
       WatchLink.shared.send(json)
     }
@@ -180,6 +192,8 @@ public class TransportIOSModule: Module {
     OnDestroy {
       if let o = self.intentObserver { NotificationCenter.default.removeObserver(o) }
       self.intentObserver = nil
+      if let o = self.watchObserver { NotificationCenter.default.removeObserver(o) }
+      self.watchObserver = nil
     }
 
     /// Reads a string from the app group and removes it, so it is handled once. From build 206.

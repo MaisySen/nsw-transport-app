@@ -27,6 +27,8 @@ struct NextTrainComplication: Widget {
         StaticConfiguration(kind: kind, provider: NextProvider()) { entry in
             NextView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
+                // Build 213: a tap opens the watch app on the trip screen while a trip runs (else its first screen).
+                .widgetURL(URL(string: entry.kind == .live ? "nswtransport://watch/trip" : "nswtransport://watch"))
         }
         .configurationDisplayName("Next train")
         .description("Your trip in progress, else Home to Work in the morning and back in the evening.")

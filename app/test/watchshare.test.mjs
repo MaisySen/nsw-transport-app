@@ -20,7 +20,7 @@ async function load(rel) {
   fs.writeFileSync(f, js);
   return import(pathToFileURL(f).href);
 }
-const { watchContextFor, watchContextJSON, WATCH_MAX_STARRED } = await load('platform/watchShare.ts');
+const { watchContextFor, watchContextJSON, WATCH_MAX_STARRED, watchActionFor, WATCH_ACTION_MAX_AGE_S } = await load('platform/watchShare.ts');
 
 const hw = { home: { id: '206710', name: 'Chatswood Station' }, work: { id: '2011', name: 'Bondi Junction Station' }, flip: null, trips: [] };
 const card = {
@@ -100,3 +100,39 @@ test('no em or en dashes in the watch code', () => {
   }
   for (const f of ['platform/watchShare.ts', 'modules/transport-ios/ios/WatchLink.swift']) assert.ok(!/[\u2013\u2014]/.test(swift(f)), f);
 });
+
+test('build 213: the trip id goes with the trip card only', () => {
+  const c = watchContextFor('https://h.example', 'p', hw, [], card, 'gabc123');
+  assert.equal(c.trip, 'gabc123');
+  assert.equal(watchContextFor('https://h.example', 'p', hw, [], null, 'gabc123').trip, null);
+  assert.equal(watchContextFor('https://h.example', 'p', hw, [], { ...card, phase: 'arrived' }, 'gabc123').trip, null);
+  assert.equal(watchContextFor('https://h.example', 'p', hw, [], card).trip, null);
+});
+
+test('build 213: End trip from the watch ends only the trip it showed, and only soon after the tap', () => {
+  const now = 1793000000000;
+  const tap = (o) => JSON.stringify({ do: 'endTrip', trip: 'g1', at: now / 1000 - 5, ...o });
+  assert.deepEqual(watchActionFor(tap({}), now, 'g1'), { kind: 'endTrip', trip: 'g1' });
+  assert.equal(watchActionFor(tap({}), now, 'g2'), null, 'another trip is running now');
+  assert.equal(watchActionFor(tap({}), now, null), null, 'no trip running');
+  assert.equal(watchActionFor(tap({ trip: '' }), now, 'g1'), null, 'no trip id');
+  assert.equal(watchActionFor(tap({ at: now / 1000 - WATCH_ACTION_MAX_AGE_S - 1 }), now, 'g1'), null, 'too old');
+  assert.equal(watchActionFor(tap({ at: now / 1000 + 120 }), now, 'g1'), null, 'from the future');
+  assert.equal(watchActionFor(tap({ do: 'startTrip' }), now, 'g1'), null, 'unknown ask');
+  assert.equal(watchActionFor('not json', now, 'g1'), null);
+  assert.equal(watchActionFor(null, now, 'g1'), null);
+});
+
+test('build 213: the watch app can end a trip and taps the wrist at each moment', () => {
+  const app = swift('targets/watch/TransportWatchApp.swift');
+  assert.match(app, /"do": "endTrip"/);
+  assert.match(app, /transferUserInfo/);
+  assert.match(app, /confirmationDialog\("End trip\?"/);
+  for (const k of ['headsUp()', 'getOffNow()', 'arrived()']) assert.ok(app.includes(`WatchHaptics.${k}`), k);
+  const link = swift('modules/transport-ios/ios/WatchLink.swift');
+  assert.match(link, /"endTrip"/);
+  assert.match(link, /didReceiveUserInfo/);
+  const la = swift('targets/widget/LiveTripActivityWidget.swift');
+  assert.match(la, /supplementalActivityFamilies\(\[\.small\]\)/);
+});
+

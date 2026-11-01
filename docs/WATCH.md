@@ -17,6 +17,14 @@ Complications and Smart Stack (watch face editor or Smart Stack, "Transport", "N
 * Inline: "T1 4:12, Plat 2".
 * Corner: the countdown with the line and platform.
 
+## Build 213 (branch build-213-watch, proposed)
+
+* Smart Stack trip card with its own watch layout (iOS 18, watchOS 11), moved by the server's pushes while the phone is locked.
+* Every row opens something: the trip opens the trip screen (End trip there, with a confirm), services open their own screen, complications open the trip while one runs.
+* Wrist taps while the app is open: stop next (one up tap), Get off now (three strong taps; one tap on old live times), arrived (success). Once each per stop per trip.
+* End trip goes to the phone (WatchConnectivity message, or queued user info when the phone is out of reach); the phone checks the trip id and age (`watchActionFor`) and runs its own End trip.
+* Not in 213: the watch loading the trip from the server itself, Start trip from the wrist, buttons on the alerts, a repeating alarm. See files/day-1nov/watch-interactive.md.
+
 ## Battery
 
 * The complications never load anything. They draw the times the watch app last loaded and the trip card from the phone, with system countdowns (`Text` timer style, `ProgressView(timerInterval:)`), so a timeline has one entry per service, not one a minute. They reload on their own at most every 15 minutes (every 5 while a trip runs), and the watch app asks for a reload only when the service or trip they show changes.

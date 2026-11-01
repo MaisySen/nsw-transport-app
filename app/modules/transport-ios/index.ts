@@ -19,9 +19,12 @@ type Native = {
   supportsActivityPush?: () => boolean;
   tripActivityPushToken?: (id: string) => string | null;
   addListener?: ((event: 'onActivityPushToken', cb: (e: { id: string; token: string }) => void) => { remove(): void }) &
-    ((event: 'onIntentQueued', cb: () => void) => { remove(): void });
+    ((event: 'onIntentQueued', cb: () => void) => { remove(): void }) &
+    ((event: 'onWatchAction', cb: () => void) => { remove(): void });
   /** From the build with the Apple Watch app: hands the watch its context (WatchConnectivity). Absent before. */
   sendWatchContext?: (json: string) => boolean;
+  /** From build 213: what the Apple Watch asked the phone to do (End trip), as JSON, taken once. Absent before. */
+  takeWatchAction?: () => string | null;
   /** From build 206: reads a string from the app group and removes it (links left by Siri). */
   takeSharedString?: (key: string) => string | null;
   /** From build 211 (31 Oct): get off alerts from the phone's position (UNLocationNotificationTrigger). Absent before. */
@@ -84,6 +87,18 @@ export const iosNative = {
   /** Sends the watch its context. Does nothing (false) on builds without the watch app or with no watch paired. */
   sendWatch(json: string): boolean {
     try { return typeof native?.sendWatchContext === 'function' ? !!native.sendWatchContext(json) : false; } catch { return false; }
+  },
+  /** Build 213: reads and clears what the watch asked for (JSON {do, trip, at}). Null before 213 or when nothing waits. */
+  takeWatchAction(): string | null {
+    try { return typeof native?.takeWatchAction === 'function' ? native.takeWatchAction() ?? null : null; } catch { return null; }
+  },
+  /** Build 213: the watch asked for something while the app was running. A no-op before. */
+  onWatchAction(cb: () => void): () => void {
+    try {
+      if (typeof native?.takeWatchAction !== 'function') return () => {};
+      const sub = (native?.addListener as any)?.('onWatchAction', () => cb());
+      return () => { try { sub?.remove(); } catch {} };
+    } catch { return () => {}; }
   },
   activityIds: (): string[] => { try { return native?.tripActivityIds() || []; } catch { return []; } },
   async startTrip(title: string, legsCount: number, s: TripCardState, staleMs?: number | null) {

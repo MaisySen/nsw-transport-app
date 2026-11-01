@@ -69,6 +69,17 @@ final class WatchAuditTests: XCTestCase {
                 ("Trip", [AnyView(LiveTripRow(card: card("ride", off: "Sydney Olympic Park Station", next: "Lidcombe Station",
                                                          warning: "You'll likely miss the 5:12pm T1 to Hornsby at Epping", updated: -12), now: now))]),
             ])),
+            // Build 213: the trip screen (waiting, your stop next with a change at risk, Get off now, old live times) and a
+            // service's own screen.
+            ("trip-screen-wait", Screen(title: "Trip", sections: [(nil, [AnyView(LiveTripPanel(card: card("wait"), now: now)),
+                                                                         AnyView(Label("End trip", systemImage: "stop.circle"))])])),
+            ("trip-screen-next", Screen(title: "Trip", sections: [(nil, [AnyView(LiveTripPanel(card: card("ride", off: "Sydney Olympic Park Station", next: "Lidcombe Station",
+                                                                                                      warning: "You'll likely miss the 5:12pm T1 to Hornsby at Epping"), now: at(17.2)))])])),
+            ("trip-screen-getoff", Screen(title: "Trip", sections: [(nil, [AnyView(LiveTripPanel(card: card("ride"), now: at(18.2)))])])),
+            ("trip-screen-old", Screen(title: "Trip", sections: [(nil, [AnyView(LiveTripPanel(card: card("ride", updated: -7), now: now))])])),
+            ("service", Screen(title: "T1", sections: [(nil, [AnyView(ServicePanel(service: services[0], now: now)),
+                                                             AnyView(ServicePanel(service: services[1], now: now)),
+                                                             AnyView(ServicePanel(service: services[2], now: now))])])),
             ("stop", Screen(title: "Sydney Olympic Park", sections: [
                 (nil, services.map { AnyView(ServiceRow(service: $0, now: now)) } + [AnyView(Text("Updated 3:33pm").font(.footnote).foregroundStyle(.secondary))]),
             ])),

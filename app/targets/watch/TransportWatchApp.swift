@@ -43,11 +43,19 @@ final class WatchModel: NSObject, ObservableObject {
     /// Live times load every minute while the app is on screen, and on watchOS's background refresh when it is not
     /// (build 210); the complications also load the commute themselves.
     private var foreground = false
-    /// The get off moment last tapped on the wrist, kept across launches so each one taps once.
-    private var tapped: String? {
-        get { UserDefaults.standard.string(forKey: "watch.tapped") }
-        set { UserDefaults.standard.set(newValue, forKey: "watch.tapped") }
+    /// Build 213: the trip moments already felt on the wrist (heads-up, Get off now, arrived), kept across launches so
+    /// each one taps once per trip. Before, one tap a minute before the stop (watch.tapped).
+    private var felt: [String] {
+        get { UserDefaults.standard.stringArray(forKey: "watch.felt") ?? [] }
+        set { UserDefaults.standard.set(Array(newValue.suffix(30)), forKey: "watch.felt") }
     }
+    /// Build 213: the trip ended from the wrist, hidden here until the phone sends another trip.
+    private var endedTrip: String? {
+        get { UserDefaults.standard.string(forKey: "watch.endedTrip") }
+        set { UserDefaults.standard.set(newValue, forKey: "watch.endedTrip") }
+    }
+    /// Build 213: opened from a complication or the Smart Stack trip card: the trip screen opens first (once).
+    @Published var openTripPending = false
     /// What the complications showed when last reloaded, so they reload only when that changes.
     private var complicationKey: String? {
         get { UserDefaults.standard.string(forKey: "watch.complicationKey") }
@@ -66,10 +74,46 @@ final class WatchModel: NSObject, ObservableObject {
 
     var commute: Commute? { context?.commute(now: now) }
 
-    /// The trip card while the trip runs.
+    /// The trip card while the trip runs (not one ended from the wrist).
     var live: WLiveCard? {
         guard let l = context?.live, l.isActive(now: now) else { return nil }
+        if let e = endedTrip, e == tripKey(l) { return nil }
         return l
+    }
+
+    /// The trip's id from the phone (build 213), else its title and stop, for the one-tap memory.
+    func tripKey(_ l: WLiveCard) -> String {
+        context?.trip ?? "\(l.title ?? "")|\(l.getOffAt)|\(Clock.halfDayKey(l.getOffTime))"
+    }
+
+    /// End trip shows only when the phone said which trip it is (iPhone app from build 213).
+    var canEndTrip: Bool { live != nil && (context?.trip ?? "").isEmpty == false }
+
+    /// Build 213: End trip from the wrist. The phone ends it exactly like its own End trip (server alerts, share link,
+    /// Lock Screen card): straight away when it is in reach, else when it next is (queued by watchOS). False when the
+    /// watch has no session with the phone at all.
+    @discardableResult
+    func endTrip() -> Bool {
+        guard let l = live, let id = context?.trip, !id.isEmpty else { return false }
+        let s = WCSession.default
+        guard s.activationState == .activated else { return false }
+        let msg: [String: Any] = ["do": "endTrip", "trip": id, "at": Date().timeIntervalSince1970]
+        if s.isReachable {
+            s.sendMessage(msg, replyHandler: { _ in }, errorHandler: { _ in WCSession.default.transferUserInfo(msg) })
+        } else {
+            s.transferUserInfo(msg)
+        }
+        endedTrip = tripKey(l)
+        WatchHaptics.ended()
+        objectWillChange.send()
+        reloadComplicationsIfChanged()
+        return true
+    }
+
+    /// From a complication or the Smart Stack: go to the trip when one runs.
+    func openTrip() {
+        now = Date()
+        if live != nil { openTripPending = true }
     }
 
     var commuteServices: [WService] {
@@ -191,18 +235,38 @@ final class WatchModel: NSObject, ObservableObject {
         WidgetCenter.shared.reloadTimelines(ofKind: "NextTrain")
     }
 
-    /// Runs every few seconds while the app is open: moves the clock on and taps the wrist when it is time to get off.
+    /// Runs every 5 seconds while the app is open (the clock moves on every 15 without a trip): moves the clock on and taps
+    /// the wrist at the trip's moments, the same moments as the phone's card (WTripMoments).
+    /// Build 213: your stop next (2 min before): one "up" tap; Get off now (30 s before): three strong taps, one tap
+    /// when the live times are old (never a strong Get off now from old times); at the stop: a "success" tap. Each once
+    /// per stop per trip, however the live times move; nothing for a moment already gone when the app opens.
     func tick() {
-        now = Date()
-        guard let l = live, l.phase == "ride" else { return }
+        let t = Date()
+        if live == nil, t.timeIntervalSince(now) < 14 { return }
+        now = t
+        guard let l = live else { return }
+        let m = WTripMoments.list(l, now: t)[0]
+        let key = tripKey(l) + "|" + l.getOffAt
         let off = l.getOffTime
-        // One tap per stop you get off at on this trip, however the live times move.
-        let key = "\(l.title ?? "")|\(l.getOffAt)|\(Clock.halfDayKey(now))"
-        // About a minute before the train gets in, and not for a stop already passed.
-        if now >= off.addingTimeInterval(-60), now < off.addingTimeInterval(120), tapped != key {
-            tapped = key
-            WKInterfaceDevice.current().play(.notification)
+        switch m.kind {
+        case .next:
+            feel("next|" + key) { WatchHaptics.headsUp() }
+        case .getOff:
+            let fresh = WTripMoments.ageStep(l, at: t) == 0
+            feel("off|" + key) { fresh ? WatchHaptics.getOffNow() : WatchHaptics.headsUp() }
+        case .arrived:
+            if t.timeIntervalSince(off) < 90 { feel("arr|" + key) { WatchHaptics.arrived() } }
+        case .wait, .due, .ride:
+            break
         }
+    }
+
+    private func feel(_ key: String, _ play: () -> Void) {
+        var f = felt
+        guard !f.contains(key) else { return }
+        f.append(key)
+        felt = f
+        play()
     }
 }
 
@@ -253,15 +317,23 @@ final class WatchAppDelegate: NSObject, WKApplicationDelegate {
 
 struct ContentView: View {
     @EnvironmentObject var model: WatchModel
-    private let timer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
+    @State private var path = NavigationPath()
+    // Build 213: every 5 s so the trip's wrist taps come on time (the model moves the clock every 15 s without a trip).
+    private let timer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
     private let reload = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if let c = model.context {
                     List {
-                        if let l = model.live { Section("Trip") { LiveTripRow(card: l, now: model.now) } }
+                        // Build 213: the trip is a button to its own screen (big countdown, Get off now, End trip).
+                        if let l = model.live {
+                            Section("Trip") {
+                                NavigationLink(value: WatchRoute.trip) { LiveTripRow(card: l, now: model.now) }
+                                    .accessibilityHint("Opens the trip")
+                            }
+                        }
                         CommuteSection(context: c)
                         if !c.starred.isEmpty {
                             Section("Starred") {
@@ -280,6 +352,8 @@ struct ContentView: View {
                         }
                     }
                     .navigationDestination(for: WStop.self) { s in StopView(stop: s) }
+                    .navigationDestination(for: WService.self) { s in ServiceView(service: s) }
+                    .navigationDestination(for: WatchRoute.self) { _ in LiveTripView() }
                 } else {
                     ScrollView {
                         VStack(spacing: 8) {
@@ -296,9 +370,168 @@ struct ContentView: View {
             }
             .navigationTitle("Transport")
         }
-        .onAppear { model.refresh(ifOlderThan: 30) }
+        .onAppear { model.refresh(ifOlderThan: 30); openTripIfLive() }
         .onReceive(timer) { _ in model.tick() }
         .onReceive(reload) { _ in model.refresh(ifOlderThan: 55) }
+        // Build 213: a complication or the Smart Stack trip card opens the trip screen when a trip runs.
+        .onOpenURL { _ in model.openTrip() }
+        .onChange(of: model.openTripPending) { _, on in if on { openTripIfLive() } }
+    }
+
+    private func openTripIfLive() {
+        guard model.openTripPending else { return }
+        model.openTripPending = false
+        if model.live != nil, path.isEmpty { path.append(WatchRoute.trip) }
+    }
+}
+
+/// Build 213: the screens the watch app opens besides stops and services.
+enum WatchRoute: Hashable { case trip }
+
+// MARK: Haptics (build 213)
+
+/// The wrist taps for a trip, played while the watch app is on screen. With the app closed the phone's own trip alerts
+/// (heads-up, Get off now, arrived) reach the wrist as notifications, whatever the iPhone's Silent switch says.
+enum WatchHaptics {
+    static func headsUp() { WKInterfaceDevice.current().play(.directionUp) }
+    /// Three strong taps 0.8 s apart, so one tap missed on a moving train is not the only one.
+    static func getOffNow() {
+        WKInterfaceDevice.current().play(.notification)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { WKInterfaceDevice.current().play(.notification) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { WKInterfaceDevice.current().play(.notification) }
+    }
+    static func arrived() { WKInterfaceDevice.current().play(.success) }
+    static func ended() { WKInterfaceDevice.current().play(.stop) }
+}
+
+/// Build 213: the trip on its own screen. Big words that read at a glance on the 40 mm watch, the stop, the next stop,
+/// the status, and End trip with a confirm. Moves through the same moments as the phone's card.
+struct LiveTripView: View {
+    @EnvironmentObject var model: WatchModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmEnd = false
+    @State private var endFailed = false
+
+    var body: some View {
+        ScrollView {
+            if let l = model.live {
+                VStack(alignment: .leading, spacing: 10) {
+                    LiveTripPanel(card: l, now: model.now)
+                    if model.canEndTrip {
+                        Button(role: .destructive) { confirmEnd = true } label: {
+                            Label("End trip", systemImage: "stop.circle")
+                        }
+                        .accessibilityHint("Ends the trip on your iPhone too")
+                    }
+                }
+            } else {
+                Text("No trip in progress.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .navigationTitle("Trip")
+        .confirmationDialog("End trip?", isPresented: $confirmEnd, titleVisibility: .visible) {
+            Button("End trip", role: .destructive) {
+                if model.endTrip() { dismiss() } else { endFailed = true }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Live alerts for this trip stop.")
+        }
+        .alert("Couldn't reach your iPhone", isPresented: $endFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("End the trip in Transport on your iPhone.")
+        }
+    }
+}
+
+/// The trip panel, a plain view so the native audit renders exactly this (no model).
+struct LiveTripPanel: View {
+    let card: WLiveCard
+    let now: Date
+
+    var body: some View {
+        let m = WTripMoments.list(card, now: now)[0]
+        let big = WTripMoments.big(card, m, at: now)
+        let detail = WTripMoments.detail(card, m, at: now)
+        let old = WTripMoments.ageStep(card, at: now) >= 1
+        let stop = WText.short(card.getOffAt)
+        let alert = m.kind == .getOff
+        return VStack(alignment: .leading, spacing: 4) {
+            LineBadge(line: card.line, colorHex: card.lineColorHex)
+            Text(big)
+                .font(.system(.title, design: .rounded).weight(.bold).monospacedDigit())
+                .foregroundStyle(alert ? Color.orange : Color.primary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.5)
+            ViewThatFits(in: .horizontal) {
+                Text(m.kind == .arrived ? WText.short(card.destination ?? card.getOffAt) : "Get off at \(stop)").lineLimit(2)
+                Text(m.kind == .arrived ? WText.short(card.destination ?? card.getOffAt) : "Off at \(stop)").lineLimit(2)
+                Text(stop).lineLimit(2).minimumScaleFactor(0.7)
+            }
+            .font(.headline)
+            if let d = detail, !d.isEmpty {
+                let color: Color = !old && (card.delayMin ?? 0) > 0 && d.hasSuffix("late") ? .orange : .secondary
+                Text(d).font(.footnote).foregroundStyle(color).lineLimit(2)
+            }
+            if m.kind == .ride, let n = card.stopsLeft, n > 1 {
+                Text("\(n) stops to go").font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+            }
+            if card.phase == "wait", m.kind != .arrived, let p = WText.platform(card.platform) {
+                Text(p).font(.footnote.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            if let w = card.warning, !w.isEmpty, card.isRisk {
+                Label(w, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(Color.red)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Build 213: one service on its own screen (from the commute list or a starred stop): when it leaves, the platform,
+/// where it goes, when it gets in, and whether the time is live or the timetable.
+struct ServiceView: View {
+    @EnvironmentObject var model: WatchModel
+    let service: WService
+
+    var body: some View {
+        ScrollView { ServicePanel(service: service, now: model.now) }
+            .navigationTitle(service.line)
+    }
+}
+
+/// The service panel, a plain view for the native audit.
+struct ServicePanel: View {
+    let service: WService
+    let now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                LineBadge(line: service.line, colorHex: service.colorHex)
+                if let d = service.dest, !d.isEmpty { Text(WText.short(d)).font(.footnote).lineLimit(2) }
+            }
+            Text(service.cancelled ? "Cancelled" : Clock.countdown(service.time, from: now))
+                .font(.system(.title2, design: .rounded).weight(.bold).monospacedDigit())
+                .foregroundStyle(service.cancelled ? Color.red : Color.primary)
+                .strikethrough(service.cancelled)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+            Text("Leaves \(Clock.hhmm(service.time))").font(.footnote).foregroundStyle(.secondary)
+            if let p = WText.platform(service.platform) { Text(p).font(.footnote.weight(.medium)).lineLimit(1) }
+            if let a = service.arrive { Text("Gets in \(Clock.hhmm(a))").font(.footnote).foregroundStyle(.secondary) }
+            Label(service.live ? "Live" : "Timetable", systemImage: service.live ? "dot.radiowaves.left.and.right" : "calendar")
+                .font(.caption)
+                .foregroundStyle(service.live ? Color.green : Color.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -315,7 +548,8 @@ struct CommuteSection: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(list) { s in ServiceRow(service: s, now: model.now) }
+                    // Build 213: each service opens its own screen.
+                    ForEach(list) { s in NavigationLink(value: s) { ServiceRow(service: s, now: model.now) } }
                 }
             } header: {
                 Text("\(c.title): \(WText.short(c.from.name)) to \(WText.short(c.to.name))")
@@ -444,7 +678,7 @@ struct StopView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(list) { s in ServiceRow(service: s, now: model.now) }
+                ForEach(list) { s in NavigationLink(value: s) { ServiceRow(service: s, now: model.now) } }
             }
             if let u = model.snapshot.stopsAt[stop.id] {
                 Text("Updated \(Clock.hhmm(u))")
