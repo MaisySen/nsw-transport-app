@@ -17,7 +17,7 @@ await ctx.addInitScript(() => {
   // Home and work were answered already, so the first launch setup does not open over this replay.
   if (!localStorage.getItem("store")) localStorage.setItem("store", JSON.stringify({ onboarded: true }));
   window.__log = [];
-  // The phone's own alarms (Wake me before my stop): set, moved and cancelled by the app, rung here when their time comes.
+  // The phone's own alarms (get off alerts, trip flow 2): set, moved and cancelled by the app, rung here when their time comes.
   window.__alarms = {};
   window.__alarmLog = (a) => { if (a.cancel) delete window.__alarms[a.id]; else if (a.at == null) window.__tripLog({ t: "alert", id: a.id, title: a.title, body: a.body, by: "app" }); else window.__alarms[a.id] = a; };
   setInterval(() => { for (const [id, a] of Object.entries(window.__alarms)) if (Date.now() >= a.at) { delete window.__alarms[id]; window.__tripLog({ t: "alert", id, title: a.title, body: a.body, by: "phone", at: Date.now() }); } }, 1000);
@@ -77,7 +77,8 @@ await vis(page.getByText("Start trip", { exact: true })).click({ timeout: 10000 
 await page.waitForTimeout(6000);
 const g = await page.evaluate(() => JSON.parse(localStorage.getItem("liveTrip") || "null"));
 if (!g) { console.log(JSON.stringify({ error: "no live trip", errs, url: page.url() })); await b.close(); process.exit(1); }
-if (process.env.WAKE === "1") { await vis(page.getByRole("switch", { name: "Wake me before my stop" })).click({ timeout: 5000 }); await page.waitForTimeout(2500); }
+// Fix-all 1 Nov: WAKE=1 no longer clicks a switch; trip flow 2 has no "Wake me before my stop" switch (get off alerts are
+// on for every started trip), so the phone's own alarms run in every replay.
 await shot("started");
 mode = "sim"; shiftAfter = 60000;
 const L = g.legs, last = L.length - 1;
