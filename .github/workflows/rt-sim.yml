@@ -9,7 +9,12 @@
 # No secrets, no signing, no upload, no production server, no Transport for NSW call. Manual runs only.
 name: Real-time trips in the simulator (rt-harness)
 
+# A run starts by hand (workflow_dispatch, once this file is on the default branch) or by a push that changes
+# tools/rt-harness/sim/config.json on a branch named rt-harness-* (scenarios and the app run to reuse come from it).
 on:
+  push:
+    branches: ['rt-harness-*']
+    paths: ['tools/rt-harness/sim/config.json']
   workflow_dispatch:
     inputs:
       scenarios:
@@ -28,8 +33,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      scenarios: ${{ steps.p.outputs.scenarios }}
+      app_run_id: ${{ steps.p.outputs.app_run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: p
+        run: |
+          if [ "${{ github.event_name }}" = workflow_dispatch ]; then
+            S='${{ inputs.scenarios }}'; A='${{ inputs.app_run_id }}'
+          else
+            S=$(jq -c .scenarios tools/rt-harness/sim/config.json); A=$(jq -r '.app_run_id // ""' tools/rt-harness/sim/config.json)
+          fi
+          echo "scenarios=$S" >> "$GITHUB_OUTPUT"; echo "app_run_id=$A" >> "$GITHUB_OUTPUT"
+          echo "scenarios $S, app run ${A:-build now}"
+
   build:
-    if: inputs.app_run_id == ''
+    needs: plan
+    if: needs.plan.outputs.app_run_id == ''
     runs-on: xcode-27
     timeout-minutes: 100
     defaults:
@@ -76,14 +99,14 @@ jobs:
           retention-days: 7
 
   sim:
-    needs: build
-    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    needs: [plan, build]
+    if: always() && needs.plan.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: xcode-27
     timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
-        scn: ${{ fromJSON(inputs.scenarios) }}
+        scn: ${{ fromJSON(needs.plan.outputs.scenarios) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -102,18 +125,18 @@ jobs:
           git worktree add srv FETCH_HEAD
           git -C srv log --oneline -1
       - name: The app (this run)
-        if: inputs.app_run_id == ''
+        if: needs.plan.outputs.app_run_id == ''
         uses: actions/download-artifact@v4
         with:
           name: rt-sim-app
           path: dl
       - name: The app (earlier run)
-        if: inputs.app_run_id != ''
+        if: needs.plan.outputs.app_run_id != ''
         uses: actions/download-artifact@v4
         with:
           name: rt-sim-app
           path: dl
-          run-id: ${{ inputs.app_run_id }}
+          run-id: ${{ needs.plan.outputs.app_run_id }}
           github-token: ${{ github.token }}
       - name: Unpack
         run: |

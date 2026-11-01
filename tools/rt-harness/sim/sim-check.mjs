@@ -28,11 +28,14 @@ const shots = ocr.map((o) => {
   const wall = m ? Date.parse(`${day}T${m[1]}:${m[2]}:${m[3]}Z`) : null;
   const t = wall ? caseT(wall) : null;
   const lines = o.lines || [];
-  const island = lines.filter((l) => l.y < 0.065 && !STATUS.test(l.t.trim())).map((l) => l.t.trim());
+  const statusClock = (l) => l.y < 0.04 && l.x < 0.25 && STATUS.test(l.t.trim());
+  const island = lines.filter((l) => l.y < 0.065 && !statusClock(l)).map((l) => l.t.trim());
+  // a running countdown in the Island or on the card (m:ss or h:mm:ss under an hour), as seconds left
+  const timers = lines.filter((l) => !statusClock(l)).map((l) => l.t.trim().match(/^(?:(\d):)?(\d{1,2}):(\d{2})$/)).filter(Boolean).map((m) => (Number(m[1] || 0) * 3600 + Number(m[2]) * 60 + Number(m[3])));
   const ours = lines.filter((l) => VOCAB.test(l.t) && !(l.y < 0.03 && STATUS.test(l.t.trim()))).map((l) => l.t.trim());
   const lock = lines.some((l) => l.y > 0.08 && l.y < 0.3 && l.h > 0.06 && /^\d{1,2}:\d{2}$/.test(l.t.trim()));
   const banner = lines.filter((l) => /Get off now|is next|Arrived at|Held, stay on|running \d+ min|Platform/i.test(l.t)).map((l) => l.t.trim());
-  return { file: o.file, name: m ? m[4] : o.file, wall, t, island, ours, lock, banner, tr: t != null ? truthAt(t) : null };
+  return { file: o.file, name: m ? m[4] : o.file, wall, t, island, ours, lock, banner, timers, tr: t != null ? truthAt(t) : null };
 }).filter((s) => s.t != null).sort((a, b) => a.t - b.t);
 
 const out = { dir, case: truth.case, title: truth.title, shots: shots.length, findings: [] };
@@ -76,7 +79,10 @@ for (const s of locked) {
   checked++;
   const want = (s.tr.status.match(/\d{1,2}:\d{2}\s?(am|pm)|Get off now|Arrived|Next: \w+|Due/i) || [null])[0];
   const text = [...s.island, ...s.ours, ...s.banner].join(' ');
-  if (want && text.toLowerCase().includes(want.toLowerCase().replace(/\s+/g, ''))) match++; else if (want) misses.push(`${hms(s.t)}: truth "${s.tr.status}", phone "${text.slice(0, 120)}"`);
+  const left = s.tr.timer != null ? s.tr.timer - s.t : null;
+  const timerOk = left != null && s.timers.some((x) => Math.abs(x - left) <= 75);
+  if ((want && text.toLowerCase().replace(/\s+/g, '').includes(want.toLowerCase().replace(/\s+/g, ''))) || timerOk) match++;
+  else if (want) misses.push(`${hms(s.t)}: truth "${s.tr.status}"${left != null ? ` (${left} s to go)` : ''}, phone "${text.slice(0, 120)}"`);
 }
 out.followsTruth = { checked, match };
 if (checked && match / checked < 0.6) add('high', 'the locked phone does not show the live state', `${match} of ${checked} locked pictures show the truth's time or phase; e.g. ${misses.slice(0, 3).join('; ')}`);
