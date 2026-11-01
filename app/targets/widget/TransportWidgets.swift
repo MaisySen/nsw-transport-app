@@ -564,6 +564,9 @@ struct NextTripView: View {
                         .font(.system(.title3, design: .rounded).weight(.bold))
                         .monospacedDigit()
                         .minimumScaleFactor(0.6)
+                        // Build 214 (audit review): the circle is a fixed size; "~3:34" was cut at the largest text sizes.
+                        // VoiceOver keeps the whole words (accessibilityLabel below).
+                        .dynamicTypeSize(...DynamicTypeSize.xLarge)
                 }
                 .gaugeStyle(.accessoryCircular)
                 .widgetAccentable()

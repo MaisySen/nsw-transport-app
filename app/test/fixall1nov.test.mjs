@@ -200,6 +200,7 @@ test('iPhone Your trip circular widget: an old clock time drops am/pm so it is n
   const w = read('targets/widget/TransportWidgets.swift');
   const circ = w.slice(w.indexOf('private var circular: some View'), w.indexOf('private var rectangular: some View'));
   assert.match(circ, /Text\(t\.waitWord\.map \{ \$0\.replacingOccurrences\(of: "am", with: ""\)\.replacingOccurrences\(of: "pm", with: ""\) \}/);
+  assert.match(circ, /\.dynamicTypeSize\(\.\.\.DynamicTypeSize\.xLarge\)/, 'stops growing in the fixed circle (cut at xxxLarge in the audit)');
 });
 
 test('Watch circular complication: an hour or more away shows the clock time, not a timer over two lines (A9, audit review)', () => {
