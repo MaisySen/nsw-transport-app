@@ -15,6 +15,10 @@ on:
         description: "Also run the app on the simulator and open every outside link (back paths, about 60 min)"
         type: boolean
         default: true
+      only_entry:
+        description: "Only the entry job (the snapshot, compile and Watch jobs already passed on this commit)"
+        type: boolean
+        default: false
   workflow_call:
 
 permissions:
@@ -26,6 +30,7 @@ concurrency:
 
 jobs:
   ios:
+    if: github.event_name != 'workflow_dispatch' || !inputs.only_entry
     runs-on: xcode-27
     timeout-minutes: 45
     defaults:
@@ -79,6 +84,7 @@ jobs:
         run: test ! -e "$GITHUB_WORKSPACE/out/FAILED-ios"
 
   module:
+    if: github.event_name != 'workflow_dispatch' || !inputs.only_entry
     # From build 211 (31 Oct 2026): the app's own native module (app/modules/transport-ios: TransportIOSModule.swift,
     # region get off alerts, alert audio, widgets, Live Activity) is compiled with the whole app for the simulator,
     # against the real Expo and React Native pods, so a Swift error fails here and never first in the signed build.
@@ -125,6 +131,7 @@ jobs:
           retention-days: 14
 
   watch:
+    if: github.event_name != 'workflow_dispatch' || !inputs.only_entry
     runs-on: xcode-27
     timeout-minutes: 75
     defaults:
