@@ -90,6 +90,9 @@ final class WidgetAuditTests: XCTestCase {
         ("live-next", liveAt(liveCard(departs: -9, legArrives: 1.5, updated: -0.5, phase: "ride"), .next, target: 1.5)),
         ("live-getoff", liveAt(liveCard(departs: -10, legArrives: 0.4, updated: -0.3, phase: "ride", delay: 0), .getOff, target: nil)),
         ("live-old", liveAt(liveCard(departs: 4, legArrives: 19, updated: -3), .wait, target: 4)),
+        // Build 214 (fix-all A2): Due and Get off now reached on fresh data, then 3 min old: "Due about" / "Get off about".
+        ("live-due-old", liveAt(liveCard(departs: 0.3, legArrives: 15, updated: -3), .due, target: nil)),
+        ("live-getoff-old", liveAt(liveCard(departs: -10, legArrives: 0.4, updated: -3, phase: "ride", delay: 0), .getOff, target: nil)),
         ("empty", nextTrip("To home", "Parramatta", "Bondi Junction", [], message: "No more services right now")),
     ]
 
