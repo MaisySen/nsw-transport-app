@@ -289,6 +289,7 @@ struct NextTripProvider: AppIntentTimelineProvider {
                                        arrival: Date(timeIntervalSince1970: c.arrival / 1000), now: now,
                                        updated: c.updatedDate)
         var out: [NextTripEntry] = []
+        let changeHere = c.next != nil || Naming.compact(Naming.short(c.getOffAt)) != Naming.compact(Naming.short(c.destination ?? c.getOffAt))
         for (i, m) in moments.enumerated() {
             let end = i + 1 < moments.count ? moments[i + 1].at : m.at.addingTimeInterval(120)
             var at = m.at
@@ -296,6 +297,20 @@ struct NextTripProvider: AppIntentTimelineProvider {
                 out.append(liveEntry(c, moment: TripMoment(at: at, kind: m.kind, target: m.target), now: at))
                 at = at.addingTimeInterval(60)
             } while m.target != nil && at < end && out.count < 90
+            // 2 Nov: "Change here · Now" is drawn again at each step of the stale ladder, so it ages like the rest
+            // ("~4:49am", then no live data) instead of saying "Now" under "Updated 4:48am" for good.
+            if m.kind == .arrived && changeHere && i + 1 == moments.count {
+                for t in TripMoments.ladder(updated: c.updatedDate, after: m.at) {
+                    out.append(liveEntry(c, moment: TripMoment(at: t, kind: m.kind, target: m.target), now: t))
+                }
+            }
+        }
+        // 2 Nov: after "Change here" the widget moves on to the next leg by itself ("T4 4:52 · Platform 5"), from the
+        // card's own next leg, so a phone that stays locked through the change still shows the train to catch.
+        if let n = c.nextLegCard() {
+            let off = c.legArrivesDate ?? Date(timeIntervalSince1970: c.arrival / 1000)
+            let start = TripMoments.nextLegAt(off: off, now: now)
+            out = out.filter { $0.date < start } + liveEntries(n, now: start)
         }
         return out
     }
@@ -344,6 +359,8 @@ struct NextTripProvider: AppIntentTimelineProvider {
             status = lastLeg ? "Arrived \(Clock.time(c.legArrivesDate ?? c.target))" : "Change here"
             word = lastLeg ? "Done" : "Now"
             leave = c.legArrivesDate ?? c.target
+            // 2 Nov: "Now" only on live times; from 2 min old the change shows its time with "about" (spec 2.4).
+            if !lastLeg && step >= 1 { word = nil }
         }
         // Old live times: the clock time with "about", then the timetable time with no live data (spec 2.4).
         if step >= 1 && word == nil {

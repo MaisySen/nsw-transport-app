@@ -2,6 +2,16 @@
 
 What changed in Transport, newest first. Times are Sydney time. Build numbers, update ids and links are in [docs/RELEASES.md](docs/RELEASES.md).
 
+## 2 Nov 2026
+
+### Dynamic Island minimal "T4 4:52", and the Your trip widget moves on to the next leg (2 Nov; branch `fix-island-2nov` from fix-lockedlive-1nov 5f4fa2e; native, for the next build, not built)
+From Bidur's first real trip on build 214 (2 Nov, 4:26 to 4:55 AM; files/day-2nov/trip-0452-diagnosis.md B2, B3). Bidur said yes at 9:19 AM.
+* Minimal Island (another app's Live Activity, such as music, shares the Island): the line and the clock time, "T4 4:52", side by side when they fit, the line over the time when not, else the time alone (`IslandMinimal.swift`, `LiveTripMinimal`). Never a bare "Due" or "Now"; orange at Get off now; the tick once arrived. A clock time needs no pushes to stay right. Compact and expanded are unchanged.
+* Your trip widget: the card the app saves now carries the next leg (`nextLegFor` in widgetShare.ts, `SharedNextLeg`), so after "Change here" the widget's own timeline moves on to the next leg ("T4 4:52 · Platform 5") a minute after the arrival, even with the phone locked and offline. Older apps and the server's card leave it out and the widget draws as before.
+* "Change here · Now" ages by the stale ladder: "Now" only on live times, then the time with "about" at 2 min, no live data at 5, open the app at 10 (redrawn at each step).
+* Native: the Swift needs a build. The @expo/fingerprint hash does not change (it does not read targets/widget), so an update over the air would NOT carry these; the JavaScript half (the next leg on the saved card) is harmless alone.
+* Tests: `app/test/island2nov.test.mjs` (5; 4 fail on 5f4fa2e, the fifth compiles the new Swift file and fails without it).
+
 ## 1 Nov 2026
 
 ### Locked screens live (1 Nov, branch `fix-lockedlive-1nov` from fix-backnav-1nov; for the next build, not built; server branch `server-lockedlive`)

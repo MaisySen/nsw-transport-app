@@ -364,6 +364,9 @@ struct SharedLiveCard: Decodable {
     var delayMin: Int?
     var departsLive: Bool?
     var legArrivesLive: Bool?
+    /// 2 Nov 2026: the next leg of the trip (app/platform/widgetShare.ts nextLegFor); nil on the last leg and from older
+    /// apps and the server's card.
+    var next: SharedNextLeg?
 
     var departsDate: Date? { departs.map { Date(timeIntervalSince1970: $0 / 1000) } }
     var legArrivesDate: Date? { legArrives.map { Date(timeIntervalSince1970: $0 / 1000) } }
@@ -375,6 +378,29 @@ struct SharedLiveCard: Decodable {
               let c = try? JSONDecoder().decode(SharedLiveCard.self, from: data) else { return nil }
         if c.phase == "arrived" { return nil }
         if Date(timeIntervalSince1970: c.until / 1000) <= now { return nil }
+        return c
+    }
+
+    /// The card for the next leg, waiting for it at the change (2 Nov): its line, departure and platform, the same live
+    /// times age; nil without a next leg or a departure. The trip's arrival and `until` stay the trip's own.
+    func nextLegCard() -> SharedLiveCard? {
+        guard phase != "arrived", let n = next, n.departs != nil, !n.line.isEmpty else { return nil }
+        var c = self
+        c.line = n.line
+        if let h = n.lineColorHex, !h.isEmpty { c.lineColorHex = h }
+        if let m = n.mode, !m.isEmpty { c.mode = m }
+        c.phase = "wait"
+        c.nextStop = n.from ?? getOffAt
+        c.getOffAt = n.to ?? destination ?? getOffAt
+        c.platform = n.platform
+        c.departs = n.departs
+        c.legArrives = n.arrives
+        c.departsLive = n.departsLive
+        c.legArrivesLive = n.arrivesLive
+        // the delay and the warning were the first leg's
+        c.delayMin = nil
+        c.warning = nil
+        c.next = nil
         return c
     }
 

@@ -19,7 +19,7 @@ import type { LiveTrip } from '@/lib/live';
 import type { ServiceResp, WatchLeg } from '@/lib/types';
 import { boardTime, missedConn, missedPlanLegs, pickNextOption, sydHHMM } from '@/lib/smart';
 import { cardFor, shortName, staleAt, type CardAlt, type CardOpts } from './tripCard';
-import { homeWorkFor, liveCardFor, starredFor, type HomeWork, type LiveCardShare, type SharedStop } from './widgetShare';
+import { homeWorkFor, liveCardFor, nextLegFor, starredFor, type HomeWork, type LiveCardShare, type SharedNextLeg, type SharedStop } from './widgetShare';
 import { watchActionFor, watchContextFor, watchContextJSON } from './watchShare';
 import { apiBase } from '@/lib/server';
 import { endActivityToken, sendActivityToken, sendDeviceToken } from './livePush';
@@ -109,9 +109,9 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     const updated = lastSvcAt || null;
     // updated is always sent (G7): a stale card then reads "Updated 7:47pm", never "You've arrived".
     const o: CardOpts = { alt: altFor(g, s), updated: updated || g.started || Date.now(), asOf: background && !honestStale ? updated || Date.now() : null, c24: phone24h() };
-    if (!iosNative.activitiesEnabled() && !activityId) { shareLive(g, cardFor(g, s, Date.now(), o)); return; }
+    if (!iosNative.activitiesEnabled() && !activityId) { shareLive(g, cardFor(g, s, Date.now(), o), nextLegFor(g.legs, s)); return; }
     const card = cardFor(g, s, Date.now(), o);
-    shareLive(g, card);
+    shareLive(g, card, nextLegFor(g.legs, s));
     const stale = staleAt(card, card.updated ?? updated, cardV, ARRIVED_KEEP_S * 1000);
     if (!activityId || activityTrip !== g.id) {
       if (starting || card.phase === 'arrived') return;
@@ -157,16 +157,17 @@ if (Platform.OS === 'ios' && iosNative.available()) {
 
   // The Next trip widget follows a trip in progress. Reload it only when the words on it change.
   let liveKey = '';
-  function shareLive(g: LiveTrip | null, card: TripCardState | null) {
+  // 2 Nov: with the next leg, so the widget moves on to it after "Change here" by itself.
+  function shareLive(g: LiveTrip | null, card: TripCardState | null, next: SharedNextLeg | null = null) {
     if (!g || !card) {
       if (liveKey) { liveKey = ''; putJSON('liveCard', null); iosNative.reloadWidgets('NextTrip'); }
       watchData.live = null; watchData.trip = null; shareWatch();
       return;
     }
-    const share = liveCardFor(g.title || `${shortName(g.origin?.name)} to ${shortName(g.to?.name)}`, card, ARRIVED_KEEP_S * 1000);
+    const share = liveCardFor(g.title || `${shortName(g.origin?.name)} to ${shortName(g.to?.name)}`, card, ARRIVED_KEEP_S * 1000, next);
     putJSON('liveCard', share);
     watchData.live = share; watchData.trip = g.id || null; shareWatch();
-    const k = [card.phase, card.line, card.getOffAt, card.departs, card.legArrives, card.platform].join('|');
+    const k = [card.phase, card.line, card.getOffAt, card.departs, card.legArrives, card.platform, next?.line, next?.departs, next?.platform].join('|');
     if (k !== liveKey) { liveKey = k; iosNative.reloadWidgets('NextTrip'); }
   }
 

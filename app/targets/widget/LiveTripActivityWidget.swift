@@ -435,12 +435,59 @@ struct LiveTripCompactTrailing: View {
     }
 }
 
+/// 2 Nov 2026 (the owner's first real trip on 214, yes at 9:19 AM): the minimal Island (when another app's Live Activity,
+/// such as music, shares the Island) is the line and the clock time, "T4 4:52", never a bare "Due" or "Now". Side by side
+/// when they fit, the line over the time when not, else the time alone (IslandMinimal.swift). Orange at Get off now.
 struct LiveTripMinimal: View {
     var state: LiveTripAttributes.ContentState
     var stale = false
     var body: some View {
-        CompactCountdown(date: state.shownTarget(stale: stale), arrived: state.arrived(stale: stale), outdated: state.outdated(stale: stale), word: state.countdownWord(stale: stale), spoken: state.spokenCountdown(stale: stale))
-            .frame(maxWidth: 36)
+        let target = state.shownTarget(stale: stale)
+        if let w = IslandMinimal.words(line: state.line, target: target, word: state.countdownWord(stale: stale), arrived: state.arrived(stale: stale)) {
+            ViewThatFits(in: [.horizontal, .vertical]) {
+                if let l = w.line {
+                    HStack(spacing: 2) {
+                        IslandMinimalLine(line: l, colorHex: state.lineColorHex, size: 10)
+                        Text(w.time).font(.caption2.weight(.semibold)).monospacedDigit()
+                    }
+                    .lineLimit(1).fixedSize()
+                    VStack(spacing: 1) {
+                        IslandMinimalLine(line: l, colorHex: state.lineColorHex, size: 9)
+                        Text(w.time).font(.system(size: 10, weight: .semibold)).monospacedDigit()
+                    }
+                    .lineLimit(1).fixedSize()
+                }
+                Text(w.time)
+                    .font(.caption2.weight(.semibold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+            // The minimal Island is a fixed 36.67 pt circle: past xLarge the text would only be cut.
+            .dynamicTypeSize(...DynamicTypeSize.xLarge)
+            .foregroundStyle(w.getOff ? Color.orange : Color.white)
+            .frame(maxWidth: 36, maxHeight: 36)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(IslandMinimal.spoken(line: state.line, target: target, phase: state.phase))
+        } else {
+            CompactCountdown(date: target, arrived: true, outdated: false, word: nil, spoken: state.spokenCountdown(stale: stale))
+                .frame(maxWidth: 36)
+        }
+    }
+}
+
+/// The line in the minimal Island: its name on its own colour, like the line badges elsewhere, small enough for 36 pt.
+struct IslandMinimalLine: View {
+    var line: String
+    var colorHex: String
+    var size: CGFloat
+    var body: some View {
+        let c = RGB(hex: colorHex)
+        Text(line)
+            .font(.system(size: size, weight: .bold))
+            .foregroundStyle((c?.prefersWhiteText ?? true) ? Color.white : Color.black)
+            .padding(.horizontal, 2)
+            .background(Color(red: c?.r ?? 0, green: c?.g ?? 0.6, blue: c?.b ?? 0.9), in: RoundedRectangle(cornerRadius: 3))
     }
 }
 

@@ -22,6 +22,24 @@ enum TripMomentKind: String, Codable, Hashable {
     case arrived
 }
 
+/// The next leg of the trip, on the card the app saves for the widget (2 Nov 2026, the owner's first real trip on 214:
+/// the widget sat on "Change here · Now" from 4:48 to 4:55 with the T4 at 4:52 nowhere, because the saved card described
+/// one leg only). With it the widget's own timeline moves on to "T4 4:52 · Platform 5" after the change, offline too.
+/// Times in ms. Optional on the card: older apps leave it out and the widget draws as before.
+struct SharedNextLeg: Codable, Hashable {
+    var line: String
+    var lineColorHex: String?
+    var mode: String?
+    /// The stop you board it at ("Town Hall") and where you get off it.
+    var from: String?
+    var to: String?
+    var platform: String?
+    var departs: Double?
+    var arrives: Double?
+    var departsLive: Bool?
+    var arrivesLive: Bool?
+}
+
 struct TripMoment: Hashable {
     var at: Date
     var kind: TripMomentKind
@@ -103,6 +121,21 @@ enum TripMoments {
         if a >= 600 { return 3 }
         if a >= 300 { return 2 }
         return a >= liveFor ? 1 : 0
+    }
+
+    /// "Change here" shows this long before the widget moves on to the next leg (2 Nov).
+    static let changeHold: TimeInterval = 60
+
+    /// When the widget moves on from "Change here" to the next leg: a minute after the arrival at the change, never
+    /// before now (2 Nov).
+    static func nextLegAt(off: Date, now: Date) -> Date { max(off.addingTimeInterval(changeHold), now) }
+
+    /// The moments a word that does not count ("Change here · Now") must be drawn again so it ages by the stale ladder
+    /// (spec 2.4: 2 min "about", 5 min no live data, 10 min open the app), after `after` (2 Nov: "Now" with "Updated
+    /// 4:48am" under it stayed for 7 min).
+    static func ladder(updated: Date?, after: Date) -> [Date] {
+        guard let u = updated else { return [] }
+        return [liveFor, 300, 600].map { u.addingTimeInterval($0) }.filter { $0 > after }
     }
 
     /// "4 min late", "2 min early", "On time"; nil when not known.

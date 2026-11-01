@@ -4,6 +4,10 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Island minimal and the widget's next leg (2 Nov, branch `fix-island-2nov`, next build)
+* With music sharing the Dynamic Island, the trip shows the line and the time, "T4 4:52", not "Due".
+* The Your trip widget moves on to your next train after "Change here" by itself, and "Now" turns into an "about" time once the live times are old.
+
 ## Locked screens live (1 Nov, branch `fix-lockedlive-1nov`, next build; server `server-lockedlive`)
 * "Your trip" widget (home, Lock Screen, StandBy) and Apple Watch complications stay live with the iPhone locked: they load the trip's card from the server when the app's is over a minute old, every 3 minutes during a trip.
 * Server (no build): the Lock Screen card, the Island and the alerts follow a train that changes trip id mid-run (858N to 858P after Central); a card sent again at arrival is ended.
