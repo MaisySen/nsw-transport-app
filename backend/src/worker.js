@@ -10938,6 +10938,10 @@ function apiOnlyRoute(request, env, url) {
   return json({ error: "Not found. This address serves the Transport: Sydney Live API under /api/.", site: siteUrl(env) }, 404);
 }
 
+/** Fix-all 1 Nov: the largest request body the app's routes take (a long regional trip is well under 64 KB). */
+const BODY_MAX = 128 * 1024;
+const BODY_UNCAPPED_RE = /^\/api\/(admin|engine\/load|raptor|budget)\//;
+
 async function handleRequest(request, env, exec) {
     const url = new URL(request.url);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "content-type, x-profile, x-device, if-none-match, x-public-ok", "access-control-expose-headers": SERVES_EXPOSE, "access-control-max-age": "86400" } });
@@ -10957,6 +10961,12 @@ async function handleRequest(request, env, exec) {
     const bad = badInput(url.searchParams);
     if (bad) return url.searchParams.get("format") === "text" ? textRes(bad) : json({ error: bad, text: bad }, 400);
     if (!(await ipLimitOk(env, request, url.pathname)) && !loadOk(request, env)) return json({ error: "Too many requests. Wait a minute and try again." }, 429);
+    // Fix-all 1 Nov (security note 1): a body over BODY_MAX is refused before any route reads it, so a large POST cannot
+    // fill the isolate's memory. Admin, engine load, planner and budget routes carry files and timetables and are not
+    // capped. Read from content-length (the edge sets it for every body that is not streamed).
+    if (request.method !== "GET" && request.method !== "HEAD" && !BODY_UNCAPPED_RE.test(url.pathname) && Number(request.headers.get("content-length") || 0) > BODY_MAX) {
+      return json({ error: "Request too big." }, 413);
+    }
     if (/^\/api\/share(\/update)?$/.test(url.pathname)) {
       try { return await shareRoutes(request, env, url); }
       catch (e) { return json({ error: "Sharing is not available right now." }, 500); }
@@ -11417,7 +11427,7 @@ async function handleRequest(request, env, exec) {
         case "/api/push/unsubscribe": {
           await ensureSchema3(env);
           const b = await request.json().catch(() => ({}));
-          if (b.endpoint) await db(env).prepare("DELETE FROM push_subs WHERE endpoint = ?1 AND device = ?2").bind(String(b.endpoint), cleanId(b.device)).run();
+          if (b.endpoint) await db(env).prepare("DELETE FROM push_subs WHERE endpoint = ?1 AND device = ?2").bind(String(b.endpoint).slice(0, 1000), cleanId(b.device)).run();
           return json({ ok: true });
         }
         case "/api/push/test": {

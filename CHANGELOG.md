@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 1 Nov 2026
 
+### Request size cap and unsubscribe clamp (server, fix-all 1 Nov, NOT deployed)
+* The server refuses a request body over 128 KB with 413 ("Request too big.") before any route reads it, so a large POST cannot fill the Worker's memory (polish security note 1). Read from content-length. Admin, engine load, planner and budget routes carry files and timetables and are not capped. The app's largest bodies (a long regional trip) are well under 64 KB.
+* `/api/push/unsubscribe` clamps the endpoint at 1000 characters, like `/api/push/subscribe` (note 4).
+* Not done: refusing short device or profile ids on `/api/live-activity/forget` and `/api/history/delete` (note 3). Profile ids are 6 to 40 characters by design today and no read of the ids in use was made, so raising the minimum could lock out existing phones. Needs a D1 read first.
+* Branch server-fixall-1nov from server-tripflow 0bb3340. Backend 734/734 (730 + `backend/test/body-cap.test.mjs`, 4; 3 failed first on 0bb3340). Not deployed.
+
 ### Arrival clip on build 212 (server, 1:46 AM)
 * The trip flow's arrival alert ("Arrived at ...") now rings with Kylie's "You've arrived at your stop." (`arrival.wav`) on iPhone build 212 and later, which bundle the clip. The Live Activity push that carries the alert names the same sound. Build 211 and older, Android, and any phone whose build is not known keep the default sound, because they do not have the file. Heads-up and Get off now keep their clips.
 * How the server knows the build: the app sets no User-Agent, so iOS sends its own, `<app name>/<build> CFNetwork/... Darwin/...`. Start trip reads the build from it and keeps it on the watch (`iosBuild`); a build in the request body is ignored. Request log lines now carry `ib` (the iPhone build), so the logs show which builds call.
