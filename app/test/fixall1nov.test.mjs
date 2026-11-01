@@ -195,3 +195,9 @@ test('Watch complications: commute times over 5 min old show the clock time and 
   assert.match(COMP, /if let t = entry\.target, entry\.old \{/, 'corner: clock time');
   assert.match(read('native-tests/native-audit/Tests/Watch/WatchAuditTests.swift'), /\("commute-old", NextEntry\(/, 'the native audit draws it');
 });
+
+test('iPhone Your trip circular widget: an old clock time drops am/pm so it is not cut (A8, found in the audit review)', () => {
+  const w = read('targets/widget/TransportWidgets.swift');
+  const circ = w.slice(w.indexOf('private var circular: some View'), w.indexOf('private var rectangular: some View'));
+  assert.match(circ, /Text\(t\.waitWord\.map \{ \$0\.replacingOccurrences\(of: "am", with: ""\)\.replacingOccurrences\(of: "pm", with: ""\) \}/);
+});

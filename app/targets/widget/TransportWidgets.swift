@@ -557,7 +557,10 @@ struct NextTripView: View {
                 Gauge(value: min(mins, 20), in: 0...20) {
                     Text(t.line)
                 } currentValueLabel: {
-                    Text(t.waitWord ?? (mins < 1 ? "Now" : (mins >= 60 ? Clock.time(t.leave).replacingOccurrences(of: "am", with: "").replacingOccurrences(of: "pm", with: "") : "\(Int(mins))")))
+                    // Build 214 (fix-all audit review): a clock time word ("~7:54pm" with old live times) drops am/pm as the
+                    // hour path does; "~3:3..." was cut in the circle since build 212.
+                    Text(t.waitWord.map { $0.replacingOccurrences(of: "am", with: "").replacingOccurrences(of: "pm", with: "") }
+                         ?? (mins < 1 ? "Now" : (mins >= 60 ? Clock.time(t.leave).replacingOccurrences(of: "am", with: "").replacingOccurrences(of: "pm", with: "") : "\(Int(mins))")))
                         .font(.system(.title3, design: .rounded).weight(.bold))
                         .monospacedDigit()
                         .minimumScaleFactor(0.6)
