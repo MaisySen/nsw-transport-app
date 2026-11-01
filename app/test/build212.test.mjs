@@ -30,7 +30,7 @@ async function load(rel) {
 
 test('build 212 has its own runtime 1.3.0 and the build workflow refuses 1.2.0 for it', () => {
   const a = JSON.parse(read('app.json')).expo;
-  assert.equal(a.ios.buildNumber, '212');
+  assert.equal(a.ios.buildNumber, '213'); // build 213 (1 Nov), same runtime 1.3.0
   assert.equal(a.runtimeVersion, '1.3.0');
   const wf = fs.readFileSync(path.join(root, '.github/workflows/ios-209-local.yml'), 'utf8');
   assert.match(wf, /github\.ref == 'refs\/heads\/build-212-rc'/);

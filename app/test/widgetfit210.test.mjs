@@ -69,7 +69,7 @@ test('the Mac fit check renders every family at the smallest and largest widget 
 test('build number 212 on version 1.0.0, runtime 1.3.0 (1.0.0 and 1.1.0 are main\'s, 1.2.0 is builds 210 and 211)', () => {
   const a = JSON.parse(read('app.json')).expo;
   // Build 212 (1 Nov): native changes 210 and 211 do not have (card version 3, arrival sound), so its own runtime.
-  assert.equal(a.ios.buildNumber, '212');
+  assert.equal(a.ios.buildNumber, '213'); // build 213 (1 Nov), same runtime 1.3.0
   assert.equal(a.version, '1.0.0');
   assert.equal(a.runtimeVersion, '1.3.0');
 });

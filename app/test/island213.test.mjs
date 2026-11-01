@@ -1,6 +1,6 @@
 // Build 213 (1 Nov 2026). Bidur, 10:57 AM: "Dynamic island just showed time?? Not the stop name ?"; 11:04 AM:
 // "Stop name.    Time" / "This is how it should be in dynamic island. It was like that before".
-// Build 212's 15e0a8d put a bell before the stop name in the compact Island ("🔔 Croydon" in the 52 pt the Island gives),
+// Build 212's 15e0a8d put a bell before the stop name in the compact Island (a bell and the name in the 52 pt the Island gives),
 // so the name was cut to "🔔 Syd..." or "🔔 ..." beside the time. These tests lock the compact Island to the stop name
 // beside the time so it cannot regress again; the native audit draws it (trip-compact-leading, probe island-compact-stop).
 import { test } from 'node:test';
@@ -15,7 +15,7 @@ test('compact Island: leading is the stop name, never a bell or a bare badge whi
   const lead = between(w, 'struct LiveTripCompactLeading: View', 'struct IslandNameLine');
   assert.match(lead, /if let name = state\.compactPlace\(stale: stale\)/, 'the stop name first');
   assert.doesNotMatch(lead, /bell/, 'no bell beside the name (the 212 regression)');
-  assert.doesNotMatch(lead, /compactStation/, 'no "Redfern:" colon');
+  assert.doesNotMatch(lead, /compactStation/, 'no colon after the name');
   // the line badge only when the card names no stop
   assert.match(lead, /\} else \{\s*WidgetLineBadge\(/);
   // fits before it shrinks: one line, two short lines, smaller one line, then scaled with an audit probe
@@ -63,10 +63,10 @@ test('compact Island: the two line split puts the break nearest the middle', () 
   const split = (s) => { const ws = s.split(' ').filter(Boolean); if (ws.length < 2) return null; let best = 1, bd = Infinity;
     for (let i = 1; i < ws.length; i++) { const a = ws.slice(0, i).join(' ').length, b = ws.slice(i).join(' ').length; if (Math.abs(a - b) < bd) { bd = Math.abs(a - b); best = i; } }
     return [ws.slice(0, best).join(' '), ws.slice(best).join(' ')]; };
-  assert.deepEqual(split('Kings Cross'), ['Kings', 'Cross']);
+  assert.deepEqual(split('Milsons Point'), ['Milsons', 'Point']);
   assert.deepEqual(split('Macquarie University'), ['Macquarie', 'University']);
   assert.deepEqual(split('Parramatta Rd opp Sydney Uni'), ['Parramatta Rd', 'opp Sydney Uni']);
-  assert.equal(split('Strathfield'), null);
+  assert.equal(split('Hornsby'), null);
 });
 
 test('the native audit draws the compact Island for every scenario on both Island phones', () => {

@@ -48,7 +48,9 @@ test('Watch app: opens straight to the trip while one runs, on a tap anywhere an
 });
 
 test('widget bundle: no if/else (WidgetBundleBuilder cannot take one; audit run 41255069387), the watch layout set in the widget', () => {
-  const b = read('targets/widget/TransportWidgets.swift');
+  const src = read('targets/widget/TransportWidgets.swift');
+  const b = src.slice(src.indexOf('struct TransportWidgets: WidgetBundle'), src.indexOf('\n}\n', src.indexOf('struct TransportWidgets: WidgetBundle')));
+  assert.ok(b.length > 100);
   assert.doesNotMatch(b, /\} else \{/);
   assert.match(b, /\n\s*LiveTripActivityWidget\(\)\n/);
   const w = read('targets/widget/LiveTripActivityWidget.swift');
