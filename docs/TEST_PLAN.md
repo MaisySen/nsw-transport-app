@@ -3,6 +3,10 @@
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
 
+## Cut-off realtime feed, server hotfix (1 Nov, branch server-lockedlive-hang)
+* `backend/test/feed-truncated.test.mjs` (5): every parse runs in a worker thread with a watchdog (a call past 1.5 s is a hang and fails the test; each call must take under 50 ms). The 4-byte repro [10,127,1,2]; every prefix of a synthetic feed with 6 trip updates and 4 vehicles (a whole-field cut parses, any other cut throws "truncated feed"); every prefix of a trip update, a vehicle position and an alerts feed; 2,000 random garbage buffers (seed 20261101) through indexFeed, the trip and vehicle readers and decodeAlerts; loadFeed serving the last good copy to the fetching and the joining request. All 5 fail or hang on 51b46a4. Run: `OFFLINE=1 TZ=Australia/Sydney node --test backend/test/feed-truncated.test.mjs`.
+* Before/after check (not in the suite): 3,000 random well-formed feeds and 3,000 alert feeds read identically by 51b46a4 and this branch.
+
 ## Locked screens live, server (1 Nov, branch server-lockedlive)
 * `backend/test/locked-live-1nov.test.mjs` (8): run split followed in the server simulation (tools/case-feed.mjs `handover`, simtrip opts `handover`/`tripId`/`cardOnly`/`get`), the next-run-letter rule, `/api/live-card`, cards ended after arrival. 7 of 8 fail on server-214 8fa2b4c; the 8th is the no-split check.
 
