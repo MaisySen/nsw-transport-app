@@ -2,6 +2,18 @@
 
 What changed in Transport, newest first. Times are Sydney time. Build numbers, update ids and links are in [docs/RELEASES.md](docs/RELEASES.md).
 
+## 2 Nov 2026
+
+### No false "Connection at risk" after a change you made, and Get off now with no clock (2 Nov; branch `fix-connrisk-2nov` from fix-getoff-1nov 30319ea; NOT built, no OTA)
+Bidur's first real trip on build 214 (2 Nov, 4:26 to 4:55 AM): the phone woke 3 min after he had changed trains and posted "Connection at risk" for the 4:52 he was on. Diagnosis: files/day-2nov/trip-0452-diagnosis.md (B1).
+* With the server watching the trip (trip flow 2), the phone posts no change alert of its own: the server owns tight and missed changes (spec 2.3, 2.5). `stepFlow` passed "server watching" as false.
+* With no server watch, a change alert is never posted for a change the trip flow has already made (the leg arrived, the next leg left, or the trip moved on), nor once the change's departure has gone by the phone's clock (`cueStale` conn<k>, both trip paths).
+* On waking, the trip flow's own arrivals are used (`flowHere`) instead of finding them again in a feed that has since dropped the stop.
+* computeLive: a fresh live answer that no longer lists your stop off with its own time while a later stop has its own live time ends the leg (`offDropped`, the feed's evidence, the server's rule; never the clock). The 30 s hold stops 10 min past the live arrival, as heldArrival. A stop the feed still lists keeps the hold.
+* Get off now's words carry no clock time ("Get off now. Cove."), so they never clash with the heads-up's "arriving 4:56" (Bidur OK, 2 Nov 9:19 AM). The server copy (LIVECARD) is regenerated.
+* JavaScript only (the @expo/fingerprint hash is the same as 30319ea): over the air on runtime 1.3.0 after Bidur's go. The server half is on `server-trip-2nov`.
+* Tests: `app/test/connrisk2nov.test.mjs` (8; 7 fail on 30319ea), `app/test/getoffwords2nov.test.mjs` (2; 1 fails on 30319ea).
+
 ## 1 Nov 2026
 
 ### Get off now timing race, app (1 Nov ~9 PM; branch `fix-getoff-1nov` from fix-rt-1nov 88c5aae; NOT built, no OTA)

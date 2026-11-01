@@ -4,6 +4,9 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## No false "Connection at risk" (2 Nov, branch `fix-connrisk-2nov`, OTA on 1.3.0)
+The phone never warns about a change while the server watches the trip, after the change was made, or once the change's train has left. A phone that wakes after the change takes the trip's own arrivals, not a feed that has dropped the stop. Get off now says the stop, not a clock time.
+
 ## Get off now at its moment reads the newest live arrival (1 Nov, branch `fix-getoff-1nov`, OTA on 1.3.0 after the server)
 With the app open, Get off now at its exact moment is decided on a fresh read asked at that moment, never on the last 15 s refresh: a train whose arrival moves in that second gets Get off now for the new arrival (never 2 to 3 min early). One timer, re-armed in one go; a moment during a refresh is never dropped.
 

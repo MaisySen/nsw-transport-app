@@ -748,7 +748,8 @@ export function tripStep(plan: TripPlan, M: TripMemory, t: number, S: TripReadin
     if (!isLast) { M.current = li + 1; res.log.push({ t, what: `now on leg ${li + 2}` }); }
     return res;
   }
-  // 3) Get off now at the live arrival minus 30 s, plus the feed's lag (build 214: it lands 38 s before the live
+  // 3) Get off now at the live arrival minus 30 s (2 Nov, Bidur OK: its words carry no clock time, so they never
+  // clash with the heads-up's "arriving 4:56"; the moment is now, and Arrived carries the real time), plus the feed's lag (build 214: it lands 38 s before the live
   // arrival, about 30 s before the train stops; never over 40 s before it, getOffLeadMs)
   const lead = env.lead ?? 0;
   const offLead = getOffLeadMs(lead);
@@ -763,7 +764,7 @@ export function tripStep(plan: TripPlan, M: TripMemory, t: number, S: TripReadin
     if (isLiveTime(tm2.arr) && t >= tm2.arr.at - offLead) {
       if (age2 < R.LIVE_FRESH) {
         m.rung.getoff = t; m.offArrAt = tm2.arr.at; if (!rung('headsup')) m.rung.headsup = 'skipped';
-        deliver({ kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}, arriving ${C(tm2.arr.at)}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + R.GETOFF_EXPIRE, target: getOffDueAt(tm2.arr.at), arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - offLead > t - 1000 && tm2.arr.at < prevArr }, age2, false);
+        deliver({ kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + R.GETOFF_EXPIRE, target: getOffDueAt(tm2.arr.at), arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - offLead > t - 1000 && tm2.arr.at < prevArr }, age2, false);
         setPhase(M, li, 'getOff', t, `live arrival ${tripClockSec(tm2.arr.at)} minus ${Math.round(getOffLeadMs(0) / 1000)} s, reading ${Math.round(age2 / 1000)}s old`, res.log);
       } else if (age2 < R.LIVE_CAP) {
         m.rung.getoffQuiet = t;
