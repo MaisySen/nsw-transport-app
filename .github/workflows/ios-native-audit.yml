@@ -259,14 +259,11 @@ jobs:
       - name: iPhone simulator
         working-directory: app/native-tests/native-audit
         run: |
-          # A classic one-screen iPhone, made for this job: the runner's newest device types have two displays and a
-          # wide layout (runs 41286058379, 41290208281), which is not the phone Bidur holds.
-          RT=$(xcrun simctl list runtimes -j | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)['runtimes'] if x.get('platform')=='iOS' and x.get('isAvailable')]; print(r[-1]['identifier'])")
-          DEV=""
-          for DT in iPhone-16 iPhone-16-Pro iPhone-15 iPhone-15-Pro iPhone-17 iPhone-16e iPhone-14; do
-            DEV=$(xcrun simctl create "Entry $DT" "com.apple.CoreSimulator.SimDeviceType.$DT" "$RT" 2>/dev/null) && { echo "simulator $DT on $RT"; break; }
-          done
-          if [ -z "$DEV" ]; then xcrun simctl list devices available -j > /tmp/devs.json; DEV=$(python3 sim.py phone /tmp/devs.json); fi
+          # An ordinary one-screen iPhone (sim.py phone): not the runner's newest type, "iPhone Duo", which has two
+          # displays and a wide layout (runs 41286058379, 41290208281). iOS 27.1 takes no older device types (run 41297564099).
+          xcrun simctl list devices available -j > /tmp/devs.json
+          python3 -c "import json; d=json.load(open('/tmp/devs.json'))['devices']; print(sorted({x['name'] for k in d if '.iOS-' in k for x in d[k] if x['name'].startswith('iPhone')}))"
+          DEV=$(python3 sim.py phone /tmp/devs.json)
           test -n "$DEV"; echo "$DEV" > /tmp/sim-id.txt
           xcrun simctl boot "$DEV" || true
           xcrun simctl bootstatus "$DEV" -b > /dev/null
