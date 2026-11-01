@@ -28,8 +28,14 @@ function one(s) {
     const p = spawn(process.execPath, ['--no-warnings', path.join(here, 'scenario.mjs'), s.id, '--server', SERVER, '--speed', SPEED, '--out', file], { stdio: ['ignore', 'pipe', 'pipe'], env: process.env });
     let o = '', e = '';
     p.stdout.on('data', (d) => (o += d)); p.stderr.on('data', (d) => (e += d));
-    const kill = setTimeout(() => p.kill('SIGKILL'), 15 * 60000);
-    p.on('close', (code) => { clearTimeout(kill); process.stdout.write(o); let r = null; try { r = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {} resolve({ s, code, r, err: r ? '' : (e || o).slice(-1500) }); });
+    // A scenario is a 10 to 40 min trip at --speed; one still running after 4x that has stopped moving: a call into
+    // the server that never returns (as a corrupt feed did, F-NSWGARBAGE) is reported as a server hang, not a harness error.
+    const limitMs = Math.max(4 * 60000, 4 * (45 * 60000) / Number(SPEED));
+    let hung = false;
+    const kill = setTimeout(() => { hung = true; p.kill('SIGKILL'); }, limitMs);
+    p.on('close', (code) => { clearTimeout(kill); process.stdout.write(o); let r = null; try { r = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+      if (!r && hung) r = { checks: [{ id: 'server-no-hang', ok: false, sev: 'critical', detail: `the run stopped moving and was stopped after ${Math.round(limitMs / 60000)} min: a server call never returned (the CPU stayed busy), so no pass, push or answer after that` }], apns: [], expo: [], nsw: { calls: 0 }, passes: [], wallS: Math.round(limitMs / 1000) };
+      resolve({ s, code, r, err: r ? '' : (e || o).slice(-1500) }); });
   });
 }
 const t0 = Date.now();

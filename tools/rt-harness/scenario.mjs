@@ -98,6 +98,8 @@ function kindOf(title, body) {
   if (/\bHeld\b/i.test(t)) return 'held';
   if (/is next|coming up/i.test(t)) return 'headsup';
   if (/arrived/i.test(t)) return 'arrived';
+  // the end of a leg at a change ("At Redfern: change here") is the change stop's arrival alert
+  if (/^At .+: change here/i.test(title || '')) return 'arrived';
   if (/Cancel/i.test(t)) return 'cancelled';
   if (/\b(late|early)\b|delay/i.test(title || '')) return 'delay';
   if (/Platform|Plat /i.test(title || '')) return 'platform';
@@ -121,6 +123,7 @@ function applyApns(p) {
     if (aps.alert) showNote({ title: aps.alert.title, body: aps.alert.body, via: 'card', sound: aps.sound || null, level: aps['interruption-level'] || null });
     return;
   }
+  if (p.token && p.token !== APNS_DEV) return; // another phone's
   showNote({ title: aps.alert && aps.alert.title, body: aps.alert && aps.alert.body, via: 'apns', sound: aps.sound || null, level: aps['interruption-level'] || null });
 }
 function deliverApns(p) {
@@ -128,6 +131,7 @@ function deliverApns(p) {
   applyApns(p);
 }
 function deliverExpo(m) {
+  if (m.to && [].concat(m.to).indexOf(EXPO) < 0) return; // another phone's (the stress phones)
   if (!phone.online) { phone.heldAlert = { body: { aps: { alert: { title: m.title, body: m.body } } } }; return; }
   showNote({ title: m.title, body: m.body, via: 'expo', sound: m.sound || null, level: m.interruptionLevel || null });
 }
@@ -139,6 +143,7 @@ const hang = (signal, maxMs) => new Promise((_, rej) => {
   if (signal) signal.addEventListener('abort', () => { clearTimeout(h); rej(signal.reason || new DOMException('aborted', 'AbortError')); });
 });
 globalThis.fetch = async (url, init = {}) => {
+  rec.fetchN = (rec.fetchN || 0) + 1;
   const u = String(url instanceof Request ? url.url : url);
   if (url instanceof Request && !init.body) init = { method: url.method, headers: url.headers, body: await url.text().catch(() => undefined), signal: url.signal };
   const t = now();
@@ -184,7 +189,7 @@ globalThis.fetch = async (url, init = {}) => {
     let msgs = []; try { msgs = JSON.parse(init.body); } catch {}
     if (!Array.isArray(msgs)) msgs = [msgs];
     const f = fault('expo', t);
-    for (const m of msgs) rec.expo.push({ at: sec(t), title: m.title, body: m.body, sound: m.sound, level: m.interruptionLevel, status: f ? f.expo : 'ok' });
+    for (const m of msgs) rec.expo.push({ at: sec(t), to: Array.isArray(m.to) ? m.to.join(',') : m.to, title: m.title, body: m.body, sound: m.sound, level: m.interruptionLevel, status: f ? f.expo : 'ok' });
     if (f) return new Response('{"errors":[{"code":"INTERNAL"}]}', { status: Number(f.expo) || 500 });
     for (const m of msgs) deliverExpo(m);
     return new Response(JSON.stringify({ data: msgs.map(() => ({ status: 'ok', id: 'rt' })) }), { status: 200 });
@@ -248,6 +253,33 @@ async function startTrip() {
   const r = await phoneCall('POST', '/api/watch', { device: DEVICE, kind: 'trip', legs, track: true, getOff: 1, getOffVoice: 1, to: { id: 'x', name: legs[legs.length - 1].to }, ...flow });
   watchOk = r.status === 200;
   await routes;
+  if (STRESS) stressRegister();
+}
+
+// Local stress (RT_STRESS=N): N more phones start the same trip in the same minute, each with its own trip watch and
+// card token, so every cron pass carries N+1 trips. Each pass's real time and outbound requests are recorded
+// (Cloudflare: a cron invocation may make at most 1000 subrequests on the paid plan, and its CPU time is limited).
+const STRESS = Number(process.env.RT_STRESS || 0);
+async function stressRegister() {
+  const t0 = performance.now(); let ok = 0, bad = 0; const slow = []; const badWhy = {};
+  for (let i = 0; i < STRESS; i += 25) {
+    await Promise.all(Array.from({ length: Math.min(25, STRESS - i) }, async (_, j) => {
+      const dev = 'rtstress' + String(i + j).padStart(16, '0');
+      const tok = (i + j).toString(16).padStart(64, 'd');
+      try {
+        // each phone on its own address, as on the road (the server limits writes per address)
+        const ip = { 'cf-connecting-ip': `10.${(i + j) >> 8 & 255}.${(i + j) & 255}.7` };
+        // the app's order: its push route first, then the trip watch and the card token
+        await call(W, env, 'POST', '/api/push/expo', { device: dev, token: `ExponentPushToken[stressdev${String(i + j).padStart(6, '0')}]`, platform: 'ios' }, dev, ip);
+        const a = await call(W, env, 'POST', '/api/watch', { device: dev, kind: 'trip', legs, track: true, getOff: 1, getOffVoice: 1, to: { id: 'x', name: legs[legs.length - 1].to }, ...flow }, dev, ip);
+        const b = await call(W, env, 'POST', '/api/live-activity', { token: tok, device: dev, activity: 'rt', trip: tripBody(), ...flow }, dev, ip);
+        if (a.status === 200 && b.status === 200) ok++; else { bad++; const k = `watch ${a.status} ${JSON.stringify(a.body).slice(0, 80)} / card ${b.status} ${JSON.stringify(b.body).slice(0, 80)}`; badWhy[k] = (badWhy[k] || 0) + 1; }
+        slow.push(Math.round(a.ms));
+      } catch (e) { bad++; rec.errors.push({ t: sec(now()), where: 'stress register', msg: String(e).slice(0, 300) }); }
+    }));
+  }
+  slow.sort((x, y) => x - y);
+  rec.stress = { devices: STRESS, ok, bad, registerRealMs: Math.round(performance.now() - t0), watchMsP50: slow[slow.length >> 1], watchMsMax: slow[slow.length - 1], badWhy };
 }
 
 // ---- the app while open: reads every 15 s, writes the card (fresh readings only), the widget and the Watch ----
@@ -309,11 +341,11 @@ async function cron() {
     await untilV(minute);
     if (serverDown(minute)) { rec.passes.push({ t: sec(minute), skipped: 'server down' }); minute += 60000; continue; }
     const exec = makeExec();
-    const r0 = performance.now(), v0 = now();
+    const r0 = performance.now(), v0 = now(), f0 = rec.fetchN || 0, a0 = rec.apns.length, c0 = process.cpuUsage();
     if (W.serverCfg) W.serverCfg.at = 0;
     try { await W.__default.scheduled({ scheduledTime: minute, cron: '* * * * *' }, env, exec); }
     catch (e) { rec.errors.push({ t: sec(minute), where: 'scheduled', msg: String(e && e.stack || e).slice(0, 400) }); }
-    const p = Promise.all([...exec.pending]).then(() => rec.passes.push({ t: sec(minute), realMs: Math.round(performance.now() - r0), virtS: Math.round((now() - v0) / 1000) }));
+    const p = Promise.all([...exec.pending]).then(() => rec.passes.push({ t: sec(minute), realMs: Math.round(performance.now() - r0), virtS: Math.round((now() - v0) / 1000), fetches: (rec.fetchN || 0) - f0, apns: rec.apns.length - a0, cpuMs: Math.round((process.cpuUsage(c0).user + process.cpuUsage(c0).system) / 1000) }));
     passes.push(p);
     minute += 60000;
   }

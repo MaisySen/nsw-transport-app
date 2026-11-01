@@ -49,10 +49,10 @@ export function makeExec() {
 }
 
 /** One HTTP call to the worker as the phone makes it. */
-export async function call(W, env, method, p, body, device) {
+export async function call(W, env, method, p, body, device, extra) {
   const exec = makeExec();
   const t0 = performance.now();
-  const res = await W.__default.fetch(new Request('https://api.transportsydney.app' + p, { method, headers: { 'content-type': 'application/json', ...(device ? { 'x-device': device } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) }), env, exec);
+  const res = await W.__default.fetch(new Request('https://api.transportsydney.app' + p, { method, headers: { 'content-type': 'application/json', ...(device ? { 'x-device': device } : {}), ...(extra || {}) }, ...(body ? { body: JSON.stringify(body) } : {}) }), env, exec);
   const msAnswer = performance.now() - t0;
   let j = null; try { j = await res.json(); } catch {}
   await Promise.all([...exec.pending]);
