@@ -94,10 +94,28 @@ final class WidgetRefreshLogicTests: XCTestCase {
             XCTAssertFalse((e.notice?.text ?? "").contains("Trip started"))
         }
         XCTAssertEqual(es.first?.trips.first?.status, "4 min late", "the delay is on the row (G28)")
-        XCTAssertTrue(es.contains { $0.trips[0].status.hasPrefix("Due now") })
-        XCTAssertTrue(es.contains { $0.trips[0].status == "Get off now" })
-        XCTAssertTrue(es.last?.trips[0].status.hasPrefix("Arrived") ?? false)
         for (a, b) in zip(es, es.dropFirst()) { XCTAssertLessThan(a.date, b.date) }
+        // Build 214: Due now, Get off now and Arrived come only from live times under 2 min old at their moment.
+        let due = NextTripProvider.liveEntries(Self.card(phase: "wait", departs: 60, legArrives: 1200), now: Self.now)
+        XCTAssertTrue(due.contains { $0.trips[0].status.hasPrefix("Due now") })
+        let off = NextTripProvider.liveEntries(Self.card(phase: "ride", departs: nil, legArrives: 60), now: Self.now)
+        XCTAssertTrue(off.contains { $0.trips[0].status == "Get off now" })
+        XCTAssertTrue(off.last?.trips[0].status.hasPrefix("Arrived") ?? false)
+    }
+
+    /// Build 214 (known issues sweep, 1 Nov): a 20 minute timeline from one reading never reaches Due now, Get off now or
+    /// Arrived by the clock; the stop shows with "about" and the times hold (spec 2.4, R-A).
+    func testOldLiveTimesNeverSayDueGetOffNowOrArrived() {
+        let es = NextTripProvider.liveEntries(Self.card(phase: "wait", departs: 240, legArrives: 1200), now: Self.now)
+        XCTAssertGreaterThan(es.count, 5)
+        for e in es where e.date >= Self.now.addingTimeInterval(120) {
+            let s = e.trips[0].status
+            XCTAssertFalse(s.hasPrefix("Due now") || s == "Get off now" || s.hasPrefix("Arrived"), "old data said \(s)")
+            XCTAssertNotEqual(e.trips[0].waitWord, "Now")
+        }
+        let held = TripMoments.list(phase: "ride", departs: nil, legArrives: Self.now.addingTimeInterval(10),
+                                    arrival: Self.now.addingTimeInterval(10), now: Self.now, updated: Self.now.addingTimeInterval(-180))
+        XCTAssertEqual(held.map(\.kind), [.next], "3 min old data at the stop: the stop with about, never Get off now or Arrived")
     }
 
     func testLiveTimelineSaysAboutThenNoLiveData() {

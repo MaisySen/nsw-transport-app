@@ -24,6 +24,9 @@ export function expectCase(c, run) {
     }
     if (k.widget === 'has') assert.ok(f.widget && f.widget.includes(k.is), `${c.id} ${k.at}: widget "${f.widget}" lacks "${k.is}"`);
     if (k.widget === 'is') assert.equal(f.widget, k.is, `${c.id} ${k.at}: widget`);
+    if (k.widget === 'lacks') assert.ok(!(f.widget || '').includes(k.is), `${c.id} ${k.at}: widget "${f.widget}" says "${k.is}"`);
+    if (k.watch === 'lacks') assert.ok(!(f.watch || '').includes(k.is), `${c.id} ${k.at}: watch "${f.watch}" says "${k.is}"`);
+    if (k.watch === 'has') assert.ok(f.watch && f.watch.includes(k.is), `${c.id} ${k.at}: watch "${f.watch}" lacks "${k.is}"`);
   }
   if (c.order) assert.deepEqual(o.rings.map((r) => r.kind), c.order, `${c.id}: alerts in order`);
   for (const w of c.ring || []) {

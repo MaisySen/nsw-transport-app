@@ -349,6 +349,29 @@ export const CASES = [
     phone: [{ at: '19:46', app: 'open', silent: true, headphones: true }, { at: '19:46:20', app: 'locked' }, { at: '19:56', app: 'open' }],
     order: ['delay', 'headsup', 'getoff', 'arrived'], spoken: ['headsup', 'getoff', 'arrived'],
   },
+  {
+    id: 'S20w', title: 'Live data lost 3 min before the stop: Watch and widget (1 Nov sweep)',
+    story: 'S20 seen on the Watch and the widget: the feed stops at 7:56, the phone is locked. Neither says Get off now or Arrived from the old reading; they hold with "about" (fix-all-1nov A1/A2, the native Watch and widget follow the same rule, test/fixall1nov.test.mjs).',
+    legs: [sample()], start: '19:46', end: '20:06',
+    feed: { events: late4(), gaps: [['19:56', null]] },
+    phone: lockedFrom('19:46', '19:46:20'),
+    checks: [
+      { at: '19:58:40', watch: 'lacks', is: 'Get off now' }, { at: '19:58:40', widget: 'lacks', is: 'Get off now' },
+      { at: '19:59:30', watch: 'lacks', is: 'Arrived' }, { at: '19:59:30', widget: 'lacks', is: 'Arrived' },
+      { at: '20:01', watch: 'lacks', is: 'Arrived' }, { at: '20:01', tripPhase: 'nextStop' },
+    ],
+    order: ['delay', 'headsup', 'quiet'],
+  },
+  {
+    id: 'S21', title: 'Held outside the stop after Get off now (1 Nov shadow trip L)',
+    story: '4 min late; Get off now at 7:58:30 for a 7:59 arrival, then the train is held: at 7:59 the live arrival moves to 8:02 and it reaches Clyde at 8:02. One Get off now, no second one, and no Arrived until the train is at the stop.',
+    legs: [sample()], start: '19:46', end: '20:06',
+    feed: { events: [{ at: '19:44', leg: 0, delay: 4 }, ...vehicle(0, [['Lidcombe', '19:52', '19:54:30'], ['Auburn', '19:56:30', '19:57']]), { at: '19:59', leg: 0, est: { Clyde: '20:02' } }, { at: '20:02', leg: 0, vehicle: { stop: 'Clyde', state: 'at' } }] },
+    phone: lockedFrom('19:46', '19:46:20'),
+    checks: [{ at: '20:00:30', watch: 'lacks', is: 'Arrived' }, { at: '20:01:30', watch: 'lacks', is: 'Arrived' }, { at: '20:01:30', widget: 'lacks', is: 'Arrived' }],
+    ring: [{ kind: 'getoff', lands: '19:58:30' }, { kind: 'arrived', between: ['20:02', '20:02:30'] }],
+    order: ['delay', 'headsup', 'getoff', 'arrived'],
+  },
 ];
 
 export const byId = (id) => CASES.find((c) => c.id === id);

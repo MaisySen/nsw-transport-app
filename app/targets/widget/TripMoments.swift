@@ -43,7 +43,8 @@ enum TripMoments {
 
     /// The moments from `now` on, the one showing now first. `departs` and `legArrives` are the live times on the card
     /// (the timetable when the card has no live time). Waiting with no departure: one waiting moment.
-    static func list(phase: String, departs: Date?, legArrives: Date?, arrival: Date, now: Date) -> [TripMoment] {
+    static func list(phase: String, departs: Date?, legArrives: Date?, arrival: Date, now: Date,
+                     updated: Date? = nil) -> [TripMoment] {
         var all: [TripMoment] = []
         let off = legArrives ?? arrival
         if phase == "arrived" { return [TripMoment(at: now, kind: .arrived, target: nil)] }
@@ -62,10 +63,33 @@ enum TripMoments {
         // Keep them in time order (a short ride can put Next before the service has left: the later wins its place).
         var sorted: [TripMoment] = []
         for m in all where sorted.last.map({ m.at > $0.at }) ?? true { sorted.append(m) }
+        sorted = holdWhenOld(sorted, updated: updated, departs: departs, off: off)
         // The one showing now, starting now, then the rest.
         let current = sorted.last(where: { $0.at <= now }) ?? sorted[0]
         var out = [TripMoment(at: now, kind: current.kind, target: current.target)]
         out += sorted.filter { $0.at > now }
+        return out
+    }
+
+    /// Build 214 (found in the 1 Nov known-issues sweep): old live times never claim "now" (spec 2.4, R-A, R-B). The
+    /// widget said "Get off now", "Arrived" and "Due now" by the clock from old data. Like the phone's tripState and the
+    /// Lock Screen card, those three need live times under 2 min old at the moment they start; from older data the moment
+    /// shows with "about" instead ("Croydon next" with "~7:59pm" at your stop, "Due about" with the departure), then the
+    /// timetable time. A moment reached on fresh data stays, and the trip never steps back. An arrival the app wrote
+    /// (phase arrived) is evidence and stays. Same rule as the Watch (WatchCore.swift WTripMoments.holdWhenOld).
+    static func holdWhenOld(_ sorted: [TripMoment], updated: Date?, departs: Date?, off: Date) -> [TripMoment] {
+        guard let u = updated else { return sorted }
+        let order: [TripMomentKind] = [.wait, .due, .ride, .next, .getOff, .arrived]
+        var out: [TripMoment] = []
+        for m in sorted {
+            var k = m.kind, t = m.target
+            if ageStep(updated: u, at: m.at) >= 1 {
+                if k == .due { k = .wait; t = departs }
+                if k == .getOff || k == .arrived { k = .next; t = off }
+            }
+            if let last = out.last, (order.firstIndex(of: k) ?? 0) <= (order.firstIndex(of: last.kind) ?? 0) { continue }
+            out.append(TripMoment(at: m.at, kind: k, target: t))
+        }
         return out
     }
 

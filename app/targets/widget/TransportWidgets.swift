@@ -266,7 +266,8 @@ struct NextTripProvider: AppIntentTimelineProvider {
     /// a minute so the minutes stay right. The last entry is the arrival; the card itself ends 2 minutes later.
     static func liveEntries(_ c: SharedLiveCard, now: Date = Date()) -> [NextTripEntry] {
         let moments = TripMoments.list(phase: c.phase, departs: c.departsDate, legArrives: c.legArrivesDate,
-                                       arrival: Date(timeIntervalSince1970: c.arrival / 1000), now: now)
+                                       arrival: Date(timeIntervalSince1970: c.arrival / 1000), now: now,
+                                       updated: c.updatedDate)
         var out: [NextTripEntry] = []
         for (i, m) in moments.enumerated() {
             let end = i + 1 < moments.count ? moments[i + 1].at : m.at.addingTimeInterval(120)
@@ -305,6 +306,8 @@ struct NextTripProvider: AppIntentTimelineProvider {
             status = late && delay != nil ? "Due now · \(delay!)" : "Due now"
             word = "Due"
             leave = c.departsDate ?? c.target
+            // Build 214: reached on fresh data, then old: "Due about" with the time, then the timetable (never "Due now").
+            if step >= 1 { status = step >= 2 ? "Timetable" : "Due about"; word = nil }
         case .ride:
             status = lastLeg ? "Get off at \(off)" : "Change at \(off)"
         case .next:
@@ -313,6 +316,8 @@ struct NextTripProvider: AppIntentTimelineProvider {
             status = "Get off now"
             word = "Now"
             leave = c.legArrivesDate ?? c.target
+            // Build 214: reached on fresh data, then old: "Get off about" with the time, as the Lock Screen card.
+            if step >= 1 { status = "Get off about"; word = nil }
         case .arrived:
             status = lastLeg ? "Arrived \(Clock.time(c.legArrivesDate ?? c.target))" : "Change here"
             word = lastLeg ? "Done" : "Now"

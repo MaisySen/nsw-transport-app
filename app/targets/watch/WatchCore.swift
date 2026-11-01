@@ -526,8 +526,31 @@ enum WTripMoments {
         all.append(WTripMoment(at: off, kind: .arrived, target: nil))
         var sorted: [WTripMoment] = []
         for m in all where sorted.last.map({ m.at > $0.at }) ?? true { sorted.append(m) }
+        sorted = holdWhenOld(sorted, c, departs: c.departs.map { Date(timeIntervalSince1970: $0 / 1000) }, off: off)
         let current = sorted.last(where: { $0.at <= now }) ?? sorted[0]
         return [WTripMoment(at: now, kind: current.kind, target: current.target)] + sorted.filter { $0.at > now }
+    }
+
+    /// Build 214 (known issue from 212): old live times never claim "now" (spec 2.4, R-A, R-B). The watch said "Get off
+    /// now", "Arrived" and "Due", and tapped "arrived", by its own clock from old data (a held train, the phone locked).
+    /// Like the phone's tripState and the Lock Screen card, those three need live times under 2 min old at the moment
+    /// they start; from older data the moment shows with "about" instead (Get off now and Arrived as "About 7:59pm" at
+    /// your stop, Due as "About 7:54pm"), then the timetable time. A moment reached on fresh data stays, and the trip
+    /// never steps back. An "arrived" the phone itself sent (phase arrived) is evidence and stays.
+    static func holdWhenOld(_ sorted: [WTripMoment], _ c: WLiveCard, departs: Date?, off: Date) -> [WTripMoment] {
+        guard c.updatedAt != nil, c.phase != "arrived" else { return sorted }
+        let order: [WTripKind] = [.wait, .due, .ride, .next, .getOff, .arrived]
+        var out: [WTripMoment] = []
+        for m in sorted {
+            var k = m.kind, t = m.target
+            if ageStep(c, at: m.at) >= 1 {
+                if k == .due { k = .wait; t = departs }
+                if k == .getOff || k == .arrived { k = .next; t = off }
+            }
+            if let last = out.last, (order.firstIndex(of: k) ?? 0) <= (order.firstIndex(of: last.kind) ?? 0) { continue }
+            out.append(WTripMoment(at: m.at, kind: k, target: t))
+        }
+        return out
     }
 
     /// 0 live, 1 "about" (2 to 5 min old), 2 no live data (5 min on), as the phone (spec 2.4).
@@ -542,11 +565,19 @@ enum WTripMoments {
     static func big(_ c: WLiveCard, _ m: WTripMoment, at: Date) -> String {
         let step = ageStep(c, at: at)
         switch m.kind {
-        case .due: return "Due"
-        case .getOff: return "Get off now"
+        // Build 214: a Due or Get off now reached on fresh data says "about" once the data is old, as the Lock Screen
+        // card ("Get off about 7:59pm"), then the timetable time; never a bare "now" from old data.
+        case .due, .getOff:
+            guard step >= 1, let t = (m.kind == .due ? c.departs.map { Date(timeIntervalSince1970: $0 / 1000) } : c.getOffTime) else {
+                return m.kind == .due ? "Due" : "Get off now"
+            }
+            return step >= 2 ? Clock.hhmm(t.addingTimeInterval(-Double(c.delayMin ?? 0) * 60)) : "About \(Clock.hhmm(t))"
         case .arrived: return WText.short(c.getOffAt) == WText.short(c.destination ?? c.getOffAt) ? "Arrived" : "Change here"
         case .wait, .ride, .next:
             guard let t = m.target else { return "Leaves soon" }
+            // Build 214: from 5 min old the timetable time (the live time less the delay), as the phone's card and
+            // widget (spec 2.4); 2 to 5 min the live time with "about".
+            if step >= 2 { return Clock.hhmm(t.addingTimeInterval(-Double(c.delayMin ?? 0) * 60)) }
             if step >= 1 { return "About \(Clock.hhmm(t))" }
             return m.kind == .wait ? WText.leaves(t, now: at) : Clock.countdown(t, from: at)
         }

@@ -74,8 +74,10 @@ final class WatchAuditTests: XCTestCase {
             ("trip-screen-wait", Screen(title: "Trip", sections: [(nil, [AnyView(LiveTripPanel(card: card("wait"), now: now)),
                                                                          AnyView(Label("End trip", systemImage: "stop.circle"))])])),
             ("trip-screen-next", Screen(title: "Trip", sections: [(nil, [AnyView(LiveTripPanel(card: card("ride", off: "Sydney Olympic Park Station", next: "Lidcombe Station",
-                                                                                                      warning: "You'll likely miss the 5:12pm T1 to Hornsby at Epping"), now: at(17.2)))])])),
-            ("trip-screen-getoff", Screen(title: "Trip", sections: [(nil, [AnyView(LiveTripPanel(card: card("ride"), now: at(18.2)))])])),
+                                                                                                      warning: "You'll likely miss the 5:12pm T1 to Hornsby at Epping", updated: 17), now: at(17.2)))])])),
+            // Build 214: Get off now only from live times under 2 min old (the fixture was 18 min old, the known issue).
+            ("trip-screen-getoff", Screen(title: "Trip", sections: [(nil, [AnyView(LiveTripPanel(card: card("ride", updated: 18), now: at(18.2)))])])),
+            ("trip-screen-held", Screen(title: "Trip", sections: [(nil, [AnyView(LiveTripPanel(card: card("ride", updated: 15.5), now: at(18.2)))])])),
             ("trip-screen-old", Screen(title: "Trip", sections: [(nil, [AnyView(LiveTripPanel(card: card("ride", updated: -7), now: now))])])),
             ("service", Screen(title: "T1", sections: [(nil, [AnyView(ServicePanel(service: services[0], now: now)),
                                                              AnyView(ServicePanel(service: services[1], now: now)),
