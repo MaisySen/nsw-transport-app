@@ -48,6 +48,215 @@ jobs:
           unzip -q /tmp/xcodegen.zip -d /tmp/xg
           "$(find /tmp/xg -type f -name xcodegen -perm -u+x | head -1)" generate
       - name: iPhone simulator
+        run: |
+          xcrun simctl list devices available -j > /tmp/devs.json
+          DEV=$(python3 sim.py ios /tmp/devs.json)
+          if [ -z "$DEV" ]; then
+            RT=$(xcrun simctl list runtimes | grep -o 'com.apple.CoreSimulator.SimRuntime.iOS-[0-9-]*' | tail -1)
+            for DT in $(xcrun simctl list devicetypes | grep -o 'com.apple.CoreSimulator.SimDeviceType.iPhone[^)]*' | tail -r); do
+              DEV=$(xcrun simctl create "Audit iPhone" "$DT" "$RT" 2>/dev/null) && break
+            done
+          fi
+          echo "simulator $DEV"; test -n "$DEV"; echo "$DEV" > /tmp/sim-id.txt
+          xcrun simctl boot "$DEV" || true
+          xcrun simctl bootstatus "$DEV" -b > /dev/null
+      - name: Audit (iPhone widgets, Lock Screen, StandBy, Live Activities, Dynamic Island)
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/out/ios"
+          TEST_RUNNER_SNAPSHOT_DIR="$GITHUB_WORKSPACE/out/ios" TEST_RUNNER_TZ=Australia/Sydney \
+          xcodebuild test -project NativeAudit.xcodeproj -scheme NativeAuditTests -destination "id=$(cat /tmp/sim-id.txt)" \
+            -derivedDataPath dd CODE_SIGNING_ALLOWED=NO > "$GITHUB_WORKSPACE/out/ios-test.log" 2>&1 \
+            || { grep -E "error:|DOES NOT FIT|failed" "$GITHUB_WORKSPACE/out/ios-test.log" | sort -u | head -150; touch "$GITHUB_WORKSPACE/out/FAILED-ios"; }
+          grep -E "native audit:" "$GITHUB_WORKSPACE/out/ios-test.log" | head -3 || true
+          ls "$GITHUB_WORKSPACE/out/ios" | wc -l
+      - name: Contact sheets
+        if: always()
+        run: |
+          python3 -m venv /tmp/v && /tmp/v/bin/pip -q install pillow
+          /tmp/v/bin/python sheets.py "$GITHUB_WORKSPACE/out/ios" "$GITHUB_WORKSPACE/out/sheets" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-audit-ios
+          path: out
+          retention-days: 14
+      - name: Result
+        run: test ! -e "$GITHUB_WORKSPACE/out/FAILED-ios"
+
+  module:
+    if: github.event_name != 'workflow_dispatch' || !inputs.only_entry
+    # From build 211 (31 Oct 2026): the app's own native module (app/modules/transport-ios: TransportIOSModule.swift,
+    # region get off alerts, alert audio, widgets, Live Activity) is compiled with the whole app for the simulator,
+    # against the real Expo and React Native pods, so a Swift error fails here and never first in the signed build.
+    # Unsigned simulator build, no JavaScript bundle, no secrets, no upload.
+    runs-on: xcode-27
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+          pod --version
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Native project (expo prebuild, pod install)
+        run: |
+          npx expo prebuild --platform ios --clean --no-install
+          # React Native's own prebuilt core and dependencies, so only the app's code and the Expo modules compile here.
+          cd ios && RCT_USE_RN_DEP=1 RCT_USE_PREBUILT_RNCORE=1 pod install
+      - name: Compile the app and its native module (simulator, unsigned)
+        env:
+          SKIP_BUNDLING: "1"
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          WS=$(ls -d ios/*.xcworkspace | head -1)
+          SCHEME=$(basename "$WS" .xcworkspace)
+          echo "workspace $WS, scheme $SCHEME"
+          xcodebuild build -workspace "$WS" -scheme "$SCHEME" -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath ios/dd \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO > "$GITHUB_WORKSPACE/out/module-build.log" 2>&1 \
+            || { grep -E "error:" "$GITHUB_WORKSPACE/out/module-build.log" | sort -u | head -150; tail -40 "$GITHUB_WORKSPACE/out/module-build.log"; echo "APP NATIVE CODE DOES NOT COMPILE"; exit 1; }
+          grep -c "TransportIOSModule.swift" "$GITHUB_WORKSPACE/out/module-build.log" || { echo "TransportIOSModule.swift was not compiled"; exit 1; }
+          echo "app and native module compiled"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-audit-module
+          path: out
+          retention-days: 14
+
+  watch:
+    if: github.event_name != 'workflow_dispatch' || !inputs.only_entry
+    runs-on: xcode-27
+    timeout-minutes: 75
+    defaults:
+      run:
+        working-directory: app/native-tests/native-audit
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+          xcrun simctl list runtimes | grep -i watch || true
+          xcrun simctl runtime list | grep -i -A1 watchOS || true
+      - name: Project
+        run: |
+          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip
+          unzip -q /tmp/xcodegen.zip -d /tmp/xg
+          "$(find /tmp/xg -type f -name xcodegen -perm -u+x | head -1)" generate
+      - name: Compile the Watch code (no simulator needed)
+        run: |
+          # Always compiles the watch app's Swift and the complications, whatever simulator the runner has, so a
+          # compile error can never pass as a runner problem.
+          mkdir -p "$GITHUB_WORKSPACE/out/watch"
+          xcodebuild build-for-testing -project NativeAudit.xcodeproj -scheme WatchAuditTests \
+            -destination 'generic/platform=watchOS Simulator' -derivedDataPath dd CODE_SIGNING_ALLOWED=NO \
+            > "$GITHUB_WORKSPACE/out/watch-build.log" 2>&1 \
+            || { grep -E "error:" "$GITHUB_WORKSPACE/out/watch-build.log" | sort -u | head -150; echo "WATCH CODE DOES NOT COMPILE"; exit 1; }
+          echo "watch code compiled"
+      - name: Watch simulator
+        run: |
+          # A watch simulator xcodebuild itself lists, booted, once the watchOS runtime image has settled
+          # (watchsim.sh: as is, then the simulator service restarted with a fresh device, then the runtime installed). On 30 Oct xcodebuild saw the
+          # runner's watch simulator as "watchOS Simulator (null)" or not at all on 5 of 9 runs while simctl listed it.
+          if DEV=$(bash watchsim.sh NativeAudit.xcodeproj WatchAuditTests); then
+            echo "simulator $DEV"; echo "$DEV" > /tmp/sim-id.txt
+          else
+            echo "The Watch code compiled, but this runner has no watch simulator xcodebuild can test on."
+            touch "$GITHUB_WORKSPACE/out/FAILED-watch-simulator"
+          fi
+      - name: Audit (Apple Watch app and complications)
+        if: hashFiles('out/FAILED-watch-simulator') == ''
+        run: |
+          LOG="$GITHUB_WORKSPACE/out/watch-test.log"
+          run_tests() {
+            TEST_RUNNER_SNAPSHOT_DIR="$GITHUB_WORKSPACE/out/watch" TEST_RUNNER_TZ=Australia/Sydney \
+            xcodebuild test -project NativeAudit.xcodeproj -scheme WatchAuditTests -destination "id=$1" \
+              -derivedDataPath dd CODE_SIGNING_ALLOWED=NO > "$2" 2>&1
+          }
+          if ! run_tests "$(cat /tmp/sim-id.txt)" "$LOG"; then
+            if grep -q -E "Simulator \(null\)|Unable to find a device" "$LOG" && DEV=$(bash watchsim.sh NativeAudit.xcodeproj WatchAuditTests); then
+              # xcodebuild lost the simulator between the pick and the test: once more on a device it lists again.
+              echo "watch simulator lost between pick and test; once more on $DEV (first log: watch-test-1.log)"
+              mv "$LOG" "$GITHUB_WORKSPACE/out/watch-test-1.log"
+              run_tests "$DEV" "$LOG" || { grep -E "error:|DOES NOT FIT|failed" "$LOG" | sort -u | head -150; touch "$GITHUB_WORKSPACE/out/FAILED-watch"; }
+            else
+              grep -E "error:|DOES NOT FIT|failed" "$LOG" | sort -u | head -150; touch "$GITHUB_WORKSPACE/out/FAILED-watch"
+            fi
+          fi
+          grep -E "native audit:" "$LOG" | head -3 || true
+          ls "$GITHUB_WORKSPACE/out/watch" | wc -l
+      - name: Contact sheets
+        if: always()
+        run: |
+          python3 -m venv /tmp/v && /tmp/v/bin/pip -q install pillow
+          /tmp/v/bin/python sheets.py "$GITHUB_WORKSPACE/out/watch" "$GITHUB_WORKSPACE/out/sheets" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-audit-watch
+          path: out
+          retention-days: 14
+      - name: Result
+        run: |
+          if [ -e "$GITHUB_WORKSPACE/out/FAILED-watch-simulator" ]; then
+            echo "Watch code compiled; no watch simulator on this runner, so no Watch snapshots. Run the audit again."; exit 1
+          fi
+          test ! -e "$GITHUB_WORKSPACE/out/FAILED-watch"
+
+  entry:
+    # 1 Nov 2026 (Bidur on build 214: "Widget missing back button or app screen?"): the whole app, JavaScript bundle
+    # included, built for the simulator (Release, unsigned, updates off so it runs this branch's code), then every link
+    # the widgets, Lock Screen, StandBy, Live Activity, Dynamic Island, Control Center and Siri open, with the app closed
+    # and open, with a UI test (app/native-tests/entry-ui) that taps each screen's Back and checks for the tab bar. Pictures
+    # of each landed screen and the screen after Back in the artifact. Manual runs only; the build's call skips it.
+    if: github.event_name == 'workflow_dispatch' && inputs.entry
+    runs-on: xcode-27
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+      - name: No live data from the runner
+        run: |
+          # The app's server, updates and crash reports are blocked: the screens open with no times, nothing is fetched.
+          printf '0.0.0.0 api.transportsydney.app\n0.0.0.0 u.expo.dev\n0.0.0.0 transportsydney.app\n' | sudo tee -a /etc/hosts
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Native project (expo prebuild, pod install)
+        run: |
+          npx expo prebuild --platform ios --clean --no-install
+          cd ios && RCT_USE_RN_DEP=1 RCT_USE_PREBUILT_RNCORE=1 pod install
+      - name: Build the app with its JavaScript (simulator, Release, unsigned)
+        env:
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+          NODE_OPTIONS: "--max-old-space-size=8192"
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          WS=$(ls -d ios/*.xcworkspace | head -1); SCHEME=$(basename "$WS" .xcworkspace)
+          # No -sdk: it forced the Watch targets onto the iOS SDK (run 41282933055: Complications.swift "accessoryCorner is
+          # unavailable in iOS"); the destination picks each target's own simulator, as in the module job.
+          xcodebuild build -workspace "$WS" -scheme "$SCHEME" -configuration Release \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath ios/dd \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO > "$GITHUB_WORKSPACE/out/entry-build.log" 2>&1 \
+            || { grep -E "error:" "$GITHUB_WORKSPACE/out/entry-build.log" | sort -u | head -80; tail -40 "$GITHUB_WORKSPACE/out/entry-build.log"; exit 1; }
+          APP=$(ls -d ios/dd/Build/Products/Release-iphonesimulator/*.app | head -1)
+          ls "$APP"/main.jsbundle >/dev/null && echo "JavaScript bundle in $APP"
+          # This branch's own JavaScript, never an update from the server.
+          plutil -replace EXUpdatesEnabled -bool NO "$APP/Expo.plist" || true
+          echo "$PWD/$APP" > /tmp/app-path.txt
+      - name: iPhone simulator
         working-directory: app/native-tests/native-audit
         run: |
           # A classic one-screen iPhone, made for this job: the runner's newest device types have two displays and a
