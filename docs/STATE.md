@@ -8,6 +8,12 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 
 ## Live now
 
+### Build 213 on TestFlight Internal (1 Nov, 12:14 PM)
+* App Store Connect build 01052395-8db3-4233-b433-70ab7667f265, 1.0.0 (213), runtime 1.3.0 (same as 212: a 1.3.0 update reaches both), VALID, Internal In Beta Testing. Not submitted for review, no external testers.
+* Built by GitHub run 41257834755 from build-213-watch d7d2426 (its audit gate passed: iPhone, Watch, full app compile). Secrets added for the run and removed after (each 404).
+* In it: build 212 + never spoke fixes (c72d75f, c1cc1b6) + Apple Watch you can use (0c989a6) + tripflow-p2 04c319a + compact Island "Stop name   Time" + Kylie's clip with the app open (headphones heard in Silent mode) + Watch opens to the trip. Checklist: Tab workspace files/day-1nov/build213-checklist.md.
+* JS for 213 after d7d2426 reaches it only by a runtime 1.3.0 update published from build-213-watch (or a later branch that contains it).
+
 ### Trip flow 2 live (31 Oct, 11:28 PM)
 * Server transport-api 9250ee58-1361-4000-bc80-42093664f888 (server-tripflow 93f2c8c); roll back b1feea1d-ec97-4676-bca5-cf34796173d7.
 * Runtime 1.2.0 production update group 6496b2d0-edf2-443d-969a-4f985671fcdf (tripflow-p2 e442b73); roll back to embedded.
