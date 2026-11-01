@@ -2,7 +2,27 @@
 // Opens every outside link in the real app, closed (cold, as after a TestFlight update or when iOS has closed it) and
 // open (warm). For each: a picture of the landed screen, then its Back is tapped and the app's tab bar must be there.
 // Pictures and results.jsonl go to ENTRY_OUT (TEST_RUNNER_ENTRY_OUT from xcodebuild).
+import ObjectiveC
 import XCTest
+
+/// The app never goes idle the way XCTest waits for (live times, spinners and countdowns keep animating with no data),
+/// so every query waited for it (the first run of this test was still on its first cases after 50 min). The test waits
+/// with its own sleeps instead: XCTest's idle wait is made a no-op for this test process only.
+enum NoIdleWait {
+    static var done = false
+    static func apply() {
+        guard !done, let cls = NSClassFromString("XCUIApplicationProcess") else { return }
+        done = true
+        let one: @convention(block) (AnyObject, Bool) -> Void = { _, _ in }
+        let two: @convention(block) (AnyObject, Bool, Bool) -> Void = { _, _, _ in }
+        if let m = class_getInstanceMethod(cls, NSSelectorFromString("waitForQuiescenceIncludingAnimationsIdle:")) {
+            method_setImplementation(m, imp_implementationWithBlock(one))
+        }
+        if let m = class_getInstanceMethod(cls, NSSelectorFromString("waitForQuiescenceIncludingAnimationsIdle:isPreEvent:")) {
+            method_setImplementation(m, imp_implementationWithBlock(two))
+        }
+    }
+}
 
 final class EntryBackTests: XCTestCase {
     let app = XCUIApplication(bundleIdentifier: "com.maisysen.nswtransport")
@@ -26,6 +46,7 @@ final class EntryBackTests: XCTestCase {
 
     override func setUp() {
         continueAfterFailure = true
+        NoIdleWait.apply()
     }
 
     private func shot(_ name: String) {
@@ -46,12 +67,13 @@ final class EntryBackTests: XCTestCase {
     private func clearPrompts() {
         for label in ["Open", "Allow", "Allow While Using App", "Allow Once", "OK"] {
             let b = springboard.buttons[label]
-            if b.waitForExistence(timeout: 1) { b.tap() }
+            if b.exists { b.tap(); sleep(1) }
         }
     }
 
     private func open(_ link: String) {
         app.open(URL(string: link)!)
+        sleep(2)
         clearPrompts()
     }
 
@@ -59,7 +81,7 @@ final class EntryBackTests: XCTestCase {
     private func skipFirstRun() {
         for label in ["Skip", "Not now", "Done"] {
             let b = app.buttons[label]
-            if b.waitForExistence(timeout: 2) { b.tap(); sleep(1) }
+            if b.exists && b.isHittable { b.tap(); sleep(2) }
         }
     }
 
@@ -90,7 +112,8 @@ final class EntryBackTests: XCTestCase {
             b.tap()
             sleep(3)
             clearPrompts()
-            tabsAfter = app.tabBars.firstMatch.waitForExistence(timeout: 6)
+            sleep(2)
+            tabsAfter = app.tabBars.firstMatch.exists
             shot(tag + "-after-back")
         }
         record(["name": tag, "url": link, "what": what, "back": back != nil, "tabsAfterBack": tabsAfter, "tabBarOnScreen": tabsUnder])
@@ -107,7 +130,8 @@ final class EntryBackTests: XCTestCase {
         shot("00-first-open")
         skipFirstRun()
         shot("00-first-open-after-skip")
-        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 10), "the app's normal start shows the tab bar")
+        sleep(3)
+        XCTAssertTrue(app.tabBars.firstMatch.exists, "the app's normal start shows the tab bar")
     }
 
     func test2Cold() {
