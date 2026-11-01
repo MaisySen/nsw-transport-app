@@ -341,6 +341,12 @@ Opal fare card on the trip screen (29 Oct, in the 12:29 AM update 281aa87b): a t
 * Stop and place search: an answer is kept by the phone for an hour, so typing the same words again answers on the phone. Stops already answer as you type from the lists kept on the phone (26 Oct).
 * Older apps (builds 201 to 208, updates up to ecb0882d) get exactly what they got before. Off switch: POLL_TAGS=off or kill.pollTags.
 
+## Trip registrations that reach the server (1 Nov, server-rt-1nov, not deployed)
+
+* Start trip's trip watch is answered at once (its first live reading runs after the answer), so a slow feed never makes the app think it failed. A repeat with the app's key gives back the same watch; End trip stops it by key even when the app never heard its id.
+* The Lock Screen card's push token can arrive with the watch, so either registration getting through starts the server's card updates.
+* Feed down while the phone is locked: the card says "1 min late, updated 5:26pm" after 2 min, "No live data since 5:26pm" after 5 and "No live data. Open the app to refresh." after 10. Builds 211 to 214, no new build.
+
 ## Not in the app
 
 No accounts or login, no ads, no analytics or tracking, no Opal card balance. Crash reports are sent only to fix faults (the crash safety net, and Sentry from build 209); the privacy policy lists them. Privacy details: [STORE_PRIVACY.md](STORE_PRIVACY.md) and https://transportsydney.app/privacy/.

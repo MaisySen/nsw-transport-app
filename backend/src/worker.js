@@ -6415,7 +6415,15 @@ function tfCard(spec, S, now, o = {}) {
   const base = { line: wl.line || "", lineColorHex: wl.color || "#0A84FF", mode: wl.mode || "train", towards: LIVECARD.stopShort(wl.towards) || null,
     destination: LIVECARD.stopShort((spec.to && spec.to.name) || legs[last].to || ""), getOffAt: offName, arrival: lastTm.arr.at, ...(asOf ? { updated: asOf } : {}) };
   if (legs.length > 1) base.legArrives = tm.arr.at;
-  const step = r.step || LIVECARD.staleStepOf(now - (asOf || 0), tm.timetableOnly);
+  let step = r.step || LIVECARD.staleStepOf(now - (asOf || 0), tm.timetableOnly);
+  // Real-time harness 1 Nov (F-NSWDOWN12, feed down 12 min with the phone locked): past 5 min with no new reading
+  // tfState makes every leg timetable only, so the step read "timetable-only" and the card said "Timetable times, not
+  // live" at 10 min instead of the stale ladder (spec 2.4: "No live data since 5:26pm" from 5 min, "No live data. Open
+  // the app to refresh." from 10 min). A service the feed never had stays "Timetable times, not live" (fresh asOf).
+  const ageStep = asOf ? LIVECARD.staleStepOf(now - asOf, false) : null;
+  const ladder = step === "timetable-only" && (ageStep === "timetable" || ageStep === "no-data");
+  if (ladder) step = ageStep;
+  const asOfT = asOf ? LIVECARD.tripClock(asOf, !!o.c24) : null;
   if (r.ended || (m.phase >= PI.arrived && li === last && r.phase === "ended")) return { card: { ...base, phase: "arrived", arrival: m.arrivedTime || tm.arr.at, progress: 1, warning: null }, staleMs: null, phase: "ended", step, end: true };
   if (r.phase === "arrived" || m.phase >= PI.arrived) return { card: { ...base, phase: "arrived", arrival: m.arrivedTime || tm.arr.at, progress: 1, warning: null }, staleMs: null, phase: "arrived", step, end: false };
   const fin = (card, staleMs) => ({ card: { ...base, ...card }, staleMs, phase: r.phase, step, end: false });
@@ -6426,8 +6434,14 @@ function tfCard(spec, S, now, o = {}) {
   const note = (wait) => {
     if (step === "timetable-only") return "Timetable times, not live";
     if (step === "no-data") return "No live data. Open the app to refresh.";
-    if (step === "timetable") return r.sub || "No live data";
-    if (step === "about") return r.warn || r.sub || null;
+    if (step === "timetable") return ladder && asOfT ? `No live data since ${asOfT}` : r.sub || "No live data";
+    // From 2 min the card says the time is from the last reading (spec 2.4 "about" step): "1 min late, updated 5:26pm",
+    // not "1 min late at 5:26pm", which read as live on the Lock Screen (harness F-NSWDOWN12 at 2 min).
+    if (step === "about") {
+      const m = /^(.+) at (\S+)$/.exec(r.warn || "");
+      if (m && /(late|early|On time)$/.test(m[1])) return `${m[1]}, updated ${m[2]}`;
+      return r.warn || r.sub || (asOfT ? `Updated ${asOfT}` : null);
+    }
     const x = wait ? tm.dep : tm.arr;
     if (!LIVECARD.isLiveTime(x)) return "Timetable times, not live";
     if (!wait) return dw(x);
@@ -6741,6 +6755,11 @@ async function createWatch(env, b, now, meta = {}) {
   // Get off now from the server (build 210, getOffAccept): stored only when accepted, and said in the answer. The new
   // flow takes it only with a route that works today (G14): a live Expo token, Apple straight (apnsAlerts), or the card.
   if (tf ? (b.getOff === 1 && !!b.track && (await tfRoute(env, device)).any) : await getOffAccept(env, b, device)) { spec.getOff = 1; if (b.getOffVoice === 1) spec.getOffVoice = 1; }
+  // The phone's own key for this registration (1 Nov, real-time harness #3/#4): the app sends the same key again
+  // until it hears back, so a repeat (a retry after a timeout, a locked phone's widget or background upload) finds
+  // the watch it made and never makes a second one.
+  const key = watchKeyOf(b.key);
+  if (key) spec.key = key;
   const L = legs[legs.length - 1];
   const end = Math.max(ms(L.arrPlanned || L.planned), ms(legs[0].planned)) + 3 * 3600000;
   const title = String(b.title || `${legs[0].line} ${legs[0].towards ? "to " + legs[0].towards : ""}`).slice(0, 90);
@@ -6750,8 +6769,56 @@ async function createWatch(env, b, now, meta = {}) {
   if (b.kind === "trip" && b.origin && b.to) await logSearch(env, { profile, device, from: b.origin, to: b.to, src: "watch", at: ms(legs[0].planned) - ((legs[0].walkBefore || 0) * 60000) });
   const w = await db(env).prepare("SELECT * FROM watches WHERE id = ?1").bind(id).first();
   // The new flow sends no "Watching the ..." note at Start trip (G35); a train already late gets its delay alert (G34).
-  const r = tf ? await tfStepWatch(env, w, now) : await processWatch(env, w, now, { silentStart: !!b.silentStart, leaveSent: !!b.leaveSent });
-  return { id, ...r, ...(r && r.card ? { card: undefined } : {}), ...(spec.getOff ? { getOff: true } : {}), ...(tf ? { tripFlow: 2 } : {}) };
+  const first = () => (tf ? tfStepWatch(env, w, now) : processWatch(env, w, now, { silentStart: !!b.silentStart, leaveSent: !!b.leaveSent }));
+  // Answered at once (1 Nov, real-time harness #4): with the feed slow or hanging, the first reading held the answer
+  // 14.6 s against the app's 15 s, so the app took a watch the server was running as failed (a second Get off now
+  // from the phone, and End trip never stopped the server's). The watch is stored and said yes to first; its first
+  // reading runs after the answer (waitUntil). A caller with no exec (tests, commutes) still waits for it.
+  if (meta.exec && typeof meta.exec.waitUntil === "function") {
+    meta.exec.waitUntil(Promise.resolve().then(first).catch((e) => console.log(JSON.stringify({ t: "watch-first", id, err: String(e && e.message || e).slice(0, 200) }))));
+    return { id, pending: true, ...(key ? { key } : {}), ...(spec.getOff ? { getOff: true } : {}), ...(tf ? { tripFlow: 2 } : {}) };
+  }
+  const r = await first();
+  return { id, ...r, ...(r && r.card ? { card: undefined } : {}), ...(key ? { key } : {}), ...(spec.getOff ? { getOff: true } : {}), ...(tf ? { tripFlow: 2 } : {}) };
+}
+
+/** The phone's registration key (a short id it makes at Start trip), or null. */
+function watchKeyOf(k) {
+  const s = typeof k === "string" ? k.trim() : "";
+  return /^[A-Za-z0-9_-]{6,64}$/.test(s) ? s : null;
+}
+const WATCH_KILL_MS = 6 * 3600000;
+/**
+ * POST /api/watch with the phone's key: the same key again gives back the watch it already made (never a second one),
+ * and a key the phone already ended (End trip reached the server first, then a retry of Start trip) makes nothing.
+ */
+async function watchByKey(env, device, key) {
+  if (!device || !key) return null;
+  const kill = await db(env).prepare("SELECT v FROM meta WHERE k = ?1").bind(`wkill:${device}:${key}`).first().catch(() => null);
+  if (kill && Date.now() - Number(kill.v) < WATCH_KILL_MS) return { ended: true };
+  const w = await db(env).prepare("SELECT * FROM watches WHERE device = ?1 AND created > ?3 AND json_extract(spec, '$.key') = ?2 ORDER BY created DESC LIMIT 1")
+    .bind(device, key, Date.now() - WATCH_KILL_MS).first().catch(() => null);
+  if (!w) return null;
+  if (!w.active) return { ended: true, id: w.id };
+  let spec = {};
+  try { spec = JSON.parse(w.spec || "{}"); } catch {}
+  return { watch: { id: w.id, key, again: true, ...(spec.getOff ? { getOff: true } : {}), ...(spec.tripFlow === 2 ? { tripFlow: 2 } : {}) } };
+}
+/** DELETE /api/watch by id and/or the phone's key; a key with no watch yet is remembered so a late Start trip makes none. */
+async function stopWatchRoute(env, p) {
+  const device = cleanId(p.get("device"));
+  const id = cleanId(p.get("id"));
+  const key = watchKeyOf(p.get("key"));
+  if (!device) return json({ error: "device needed" }, 400);
+  let n = 0;
+  if (id) n += Number((await db(env).prepare("UPDATE watches SET active = 0, ended = 'stopped' WHERE id = ?1 AND device = ?2 AND active = 1").bind(id, device).run()).meta?.changes || 0);
+  if (key) {
+    n += Number((await db(env).prepare("UPDATE watches SET active = 0, ended = 'stopped' WHERE device = ?1 AND active = 1 AND json_extract(spec, '$.key') = ?2").bind(device, key).run()).meta?.changes || 0);
+    const now = Date.now();
+    await db(env).prepare("INSERT INTO meta (k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = excluded.v").bind(`wkill:${device}:${key}`, String(now)).run().catch(() => null);
+    await db(env).prepare("DELETE FROM meta WHERE k LIKE 'wkill:%' AND CAST(v AS INTEGER) < ?1").bind(now - WATCH_KILL_MS).run().catch(() => null);
+  }
+  return json({ ok: true, stopped: n });
 }
 
 function watchOut(w) {
@@ -10383,14 +10450,24 @@ async function liveActivityRoute(env, request, path, now = Date.now()) {
       .bind(token, cleanId(b.device) || null, b.env === "development" ? "development" : "production", now).run();
     return json({ ok: true });
   }
+  const r = await laRegister(env, b, now);
+  return r.error ? json({ error: r.error }, 400) : json({ ok: true, push: !!env.APNS_KEY });
+}
+
+/** Stores (or refreshes) a trip card's push token with its trip: POST /api/live-activity, or riding a trip watch. */
+async function laRegister(env, b, now = Date.now()) {
+  if (!(await ensureLiveActivities(env))) return { error: "no database" };
+  const token = String(b && b.token || "").trim().toLowerCase();
+  if (!LA_TOKEN_RE.test(token)) return { error: "bad token" };
+  laSentMem.delete(token);
   const trip = laTripFrom(b.trip);
-  if (!trip) return json({ error: "bad trip" }, 400);
+  if (!trip) return { error: "bad trip" };
   const lastPlanned = Math.max(...trip.legs.map((l) => Date.parse(l.arrPlanned || l.planned) || 0));
   const expires = Math.min(now + LA_MAX_MS, Math.max(now + 3600000, (lastPlanned || now) + 3 * 3600000));
   await db(env).prepare(`INSERT INTO live_activities (token, activity, device, trip, created, updated, expires, active, pushes) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, 1, 0)
     ON CONFLICT(token) DO UPDATE SET activity = excluded.activity, device = excluded.device, trip = excluded.trip, updated = excluded.updated, expires = excluded.expires, active = 1`)
     .bind(token, cleanId(b.activity, 80) || null, cleanId(b.device) || null, JSON.stringify(trip), now, expires).run();
-  return json({ ok: true, push: !!env.APNS_KEY });
+  return { ok: true };
 }
 
 /**
@@ -11651,13 +11728,21 @@ async function handleRequest(request, env, exec) {
           await ensureSchema3(env);
           if (request.method === "POST") {
             const b = await request.json().catch(() => ({}));
-            try { return json({ ok: true, watch: await createWatch(env, { ...b, profile: b.profile || profile }, Date.now(), { iosBuild: iosBuildOf(request) }) }); }
+            // The trip card's push token can ride with the watch (1 Nov, real-time harness #2): whichever of the two
+            // registrations gets through first (a retry, a locked phone's background upload) gives the server both.
+            const la = b && b.la && typeof b.la === "object" ? b.la : null;
+            const laDone = la ? laRegister(env, { token: la.token, activity: la.activity, device: b.device, trip: { id: la.trip || "w", title: b.title, origin: b.origin, to: b.to, legs: b.legs, rode: la.rode, here: la.here, tripFlow: b.tripFlow, c24: b.c24 } }, Date.now()).catch(() => null) : null;
+            try {
+              const again = await watchByKey(env, cleanId(b.device), watchKeyOf(b.key));
+              if (again && again.ended) { if (laDone) await laDone; return json({ ok: true, watch: null, ended: true }); }
+              if (again) { if (laDone) await laDone; return json({ ok: true, watch: again.watch }); }
+              const watch = await createWatch(env, { ...b, profile: b.profile || profile }, Date.now(), { iosBuild: iosBuildOf(request), exec });
+              if (laDone) await laDone;
+              return json({ ok: true, watch });
+            }
             catch (e) { return json({ error: String(e && e.message || e) }, 400); }
           }
-          if (request.method === "DELETE") {
-            await db(env).prepare("UPDATE watches SET active = 0, ended = 'stopped' WHERE id = ?1 AND device = ?2").bind(cleanId(p.get("id")), cleanId(p.get("device"))).run();
-            return json({ ok: true });
-          }
+          if (request.method === "DELETE") return stopWatchRoute(env, p);
           const w = await db(env).prepare("SELECT * FROM watches WHERE id = ?1").bind(cleanId(p.get("id"))).first();
           if (!w) return json({ error: "not found" }, 404);
           return json({ watch: watchOut(w), notes: await d1all(env, "SELECT id, at, title, body FROM notes WHERE watch_id = ?1 ORDER BY id DESC LIMIT 20", w.id), now: Date.now() });

@@ -77,9 +77,9 @@ Example (Central to Chatswood by metro): `/api/plan?legs=[{"f":"200060","fn":"Ce
 
 | Endpoint | Method | Body or parameters | Returns |
 | --- | --- | --- | --- |
-| `/api/watch` | POST | `{device, profile, legs, lead, track, voice, getOff, getOffVoice}` | `watch` (with `getOff: true` when the server sends Get off now for it) |
+| `/api/watch` | POST | `{device, profile, legs, lead, track, voice, getOff, getOffVoice, key?, la?}`. Answered at once; the first live reading runs after the answer (1 Nov). `key` (6 to 64 of A-Z a-z 0-9 _ -): the phone's registration key, the same key again gives back the same watch; `la: {token, activity, trip}` registers the Lock Screen card's push token with it | `watch` (with `getOff: true` when the server sends Get off now for it, `key` said back, `again: true` for a repeat), or `watch: null, ended: true` for a key already ended |
 | `/api/watch` | GET | `id` | `watch` with recent `notes` |
-| `/api/watch` | DELETE | `id`, `device` | `ok` |
+| `/api/watch` | DELETE | `device` and `id` and/or `key` (a key with no watch yet is remembered 6 h, so a late Start trip makes none) | `ok`, `stopped` |
 | `/api/watches` | GET | `device`, `since` | Active watches with live snapshots, recent alerts, push counts. Runs a tick for the device if the scheduler is quiet |
 | `/api/push/key` | GET | none | `publicKey` (VAPID public key) |
 | `/api/push/subscribe` | POST | `{device, profile, subscription, welcome}` | `ok`, optional test result |

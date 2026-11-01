@@ -803,6 +803,11 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 
 At most 5% of tests may name the owner's own stations (Strathfield, Burwood, Kings Cross, Redfern, Town Hall, Flemington, Campsie, Five Dock, Chiswick; stop ids 213510, 213516, 201110, 214020, 219410), so the suites cover Sydney and NSW and not one commute. `backend/test/owner-stations.test.mjs` fails over the limit. It counts each `test(` in `app/test/*.test.mjs` and `backend/test/*.test.mjs` once; a test counts when its own code names a station (any case, spaced or joined) or one of the ids, or uses a top level constant, a top level set up or a fixture file of its test file that does. A test that lists the names to check they are absent carries the comment `owner-stations: guard` and is not counted (at most 5 may). New fixtures: use other real stations with their real ids from `backend/src/public/stations`. On 30 Oct: before 344 of 1510 (22.8%), after 27 of 1513 (1.8%); left are real station search and typo tests on the owner's names, `backend/test/ask.test.mjs`, the Ask corpus share test and fixtures captured from live answers. The browser scripts in `app/test/e2e/` are not counted.
 
+## Real-time harness fixes, server (1 Nov, server-rt-1nov)
+
+* Backend: `TZ=Australia/Sydney node --test test/rt-fix-1nov.test.mjs` (4, all fail on server-lockedlive 51b46a4): POST /api/watch answers in under 3 s with the feed hanging and hands the first reading to waitUntil; the same key gives back the same watch, DELETE by key, a retry after End trip (or an End trip that came first) makes nothing, no key and a malformed key work as before; the card's push token riding with the watch registers the card; the card's words at 0.5, 2.5, 5.5 and 10.5 min with the feed down (live, "updated", "No live data since", "No live data. Open the app to refresh.") and a never-live service still "Timetable times, not live".
+* Real-time harness (app branch fix-rt-1nov, `node tools/rt-harness/run.mjs --server <checkout>`): all 48 scenarios; F-NSWSLOW-START, F-NSWHANG-START, F-NSWSLOW, F-NSWTIMEOUT (registration-ok) and F-NSWDOWN12 (stale words) pass with this server even on the build 214 app model (`RT_APP_OLD=1`).
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).
