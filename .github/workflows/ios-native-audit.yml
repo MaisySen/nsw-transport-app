@@ -266,6 +266,7 @@ jobs:
           xcrun simctl bootstatus "$DEV" -b > /dev/null
       - name: Open every outside link, app closed and open, and tap Back (UI test, app/native-tests/entry-ui)
         working-directory: app/native-tests/entry-ui
+        timeout-minutes: 45
         run: |
           DEV=$(cat /tmp/sim-id.txt)
           xcrun simctl install "$DEV" "$(cat /tmp/app-path.txt)"
@@ -279,6 +280,7 @@ jobs:
           set +e
           xcodebuild test -project EntryUI.xcodeproj -scheme EntryUITests -destination "id=$DEV" \
             -resultBundlePath "$GITHUB_WORKSPACE/out/entry-ui.xcresult" \
+            -test-timeouts-enabled YES -maximum-test-execution-time-allowance 1200 \
             TEST_RUNNER_ENTRY_OUT="$GITHUB_WORKSPACE/out/entry" > "$GITHUB_WORKSPACE/out/entry-test.log" 2>&1
           RC=$?
           set -e
