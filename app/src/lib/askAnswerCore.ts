@@ -42,7 +42,7 @@ function clock(iso: string): string {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return '';
   if (PHONE24()) return C24(d.getTime());
-  return d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, (_m, p) => ' ' + p.toLowerCase());
+  return d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, (_m, p) => p.toLowerCase());
 }
 const short = (n?: string) => String(n || '').split(',')[0].replace(/ (Station|Light Rail)$/, '');
 

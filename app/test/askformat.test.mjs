@@ -47,11 +47,11 @@ const NOW = Date.parse(DEP) - 13 * MIN;
 
 test('trip answer becomes the card fields', () => {
   const s = A.tripSummary(msg([journey(DEP, 4)]), NOW);
-  assert.equal(s.time, '7:30 am');
+  assert.equal(s.time, '7:30am');
   assert.equal(s.when, 'in 13 min');
   assert.deepEqual(s.lines.map((l) => l.line), ['T1', 'T4']);
   assert.equal(s.platform, 'Platform 2');
-  assert.equal(s.arrive, 'Arrives Bondi Junction 7:55 am \u00b7 1 change');
+  assert.equal(s.arrive, 'Arrives Bondi Junction 7:55am \u00b7 1 change');
   assert.deepEqual(s.status, { text: '4 min late', tone: 'lateText' });
   assert.equal(s.liftShort, 'Lift 1 at Bondi Junction not working');
   assert.deepEqual(s.outages, [KX]);
@@ -70,13 +70,13 @@ test('no repeated header, no "Station" and no dashes in what is shown', () => {
 
 test('screen readers get one sentence', () => {
   const s = A.tripSummary(msg([journey(DEP, 4)]), NOW);
-  assert.equal(s.spoken, 'Next T1 then T4 at 7:30 am, in 13 minutes, from Platform 2. Arrives Bondi Junction at 7:55 am, 1 change. 4 minutes late. Lift 1 at Bondi Junction not working. Fare about $3.76, Adult off peak.');
+  assert.equal(s.spoken, 'Next T1 then T4 at 7:30am, in 13 minutes, from Platform 2. Arrives Bondi Junction at 7:55am, 1 change. 4 minutes late. Lift 1 at Bondi Junction not working. Fare about $3.76, Adult off peak.');
 });
 
 test('on time is green, cancelled and scheduled read plainly', () => {
   assert.deepEqual(A.statusOf({ realtime: true, delayMin: 1 }), { text: 'On time', tone: 'liveText' });
   assert.deepEqual(A.statusOf({ realtime: true, delayMin: -3 }), { text: '3 min early', tone: 'liveText' });
-  assert.deepEqual(A.statusOf({ realtime: false }), { text: 'Scheduled', tone: 'text2' });
+  assert.deepEqual(A.statusOf({ realtime: false }), { text: 'Timetable', tone: 'text2' });
   assert.deepEqual(A.statusOf({ cancelled: true, realtime: true }), { text: 'Cancelled', tone: 'redText' });
   const s = A.tripSummary(msg([journey(DEP, 0)]), NOW);
   assert.equal(s.status.text, 'On time');
@@ -95,7 +95,7 @@ test('countdown words', () => {
 test('a journey that has left gives way to the next one', () => {
   const later = '2026-10-24T20:45:00.000Z';
   const s = A.tripSummary(msg([journey(DEP, 4), journey(later, 0)]), Date.parse(DEP) + 3 * MIN);
-  assert.equal(s.time, '7:45 am');
+  assert.equal(s.time, '7:45am');
   assert.equal(s.status.text, 'On time');
 });
 
@@ -123,9 +123,9 @@ test('walk first shows when to leave; other reply lines are kept', () => {
   const m = msg([journey(DEP, 0, { walk: true, leave: '2026-10-24T20:22:00.000Z' })]);
   m.text = m.text + '\nStep free trips only.';
   const s = A.tripSummary(m, NOW);
-  assert.equal(s.leaveAt, '7:22 am');
+  assert.equal(s.leaveAt, '7:22am');
   assert.deepEqual(s.extras, ['Step free trips only.']);
-  assert.ok(s.spoken.includes('Leave at 7:22 am.'));
+  assert.ok(s.spoken.includes('Leave at 7:22am.'));
 });
 
 test('answers that are not a next service stay text', () => {

@@ -6662,6 +6662,11 @@ const LIVECARD = (() => {
         NO_DATA: 600000,
         LEFT_BY: 60000,
         GETOFF_LEAD: 30000,
+        GETOFF_LAG: 8000,
+        GETOFF_MAX_LEAD: 40000,
+        HELD_AFTER: 60000,
+        HELD_AHEAD: 15000,
+        HELD_MOVED: 30000,
         SERVER_DELIVERY: 2000,
         GETOFF_EXPIRE: 30000,
         HEADSUP_WINDOW: 120000,
@@ -6677,6 +6682,8 @@ const LIVECARD = (() => {
         AT_STOP_M: 150,
     };
     const R = TRIP_RULES;
+    const getOffLeadMs = (deliveryLead = 0) => Math.min(R.GETOFF_LEAD + R.GETOFF_LAG + Math.max(0, deliveryLead), R.GETOFF_MAX_LEAD);
+    const getOffDueAt = (arr) => arr - getOffLeadMs(0);
     const TRIP_CLIPS = {
         headsup: { file: 'getoff_soon', words: 'Your stop is coming up. Please get ready to get off at the next stop.', secs: 5.2 },
         getoff: { file: 'getoff_now', words: 'Please get off at the next stop.', secs: 2.8 },
@@ -7052,6 +7059,7 @@ const LIVECARD = (() => {
         const L = snap.legs[li];
         const cancelledNoAlt = !!(L && L.cancelled && m.replaced == null && step !== 'timetable' && step !== 'no-data');
         const replacedWhy = m.replaced != null ? (M.legs[li].replacedWhy || 'missed') : null;
+        const held = typeof m.rung.held === 'number' && m.phase === PI.getOff;
         let status = '', warn = null, arrive = null, sub = null, timer = null;
         let trailing = '', minimal = '', inApp = '', voiceOver = '', nextStop = null;
         const prefix = isChange ? 'Change: ' : '';
@@ -7139,7 +7147,15 @@ const LIVECARD = (() => {
             const nextName = leg.stops[Math.min(nextIdx, leg.off)].name;
             nextStop = nextName;
             const arrT = C(tm.arr.at);
-            if (phase === 'getOff') {
+            if (phase === 'getOff' && held) {
+                status = [`Held · stay on for ${off}`, `Held · stay on`, 'Held, stay on'];
+                trailing = 'Stay on';
+                minimal = 'Held';
+                arrive = step === 'live' || step === 'about' ? `Arriving about ${arrT}` : null;
+                inApp = `Held before ${off} · stay on${step === 'live' || step === 'about' ? `, arriving about ${arrT}` : ''}`;
+                voiceOver = `Held before ${off}, stay on`;
+            }
+            else if (phase === 'getOff') {
                 status = [`Get off now · ${off}`, `Get off · ${off}`, 'Get off now'];
                 trailing = 'Off now';
                 minimal = 'Off';
@@ -7215,7 +7231,7 @@ const LIVECARD = (() => {
             truncated: [S, Wn, A, T, Mi].filter((x) => x.truncated).length, widgetTruncated: WG.truncated,
             delayShown: (step === 'live' || step === 'about') && d != null && (phase === 'waiting' || phase === 'due') ? d : null,
             depAt: tm.dep.at, depPlanned: tm.dep.planned, depSource: tm.dep.source, arrAt: tm.arr.at, arrSource: tm.arr.source, asOf: tm.asOf,
-            platform: p, platformWas: was, nextStop, offName: off, boardName: board,
+            platform: p, platformWas: was, nextStop, offName: off, boardName: board, ...(held ? { held: true } : {}),
         };
     }
     const BANNED_WORDS = ['0:00', 'Trip started', 'Checking for the next one', 'Next one', 'Wake up'];
@@ -7366,22 +7382,24 @@ const LIVECARD = (() => {
             return res;
         }
         const lead = env.lead ?? 0;
+        const offLead = getOffLeadMs(lead);
         const prevArr = m.lastArrAt ?? null;
         m.lastArrAt = isLiveTime(tm.arr) ? tm.arr.at : prevArr;
-        if (!rung('getoff') && !rung('getoffQuiet') && isLiveTime(tm.arr) && t >= tm.arr.at - R.GETOFF_LEAD - lead) {
+        if (!rung('getoff') && !rung('getoffQuiet') && isLiveTime(tm.arr) && t >= tm.arr.at - offLead) {
             const S2 = (env.reread && env.reread()) || S;
             const tm2 = tripLegTimes(plan, M, S2, li, t);
             const age2 = t - S2.asOf;
             const e2 = tripEvidence(plan, M, S2, li, t);
             if (e2.arrived || e2.passed)
                 return res;
-            if (isLiveTime(tm2.arr) && t >= tm2.arr.at - R.GETOFF_LEAD - lead) {
+            if (isLiveTime(tm2.arr) && t >= tm2.arr.at - offLead) {
                 if (age2 < R.LIVE_FRESH) {
                     m.rung.getoff = t;
+                    m.offArrAt = tm2.arr.at;
                     if (!rung('headsup'))
                         m.rung.headsup = 'skipped';
-                    deliver({ kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}, arriving ${C(tm2.arr.at)}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + R.GETOFF_EXPIRE, target: tm2.arr.at - R.GETOFF_LEAD, arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - R.GETOFF_LEAD - lead > t - 1000 && tm2.arr.at < prevArr }, age2, false);
-                    setPhase(M, li, 'getOff', t, `live arrival ${tripClockSec(tm2.arr.at)} minus 30 s, reading ${Math.round(age2 / 1000)}s old`, res.log);
+                    deliver({ kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}, arriving ${C(tm2.arr.at)}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + R.GETOFF_EXPIRE, target: getOffDueAt(tm2.arr.at), arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - offLead > t - 1000 && tm2.arr.at < prevArr }, age2, false);
+                    setPhase(M, li, 'getOff', t, `live arrival ${tripClockSec(tm2.arr.at)} minus ${Math.round(getOffLeadMs(0) / 1000)} s, reading ${Math.round(age2 / 1000)}s old`, res.log);
                 }
                 else if (age2 < R.LIVE_CAP) {
                     m.rung.getoffQuiet = t;
@@ -7389,6 +7407,14 @@ const LIVECARD = (() => {
                 }
                 return res;
             }
+        }
+        const gAt = rung('getoff');
+        if (typeof gAt === 'number' && !rung('held') && m.phase === PI.getOff && t >= gAt + R.HELD_AFTER && fresh && isLiveTime(tm.arr)
+            && typeof m.offArrAt === 'number' && tm.arr.at - t >= R.HELD_AHEAD && tm.arr.at - m.offArrAt >= R.HELD_MOVED) {
+            m.rung.held = t;
+            deliver({ kind: 'held', quiet: true, title: 'Held, stay on', body: `Held before ${offName}. Stay on, arriving about ${C(tm.arr.at)}.`, level: 'passive', moment: `held:${li}`, expires: tm.arr.at + R.GETOFF_EXPIRE, arrAt: tm.arr.at, arrSource: tm.arr.source }, age, false);
+            res.log.push({ t, what: `leg ${li + 1}: held (live arrival ${tripClockSec(tm.arr.at)}, ${Math.round((tm.arr.at - m.offArrAt) / 1000)} s later than at Get off now)` });
+            return res;
         }
         const headsUpNow = e.leftBefore || (e.fresh && isLiveTime(tm.arr) && tm.arr.at - t <= R.HEADSUP_WINDOW);
         if (!rung('headsup') && headsUpNow) {
@@ -7455,7 +7481,7 @@ const LIVECARD = (() => {
         const tm = tripLegTimes(plan, M, snap, li, t);
         if (!isLiveTime(tm.arr) || tm.arr.at - t >= R.NEAR)
             return null;
-        return { at: tm.arr.at - R.GETOFF_LEAD, arrAt: tm.arr.at, li };
+        return { at: getOffDueAt(tm.arr.at), arrAt: tm.arr.at, li };
     }
     function tripPlanFrom(legs, svc = [], alts = []) {
         const out = legs.map((w, i) => planLegFrom(w, svc[i] || null, { li: i }));
@@ -7468,9 +7494,9 @@ const LIVECARD = (() => {
         const tm = tripLegTimes(plan, M, snap, M.current, t);
         return isLiveTime(tm.arr) && tm.arr.at - t < R.NEAR && M.legs[M.current].phase >= PI.onTheWay ? 15000 : 30000;
     }
-    return { TRIP_RULES, TRIP_CLIPS, tripClock, tripClockSec, stopShort, platNum, boardIndexOf, offIndexOf, planLegFrom, vehicleOnRun, legReadingFrom, tripReadingFrom, TRIP_PHASES, PHASE_INDEX, newTripMemory, lastLegOf, effLeg, isLiveTime, tripEvidence, tripLegTimes, staleStepOf, LINE_BUDGET, delayWords, tripRender, BANNED_WORDS, renderSig, forecastPhaseOf, tripStep, voiceGate, ringDue, ringRoute, backupGetOff, tripPlanFrom, serverPollMs };
+    return { TRIP_RULES, getOffLeadMs, getOffDueAt, TRIP_CLIPS, tripClock, tripClockSec, stopShort, platNum, boardIndexOf, offIndexOf, planLegFrom, vehicleOnRun, legReadingFrom, tripReadingFrom, TRIP_PHASES, PHASE_INDEX, newTripMemory, lastLegOf, effLeg, isLiveTime, tripEvidence, tripLegTimes, staleStepOf, LINE_BUDGET, delayWords, tripRender, BANNED_WORDS, renderSig, forecastPhaseOf, tripStep, voiceGate, ringDue, ringRoute, backupGetOff, tripPlanFrom, serverPollMs };
   })();
-  const { TRIP_RULES, TRIP_CLIPS, tripClock, tripClockSec, stopShort, platNum, boardIndexOf, offIndexOf, planLegFrom, vehicleOnRun, legReadingFrom, tripReadingFrom, TRIP_PHASES, PHASE_INDEX, newTripMemory, lastLegOf, effLeg, isLiveTime, tripEvidence, tripLegTimes, staleStepOf, LINE_BUDGET, delayWords, tripRender, BANNED_WORDS, renderSig, forecastPhaseOf, tripStep, voiceGate, ringDue, ringRoute, backupGetOff, tripPlanFrom, serverPollMs } = tripState;
+  const { TRIP_RULES, getOffLeadMs, getOffDueAt, TRIP_CLIPS, tripClock, tripClockSec, stopShort, platNum, boardIndexOf, offIndexOf, planLegFrom, vehicleOnRun, legReadingFrom, tripReadingFrom, TRIP_PHASES, PHASE_INDEX, newTripMemory, lastLegOf, effLeg, isLiveTime, tripEvidence, tripLegTimes, staleStepOf, LINE_BUDGET, delayWords, tripRender, BANNED_WORDS, renderSig, forecastPhaseOf, tripStep, voiceGate, ringDue, ringRoute, backupGetOff, tripPlanFrom, serverPollMs } = tripState;
   // src/lib/liveCalc.ts
   const liveCalc = (() => {
     const tms = (s) => (s ? new Date(s).getTime() : NaN);
@@ -8088,7 +8114,7 @@ const LIVECARD = (() => {
             return null;
         if (M.legs[s.cur]?.rung?.getoff)
             return null;
-        const at = x.arr - TRIP_RULES.GETOFF_LEAD;
+        const at = getOffDueAt(x.arr);
         return at > now && at - now <= 20000 ? at : null;
     }
     function noteKey(n) {
@@ -8262,7 +8288,7 @@ const LIVECARD = (() => {
     }
     return { TRACK_MAX, TRACK_NAME_MAX, shortName, stopTrackFor, cardFor, legNoteFor, cardWarning, staleAt };
   })();
-  return { computeLive: liveCalc.computeLive, cardFor: tripCard.cardFor, staleAt: tripCard.staleAt, cardWarning: tripCard.cardWarning, legNoteFor: tripCard.legNoteFor, TRIP_RULES, TRIP_CLIPS, tripClock, tripClockSec, stopShort, platNum, boardIndexOf, offIndexOf, planLegFrom, vehicleOnRun, legReadingFrom, tripReadingFrom, TRIP_PHASES, PHASE_INDEX, newTripMemory, lastLegOf, effLeg, isLiveTime, tripEvidence, tripLegTimes, staleStepOf, LINE_BUDGET, delayWords, tripRender, BANNED_WORDS, renderSig, forecastPhaseOf, tripStep, voiceGate, ringDue, ringRoute, backupGetOff, tripPlanFrom, serverPollMs };
+  return { computeLive: liveCalc.computeLive, cardFor: tripCard.cardFor, staleAt: tripCard.staleAt, cardWarning: tripCard.cardWarning, legNoteFor: tripCard.legNoteFor, TRIP_RULES, getOffLeadMs, getOffDueAt, TRIP_CLIPS, tripClock, tripClockSec, stopShort, platNum, boardIndexOf, offIndexOf, planLegFrom, vehicleOnRun, legReadingFrom, tripReadingFrom, TRIP_PHASES, PHASE_INDEX, newTripMemory, lastLegOf, effLeg, isLiveTime, tripEvidence, tripLegTimes, staleStepOf, LINE_BUDGET, delayWords, tripRender, BANNED_WORDS, renderSig, forecastPhaseOf, tripStep, voiceGate, ringDue, ringRoute, backupGetOff, tripPlanFrom, serverPollMs };
 })();
 // ---- live card end
 

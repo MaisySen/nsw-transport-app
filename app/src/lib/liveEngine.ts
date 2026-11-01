@@ -101,7 +101,7 @@ let svcAt = 0;
 let openSince = Date.now();
 let refreshes = 0;
 let speakingUntil = 0;
-// The precise moment the open app steps the trip again (Get off now at the live arrival minus 30 s).
+// The precise moment the open app steps the trip again (Get off now at the live arrival minus 38 s, build 214).
 let momentTimer: ReturnType<typeof setTimeout> | null = null;
 /** The phone's backup Get off now set when the app went to the background (only when the server has not taken it). */
 let backupId: string | null = null;
@@ -189,7 +189,7 @@ export async function tickLive(opts: { noFetch?: boolean } = {}) {
       else if (a.t === 'say') speak(a.text, { alert: true, ...(a.quiet ? { quiet: true } : {}) });
     }
     for (const a of w.actions) if (a.t === 'wakeCancel') await cancelWake(a.id);
-    // The open app steps the trip again at the exact Get off now moment (live arrival minus 30 s), not up to 15 s late.
+    // The open app steps the trip again at the exact Get off now moment (live arrival minus 38 s), not up to 15 s late.
     if (momentTimer) { clearTimeout(momentTimer); momentTimer = null; }
     const due = nextFlowMoment(r.g, r.s, now);
     if (due != null) momentTimer = setTimeout(() => { momentTimer = null; tickLive({ noFetch: true }).catch(() => {}); }, Math.max(0, due - Date.now()) + 50);

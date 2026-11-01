@@ -221,7 +221,7 @@ export function AlertBanner() {
 
 // ---------- small formatters ----------
 
-/** "7:52 pm" (or "19:52" on a 24 hour phone), Sydney time: the Plan rows' clock (lib/rowTime.ts). */
+/** "7:52pm" (or "19:52" on a 24 hour phone), Sydney time: the Plan rows' clock (lib/rowTime.ts). */
 const hm = (t: number) => rowTime(t);
 
 /** 24 hour "07:55", Sydney time. */
@@ -352,7 +352,7 @@ function CardHeader({ title, glyph, glyphColor, right, sub, onPress, menu, href,
 // ---------- Your trips: a card with the next 3 services ----------
 
 type Hold = { delay: number; at: number };
-/** Last live reading per service, so a feed gap shows "Last reported" for 10 minutes instead of flipping to Scheduled. */
+/** Last live reading per service, so a feed gap shows "Last reported" for 10 minutes instead of flipping to Timetable. */
 const holds = new Map<string, Hold>();
 const HOLD_MS = 10 * 60000;
 
@@ -372,7 +372,7 @@ type Status = { text: string; tone: 'live' | 'late' | 'red' | 'grey' };
 function statusOf(j: Journey, now: number): Status {
   const l = firstLeg(j);
   if (j.anyCancelled || l?.cancelled) return { text: 'Cancelled', tone: 'red' };
-  if (!l) return { text: 'Scheduled', tone: 'grey' };
+  if (!l) return { text: 'Timetable', tone: 'grey' };
   // An on demand service (the D400 in the Inner West) runs when booked: no timetable departure to be late for.
   if (l.onDemand) return { text: l.booking === false ? 'On demand' : 'On demand, book ahead', tone: 'grey' };
   // Live words only when the row carries a live reading (lib/rowTimeCore.ts): the planner echoes the timetable as a
@@ -387,7 +387,7 @@ function statusOf(j: Journey, now: number): Status {
     return { text: `Last reported ${w}`, tone: h.delay > 0 ? 'late' : 'grey' };
   }
   if (h) return { text: 'Live data unavailable', tone: 'grey' };
-  return { text: 'Scheduled', tone: 'grey' };
+  return { text: 'Timetable', tone: 'grey' };
 }
 
 export type TripItem = { key: string; from: Place; to: Place; kind: 'commute' | 'saved' | 'recent' | 'place' | 'mine'; id?: string; name?: string; tag?: string; via?: Place; conn?: number; okey?: string; legs?: TripLeg[]; modes?: string[] };
@@ -745,7 +745,7 @@ const g = StyleSheet.create({
 /**
  * Service row on the Plan tab's trip list: a time left badge ("12 min", "2 hrs"); where you get on with its platform
  * over the leave time and the status; where you get off over the arrive time and the lines the trip rides. Times in
- * the phone's clock ("12:56 pm" or "12:56", lib/rowTime.ts). The badge moves with the screen's countdown tick.
+ * the phone's clock ("12:56pm" or "12:56", lib/rowTime.ts). The badge moves with the screen's countdown tick.
  */
 type ServiceRowProps = { j: Journey; now: number; arrive: number; beaten?: boolean; onPress: () => void; showTravel?: boolean;
   /** Set when onPress only changes with this value (the trip list passes the row's index), so a new closure each redraw
@@ -919,7 +919,7 @@ export function StopBoard({ stop, now, starred, distance, menu }: { stop: Place;
               <T kind="body" numberOfLines={1} style={{ flex: 1, marginLeft: 10 }}>{shortName(d.dest)}</T>
               <View style={{ alignItems: 'flex-end', marginLeft: 8 }}>
                 <Text maxFontSizeMultiplier={1.4} style={[font.callout, { fontWeight: '600', color: live ? c.liveText : tag === 'Cancelled' ? c.redText : c.text2, fontVariant: ['tabular-nums'] }]}>
-                  {t.big}{t.unit ? ` ${t.unit}` : ''}
+                  {t.big}{t.unit ? (t.unit === 'am' || t.unit === 'pm' ? t.unit : ` ${t.unit}`) : ''}
                 </Text>
                 {tag ? <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={[font.caption, { color: tag === 'Cancelled' ? c.redText : c.text2 }]}>{tag}</Text> : null}
               </View>

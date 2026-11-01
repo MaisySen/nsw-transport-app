@@ -501,7 +501,9 @@ struct WTripMoment: Hashable {
 
 enum WTripMoments {
     static let nextLead: TimeInterval = 120
-    static let getOffLead: TimeInterval = 30
+    /// Build 214: Get off now 38 s before the live arrival, the same moment as the alert (tripState getOffLeadMs: the
+    /// 30 s rule plus the feed's 8 s lag, never over 40 s).
+    static let getOffLead: TimeInterval = 38
     static let dueLead: TimeInterval = 60
     static let dueFor: TimeInterval = 60
     static let liveFor: TimeInterval = 120

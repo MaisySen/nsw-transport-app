@@ -75,7 +75,7 @@ export function shortName(n?: string | null) {
 
 export function delayWords(d?: number | null, realtime?: boolean, cancelled?: boolean) {
   if (cancelled) return { text: 'Cancelled', tone: 'red' as const };
-  if (!realtime) return { text: 'Scheduled', tone: 'grey' as const };
+  if (!realtime) return { text: 'Timetable', tone: 'grey' as const };
   if (d == null || d === 0) return { text: 'On time', tone: 'green' as const };
   if (d > 0) return { text: `${d} min late`, tone: d >= 5 ? ('red' as const) : ('orange' as const) };
   return { text: `${-d} min early`, tone: 'green' as const };

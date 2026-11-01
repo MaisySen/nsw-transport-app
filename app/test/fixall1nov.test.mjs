@@ -130,7 +130,7 @@ function checkKinds(R, who) {
   // the held moment is listed again where Get off now and Arrived would have been, so the complication's countdown stops
   // there instead of counting past the stop (Text(.timer) counts up past its date)
   assert.deepEqual(R['timeline'].raw, ['ride', 'next', 'next', 'next'], `${who}: held entries at the old Get off now and arrival times`);
-  assert.deepEqual(R['timeline'].rawAts, [0, 30, 120, 150], `${who}: at 30 s before and at the arrival`);
+  assert.deepEqual(R['timeline'].rawAts, [0, 30, 112, 150], `${who}: at 38 s before (build 214, the alert's moment) and at the arrival`);
   assert.equal(R['no-updated'].kinds[0], 'getOff', `${who}: a card with no data time (older phones) keeps the clock moments`);
   for (const [id, r] of Object.entries(R)) {
     if (id === 'arrived-by-phone' || id === 'no-updated' || id.startsWith('fresh')) continue;

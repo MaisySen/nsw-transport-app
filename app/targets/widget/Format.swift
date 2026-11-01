@@ -74,10 +74,11 @@ public enum Clock {
 }
 
 public enum Delay {
-    /// "On time", "3 min late", "2 min early", "Cancelled", or "Scheduled" when there is no live data.
+    /// "On time", "3 min late", "2 min early", "Cancelled", or "Timetable" when there is no live data (build 214: one
+    /// word for no live data everywhere).
     public static func text(delayMin: Int?, live: Bool, cancelled: Bool) -> String {
         if cancelled { return "Cancelled" }
-        guard live, let d = delayMin else { return "Scheduled" }
+        guard live, let d = delayMin else { return "Timetable" }
         if d == 0 { return "On time" }
         return d > 0 ? "\(d) min late" : "\(-d) min early"
     }

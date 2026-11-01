@@ -27,10 +27,10 @@ public enum WidgetText {
         return p
     }
 
-    /// "On time", "3 min late", "Cancelled", or "No live data" when the service has no live times.
+    /// "On time", "3 min late", "Cancelled", or "Timetable" when the service has no live times (build 214: one word).
     public static func status(isLive: Bool, status: String) -> String {
         if status == "Cancelled" { return status }
-        if !isLive || status == "Scheduled" || status.isEmpty { return "No live data" }
+        if !isLive || status == "Scheduled" || status == "Timetable" || status.isEmpty { return "Timetable" }
         return status
     }
 

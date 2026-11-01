@@ -41,7 +41,7 @@ test('the commute card never says "No more services today" from a kept copy whil
 test('no status code ever reaches a person, and the server\'s own words are used', () => {
   assert.equal(N.httpMessage(502, {}), N.MSG.upstream);
   assert.equal(N.httpMessage(429, null), N.MSG.upstream);
-  assert.equal(N.httpMessage(503, { kind: 'error', text: 'Live data from Transport for NSW isn\'t available right now. Try again soon.' }), 'Live data from Transport for NSW isn\'t available right now. Try again soon.');
+  assert.equal(N.httpMessage(503, { kind: 'error', text: 'Live data from Transport for NSW isn\'t available right now. Try again soon.' }), 'Live data isn\'t available right now. Try again soon.', 'the server\'s words, without the data provider\'s name (build 214)');
   assert.equal(N.httpMessage(400, { error: 'Give stop=id' }), 'Give stop=id');
   assert.equal(N.httpMessage(500, { error: 'Something went wrong (500)' }), N.MSG.upstream);
   const e = N.httpError(502, {});
@@ -53,7 +53,7 @@ test('no status code ever reaches a person, and the server\'s own words are used
 });
 
 test('Ask blames the phone only when the phone has no connection', () => {
-  assert.match(N.askFailText({ http: 502, server: true }), /Transport for NSW/);
+  assert.match(N.askFailText({ http: 502, server: true }), /^Live data isn't answering/); // build 214: no provider name in errors
   assert.doesNotMatch(N.askFailText({ http: 502, server: true }), /signal/);
   assert.match(N.askFailText({ offline: true }), /Check your signal/);
   assert.match(N.askFailText({ slow: true, server: true }), /not your connection/);

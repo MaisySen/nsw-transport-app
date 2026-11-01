@@ -16,7 +16,7 @@ enum TripMomentKind: String, Codable, Hashable {
     case ride
     /// Your stop is next (from 2 minutes before the live arrival there).
     case next
-    /// Get off now (30 seconds before the live arrival, as the alert).
+    /// Get off now (38 seconds before the live arrival, as the alert from build 214).
     case getOff
     /// At your stop: "Arrived" on the last leg, "Change here" when another leg follows.
     case arrived
@@ -32,8 +32,9 @@ struct TripMoment: Hashable {
 enum TripMoments {
     /// "Croydon next" from this long before the live arrival there.
     static let nextLead: TimeInterval = 120
-    /// Get off now this long before the live arrival (the alert's own lead, getOffCore.ts GETOFF_LEAD).
-    static let getOffLead: TimeInterval = 30
+    /// Get off now this long before the live arrival (the alert's own lead from build 214, tripState getOffLeadMs:
+    /// 30 s plus the feed's 8 s lag).
+    static let getOffLead: TimeInterval = 38
     /// Due is shown from a minute before the live departure.
     static let dueLead: TimeInterval = 60
     /// The service is taken to have left this long after the live departure, when no newer card says otherwise.

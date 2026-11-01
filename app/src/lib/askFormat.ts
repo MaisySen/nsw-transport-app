@@ -30,15 +30,15 @@ export type Tone = 'liveText' | 'lateText' | 'redText' | 'text2';
 export type Status = { text: string; tone: Tone };
 
 export type TripSummary = {
-  time: string;            // "7:30 am"
+  time: string;            // "7:30am"
   when: string;            // "in 13 min", "Now", "Left"
   whenSpoken: string;      // "in 13 minutes"
   past: boolean;
   live: boolean;
   lines: { line?: string; mode?: string; color?: string }[];
   platform: string | null; // "Platform 2"
-  leaveAt: string | null;  // set when the trip starts with a walk: "7:22 am"
-  arrive: string;          // "Arrives Kings Cross 7:55 am \u00b7 1 change"
+  leaveAt: string | null;  // set when the trip starts with a walk: "7:22am"
+  arrive: string;          // "Arrives Kings Cross 7:55am \u00b7 1 change"
   arriveSpoken: string;
   status: Status;
   outages: string[];       // the full lift and escalator messages
@@ -56,11 +56,11 @@ export function shortPlace(name?: string | null): string {
   return String(name || '').split(',')[0].replace(/ (Station|Light Rail|Wharf)$/, '').trim();
 }
 
-/** "7:30 am" in Sydney time. */
+/** "7:30am" in Sydney time (build 214: one time style, no space). */
 export function clock12(iso: string): string {
   if (PHONE24() && Number.isFinite(Date.parse(iso))) return C24(Date.parse(iso));
   return new Date(iso).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' })
-    .replace(/\s?(am|pm)/i, (_m, p) => ' ' + p.toLowerCase());
+    .replace(/\s?(am|pm)/i, (_m, p) => p.toLowerCase());
 }
 
 /** Minutes until a time, as shown ("in 13 min") and as read aloud ("in 13 minutes"). */
@@ -80,7 +80,7 @@ export function untilWords(iso: string, now: number): { text: string; spoken: st
 /** Same words and colours as the trip and departure rows. */
 export function statusOf(it: { cancelled?: boolean; realtime?: boolean; delayMin?: number }): Status {
   if (it.cancelled) return { text: 'Cancelled', tone: 'redText' };
-  if (!it.realtime) return { text: 'Scheduled', tone: 'text2' };
+  if (!it.realtime) return { text: 'Timetable', tone: 'text2' };
   const d = Math.round(it.delayMin || 0);
   if (d >= 2) return { text: `${d} min late`, tone: 'lateText' };
   if (d <= -2) return { text: `${-d} min early`, tone: 'liveText' };

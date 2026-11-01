@@ -72,7 +72,7 @@ test('gone services read Left with the live delay they left with', () => {
   const late = dep('T3', NOW - 30 * MIN, { realtime: true, estimated: iso(NOW - 27 * MIN), delayMin: 3 });
   assert.equal(B.isGone(late, NOW), true);
   assert.equal(B.goneWords(late, hm), `Left ${hm(NOW - 27 * MIN)} \u00b7 3 min late`);
-  assert.equal(B.goneWords(dep('T9', NOW - 12 * MIN), hm), `Left ${hm(NOW - 12 * MIN)} \u00b7 Scheduled`);
+  assert.equal(B.goneWords(dep('T9', NOW - 12 * MIN), hm), `Left ${hm(NOW - 12 * MIN)} \u00b7 Timetable`);
   assert.equal(B.goneWords(dep('T2', NOW - 8 * MIN, { cancelled: true }), hm), `Cancelled ${hm(NOW - 8 * MIN)}`);
   assert.equal(B.goneWords(dep('T1', NOW - 4 * MIN, { realtime: true, estimated: iso(NOW - 4 * MIN), delayMin: 0 }), hm), `Left ${hm(NOW - 4 * MIN)} \u00b7 On time`);
   // Within the last minute it is not gone yet (the countdown chip says the same).

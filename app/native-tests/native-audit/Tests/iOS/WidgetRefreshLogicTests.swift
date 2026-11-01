@@ -72,7 +72,7 @@ final class WidgetRefreshLogicTests: XCTestCase {
                                  legArrives: Self.now.addingTimeInterval(1200), arrival: Self.now.addingTimeInterval(1200), now: Self.now)
         XCTAssertEqual(m.map(\.kind), [.wait, .due, .ride, .next, .getOff, .arrived])
         XCTAssertEqual(m[1].at, Self.now.addingTimeInterval(180), "Due a minute before the live departure")
-        XCTAssertEqual(m[4].at, Self.now.addingTimeInterval(1170), "Get off now 30 s before the live arrival")
+        XCTAssertEqual(m[4].at, Self.now.addingTimeInterval(1162), "Get off now 38 s before the live arrival (build 214, the alert's moment)")
         for (a, b) in zip(m, m.dropFirst()) { XCTAssertLessThan(a.at, b.at) }
     }
 

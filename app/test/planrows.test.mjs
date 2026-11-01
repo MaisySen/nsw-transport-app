@@ -1,4 +1,4 @@
-// Plan tab trip rows (27 Oct 2026): times in the phone's clock ("12:56 pm" or 24 hour), the time left badge
+// Plan tab trip rows (27 Oct 2026): times in the phone's clock ("12:56pm" or 24 hour, no space from build 214), the time left badge
 // ("12 min", "2 hrs") and On time only when the row carries a live reading. Pure parts run here; the rows are
 // checked in the source.
 // Run: TZ=Australia/Sydney OFFLINE=1 node --test test/planrows.test.mjs
@@ -38,13 +38,13 @@ test('the phone clock setting: iPhone 24-Hour Time wins, then the locale hour cy
   assert.equal(R.uses24h(null), false);
 });
 
-test('12 hour rows read "12:56 pm": lowercase, with a space, Sydney time', () => {
-  assert.equal(R.rowClock(at(12, 56), false), '12:56 pm');
-  assert.equal(R.rowClock(at(13, 38), false), '1:38 pm');
-  assert.equal(R.rowClock(at(9, 5), false), '9:05 am');
-  assert.equal(R.rowClock(at(0, 5), false), '12:05 am');
-  assert.equal(R.rowClock(at(12, 0), false), '12:00 pm');
-  assert.equal(R.rowClock(at(23, 59), false), '11:59 pm');
+test('12 hour rows read "12:56pm": lowercase, no space (build 214, one time style), Sydney time', () => {
+  assert.equal(R.rowClock(at(12, 56), false), '12:56pm');
+  assert.equal(R.rowClock(at(13, 38), false), '1:38pm');
+  assert.equal(R.rowClock(at(9, 5), false), '9:05am');
+  assert.equal(R.rowClock(at(0, 5), false), '12:05am');
+  assert.equal(R.rowClock(at(12, 0), false), '12:00pm');
+  assert.equal(R.rowClock(at(23, 59), false), '11:59pm');
   assert.equal(R.rowClock(NaN, false), '');
   assert.doesNotMatch(R.rowClock(at(12, 56), false), /[AP]M/);
 });
@@ -59,7 +59,7 @@ test('24 hour rows read "12:56" and "09:05", with no am or pm', () => {
 
 test('rows keep Sydney time across the daylight saving change', () => {
   // 5 Apr 2026, 3 am AEDT becomes 2 am AEST: 15:30 UTC on 4 Apr is 2:30 am AEDT, 16:30 UTC is 2:30 am AEST.
-  assert.equal(R.rowClock(Date.parse('2026-04-04T15:30:00Z'), false), '2:30 am');
+  assert.equal(R.rowClock(Date.parse('2026-04-04T15:30:00Z'), false), '2:30am');
   assert.equal(R.rowClock(Date.parse('2026-04-04T16:30:00Z'), true), '02:30');
 });
 

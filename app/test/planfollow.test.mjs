@@ -1,5 +1,5 @@
 // Plan rows follow ups (27 Oct 2026): trip detail times and the Home chip past an hour in the Plan rows' clock
-// ("12:56 pm", or 24 hour), and the rule based "Tight change" hint on trip rows and trip detail.
+// ("12:56pm", or 24 hour), and the rule based "Tight change" hint on trip rows and trip detail.
 // Run: TZ=Australia/Sydney OFFLINE=1 node --test test/planfollow.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -34,7 +34,7 @@ test('chip clock: the Plan rows clock split into digits and am or pm, or 24 hour
   for (const [h, m] of [[0, 5], [9, 41], [12, 0], [12, 56], [13, 7], [23, 59]]) {
     const t = at(h, m);
     const c12 = R.chipClock(t, false);
-    assert.equal(`${c12.big} ${c12.unit}`, R.rowClock(t, false), `12 hour ${h}:${m}`);
+    assert.equal(`${c12.big}${c12.unit}`, R.rowClock(t, false), `12 hour ${h}:${m}`); // build 214: "12:56pm"
     assert.match(c12.unit, /^(am|pm)$/);
     assert.deepEqual(R.chipClock(t, true), { big: R.rowClock(t, true), unit: '' });
   }

@@ -2,6 +2,12 @@
 
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
+## Build 214 (1 Nov, branch build-214-rc; server branch server-214)
+* `app/test/build214.test.mjs` (7): the 38 s lead and 40 s cap (getOffLeadMs, getOffDueAt, the open app's timer), the held note on a held train and none on a train still coming in, the held render, "Timetable", "7:52pm", error words without the provider's name. 6 of 7 fail on 09dde0a (test 3, no false Held, passes there as it should); files/day-1nov/failing-first-build214.txt.
+* Journey sim: S21 now expects the held note at 7:59:20 to 7:59:40; new S22f (fast feed: lands 7:58:22, 38 s before 7:59) and S22s (slow feed: a late reading brings the arrival in, Get off now goes at once, no Held); I8 also checks the 40 s cap. Reference and real code agree on every case.
+* `backend/test/build214-server.test.mjs` (5, server branch): the lead and cap through LIVECARD and the server timer, S16 sent at 7:54:20, S21 held alert (no sound) and the Lock Screen warning, S22f/S22s no false Held, error words. 4 of 5 fail on a9a75e6 (test 4 passes there as it should).
+* Expectations moved with the change: Get off moments 8 s earlier (journeysim, tripflow2-app, fixall1nov swiftc grid 112 s), "Timetable" (askformat, boardtime, trippast), "7:52pm" (askbrain, askformat, planrows, planfollow, syssettings31), error words (outage16, outage-trips, upstream-not-json).
+
 ## Fix-all (1 Nov, branch fix-all-1nov)
 * `app/test/fixall1nov.test.mjs` (5): compiles WTripMoments (WatchCore.swift) and TripMoments.swift with swiftc and runs a grid (fresh / 3 min / 6 min old data; waiting, Due, on board, at the stop, past it; arrival sent by the phone; no data time): no Get off now, Arrived or Due from old data, a fresh moment stays, held entries at the old moment times; the same rule in both files; e2e scripts without the removed switch; complication commute entries split where they turn 5 min old. All 5 fail on e348fa0 (files/day-1nov/failing-first-fixall.txt).
 * Journey sim: S20w (feed lost 3 min before the stop: the Watch and widget text never say Get off now or Arrived) and S21 (held outside the stop after Get off now: one Get off now, Arrived only when the train is there), reference and real code.

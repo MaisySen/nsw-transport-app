@@ -24,7 +24,7 @@ export const depKey = (d: DepLike) => `${d.line || ''}|${d.planned || ''}|${d.st
 /** Gone: left over a minute ago, worked out on the phone (a kept answer's own flag can be a minute old). */
 export const isGone = (d: DepLike, now: number) => hasLeft(depTime(d), now);
 
-/** "Left 6:18 · 3 min late", "Left 6:18 · Scheduled" (no live time), "Cancelled 6:18". */
+/** "Left 6:18 · 3 min late", "Left 6:18 · Timetable" (no live time), "Cancelled 6:18". */
 export const goneWords = (d: DepLike, hm: (t: number) => string) => leftWords(depTime(d), d, hm);
 
 /** The moment a time picked for the board stands for: that clock time in the service day of now (4am to 4am), so

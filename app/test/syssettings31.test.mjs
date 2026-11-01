@@ -88,7 +88,7 @@ test('24 hour phone: boards, trips, Plan, stamps and Ask say 19:52 and 00:05; 12
   assert.equal(BT.boardWhenWords(EVE, EVE), 'From 7:52pm');
   assert.equal(O.stampText(EVE, EVE), '7:52pm');
   assert.equal(RC.clockText(7, 30), '7:30am');
-  assert.equal(AF.clock12(new Date(EVE).toISOString()), '7:52 pm');
+  assert.equal(AF.clock12(new Date(EVE).toISOString()), '7:52pm');
   assert.equal(S.clock(EVE), '7:52pm');
   unset();
 });

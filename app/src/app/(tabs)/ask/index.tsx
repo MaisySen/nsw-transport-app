@@ -2,7 +2,7 @@
 // home and work, follow ups) and either asks one short question with choices or sends a clear question to /api/ask.
 // Answers come back as a short reply plus live cards (departures, trips, alerts) that open the stop board, trip or
 // live map, with the actions under them (Open trip, Directions, Speak).
-import { askFailText, httpError, isNetErr, noAnswerError, noteReach, READ_MS_EMPTY } from '@/lib/netErrCore';
+import { askFailText, httpError, plainErr, isNetErr, noAnswerError, noteReach, READ_MS_EMPTY } from '@/lib/netErrCore';
 import { spokenTime } from '@/lib/homeCore';
 import { prefetchStop } from '@/lib/prefetch';
 import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react';
@@ -52,7 +52,7 @@ type Msg = { id: string; role: 'me' | 'bot'; text: string; heard?: string | null
 
 function clock(t: string) {
   if (PHONE24() && Number.isFinite(Date.parse(t))) return C24(Date.parse(t));
-  return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, (_m, p) => ' ' + p.toLowerCase());
+  return new Date(t).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney' }).replace(/\s?(am|pm)/i, (_m, p) => p.toLowerCase());
 }
 function cd(t: string, now: number) {
   const m = Math.round((new Date(t).getTime() - now) / 60000);
@@ -338,6 +338,7 @@ export default function AskScreen() {
       } finally { clearTimeout(timer); }
       let cards: Card[] = d.cards || [];
       let reply: string = d.reply || d.text || "Sorry, I didn't get that.";
+      if (d.kind === 'error') reply = plainErr(reply); // build 214: no data provider's name in an error
       const rf = a.refine;
       // Another day, a mode on another day, or no changes: the planner's own answer for exactly that.
       const tc = tripCardOf(cards as any);

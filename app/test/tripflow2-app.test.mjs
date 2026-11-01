@@ -67,7 +67,7 @@ test('registration: every trip, get-off and card body carries tripFlow 2 and c24
   assert.match(read('src/lib/live.ts'), /kind: 'trip'[\s\S]{0,300}tripFlow: 2, c24: phone24h\(\)/);
 });
 
-test('open app: heads-up, Get off now 30 s before the live arrival and arrived, each once, a light tap only for the calm steps', () => {
+test('open app: heads-up, Get off now 38 s before the live arrival (build 214, never over 40 s) and arrived, each once, a light tap only for the calm steps', () => {
   for (const delay of [0, 4]) {
     const { log } = ride({ delay, every: 5000 });
     const alerts = log.filter((a) => a.t === 'alert');
@@ -76,7 +76,7 @@ test('open app: heads-up, Get off now 30 s before the live arrival and arrived, 
     const off = alerts.find((a) => /^Get off now/.test(a.title));
     assert.ok(off, JSON.stringify(alerts.map((a) => a.title)));
     const arr = at(7) + delay * 60000;
-    assert.ok(off.time >= arr - 30000 && off.time < arr, `Get off now at ${iso(off.time)} for ${iso(arr)}`);
+    assert.ok(off.time >= arr - 40000 && off.time < arr, `Get off now at ${iso(off.time)} for ${iso(arr)}`);
     assert.equal(off.haptic, 'light');
     for (const a of alerts) assert.doesNotMatch(a.title + ' ' + a.body, /Wake up|Checking for the next one/);
     assert.ok(log.some((a) => a.t === 'clearOngoing'));
@@ -93,12 +93,12 @@ test('voice gate: nothing said in the first 10 s or the first two refreshes afte
   assert.deepEqual(quiet, [], 'Speak alerts off: nothing said');
 });
 
-test('Get off now timer: the open app steps again at the live arrival minus 30 s', () => {
+test('Get off now timer: the open app steps again at the live arrival minus 38 s (build 214)', () => {
   let g = { id: 'g1', legs: [LEG], alerted: {}, watchId: null, share: null, started: at(-5) };
   const t = at(6) + 20000;
   const r = live.stepLive(g, [feed(t)], t, fmt, null, null, { asOf: t });
   const due = live.nextFlowMoment(r.g, r.s, t);
-  assert.equal(due, at(7) - 30000);
+  assert.equal(due, at(7) - 38000);
 });
 
 test('get off (flow2): no quiet note, no heads-up location alert, no in-app moments; only the backup Get off now location alert', () => {

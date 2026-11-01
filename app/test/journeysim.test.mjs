@@ -26,7 +26,7 @@ for (const c of CASES.filter((x) => !x.owner)) {
 // ---- the owner's cases ----
 test("journey sim S2: the 31 Oct Strathfield to Croydon T1 trip, 4 min late, follows the live train", () => {
   const o = expectCase(byId('S2'));
-  assert.equal(o.rings.find((r) => r.kind === 'getoff').target, hms('19:58:30'));
+  assert.equal(o.rings.find((r) => r.kind === 'getoff').target, hms('19:58:22')); // build 214: 38 s before the live 7:59
   assert.ok(!o.voice.some((s) => s.words && s.t >= hms('19:49') && s.t < hms('19:50')), 'nothing spoken when he opened the app at 7:49');
 });
 test("journey sim S2-open: the Strathfield to Croydon trip with the app open from 7:56 speaks each moment once", () => {

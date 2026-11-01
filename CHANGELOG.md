@@ -4,6 +4,15 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 1 Nov 2026
 
+### Build 214: everything in one build (1 Nov, branch `build-214-rc` from fix-all-1nov 09dde0a; server branch `server-214` from a9a75e6)
+Bidur, 2:31 PM: "Yes. If thats the right thing". Includes all of fix-all-1nov.
+* Get off now lands about 30 s before the train really stops. The live arrival estimate trails the train by about 8 s (the 1 Nov shadow trips landed 13 to 25 s early on the 30 s rule), so Get off now now goes at the live arrival minus 38 s, and never more than 40 s before it. One rule for the open app, the server (sends at minus 40 s, lands at minus 38 s), the phone's backup alert, the Watch and the widget. Simulator S16, S22f (fast feed) and S22s (slow feed).
+* "Held, stay on": when the train is held outside your stop after Get off now (a minute later it is still not in, and the live arrival has moved 30 s or more later), one calm note with no sound: "Held before Croydon. Stay on, arriving about 8:02pm." The card and Island say "Held · stay on for Croydon"; the Lock Screen card from the server shows "Held, stay on". Once per stop; never when the train is just running a little late into the stop. Simulator S21.
+* "Timetable" everywhere a time has no live data (it said "Scheduled" in some places): boards, gone services, Ask, widgets, Lock Screen and Watch.
+* One time style: "7:52pm" (no space) in the Plan rows, Home chips, Ask and its answers, as the widgets and Watch already wrote it.
+* Error messages no longer name the data provider: "Live data isn't available right now. Try again soon." (the licence attribution stays).
+* Not changed: with trip flow 2 switched off the old Get off path keeps 30 s; Travel Updates' "Next stop" notifications are their own path.
+
 ### Fix-all: known issues fixed together (1 Nov, branch `fix-all-1nov` from build 213 e348fa0; NOT built, no update, nothing deployed)
 Bidur, 12:26 PM: "If you know issues, fix it before you build." Full list with status: files/day-1nov/known-issues.md (task c7f723ad).
 * Apple Watch (A1, known since 212): the trip row, trip screen and complications no longer say "Get off now", "Arrived" or "Due", and the wrist no longer gets the "arrived" tap, by the Watch's own clock from old live times. Those moments now need live times under 2 min old when they start, as the phone's trip state and the Lock Screen card; from older data the Watch holds at your stop with "About 7:59pm" and "Updated 7:56pm", then the timetable time with "No live data since". A moment reached on fresh data stays, the trip never steps back, an arrival the phone sent stays. A held moment is listed again where Get off now and Arrived would have been, so a complication's countdown stops there.

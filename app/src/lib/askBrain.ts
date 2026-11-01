@@ -703,10 +703,10 @@ export function clockWord(hhmm: string): string {
 }
 // The phone's 24-Hour Time setting (lib/rowTime.ts installs the reader); the server's question text keeps clockWord.
 const PHONE24 = (): boolean => { try { return (globalThis as any).__tslPhone24h?.() === true; } catch { return false; } };
-/** What the chat shows it heard: "6:00 pm", or "18:00" on a 24 hour phone (1 Nov polish). */
+/** What the chat shows it heard: "6:00pm", or "18:00" on a 24 hour phone (1 Nov polish; no space from build 214). */
 function clockSay(hhmm: string): string {
   if (PHONE24()) { const [h, m] = hhmm.split(':').map(Number); return `${pad(h)}:${pad(m)}`; }
-  return clockWord(hhmm).replace(/(am|pm)$/, ' $1');
+  return clockWord(hhmm);
 }
 function addMin(hhmm: string, n: number): string {
   const [h, m] = hhmm.split(':').map(Number); const t = ((h * 60 + m + n) % 1440 + 1440) % 1440;

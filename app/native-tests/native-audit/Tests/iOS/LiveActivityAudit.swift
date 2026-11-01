@@ -26,7 +26,7 @@ enum LiveActivityAudit {
                                         towards: "Macquarie University via Epping and North Ryde", to: "Macquarie University"),
          .init(departs: m(14.5), arrives: m(70), status: "12 min late", isLive: true, platform: "Stand D", detail: "11 stops away", stopsAway: 11)),
         ("nolive", TripActivityAttributes(line: "F1", lineColorHex: "#00774B", mode: "ferry", from: "Circular Quay", towards: "Manly", to: nil),
-         .init(departs: m(9.5), arrives: nil, status: "Scheduled", isLive: false, platform: "Wharf 3", detail: nil, stopsAway: nil)),
+         .init(departs: m(9.5), arrives: nil, status: "Timetable", isLive: false, platform: "Wharf 3", detail: nil, stopsAway: nil)),
         ("cancelled", TripActivityAttributes(line: "T1", lineColorHex: "#F99D1C", mode: "train", from: "Chatswood", towards: "Hornsby", to: "Hornsby"),
          .init(departs: m(3.5), arrives: m(25), status: "Cancelled", isLive: true, platform: "Platform 4", detail: "Next one in 8 min", stopsAway: nil)),
         ("later", TripActivityAttributes(line: "L2", lineColorHex: "#E4022D", mode: "lightrail", from: "Circular Quay", towards: "Randwick", to: "Randwick"),

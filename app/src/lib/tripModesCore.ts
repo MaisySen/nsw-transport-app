@@ -184,10 +184,10 @@ type WhenLike = { kind: 'now' } | { kind: 'leave' | 'arrive'; h: number; m: numb
 export const hasLeft = (dep: number, now: number) => Number.isFinite(dep) && dep < now - 60000;
 
 /** The words on a service that has gone: "Left 6:21 · 3 min late" with a live time (the time it really left),
- * "Left 6:18 · Scheduled" with only the timetable, "Cancelled" when it did not run. */
+ * "Left 6:18 · Timetable" with only the timetable, "Cancelled" when it did not run. */
 export function leftWords(dep: number, l: { realtime?: boolean; delayMin?: number | null; cancelled?: boolean } | null | undefined, hm: (t: number) => string): string {
   if (l?.cancelled) return `Cancelled ${hm(dep)}`;
-  if (!l?.realtime) return `Left ${hm(dep)} \u00b7 Scheduled`;
+  if (!l?.realtime) return `Left ${hm(dep)} \u00b7 Timetable`;
   const d = l.delayMin || 0;
   return `Left ${hm(dep)} \u00b7 ${d > 0 ? `${d} min late` : d < 0 ? `${-d} min early` : 'On time'}`;
 }

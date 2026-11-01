@@ -103,9 +103,9 @@ test('gone services: Left from over a minute ago, with the live delay they left 
   assert.equal(m.leftWords(at('1821'), { realtime: true, delayMin: 3 }, hm), 'Left 6:21 \u00b7 3 min late');
   assert.equal(m.leftWords(at('1818'), { realtime: true, delayMin: 0 }, hm), 'Left 6:18 \u00b7 On time');
   assert.equal(m.leftWords(at('1817'), { realtime: true, delayMin: -1 }, hm), 'Left 6:17 \u00b7 1 min early');
-  assert.equal(m.leftWords(at('1824'), { realtime: false }, hm), 'Left 6:24 \u00b7 Scheduled', 'no live time: says so');
+  assert.equal(m.leftWords(at('1824'), { realtime: false }, hm), 'Left 6:24 \u00b7 Timetable', 'no live time: says so');
   assert.equal(m.leftWords(at('1824'), { cancelled: true, realtime: true }, hm), 'Cancelled 6:24');
-  assert.equal(m.leftWords(at('1824'), null, hm), 'Left 6:24 \u00b7 Scheduled');
+  assert.equal(m.leftWords(at('1824'), null, hm), 'Left 6:24 \u00b7 Timetable');
 });
 
 test('no em or en dashes in the new words', () => {

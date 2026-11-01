@@ -9,7 +9,7 @@
  * - No connection at all: the phone is offline.
  */
 export const MSG = {
-  upstream: "Live data from Transport for NSW isn't available right now. Try again soon.",
+  upstream: "Live data isn't available right now. Try again soon.",
   slow: 'Live times are slow right now. Try again in a moment.',
   offline: "You're offline. Check your connection.",
   noAnswer: 'No answer from the server. Check your connection.',
@@ -56,10 +56,28 @@ export function reachedRecently(now: number = Date.now()): boolean { return reac
 export function failWhy(): 'phone' | 'server' { return whyNow; }
 export function setFailWhy(w: 'phone' | 'server') { why.set(w); }
 
+/**
+ * Error words without the data provider's name (build 214, Bidur OK 1 Nov: no Transport for NSW branding in error
+ * messages). Servers before the 1 Nov deploy still say "Live data from Transport for NSW isn't available", "because
+ * Transport for NSW isn't answering"; the phone says "live data" instead. Attributions (CC BY 4.0, data sources) are
+ * not errors and keep the name.
+ */
+export function plainErr(s: string): string;
+export function plainErr(s: string | null | undefined): string | null | undefined;
+export function plainErr(s: string | null | undefined) {
+  if (!s || !/Transport for NSW|TfNSW/i.test(s)) return s;
+  return s
+    .replace(/Transport for NSW's live data/g, 'Live data')
+    .replace(/\b(L|l)ive (data|times) from Transport for NSW\b/g, '$1ive $2')
+    .replace(/\bbecause Transport for NSW isn't answering\b/g, "because live data isn't answering")
+    .replace(/\b(?:Transport for NSW|TfNSW)(?:'s)?\b/g, 'live data')
+    .replace(/^live data/, 'Live data');
+}
+
 /** No status code ever reaches a person: the server's own words, else plain ones. */
 export function httpMessage(status: number, body: any): string {
   const own = body && typeof body === 'object' ? (typeof body.error === 'string' && body.error) || (typeof body.text === 'string' && body.text) : '';
-  if (own && !/^Something went wrong \(\d+\)$/.test(own)) return own;
+  if (own && !/^Something went wrong \(\d+\)$/.test(own)) return plainErr(own);
   return status >= 500 || status === 429 ? MSG.upstream : MSG.failed;
 }
 
@@ -108,7 +126,7 @@ export function legacyWorthy(e: any): boolean {
 export function askFailText(e: any): string {
   if (e?.offline && !e?.slow) return 'No connection right now. Check your signal and try again.';
   if (e?.slow) return "Live data is slow right now, so Ask couldn't answer in time. It's not your connection. Try again in a moment.";
-  return "Transport for NSW's live data isn't answering right now, so Ask can't check that. It's not your connection. Try again soon.";
+  return "Live data isn't answering right now, so Ask can't check that. It's not your connection. Try again soon.";
 }
 
 /** Under a Home trip card that shows timetable trips (the server's stand in while the Trip Planner is refused). */
@@ -127,7 +145,7 @@ export function tripNote(o: { data: boolean; error: string | null; offlineAt: nu
   if (o.offlineAt) return o.why === 'server' ? 'Live trips unavailable right now' : 'No kept times left for today';
   if (o.error) return o.why === 'phone' ? 'No connection, no kept times left' : 'Live trips unavailable right now';
   if (o.staleAt) return 'Loading live times';
-  return o.serverNote || 'No more services today';
+  return plainErr(o.serverNote) || 'No more services today';
 }
 
 /** The line on a stop board with no rows: "No more services right now" only from a live answer. */

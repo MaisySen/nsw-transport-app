@@ -37,9 +37,9 @@ for (const c of CASES) {
   });
 }
 
-test('real code S2: the 31 Oct trip counts to the live 7:54, never 0:00, Get off now lands 7:58:30, nothing spoken on open', () => {
+test('real code S2: the 31 Oct trip counts to the live 7:54, never 0:00, Get off now lands 7:58:22, nothing spoken on open', () => {
   const o = run('S2');
-  assert.equal(o.rings.find((r) => r.kind === 'getoff').target, hms('19:58:30'));
+  assert.equal(o.rings.find((r) => r.kind === 'getoff').target, hms('19:58:22')); // build 214: 38 s before the live 7:59
   assert.ok(!o.voice.some((s) => s.words && s.t >= hms('19:49') && s.t < hms('19:50')));
   for (const at of ['19:48', '19:50', '19:53:59']) assert.equal(frameAt(o, at).card.timer, hms('19:54'), `timer at ${at}`);
   assert.equal(frameAt(o, '19:48').card.warn, '4 min late');

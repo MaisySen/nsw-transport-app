@@ -112,7 +112,7 @@ struct NextTripEntry: TimelineEntry {
                 TripLine(line: "T1", colorHex: "#F99D1C", mode: "train", leave: .now.addingTimeInterval(840),
                          arrive: .now.addingTimeInterval(1600), isLive: true, status: "2 min late", platform: "Platform 1"),
                 TripLine(line: "T2", colorHex: "#0098CD", mode: "train", leave: .now.addingTimeInterval(1320),
-                         arrive: .now.addingTimeInterval(2100), isLive: false, status: "Scheduled", platform: "Platform 2")],
+                         arrive: .now.addingTimeInterval(2100), isLive: false, status: "Timetable", platform: "Platform 2")],
         message: nil, fromID: "213410", toID: "200060")
 
     var url: URL? { WidgetText.tripURL(from: fromID, to: toID, leave: nil, fromName: from, toName: to) }
@@ -417,7 +417,7 @@ struct BoardCache: Codable {
             if r.isLive, let t = r.timetable { x.time = t }
             x.isLive = false
             x.liveAt = nil
-            x.status = "Scheduled"
+            x.status = "Timetable"
             return x
         }
         .filter { $0.time > now }
@@ -485,7 +485,7 @@ struct NoticeLine: View {
 enum WidgetStyle {
     static func statusColor(isLive: Bool, status: String) -> Color {
         if status == "Cancelled" { return .red }
-        if !isLive || status == "Scheduled" { return .secondary }
+        if !isLive || status == "Timetable" || status == "Scheduled" { return .secondary }
         return status.contains("late") ? .orange : .green
     }
 }
@@ -906,7 +906,7 @@ struct StopBoardEntry: TimelineEntry {
         date: .now, stopID: "200060", stopName: "Central", filter: nil,
         rows: [BoardRow(line: "T1", colorHex: "#F99D1C", mode: "train", dest: "Emu Plains", time: .now.addingTimeInterval(120), isLive: true, status: "On time", platform: "Platform 18"),
                BoardRow(line: "T4", colorHex: "#005AA3", mode: "train", dest: "Cronulla", time: .now.addingTimeInterval(300), isLive: true, status: "1 min late", platform: "Platform 24"),
-               BoardRow(line: "L2", colorHex: "#E4022D", mode: "lightrail", dest: "Randwick", time: .now.addingTimeInterval(420), isLive: false, status: "Scheduled", platform: nil)],
+               BoardRow(line: "L2", colorHex: "#E4022D", mode: "lightrail", dest: "Randwick", time: .now.addingTimeInterval(420), isLive: false, status: "Timetable", platform: nil)],
         message: nil)
 }
 

@@ -89,7 +89,7 @@ struct IslandBottom: View {
     var state: TripActivityAttributes.ContentState
     var body: some View {
         HStack {
-            Text(state.isLive ? state.status : "Scheduled")
+            Text(state.isLive ? state.status : "Timetable")
                 .foregroundStyle(activityStatusColor(state))
             if let p = state.platform, !p.isEmpty { Text(p).foregroundStyle(.secondary) }
             Spacer()
@@ -178,7 +178,7 @@ struct LockScreenCard: View {
 
     private func statusRow(platform: Bool, detail: Bool) -> some View {
         HStack(spacing: 6) {
-            Text(state.isLive ? state.status : "Scheduled")
+            Text(state.isLive ? state.status : "Timetable")
                 .fontWeight(.semibold)
                 .foregroundStyle(activityStatusColor(state))
                 .fixedSize()

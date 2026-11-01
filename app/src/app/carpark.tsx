@@ -71,7 +71,7 @@ export default function CarParkScreen() {
             <Row icon={I.train} iconBg="#F6891F" title="Station departures" onPressIn={() => prefetchStop(stationId)} onPress={() => router.push({ pathname: '/stop/[id]', params: { id: stationId, name: '' } })} />
           </View>
         ) : null}
-        {data && !list.length ? <Empty icon={I.car} title="No live car park here" body="Transport for NSW sends no Park and Ride count for this one right now." /> : null}
+        {data && !list.length ? <Empty icon={I.car} title="No live car park here" body="No live Park and Ride count for this one right now." /> : null}
         {error && !data ? <Empty icon={I.warn} title="Can't load the car park" body={error} /> : null}
         {list.length ? <T kind="foot" tone="text2" style={{ marginHorizontal: 32, marginTop: 12 }}>Live spaces from the Transport for NSW Car Park API. Nearly full means 10 percent or fewer spaces left.</T> : null}
       </Screen>

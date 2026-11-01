@@ -4,6 +4,11 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Build 214 (1 Nov, branch `build-214-rc`)
+* Get off now at the live arrival minus 38 s (30 s plus the feed's lag), never more than 40 s early: lands about 30 s before the train stops.
+* "Held, stay on": one quiet note a minute after Get off now when the train is held outside the stop; card "Held · stay on for Croydon", Lock Screen "Held, stay on".
+* "Timetable" for every time with no live data; times written "7:52pm"; error messages without the data provider's name.
+
 ## Fix-all (1 Nov, branch `fix-all-1nov`, for build 214, not built)
 * Apple Watch and the iPhone "Your trip" widget hold the trip on old live times: no Get off now, Arrived or Due from data over 2 min old; "About 7:59pm" / "~7:59pm" with "Updated", then the timetable time. No "arrived" wrist tap from old data.
 * Watch complications show commute times over 5 min old as the clock time with "Updated", never a countdown.

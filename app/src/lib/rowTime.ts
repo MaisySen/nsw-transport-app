@@ -56,5 +56,5 @@ export function installPhoneClock(): void {
   try { (globalThis as any).__tslPhone24h = () => phone24h(); } catch {}
 }
 
-/** A trip row's time in the phone's clock: "12:56 pm" or "12:56". Sydney time. */
+/** A trip row's time in the phone's clock: "12:56pm" or "12:56". Sydney time. */
 export const rowTime = (t: number) => rowClock(t, phone24h());

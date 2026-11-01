@@ -57,7 +57,7 @@ const sameMode = (rowMode: string, mode: string) => rowMode === mode || (mode ==
 const NOT_IN_SERVICE = /^(empty train|not in service)$/i;
 
 /**
- * The pack's departures from `now` on, as live board rows with no live data: realtime false, status Scheduled, no trip
+ * The pack's departures from `now` on, as live board rows with no live data: realtime false, status Timetable, no trip
  * id. `mode` keeps one mode (bus includes coach and school bus, as the server does). At most `max` rows.
  */
 export function packDepartures(p: Pack, now: number, opts: { mode?: string | null; max?: number; stopId?: string } = {}): Departure[] {
@@ -78,7 +78,7 @@ export function packDepartures(p: Pack, now: number, opts: { mode?: string | nul
       mode: l[1], modeName: l[3], line: l[0], color: l[2], dest: p.heads[r[i + 2]] || '', description: l[4] || '',
       platform: pl[1] || '', platformChangedFrom: null, stopId: pl[0], stopName: pl[2] || '', tripId: '',
       planned: new Date(ms).toISOString(), estimated: null, realtime: false, delayMin: null, cancelled: false,
-      alerts: [], status: { key: 'scheduled', text: 'Scheduled' },
+      alerts: [], status: { key: 'scheduled', text: 'Timetable' },
     });
   }
   return out;

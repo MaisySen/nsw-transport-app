@@ -79,7 +79,7 @@ export function LeftRow({ j, arrive, onPress, muted }: { j: Journey; arrive: num
 }
 
 /** A service that has gone, on a stop's board (Earlier departures or a time picked in the past): the board's row
- * layout, greyed, with "Left 6:18 · 3 min late" (the live delay it left with), "Left 6:18 · Scheduled" or
+ * layout, greyed, with "Left 6:18 · 3 min late" (the live delay it left with), "Left 6:18 · Timetable" or
  * "Cancelled 6:18", and the trip screen's Left block. Opens the service like any other row. */
 export function LeftDepartureRow({ d, stopNo, onPress, muted }: { d: Departure; stopNo?: string | null; onPress: () => void; muted?: boolean }) {
   const c = usePalette();

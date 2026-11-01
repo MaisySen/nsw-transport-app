@@ -68,7 +68,7 @@ test('another day goes to the planner for that day, with the time asked', () => 
   assert.equal(a.kind, 'ask');
   assert.equal(a.q, 'Gosford to Central');
   assert.deepEqual({ date: a.refine.date, time: a.refine.time }, { date: '2026-10-27', time: '07:00' });
-  assert.match(a.heard, /tomorrow, from 7:00 am/);
+  assert.match(a.heard, /tomorrow, from 7:00am/);
   const d = act('parramatta to central no changes');
   assert.equal(d.refine.direct, true);
 });
@@ -142,7 +142,7 @@ test('answers: no change filter, follow up times, actions, and every number copi
   assert.equal(A.directFirst(card.journeys).journeys.length, 1);
   assert.match(A.directFirst([card.journeys[0]]).note, /None of these go without a change/);
   const r = A.tripReply(card, 'tomorrow', NOW);
-  assert.match(r, /Next: the CCN from Gosford, Plat 1 at 7:00 am, arriving Central 8:20 am with 1 change/);
+  assert.match(r, /Next: the CCN from Gosford, Plat 1 at 7:00am, arriving Central 8:20am with 1 change/);
   assert.deepEqual(A.shownTimes([card]), { firstLeave: '2026-10-26T20:00:00Z', lastLeave: '2026-10-26T20:30:00Z' });
   assert.deepEqual(A.actionsFor([card], 'ios').map((a) => a.label), ['Open trip', 'Speak']);
   const park = { type: 'parking', items: [{ name: 'Car park', lat: -33.8, lon: 151.1 }] };
@@ -172,5 +172,5 @@ test('1 Nov polish: what the chat heard follows a 24 hour phone; the question te
     assert.match(a.heard, /tomorrow, from 19:00/);
     assert.equal(a.refine.time, '19:00');
   } finally { delete globalThis.__tslPhone24h; }
-  assert.match(act('gosford to central tomorrow at 7pm').heard, /from 7:00 pm/);
+  assert.match(act('gosford to central tomorrow at 7pm').heard, /from 7:00pm/);
 });

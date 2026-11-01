@@ -1,7 +1,7 @@
 // Live trip maths, shared by the live trip screen and its tests. No React Native imports here.
 import type { ServiceResp, ServiceStop, WatchLeg } from './types';
 import type { TextSize, TimeSource, TripRender, StaleStep, TripMemory, VoiceState } from './tripState';
-import { boardIndexOf, isLiveTime, newTripMemory, offIndexOf, PHASE_INDEX, ringDue, TRIP_CLIPS, tripEvidence, tripLegTimes, tripPlanFrom, tripReadingFrom, tripRender, tripStep, TRIP_RULES, voiceGate, type ClipKey } from './tripState';
+import { boardIndexOf, getOffDueAt, isLiveTime, newTripMemory, offIndexOf, PHASE_INDEX, ringDue, TRIP_CLIPS, tripEvidence, tripLegTimes, tripPlanFrom, tripReadingFrom, tripRender, tripStep, TRIP_RULES, voiceGate, type ClipKey } from './tripState';
 
 export type LegLive = { dep: number; arr: number; delay: number; live: boolean; d: ServiceResp | null; gone?: boolean;
   /** The change to this leg was missed: dep and arr are the earliest you could go, not this service's times. */
@@ -721,7 +721,8 @@ function stepFlow(g: LiveTripLike, n: LiveTripLike, s: LiveState, svc: (ServiceR
 
 /**
  * The next moment the open app must step the trip again without waiting for the next 15 s refresh: Get off now at the
- * live arrival minus 30 s (the phone runs the same timer from the same trip state). Null when nothing is due soon.
+ * live arrival minus 38 s (build 214: 30 s plus the feed's lag, getOffDueAt; the phone runs the same timer from the
+ * same trip state). Null when nothing is due soon.
  */
 export function nextFlowMoment(g: LiveTripLike, s: LiveState, now: number): number | null {
   if (s.done) return null;
@@ -729,7 +730,7 @@ export function nextFlowMoment(g: LiveTripLike, s: LiveState, now: number): numb
   const x = s.L2[s.cur];
   if (!M || !x || !x.arrLive || !Number.isFinite(x.arr)) return null;
   if (M.legs[s.cur]?.rung?.getoff) return null;
-  const at = x.arr - TRIP_RULES.GETOFF_LEAD;
+  const at = getOffDueAt(x.arr);
   return at > now && at - now <= 20000 ? at : null;
 }
 

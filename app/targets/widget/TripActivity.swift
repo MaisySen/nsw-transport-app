@@ -9,7 +9,7 @@ public struct TripActivityAttributes: ActivityAttributes {
         public var departs: Date
         /// When you arrive at the end of the trip, if known.
         public var arrives: Date?
-        /// "3 min late", "On time", "Scheduled", "Cancelled".
+        /// "3 min late", "On time", "Timetable", "Cancelled".
         public var status: String
         public var isLive: Bool
         public var platform: String?

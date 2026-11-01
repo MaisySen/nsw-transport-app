@@ -98,7 +98,7 @@ export function watchLine(w: any, now: number) {
   const mins = Math.round((t - now) / 60000);
   const when = Number.isFinite(t) ? (mins <= 0 ? 'Departing now' : mins < 60 ? `Departs in ${mins} min` : `Departs ${clock(t)}`) : '';
   let status = '';
-  if (s0) status = s0.cancelled ? 'Cancelled' : !s0.depLive ? 'Scheduled' : s0.delay > 0 ? `${s0.delay} min late` : 'On time';
+  if (s0) status = s0.cancelled ? 'Cancelled' : !s0.depLive ? 'Timetable' : s0.delay > 0 ? `${s0.delay} min late` : 'On time';
   const plat = s0?.platform || L?.fromPlatform;
   return [when, status, plat].filter(Boolean).join(' \u00b7 ');
 }

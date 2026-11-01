@@ -1,4 +1,4 @@
-// Plan tab trip rows (27 Oct 2026): the clock the phone uses (12 hour "12:56 pm" or 24 hour "12:56"), the time
+// Plan tab trip rows (27 Oct 2026): the clock the phone uses (12 hour "12:56pm" or 24 hour "12:56"), the time
 // left badge on each row ("Now", "12 min", "1 hr", "2 hrs") and when a row may say On time, late or early.
 // No phone dependencies here (unit tested in test/planrows.test.mjs); lib/rowTime.ts reads the phone's setting.
 
@@ -37,13 +37,14 @@ function sydneyHM(t: number): { h: number; m: number } {
   return { h: d.getHours(), m: d.getMinutes() };
 }
 
-/** "12:56 pm" (lowercase, with a space, as iOS writes it) or "12:56" and "09:05" on a 24 hour phone. Sydney time. */
+/** "12:56pm" (lowercase, no space: build 214, one time style everywhere, as the widgets, Island and Watch) or "12:56"
+ * and "09:05" on a 24 hour phone. Sydney time. */
 export function rowClock(t: number, h24: boolean): string {
   if (!Number.isFinite(t)) return '';
   const { h, m } = sydneyHM(t);
   const mm = String(m).padStart(2, '0');
   if (h24) return `${String(h).padStart(2, '0')}:${mm}`;
-  return `${((h + 11) % 12) + 1}:${mm} ${h < 12 ? 'am' : 'pm'}`;
+  return `${((h + 11) % 12) + 1}:${mm}${h < 12 ? 'am' : 'pm'}`;
 }
 
 /**
@@ -52,7 +53,7 @@ export function rowClock(t: number, h24: boolean): string {
  */
 export function chipClock(t: number, h24: boolean): { big: string; unit: string } {
   const s = rowClock(t, h24);
-  const m = s.match(/^(\S+) (am|pm)$/);
+  const m = s.match(/^(\d{1,2}:\d{2})(am|pm)$/);
   return m ? { big: m[1], unit: m[2] } : { big: s, unit: '' };
 }
 
@@ -101,10 +102,10 @@ const msOf = (s?: string | null) => (s ? new Date(s).getTime() : NaN);
 
 /**
  * Whether a trip row may say On time, N min late or N min early. The trip planner marks some services hours away as
- * live and echoes the timetable as the "estimate" (delay 0), so a 1:29 pm trip read at 10:16 am said On time. A row
+ * live and echoes the timetable as the "estimate" (delay 0), so a 1:29pm trip read at 10:16am said On time. A row
  * carries live data when the leg is live with an estimate and either the estimate moved (a real delay or early
  * running), the vehicle is placed (position or stops away), or the service leaves within LIVE_HORIZON_MS. Otherwise
- * the row says Scheduled.
+ * the row says Timetable.
  */
 export function hasLiveData(l: LiveLeg | null | undefined, now: number): boolean {
   if (!l || !l.realtime) return false;
@@ -148,7 +149,7 @@ export function tripLines<L extends { kind?: string; line?: string | null }>(leg
 
 /**
  * Whether a trip row's get off column goes under the get on column instead of beside it: when two columns of
- * "12:56 pm" at the current text size do not fit beside the badge (big Dynamic Type, narrow phones).
+ * "12:56pm" at the current text size do not fit beside the badge (big Dynamic Type, narrow phones).
  * `width` is the window width in points; row padding and the badge take 136.
  */
 export function stackColumns(width: number, fontScale: number): boolean {
