@@ -6,7 +6,7 @@ The iPhone and Android apps are one Expo app (`app/`). Anything below marked "ov
 
 ## Build 214 (1 Nov, branch `build-214-rc`)
 * Get off now at the live arrival minus 38 s (30 s plus the feed's lag), never more than 40 s early: lands about 30 s before the train stops.
-* "Held, stay on": one quiet note a minute after Get off now when the train is held outside the stop; card "Held · stay on for Croydon", Lock Screen "Held, stay on".
+* "Held, stay on": one quiet note a minute after Get off now when the train is held outside the stop; Lock Screen card "Held, stay on".
 * "Timetable" for every time with no live data; times written "7:52pm"; error messages without the data provider's name.
 
 ## Fix-all (1 Nov, branch `fix-all-1nov`, for build 214, not built)
