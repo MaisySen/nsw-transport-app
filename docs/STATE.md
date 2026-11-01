@@ -8,6 +8,10 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 
 ## Live now
 
+### Server deploy 1 Nov, 11:11 PM
+* Server transport-api d47e81c3-acb7-4f19-92b3-5b1e36fe1275 (server-getoff-1nov 58f778b: server-214 + locked screens live + feed hang fix + real-time harness fixes + Get off now race fix); roll back 279d1e44-24b2-40f0-b0c1-64b9f571697c. Verified 11:12 PM (verify-deploy all ok, --live ok, train feeds live on real data) and watched to 11:27 PM (0 errors). Switches unchanged.
+* Deploy the server from `server-tripflow` (moved up to this commit with its records) or a branch that contains it; never from main.
+
 ### Trip flow 2 live (31 Oct, 11:28 PM)
 * Server transport-api 9250ee58-1361-4000-bc80-42093664f888 (server-tripflow 93f2c8c); roll back b1feea1d-ec97-4676-bca5-cf34796173d7.
 * Runtime 1.2.0 production update group 6496b2d0-edf2-443d-969a-4f985671fcdf (tripflow-p2 e442b73); roll back to embedded.

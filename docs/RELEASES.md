@@ -63,7 +63,8 @@ Public TestFlight (since 25 Oct, 8:41 AM): external group "Public" `36f40c38-274
 | Server deploy | transport-api cfaa9516-46f6-4f93-8b46-1e3fbf80716b | 12:30 AM | server-tripflow 14745cf |
 | Server deploy | transport-api a4fd39b0-7092-4a6d-a95a-8aff2f09e762 | 12:44 AM | server-tripflow f62b276 |
 | Server deploy | transport-api 2a37431b-10ca-4d69-a2bd-71a11cd70882 | 1:12 AM | server-tripflow 0fb4016 |
-| Server deploy (current) | transport-api 279d1e44-24b2-40f0-b0c1-64b9f571697c (arrival clip for build 212); roll back in order to 2a37431b, a4fd39b0, cfaa9516, ee87bf7f, 203dd435, 07423792, 9250ee58, b1feea1d | 1:46 AM | server-tripflow e1b3d47 |
+| Server deploy | transport-api 279d1e44-24b2-40f0-b0c1-64b9f571697c (arrival clip for build 212); roll back in order to 2a37431b, a4fd39b0, cfaa9516, ee87bf7f, 203dd435, 07423792, 9250ee58, b1feea1d | 1:46 AM | server-tripflow e1b3d47 |
+| Server deploy (current, 1 Nov) | transport-api d47e81c3-acb7-4f19-92b3-5b1e36fe1275 (build 214 server half, locked screens live, feed hang fix, real-time harness fixes #2 to #5, Get off now race fix); roll back first to 279d1e44-24b2-40f0-b0c1-64b9f571697c, then the chain above | 11:11 PM 1 Nov | server-getoff-1nov 58f778b |
 | App (not published) | tripflow-p2 (see CHANGELOG) | 1:15 AM | no update sent |
 
 ## iPhone (native SwiftUI)
