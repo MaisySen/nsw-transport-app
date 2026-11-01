@@ -4,10 +4,13 @@
 // 1. With the app closed, a link made its screen the only one in the stack: no Back, no tab bar (since the Expo app,
 //    24-25 Oct). The start screen is now the anchor under it (unstable_settings.anchor = 'index'); Back opens Home.
 //    Checked with expo-router's own state functions, the ones its linking runs on a cold start.
-// 2. The "Your trip" widget during a trip opened Home (nswtransport://, since build 204); it opens the live trip.
+// 2. The "Your trip" widget during a trip opened Home (nswtransport://, since build 204): native, in
+//    backnav1nov-native.test.mjs, needs a build.
 // 3. Siri / Shortcuts "Start my commute" handed its link to the system before the screens listened (lost on a cold
 //    start); it now waits for the root layout and opens on top of the screen in view.
-// 4. The Apple Watch reopened the trip screen on every return to the app (build 213), so Back did not stay.
+// 4. The Apple Watch reopened the trip screen on every return to the app (build 213): native, in
+//    backnav1nov-native.test.mjs, needs a build.
+// This file is JavaScript only (the update for runtime 1.3.0): it passes with build 214's native code as it is.
 // Run: TZ=Australia/Sydney OFFLINE=1 node --test test/backnav1nov.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -123,18 +126,6 @@ test('every link the native code opens is a screen of the app (none lands on Not
   }
 });
 
-test('the "Your trip" widget during a trip opens the live trip, like the Lock Screen card and the Island', () => {
-  const w = read('targets/widget/TransportWidgets.swift');
-  const t = read('targets/widget/WidgetText.swift');
-  assert.match(t, /static let liveTripURL = URL\(string: "nswtransport:\/\/go"\)/);
-  assert.match(w, /var url: URL\? \{ live \? WidgetText\.liveTripURL :/);
-  assert.match(w, /private func link\(_ t: TripLine\) -> URL\? \{\s*entry\.live \? WidgetText\.liveTripURL :/);
-  assert.match(w, /private var alertsLink: URL\? \{\s*entry\.live \? WidgetText\.liveTripURL :/);
-  // The trip entry has no stop ids, which is why tripURL gave nswtransport:// (Home).
-  assert.match(t, /guard !from\.isEmpty, !to\.isEmpty else \{ return URL\(string: "nswtransport:\/\/"\) \}/);
-  assert.equal((read('targets/widget/LiveTripActivityWidget.swift').match(/widgetURL\(URL\(string: "nswtransport:\/\/go"\)\)/g) || []).length, 3);
-});
-
 test('Siri and Shortcuts links wait for the screens, then open on top of the one in view', async () => {
   const L = await load('src/lib/appLinkInbox.ts');
   const opened = [];
@@ -182,16 +173,4 @@ test('screens that hide the bar have their own Back that works from a cold start
     assert.match(read(f), /router\.canGoBack\(\) \? router\.back\(\) : router\.replace\('\/'\)/, f);
   }
   assert.match(read('src/app/go.tsx'), /accessibilityLabel="Back"/);
-});
-
-test('Apple Watch: the trip screen opens by itself once per trip; a complication tap opens it every time', () => {
-  const s = read('targets/watch/TransportWatchApp.swift');
-  assert.match(s, /if p == \.active \{ model\.openTripOnce\(\) \}/);
-  assert.match(s, /\.onChange\(of: model\.live != nil\) \{ _, has in if has \{ model\.openTripOnce\(\) \} \}/);
-  assert.match(s, /\.onOpenURL \{ _ in model\.openTrip\(\) \}/);
-  assert.match(s, /static func shouldAutoOpen\(trip: String, lastOpened: String\?\) -> Bool \{ trip != lastOpened \}/);
-  assert.match(s, /NavigationLink\(value: WatchRoute\.trip\)/, 'the trip is pushed on the list, so the watch shows its Back');
-  assert.doesNotMatch(s, /navigationBarBackButtonHidden/);
-  const t = read('native-tests/native-audit/Tests/Watch/WatchRefreshLogicTests.swift');
-  assert.match(t, /func testTripScreenOpensByItselfOncePerTrip/);
 });
