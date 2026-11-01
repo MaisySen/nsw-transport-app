@@ -21,6 +21,8 @@ struct TransportWatchApp: App {
         }
         .onChange(of: phase, initial: true) { _, p in
             model.setForeground(p == .active)
+            // Build 213: the watch app opens straight to the trip screen while a trip runs.
+            if p == .active { model.openTrip() }
         }
     }
 }
@@ -376,6 +378,8 @@ struct ContentView: View {
         // Build 213: a complication or the Smart Stack trip card opens the trip screen when a trip runs.
         .onOpenURL { _ in model.openTrip() }
         .onChange(of: model.openTripPending) { _, on in if on { openTripIfLive() } }
+        // Build 213: a trip the phone starts while the watch app is on its first screen opens the trip screen.
+        .onChange(of: model.live != nil) { _, has in if has { model.openTrip() } }
     }
 
     private func openTripIfLive() {

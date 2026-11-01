@@ -17,8 +17,9 @@ Complications and Smart Stack (watch face editor or Smart Stack, "Transport", "N
 * Inline: "T1 4:12, Plat 2".
 * Corner: the countdown with the line and platform.
 
-## Build 213 (branch build-213-watch, proposed)
+## Build 213 (branch build-213-watch)
 
+* The watch app opens straight to the trip screen while a trip runs: on opening it, from a complication or the Smart Stack card (any link), and when the phone starts a trip while the app is on its first screen. Never over a screen you opened yourself.
 * Smart Stack trip card with its own watch layout (iOS 18, watchOS 11), moved by the server's pushes while the phone is locked.
 * Every row opens something: the trip opens the trip screen (End trip there, with a confirm), services open their own screen, complications open the trip while one runs.
 * Wrist taps while the app is open: stop next (one up tap), Get off now (three strong taps; one tap on old live times), arrived (success). Once each per stop per trip.

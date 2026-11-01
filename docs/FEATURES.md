@@ -4,11 +4,19 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Build 213 (1 Nov, branch `build-213-watch`, runtime 1.3.0)
+
+Everything in build 212, plus:
+* Dynamic Island compact: the stop name beside the time ("Strathfield   4:12", on board "Kings Cross   1:59", "Due" / "Now" never 0:00). Waiting, the stop you board at; on board and at Get off now (orange), the stop you get off at.
+* Kylie speaks with the app open: heads-up, Get off now and arrival play Kylie's own clip. In headphones she is heard even in Silent mode; on the speaker the Silent switch mutes her. Never a moment from before you opened the app, never twice with the alert.
+* Apple Watch you can use: the trip card in the Smart Stack with its own layout (iOS 18 with watchOS 11), moved by the server with the phone locked; the Watch app opens straight to the trip; every row opens something (trip, each commute service, each starred stop departure; starred stops still show their next 3); strong wrist taps (your stop next, three for Get off now, a success tap on arrival) while the Watch app is open; End trip from the wrist with a confirm; complications open the trip. See docs/WATCH.md.
+* Tapping an alert of the trip in progress opens the live trip; the Watching screen of that trip says Open trip.
+
 ## Build 212 (1 Nov, branch `build-212-rc`, runtime 1.3.0, TestFlight)
 
-* Proposed for build 213 (branch `build-213-watch`, not built): Apple Watch trip card in the Smart Stack with its own layout; Watch app trip screen with End trip; every Watch row opens something; stronger wrist taps (your stop next, Get off now x3, arrived) while the Watch app is open; complications open the trip. See docs/WATCH.md.
+* In build 213 (above): Apple Watch, Kylie with the app open, compact Island stop name.
 
-* Pending (branch `fix-never-spoke-1nov`, not published): with the app open, the app voices every trip moment itself at its moment (no wait after opening; nothing from before it was opened), heard in headphones even in Silent mode and quiet on the speaker in Silent mode, and the server's push stays soundless while the app is open. The voice is the phone's on 212 and Kylie's clip on a build with the in-app clip player (213, proposed). The open app rings and says the arrival in the refresh that sees it. Tapping an alert of the trip in progress opens the live trip (it opened the Watching screen, whose Stop watching ended a bus then train trip at the change).
+* In build 213 (JS from `fix-never-spoke-1nov`): with the app open, the app voices every trip moment itself at its moment (no wait after opening; nothing from before it was opened), heard in headphones even in Silent mode and quiet on the speaker in Silent mode, and the server's push stays soundless while the app is open. The voice is the phone's on 212 and Kylie's clip on a build with the in-app clip player (213, proposed). The open app rings and says the arrival in the refresh that sees it. Tapping an alert of the trip in progress opens the live trip (it opened the Watching screen, whose Stop watching ended a bus then train trip at the change).
 
 The Your trip widget follows a started trip from start to end: countdown to the live departure, Due, on board, your stop next, Get off now, Arrived, with the delay on the row and "about" or "No live data since" when the live times are old. The Lock Screen card and Dynamic Island show Due instead of a timer stuck at 0:00, keep the status on one line at every text size, and read the whole card as one sentence to VoiceOver. The Apple Watch shows the same moments. Arrival is spoken by Kylie ("You've arrived at your stop.") even when the phone is locked.
 

@@ -304,6 +304,24 @@ extension LiveTripAttributes.ContentState {
     /// Build 212: the stop alone for the Island beside its bell ("Croydon").
     public var compactStop: String { Naming.compact(Naming.short(getOffAt)) }
 
+    /// Build 213: the stop name for the compact Island ("Stop name   Time", Bidur 1 Nov). Waiting: the stop you board at
+    /// (the card's next stop while waiting); on board, at Get off now and arrived: the stop you get off at. Nil when the
+    /// card names no stop (the Island then keeps the line badge).
+    public func compactPlace(stale: Bool) -> String? {
+        let raw: String?
+        if phase == "wait" && !arrived(stale: stale) { raw = nextStop } else { raw = getOffAt }
+        guard let r = raw else { return nil }
+        let n = Naming.compact(Naming.short(r)).trimmingCharacters(in: .whitespaces)
+        return n.isEmpty ? nil : n
+    }
+
+    /// VoiceOver for the compact Island's stop: "Board at Strathfield", "Get off at Kings Cross", "Arrived at Kings Cross".
+    public func compactPlaceSpoken(stale: Bool) -> String {
+        if arrived(stale: stale) { return "Arrived at \(Naming.short(getOffAt))" }
+        if phase == "wait" { return "Board at \(Naming.short(nextStop ?? ""))" }
+        return "Get off at \(Naming.short(getOffAt))"
+    }
+
     public var arriveLine: String { "Arrive \(destination ?? getOffAt) \(Clock.time(arrival))" }
 
     /// "Arrive 5:28pm": the arrival when the whole line does not fit beside the next stop.

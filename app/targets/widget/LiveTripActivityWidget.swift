@@ -283,23 +283,76 @@ struct LiveTripTitle: View {
     }
 }
 
-/// Before boarding the line badge; on board just where you get off with a colon ("Rhodes:"), short so the system
-/// clock beside the island stays visible (28 Oct: "Off <station>" and "in 2 minutes" covered it).
+/// Build 213 (1 Nov, Bidur: "Stop name.    Time", "This is how it should be in dynamic island. It was like that before"):
+/// the compact Island is the stop name beside the time. Waiting, the stop you board at; on board and at Get off now, the
+/// stop you get off at (orange at Get off now); arrived, where you are. The line badge only when no stop name is known.
+/// Build 212's bell before the name (15e0a8d, G10) left "🔔 Syd..." or "🔔 ..." in the 52 pt the Island gives, which
+/// is the regression. The name keeps the 64 pt cap so the system clock stays visible (28 Oct), drops "Station", then
+/// takes two short lines ("Kings / Cross"), and only then shrinks; the native audit probes it (island-compact-stop) and
+/// app/test/island213.test.mjs locks the order so it cannot regress again.
 struct LiveTripCompactLeading: View {
     var state: LiveTripAttributes.ContentState
     var stale = false
     var body: some View {
-        if state.phase == "ride" && !state.arrived(stale: stale) {
-            // Build 212 (G10): the bell the stop track uses for your stop and the stop name ("🔔 Croydon"), not
-            // "Croydon:" beside a clock time, which read as the time you would get there.
-            (Text(Image(systemName: "bell.fill")).font(.caption2) + Text(" " + state.compactStop).font(.caption.weight(.semibold)))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: 64, alignment: .leading)
-                .accessibilityLabel("Get off at \(state.getOffAt)")
+        if let name = state.compactPlace(stale: stale) {
+            let parts = IslandName.split(name)
+            let off = state.countdownWord(stale: stale) == "Now"
+            ViewThatFits(in: [.horizontal, .vertical]) {
+                Text(name).font(.caption.weight(.semibold)).lineLimit(1).fixedSize()
+                if let p = parts {
+                    VStack(alignment: .leading, spacing: -1) {
+                        Text(p.0).lineLimit(1).fixedSize()
+                        Text(p.1).lineLimit(1).fixedSize()
+                    }
+                    .font(.caption2.weight(.semibold))
+                }
+                Text(name).font(.caption2.weight(.semibold)).lineLimit(1).fixedSize()
+                // Last: shrunk, on two lines when it has two words; the audit's probe fails the run if it is still cut.
+                if let p = parts {
+                    VStack(alignment: .leading, spacing: -1) {
+                        IslandNameLine(text: p.0)
+                        IslandNameLine(text: p.1)
+                    }
+                } else {
+                    IslandNameLine(text: name)
+                }
+            }
+            .foregroundStyle(off ? Color.orange : Color.white)
+            .frame(maxWidth: 64, alignment: .leading)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(state.compactPlaceSpoken(stale: stale))
         } else {
             WidgetLineBadge(line: state.line, colorHex: state.lineColorHex, mode: state.mode)
         }
+    }
+}
+
+/// One line of the stop name in the compact Island, shrunk to half before it is cut (probed by the native audit).
+struct IslandNameLine: View {
+    var text: String
+    var body: some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
+            .lineProbe("island-compact-stop", text: text, lines: 1, font: .caption2.weight(.semibold), minScale: 0.5)
+    }
+}
+
+/// Two short lines for a stop name in the compact Island: split at the space nearest the middle ("Kings" / "Cross",
+/// "Macquarie" / "University"). Nil for a one word name.
+enum IslandName {
+    static func split(_ s: String) -> (String, String)? {
+        let words = s.split(separator: " ").map(String.init)
+        guard words.count >= 2 else { return nil }
+        var best = 1
+        var bestDiff = Int.max
+        for i in 1..<words.count {
+            let a = words[..<i].joined(separator: " ").count
+            let b = words[i...].joined(separator: " ").count
+            if abs(a - b) < bestDiff { bestDiff = abs(a - b); best = i }
+        }
+        return (words[..<best].joined(separator: " "), words[best...].joined(separator: " "))
     }
 }
 

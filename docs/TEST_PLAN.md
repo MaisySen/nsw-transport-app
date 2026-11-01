@@ -2,6 +2,12 @@
 
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
+## Build 213 together (1 Nov, branch build-213-watch)
+- `app/test/island213.test.mjs` (5): the compact Island is the stop name beside the time (no bell, no colon), boarding stop while waiting, stop off on board and at Get off now (orange), arrived where you are, badge only with no stop name; fits before it shrinks (one line, two short lines, smaller, then shrunk to half with the audit probe island-compact-stop); trailing time with Due / Now; expanded and minimal unchanged; the audit draws all three regions on both Island phones. Failing first on 0c989a6: files/day-1nov/failing-first-build213.txt.
+- `app/test/build213.test.mjs` (3): native `audioRoute` and `playAlertClip` match the JS feature detection (same arguments); ClipPlayer plays only the three bundled clips, playback session in headphones (heard in Silent mode), ambient on the speaker (Silent mutes it), lets the session go with notifyOthersOnDeactivation and returns to ambient; no audio background mode; the Watch app opens straight to the trip (on opening, onOpenURL, a trip the phone starts) and never over a screen the person opened; every Watch row is a button; complications open the trip.
+- `app/test/build212.test.mjs`: the bell assertion (212 G10) now asserts the compact Island's stop name.
+- Native audit (ios-native-audit.yml) before the build: trip-compact-leading in every scenario on std and Pro Max at default and xxxLarge, the watch trip card (trip-watch), the Watch trip and service screens.
+
 ## Apple Watch, build 213 (1 Nov, branch build-213-watch)
 - `app/test/watchshare.test.mjs` (+3): the trip id goes with the trip card only; End trip from the watch ends only the trip it showed, within 10 minutes, never from the future or for an unknown ask; the watch app sends endTrip with a queued fallback, confirms, and plays the three moment taps; WatchLink keeps endTrip (message and queued user info); the Live Activity declares the small family. Failing first: files/day-1nov/failing-first-watch-213.txt (3 of 3 fail on c1cc1b6).
 - `app/test/build212.test.mjs`: spokenCountdown count 4 -> 5 (the watch card).

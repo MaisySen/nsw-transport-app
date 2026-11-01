@@ -107,6 +107,18 @@ public class TransportIOSModule: Module {
       }
     }
 
+    /// Build 213 (1 Nov, "Never spoke"): where the sound goes now, "headphones", "speaker" or "other" (ClipPlayer.route).
+    Function("audioRoute") { () -> String in
+      ClipPlayer.route()
+    }
+
+    /// Build 213: plays one of Kylie's bundled clips with the app open (getoff_soon, getoff_now, arrival). headphones true
+    /// is heard in the ears in Silent mode; false follows the Silent switch. False when it cannot play (the JS then says
+    /// the words). Feature detected by the JS (nativeExtras.clipAudio): builds before 213 have neither function.
+    Function("playAlertClip") { (name: String, headphones: Bool) -> Bool in
+      ClipPlayer.shared.play(name, headphones: headphones)
+    }
+
     /// Lets the alert audio session go once the last spoken alert is done, so other audio resumes as it was.
     Function("endAlertAudio") { () -> Void in
       do {
@@ -158,13 +170,13 @@ public class TransportIOSModule: Module {
       return true
     }
 
-    /// From the build with the Apple Watch app: the watch's context (JSON from platform/watchShare.ts). False when
-    /// this phone cannot talk to a watch.
     /// Build 213: what the Apple Watch asked for (End trip), as JSON {do, trip, at}, taken once; nil when nothing waits.
     Function("takeWatchAction") { () -> String? in
       WatchLink.shared.takeAction()
     }
 
+    /// From the build with the Apple Watch app: the watch's context (JSON from platform/watchShare.ts). False when
+    /// this phone cannot talk to a watch.
     Function("sendWatchContext") { (json: String) -> Bool in
       WatchLink.shared.send(json)
     }

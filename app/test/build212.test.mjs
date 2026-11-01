@@ -121,7 +121,9 @@ test('Live Activity: one line status, Island wording, VoiceOver for the countdow
   assert.match(w, /lineProbe\("lock-status"/);
   assert.match(w, /lineProbe\(probe, text: last, lines: 1/);
   assert.doesNotMatch(w, /probe: "lock-detail", lines: 2/);
-  assert.match(w, /Text\(Image\(systemName: "bell\.fill"\)\)\.font\(\.caption2\) \+ Text\(" " \+ state\.compactStop\)/);
+  // Build 213 (Bidur 1 Nov, "Stop name.    Time"): the compact Island is the stop name beside the time, no bell
+  // (island213.test.mjs locks it).
+  assert.match(w, /state\.compactPlace\(stale: stale\)/);
   assert.match(w, /\.accessibilityLabel\(state\.spokenSummary\(stale: stale\)\)/);
   // 4 on the Lock Screen card and the Island, 1 on the Apple Watch card (build 213).
   assert.equal((w.match(/spoken: state\.spokenCountdown\(stale: stale\)/g) || []).length, 5);
