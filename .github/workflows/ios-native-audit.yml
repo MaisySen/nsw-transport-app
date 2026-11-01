@@ -45,7 +45,7 @@ jobs:
       - name: iPhone simulator
         run: |
           xcrun simctl list devices available -j > /tmp/devs.json
-          DEV=$(python3 sim.py ios /tmp/devs.json)
+          DEV=$(python3 sim.py phone /tmp/devs.json)
           if [ -z "$DEV" ]; then
             RT=$(xcrun simctl list runtimes | grep -o 'com.apple.CoreSimulator.SimRuntime.iOS-[0-9-]*' | tail -1)
             for DT in $(xcrun simctl list devicetypes | grep -o 'com.apple.CoreSimulator.SimDeviceType.iPhone[^)]*' | tail -r); do

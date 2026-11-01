@@ -8,9 +8,17 @@
 set -u
 APP="$1"; OUT="$2"; DEV="$3"; BID=com.maisysen.nswtransport
 mkdir -p "$OUT"
-xcrun simctl install "$DEV" "$APP"
+xcrun simctl install "$DEV" "$APP" || { echo "install failed"; exit 1; }
+xcrun simctl get_app_container "$DEV" "$BID" >/dev/null || { echo "app not installed"; exit 1; }
 for s in location location-always photos contacts calendar; do xcrun simctl privacy "$DEV" grant "$s" "$BID" 2>/dev/null || true; done
-shot() { xcrun simctl io "$DEV" screenshot "$OUT/$1.png" >/dev/null 2>&1 && echo "{\"name\":\"$1\",\"url\":\"$2\"}" >> "$OUT/manifest.jsonl"; }
+# A picture of the screen; the error is printed (run 41283876166 kept none and said nothing).
+shot() {
+  if xcrun simctl io "$DEV" screenshot --type=png "$OUT/$1.png" || xcrun simctl io "$DEV" screenshot --type=png --display=internal "$OUT/$1.png"; then
+    echo "{\"name\":\"$1\",\"url\":\"$2\"}" >> "$OUT/manifest.jsonl"
+  else
+    echo "no picture for $1"
+  fi
+}
 stop() { xcrun simctl terminate "$DEV" "$BID" >/dev/null 2>&1 || true; sleep 2; }
 # First open of the fresh install (Home, then its one-time set up questions).
 xcrun simctl launch "$DEV" "$BID" >/dev/null; sleep 30; shot "00-first-open" ""
@@ -39,4 +47,7 @@ for c in "${CASES[@]}"; do
   sleep 9; shot "warm-$name" "$url"
 done
 stop
-ls "$OUT" | wc -l
+N=$(ls "$OUT"/*.png 2>/dev/null | wc -l | tr -d ' ')
+echo "$N pictures"
+# 1 first open + cold and warm for each case; fewer means the check did not run, which must not pass.
+test "$N" -ge $((1 + 2 * ${#CASES[@]})) || { echo "ENTRY CHECK INCOMPLETE: $N pictures"; exit 1; }
