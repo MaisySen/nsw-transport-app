@@ -98,6 +98,9 @@ public enum WidgetText {
         return s
     }
 
+    /// The live trip screen: what the Lock Screen card, the Dynamic Island and the "Your trip" widget open.
+    public static let liveTripURL = URL(string: "nswtransport://go")
+
     /// The link a widget row opens: that trip in the app (route trip?from=&fromName=&to=&toName=).
     public static func tripURL(from: String, to: String, leave: Date?, fromName: String = "", toName: String = "") -> URL? {
         guard !from.isEmpty, !to.isEmpty else { return URL(string: "nswtransport://") }

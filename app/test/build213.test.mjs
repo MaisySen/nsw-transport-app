@@ -35,9 +35,12 @@ test('native clip player: headphones play through Silent, the speaker follows Si
 
 test('Watch app: opens straight to the trip while one runs, on a tap anywhere and when the phone starts one', () => {
   const w = read('targets/watch/TransportWatchApp.swift');
-  assert.match(w, /if p == \.active \{ model\.openTrip\(\) \}/, 'opening the app');
+  // 1 Nov back-nav audit: once per trip (WatchNav.shouldAutoOpen), so Back to the first screen stays on a wrist raise;
+  // openTripOnce goes through openTrip. Complication and Smart Stack taps still open it every time.
+  assert.match(w, /if p == \.active \{ model\.openTripOnce\(\) \}/, 'opening the app');
+  assert.match(w, /if WatchNav\.shouldAutoOpen\(trip: tripKey\(l\), lastOpened: autoOpened\) \{ openTrip\(\) \}/);
   assert.match(w, /\.onOpenURL \{ _ in model\.openTrip\(\) \}/, 'complications and the Smart Stack card');
-  assert.match(w, /\.onChange\(of: model\.live != nil\) \{ _, has in if has \{ model\.openTrip\(\) \} \}/, 'a trip started on the phone');
+  assert.match(w, /\.onChange\(of: model\.live != nil\) \{ _, has in if has \{ model\.openTripOnce\(\) \} \}/, 'a trip started on the phone');
   assert.match(w, /if model\.live != nil, path\.isEmpty \{ path\.append\(WatchRoute\.trip\) \}/, 'never over a screen the person opened');
   // every surface is a button: trip row, commute services, starred stops and their departures
   assert.match(w, /NavigationLink\(value: WatchRoute\.trip\) \{ LiveTripRow/);

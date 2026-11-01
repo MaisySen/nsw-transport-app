@@ -237,7 +237,9 @@ jobs:
         run: |
           mkdir -p "$GITHUB_WORKSPACE/out"
           WS=$(ls -d ios/*.xcworkspace | head -1); SCHEME=$(basename "$WS" .xcworkspace)
-          xcodebuild build -workspace "$WS" -scheme "$SCHEME" -configuration Release -sdk iphonesimulator \
+          # No -sdk: it forced the Watch targets onto the iOS SDK (run 41282933055: Complications.swift "accessoryCorner is
+          # unavailable in iOS"); the destination picks each target's own simulator, as in the module job.
+          xcodebuild build -workspace "$WS" -scheme "$SCHEME" -configuration Release \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath ios/dd \
             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO > "$GITHUB_WORKSPACE/out/entry-build.log" 2>&1 \
             || { grep -E "error:" "$GITHUB_WORKSPACE/out/entry-build.log" | sort -u | head -80; tail -40 "$GITHUB_WORKSPACE/out/entry-build.log"; exit 1; }

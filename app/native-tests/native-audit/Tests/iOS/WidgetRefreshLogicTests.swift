@@ -124,4 +124,19 @@ final class WidgetRefreshLogicTests: XCTestCase {
         XCTAssertEqual(e.ago?.hasPrefix("No live data since"), true)
         XCTAssertFalse(e.trips[0].isLive)
     }
+
+    /// 1 Nov back-nav audit (Bidur on build 214: "Widget missing back button or app screen?"): a tap on the "Your trip"
+    /// widget during a trip opens the live trip (nswtransport://go), like the Lock Screen card and the Island. It opened
+    /// Home (nswtransport://) since build 204. A saved trip's widget still opens that trip.
+    func testYourTripWidgetOpensTheLiveTrip() {
+        for phase in ["wait", "ride", "arrived"] {
+            let e = NextTripProvider.liveEntry(Self.card(phase: phase, departs: phase == "wait" ? 240 : nil, legArrives: 1200), now: Self.now)
+            XCTAssertTrue(e.live)
+            XCTAssertEqual(e.url?.absoluteString, "nswtransport://go", "phase \(phase)")
+        }
+        XCTAssertEqual(WidgetText.liveTripURL?.absoluteString, "nswtransport://go")
+        let saved = NextTripEntry.sample
+        XCTAssertFalse(saved.live)
+        XCTAssertEqual(saved.url?.host, "trip")
+    }
 }

@@ -35,4 +35,12 @@ final class WatchRefreshLogicTests: XCTestCase {
         s.commuteAt = now.addingTimeInterval(-300)
         XCTAssertTrue(WatchRefresh.commuteStale(s, key: "a>b", now: now), "5 minutes old")
     }
+
+    /// 1 Nov back-nav audit: the watch app opens the trip screen by itself once per trip, so Back to the first screen
+    /// stays there when the wrist goes down and up again (build 213 reopened the trip on every return to the app).
+    func testTripScreenOpensByItselfOncePerTrip() {
+        XCTAssertTrue(WatchNav.shouldAutoOpen(trip: "trip-a", lastOpened: nil), "first look at a trip")
+        XCTAssertFalse(WatchNav.shouldAutoOpen(trip: "trip-a", lastOpened: "trip-a"), "same trip after Back")
+        XCTAssertTrue(WatchNav.shouldAutoOpen(trip: "trip-b", lastOpened: "trip-a"), "a new trip")
+    }
 }

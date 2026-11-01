@@ -9,6 +9,7 @@ import { startAppPoll } from '@/lib/activity';
 import { startPacks } from '@/lib/timetablePack';
 import { endLive, getLive, setupLiveNotifications } from '@/lib/live';
 import { alertTapRoute } from '@/lib/alertTapCore';
+import { appPath, setAppLinkHandler } from '@/lib/appLinkInbox';
 import { finishProfileMove } from '@/lib/device';
 import { finishServerMove } from '@/lib/serverMove';
 import { configDue, refreshConfig } from '@/lib/config';
@@ -53,6 +54,13 @@ function systemUI(): any {
 // is reported once to the server (lib/crash.ts). Plain React Native only, so it cannot fail the way a screen did.
 // How many times Try again or Go to Home was pressed this run: kept outside the screen, which is drawn anew each time.
 let boundaryTries = 0;
+// Back from anything opened from outside the app (1 Nov 2026, Bidur on build 214: "Widget missing back button or app
+// screen?"). A widget, Lock Screen, StandBy, Control Center, Siri or site link opened with the app closed made its
+// screen the only one in the stack: no Back and no tab bar. With the start screen as the anchor, that screen opens on
+// top of it, and Back (the button or the swipe) goes to it, which opens Home, or Simple mode when that is on.
+// Not '(tabs)': the app's normal start (no link) would then skip the Simple mode choice in index.tsx.
+export const unstable_settings = { anchor: 'index' };
+
 export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   const dark = useColorScheme() === 'dark';
   const [tries, setTriesState] = useState(boundaryTries);
@@ -165,6 +173,14 @@ function RootLayout() {
       if (to === 'watch') router.push({ pathname: '/watch/[id]', params: { id: String(d.watch) } });
     };
     const sub = Notifications.addNotificationResponseReceivedListener(openFromAlert);
+    // Siri and Shortcuts links (appLinkInbox.ts) open now that the screens are ready, on top of the one in view.
+    // A push before the stack has mounted throws; it is tried again a moment later (5 times, 300 ms apart).
+    const links = setAppLinkHandler((url) => {
+      const to = appPath(url);
+      if (!to || to === '/') return;
+      const go = (n: number) => { try { router.push(to as any); } catch { if (n < 5) setTimeout(() => go(n + 1), 300); } };
+      setTimeout(() => go(0), 0);
+    });
     // The tap that opened a closed app arrived before this listener existed: read it once, after the first screen mounts.
     const coldTap = setTimeout(() => {
       try {
@@ -181,7 +197,7 @@ function RootLayout() {
         else if (typeof N.getLastNotificationResponseAsync === 'function') N.getLastNotificationResponseAsync().then(take).catch(() => {});
       } catch {}
     }, 0);
-    return () => { poll.remove(); lastPoll.remove(); sub.remove(); clearTimeout(first); clearTimeout(coldTap); };
+    return () => { poll.remove(); lastPoll.remove(); sub.remove(); links(); clearTimeout(first); clearTimeout(coldTap); };
   }, [ready]);
 
   // The window behind every screen takes the theme's background (expo-system-ui, in every build), so a push, a
@@ -204,7 +220,7 @@ function RootLayout() {
         <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal', headerTintColor: c.tint, contentStyle: { backgroundColor: c.bg }, orientation }}>
           {/* The opening route only redirects to Home; without this it drew an empty screen titled "index" for a frame (g13). */}
           <Stack.Screen name="index" options={{ headerShown: false, animation: 'none' }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false, animation: 'none' }} />
           <Stack.Screen name="stop/[id]" options={stopHeaderOptions(Platform.OS)} />
           <Stack.Screen name="trip" options={{ title: 'Trips', headerLargeTitle: false }} />
           <Stack.Screen name="board" options={{ headerShown: false, presentation: Platform.OS === 'ios' ? 'fullScreenModal' : 'card', orientation: 'all' }} />

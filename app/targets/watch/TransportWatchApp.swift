@@ -21,8 +21,10 @@ struct TransportWatchApp: App {
         }
         .onChange(of: phase, initial: true) { _, p in
             model.setForeground(p == .active)
-            // Build 213: the watch app opens straight to the trip screen while a trip runs.
-            if p == .active { model.openTrip() }
+            // Build 213: the watch app opens straight to the trip screen while a trip runs. 1 Nov back-nav audit: once
+            // per trip, so Back to the first screen stays there when the wrist goes down and up again (it reopened the
+            // trip every time). A complication or Smart Stack tap still opens the trip every time (onOpenURL).
+            if p == .active { model.openTripOnce() }
         }
     }
 }
@@ -115,7 +117,20 @@ final class WatchModel: NSObject, ObservableObject {
     /// From a complication or the Smart Stack: go to the trip when one runs.
     func openTrip() {
         now = Date()
-        if live != nil { openTripPending = true }
+        if let l = live { openTripPending = true; autoOpened = tripKey(l) }
+    }
+
+    /// The trip the app last opened by itself (1 Nov back-nav audit), so it opens the trip screen once per trip. Kept
+    /// in memory only: a wrist raise keeps the screen the person left, and a fresh start of the watch app during a trip
+    /// still opens straight to the trip, as in build 213.
+    private var autoOpened: String?
+
+    /// The app coming to the front, or a trip the phone has just started: the trip screen opens if this trip has not
+    /// opened it yet. After Back, the first screen stays.
+    func openTripOnce() {
+        now = Date()
+        guard let l = live else { return }
+        if WatchNav.shouldAutoOpen(trip: tripKey(l), lastOpened: autoOpened) { openTrip() }
     }
 
     var commuteServices: [WService] {
@@ -378,8 +393,8 @@ struct ContentView: View {
         // Build 213: a complication or the Smart Stack trip card opens the trip screen when a trip runs.
         .onOpenURL { _ in model.openTrip() }
         .onChange(of: model.openTripPending) { _, on in if on { openTripIfLive() } }
-        // Build 213: a trip the phone starts while the watch app is on its first screen opens the trip screen.
-        .onChange(of: model.live != nil) { _, has in if has { model.openTrip() } }
+        // Build 213: a trip the phone starts while the watch app is on its first screen opens the trip screen (once).
+        .onChange(of: model.live != nil) { _, has in if has { model.openTripOnce() } }
     }
 
     private func openTripIfLive() {
@@ -391,6 +406,12 @@ struct ContentView: View {
 
 /// Build 213: the screens the watch app opens besides stops and services.
 enum WatchRoute: Hashable { case trip }
+
+/// 1 Nov back-nav audit: when the watch app opens the trip screen by itself. Pure, so the native audit tests it.
+enum WatchNav {
+    /// Once per trip: a trip it has not opened yet (a new trip, or the first look at this one).
+    static func shouldAutoOpen(trip: String, lastOpened: String?) -> Bool { trip != lastOpened }
+}
 
 // MARK: Haptics (build 213)
 

@@ -115,7 +115,9 @@ struct NextTripEntry: TimelineEntry {
                          arrive: .now.addingTimeInterval(2100), isLive: false, status: "Timetable", platform: "Platform 2")],
         message: nil, fromID: "213410", toID: "200060")
 
-    var url: URL? { WidgetText.tripURL(from: fromID, to: toID, leave: nil, fromName: from, toName: to) }
+    /// What a tap opens. A trip in progress ("Your trip") opens the live trip, like the Lock Screen card and the Island
+    /// (1 Nov back-nav audit: it opened Home, since build 204, as the trip entry has no stop ids).
+    var url: URL? { live ? WidgetText.liveTripURL : WidgetText.tripURL(from: fromID, to: toID, leave: nil, fromName: from, toName: to) }
 }
 
 struct NextTripProvider: AppIntentTimelineProvider {
@@ -519,8 +521,12 @@ struct NextTripView: View {
 
     private func status(_ t: TripLine) -> String { t.tripRow == true ? t.status : WidgetText.status(isLive: t.isLive, status: t.status) }
 
-    private func link(_ t: TripLine) -> URL? { WidgetText.tripURL(from: entry.fromID, to: entry.toID, leave: t.leave, fromName: entry.from, toName: entry.to) }
-    private var alertsLink: URL? { WidgetText.alertsURL(from: entry.fromID, to: entry.toID, fromName: entry.from, toName: entry.to) }
+    private func link(_ t: TripLine) -> URL? {
+        entry.live ? WidgetText.liveTripURL : WidgetText.tripURL(from: entry.fromID, to: entry.toID, leave: t.leave, fromName: entry.from, toName: entry.to)
+    }
+    private var alertsLink: URL? {
+        entry.live ? WidgetText.liveTripURL : WidgetText.alertsURL(from: entry.fromID, to: entry.toID, fromName: entry.from, toName: entry.to)
+    }
 
     var body: some View {
         content.widgetURL(entry.trips.first.flatMap { link($0) } ?? entry.url)
