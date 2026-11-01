@@ -290,22 +290,27 @@ const OCC_GTFS = [
 
 class PB {
   constructor(buf, pos = 0, end = buf.length) { this.b = buf; this.p = pos; this.e = end; }
+  // Every read stays inside this message (1 Nov, feedTruncated): a field that runs past its end throws.
   varint() {
-    const b = this.b;
+    const b = this.b, e = this.e;
     let lo = 0, hi = 0, x, i = 0;
-    for (; i < 4; i++) { x = b[this.p++]; lo |= (x & 127) << (i * 7); if (x < 128) return { lo: lo >>> 0, hi: 0 }; }
+    for (; i < 4; i++) { if (this.p >= e) throw feedTruncated(); x = b[this.p++]; lo |= (x & 127) << (i * 7); if (x < 128) return { lo: lo >>> 0, hi: 0 }; }
+    if (this.p >= e) throw feedTruncated();
     x = b[this.p++]; lo |= (x & 127) << 28; hi = (x & 127) >> 4; if (x < 128) return { lo: lo >>> 0, hi };
-    for (i = 0; i < 5; i++) { x = b[this.p++]; hi |= (x & 127) << (i * 7 + 3); if (x < 128) break; }
+    for (i = 0; i < 5; i++) { if (this.p >= e) throw feedTruncated(); x = b[this.p++]; hi |= (x & 127) << (i * 7 + 3); if (x < 128) break; }
+    if (x >= 128) throw new Error("bad feed varint");
     return { lo: lo >>> 0, hi: hi >>> 0 };
   }
   // Plain number for varints up to 7 bytes (under 2^49), which is every id, count and timestamp in
   // these feeds; longer ones (negative numbers) go through varint() as before. Returns -1 to say so.
   small() {
-    const b = this.b, s = this.p;
+    const b = this.b, s = this.p, e = this.e;
+    if (s >= e) throw feedTruncated();
     let x = b[s];
     if (x < 128) { this.p = s + 1; return x; }
     let v = x & 127, m = 128;
     for (let i = 1; i < 7; i++) {
+      if (s + i >= e) throw feedTruncated();
       x = b[s + i]; v += (x & 127) * m;
       if (x < 128) { this.p = s + i + 1; return v; }
       m *= 128;
@@ -315,15 +320,15 @@ class PB {
   uint() { const n = this.small(); if (n >= 0) return n; const v = this.varint(); return v.hi * 4294967296 + v.lo; }
   int32() { const s = this.p, n = this.small(); if (n >= 0 && n < 2147483648) return n; this.p = s; return this.varint().lo | 0; }
   int64() { const n = this.small(); if (n >= 0) return n; const v = this.varint(); return v.hi & 0x80000000 ? -((~v.hi >>> 0) * 4294967296 + ((~v.lo >>> 0) + 1)) : v.hi * 4294967296 + v.lo; }
-  float() { const dv = new DataView(this.b.buffer, this.b.byteOffset + this.p, 4); this.p += 4; return dv.getFloat32(0, true); }
-  double() { const dv = new DataView(this.b.buffer, this.b.byteOffset + this.p, 8); this.p += 8; return dv.getFloat64(0, true); }
-  bytes() { const n = this.uint(); const s = this.p; this.p += n; return [s, this.p]; }
+  float() { if (this.p + 4 > this.e) throw feedTruncated(); const dv = new DataView(this.b.buffer, this.b.byteOffset + this.p, 4); this.p += 4; return dv.getFloat32(0, true); }
+  double() { if (this.p + 8 > this.e) throw feedTruncated(); const dv = new DataView(this.b.buffer, this.b.byteOffset + this.p, 8); this.p += 8; return dv.getFloat64(0, true); }
+  bytes() { const n = this.uint(); const s = this.p; if (n > this.e - s) throw feedTruncated(); this.p += n; return [s, this.p]; }
   str() { const [s, e] = this.bytes(); return TD.decode(this.b.subarray(s, e)); }
   skip(wt) {
-    if (wt === 0) { while (this.b[this.p++] >= 128); }
-    else if (wt === 1) this.p += 8;
+    if (wt === 0) this.varint();
+    else if (wt === 1) { if (this.p + 8 > this.e) throw feedTruncated(); this.p += 8; }
     else if (wt === 2) this.bytes();
-    else if (wt === 5) this.p += 4;
+    else if (wt === 5) { if (this.p + 4 > this.e) throw feedTruncated(); this.p += 4; }
     else throw new Error("bad wire type " + wt);
   }
   // Iterate fields: calls fn(fieldNumber, wireType) which must consume the value or return false.
@@ -488,18 +493,32 @@ function quietHint(cars) {
 // Hand rolled for speed: it walks only the entity level and the first bytes of each entity,
 // so a 2 MB bus feed costs one short loop per trip instead of a step per stop time update.
 let QP = 0;
+// A cut-off or corrupted feed (1 Nov, real-time harness F-NSWGARBAGE): every read is checked against the end of the
+// bytes, and a length that points past the end of its message throws. Before, qv read past the end (undefined < 128 is
+// false), so its loop never ended and the server copy spun until it was killed for CPU, failing every request and the
+// minute's pushes. loadFeed catches the throw and keeps the last good copy (with its own time).
+function feedTruncated() { return new Error("truncated feed"); }
 function qv(b) { // varint at QP, as a plain number (exact up to 2^53)
+  const end = b.length;
+  if (QP >= end) throw feedTruncated();
   let x = b[QP++];
   if (x < 128) return x;
   let v = x & 127, m = 128;
-  for (;;) { x = b[QP++]; v += (x & 127) * m; if (x < 128) return v; m *= 128; }
+  for (let i = 1; ; i++) {
+    if (QP >= end) throw feedTruncated();
+    if (i >= 10) throw new Error("bad feed varint");
+    x = b[QP++]; v += (x & 127) * m; if (x < 128) return v; m *= 128;
+  }
 }
-function qskip(b, wt) {
-  if (wt === 0) { while (b[QP++] >= 128); }
-  else if (wt === 1) QP += 8;
-  else if (wt === 2) { const n = qv(b); QP += n; }
-  else if (wt === 5) QP += 4;
+// QP must stay inside [0, lim] (lim: the end of the enclosing message).
+function qlen(b, lim) { const n = qv(b); if (n > lim - QP) throw feedTruncated(); return QP + n; }
+function qskip(b, wt, lim = b.length) {
+  if (wt === 0) qv(b);
+  else if (wt === 1) { if (QP + 8 > lim) throw feedTruncated(); QP += 8; }
+  else if (wt === 2) QP = qlen(b, lim);
+  else if (wt === 5) { if (QP + 4 > lim) throw feedTruncated(); QP += 4; }
   else throw new Error("bad wire type " + wt);
+  if (QP > lim) throw feedTruncated();
 }
 function indexFeed(buf, kind) {
   const want = kind === "tu" ? 3 : 4;
@@ -510,29 +529,31 @@ function indexFeed(buf, kind) {
   while (QP < end) {
     const tag = qv(buf), f = Math.floor(tag / 8), wt = tag & 7;
     if (f === 1) {
-      const he = qv(buf) + QP;
-      while (QP < he) { const t = qv(buf); if (Math.floor(t / 8) === 3) headerTs = qv(buf); else qskip(buf, t & 7); }
+      const he = qlen(buf, end);
+      while (QP < he) { const t = qv(buf); if (Math.floor(t / 8) === 3) headerTs = qv(buf); else qskip(buf, t & 7, he); }
+      if (QP > he) throw feedTruncated();
       continue;
     }
-    if (f !== 2) { qskip(buf, wt); continue; }
-    const ee = qv(buf) + QP;
+    if (f !== 2) { qskip(buf, wt, end); continue; }
+    const ee = qlen(buf, end);
     while (QP < ee) {
       const t = qv(buf);
-      if (Math.floor(t / 8) !== want) { qskip(buf, t & 7); continue; }
-      const n = qv(buf), s = QP, e = s + n;
+      if (Math.floor(t / 8) !== want) { qskip(buf, t & 7, ee); continue; }
+      const e = qlen(buf, ee), s = QP; // the message runs from after its length to e
       let tripId = null;
       while (QP < e) {
         const t2 = qv(buf);
         if (Math.floor(t2 / 8) === 1) {
-          const de = qv(buf) + QP;
+          const de = qlen(buf, e);
           while (QP < de) {
             const t3 = qv(buf);
-            if (Math.floor(t3 / 8) === 1) { const l = qv(buf); tripId = TD.decode(buf.subarray(QP, QP + l)); QP += l; }
-            else qskip(buf, t3 & 7);
+            if (Math.floor(t3 / 8) === 1) { const le = qlen(buf, de); tripId = TD.decode(buf.subarray(QP, le)); QP = le; }
+            else qskip(buf, t3 & 7, de);
           }
+          if (QP > de) throw feedTruncated();
           break; // the descriptor is all this pass needs; the rest of the message is skipped below
         }
-        qskip(buf, t2 & 7);
+        qskip(buf, t2 & 7, e);
       }
       QP = e;
       if (tripId) idx.set(tripId, [s, e]);
@@ -648,7 +669,14 @@ async function loadFeed(env, path, kind, maxAgeMs) {
   // answered before it finished (realtimeFor waits FEED_WAIT_MS at most), and the runtime can drop its unfinished work.
   // Before 26 Oct (g28) such a fetch stayed in feedMem for the life of the copy: no fresh feed again, and every later
   // board waited FEED_WAIT_MS for it.
-  if (hit && hit.job && !fresh && (hit.job.done || now - hit.job.at < FEED_JOB_MAX_MS)) return joinJob(hit.job, FEED_JOB_MAX_MS);
+  // A request that joins a fetch which then fails (a cut-off feed, an error answer) gets the last good copy too, as
+  // the request that started it does below (1 Nov, feedTruncated); before, it got no live data for that moment.
+  if (hit && hit.job && !fresh && (hit.job.done || now - hit.job.at < FEED_JOB_MAX_MS)) {
+    return joinJob(hit.job, FEED_JOB_MAX_MS).catch((e) => {
+      if (hit.buf && hit.idx) { feedFreshRow(path, kind).servedOld++; return hit; }
+      throw e;
+    });
+  }
   const promise = (async () => {
     // One copy per location is shared through Cloudflare's own fetch cache (good answers only): the same 15 s
     // sharing the Cache API gave, but the copy is stored outside this isolate, so it costs no CPU here.
@@ -686,7 +714,12 @@ function decodeFrom(feed, tripId) {
   if (feed.cache.has(tripId)) return feed.cache.get(tripId);
   const loc = feed.idx.get(tripId);
   let out = null;
-  if (loc) out = feed.kind === "tu" ? readTripUpdate(new PB(feed.buf, loc[0], loc[1])) : readVehiclePosition(new PB(feed.buf, loc[0], loc[1]));
+  // A trip whose bytes do not read (a corrupted message inside a feed that indexed) has no live data; the rest of the
+  // feed still serves (1 Nov, feedTruncated).
+  if (loc) {
+    try { out = feed.kind === "tu" ? readTripUpdate(new PB(feed.buf, loc[0], loc[1])) : readVehiclePosition(new PB(feed.buf, loc[0], loc[1])); }
+    catch (e) { out = null; }
+  }
   feed.cache.set(tripId, out);
   return out;
 }
