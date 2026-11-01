@@ -2,6 +2,10 @@
 
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
+## Get off now timing race (1 Nov, branch fix-getoff-1nov; server branch server-getoff-1nov)
+* `app/test/getoffrace1nov.test.mjs`: 6 tests, 6 pass (all 6 fail on 88c5aae). liveMomentCore (moment read rule, the ask's at=, one timer re-armed in one go with a leaky platform timer, the moment queue), liveEngine wiring, and the open app's loop on an injected clock with the real tripState.ts and the case feeds: S17a and S17b on 15 refresh phases x 4 answer times; the old step on the cached answers rings at 7:58:22 for 7:59 in S17a.
+* Real-time harness S17a/S17b 20x at speed 30 and 20x under CPU load against server-getoff-1nov: 0 flakes.
+
 ## Locked screens live (1 Nov, branch fix-lockedlive-1nov; server branch server-lockedlive)
 * `app/test/lockedlive1nov.test.mjs`: compiles `targets/widget/LiveCardFetch.swift` with `app/test/swift/livecardfetch/main.swift` (swiftc, skipped without it): asks only when the kept card is over 60 s old, no ask for the "none" or a shared profile, takes only a newer card (or an ended trip), 180 s / 300 s reloads capped at the arrival; and checks the widget's trip timeline and the Watch complication use it, the two copies identical. Both fail on fix-backnav-1nov (files/day-1nov/failing-first-lockedlive-app.txt).
 * `backend/test/locked-live-1nov.test.mjs` (server branch): run split followed in the server simulation (S3 split at Auburn, by our timetable and by the feed's next run letter, Get off now from the live 8:01 arrival), no lookups without a split, `/api/live-card` shape and profile rules, a card with `arrivedAt` ends at its first push, a card alone with no live reading ends within 30 min of its planned arrival. 7 of 8 fail on server-214 (files/day-1nov/failing-first-lockedlive-server.txt).

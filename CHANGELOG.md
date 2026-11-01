@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 1 Nov 2026
 
+### Get off now timing race, app (1 Nov ~9 PM; branch `fix-getoff-1nov` from fix-rt-1nov 88c5aae; NOT built, no OTA)
+* The open app's step at the exact Get off now moment (live arrival less 38 s) ran on the answers of the last 15 s refresh (`tickLive({ noFetch: true })`): an arrival that moved in the seconds before the moment, or in its second, was not seen and Get off now rang on the old arrival (real-time harness S17a: 160 s early). Now it reads again first (`refresh=1&at=<moment>`) and decides only on answers asked for at or after the moment; a failed read leaves it to the next 15 s refresh (never decided on older answers).
+* One moment timer, re-armed in one go with a generation (`liveMomentCore.ts` makeMomentTimer): a timer for an old moment never runs. A moment that comes while a refresh is running is kept and run after it (it was dropped).
+* JavaScript only: OTA on runtime 1.3.0 once server-getoff-1nov is deployed (an older server ignores `at`, and the moment's read is then a plain refresh, still newer than the cached answers).
+* Tests: `app/test/getoffrace1nov.test.mjs` (6; all 6 fail on 88c5aae). The same open-app loop with the old step rang S17a at 7:58:22 for 7:59 on 12 of 15 refresh phases; with the fix 15 of 15 at 8:00:22 for 8:01. `livefresh.test.mjs` source check allows the moment wrapper.
+
 ### Real-time harness fixes, app (1 Nov 8 PM; branch `fix-rt-1nov` from fix-lockedlive-1nov 5f4fa2e; NOT built, no OTA)
 * The trip watch (the server's alerts, Get off now among them) is asked again until the server has it: 5 s, 15 s, 30 s, 1 min, 2 min, then every 5 min while the app is open, and at once when it comes back to the front (live.ts, app/src/lib/tripRegCore.ts). It went once at Start trip, so no signal or a server blip at that moment meant no server alerts for the whole trip. Harness bug #3. JavaScript: over the air on runtime 1.3.0 (214), but only after server-rt-1nov is deployed (the key needs it).
 * Each registration has the phone's key; a time out is "unknown", asked again with the same key only from a server that says the key back (an older one would make a second watch); End trip stops the watch by key (and id), asked again until the server answers, so a watch the app never heard back from stops too. Harness bug #4.
