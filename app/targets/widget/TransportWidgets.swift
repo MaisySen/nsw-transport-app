@@ -8,13 +8,9 @@ struct TransportWidgets: WidgetBundle {
     var body: some Widget {
         NextTripWidget()
         StopBoardWidget()
-        // Build 213: on iOS 18 the trip card also has an Apple Watch layout (Smart Stack); the Lock Screen card and the
-        // Island are the same views as before.
-        if #available(iOS 18.0, *) {
-            LiveTripActivityWidgetWatch()
-        } else {
-            LiveTripActivityWidget()
-        }
+        // Build 213: on iOS 18 the trip card also has an Apple Watch layout (Smart Stack), set inside the widget itself
+        // (no if/else here: the widget bundle builder cannot take one). Lock Screen card and Island unchanged.
+        LiveTripActivityWidget()
         // Build 212 (G36): the followed-service Live Activity (TripLiveActivity) is no longer bundled: nothing ever
         // started it. Its views stay in the source for the native audit until they are removed with their tests.
         if #available(iOS 18.0, *) {

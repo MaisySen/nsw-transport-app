@@ -4,7 +4,18 @@ import SwiftUI
 
 /// Lock Screen card and Dynamic Island for a live trip started with Start trip.
 struct LiveTripActivityWidget: Widget {
+    /// Build 213: on iOS 18 the same card also has an Apple Watch layout (Smart Stack, watchOS 11, activity family
+    /// small); iOS 17 gets exactly the 212 configuration. One configuration either way (an if/else in the widget bundle
+    /// does not compile: audit run 41255069387). The availability branch with two return types is SE-0360.
     var body: some WidgetConfiguration {
+        if #available(iOS 18.0, *) {
+            return config.supplementalActivityFamilies([.small])
+        } else {
+            return config
+        }
+    }
+
+    private var config: some WidgetConfiguration {
         ActivityConfiguration(for: LiveTripAttributes.self) { context in
             // Build 213: the Apple Watch Smart Stack (iOS 18 with watchOS 11) gets its own layout, the Lock Screen keeps its card.
             LiveTripActivityContent(attrs: context.attributes, state: context.state, stale: context.isStale)
@@ -33,16 +44,6 @@ struct LiveTripActivityWidget: Widget {
             }
             .widgetURL(URL(string: "nswtransport://go"))
         }
-    }
-}
-
-/// Build 213: the same trip card with the Apple Watch layout (Smart Stack, watchOS 11 with iOS 18). Before, the watch
-/// drew the Dynamic Island's compact views (badge and a countdown) and nothing said where to get off. Registered in
-/// place of LiveTripActivityWidget on iOS 18 (TransportWidgets); the server's pushes move it with the phone locked.
-@available(iOS 18.0, *)
-struct LiveTripActivityWidgetWatch: Widget {
-    var body: some WidgetConfiguration {
-        LiveTripActivityWidget().body.supplementalActivityFamilies([.small])
     }
 }
 

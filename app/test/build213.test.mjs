@@ -46,3 +46,11 @@ test('Watch app: opens straight to the trip while one runs, on a tap anywhere an
   const cx = read('targets/watch-widget/Complications.swift');
   assert.match(cx, /\.widgetURL\(URL\(string: entry\.kind == \.live \? "nswtransport:\/\/watch\/trip" : "nswtransport:\/\/watch"\)\)/);
 });
+
+test('widget bundle: no if/else (WidgetBundleBuilder cannot take one; audit run 41255069387), the watch layout set in the widget', () => {
+  const b = read('targets/widget/TransportWidgets.swift');
+  assert.doesNotMatch(b, /\} else \{/);
+  assert.match(b, /\n\s*LiveTripActivityWidget\(\)\n/);
+  const w = read('targets/widget/LiveTripActivityWidget.swift');
+  assert.match(w, /if #available\(iOS 18\.0, \*\) \{\s*return config\.supplementalActivityFamilies\(\[\.small\]\)\s*\} else \{\s*return config\s*\}/);
+});
