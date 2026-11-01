@@ -87,7 +87,9 @@ enum TripMoments {
                 if k == .due { k = .wait; t = departs }
                 if k == .getOff || k == .arrived { k = .next; t = off }
             }
-            if let last = out.last, (order.firstIndex(of: k) ?? 0) <= (order.firstIndex(of: last.kind) ?? 0) { continue }
+            // Held: the moment it is in carries on, as a new entry at this time, so a complication's timer stops here
+            // (its entries drop the countdown once the data is old) and never counts past the moment.
+            if let last = out.last, (order.firstIndex(of: k) ?? 0) <= (order.firstIndex(of: last.kind) ?? 0) { k = last.kind; t = last.target }
             out.append(TripMoment(at: m.at, kind: k, target: t))
         }
         return out

@@ -49,13 +49,16 @@ struct NextEntry: TimelineEntry {
     /// "Strathfield to Kings Cross", "then 9:52am" or "Updated 9:41am".
     var detail: String?
     var relevance: TimelineEntryRelevance?
+    /// Build 214 (fix-all 1 Nov, A6): the commute times behind this entry are over 5 min old (the phone's live cap, R2):
+    /// the departure shows as its clock time, never a countdown, and the detail says when they are from.
+    var old: Bool = false
 
     var plat: String? { WText.platform(platform) }
 
-    /// "T1 4:12, Plat 2", counting down by itself.
+    /// "T1 4:12, Plat 2", counting down by itself; "T1 9:52am, Plat 2" once the times are old.
     var countdownText: Text {
         guard let t = target else { return Text(title) }
-        var s = Text(line.isEmpty ? "" : "\(line) ") + Text(t, style: .timer).monospacedDigit()
+        var s = Text(line.isEmpty ? "" : "\(line) ") + (old ? Text(Clock.hhmm(t)) : Text(t, style: .timer).monospacedDigit())
         if let p = plat { s = s + Text(", \(p)") }
         return s
     }
@@ -126,17 +129,26 @@ struct NextProvider: TimelineProvider {
             return [NextEntry(date: now, kind: .empty, title: c.home == nil || c.work == nil ? "Set Home and Work" : "Change Home or Work", detail: "on your iPhone")]
         }
         let services = snapshot.commuteKey == m.key ? WatchSnapshot.upcoming(snapshot.commute, now: now).filter { !$0.cancelled } : []
-        let stale = snapshot.commuteAt.map { now.timeIntervalSince($0) > 5 * 60 } ?? true
         let route = "\(WText.short(m.from.name)) to \(WText.short(m.to.name))"
+        // Build 214 (fix-all 1 Nov, A6): each entry is old or not at its own time (the timeline runs 20 to 60 min between
+        // reloads); an entry that turns 5 min old part way through is split there, so no countdown runs on old times.
+        let oldFrom = snapshot.commuteAt.map { $0.addingTimeInterval(5 * 60) } ?? .distantPast
         var out: [NextEntry] = []
         var start = now
         for (i, s) in services.enumerated() where s.time > now {
-            var detail = route
-            if i + 1 < services.count { detail = "then \(Clock.hhmm(services[i + 1].time))" }
-            if stale, let at = snapshot.commuteAt { detail = "Updated \(Clock.hhmm(at))" }
-            let soon = s.time.timeIntervalSince(start) < 20 * 60
-            out.append(NextEntry(date: start, kind: .commute, line: s.line, colorHex: s.colorHex, target: s.time, platform: s.platform,
-                                 title: m.title, detail: detail, relevance: TimelineEntryRelevance(score: soon ? 50 : 10)))
+            var starts = [start]
+            if oldFrom > start && oldFrom < s.time { starts.append(oldFrom) }
+            for at in starts {
+                let old = at >= oldFrom
+                var detail = route
+                if i + 1 < services.count { detail = "then \(Clock.hhmm(services[i + 1].time))" }
+                if old, let u = snapshot.commuteAt { detail = "Updated \(Clock.hhmm(u))" }
+                let soon = s.time.timeIntervalSince(at) < 20 * 60
+                var e = NextEntry(date: at, kind: .commute, line: s.line, colorHex: s.colorHex, target: s.time, platform: s.platform,
+                                  title: m.title, detail: detail, relevance: TimelineEntryRelevance(score: soon ? 50 : 10))
+                e.old = old
+                out.append(e)
+            }
             start = s.time
         }
         out.append(NextEntry(date: start, kind: .empty, title: m.title, detail: "Open Transport for times"))
@@ -189,7 +201,7 @@ struct NextView: View {
 
     private var circular: some View {
         ZStack {
-            if let r = entry.ringRange, let t = entry.target {
+            if let r = entry.ringRange, let t = entry.target, !entry.old {
                 ProgressView(timerInterval: r, countsDown: true, label: { EmptyView() }, currentValueLabel: { EmptyView() })
                     .progressViewStyle(.circular)
                     .tint(tint)
@@ -211,7 +223,15 @@ struct NextView: View {
 
     private var corner: some View {
         Group {
-            if let t = entry.target {
+            if let t = entry.target, entry.old {
+                // Build 214: old commute times as the clock time, never a countdown (A6).
+                Text(Clock.hhmm(t))
+                    .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .widgetAccentable()
+                    .widgetLabel { Text([entry.line, entry.plat].compactMap { $0 }.joined(separator: " ")) }
+            } else if let t = entry.target {
                 // One line, shrunk before it is cut (31 Oct readiness audit: "13:..." and "1:1..." on the 40 mm corner,
                 // "13:5" over "9" on 45 mm).
                 Text(t, style: .timer)

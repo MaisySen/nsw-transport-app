@@ -106,7 +106,12 @@ function run(name, src) {
   fs.writeFileSync(f, src);
   const bin = path.join(out, name);
   execFileSync(swiftc, [f, '-o', bin], { stdio: 'pipe', timeout: 280000 });
-  return Object.fromEntries(lines(execFileSync(bin, { encoding: 'utf8', timeout: 20000 })).map((r) => [r.id, r]));
+  // kinds: the moments with a held repeat folded into the one before it (a held moment is the same moment carried on, as a
+  // new entry so a complication's timer stops there); raw: as listed.
+  return Object.fromEntries(lines(execFileSync(bin, { encoding: 'utf8', timeout: 20000 })).map((r) => {
+    const keep = r.kinds.map((k, i) => i === 0 || k !== r.kinds[i - 1]);
+    return [r.id, { ...r, raw: r.kinds, rawAts: r.ats, kinds: r.kinds.filter((_, i) => keep[i]), ats: r.ats.filter((_, i) => keep[i]) }];
+  }));
 }
 
 // What both surfaces must do (the same moments, R-E).
@@ -122,6 +127,10 @@ function checkKinds(R, who) {
   assert.deepEqual(R['timeline'].ats, [0, 30], `${who}: the stop at 2 min out, then it holds`);
   assert.deepEqual(R['getoff-then-old'].kinds, ['getOff'], `${who}: Get off now reached on fresh data stays (as the phone's phase), never Arrived from old data, never steps back`);
   assert.deepEqual(R['arrived-by-phone'].kinds, ['arrived'], `${who}: an arrival the phone sent is evidence and stays`);
+  // the held moment is listed again where Get off now and Arrived would have been, so the complication's countdown stops
+  // there instead of counting past the stop (Text(.timer) counts up past its date)
+  assert.deepEqual(R['timeline'].raw, ['ride', 'next', 'next', 'next'], `${who}: held entries at the old Get off now and arrival times`);
+  assert.deepEqual(R['timeline'].rawAts, [0, 30, 120, 150], `${who}: at 30 s before and at the arrival`);
   assert.equal(R['no-updated'].kinds[0], 'getOff', `${who}: a card with no data time (older phones) keeps the clock moments`);
   for (const [id, r] of Object.entries(R)) {
     if (id === 'arrived-by-phone' || id === 'no-updated' || id.startsWith('fresh')) continue;
@@ -162,4 +171,25 @@ test('the Watch and the widget hold with the same rule, the wrist taps follow it
   assert.match(WIDGETS, /if step >= 1 \{ status = "Get off about"; word = nil \}/, 'widget: Get off now with old data says about');
   const tick = WAPP.slice(WAPP.indexOf('let m = WTripMoments.list(l, now: t)[0]'));
   assert.match(tick.slice(0, 900), /case \.arrived:/, 'the arrived tap comes from the held moments');
+});
+
+test('the browser checks no longer look for the removed "Wake me before my stop" switch (A5, native-asks 13)', () => {
+  for (const f of ['test/e2e/buttons.mjs', 'test/e2e/live-replay.mjs']) {
+    assert.doesNotMatch(read(f), /getByRole\("switch", \{ name: "Wake me before my stop" \}\)/, f);
+  }
+});
+
+test('Watch complications: commute times over 5 min old show the clock time and "Updated", never a countdown (A6, found in the sweep)', () => {
+  // The complication reloads every 20 to 60 min, so one load's live countdowns ran up to an hour past the 5 min live cap
+  // (R2), with "then 9:55am" and no age. Now each entry is old or not at its own time, split where it turns old.
+  const COMP = read('targets/watch-widget/Complications.swift');
+  const ent = COMP.slice(COMP.indexOf('static func entries('), COMP.indexOf('struct NextView'));
+  assert.doesNotMatch(ent, /let stale = snapshot\.commuteAt\.map \{ now\.timeIntervalSince/, 'old is no longer worked out once, at load');
+  assert.match(ent, /let oldFrom = snapshot\.commuteAt\.map \{ \$0\.addingTimeInterval\(5 \* 60\) \}/);
+  assert.match(ent, /if oldFrom > start && oldFrom < s\.time \{ starts\.append\(oldFrom\) \}/, 'split where it turns old');
+  assert.match(ent, /if old, let u = snapshot\.commuteAt \{ detail = "Updated \\\(Clock\.hhmm\(u\)\)" \}/);
+  assert.match(COMP, /\(old \? Text\(Clock\.hhmm\(t\)\) : Text\(t, style: \.timer\)\.monospacedDigit\(\)\)/, 'rectangular and inline: clock time');
+  assert.match(COMP, /if let r = entry\.ringRange, let t = entry\.target, !entry\.old \{/, 'circular: no ring countdown');
+  assert.match(COMP, /if let t = entry\.target, entry\.old \{/, 'corner: clock time');
+  assert.match(read('native-tests/native-audit/Tests/Watch/WatchAuditTests.swift'), /\("commute-old", NextEntry\(/, 'the native audit draws it');
 });

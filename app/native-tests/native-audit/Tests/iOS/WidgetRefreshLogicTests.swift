@@ -115,7 +115,7 @@ final class WidgetRefreshLogicTests: XCTestCase {
         }
         let held = TripMoments.list(phase: "ride", departs: nil, legArrives: Self.now.addingTimeInterval(10),
                                     arrival: Self.now.addingTimeInterval(10), now: Self.now, updated: Self.now.addingTimeInterval(-180))
-        XCTAssertEqual(held.map(\.kind), [.next], "3 min old data at the stop: the stop with about, never Get off now or Arrived")
+        XCTAssertEqual(Set(held.map(\.kind)), [.next], "3 min old data at the stop: the stop with about, never Get off now or Arrived")
     }
 
     func testLiveTimelineSaysAboutThenNoLiveData() {
