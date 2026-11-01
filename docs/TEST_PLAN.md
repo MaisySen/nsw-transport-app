@@ -2,6 +2,13 @@
 
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
+## Fix-all (1 Nov, branch fix-all-1nov)
+* `app/test/fixall1nov.test.mjs` (5): compiles WTripMoments (WatchCore.swift) and TripMoments.swift with swiftc and runs a grid (fresh / 3 min / 6 min old data; waiting, Due, on board, at the stop, past it; arrival sent by the phone; no data time): no Get off now, Arrived or Due from old data, a fresh moment stays, held entries at the old moment times; the same rule in both files; e2e scripts without the removed switch; complication commute entries split where they turn 5 min old. All 5 fail on e348fa0 (files/day-1nov/failing-first-fixall.txt).
+* Journey sim: S20w (feed lost 3 min before the stop: the Watch and widget text never say Get off now or Arrived) and S21 (held outside the stop after Get off now: one Get off now, Arrived only when the train is there), reference and real code.
+* Native audit: Watch trip-screen-held, commute-old; WidgetRefreshLogicTests testOldLiveTimesNeverSayDueGetOffNowOrArrived.
+* Backend (server-fixall-1nov): `backend/test/body-cap.test.mjs` (4).
+* On a real phone and Watch (not done here): lock the phone on a trip, put it in a bag out of signal for 3 min before your stop: the Watch should show "About" with "Updated", never Get off now, and the server's Get off now alert still taps the wrist.
+
 ## Build 213 together (1 Nov, branch build-213-watch)
 - `app/test/island213.test.mjs` (5): the compact Island is the stop name beside the time (no bell, no colon), boarding stop while waiting, stop off on board and at Get off now (orange), arrived where you are, badge only with no stop name; fits before it shrinks (one line, two short lines, smaller, then shrunk to half with the audit probe island-compact-stop); trailing time with Due / Now; expanded and minimal unchanged; the audit draws all three regions on both Island phones. Failing first on 0c989a6: files/day-1nov/failing-first-build213.txt.
 - `app/test/build213.test.mjs` (3): native `audioRoute` and `playAlertClip` match the JS feature detection (same arguments); ClipPlayer plays only the three bundled clips, playback session in headphones (heard in Silent mode), ambient on the speaker (Silent mutes it), lets the session go with notifyOthersOnDeactivation and returns to ambient; no audio background mode; the Watch app opens straight to the trip (on opening, onOpenURL, a trip the phone starts) and never over a screen the person opened; every Watch row is a button; complications open the trip.

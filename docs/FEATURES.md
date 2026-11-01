@@ -4,6 +4,10 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Fix-all (1 Nov, branch `fix-all-1nov`, for build 214, not built)
+* Apple Watch and the iPhone "Your trip" widget hold the trip on old live times: no Get off now, Arrived or Due from data over 2 min old; "About 7:59pm" / "~7:59pm" with "Updated", then the timetable time. No "arrived" wrist tap from old data.
+* Watch complications show commute times over 5 min old as the clock time with "Updated", never a countdown.
+
 ## Build 213 (1 Nov, branch `build-213-watch`, runtime 1.3.0)
 
 Everything in build 212, plus:
