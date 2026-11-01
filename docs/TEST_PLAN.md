@@ -2,6 +2,11 @@
 
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
+## Locked screens live (1 Nov, branch fix-lockedlive-1nov; server branch server-lockedlive)
+* `app/test/lockedlive1nov.test.mjs`: compiles `targets/widget/LiveCardFetch.swift` with `app/test/swift/livecardfetch/main.swift` (swiftc, skipped without it): asks only when the kept card is over 60 s old, no ask for the "none" or a shared profile, takes only a newer card (or an ended trip), 180 s / 300 s reloads capped at the arrival; and checks the widget's trip timeline and the Watch complication use it, the two copies identical. Both fail on fix-backnav-1nov (files/day-1nov/failing-first-lockedlive-app.txt).
+* `backend/test/locked-live-1nov.test.mjs` (server branch): run split followed in the server simulation (S3 split at Auburn, by our timetable and by the feed's next run letter, Get off now from the live 8:01 arrival), no lookups without a split, `/api/live-card` shape and profile rules, a card with `arrivedAt` ends at its first push, a card alone with no live reading ends within 30 min of its planned arrival. 7 of 8 fail on server-214 (files/day-1nov/failing-first-lockedlive-server.txt).
+* Not covered offline: WidgetKit's real reload timing on a locked phone and the Watch's complication budget (iOS decides); the next trip on a real phone is that test.
+
 ## Build 214 (1 Nov, branch build-214-rc; server branch server-214)
 * `app/test/build214.test.mjs` (7): the 38 s lead and 40 s cap (getOffLeadMs, getOffDueAt, the open app's timer), the held note on a held train and none on a train still coming in, the held render, "Timetable", "7:52pm", error words without the provider's name. 6 of 7 fail on 09dde0a (test 3, no false Held, passes there as it should); files/day-1nov/failing-first-build214.txt.
 * Journey sim: S21 now expects the held note at 7:59:20 to 7:59:40; new S22f (fast feed: lands 7:58:22, 38 s before 7:59) and S22s (slow feed: a late reading brings the arrival in, Get off now goes at once, no Held); I8 also checks the 40 s cap. Reference and real code agree on every case.

@@ -7,7 +7,8 @@
 // times are over 4 minutes old (before, they never loaded anything and changed only after the watch app was opened),
 // and reload on WatchRefresh's clock: every 20 minutes in the weekday peaks, 30 in the day, 45 in the evening,
 // hourly overnight, 5 while a trip runs (from the phone's card, no loading). The watch app still reloads them when
-// what they show changes.
+// what they show changes. Build 215 (locked screens): during a trip they ask the server for the trip's card when the
+// phone's is over a minute old (LiveCardFetch), as the iPhone is locked then, and reload every 3 minutes.
 import SwiftUI
 import WidgetKit
 
@@ -89,10 +90,25 @@ struct NextProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<NextEntry>) -> Void) {
         Task {
             let now = Date()
-            let ctx = WatchStore.loadContext()
+            var ctx = WatchStore.loadContext()
             var snap = WatchStore.loadSnapshot()
-            let live = ctx?.live?.isActive(now: now) == true
+            var live = ctx?.live?.isActive(now: now) == true
             var failed = false
+            // Build 215 (locked screens): the phone's card stops coming while the iPhone is locked, so once its live
+            // times are over a minute old the complication asks the server for the card its trip flow has
+            // (LiveCardFetch, the same reading the Lock Screen card is pushed from) and keeps it for the watch app.
+            var asked: Bool? = nil
+            if live, var c = ctx, let l = c.live, let base = c.baseURL, let p = c.profile, LiveCardFetch.needed(updatedMs: l.updated, now: now) {
+                let a = await LiveCardFetch.load(base: base, profile: p, line: l.line, off: l.getOffAt, timeout: 8)
+                asked = a != nil
+                if let a, LiveCardFetch.replaces(a, keptUpdatedMs: l.updated), let data = a.card,
+                   let fresh = try? JSONDecoder().decode(WLiveCard.self, from: data) {
+                    c.live = fresh
+                    WatchStore.save(c)
+                    ctx = c
+                    live = fresh.isActive(now: now)
+                }
+            }
             // Build 210: the complication loads the commute itself when the kept times are old (it used to wait for
             // the watch app to be opened). One call, 8 s at most; on failure the kept times show with "Updated".
             if !live, let c = ctx, let m = c.commute(now: now), WatchRefresh.commuteStale(snap, key: m.key, now: now) {
@@ -101,7 +117,9 @@ struct NextProvider: TimelineProvider {
                 if !f { snap = s; WatchStore.save(s) }
             }
             let entries = NextProvider.entries(now: Date(), context: ctx, snapshot: snap)
-            completion(Timeline(entries: entries, policy: .after(WatchRefresh.next(now, live: live, failed: failed))))
+            let arrival = ctx?.live.map { Date(timeIntervalSince1970: $0.arrival / 1000) } ?? now
+            let reload = live && asked != nil ? LiveCardFetch.next(now: now, arrival: arrival, ok: asked == true) : WatchRefresh.next(now, live: live, failed: failed)
+            completion(Timeline(entries: entries, policy: .after(reload)))
         }
     }
 

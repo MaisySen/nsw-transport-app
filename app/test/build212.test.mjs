@@ -136,7 +136,8 @@ test('the Your trip widget follows the whole trip: a moment per phase, no "Check
   const live = w.slice(w.indexOf('static func liveEntries'), w.indexOf('static func notice(for'));
   assert.ok(live.length > 500);
   assert.doesNotMatch(code(live), /Checking for the next one|Trip started/);
-  assert.match(w, /if e\.live, let card = SharedLiveCard\.load\(\) \{\s*let entries = Self\.liveEntries\(card\)/);
+  // build 215 (locked screens): the card may be swapped for the server's newer one first (lockedlive1nov.test.mjs)
+  assert.match(w, /if e\.live, var card = SharedLiveCard\.load\(\) \{[\s\S]{0,2500}?let entries = Self\.liveEntries\(card\)/);
   assert.match(live, /status = delay \?\? "Leaves"/, 'the delay on the row (G28)');
   assert.match(live, /word = "Due"/);
   assert.match(live, /status = "Get off now"/);

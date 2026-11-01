@@ -4,6 +4,10 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Locked screens live (1 Nov, branch `fix-lockedlive-1nov`, next build; server `server-lockedlive`)
+* "Your trip" widget (home, Lock Screen, StandBy) and Apple Watch complications stay live with the iPhone locked: they load the trip's card from the server when the app's is over a minute old, every 3 minutes during a trip.
+* Server (no build): the Lock Screen card, the Island and the alerts follow a train that changes trip id mid-run (858N to 858P after Central); a card sent again at arrival is ended.
+
 ## Build 214 (1 Nov, branch `build-214-rc`)
 * Get off now at the live arrival minus 38 s (30 s plus the feed's lag), never more than 40 s early: lands about 30 s before the train stops.
 * "Held, stay on": one quiet note a minute after Get off now when the train is held outside the stop; Lock Screen card "Held, stay on".

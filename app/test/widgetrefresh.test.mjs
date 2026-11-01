@@ -135,7 +135,8 @@ test('Apple Watch: complications load the commute themselves, the app refreshes 
   assert.doesNotMatch(COMP, /never load anything/);
   assert.match(COMP, /WatchRefresh\.commuteStale\(snap, key: m\.key, now: now\)/);
   assert.match(COMP, /await WatchRefresh\.load\(c, into: snap, stops: false, now: now\)/);
-  assert.match(COMP, /policy: \.after\(WatchRefresh\.next\(now, live: live, failed: failed\)\)/);
+  // build 215: during a trip with an ask to the server, LiveCardFetch.next (3 / 5 min); otherwise WatchRefresh as before
+  assert.match(COMP, /: WatchRefresh\.next\(now, live: live, failed: failed\)\n\s*completion\(Timeline\(entries: entries, policy: \.after\(reload\)\)\)/);
   assert.match(WAPP, /@WKApplicationDelegateAdaptor\(WatchAppDelegate\.self\)/);
   assert.match(WAPP, /final class WatchAppDelegate: NSObject, WKApplicationDelegate/);
   assert.match(WAPP, /task as\? WKApplicationRefreshBackgroundTask/);

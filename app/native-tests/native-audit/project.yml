@@ -56,6 +56,7 @@ targets:
       - path: ../../targets/watch
         includes: ["*.swift"]
       - path: ../../targets/watch-widget/Complications.swift
+      - path: ../../targets/watch-widget/LiveCardFetch.swift
       - Tests/Shared
       - Tests/Watch
     settings:

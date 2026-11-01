@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 1 Nov 2026
 
+### Locked screens live (1 Nov, branch `fix-lockedlive-1nov` from fix-backnav-1nov; for the next build, not built; server branch `server-lockedlive`)
+Bidur, 7:09 PM on build 214: "App still doesnt pull live data on locked screens yet". Diagnosis with his phone's server rows: files/day-1nov/locked-live.md.
+* The "Your trip" widget (home screen, Lock Screen, StandBy) and the Apple Watch complications during a trip: up to build 214 they read only the card the app saved, which stops changing while the iPhone is locked. Now, when that card's live times are over a minute old, they ask the server for the trip flow's card (`GET /api/live-card`, the same reading the Lock Screen card is pushed from; no Transport for NSW call) and use it when it is newer. The widget keeps it in the App Group for the other widgets; the complication keeps it for the watch app. During a trip they reload every 3 minutes after an answer (5 after a failure), never past the arrival, instead of asking iOS every minute to re-read a frozen card. `targets/widget/LiveCardFetch.swift` (the same file in `targets/watch-widget`). Native: needs a build.
+* Server side (branch `server-lockedlive`, works on builds 211 to 214 once deployed): trains that change trip id mid-run (858N becomes 858P after Central) are followed to the stop, so the Lock Screen card, the Island and the alerts stay live; a card registered again at arrival is ended instead of pushed "Due now" for an hour; `/api/live-card` for the above.
+* Tests: app/test/lockedlive1nov.test.mjs (2, compiles LiveCardFetch.swift with swiftc; both fail on fix-backnav-1nov), build212 and widgetrefresh expectations follow the new reload. Backend (server branch) locked-live-1nov.test.mjs 8 (7 fail on server-214).
+
 ### Build 214: everything in one build (1 Nov, branch `build-214-rc` from fix-all-1nov 09dde0a; server branch `server-214` from a9a75e6)
 Bidur, 2:31 PM: "Yes. If thats the right thing". Includes all of fix-all-1nov.
 * Get off now lands about 30 s before the train really stops. The live arrival estimate trails the train by about 8 s (the 1 Nov shadow trips landed 13 to 25 s early on the 30 s rule), so Get off now now goes at the live arrival minus 38 s, and never more than 40 s before it. One rule for the open app, the server (sends at minus 40 s, lands at minus 38 s), the phone's backup alert, the Watch and the widget. Simulator S16, S22f (fast feed) and S22s (slow feed).

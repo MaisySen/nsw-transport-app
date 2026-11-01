@@ -131,9 +131,27 @@ struct NextTripProvider: AppIntentTimelineProvider {
     func timeline(for configuration: NextTripIntent, in context: Context) async -> Timeline<NextTripEntry> {
         let e = await Self.load(configuration)
         // Build 212: a started trip has its own timeline, one entry per moment to the end (TripMoments).
-        if e.live, let card = SharedLiveCard.load() {
+        if e.live, var card = SharedLiveCard.load() {
+            // Build 215 (locked screens): the app's saved card stops changing while the phone is locked, so once its
+            // live times are over a minute old the widget asks the server for the card its trip flow has (the same
+            // reading the Lock Screen card is pushed from) and keeps it in the App Group for the other widgets.
+            var asked: Bool? = nil
+            if LiveCardFetch.needed(updatedMs: card.updated, now: Date()) {
+                let a = await LiveCardFetch.load(base: APIBase.current(), profile: AppIdentity.profile, line: card.line,
+                                                 off: card.getOffAt, timeout: WidgetRefresh.fetchTimeout)
+                asked = a != nil
+                if let a, LiveCardFetch.replaces(a, keptUpdatedMs: card.updated), let data = a.card {
+                    AppIdentity.groupDefaults.set(data, forKey: "liveCard")
+                    guard let fresh = SharedLiveCard.load() else {
+                        // the trip has ended: the widget goes back to its trips
+                        let after = await Self.load(configuration)
+                        return Timeline(entries: Self.entries(from: after), policy: .after(WidgetText.reloadDate(updated: after.updated, departures: after.trips.map(\.leave), live: after.live, failed: after.failed)))
+                    }
+                    card = fresh
+                }
+            }
             let entries = Self.liveEntries(card)
-            return Timeline(entries: entries, policy: .after(Self.liveReload(card)))
+            return Timeline(entries: entries, policy: .after(Self.liveReload(card, asked: asked)))
         }
         return Timeline(entries: Self.entries(from: e), policy: .after(WidgetText.reloadDate(updated: e.updated, departures: e.trips.map(\.leave), live: e.live, failed: e.failed)))
     }
@@ -283,9 +301,11 @@ struct NextTripProvider: AppIntentTimelineProvider {
     }
 
     /// When the widget asks for a new timeline during a trip: soon after the card's live times are 2 minutes old (the
-    /// app writes a newer card whenever it is open), and never later than the arrival.
-    static func liveReload(_ c: SharedLiveCard, now: Date = Date()) -> Date {
+    /// app writes a newer card whenever it is open), and never later than the arrival. Build 215: after an ask to the
+    /// server (asked: answered or not) every 3 minutes, 5 after a failure (LiveCardFetch.next), not every minute.
+    static func liveReload(_ c: SharedLiveCard, now: Date = Date(), asked: Bool? = nil) -> Date {
         let arrive = Date(timeIntervalSince1970: c.arrival / 1000)
+        if let ok = asked { return LiveCardFetch.next(now: now, arrival: arrive, ok: ok) }
         let base = c.updatedDate.map { max($0.addingTimeInterval(TripMoments.liveFor + 30), now.addingTimeInterval(60)) }
             ?? now.addingTimeInterval(5 * 60)
         return min(max(base, now.addingTimeInterval(60)), max(arrive, now.addingTimeInterval(60)))
