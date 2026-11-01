@@ -154,8 +154,11 @@ export function evaluate(rec, S, { P }) {
     const mins = Math.max(1, (P.end - P.start) / 60);
     const perMin = la.length / mins;
     add('push-budget', perMin <= 2.5, 'low', `${la.length} card pushes in ${Math.round(mins)} min (${perMin.toFixed(2)} a minute), ${rec.apns.length - la.length} alert pushes, ${rec.expo.length} Expo`);
-    const nswPerMin = rec.nsw.calls / mins;
-    add('feed-budget', nswPerMin <= 12, 'low', `${rec.nsw.calls} feed and board reads for one trip (${nswPerMin.toFixed(1)} a minute)`);
+    // the trip's own reads (its feeds and its stops' boards); the server's warm-up of the busiest stations' boards
+    // runs whatever the trips are and is not counted against one trip
+    const tripCalls = rec.nsw.trip != null ? rec.nsw.trip : rec.nsw.calls;
+    const nswPerMin = tripCalls / mins;
+    add('feed-budget', nswPerMin <= 12, 'low', `${tripCalls} feed and board reads for one trip (${nswPerMin.toFixed(1)} a minute; ${rec.nsw.calls - tripCalls} more for the server's station warm-up)`);
   }
   // 19. overlapping cron passes still ring once (checked by 9), and no pass outlives two minutes
   {

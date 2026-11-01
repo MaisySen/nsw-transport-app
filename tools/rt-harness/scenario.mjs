@@ -149,6 +149,7 @@ globalThis.fetch = async (url, init = {}) => {
   const t = now();
   if (u.startsWith('https://api.transport.nsw.gov.au/')) {
     rec.nsw.calls++;
+    { const k = new URL(u).pathname.replace(/\/v\d+\//, '/').replace(/[0-9]+/g, '#'); rec.nsw.byPath = rec.nsw.byPath || {}; rec.nsw.byPath[k] = (rec.nsw.byPath[k] || 0) + 1; const dm = new URL(u).searchParams.get('name_dm'); if (!dm || dm.startsWith('SIM_')) rec.nsw.trip = (rec.nsw.trip || 0) + 1; if (dm) { rec.nsw.byStop = rec.nsw.byStop || {}; rec.nsw.byStop[dm] = (rec.nsw.byStop[dm] || 0) + 1; } }
     const f = fault('nsw', t);
     let lag = 0;
     if (f) {

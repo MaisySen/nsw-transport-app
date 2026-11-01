@@ -53,7 +53,7 @@ out.server = { pushes: pushes.length, cardPushes: pushes.filter((p) => p.liveAct
   simctlOk: simctl.filter((s) => s.ok).length, simctlFailed: simctl.filter((s) => !s.ok).length, simctlFirstError: (simctl.find((s) => !s.ok) || {}).err || null };
 if (errors.length) add('critical', 'server errors', errors.slice(0, 3).map((e) => `${e.where}: ${String(e.msg).split('\n')[0]}`).join('; '));
 // locked reads: the app's JavaScript reading while it should be suspended
-const lockAt = (() => { const m = timeline.match(/(\d{2}):(\d{2}):(\d{2}) (Settings in front|lock keystroke)/); return m ? caseT(Date.parse(`${day}T${m[1]}:${m[2]}:${m[3]}Z`)) : null; })();
+const lockAt = (() => { const m = timeline.match(/(\d{2}):(\d{2}):(\d{2}) (Settings in front|lock sent)/); return m ? caseT(Date.parse(`${day}T${m[1]}:${m[2]}:${m[3]}Z`)) : null; })();
 out.lockAt = lockAt;
 if (lockAt != null) out.app.serviceReadsWhileLocked = reqs.filter((r) => r.caseT > lockAt + 30 && r.p.startsWith('/api/service')).length;
 

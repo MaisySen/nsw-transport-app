@@ -40,10 +40,15 @@ LEAD=150
 node --no-warnings "$RTH/sim-server.mjs" --server "$SRV" --case "$CASE" --out "$OUT/server" --port 443 --cert "$OUT/server/srv.pem" --key "$OUT/server/srv.key" \
   --lead $LEAD --sim "$DEV" --bundle "$BID" --faults "$FAULTS" > "$OUT/server/server.log" 2>&1 &
 SPID=$!
-sleep 8
+# wait until the server answers and has written the Start link (it took over 8 s on a busy runner in run 2)
+for i in $(seq 1 60); do
+  [ -s "$OUT/server/start-link.txt" ] && [ "$(curl -s --cacert "$OUT/server/ca.pem" -o /dev/null -w '%{http_code}' "https://api.transportsydney.app/api/app/config?platform=ios")" = 200 ] && break
+  sleep 2
+done
 cat "$OUT/server/server.log"
-curl -s --cacert "$OUT/server/ca.pem" "https://api.transportsydney.app/api/trip?from=SIM_x&to=SIM_y" -o /dev/null -w "local server answers: %{http_code}\n" | tee -a "$OUT/timeline.txt"
+log "local server answers after $((i * 2)) s"
 LINK=$(cat "$OUT/server/start-link.txt")
+[ -n "$LINK" ] || { log "no Start link from the server"; exit 1; }
 
 DISPLAY_ARG=""
 shot() {
@@ -57,8 +62,12 @@ shot() {
 lock_phone() {
   if [ "$LOCK_KIND" = lock ]; then
     printf -- '- pressKey: Lock\n' | flow lock
-    osascript -e 'tell application "Simulator" to activate' -e 'delay 1' -e 'tell application "System Events" to keystroke "l" using {command down}' 2>&1 | tee -a "$OUT/timeline.txt"
+    osascript -e 'tell application id "com.apple.iphonesimulator" to activate' -e 'delay 1' -e 'tell application "System Events" to keystroke "l" using {command down}' 2>&1 | tee -a "$OUT/timeline.txt"
     log "lock sent (Maestro Lock key and the Simulator's Lock shortcut)"
+    sleep 3; shot after-lock
+    # if the app is still in front (no lock on this runner), send it to the background so the run still tests a phone
+    # whose app is not running
+    xcrun simctl launch "$DEV" com.apple.Preferences >/dev/null && log "Settings in front as well: the app is in the background (JavaScript suspended)"
   else
     xcrun simctl launch "$DEV" com.apple.Preferences >/dev/null && log "Settings in front: the app is in the background (JavaScript suspended)"
   fi
@@ -91,6 +100,11 @@ if command -v maestro >/dev/null; then
   printf -- '- openLink: "%s"\n- tapOn: {text: "Open", optional: true}\n- tapOn: {text: "Allow", optional: true}\n- tapOn: {text: "Allow While Using App", optional: true}\n- waitForAnimationToEnd\n' "$LINK" | flow start
 else
   xcrun simctl openurl "$DEV" "$LINK"
+fi
+# iOS asks for notifications when the trip starts (the trip watch is registered after the answer): tap Allow
+sleep 6
+if command -v maestro >/dev/null; then
+  printf -- '- tapOn: {text: "Allow", optional: true}\n- tapOn: {text: "Allow While Using App", optional: true}\n- tapOn: {text: "Allow", optional: true}\n' | flow allow
 fi
 for i in 1 2 3; do sleep 6; shot "in-app-$i"; done
 lock_phone
