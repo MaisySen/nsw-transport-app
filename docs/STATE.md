@@ -8,6 +8,12 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 
 ## Live now
 
+### Build 214 on TestFlight Internal (1 Nov, 4:10 PM)
+* App Store Connect build 2a804563-2d29-4eab-8f1f-79767e399edc, 1.0.0 (214), runtime 1.3.0 (same as 212 and 213: a 1.3.0 update reaches all three), VALID, Internal In Beta Testing. Not submitted for review, no external testers.
+* Built by GitHub run 41273129278 from build-214-rc 9c7ba2f (its audit gate passed: iPhone, Watch, full app compile). Secrets added for the run and removed after (each 404).
+* In it: fix-all-1nov + Get off now at the live arrival minus 38 s (never more than 40 s early), "Held, stay on", "Timetable", "7:52pm", error words without the provider name. Checklist: Tab workspace files/day-1nov/build214-checklist.md.
+* Server side NOT deployed: server-214 8fa2b4c (Get off now timer at minus 40 s so it lands at minus 38 s, the held note and Lock Screen warning, error words). Deploy only between 11 PM and 5 AM. Until then a locked phone gets Get off now from the live server at minus 32 s (lands at minus 30 s) and no held note; the open app already uses 38 s.
+
 ### Build 213 on TestFlight Internal (1 Nov, 12:14 PM)
 * App Store Connect build 01052395-8db3-4233-b433-70ab7667f265, 1.0.0 (213), runtime 1.3.0 (same as 212: a 1.3.0 update reaches both), VALID, Internal In Beta Testing. Not submitted for review, no external testers.
 * Built by GitHub run 41257834755 from build-213-watch d7d2426 (its audit gate passed: iPhone, Watch, full app compile). Secrets added for the run and removed after (each 404).
