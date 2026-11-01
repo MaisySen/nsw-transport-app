@@ -80,7 +80,8 @@ final class EntryBackTests: XCTestCase {
 
     /// The app's own first-run questions (home and work), skipped once so they do not cover the screens.
     private func skipFirstRun() {
-        for label in ["Continue", "Skip", "Not now", "Done"] {
+        // "Skip home" / "Skip work" are the welcome screen's buttons (welcome.tsx); "Continue" closes the keyboard's tip.
+        for label in ["Continue", "Skip home", "Skip work", "Skip", "Done"] {
             let b = app.buttons[label]
             if b.exists && b.isHittable { b.tap(); sleep(2) }
         }
@@ -100,7 +101,7 @@ final class EntryBackTests: XCTestCase {
     /// The app's tabs: the tab bar (Home, Plan, Ask, More).
     private func tabsShown() -> Bool {
         if app.tabBars.firstMatch.exists { return true }
-        return app.buttons["Home"].exists && app.buttons["Plan"].exists
+        return app.buttons["Home"].exists && app.buttons["Plan"].exists && app.buttons["More"].exists
     }
 
     private func tap(_ e: XCUIElement) {
@@ -124,6 +125,7 @@ final class EntryBackTests: XCTestCase {
             tap(b)
             sleep(3)
             clearPrompts()
+            skipFirstRun()
             sleep(2)
             tabsAfter = tabsShown()
             shot(tag + "-after-back")

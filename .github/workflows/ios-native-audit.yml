@@ -304,7 +304,8 @@ jobs:
               if f.startswith('result-'): print(open(os.path.join(d, f)).read().strip())
           EOF
           ls "$GITHUB_WORKSPACE"/out/entry/*.png > /dev/null 2>&1 && rm -rf "$GITHUB_WORKSPACE/out/entry-ui.xcresult"
-          exit $RC
+          # Run 41299528772 passed with failing tests; the log's own verdict decides.
+          grep -q '\*\* TEST SUCCEEDED \*\*' "$GITHUB_WORKSPACE/out/entry-test.log" || { echo "ENTRY UI TEST FAILED (xcodebuild $RC)"; exit 1; }
       - name: Contact sheet
         if: always()
         working-directory: app/native-tests/native-audit
