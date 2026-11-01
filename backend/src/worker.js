@@ -868,6 +868,22 @@ function vehicleOf(vp) {
 
 // Index of the next stop the vehicle will reach, from the vehicle state or the trip update
 // times. Returns -1 when neither says.
+/**
+ * The vehicle of a run's other trip ids when the asked trip id has none (2 Nov, B1): the same train under the trip id it
+ * runs as now. Its stop sequence belongs to that other trip, so it is left off (only its position and stop id are read).
+ */
+function svcRunVehicle(rt, mode, line, tripId, feed, trips) {
+  if (!rt || !Array.isArray(trips) || trips.length < 2) return null;
+  const k = trips.indexOf(tripId);
+  // the trip ids after the asked one first (the train has carried on), then any before it (still on its way)
+  const order = k >= 0 ? [...trips.slice(k + 1), ...trips.slice(0, k).reverse()] : trips.filter((t) => t !== tripId);
+  for (const t of order) {
+    if (!t || t === tripId) continue;
+    const v = vehicleOf(rt.vp(mode, line, t, feed));
+    if (v) return { ...v, stopSeq: null, runTrip: t };
+  }
+  return null;
+}
 function nextStopIndex(tu, veh, now = Date.now()) {
   if (!tu || !tu.stus.length) return -1;
   if (veh && veh.stopSeq) {
@@ -2282,7 +2298,7 @@ async function service(env, q) {
   const engP = q.quick && q.ttQuick && mode === "train" && tripId ? engineTrip(env, null, tripId).catch(() => null) : null;
   const rt = await realtimeFor(env, [[mode, line, feed]], Number.isFinite(q.at) ? { notBefore: q.at } : undefined);
   const tu = tripId ? rt.tu(mode, line, tripId, feed) : null;
-  const veh = tripId ? vehicleOf(rt.vp(mode, line, tripId, feed)) : null;
+  let veh = tripId ? vehicleOf(rt.vp(mode, line, tripId, feed)) : null;
   const now = Date.now();
   let stops = [], path = [], source = "feed", dest = q.dest || "", stopsStatus = "ok";
   const tuLive = !!(tu && tu.ts && tu.rel !== 3);
@@ -2317,6 +2333,11 @@ async function service(env, q) {
     const list = r ? runStops(r, (t) => (t === tripId ? tu : rt.tu(mode, line, t, feed)), tripId, tuLive) : null;
     if (list) { run = r; runList = list; }
   }
+  // 2 Nov 2026 (the owner's first real trip on 214, B1): a train whose run carries on under another trip id (the 4:26 T9 ran
+  // as 142A to Central and 142B from there) reports its position under the trip id it is on now; the asked id had no
+  // vehicle, so the open app never saw the train reach the stop off and, woken after the change, thought it was still on
+  // the first train. The position of the run's other trip ids is used, as the trip flow already does (tfRead).
+  if (!veh && tripId && run) veh = svcRunVehicle(rt, mode, line, tripId, feed, run.trips);
   // The quick answer (q.quick) takes the timetable run as it is, reached or not: it is marked partial, and the full
   // answer that follows has the whole list.
   const useRun = !!(run && (run.reached || mode !== "train" || q.quick));
@@ -6280,6 +6301,13 @@ function tfLegRaw(l, tu, veh, info, asOf) {
     let seq = stus, b0 = bi, o0 = oi;
     const depDue = Number.isFinite(ms(l.planned)) ? ms(l.planned) + (r.est[0] != null ? r.est[0] - ms(l.planned) : (r.runDelay || 0) * 1000) - 60000 : Infinity;
     if (bi < 0 && oi >= 0 && info[l.stopId] && Math.max(asOf, veh.ts) >= depDue) { seq = [{ stopId: l.stopId }, ...stus]; b0 = 0; o0 = oi + 1; }
+    // 2 Nov 2026 (the owner's first real trip on 214, B6b): the run's first trip id ends before your stop off (the 4:26 T9 ran
+    // as 142A to Central, then 142B), so neither your stop nor the stop off is in its trip update and the train was never
+    // placed: the card sat on Due for 6 min 42 s while he rode. The same placement, on your stop followed by the listed
+    // ones, a minute after the live departure (not a minute before: with the stop off missing too there is less to go on)
+    // and only for a position clear of your stop (over 300 m).
+    else if (bi < 0 && oi < 0 && l.toStopId && info[l.stopId] && Number.isFinite(info[l.stopId].lat) && Number.isFinite(veh.lat)
+      && Math.max(asOf, veh.ts) >= depDue + 120000 && distM(veh.lat, veh.lon, info[l.stopId].lat, info[l.stopId].lon) > 300) { seq = [{ stopId: l.stopId }, ...stus]; b0 = 0; }
     let vi = veh.stopId ? seq.findIndex((u) => u.stopId === veh.stopId) : -1;
     let at = veh.status === 1, byPlace = false;
     if (vi < 0) { const g = tfVehOnRun(veh, seq, info); if (g) { vi = g.k; at = g.at; byPlace = true; } }
@@ -8845,7 +8873,7 @@ const LIVECARD = (() => {
                     m.offArrAt = tm2.arr.at;
                     if (!rung('headsup'))
                         m.rung.headsup = 'skipped';
-                    deliver({ kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}, arriving ${C(tm2.arr.at)}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + R.GETOFF_EXPIRE, target: getOffDueAt(tm2.arr.at), arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - offLead > t - 1000 && tm2.arr.at < prevArr }, age2, false);
+                    deliver({ kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + R.GETOFF_EXPIRE, target: getOffDueAt(tm2.arr.at), arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - offLead > t - 1000 && tm2.arr.at < prevArr }, age2, false);
                     setPhase(M, li, 'getOff', t, `live arrival ${tripClockSec(tm2.arr.at)} minus ${Math.round(getOffLeadMs(0) / 1000)} s, reading ${Math.round(age2 / 1000)}s old`, res.log);
                 }
                 else if (age2 < R.LIVE_CAP) {

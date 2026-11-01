@@ -27,7 +27,7 @@ globalThis.Date = SimDate;
 const raw = fs.readFileSync(path.join(backend, "src/worker.js"), "utf8").replace(/export default\s*\{/, "const __default = {");
 // Only the names this worker has (an older branch has no trip flow pass: the run then drives its minute tick, which is
 // how a failing-first run on server-211-rc shows what the old server does with each case).
-const WANT = ["tfPass", "tfPassStep", "TripFlowShard", "tfShardOf", "tfWatchedTokens", "TF_SHARD_TRIPS", "tfRunTu", "tfArrivedOnPhone", "tickLiveActivities", "tfNextRunPrefix", "tfFeedRun", "serverCfg", "TF", "LIVECARD", "tfLegRaw", "tfLegReading", "tfPlanLeg", "tfState", "tfCard", "tfNext", "runTick", "svcOffIndex"];
+const WANT = ["tfPass", "tfPassStep", "TripFlowShard", "tfShardOf", "tfWatchedTokens", "TF_SHARD_TRIPS", "tfRunTu", "tfArrivedOnPhone", "tickLiveActivities", "tfNextRunPrefix", "tfFeedRun", "serverCfg", "TF", "LIVECARD", "tfLegRaw", "tfLegReading", "tfPlanLeg", "tfState", "tfCard", "tfNext", "runTick", "svcOffIndex", "svcRunVehicle"];
 const src = raw + "\nexport { __default, " + WANT.filter((n) => new RegExp("\\n(?:async )?(?:function|const|let) " + n + "\\b").test(raw)).join(", ") + " };\n";
 // A fresh copy of the worker for each case: its feed copies and shared jobs are kept in memory by the clock, and each
 // case starts its clock again.

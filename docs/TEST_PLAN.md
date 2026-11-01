@@ -3,6 +3,9 @@
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
 
+## Trip fixes from the 2 Nov trip, server (2 Nov, branch server-trip-2nov)
+* `backend/test/trip-2nov.test.mjs`: 5 tests: the run's vehicle from its next trip id (its stop sequence not used); /api/service takes it only when the asked trip id has none (source wiring); B6b, the card leaves Due once a minute past the live departure with the vehicle over 300 m past the boarding stop; kept: no change before that, at the stop, or with no position; Get off now words with no clock time. 4 of 5 fail on ae97e39. Backend 777/777; the journey simulator compare (tripflow-sim) 38/38.
+
 ## Live trips at scale, feed late or lost near the stop, server (1 Nov, branch server-scale-1nov)
 * `backend/test/scale-1nov.test.mjs`: 8 tests, 8 pass; 7 of 8 fail on 58f778b (evidence in files/day-1nov/failing-first-scale.txt; "feed lost 50 s before the stop" passes there too and stays as a guard). Through the real worker on the virtual clock of tools/simtrip.mjs: 151 and 500 trips at once with the TFSHARD binding (every trip's card pushes and Get off now, each invocation's outbound requests plus D1 statements under 1000), 120 older running watches of other kinds, 151 trips with no binding (under budget, every card kept), the feed 150 s behind, the feed lost 50 s, 3 min and just after leaving the stop before. simtrip: runCase stress N (N more phones, each with its own trip, card and Expo route), shards (a TFSHARD namespace whose objects run on their own copy of the worker), oldWatches, feedLagMs, feedDown, and per invocation counts of outbound requests and D1 calls (`passes`).
 * Real-time harness (tools/rt-harness on the app branch fix-getoff-1nov, with a local TFSHARD stand-in in scenario.mjs): full 46 scenarios and the S1 stress at 151 and 500 trips, before (58f778b) and after.

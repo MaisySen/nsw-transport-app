@@ -2,6 +2,15 @@
 
 What changed in Transport, newest first. Times are Sydney time. Build numbers, update ids and links are in [docs/RELEASES.md](docs/RELEASES.md).
 
+## 2 Nov 2026
+
+### Trip fixes from the first real build 214 trip, server (2 Nov; branch `server-trip-2nov` from server-scale-1nov ae97e39; NOT deployed)
+From the 2 Nov trip, 4:26 to 4:55 AM (files/day-2nov/trip-0452-diagnosis.md).
+* /api/service finds the vehicle for a run the feed lists under another trip id (a continued run): `svcRunVehicle` tries the run's later trip ids first, then earlier ones, so the card is not left without a position for a train that is running.
+* The trip flow no longer leaves the card on "Due" after the train has gone (B6b): with no live stop for the boarding stop or the stop off, once it is a minute past the live departure and the vehicle is more than 300 m from the boarding stop, the leg is read as boarded.
+* Get off now carries no clock time ("Get off now. Cove."), the owner said yes on 2 Nov 9:19 AM; the LIVECARD copy is regenerated and the journey simulator says the same. The older pre trip flow push path (getOffPushWords, "Due 4:55") is unchanged.
+* Tests: `backend/test/trip-2nov.test.mjs` (5; 4 fail on ae97e39). Backend 777/777.
+
 ## 1 Nov 2026
 
 ### Live trips at scale; honest card when the feed runs late or drops near the stop (server, 1 Nov; branch `server-scale-1nov` from server-getoff-1nov 58f778b; NOT deployed)
