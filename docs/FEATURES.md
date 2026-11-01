@@ -4,6 +4,9 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Back from outside the app (1 Nov, update on runtime 1.3.0, over the air to builds 212 to 214)
+* Opening the app from a widget, the Lock Screen, StandBy, Control Center, Siri or a link with the app closed lands on the screen with Back and the tab bar; Back goes to Home.
+
 ## Build 214 (1 Nov, branch `build-214-rc`)
 * Get off now at the live arrival minus 38 s (30 s plus the feed's lag), never more than 40 s early: lands about 30 s before the train stops.
 * "Held, stay on": one quiet note a minute after Get off now when the train is held outside the stop; Lock Screen card "Held, stay on".

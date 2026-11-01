@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 1 Nov 2026
 
+### Back from outside the app (update on runtime 1.3.0, 1 Nov, 10:57 PM; branch `ota-backnav-1nov` 8791b4c)
+Bidur on build 214: "Widget missing back button or app screen?"; his OK for the update 6:26 PM.
+* A screen opened from outside the app with the app closed (Next trip widget row, Lock Screen and StandBy widgets, Control Center, Siri and Shortcuts, Stop board, Plan and live trip links) opens on top of Home, so Back and the tab bar are there. Before, it was the only screen (since the Expo app, 24-25 Oct).
+* Siri and Shortcuts links wait until the screens are ready, then open on top of the screen in view.
+* JavaScript only, so builds 212, 213 and 214 take it over the air: production group `8c846fb7-ec24-46e4-9a61-f2bab35536f5`. The "Your trip" widget and Watch fixes need the next build.
+
 ### Build 214: everything in one build (1 Nov, branch `build-214-rc` from fix-all-1nov 09dde0a; server branch `server-214` from a9a75e6)
 Bidur, 2:31 PM: "Yes. If thats the right thing". Includes all of fix-all-1nov.
 * Get off now lands about 30 s before the train really stops. The live arrival estimate trails the train by about 8 s (the 1 Nov shadow trips landed 13 to 25 s early on the 30 s rule), so Get off now now goes at the live arrival minus 38 s, and never more than 40 s before it. One rule for the open app, the server (sends at minus 40 s, lands at minus 38 s), the phone's backup alert, the Watch and the widget. Simulator S16, S22f (fast feed) and S22s (slow feed).

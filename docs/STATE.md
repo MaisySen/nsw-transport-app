@@ -8,6 +8,13 @@ What is live and what is open, by hand, with when each line was last checked. Ru
 
 ## Live now
 
+### Back from outside the app, update live on runtime 1.3.0 (1 Nov, 10:57 PM)
+* Production update group 8c846fb7-ec24-46e4-9a61-f2bab35536f5 (iOS, runtime 1.3.0: builds 212, 213 and 214), from ota-backnav-1nov 8791b4c, JavaScript only. Preview group 0cc106d9-8bda-4f3c-b8fe-4aa0c55e7e31. Manifests read back on both channels (runtime 1.3.0, launch hash = local export). First update on 1.3.0.
+* What it does: a screen opened from a widget, the Lock Screen, StandBy, Control Center, Siri or a site link with the app closed now has Back and the tab bar (it opened alone, with neither). A phone takes it on its next launch: close and reopen the app twice.
+* 15 min watch 10:57 to 11:12 PM: no crash rows, no app error events; no phone activity in the window, so not yet seen on a phone.
+* Roll back: `npx eas-cli update:roll-back-to-embedded --branch production --runtime-version 1.3.0 --platform ios`.
+* Not in it: the "Your trip" widget opening Home and the Watch reopening the trip on each wrist raise are native (fix-backnav-1nov, next build).
+
 ### Build 214 on TestFlight Internal (1 Nov, 4:10 PM)
 * App Store Connect build 2a804563-2d29-4eab-8f1f-79767e399edc, 1.0.0 (214), runtime 1.3.0 (same as 212 and 213: a 1.3.0 update reaches all three), VALID, Internal In Beta Testing. Not submitted for review, no external testers.
 * Built by GitHub run 41273129278 from build-214-rc 9c7ba2f (its audit gate passed: iPhone, Watch, full app compile). Secrets added for the run and removed after (each 404).

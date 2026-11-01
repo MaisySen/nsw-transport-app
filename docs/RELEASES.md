@@ -49,6 +49,19 @@ App group (since build 203): Bidur registered `group.com.maisysen.nswtransport` 
 Public TestFlight (since 25 Oct, 8:41 AM): external group "Public" `36f40c38-274e-4854-86ab-61f03138d216`, public link https://testflight.apple.com/join/ZKZY7PKX (no tester limit, feedback on). Build 204 (1.0.0) added and submitted for Beta App Review at 8:41 AM, approved the same minute (BETA_APPROVED). Test Information (en-AU and en-US): feedback email support@transportsydney.app, marketing https://transportsydney.app, privacy https://transportsydney.app/privacy; beta review contact Bidur Khatri, no login. To ship a later build to the public: add it to this group (`POST /v1/betaGroups/<id>/relationships/builds`), set whatsNew, then `POST /v1/betaAppReviewSubmissions`. The older "External tester" group `0422061b-bca9-4790-982a-a9f632d271fa` has no public link and is unchanged. Only Beta App Review was used; no App Store version was submitted.
 
 
+## Back from outside the app, runtime 1.3.0 (1 Nov 2026, 10:56 to 10:57 PM)
+
+First update on runtime 1.3.0 (builds 212, 213 and 214). JavaScript only: against build 214's source (9c7ba2f) the app changes are `app/src/app/_layout.tsx`, `app/platform/iosBridge.ts` and the new `app/src/lib/appLinkInbox.ts`; no native file, app.json, app.config.js or package change. Runtime read from `npx expo config` on the commit: "1.3.0" (app.json's own string, no OTA_RUNTIME), `EAS_SKIP_AUTO_FINGERPRINT=1`. Bidur's OK 1 Nov, 6:26 PM, once tested; proven on build 214's native code in the simulator (cold start from each outside link: no Back on 214 as shipped, Back with this JavaScript).
+
+| What | Id | When | From |
+| --- | --- | --- | --- |
+| Update, preview, runtime 1.3.0, iOS | group 0cc106d9-8bda-4f3c-b8fe-4aa0c55e7e31 (update 01a196f8-398a-7d26-b8df-730a2a34027c) | 10:56 PM | ota-backnav-1nov 8791b4c |
+| Update, production, runtime 1.3.0, iOS | group 8c846fb7-ec24-46e4-9a61-f2bab35536f5 (update 01a196f8-92ef-76b4-b8d4-7b7d992c271a), republished from preview | 10:57 PM | ota-backnav-1nov 8791b4c |
+
+Both manifests read back from the update server (iOS, runtime 1.3.0, channels preview and production): runtimeVersion 1.3.0, the update ids above, launch asset hash `_f2AgT_JAYT0IUh9z-LmmFtydc1-lfaXRhDCm7WxN0s` = the local export; the publish records git commit 8791b4c. Runtimes 1.0.0, 1.1.0 and 1.2.0 untouched. Tests on the commit: app 1,368 (1,364 pass, 4 skipped, 0 fail), `backnav1nov` 6/6, tsc clean. 15 min crash watch 10:57 to 11:12 PM: 0 new crash or error screen rows (feedback still 5, all from 28 Oct), 0 app error events in the crash reporter since the publish (1 in the 24 h before, from a simulator on 214), 0 searches and 0 trip watches from any phone in the window (late Sunday, so a weak signal: which phones have taken the update is not known yet).
+
+Roll back: `npx eas-cli update:roll-back-to-embedded --branch production --runtime-version 1.3.0 --platform ios` (no earlier 1.3.0 update exists; the phones go back to the JavaScript in their build).
+
 ## Trip flow 2 (31 Oct 2026, 11:11 to 11:28 PM)
 
 | What | Id | When | From |

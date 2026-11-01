@@ -2,6 +2,11 @@
 
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
+## Back from outside the app (1 Nov, branch ota-backnav-1nov 8791b4c, update on runtime 1.3.0)
+* `app/test/backnav1nov.test.mjs` (6): expo-router's own cold-start state with the anchor, Siri links held until the screens are ready; 3 fail on 7566d47. Full app run on 8791b4c before the publish: 1,368 (1,364 pass, 4 skipped, 0 fail), tsc clean.
+* Simulator UI test (native audit entry job) on build 214's native code: every outside link opened cold has no Back on 214 as shipped and Back with this JavaScript.
+* On a real phone (not done here): after closing and reopening twice, open the Stop board or Next trip widget with the app closed; Back and the tab bar should be there.
+
 ## Build 214 (1 Nov, branch build-214-rc; server branch server-214)
 * `app/test/build214.test.mjs` (7): the 38 s lead and 40 s cap (getOffLeadMs, getOffDueAt, the open app's timer), the held note on a held train and none on a train still coming in, the held render, "Timetable", "7:52pm", error words without the provider's name. 6 of 7 fail on 09dde0a (test 3, no false Held, passes there as it should); files/day-1nov/failing-first-build214.txt.
 * Journey sim: S21 now expects the held note at 7:59:20 to 7:59:40; new S22f (fast feed: lands 7:58:22, 38 s before 7:59) and S22s (slow feed: a late reading brings the arrival in, Get off now goes at once, no Held); I8 also checks the 40 s cap. Reference and real code agree on every case.
