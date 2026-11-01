@@ -137,7 +137,7 @@ async function tp(env, endpoint, params, timeoutMs = 12000) {
     upstream.calls++;
     upstreamNote();
     const t0 = Date.now();
-    const res = await fetch(API + "/v1/tp/" + endpoint + "?" + qs.toString(), {
+    const res = await subFetch(API + "/v1/tp/" + endpoint + "?" + qs.toString(), {
       headers: { Authorization: "apikey " + apiKey(env) },
       signal: AbortSignal.timeout(timeoutMs),
     }).finally(() => reqUpstream(Date.now() - t0));
@@ -702,7 +702,7 @@ async function loadFeed(env, path, kind, maxAgeMs, notBefore) {
     // Putting a 2.3 MB feed into the Cache API took about 25 ms of CPU on every fresh fetch, and most
     // requests run in a fresh isolate. A copy from that cache says how old it is in Age.
     const f0 = Date.now();
-    const res = await fetch(API + path, { headers: { Authorization: "apikey " + apiKey(env) }, signal: AbortSignal.timeout(FEED_JOB_MAX_MS - 2000), cf: fresh ? { cacheTtl: 0 } : { cacheEverything: true, cacheTtlByStatus: { "200-299": Math.round(FEED_TTL_MS / 1000), "300-599": 0 } } }).finally(() => reqUpstream(Date.now() - f0));
+    const res = await subFetch(API + path, { headers: { Authorization: "apikey " + apiKey(env) }, signal: AbortSignal.timeout(FEED_JOB_MAX_MS - 2000), cf: fresh ? { cacheTtl: 0 } : { cacheEverything: true, cacheTtlByStatus: { "200-299": Math.round(FEED_TTL_MS / 1000), "300-599": 0 } } }).finally(() => reqUpstream(Date.now() - f0));
     const shared = res.headers && res.headers.get("cf-cache-status") === "HIT";
     if (shared) feedStats.edgeHits++; else { upstream.calls++; feedStats.fetched++; }
     if (!res.ok) { upstreamRefused(res.status, res.headers && res.headers.get("x-error-detail")); throw new Error(`Realtime feed ${path} answered ${res.status}`); }
@@ -1313,7 +1313,7 @@ async function trafficHazards(env) {
   if (hazMem && hazMem.job) return joinJob(hazMem.job);
   const promise = (async () => {
     upstream.calls++;
-    const res = await fetch(API + "/v1/live/hazards/incident/open", { headers: { Authorization: "apikey " + apiKey(env) }, signal: AbortSignal.timeout(8000), cf: { cacheTtl: 120, cacheEverything: true } });
+    const res = await subFetch(API + "/v1/live/hazards/incident/open", { headers: { Authorization: "apikey " + apiKey(env) }, signal: AbortSignal.timeout(8000), cf: { cacheTtl: 120, cacheEverything: true } });
     if (!res.ok) throw new Error(`Live Traffic answered ${res.status}`);
     const data = await res.json();
     const items = (Array.isArray(data && data.features) ? data.features : []).map(hazardOut).filter(Boolean);
@@ -2576,7 +2576,12 @@ async function alerts(env, q) {
 // ---------- storage (D1): realtime observations and saved trips ----------
 
 let schemaReady = null;
-function db(env) { return env && env.DB ? env.DB : null; }
+function db(env) {
+  const d = env && env.DB ? env.DB : null;
+  // Inside a trip flow pass every D1 call is counted against the invocation's budget (tfPass, TF_D1_BUDGET).
+  const m = d && typeof tfMeterStore !== "undefined" ? tfMeterStore.getStore() : null;
+  return m ? tfMeteredDb(d, m) : d;
+}
 async function ensureSchema(env) {
   const d = db(env);
   if (!d) return false;
@@ -2929,7 +2934,7 @@ function askBase(s) {
 async function askAsset(env, origin, path) {
   try {
     const req = new Request(new URL(path, origin || "https://assets.local"));
-    const r = env && env.ASSETS ? await env.ASSETS.fetch(req) : await fetch(req);
+    const r = env && env.ASSETS ? (tfMeterNote("assets"), await env.ASSETS.fetch(req)) : await subFetch(req);
     return r.ok ? await r.json() : [];
   } catch { return []; }
 }
@@ -3902,7 +3907,7 @@ async function sendPush(sub, msg, opts = {}) {
     Urgency: opts.urgency || "high",
   };
   if (opts.topic) headers.Topic = String(opts.topic).replace(/[^A-Za-z0-9_-]/g, "").slice(0, 32);
-  const res = await fetch(sub.endpoint, { method: "POST", headers, body });
+  const res = await subFetch(sub.endpoint, { method: "POST", headers, body });
   let text = "";
   if (!res.ok) { try { text = (await res.text()).slice(0, 200); } catch (e) { text = ""; } }
   return { status: res.status, ok: res.ok, text };
@@ -4254,7 +4259,7 @@ async function sendExpo(env, target, n) {
     ...(n.timeSensitive ? { interruptionLevel: "time-sensitive" } : {}),
     ttl: n.ttl || 900, data: { url: n.url || "/", watch: n.watchId || null, id: n.id, tag: n.tag || "tb", ...(n.getOff ? { getOff: n.getOff } : {}) },
   }));
-  const r = await fetch("https://exp.host/--/api/v2/push/send", {
+  const r = await subFetch("https://exp.host/--/api/v2/push/send", {
     method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(msgs),
   });
   const body = await r.json().catch(() => ({}));
@@ -4804,7 +4809,7 @@ function digestAlerts(raw, table, now) {
   return items;
 }
 async function refreshAlertDigest(env, now = Date.now()) {
-  const res = await fetch(API + ALERT_FEED, { headers: { Authorization: "apikey " + apiKey(env) }, signal: AbortSignal.timeout(15000) });
+  const res = await subFetch(API + ALERT_FEED, { headers: { Authorization: "apikey " + apiKey(env) }, signal: AbortSignal.timeout(15000) });
   upstream.calls++;
   if (!res.ok) throw new Error(`Alerts feed answered ${res.status}`);
   const raw = decodeAlerts(new Uint8Array(await res.arrayBuffer()));
@@ -6496,9 +6501,15 @@ function tfCard(spec, S, now, o = {}) {
     if (step === "timetable") return ladder && asOfT ? `No live data since ${asOfT}` : r.sub || "No live data";
     // From 2 min the card says the time is from the last reading (spec 2.4 "about" step): "1 min late, updated 5:26pm",
     // not "1 min late at 5:26pm", which read as live on the Lock Screen (harness F-NSWDOWN12 at 2 min).
+    // 1 Nov (harness F-NSWSTALE, feed 150 s behind): never "On time" from a copy over 2 min old; the time it gave is
+    // "about", with when the copy was made ("About 7:50pm, updated 7:46pm").
     if (step === "about") {
       const m = /^(.+) at (\S+)$/.exec(r.warn || "");
-      if (m && /(late|early|On time)$/.test(m[1])) return `${m[1]}, updated ${m[2]}`;
+      const x = wait ? tm.dep : tm.arr;
+      if (m && m[1] === "On time" && LIVECARD.isLiveTime(x)) return `About ${LIVECARD.tripClock(x.at, !!o.c24)}, updated ${m[2]}`;
+      if (m && /(late|early)$/.test(m[1])) return `${m[1]}, updated ${m[2]}`;
+      if (m && m[1] === "On time") return asOfT ? `Updated ${asOfT}` : null;
+      if (!r.warn && LIVECARD.isLiveTime(x) && asOfT) return `About ${LIVECARD.tripClock(x.at, !!o.c24)}, updated ${asOfT}`;
       return r.warn || r.sub || (asOfT ? `Updated ${asOfT}` : null);
     }
     const x = wait ? tm.dep : tm.arr;
@@ -6523,7 +6534,11 @@ function tfCard(spec, S, now, o = {}) {
   let progress = span > 0 ? Math.min(1, Math.max(0, (now - tm.dep.at) / span)) : 0;
   if (step !== "live") progress = Math.min(progress, 0.9);
   // Build 214: held after Get off now: the card says "Held, stay on" (builds 211 and later show the warning line).
-  return fin({ phase: "ride", nextStop: r.nextStop || null, legArrives: tm.arr.at, warning: r.held && step === "live" ? "Held, stay on" : risk || note(false), progress, platform: null }, staleMs);
+  // 1 Nov (harness F-NSWDOWN-NEAR): the next stop only from live data (a reading under 5 min old). With none, the plan
+  // keeps just the stops it knows (on, off) and its "next" became the stop off with no train behind it; the card says no
+  // next stop then (build 211 shows nothing for it), and the words say how old the data is.
+  const liveNext = step === "live" || step === "about" ? r.nextStop || null : null;
+  return fin({ phase: "ride", nextStop: liveNext, legArrives: tm.arr.at, warning: r.held && step === "live" ? "Held, stay on" : risk || note(false), progress, platform: null }, staleMs);
 }
 /** What changes a card push (spec: a push on every change of target, delay, platform, phase or stale step). */
 const tfCardSig = (c) => JSON.stringify([c.phase, c.card.phase, c.card.departs, c.card.legArrives, c.card.arrival, c.card.platform, c.card.warning, c.card.nextStop, c.step, c.end]);
@@ -6545,9 +6560,9 @@ async function tfRoute(env, device) {
 }
 
 /** The Live Activity rows of this watch's trip: the same phone, the same boarding stop and the same stop off. */
-async function tfCardRows(env, w, spec) {
-  if (!(await ensureLiveActivities(env).catch(() => false))) return [];
-  const rows = await d1all(env, "SELECT * FROM live_activities WHERE device = ?1 AND active = 1", w.device).catch(() => []);
+async function tfCardRows(env, w, spec, pre = null) {
+  // pre: the phone's active card rows, read already for a group of steps (tfPassStep)
+  const rows = Array.isArray(pre) ? pre : (await ensureLiveActivities(env).catch(() => false)) ? await d1all(env, "SELECT * FROM live_activities WHERE device = ?1 AND active = 1", w.device).catch(() => []) : [];
   const first = spec.legs[0], last = spec.legs[spec.legs.length - 1];
   return rows.filter((r) => {
     let t = null; try { t = JSON.parse(r.trip); } catch { return false; }
@@ -6639,7 +6654,7 @@ async function tfStepWatch(env, w, now, opts = {}) {
   const sig = tfCardSig(c);
   const mustSee = rings.some((r) => TF_MUST_SEE.has(r.kind));
   const pushes = [];
-  const cardRows = await tfCardRows(env, w, spec);
+  const cardRows = await tfCardRows(env, w, spec, opts.cards);
   st.tfPush = st.tfPush || {};
   for (const row of cardRows) {
     const lp = st.tfPush[row.token.slice(0, 16)] || {};
@@ -6697,46 +6712,214 @@ function tfWakeAt(st) {
   return Math.min(Number.isFinite(n.readAt) ? n.readAt : Infinity, Number.isFinite(n.timerAt) ? n.timerAt : Infinity);
 }
 
-/** One look over the new flow watches (tfPass and the tests call it): steps every watch that is due, says when the next one is. */
-const TF_PASS_MAX = 100;
-async function tfPassStep(env, now) {
-  const rows = await d1all(env, "SELECT * FROM watches WHERE active = 1 ORDER BY created LIMIT ?1", TF_PASS_MAX).catch(() => []);
-  const out = [];
-  let wake = Infinity;
-  for (const w of rows) {
-    let spec, st;
-    try { spec = JSON.parse(w.spec); st = w.state ? JSON.parse(w.state) : {}; } catch { continue; }
-    if (!tfWanted(spec)) continue;
-    if (tfDue(st, now)) {
-      try { const r = await tfStepWatch(env, w, now); out.push(r); if (!r.ended) wake = Math.min(wake, tfWakeAt({ tfNext: r.next })); }
-      catch (e) { out.push({ id: w.id, error: String(e && e.message || e).slice(0, 160) }); wake = Math.min(wake, now + TF.READ); }
-    } else wake = Math.min(wake, tfWakeAt(st));
+/**
+ * The trip flow pass at scale (1 Nov 2026, real-time harness bug 2). It read `SELECT * FROM watches WHERE active = 1
+ * ORDER BY created LIMIT 100` and left out the watches that are not trip flow 2 AFTER the limit, so once about 100
+ * watches were active the newer trips were never stepped: in the harness 51 of 151 phones on one trip got no card push
+ * and no Get off now while locked. Now:
+ * - the list is every active trip flow 2 watch (filtered in SQL, light columns only: id and the next moment), read again
+ *   every TF_LIST_EVERY in a pass so a trip started meanwhile joins; a due step re-reads its own row first (an End trip
+ *   or an open app's step since is seen);
+ * - due steps go most overdue first, TF_STEP_CONCURRENCY at a time, with the card rows of a group read in one query;
+ * - watches past their expiry are ended in one UPDATE at each pass (a leftover never holds a place);
+ * - one invocation steps at most TF_SHARD_TRIPS trips: past that the cron steps none itself and hands them all to
+ *   TripFlowShard objects (the TFSHARD binding) by a hash of the watch id, each request its own invocation with its own
+ *   subrequest and D1 limits (measured in the 500 trip test: the worst minute of a 30 trip share is about 18 D1
+ *   statements and 4 outbound requests a trip, all trips getting Get off now in the same minute);
+ * - every outbound request and D1 statement of the pass is counted (tfMeterStore): past TF_EXT_SOFT / TF_D1_SOFT only
+ *   steps at a Get off now timer are made, and past TF_EXT_HARD / TF_D1_HARD none; the rest wait for the next
+ *   invocation, most overdue first. Cloudflare allows 1,000 of each a invocation; the rest of the cron (runTick, the
+ *   card passes) keeps at least 250. Without the TFSHARD binding everything runs in the cron under these caps.
+ */
+const TF_SHARD_TRIPS = 30;
+const TF_SHARD_MAX = 40;
+const TF_STEP_CONCURRENCY = 6;
+const TF_LIST_EVERY = 15000;
+const TF_EXT_SOFT = 600, TF_EXT_HARD = 750;
+const TF_D1_SOFT = 600, TF_D1_HARD = 750;
+const tfMeterStore = new AsyncLocalStorage();
+/** Counts one outbound call of a kind (ext: a subrequest, assets: the static files binding) in the pass running now. */
+function tfMeterNote(kind, n = 1) { const m = tfMeterStore.getStore(); if (m) m[kind] = (m[kind] || 0) + n; }
+/** Every external fetch of the worker: counted when a trip flow pass is running. */
+function subFetch(input, init) { tfMeterNote("ext"); return fetch(input, init); }
+/** D1 seen through the pass's meter: each run, all, first and batch is one call (d1), each statement one (d1s). */
+function tfMeteredDb(d, m) {
+  const note = (n) => { m.d1 = (m.d1 || 0) + 1; m.d1s = (m.d1s || 0) + n; };
+  const stmt = (s) => new Proxy(s, { get(t, k) {
+    if (k === "__raw") return t;
+    if (k === "bind") return (...a) => stmt(t.bind(...a));
+    if (k === "run" || k === "all" || k === "first" || k === "raw") return (...a) => { note(1); return t[k](...a); };
+    const v = t[k]; return typeof v === "function" ? v.bind(t) : v;
+  } });
+  return new Proxy(d, { get(t, k) {
+    if (k === "prepare") return (q) => stmt(t.prepare(q));
+    if (k === "batch") return (list) => { note(list.length); return t.batch(list.map((s) => (s && s.__raw) || s)); };
+    const v = t[k]; return typeof v === "function" ? v.bind(t) : v;
+  } });
+}
+/** The pass's budget: "ok" (any step), "timers" (only a step at its Get off now timer) or "full" (none). */
+function tfBudget(m) {
+  if (!m) return "ok";
+  const r = m.reserve || 0; // the cron's own pass keeps room for the minute tick and the card passes around it
+  if ((m.ext || 0) >= TF_EXT_HARD - r || (m.d1s || 0) >= TF_D1_HARD - r) return "full";
+  if ((m.ext || 0) >= TF_EXT_SOFT - r || (m.d1s || 0) >= TF_D1_SOFT - r) return "timers";
+  return "ok";
+}
+/** What the cron's own trip pass leaves for the rest of its invocation (the shards' passes run alone, with none). */
+const TF_CRON_RESERVE = 100;
+/** Which of n shards a watch is stepped by (FNV-1a of its id). */
+function tfShardOf(id, n) {
+  let h = 2166136261;
+  for (const ch of String(id)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+  return h % n;
+}
+// A row with spec or state that is not JSON never stops the query (SQLite's JSON functions throw on it).
+const TF_SQL_FLOW = "(CASE WHEN json_valid(spec) THEN json_extract(spec, '$.tripFlow') ELSE 0 END) >= 2";
+const TF_SQL_STATE = (p) => `(CASE WHEN json_valid(state) THEN json_extract(state, '${p}') END)`;
+/** The list of active trip flow 2 watches for this pass (and shard): id -> { wake, timerAt }. */
+async function tfRelist(env, ctx, now) {
+  const rows = await d1all(env, `SELECT id, ${TF_SQL_STATE("$.tfNext.readAt")} AS ra, ${TF_SQL_STATE("$.tfNext.timerAt")} AS ta, ${TF_SQL_STATE("$.tfNext.momentAt")} AS ma, CASE WHEN json_valid(state) THEN json_type(state, '$.tfNext') END AS nt FROM watches WHERE active = 1 AND ${TF_SQL_FLOW}`).catch(() => null);
+  ctx.listedAt = now;
+  if (!rows) return false;
+  const list = new Map();
+  for (const r of rows) {
+    if (ctx.shard && tfShardOf(r.id, ctx.shard.n) !== ctx.shard.k) continue;
+    const ra = Number.isFinite(Number(r.ra)) && r.ra != null ? Number(r.ra) : Infinity;
+    const ta = Number.isFinite(Number(r.ta)) && r.ta != null ? Number(r.ta) : Infinity;
+    const ma = Number.isFinite(Number(r.ma)) && r.ma != null ? Number(r.ma) : Infinity;
+    list.set(r.id, { wake: r.nt == null ? 0 : Math.min(ra, ta), timerAt: ta, momentAt: ma });
   }
-  return { steps: out, wake };
+  ctx.list = list;
+  ctx.total = rows.length;
+  return true;
+}
+/** Ends the trip flow watches past their expiry (6 h at most, 3 h after the trip): one UPDATE, once a pass. */
+async function tfExpire(env, now) {
+  const r = await db(env).prepare(`UPDATE watches SET active = 0, ended = 'expired', updated = ?1 WHERE active = 1 AND expires < ?1 AND ${TF_SQL_FLOW}`).bind(now).run().catch(() => null);
+  return (r && r.meta && r.meta.changes) || 0;
+}
+
+/** One look over the new flow watches (tfPass and the tests call it): steps every watch that is due, says when the next one is. */
+async function tfPassStep(env, now, ctx = null) {
+  if (!ctx) { ctx = { shard: null, list: null, listedAt: 0, deferred: 0 }; await tfRelist(env, ctx, now); }
+  if (!ctx.list) return { steps: [], wake: now + 5000 };
+  const out = [];
+  const due = [...ctx.list.entries()].filter(([, e]) => e.wake <= now + 250).sort((a, b) => a[1].wake - b[1].wake);
+  // env TF_STEP_CONCURRENCY: steps at once (1 in the virtual clock tests, whose shared feed reads wait on that clock);
+  // the rows and cards of TF_STEP_CONCURRENCY steps are read together either way.
+  const conc = Math.max(1, Math.min(16, Number(env.TF_STEP_CONCURRENCY) || TF_STEP_CONCURRENCY));
+  let held = 0;
+  let cardsOk = null;
+  for (let i = 0; i < due.length; i += TF_STEP_CONCURRENCY) {
+    const b = tfBudget(tfMeterStore.getStore());
+    let group = due.slice(i, i + TF_STEP_CONCURRENCY);
+    if (b === "full") { held += due.length - i; break; }
+    // over the soft budget only the steps at a moment go: the Get off now timer, or a live time this trip's alerts hang
+    // on (Due, left, heads-up, arrived)
+    if (b === "timers") { const g = group.filter(([, e]) => e.timerAt <= now + 250 || e.momentAt <= now + 250); held += group.length - g.length; group = g; if (!group.length) continue; }
+    const ids = group.map(([id]) => id);
+    const rows = await d1all(env, `SELECT * FROM watches WHERE active = 1 AND id IN (${ids.map((_, k) => "?" + (k + 1)).join(", ")})`, ...ids).catch(() => null);
+    if (!rows) { for (const [, e] of group) e.wake = now + 1000; continue; }
+    const seen = new Set(rows.map((r) => r.id));
+    for (const id of ids) if (!seen.has(id)) ctx.list.delete(id);
+    // the cards of the group's phones in one read (tfCardRows otherwise reads one phone at a time)
+    if (cardsOk === null) cardsOk = await ensureLiveActivities(env).catch(() => false);
+    const devs = [...new Set(rows.map((r) => r.device).filter(Boolean))];
+    const cardRows = cardsOk && devs.length ? await d1all(env, `SELECT * FROM live_activities WHERE active = 1 AND device IN (${devs.map((_, k) => "?" + (k + 1)).join(", ")})`, ...devs).catch(() => null) : [];
+    const stepOne = async (w) => {
+      const e = ctx.list.get(w.id);
+      let spec, st;
+      try { spec = JSON.parse(w.spec); st = w.state ? JSON.parse(w.state) : {}; } catch { ctx.list.delete(w.id); return; }
+      if (!tfWanted(spec)) { ctx.list.delete(w.id); return; }
+      // stepped since the list was read (an open app's step): its own next moment
+      if (!tfDue(st, now)) { e.wake = tfWakeAt(st); e.timerAt = st.tfNext && Number.isFinite(st.tfNext.timerAt) ? st.tfNext.timerAt : Infinity; e.momentAt = st.tfNext && Number.isFinite(st.tfNext.momentAt) ? st.tfNext.momentAt : Infinity; return; }
+      try {
+        const r = await tfStepWatch(env, w, now, cardRows ? { cards: cardRows.filter((c) => c.device === w.device) } : {});
+        out.push(r);
+        if (r.ended) ctx.list.delete(w.id);
+        else { e.wake = tfWakeAt({ tfNext: r.next }); e.timerAt = r.next && Number.isFinite(r.next.timerAt) ? r.next.timerAt : Infinity; e.momentAt = r.next && Number.isFinite(r.next.momentAt) ? r.next.momentAt : Infinity; }
+      } catch (err) { out.push({ id: w.id, error: String(err && err.message || err).slice(0, 160) }); e.wake = now + TF.READ; }
+    };
+    for (let j = 0; j < rows.length; j += conc) await Promise.all(rows.slice(j, j + conc).map(stepOne));
+  }
+  ctx.deferred = (ctx.deferred || 0) + held;
+  const b = tfBudget(tfMeterStore.getStore());
+  let wake = Infinity;
+  for (const e of ctx.list.values()) {
+    if (b === "full") continue;
+    if (b === "timers" && !(e.timerAt <= e.wake + 250 || e.momentAt <= e.wake + 250)) { wake = Math.min(wake, e.timerAt, e.momentAt); continue; }
+    wake = Math.min(wake, e.wake);
+  }
+  if (b !== "ok" && wake <= now + 250) wake = now + 1000;
+  return { steps: out, wake, held };
 }
 
 /**
  * The cron's trip flow pass (tripflow2 on): every new flow watch is read every 30 s, every 15 s once its live arrival
  * is under 5 min away, and once more at its Get off now moment (one timer per trip, moved on every reading) and at
  * each moment a live time names. One cron run holds this up to TF.PASS_SPAN (62 s); the next run takes over; the moment
- * keys (watch_sent) stop anything ringing twice where two runs overlap. No Durable Object is needed: the wait costs no
- * CPU and no request.
+ * keys (watch_sent) stop anything ringing twice where two runs overlap. Past TF_SHARD_TRIPS trips the cron steps one
+ * share and hands the others to TripFlowShard objects (o.shard { k, n }: the share this call steps).
  */
-async function tfPass(env, startedAt = Date.now(), wait = (ms) => new Promise((r) => setTimeout(r, ms))) {
+async function tfPass(env, startedAt = Date.now(), wait = (ms) => new Promise((r) => setTimeout(r, ms)), o = {}) {
   if (!(await serverOn(env, "tripflow2"))) return { off: true };
-  const end = startedAt + TF.PASS_SPAN;
-  let steps = 0, loops = 0;
-  const items = [];
-  while (loops++ < 200) {
-    const now = Date.now();
-    const r = await tfPassStep(env, now);
-    steps += r.steps.length;
-    for (const s of r.steps) if (s.sent && s.sent.length) items.push({ id: s.id, sent: s.sent.map((x) => x.kind) });
-    if (!Number.isFinite(r.wake) || r.wake > end) break;
-    await wait(Math.max(250, r.wake - Date.now()));
-  }
-  return { steps, loops, items: items.slice(0, 20) };
+  const meter = { ext: 0, d1: 0, d1s: 0, assets: 0, shardCalls: 0, reserve: o.shard ? 0 : TF_CRON_RESERVE };
+  return tfMeterStore.run(meter, async () => {
+    const end = startedAt + TF.PASS_SPAN;
+    const ctx = { shard: o.shard || null, list: null, listedAt: 0, deferred: 0, total: 0 };
+    const expired = o.shard ? 0 : await tfExpire(env, Date.now());
+    await tfRelist(env, ctx, Date.now());
+    const shardRuns = [];
+    if (!o.shard && ctx.list && ctx.list.size > TF_SHARD_TRIPS && env.TFSHARD && String(env.TF_SHARDS || "").toLowerCase() !== "off") {
+      const n = Math.min(TF_SHARD_MAX, Math.ceil(ctx.list.size / TF_SHARD_TRIPS));
+      // the cron steps no trip itself: its invocation keeps its budget for the minute tick and the card passes
+      ctx.shard = { k: -1, n };
+      ctx.list = new Map();
+      for (let k = 0; k < n; k++) {
+        meter.shardCalls++;
+        shardRuns.push(Promise.resolve().then(() => {
+          const stub = env.TFSHARD.get(env.TFSHARD.idFromName("tf" + k), { locationHint: "oc" });
+          return stub.fetch("https://tfshard/pass", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ k, n, startedAt }) });
+        }).then((r) => r.json()).catch((e) => ({ k, error: String(e && e.message || e).slice(0, 160) })));
+      }
+    }
+    let steps = 0, loops = 0;
+    const items = [];
+    while (!(ctx.shard && ctx.shard.k < 0) && loops++ < 400) {
+      const now = Date.now();
+      if (now - ctx.listedAt >= TF_LIST_EVERY) {
+        const keep = ctx.list;
+        if (!(await tfRelist(env, ctx, now))) ctx.list = keep;
+      }
+      const r = await tfPassStep(env, now, ctx);
+      steps += r.steps.length;
+      for (const s of r.steps) if (s.sent && s.sent.length) items.push({ id: s.id, sent: s.sent.map((x) => x.kind) });
+      if (!Number.isFinite(r.wake) || r.wake > end) break;
+      await wait(Math.max(250, Math.min(r.wake, ctx.listedAt + TF_LIST_EVERY) - Date.now()));
+    }
+    const shards = shardRuns.length ? await Promise.all(shardRuns) : [];
+    return { steps, loops, items: items.slice(0, 20), trips: ctx.total, shard: ctx.shard, expired, deferred: ctx.deferred, meter: { ...meter },
+      ...(shards.length ? { shards: shards.map((s) => ({ k: s.k ?? (s.shard && s.shard.k), steps: s.steps, deferred: s.deferred, meter: s.meter, error: s.error })) } : {}) };
+  });
 }
+
+/**
+ * One share of the trip flow pass (TFSHARD binding, name "tf<k>"): the cron's pass sends { k, n, startedAt } once a
+ * minute when more than TF_SHARD_TRIPS trips are live, and this object steps the watches whose id hashes to k, as its
+ * own invocation (its own 1,000 subrequests and D1 calls). Reached only through the binding; it keeps nothing.
+ */
+class TripFlowShard {
+  constructor(state, env) { this.state = state; this.env = env; }
+  async fetch(request) {
+    const b = await request.json().catch(() => ({}));
+    const k = Number(b.k), n = Number(b.n);
+    if (!(Number.isInteger(k) && Number.isInteger(n) && n >= 2 && n <= TF_SHARD_MAX && k >= 0 && k < n)) return json({ error: "bad shard" }, 400);
+    applyEnv(this.env);
+    const r = await tfPass(this.env, Number(b.startedAt) || Date.now(), undefined, { shard: { k, n } }).catch((e) => ({ error: String(e && e.message || e).slice(0, 160) }));
+    return json({ k, ...r });
+  }
+}
+export { TripFlowShard };
 
 /** A new flow card with no watch behind it (the app registered only the card): its state from one reading, no alerts. */
 async function tfCardAlone(env, trip, now) {
@@ -7147,7 +7330,7 @@ async function budgetUsage(env, from, to) {
     p: durableObjectsPeriodicGroups(limit: 1, filter: { datetimeMinute_geq: $s, datetimeMinute_lt: $e }) { sum { duration rowsRead rowsWritten inboundWebsocketMsgCount } }
     d: d1AnalyticsAdaptiveGroups(limit: 1, filter: { datetimeMinute_geq: $s, datetimeMinute_lt: $e }) { sum { rowsRead rowsWritten } }
   } } }`;
-  const r = await fetch("https://api.cloudflare.com/client/v4/graphql", {
+  const r = await subFetch("https://api.cloudflare.com/client/v4/graphql", {
     method: "POST", headers: { authorization: "Bearer " + env.CF_ANALYTICS_TOKEN, "content-type": "application/json" },
     body: JSON.stringify({ query: q, variables: { a: env.CF_ACCOUNT_ID, s: new Date(from).toISOString(), e: new Date(to).toISOString() } }),
     signal: AbortSignal.timeout(20000),
@@ -7923,6 +8106,7 @@ const LIVECARD = (() => {
         LIVE_CAP: 300000,
         NO_DATA: 600000,
         LEFT_BY: 60000,
+        EVIDENCE_AHEAD: 30000,
         GETOFF_LEAD: 30000,
         GETOFF_LAG: 8000,
         GETOFF_MAX_LEAD: 40000,
@@ -8204,14 +8388,16 @@ const LIVECARD = (() => {
         const L = snap.legs[ei];
         const age = t - snap.asOf;
         const fresh = age < R.LIVE_FRESH && !!L && !L.unmatched;
-        const v = fresh && L && L.vehicle && t - L.vehicle.at < R.LIVE_FRESH ? L.vehicle : null;
+        const usable = age < R.LIVE_CAP && !!L && !L.unmatched;
+        const tc = Math.min(t, snap.asOf + R.EVIDENCE_AHEAD);
+        const v = usable && L && L.vehicle && snap.asOf - L.vehicle.at < R.LIVE_FRESH ? L.vehicle : null;
         const left = (i) => {
             if (v && (v.stop > i || (v.stop === i && v.state === 'left')))
                 return 'vehicle';
             if (v)
                 return null;
             const e = L ? L.est[i] : null;
-            if (fresh && e != null && t >= e + R.LEFT_BY)
+            if (usable && e != null && tc >= e + R.LEFT_BY)
                 return 'stop live';
             return null;
         };
@@ -8224,7 +8410,7 @@ const LIVECARD = (() => {
             if (v)
                 return null;
             const e = L ? L.est[i] : null;
-            if (fresh && e != null && t >= e)
+            if (usable && e != null && tc >= e)
                 return 'stop live';
             return null;
         };
@@ -8382,7 +8568,8 @@ const LIVECARD = (() => {
         }
         else if (phase === 'left' || phase === 'onTheWay' || phase === 'nextStop' || phase === 'getOff') {
             const e = tripEvidence(plan, M, snap, li, t);
-            let nextIdx = e.next;
+            const seen = M.legs[li].nextSeen;
+            let nextIdx = seen && seen.ei === ei && seen.n === leg.stops.length ? Math.max(e.next, seen.idx) : e.next;
             if (opts.forecast) {
                 nextIdx = 1;
                 while (nextIdx < leg.off) {
@@ -8549,6 +8736,11 @@ const LIVECARD = (() => {
             deliver({ kind: 'cancelled', title: `${C(leg0.stops[0].tt)} ${leg0.line} cancelled`, body, level: 'normal', say, moment: `cancel:${li}` }, age, false);
         }
         const e = tripEvidence(plan, M, S, li, t);
+        {
+            const ei = effLeg(M, li), n = plan.legs[ei].stops.length, s = m.nextSeen;
+            if (!s || s.ei !== ei || s.n !== n || e.next > s.idx)
+                m.nextSeen = { ei, n, idx: s && s.ei === ei && s.n === n ? Math.max(s.idx, e.next) : e.next };
+        }
         const tm = tripLegTimes(plan, M, S, li, t);
         const leg = plan.legs[effLeg(M, li)];
         const offName = leg.stops[leg.off].name;
@@ -8611,7 +8803,7 @@ const LIVECARD = (() => {
             const arrivedTime = e.arrived === 'vehicle' ? Math.min(t, isLiveTime(tm.arr) ? Math.max(tm.arr.at, t - R.LIVE_FRESH) : t) : tm.arr.at;
             m.arrivedAt = t;
             m.arrivedTime = arrivedTime;
-            if (!rung('getoff')) {
+            if (!rung('getoff') && e.fresh) {
                 m.rung.getoff = t;
                 m.rung.arrived = 'with getoff';
                 if (!rung('headsup'))
@@ -8619,6 +8811,11 @@ const LIVECARD = (() => {
                 deliver({ kind: 'atstop', title: `${offName} now`, body: `${offName} now. Get off here.`, level: 'time sensitive', clip: 'getoff', say: `${offName} now. Get off here.`, moment: `getoff:${li}`, expires: t + R.GETOFF_EXPIRE }, age, e.arrived === 'vehicle');
             }
             else {
+                if (!rung('getoff')) {
+                    m.rung.getoff = 'skipped';
+                    if (!rung('headsup'))
+                        m.rung.headsup = 'skipped';
+                }
                 m.rung.arrived = t;
                 const say = nextVis ? `You're at ${offName}. Change to the ${nextVis.line}.` : `You've arrived at ${offName}.`;
                 const nt = nextVis ? tripLegTimes(plan, M, S, li + 1, t) : null;
@@ -8666,7 +8863,7 @@ const LIVECARD = (() => {
             res.log.push({ t, what: `leg ${li + 1}: held (live arrival ${tripClockSec(tm.arr.at)}, ${Math.round((tm.arr.at - m.offArrAt) / 1000)} s later than at Get off now)` });
             return res;
         }
-        const headsUpNow = e.leftBefore || (e.fresh && isLiveTime(tm.arr) && tm.arr.at - t <= R.HEADSUP_WINDOW);
+        const headsUpNow = e.fresh && (!!e.leftBefore || (isLiveTime(tm.arr) && tm.arr.at - t <= R.HEADSUP_WINDOW));
         if (!rung('headsup') && headsUpNow) {
             m.rung.headsup = t;
             deliver({ kind: 'headsup', title: `${offName} is next`, body: changeWords ? changeWords.head : `${offName} is next. Arriving about ${C(tm.arr.at)}. Get ready to get off.`, level: 'normal', clip: 'headsup', say: changeWords ? changeWords.head : `${offName} is next. Get ready to get off.`, moment: `headsup:${li}`, expires: tm.arr.at, arrSource: tm.arr.source }, age, false);
@@ -10352,7 +10549,7 @@ async function signApnsJwt(pem, kid, team, now = Date.now()) {
 /** One push to Apple. Returns Apple's status and reason ("BadDeviceToken" and so on). */
 async function apnsSend(env, token, payload, o = {}) {
   const jwt = await apnsJwt(env);
-  const r = await fetch(`${APNS_HOST}/3/device/${token}`, {
+  const r = await subFetch(`${APNS_HOST}/3/device/${token}`, {
     method: "POST",
     headers: {
       authorization: `bearer ${jwt}`, "apns-topic": o.topic || apnsLaTopic(env), "apns-push-type": o.pushType || "liveactivity",
@@ -10408,24 +10605,28 @@ async function laPushOne(env, row, now, o = {}) {
   return { token: row.token.slice(0, 8), status: res.status, reason: res.reason, event: payload.aps.event, phase: card.phase, warning: card.warning || null, changed, priority, apnsId: res.id, contentState: cs };
 }
 
-/** Card tokens of new flow trips that an active new flow watch pushes (tfStepWatch), when tripflow2 is on. */
-async function tfWatchedTokens(env, rows) {
+/**
+ * Card tokens of new flow trips that an active new flow watch pushes (tfStepWatch), when tripflow2 is on. Two queries
+ * whatever the number of phones (1 Nov, harness bug 2: it was one watch query per phone, twice a minute).
+ */
+async function tfWatchedTokens(env, now = Date.now()) {
   const out = new Set();
-  const tfRows = rows.filter((r) => { try { return tfWanted(JSON.parse(r.trip)); } catch { return false; } });
-  if (!tfRows.length || !(await serverOn(env, "tripflow2"))) return out;
-  const devices = [...new Set(tfRows.map((r) => r.device).filter(Boolean))];
-  for (const d of devices) {
-    const ws = await d1all(env, "SELECT * FROM watches WHERE device = ?1 AND active = 1", d).catch(() => []);
-    for (const w of ws) {
-      let spec = null; try { spec = JSON.parse(w.spec); } catch { continue; }
-      if (!tfWanted(spec)) continue;
-      const first = spec.legs[0], last = spec.legs[spec.legs.length - 1];
-      for (const r of tfRows) {
-        if (r.device !== d) continue;
-        const t = JSON.parse(r.trip);
-        if (t.legs[0].stopId === first.stopId && (t.legs[t.legs.length - 1].toStopId || null) === (last.toStopId || null)) out.add(r.token);
-      }
-    }
+  if (!(await serverOn(env, "tripflow2"))) return out;
+  const ws = await d1all(env, `SELECT device, spec FROM watches WHERE active = 1 AND ${TF_SQL_FLOW}`);
+  if (!ws.length) return out;
+  const want = new Map();
+  for (const w of ws) {
+    let spec = null; try { spec = JSON.parse(w.spec); } catch { continue; }
+    if (!tfWanted(spec) || !Array.isArray(spec.legs) || !spec.legs.length) continue;
+    const first = spec.legs[0], last = spec.legs[spec.legs.length - 1];
+    const k = w.device + "|" + first.stopId + "|" + (last.toStopId || null);
+    want.set(k, true);
+  }
+  const cards = await d1all(env, `SELECT token, device, trip FROM live_activities WHERE active = 1 AND expires > ?1 AND device IN (SELECT device FROM watches WHERE active = 1 AND ${TF_SQL_FLOW})`, now - 600000);
+  for (const r of cards) {
+    let t = null; try { t = JSON.parse(r.trip); } catch { continue; }
+    if (!t || !tfWanted(t) || !Array.isArray(t.legs) || !t.legs.length) continue;
+    if (want.has(r.device + "|" + t.legs[0].stopId + "|" + (t.legs[t.legs.length - 1].toStopId || null))) out.add(r.token);
   }
   return out;
 }
@@ -10434,10 +10635,11 @@ async function tfWatchedTokens(env, rows) {
 async function tickLiveActivities(env, now = Date.now()) {
   if (!env.APNS_KEY || !env.APNS_BUNDLE || !(await ensureLiveActivities(env))) return { skipped: "no push key" };
   await db(env).prepare("UPDATE live_activities SET active = 0 WHERE active = 1 AND expires < ?1").bind(now - 3600000).run().catch(() => null);
-  const all = await d1all(env, "SELECT * FROM live_activities WHERE active = 1 AND expires > ?1 ORDER BY last_push LIMIT ?2", now - 600000, LA_PER_TICK * 2);
   // New trip flow cards whose trip has a watch are pushed by the trip flow pass from the watch's own reading (one
-  // state for card and alerts, I6): not here.
-  const tfDriven = await tfWatchedTokens(env, all).catch(() => new Set());
+  // state for card and alerts, I6): not here. They are counted out of the limit, so 300 trip flow cards never take the
+  // places of the cards this pass does push (1 Nov, harness bug 2).
+  const tfDriven = await tfWatchedTokens(env, now).catch(() => new Set());
+  const all = await d1all(env, "SELECT * FROM live_activities WHERE active = 1 AND expires > ?1 ORDER BY last_push LIMIT ?2", now - 600000, LA_PER_TICK * 2 + tfDriven.size);
   const rows = laDue(all.filter((r) => !tfDriven.has(r.token)), now);
   const out = [];
   let next = 0;
@@ -10664,7 +10866,7 @@ async function shareFromFallback(env, id) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 5000);
   try {
-    const r = await fetch(`${base}/api/share?id=${encodeURIComponent(id)}`, { signal: ctl.signal, headers: { accept: "application/json" } });
+    const r = await subFetch(`${base}/api/share?id=${encodeURIComponent(id)}`, { signal: ctl.signal, headers: { accept: "application/json" } });
     if (!r.ok) return null;
     const b = await r.json();
     return b && typeof b === "object" && b.id === id && !b.ended ? b : null;
@@ -10870,7 +11072,7 @@ async function carparkLive(env, c) {
     if (tryN) await new Promise((r) => setTimeout(r, 450));
     upstream.calls++;
     try {
-      const res = await fetch(API + "/v1/carpark?facility=" + encodeURIComponent(c.id), { headers: { Authorization: "apikey " + apiKey(env) }, signal: AbortSignal.timeout(8000) });
+      const res = await subFetch(API + "/v1/carpark?facility=" + encodeURIComponent(c.id), { headers: { Authorization: "apikey " + apiKey(env) }, signal: AbortSignal.timeout(8000) });
       if (res.ok) v = parkOut(c, await res.json());
     } catch (e) { /* retry once */ }
   }

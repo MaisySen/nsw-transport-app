@@ -11,6 +11,7 @@ export const TRIP_RULES = {
   LIVE_CAP: 300000, // R2: live readings over 5 min old are not used for times
   NO_DATA: 600000, // over 10 min: "No live data. Open the app to refresh."
   LEFT_BY: 60000, // the stop's own live time passed by 60 s = left
+  EVIDENCE_AHEAD: 30000, // a stop's live time moves the trip at most 30 s past the reading it came from (never on the clock alone)
   GETOFF_LEAD: 30000, // Get off now at live arrival minus 30 s (the owner's rule: it should land 30 s before the stop)
   // Build 214 (1 Nov 2026, Bidur OK 2:31 PM): the feed's lag, made up for. Shadow trips G, H, I, K, M (31 Oct) landed
   // 13 to 25 s before the train stopped (mean 20 s) on the 30 s timer: the position-based arrival ran up to 15 s late
@@ -294,6 +295,8 @@ export type LegMemory = {
   platformAlerted: string | null; delayAlerted: number | null; cancelAlerted: boolean; replaced: number | null; replacedWhy?: 'cancelled' | 'missed' | null; lastArrAt?: number | null;
   /** Build 214: the live arrival Get off now came from (the held check compares the arrival with it). */
   offArrAt?: number | null;
+  /** 1 Nov 2026: the furthest next stop live data has shown on this service (plan leg ei, its stop count): the card's next stop never goes back once an older reading's vehicle drops out. */
+  nextSeen?: { ei: number; n: number; idx: number } | null;
 };
 export type TripMemory = { legs: LegMemory[]; current: number };
 export function newTripMemory(plan: TripPlan): TripMemory {
@@ -332,14 +335,21 @@ export function tripEvidence(plan: TripPlan, M: TripMemory, snap: TripReading, l
   const L = snap.legs[ei];
   const age = t - snap.asOf;
   const fresh = age < R.LIVE_FRESH && !!L && !L.unmatched;
-  const v = fresh && L && L.vehicle && t - L.vehicle.at < R.LIVE_FRESH ? L.vehicle : null;
+  // 1 Nov 2026 (real-time harness F-NSWSTALE, F-NSWDOWN-NEAR): what a reading shows has already happened (the vehicle
+  // past a stop, a stop's live time passed by the reading's own time) stays true while the reading is under the live
+  // cap, however late the feed is, so a feed 150 s behind still moves the trip (late, never early). A stop's live time
+  // is a forecast: it is never passed on the clock more than EVIDENCE_AHEAD after the reading was made, so a lost feed
+  // does not move the trip on its last forecast ("Clyde is next" with no live data behind it).
+  const usable = age < R.LIVE_CAP && !!L && !L.unmatched;
+  const tc = Math.min(t, snap.asOf + R.EVIDENCE_AHEAD);
+  const v = usable && L && L.vehicle && snap.asOf - L.vehicle.at < R.LIVE_FRESH ? L.vehicle : null;
   // A fresh vehicle position is the best evidence: when there is one, a stop's own live time never moves the trip past
   // where the vehicle is (25 Oct: a feed whose estimates were the timetable, the train 4 min behind them).
   const left = (i: number): string | null => {
     if (v && (v.stop > i || (v.stop === i && v.state === 'left'))) return 'vehicle';
     if (v) return null;
     const e = L ? L.est[i] : null;
-    if (fresh && e != null && t >= e + R.LEFT_BY) return 'stop live';
+    if (usable && e != null && tc >= e + R.LEFT_BY) return 'stop live';
     return null;
   };
   const off = leg.off;
@@ -348,7 +358,7 @@ export function tripEvidence(plan: TripPlan, M: TripMemory, snap: TripReading, l
     if (v && (v.stop > i || (v.stop === i && v.state === 'left'))) return 'vehicle';
     if (v) return null;
     const e = L ? L.est[i] : null;
-    if (fresh && e != null && t >= e) return 'stop live';
+    if (usable && e != null && tc >= e) return 'stop live';
     return null;
   };
   const passed = v && (v.stop > off || (v.stop === off && v.state === 'left')) ? 'vehicle' : null;
@@ -502,7 +512,8 @@ export function tripRender(plan: TripPlan, M: TripMemory, snap: TripReading, t: 
     nextStop = board;
   } else if (phase === 'left' || phase === 'onTheWay' || phase === 'nextStop' || phase === 'getOff') {
     const e = tripEvidence(plan, M, snap, li, t);
-    let nextIdx = e.next;
+    const seen = M.legs[li].nextSeen;
+    let nextIdx = seen && seen.ei === ei && seen.n === leg.stops.length ? Math.max(e.next, seen.idx) : e.next;
     if (opts.forecast) {
       // the widget's timeline: the next stop by the live times it loaded (never the timetable)
       nextIdx = 1;
@@ -660,6 +671,7 @@ export function tripStep(plan: TripPlan, M: TripMemory, t: number, S: TripReadin
     deliver({ kind: 'cancelled', title: `${C(leg0.stops[0].tt)} ${leg0.line} cancelled`, body, level: 'normal', say, moment: `cancel:${li}` }, age, false);
   }
   const e = tripEvidence(plan, M, S, li, t);
+  { const ei = effLeg(M, li), n = plan.legs[ei].stops.length, s = m.nextSeen; if (!s || s.ei !== ei || s.n !== n || e.next > s.idx) m.nextSeen = { ei, n, idx: s && s.ei === ei && s.n === n ? Math.max(s.idx, e.next) : e.next }; }
   const tm = tripLegTimes(plan, M, S, li, t);
   const leg = plan.legs[effLeg(M, li)];
   const offName = leg.stops[leg.off].name;
@@ -716,10 +728,13 @@ export function tripStep(plan: TripPlan, M: TripMemory, t: number, S: TripReadin
   if (e.arrived) {
     const arrivedTime = e.arrived === 'vehicle' ? Math.min(t, isLiveTime(tm.arr) ? Math.max(tm.arr.at, t - R.LIVE_FRESH) : t) : tm.arr.at;
     m.arrivedAt = t; m.arrivedTime = arrivedTime;
-    if (!rung('getoff')) {
+    // "<stop> now. Get off here." only from a reading under 2 min old: from an older one (a feed running late) the train
+    // got in a while ago, so the calm Arrived goes instead (1 Nov, harness F-NSWSTALE).
+    if (!rung('getoff') && e.fresh) {
       m.rung.getoff = t; m.rung.arrived = 'with getoff'; if (!rung('headsup')) m.rung.headsup = 'skipped';
       deliver({ kind: 'atstop', title: `${offName} now`, body: `${offName} now. Get off here.`, level: 'time sensitive', clip: 'getoff', say: `${offName} now. Get off here.`, moment: `getoff:${li}`, expires: t + R.GETOFF_EXPIRE }, age, e.arrived === 'vehicle');
     } else {
+      if (!rung('getoff')) { m.rung.getoff = 'skipped'; if (!rung('headsup')) m.rung.headsup = 'skipped'; }
       m.rung.arrived = t;
       const say = nextVis ? `You're at ${offName}. Change to the ${nextVis.line}.` : `You've arrived at ${offName}.`;
       const nt = nextVis ? tripLegTimes(plan, M, S, li + 1, t) : null;
@@ -765,7 +780,10 @@ export function tripStep(plan: TripPlan, M: TripMemory, t: number, S: TripReadin
     return res;
   }
   // 4) heads-up: the stop before is left, or the live arrival is 2 min away (never before leaving)
-  const headsUpNow = e.leftBefore || (e.fresh && isLiveTime(tm.arr) && tm.arr.at - t <= R.HEADSUP_WINDOW);
+  // Only from a live reading (under 2 min old, spec 2.2 and case S20): the stop before left as that reading shows it,
+  // or its live arrival 2 min away. From an older reading (a feed running late, harness F-NSWSTALE) none goes: the quiet
+  // "about" note at the Get off moment says it instead.
+  const headsUpNow = e.fresh && (!!e.leftBefore || (isLiveTime(tm.arr) && tm.arr.at - t <= R.HEADSUP_WINDOW));
   if (!rung('headsup') && headsUpNow) {
     m.rung.headsup = t;
     deliver({ kind: 'headsup', title: `${offName} is next`, body: changeWords ? changeWords.head : `${offName} is next. Arriving about ${C(tm.arr.at)}. Get ready to get off.`, level: 'normal', clip: 'headsup', say: changeWords ? changeWords.head : `${offName} is next. Get ready to get off.`, moment: `headsup:${li}`, expires: tm.arr.at, arrSource: tm.arr.source }, age, false);

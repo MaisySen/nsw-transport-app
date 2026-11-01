@@ -4,6 +4,9 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Live trips at scale, and honest words when the feed runs late or drops (server, 1 Nov, branch server-scale-1nov, not yet deployed)
+Every live trip is stepped every pass however many are running: the trip pass reads only trip flow watches (the most overdue first, leftovers expired in one go), and past 30 live trips the minute is shared out over TripFlowShard objects so each piece stays well under Cloudflare's 1000 requests an invocation (500 trips at once in the simulator: every trip got its 22 to 23 card pushes and its Get off now). With the feed running behind, the Lock Screen card still moves with the train (late, never early), says "About 7:55pm, updated 7:52pm" instead of "On time", and Get off now from that old copy is the quiet "Clyde about 7:55pm" note. With the feed lost, no arrival is claimed on the last forecast, the next stop never moves on the timetable or goes back, and the card says how old the data is. Builds 211 to 214, no build needed; the deploy adds the TFSHARD binding.
+
 ## Get off now follows the newest live arrival at its moment (server, 1 Nov, branch server-getoff-1nov, not yet deployed)
 The trip flow decides Get off now (and every 15 s step near the stop) only on a feed copy asked for at or after that moment, so an arrival that moves in that very second moves Get off now with it: never rung on the old arrival, never missed. The open app's own Get off now read (`/api/service?refresh=1&at=`) gets the same. Builds 211 to 214, no build needed.
 

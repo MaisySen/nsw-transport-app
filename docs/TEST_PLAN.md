@@ -3,6 +3,10 @@
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
 
+## Live trips at scale, feed late or lost near the stop, server (1 Nov, branch server-scale-1nov)
+* `backend/test/scale-1nov.test.mjs`: 8 tests, 8 pass; 7 of 8 fail on 58f778b (evidence in files/day-1nov/failing-first-scale.txt; "feed lost 50 s before the stop" passes there too and stays as a guard). Through the real worker on the virtual clock of tools/simtrip.mjs: 151 and 500 trips at once with the TFSHARD binding (every trip's card pushes and Get off now, each invocation's outbound requests plus D1 statements under 1000), 120 older running watches of other kinds, 151 trips with no binding (under budget, every card kept), the feed 150 s behind, the feed lost 50 s, 3 min and just after leaving the stop before. simtrip: runCase stress N (N more phones, each with its own trip, card and Expo route), shards (a TFSHARD namespace whose objects run on their own copy of the worker), oldWatches, feedLagMs, feedDown, and per invocation counts of outbound requests and D1 calls (`passes`).
+* Real-time harness (tools/rt-harness on the app branch fix-getoff-1nov, with a local TFSHARD stand-in in scenario.mjs): full 46 scenarios and the S1 stress at 151 and 500 trips, before (58f778b) and after.
+
 ## Get off now timing race, server (1 Nov, branch server-getoff-1nov)
 * `backend/test/getoff-race-1nov.test.mjs`: 5 tests, 5 pass (0 of 5 on the merge dc902d3, evidence in files/day-1nov/failing-first-getoff.txt). S17a and S17b each run through the real worker's trip flow on the virtual clock of tools/simtrip.mjs with feed answers 0 to 2.4 s and the pass's timers 0 to 0.6 s late (15 runs each), and with seeded timer jitter (20 seeds x 2 answer times each); S16, S17c, S17d, S2, S1 with slow answers; /api/service refresh=1&at=. Deterministic, no real sleeps, no Transport for NSW.
 * Real-time harness (tools/rt-harness on the app branch fix-getoff-1nov): S17a and S17b 20 times each at speed 30, and 20 times each under CPU load: 0 flakes. Full 46 scenarios: no failing check beyond e0bf4652's "after" list.

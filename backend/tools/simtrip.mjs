@@ -27,15 +27,17 @@ globalThis.Date = SimDate;
 const raw = fs.readFileSync(path.join(backend, "src/worker.js"), "utf8").replace(/export default\s*\{/, "const __default = {");
 // Only the names this worker has (an older branch has no trip flow pass: the run then drives its minute tick, which is
 // how a failing-first run on server-211-rc shows what the old server does with each case).
-const WANT = ["tfPass", "tfPassStep", "tfRunTu", "tfArrivedOnPhone", "tickLiveActivities", "tfNextRunPrefix", "tfFeedRun", "serverCfg", "TF", "LIVECARD", "tfLegRaw", "tfLegReading", "tfPlanLeg", "tfState", "tfCard", "tfNext", "runTick", "svcOffIndex"];
+const WANT = ["tfPass", "tfPassStep", "TripFlowShard", "tfShardOf", "tfWatchedTokens", "TF_SHARD_TRIPS", "tfRunTu", "tfArrivedOnPhone", "tickLiveActivities", "tfNextRunPrefix", "tfFeedRun", "serverCfg", "TF", "LIVECARD", "tfLegRaw", "tfLegReading", "tfPlanLeg", "tfState", "tfCard", "tfNext", "runTick", "svcOffIndex"];
 const src = raw + "\nexport { __default, " + WANT.filter((n) => new RegExp("\\n(?:async )?(?:function|const|let) " + n + "\\b").test(raw)).join(", ") + " };\n";
 // A fresh copy of the worker for each case: its feed copies and shared jobs are kept in memory by the clock, and each
 // case starts its clock again.
 let W = null, loads = 0;
-async function freshWorker() {
+async function freshWorker() { W = await workerCopy(); }
+/** One more copy of the worker module (its own memory: feed copies, shared jobs), as a Durable Object's isolate has. */
+async function workerCopy() {
   const tmp = path.join(backend, `.simtrip-${process.pid}-${loads++}.mjs`);
   fs.writeFileSync(tmp, src);
-  try { W = await import(tmp); } finally { fs.unlinkSync(tmp); }
+  try { return await import(tmp); } finally { fs.unlinkSync(tmp); }
 }
 
 let fake = null, FAKE = null;
@@ -63,12 +65,18 @@ export function stopFake() { if (fake) { fake.kill(); fake = null; } }
 const realFetch = globalThis.fetch;
 let caught = null;
 let feedMs = 0;
+let feedLagMs = 0, feedDown = null;
 globalThis.fetch = async (url, init = {}) => {
   const u = String(url instanceof Request ? url.url : url);
+  // every outbound request (a Cloudflare subrequest), counted for opts.stress (per cron pass)
+  caught.ext = (caught.ext || 0) + 1;
   if (u.startsWith("https://api.transport.nsw.gov.au/")) {
     caught.nsw++; const k = u.slice(31).split("?")[0].replace(/\/[^/]*$/, (x) => (/departure_mon|trip|stop_finder/.test(x) ? x : "")); caught.nswBy = caught.nswBy || {}; caught.nswBy[k] = (caught.nswBy[k] || 0) + 1;
     const asked = clock;
-    const r = await realFetch(FAKE + u.slice("https://api.transport.nsw.gov.au".length), { headers: { ...(init.headers || {}), "x-sim-now": String(asked) } });
+    // runCase opts.feedDown [from, to] (case seconds): every NSW request fails then (the network, as harness "down");
+    // opts.feedLagMs: every answer is the feed as it was this long before (harness "stale150": the copy's own time lags)
+    if (feedDown && asked >= at(feedDown[0]) && asked < at(feedDown[1])) throw new TypeError("fetch failed");
+    const r = await realFetch(FAKE + u.slice("https://api.transport.nsw.gov.au".length), { headers: { ...(init.headers || {}), "x-sim-now": String(asked - feedLagMs) } });
     // runCase opts.feedMs: a feed answer arrives this long after it was asked on the virtual clock (made at the moment it
     // was asked), as a real fetch does, so the copy a step reads can be older than the moment the step is for (1 Nov,
     // S17a/S17b). Fetches asked together (trip updates and vehicles) arrive together.
@@ -76,10 +84,11 @@ globalThis.fetch = async (url, init = {}) => {
     return r;
   }
   if (/^https:\/\/api(\.sandbox|\.development)?\.push\.apple\.com\//.test(u)) {
-    caught.apple.push({ at: clock, headers: init.headers, body: JSON.parse(init.body) });
+    caught.apple.push({ at: clock, headers: init.headers, body: JSON.parse(init.body), token: u.split("/").pop() });
     return new Response(null, { status: 200, headers: { "apns-id": "sim-" + caught.apple.length } });
   }
   if (u.startsWith("https://exp.host/")) {
+    caught.expoReq = (caught.expoReq || 0) + 1;
     const msgs = JSON.parse(init.body); for (const m of msgs) caught.expo.push({ at: clock, ...m });
     return new Response(JSON.stringify({ data: msgs.map(() => ({ status: "ok", id: "sim" })) }), { status: 200 });
   }
@@ -91,25 +100,36 @@ const DEVICE = "simdevice0000000001";
 const LA_TOKEN = "a".repeat(64);
 const EXPO = "ExponentPushToken[simsimsimsimsim01]";
 
+// D1 calls counted (opts.stress: a cron invocation may make at most 1,000 queries on Workers Paid)
+function countedD1(D) {
+  const wrap = (s) => ({ q: s.q, _s: s, bind: (...a) => wrap(s.bind(...a)),
+    run: () => { d1n(s.q); return s.run(); },
+    all: () => { d1n(s.q); return s.all(); },
+    first: (...a) => { d1n(s.q); return s.first(...a); } });
+  const d1n = (q) => { if (!caught) return; caught.d1 = (caught.d1 || 0) + 1; const k = String(q).replace(/\s+/g, " ").slice(0, 70); (caught.d1q = caught.d1q || {})[k] = (caught.d1q[k] || 0) + 1; };
+  return { sql: D.sql, prepare: (q) => wrap(D.prepare(q)), batch: (list) => { caught.d1 = (caught.d1 || 0) + 1; return D.batch(list.map((s) => s._s || s)); } };
+}
 function makeEnv(net, flags) {
-  const DB = makeD1();
+  const DB = countedD1(makeD1());
   for (const f of fs.readdirSync(path.join(backend, "migrations")).sort()) DB.sql.exec(fs.readFileSync(path.join(backend, "migrations", f), "utf8"));
   try { DB.sql.exec("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)"); } catch {}
   DB.sql.exec("CREATE TABLE IF NOT EXISTS app_config (platform TEXT PRIMARY KEY, body TEXT NOT NULL, at INTEGER)");
   DB.sql.prepare("INSERT INTO app_config (platform, body, at) VALUES ('server', ?, ?)").run(JSON.stringify({ flags }), clock);
   const { privateKey } = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
   const ASSETS = { fetch: async (rq) => {
+    if (caught) caught.assets = (caught.assets || 0) + 1;
     const m = new URL(rq.url).pathname.match(/^\/stops\/(.+)\.json$/);
     if (!m) return new Response("{}", { status: 404 });
     const shard = {};
     for (const [id, v] of Object.entries(net.names)) if (id.slice(0, 3).replace(/[^A-Za-z0-9]/g, "_") === m[1]) shard[id] = v;
     return new Response(JSON.stringify(shard), { headers: { "content-type": "application/json" } });
   } };
-  return { DB, ASSETS, APNS_KEY: privateKey.export({ type: "pkcs8", format: "pem" }), APNS_BUNDLE: ["com", "maisy" + "sen", "nswtransport"].join("."), TFNSW_API_KEY: "fake-local-key", ADMIN_KEY: "s".repeat(24), API_ONLY: "1" };
+  // TF_STEP_CONCURRENCY 1: the pass's steps one at a time, so a run on this virtual clock is the same every time
+  return { TF_STEP_CONCURRENCY: "1", DB, ASSETS, APNS_KEY: privateKey.export({ type: "pkcs8", format: "pem" }), APNS_BUNDLE: ["com", "maisy" + "sen", "nswtransport"].join("."), TFNSW_API_KEY: "fake-local-key", ADMIN_KEY: "s".repeat(24), API_ONLY: "1" };
 }
 const exec = { pending: [], waitUntil(p) { this.pending.push(Promise.resolve(p).catch(() => null)); }, passThroughOnException() {} };
-async function call(env, method, p, body) {
-  const res = await W.__default.fetch(new Request("https://api.transportsydney.app" + p, { method, headers: { "content-type": "application/json", "x-device": DEVICE }, ...(body ? { body: JSON.stringify(body) } : {}) }), env, exec);
+async function call(env, method, p, body, hdrs = {}) {
+  const res = await W.__default.fetch(new Request("https://api.transportsydney.app" + p, { method, headers: { "content-type": "application/json", "x-device": DEVICE, ...hdrs }, ...(body ? { body: JSON.stringify(body) } : {}) }), env, exec);
   await Promise.all(exec.pending.splice(0));
   let j = null; try { j = await res.json(); } catch {}
   return { status: res.status, body: j };
@@ -141,6 +161,8 @@ export async function runCase(id, opts = {}) {
   caught = { apple: [], expo: [], nsw: 0, other: [] };
   clock = at(P.start);
   feedMs = Number(opts.feedMs) || 0;
+  feedLagMs = Number(opts.feedLagMs) || 0;
+  feedDown = Array.isArray(opts.feedDown) ? opts.feedDown : null;
   // opts.handover { leg, at }: the leg's train carries on under another trip id from stop index at (case-feed.mjs)
   const ho = (opts.handover ? `&handover=${opts.handover.leg}:${opts.handover.at}` : "") + (opts.tripId ? `&tripid=${opts.tripId.leg}:${encodeURIComponent(opts.tripId.id)}` : "");
   await realFetch(`${FAKE}/__mode?set=case&case=${encodeURIComponent(id)}&base=${BASE}${ho}`);
@@ -149,6 +171,17 @@ export async function runCase(id, opts = {}) {
   const flags = opts.flags || { tripflow2: true, getOffPush: true, liveStops: true, ...(direct ? {} : { apnsAlerts: false }) };
   const env = makeEnv(net, flags);
   W.serverCfg.at = 0;
+  // opts.oldWatches N: N active watches of other kinds (stop boards, old trip watches with no trip flow) made a day
+  // before, still running, as the production table holds them
+  for (let i = 0; i < (Number(opts.oldWatches) || 0); i++) {
+    env.DB.sql.prepare("INSERT INTO watches (id, device, profile, kind, title, spec, state, created, updated, expires, active) VALUES (?, ?, NULL, 'trip', 'Older watch', ?, '{}', ?, ?, ?, 1)")
+      .run(`oldwatch${i}`, `simold${String(i).padStart(6, "0")}`, JSON.stringify({ legs: [] }), clock - 86400000 + i, clock - 86400000, clock + 86400000);
+  }
+  // opts.shards: the TFSHARD binding. Each TripFlowShard object is its own copy of the worker (its own memory, as its
+  // isolate has) and runs its share of the minute on this virtual clock after the cron's own share (one minute's
+  // shares touch different watches, so their order does not matter); each one's requests are counted on its own.
+  const shardQ = [], shardW = new Map();
+  if (opts.shards) env.TFSHARD = { idFromName: (n) => String(n), get: (id) => ({ fetch: async (u, init) => { shardQ.push({ id, body: JSON.parse(init.body) }); return new Response(JSON.stringify({ queued: true }), { headers: { "content-type": "application/json" } }); } }) };
   const c24 = !!(P.phone || []).find((p) => p.c24);
   const legs = legsFor(net);
   const flow = opts.flow === 1 ? {} : { tripFlow: 2, c24 };
@@ -159,6 +192,20 @@ export async function runCase(id, opts = {}) {
   const cardOnly = opts.cardOnly || null;
   await call(env, "POST", "/api/live-activity", { token: LA_TOKEN, device: DEVICE, activity: "sim", trip: { id: "sim", title: "sim", to: { id: "x", name: legs[legs.length - 1].to }, legs, rode: {}, ...flow, ...(cardOnly && cardOnly.arrivedAt != null ? { arrivedAt: at(cardOnly.arrivedAt) } : {}) } });
   const reg = cardOnly ? { body: null } : await call(env, "POST", "/api/watch", { device: DEVICE, kind: "trip", legs, track: true, getOff: 1, getOffVoice: 1, to: { id: "x", name: legs[legs.length - 1].to }, ...flow, ...(opts.profile ? { profile: opts.profile } : {}) });
+  // opts.stress N (1 Nov, harness bug 2): N more phones start the same trip, each with its own address, Expo route, trip
+  // watch and card token, so every pass carries N + 1 trips; each pass's outbound requests and D1 queries are written down.
+  const stress = [];
+  for (let i = 0; i < (Number(opts.stress) || 0); i++) {
+    const dev = "simstress" + String(i).padStart(10, "0");
+    const tok = (i + 1).toString(16).padStart(64, "c");
+    const expo = `ExponentPushToken[simstress${String(i).padStart(6, "0")}]`;
+    const ip = { "x-device": dev, "cf-connecting-ip": `10.${(i >> 8) & 255}.${i & 255}.9` };
+    await call(env, "POST", "/api/push/expo", { device: dev, token: expo, platform: "ios" }, ip);
+    await call(env, "POST", "/api/live-activity", { token: tok, device: dev, activity: "sim" + i, trip: { id: "sim" + i, title: "sim", to: { id: "x", name: legs[legs.length - 1].to }, legs, rode: {}, ...flow } }, ip);
+    const r = await call(env, "POST", "/api/watch", { device: dev, kind: "trip", legs, track: true, getOff: 1, getOffVoice: 1, to: { id: "x", name: legs[legs.length - 1].to }, ...flow }, ip);
+    stress.push({ dev, tok, expo, watch: r.status === 200 });
+  }
+  const passes = [];
   // opts.lateMs: every wait of the pass ends this much late (a busy server copy: its timers fire after their moment)
   // (a list: the waits end that late in turn, cycled, a box whose timers are late by different amounts)
   const lateList = Array.isArray(opts.lateMs) ? opts.lateMs.map(Number) : [Number(opts.lateMs) || 0];
@@ -172,16 +219,32 @@ export async function runCase(id, opts = {}) {
     if (clock < minute) clock = minute;
     W.serverCfg.at = 0;
     if (cardOnly && W.tickLiveActivities) await W.tickLiveActivities(env, clock);
-    else if (W.tfPass) await W.tfPass(env, minute, wait);
-    else await W.runTick(env, { skipLa: true });
+    else if (W.tfPass) {
+      const e0 = caught.ext || 0, d0 = caught.d1 || 0, a0 = caught.apple.length, x0 = caught.expo.length, s0 = caught.expoReq || 0;
+      // the card passes run in the same cron invocation (laPasses: at its minute and 30 s later)
+      if (opts.stress && W.tickLiveActivities) await W.tickLiveActivities(env, clock);
+      const pr = await W.tfPass(env, minute, wait);
+      passes.push({ t: sec(minute), ext: (caught.ext || 0) - e0, d1: (caught.d1 || 0) - d0, apple: caught.apple.length - a0, expo: caught.expo.length - x0, expoReq: (caught.expoReq || 0) - s0, meter: pr && pr.meter, trips: pr && pr.trips, shard: pr && pr.shard });
+      const endClock = clock;
+      for (const q of shardQ.splice(0)) {
+        let SW = shardW.get(q.id);
+        if (!SW) { SW = await workerCopy(); shardW.set(q.id, SW); }
+        SW.serverCfg.at = 0;
+        clock = minute;
+        const f0 = caught.ext || 0, g0 = caught.d1 || 0, h0 = caught.apple.length, i0 = caught.expo.length;
+        const sr = await SW.tfPass(env, q.body.startedAt, wait, { shard: { k: q.body.k, n: q.body.n } });
+        passes.push({ t: sec(minute), shardK: q.body.k, ext: (caught.ext || 0) - f0, d1: (caught.d1 || 0) - g0, apple: caught.apple.length - h0, expo: caught.expo.length - i0, meter: sr && sr.meter, steps: sr && sr.steps });
+        clock = Math.max(endClock, clock);
+      }
+    } else await W.runTick(env, { skipLa: true });
     minute += 60000;
     // the app opened: its catch-up ask (spec 2.6 G32), once, at the first open after locking
     const open = (P.phone || []).find((p) => p.app === "open" && at(p.at) > at(P.start) + 1000 && at(p.at) <= clock && at(p.at) > clock - 60000);
     if (open && !catchUp) { const r = await call(env, "GET", `/api/watches?device=${DEVICE}&since=1`); catchUp = { at: clock, notes: r.body ? r.body.notes : null }; }
   }
-  feedMs = 0;
+  feedMs = 0; feedLagMs = 0; feedDown = null;
   const got = opts.get ? await call(env, "GET", opts.get) : null;
-  return { id, net, reg: reg.body, caught, catchUp, got, ...summarise(caught, P) };
+  return { id, net, reg: reg.body, caught, catchUp, got, passes, stress, mainExpo: EXPO, ...summarise(caught, P) };
 }
 
 /** The server's alerts (Expo, Apple alert pushes, card pushes carrying an alert) and card pushes, in case time. */

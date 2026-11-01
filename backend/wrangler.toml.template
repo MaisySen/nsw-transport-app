@@ -101,6 +101,14 @@ class_name = "LiveHub"
 name = "PLANNER"
 class_name = "TripPlanner"
 
+# Trip flow shards (src/worker.js tfPass, 1 Nov 2026): past TF_SHARD_TRIPS (30) live trips the minute cron splits the
+# trip watches over TripFlowShard objects by a hash of the watch id, each request its own invocation with its own
+# subrequest budget (Cloudflare: 1000 an invocation). Unbound, the cron steps every trip itself (over budget it keeps
+# Get off now timers first and defers the rest). TF_SHARDS = "off" in [vars] turns the split off with the binding kept.
+[[durable_objects.bindings]]
+name = "TFSHARD"
+class_name = "TripFlowShard"
+
 [[migrations]]
 tag = "engine-v1"
 new_sqlite_classes = ["BoardEngine"]
@@ -116,6 +124,10 @@ new_sqlite_classes = ["LiveHub"]
 [[migrations]]
 tag = "planner-v1"
 new_sqlite_classes = ["TripPlanner"]
+
+[[migrations]]
+tag = "tripflow-v1"
+new_sqlite_classes = ["TripFlowShard"]
 
 # Budget guard emails (worker.js budgetMail) through Email Routing on transportsydney.app, to its verified address only.
 [[send_email]]
