@@ -2,6 +2,12 @@
 
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
+## Back from outside the app (1 Nov, branches ota-backnav-1nov and fix-backnav-1nov)
+* `app/test/backnav1nov.test.mjs` (6, JavaScript; the update for runtime 1.3.0): runs expo-router's own cold-start functions (getRoutes, getStateFromPath, createSeededNavigationState with the layout anchor) for every link a widget, the Lock Screen, StandBy, Live Activity, Island, Control Center, Siri or a site opens: each lands on top of the start screen; the normal start is one start screen; every native link is a screen (none Not found); Siri links wait for the screens and push; notification taps push; screens without a bar keep their own Back. 3 of 6 fail on 7566d47 (build 214 code); files/day-1nov/failing-first-backnav.txt.
+* `app/test/backnav1nov-native.test.mjs` (2, next build): the "Your trip" widget during a trip opens nswtransport://go; the Watch opens the trip by itself once per trip, complications every time. Both fail on 7566d47. `build213.test.mjs` Watch test now expects once per trip.
+* XCTest in the native audit: `WidgetRefreshLogicTests.testYourTripWidgetOpensTheLiveTrip`, `WatchRefreshLogicTests.testTripScreenOpensByItselfOncePerTrip`.
+* Native audit entry job (manual, `entry: true`, `only_entry: true` to run it alone): the app built for the simulator with its JavaScript; the UI test `app/native-tests/entry-ui` opens every outside link with the app closed and open, answers the system prompts, keeps a picture, taps the screen's Back and checks for the tab bar. Runs on a classic one-screen iPhone made for the job.
+
 ## Build 214 (1 Nov, branch build-214-rc; server branch server-214)
 * `app/test/build214.test.mjs` (7): the 38 s lead and 40 s cap (getOffLeadMs, getOffDueAt, the open app's timer), the held note on a held train and none on a train still coming in, the held render, "Timetable", "7:52pm", error words without the provider's name. 6 of 7 fail on 09dde0a (test 3, no false Held, passes there as it should); files/day-1nov/failing-first-build214.txt.
 * Journey sim: S21 now expects the held note at 7:59:20 to 7:59:40; new S22f (fast feed: lands 7:58:22, 38 s before 7:59) and S22s (slow feed: a late reading brings the arrival in, Get off now goes at once, no Held); I8 also checks the 40 s cap. Reference and real code agree on every case.
