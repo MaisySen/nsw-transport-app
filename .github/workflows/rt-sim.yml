@@ -114,6 +114,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
       - name: Xcode 27.1
         run: |
           sudo xcode-select -s /Applications/Xcode_27.1.app
@@ -150,6 +154,8 @@ jobs:
           sudo systemsetup -settimezone Australia/Sydney 2>/dev/null || sudo ln -sf /usr/share/zoneinfo/Australia/Sydney /etc/localtime
           date
           brew tap wix/brew >/dev/null 2>&1 && brew install applesimutils >/dev/null 2>&1 && echo "applesimutils $(applesimutils --version 2>/dev/null)" || echo "applesimutils not installed"
+          # Maestro taps what a person taps (set up questions, iOS's "Open in Transport?" for a link, Lock)
+          curl -fsSL "https://get.maestro.mobile.dev" | bash > /tmp/maestro-install.log 2>&1 && echo "$HOME/.maestro/bin" >> "$GITHUB_PATH" && "$HOME/.maestro/bin/maestro" --version || { echo "maestro not installed"; tail -5 /tmp/maestro-install.log; }
       - name: iPhone simulator with a Dynamic Island
         run: |
           xcrun simctl list devices available -j > /tmp/devs.json

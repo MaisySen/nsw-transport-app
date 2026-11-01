@@ -43,7 +43,7 @@ const add = (sev, what, detail) => out.findings.push({ sev, what, detail });
 
 // the app and the server
 const posts = (p) => reqs.filter((r) => r.m === 'POST' && r.p.startsWith(p));
-const tripStartT = (() => { const r = reqs.find((x) => x.p.startsWith('/api/trip')); return r ? r.caseT : null; })();
+const tripStartT = (() => { const r = reqs.find((x) => x.p.startsWith('/api/trip') && !x.p.includes('SIM_x')); return r ? r.caseT : null; })(); // SIM_x is run-sim.sh's own check
 out.app = { tripAsked: !!tripStartT, watch: posts('/api/watch').map((r) => r.s), card: posts('/api/live-activity').map((r) => r.s), apnsDevice: posts('/api/apns/device').map((r) => r.s), expo: posts('/api/push/expo').map((r) => r.s),
   serviceReads: reqs.filter((r) => r.p.startsWith('/api/service')).length, firstReq: reqs[0] ? reqs[0].p : null };
 if (!out.app.tripAsked) add('blocker', 'the app never asked the local server for the trip', 'Start trip did not reach the server (link not handled, first-open screen in the way, or TLS not trusted)');

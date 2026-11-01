@@ -1,1 +1,1 @@
-{"scenarios": ["clean-train", "lock-train", "feed-down", "killed"], "app_run_id": ""}
+{"scenarios": ["clean-train", "killed", "lock-train", "feed-down"], "app_run_id": "41289773708", "note": "run 2: Maestro taps the set-up questions and iOS's Open confirmation"}
