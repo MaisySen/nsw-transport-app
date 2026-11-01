@@ -4,7 +4,7 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 
 ## Connection at risk and Get off now words (2 Nov, branch fix-connrisk-2nov)
 * `app/test/connrisk2nov.test.mjs`: 8 tests from the 2 Nov trip (generic stops): server watch on, no change alerts; departure gone, none (trip flow and older path); trip flow memory on waking puts the trip on leg 2; a stop off dropped from a fresh live answer ends the leg; kept: no hold change without that evidence or with an old answer; the hold stops 10 min past the arrival; kept: a real missed change before it leaves still warns when no server watches. 7 of 8 fail on 30319ea (files/day-2nov/trip-fixes-2nov.md).
-* `app/test/getoffwords2nov.test.mjs`: 2 tests, Get off now body and words have no clock time, the heads-up keeps "Arriving about"; 1 fails on 30319ea.
+* `app/test/getoffwords2nov.test.mjs`: 3 tests, Get off now body and words have no clock time (the server step, the phone's backup alert and the simulator), the heads-up keeps "Arriving about"; 2 fail on 30319ea.
 
 ## Get off now timing race (1 Nov, branch fix-getoff-1nov; server branch server-getoff-1nov)
 * `app/test/getoffrace1nov.test.mjs`: 6 tests, 6 pass (all 6 fail on 88c5aae). liveMomentCore (moment read rule, the ask's at=, one timer re-armed in one go with a leaky platform timer, the moment queue), liveEngine wiring, and the open app's loop on an injected clock with the real tripState.ts and the case feeds: S17a and S17b on 15 refresh phases x 4 answer times; the old step on the cached answers rings at 7:58:22 for 7:59 in S17a.
