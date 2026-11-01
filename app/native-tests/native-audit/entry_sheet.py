@@ -1,9 +1,10 @@
-"""Contact sheet for entry.sh: every landed screen, cold and warm, labelled. Usage: entry_sheet.py SHOTS_DIR OUT_PNG"""
+"""Contact sheet for the entry UI test (app/native-tests/entry-ui): every landed screen and the screen after its Back,
+cold and warm, labelled. Usage: entry_sheet.py SHOTS_DIR OUT_PNG"""
 import json, os, sys
 from PIL import Image, ImageDraw, ImageFont
 
 src, out = sys.argv[1], sys.argv[2]
-recs = [json.loads(l) for l in open(os.path.join(src, 'manifest.jsonl')) if l.strip()]
+recs = [{'name': f[:-4]} for f in sorted(os.listdir(src)) if f.endswith('.png')]
 def font(n):
     for f in ['/System/Library/Fonts/Supplemental/Arial.ttf', '/System/Library/Fonts/Helvetica.ttc']:
         if os.path.exists(f):
