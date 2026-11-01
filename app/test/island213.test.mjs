@@ -19,11 +19,12 @@ test('compact Island: leading is the stop name, never a bell or a bare badge whi
   // the line badge only when the card names no stop
   assert.match(lead, /\} else \{\s*WidgetLineBadge\(/);
   // fits before it shrinks: one line, two short lines, smaller one line, then scaled with an audit probe
-  const order = ['IslandName.split(name)', '.font(.caption.weight(.semibold)).lineLimit(1).fixedSize()', 'VStack(alignment: .leading, spacing: -1)',
-    '.font(.caption2.weight(.semibold)).lineLimit(1).fixedSize()', 'IslandNameLine(text: p.0)', 'IslandNameLine(text: name)'];
+  const order = ['IslandName.split(name)', '.font(.caption.weight(.semibold)).lineLimit(1).fixedSize()', 'IslandNameTwoLines(top: p.0, bottom: p.1).fixedSize()',
+    '.font(.caption2.weight(.semibold)).lineLimit(1).fixedSize()', 'if abbr != name {', 'Text(abbr).font(.caption2.weight(.semibold)).lineLimit(1).fixedSize()',
+    'IslandNameLine(text: p.0)', 'IslandNameLine(text: abbr)', '.dynamicTypeSize(...DynamicTypeSize.xLarge)'];
   let at = -1;
   for (const o of order) { const i = lead.indexOf(o, at + 1); assert.ok(i > at, 'order: ' + o); at = i; }
-  const line = between(w, 'struct IslandNameLine: View', 'enum IslandName');
+  const line = between(w, 'struct IslandNameLine: View', 'struct IslandNameTwoLines');
   assert.match(line, /\.minimumScaleFactor\(0\.5\)\s*\.lineProbe\("island-compact-stop", text: text, lines: 1/);
   assert.match(lead, /\.frame\(maxWidth: 64, alignment: \.leading\)/, 'the system clock stays visible (28 Oct)');
   assert.match(lead, /accessibilityLabel\(state\.compactPlaceSpoken\(stale: stale\)\)/);
@@ -67,6 +68,13 @@ test('compact Island: the two line split puts the break nearest the middle', () 
   assert.deepEqual(split('Macquarie University'), ['Macquarie', 'University']);
   assert.deepEqual(split('Parramatta Rd opp Sydney Uni'), ['Parramatta Rd', 'opp Sydney Uni']);
   assert.equal(split('Hornsby'), null);
+  // the short words, whole words only (JS mirror of IslandName.abbreviate)
+  assert.match(sp, /"Centre": "Ctr", "University": "Uni", "and": "&"/);
+  const short = { Centre: 'Ctr', University: 'Uni', and: '&' };
+  const abbr = (s) => s.split(' ').map((x) => short[x] || x).join(' ');
+  assert.equal(abbr('Macquarie Centre and University'), 'Macquarie Ctr & Uni');
+  assert.deepEqual(split(abbr('Macquarie Centre and University')), ['Macquarie', 'Ctr & Uni']);
+  assert.equal(abbr('Candleford'), 'Candleford', 'no part of a word is changed');
 });
 
 test('the native audit draws the compact Island for every scenario on both Island phones', () => {

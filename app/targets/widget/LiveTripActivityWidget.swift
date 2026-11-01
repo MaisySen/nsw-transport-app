@@ -297,27 +297,31 @@ struct LiveTripCompactLeading: View {
     var body: some View {
         if let name = state.compactPlace(stale: stale) {
             let parts = IslandName.split(name)
+            let abbr = IslandName.abbreviate(name)
+            let abbrParts = IslandName.split(abbr)
             let off = state.countdownWord(stale: stale) == "Now"
             ViewThatFits(in: [.horizontal, .vertical]) {
                 Text(name).font(.caption.weight(.semibold)).lineLimit(1).fixedSize()
-                if let p = parts {
-                    VStack(alignment: .leading, spacing: -1) {
-                        Text(p.0).lineLimit(1).fixedSize()
-                        Text(p.1).lineLimit(1).fixedSize()
-                    }
-                    .font(.caption2.weight(.semibold))
-                }
+                if let p = parts { IslandNameTwoLines(top: p.0, bottom: p.1).fixedSize() }
                 Text(name).font(.caption2.weight(.semibold)).lineLimit(1).fixedSize()
+                // Then the short words ("Macquarie Ctr & Uni"), whole, before anything shrinks.
+                if abbr != name {
+                    Text(abbr).font(.caption2.weight(.semibold)).lineLimit(1).fixedSize()
+                    if let p = abbrParts { IslandNameTwoLines(top: p.0, bottom: p.1).fixedSize() }
+                }
                 // Last: shrunk, on two lines when it has two words; the audit's probe fails the run if it is still cut.
-                if let p = parts {
+                if let p = abbrParts {
                     VStack(alignment: .leading, spacing: -1) {
                         IslandNameLine(text: p.0)
                         IslandNameLine(text: p.1)
                     }
                 } else {
-                    IslandNameLine(text: name)
+                    IslandNameLine(text: abbr)
                 }
             }
+            // The compact Island is a fixed 36.67 pt high: text past xLarge only gets cut there (audit run 41256015119:
+            // three names cut at xxxLarge), so this region stops growing at xLarge. VoiceOver reads the whole name.
+            .dynamicTypeSize(...DynamicTypeSize.xLarge)
             .foregroundStyle(off ? Color.orange : Color.white)
             .frame(maxWidth: 64, alignment: .leading)
             .accessibilityElement(children: .ignore)
@@ -340,6 +344,19 @@ struct IslandNameLine: View {
     }
 }
 
+/// A stop name on two short lines in the compact Island.
+struct IslandNameTwoLines: View {
+    var top: String
+    var bottom: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: -1) {
+            Text(top).lineLimit(1)
+            Text(bottom).lineLimit(1)
+        }
+        .font(.caption2.weight(.semibold))
+    }
+}
+
 /// Two short lines for a stop name in the compact Island: split at the space nearest the middle ("Kings" / "Cross",
 /// "Macquarie" / "University"). Nil for a one word name.
 enum IslandName {
@@ -354,6 +371,15 @@ enum IslandName {
             if abs(a - b) < bestDiff { bestDiff = abs(a - b); best = i }
         }
         return (words[..<best].joined(separator: " "), words[best...].joined(separator: " "))
+    }
+
+    /// The usual short words, only for the compact Island when the whole name does not fit ("Macquarie Centre and
+    /// University" to "Macquarie Ctr & Uni"). Whole words only; VoiceOver keeps the full name.
+    static let short: [String: String] = ["Centre": "Ctr", "University": "Uni", "and": "&", "Street": "St", "Road": "Rd",
+                                          "Avenue": "Ave", "Parade": "Pde", "Highway": "Hwy", "Interchange": "Int",
+                                          "Junction": "Jct", "Shopping": "Shop", "Hospital": "Hosp", "Wharf": "Whf"]
+    static func abbreviate(_ s: String) -> String {
+        s.split(separator: " ").map { short[String($0)] ?? String($0) }.joined(separator: " ")
     }
 }
 
