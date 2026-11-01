@@ -208,10 +208,19 @@ struct NextView: View {
                     .widgetAccentable()
                 VStack(spacing: 0) {
                     Text(entry.line).font(.system(size: 12, weight: .bold, design: .rounded))
-                    Text(t, style: .timer)
-                        .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
-                        .multilineTextAlignment(.center)
-                        .minimumScaleFactor(0.5)
+                    // Build 214 (fix-all audit review): an hour or more away the clock time, not "1:14:58" broken over
+                    // two lines in the ring.
+                    if t.timeIntervalSince(entry.date) >= 3600 {
+                        Text(Clock.hhmm(t))
+                            .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+                    } else {
+                        Text(t, style: .timer)
+                            .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
+                            .multilineTextAlignment(.center)
+                            .minimumScaleFactor(0.5)
+                    }
                 }
                 .padding(.horizontal, 6)
             } else if entry.old, let t = entry.target {

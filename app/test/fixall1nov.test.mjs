@@ -201,3 +201,9 @@ test('iPhone Your trip circular widget: an old clock time drops am/pm so it is n
   const circ = w.slice(w.indexOf('private var circular: some View'), w.indexOf('private var rectangular: some View'));
   assert.match(circ, /Text\(t\.waitWord\.map \{ \$0\.replacingOccurrences\(of: "am", with: ""\)\.replacingOccurrences\(of: "pm", with: ""\) \}/);
 });
+
+test('Watch circular complication: an hour or more away shows the clock time, not a timer over two lines (A9, audit review)', () => {
+  const COMP = read('targets/watch-widget/Complications.swift');
+  const circ = COMP.slice(COMP.indexOf('private var circular: some View'), COMP.indexOf('private var corner: some View'));
+  assert.match(circ, /if t\.timeIntervalSince\(entry\.date\) >= 3600 \{\s*Text\(Clock\.hhmm\(t\)\)/);
+});
