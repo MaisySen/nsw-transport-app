@@ -10,7 +10,7 @@
 //
 // This file only listens. It reads the saved trip ('liveTrip'), profile and store as the app writes them,
 // and the live service data the trip engine loads, so the screens need no iPhone specific code.
-import { AppState, Linking, Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { iosNative, type TripCardState } from '../modules/transport-ios';
 import { api } from '@/lib/api';
@@ -24,6 +24,7 @@ import { watchActionFor, watchContextFor, watchContextJSON } from './watchShare'
 import { apiBase } from '@/lib/server';
 import { endActivityToken, sendActivityToken, sendDeviceToken } from './livePush';
 import { pendingOpenURL } from './intentInboxCore';
+import { openAppLink } from '@/lib/appLinkInbox';
 import { startAppPoll } from '@/lib/activity';
 import { appMayWriteCard } from '@/lib/liveFreshCore';
 import { phone24h } from '@/lib/rowTime';
@@ -286,9 +287,11 @@ if (Platform.OS === 'ios' && iosNative.available()) {
   // "Start my commute" from Siri or Shortcuts (build 206 and later) leaves a link in the app group and opens
   // the app. It is read when the app comes to the front, a moment later in case Siri writes it after that, and
   // at once when the app was already open.
+  // 1 Nov back-nav audit: the link opens once the screens are ready, on top of the screen in view (appLinkInbox.ts), so
+  // a cold start from Siri no longer loses it and Back returns to the app.
   const takePending = () => {
     const url = pendingOpenURL(iosNative.takeString('intentPendingOpen'), Date.now());
-    if (url) Linking.openURL(url).catch(() => {});
+    if (url) openAppLink(url);
   };
   const checkPending = () => { takePending(); setTimeout(takePending, 800); setTimeout(takePending, 2500); takeWatchAction().catch(() => {}); };
   iosNative.onIntentQueued(takePending);
