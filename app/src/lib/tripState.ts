@@ -632,8 +632,11 @@ export type TripMoment = { ring: TripRing; age: number; byVehicle: boolean };
 /**
  * c24: 24 hour words. lead: how early this side sends Get off now for delivery (0 in the app, 2 s on the server).
  * reread: read the live data once more at the Get off moment (so a jump in the last seconds moves it).
+ * gps (3 Nov 2026 prototype, off): the phone's own location for the leg you are on, worked out by the open app
+ * (getOffGpsCore.ts) and passed only when GETOFF_GPS.on: due rings Get off now; hold keeps the live rule waiting.
  */
-export type StepEnv = { c24?: boolean; lead?: number; reread?: () => TripReading | null };
+export type StepGps = { due: boolean; hold: boolean; d: number | null };
+export type StepEnv = { c24?: boolean; lead?: number; reread?: () => TripReading | null; gps?: StepGps | null };
 export type StepResult = { moments: TripMoment[]; log: { t: number; what: string }[] };
 
 function setPhase(M: TripMemory, li: number, name: TripPhase, t: number, why: string, log: StepResult['log']) {
@@ -754,7 +757,19 @@ export function tripStep(plan: TripPlan, M: TripMemory, t: number, S: TripReadin
   const lead = env.lead ?? 0;
   const offLead = getOffLeadMs(lead);
   const prevArr = m.lastArrAt ?? null; m.lastArrAt = isLiveTime(tm.arr) ? tm.arr.at : prevArr;
-  if (!rung('getoff') && !rung('getoffQuiet') && isLiveTime(tm.arr) && t >= tm.arr.at - offLead) {
+  // 3a) Get off now by the phone's own location (3 Nov 2026 prototype, off unless env.gps is passed, which only the
+  // open app does with GETOFF_GPS.on): a fresh fix under 500 m from the stop off and moving towards it rings it now.
+  // Simulated on the 3 Nov morning peak above ground: on time 75 to 85% (live rule 59%), late 1 to 3% (live rule 21%).
+  // A fresh fix over 800 m away holds the live rule (a live arrival that creeps, 2 Nov 3:15 PM: 2 min early).
+  const gps = env.gps || null;
+  if (gps && gps.due && !rung('getoff') && !rung('getoffQuiet') && !e.arrived && !e.passed) {
+    m.rung.getoff = t; m.offArrAt = isLiveTime(tm.arr) ? tm.arr.at : null; if (!rung('headsup')) m.rung.headsup = 'skipped';
+    const until = isLiveTime(tm.arr) ? Math.max(tm.arr.at, t + offLead) : t + offLead;
+    deliver({ kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: until + R.GETOFF_EXPIRE, target: t, ...(isLiveTime(tm.arr) ? { arrAt: tm.arr.at, arrSource: tm.arr.source } : {}) }, age, false);
+    setPhase(M, li, 'getOff', t, `phone ${gps.d != null ? Math.round(gps.d) : '?'} m from ${offName} and moving`, res.log);
+    return res;
+  }
+  if (!rung('getoff') && !rung('getoffQuiet') && isLiveTime(tm.arr) && t >= tm.arr.at - offLead && !(gps && gps.hold)) {
     // read once more at the fire moment, so a jump in the last seconds moves the timer
     const S2 = (env.reread && env.reread()) || S;
     const tm2 = tripLegTimes(plan, M, S2, li, t);

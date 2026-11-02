@@ -20,6 +20,7 @@ import { hasClipPlayer, hasSpeech, playClip, speak } from './nativeExtras';
 import { lockedQuiet, lockedReadPushes, lockedSaid, lockedSaidNow, lockedSay, lockedStep, onLockedWake, stopLockedVoice } from './lockedVoice';
 import { lockedActions } from './lockedVoiceCore';
 import { getOffStep, readGetOff, readGetOffSay } from './getOffCore';
+import { GETOFF_GPS, gpsStep, keepFix, type PhoneFix } from './getOffGpsCore';
 import { cancelGetOff, getOffBackup, getOffNow, ownGetOffShown, scheduleGetOff, scheduleQuiet, scheduleRegion, serverGetOffShown, setServerGetOffWatch, setTripFlow2, setTripWatch, sweepRegions, voiceClips } from './getOffNotify';
 import { store } from './store';
 import { cancelWake } from './smartNotify';
@@ -53,7 +54,9 @@ let pos: Pos | null = null;
  * Your position from the live trip screen (only with permission, only while it is on view): it moves the trip on when
  * you are at your stop and holds it while you are still before it, and goes with a share link that includes it.
  */
-export function setEnginePos(p: Pos | null) { pos = p; }
+export function setEnginePos(p: Pos | null) { pos = p; if (GETOFF_GPS.on) fixes = p ? keepFix(fixes, { lat: p.lat, lon: p.lon, acc: p.acc ?? null, at: p.at ?? Date.now() }) : []; }
+/** Recent fixes for Get off now by location (3 Nov prototype, off: kept only with GETOFF_GPS.on, getOffGpsCore.ts). */
+let fixes: PhoneFix[] = [];
 
 /**
  * "I'm at Town Hall": you say you got off the leg you are on. It ends that leg now and the trip carries on from there
@@ -179,7 +182,7 @@ export async function tickLive(opts: { noFetch?: boolean; momentAt?: number } = 
     // this build plays Kylie's clips in the app (213 and later); 212 says those moments in the phone's voice.
     setTripFlow2(true);
     const r = stepLive(g, svcCache, now, fmt, pos, { ...(serverRung || {}), ...(rung || {}) },
-      { asOf: svcAt || now, c24: phone24h(now), voice: lk.voice || { open: AppState.currentState === 'active', silent: false, openSince, refreshes, speakingUntil }, clipPlayer: hasClipPlayer() });
+      { asOf: svcAt || now, c24: phone24h(now), voice: lk.voice || { open: AppState.currentState === 'active', silent: false, openSince, refreshes, speakingUntil }, clipPlayer: hasClipPlayer(), ...(GETOFF_GPS.on ? { gpsAt: (stop: { lat: number; lon: number }, t: number) => gpsStep(fixes, stop, t) } : {}) });
     // Locked in headphones: no banner of the app's own while the server watches (its push is the banner), speech only in
     // the headphones and never a moment a push already had read out; the push sounds are silent copies meanwhile.
     const acts = lk.voicing ? lockedActions(r.actions, { serverWatching: !!g.watchId, headphones: true, said: lockedSaidNow(), now }) : r.actions;

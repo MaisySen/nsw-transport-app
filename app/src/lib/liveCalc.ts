@@ -1,7 +1,7 @@
 // Live trip maths, shared by the live trip screen and its tests. No React Native imports here.
 import type { ServiceResp, ServiceStop, WatchLeg } from './types';
 import type { TextSize, TimeSource, TripRender, StaleStep, TripMemory, VoiceState } from './tripState';
-import { boardIndexOf, getOffDueAt, isLiveTime, newTripMemory, offIndexOf, PHASE_INDEX, ringDue, TRIP_CLIPS, tripEvidence, tripLegTimes, tripPlanFrom, tripReadingFrom, tripRender, tripStep, TRIP_RULES, voiceGate, type ClipKey } from './tripState';
+import { boardIndexOf, getOffDueAt, isLiveTime, newTripMemory, offIndexOf, PHASE_INDEX, ringDue, TRIP_CLIPS, tripEvidence, tripLegTimes, tripPlanFrom, tripReadingFrom, tripRender, tripStep, TRIP_RULES, voiceGate, type ClipKey, type StepGps } from './tripState';
 
 export type LegLive = { dep: number; arr: number; delay: number; live: boolean; d: ServiceResp | null; gone?: boolean;
   /** The change to this leg was missed: dep and arr are the earliest you could go, not this service's times. */
@@ -687,7 +687,9 @@ export function stepLive(g: LiveTripLike, svc: (ServiceResp | null | undefined)[
 // clip moments then play the clip, else the app says them in the phone's voice. Either way through a session the
 // Silent switch mutes on the speaker only. (The morning's serverClips, which left clip moments to the push, is gone: a
 // push's clip is muted in Silent mode even with headphones, so it cannot stand in for the open app's voice.)
-export type FlowCtx = { asOf?: number | null; c24?: boolean; voice?: VoiceState | null; plannerAt?: number | null; clipPlayer?: boolean | null };
+// gpsAt (3 Nov 2026 prototype, off): what the phone's own location says about Get off now for a stop, passed by the
+// engine only with GETOFF_GPS.on (getOffGpsCore.ts works it out); the leg you are on may then ring from it.
+export type FlowCtx = { asOf?: number | null; c24?: boolean; voice?: VoiceState | null; plannerAt?: number | null; clipPlayer?: boolean | null; gpsAt?: ((stop: { lat: number; lon: number }, now: number) => StepGps | null) | null };
 function stepFlow(g: LiveTripLike, n: LiveTripLike, s: LiveState, svc: (ServiceResp | null | undefined)[], now: number, f: Fmt, flow: FlowCtx, actions: LiveAction[]): { g: LiveTripLike; s: LiveState; actions: LiveAction[]; voiceUntil?: number } {
   const legs = g.legs;
   const use = legs.map((l, i) => { const d = svc[i] || null; return d && !sameRun(d, l, (g.rode || {})[i] != null) ? null : d; });
@@ -704,7 +706,16 @@ function stepFlow(g: LiveTripLike, n: LiveTripLike, s: LiveState, svc: (ServiceR
     const fresh = (g.here || {})[i] == null && typeof M.legs[i].rung.getoff === 'number' && now - (M.legs[i].rung.getoff as number) < 180000;
     if (h != null && !fresh && M.legs[i].phase < PHASE_INDEX.arrived) { M.legs[i].phase = PHASE_INDEX.arrived; M.legs[i].arrivedAt = h; M.legs[i].arrivedTime = h; M.legs[i].rung.getoff = M.legs[i].rung.getoff || 'skipped'; M.legs[i].rung.arrived = M.legs[i].rung.arrived || 'skipped'; if (M.current === i && i < legs.length - 1) M.current = i + 1; }
   }
-  const res = tripStep(plan, M, now, reading, { c24: !!flow.c24, lead: 0 });
+  // Get off now by the phone's location (3 Nov prototype): only when the engine passes gpsAt (GETOFF_GPS.on), for the
+  // leg you are on, against its stop off's own coordinates from the live answer.
+  let gps: StepGps | null = null;
+  if (typeof flow.gpsAt === 'function') {
+    const d = use[M.current] || null;
+    const ai = d && typeof d.alightIndex === 'number' ? d.alightIndex : -1;
+    const off = d && ai >= 0 ? d.stops[ai] : null;
+    if (off && typeof off.lat === 'number' && typeof off.lon === 'number') gps = flow.gpsAt({ lat: off.lat, lon: off.lon }, now);
+  }
+  const res = tripStep(plan, M, now, reading, { c24: !!flow.c24, lead: 0, ...(gps ? { gps } : {}) });
   let alerted = n.alerted || {};
   let spoken = n.spoken || {};
   let voiceUntil = flow.voice ? flow.voice.speakingUntil : 0;

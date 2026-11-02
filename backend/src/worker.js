@@ -7385,7 +7385,18 @@ const LIVECARD = (() => {
         const offLead = getOffLeadMs(lead);
         const prevArr = m.lastArrAt ?? null;
         m.lastArrAt = isLiveTime(tm.arr) ? tm.arr.at : prevArr;
-        if (!rung('getoff') && !rung('getoffQuiet') && isLiveTime(tm.arr) && t >= tm.arr.at - offLead) {
+        const gps = env.gps || null;
+        if (gps && gps.due && !rung('getoff') && !rung('getoffQuiet') && !e.arrived && !e.passed) {
+            m.rung.getoff = t;
+            m.offArrAt = isLiveTime(tm.arr) ? tm.arr.at : null;
+            if (!rung('headsup'))
+                m.rung.headsup = 'skipped';
+            const until = isLiveTime(tm.arr) ? Math.max(tm.arr.at, t + offLead) : t + offLead;
+            deliver({ kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: until + R.GETOFF_EXPIRE, target: t, ...(isLiveTime(tm.arr) ? { arrAt: tm.arr.at, arrSource: tm.arr.source } : {}) }, age, false);
+            setPhase(M, li, 'getOff', t, `phone ${gps.d != null ? Math.round(gps.d) : '?'} m from ${offName} and moving`, res.log);
+            return res;
+        }
+        if (!rung('getoff') && !rung('getoffQuiet') && isLiveTime(tm.arr) && t >= tm.arr.at - offLead && !(gps && gps.hold)) {
             const S2 = (env.reread && env.reread()) || S;
             const tm2 = tripLegTimes(plan, M, S2, li, t);
             const age2 = t - S2.asOf;
@@ -8075,7 +8086,15 @@ const LIVECARD = (() => {
                     M.current = i + 1;
             }
         }
-        const res = tripStep(plan, M, now, reading, { c24: !!flow.c24, lead: 0 });
+        let gps = null;
+        if (typeof flow.gpsAt === 'function') {
+            const d = use[M.current] || null;
+            const ai = d && typeof d.alightIndex === 'number' ? d.alightIndex : -1;
+            const off = d && ai >= 0 ? d.stops[ai] : null;
+            if (off && typeof off.lat === 'number' && typeof off.lon === 'number')
+                gps = flow.gpsAt({ lat: off.lat, lon: off.lon }, now);
+        }
+        const res = tripStep(plan, M, now, reading, { c24: !!flow.c24, lead: 0, ...(gps ? { gps } : {}) });
         let alerted = n.alerted || {};
         let spoken = n.spoken || {};
         let voiceUntil = flow.voice ? flow.voice.speakingUntil : 0;

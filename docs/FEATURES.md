@@ -4,6 +4,9 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Get off now from the phone's location (3 Nov, branch `getoff-gps-3nov`, prototype, off)
+With the trip screen open and location on, Get off now can come from the phone's own fix: under 500 m from your stop and moving towards it. A fix over 800 m away holds a live arrival that creeps. Underground, with no fix, it is the live rule as now. Off on this branch (`GETOFF_GPS.on` false): nothing changes until a real logged trip backs it. Simulated on the 3 Nov morning peak: on time 75 to 85% above ground (now 59%), late 1 to 3% (now 21%).
+
 ## Build 215 candidate, last additions (2 Nov evening, branch `build-215-rc`)
 * Plan: a mode chip with no trips says why ("Metro doesn't go to Liverpool") when the phone's stop lists show it, and shows the fastest trip of any mode, one tap to Any.
 * Expo SDK 58 patch versions (security advisories in the build tools cleared; no feature change).

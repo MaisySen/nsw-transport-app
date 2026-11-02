@@ -2,6 +2,9 @@
 
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
+## Get off now from the phone's location (3 Nov, branch getoff-gps-3nov, prototype, off)
+`app/test/getoffgps3nov.test.mjs` (9): off by default and only the open app passes fixes; due under 500 m and moving at 3 m/s or more; not due when dwelling at a close stop before, stale (21 s), fixes 40 s apart, moving away, a 150 m guess, no stop coordinates; hold over 800 m only from a fresh precise fix; fixes kept newest last (4); a replayed approach with 20 m error rings 15 to 75 s before the stop at four sampling phases; the trip state unchanged without env.gps (7:58:22 for a 7:59:00 arrival), env.gps due rings once at once, hold keeps the live rule waiting. 3 failed first on build-215-rc 3aaf3d3. Full app suite here: 1447 tests, 1440 pass, the same 3 failing as on the base with this box's node_modules (backnav1nov, TabBarSafe, SDK pins); backend 644/644. Before turning on: log fixes on a real ride (above ground and through Town Hall), compare with the doors opening.
+
 ## Build 215 last additions (2 Nov evening, branch build-215-rc)
 * app/test/modeempty2nov.test.mjs (10): the reason line from the stop lists (real lists: no metro at Liverpool, metro at Martin Place), nothing claimed for bus, unknown places or both ends served; the fastest trip (first to arrive, gone trips left out, arrive-by picks the last to leave); the card words and timetable marking; the trip screen asks without modes and swallows failures. All 10 failed on 79767f4.
 * app/test/expopatch215.test.mjs (5): SDK 58 patch versions, every SDK-pinned package on its listed version, no lock entry in a high advisory range, runtime 1.4.0, the expo-router anchor change guarded. The version and lock checks failed on 79767f4.
