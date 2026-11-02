@@ -37,8 +37,9 @@ openssl x509 -req -in srv.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 30 
 cd - >/dev/null
 xcrun simctl keychain "$DEV" add-root-cert "$OUT/server/ca.pem" && log "CA trusted in the simulator" || log "add-root-cert FAILED"
 
-# 2. the server: real worker.js on 443, Start trip 150 s from now
-LEAD=150
+# 2. the server: real worker.js on 443, Start trip LEAD s from now (2 Nov: 150 s was shorter than the first-open set up
+# on a busy runner, 5 to 6 min in run 3, so the trip was asked after its train had left: "No trips found")
+LEAD=${LEAD:-420}
 node --no-warnings "$RTH/sim-server.mjs" --server "$SRV" --case "$CASE" --out "$OUT/server" --port 443 --cert "$OUT/server/srv.pem" --key "$OUT/server/srv.key" \
   --lead $LEAD --sim "$DEV" --bundle "$BID" --faults "$FAULTS" > "$OUT/server/server.log" 2>&1 &
 SPID=$!
@@ -102,15 +103,17 @@ shot after-setup
 T_START=$(node -e "const t=require('$OUT/server/truth.json'); console.log(Math.round((t.base + t.start * 1000) / 1000))")
 while [ "$(date +%s)" -lt $((T_START - 5)) ]; do sleep 2; done
 log "Start trip: $LINK"
+# the link opens at once (simctl); Maestro then answers the system prompts (its own openLink took up to 7 min in run 3)
+xcrun simctl openurl "$DEV" "$LINK" || log "openurl failed"
 if command -v maestro >/dev/null; then
-  printf -- '- openLink: "%s"\n- tapOn: {text: "Open", optional: true}\n- tapOn: {text: "Allow", optional: true}\n- tapOn: {text: "Allow While Using App", optional: true}\n- waitForAnimationToEnd\n' "$LINK" | flow start
-else
-  xcrun simctl openurl "$DEV" "$LINK"
+  printf -- '- tapOn: {text: "Open", optional: true}\n- tapOn: {text: "Allow", optional: true}\n- tapOn: {text: "Allow While Using App", optional: true}\n- waitForAnimationToEnd\n' | flow start
 fi
 # iOS asks for notifications when the trip starts (the trip watch is registered after the answer): tap Allow
 sleep 6
 if command -v maestro >/dev/null; then
   printf -- '- tapOn: {text: "Allow", optional: true}\n- tapOn: {text: "Allow While Using App", optional: true}\n- tapOn: {text: "Allow", optional: true}\n' | flow allow
+  # once more when Maestro itself failed (run 3: the notification prompt stayed on screen for the whole trip)
+  grep -q "maestro allow failed" "$OUT/timeline.txt" 2>/dev/null && printf -- '- tapOn: {text: "Allow", optional: true}\n- tapOn: {text: "Allow", optional: true}\n' | flow allow2
 fi
 for i in 1 2 3; do sleep 6; shot "in-app-$i"; done
 lock_phone
