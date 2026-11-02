@@ -64,6 +64,8 @@ final class WidgetAuditTests: XCTestCase {
     static func changeCard(arrivedAgo: Double) -> SharedLiveCard {
         let ms = { (m: Double) -> Double in at(m).timeIntervalSince1970 * 1000 }
         var c = liveCard(departs: -14, legArrives: -arrivedAgo, updated: -arrivedAgo - 0.2, phase: "ride", delay: 0)
+        // The trip goes on past the change: Lakemba to Bondi Junction, change at Circular Quay.
+        c.title = "Lakemba to Bondi Junction"; c.destination = "Bondi Junction"
         c.arrival = ms(9); c.until = ms(11)
         c.next = SharedNextLeg(line: "T4", lineColorHex: "#005AA3", mode: "train", from: "Circular Quay", to: "Bondi Junction",
                                platform: "Platform 5", departs: ms(3), arrives: ms(9), departsLive: true, arrivesLive: true)
