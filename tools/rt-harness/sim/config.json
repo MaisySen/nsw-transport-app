@@ -1,1 +1,1 @@
-{"scenarios": ["clean-train", "lock-train", "feed-down", "killed"], "app_run_id": ""}
+{"scenarios": ["clean-train", "killed", "feed-down", "lock-train"], "app_run_id": "41289773708", "note": "run 3: tap Allow on the notification prompt after Start; wait for the server; background after the lock attempt"}

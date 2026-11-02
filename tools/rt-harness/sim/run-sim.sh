@@ -40,10 +40,15 @@ LEAD=150
 node --no-warnings "$RTH/sim-server.mjs" --server "$SRV" --case "$CASE" --out "$OUT/server" --port 443 --cert "$OUT/server/srv.pem" --key "$OUT/server/srv.key" \
   --lead $LEAD --sim "$DEV" --bundle "$BID" --faults "$FAULTS" > "$OUT/server/server.log" 2>&1 &
 SPID=$!
-sleep 8
+# wait until the server answers and has written the Start link (it took over 8 s on a busy runner in run 2)
+for i in $(seq 1 60); do
+  [ -s "$OUT/server/start-link.txt" ] && [ "$(curl -s --cacert "$OUT/server/ca.pem" -o /dev/null -w '%{http_code}' "https://api.transportsydney.app/api/app/config?platform=ios")" = 200 ] && break
+  sleep 2
+done
 cat "$OUT/server/server.log"
-curl -s --cacert "$OUT/server/ca.pem" "https://api.transportsydney.app/api/trip?from=SIM_x&to=SIM_y" -o /dev/null -w "local server answers: %{http_code}\n" | tee -a "$OUT/timeline.txt"
+log "local server answers after $((i * 2)) s"
 LINK=$(cat "$OUT/server/start-link.txt")
+[ -n "$LINK" ] || { log "no Start link from the server"; exit 1; }
 
 DISPLAY_ARG=""
 shot() {
@@ -56,8 +61,13 @@ shot() {
 }
 lock_phone() {
   if [ "$LOCK_KIND" = lock ]; then
-    osascript -e 'tell application "Simulator" to activate' -e 'delay 1' -e 'tell application "System Events" to keystroke "l" using {command down}' 2>&1 | tee -a "$OUT/timeline.txt"
-    log "lock keystroke sent"
+    printf -- '- pressKey: Lock\n' | flow lock
+    osascript -e 'tell application id "com.apple.iphonesimulator" to activate' -e 'delay 1' -e 'tell application "System Events" to keystroke "l" using {command down}' 2>&1 | tee -a "$OUT/timeline.txt"
+    log "lock sent (Maestro Lock key and the Simulator's Lock shortcut)"
+    sleep 3; shot after-lock
+    # if the app is still in front (no lock on this runner), send it to the background so the run still tests a phone
+    # whose app is not running
+    xcrun simctl launch "$DEV" com.apple.Preferences >/dev/null && log "Settings in front as well: the app is in the background (JavaScript suspended)"
   else
     xcrun simctl launch "$DEV" com.apple.Preferences >/dev/null && log "Settings in front: the app is in the background (JavaScript suspended)"
   fi
@@ -68,10 +78,34 @@ xcrun simctl install "$DEV" "$APP" || { log "install failed"; exit 1; }
 for s in location location-always calendar; do xcrun simctl privacy "$DEV" grant "$s" "$BID" 2>/dev/null || true; done
 if command -v applesimutils >/dev/null; then applesimutils --byId "$DEV" --bundle "$BID" --setPermissions notifications=YES 2>&1 | tail -1 | tee -a "$OUT/timeline.txt"; fi
 xcrun simctl launch "$DEV" "$BID" >/dev/null; sleep 20; shot first-open
+# Taps a person would make, by Maestro (it drives the simulator through XCTest): the keyboard tip, the first-open set
+# up questions (Skip), and iOS's "Open in Transport?" confirmation that a link opened from outside the app shows.
+flow() { # flow NAME then YAML commands on stdin
+  local f="$OUT/maestro-$1.yaml"; { echo "appId: $BID"; echo "---"; cat; } > "$f"
+  maestro --device "$DEV" test "$f" > "$OUT/maestro-$1.log" 2>&1 && log "maestro $1 ok" || log "maestro $1 failed: $(tail -3 "$OUT/maestro-$1.log" | tr '\n' ' ')"
+}
+TAPS='- tapOn: {text: "Continue", optional: true}
+- tapOn: {text: "Skip", optional: true}
+- tapOn: {text: "Skip", optional: true}
+- tapOn: {text: "Skip", optional: true}
+- tapOn: {text: "Not now", optional: true}
+- tapOn: {text: "Allow", optional: true}'
+if command -v maestro >/dev/null; then echo "$TAPS" | flow setup; fi
+shot after-setup
 # wait for Start trip time (the server's case clock)
-sleep $((LEAD - 35))
+T_START=$(node -e "const t=require('$OUT/server/truth.json'); console.log(Math.round((t.base + t.start * 1000) / 1000))")
+while [ "$(date +%s)" -lt $((T_START - 5)) ]; do sleep 2; done
 log "Start trip: $LINK"
-xcrun simctl openurl "$DEV" "$LINK"
+if command -v maestro >/dev/null; then
+  printf -- '- openLink: "%s"\n- tapOn: {text: "Open", optional: true}\n- tapOn: {text: "Allow", optional: true}\n- tapOn: {text: "Allow While Using App", optional: true}\n- waitForAnimationToEnd\n' "$LINK" | flow start
+else
+  xcrun simctl openurl "$DEV" "$LINK"
+fi
+# iOS asks for notifications when the trip starts (the trip watch is registered after the answer): tap Allow
+sleep 6
+if command -v maestro >/dev/null; then
+  printf -- '- tapOn: {text: "Allow", optional: true}\n- tapOn: {text: "Allow While Using App", optional: true}\n- tapOn: {text: "Allow", optional: true}\n' | flow allow
+fi
 for i in 1 2 3; do sleep 6; shot "in-app-$i"; done
 lock_phone
 T_LOCK=$(date +%s)

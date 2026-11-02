@@ -1,0 +1,187 @@
+# Real-time trips in the iOS Simulator (1 Nov 2026, Bidur: "can you stress test, fail check, error check, every test and
+# check in app like real time" and "Have you even tested any in simulator?"). The whole app (this branch's build-214
+# code, JavaScript bundle included, Release, unsigned, updates off) runs in the simulator against the REAL server code
+# (server-214 worker.js) served locally as api.transportsydney.app over HTTPS with this run's own certificate authority,
+# replaying a journey's live feeds on the wall clock. A trip is started from the link the Next trip widget's Start
+# button opens, then the phone is "locked" (the app sent to the background, the Simulator's Lock, or the app killed).
+# Every push the server sends Apple is handed to the simulator with xcrun simctl push. A picture every 20 s of what the
+# phone shows, the words on each picture (Vision), and the checks: which surfaces stay live and which freeze.
+# No secrets, no signing, no upload, no production server, no Transport for NSW call. Manual runs only.
+name: Real-time trips in the simulator (rt-harness)
+
+# A run starts by hand (workflow_dispatch, once this file is on the default branch) or by a push that changes
+# tools/rt-harness/sim/config.json on a branch named rt-harness-* (scenarios and the app run to reuse come from it).
+on:
+  push:
+    branches: ['rt-harness-*']
+    paths: ['tools/rt-harness/sim/config.json']
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        description: 'JSON list of tools/rt-harness/sim/run-sim.sh scenarios'
+        default: '["clean-train","lock-train","feed-down","killed"]'
+      app_run_id:
+        description: "Use the app built by this earlier run of this workflow (skips the 40 min build)"
+        default: ""
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rt-sim-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      scenarios: ${{ steps.p.outputs.scenarios }}
+      app_run_id: ${{ steps.p.outputs.app_run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: p
+        run: |
+          if [ "${{ github.event_name }}" = workflow_dispatch ]; then
+            S='${{ inputs.scenarios }}'; A='${{ inputs.app_run_id }}'
+          else
+            S=$(jq -c .scenarios tools/rt-harness/sim/config.json); A=$(jq -r '.app_run_id // ""' tools/rt-harness/sim/config.json)
+          fi
+          echo "scenarios=$S" >> "$GITHUB_OUTPUT"; echo "app_run_id=$A" >> "$GITHUB_OUTPUT"
+          echo "scenarios $S, app run ${A:-build now}"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.app_run_id == ''
+    runs-on: xcode-27
+    timeout-minutes: 100
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Native project (expo prebuild, pod install)
+        run: |
+          npx expo prebuild --platform ios --clean --no-install
+          cd ios && RCT_USE_RN_DEP=1 RCT_USE_PREBUILT_RNCORE=1 pod install
+      - name: Build the app with its JavaScript (simulator, Release, unsigned)
+        env:
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+          NODE_OPTIONS: "--max-old-space-size=8192"
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          WS=$(ls -d ios/*.xcworkspace | head -1); SCHEME=$(basename "$WS" .xcworkspace)
+          xcodebuild build -workspace "$WS" -scheme "$SCHEME" -configuration Release \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath ios/dd \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO > "$GITHUB_WORKSPACE/out/build.log" 2>&1 \
+            || { grep -E "error:" "$GITHUB_WORKSPACE/out/build.log" | sort -u | head -80; tail -40 "$GITHUB_WORKSPACE/out/build.log"; exit 1; }
+          APP=$(ls -d ios/dd/Build/Products/Release-iphonesimulator/*.app | head -1)
+          ls "$APP"/main.jsbundle >/dev/null && echo "JavaScript bundle in $APP"
+          plutil -replace EXUpdatesEnabled -bool NO "$APP/Expo.plist" || true
+          tar -czf "$GITHUB_WORKSPACE/out/app.tgz" -C "$(dirname "$APP")" "$(basename "$APP")"
+          ls -la "$GITHUB_WORKSPACE/out/app.tgz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rt-sim-app
+          path: out/app.tgz
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: rt-sim-build-log
+          path: out/build.log
+          retention-days: 7
+
+  sim:
+    needs: [plan, build]
+    if: always() && needs.plan.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: xcode-27
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        scn: ${{ fromJSON(needs.plan.outputs.scenarios) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+          node --version
+      - name: The server code (server-214)
+        run: |
+          git fetch origin server-214
+          git worktree add srv FETCH_HEAD
+          git -C srv log --oneline -1
+      - name: The app (this run)
+        if: needs.plan.outputs.app_run_id == ''
+        uses: actions/download-artifact@v4
+        with:
+          name: rt-sim-app
+          path: dl
+      - name: The app (earlier run)
+        if: needs.plan.outputs.app_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: rt-sim-app
+          path: dl
+          run-id: ${{ needs.plan.outputs.app_run_id }}
+          github-token: ${{ github.token }}
+      - name: Unpack
+        run: |
+          mkdir -p appdir && tar -xzf dl/app.tgz -C appdir
+          echo "$PWD/$(ls -d appdir/*.app | head -1)" > /tmp/app-path.txt; cat /tmp/app-path.txt
+      - name: Local server name, Sydney time, permissions tool
+        run: |
+          # The app's server name points at this runner; updates and crash reports go nowhere.
+          printf '127.0.0.1 api.transportsydney.app\n0.0.0.0 u.expo.dev\n0.0.0.0 transportsydney.app\n0.0.0.0 o4507.ingest.sentry.io\n' | sudo tee -a /etc/hosts
+          sudo dscacheutil -flushcache || true
+          sudo systemsetup -settimezone Australia/Sydney 2>/dev/null || sudo ln -sf /usr/share/zoneinfo/Australia/Sydney /etc/localtime
+          date
+          brew tap wix/brew >/dev/null 2>&1 && brew install applesimutils >/dev/null 2>&1 && echo "applesimutils $(applesimutils --version 2>/dev/null)" || echo "applesimutils not installed"
+          # Maestro taps what a person taps (set up questions, iOS's "Open in Transport?" for a link, Lock)
+          curl -fsSL "https://get.maestro.mobile.dev" | bash > /tmp/maestro-install.log 2>&1 && echo "$HOME/.maestro/bin" >> "$GITHUB_PATH" && "$HOME/.maestro/bin/maestro" --version || { echo "maestro not installed"; tail -5 /tmp/maestro-install.log; }
+      - name: iPhone simulator with a Dynamic Island
+        run: |
+          xcrun simctl list devices available -j > /tmp/devs.json
+          DEV=$(python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/devs.json'))['devices']
+          rts=sorted([k for k in d if '.iOS-' in k], key=lambda k:[int(p) for p in k.split('.iOS-')[1].split('-') if p.isdigit()])
+          for k in reversed(rts):
+              ds=[x for x in d[k] if x['name'].startswith('iPhone') and 'Pro' in x['name'] and 'Max' not in x['name']] or [x for x in d[k] if x['name'].startswith('iPhone')]
+              if ds:
+                  print(ds[-1]['udid']); break
+          PY
+          )
+          test -n "$DEV"; echo "$DEV" > /tmp/sim-id.txt
+          xcrun simctl list devices | grep "$DEV"
+          xcrun simctl boot "$DEV" || true
+          xcrun simctl bootstatus "$DEV" -b > /dev/null
+          open -a Simulator --args -CurrentDeviceUDID "$DEV" || true
+          sleep 10
+      - name: Real-time trip (${{ matrix.scn }})
+        run: bash tools/rt-harness/sim/run-sim.sh "$(cat /tmp/app-path.txt)" "$GITHUB_WORKSPACE/out/${{ matrix.scn }}" "$(cat /tmp/sim-id.txt)" "${{ matrix.scn }}"
+        env:
+          RT_SERVER: ${{ github.workspace }}/srv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rt-sim-${{ matrix.scn }}
+          path: out
+          retention-days: 14

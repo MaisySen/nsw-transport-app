@@ -28,9 +28,16 @@ export function makeEnv(serverDir, names, flags, nowMs) {
   DB.sql.exec('CREATE TABLE IF NOT EXISTS app_config (platform TEXT PRIMARY KEY, body TEXT NOT NULL, at INTEGER)');
   DB.sql.prepare("INSERT OR REPLACE INTO app_config (platform, body, at) VALUES ('server', ?, ?)").run(JSON.stringify({ flags }), nowMs);
   const { privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const pub = path.join(backend, 'src', 'public');
   const ASSETS = { fetch: async (rq) => {
-    const m = new URL(rq.url).pathname.match(/^\/stops\/(.+)\.json$/);
-    if (!m) return new Response('{}', { status: 404 });
+    const pn = new URL(rq.url).pathname;
+    const m = pn.match(/^\/stops\/(.+)\.json$/);
+    if (!m) {
+      // the server's own published files (station lists the app reads at /stations/*.json), as the site serves them
+      const f = path.join(pub, path.normalize(pn).replace(/^(\.\.[/\\])+/, ''));
+      if (f.startsWith(pub) && fs.existsSync(f) && fs.statSync(f).isFile()) return new Response(fs.readFileSync(f), { headers: { 'content-type': f.endsWith('.json') ? 'application/json' : 'application/octet-stream' } });
+      return new Response('{}', { status: 404 });
+    }
     const shard = {};
     for (const [id, v] of Object.entries(names)) if (id.slice(0, 3).replace(/[^A-Za-z0-9]/g, '_') === m[1]) shard[id] = v;
     return new Response(JSON.stringify(shard), { headers: { 'content-type': 'application/json' } });

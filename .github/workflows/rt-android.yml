@@ -1,0 +1,111 @@
+# Real-time trips on the Android emulator (1 Nov 2026, Bidur: "Then rent it"): the Android app built from this branch
+# (Release, x86_64, debug-signed, no secrets) on an API 33 emulator (KVM) against the REAL server code (server-214
+# worker.js) served on this runner as api.transportsydney.app with the run's own certificate authority, replaying a
+# journey's feeds on the wall clock. Trip started from the Start link, app in the background, screen off; the app's
+# notifications read every 30 s and the Lock Screen pictured every 60 s. Started by a push that changes
+# tools/rt-harness/android/config.json on a branch named rt-harness-* (or by hand once on the default branch).
+name: Real-time trips on the Android emulator (rt-harness)
+
+on:
+  push:
+    branches: ['rt-harness-*']
+    paths: ['tools/rt-harness/android/config.json']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rt-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      scenarios: ${{ steps.p.outputs.scenarios }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: p
+        run: echo "scenarios=$(jq -c .scenarios tools/rt-harness/android/config.json)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Native project and APK (Release, x86_64, debug signing)
+        env:
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+          NODE_ENV: production
+          CI: "1"
+        run: |
+          npx expo prebuild --platform android --clean --no-install
+          cd android
+          sed -i 's/org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g/' gradle.properties
+          ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 --no-daemon --console=plain > ../../build-android.log 2>&1 || { tail -60 ../../build-android.log; exit 1; }
+          ls -la app/build/outputs/apk/release/
+          cp app/build/outputs/apk/release/*.apk "$GITHUB_WORKSPACE/app-rt.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rt-android-apk
+          path: app-rt.apk
+          retention-days: 7
+
+  emu:
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        scn: ${{ fromJSON(needs.plan.outputs.scenarios) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: The server code (server-214)
+        run: |
+          git fetch origin server-214
+          git worktree add srv FETCH_HEAD
+      - uses: actions/download-artifact@v4
+        with:
+          name: rt-android-apk
+          path: dl
+      - name: KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Real-time trip (${{ matrix.scn }})
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          RT_SERVER: ${{ github.workspace }}/srv
+        with:
+          api-level: 33
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -writable-system -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash tools/rt-harness/android/run-emu.sh "$GITHUB_WORKSPACE/dl/app-rt.apk" "$GITHUB_WORKSPACE/out/${{ matrix.scn }}" "${{ matrix.scn }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rt-android-${{ matrix.scn }}
+          path: out
+          retention-days: 14
