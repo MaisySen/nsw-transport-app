@@ -74,6 +74,66 @@ export function emptyModes(modes: ModeK[], byServer: boolean): { title: string; 
   return { title: `No ${w} only trips in these results`, body: 'The planner suggested other ways for this trip. Try again in a moment, or tap Any.' };
 }
 
+// ---- A mode with no trips (2 Nov): why, in one line, and the fastest trip of any mode ----
+
+/** Trip Planner mode codes of the station lists on the phone (localSearchCore.ts). Bus is not here: bus stops are a
+ * separate list, so a station with no bus listed proves nothing about buses nearby. */
+const STATION_CODE: Partial<Record<ModeK, number>> = { train: 1, metro: 2, lightrail: 4, ferry: 9 };
+type PlaceModes = { name: string; modes?: number[] | null } | null | undefined;
+
+/**
+ * Why a mode-only trip cannot exist, when the phone's stop lists show it: "Metro doesn't go to Liverpool" (none of
+ * the chosen modes stops at the destination), "Metro doesn't stop at Epping" (none at the start). Null when it is not
+ * provable from the lists: a place whose modes are unknown (an address, a bus stop), Bus chosen, or both ends served
+ * (the lines may still not meet) — then the screen keeps its plain words.
+ */
+export function modesWhy(modes: ModeK[], from: PlaceModes, to: PlaceModes): string | null {
+  if (!modes.length || modes.some((k) => STATION_CODE[k] == null)) return null;
+  const codes = modes.map((k) => STATION_CODE[k] as number);
+  const lacks = (p: PlaceModes) => !!p && Array.isArray(p.modes) && p.modes.length > 0 && !codes.some((c) => p.modes!.includes(c));
+  const verb = modes.length > 1 ? "don't" : "doesn't";
+  if (lacks(to)) return `${modesWords(modes)} ${verb} go to ${to!.name}`;
+  if (lacks(from)) return `${modesWords(modes)} ${verb} stop at ${from!.name}`;
+  return null;
+}
+
+type TimedJ = JLike & { leave: string; board?: string; arrive: string; durationMin?: number; live?: boolean };
+const msOf = (s?: string) => (s ? Date.parse(s) : NaN);
+
+/** The fastest trip of a list: the one that gets there first (the shorter ride on a tie); arriving by a time, the one
+ * that leaves last. Trips already gone by the phone's clock never count (R3). */
+export function fastestTrip<T extends TimedJ>(js: T[] | null | undefined, now: number, arriveBy: boolean): T | null {
+  let best: T | null = null;
+  for (const j of js || []) {
+    const lv = msOf(j.board || j.leave), ar = msOf(j.arrive);
+    if (!Number.isFinite(lv) || !Number.isFinite(ar) || lv < now) continue;
+    if (!best) { best = j; continue; }
+    const blv = msOf(best.board || best.leave), bar = msOf(best.arrive);
+    const better = arriveBy ? lv > blv || (lv === blv && ar < bar) : ar < bar || (ar === bar && ar - lv < bar - blv);
+    if (better) best = j;
+  }
+  return best;
+}
+
+/** The fastest trip as a card: its lines ("M1, then T1"), "8:06pm to 8:48pm · 42 min", timetable times marked (R1). */
+export function fastestWords(j: Omit<TimedJ, 'legs'> & { legs: (LegLike & { line?: string; modeName?: string })[] }, fmt: (t: number) => string): { title: string; line: string; a11y: string } {
+  const names = j.legs.filter((l) => l.kind !== 'walk').map((l) => l.line || l.modeName || (chipOf(l.mode) ? MODE_CHIPS.find((c) => c.k === chipOf(l.mode))!.name : 'Service'));
+  const title = names.length ? names.join(', then ') : 'Walk';
+  const lv = msOf(j.board || j.leave), ar = msOf(j.arrive);
+  const min = Math.max(1, Math.round((ar - lv) / 60000));
+  const tt = j.live === false;
+  const line = `${fmt(lv)} to ${fmt(ar)} · ${min} min${tt ? ' · timetable' : ''}`;
+  return { title, line, a11y: `Fastest trip, ${title}, leaves ${fmt(lv)}, arrives ${fmt(ar)}, ${min} min${tt ? ', timetable times' : ''}. Shows every trip.` };
+}
+
+/** The empty state with the reason as its title when known, and a lead in to the fastest trip when there is one. */
+export function modesEmptyState(modes: ModeK[], byServer: boolean, why: string | null, hasFastest: boolean): { title: string; body: string } {
+  const e = emptyModes(modes, byServer);
+  if (why) return { title: why, body: hasFastest ? 'The fastest trip right now:' : 'Tap Any for other ways to get there.' };
+  if (!hasFastest) return e;
+  return { title: e.title, body: byServer ? `${e.body.replace(/ Try Any\.$/, '')} The fastest trip right now:` : 'The fastest trip right now:' };
+}
+
 /** Accessibility label of a chip. */
 export const chipLabel = (name: string, on: boolean) => `${name}${on ? ', selected' : ''}`;
 

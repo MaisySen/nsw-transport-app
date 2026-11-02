@@ -11,7 +11,7 @@ import { PullDownButton } from '@/components/HoldMenu';
 import { menuOf, type MenuSpec } from '@/lib/menuCore';
 import { arriveByIndex, NOW, whenFromParams, type When } from '@/lib/planCore';
 import { WhenPicker } from '@/components/WhenPicker';
-import { afterBatch, canLoadEarlier, canLoadLater, chipLabel, chipsToShow, dateNeeded, earlierFloor, earlierSteps, emptyModes, filterModes, hasLeft, keepFrom, modesWords, MODE_CHIPS, nearEnd, normModes, PAGE0, PAGING, pickerDays, pinDay, queryAt, serviceDayEnd, toggleMode, whenAt, whenKeyOf, whenWords, ymd, type ModeK, type PageState } from '@/lib/tripModesCore';
+import { afterBatch, canLoadEarlier, canLoadLater, chipLabel, chipsToShow, dateNeeded, earlierFloor, earlierSteps, fastestTrip, fastestWords, filterModes, hasLeft, keepFrom, modesEmptyState, modesWhy, modesWords, MODE_CHIPS, nearEnd, normModes, PAGE0, PAGING, pickerDays, pinDay, queryAt, serviceDayEnd, toggleMode, whenAt, whenKeyOf, whenWords, ymd, type ModeK, type PageState } from '@/lib/tripModesCore';
 import { LeftRow } from '@/components/LeftRow';
 import { EarlierHeader, NextMark, NowDivider, useOpenAtNow, usePastNow } from '@/components/PastNow';
 import { cardEdges, nowA11y, nowLabel, pastNowSplit } from '@/lib/pastNowCore';
@@ -71,6 +71,8 @@ import { stableKeys } from '@/lib/rowKeysCore';
 import { hasLiveData } from '@/lib/rowTimeCore';
 import { rowTime } from '@/lib/rowTime';
 import { changeAt } from '@/lib/tightChangeCore';
+import { localIndexNow, warmLocalSearch } from '@/lib/localSearch';
+import { placeModes } from '@/lib/localSearchCore';
 
 /** "0745" for the trip API's time parameter, Sydney time. */
 function hhmm(t: number) {
@@ -493,6 +495,35 @@ export default function TripScreen() {
   // to leave, only when a trip after the peak is loaded (shown, waiting above or a later page) with the same choices.
   const opHint = offPeakHint(js, applyWalkPref(filterModes([...(data?.journeys || []), ...extra, ...heldDays], modes), wp).list, depMs, now, when.kind === 'arrive');
   const jKeys = stableKeys(js.map(jKey));
+  // Fastest of any mode (2 Nov): a mode chip with no trips says why in one line when the stop lists on the phone show it
+  // (modesWhy: "Metro doesn't go to Liverpool") and shows the fastest trip of any mode, one tap from Any (which opens
+  // that trip). A phone filtered answer (modesBy 'phone') already holds every mode; a server filtered one is asked once
+  // more without modes. Offline or failing, the reason and the Any button still show; nothing is made up. The stop lists
+  // are read only here, when a chip came up empty (battery: the trip screen does not read them otherwise).
+  const modeEmpty = !!data && !js.length && modes.length > 0;
+  const anyKey = modeEmpty ? `${tkey}|${whenKey}|${wKey}|${modesKey}` : '';
+  const [anyBest, setAnyBest] = useState<{ key: string; js: Journey[] } | null>(null);
+  const [lidx, setLidx] = useState(localIndexNow);
+  useEffect(() => {
+    if (!anyKey) return;
+    let still = true;
+    if (!lidx) warmLocalSearch().then(() => { if (still) setLidx(localIndexNow()); }).catch(() => {});
+    if (data?.modesBy !== 'phone' && anyBest?.key !== anyKey) {
+      planTrip(plan, { count: 6, ...queryAt(when, Date.now()), walk: wp }).then((r) => { if (still) setAnyBest({ key: anyKey, js: r?.journeys || [] }); }).catch(() => {});
+    }
+    return () => { still = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anyKey]);
+  const anyPool = !modeEmpty ? [] : data?.modesBy === 'phone' ? applyWalkPref(data.journeys || [], wp).list : anyBest?.key === anyKey ? anyBest.js : [];
+  const fastest = modeEmpty ? fastestTrip(anyPool, now, when.kind === 'arrive') : null;
+  const why = modeEmpty ? modesWhy(modes, { name: stName(shortName(from.name)), modes: placeModes(lidx, from) }, { name: stName(shortName(to.name)), modes: placeModes(lidx, to) }) : null;
+  const pendingPick = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pendingPick.current) return;
+    const i = js.findIndex((j) => jKey(j) === pendingPick.current);
+    if (i >= 0) { setOpen(i); pendingPick.current = null; }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jKeys.join('|')]);
   // Past and upcoming apart (PAST_NOW, 30 Oct): gone ones in their own muted card under Earlier, a Now divider, the next
   // one marked, the list opened at Now (pastNowCore.ts). Gone is the same rule the rows already use (hasLeft, minute tick).
   const pastNow = usePastNow();
@@ -898,7 +929,28 @@ export default function TripScreen() {
             {error ? `${failWhy() === 'server' ? 'Live data unavailable right now' : 'Offline'}. Updated ${rowTime(updatedAt)}` : (data as any)?.source === 'timetable' ? TIMETABLE_TRIPS_NOTE : `Updated ${rowTime(updatedAt)}`}
           </T>
         ) : null}
-        {data && !js.length && modes.length ? (() => { const e = emptyModes(modes, data.modesBy === 'server'); return <Empty icon={I.route} title={e.title} body={e.body} action={<Button title="Any" kind="tinted" onPress={() => { haptic.select(); store.setTripModes(tkey, []); }} />} />; })() : null}
+        {modeEmpty && data ? (() => {
+          const e = modesEmptyState(modes, data.modesBy === 'server', why, !!fastest);
+          const fw = fastest ? fastestWords(fastest, rowTime) : null;
+          const toAny = () => { haptic.select(); pendingPick.current = fastest ? jKey(fastest) : null; store.setTripModes(tkey, []); };
+          return (
+            <Empty icon={I.route} title={e.title} body={e.body} action={(
+              <View style={{ alignItems: 'center', alignSelf: 'stretch' }}>
+                {fw && fastest ? (
+                  <Pressable accessibilityRole="button" accessibilityLabel={fw.a11y} onPress={toAny} style={({ pressed }) => ({ alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', minHeight: 44, backgroundColor: c.card, borderRadius: radius, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 14, opacity: pressed ? 0.6 : 1 })}>
+                    <Icon name={modeIconName(firstT(fastest)?.mode)} size={18} color={modeColor[String(firstT(fastest)?.mode || '')] || c.text2} />
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <T kind="headline" numberOfLines={1}>{fw.title}</T>
+                      <T kind="foot" tone="text2" numberOfLines={1} style={{ marginTop: 2, fontVariant: ['tabular-nums'] }}>{fw.line}</T>
+                    </View>
+                    <Icon name={I.chevron} size={14} color={c.text3} style={{ marginLeft: 6 }} />
+                  </Pressable>
+                ) : null}
+                <Button title="Any" kind="tinted" onPress={toAny} />
+              </View>
+            )} />
+          );
+        })() : null}
         {data && !js.length && !modes.length ? (error || offlineAt || (staleAt && !updatedAt)
           // A kept copy whose trips have all left while the live answer failed (g16): never "No trips found".
           ? <Empty icon={I.warn} title={error || offlineAt ? "Can't plan this trip right now" : 'Loading live trips'} body={error || (offlineAt ? (failWhy() === 'server' ? 'Live trips are unavailable right now.' : "You're offline. Check your connection.") : 'One moment.')} />

@@ -49,6 +49,21 @@ export function buildLocalIndex(lists: Record<string, any[]> | null | undefined,
   return { stations, bus, byId };
 }
 
+/**
+ * Which station modes stop at a place (Trip Planner codes: 1 train, 2 metro, 4 light rail, 9 ferry), from the lists on
+ * the phone: by its stop id, joined with every station of the same name (one station can be listed under another id
+ * for another mode). Null when the lists do not know it as a station (an address, a bus stop, lists not read yet).
+ */
+export function placeModes(idx: LocalIndex | null | undefined, place: { id?: string; name?: string } | null | undefined): number[] | null {
+  if (!idx || !place) return null;
+  const byId = place.id ? idx.byId.get(String(place.id)) : undefined;
+  if (byId && !idx.stations.includes(byId)) return null;
+  const base = byId ? byId.base : place.name ? baseOf(norm(String(place.name))) : '';
+  const same = base ? idx.stations.filter((s) => s.base === base) : [];
+  const all = new Set<number>([...(byId ? byId.modes : []), ...same.flatMap((s) => s.modes)]);
+  return all.size ? [...all] : null;
+}
+
 /** What was typed, as a key: lower case, short forms spelt out ("parra", "kings x", "bondi jnct"). */
 export function searchKey(q: string): string {
   let k = norm(q).replace(/:/g, ' ').replace(/\s+/g, ' ').trim();
