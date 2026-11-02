@@ -88,7 +88,7 @@ jobs:
           # Build 215 (2 Nov) has native code builds 212 to 214 do not (background audio and location, the locked screens'
           # live card, the minimal Island): its own runtime 1.4.0, so the 1.3.0 updates (builds 212 to 214) never land on it.
           if [ "$BN" -ge 215 ] && { [ "$RT" = "1.3.0" ] || [ "$RT" = "1.2.0" ]; }; then echo "build $BN must not use runtime $RT (builds 212 to 214)"; exit 1; fi
-          if [ "$BN" -ge 212 ] && [ "$GITHUB_REF" != "refs/heads/build-212-rc" ] && [ "$GITHUB_REF" != "refs/heads/build-213-watch" ] && [ "$GITHUB_REF" != "refs/heads/build-214-rc" ] && [ "$GITHUB_REF" != "refs/heads/build-209" ]; then echo "unexpected branch $GITHUB_REF"; exit 1; fi
+          if [ "$BN" -ge 212 ] && [ "$GITHUB_REF" != "refs/heads/build-212-rc" ] && [ "$GITHUB_REF" != "refs/heads/build-213-watch" ] && [ "$GITHUB_REF" != "refs/heads/build-214-rc" ] && [ "$GITHUB_REF" != "refs/heads/build-215-rc" ] && [ "$GITHUB_REF" != "refs/heads/build-209" ]; then echo "unexpected branch $GITHUB_REF"; exit 1; fi
 
       - name: EAS local build (production profile)
         run: |

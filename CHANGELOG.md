@@ -4,6 +4,9 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 2 Nov 2026
 
+### Build 215: the build workflow's own branch check (2 Nov, 10:15 PM; branch `build-215-rc`)
+Found right before dispatching build 215: the build job's `if` took build-215-rc, but the step "Runtime and build number" had its own list of branches without it, so the signed build would have stopped at that step with "unexpected branch refs/heads/build-215-rc" after the audit. build-215-rc is now in that list. Test: app/test/build215.test.mjs runs the step's checks through bash for build-215-rc with 215 and 1.4.0 (passes), 215 on 1.3.0 (stops) and an unknown branch (stops); it failed first on 2d500a1. Workflow and test only, no app code.
+
 ### Build 215 candidate, last additions (2 Nov, evening; branch `build-215-rc`, not built)
 Added on top of 79767f4 so the one next build has everything; each with a test that failed first.
 * Plan, a mode chip with no trips (Bidur, 8:00 PM screenshot, Martin Place to Liverpool with Metro on: "No metro only trips", then "Where is metro???"): the screen now says why in one line when the stop lists on the phone show it ("Metro doesn't go to Liverpool", or "doesn't stop at" the start), and shows the fastest trip of any mode right there as a card; one tap (the card or Any) switches to Any with that trip opened. A server-filtered answer asks the planner once more without modes; offline or failing, the reason and Any still show; nothing is made up. Bus is never claimed (bus stops are not in the station lists). JavaScript only (`tripModesCore.ts` modesWhy, fastestTrip, fastestWords, modesEmptyState; `localSearchCore.ts` placeModes; app/test/modeempty2nov.test.mjs, 10).

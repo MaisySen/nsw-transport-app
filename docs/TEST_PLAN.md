@@ -12,7 +12,7 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 * `app/test/swiftnames215.test.mjs` (3): no top-level Swift type named twice in the widget, Watch or module target (the widget test failed on 83686dd: IslandMinimal twice).
 * `app/test/welcome215.test.mjs` (3): the first-open questions skip a running trip, also one that loads after the store; asked once only when shown (all 3 failed before).
 * `app/test/location215.test.mjs` (2): freshFix turns any failure of the system location into nofix; friendlyErr drops native module errors and messages over more than one line (both failed before).
-* `app/test/build215.test.mjs` (3): build 215 on runtime 1.4.0; the build workflow takes build-215-rc and refuses 1.3.0 and 1.2.0; background modes exactly audio and location, When In Use only (2 failed before).
+* `app/test/build215.test.mjs` (4): build 215 on runtime 1.4.0; the build workflow takes build-215-rc and refuses 1.3.0 and 1.2.0; background modes exactly audio and location, When In Use only (2 failed before); the workflow step "Runtime and build number" run through bash lets build-215-rc with 215 and 1.4.0 through and stops 1.3.0 and unknown branches (failed on 2d500a1, 2 Nov 10:15 PM).
 * Mac: native audit (snapshots of every widget, Live Activity, Island and Watch surface, plus the whole app compiled for the simulator), the iOS Simulator real-time trips (rt-sim.yml on rt-harness-215: t9t4, killed, clean-train, feed-down) against server-trip-2nov, and the node harness with RT_WIDGET=215 (`node tools/rt-harness/run.mjs --server <server-trip-2nov checkout>`). Results in files/day-2nov/build-215-readiness.md.
 
 ## Trip alerts spoken in headphones, phone locked (2 Nov, branch fix-voice-locked-2nov)

@@ -32,3 +32,27 @@ test('background modes are exactly audio and location, with the When In Use purp
   assert.doesNotMatch(plugins + JSON.stringify(ip), /NSLocationAlwaysAndWhenInUseUsageDescription|NSLocationAlwaysUsageDescription/);
   assert.match(plugins + JSON.stringify(ip), /NSLocationWhenInUseUsageDescription|locationWhenInUsePermission/);
 });
+
+// 2 Nov 2026, before dispatching build 215: the job-level `if` took build-215-rc, but the step "Runtime and build
+// number" still had its own branch list without it, so the signed build would have stopped there with "unexpected
+// branch refs/heads/build-215-rc" after the audit. Every branch the build job takes must pass that step's checks, run
+// here through bash with the build number and runtime that branch builds.
+test('the runtime and build number step lets every branch the build job takes through (build-215-rc with 215 / 1.4.0)', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const job = wf.match(/^  build:\n[\s\S]*?^    if: (.*)$/m);
+  assert.ok(job, 'build job if');
+  const refs = [...job[1].matchAll(/refs\/heads\/([\w.-]+)/g)].map((m) => m[1]);
+  assert.ok(refs.includes('build-215-rc'));
+  const step = wf.match(/- name: Runtime and build number[^\n]*\n\s+run: \|\n([\s\S]*?)\n\n/);
+  assert.ok(step, 'runtime step');
+  const body = step[1].split('\n').filter((l) => !/^\s*(RT|BN)=|^\s*echo "runtime/.test(l)).join('\n');
+  const run = (ref, bn, rt) => {
+    try {
+      execFileSync('bash', ['-c', body], { env: { ...process.env, GITHUB_REF: `refs/heads/${ref}`, BN: bn, RT: rt }, stdio: 'pipe' });
+      return 0;
+    } catch (e) { return e.status; }
+  };
+  assert.equal(run('build-215-rc', '215', '1.4.0'), 0, 'build-215-rc, 215, 1.4.0 must pass');
+  assert.notEqual(run('build-215-rc', '215', '1.3.0'), 0, '215 on 1.3.0 must stop');
+  assert.notEqual(run('some-other-branch', '215', '1.4.0'), 0, 'an unknown branch must stop');
+});
