@@ -62,9 +62,10 @@ test('TabBarSafe pads by the native screen safe area on iPhone only', () => {
   assert.match(t, /from 'react-native-screens\/experimental'/);
   assert.match(t, /edges=\{\{ bottom: true, left: true, right: true \}\}/);
   assert.match(t, /Platform\.OS === 'ios'/);
-  // The native view must exist in the builds this update reaches: same react-native-screens as the 206 lock file.
+  // The native view must exist in the builds this update reaches: react-native-screens 4.30 as in the 206 lock file
+  // (build 215 takes the 4.30.1 patch with the SDK 58 patches, 2 Nov; RNSSafeAreaView is in every 4.30 release).
   const lock = JSON.parse(src('package-lock.json'));
-  assert.equal(lock.packages['node_modules/react-native-screens'].version, '4.30.0');
+  assert.match(lock.packages['node_modules/react-native-screens'].version, /^4\.30\.\d+$/);
   const codegen = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/react-native-screens/package.json'), 'utf8')).codegenConfig;
   assert.ok(codegen.ios.components.RNSSafeAreaView, 'RNSSafeAreaView is a native component of react-native-screens');
 });

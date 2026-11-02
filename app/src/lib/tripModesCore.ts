@@ -85,7 +85,7 @@ type PlaceModes = { name: string; modes?: number[] | null } | null | undefined;
  * Why a mode-only trip cannot exist, when the phone's stop lists show it: "Metro doesn't go to Liverpool" (none of
  * the chosen modes stops at the destination), "Metro doesn't stop at Epping" (none at the start). Null when it is not
  * provable from the lists: a place whose modes are unknown (an address, a bus stop), Bus chosen, or both ends served
- * (the lines may still not meet) — then the screen keeps its plain words.
+ * (the lines may still not meet); then the screen keeps its plain words.
  */
 export function modesWhy(modes: ModeK[], from: PlaceModes, to: PlaceModes): string | null {
   if (!modes.length || modes.some((k) => STATION_CODE[k] == null)) return null;
