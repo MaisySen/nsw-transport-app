@@ -1,1 +1,1 @@
-{"scenarios": ["clean-train", "killed", "feed-down", "lock-train"], "app_run_id": "41289773708", "note": "run 3: tap Allow on the notification prompt after Start; wait for the server; background after the lock attempt"}
+{"scenarios": ["t9t4", "killed", "clean-train", "feed-down"], "app_run_id": "", "server_ref": "server-trip-2nov", "note": "build 215 check (2 Nov): build-215-rc 83686dd app (this run builds it) against the live server code server-trip-2nov; t9t4 = owner's 2 Nov trip shape, woken on the T4"}
