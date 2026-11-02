@@ -49,6 +49,8 @@ type State = { starred: Place[]; recents: Place[]; recentTrips: RecentTrip[]; wa
   getOff?: { stops: number; now: boolean; v?: 2 };
   /** Spoken Get off now (getOffCore.readGetOffSay): on unless set to false. */
   getOffSay?: boolean;
+  /** More > Speak alerts in headphones (2 Nov, lockedVoiceCore.readLockedVoice): on unless set to false. */
+  lockedVoice?: boolean;
 };
 export type LeaveReminder = { at: number; dep: number; label: string };
 const EMPTY: State = { starred: [], recents: [], recentTrips: [], watchedTrips: {}, places: {}, myTrips: [], tripOrder: [], allServices: {}, fareType: 'adult' };
@@ -138,6 +140,9 @@ export const store = {
   /** Spoken Get off now, as stored (read it through getOffCore.readGetOffSay). */
   getOffSay: (): unknown => state.getOffSay,
   setGetOffSay(on: boolean) { state = { ...state, getOffSay: !!on }; save(); },
+  /** Speak alerts in headphones, as stored (read it through lockedVoiceCore.readLockedVoice). */
+  lockedVoice: (): unknown => state.lockedVoice,
+  setLockedVoice(on: boolean) { state = { ...state, lockedVoice: !!on }; save(); },
   speakOn: (): boolean => !!state.speak,
   setSpeak(on: boolean) { state = { ...state, speak: on }; save(); },
   voiceId: (): string | null => state.voiceId || null,

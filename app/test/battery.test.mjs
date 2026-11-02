@@ -194,7 +194,13 @@ test('the screen is kept awake only by the full screen board, and released on le
 test('app.json declares no background modes the app does not use', () => {
   const app = JSON.parse(fs.readFileSync(path.join(root, 'app.json'), 'utf8')).expo;
   const modes = app.ios?.infoPlist?.UIBackgroundModes || [];
-  for (const m of modes) assert.ok(['remote-notification'].includes(m), `UIBackgroundModes has ${m}`);
+  // 2 Nov (Bidur, 3:18 PM: "Find a way to do this from in app"): audio and location, only for the trip voice in
+  // headphones with the phone locked (TripAwake.swift, started with a trip and stopped at its end; voicelocked2nov.test.mjs).
+  for (const m of modes) assert.ok(['remote-notification', 'audio', 'location'].includes(m), `UIBackgroundModes has ${m}`);
+  if (modes.includes('audio') || modes.includes('location')) {
+    assert.ok(modes.includes('audio') && modes.includes('location'), 'audio and location come together, for the locked trip voice');
+    assert.ok(fs.existsSync(path.join(root, 'modules/transport-ios/ios/TripAwake.swift')), 'the background modes are used only by TripAwake');
+  }
 });
 
 test('every Pressable says what it is to VoiceOver and TalkBack', () => {

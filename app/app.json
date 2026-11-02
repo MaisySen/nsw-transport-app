@@ -24,6 +24,10 @@
         "NSCalendarsWriteOnlyAccessUsageDescription": "Transport adds a leave by reminder for a trip to your calendar when you ask it to.",
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivitiesFrequentUpdates": true,
+        "UIBackgroundModes": [
+          "audio",
+          "location"
+        ],
         "INAlternativeAppNames": [
           {
             "INAlternativeAppName": "Sydney Transport"
@@ -219,7 +223,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Transport uses your location to show stops near you, plan trips from where you are, show where you are on a live trip map and alert you as you near your stop.",
+          "locationWhenInUsePermission": "Transport uses your location to show stops near you, plan trips from where you are, show where you are on a live trip map and alert you as you near your stop. On a trip, it keeps spoken alerts going in your headphones while your iPhone is locked.",
           "locationAlwaysAndWhenInUsePermission": false,
           "locationAlwaysPermission": false,
           "motionUsagePermission": false,

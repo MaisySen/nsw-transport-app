@@ -70,9 +70,12 @@ public class TransportIOSModule: Module {
   public func definition() -> ModuleDefinition {
     Name("TransportIOS")
 
-    Events("onActivityPushToken", "onIntentQueued", "onWatchAction")
+    Events("onActivityPushToken", "onIntentQueued", "onWatchAction", "onTripWake")
 
     OnCreate {
+      // 2 Nov: nothing runs at launch, so no silent push clip is left from a run that ended without a goodbye.
+      QuietClips.apply(false)
+      TripAwake.shared.onWake = { [weak self] at in self?.sendEvent("onTripWake", ["at": at]) }
       WatchLink.shared.start()
       self.intentObserver = NotificationCenter.default.addObserver(
         forName: Notification.Name("TransportIntentQueued"), object: nil, queue: .main
@@ -100,6 +103,47 @@ public class TransportIOSModule: Module {
       let s = AVAudioSession.sharedInstance()
       do {
         try s.setCategory(.ambient, mode: .default, options: [])
+        try s.setActive(true)
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    /// 2 Nov (Bidur: "Find a way to do this from in app"): trip alerts spoken into the headphones with the phone locked
+    /// or on Silent (TripAwake, QuietClips, docs/VOICE_LOCKED.md). Feature detected by the JavaScript (lockedVoice.ts):
+    /// builds before have none of these. "ok", "noBackgroundMode", "unavailable", "notDetermined" or "denied"; never prompts.
+    Function("tripAwakeStatus") { () -> String in
+      TripAwake.status()
+    }
+
+    /// Starts the trip's background session (app in front, at Start trip) or moves its deadline. Returns tripAwakeStatus.
+    AsyncFunction("startTripAwake") { (untilMs: Double) -> String in
+      TripAwake.shared.start(untilMs: untilMs)
+    }.runOnQueue(.main)
+
+    /// Stops it (arrival, End trip, cancel, headphones out for 5 minutes, Speak alerts in headphones off).
+    AsyncFunction("stopTripAwake") { () -> Void in
+      TripAwake.shared.stop()
+    }.runOnQueue(.main)
+
+    AsyncFunction("tripAwakeOn") { () -> Bool in
+      TripAwake.shared.running
+    }.runOnQueue(.main)
+
+    /// The app is voicing the locked trip in the headphones until untilMs (on), or not (off): the push's spoken clips are
+    /// silent copies only for that time and only with the headphones in. Returns whether the copies are in place.
+    AsyncFunction("setPushClipsQuiet") { (on: Bool, untilMs: Double) -> Bool in
+      TripAwake.shared.setQuiet(on, untilMs: untilMs)
+    }.runOnQueue(.main)
+
+    /// The session the app's spoken trip alerts use while it voices the locked trip: playback (the Silent switch does not
+    /// mute it, and with UIBackgroundModes audio it can start with the phone locked), voice prompt mode, spoken audio
+    /// such as a podcast paused and music lowered while it talks. Only used with headphones in (the JavaScript checks).
+    Function("startVoiceAudio") { () -> Bool in
+      let s = AVAudioSession.sharedInstance()
+      do {
+        try s.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
         try s.setActive(true)
         return true
       } catch {

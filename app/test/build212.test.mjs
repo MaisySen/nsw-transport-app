@@ -169,7 +169,8 @@ test('the never started followed service Live Activity is not bundled (G36)', ()
 
 test('battery: no new background mode, no Always location, no Critical Alerts in build 212', () => {
   const a = JSON.parse(read('app.json')).expo;
-  assert.equal(a.ios.infoPlist.UIBackgroundModes, undefined);
+  // 2 Nov: audio and location only, for the trip voice in headphones with the phone locked (voicelocked2nov.test.mjs).
+  assert.deepEqual((a.ios.infoPlist.UIBackgroundModes || []).filter((m) => !['audio', 'location'].includes(m)), []);
   assert.equal(a.ios.entitlements['com.apple.developer.usernotifications.critical-alerts'], undefined);
   const loc = a.plugins.find((p) => Array.isArray(p) && p[0] === 'expo-location')[1];
   assert.equal(loc.locationAlwaysPermission, false);

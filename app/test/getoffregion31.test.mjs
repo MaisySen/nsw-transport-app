@@ -262,7 +262,8 @@ test('native part: a location trigger on entry only, once, time sensitive, When 
   const loc = cfg.expo.plugins.find((p) => Array.isArray(p) && p[0] === 'expo-location')[1];
   assert.match(loc.locationWhenInUsePermission, /alert you as you near your stop/);
   assert.equal(loc.locationAlwaysAndWhenInUsePermission, false, 'When In Use only, no Always');
-  assert.ok(!cfg.expo.ios.infoPlist.UIBackgroundModes, 'no background modes');
+  // 2 Nov: audio and location only, for the trip voice in headphones with the phone locked (voicelocked2nov.test.mjs).
+  assert.deepEqual((cfg.expo.ios.infoPlist.UIBackgroundModes || []).filter((m) => !['audio', 'location'].includes(m)), [], 'no other background modes');
 });
 
 test('wiring: the engine sets and takes back circles, sweeps leftovers, reads what rang; the trip end takes them back', () => {
@@ -282,14 +283,18 @@ test('wiring: the engine sets and takes back circles, sweeps leftovers, reads wh
 test('Silent switch (Bidur, 31 Oct: banner on Silent, voice on open): spoken trip alerts use an ambient session the switch mutes', () => {
   const sw = read('modules/transport-ios/ios/TransportIOSModule.swift');
   assert.match(sw, /Function\("startAlertAudio"\)[\s\S]*?setCategory\(\.ambient, mode: \.default, options: \[\]\)/, 'ambient, not playback');
-  assert.doesNotMatch(sw, /setCategory\(\.playback/);
+  // 2 Nov: the only playback session in the module is startVoiceAudio, for the locked trip voice in headphones
+  // (voicelocked2nov.test.mjs); the alert session stays ambient.
+  const vstart = sw.indexOf('Function("startVoiceAudio")');
+  const noVoice = vstart < 0 ? sw : sw.slice(0, vstart) + sw.slice(sw.indexOf('Function(', vstart + 10));
+  assert.doesNotMatch(noVoice, /setCategory\(\.playback/);
   assert.match(sw, /Function\("endAlertAudio"\)[\s\S]*?notifyOthersOnDeactivation/);
   const ne = read('src/lib/nativeExtras.ts');
   assert.match(ne, /typeof m\.startAlertAudio === 'function'/);
-  assert.match(ne, /const amb = opts\.alert \? alertAudio\(\) : null;/);
+  assert.match(ne, /const amb = opts\.alert \? \(\(opts\.locked \? voiceAudio\(\) : null\) \|\| alertAudio\(\)\) : null;/, 'ambient unless the locked trip voice (2 Nov)');
   assert.match(ne, /S\.speak\(text, speechOptions\(ok, fin, voice\)\)/, 'the app session (useApplicationAudioSession) when it started');
   const e = read('src/lib/liveEngine.ts');
-  assert.match(e, /a\.t === 'say'\) speak\(a\.text, \{ alert: true, \.\.\.\(a\.quiet \? \{ quiet: true \} : \{\}\) \}\)/, 'get off lines');
+  assert.match(e, /a\.t === 'say'\) \{ if \(lk\.voicing\) lockedSay\(a\); else speak\(a\.text, \{ alert: true, \.\.\.\(a\.quiet \? \{ quiet: true \} : \{\}\) \}\)/, 'get off lines (locked in headphones: lockedSay, 2 Nov)');
   assert.match(e, /if \(a\.t === 'say'\) speak\(a\.text, \{ alert: true \}\);/, 'trip guidance lines');
 });
 

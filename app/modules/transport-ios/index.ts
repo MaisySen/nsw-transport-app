@@ -20,7 +20,8 @@ type Native = {
   tripActivityPushToken?: (id: string) => string | null;
   addListener?: ((event: 'onActivityPushToken', cb: (e: { id: string; token: string }) => void) => { remove(): void }) &
     ((event: 'onIntentQueued', cb: () => void) => { remove(): void }) &
-    ((event: 'onWatchAction', cb: () => void) => { remove(): void });
+    ((event: 'onWatchAction', cb: () => void) => { remove(): void }) &
+    ((event: 'onTripWake', cb: (e: { at: number }) => void) => { remove(): void });
   /** From the build with the Apple Watch app: hands the watch its context (WatchConnectivity). Absent before. */
   sendWatchContext?: (json: string) => boolean;
   /** From build 213: what the Apple Watch asked the phone to do (End trip), as JSON, taken once. Absent before. */
@@ -30,6 +31,13 @@ type Native = {
   /** From build 211 (31 Oct): get off alerts from the phone's position (UNLocationNotificationTrigger). Absent before. */
   regionAlertStatus?: () => string;
   scheduleRegionAlert?: (id: string, title: string, body: string, lat: number, lon: number, radius: number, sound: string | null, dataJSON: string) => Promise<boolean>;
+  /** 2 Nov (next build): trip alerts spoken in headphones with the phone locked (TripAwake.swift). Absent before. */
+  tripAwakeStatus?: () => string;
+  startTripAwake?: (untilMs: number) => Promise<string>;
+  stopTripAwake?: () => Promise<void>;
+  tripAwakeOn?: () => Promise<boolean>;
+  setPushClipsQuiet?: (on: boolean, untilMs: number) => Promise<boolean>;
+  startVoiceAudio?: () => boolean;
 };
 
 const native: Native | null = Platform.OS === 'ios' ? requireOptionalNativeModule<Native>('TransportIOS') : null;
@@ -97,6 +105,32 @@ export const iosNative = {
     try {
       if (typeof native?.takeWatchAction !== 'function') return () => {};
       const sub = (native?.addListener as any)?.('onWatchAction', () => cb());
+      return () => { try { sub?.remove(); } catch {} };
+    } catch { return () => {}; }
+  },
+  /** 2 Nov (next build): the app can keep a trip's voice going with the phone locked (feature detected). */
+  hasTripAwake: (): boolean => typeof native?.startTripAwake === 'function' && typeof native?.tripAwakeStatus === 'function' && typeof native?.setPushClipsQuiet === 'function',
+  /** "ok", "noBackgroundMode", "unavailable", "notDetermined" or "denied"; null before the build that has it. Never prompts. */
+  tripAwakeStatus(): string | null {
+    try { return typeof native?.tripAwakeStatus === 'function' ? String(native.tripAwakeStatus()) : null; } catch { return null; }
+  },
+  async startTripAwake(untilMs: number): Promise<string | null> {
+    try { return typeof native?.startTripAwake === 'function' ? String(await native.startTripAwake(untilMs)) : null; } catch { return null; }
+  },
+  async tripAwakeOn(): Promise<boolean> {
+    try { return typeof native?.tripAwakeOn === 'function' ? !!(await native.tripAwakeOn()) : false; } catch { return false; }
+  },
+  async stopTripAwake(): Promise<void> {
+    try { if (typeof native?.stopTripAwake === 'function') await native.stopTripAwake(); } catch {}
+  },
+  async setPushClipsQuiet(on: boolean, untilMs: number): Promise<boolean> {
+    try { return typeof native?.setPushClipsQuiet === 'function' ? !!(await native.setPushClipsQuiet(on, untilMs)) : false; } catch { return false; }
+  },
+  /** The native side asks for a trip refresh while the app runs in the background for a trip. A no-op before. */
+  onTripWake(cb: (at: number) => void): () => void {
+    try {
+      if (typeof native?.startTripAwake !== 'function') return () => {};
+      const sub = (native?.addListener as any)?.('onTripWake', (e: { at?: number }) => cb(Number(e?.at) || Date.now()));
       return () => { try { sub?.remove(); } catch {} };
     } catch { return () => {}; }
   },

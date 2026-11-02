@@ -4,6 +4,10 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Trip alerts in your headphones with the phone locked (2 Nov, branch `fix-voice-locked-2nov`, next build)
+* On a trip with Speak alerts on and AirPods or headphones in, Transport says Get off now, the next stop and the arrival in your ears even with the iPhone locked and on Silent. Music lowers while it talks; nothing is heard twice.
+* More > Speak alerts in headphones (on by default) turns it off. It uses your location While Using the App during the trip, so the location icon shows; it stops at arrival. Siri's Announce Notifications is named as the other way. Details: [VOICE_LOCKED.md](VOICE_LOCKED.md).
+
 ## Island minimal and the widget's next leg (2 Nov, branch `fix-island-2nov`, next build)
 * With music sharing the Dynamic Island, the trip shows the line and the time, "T4 4:52", not "Due".
 * The Your trip widget moves on to your next train after "Change here" by itself, and "Now" turns into an "about" time once the live times are old.

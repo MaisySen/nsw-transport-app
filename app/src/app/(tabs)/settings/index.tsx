@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, Switch, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Linking, Platform, Switch, View } from 'react-native';
 import { router, Stack } from 'expo-router';
 import Constants from 'expo-constants';
 import * as Application from 'expo-application';
@@ -36,6 +36,9 @@ import { setTrackworkHeadsUp } from '@/lib/trackwork';
 import { forgetPushTokens, PUSH_FORGOTTEN_KEY } from '@/lib/forgetTokens';
 import { askCalendarRead, calendarReadSupported } from '@/lib/calendarLeaveBy';
 import { hasSpeech } from '@/lib/nativeExtras';
+import * as Location from 'expo-location';
+import { lockedVoiceStatus, lockedVoiceSupported, stopLockedVoice } from '@/lib/lockedVoice';
+import { LOCKED_VOICE_HELP, lockedVoiceRow, readLockedVoice } from '@/lib/lockedVoiceCore';
 import { friendlyErr } from '@/lib/netErrCore';
 
 /** "1.0.0 (204) · update 01a16ff7": the build on the phone and the update it runs, for support. */
@@ -175,6 +178,28 @@ export default function Settings() {
   );
 
   const [canSpeak] = useState(() => hasSpeech());
+  // Speak alerts in headphones (2 Nov): the next build's locked trip voice. Hidden on builds without it.
+  const [lockedOk] = useState(() => lockedVoiceSupported());
+  const [lockedStatus, setLockedStatus] = useState<string | null>(() => lockedVoiceStatus());
+  const lockedRow = lockedVoiceRow(lockedStatus);
+  // Back from the iPhone's Settings: the location answer is read again.
+  useEffect(() => {
+    if (!lockedOk) return;
+    const sub = AppState.addEventListener('change', (s) => { if (s === 'active') setLockedStatus(lockedVoiceStatus()); });
+    return () => sub.remove();
+  }, [lockedOk]);
+  const setLocked = async (v: boolean) => {
+    haptic.select();
+    store.setLockedVoice(v);
+    if (!v) { stopLockedVoice().catch(() => {}); return; }
+    if (lockedRow.action === 'ask') {
+      // The same When In Use prompt the app already shows for stops near you (no Always).
+      await Location.requestForegroundPermissionsAsync().catch(() => null);
+      setLockedStatus(lockedVoiceStatus());
+    } else if (lockedRow.action === 'settings') {
+      Alert.alert('Location is off', 'To speak alerts with your iPhone locked, allow location for Transport while using the app.', [{ text: 'Not now', style: 'cancel' }, { text: 'Open Settings', onPress: () => Linking.openSettings() }]);
+    }
+  };
   const morningOn = useFlag('morningCheck');
   // One local notification, set from Home while it is open (docs/TRACKWORK.md). Needs the DATE trigger (201 to 206).
   const twOn = useFlag('weekendTrackwork') && localLastSupported();
@@ -263,6 +288,14 @@ export default function Settings() {
             <>
               <Sep inset={57} />
               <Row icon={I.speaker} iconBg={c.indigo} title="Voice" subtitle="For trip guidance and Speak departures" right={<T kind="body" tone="text2">{st.voiceId ? 'Chosen' : 'Automatic'}</T>} onPress={() => router.push('/voice')} />
+              {lockedOk ? (
+                <>
+                  <Sep inset={57} />
+                  <Row icon={I.speaker} iconBg={c.indigo} title={LOCKED_VOICE_HELP.title} subtitle={lockedRow.subtitle} chevron={false}
+                    onPress={() => Alert.alert(LOCKED_VOICE_HELP.title, LOCKED_VOICE_HELP.body)}
+                    right={sw(readLockedVoice(st.lockedVoice), setLocked, LOCKED_VOICE_HELP.title)} />
+                </>
+              ) : null}
             </>
           ) : null}
           <Sep inset={57} />

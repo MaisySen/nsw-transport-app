@@ -110,19 +110,31 @@ function clipAudio(): { play: (file: string, force: boolean) => boolean; route: 
 /** True on builds that play Kylie's clips in the app (213 and later); 212 says those moments in the phone's voice. */
 export function hasClipPlayer(): boolean { return !!clipAudio(); }
 
+/** Where the sound goes now: "headphones", "speaker" or "other"; null on builds without the reading (before 213). */
+export function audioRoute(): string | null { const c = clipAudio(); return c ? c.route() : null; }
+
+/** 2 Nov: the playback session for the locked trip's voice in headphones (lockedVoice.ts); null before that build. */
+function voiceAudio(): { start?: () => boolean; end?: () => void } | null {
+  if (Platform.OS !== 'ios') return null;
+  try {
+    const m: any = requireOptionalNativeModule('TransportIOS');
+    return m && typeof m.startVoiceAudio === 'function' ? { start: () => !!m.startVoiceAudio(), end: () => { try { m.endAlertAudio?.(); } catch {} } } : null;
+  } catch { return null; }
+}
+
 /**
  * One of Kylie's clips with the app open (heads-up, Get off now, arrival). Headphones: played even in Silent mode
  * (Bidur, 1 Nov); speaker: the Silent switch mutes it. A build without the clip player, or a clip that will not play,
  * says the words through the ambient session instead (heard in headphones in Silent mode, quiet on the speaker).
  */
-export async function playClip(file: string, text: string) {
+export async function playClip(file: string, text: string, opts: { locked?: boolean } = {}) {
   const c = clipAudio();
   if (c) {
     let ok = false;
     try { ok = c.play(file, c.route() === 'headphones'); } catch { ok = false; }
     if (ok) return;
   }
-  await speak(text, { alert: true });
+  await speak(text, { alert: true, ...(opts.locked ? { locked: true } : {}) });
 }
 
 /** True on builds whose spoken trip alerts follow the Silent switch (211 and later). */
@@ -191,7 +203,7 @@ export async function currentVoice(): Promise<RankedVoice | null> {
  * with Speak alerts off; the rider never chose to hear it in Silent mode). `alert`: a spoken trip alert (Next stop, Get
  * off now, You've arrived): from build 211 said through the ambient session, which the Silent switch mutes.
  */
-export async function speak(text: string, opts: { interrupt?: boolean; voice?: string | null; quiet?: boolean; alert?: boolean } = {}) {
+export async function speak(text: string, opts: { interrupt?: boolean; voice?: string | null; quiet?: boolean; alert?: boolean; locked?: boolean } = {}) {
   const S = speechModule();
   if (!S || !text) return;
   let voice: string | null = null;
@@ -200,7 +212,9 @@ export async function speak(text: string, opts: { interrupt?: boolean; voice?: s
     if (opts.interrupt) { try { S.stop(); } catch {} }
     // Queued after anything still being said (two moments in one refresh are both heard). The app's own audio
     // session, where there is one, is let go only when the last queued alert is done.
-    const amb = opts.alert ? alertAudio() : null;
+    // 2 Nov: the locked trip's voice (lockedVoice.ts, headphones only): the playback session, heard on Silent and
+    // started with the phone locked. Without it (older build) the ambient session below, which the lock silences.
+    const amb = opts.alert ? ((opts.locked ? voiceAudio() : null) || alertAudio()) : null;
     if (amb) {
       // Trip alerts (build 211+): the ambient session, muted by the Silent switch like the alert's own sound.
       const ok = !!amb.start?.();

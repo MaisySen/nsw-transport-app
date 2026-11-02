@@ -235,7 +235,9 @@ test('the wiring: alerts carry the sound to the phone, only on builds that have 
   assert.match(eng, /offVoice: o\.g\.offVoice/);
   const lv = src('lib/live.ts');
   assert.match(lv, /voiceClips\(\) && !!g\.speak && \(await soundChannels\(\)\) \? \{ voice: 'soon' \}/);
-  // Speaking with the phone locked is the alert sound's job: no background audio mode is added for it.
-  const cfg = fs.readFileSync(path.join(root, 'app.json'), 'utf8');
-  assert.doesNotMatch(cfg, /"audio"/);
+  // Speaking with the phone locked was the alert sound's job alone. 2 Nov (Bidur: "Find a way to do this from in app"):
+  // the audio background mode comes only with location, for the locked trip voice in headphones (voicelocked2nov).
+  const cfg = JSON.parse(fs.readFileSync(path.join(root, 'app.json'), 'utf8'));
+  const modes = cfg.expo.ios.infoPlist.UIBackgroundModes || [];
+  if (modes.includes('audio')) assert.deepEqual([...modes].sort(), ['audio', 'location']);
 });

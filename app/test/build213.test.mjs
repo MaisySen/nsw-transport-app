@@ -21,13 +21,16 @@ test('native clip player: headphones play through Silent, the speaker follows Si
   const c = read('modules/transport-ios/ios/ClipPlayer.swift');
   assert.match(c, /static let names: Set<String> = \["getoff_soon", "getoff_now", "arrival"\]/);
   assert.match(c, /guard Self\.names\.contains\(name\), let url = Bundle\.main\.url\(forResource: name, withExtension: "wav"\)/);
-  assert.match(c, /if headphones \{\s*try s\.setCategory\(\.playback, mode: \.voicePrompt, options: \[\.mixWithOthers, \.duckOthers\]\)\s*\} else \{\s*try s\.setCategory\(\.ambient/);
+  // 2 Nov (voicelocked2nov): spoken audio such as a podcast pauses for the clip (interruptSpokenAudioAndMixWithOthers).
+  assert.match(c, /if headphones \{\s*try s\.setCategory\(\.playback, mode: \.voicePrompt, options: \[\.duckOthers, \.interruptSpokenAudioAndMixWithOthers\]\)\s*\} else \{\s*try s\.setCategory\(\.ambient/);
   assert.match(c, /\[\.headphones, \.bluetoothA2DP, \.bluetoothHFP, \.bluetoothLE\]/);
   assert.match(c, /setActive\(false, options: \.notifyOthersOnDeactivation\)/, 'music comes back up after the clip');
   assert.match(c, /try\? s\.setCategory\(\.ambient, mode: \.default, options: \[\]\)/, 'the next phone-voice alert follows Silent again');
-  // no background audio: the app adds no background mode for this
+  // The clip player itself adds no background mode. 2 Nov (Bidur: "Find a way to do this from in app"): audio comes
+  // only with location, for the locked trip voice in headphones (TripAwake, voicelocked2nov.test.mjs).
   const app = read('app.json');
-  assert.doesNotMatch(app, /"audio"\s*[,\]]/);
+  const modes = JSON.parse(app).expo.ios.infoPlist.UIBackgroundModes || [];
+  if (modes.includes('audio')) assert.ok(modes.includes('location') && existsSync(new URL('../modules/transport-ios/ios/TripAwake.swift', import.meta.url)));
   // the clips are bundled (the same files the server's pushes name)
   assert.match(app, /assets\/sounds\/getoff_now\.wav[\s\S]*assets\/sounds\/getoff_soon\.wav[\s\S]*assets\/sounds\/arrival\.wav/);
   for (const f of ['getoff_now', 'getoff_soon', 'arrival']) assert.ok(existsSync(new URL(`../assets/sounds/${f}.wav`, import.meta.url)), f);

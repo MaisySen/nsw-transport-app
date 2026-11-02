@@ -15,6 +15,10 @@ The source for the Notes field. It lists every feature that appears, changes or 
 * Remote configuration now names everything it can do (switch features off or back on, timings, server address, WebSocket boards) and that the server can build boards and trip plans itself from the same data (board engine and own planner, both off today).
 * Test steps shortened to make room; the get off alert choice (1, 2 or 3 stops early, spoken Get off now) and the Max walk chips are in the steps.
 
+## Next build (2 Nov, branch `fix-voice-locked-2nov`): spoken trip alerts with the phone locked
+
+Bidur, 2 Nov 3:18 PM: "Find a way to do this from in app". The next build adds `UIBackgroundModes` audio and location, used only while a started trip runs with headphones in (docs/VOICE_LOCKED.md). App Review 2.5.4 expects the notes to say what each background mode is for, so the Notes text below now has a BACKGROUND paragraph and step 5 says how to hear it. To stay under 4000 characters (3992 now, was 3994), lines were shortened with nothing removed: the opening line, step 1, the Location permission line (now "When In Use only"), the server data lead and three of its lines, and the remote configuration paragraph (the "server can switch its own features off" sentence is dropped; that is server side only). Write it to App Store Connect when the next build is attached, and read it back.
+
 ## Before submitting (root or owner)
 
 * Branch `build-209` only (30 Oct): the Notes text below adds two lines for build 209 (Get off now is Time Sensitive; crash reports are errors only, cleaned on the phone), now 3953 characters. App Store Connect still holds the 28 Oct text: write this one on 1 Nov when 209 is attached, and read it back.
@@ -59,46 +63,48 @@ App switches are `flags` and `kill` in `/api/app/config` (an unknown flag counts
 
 ## Notes
 
-Transport: Sydney Live shows live Sydney and NSW public transport times. It is free, with no accounts, sign in, ads or in-app purchases, so no demo account is needed. Every screen works from any location.
+Transport: Sydney Live shows live Sydney and NSW public transport times. Free, no accounts, sign in, ads or in-app purchases, so no demo account. Works from any location.
 
 DATA SOURCE
 Transport information comes from Transport for NSW Open Data, licensed under CC BY 4.0, credited in More and in the description. The app is independent, by Fintex Australia Pty Ltd, not made or endorsed by Transport for NSW, and uses no Transport for NSW logos.
 
 HOW TO TEST
-1. First launch: pick Parramatta as Home and Wynyard as Work. Home shows the next trip as a big card. Every time says Live (with its age), Timetable or Not tracking.
+1. First launch: pick Parramatta as Home and Wynyard as Work. Home shows the next trip. Every time says Live (with its age), Timetable or Not tracking.
 2. Plan: search Central for a departure board. Plan Chatswood to Bondi Junction with Leave now, Leave at or Arrive by. Chips set the mode and a walking limit (Max walk 5, 10 or 15 min, Prefer bus).
 3. Buses: search route 333, or a stop number from a stop sign.
 4. Ask: type "next train Parramatta to Central". Ask answers from live data by fixed rules, with no generative AI.
-5. Start trip: open a trip, tap Start trip for a live map, next stop, arrival time and a Live Activity. Get off alerts come 1, 2 or 3 stops early (your choice) and a Get off now alert before your stop, optionally spoken.
+5. Start trip: open a trip, tap Start trip for a live map, next stop and a Live Activity. Get off alerts come 1, 2 or 3 stops early and Get off now before your stop, optionally spoken. With headphones in, lock the phone: alerts are still spoken (BACKGROUND).
 6. Reminders: saved trip, Reminders, Add a reminder. More > Check my trip before I go alerts only if something is wrong.
 7. More > Delete all my data removes what the server keeps for this install.
 
 PERMISSIONS
-Location: optional, only on a location button tap; if allowed, get off alerts use iOS location triggers.
+Location: optional, When In Use only; get off alerts use iOS location triggers.
 Notifications: never at launch; asked when you first turn on an alert. Only get off alerts are Time Sensitive.
 Calendar: only for Calendar leave by in More (off by default), read only.
 Crash reports: errors only, cleaned on the phone, no tracking.
+
+BACKGROUND (2.5.4)
+Audio and location run in the background only on a trip the user started, with headphones in: like turn by turn guidance, the app follows the live train and speaks Get off now in the headphones (When In Use, indicator shown). It stops at arrival, End trip or 5 min without headphones; More > Speak alerts in headphones turns it off.
 
 SYSTEM FEATURES
 Live Activities (step 5); Home Screen, Lock Screen and StandBy widgets; Siri ("Next train home in Transport"); Control Center (search Transport); Apple Watch app and complications.
 
 SERVER DATA AND REMOTE CONFIGURATION (guidelines 2.5.2 and 2.5.19)
-All of these are in this build, documented here, and none is behind a hidden setting or code. Each appears only when our server (api.transportsydney.app) has data for it, and otherwise the screen looks as it would without it:
+All are in this build and documented here, none hidden. Each appears only when our server (api.transportsydney.app) has data for it:
 - Plan B: another way when a service is cancelled, a line is suspended, a change will be missed or trackwork applies (trip, Home card, morning check alert)
 - Weekend trackwork card on Home; status of my lines
 - Last way home reminder before the last service
-- How late a route usually runs; reliability of a service
-- When a Park and Ride usually fills; traffic incidents on bus legs; quieter carriages where occupancy is sent
+- How late a route usually runs; reliability; when a Park and Ride fills; bus traffic incidents; quieter carriages
 - Live times for regional trains and coaches
 - "Often does not run" on bus times that often never show live
 - "Not stopping at (stop) today" for bus detours and closed stops, from service alerts
-- Off peak hint on peak hour trips: leave after the peak and pay about a stated amount less (an Opal fare estimate)
+- Off peak hint: leave after the peak and pay about a stated amount less (Opal fare estimate)
 - Walking limit and Prefer bus passed to the trip planner
 - Step free routing around lifts out of service; platform change alerts
-- Alerts for my trips (More, off until switched on; the switch shows only when the server supports it)
+- Alerts for my trips (More, off until switched on, shown only when the server supports it)
 
-Freshness rule: a time is shown as Live only if the feed's own timestamp is under 5 minutes old; older data is shown as Timetable with "Updated N min ago".
+Freshness: a time shows as Live only if the feed's own timestamp is under 5 min old; older shows as Timetable with "Updated N min ago".
 
-Remote configuration (read at launch and when the app returns to the front) can only: switch features listed above off or back on, adjust refresh and alert timings, change the server address, or send live boards over a WebSocket instead of polling (same data, off today). The server can also switch its own features off for every app at once, and may build boards and trip plans from the same open data itself (off today); the screens and fields stay the same. It cannot add features, screens or code.
+Remote configuration (read at launch and on return) can only switch the features above off or on, adjust refresh and alert timings, change the server address, or send live boards over a WebSocket (same data, off today). The server may build boards and trip plans from the same open data itself (off today); screens and fields stay the same. It cannot add features, screens or code.
 
 From about 1am to 4am many lines have no services.

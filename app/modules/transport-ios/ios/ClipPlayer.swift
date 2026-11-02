@@ -6,7 +6,8 @@ import Foundation
 /// came to the front (voiceGate), and the running trip's push stays soundless while the app is open, so nothing is heard
 /// twice. In headphones the clip plays in a playback session (the Silent switch does not mute what goes to the ears,
 /// other audio is ducked, not stopped); on the speaker it plays in the ambient session, which the Silent switch mutes,
-/// as Bidur chose. Only the three bundled clips; nothing runs with the app in the background.
+/// as Bidur chose. Only the three bundled clips. 2 Nov: with the trip voiced while locked (TripAwake) the same clips play
+/// from the background in headphones (UIBackgroundModes audio), and spoken audio such as a podcast pauses for them.
 final class ClipPlayer: NSObject, AVAudioPlayerDelegate {
   static let shared = ClipPlayer()
   /// The clips bundled as notification sounds (app.json expo-notifications sounds), the only names played.
@@ -33,7 +34,7 @@ final class ClipPlayer: NSObject, AVAudioPlayerDelegate {
     let s = AVAudioSession.sharedInstance()
     do {
       if headphones {
-        try s.setCategory(.playback, mode: .voicePrompt, options: [.mixWithOthers, .duckOthers])
+        try s.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
       } else {
         try s.setCategory(.ambient, mode: .default, options: [])
       }

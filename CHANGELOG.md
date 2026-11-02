@@ -4,6 +4,16 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 2 Nov 2026
 
+### Trip alerts spoken in headphones with the phone locked or on Silent (2 Nov; branch `fix-voice-locked-2nov` from fix-island-2nov b56560d; native, for the next build, not built)
+Bidur, 3:12 PM: "Silent mode. Airpod or headphone on. App talks only when app opened ?", 3:18 PM: "Find a way to do this from in app". docs/VOICE_LOCKED.md.
+* While a started trip runs with AirPods or headphones in, the app keeps running with the phone locked, the way turn by turn guidance does: When In Use location in the background (`TripAwake.swift`: about 100 m, 100 m filter, the location indicator shown, a CLBackgroundActivitySession on iOS 17+), no Always prompt. It follows the live train and says each trip moment at its moment in the headphones through a playback session (voice prompt mode; heard on Silent; music lowered, a podcast paused). Same rules as the open app (voiceGate V1 to V6): only from a live reading under 60 s, never a catch-up.
+* Stops at arrival (after a minute), End trip, cancel, 5 minutes without headphones in the background, the switch off, location off, the app closed, and by itself 30 min after the trip's last arrival (4 h at most). Without headphones nothing runs in the background, as before.
+* One voice: while the app speaks, the push's spoken sounds are silent copies in the app's Library/Sounds (`QuietClips.swift`, iOS takes them before the bundle), on a 45 s lease renewed every refresh and only with headphones in; removed on headphones out, at the end, on close and at every launch. The app shows no banner of its own while the server watches the trip (the server's push is the banner), and a heads-up, Get off now or arrival push the app had not said itself is read out once in its own words.
+* More > Speak alerts in headphones (on by default; hidden on builds without it). The row says what location needs; tapping explains and names Siri's Announce Notifications.
+* Info.plist: `UIBackgroundModes` audio and location; the When In Use text adds the headphones line. No Always, no Critical Alerts. App Review notes: a BACKGROUND (2.5.4) paragraph, 3992 of 4000 characters (docs/APP_REVIEW_NOTES.md).
+* No change to the trip state, the voice gate or the server.
+* Tests: `app/test/voicelocked2nov.test.mjs` (15, all fail on b56560d). Guards moved with the decision (battery, build212, build213, getoffregion31, getoffvoice). App suite 1392: 1388 pass, 4 skipped, 0 fail; tsc clean.
+
 ### Dynamic Island minimal "T4 4:52", and the Your trip widget moves on to the next leg (2 Nov; branch `fix-island-2nov` from fix-lockedlive-1nov 5f4fa2e; native, for the next build, not built)
 From Bidur's first real trip on build 214 (2 Nov, 4:26 to 4:55 AM; files/day-2nov/trip-0452-diagnosis.md B2, B3). Bidur said yes at 9:19 AM.
 * Minimal Island (another app's Live Activity, such as music, shares the Island): the line and the clock time, "T4 4:52", side by side when they fit, the line over the time when not, else the time alone (`IslandMinimal.swift`, `LiveTripMinimal`). Never a bare "Due" or "Now"; orange at Get off now; the tick once arrived. A clock time needs no pushes to stay right. Compact and expanded are unchanged.

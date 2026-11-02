@@ -17,6 +17,8 @@ import { haptic } from './haptic';
 const tapped = new Set<string>();
 import { wakeStep } from './smart';
 import { hasClipPlayer, hasSpeech, playClip, speak } from './nativeExtras';
+import { lockedQuiet, lockedReadPushes, lockedSaid, lockedSaidNow, lockedSay, lockedStep, onLockedWake, stopLockedVoice } from './lockedVoice';
+import { lockedActions } from './lockedVoiceCore';
 import { getOffStep, readGetOff, readGetOffSay } from './getOffCore';
 import { cancelGetOff, getOffBackup, getOffNow, ownGetOffShown, scheduleGetOff, scheduleQuiet, scheduleRegion, serverGetOffShown, setServerGetOffWatch, setTripFlow2, setTripWatch, sweepRegions, voiceClips } from './getOffNotify';
 import { store } from './store';
@@ -114,10 +116,14 @@ export async function tickLive(opts: { noFetch?: boolean } = {}) {
   const cur = await loadLive().catch(() => getLive());
   // Location alerts a given up trip left on the phone are taken back (31 Oct): at launch with no trip, and once per trip.
   if (sweptFor !== (cur?.id ?? null)) { sweptFor = cur?.id ?? null; sweepRegions(sweptFor).catch(() => {}); }
-  if (!cur) { if (state.gid) put({ gid: null, svc: [], st: null, offline: null, updated: 0 }); return; }
+  if (!cur) { if (state.gid) put({ gid: null, svc: [], st: null, offline: null, updated: 0 }); await stopLockedVoice().catch(() => {}); return; }
   if (busy) return;
   busy = true;
   try {
+    // Trip alerts in headphones with the phone locked (2 Nov, lockedVoice.ts): the background session follows the trip.
+    // In the background the engine runs only while the app voices the locked trip in headphones; else nothing, as before.
+    const lk = await lockedStep(cur, { sayNow: readGetOffSay(store.getOffSay()), refreshes, speakingUntil }).catch(() => ({ voicing: false, voice: null }));
+    if (AppState.currentState !== 'active' && !lk.voicing) { await lockedQuiet(false, null).catch(() => {}); return; }
     if (cacheFor !== cur.id) { cacheFor = cur.id; svcCache = []; lastFull = 0; liveOkAt = 0; put({ gid: cur.id, svc: [], st: null, offline: null, updated: 0 }); }
     if (!cur.arrivedAt && apiBase() === NEW_API_BASE && cur.legs.some(needsFeed)) await backfillLiveFeeds(cur.id).catch(() => {});
     const L = (getLive() || cur).legs;
@@ -157,7 +163,11 @@ export async function tickLive(opts: { noFetch?: boolean } = {}) {
     // this build plays Kylie's clips in the app (213 and later); 212 says those moments in the phone's voice.
     setTripFlow2(true);
     const r = stepLive(g, svcCache, now, fmt, pos, { ...(serverRung || {}), ...(rung || {}) },
-      { asOf: svcAt || now, c24: phone24h(now), voice: { open: AppState.currentState === 'active', silent: false, openSince, refreshes, speakingUntil }, clipPlayer: hasClipPlayer() });
+      { asOf: svcAt || now, c24: phone24h(now), voice: lk.voice || { open: AppState.currentState === 'active', silent: false, openSince, refreshes, speakingUntil }, clipPlayer: hasClipPlayer() });
+    // Locked in headphones: no banner of the app's own while the server watches (its push is the banner), speech only in
+    // the headphones and never a moment a push already had read out; the push sounds are silent copies meanwhile.
+    const acts = lk.voicing ? lockedActions(r.actions, { serverWatching: !!g.watchId, headphones: true, said: lockedSaidNow(), now }) : r.actions;
+    if (lk.voicing) lockedSaid(acts, now);
     if (r.voiceUntil != null) speakingUntil = r.voiceUntil;
     // Wake me before my stop is gone (G9): an alarm an earlier version set for this trip is taken back.
     const w = wakeStep({ id: g.id, legs: g.legs, wake: false, wakeSet: g.wakeSet, alerted: r.g.alerted }, r.s, now, fmt);
@@ -186,19 +196,21 @@ export async function tickLive(opts: { noFetch?: boolean } = {}) {
       else if (a.t === 'regionCancel') await cancelGetOff(a.id);
       else if (a.t === 'offDue') { if (await getOffNow(a.id, a.title, a.body, a.sound)) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); }
       else if (a.t === 'offCancel') await cancelGetOff(a.id);
-      else if (a.t === 'say') speak(a.text, { alert: true, ...(a.quiet ? { quiet: true } : {}) });
+      else if (a.t === 'say') { if (lk.voicing) lockedSay(a); else speak(a.text, { alert: true, ...(a.quiet ? { quiet: true } : {}) }); }
     }
     for (const a of w.actions) if (a.t === 'wakeCancel') await cancelWake(a.id);
     // The open app steps the trip again at the exact Get off now moment (live arrival minus 38 s), not up to 15 s late.
     if (momentTimer) { clearTimeout(momentTimer); momentTimer = null; }
     const due = nextFlowMoment(r.g, r.s, now);
     if (due != null) momentTimer = setTimeout(() => { momentTimer = null; tickLive({ noFetch: true }).catch(() => {}); }, Math.max(0, due - Date.now()) + 50);
-    for (const a of r.actions) {
+    for (const a of acts) {
       // The web preview logs every action, so a browser replay can check each alert and the end of the trip.
       if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, at: now });
       // Spoken trip alerts follow the Silent switch on the speaker and play in headphones (build 211+, the ambient
-      // session in nativeExtras alertAudio); Kylie's clip the same way where the build can play it (213+).
-      if (a.t === 'say') speak(a.text, { alert: true });
+      // session in nativeExtras alertAudio); Kylie's clip the same way where the build can play it (213+). Locked in
+      // headphones (2 Nov): the playback session, heard on Silent and with the phone locked.
+      if ((a.t === 'say' || a.t === 'clip') && lk.voicing) lockedSay(a);
+      else if (a.t === 'say') speak(a.text, { alert: true });
       else if (a.t === 'clip') playClip(a.file, a.text);
       // One light tap for the calm steps (heads-up, Get off now), nothing for the others: never a buzz of scare.
       else if (a.t === 'alert') { liveAlert(a.title, a.body, a.id); if (a.haptic === 'light') { const id = `${g.id}:${a.key}`; if (!tapped.has(id)) { tapped.add(id); haptic.light(); } } }
@@ -210,6 +222,11 @@ export async function tickLive(opts: { noFetch?: boolean } = {}) {
         api.shareUpdate({ id: g.share.id, key: g.share.key, pos: p, prog: a.prog }).catch((e: any) => { if (/not found/i.test(String(e?.message))) { const c3 = getLive(); if (c3) setLive({ ...c3, share: null }); } });
       } else if (a.t === 'end') await endLive();
     }
+    if (lk.voicing) {
+      // A push of this trip the app had not said (its sound is the silent copy now) is read out once, then the lease.
+      await lockedReadPushes(g.watchId, Date.now()).catch(() => {});
+      await lockedQuiet(true, svcAt ? Date.now() - svcAt : null).catch(() => {});
+    } else await lockedQuiet(false, null).catch(() => {});
   } finally { busy = false; }
 }
 
@@ -243,11 +260,15 @@ export function LiveTripEngine() {
   useEffect(() => {
     tickLive();
     if (!g?.id) return;
-    // Every 15 seconds while the app is in front; nothing in the background (push moves the lock screen card).
+    // Every 15 seconds while the app is in front; in the background only while the app voices the locked trip in
+    // headphones (2 Nov), else nothing (push moves the lock screen card).
     // Back in front after 5 seconds or more it refreshes at once.
     const p = startAppPoll(async () => { await tickLive(); return true; }, 15000, { runAtStart: false, staleMs: 5000 });
-    const sub = AppState.addEventListener('change', (s) => { onAppState(s).catch(() => {}); });
-    return () => { p.remove(); sub.remove(); };
+    // Going to the background, one pass decides whether the app keeps voicing the trip (headphones in) or lets go.
+    const sub = AppState.addEventListener('change', (s) => { onAppState(s).catch(() => {}).finally(() => { if (s !== 'active') tickLive({ noFetch: true }).catch(() => {}); }); });
+    // Locked in headphones (2 Nov): the native side wakes the engine every 15 s and on a new position (lockedVoice.ts).
+    const wake = onLockedWake(() => { tickLive().catch(() => {}); });
+    return () => { p.remove(); sub.remove(); wake(); if (!getLive()) stopLockedVoice().catch(() => {}); };
   }, [g?.id]);
   return null;
 }

@@ -36,7 +36,8 @@ Written 25 Oct 2026 after the battery, smoothness and iOS audit (report: files/q
 7. **Why it's late** asks `/api/alerts?q=<line>` only when a screen's own live data shows a late, cancelled or changed service with linked alerts, once per line, kept 3 min; no timer of its own ([WHY-LATE.md](WHY-LATE.md)).
 7. **Background.** Nothing in JS runs in the background. The lock screen trip card is moved by server push
    (build 205), not by the app waking up. UIBackgroundModes stays empty unless a feature truly needs one (a test
-   checks app.json).
+   checks app.json). 2 Nov, next build: audio and location, only while a started trip runs with headphones in, for
+   the spoken alerts with the phone locked (VOICE_LOCKED.md); the native side wakes the engine every 15 s then.
 8. **Network.** Reads go through `req` in src/lib/api.ts, which shares a request already in flight for the same
    address and reuses a good answer for 4 s (src/lib/pollCore.ts `createReadCache`). `refresh=1` reads always go
    out. Any write empties the cache. Every request has a timeout (20 s default); reads get one quiet retry on a
