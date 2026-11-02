@@ -58,6 +58,23 @@ final class WidgetAuditTests: XCTestCase {
         NextTripProvider.liveEntry(c, moment: TripMoment(at: now, kind: kind, target: target.map { at($0) }), now: now)
     }
 
+    /// Build 215 check (2 Nov): the "Your trip" widget at a change. The first leg arrived `arrivedAgo` minutes ago and the
+    /// saved card carries the next leg (T4 from Platform 5 in 3 min); the widget's own timeline, made a few minutes
+    /// before, is read at `now`: "Change here" first, then the next leg after the change hold (owner's 2 Nov trip, B3).
+    static func changeCard(arrivedAgo: Double) -> SharedLiveCard {
+        let ms = { (m: Double) -> Double in at(m).timeIntervalSince1970 * 1000 }
+        var c = liveCard(departs: -14, legArrives: -arrivedAgo, updated: -arrivedAgo - 0.2, phase: "ride", delay: 0)
+        c.arrival = ms(9); c.until = ms(11)
+        c.next = SharedNextLeg(line: "T4", lineColorHex: "#005AA3", mode: "train", from: "Circular Quay", to: "Bondi Junction",
+                               platform: "Platform 5", departs: ms(3), arrives: ms(9), departsLive: true, arrivesLive: true)
+        return c
+    }
+
+    static func timelineAt(_ c: SharedLiveCard, madeAgo: Double) -> NextTripEntry {
+        let es = NextTripProvider.liveEntries(c, now: at(-madeAgo))
+        return es.last(where: { $0.date <= now }) ?? es[0]
+    }
+
     static let nextScenarios: [(String, NextTripEntry)] = [
         ("normal", nextTrip("To work", "Bondi Junction", "Parramatta", [
             trip("T4", "#005AA3", "train", leave: 9.5, live: true, status: "On time", platform: "Platform 1", changes: 1),
@@ -93,6 +110,9 @@ final class WidgetAuditTests: XCTestCase {
         // Build 214 (fix-all A2): Due and Get off now reached on fresh data, then 3 min old: "Due about" / "Get off about".
         ("live-due-old", liveAt(liveCard(departs: 0.3, legArrives: 15, updated: -3), .due, target: nil)),
         ("live-getoff-old", liveAt(liveCard(departs: -10, legArrives: 0.4, updated: -3, phase: "ride", delay: 0), .getOff, target: nil)),
+        // Build 215 check (2 Nov): at the change, then on to the next leg by the widget's own timeline (no app, no network).
+        ("live-change", timelineAt(changeCard(arrivedAgo: 0.3), madeAgo: 4)),
+        ("live-nextleg", timelineAt(changeCard(arrivedAgo: 2), madeAgo: 5)),
         ("empty", nextTrip("To home", "Parramatta", "Bondi Junction", [], message: "No more services right now")),
     ]
 
