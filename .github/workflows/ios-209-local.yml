@@ -1,6 +1,6 @@
 # Build 209 on a GitHub hosted Mac with `eas build --local` (30 Oct 2026). A local build uses none of the
 # Expo plan's monthly iOS builds. Manual trigger only (never on pull requests, so a fork never sees the secrets),
-# and only from the build-209 branch (build 212 and later: also build-212-rc, runtime 1.3.0, 1 Nov; build 213: build-213-watch, same runtime; build 214: build-214-rc, same runtime). Signing: the distribution certificate and the four App Store profiles
+# and only from the build-209 branch (build 212 and later: also build-212-rc, runtime 1.3.0, 1 Nov; build 213: build-213-watch, same runtime; build 214: build-214-rc, same runtime; build 215: build-215-rc, runtime 1.4.0, 2 Nov). Signing: the distribution certificate and the four App Store profiles
 # (the app's profile regenerated on 30 Oct with Time Sensitive) arrive as one secret and are deleted at the end.
 # Upload goes to App Store Connect for TestFlight only. Nothing here submits for App Review.
 name: iOS build 209+ (local EAS build, TestFlight upload; widget snapshots)
@@ -35,7 +35,7 @@ jobs:
 
   build:
     needs: audit
-    if: (github.ref == 'refs/heads/build-209' || github.ref == 'refs/heads/build-212-rc' || github.ref == 'refs/heads/build-213-watch' || github.ref == 'refs/heads/build-214-rc') && inputs.mode != 'snapshots'
+    if: (github.ref == 'refs/heads/build-209' || github.ref == 'refs/heads/build-212-rc' || github.ref == 'refs/heads/build-213-watch' || github.ref == 'refs/heads/build-214-rc' || github.ref == 'refs/heads/build-215-rc') && inputs.mode != 'snapshots'
     runs-on: xcode-27
     timeout-minutes: 120
     env:
@@ -85,6 +85,9 @@ jobs:
           # Build 212 (1 Nov) has native code builds 210 and 211 do not (card version 3, arrival sound): its own runtime
           # 1.3.0, so an update published for 1.2.0 can never land on it, and the other way round.
           if [ "$BN" -ge 212 ] && [ "$RT" = "1.2.0" ]; then echo "build $BN must not use runtime 1.2.0 (builds 210 and 211)"; exit 1; fi
+          # Build 215 (2 Nov) has native code builds 212 to 214 do not (background audio and location, the locked screens'
+          # live card, the minimal Island): its own runtime 1.4.0, so the 1.3.0 updates (builds 212 to 214) never land on it.
+          if [ "$BN" -ge 215 ] && { [ "$RT" = "1.3.0" ] || [ "$RT" = "1.2.0" ]; }; then echo "build $BN must not use runtime $RT (builds 212 to 214)"; exit 1; fi
           if [ "$BN" -ge 212 ] && [ "$GITHUB_REF" != "refs/heads/build-212-rc" ] && [ "$GITHUB_REF" != "refs/heads/build-213-watch" ] && [ "$GITHUB_REF" != "refs/heads/build-214-rc" ] && [ "$GITHUB_REF" != "refs/heads/build-209" ]; then echo "unexpected branch $GITHUB_REF"; exit 1; fi
 
       - name: EAS local build (production profile)

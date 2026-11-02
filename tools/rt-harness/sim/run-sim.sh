@@ -22,6 +22,7 @@ case "$SCN" in
   server-down) CASE=S1; FAULTS='[{"from":"+4","to":"+7","server":"down"}]' ;;
   killed) CASE=RT-T2; KILL_AT=150 ;;                # app killed 150 s after Start trip
   t9t4) CASE=RT-T9T4; WAKE_AT=04:55:14 ;;           # build 215 check: owner's 2 Nov trip shape, the app opened on the T4 at 4:55:14
+  t9t4-change) CASE=RT-T9T4; WAKE_AT=04:50:40 ;;    # the same trip opened at Town Hall 40 s after the late T9 got in (the change, Town Hall dropped from the feed)
   *) echo "unknown scenario $SCN"; exit 2 ;;
 esac
 log "scenario $SCN: case $CASE, lock $LOCK_KIND, faults $FAULTS, kill ${KILL_AT:-no}, wake ${WAKE_AT:-no}"

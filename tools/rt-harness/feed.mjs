@@ -77,7 +77,11 @@ export function caseFeed(net, base, t, kind, o = {}) {
     } else if (L.vehicle && !L.cancelled) {
       const v = L.vehicle;
       const k = v.state === "at" ? v.stop : v.stop + 1;
-      const vp = [...msg(1, str(1, leg.tripId)), ...msg(2, [...f32(1, -33.8 - k * 0.01), ...f32(2, 151 + k * 0.01)]), ...num(3, k + 1), ...num(4, v.state === "at" ? 1 : 2), ...num(5, Math.floor(base / 1000) + v.at), ...str(7, stopIdOf(leg, k))];
+      // 2 Nov (build 215 check): between stops the train is drawn halfway (about 780 m from each), not on top of the
+      // stop it is heading to; a position on the stop reads as "at the stop" (150 m), so the app in the iOS Simulator
+      // said "You've arrived" as soon as the T4 left Martin Place.
+      const g = v.state === "at" ? v.stop : v.stop + 0.5;
+      const vp = [...msg(1, str(1, leg.tripId)), ...msg(2, [...f32(1, -33.8 - g * 0.01), ...f32(2, 151 + g * 0.01)]), ...num(3, k + 1), ...num(4, v.state === "at" ? 1 : 2), ...num(5, Math.floor(base / 1000) + v.at), ...str(7, stopIdOf(leg, k))];
       ents.push(msg(2, [...str(1, "v" + li), ...msg(4, vp)]));
     }
   });
