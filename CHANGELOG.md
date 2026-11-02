@@ -4,6 +4,9 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 2 Nov 2026
 
+### Build 215 on TestFlight Internal (2 Nov, 10:53 PM)
+Built from build-215-rc a009204 (GitHub Actions run 41435677678, eas build --local, Xcode 27.1), App Store Connect build b44a470e-e1ab-4568-9bf0-dfcb0e9f8e10, 1.0.0 (215), runtime 1.4.0, VALID, Internal In Beta Testing. What to Test: spoken alerts in headphones with the phone locked, no false Connection at risk, the Your trip widget moving to the next leg, the Island's line and time, the mode chip with no trips, Where's home after reopening. Not submitted for review; no external group. Secrets removed after the run. Details in docs/RELEASES.md.
+
 ### Build 215: the build workflow's own branch check (2 Nov, 10:15 PM; branch `build-215-rc`)
 Found right before dispatching build 215: the build job's `if` took build-215-rc, but the step "Runtime and build number" had its own list of branches without it, so the signed build would have stopped at that step with "unexpected branch refs/heads/build-215-rc" after the audit. build-215-rc is now in that list. Test: app/test/build215.test.mjs runs the step's checks through bash for build-215-rc with 215 and 1.4.0 (passes), 215 on 1.3.0 (stops) and an unknown branch (stops); it failed first on 2d500a1. Workflow and test only, no app code.
 
