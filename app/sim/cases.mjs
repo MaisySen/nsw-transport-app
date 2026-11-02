@@ -352,6 +352,28 @@ export const CASES = [
     ring: [{ kind: 'getoff', between: ['19:58:40', '19:58:47'] }, { kind: 'arrived', between: ['19:59:05', '19:59:25'] }],
     order: ['delay', 'headsup', 'getoff', 'arrived'],
   },
+  {
+    id: 'S23c', title: 'Train crawls in after Get off now, the feed creeping with it (2 Nov 3:15 PM owner trip shape)',
+    story: '4 min late; Get off now at 7:58:22 for a 7:59 arrival; then the train takes 88 s longer to get in and the stop feed moves the arrival along in small steps, never more than 10 s ahead of each reading (8:00:28 at the end). The build 214 rule wants the live arrival at least 15 s away and 30 s later than at Get off now at the same reading, so no Held: correct by that rule. Arrived when the train is at the stop.',
+    legs: [sample()], start: '19:46', end: '20:04',
+    feed: { events: [{ at: '19:44', leg: 0, delay: 4 }, ...vehicle(0, [['Lidcombe', '19:52', '19:54:30'], ['Auburn', '19:56:30', '19:57']]),
+      { at: '19:59:00', leg: 0, est: { Clyde: '19:59:10' } }, { at: '19:59:15', leg: 0, est: { Clyde: '19:59:25' } }, { at: '19:59:30', leg: 0, est: { Clyde: '19:59:40' } },
+      { at: '19:59:45', leg: 0, est: { Clyde: '19:59:55' } }, { at: '20:00:00', leg: 0, est: { Clyde: '20:00:10' } }, { at: '20:00:15', leg: 0, est: { Clyde: '20:00:25' } },
+      { at: '20:00:28', leg: 0, vehicle: { stop: 'Clyde', state: 'at' } }] },
+    phone: lockedFrom('19:46', '19:46:20'),
+    ring: [{ kind: 'getoff', lands: '19:58:22' }, { kind: 'arrived', between: ['20:00:28', '20:00:50'] }],
+    order: ['delay', 'headsup', 'getoff', 'arrived'],
+  },
+  {
+    id: 'S23j', title: 'The same 88 s, the feed moving the arrival once (Held, as S21)',
+    story: 'As S23c, but at 7:59 the stop feed moves the arrival straight to 8:00:28. A minute after Get off now the live arrival is over 15 s away and over 30 s later: one quiet Held, stay on.',
+    legs: [sample()], start: '19:46', end: '20:04',
+    feed: { events: [{ at: '19:44', leg: 0, delay: 4 }, ...vehicle(0, [['Lidcombe', '19:52', '19:54:30'], ['Auburn', '19:56:30', '19:57']]),
+      { at: '19:59:00', leg: 0, est: { Clyde: '20:00:28' } }, { at: '20:00:28', leg: 0, vehicle: { stop: 'Clyde', state: 'at' } }] },
+    phone: lockedFrom('19:46', '19:46:20'),
+    ring: [{ kind: 'getoff', lands: '19:58:22' }, { kind: 'held', between: ['19:59:20', '19:59:40'] }, { kind: 'arrived', between: ['20:00:28', '20:00:50'] }],
+    order: ['delay', 'headsup', 'getoff', 'held', 'arrived'],
+  },
 ];
 
 export const byId = (id) => CASES.find((c) => c.id === id);
