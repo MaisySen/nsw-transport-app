@@ -4,6 +4,9 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Train details past a split (2 Nov evening, server branch `server-858n-2nov`, not deployed)
+* The open app's train details follow a train whose run continues under a new trip id at Central (858N then 858P) on to its last stop, instead of stopping at Central.
+
 ## Trip fixes from the first real build 214 trip (server, 2 Nov, branch server-trip-2nov, not yet deployed)
 A train whose run continues under another trip id keeps its position on the card. The card stops saying Due once the train has clearly left with you on it. Get off now says the stop, not a clock time.
 

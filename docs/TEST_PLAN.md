@@ -3,6 +3,10 @@
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
 
+## 858N train details and the Held replay, server (2 Nov evening, branch server-858n-2nov)
+* backend/test/service-858n.test.mjs (4): on the fixture pack with the T9 206E to 206F link taken out (the 858N shape), the run ends at Central and is called whole; the service follows it on to Hornsby by the feed's naming with the pack's stops, Central once, the same list as the linked pack; never guessed (no next trip, two candidates, no pack answer, a far-off time, a run already reaching, another naming); service() follows it for trains on the full answer, before the vehicle and useRun. All 4 failed on 69a8328.
+* backend/test/held-2nov.test.mjs (2): replays S23c and S23j of the owner's 2 Nov 3:15 PM trip shape (88 s late after Get off now).
+
 ## Trip fixes from the 2 Nov trip, server (2 Nov, branch server-trip-2nov)
 * `backend/test/trip-2nov.test.mjs`: 5 tests: the run's vehicle from its next trip id (its stop sequence not used); /api/service takes it only when the asked trip id has none (source wiring); B6b, the card leaves Due once a minute past the live departure with the vehicle over 300 m past the boarding stop; kept: no change before that, at the stop, or with no position; Get off now words with no clock time. 4 of 5 fail on ae97e39. Backend 777/777; the journey simulator compare (tripflow-sim) 38/38.
 
