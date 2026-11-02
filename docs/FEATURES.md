@@ -4,6 +4,11 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Build 215 candidate (2 Nov, branch `build-215-rc`, runtime 1.4.0, not built)
+* Everything waiting for a native build in one: spoken alerts in headphones with the phone locked, the minimal Island "T4 4:52", the Your trip widget moving on to the next leg, the locked screens' live card from the server, the native trip queue, Back from outside the app (native half), and the live updates' JavaScript. Readiness: files/day-2nov/build-215-readiness.md.
+* "Where's home?" never covers a running trip; the questions wait for a launch with no trip.
+* When the phone cannot find where you are, Nearby says "Can't find where you are right now. Pull down to try again.", never the system's error text.
+
 ## Trip alerts in your headphones with the phone locked (2 Nov, branch `fix-voice-locked-2nov`, next build)
 * On a trip with Speak alerts on and AirPods or headphones in, Transport says Get off now, the next stop and the arrival in your ears even with the iPhone locked and on Silent. Music lowers while it talks; nothing is heard twice.
 * More > Speak alerts in headphones (on by default) turns it off. It uses your location While Using the App during the trip, so the location icon shows; it stops at arrival. Siri's Announce Notifications is named as the other way. Details: [VOICE_LOCKED.md](VOICE_LOCKED.md).
