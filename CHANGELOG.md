@@ -62,6 +62,12 @@ Bidur on build 214, 5:48 PM: "Widget missing back button or app screen? Check". 
 * Native audit entry job (manual runs, `only_entry` runs it alone): builds without `-sdk` (the Watch targets failed on the iOS SDK) and runs a UI test (app/native-tests/entry-ui) on an ordinary one-screen iPhone: opens each link closed and open, answers the system prompts, keeps a picture, taps Back, checks the tab bar.
 * Checks: app tests 1,366 pass / 4 skip / 0 fail (ota branch 1,364), tsc clean, journey sim 184/184, backend copy 644/644. Native audit run 41283876166 (all app code of this branch): full app compile, iPhone 2,038 shots and Watch 180 shots 0 cut (the same counts as 214), new XCTests pass. Simulator UI test (app/native-tests/entry-ui, the app built with its JavaScript): 214 as shipped (run 41303463593) has no Back on cold Next trip row, Start, Stop board, Plan and live trip links; 214 native + this JavaScript (run 41303474779) and this branch (run 41302308793): every cold and warm link has Back, and Back reaches Home with the tab bar.
 
+### Back from outside the app (update on runtime 1.3.0, 1 Nov, 10:57 PM; branch `ota-backnav-1nov` 8791b4c)
+Bidur on build 214: "Widget missing back button or app screen?"; his OK for the update 6:26 PM.
+* A screen opened from outside the app with the app closed (Next trip widget row, Lock Screen and StandBy widgets, Control Center, Siri and Shortcuts, Stop board, Plan and live trip links) opens on top of Home, so Back and the tab bar are there. Before, it was the only screen (since the Expo app, 24-25 Oct).
+* Siri and Shortcuts links wait until the screens are ready, then open on top of the screen in view.
+* JavaScript only, so builds 212, 213 and 214 take it over the air: production group `8c846fb7-ec24-46e4-9a61-f2bab35536f5`. The "Your trip" widget and Watch fixes need the next build.
+
 ### Build 214: everything in one build (1 Nov, branch `build-214-rc` from fix-all-1nov 09dde0a; server branch `server-214` from a9a75e6)
 Bidur, 2:31 PM: "Yes. If thats the right thing". Includes all of fix-all-1nov.
 * Get off now lands about 30 s before the train really stops. The live arrival estimate trails the train by about 8 s (the 1 Nov shadow trips landed 13 to 25 s early on the 30 s rule), so Get off now now goes at the live arrival minus 38 s, and never more than 40 s before it. One rule for the open app, the server (sends at minus 40 s, lands at minus 38 s), the phone's backup alert, the Watch and the widget. Simulator S16, S22f (fast feed) and S22s (slow feed).
