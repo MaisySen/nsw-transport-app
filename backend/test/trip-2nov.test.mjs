@@ -48,7 +48,7 @@ test("(a) the run's vehicle: the asked trip id has none, the run's next trip id 
 });
 
 test("(a) /api/service takes the run's vehicle only when the asked trip id has none", () => {
-  const body = src.slice(src.indexOf("async function service(env, q)"), src.indexOf("async function service(env, q)") + 12000);
+  const body = src.slice(src.indexOf("async function service(env, q)"), src.indexOf("async function service(env, q)") + 16000);
   assert.match(body, /let veh = tripId \? vehicleOf\(rt\.vp\(mode, line, tripId, feed\)\) : null;/);
   const k = body.indexOf("if (list) { run = r; runList = list; }");
   const j = body.indexOf("if (!veh && tripId && run) veh = svcRunVehicle(rt, mode, line, tripId, feed, run.trips);");

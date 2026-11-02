@@ -869,6 +869,46 @@ function vehicleOf(vp) {
 // Index of the next stop the vehicle will reach, from the vehicle state or the trip update
 // times. Returns -1 when neither says.
 /**
+ * 858N (1 Nov 2026, 6:30 PM): a train run Sydney Trains splits into two trip ids (858N to Central, 858P on) that our
+ * pack does not link ends at the split in the pack, and rpRun calls a trip with no trip after it the whole run, so the
+ * open app's train details stopped at Central. True when a train run's stops end short of its headsign's station (the
+ * station is neither the last stop nor any stop after yours).
+ */
+function svcRunShort(run) {
+  if (!run || !Array.isArray(run.stops) || run.stops.length < 2 || !Array.isArray(run.trips) || !run.trips.length) return false;
+  const dest = String(run.lastHead || run.head || "").split(/\s+via\s+/i)[0].trim().toLowerCase();
+  if (!dest) return false;
+  const key = (n) => String(n || "").replace(/\s+(station|wharf|interchange|light rail)$/i, "").split(",")[0].trim().toLowerCase();
+  for (let i = Math.max(0, Number(run.mine) || 0) + 1; i < run.stops.length; i++) if (key(run.stops[i].name) === dest) return false;
+  return key(run.stops[run.stops.length - 1].name) !== dest;
+}
+/** The longest a run's next trip may leave the station it takes over at after the first gets there (else another train). */
+const SVC_RUN_ON_GAP_MS = 30 * 60000;
+/**
+ * A train run that stops short (svcRunShort) followed on: the feed names the run's next trip by Sydney Trains' naming
+ * (tfFeedRun: exactly one trip id, never guessed), and that trip's stops come from our own pack (runOf, ownRun) from the
+ * station it takes over at. The station is listed once, arriving on the first trip and leaving on the next, as rpRun
+ * does for a linked run. null when anything does not fit: the caller keeps what it had.
+ */
+async function svcRunOn(run, idsLike, runOf) {
+  if (!svcRunShort(run) || typeof idsLike !== "function" || typeof runOf !== "function") return null;
+  const ids = tfFeedRun(run.trips[run.trips.length - 1], idsLike);
+  if (ids.length < 2) return null;
+  const hand = run.stops[run.stops.length - 1];
+  let r2 = null;
+  try { r2 = await runOf(ids[1], hand.id, hand.arr); } catch { r2 = null; }
+  if (!r2 || !Array.isArray(r2.stops) || !Array.isArray(r2.trips) || !(r2.mine >= 0) || !r2.stops[r2.mine]) return null;
+  const h2 = r2.stops[r2.mine];
+  if (!Number.isFinite(h2.dep) || !Number.isFinite(hand.arr) || h2.dep < hand.arr - 60000 || h2.dep - hand.arr > SVC_RUN_ON_GAP_MS) return null;
+  if (r2.stops.length <= r2.mine + 1) return null;
+  const k = r2.trips.indexOf(String(ids[1]));
+  const stops = run.stops.slice(0, -1);
+  stops.push({ ...hand, id: h2.id, parent: h2.parent != null ? h2.parent : hand.parent, plat: h2.plat || hand.plat, dep: h2.dep, board: h2.board, trip: h2.trip });
+  stops.push(...r2.stops.slice(r2.mine + 1));
+  return { ...run, trips: [...run.trips, ...(k >= 0 ? r2.trips.slice(k) : [String(ids[1])])], lastHead: r2.lastHead || run.lastHead,
+    reached: !!r2.reached, stops, alt: { ...(run.alt || {}), ...(r2.alt || {}) }, runOn: String(ids[1]) };
+}
+/**
  * The vehicle of a run's other trip ids when the asked trip id has none (2 Nov, B1): the same train under the trip id it
  * runs as now. Its stop sequence belongs to that other trip, so it is left off (only its position and stop id are read).
  */
@@ -2333,6 +2373,14 @@ async function service(env, q) {
     const list = r ? runStops(r, (t) => (t === tripId ? tu : rt.tu(mode, line, t, feed)), tripId, tuLive) : null;
     if (list) { run = r; runList = list; }
   }
+  // 858N (1 Nov 2026): a train run that stops short of its headsign's station in our pack (a split Sydney Trains makes and
+  // the pack does not link, 858N to Central then 858P) is followed on by the feed's naming of its next trip, with that
+  // trip's stops from our pack (svcRunOn, no Transport for NSW call). The full answer only; the quick one stays quick.
+  if (run && mode === "train" && !q.quick && typeof rt.idsLike === "function") {
+    const on = await svcRunOn(run, (pre) => rt.idsLike(mode, line, feed, pre), (t, s, at) => ownRun(env, t, s, at)).catch(() => null);
+    const list = on ? runStops(on, (t) => (t === tripId ? tu : rt.tu(mode, line, t, feed)), tripId, tuLive) : null;
+    if (list) { run = on; runList = list; }
+  }
   // 2 Nov 2026 (the owner's first real trip on 214, B1): a train whose run carries on under another trip id (the 4:26 T9 ran
   // as 142A to Central and 142B from there) reports its position under the trip id it is on now; the asked id had no
   // vehicle, so the open app never saw the train reach the stop off and, woken after the change, thought it was still on
@@ -2340,7 +2388,7 @@ async function service(env, q) {
   if (!veh && tripId && run) veh = svcRunVehicle(rt, mode, line, tripId, feed, run.trips);
   // The quick answer (q.quick) takes the timetable run as it is, reached or not: it is marked partial, and the full
   // answer that follows has the whole list.
-  const useRun = !!(run && (run.reached || mode !== "train" || q.quick));
+  const useRun = !!(run && (run.reached || run.runOn || mode !== "train" || q.quick));
   if (useRun) { stops = runList; source = "own"; }
   // The quick answer for a train with no run (the planner object off or held by the budget guard): the trip's stop list
   // from the board engine's timetable with the feed's delays by the engine's rules (engLive). No planner object read,
