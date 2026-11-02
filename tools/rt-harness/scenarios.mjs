@@ -25,6 +25,7 @@ export const SCENARIOS = [
   J('RT-DIVERT', 'Run vanishes from the feed after leaving (diverted)', { strict: false, expect: { getoff: false, noMovesAfter: '19:51' } }),
   J('S2-open', "Owner's train with the app open from 7:56", { strict: false }),
   J('S11', 'App killed at 7:51, reopened at 7:58', { strict: false }),
+  J('RT-T9T4', "Owner's 2 Nov trip: T9 5 min late, Town Hall dropped from the feed, change to the T4, woken on the T4 (build 215 check)", { strict: false }),
 
   // ---- the live feed failing (server side) ----
   { id: 'F-NSW500', title: 'Feed answers 500 for 3 min mid-trip', case: 'S1', faults: [{ from: '19:46', to: '19:49', nsw: '500' }], expect: { staleFrom: '19:46', staleTo: '19:49' } },

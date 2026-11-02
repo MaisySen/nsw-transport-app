@@ -221,7 +221,7 @@ async function phoneCall(method, p, body, via = 'js') {
   // it counts as failed, whatever the server goes on to do. The native queue's background upload waits 60 s.
   const limit = via === 'native' ? 60000 : p === '/api/live-activity' || p === '/api/apns/device' ? 10000 : 15000;
   try {
-    const r = await Promise.race([call(W, env, method, p, body, DEVICE), sleepV(limit).then(() => ({ status: 'timeout' }))]);
+    const r = await Promise.race([call(W, env, method, p, body, DEVICE, W215 ? { 'x-profile': PROFILE } : undefined), sleepV(limit).then(() => ({ status: 'timeout' }))]);
     const ms = r.status === 'timeout' ? limit : Math.round(r.ms * SPEED);
     rec.calls.push({ t: sec(t), method, p, status: r.status, ms, via });
     return r;
@@ -394,6 +394,29 @@ function setOnline(v) {
   if (v) { const a = phone.heldLa, b = phone.heldAlert; phone.heldLa = phone.heldAlert = null; if (a) applyApns(a); if (b) applyApns(b); }
 }
 
+// Build 215's widget and Watch complication on a locked phone (LiveCardFetch.swift): a kept card whose live times are
+// over a minute old is replaced by the server's trip flow card (GET /api/live-card) when that one is newer; the next
+// reload is 3 min after a good answer, 5 after a failed one, never past the arrival.
+const W215 = process.env.RT_WIDGET === '215';
+const PROFILE = 'rtprofile' + String(process.pid).padStart(12, '0'); // the install's profile id the app sends (x-profile) and the widget asks with
+async function widgetFetch(t) {
+  phone.widgetReload = t;
+  const kept = phone.widget ? phone.widget.asOfMs : null;
+  if (kept != null && t - kept < 60000) { phone.widgetNext = t + 180000; return; }
+  const r = await phoneCall('GET', '/api/live-card?profile=' + encodeURIComponent(PROFILE), null, 'widget');
+  const card = r && r.status === 200 && r.body ? r.body.card : null;
+  const ok = r && r.status === 200;
+  if (card && card.updated != null && (r.body.ended || card.updated > (kept ?? 0))) {
+    const ph = PH[card.phase] || card.phase;
+    phone.widget = { at: now(), asOfMs: Number(card.updated), phase: ph, words: card.status || null, src: 'server' };
+    phone.watch = { at: now(), asOfMs: Number(card.updated), phase: ph, words: card.status || null, src: 'server' };
+  }
+  rec.device.push({ t: sec(now()), what: 'widget asked /api/live-card: ' + (ok ? (card ? 'card ' + card.phase : 'no card') : 'failed') });
+  const arr = card && card.arrival ? Number(card.arrival) : null;
+  const gap = ok ? 180000 : 300000;
+  phone.widgetNext = arr ? Math.min(t + gap, Math.max(arr, t + 60000)) : t + gap;
+}
+
 // ---- the script: the case's phone moments plus the scenario's own device moments ----
 const script = [...(S.keepCasePhone === false ? [] : P.phone.map((p) => ({ at: p.at, ...(p.app ? { app: p.app === 'locked' ? 'locked' : p.app } : {}) }))), ...(S.device || []).map((d) => ({ ...d, at: hms(d.at) }))]
   .sort((a, b) => a.at - b.at);
@@ -446,8 +469,12 @@ async function device() {
     // the card's push token reaches JavaScript (onActivityPushToken): shared at once if the app is running
     if (phone.app === 'open' && phone.laTokenAt != null && t >= phone.laTokenAt && !phone.laSent && !phone.laSending) shareToken();
     if (REG && started) regTick(t).catch((e) => rec.errors.push({ t: tS, where: 'regTick', msg: String(e && e.stack || e).slice(0, 300) }));
-    // the widget reloads on its own about every 5 min while the app is not in front (TripMoments liveReload)
-    if (phone.app !== 'open' && phone.widgetReload != null && t - phone.widgetReload >= 300000) phone.widgetReload = t;
+    // the widget reloads on its own about every 5 min while the app is not in front (TripMoments liveReload); from build
+    // 215 (RT_WIDGET=215, fix-lockedlive-1nov) the widget and the Watch complication ask GET /api/live-card instead
+    if (phone.app !== 'open' && phone.widgetReload != null) {
+      if (!W215 && t - phone.widgetReload >= 300000) phone.widgetReload = t;
+      if (W215 && started && t >= (phone.widgetNext ?? 0) && !phone.widgetBusy) { phone.widgetBusy = true; widgetFetch(t).catch((e) => rec.errors.push({ t: tS, where: 'widgetFetch', msg: String(e) })).finally(() => { phone.widgetBusy = false; }); }
+    }
     if (tS % 5 === 0 && started) {
       const card = phone.card;
       rec.samples.push({ t: tS, app: phone.app, online: phone.online,

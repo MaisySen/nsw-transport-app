@@ -23,6 +23,7 @@ const STATUS = /^(\d{1,2}:\d{2}|[\d:]+\s?(AM|PM)?)$/; // the status bar clock
 
 const frames = (truth.frames || []);
 const truthAt = (t) => { let best = null; for (const f of frames) { if (f.t <= t) best = f; else break; } return best; };
+const ocrLines = (file) => ((ocr.find((o) => o.file === file) || {}).lines || []).map((l) => l.t);
 const shots = ocr.map((o) => {
   const m = o.file.match(/^(\d{2})(\d{2})(\d{2})-(.+)\.png$/);
   const wall = m ? Date.parse(`${day}T${m[1]}:${m[2]}:${m[3]}Z`) : null;
@@ -40,6 +41,18 @@ const shots = ocr.map((o) => {
 
 const out = { dir, case: truth.case, title: truth.title, shots: shots.length, findings: [] };
 const add = (sev, what, detail) => out.findings.push({ sev, what, detail });
+
+// Build 215 check (2 Nov): the owner's false "Connection at risk" on his first 214 trip, and each alert once.
+const riskShots = shots.filter((s) => (ocrLines(s.file)).some((t) => /connection at risk|at risk/i.test(t)));
+out.connectionAtRisk = riskShots.map((s) => s.file);
+if (riskShots.length) add('critical', 'a "Connection at risk" alert on the phone', riskShots.map((s) => s.file).join(', '));
+{
+  const seen = new Map();
+  for (const p of pushes.filter((x) => !x.liveActivity)) { const al = (p.body && p.body.aps && p.body.aps.alert) || {}; const ti = p.expo ? p.title : al.title, bo = p.expo ? p.body : al.body; if (!ti && !bo) continue; const k = `${p.expo ? 'expo' : 'apns'}: ${ti || ''}|${bo || ''}`; seen.set(k, (seen.get(k) || 0) + 1); }
+  out.alerts = [...seen].map(([k, n]) => ({ alert: k, times: n }));
+  const twice = out.alerts.filter((a) => a.times > 1);
+  if (twice.length) add('high', 'an alert sent more than once', twice.map((a) => `${a.alert} x${a.times}`).join('; '));
+}
 
 // the app and the server
 const posts = (p) => reqs.filter((r) => r.m === 'POST' && r.p.startsWith(p));

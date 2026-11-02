@@ -13,7 +13,7 @@ mkdir -p "$OUT/shots" "$OUT/server"
 log() { echo "$(date -u +%H:%M:%S) $*" | tee -a "$OUT/timeline.txt"; }
 
 # scenario: case, minutes "locked" (background or Lock), what else happens, failures for the server (minutes from Start trip)
-FAULTS='[]'; KILL_AT=""; LOCK_KIND=background; CASE=S1
+FAULTS='[]'; KILL_AT=""; LOCK_KIND=background; CASE=S1; WAKE_AT=""
 case "$SCN" in
   clean-train) CASE=RT-T2 ;;                        # delay grows 1 to 5 min after the phone locks: the card must follow
   clean-bus) CASE=RT-BUS530 ;;
@@ -21,9 +21,10 @@ case "$SCN" in
   feed-down) CASE=RT-T2; FAULTS='[{"from":"+3","to":"+15","nsw":"down"}]' ;;   # 2, 5, 10 min stale words while locked
   server-down) CASE=S1; FAULTS='[{"from":"+4","to":"+7","server":"down"}]' ;;
   killed) CASE=RT-T2; KILL_AT=150 ;;                # app killed 150 s after Start trip
+  t9t4) CASE=RT-T9T4; WAKE_AT=04:55:14 ;;           # build 215 check: owner's 2 Nov trip shape, the app opened on the T4 at 4:55:14
   *) echo "unknown scenario $SCN"; exit 2 ;;
 esac
-log "scenario $SCN: case $CASE, lock $LOCK_KIND, faults $FAULTS, kill ${KILL_AT:-no}"
+log "scenario $SCN: case $CASE, lock $LOCK_KIND, faults $FAULTS, kill ${KILL_AT:-no}, wake ${WAKE_AT:-no}"
 
 # 1. a certificate authority for this run and a certificate for api.transportsydney.app, trusted by the simulator
 cd "$OUT/server"
@@ -85,6 +86,10 @@ flow() { # flow NAME then YAML commands on stdin
   maestro --device "$DEV" test "$f" > "$OUT/maestro-$1.log" 2>&1 && log "maestro $1 ok" || log "maestro $1 failed: $(tail -3 "$OUT/maestro-$1.log" | tr '\n' ' ')"
 }
 TAPS='- tapOn: {text: "Continue", optional: true}
+- tapOn: {id: "Skip home", optional: true}
+- tapOn: {text: "Skip home", optional: true}
+- tapOn: {id: "Skip work", optional: true}
+- tapOn: {text: "Skip work", optional: true}
 - tapOn: {text: "Skip", optional: true}
 - tapOn: {text: "Skip", optional: true}
 - tapOn: {text: "Skip", optional: true}
@@ -111,11 +116,20 @@ lock_phone
 T_LOCK=$(date +%s)
 # 4. real time: a picture every 20 s until the case ends (+3 min)
 END=$(node -e "const t=require('$OUT/server/truth.json'); console.log(Math.round((t.base + (t.end + 180) * 1000) / 1000))")
+T_WAKE=0
+[ -n "$WAKE_AT" ] && T_WAKE=$(node -e "const t=require('$OUT/server/truth.json'); const [h,m,s]='$WAKE_AT'.split(':').map(Number); console.log(Math.round((t.base + (h*3600+m*60+(s||0)) * 1000) / 1000))")
 n=0
 while [ "$(date +%s)" -lt "$END" ]; do
   now=$(date +%s)
   if [ -n "$KILL_AT" ] && [ $((now - T_LOCK)) -ge "$KILL_AT" ] && [ ! -f "$OUT/killed" ]; then
     xcrun simctl terminate "$DEV" "$BID"; touch "$OUT/killed"; log "app killed (simctl terminate)"
+  fi
+  # the phone woken on the trip (the app brought to the front for a minute, pictures every 5 s, then back to the
+  # background): the moment of the owner's 2 Nov "Connection at risk" (the app's JavaScript runs again after a suspend)
+  if [ -n "$WAKE_AT" ] && [ ! -f "$OUT/woken" ] && [ "$now" -ge "$T_WAKE" ]; then
+    touch "$OUT/woken"; xcrun simctl launch "$DEV" "$BID" >/dev/null; log "app opened (woken on the trip)"
+    for w in $(seq 1 12); do sleep 5; shot "woken-$w"; done
+    xcrun simctl launch "$DEV" com.apple.Preferences >/dev/null && log "Settings in front again: the app is in the background"
   fi
   shot "t$n"; n=$((n + 1))
   sleep 20

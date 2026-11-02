@@ -38,6 +38,7 @@ jobs:
     outputs:
       scenarios: ${{ steps.p.outputs.scenarios }}
       app_run_id: ${{ steps.p.outputs.app_run_id }}
+      server_ref: ${{ steps.p.outputs.server_ref }}
     steps:
       - uses: actions/checkout@v4
       - id: p
@@ -47,7 +48,9 @@ jobs:
           else
             S=$(jq -c .scenarios tools/rt-harness/sim/config.json); A=$(jq -r '.app_run_id // ""' tools/rt-harness/sim/config.json)
           fi
-          echo "scenarios=$S" >> "$GITHUB_OUTPUT"; echo "app_run_id=$A" >> "$GITHUB_OUTPUT"
+          R=$(jq -r '.server_ref // "server-214"' tools/rt-harness/sim/config.json)
+          echo "scenarios=$S" >> "$GITHUB_OUTPUT"; echo "app_run_id=$A" >> "$GITHUB_OUTPUT"; echo "server_ref=$R" >> "$GITHUB_OUTPUT"
+          echo "server code: $R"
           echo "scenarios $S, app run ${A:-build now}"
 
   build:
@@ -123,9 +126,9 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_27.1.app
           xcodebuild -version
           node --version
-      - name: The server code (server-214)
+      - name: The server code (config.json server_ref, server-214 before 2 Nov)
         run: |
-          git fetch origin server-214
+          git fetch origin ${{ needs.plan.outputs.server_ref }}
           git worktree add srv FETCH_HEAD
           git -C srv log --oneline -1
       - name: The app (this run)

@@ -61,6 +61,23 @@ export const RT_CASES = [
     phone: lockedFrom('19:44', '19:44:20'),
     order: ['headsup', 'getoff', 'held', 'arrived'],
   },
+  {
+    id: 'RT-T9T4', owner: true, title: "Owner's 2 Nov trip shape: T9 to Town Hall 5 min late, Town Hall dropped from the feed after arrival, change to the T4 to Kings Cross, phone locked then woken on the T4",
+    // Build 215 check (2 Nov): the trip of files/day-2nov/trip-0452-diagnosis.md (B1, B6). Times are the trip's shape
+    // (the T4 leaves 4:52, arrives 4:55:44 live), not timetable facts. Town Hall leaves the T9's trip update once the
+    // train is there (the feed drops the stop), and the phone is opened on the T4 as it was at 4:55.
+    legs: [
+      { mode: 'train', line: 'T9', platform: '3', stops: [{ name: 'Strathfield', tt: '04:31' }, { name: 'Redfern', tt: '04:40' }, { name: 'Central', tt: '04:42' }, { name: 'Town Hall', tt: '04:45' }] },
+      { mode: 'train', line: 'T4', platform: '5', stops: [{ name: 'Town Hall', tt: '04:52' }, { name: 'Martin Place', tt: '04:54' }, { name: 'Kings Cross', tt: '04:56' }] },
+    ],
+    start: '04:27', end: '05:00',
+    feed: { events: [{ at: '04:26', leg: 0, delay: 1 }, { at: '04:26', leg: 1, delay: 0 }, { at: '04:33', leg: 0, delay: 3 }, { at: '04:38', leg: 0, delay: 5 },
+      ...vehicle(0, [['Strathfield', '04:32', '04:34'], ['Redfern', '04:44:40', '04:45'], ['Central', '04:46:40', '04:47'], ['Town Hall', '04:49:50', null]]),
+      { at: '04:50:30', leg: 0, unmatched: true },
+      ...vehicle(1, [['Town Hall', '04:51:30', '04:52:20'], ['Martin Place', '04:54', '04:54:20'], ['Kings Cross', '04:55:44', null]])] },
+    phone: [{ at: '04:27', app: 'open' }, { at: '04:27:20', app: 'locked' }, { at: '04:55:14', app: 'open' }],
+    order: ['delay', 'headsup', 'getoff', 'arrived', 'headsup', 'getoff', 'arrived'],
+  },
 ];
 
 export const ALL_CASES = [...CASES, ...RT_CASES];
