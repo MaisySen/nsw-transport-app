@@ -6,7 +6,9 @@ import Foundation
 /// (the departure while waiting, your stop's arrival on board), side by side when they fit, the line over the time when
 /// not, else the time alone. A clock time needs no update to stay right, so this costs no pushes. Pure, so
 /// app/test/island2nov.test.mjs compiles it on Linux.
-enum IslandMinimal {
+/// Named MinimalIsland, not IslandMinimal: the follow activity's minimal view is `struct IslandMinimal`
+/// (TripLiveActivity.swift, same widget target); the same name twice did not compile (build 215 check, 2 Nov).
+enum MinimalIsland {
     struct Words: Equatable {
         /// "T4"; nil when the card has no line.
         var line: String?

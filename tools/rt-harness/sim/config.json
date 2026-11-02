@@ -1,1 +1,1 @@
-{"scenarios": ["t9t4", "killed", "clean-train", "feed-down"], "app_run_id": "", "server_ref": "server-trip-2nov", "note": "build 215 check (2 Nov): build-215-rc 83686dd app (this run builds it) against the live server code server-trip-2nov; t9t4 = owner's 2 Nov trip shape, woken on the T4"}
+{"scenarios": ["t9t4", "killed", "clean-train", "feed-down"], "app_run_id": "", "server_ref": "server-trip-2nov", "note": "build 215 check (2 Nov), run 2: build-215-rc 4248d59 (compile fix) against the live server code server-trip-2nov; t9t4 = owner 2 Nov trip shape, woken on the T4"}
