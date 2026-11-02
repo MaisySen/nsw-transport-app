@@ -22,6 +22,12 @@ With the app open, Get off now at its exact moment is decided on a fresh read as
 * "Your trip" widget (home, Lock Screen, StandBy) and Apple Watch complications stay live with the iPhone locked: they load the trip's card from the server when the app's is over a minute old, every 3 minutes during a trip.
 * Server (no build): the Lock Screen card, the Island and the alerts follow a train that changes trip id mid-run (858N to 858P after Central); a card sent again at arrival is ended.
 
+## Back from outside the app (1 Nov, `ota-backnav-1nov` over the air on runtime 1.3.0 once approved; `fix-backnav-1nov` for the next build)
+* Every widget, Lock Screen, StandBy, Control Center, Siri and site link opens its screen with Back and the tab bar one step away, also with the app closed (over the air).
+* Siri / Shortcuts links open once the app is ready, on top of the screen in view (over the air).
+* "Your trip" widget during a trip opens the live trip (next build).
+* Apple Watch opens the trip screen by itself once per trip; Back to the list stays (next build).
+
 ## Build 214 (1 Nov, branch `build-214-rc`)
 * Get off now at the live arrival minus 38 s (30 s plus the feed's lag), never more than 40 s early: lands about 30 s before the train stops.
 * "Held, stay on": one quiet note a minute after Get off now when the train is held outside the stop; Lock Screen card "Held, stay on".

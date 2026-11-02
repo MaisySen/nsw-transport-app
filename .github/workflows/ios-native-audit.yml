@@ -50,7 +50,7 @@ jobs:
       - name: iPhone simulator
         run: |
           xcrun simctl list devices available -j > /tmp/devs.json
-          DEV=$(python3 sim.py phone /tmp/devs.json)
+          DEV=$(python3 sim.py ios /tmp/devs.json)
           if [ -z "$DEV" ]; then
             RT=$(xcrun simctl list runtimes | grep -o 'com.apple.CoreSimulator.SimRuntime.iOS-[0-9-]*' | tail -1)
             for DT in $(xcrun simctl list devicetypes | grep -o 'com.apple.CoreSimulator.SimDeviceType.iPhone[^)]*' | tail -r); do
@@ -214,7 +214,8 @@ jobs:
     # 1 Nov 2026 (Bidur on build 214: "Widget missing back button or app screen?"): the whole app, JavaScript bundle
     # included, built for the simulator (Release, unsigned, updates off so it runs this branch's code), then every link
     # the widgets, Lock Screen, StandBy, Live Activity, Dynamic Island, Control Center and Siri open, with the app closed
-    # and open (entry.sh). Pictures of each landed screen in the artifact. Manual runs only; the build's call skips it.
+    # and open, with a UI test (app/native-tests/entry-ui) that taps each screen's Back and checks for the tab bar. Pictures
+    # of each landed screen and the screen after Back in the artifact. Manual runs only; the build's call skips it.
     if: github.event_name == 'workflow_dispatch' && inputs.entry
     runs-on: xcode-27
     timeout-minutes: 120
@@ -258,14 +259,53 @@ jobs:
       - name: iPhone simulator
         working-directory: app/native-tests/native-audit
         run: |
+          # An ordinary one-screen iPhone (sim.py phone): not the runner's newest type, "iPhone Duo", which has two
+          # displays and a wide layout (runs 41286058379, 41290208281). iOS 27.1 takes no older device types (run 41297564099).
           xcrun simctl list devices available -j > /tmp/devs.json
-          DEV=$(python3 sim.py ios /tmp/devs.json)
+          python3 -c "import json; d=json.load(open('/tmp/devs.json'))['devices']; print(sorted({x['name'] for k in d if '.iOS-' in k for x in d[k] if x['name'].startswith('iPhone')}))"
+          DEV=$(python3 sim.py phone /tmp/devs.json)
           test -n "$DEV"; echo "$DEV" > /tmp/sim-id.txt
           xcrun simctl boot "$DEV" || true
           xcrun simctl bootstatus "$DEV" -b > /dev/null
-      - name: Open every outside link, app closed and open
-        working-directory: app/native-tests/native-audit
-        run: bash entry.sh "$(cat /tmp/app-path.txt)" "$GITHUB_WORKSPACE/out/entry" "$(cat /tmp/sim-id.txt)"
+      - name: Open every outside link, app closed and open, and tap Back (UI test, app/native-tests/entry-ui)
+        working-directory: app/native-tests/entry-ui
+        timeout-minutes: 45
+        run: |
+          DEV=$(cat /tmp/sim-id.txt)
+          xcrun simctl install "$DEV" "$(cat /tmp/app-path.txt)"
+          for s in location location-always photos contacts calendar; do xcrun simctl privacy "$DEV" grant "$s" com.maisysen.nswtransport 2>/dev/null || true; done
+          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip
+          unzip -q -o /tmp/xcodegen.zip -d /tmp/xg
+          "$(find /tmp/xg -type f -name xcodegen -perm -u+x | head -1)" generate
+          mkdir -p "$GITHUB_WORKSPACE/out/entry"
+          # simctl openurl asks "Open in Transport?" and simctl io cannot pick one of the runner's two displays (runs
+          # 41286058379, 41287901448), so a UI test opens the links, answers the system prompts and taps Back.
+          set +e
+          xcodebuild test -project EntryUI.xcodeproj -scheme EntryUITests -destination "id=$DEV" \
+            -resultBundlePath "$GITHUB_WORKSPACE/out/entry-ui.xcresult" \
+            -test-timeouts-enabled YES -maximum-test-execution-time-allowance 1200 \
+            TEST_RUNNER_ENTRY_OUT="$GITHUB_WORKSPACE/out/entry" > "$GITHUB_WORKSPACE/out/entry-test.log" 2>&1
+          RC=$?
+          set -e
+          grep -E "Test Case|error:|XCTAssert|Executed" "$GITHUB_WORKSPACE/out/entry-test.log" | tail -80
+          # The pictures and results as named files (the test's own files stay inside the simulator).
+          xcrun xcresulttool export attachments --path "$GITHUB_WORKSPACE/out/entry-ui.xcresult" --output-path "$GITHUB_WORKSPACE/out/entry" || true
+          python3 - "$GITHUB_WORKSPACE/out/entry" <<'EOF' || true
+          import json, os, sys
+          d = sys.argv[1]
+          m = json.load(open(os.path.join(d, 'manifest.json')))
+          for t in m:
+              for a in t.get('attachments', []):
+                  src = os.path.join(d, a['exportedFileName'])
+                  name = (a.get('suggestedHumanReadableName') or a['exportedFileName']).split('_0_')[0]
+                  ext = os.path.splitext(a['exportedFileName'])[1]
+                  if os.path.exists(src): os.replace(src, os.path.join(d, name + ext))
+          for f in sorted(os.listdir(d)):
+              if f.startswith('result-'): print(open(os.path.join(d, f)).read().strip())
+          EOF
+          ls "$GITHUB_WORKSPACE"/out/entry/*.png > /dev/null 2>&1 && rm -rf "$GITHUB_WORKSPACE/out/entry-ui.xcresult"
+          # Run 41299528772 passed with failing tests; the log's own verdict decides.
+          grep -q '\*\* TEST SUCCEEDED \*\*' "$GITHUB_WORKSPACE/out/entry-test.log" || { echo "ENTRY UI TEST FAILED (xcodebuild $RC)"; exit 1; }
       - name: Contact sheet
         if: always()
         working-directory: app/native-tests/native-audit
