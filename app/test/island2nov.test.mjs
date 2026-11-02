@@ -52,13 +52,13 @@ test('B2 minimal Island: the line and the clock time ("T4 4:52"), never a bare D
 test('B2 minimal Island view: line and time side by side, then stacked, then the time alone; 36 pt; never the countdown word', () => {
   const w = read('targets/widget/LiveTripActivityWidget.swift');
   const min = between(w, 'struct LiveTripMinimal: View', 'struct IslandMinimalLine');
-  assert.match(min, /IslandMinimal\.words\(line: state\.line, target: target, word: state\.countdownWord\(stale: stale\), arrived: state\.arrived\(stale: stale\)\)/);
+  assert.match(min, /MinimalIsland\.words\(line: state\.line, target: target, word: state\.countdownWord\(stale: stale\), arrived: state\.arrived\(stale: stale\)\)/);
   const order = ['ViewThatFits(in: [.horizontal, .vertical])', 'HStack(spacing: 2)', 'IslandMinimalLine(line: l', 'Text(w.time)', 'VStack(spacing: 1)', 'IslandMinimalLine(line: l', 'Text(w.time)', 'Text(w.time)'];
   let at = -1;
   for (const o of order) { const i = min.indexOf(o, at + 1); assert.ok(i > at, 'order: ' + o); at = i; }
   assert.match(min, /\.frame\(maxWidth: 36, maxHeight: 36\)/);
   assert.match(min, /w\.getOff \? Color\.orange : Color\.white/);
-  assert.match(min, /accessibilityLabel\(IslandMinimal\.spoken\(/);
+  assert.match(min, /accessibilityLabel\(MinimalIsland\.spoken\(/);
   assert.doesNotMatch(min, /CompactCountdown\([^\n]*word: state\.countdownWord/, 'the minimal view never draws the bare word (Due, Now)');
   assert.match(min, /CompactCountdown\(date: target, arrived: true/, 'the countdown view only for the arrived tick');
   // compact and expanded are unchanged (build 213)

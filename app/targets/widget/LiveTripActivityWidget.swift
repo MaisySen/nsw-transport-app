@@ -437,13 +437,13 @@ struct LiveTripCompactTrailing: View {
 
 /// 2 Nov 2026 (the owner's first real trip on 214, yes at 9:19 AM): the minimal Island (when another app's Live Activity,
 /// such as music, shares the Island) is the line and the clock time, "T4 4:52", never a bare "Due" or "Now". Side by side
-/// when they fit, the line over the time when not, else the time alone (IslandMinimal.swift). Orange at Get off now.
+/// when they fit, the line over the time when not, else the time alone (IslandMinimal.swift, enum MinimalIsland). Orange at Get off now.
 struct LiveTripMinimal: View {
     var state: LiveTripAttributes.ContentState
     var stale = false
     var body: some View {
         let target = state.shownTarget(stale: stale)
-        if let w = IslandMinimal.words(line: state.line, target: target, word: state.countdownWord(stale: stale), arrived: state.arrived(stale: stale)) {
+        if let w = MinimalIsland.words(line: state.line, target: target, word: state.countdownWord(stale: stale), arrived: state.arrived(stale: stale)) {
             ViewThatFits(in: [.horizontal, .vertical]) {
                 if let l = w.line {
                     HStack(spacing: 2) {
@@ -468,7 +468,7 @@ struct LiveTripMinimal: View {
             .foregroundStyle(w.getOff ? Color.orange : Color.white)
             .frame(maxWidth: 36, maxHeight: 36)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(IslandMinimal.spoken(line: state.line, target: target, phase: state.phase))
+            .accessibilityLabel(MinimalIsland.spoken(line: state.line, target: target, phase: state.phase))
         } else {
             CompactCountdown(date: target, arrived: true, outdated: false, word: nil, spoken: state.spokenCountdown(stale: stale))
                 .frame(maxWidth: 36)
