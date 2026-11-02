@@ -23,7 +23,7 @@ export const MSG = {
 export function friendlyErr(e: any): string {
   const m = typeof e === 'string' ? e : typeof e?.message === 'string' ? e.message : '';
   const t = m.trim();
-  if (!t || t.length > 200 || /^[A-Z][A-Za-z]*Error\b|\bundefined\b|\bnull\b|[{}<>\[\]]|\bstatus\s*\d{3}\b|^\d{3}\b|is not a function|Cannot read prop/.test(t)) return MSG.failed;
+  if (!t || t.length > 200 || /^[A-Z][A-Za-z]*Error\b|\bundefined\b|\bnull\b|[{}<>\[\]]|\bstatus\s*\d{3}\b|^\d{3}\b|is not a function|Cannot read prop|\n|kCLErrorDomain|NSError|Domain=|function has failed|Caused by/.test(t)) return MSG.failed;
   return t;
 }
 

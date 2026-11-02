@@ -4,12 +4,14 @@ import * as Location from 'expo-location';
 export const FIX_TIMEOUT_MS = 12000;
 /**
  * A fresh position within FIX_TIMEOUT_MS, else an Error("nofix") that each screen's existing catch already handles
- * (1 Nov polish: "Finding where you are" could spin for ever when the system location never answered).
+ * (1 Nov polish: "Finding where you are" could spin for ever when the system location never answered). A system
+ * location that fails (iOS "location unknown", kCLErrorDomain 0, indoors or under ground) is nofix too, never its
+ * developer text (2 Nov, build 215 check: Home's Nearby showed "Calling the 'getCurrentPositionAsync' function has failed").
  */
 export function freshFix(accuracy: Location.Accuracy, ms = FIX_TIMEOUT_MS, L: any = Location): Promise<Location.LocationObject> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('nofix')), ms);
-    Promise.resolve().then(() => L.getCurrentPositionAsync({ accuracy })).then((v: Location.LocationObject) => { clearTimeout(t); resolve(v); }, (e: unknown) => { clearTimeout(t); reject(e); });
+    Promise.resolve().then(() => L.getCurrentPositionAsync({ accuracy })).then((v: Location.LocationObject) => { clearTimeout(t); resolve(v); }, () => { clearTimeout(t); reject(new Error('nofix')); });
   });
 }
 
