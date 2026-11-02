@@ -1,5 +1,6 @@
 import ExpoModulesCore
 import Foundation
+import UIKit
 import WidgetKit
 import CoreLocation
 import AVFoundation
@@ -39,6 +40,7 @@ public class TransportIOSModule: Module {
   /// Siri's "Start my commute" (in the app's own process) posts this after leaving a link in the app group.
   private var intentObserver: NSObjectProtocol?
   private var watchObserver: NSObjectProtocol?
+  private var backgroundObserver: NSObjectProtocol?
   private let followingLock = NSLock()
 
   private func claim(_ id: String) -> Bool {
@@ -60,7 +62,14 @@ public class TransportIOSModule: Module {
     let id = a.id
     Task { [weak self] in
       for await data in a.pushTokenUpdates {
-        self?.sendEvent("onActivityPushToken", ["id": id, "token": hex(data)])
+        let token = hex(data)
+        self?.sendEvent("onActivityPushToken", ["id": id, "token": token])
+        // 1 Nov (harness #2): queued natively too, so the server gets it even when JavaScript is already suspended
+        // (the phone locked before the token came). While the app is open its copy waits for JavaScript's own send.
+        let open = await MainActor.run { UIApplication.shared.applicationState == .active }
+        if TripOutbox.cardToken(token, activity: id, appOpen: open, now: Date(), sharedDefaults()) != nil {
+          TripOutboxUploader.shared.kick()
+        }
       }
       self?.release(id)
     }
@@ -77,6 +86,19 @@ public class TransportIOSModule: Module {
       QuietClips.apply(false)
       TripAwake.shared.onWake = { [weak self] at in self?.sendEvent("onTripWake", ["at": at]) }
       WatchLink.shared.start()
+      // The trip's registration queue (TripOutbox): anything left from before (the app was closed) goes out again.
+      TripOutboxUploader.shared.defaults = sharedDefaults()
+      TripOutboxUploader.shared.kick()
+      self.backgroundObserver = NotificationCenter.default.addObserver(
+        forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+      ) { _ in
+        // Leaving the screen with a registration still unanswered: a short hold (about 25 s) so a token or answer on
+        // its way still lands, and the queue's background tasks are in place.
+        if !TripOutbox.load(sharedDefaults()).isEmpty || UserDefaults.standard.bool(forKey: "tripOutboxHold") {
+          TripOutboxUploader.shared.holdBriefly()
+          TripOutboxUploader.shared.kick()
+        }
+      }
       self.intentObserver = NotificationCenter.default.addObserver(
         forName: Notification.Name("TransportIntentQueued"), object: nil, queue: .main
       ) { _ in
@@ -94,6 +116,26 @@ public class TransportIOSModule: Module {
         for a in Activity<LiveTripAttributes>.activities where a.activityState == .active { self.follow(a) }
       }
       #endif
+    }
+
+    /// After build 214 (1 Nov, real-time harness #2 to #4): the trip's registrations, queued natively and sent by a
+    /// background upload (TripOutboxUploader) and the widgets' timeline until the server answers. kind: watch, card or
+    /// stop; entryJSON: tripRegCore.ts OutboxEntry; base: the API server.
+    Function("outboxPut") { (kind: String, entryJSON: String, base: String) -> Bool in
+      let ok = TripOutbox.put(kind: kind, json: entryJSON, base: base, sharedDefaults())
+      if ok { TripOutboxUploader.shared.cancel(kind: kind); if kind == "stop" { TripOutboxUploader.shared.cancel(kind: "watch") }; TripOutboxUploader.shared.kick() }
+      return ok
+    }
+
+    Function("outboxTake") { (kind: String) in
+      TripOutbox.take(kind: kind, sharedDefaults())
+      TripOutboxUploader.shared.cancel(kind: kind)
+    }
+
+    /// The card registration's body without its token (null clears it and any queued card).
+    Function("setCardRegistration") { (json: String?, base: String) in
+      TripOutbox.setCard(json: json, base: base, sharedDefaults())
+      if json == nil { TripOutboxUploader.shared.cancel(kind: "card") }
     }
 
     /// From build 211 (31 Oct, Bidur: on Silent the banner came but the app's voice still played on open): the audio
@@ -250,6 +292,8 @@ public class TransportIOSModule: Module {
       self.intentObserver = nil
       if let o = self.watchObserver { NotificationCenter.default.removeObserver(o) }
       self.watchObserver = nil
+      if let o = self.backgroundObserver { NotificationCenter.default.removeObserver(o) }
+      self.backgroundObserver = nil
     }
 
     /// Reads a string from the app group and removes it, so it is handled once. From build 206.
@@ -328,6 +372,9 @@ public class TransportIOSModule: Module {
         // Push updates need the push entitlement; without it the card still starts and the app updates it.
         if let a = try? Activity<LiveTripAttributes>.request(attributes: attrs, content: content, pushType: .token) {
           self.follow(a)
+          // The token comes a moment later: if the phone locks first, the app keeps running long enough to queue it.
+          UserDefaults.standard.set(true, forKey: "tripOutboxHold")
+          DispatchQueue.main.asyncAfter(deadline: .now() + 60) { UserDefaults.standard.set(false, forKey: "tripOutboxHold") }
           return a.id
         }
         let a = try Activity<LiveTripAttributes>.request(attributes: attrs, content: content, pushType: nil)

@@ -282,11 +282,13 @@ export function NextOption({ g, st }: { g: LiveTrip; st: LiveState | null }) {
     for (const [k2, at] of Object.entries(cur.wakeSet || {})) if (Number(k2) > m.i && at > Date.now()) cancelWake(wakeId(cur.id, Number(k2))).catch(() => {});
     for (const [k2, at] of Object.entries(cur.offSet || {})) if (Number(/(\d+)$/.exec(k2)?.[1] ?? -1) > m.i && at > Date.now()) cancelGetOff(getOffId(cur.id, k2)).catch(() => {});
     for (const k2 of Object.keys(cur.offRegion || {})) if (Number(/(\d+)$/.exec(k2)?.[1] ?? -1) > m.i) cancelGetOff(getOffId(cur.id, k2)).catch(() => {});
-    const n = switchLegs(cur, m, next);
-    const oldWatch = n.watchId;
+    const n0 = switchLegs(cur, m, next);
+    const oldWatch = n0.watchId, oldKey = n0.regKey;
+    // The new legs are registered under a new key (the old key's watch is stopped).
+    const n = { ...n0, regKey: undefined };
     // A new watch for the new legs asks again whether the server sends Get off now; till then the phone sets its own.
     setLive({ ...n, watchId: null, offServer: false });
-    if (oldWatch) api.stopWatch(oldWatch).catch(() => {});
+    if (oldWatch || oldKey) api.stopWatch(oldWatch, oldKey).catch(() => {});
     resetLiveCache();
     haptic.success();
     await tickLive();

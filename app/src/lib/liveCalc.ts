@@ -205,17 +205,23 @@ export function computeLive(legs: WatchLeg[], svc: (ServiceResp | null | undefin
     }
     const past = !!e.passed;
     let done = false;
+    // 2 Nov (B1): the feed has dropped your stop off (Sydney Trains lists only the stops a train has still to reach)
+    // while a later stop of the same answer has its own live time: the train is past it. That is the feed's evidence,
+    // the same rule the server uses, never the clock. Before, the leg was held 30 s ahead of now for good and a phone
+    // that woke after the change thought you were still on the first train.
+    const dropped = !!(d && d.live && ai >= 0 && t - asOf < TRIP_RULES.LIVE_FRESH && arrLive && t - arr >= 30000 && offDropped(d, ai));
     // The live arrival has passed but nothing shows the train there yet (a vehicle still before the stop, a feed that
     // lags): held 30 s ahead once it is 30 s old, so nothing counts to a time behind you or says "Get off now" early.
-    if (!(e.passed || e.arrived) && gps !== 'at' && gps !== 'after' && arrLive && t - arr >= 30000) arr = t + 30000;
+    // For at most 10 min past the live arrival, as heldArrival.
+    if (!(e.passed || e.arrived || dropped) && gps !== 'at' && gps !== 'after' && arrLive && t - arr >= 30000 && t - arr <= 10 * 60000) arr = t + 30000;
     if (gps === 'at' || gps === 'after') done = true;
     else if (gps === 'before') done = false;
-    else if (e.passed || e.arrived) done = true;
+    else if (e.passed || e.arrived || dropped) done = true;
     fin[i] = done;
     rideEv[i] = done || !!e.leftBoard || rode[i] != null || gps === 'before' && !!e.leftBoard;
     if (gps === 'at' || gps === 'after') track = 'gps';
     if (!rideEv[i]) ni = mi;
-    return { dep, arr, delay, live: anyLive, d, gone: past, arrLive, arrDelay, track, ni, phaseEv: e.arrived ? 'at' : e.leftBoard || rode[i] != null ? 'left' : 'wait',
+    return { dep, arr, delay, live: anyLive, d, gone: past, arrLive, arrDelay, track, ni, phaseEv: e.arrived || dropped ? 'at' : e.leftBoard || rode[i] != null ? 'left' : 'wait',
       ...(gps === 'at' || gps === 'after' ? { gpsHere: true } : {}), ...(gps === 'before' ? { gpsBefore: true } : {}) };
   });
   // A change you missed: you got off the leg before (your tap or location), or rode it on live times, and the live
@@ -264,6 +270,20 @@ export function computeLive(legs: WatchLeg[], svc: (ServiceResp | null | undefin
   const tmc = tripLegTimes(plan, M, reading, cur, t);
   return { done: false, cur, phase, nextIdx, stopsLeft, L2, conns, eta: e.eta, live: x.live, track: how, delayMin, view, step: view.step || null,
     depSource: tmc.dep.source, arrSource: tmc.arr.source, ...(e.late ? { etaLate: true } : {}) };
+}
+
+/**
+ * True when a live answer no longer lists your stop off with a time of its own (the feed drops a stop once the train
+ * has passed it) while a later stop of the run has its own live time (2 Nov, B1). A stop that still has its own live
+ * time is never counted as passed here: a feed that lags the train keeps the hold.
+ */
+export function offDropped(d: ServiceResp, ai: number): boolean {
+  const st = d.stops || [];
+  const s = st[ai];
+  if (!s || s.skipped) return false;
+  if (s.estimated && !s.carried) return false;
+  for (let k = ai + 1; k < st.length; k++) if (st[k] && st[k].estimated && !st[k].carried && !st[k].skipped) return true;
+  return false;
 }
 
 /** A change with less than 2 minutes to spare is tight; a negative spare means the next leg leaves before you get there. */
@@ -491,10 +511,19 @@ export const CUE_LATE_MS = 45000;
 /**
  * Whether a trip alert or spoken cue (by key) is too late to give (31 Oct): "You've arrived" more than 45 s after the
  * arrival, and "Next stop" / "Your stop is next" (off<k>) once the arrival at that stop has passed by the phone's clock
- * (R3, the same rule as departed services). Every other cue is about the state right now, so it is never stale.
+ * (R3, the same rule as departed services), and a tight or missed change (conn<k>) once its departure has gone (2 Nov).
+ * Every other cue is about the state right now, so it is never stale.
  */
 export function cueStale(key: string, s: LiveState, now: number): boolean {
   if (key === 'arrived') return !(s.done && Number.isFinite(s.eta) && now - s.eta <= CUE_LATE_MS);
+  // 2 Nov (B1): a tight or missed change (conn<k>) is about a departure; once that departure has gone by the phone's
+  // clock, or the trip has ended, "Connection at risk" is not news any more (R3).
+  const c = /^conn(\d+)$/.exec(key);
+  if (c) {
+    if (s.done) return true;
+    const cn = (s.conns || []).find((x) => x.i === Number(c[1]));
+    return !!cn && typeof cn.nextDep === 'number' && Number.isFinite(cn.nextDep) && cn.nextDep <= now;
+  }
   const m = /^off(\d+)$/.exec(key);
   if (!m) return false;
   if (s.done) return true;
@@ -593,7 +622,7 @@ export function liveWords(legs: WatchLeg[], s: LiveState, now: number, f: Fmt) {
  */
 export function stepLive(g: LiveTripLike, svc: (ServiceResp | null | undefined)[], now: number, f: Fmt, pos?: Pos | null, shown?: Record<string, 1> | null, flow?: FlowCtx | null): { g: LiveTripLike; s: LiveState; actions: LiveAction[]; voiceUntil?: number } {
   const actions: LiveAction[] = [];
-  const memo: LiveMemo = { rode: g.rode, here: g.here, arrivedAt: g.arrivedAt };
+  const memo: LiveMemo = { rode: g.rode, here: flowHere(g, flow, now), arrivedAt: g.arrivedAt };
   const s = computeLive(g.legs, svc, now, memo, pos, flow ? { asOf: flow.asOf ?? now, plannerAt: g.started ?? null, c24: !!flow.c24 } : {});
   let n: LiveTripLike = g;
   const m = nextMemo(memo, s, now);
@@ -701,8 +730,15 @@ function stepFlow(g: LiveTripLike, n: LiveTripLike, s: LiveState, svc: (ServiceR
   }
   // Tight and missed changes from the live times stay as before (each once per trip); "Next stop" and "You've
   // arrived" now come from the calm sequence above.
-  const conn = tripAlerts(legs, s, alerted, false, f).filter((a) => a.key.startsWith('conn'));
-  for (const a of conn) { alerted = { ...alerted, [a.key]: 1 }; actions.push({ t: 'alert', id: `trip-${g.id}-${a.key}`, key: a.key, title: a.title, body: a.body }); }
+  // 2 Nov (B1, Bidur's first real trip on 214): never while the server watches the trip (it owns the change alerts
+  // under trip flow 2, spec 2.3 / 2.5), and never for a change the trip flow has already made or one whose departure
+  // has gone (cueStale): a phone that woke 3 min after the change said "Connection at risk" for the train he was on.
+  const conn = tripAlerts(legs, s, alerted, !!n.watchId, f).filter((a) => a.key.startsWith('conn'));
+  for (const a of conn) {
+    alerted = { ...alerted, [a.key]: 1 };
+    if (connMade(M, Number(a.key.slice(4))) || cueStale(a.key, s, now)) continue;
+    actions.push({ t: 'alert', id: `trip-${g.id}-${a.key}`, key: a.key, title: a.title, body: a.body });
+  }
   n = { ...n, alerted, spoken, flow: M };
   if (s.done) {
     if (!n.arrivedAt) {
@@ -717,6 +753,41 @@ function stepFlow(g: LiveTripLike, n: LiveTripLike, s: LiveState, svc: (ServiceR
   actions.push({ t: 'ongoing', title: w.title, body: w.body, leg: s.cur });
   if (n.share) actions.push({ t: 'share', prog: progOf(s, f) });
   return { g: n, s, actions, voiceUntil };
+}
+
+/**
+ * The change after leg k is already behind the trip by the trip flow's own memory (2 Nov, B1): leg k arrived, the next
+ * leg has left, or the trip has moved past leg k. A change alert is then never news.
+ */
+function connMade(M: TripMemory | null | undefined, k: number): boolean {
+  if (!M || !Number.isFinite(k) || !M.legs[k]) return false;
+  if (M.current > k) return true;
+  if (M.legs[k].phase >= PHASE_INDEX.arrived) return true;
+  const nx = M.legs[k + 1];
+  return !!nx && nx.phase >= PHASE_INDEX.left;
+}
+
+/**
+ * The legs the trip flow's own memory has finished (2 Nov, B1): on waking, the phone takes the arrivals it already
+ * knows (a leg arrived, or the next leg has left) instead of finding them again in a feed that has since dropped the
+ * stop. Kept at the time the trip flow had, never later than now. Without trip flow memory, the trip's own here.
+ */
+function flowHere(g: LiveTripLike, flow: FlowCtx | null | undefined, now: number): Record<number, number> | undefined {
+  const M = flow ? g.flow : null;
+  if (!M || !Array.isArray(M.legs) || M.legs.length !== g.legs.length) return g.here;
+  let out = g.here;
+  for (let i = 0; i < M.legs.length - 1; i++) {
+    if (out && out[i] != null) continue;
+    const m = M.legs[i], nx = M.legs[i + 1];
+    if (m.replaced != null || nx.replaced != null) continue;
+    const arrived = m.phase >= PHASE_INDEX.arrived;
+    const nextLeft = nx.phase >= PHASE_INDEX.left;
+    if (!arrived && !nextLeft) continue;
+    const t0 = arrived ? (m.arrivedTime ?? m.arrivedAt) : (nx.phaseAt?.left ?? nx.phaseAt?.onTheWay ?? null);
+    const at = typeof t0 === 'number' && Number.isFinite(t0) ? Math.min(t0, now) : now;
+    out = { ...(out || {}), [i]: at };
+  }
+  return out;
 }
 
 /**

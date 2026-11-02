@@ -38,6 +38,13 @@ type Native = {
   tripAwakeOn?: () => Promise<boolean>;
   setPushClipsQuiet?: (on: boolean, untilMs: number) => Promise<boolean>;
   startVoiceAudio?: () => boolean;
+  /** From the build after 214 (1 Nov, TripOutbox.swift): the trip's registrations queued natively, sent by a background
+   * upload while the phone is locked and by the widgets' timeline, until the server says yes. Absent before. */
+  outboxPut?: (kind: string, entryJSON: string, base: string) => boolean;
+  outboxTake?: (kind: string) => void;
+  /** The card registration's body without its token: the native side adds the token when iOS hands it over (even after
+   * the phone locked, inside the background time Start trip asks for) and queues it. Null clears it. */
+  setCardRegistration?: (json: string | null, base: string) => void;
 };
 
 const native: Native | null = Platform.OS === 'ios' ? requireOptionalNativeModule<Native>('TransportIOS') : null;
@@ -78,6 +85,17 @@ export const iosNative = {
       const sub = (native?.addListener as any)?.('onIntentQueued', () => cb());
       return () => { try { sub?.remove(); } catch {} };
     } catch { return () => {}; }
+  },
+  /** True on builds with the native registration queue (after 214). */
+  hasOutbox: (): boolean => typeof native?.outboxPut === 'function' && typeof native?.outboxTake === 'function',
+  /** Queues (or replaces) the trip's watch, card or stop registration natively. False on builds without the queue. */
+  outboxPut(kind: 'watch' | 'card' | 'stop', entry: unknown, base: string): boolean {
+    try { return typeof native?.outboxPut === 'function' ? !!native.outboxPut(kind, JSON.stringify(entry), base) : false; } catch { return false; }
+  },
+  /** Takes a registration back out of the native queue (JavaScript heard yes first, or the trip ended). */
+  outboxTake(kind: 'watch' | 'card' | 'stop') { try { native?.outboxTake?.(kind); } catch {} },
+  setCardRegistration(body: unknown | null, base: string) {
+    try { native?.setCardRegistration?.(body == null ? null : JSON.stringify(body), base); } catch {}
   },
   /** True on builds that can set get off alerts from the phone's position (211 and later). */
   hasRegionAlerts: (): boolean => typeof native?.scheduleRegionAlert === 'function' && typeof native?.regionAlertStatus === 'function',

@@ -7398,7 +7398,7 @@ const LIVECARD = (() => {
                     m.offArrAt = tm2.arr.at;
                     if (!rung('headsup'))
                         m.rung.headsup = 'skipped';
-                    deliver({ kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}, arriving ${C(tm2.arr.at)}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + R.GETOFF_EXPIRE, target: getOffDueAt(tm2.arr.at), arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - offLead > t - 1000 && tm2.arr.at < prevArr }, age2, false);
+                    deliver({ kind: 'getoff', title: 'Get off now', body: changeWords ? changeWords.off : `Get off now. ${offName}.`, level: 'time sensitive', clip: 'getoff', say: changeWords ? changeWords.off : `Get off now for ${offName}.`, moment: `getoff:${li}`, expires: tm2.arr.at + R.GETOFF_EXPIRE, target: getOffDueAt(tm2.arr.at), arrAt: tm2.arr.at, arrSource: tm2.arr.source, jumped: prevArr != null && prevArr - offLead > t - 1000 && tm2.arr.at < prevArr }, age2, false);
                     setPhase(M, li, 'getOff', t, `live arrival ${tripClockSec(tm2.arr.at)} minus ${Math.round(getOffLeadMs(0) / 1000)} s, reading ${Math.round(age2 / 1000)}s old`, res.log);
                 }
                 else if (age2 < R.LIVE_CAP) {
@@ -7661,13 +7661,14 @@ const LIVECARD = (() => {
             }
             const past = !!e.passed;
             let done = false;
-            if (!(e.passed || e.arrived) && gps !== 'at' && gps !== 'after' && arrLive && t - arr >= 30000)
+            const dropped = !!(d && d.live && ai >= 0 && t - asOf < TRIP_RULES.LIVE_FRESH && arrLive && t - arr >= 30000 && offDropped(d, ai));
+            if (!(e.passed || e.arrived || dropped) && gps !== 'at' && gps !== 'after' && arrLive && t - arr >= 30000 && t - arr <= 10 * 60000)
                 arr = t + 30000;
             if (gps === 'at' || gps === 'after')
                 done = true;
             else if (gps === 'before')
                 done = false;
-            else if (e.passed || e.arrived)
+            else if (e.passed || e.arrived || dropped)
                 done = true;
             fin[i] = done;
             rideEv[i] = done || !!e.leftBoard || rode[i] != null || gps === 'before' && !!e.leftBoard;
@@ -7675,7 +7676,7 @@ const LIVECARD = (() => {
                 track = 'gps';
             if (!rideEv[i])
                 ni = mi;
-            return { dep, arr, delay, live: anyLive, d, gone: past, arrLive, arrDelay, track, ni, phaseEv: e.arrived ? 'at' : e.leftBoard || rode[i] != null ? 'left' : 'wait',
+            return { dep, arr, delay, live: anyLive, d, gone: past, arrLive, arrDelay, track, ni, phaseEv: e.arrived || dropped ? 'at' : e.leftBoard || rode[i] != null ? 'left' : 'wait',
                 ...(gps === 'at' || gps === 'after' ? { gpsHere: true } : {}), ...(gps === 'before' ? { gpsBefore: true } : {}) };
         });
         for (let i = 1; i < L2.length; i++) {
@@ -7728,6 +7729,18 @@ const LIVECARD = (() => {
         const tmc = tripLegTimes(plan, M, reading, cur, t);
         return { done: false, cur, phase, nextIdx, stopsLeft, L2, conns, eta: e.eta, live: x.live, track: how, delayMin, view, step: view.step || null,
             depSource: tmc.dep.source, arrSource: tmc.arr.source, ...(e.late ? { etaLate: true } : {}) };
+    }
+    function offDropped(d, ai) {
+        const st = d.stops || [];
+        const s = st[ai];
+        if (!s || s.skipped)
+            return false;
+        if (s.estimated && !s.carried)
+            return false;
+        for (let k = ai + 1; k < st.length; k++)
+            if (st[k] && st[k].estimated && !st[k].carried && !st[k].skipped)
+                return true;
+        return false;
     }
     const connRisk = (spare) => (spare < 0 ? 'miss' : spare < 2 ? 'tight' : 'ok');
     function heldArrival(d, ai, arr, t, short = false, next) {
@@ -7925,6 +7938,13 @@ const LIVECARD = (() => {
     function cueStale(key, s, now) {
         if (key === 'arrived')
             return !(s.done && Number.isFinite(s.eta) && now - s.eta <= CUE_LATE_MS);
+        const c = /^conn(\d+)$/.exec(key);
+        if (c) {
+            if (s.done)
+                return true;
+            const cn = (s.conns || []).find((x) => x.i === Number(c[1]));
+            return !!cn && typeof cn.nextDep === 'number' && Number.isFinite(cn.nextDep) && cn.nextDep <= now;
+        }
         const m = /^off(\d+)$/.exec(key);
         if (!m)
             return false;
@@ -7984,7 +8004,7 @@ const LIVECARD = (() => {
     }
     function stepLive(g, svc, now, f, pos, shown, flow) {
         const actions = [];
-        const memo = { rode: g.rode, here: g.here, arrivedAt: g.arrivedAt };
+        const memo = { rode: g.rode, here: flowHere(g, flow, now), arrivedAt: g.arrivedAt };
         const s = computeLive(g.legs, svc, now, memo, pos, flow ? { asOf: flow.asOf ?? now, plannerAt: g.started ?? null, c24: !!flow.c24 } : {});
         let n = g;
         const m = nextMemo(memo, s, now);
@@ -8082,9 +8102,11 @@ const LIVECARD = (() => {
                 }
             }
         }
-        const conn = tripAlerts(legs, s, alerted, false, f).filter((a) => a.key.startsWith('conn'));
+        const conn = tripAlerts(legs, s, alerted, !!n.watchId, f).filter((a) => a.key.startsWith('conn'));
         for (const a of conn) {
             alerted = { ...alerted, [a.key]: 1 };
+            if (connMade(M, Number(a.key.slice(4))) || cueStale(a.key, s, now))
+                continue;
             actions.push({ t: 'alert', id: `trip-${g.id}-${a.key}`, key: a.key, title: a.title, body: a.body });
         }
         n = { ...n, alerted, spoken, flow: M };
@@ -8104,6 +8126,37 @@ const LIVECARD = (() => {
         if (n.share)
             actions.push({ t: 'share', prog: progOf(s, f) });
         return { g: n, s, actions, voiceUntil };
+    }
+    function connMade(M, k) {
+        if (!M || !Number.isFinite(k) || !M.legs[k])
+            return false;
+        if (M.current > k)
+            return true;
+        if (M.legs[k].phase >= PHASE_INDEX.arrived)
+            return true;
+        const nx = M.legs[k + 1];
+        return !!nx && nx.phase >= PHASE_INDEX.left;
+    }
+    function flowHere(g, flow, now) {
+        const M = flow ? g.flow : null;
+        if (!M || !Array.isArray(M.legs) || M.legs.length !== g.legs.length)
+            return g.here;
+        let out = g.here;
+        for (let i = 0; i < M.legs.length - 1; i++) {
+            if (out && out[i] != null)
+                continue;
+            const m = M.legs[i], nx = M.legs[i + 1];
+            if (m.replaced != null || nx.replaced != null)
+                continue;
+            const arrived = m.phase >= PHASE_INDEX.arrived;
+            const nextLeft = nx.phase >= PHASE_INDEX.left;
+            if (!arrived && !nextLeft)
+                continue;
+            const t0 = arrived ? (m.arrivedTime ?? m.arrivedAt) : (nx.phaseAt?.left ?? nx.phaseAt?.onTheWay ?? null);
+            const at = typeof t0 === 'number' && Number.isFinite(t0) ? Math.min(t0, now) : now;
+            out = { ...(out || {}), [i]: at };
+        }
+        return out;
     }
     function nextFlowMoment(g, s, now) {
         if (s.done)
@@ -8150,7 +8203,7 @@ const LIVECARD = (() => {
         const v = Math.max(0, Math.round(m));
         return v < 60 ? `${v} min` : `${Math.floor(v / 60)} h ${v % 60} min`;
     }
-    return { tOf, timed, distM, carriedDelay, liveAt, vehicleNext, trackOf, gpsOnRun, computeLive, connRisk, heldArrival, vehicleShort, etaFrom, sameRun, nextMemo, notLive, tripAlerts, sayName, sayLineName, speechCues, tapMoments, CUE_LATE_MS, cueStale, offShownFor, progOf, liveWords, stepLive, nextFlowMoment, noteKey, cutPath, minsWords };
+    return { tOf, timed, distM, carriedDelay, liveAt, vehicleNext, trackOf, gpsOnRun, computeLive, offDropped, connRisk, heldArrival, vehicleShort, etaFrom, sameRun, nextMemo, notLive, tripAlerts, sayName, sayLineName, speechCues, tapMoments, CUE_LATE_MS, cueStale, offShownFor, progOf, liveWords, stepLive, nextFlowMoment, noteKey, cutPath, minsWords };
   })();
   // platform/tripCard.ts
   const tripCard = (() => {

@@ -12,6 +12,12 @@ The iPhone and Android apps are one Expo app (`app/`). Anything below marked "ov
 * With music sharing the Dynamic Island, the trip shows the line and the time, "T4 4:52", not "Due".
 * The Your trip widget moves on to your next train after "Change here" by itself, and "Now" turns into an "about" time once the live times are old.
 
+## No false "Connection at risk" (2 Nov, branch `fix-connrisk-2nov`, OTA on 1.3.0)
+The phone never warns about a change while the server watches the trip, after the change was made, or once the change's train has left. A phone that wakes after the change takes the trip's own arrivals, not a feed that has dropped the stop. Get off now says the stop, not a clock time.
+
+## Get off now at its moment reads the newest live arrival (1 Nov, branch `fix-getoff-1nov`, OTA on 1.3.0 after the server)
+With the app open, Get off now at its exact moment is decided on a fresh read asked at that moment, never on the last 15 s refresh: a train whose arrival moves in that second gets Get off now for the new arrival (never 2 to 3 min early). One timer, re-armed in one go; a moment during a refresh is never dropped.
+
 ## Locked screens live (1 Nov, branch `fix-lockedlive-1nov`, next build; server `server-lockedlive`)
 * "Your trip" widget (home, Lock Screen, StandBy) and Apple Watch complications stay live with the iPhone locked: they load the trip's card from the server when the app's is over a minute old, every 3 minutes during a trip.
 * Server (no build): the Lock Screen card, the Island and the alerts follow a train that changes trip id mid-run (858N to 858P after Central); a card sent again at arrival is ended.
@@ -403,6 +409,7 @@ The server parts of speed pass part 2 steps C and D that a phone could meet (the
 Kept copies that cannot be read (28 Oct crash hunt, on main for tonight's update): a board copy kept on the phone with a broken row draws its good rows, and a kept copy that cannot be read at all counts as no copy, so the screen waits for the live answer as on a first open instead of stopping (`app/src/lib/offline.ts` peekOffline, `offlineCore.ts` pruneDepartures; test/crash28.test.mjs).
 
 Opal fare card on the trip screen (29 Oct, in the 12:29 AM update 281aa87b): a trip whose fare arrives on a later refresh no longer shows "Something went wrong" (crash reports from build 208 on 28 Oct).
+
 ## Less data on every refresh (27 Oct, 9 PM network pass; server transport-api, app in the 27 Oct 11:34 PM update)
 * Boards, services, trips, live trip legs, alerts, car parks, line status and trackwork: when nothing changed since the last refresh, the server answers with a short "not changed" (304) and the phone keeps what it shows, with the server's clock for its countdowns. Times, rows and how old the times are never change on a 304.
 * Board rows no longer carry two fields the app never reads (mode name, wheelchair flag).
@@ -419,6 +426,11 @@ Opal fare card on the trip screen (29 Oct, in the 12:29 AM update 281aa87b): a t
 * Get off now breaks through Focus as Time Sensitive (entitlement in this build; the app already asks for it over the air).
 * Build 210 has its own update line too: runtime 1.2.0 (30 Oct), because main's nightly update goes to 1.0.0 and 1.1.0 and build 210 carries JavaScript main does not have yet. Updates for 1.2.0 come from `build-209` (or main after the merge).
 * Own update line: runtime 1.1.0, App Store version still 1.0.0, build number 209. Builds 201 to 208 keep runtime 1.0.0 and get the same JavaScript published with `OTA_RUNTIME=1.0.0` once 209 is out. The only new JavaScript to native call is Sentry, which loads only after its native module is found, so builds 201 to 208 never call it.
+
+## Trip registrations that reach the server (1 Nov, fix-rt-1nov, not built)
+
+* Start trip's trip watch and the Lock Screen card's push token are sent until the server has them: again with backoff while the app is open, at once when it comes back, and on iPhone by a background upload iOS runs while the phone is locked (also the widget's reload during a trip). No signal or a server blip at Start trip no longer means a frozen Lock Screen card and no Get off now from the server.
+* End trip stops the server's alerts even when Start trip never heard back.
 
 ## Not in the app
 

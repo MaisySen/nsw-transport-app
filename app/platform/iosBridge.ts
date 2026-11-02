@@ -22,7 +22,7 @@ import { cardFor, shortName, staleAt, type CardAlt, type CardOpts } from './trip
 import { homeWorkFor, liveCardFor, nextLegFor, starredFor, type HomeWork, type LiveCardShare, type SharedNextLeg, type SharedStop } from './widgetShare';
 import { watchActionFor, watchContextFor, watchContextJSON } from './watchShare';
 import { apiBase } from '@/lib/server';
-import { endActivityToken, sendActivityToken, sendDeviceToken } from './livePush';
+import { endActivityToken, sendActivityToken, sendDeviceToken, shareCardRegistration } from './livePush';
 import { pendingOpenURL } from './intentInboxCore';
 import { openAppLink } from '@/lib/appLinkInbox';
 import { startAppPoll } from '@/lib/activity';
@@ -116,6 +116,8 @@ if (Platform.OS === 'ios' && iosNative.available()) {
     if (!activityId || activityTrip !== g.id) {
       if (starting || card.phase === 'arrived') return;
       starting = true;
+      // the card's registration waits natively for its token (sent even if the phone locks before it comes, harness #2)
+      shareCardRegistration(g).catch(() => {});
       try {
         activityId = await iosNative.startTrip(g.title || `${shortName(g.origin?.name)} to ${shortName(g.to?.name)}`, g.legs.length, card, stale);
         activityTrip = activityId ? g.id : null;

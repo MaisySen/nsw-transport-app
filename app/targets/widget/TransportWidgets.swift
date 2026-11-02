@@ -132,6 +132,9 @@ struct NextTripProvider: AppIntentTimelineProvider {
         let e = await Self.load(configuration)
         // Build 212: a started trip has its own timeline, one entry per moment to the end (TripMoments).
         if e.live, var card = SharedLiveCard.load() {
+            // After build 214 (1 Nov, harness #2 to #4): the trip's registrations still waiting for the server (the card's
+            // push token, the trip watch, End trip's stop) go out from here too, one quick try each (TripOutbox).
+            if !TripOutbox.load(AppIdentity.groupDefaults).isEmpty { _ = await TripOutbox.flush(AppIdentity.groupDefaults, timeout: 5) }
             // Build 215 (locked screens): the app's saved card stops changing while the phone is locked, so once its
             // live times are over a minute old the widget asks the server for the card its trip flow has (the same
             // reading the Lock Screen card is pushed from) and keeps it in the App Group for the other widgets.

@@ -57,7 +57,8 @@ test('trip card while the server pushes it: only times from the last 20 seconds 
 
 test('the engine and the iPhone bridge use these rules', () => {
   const eng = fs.readFileSync(path.join(here, '..', 'src/lib/liveEngine.ts'), 'utf8');
-  assert.match(eng, /api\.service\(liveServiceQuery\(\{[^]*?\}, !!svcCache\[i\](, \{ board: wantsBoard\([^]*?\) \})?\)\)/);
+  // 1 Nov (getoffrace1nov): the ask may carry the Get off now moment (momentQuery wraps the same refresh ask)
+  assert.match(eng, /api\.service\((?:momentQuery\()?liveServiceQuery\(\{[^]*?\}, !!svcCache\[i\](, \{ board: wantsBoard\([^]*?\) \})?\)(?:, moment\))?\)/);
   const br = fs.readFileSync(path.join(here, '..', 'platform/iosBridge.ts'), 'utf8');
   assert.match(br, /if \(!appMayWriteCard\(\{ background, pushing: !!activityToken, lastSvcAt, now: Date\.now\(\) \}\)\) return;/);
   // The guard comes after shareToken and before the card is compared and written.

@@ -295,7 +295,8 @@ export const api = {
     return r;
   },
   watchDetail: (id: string) => req<{ watch: Watch; notes: any[]; now: number }>(`/api/watch?${qs({ id })}`),
-  stopWatch: async (id: string) => req<{ ok: boolean }>(`/api/watch?${qs({ id, device: await getDevice() })}`, { method: 'DELETE' }),
+  // key (1 Nov): the trip's registration key, so End trip stops a watch whose id the phone never heard (server-rt-1nov).
+  stopWatch: async (id: string | null, key?: string) => req<{ ok: boolean }>(`/api/watch?${qs({ ...(id ? { id } : {}), device: await getDevice(), ...(key ? { key } : {}) })}`, { method: 'DELETE' }),
   registerExpo: async (token: string, platform: string, welcome = false) =>
     req<{ ok: boolean; test?: any }>(`/api/push/expo`, { method: 'POST', body: JSON.stringify({ device: await getDevice(), profile: PROFILE, token, platform, welcome }) }),
   unregisterExpo: async (token: string) => req<{ ok: boolean }>(`/api/push/expo/unregister`, { method: 'POST', body: JSON.stringify({ device: await getDevice(), token }) }),

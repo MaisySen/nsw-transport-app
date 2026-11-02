@@ -11,6 +11,14 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 * `app/test/island2nov.test.mjs`: 5 tests. Compiles `targets/widget/IslandMinimal.swift` with Format.swift and `test/swift/islandminimal/main.swift` (swiftc, skipped without it): "T4" and "4:52" while Due or counting, orange at Get off now, the tick once arrived, no line cut. The minimal view's order (side by side, stacked, time alone), 36 pt, never the bare word. Compiles TripMoments.swift with `test/swift/tripmoments2nov/main.swift`: the ladder at 2, 5 and 10 min, the next leg a minute after the change and never before now, its moments wait then Due, SharedNextLeg decodes. liveEntries and nextLegCard wiring. The app's nextLegFor from a real computeLive state, keys equal to the Swift struct's, the bridge passes it. 4 of 5 fail on 5f4fa2e; the fifth fails without the new Swift file.
 * The native audit (native-tests/native-audit) already renders LiveTripMinimal in every scenario and size; run it on the Mac before the build.
 
+## Connection at risk and Get off now words (2 Nov, branch fix-connrisk-2nov)
+* `app/test/connrisk2nov.test.mjs`: 8 tests from the 2 Nov trip (generic stops): server watch on, no change alerts; departure gone, none (trip flow and older path); trip flow memory on waking puts the trip on leg 2; a stop off dropped from a fresh live answer ends the leg; kept: no hold change without that evidence or with an old answer; the hold stops 10 min past the arrival; kept: a real missed change before it leaves still warns when no server watches. 7 of 8 fail on 30319ea (files/day-2nov/trip-fixes-2nov.md).
+* `app/test/getoffwords2nov.test.mjs`: 3 tests, Get off now body and words have no clock time (the server step, the phone's backup alert and the simulator), the heads-up keeps "Arriving about"; 2 fail on 30319ea.
+
+## Get off now timing race (1 Nov, branch fix-getoff-1nov; server branch server-getoff-1nov)
+* `app/test/getoffrace1nov.test.mjs`: 6 tests, 6 pass (all 6 fail on 88c5aae). liveMomentCore (moment read rule, the ask's at=, one timer re-armed in one go with a leaky platform timer, the moment queue), liveEngine wiring, and the open app's loop on an injected clock with the real tripState.ts and the case feeds: S17a and S17b on 15 refresh phases x 4 answer times; the old step on the cached answers rings at 7:58:22 for 7:59 in S17a.
+* Real-time harness S17a/S17b 20x at speed 30 and 20x under CPU load against server-getoff-1nov: 0 flakes.
+
 ## Locked screens live (1 Nov, branch fix-lockedlive-1nov; server branch server-lockedlive)
 * `app/test/lockedlive1nov.test.mjs`: compiles `targets/widget/LiveCardFetch.swift` with `app/test/swift/livecardfetch/main.swift` (swiftc, skipped without it): asks only when the kept card is over 60 s old, no ask for the "none" or a shared profile, takes only a newer card (or an ended trip), 180 s / 300 s reloads capped at the arrival; and checks the widget's trip timeline and the Watch complication use it, the two copies identical. Both fail on fix-backnav-1nov (files/day-1nov/failing-first-lockedlive-app.txt).
 * `backend/test/locked-live-1nov.test.mjs` (server branch): run split followed in the server simulation (S3 split at Auburn, by our timetable and by the feed's next run letter, Get off now from the live 8:01 arrival), no lookups without a split, `/api/live-card` shape and profile rules, a card with `arrivedAt` ends at its first push, a card alone with no live reading ends within 30 min of its planned arrival. 7 of 8 fail on server-214 (files/day-1nov/failing-first-lockedlive-server.txt).
@@ -148,6 +156,7 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 * `CI=1 IOS_APP_GROUP=1 npx expo prebuild --platform ios --no-install`: Expo.plist runtime 1.1.0, Info.plist 1.0.0 (209) (build 210: runtime 1.2.0, Info.plist 1.0.0 (210); `app/test/widgetfit210.test.mjs` checks app.json), entitlements carry time sensitive and the App Group, privacy manifest lists Crash Data (not linked), Sentry build phases present, widget target picks up every file in targets/widget (synchronized folder).
 * Swift: all 26 Swift files under app/ parse with `swiftc -parse` (Swift 6.4.1 on Linux). A full compile needs the iOS SDK (SwiftUI, WidgetKit, ActivityKit), so the first real compile is the EAS compile check on 1 Nov (checklist step 4).
 * On a device: the 209 checks in docs/BUILD_209_CHECKLIST.md step 6.
+
 ### `app/test/quietnote31.test.mjs`: 8 tests, 8 pass (31 Oct, quiet note never early, build 211)
 - Replays a trip on a phone in 15 s steps: open (reads live times) until a lock time, then only what is set on the phone rings.
 - Bidur's case: locked a minute in, the train 4 min late from 6 min: no note rings before the live arrival less 2 min (rang 4 min early before the fix).
@@ -208,11 +217,13 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 * `laPasses`: a second pass about 30 s after the cron's minute only while a card is active; none with `LA_HALF=off`.
 * Changed: "register, tick, skip within 25 s, end on arrival" (the unchanged push is priority 10 now); `hosts.test.mjs` "the Cron Trigger runs the minute tick" expects two scheduled jobs.
 * Results (30 Oct, 12:35 AM, on main c7a2a11 plus this change): backend 621 of 621 (`TZ=Australia/Sydney`). No app change. Device check after deploy: docs/LIVE_ACTIVITY_PUSH.md, "Deploy and check".
+
 ### `app/test/livefresh.test.mjs`: 5 tests, 5 pass (30 Oct, live trip freshness, app, branch liveact-ota)
 * First ask for a leg is a plain open, later asks carry `refresh=1` (and match the shared read cache's fresh rule); the ask passed in is not changed.
 * The trip card: going to the background or with no push the app always writes it; while the server pushes it, only live times from the last 20 s overwrite it (edge at 20 s, a clock that moved back is not fresh).
 * The engine and the iPhone bridge call these rules in the right place (source check).
 * Results (30 Oct, 12:30 AM, on main c7a2a11 plus this change): app 885 pass, 3 skipped offline, 0 fail (`OFFLINE=1 TZ=Australia/Sydney`, includes battery), `npx tsc --noEmit` clean. Device check after the update: start a trip on an iPhone (build 205 to 208), lock for 3 min, open the app: the card keeps its times and does not flash "Updated"; the trip screen's "Updated" age stays under about 20 s.
+
 ### `app/test/widgetlive.test.mjs`: 7 tests, 7 pass (29 Oct, build 209 widgets, branch `widget-209`)
 * The iPhone (`WidgetLive.swift`) and Android (`WidgetLive.kt`) widget rules use the app's numbers (`LIVE_MAX_MS`, `STALE_DATA_MS`, `STALE_NEAR_MS`).
 * With swiftc on the machine: `app/test/swift/widgetlive/main.swift` is compiled with `WidgetLive.swift` and its 77 grid cases (data age by time to the service) must equal `liveState`; data time on the phone's clock (server clock skew, a feed time in the future, an ancient one, none); "Updated N min ago"; a stale live row shows its timetable time. Skipped without swiftc (set `WIDGET_NATIVE_CHECK=0` to skip on purpose).
@@ -316,32 +327,44 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 No new tests. Run on main 75dc077 before publishing: backend 559 of 559 (`TZ=Australia/Sydney`, real clock at 11:20 PM, no fake clock needed), app 814 tests, 811 pass, 3 skipped offline, 0 fail (`OFFLINE=1 TZ=Australia/Sydney`), battery 17 of 17, `npx tsc --noEmit` clean. Preview and production manifests: runtime 1.0.0, launch asset hashes equal to the export. Device checks still to do: every device check listed for the 27 Oct sections above, on an iPhone (build 201 to 208) and an Android phone after closing and reopening twice.
 
 ## Network pass (27 Oct, 9 PM, poll tags)
+
 ### `backend/test/net-pass.test.mjs`: 8 tests, 8 pass
 Newer app board rows lose modeName and wheelchair and keep the rest (nulls too); an old app gets the same bytes, no tag and no-store (and a full answer to a tag it never got); the tag leaves out only "now" (a moved time and dataAt change it); a matching tag (weak or strong) is a 304 with no body, x-now, x-edge-cache and x-serves; every polled path is tagged and saved, watches, home and search are not, errors are not; POLL_TAGS=off and kill.pollTags turn tags off and keep the trim; search and places are public for an hour with x-public-ok or the ids, never for stand ins or errors; trimBoard leaves anything not a board as it was. `speed-part2.test.mjs` expects poll-tags in x-serves.
+
 ### `app/test/polltags.test.mjs`: 6 tests, 6 pass
 Which addresses are polled; tag header values; a kept answer comes back on a 304 with x-now (dataAt never moved, no now added); old, oversized and untagged answers are not kept; bounded by count and size, oldest out first; api.ts sends the tag only for polled GETs while the server says poll-tags, keeps the answer on a 304, search and places send x-public-ok, and Delete all my data clears it.
+
 ### On a device (not done)
 Open a board, wait for two refreshes with no change: the second should be a 304 (Workers Logs or a proxy), the countdowns keep moving, the Updated line stays honest. Type a stop name, clear it, type it again in a new session: answered with no request.
 
 ## Home in one request and recovery (27 Oct, home bundle)
+
 ### `backend/test/home-bundle.test.mjs`: 7 tests, 7 pass
 x-serves names home-bundle; parts come back in order and each equals the same read asked on its own; one Trip Planner call per board, and the same read twice runs once; only Home's reads (ask, budget, another host, format=text, trip/live are refused per part with no upstream call); no reads or more than 10 is 400; a part still waiting at 2.5 s is answered late and handed to waitUntil; HOME_BUNDLE=off is a 404 and the word leaves x-serves. `backend/test/speed-part2.test.mjs` expects the word too.
+
 ### `app/test/homebundle.test.mjs`: 10 tests, 10 pass
 Which reads may be bundled (no paging or refresh trips, no text answers); the bundle address; first start sends nothing and keeps the reads of the 6 s window; next start sends one bundle and each read takes its part once, waiting while it is out; a late part, a failed bundle or a wrong part count send the read on its own; another server never takes a part; parts expire after 10 s; one read is not a bundle; config only when due; a write empties bundle answers; an empty window keeps the old list; at most 10 reads; the recovery waits (any stand in, slow planner first as Getting live times, then 5, 10, 20, 40, 60 s; failures the same after the quick asks); wiring in api.ts, config.ts, boot.ts, _layout.tsx, Home and hooks.ts (foreground re-ask with a plain read, never later than the normal gap). `app/test/coldopen.test.mjs` now checks the general stand in ask.
+
 ### Results (27 Oct, about 2 PM): app 782 tests, 779 pass, 3 skipped offline, 0 fail (`TZ=Australia/Sydney OFFLINE=1`, includes battery 17 of 17), `npx tsc --noEmit` clean; backend 518 of 518 (`TZ=Australia/Sydney`).
+
 ### On a device (not done yet)
 After tonight's update: open the app twice (the first open notes Home's reads); on the second, Home should paint from the kept copy and its cards turn live together. Then put the phone in Airplane mode on Home for a minute and turn it off: the cards go live again within about 5 to 20 s without a pull. Leave the app on a timetable stand in and come back: it asks at once.
 
 ## Home cold open (27 Oct, after the 8:35 AM "No live times")
+
 ### `app/test/coldopen.test.mjs`: 12 tests, 12 pass
 Quick asks after a timeout, a 5xx or a slow answer (1.5 s, 4 s, then the failure shows on the third in a row; no connection: the second); a live answer over a minute old is not kept through one; the slow planner stand in asked again at 6 s and 10 s (an outage stand in is not); the header says Updating while any first request is out, never "No live times", and "No live times" once every card has had its answer or its failures; the 8:35 AM sequence replayed (timeout, quick ask, stand in, live) never shows unavailable; a real outage still says so; `TRIP_MS` at least 4 s over the server's `TRIP_QUICK_MS` plus `TRIP_STANDIN_MS` (read from backend/src/worker.js); one slow trip does not mark its pair long, the second does; the poller takes a run's own next wait once, does not count it towards the back off, and runs nothing while the app is away; the commute card's trip for now; source checks (the quick ask is decided before any error is set, the commute request goes out before Home draws and is the same request as the card's). `outage16.test.mjs` now expects `TRIP_MS` 13000.
+
 ### Results (27 Oct, about 9:10 AM): app 715 tests, 712 pass, 3 skipped offline, 0 fail (`TZ=Australia/Sydney OFFLINE=1`, includes battery 17 of 17), `npx tsc --noEmit` clean. No backend change.
+
 ### On a device (not done yet)
 Turn on Airplane mode for 20 s after opening Home with a kept copy: the card shows "Updating, times from ..." and the header "Updating", then "Offline" after the second failure. Open Home on a cold pair: "Updating" until the first answer, timetable trips with "Timetable times for now. Getting live times." if the planner is slow, live within about 10 s more.
 
 ## Get off alert and the delay once on Home (26 Oct, g32)
+
 ### `app/test/getoffvoice.test.mjs`: 12 tests, 12 pass (30 Oct, build-209)
 Spoken alert sounds for build 210, from the owner's locked phone trip (banner, no voice). Replays the express T9 every 15 s with the phone's set alerts ringing with the sound they were set with. Locked the whole ride: Get off now rings once, before arrival, with `getoff_now`. Builds without the sounds: no sound named, as before. Voice off: normal sound. Heads up voice only with Speak alerts. Rang with voice, opened before arrival: not said again. App open: heard once. Rung at once with the app open: read out by the app, no second voice; voice sound only when the app cannot speak. Voice flipped mid trip: set again. Build gates (iPhone 210, Android 6). The wav files (PCM, 1.5 to 10 s, names, plugin). Wiring, server off switch, no background audio.
+
 ### On a phone with build 210 (not done)
 Lock the phone on a live trip with Get off now on and the ring switch on: about 30 s before your stop the alert lights the screen and a soft Australian woman's voice (Kylie, Bidur's pick) says "Please get off at the next stop." once. With AirPods in: heard in the AirPods. Silent mode: banner and buzz only. Open the app right after: nothing said again. Turn off Speak Get off now: normal alert sound. Speak alerts on: the server's "Next stop" alert says "Your stop is coming up. Please get ready to get off at the next stop." (after the server branch is deployed). VoiceOver on: the sound plays, then VoiceOver reads the banner.
 
@@ -350,7 +373,9 @@ Bidur's chosen get off voice (round 3 voice 3, Kylie). Both bundled sounds are t
 
 ### `app/test/getoffspoken.test.mjs`: 16 tests, 16 pass (28 Oct)
 Get off alert you choose, spoken. Replays an express T9 that runs through two stops, every 15 s with the phone's scheduled alerts simulated. Stop counting: 1 early is the last stop it calls at, 2 early skips the stop it runs through, 3 early on a ride with only 2 calls gives no heads up (Get off now still once); an all stops run counts every stop. 2 stops early, on time and 3 min late: rings as it leaves the stop 2 calls before yours. Spoken Get off now with Speak alerts off, on time, 2 min late and 1 min early: said once as "Get off now at Rhodes.", marked quiet (follows Silent mode), in the 30 s before the live arrival; the heads up is not spoken. Speech off: nothing said, the alert still rings on time. Get off now off: nothing said. Speak alerts on: both said, not quiet. Never after arrival: opened after arrival, nothing rings or is said; rung by the phone with the app closed and opened after arrival, not said late; opened before arrival, said before arrival. No live times: said with the timetable alert, before arrival. Words, stored choice (on unless false), menu labels, change words. Source checks: speech feature detected, quiet skips the app session, menu item only where it can speak, no `setInterval`.
+
 ### Results (28 Oct, morning, on main 007b877 plus this change): app 857 pass, 3 skipped offline, 0 fail (`OFFLINE=1 TZ=Australia/Sydney`, includes battery), `npx tsc --noEmit` clean. getoff30 12 of 12 and getoff 20 of 20 still pass.
+
 ### On a phone after the update (not done)
 Ride with Speak alerts off and the ring switch on: hear "Get off now at <your stop>" about 30 s before arrival with the app open. Flip to Silent: the alert still shows, nothing is said. Turn off Speak Get off now in the menu: nothing said. Pick Alert 3 stops early on an express: the heads up comes 3 calling stops before yours.
 
@@ -359,9 +384,12 @@ Get off now 30 s before the realtime arrival, from a rider who got it after gett
 
 ### `app/test/getoff.test.mjs`: 20 tests, 20 pass (updated 28 Oct for Get off now on by default)
 Replays a Strathfield to Central T1 (5 stops ridden) every 15 s with the phone's own scheduled alerts simulated (they ring at their time, app open or closed). Default (1 stop, Get off now, 28 Oct): the Next stop alert, once, as the train leaves Redfern, and Get off now once. A choice saved before 28 Oct with Get off now off reads as on; one turned off from this version stays off. 2 and 3 stops before, on time and 4 min late: one heads up as the train leaves that stop (within one refresh), before Next stop, nothing left set. 2 stops with the app closed: the phone rings it at the live time. A delay that shows up mid ride moves both alerts. Get off now: once, after Next stop, in the minute before arrival, app open and closed; on a 1 minute last stretch it waits for the train to leave the stop before. A ride shorter than the choice: no heads up. No live times: nothing set. Back to 1 stop before it rings: both taken back, Next stop stays. Turned on past the moment: no late heads up, Get off now still comes. Speak alerts: each read out once, the existing "Your stop is next" line stays. Words at a change name the next line. Switch to this drops the replaced legs' alerts. Source checks: engine, row, End trip cancel, no `setInterval`, high accuracy, location watch or native module call, no dashes. Where the bus is beside a status that shows the delay: "3 stops away" only (a11y too), the delay still colours it; Home's two call sites pass it.
+
 ### Results (26 Oct, about 9:20 PM, on main 1dca4d5): app 688 pass, 3 skipped offline, 0 fail (`OFFLINE=1`, includes battery), `npx tsc --noEmit` clean. No backend change.
+
 ### Screens
 `app/test/e2e/getoff.mjs` on the web export against `test/e2e/mockapi.mjs` (no NSW call), with a seeded live trip Strathfield to Central and its run answered by the script. At 390 x 844 and 430 x 932, light and dark: the row reads "Get off alert, 1 stop before" with "As you leave the stop before Central"; the menu opens; 3 stops before and then Also Get off now are kept on the phone; the app set "3 stops to Central" for Croydon's live time and "Get off now: Central" for a minute before the live arrival; Home shows "4 min late" once and "3 stops away". All four passed with no page errors. `app/test/e2e/riderwins.mjs` now expects "3 stops away" alone.
+
 ### On a phone after the over the air update (not done)
 1. Start a trip of 4 or more stops with live times, choose 3 stops before and Get off now, lock the phone: "3 stops to ..." as the service leaves that stop, Next stop at the stop before, Get off now about 30 seconds before arriving, never after (a minute before the timetable arrival with no live times). Each once.
 2. With Speak alerts on and the app open (build 206 or later): "3 stops to ..." and "Get off now. ..." are heard once each. On a build without the speech module the row still works and nothing is said.
@@ -369,6 +397,7 @@ Replays a Strathfield to Central T1 (5 stops ridden) every 15 s with the phone's
 4. Home with a live bus trip: "N min late" in the status line, "N stops away" under it, the delay not repeated; VoiceOver reads it once.
 
 ## Four rider wins (26 Oct, g31)
+
 ### Max walk chips (28 Oct)
 * `cd app && TZ=Australia/Sydney OFFLINE=1 node --test test/getoffpush.test.mjs`: 9 tests (30 Oct, build-209). With the server sending Get off now no Get off now is set on the phone and one set before the yes is taken back; the same late bus with the app closed rings early without it and not at all on the phone with it; app open: rings and is read out once at its moment; a server alert already shown is not rung or read out on opening; the 2 stop heads up is the same with or without; a timetable only Get off now says so; build gates and reading the shown server alerts; source checks for the request, the take back, the quiet push in front and Switch to this.
 * `cd app && TZ=Australia/Sydney OFFLINE=1 node --test test/maxwalk.test.mjs`: 6 tests. Per trip choice first, else the older one for every trip, else Any; Any set on purpose for one trip stays; broken values read as Any; setting one trip leaves the others, newest kept, at most 100; chips 5, 10, 15 with a kept 20 shown while on; pressing the chip that is on goes back to Any; `walkKey` changes with either part; the server echo read (none from an older server); a 22 min walk left out with a 10 min cap, every trip over keeps them all and suggests Prefer bus; source checks that the trip screen reads `tripWalk` for its trip, asks again and drops old batches when the choice changes, the chips are buttons with a selected state and no timers or location, and Home's read ahead reads the same trip's choice.
@@ -378,33 +407,46 @@ Replays a Strathfield to Central T1 (5 stops ridden) every 15 s with the phone's
 
 ### `app/test/riderwins.test.mjs`: 13 tests, 13 pass
 Where the bus is: words for 0, 1 and several stops, late, early and on time, the delay at your stop from `ahead`, and nothing for a timetable row, no position, no stop count, more than 20 stops, a passed stop, a cancelled service, a position over 3 min old, a row that is Not tracking, or a walk. Walking: longest walk, the limit with the count left out, every trip over the limit (all stay), Prefer a bus moving a long walk below a shorter one arriving within 10 min and not otherwise, stored values read back safely, query words only when set. Get me home: no Home, no location, outside NSW, the point id in the server's own format (longitude first). Stand pin: the path's first point, stand, wharf and platform names, no pin without a path, across the road only from the right side of a bus's road within 12 to 300 m and never for trains, maps links per platform. Source checks: the three Home and trip row places, the Walking row and filter, stand pins, no recent trip or Save for a trip from your position, Get me home on Home with balanced accuracy, no `setInterval` or high accuracy. Cases from Parramatta, Newcastle, Wollongong, Manly and Penrith.
+
 ### `app/test/plan.test.mjs`
 The trip screen's request check now includes the Walking choice (`walk: wp`).
+
 ### Results (26 Oct, about 9:00 PM, rebased on main c57af63): app 668 pass, 3 skipped offline, 0 fail (`OFFLINE=1`, includes battery), `npx tsc --noEmit` clean. No backend change.
+
 ### Screens
 `app/test/e2e/riderwins.mjs` on the web export against `test/e2e/mockapi.mjs` (the real server code, fake Transport for NSW, no NSW call). The mock has no live vehicle feed, so the script gives the first ride of each trip answer a live position (3 stops away, 4 min late), a bus stand, a short northbound path and a walk from the far side of the road. At 390 x 844 and 430 x 932, light and dark, it checks: the Home card line, the Get me home row, its tap opening the trip from your position (no Save button), the Walking row, the row line, the stand pin row with the across the road hint, the map and Walk there in Maps, the Walking menu and Up to 5 min kept on the phone. All checks passed in all four, no page errors. Not tried on a real phone.
+
 ### On a phone after the over the air update (not done)
 1. A saved bus trip with a live bus: the Home card shows "N stops away" and it counts down as the bus moves; it goes when the row shows Not tracking.
 2. Trip screen: Walking, Up to 10 min; trips with a longer walk go with a note; close and reopen the app and it is still Up to 10 min.
 3. Get me home from away from your Home stop: the trip screen opens from Your location; with location off, the message and Open Settings.
 4. An open bus trip: Stand on the map opens a pin on the right kerb; Walk there in Maps opens Apple Maps walking (iPhone) or the maps app (Android).
+
 ## Button and screen check (26 Oct, g23 and g23b)
 Full results and how to run it: [BUTTON_CHECK.md](BUTTON_CHECK.md). `app/test/e2e/buttons.mjs` (54 main path buttons) with `app/test/e2e/mockapi.mjs` (this repo's server code, a fake Transport for NSW, a clock set with `AT`, services `HEADWAY` minutes apart, `LATENCY` ms on every answer): 54 of 54 at 1:00 AM, 8:10 AM and 5:30 PM busy (2 minutes apart, 0.8 s late), 12:48 PM, and with the iPhone look; 51 of 54 at 8:10 AM busy on the export before the leave line fix. `app/test/e2e/sweep.mjs`: 27 screens at 390 x 844 and 430 x 932, light and dark, both looks, no page errors or bad words; every control tapped once (each tap with no visible change explained in BUTTON_CHECK.md). `app/test/buttoncheck.test.mjs`: 2 tests, 2 pass (an ended watch, an empty car park list). On a phone (not done): open an old watch from a notification after it ended; More > Car parks with no signal.
 
 ## Limited stops and alerts for my trips (26 Oct, g22)
+
 ### `backend/test/limited-stops.test.mjs`: 4 tests, 4 pass
 Rail patterns that skip stations a third of the trips stop at are limited; all stops and short runs are not; buses need 4 skipped stops and a quarter of the stretch; route names with express or limited stops count. Generic made up networks.
+
 ### `backend/test/raptor.test.mjs`: 2 more tests (11 pass)
 `rpLegs` marks a limited trip's leg; `markLimited` marks departures and legs from the cached id list and from the description, never waits on the planner, and does nothing with `LIMITED_STOPS=off`.
+
 ### `backend/test/trip-alerts.test.mjs`: 6 tests, 6 pass
 Trips are cleaned; which alerts touch a trip (its line on its stretch, the whole line, its own stops, platform ids mapped to the station; not the same line past where it gets off, not another line); live problems only from an hour before to two hours after a travel time, once a day, none for a trip with no times; planned work once from 6 PM the evening before, nothing at night outside a travel time; one push for several; turn on, push when due, once, turn off (real SQL on node:sqlite).
+
 ### `backend/test/history.test.mjs`
 Delete all my data also deletes the device's `ta:` row.
+
 ### `app/test/limited.test.mjs`: 2 tests, 2 pass; `app/test/tripalerts.test.mjs`: 4 tests, 4 pass
 The tag shows from the server mark or "Limited stops" in the description only, sits on departure rows and trip legs, has a label and no tap target. Trip legs from the Home card, reminder and morning check days, at most 8 trips, the change key; no `setInterval` or polling in the sync, the switch asks for notifications and shows only with `flags.tripAlerts === true`.
+
 ### Results (26 Oct, about 6:10 PM): app 674 of 674 (`OFFLINE=1`, includes battery), `npx tsc --noEmit` clean, backend 396 of 396 (after rebasing on main 52b235c)
+
 ### Screens
 Web export against a local copy of the server with a fake Transport for NSW and a fake limited list: a station board, a trip and More, at 390 x 844 and 430 x 932, light and dark, iPhone and Android look (24 images, g22 task folder). Not yet seen on a real phone.
+
 ### On a phone after the server deploy (not done)
 1. More > Alerts for my trips: switch on, allow notifications; `GET /api/trip-alerts?device=` says `on: true` with the number of trips on Home.
 2. Add a reminder to a saved trip; the trips are sent again once (one POST) and not on the next app open.
@@ -948,6 +990,12 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 ## Owner stations in tests (30 Oct)
 
 At most 5% of tests may name the owner's own stations (Strathfield, Burwood, Kings Cross, Redfern, Town Hall, Flemington, Campsie, Five Dock, Chiswick; stop ids 213510, 213516, 201110, 214020, 219410), so the suites cover Sydney and NSW and not one commute. `backend/test/owner-stations.test.mjs` fails over the limit. It counts each `test(` in `app/test/*.test.mjs` and `backend/test/*.test.mjs` once; a test counts when its own code names a station (any case, spaced or joined) or one of the ids, or uses a top level constant, a top level set up or a fixture file of its test file that does. A test that lists the names to check they are absent carries the comment `owner-stations: guard` and is not counted (at most 5 may). New fixtures: use other real stations with their real ids from `backend/src/public/stations`. On 30 Oct: before 344 of 1510 (22.8%), after 27 of 1513 (1.8%); left are real station search and typo tests on the owner's names, `backend/test/ask.test.mjs`, the Ask corpus share test and fixtures captured from live answers. The browser scripts in `app/test/e2e/` are not counted.
+
+## Real-time harness fixes, app (1 Nov, fix-rt-1nov)
+
+* `cd app && OFFLINE=1 TZ=Australia/Sydney node --test test/rtfix1nov.test.mjs` (7, all fail on fix-lockedlive-1nov 5f4fa2e): tripRegCore outcomes, backoff, keys in the server's shape, the native queue entries; live.ts retries, AppState return, End trip by key; the card registration handed to the native queue before the card starts; TripOutbox.swift compiled on its own (queue, backoff, card token after lock, stop over watch, Get off now answer); native wiring (background session, app delegate subscriber, widget flush).
+* Real-time harness, all 48 scenarios: `node tools/rt-harness/run.mjs --server <server-rt-1nov checkout>`; before/after: `RT_APP_OLD=1` with server-lockedlive. F-TOKEN-LATE, F-OFFLINE-START, F-SERVER-START (card token, locked card, Get off now), F-NSW*-START/SLOW/TIMEOUT (registration), F-NSWDOWN12 (stale words), S5 (cadence).
+* On a device (build after 214): Start trip, lock within 2 s; Start trip in Airplane mode, lock, signal back after 2 min; the Lock Screen card must move within a minute of signal and Get off now must come from the server.
 
 ## Before a release
 

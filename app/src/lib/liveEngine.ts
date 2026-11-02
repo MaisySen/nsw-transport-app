@@ -29,6 +29,7 @@ import type { ServiceResp, WatchLeg } from './types';
 import { fillFeeds, needsFeed, stopsToLook } from './feedCore';
 import { apiBase, NEW_API_BASE } from './server';
 import { liveServiceQuery, wantsBoard } from './liveFreshCore';
+import { makeMomentQueue, makeMomentTimer, momentMayStep, momentNeedsRead, momentQuery } from './liveMomentCore';
 
 export const short = (n?: string | null) => shortName(n || '').replace(/ Station$/, '');
 export const plat = (p?: string | null) => (p ? p.replace(/^Platform\s*/i, 'Platform ').replace(/^Stand\s*/i, 'Stand ') : '');
@@ -103,21 +104,28 @@ let svcAt = 0;
 let openSince = Date.now();
 let refreshes = 0;
 let speakingUntil = 0;
-// The precise moment the open app steps the trip again (Get off now at the live arrival minus 38 s, build 214).
-let momentTimer: ReturnType<typeof setTimeout> | null = null;
+// The precise moment the open app steps the trip again (Get off now at the live arrival minus 38 s, build 214). One
+// timer, re-armed in one go (liveMomentCore.ts, 1 Nov): its step reads again first, so it rests on answers asked for at
+// or after the moment, never on the last 15 s refresh's (S17a/S17b: an arrival that moved in that second).
+const momentTimer = makeMomentTimer({ now: () => Date.now(), set: (fn, ms) => setTimeout(fn, ms), clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) },
+  (due) => { tickLive({ momentAt: due, noFetch: true }).catch(() => {}); });
+/** A moment that came while a refresh was running: run when it finishes (never dropped). */
+const momentQueue = makeMomentQueue();
+/** When the answers in svcCache were asked for (the start of the last refresh with no failure). */
+let svcAskedAt = 0;
 /** The phone's backup Get off now set when the app went to the background (only when the server has not taken it). */
 let backupId: string | null = null;
 /** The trip whose leftover location alerts from other trips were last swept (once per trip, and once with none). */
 let sweptFor: string | null | undefined;
 
-export async function tickLive(opts: { noFetch?: boolean } = {}) {
+export async function tickLive(opts: { noFetch?: boolean; momentAt?: number } = {}) {
   // The saved trip is read first (31 Oct): at launch the engine's first refresh ran before it was loaded, saw no trip
   // and swept the running trip's own location alerts as left over.
   const cur = await loadLive().catch(() => getLive());
   // Location alerts a given up trip left on the phone are taken back (31 Oct): at launch with no trip, and once per trip.
   if (sweptFor !== (cur?.id ?? null)) { sweptFor = cur?.id ?? null; sweepRegions(sweptFor).catch(() => {}); }
   if (!cur) { if (state.gid) put({ gid: null, svc: [], st: null, offline: null, updated: 0 }); await stopLockedVoice().catch(() => {}); return; }
-  if (busy) return;
+  if (busy) { if (opts.momentAt != null) momentQueue.hold(opts.momentAt); return; }
   busy = true;
   try {
     // Trip alerts in headphones with the phone locked (2 Nov, lockedVoice.ts): the background session follows the trip.
@@ -129,15 +137,19 @@ export async function tickLive(opts: { noFetch?: boolean } = {}) {
     const L = (getLive() || cur).legs;
     const gen = cacheGen;
     let failed = 0;
-    if (!cur.arrivedAt && !opts.noFetch) {
-      const full = Date.now() - lastFull > 60000;
+    // At a Get off now moment (noFetch: no plain refresh) the trip is read again first unless the answers in hand were
+    // asked for at or after it.
+    const moment = opts.momentAt != null && momentNeedsRead(opts.momentAt, svcAskedAt) ? opts.momentAt : null;
+    if (!cur.arrivedAt && (!opts.noFetch || moment != null)) {
+      const asked = Date.now();
+      const full = moment == null && Date.now() - lastFull > 60000;
       const prev = state.st && !state.st.done ? state.st.cur : 0;
       const next = svcCache.slice();
       await Promise.all(L.map(async (l, i) => {
         if (!(full || i === prev || i === prev + 1)) return;
         try {
           // A leg already answered asks as a refresh (liveFreshCore.ts): live feed times, not a copy up to a minute old.
-          next[i] = await api.service(liveServiceQuery({ trip: l.tripId || undefined, mode: l.mode, line: l.line, stop: l.stopId, destId: l.destId || undefined, planned: l.planned, to: l.toStopId || undefined, dest: l.towards || undefined, stopName: l.from || undefined, color: l.color || undefined, feed: l.feed || undefined }, !!svcCache[i], { board: wantsBoard(l.planned, (cur.rode || {})[i] != null, Date.now()) }));
+          next[i] = await api.service(momentQuery(liveServiceQuery({ trip: l.tripId || undefined, mode: l.mode, line: l.line, stop: l.stopId, destId: l.destId || undefined, planned: l.planned, to: l.toStopId || undefined, dest: l.towards || undefined, stopName: l.from || undefined, color: l.color || undefined, feed: l.feed || undefined }, !!svcCache[i], { board: wantsBoard(l.planned, (cur.rode || {})[i] != null, Date.now()) }), moment));
         } catch { failed++; }
       }));
       // The trip or its legs changed while these were on their way (Switch to this, a new trip): drop them; the next
@@ -148,8 +160,12 @@ export async function tickLive(opts: { noFetch?: boolean } = {}) {
       svcCache = next;
       if (!failed) liveOkAt = Date.now();
       if (!failed || !svcAt) svcAt = Date.now();
+      if (!failed) svcAskedAt = asked;
       refreshes++;
     }
+    // A moment whose read failed is not decided on older answers (Get off now never rests on a reading from before its
+    // moment): the next 15 s refresh steps the trip, as any refresh does.
+    if (opts.momentAt != null && !cur.arrivedAt && !momentMayStep(opts.momentAt, svcAskedAt)) return;
     const g = getLive();
     if (!g || g.id !== cur.id) return;
     const now = Date.now();
@@ -200,9 +216,7 @@ export async function tickLive(opts: { noFetch?: boolean } = {}) {
     }
     for (const a of w.actions) if (a.t === 'wakeCancel') await cancelWake(a.id);
     // The open app steps the trip again at the exact Get off now moment (live arrival minus 38 s), not up to 15 s late.
-    if (momentTimer) { clearTimeout(momentTimer); momentTimer = null; }
-    const due = nextFlowMoment(r.g, r.s, now);
-    if (due != null) momentTimer = setTimeout(() => { momentTimer = null; tickLive({ noFetch: true }).catch(() => {}); }, Math.max(0, due - Date.now()) + 50);
+    momentTimer.arm(nextFlowMoment(r.g, r.s, now));
     for (const a of acts) {
       // The web preview logs every action, so a browser replay can check each alert and the end of the trip.
       if (Platform.OS === 'web') (globalThis as any).__tripLog?.({ ...a, at: now });
@@ -227,7 +241,12 @@ export async function tickLive(opts: { noFetch?: boolean } = {}) {
       await lockedReadPushes(g.watchId, Date.now()).catch(() => {});
       await lockedQuiet(true, svcAt ? Date.now() - svcAt : null).catch(() => {});
     } else await lockedQuiet(false, null).catch(() => {});
-  } finally { busy = false; }
+  } finally {
+    busy = false;
+    // a moment that came while this refresh ran: its own step now (it reads again if these answers were asked before it)
+    const held = momentQueue.take();
+    if (held != null) tickLive({ momentAt: held, noFetch: true }).catch(() => {});
+  }
 }
 
 /**
@@ -251,7 +270,7 @@ export async function onAppState(next: string) {
   if (!b) return;
   const off = short(g.legs[b.li]?.to);
   backupId = `getoff-backup-${g.id}-${b.li}`;
-  await scheduleGetOff(backupId, b.at, 'Get off now', `Get off now. ${off}, arriving ${clock(b.arrAt)}.`, 'getoff_now').catch(() => {});
+  await scheduleGetOff(backupId, b.at, 'Get off now', `Get off now. ${off}.`, 'getoff_now').catch(() => {});
 }
 
 /** Mounted once at the root: runs the engine while a trip is in progress. */

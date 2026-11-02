@@ -25,6 +25,17 @@ async function post(path: string, body: unknown): Promise<boolean> {
 let sentKey = '';
 let sending = false;
 
+/**
+ * The card registration without its token, handed to the native queue at Start trip (1 Nov, harness #2): when iOS
+ * hands over the token after the phone locked (JavaScript suspended), the native side adds it and sends this itself.
+ */
+export async function shareCardRegistration(g: LiveTrip | null) {
+  if (Platform.OS !== 'ios' || !iosNative.hasOutbox()) return;
+  if (!g) { iosNative.setCardRegistration(null, PUSH_BASE); return; }
+  const c24 = phone24h();
+  iosNative.setCardRegistration({ device: await getDevice(), trip: pushTrip(g, c24), tripFlow: TRIP_FLOW, c24 }, PUSH_BASE);
+}
+
 /** Tells the server the card's token and trip. Repeats only when something it needs has changed. */
 export async function sendActivityToken(activityId: string, token: string | null, g: LiveTrip | null) {
   const tok = cleanToken(token);
@@ -34,8 +45,10 @@ export async function sendActivityToken(activityId: string, token: string | null
   if (key === sentKey) return;
   sending = true;
   try {
+    // the native queue's copy follows the trip as it changes (a leg ridden, a replan)
+    shareCardRegistration(g).catch(() => {});
     const ok = await post('/api/live-activity', { token: tok, activity: activityId, device: await getDevice(), trip: pushTrip(g, c24), tripFlow: TRIP_FLOW, c24 });
-    if (ok) sentKey = key;
+    if (ok) { sentKey = key; iosNative.outboxTake('card'); }
   } finally {
     sending = false;
   }
@@ -45,6 +58,7 @@ export async function sendActivityToken(activityId: string, token: string | null
 export async function endActivityToken(token: string | null) {
   const tok = cleanToken(token);
   sentKey = '';
+  if (Platform.OS === 'ios') shareCardRegistration(null).catch(() => {});
   if (Platform.OS !== 'ios' || !tok) return;
   await post('/api/live-activity/end', { token: tok });
 }

@@ -17,6 +17,10 @@ import { iosNative } from '../../modules/transport-ios';
 import { wantOngoing } from './leaveByCore';
 import { store } from './store';
 import { hasSpeech } from './nativeExtras';
+import { AppState } from 'react-native';
+import { getDevice, PROFILE } from './device';
+import { NEW_API_BASE } from './server';
+import { regKeyFor, regNextAt, regOutcome, serverKeepsKeys, stopEntry, watchEntry, type RegOutcome } from './tripRegCore';
 
 export type LiveShare = { id: string; key: string; url: string; pos: boolean };
 export type LiveTrip = {
@@ -40,6 +44,8 @@ export type LiveTrip = {
   speak?: boolean; spoken?: Record<string, 1>;
   /** The trip state's memory (tripState.TripMemory, phase 2): phases from the live train and the calm steps rung. */
   flow?: import('./tripState').TripMemory;
+  /** The key this trip's watch is registered under (tripRegCore.ts, 1 Nov): the same key on every try. */
+  regKey?: string;
 };
 
 const KEY = 'liveTrip';
@@ -108,12 +114,47 @@ async function takeBackLeave(g: LiveTrip) {
   }
 }
 
+/** What an api error means for a registration (tripRegCore.regOutcome): its status, a time out, or no connection. */
+function outcomeOf(e: any): RegOutcome {
+  if (e && typeof e.http === 'number') return regOutcome(e.http);
+  if (e && e.slow) return regOutcome('timeout');
+  return regOutcome('offline');
+}
+
+// The trip watch is asked again until the server has it (1 Nov, real-time harness #3): once at Start trip was all, so no
+// signal or a server blip at that moment meant no server alerts, Get off now among them, for the whole trip.
+const wreg = { trip: '', tries: 0, started: 0, timer: null as ReturnType<typeof setTimeout> | null, busy: false, keeps: false };
+function retryLater(at: number | null) {
+  if (wreg.timer) { clearTimeout(wreg.timer); wreg.timer = null; }
+  if (at == null) return;
+  wreg.timer = setTimeout(() => { wreg.timer = null; if (AppState.currentState === 'active') liveWatch().catch(() => {}); }, Math.max(1000, at - Date.now()));
+}
+let appStateHooked = false;
+function hookAppState() {
+  if (appStateHooked) return;
+  appStateHooked = true;
+  // Back in front: a registration still unanswered goes again at once (the phone may have been locked through the tries).
+  try { AppState.addEventListener('change', (st) => { if (st === 'active') { const g = cur; if (g && !g.watchId && !g.arrivedAt) liveWatch().catch(() => {}); } }); } catch {}
+}
+
+/** The phone's own Get off now alerts set for this trip (the ones that come off once the server sends it). */
+function phoneGetOffIds(g: LiveTrip): string[] {
+  return [...Object.keys(g.offSet || {}).filter((k) => /^(gnow|quiet)\d+$/.test(k)), ...Object.keys(g.offRegion || {}).filter((k) => /^rnow\d+$/.test(k))].map((k) => getOffId(g.id, k));
+}
+
 /** With notifications on, the server also sends next stop, change and connection alerts while the app is closed. */
 export async function liveWatch() {
-  const g = cur;
-  if (!g || g.watchId || g.arrivedAt) return;
+  const g0 = cur;
+  if (!g0 || g0.watchId || g0.arrivedAt || wreg.busy) return;
   const ps = await getPushState();
   if (ps.status !== 'on' && ps.status !== 'local') return;
+  hookAppState();
+  // The key: made once for this registration and kept on the live trip, so every try (here, the native queue, a
+  // retry after a time out) is the same watch on the server.
+  let g = g0;
+  if (!g.regKey) { g = { ...g, regKey: regKeyFor(g.id + Date.now().toString(36).slice(-4), await getDevice().catch(() => '')) }; if (cur && cur.id === g.id) setLive({ ...cur, regKey: g.regKey }); }
+  const key = g.regKey as string;
+  if (wreg.trip !== key) { wreg.trip = key; wreg.tries = 0; wreg.started = Date.now(); retryLater(null); }
   // voice: this build has the spoken alert sounds and Speak alerts is on, so the server's "Next stop" alert rings with
   // "Your stop is coming up" (heard with the phone locked). Older builds never send it and get the normal sound.
   // Android: the server's alert names the spoken sound's channel, so it is made first (made once).
@@ -130,11 +171,31 @@ export async function liveWatch() {
   } catch { off = {}; }
   // tripFlow 2 (phase 2): the server runs the new trip flow for this watch when its tripflow2 switch is on; c24: its
   // words follow the phone's 12 or 24 hour clock; started: when the planner estimate on the legs was read.
-  const r = await api.watch({ kind: 'trip', title: g.title, legs: g.legs, origin: g.origin, to: g.to, lead: 0, track: true, silentStart: true, ...voice, ...off,
-    tripFlow: 2, c24: phone24h(), ...(typeof g.started === 'number' ? { started: g.started } : {}) });
-  if (!r.watch?.id) return;
+  const body = { kind: 'trip', title: g.title, legs: g.legs, origin: g.origin, to: g.to, lead: 0, track: true, silentStart: true, ...voice, ...off,
+    tripFlow: 2, c24: phone24h(), ...(typeof g.started === 'number' ? { started: g.started } : {}), key };
+  // iPhone, builds with the native queue: a copy waits there (20 s) in case this app is suspended before it hears back;
+  // sent by a background upload while locked, with the phone's own Get off now to take off if the server says yes.
+  if (Platform.OS === 'ios') iosNative.outboxPut('watch', watchEntry({ ...body, device: await getDevice().catch(() => ''), profile: PROFILE || undefined }, Date.now(), phoneGetOffIds(g)), NEW_API_BASE);
+  wreg.busy = true;
+  wreg.tries++;
+  let r: any = null, out: RegOutcome = 'retry';
+  try { r = await api.watch(body); out = 'ok'; } catch (e) { out = outcomeOf(e); } finally { wreg.busy = false; }
+  if (out !== 'ok') {
+    // A time out may have reached the server: asked again with the same key only from a server that keeps one watch
+    // per key (an older one would make two). A 4xx is never asked again.
+    const next = out === 'unknown' && !wreg.keeps ? null : regNextAt(wreg.tries, out, Date.now(), wreg.started);
+    retryLater(next);
+    if (out === 'gone' && Platform.OS === 'ios') iosNative.outboxTake('watch');
+    return;
+  }
+  retryLater(null);
+  if (Platform.OS === 'ios') iosNative.outboxTake('watch');
+  if (serverKeepsKeys(r, key)) wreg.keeps = true;
+  if (r && r.watch === null && r.ended) return; // this trip already ended on the server
+  if (!r?.watch?.id) return;
   if (cur && cur.id === g.id && !cur.arrivedAt) {
     // The server said yes: the phone's own Get off now comes off now, before the phone is locked (getOffCore server).
+    // (tripRegCore.keepPhoneGetOff: the phone's own stay until the server said yes with getOff true)
     const server = (r.watch as any).getOff === true && 'getOff' in off;
     const offSet = { ...(cur.offSet || {}) };
     if (server) for (const k of Object.keys(offSet)) if (/^(gnow|quiet)\d+$/.test(k)) { cancelGetOff(getOffId(cur.id, k)).catch(() => {}); delete offSet[k]; }
@@ -142,8 +203,25 @@ export async function liveWatch() {
     const offRegion = { ...(cur.offRegion || {}) };
     if (server) for (const k of Object.keys(offRegion)) if (/^rnow\d+$/.test(k)) { cancelGetOff(getOffId(cur.id, k)).catch(() => {}); delete offRegion[k]; }
     if (server) setServerGetOffWatch(r.watch.id);
-    setLive({ ...cur, watchId: r.watch.id, ...(server ? { offServer: true, offSet, offRegion } : { offServer: false }) });
-  } else api.stopWatch(r.watch.id).catch(() => {});
+    setLive({ ...cur, regKey: key, watchId: r.watch.id, ...(server ? { offServer: true, offSet, offRegion } : { offServer: false }) });
+  } else api.stopWatch(r.watch.id, key).catch(() => {});
+}
+
+/**
+ * End trip stops the server's alerts even when Start trip never heard back (1 Nov, harness #4: a watch the app took as
+ * failed kept alerting after End trip): by the key, the id when known, asked again until the server answers.
+ */
+async function stopServerWatch(id: string | null, key: string | null) {
+  if (!id && !key) return;
+  if (Platform.OS === 'ios') {
+    iosNative.outboxTake('watch');
+    if (key) iosNative.outboxPut('stop', stopEntry(await getDevice().catch(() => ''), key, id, Date.now()), NEW_API_BASE);
+  }
+  for (let i = 1; i <= 4; i++) {
+    try { await api.stopWatch(id, key || undefined); if (Platform.OS === 'ios') iosNative.outboxTake('stop'); return; }
+    catch (e) { if (outcomeOf(e) === 'gone') { if (Platform.OS === 'ios') iosNative.outboxTake('stop'); return; } }
+    await new Promise((res) => setTimeout(res, regNextAt(i, 'retry', 0, 0)! ));
+  }
 }
 
 /** Ends the trip: stops the share link and the server alerts, removes the ongoing notification. */
@@ -151,7 +229,8 @@ export async function endLive() {
   const g = cur;
   if (!g) return null;
   if (g.share) api.shareEnd(g.share.id, g.share.key).catch(() => {});
-  if (g.watchId) api.stopWatch(g.watchId).catch(() => {});
+  retryLater(null); wreg.trip = '';
+  if (g.watchId || g.regKey) stopServerWatch(g.watchId, g.regKey || null).catch(() => {});
   // Wake alarms still set for this trip never ring after it ends.
   for (const k of Object.keys(g.wakeSet || {})) cancelWake(wakeId(g.id, Number(k))).catch(() => {});
   for (const k of Object.keys(g.offSet || {})) cancelGetOff(getOffId(g.id, k)).catch(() => {});
