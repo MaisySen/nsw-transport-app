@@ -4,7 +4,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 2 Nov 2026
 
-### No false "Connection at risk" after a change you made, and Get off now with no clock (2 Nov; branch `fix-connrisk-2nov` from fix-getoff-1nov 30319ea; NOT built, no OTA)
+### No false "Connection at risk" after a change you made, and Get off now with no clock (2 Nov; branch `fix-connrisk-2nov` from fix-getoff-1nov 30319ea; LIVE 2 Nov 3:01 PM as the runtime 1.3.0 production update b75a4e11, no build, see docs/RELEASES.md)
 Bidur's first real trip on build 214 (2 Nov, 4:26 to 4:55 AM): the phone woke 3 min after he had changed trains and posted "Connection at risk" for the 4:52 he was on. Diagnosis: files/day-2nov/trip-0452-diagnosis.md (B1).
 * With the server watching the trip (trip flow 2), the phone posts no change alert of its own: the server owns tight and missed changes (spec 2.3, 2.5). `stepFlow` passed "server watching" as false.
 * With no server watch, a change alert is never posted for a change the trip flow has already made (the leg arrived, the next leg left, or the trip moved on), nor once the change's departure has gone by the phone's clock (`cueStale` conn<k>, both trip paths).
