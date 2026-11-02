@@ -1,0 +1,4 @@
+route_id,service_id,trip_id,shape_id,trip_headsign,direction_id,block_id,wheelchair_accessible,route_direction,trip_note,bikes_allowed
+2-T1-N-sj2-1,TA+q0+7,120G.1419.157.8.A.8.92059146,2-T1-N-sj2-1.14.R,Penrith Via Gordon,1,7+4016,1,Berowra to City via Gordon,,
+2-T1-W-sj2-1,TA+q0+7,120H.1419.157.8.A.8.92059145,2-T1-W-sj2-1.240.H,Emu Plains Via Parramatta,0,7+4016,1,City to Emu Plains or Richmond,,
+2-T1-W-sj2-1,TA+q0+7,120J.1419.157.8.A.8.92061995,2-T1-W-sj2-1.29.R,Berowra Via Gordon,1,7+306,1,Emu Plains or Richmond to City,,

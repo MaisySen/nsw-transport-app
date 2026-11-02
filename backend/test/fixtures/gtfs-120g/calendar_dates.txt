@@ -1,0 +1,5 @@
+service_id,date,exception_type
+TA+q0+7,20261110,2
+TA+q0+7,20261117,2
+TA+q0+7,20261124,2
+TA+q0+7,20261201,2

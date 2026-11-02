@@ -1,0 +1,3 @@
+route_id,agency_id,route_short_name,route_long_name,route_desc,route_type,route_color,route_text_color,exact_times
+2-T1-N-sj2-1,x0001,T1,T1 North Shore and Western Line,Sydney Trains Network,2,F99D1C,FFFFFF,1
+2-T1-W-sj2-1,x0001,T1,T1 North Shore and Western Line,Sydney Trains Network,2,F99D1C,FFFFFF,1

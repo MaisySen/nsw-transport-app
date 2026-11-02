@@ -901,6 +901,16 @@ async function svcRunOn(run, idsLike, runOf) {
   const h2 = r2.stops[r2.mine];
   if (!Number.isFinite(h2.dep) || !Number.isFinite(hand.arr) || h2.dep < hand.arr - 60000 || h2.dep - hand.arr > SVC_RUN_ON_GAP_MS) return null;
   if (r2.stops.length <= r2.mine + 1) return null;
+  // 3 Nov 2026 (live check on the day's timetable): the next trip must start at the station the run hands over at, the
+  // train running on from there, not a trip of another train that passes that station later (120G "Penrith via Gordon"
+  // ends at Penrith and the feed's 120J is the Emu Plains to Berowra run back through Penrith 12 min later), and it must
+  // not run back over the stations already listed (a train that turns back).
+  const nextId = String(ids[1]);
+  if (h2.trip != null && String(h2.trip) !== nextId) return null;
+  if (r2.mine > 0 && r2.stops[r2.mine - 1] && String(r2.stops[r2.mine - 1].trip) === nextId) return null;
+  const stn = (s) => String(s && (s.parent != null ? s.parent : s.id));
+  const listed = new Set(run.stops.slice(0, -1).map(stn));
+  for (const s of r2.stops.slice(r2.mine + 1)) if (listed.has(stn(s))) return null;
   const k = r2.trips.indexOf(String(ids[1]));
   const stops = run.stops.slice(0, -1);
   stops.push({ ...hand, id: h2.id, parent: h2.parent != null ? h2.parent : hand.parent, plat: h2.plat || hand.plat, dep: h2.dep, board: h2.board, trip: h2.trip });
