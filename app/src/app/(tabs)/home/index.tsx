@@ -26,7 +26,7 @@ import { menuFrom, type MenuSpec } from '@/lib/menuCore';
 import { AnchoredMenu, type MenuItem, type Rect } from '@/components/AnchoredMenu';
 import { LineBadge } from '@/components/Transit';
 import { TabBarSafe } from '@/components/TabBarSafe';
-import { useLiveTrip } from '@/lib/live';
+import { getLive, useLiveTrip } from '@/lib/live';
 import { radius } from '@/lib/theme';
 import { Button, Empty, Section, Screen, T } from '@/components/ui';
 import { LeaveLine, MorningLink, useMyPos } from '@/components/Smart';
@@ -93,14 +93,17 @@ export default function Home() {
   }
   const me = useMyPos();
   // First launch: two questions, home and work. Skippable, and asked once.
+  // Never over a running trip (2 Nov, build 215 check): a trip started from a link before the questions were answered
+  // reopened under "Where's home?" after the app was closed. The saved trip can load after the store, so it is read
+  // again when the timer fires; the questions wait for a launch with no trip.
   const loaded = useLoaded();
   const asked = useRef(false);
+  const g = useLiveTrip();
   useEffect(() => {
-    if (!loaded || asked.current || st.onboarded || (places.home && places.work)) return;
-    asked.current = true;
-    const t = setTimeout(() => router.push('/welcome'), 300);
+    if (!loaded || asked.current || st.onboarded || (places.home && places.work) || g) return;
+    const t = setTimeout(() => { if (getLive()) return; asked.current = true; router.push('/welcome'); }, 300);
     return () => clearTimeout(t);
-  }, [loaded, st.onboarded, places.home, places.work]);
+  }, [loaded, st.onboarded, places.home, places.work, g]);
   (d?.commutes.items || []).filter((x) => x.active).forEach((cm) => add({ key: '', from: cm.from, to: cm.to, kind: 'commute', name: cm.name, id: cm.id }));
   (st.myTrips || []).forEach((m) => add({ key: '', from: m.from, to: m.to, via: m.via, conn: m.conn, legs: m.legs, modes: m.modes, kind: 'mine', name: m.name }));
   const savedItems = deletedSaved.filter(d?.saved.items || []);
@@ -116,7 +119,6 @@ export default function Home() {
   const starred = st.starred || [];
   // Nearby leaves out stops already on Home as starred, and shows at most 3.
   const nearStops = (near.stops || []).filter((p: Place) => !starred.some((s) => s.id === p.id)).slice(0, 3);
-  const g = useLiveTrip();
   // The Next trip card's look (plain today; three new looks switchable in development, lib/cardSkin.ts).
   const skin = useCardSkin();
   const solid = useSolidLook();
