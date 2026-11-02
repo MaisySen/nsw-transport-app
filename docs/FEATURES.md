@@ -4,6 +4,10 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Build 215 candidate, last additions (2 Nov evening, branch `build-215-rc`)
+* Plan: a mode chip with no trips says why ("Metro doesn't go to Liverpool") when the phone's stop lists show it, and shows the fastest trip of any mode, one tap to Any.
+* Expo SDK 58 patch versions (security advisories in the build tools cleared; no feature change).
+
 ## Build 215 candidate (2 Nov, branch `build-215-rc`, runtime 1.4.0, not built)
 * Everything waiting for a native build in one: spoken alerts in headphones with the phone locked, the minimal Island "T4 4:52", the Your trip widget moving on to the next leg, the locked screens' live card from the server, the native trip queue, Back from outside the app (native half), and the live updates' JavaScript. Readiness: files/day-2nov/build-215-readiness.md.
 * "Where's home?" never covers a running trip; the questions wait for a launch with no trip.

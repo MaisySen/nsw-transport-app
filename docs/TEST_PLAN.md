@@ -2,6 +2,12 @@
 
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
+## Build 215 last additions (2 Nov evening, branch build-215-rc)
+* app/test/modeempty2nov.test.mjs (10): the reason line from the stop lists (real lists: no metro at Liverpool, metro at Martin Place), nothing claimed for bus, unknown places or both ends served; the fastest trip (first to arrive, gone trips left out, arrive-by picks the last to leave); the card words and timetable marking; the trip screen asks without modes and swallows failures. All 10 failed on 79767f4.
+* app/test/expopatch215.test.mjs (5): SDK 58 patch versions, every SDK-pinned package on its listed version, no lock entry in a high advisory range, runtime 1.4.0, the expo-router anchor change guarded. The version and lock checks failed on 79767f4.
+* Prebuild compared before and after the SDK patches (IOS_APP_GROUP=1): every generated file the same, the project file the same apart from generated ids.
+* Mac: native audit (module compile, snapshots, Watch, entry UI test) on the new head.
+
 ## Build 215 readiness (2 Nov, branch build-215-rc)
 * `app/test/swiftnames215.test.mjs` (3): no top-level Swift type named twice in the widget, Watch or module target (the widget test failed on 83686dd: IslandMinimal twice).
 * `app/test/welcome215.test.mjs` (3): the first-open questions skip a running trip, also one that loads after the store; asked once only when shown (all 3 failed before).
