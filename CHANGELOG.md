@@ -2,6 +2,14 @@
 
 What changed in Transport, newest first. Times are Sydney time. Build numbers, update ids and links are in [docs/RELEASES.md](docs/RELEASES.md).
 
+## 3 Nov 2026
+
+### Server: 858N follow-on guard after a live check (3 Nov morning; branch `server-858n-guard-3nov` from server-858n-2nov 4f682ac; not deployed)
+* Live check of server-858n-2nov: the branch and the live code (server-trip-2nov 69a8328) run side by side locally on a pack built from the 3 Nov full timetable, with the same live feed for both (the pack's last stop agreed with production on 76 of 77 live trips). Live, production cut 136A (T1 to Schofields) at Central; the branch listed it on to Schofields, the same train (block 7+2616).
+* On the whole 3 Nov timetable 86 train runs stop short of their headsign's station in the pack; the branch followed 62, and 5 of those were wrong: 120G "Penrith via Gordon" runs on as 120H, whose run ends at Penrith, and the next trip by the feed's naming, 120J, is the Emu Plains to Berowra run back through Penrith 17 minutes later (another block). The list went Penrith, Kingswood, Werrington ... back to Central.
+* Fix: the next trip is followed only when it starts at the hand-over station and does not run back over stations already listed. Now 54 follows, 53 on the same block as the first trip and 1 with no block in the timetable, 0 wrong (backend/test/service-858n-guard.test.mjs, 3, 2 failed first; fixture backend/test/fixtures/gtfs-120g is the three trips as published 3 Nov).
+* Cost: a followed run adds at most one planner object call and two edge cache reads; nothing changes for a run that is not followed.
+
 ## 2 Nov 2026
 
 ### Server: 858N train details past Central, and the 3:15 PM "Held" question (2 Nov evening; branch `server-858n-2nov` from server-trip-2nov 69a8328; not deployed)

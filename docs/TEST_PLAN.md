@@ -3,6 +3,10 @@
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
 
+## 858N follow-on guard, server (3 Nov, branch server-858n-guard-3nov)
+* backend/test/service-858n-guard.test.mjs (3): on a cut of the 3 Nov GTFS (120G, 120H, 120J as published), 120G's run ends at Penrith short of Emu Plains; the feed's next trip 120J (from Emu Plains, through Penrith 17 min later, back to Central) is not followed; a trip that starts at the hand-over station but turns back over listed stations is not followed. 2 of 3 failed on 4f682ac (the list went back to Central). Backend 788/788.
+* Live check (not in CI): the branch, the guard and server-trip-2nov side by side in node on a pack built from the 3 Nov full timetable with the live feed (one fetch shared by all three), compared with production /api/service; and every train trip of 3 Nov through svcRunShort and svcRunOn with the feed naming all of that day's trip ids.
+
 ## 858N train details and the Held replay, server (2 Nov evening, branch server-858n-2nov)
 * backend/test/service-858n.test.mjs (4): on the fixture pack with the T9 206E to 206F link taken out (the 858N shape), the run ends at Central and is called whole; the service follows it on to Hornsby by the feed's naming with the pack's stops, Central once, the same list as the linked pack; never guessed (no next trip, two candidates, no pack answer, a far-off time, a run already reaching, another naming); service() follows it for trains on the full answer, before the vehicle and useRun. All 4 failed on 69a8328.
 * backend/test/held-2nov.test.mjs (2): replays S23c and S23j of the owner's 2 Nov 3:15 PM trip shape (88 s late after Get off now).
