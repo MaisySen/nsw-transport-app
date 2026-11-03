@@ -8023,6 +8023,16 @@ async function tickLease(env, now) {
   return (r.meta && r.meta.changes) > 0;
 }
 
+// The calls a tick adds to the usage table: only those not already flushed. Inside a tick, prewarm and warmBoards
+// answers go through afterAnswer, which flushes upstream.calls into the table itself (usage double count, 3 Nov:
+// the table read about 44 a tick against about 28 real, so the 40,000 pre-load cap stopped warming every afternoon).
+// Counting only; no upstream call changes.
+function tickCalls(c0) {
+  const f = upstream.flushed || 0;
+  const calls = upstream.calls - Math.max(c0, f);
+  upstream.flushed = Math.max(f, upstream.calls);
+  return calls;
+}
 async function runTick(env, opts = {}) {
   const t0 = Date.now();
   const c0 = upstream.calls;
@@ -8114,8 +8124,7 @@ async function runTick(env, opts = {}) {
   // Car park copies are kept 7 days (the list's stand in, parkStandIn); every other copy a day.
   if (!opts.device && sn.tod % 60 === 7) await db(env).prepare("DELETE FROM board_copies WHERE at < ?1 AND (k NOT LIKE 'park:%' OR at < ?2)").bind(now - 86400000, now - 7 * 86400000).run().catch(() => null);
   if (!opts.device) await db(env).prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('last_tick', ?1)").bind(String(now)).run().catch(() => null);
-  const calls = upstream.calls - c0;
-  upstream.flushed = Math.max(upstream.flushed || 0, upstream.calls);
+  const calls = tickCalls(c0);
   await bumpUsage(env, { calls, ticks: opts.device ? 0 : 1, rows: (out.sample && out.sample.rows) || 0, pushes: out.watches.reduce((n, w) => n + ((w.sent && w.sent.length) || 0), 0) });
   out.calls = calls;
   out.ms = Date.now() - t0;

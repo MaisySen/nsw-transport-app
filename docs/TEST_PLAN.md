@@ -3,6 +3,9 @@
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
 
+## Usage double count, server (4 Nov, branch server-4nov)
+* backend/test/usage-count-4nov.test.mjs (4): a tick whose prewarm answers flushed some calls through afterAnswer adds only the rest, and the usage table gains exactly the real number of calls (28, not 50); a tick with no answer inside counts its calls once; a request answered in the same isolate during a tick flushes its own and the tick's calls once; calls before the tick that were never flushed stay out of the tick's count, as before. 3 of 4 failed on the old line (`upstream.calls - c0`). Backend 792/792 (OFFLINE=1, TZ=Australia/Sydney).
+
 ## 858N follow-on guard, server (3 Nov, branch server-858n-guard-3nov)
 * backend/test/service-858n-guard.test.mjs (3): on a cut of the 3 Nov GTFS (120G, 120H, 120J as published), 120G's run ends at Penrith short of Emu Plains; the feed's next trip 120J (from Emu Plains, through Penrith 17 min later, back to Central) is not followed; a trip that starts at the hand-over station but turns back over listed stations is not followed. 2 of 3 failed on 4f682ac (the list went back to Central). Backend 788/788.
 * Live check (not in CI): the branch, the guard and server-trip-2nov side by side in node on a pack built from the 3 Nov full timetable with the live feed (one fetch shared by all three), compared with production /api/service; and every train trip of 3 Nov through svcRunShort and svcRunOn with the feed naming all of that day's trip ids.
