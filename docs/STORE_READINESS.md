@@ -20,7 +20,7 @@ Listing texts: store/apple/listing.md, store/google/listing.md. Privacy answers:
 | Price and availability | DONE | Free, Australia only |
 | Export compliance | DONE | usesNonExemptEncryption false in app.json; build 201 reports false, so nothing to answer |
 | App Review contact and notes | DONE | Bidur Khatri, contact@fintex.au, his mobile (on file in App Store Connect, App Review Information; not written here because the repo is public; change it there if another number should get Apple's calls). Notes rewritten for the Expo build |
-| Screenshots 6.9 inch and 6.5 inch | DONE | 5 each, uploaded |
+| Screenshots 6.9 inch and 6.5 inch | DONE | 5 each, from the iOS Simulator (build-215-rc), uploaded 3 Nov; store/apple/screenshots/ |
 | App Privacy | BIDUR | No API for it. 5 minutes of clicks, steps in docs/STORE_PRIVACY.md |
 | Test build 201 on a real iPhone | BIDUR | TestFlight: Home, Plan, Ask, Start trip (Live Activity), a widget, a watched service alert |
 | App Group group.com.maisysen.nswtransport | BUILD | Registered and ticked on both App IDs on 25 Oct (commit 9f739d0): eas.json production now builds with IOS_APP_GROUP=1 and buildNumber 202, so widgets see saved trips and starred stops from build 202 |

@@ -4,6 +4,12 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 3 Nov 2026
 
+### iPhone App Store screenshots from the iOS Simulator (3 Nov, 5:56 PM and 6:20 PM; App Store Connect only, no build)
+* Owner, 3:56 PM: "Reshoot from sim". The 6.9 inch (APP_IPHONE_67, 1320 x 2868) and 6.5 inch (APP_IPHONE_65, 1284 x 2778) sets of version 1.0.0 (en-AU) now hold 5 real simulator screenshots each instead of the 27 Oct web export: 01 Home (home Parramatta, work Wynyard, phone at Bondi Junction), 02 Town Hall departures (Trains), 03 Parramatta to Bondi Junction trip, 04 Ask "next train Parramatta to Central", 05 Check my trip before I go. Same screens and order as before. App Store Connect shows all 10 as Complete; the old 10 are deleted. Files in store/apple/screenshots/iphone-6.9 and iphone-6.5.
+* How: build-215-rc (0855b7f) compiled for the iOS Simulator only on a GitHub Mac (Release, unsigned, updates off; no archive, no upload, no version bump), run 41581636288; Maestro set up Home and Work and tapped the screens; live data from production; status bar 9:41, full signal and battery, light mode. 6.9 inch on an iPhone 17 Pro Max simulator (5:41 to 5:48 PM), 6.5 inch on an iPhone 14 Plus simulator (6:07 to 6:17 PM), both iOS 27.0. The throwaway branch iphone-shots-3nov is deleted; no GitHub secrets were added.
+* Not changed: the iPhone Duo set (web export of 27 Oct). The Duo simulator opens folded only, so its open screen cannot be shot there. Apple Watch set (3 Nov) unchanged.
+* Not submitted. The owner waits for the account migration to the organisation before submitting.
+
 ### Privacy policy: background location sentence for build 215 (3 Nov, 4:00 PM; LIVE on transportsydney.app, Pages deployment 9fbd78b4, roll back to 515eb805; owner approved 3:56 PM; no app or server change)
 * Owner's approval: Bidur, 3:56 PM, "Yes" to the App Store readiness list item 1.
 * `site/privacy/index.html` (Location) and its text copy `store/privacy-policy.md`: "The app never uses location in the background." became "The app uses location in the background only on a trip you started, for get off alerts and spoken alerts. That position stays on your phone, is not stored, and stops when the trip ends." Build 215 keeps location on in the background only for a trip the user started (spoken alerts in headphones with the phone locked, docs/VOICE_LOCKED.md), so the old sentence was untrue for it.

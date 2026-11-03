@@ -2,6 +2,9 @@
 
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
+## iPhone store screenshots from the iOS Simulator (3 Nov, App Store Connect only)
+* Every picture looked at before upload (live times loaded, no Not tracking rows, no owner stations, 9:41 status bar). After upload the API lists 5 per set at 1320 x 2868 and 1284 x 2778, all Complete, in the order 01 to 05; version 1.0.0 still Prepare for Submission. No app code changed, so no app test run.
+
 ## Privacy policy background location sentence (3 Nov, 4:00 PM, site only)
 * `backend/test/public-site.test.mjs` 8 of 8 pass. After the Pages deploy (9fbd78b4) https://transportsydney.app/privacy/ answered 200 with the new sentence and "Updated 3 November 2026", and without the old sentence; /sitemap.xml shows lastmod 2026-11-03.
 
