@@ -4,7 +4,7 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 4 Nov 2026
 
-### Server: 858N follow-on guard and the usage double count fix, one deploy (4 Nov, 1 AM; branch `server-4nov` from server-trip-2nov 69a8328; owner's go 3 Nov 7:33 PM and 4 Nov 1:10 AM)
+### Server: 858N follow-on guard and the usage double count fix, one deploy (4 Nov, 1 AM; branch `server-4nov` from server-trip-2nov 69a8328; owner's go 3 Nov 7:33 PM and 4 Nov 1:10 AM; DEPLOYED 4 Nov 1:18 AM as transport-api 3db6acd2, roll back to a949c196, see docs/RELEASES.md)
 * Carries server-858n-guard-3nov b87c252 unchanged (fast forward): train details follow a run past a split at Central only onto a trip that starts at the hand-over station and does not run back over listed stations. Checked live all day 3 Nov: 28 differences from production, 25 checkable on train positions, 0 wrong.
 * Usage double count: the minute tick added `upstream.calls - c0` to the usage table, but prewarm and warmBoards answers inside the tick (answerAndStore, handleRequest, afterAnswer) had already flushed part of those calls themselves, so they counted twice (about 44 a tick against about 28 real on 3 Nov). The 40,000 pre-load cap (WARM_DAY_CAP, SAMPLE_BUDGET) was reached every afternoon since at least 27 Oct and boards stopped being pre-loaded for the evening peak. Now `tickCalls(c0)` counts only what was not flushed: `upstream.calls - Math.max(c0, flushed)`. Counting only; no Transport for NSW call changes. backend/test/usage-count-4nov.test.mjs (4, 3 failed first on the old line).
 
