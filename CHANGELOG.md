@@ -4,6 +4,13 @@ What changed in Transport, newest first. Times are Sydney time. Build numbers, u
 
 ## 3 Nov 2026
 
+### Privacy policy: background location sentence for build 215 (3 Nov, 4:00 PM; LIVE on transportsydney.app, Pages deployment 9fbd78b4, roll back to 515eb805; owner approved 3:56 PM; no app or server change)
+* Owner's approval: Bidur, 3:56 PM, "Yes" to the App Store readiness list item 1.
+* `site/privacy/index.html` (Location) and its text copy `store/privacy-policy.md`: "The app never uses location in the background." became "The app uses location in the background only on a trip you started, for get off alerts and spoken alerts. That position stays on your phone, is not stored, and stops when the trip ends." Build 215 keeps location on in the background only for a trip the user started (spoken alerts in headphones with the phone locked, docs/VOICE_LOCKED.md), so the old sentence was untrue for it.
+* "Updated" date 3 November 2026 on both, sitemap lastmod 2026-11-03. Nothing else on the page changed.
+* Deployed from build-215-rc with `backend/tools/deploy-site.mjs` (site/ is the same on main and build-215-rc apart from this change). Live page fetched after deploy: new sentence present, old sentence gone. main still carries the old sentence: bring this commit to main before the next site deploy from main, or that deploy puts the old sentence back.
+* Other places that say there is no background location (not the policy, not changed here): store/AUDIT.md (Location line), docs/PERFORMANCE.md (5. Location), store/google/permissions.md (Android, foreground only, still true for Android). The app has no copy of the policy (More, Privacy policy opens the web page). `backend/test/public-site.test.mjs` 8 of 8 pass.
+
 ### App Store version 1.0.0 set up for build 215 (3 Nov, 3:24 PM; App Store Connect only, no build)
 * Build 215 attached to version 1.0.0 (was 208). Export compliance was already answered on the build (no non-exempt encryption).
 * Notes for App Review: the build 215 text from docs/APP_REVIEW_NOTES.md written and read back (3992 characters). It adds the BACKGROUND (2.5.4) paragraph for spoken alerts in headphones with the phone locked, and Location now reads "When In Use only"; the old text said foreground only.

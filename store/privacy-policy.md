@@ -2,7 +2,7 @@
 
 The text published at https://transportsydney.app/privacy/ (source: site/privacy/index.html). This copy is generated from that page; edit the page, then regenerate this file.
 
-Updated 30 October 2026
+Updated 3 November 2026
 
 This policy covers the Transport: Sydney Live app for iPhone and Android, this website and the server the apps use. The app and website are provided by Fintex Australia Pty Ltd (ABN 60 688 406 108), New South Wales, Australia ("we", "us"). Contact: privacy@transportsydney.app.
 
@@ -39,7 +39,7 @@ This website sets no cookies, stores nothing on your device and counts no visits
 
 ## Location
 
-The app asks for your location only when you use a feature that needs it, such as stops near you, planning a trip from where you are, showing where you are during a live trip, or working out when to leave. Your position is sent for that one request and is not stored. There are two exceptions, both your choice: a last way home reminder set from where you are keeps that starting point with the reminder (deleted 12 hours after that service), and a shared live trip can include your latest position (see Live trips and sharing). The app never uses location in the background.
+The app asks for your location only when you use a feature that needs it, such as stops near you, planning a trip from where you are, showing where you are during a live trip, or working out when to leave. Your position is sent for that one request and is not stored. There are two exceptions, both your choice: a last way home reminder set from where you are keeps that starting point with the reminder (deleted 12 hours after that service), and a shared live trip can include your latest position (see Live trips and sharing). The app uses location in the background only on a trip you started, for get off alerts and spoken alerts. That position stays on your phone, is not stored, and stops when the trip ends.
 
 ## Calendar
 

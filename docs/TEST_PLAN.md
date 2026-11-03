@@ -2,6 +2,9 @@
 
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
+## Privacy policy background location sentence (3 Nov, 4:00 PM, site only)
+* `backend/test/public-site.test.mjs` 8 of 8 pass. After the Pages deploy (9fbd78b4) https://transportsydney.app/privacy/ answered 200 with the new sentence and "Updated 3 November 2026", and without the old sentence; /sitemap.xml shows lastmod 2026-11-03.
+
 ## App Store readiness for build 215 (3 Nov, App Store Connect only)
 * Read back through the API after each write: version 1.0.0 lists build 215, the review notes equal docs/APP_REVIEW_NOTES.md (3992 characters). Support, marketing and privacy URLs answered 200. No app code changed, so no app test run was needed for this record.
 
