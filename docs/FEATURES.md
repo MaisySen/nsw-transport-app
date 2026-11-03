@@ -4,6 +4,9 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## App Store listing for build 215 (3 Nov)
+* Version 1.0.0 in App Store Connect now carries build 215 and its review notes (spoken alerts in headphones while locked explained for App Review). No feature change.
+
 ## Build 215 candidate, last additions (2 Nov evening, branch `build-215-rc`)
 * Plan: a mode chip with no trips says why ("Metro doesn't go to Liverpool") when the phone's stop lists show it, and shows the fastest trip of any mode, one tap to Any.
 * Expo SDK 58 patch versions (security advisories in the build tools cleared; no feature change).

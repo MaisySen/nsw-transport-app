@@ -4,6 +4,7 @@ The source for the Notes field. It lists every feature that appears, changes or 
 
 ## Status
 
+* **3 Nov 2026, 3:24 PM Sydney (build 215):** build 215 (1.0.0, ASC b44a470e) attached to version 1.0.0 in place of 208, and the Notes text below written to App Store Connect through the API and read back: 3992 characters, identical. It replaces the 30 Oct text, which still said location was foreground only. Contact fields unchanged. Nothing submitted; the version is still Prepare for Submission.
 * Written to App Store Connect through the API on Wed 28 Oct 2026, 3:53 PM Sydney, and read back: 3854 characters (limit 4000), identical to the text below.
 * Saved as a draft only. Nothing was submitted, no build was attached or changed (the version still has build 208), and the contact fields are unchanged (Bidur Khatri, contact@fintex.au, his mobile on file in App Store Connect, not written here because the repo is public). Sign in required: No. The version is still Prepare for Submission.
 * Replaces the 26 Oct text (3562 characters, kept in git history in store/apple/review-notes.md).

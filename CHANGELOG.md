@@ -2,6 +2,13 @@
 
 What changed in Transport, newest first. Times are Sydney time. Build numbers, update ids and links are in [docs/RELEASES.md](docs/RELEASES.md).
 
+## 3 Nov 2026
+
+### App Store version 1.0.0 set up for build 215 (3 Nov, 3:24 PM; App Store Connect only, no build)
+* Build 215 attached to version 1.0.0 (was 208). Export compliance was already answered on the build (no non-exempt encryption).
+* Notes for App Review: the build 215 text from docs/APP_REVIEW_NOTES.md written and read back (3992 characters). It adds the BACKGROUND (2.5.4) paragraph for spoken alerts in headphones with the phone locked, and Location now reads "When In Use only"; the old text said foreground only.
+* Not submitted. Open items for the owner (Apple Watch screenshots, the privacy policy's background location sentence, seller name during the account migration): files/day-3nov/appstore-ready-3nov.md.
+
 ## 2 Nov 2026
 
 ### Build 215 on TestFlight Internal (2 Nov, 10:53 PM)
