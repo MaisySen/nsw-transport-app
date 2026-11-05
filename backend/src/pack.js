@@ -122,6 +122,7 @@ async function packAnswer(env, ctx, url, headers) {
   const body = await r.text();
   // No timetable for this stop (a private ferry, some coaches): the phone keeps no pack and uses the live board. An
   // answer that is not a pack is never kept, so a stop that gains a timetable gets it on the next ask.
+  // A 404 stays uncached (27 Oct decision); the per address limits on /api/pack (5 Nov 2026) bound what made up ids cost.
   if (r.status === 404) return new Response(body, { status: 404, headers: { ...hdr, "cache-control": "no-store" } });
   if (r.status !== 200) return new Response('{"error":"No timetable right now."}', { status: 503, headers: { ...hdr, "cache-control": "no-store" } });
   // A strong ETag (a hash of the bytes): a phone that sends it back as If-None-Match gets a 304 (worker.js finishAnswer).

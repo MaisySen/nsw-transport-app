@@ -164,8 +164,10 @@ test("a slow Trip Planner, first page: labelled timetable trips with page cursor
   assert.notEqual(r2.body.source, "timetable");
   assert.equal(r2.body.page.dir, "first");
   assert.equal(nswCalls, calls, "served from the kept page, no second planner call");
-  const row = await D.prepare("SELECT k FROM board_copies WHERE k = ?1").bind("tripp:200030>206710").first();
+  // A child fare page has its own copy (5 Nov 2026): under the plain key its fares were served to the next adult.
+  const row = await D.prepare("SELECT k FROM board_copies WHERE k = ?1").bind("tripp:200030>206710$child").first();
   assert.ok(row, "the live first page is saved under its own key");
+  assert.equal(await D.prepare("SELECT k FROM board_copies WHERE k = ?1").bind("tripp:200030>206710").first(), null, "not under the adult key");
 });
 
 test("no page copy but a saved plain trip copy (Home's card, the pre-warm): the first page answers at once from it", { timeout: 30000 }, async () => {
