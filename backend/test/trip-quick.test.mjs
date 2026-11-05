@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { efaTrip } from "./helpers/efa.mjs";
+import { sydneyMidnightS } from "./helpers/sydney.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
 const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {") + "\n" +
@@ -32,7 +33,7 @@ globalThis.caches = { default: { match: async (req) => (edge.has(String(req.url 
 
 // ---- a small network around now ----
 const day = W.engDayKey(Date.now());
-const base = Math.floor(new Date(new Date().toLocaleString("en-US", { timeZone: "Australia/Sydney" }).replace(/,.*/, "") + " 00:00").getTime() / 1000);
+const base = sydneyMidnightS(); // Sydney midnight on any machine (helpers/sydney.mjs; was right only with TZ=Australia/Sydney)
 const nowS = Math.floor(Date.now() / 1000);
 const sec = (m) => nowS + m * 60 - base;
 const meta = {

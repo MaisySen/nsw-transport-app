@@ -3,7 +3,7 @@
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
 
-Security review 5 Nov 2026: `backend/test/audit-nov5.test.mjs` (12) and `app/test/audit1105.test.mjs` (11) cover trip card passes with made up tokens (no Trip Planner call, proven cards kept), IPv6 /64 limits, the push endpoint allow list, saved trip copies (no request names, one per fare), the kept observation count, tick and route limits, watch errors, the profile link (old id kept), ids in headers, `start=1` only for the phone's own trips, new ids after Delete all, the install ID in More and the widget and Watch clocks. The owner stations guard is skipped unless `OWNER_STATIONS` or `backend/tools/owner-stations.local.json` is present.
+Security review 5 Nov 2026: `backend/test/audit-nov5.test.mjs` (12) and `app/test/audit1105.test.mjs` (11) cover trip card passes with made up tokens (no Trip Planner call, proven cards kept), IPv6 /64 limits, the push endpoint allow list, saved trip copies (no request names, one per fare), the kept observation count, tick and route limits, watch errors, the profile link (old id kept), ids in headers, `start=1` only for the phone's own trips, new ids after Delete all, the install ID in More and the widget and Watch clocks. The owner stations guard is skipped unless `OWNER_STATIONS` or `backend/tools/owner-stations.local.json` is present. Backend timetable tests find Sydney midnight with `backend/test/helpers/sydney.mjs`, so they pass with any `TZ` at any hour (before 5 Nov, 45 failed in UTC between about 13:00 and 19:00 UTC); CI also sets `TZ: Australia/Sydney`.
 ## Levels
 
 | Level | Where | Runs |

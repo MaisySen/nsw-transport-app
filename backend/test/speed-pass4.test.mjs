@@ -8,6 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { makeD1 } from "./helpers/d1.mjs";
+import { sydneyMidnightS } from "./helpers/sydney.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
 const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {") + "\n" +
@@ -25,7 +26,7 @@ const sydStr = (ms) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Australia/S
 
 // ---- a small timetable around now (made up stops) ----
 const day = W.engDayKey(now);
-const base = Math.floor(new Date(new Date().toLocaleString("en-US", { timeZone: "Australia/Sydney" }).replace(/,.*/, "") + " 00:00").getTime() / 1000);
+const base = sydneyMidnightS(); // Sydney midnight on any machine (helpers/sydney.mjs; was right only with TZ=Australia/Sydney)
 const nowS = Math.floor(now / 1000);
 const sec = (m) => nowS + m * 60 - base;
 const meta = { ver: 1, days: { [day]: base }, routes: [["T1", 1, "#F99D1C", "train", "", "North Shore"], ["400", 5, "#00B5EF", "bus", "", "Bondi to Airport"]], heads: ["Hornsby", "Airport"], routeIds: {} };
