@@ -28,11 +28,15 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
       - name: Tests
+        env:
+          # The owner stations guard reads its list from this secret, not from the repository (5 Nov 2026). Without it
+          # (a fork's pull request, or before the secret is added) that guard is skipped and says so.
+          OWNER_STATIONS: ${{ secrets.OWNER_STATIONS }}
         run: node --test test/*.test.mjs
       - name: Build with placeholder keys
         env:

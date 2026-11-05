@@ -39,9 +39,9 @@ jobs:
       run:
         working-directory: app
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
 
@@ -68,10 +68,12 @@ jobs:
           rm -f /tmp/p.plist
 
       - name: EAS local build (production profile)
+        # eas-cli is pinned (security review, 5 Nov 2026): @latest ran whatever npm served that minute in a job that
+        # holds the Expo and Sentry tokens and the signing files. Move the pin on purpose, after reading the release notes.
         run: |
           set -o pipefail
-          npx -y eas-cli@latest whoami
-          npx -y eas-cli@latest build --platform ios --profile production --local --non-interactive \
+          npx -y eas-cli@25.3.0 whoami
+          npx -y eas-cli@25.3.0 build --platform ios --profile production --local --non-interactive \
             --output "$RUNNER_TEMP/Transport.ipa" 2>&1 | tee "$RUNNER_TEMP/build.log"
           ls -la "$RUNNER_TEMP/Transport.ipa"
 
@@ -130,7 +132,7 @@ jobs:
       run:
         working-directory: app/native-tests/widget-snapshots
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Xcode 27.1
         run: |
@@ -139,7 +141,8 @@ jobs:
 
       - name: Project
         run: |
-          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip
+          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  /tmp/xcodegen.zip" | shasum -a 256 -c -
           unzip -q /tmp/xcodegen.zip -d /tmp/xg
           XG=$(find /tmp/xg -type f -name xcodegen -perm -u+x | head -1)
           "$XG" generate
@@ -184,7 +187,7 @@ jobs:
           cat "$GITHUB_WORKSPACE/out/widgets/fit-report.txt" || true
           ls "$GITHUB_WORKSPACE/out/widgets" | wc -l
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: widget-snapshots

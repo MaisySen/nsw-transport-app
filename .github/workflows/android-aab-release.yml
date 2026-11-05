@@ -38,6 +38,11 @@ jobs:
           OUT: ${{ inputs.file_name }}
         run: |
           set -euo pipefail
+          # Inputs are checked before use (security review, 5 Nov 2026): N goes into shell arithmetic, which runs
+          # commands hidden in a value like a[$(...)], and the file name becomes a path.
+          case "$N" in ''|*[!0-9]*) echo "parts must be a number"; exit 1;; esac
+          case "$OUT" in ''|*/*|.*) echo "file name must be a plain name"; exit 1;; esac
+          case "$BASE" in https://*) ;; *) echo "base_url must be https"; exit 1;; esac
           : > "$OUT"
           for i in $(seq 0 $((N-1))); do
             p=$(printf "p%03d" "$i")
@@ -51,6 +56,8 @@ jobs:
           OUT: ${{ inputs.file_name }}
           WANT: ${{ inputs.sha256 }}
         run: |
+          case "$WANT" in *[!0-9a-f]*|'') echo "sha256 must be 64 hex characters"; exit 1;; esac
+          [ "${#WANT}" -eq 64 ] || { echo "sha256 must be 64 hex characters"; exit 1; }
           got=$(sha256sum "$OUT" | cut -d" " -f1)
           echo "got $got"
           test "$got" = "$WANT"
