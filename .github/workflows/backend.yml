@@ -37,6 +37,9 @@ jobs:
           # The owner stations guard reads its list from this secret, not from the repository (5 Nov 2026). Without it
           # (a fork's pull request, or before the secret is added) that guard is skipped and says so.
           OWNER_STATIONS: ${{ secrets.OWNER_STATIONS }}
+          # The suite is documented and run with Sydney time (5 Nov 2026: with the runner's UTC, 45 timetable tests failed
+          # between about 13:00 and 19:00 UTC, on main too). The tests now find Sydney midnight on any machine as well.
+          TZ: Australia/Sydney
         run: node --test test/*.test.mjs
       - name: Build with placeholder keys
         env:

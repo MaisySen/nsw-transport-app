@@ -32,6 +32,7 @@ How Transport is tested, what runs where, and the current results. Updated 25 Oc
 ## Locked screens live, server (1 Nov, branch server-lockedlive)
 * `backend/test/locked-live-1nov.test.mjs` (8): run split followed in the server simulation (tools/case-feed.mjs `handover`, simtrip opts `handover`/`tripId`/`cardOnly`/`get`), the next-run-letter rule, `/api/live-card`, cards ended after arrival. 7 of 8 fail on server-214 8fa2b4c; the 8th is the no-split check.
 
+Security review 5 Nov 2026: `backend/test/audit-nov5.test.mjs` (12) and `app/test/audit1105.test.mjs` (11) cover trip card passes with made up tokens (no Trip Planner call, proven cards kept), IPv6 /64 limits, the push endpoint allow list, saved trip copies (no request names, one per fare), the kept observation count, tick and route limits, watch errors, the profile link (old id kept), ids in headers, `start=1` only for the phone's own trips, new ids after Delete all, the install ID in More and the widget and Watch clocks. The owner stations guard is skipped unless `OWNER_STATIONS` or `backend/tools/owner-stations.local.json` is present. Backend timetable tests find Sydney midnight with `backend/test/helpers/sydney.mjs`, so they pass with any `TZ` at any hour (before 5 Nov, 45 failed in UTC between about 13:00 and 19:00 UTC); CI also sets `TZ: Australia/Sydney`.
 ## Levels
 
 | Level | Where | Runs |
