@@ -1,3 +1,13 @@
 # Python bytecode (build tools under backend/tools)
 __pycache__/
 *.pyc
+# Build output and exports that can hold secrets or user data (security review, 5 Nov 2026).
+# backend/build.mjs refuses to write its single folder build inside the repository; these are a second guard.
+.env
+!backend/.env.example
+worker.mjs
+*-site.json
+export.sql
+*.export.sql
+backend/site/
+backend/tools/owner-stations.local.json
