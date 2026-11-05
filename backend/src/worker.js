@@ -1059,6 +1059,10 @@ function boardAt(rawTime, rawDate, now = Date.now()) {
   else {
     t = sydneyMomentOf(startDay, time);
     if (t < floor) t = sydneyMomentOf(sydneyNow(new Date(floor + 24 * 3600000)).day, time);
+    // Before 4am the service day is yesterday's, so 5:00 asked at 3:30am was yesterday's 5:00, almost a day ago
+    // (found 5 Nov 2026 when a test ran at 3:30am). A moment more than 12 hours back means the next one: 11pm asked at
+    // 1:30am stays the evening before, 5:00 asked at 3:30am is in 90 minutes.
+    else if (t < now - 12 * 3600000) t = sydneyMomentOf(sydneyNow(new Date(t + 24 * 3600000)).day, time);
   }
   if (!Number.isFinite(t)) return null;
   const clamped = t < floor;

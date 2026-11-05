@@ -14,6 +14,8 @@ Findings and the full table: docs/SECURITY.md, "Security review, 5 Nov 2026". Se
 * Privacy text (owner to approve before publishing): reminders' times go to the server with Alerts for my trips on; a shared trip keeps the install ID; the station map page comes from the Transport for NSW website; the shared trip page's map tiles; Delete all my data makes a new install ID. App Privacy and Data safety: Crash Data added (owner to click it into App Store Connect).
 * Owner privacy: the owner's stations are no longer listed in the repository (the test guard reads `OWNER_STATIONS` or an ignored local file and is skipped without it); labelled lists taken out of the current docs. Older commits still have them.
 * Tests: backend `test/audit-nov5.test.mjs` (12) and app `test/audit1105.test.mjs` (11); two older tests changed because they asserted the old behaviour (`/api/obs` without a key, a child fare page under the adult copy key).
+* CI red on this PR and, as it turned out, on main at some hours: with the runner's UTC clock, 45 timetable tests failed between about 13:00 and 19:00 UTC, because 8 test files read the Sydney date as midnight in the machine's own time zone. They now use `test/helpers/sydney.mjs` (Sydney midnight on any machine, daylight saving days included), and the backend workflow sets `TZ: Australia/Sydney` as the suite is documented to run. Checked with the clock shifted to the failing times.
+* Departures at a time, found by the same check: between midnight and 4am a time after 4am (5:00 asked at 3:30am) gave yesterday's board, almost a day back. A moment with no date that falls more than 12 hours back now means the next one; 11pm asked at 1:30am stays the evening before (`boardAt`, `test/departures-at.test.mjs`).
 
 ## 31 Oct 2026
 
