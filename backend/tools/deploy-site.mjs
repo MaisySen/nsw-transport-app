@@ -23,6 +23,15 @@ async function cf(method, p, body) {
 }
 const step = (s) => console.log(s);
 
+// Nothing but the public site goes up (security review, 5 Nov 2026): the old single folder build once wrote worker.mjs
+// (with every secret in it) and tab-site.json to a folder named site, and Pages serves every file it is given.
+{
+  const fs = await import("node:fs");
+  const bad = fs.readdirSync(siteDir, { recursive: true }).map(String)
+    .filter((f) => /(^|\/)(worker\.m?js|_worker\.js|[^/]*-site\.json|\.env[^/]*|[^/]*\.sql|[^/]*\.(p8|p12|pem|jks|keystore))$/i.test(f) && !/\.env\.example$/.test(f));
+  if (bad.length) { console.error("Refusing to publish site/: it holds " + bad.join(", ") + ". Remove them first."); process.exit(1); }
+}
+
 step("1. Pages project " + PROJECT);
 const projects = (await cf("GET", `/accounts/${ACC}/pages/projects`)).result || [];
 if (!projects.some((p) => p.name === PROJECT)) await cf("POST", `/accounts/${ACC}/pages/projects`, { name: PROJECT, production_branch: "main" });
