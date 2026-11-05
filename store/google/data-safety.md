@@ -19,9 +19,10 @@ Checked against the code on 26 Oct 2026, 5:50 PM Sydney (g25), with the same che
 | App activity: In-app search history | Yes | No (90 days) | Required | App functionality |
 | App activity: Other user-generated content | Yes | No | Optional | App functionality |
 | App activity: Other actions | Yes (watched services, checks, chosen car parks and stations) | No | Optional | App functionality |
+| App info and performance: Crash logs | Yes (since 27 Oct 2026, with the random install ID; added here 5 Nov 2026) | No (until the fault is fixed, at most 12 months) | Required | App functionality |
 | Device or other IDs | Yes (random install and profile IDs; push token once Android push ships) | No | Required | App functionality |
 
-Not collected: personal info, financial info, health and fitness, messages, photos and videos, audio, files and docs, contacts, web browsing, app info and performance, advertising ID. Calendar: not collected while Android versionCode 5 (no calendar module) is the build in use. When an Android build with the calendar module ships, add the row "Calendar: Calendar events | Yes | Yes | Optional | App functionality": with Calendar leave by on, an event's place leaves the phone as a search (no ID, not kept), which Play counts as collected and processed ephemerally. That build also lists READ_CALENDAR and WRITE_CALENDAR.
+Not collected: personal info, financial info, health and fitness, messages, photos and videos, audio, files and docs, contacts, web browsing, app info and performance other than crash logs, advertising ID. Calendar: not collected while Android versionCode 5 (no calendar module) is the build in use. When an Android build with the calendar module ships, add the row "Calendar: Calendar events | Yes | Yes | Optional | App functionality": with Calendar leave by on, an event's place leaves the phone as a search (no ID, not kept), which Play counts as collected and processed ephemerally. That build also lists READ_CALENDAR and WRITE_CALENDAR.
 
 Security: encrypted in transit Yes; deletion request Yes; Families policy No; independent security review No.
 

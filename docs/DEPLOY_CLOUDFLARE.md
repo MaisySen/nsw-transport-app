@@ -157,7 +157,7 @@ curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://www.transportsy
 
 The new D1 database starts empty: saved trips, commutes, morning checks, watches and notification sign ups live in the first deploy's database. Reading them needs the admin export endpoint (`GET /api/admin/export`, read only, admin key) on the first address for a few minutes. Deploy it there without changing anything else:
 
-1. Copy the folder the first address was last deployed from (`node build.mjs site` output) and add only the export route to its `worker.mjs`, as the first check in `fetch` (the code is `exportRoute` in `src/worker.js`).
+1. Copy the folder the first address was last deployed from (`node build.mjs <folder outside the repository>` output; the build refuses a folder inside the repository since 5 Nov 2026) and add only the export route to its `worker.mjs`, as the first check in `fetch` (the code is `exportRoute` in `src/worker.js`).
 2. Deploy that copy, check `/api/status`, `/api/stations?mode=train`, `/api/departures?stop=200060` and `/api/app/config` still answer 200, then run the export below.
 3. Deploy the untouched folder again (the same files give the same deploy manifest), check that `/api/admin/export` answers 404 and run the same checks.
 

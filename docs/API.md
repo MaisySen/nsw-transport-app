@@ -73,16 +73,19 @@ Example (Central to Chatswood by metro): `/api/plan?legs=[{"f":"200060","fn":"Ce
 
 `tod` is minutes after midnight (0 to 1439). `days` is a string of weekday numbers, 1 is Monday (default `12345`).
 
+
+Limits (security review, 5 Nov 2026): at most 10 commutes per profile (an 11th is `409`, "You can keep up to 10 usual trips."). The minute tick works on a commute only while its profile has read `GET /api/commutes` in the last 30 days (Home reads it on every start; the read writes `cseen:<profile>` in `meta` at most once a day; commutes made before 5 Nov count from that day). After a planner answer with no usable journey a commute waits 5 minutes before asking again.
+
 ## Watches and notifications
 
 | Endpoint | Method | Body or parameters | Returns |
 | --- | --- | --- | --- |
-| `/api/watch` | POST | `{device, profile, legs, lead, getOff}` | `watch` |
+| `/api/watch` | POST | `{device, profile, legs, lead, getOff}` | `watch`. At most 8 active watches per device: the oldest beyond that ends as `replaced` (5 Nov 2026). A bad body gets `{"error": "device needed" | "nothing to watch" | "This trip could not be watched."}`, never exception text |
 | `/api/watch` | GET | `id` | `watch` with recent `notes` |
 | `/api/watch` | DELETE | `id`, `device` | `ok` |
 | `/api/watches` | GET | `device`, `since` | Active watches with live snapshots, recent alerts, push counts. Runs a tick for the device if the scheduler is quiet |
 | `/api/push/key` | GET | none | `publicKey` (VAPID public key) |
-| `/api/push/subscribe` | POST | `{device, profile, subscription, welcome}` | `ok`, optional test result |
+| `/api/push/subscribe` | POST | `{device, profile, subscription, welcome}` | `ok`, optional test result. The endpoint must be a browser push service on port 443 (fcm.googleapis.com, android.googleapis.com, updates.push.services.mozilla.com, push.services.mozilla.com, web.push.apple.com, *.notify.windows.com); anything else is 400, and a stored one is answered as gone (5 Nov 2026) |
 | `/api/push/unsubscribe` | POST | `{device, endpoint}` | `ok` |
 | `/api/push/expo` | POST | `{device, profile, token, platform, welcome}` | `ok` |
 | `/api/push/expo/unregister` | POST | `{device, token}` | `ok` |
@@ -113,7 +116,7 @@ A shared live trip is a link someone else can open to follow a trip. No account.
 | `POST /api/share` | Body `{device, title, from:{id,name}, to:{id,name}, legs:[watch legs], pos?:{lat,lon,acc}, prog?}`. Returns `{id, key, url, expires}`. `key` is the owner's secret; keep it on the device. Rate limit 20 per 10 min per address. |
 | `POST /api/share/update` | Body `{id, key, pos?: {lat,lon,acc} or null, prog?: {leg, phase, next, stopsLeft, eta}, legs?, end?}`. `pos: null` removes the position. `end: true` deletes the share. Rate limit 240 per 10 min. |
 | `GET /api/share?id=` | For viewers: `{title, from, to, legs, pos (only if under 5 min old), prog, started, updated, expires, now}`. Never returns the key or the device id. 404 `{ended: true}` once the trip has ended. |
-| `DELETE /api/share?id=` | Header `x-share-key` (or `key=`). Deletes the share and every position in it. |
+| `DELETE /api/share?id=` | Header `x-share-key` only (the `key=` form was removed on 5 Nov 2026: a key in the address reaches logs). Deletes the share and every position in it. |
 
 Positions are rounded to 5 decimal places. Viewers get the vehicle from `/api/service` for the current leg.
 
@@ -133,8 +136,9 @@ Watches: `POST /api/watch` takes `track: true` (sent by Start trip). A tracked w
 | Endpoint | Method | Parameters | Returns |
 | --- | --- | --- | --- |
 | `/api/health` | GET | `x-admin-key` header | Feed fetch stats, cached realtime feeds and their age, storage status, and `upstream` for this server copy (`perS` budget, `last10s` Trip Planner calls, `busy`, `refused`, `staleServed`, `shared`, any rate or quota `headers` the hub sent). `403` without the key |
-| `/api/usage` | GET | `x-admin-key` header for the full answer | With the key: today's upstream calls against the 60,000 budget, observation count, last tick time. Without it: only `observations.n` (shown in Settings) |
-| `/api/obs` | GET | `route`, `stop`, `day`, `limit` (up to 1000) | Recorded live observations |
+| `/api/usage` | GET | `x-admin-key` header for the full answer | With the key: today's upstream calls against the 60,000 budget, observation count, last tick time. Without it: only `observations.n` (shown in Settings), from a count at most 10 minutes old (5 Nov 2026; it counted the whole table on every call) |
+| `/api/obs` | GET | `x-admin-key` header; `route`, `stop`, `day`, `limit` (up to 1000) | Recorded live observations. Admin only since 5 Nov 2026 (no app reads it) |
+| `/api/engine/status` | GET | none | The board engine's status, kept 15 s per server copy (5 Nov 2026) |
 
 ## Keyed endpoints
 
@@ -418,6 +422,9 @@ The trip card on the Lock Screen and in the Dynamic Island (Live Activity) is up
 * Minute tick: each active card not pushed in the last 50 s (10 per tick) gets the card worked out from live times with the app's own code (`LIVECARD` in `src/worker.js`, written by `tools/gen-livecard.mjs` from `app/src/lib/liveCalc.ts` and `app/platform/tripCard.ts`; `app/test/livecard-sync.test.mjs` fails when they drift). Push: topic `<APNS_BUNDLE>.push-type.liveactivity`, `apns-push-type: liveactivity`, `event: update` with `content-state` matching `LiveTripAttributes.ContentState` (dates as seconds since 1 Jan 2001), `stale-date` 2 minutes after the live times, priority 10 when the card looks different and 5 otherwise. On arrival (or 7 hours at most) `event: end` with the arrived card and `dismissal-date` 2 minutes later. A token Apple refuses (410, BadDeviceToken, Unregistered) stops the card.
 * `GET /api/admin/live-activity` (admin key): the last 10 cards (token cut to 8 characters, trip title, pushes, Apple's last status and reason) and the count of saved phone tokens.
 * `POST /api/admin/live-activity` (admin key) body `{ token?, warning?, end? }`: sends the newest active card (or the one whose token starts with `token`) its live state now, with the warning line "Server test 9:41am" unless `warning` is given (`false` for none); `end: true` ends it. Answers Apple's status and reason, the event, phase and the content state sent.
+
+
+Since 5 Nov 2026 (security review): `POST /api/live-activity`, `/end` and `/api/apns/device` are limited to 40 in 10 minutes per address (an IPv6 /64 counts as one) and 60 a minute in the shared D1 limit. A card Apple has not yet taken a push for is worked out from the quick service answer only (no Trip Planner call, kept line alerts only), and at most 20 such cards go in one pass, oldest first; cards Apple has taken are read on their own, so new tokens can never push them out of a pass. A made up token is refused by Apple on that first push (BadDeviceToken) and the row ends.
 
 ## Remote config for the phone apps
 

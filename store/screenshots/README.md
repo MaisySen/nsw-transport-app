@@ -20,7 +20,7 @@ The iPhone 6.9 and 6.5 inch sets were reshot on 27 Oct with live data and no own
 
 The uploaded iPhone shots are valid and light. Two things are worth a reshoot before submission, both root or owner decisions:
 
-1. They show the owner's own commute: Home is Burwood to Strathfield and the Ask screen asks "next train Strathfield to Kings Cross". Public store images then show his home and work stations. `test/e2e/store-shots.mjs` now defaults to NSW wide examples (Home Parramatta, Work Wynyard, the board at Central, a Chatswood to Bondi Junction trip, Ask "next train Parramatta to Central").
+1. They show the owner's own commute on Home and in the Ask question, so public store images would show the owner's home and work stations. `test/e2e/store-shots.mjs` now defaults to NSW wide examples (Home Parramatta, Work Wynyard, the board at Central, a Chatswood to Bondi Junction trip, Ask "next train Parramatta to Central").
 2. A reshoot needs live data, which needs the production NSW key: not before 11 PM by the owner's rule, and the key is over quota until about 1 AM. Few services run from 1 to 4 AM, so the first useful window is about 4:30 to 5 AM on 27 Oct (inside the 11 PM to 5 AM test window), or a later night with the root's OK. Not done in this pass. The commands are below; they make about 30 server requests.
 
 Apple Watch screenshots cannot be made on this Linux box (the Watch app is SwiftUI; there is no watchOS simulator here). Two ways:
@@ -39,7 +39,7 @@ Made on 25 Oct 2026 from the Expo app (main at 7bc7ac3) with live data, light mo
 | ../apple/screenshots/iphone-duo (outer-*) | 1398 x 2034 | iPhone Duo, closed (outer display) | App Store, iPhone Duo (uploaded 27 Oct, last five in the set) |
 | play | 1080 x 2160 | Android | Google Play phone screenshots, plus feature-graphic.png (1024 x 500) and icon-512.png |
 
-Screens in the uploaded set (25 Oct): 01 Home with the commute card (home Burwood, work Strathfield), 02 Central departures, 03 Central to Parramatta trip, 04 Ask "next train Strathfield to Kings Cross", 05 Check my trip before I go. A reshoot with today's script gives: 01 Home (home Parramatta, work Wynyard), 02 Central departures, 03 Chatswood to Bondi Junction, 04 Ask "next train Parramatta to Central", 05 Check my trip before I go. Set HOME_Q, WORK_Q, TRIP or ASKQ to change them. On the iPhone shots of screen 05 the web only note about notifications is hidden, because an iPhone with notifications on does not show it; the Android shot keeps its note, which is true for versionCode 5.
+Screens in the uploaded set (25 Oct): 01 Home with the owner's commute card, 02 Central departures, 03 Central to Parramatta trip, 04 Ask with the owner's commute, 05 Check my trip before I go. A reshoot with today's script gives: 01 Home (home Parramatta, work Wynyard), 02 Central departures, 03 Chatswood to Bondi Junction, 04 Ask "next train Parramatta to Central", 05 Check my trip before I go. Set HOME_Q, WORK_Q, TRIP or ASKQ to change them. On the iPhone shots of screen 05 the web only note about notifications is hidden, because an iPhone with notifications on does not show it; the Android shot keeps its note, which is true for versionCode 5.
 
 To make them again:
 

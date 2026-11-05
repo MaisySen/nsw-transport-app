@@ -15,7 +15,7 @@ Updated 25 Oct, evening: Bidur at 7:07 PM sent a mockup with "Yes commute should
 7. Starred stops, then Nearby, as before.
 8. No trips: "Save the trips you take" with a large Add a trip button.
 
-Checked in the web build at 390 x 844 (light and dark) with Kings Cross to Strathfield (To home) and live data, a trip in progress and its watch, 9 trip alerts and weekend trackwork: the card sits at 192 to 387 px, so it is fully on screen. Before and after: `files/home-commute-hero-25oct/`.
+Checked in the web build at 390 x 844 (light and dark) with a commute (To home) and live data, a trip in progress and its watch, 9 trip alerts and weekend trackwork: the card sits at 192 to 387 px, so it is fully on screen. Before and after: `files/home-commute-hero-25oct/`.
 
 ## The card's look: Line glow (look B)
 

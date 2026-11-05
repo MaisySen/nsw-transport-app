@@ -60,7 +60,7 @@ Items 1 to 4 are done: the App Store Connect API key exists (operator secrets fo
 
 ## Notes for Bidur's own phone
 
-The App Store build has a new bundle id, so it starts with an empty profile. Open the private profile link you were sent (`nswtransport://profile/` followed by your own id) once on the phone after installing to get the saved trips back. The id is private, so it is not written here. The Play build keeps the same package and key, so an existing Android install keeps its data.
+The App Store build has a new bundle id, so it starts with an empty profile. Open the private profile link you were sent (`nswtransport://profile/` followed by your own id) once on the phone after installing to get the saved trips back. The id is private, so it is not written here. Since 5 Nov 2026 the screen warns that anyone with the link can read those trips, keeps the phone's own id with a Switch back button, and refuses ids shorter than 16 characters: if yours is shorter, make a new one with `POST /api/admin/profile-copy`. The Play build keeps the same package and key, so an existing Android install keeps its data.
 
 The old shared test profile is retired: an Android install still on it moves to a fresh private id on its next launch and saves its phone's trips again there, and a profile link to the shared id is refused.
 
