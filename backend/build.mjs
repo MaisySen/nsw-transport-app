@@ -14,13 +14,28 @@ const cf = process.argv.includes("--cloudflare");
 const outArg = process.argv.slice(2).find((a) => !a.startsWith("--"));
 const out = outArg ? path.resolve(outArg) : path.join(root, cf ? "dist" : "site");
 const pub = cf ? path.join(out, "public") : out;
+// Where the build may write (security review, 5 Nov 2026). The output folder is deleted first, and the single folder
+// build writes every secret into worker.mjs, so: never the repository or a folder that holds it; the single folder build
+// only outside the repository (backend/site was not ignored by git, and "site" from the repository root was the public
+// website's folder); the Cloudflare build inside the repository only under backend/dist.
+{
+  const repo = path.resolve(root, "..");
+  const under = (a, b) => a === b || a.startsWith(b + path.sep);
+  const dist = path.join(root, "dist");
+  let why = "";
+  if (under(repo, out)) why = "it holds the repository";
+  else if (!cf && under(out, repo)) why = "the single folder build writes the secrets into worker.mjs, so it goes outside the repository (for example node build.mjs ~/tab-site)";
+  else if (cf && under(out, repo) && !under(out, dist)) why = "inside the repository the Cloudflare build goes only to backend/dist";
+  if (why) { console.error(`Refusing to build into ${out}: ${why}.`); process.exit(1); }
+}
 
 const envFile = path.join(root, ".env");
 const fileEnv = {};
 if (fs.existsSync(envFile)) {
   for (const line of fs.readFileSync(envFile, "utf8").split("\n")) {
     const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (m) fileEnv[m[1]] = m[2].trim();
+    // A value in matching quotes loses them, as a shell would read it.
+    if (m) fileEnv[m[1]] = m[2].trim().replace(/^(["'])(.*)\1$/, "$2");
   }
 }
 const need = ["TFNSW_API_KEY", "VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT", "TICK_KEY", "ADMIN_KEY"];
@@ -60,7 +75,9 @@ worker += "\n" + fs.readFileSync(path.join(root, "src/daylist.js"), "utf8");
 worker += "\n" + fs.readFileSync(path.join(root, "src/tripalerts.js"), "utf8");
 // Live push for Trip Planner boards and the socket limits the board shards share (src/livehub.js), last.
 worker += "\n" + fs.readFileSync(path.join(root, "src/livehub.js"), "utf8");
-if (!cf) for (const k of need) worker = worker.split(`__${k}__`).join(vals[k]);
+// Each value goes into a JavaScript string, escaped as one (a quote or backslash in a value built a broken worker).
+if (!cf) for (const k of need) worker = worker.split(`__${k}__`).join(JSON.stringify(vals[k]).slice(1, -1));
+if (!cf) { const left = need.filter((k) => worker.includes(`__${k}__`)); if (left.length) { console.error("Placeholders left in worker.mjs: " + left.join(", ")); process.exit(1); } }
 // The Content Security Policy allows only this site's own scripts plus the exact inline
 // scripts in the built pages, hashed here at build time so later page edits stay covered.
 const htmlFiles = [];
@@ -76,12 +93,13 @@ const csp = [
   "default-src 'self'",
   "script-src 'self' " + [...hashes].sort().join(" "),
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://tile.openstreetmap.org https://tiles.openfreemap.org",
-  "connect-src 'self' https://tiles.openfreemap.org",
+  // The Cloudflare build serves only the live trip page, which uses raster tiles: no vector map, no blob workers.
+  cf ? "img-src 'self' data: https://tile.openstreetmap.org" : "img-src 'self' data: blob: https://tile.openstreetmap.org https://tiles.openfreemap.org",
+  cf ? "connect-src 'self'" : "connect-src 'self' https://tiles.openfreemap.org",
   "font-src 'self'",
   "manifest-src 'self'",
-  "worker-src 'self' blob:",
-  "child-src blob:",
+  cf ? "worker-src 'self'" : "worker-src 'self' blob:",
+  ...(cf ? [] : ["child-src blob:"]),
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

@@ -43,10 +43,14 @@ window.TBApp = () => {
     const qp = new URLSearchParams(location.search);
     const me = (qp.get("me") || "").toLowerCase().replace(/[^a-z0-9_.:-]/g, "").slice(0, 40);
     if (qp.has("me")) {
-      // A ?me= link switches to another set of saved trips. Ask first when this browser already
-      // has its own, so a link from someone else cannot quietly move you onto their profile.
+      // A ?me= link switches to another set of saved trips. Always ask first (5 Nov 2026: a browser with no profile
+      // yet was switched without asking, so its new trips were saved where the link's sender could read them).
       const cur = LS.get("tb_profile", null);
-      if (validProfile(me) && me !== cur && (!cur || window.confirm("Open the saved trips from this link? Your current trips stay saved on the server under your old profile."))) LS.set("tb_profile", me);
+      if (validProfile(me) && me !== cur && window.confirm("Open the saved trips from this link? Trips you save after this are kept with that link's profile.")) {
+        LS.set("tb_profile", me);
+        // Offline copies of the old profile's commutes and watches go with it.
+        try { if (window.caches) caches.delete("tb-api"); } catch (e) { /* no cache storage */ }
+      }
       qp.delete("me");
       try { history.replaceState(null, "", location.pathname + (qp.toString() ? "?" + qp : "") + location.hash); } catch (e) { /* old browser */ }
     }

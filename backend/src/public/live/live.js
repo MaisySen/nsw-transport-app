@@ -20,22 +20,11 @@
   var map = null, route = null, vMarker = null, pMarker = null, stopsLayer = null, follow = true, share = null, svc = null, svcLeg = -1, timer = null;
 
 
-  // Vector tiles from OpenFreeMap with MapLibre GL inside Leaflet, loaded when the map opens;
-  // OpenStreetMap raster tiles when the phone has no WebGL.
+  // OpenStreetMap raster tiles (5 Nov 2026). The vector map (MapLibre with OpenFreeMap) was never served on this
+  // address: the build leaves its files out, so every phone with WebGL asked for them, got a 404 and fell back to these.
   function baseTiles(m) {
     var dark = matchMedia("(prefers-color-scheme: dark)").matches;
-    function raster() { L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, className: dark ? "dk-tiles" : "", attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(m); }
-    var gl = false;
-    try { var c = document.createElement("canvas"); gl = !!(c.getContext("webgl2") || c.getContext("webgl")); } catch (e) { gl = false; }
-    if (!gl) { raster(); return; }
-    var add = function (src, next) { var s = document.createElement("script"); s.src = src; s.onload = next; s.onerror = raster; document.head.appendChild(s); };
-    var css = document.createElement("link"); css.rel = "stylesheet"; css.href = "/vendor/maplibre-gl.css?v=1"; document.head.appendChild(css);
-    add("/vendor/maplibre-gl.js?v=1", function () {
-      add("/vendor/leaflet-maplibre-gl.js?v=1", function () {
-        if (!L.maplibreGL) { raster(); return; }
-        L.maplibreGL({ style: "https://tiles.openfreemap.org/styles/" + (dark ? "dark" : "liberty"), attribution: '<a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(m);
-      });
-    });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, className: dark ? "dk-tiles" : "", attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(m);
   }
   function makeMap() {
     if (map || !window.L) return;
@@ -99,7 +88,7 @@
     }).join("");
     var m = mins(eta);
     var inTxt = m === 0 ? "<b>Now</b>" : m < 60 ? "<b>" + m + "</b><span>min</span>" : "<b>" + Math.floor(m / 60) + "</b><span>h</span><b>" + (m % 60) + "</b><span>min</span>";
-    sbody.innerHTML = '<div class="go-pad"><div class="go-head"><div class="go-k">' + esc(s.title) + '</div><div class="go-row"><div><div class="go-sub" style="margin:0">Gets in at ' + esc(short((s.to && s.to.name) || last.to)) + '</div><div class="go-big">' + clock(eta) + '</div></div><div class="go-in">' + inTxt + '</div></div><div class="go-badges">' + badge + (s.pos ? '<span class="badge sched">Location shared</span>' : "") + "</div></div>" +
+    sbody.innerHTML = '<div class="go-pad"><div class="go-head"><div class="go-sub" style="margin:0 0 2px">Shared by someone using Transport</div><div class="go-k">' + esc(s.title) + '</div><div class="go-row"><div><div class="go-sub" style="margin:0">Gets in at ' + esc(short((s.to && s.to.name) || last.to)) + '</div><div class="go-big">' + clock(eta) + '</div></div><div class="go-in">' + inTxt + '</div></div><div class="go-badges">' + badge + (s.pos ? '<span class="badge sched">Location shared</span>' : "") + "</div></div>" +
       '<div class="go-card" style="--c:' + esc(l.color || "#00B5EF") + '"><div class="grow"><div class="go-now1">' + line1 + '</div><div class="go-now2">' + line2 + "</div></div></div>" +
       (svc && svc.where ? '<p class="go-sub" style="padding:0 4px">The ' + esc(nouns[l.mode] || "service") + " is " + esc(svc.where.text.charAt(0).toLowerCase() + svc.where.text.slice(1)) + ".</p>" : "") +
       '<div class="group-h">The trip</div><div class="group"><div class="go-legs">' + legRows + "</div></div>" +
