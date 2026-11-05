@@ -507,7 +507,7 @@ Legs with `feed: "nswtrains"` (NSW TrainLink regional trains and coaches) are no
 `/api/departures` takes an optional `time` (`HHMM`, 24 hour Sydney time) and `date` (`YYYYMMDD`). Only api.transportsydney.app has it (25 Oct 2026); the first address ignores both and answers for now.
 
 * No `time`: the board for now, exactly as before (services gone over 45 s ago are dropped, no `at`).
-* `time` with no `date`: that time in the current service day, which runs 4am to 4am (at 1:30am, `2300` is the evening before and `0200` is tonight).
+* `time` with no `date`: that time in the current service day, which runs 4am to 4am (at 1:30am, `2300` is the evening before and `0200` is tonight). A moment that would fall more than 12 hours back means the next one (since 5 Nov 2026: at 3:30am, `0500` is in 90 minutes, not yesterday's 5am).
 * `time` with `date`: that day at that time.
 * Never before the start of the current service day (4am today, or yesterday's 4am when it is now before 4am): an earlier moment is answered from 4am with `at.clamped: true`. Never more than 14 days ahead.
 * The Trip Planner's departure monitor is asked for that moment (`itdDate`, `itdTime`, departures). Every service it returns is kept, gone or not. Each row carries `departed`: `true` when it left over a minute ago (its live time when there is one, else its timetable time). A gone service keeps the live time and `delayMin` it left with when Transport for NSW still reports them, else `realtime: false` (timetable only).
