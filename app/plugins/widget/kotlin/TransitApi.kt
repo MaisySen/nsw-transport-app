@@ -3,6 +3,7 @@ package com.maisysen.nswtransport.widget
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.graphics.Color
+import android.text.format.DateFormat
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -28,8 +29,12 @@ object TransitApi {
     @Volatile var STORE: JSONObject = JSONObject()
         private set
 
+    /** The phone's 12 or 24 hour setting (Settings, System, Date and time), read again on every init. */
+    @Volatile private var H24 = false
+
     /** Reads the app's "profile", "store" and "apiBase" keys from its key value storage. Until the app has been opened once, no saved trips show. */
     fun init(context: Context) {
+        H24 = try { DateFormat.is24HourFormat(context) } catch (e: Exception) { false }
         try {
             val path = context.getDatabasePath("RKStorage")
             if (!path.exists()) return
@@ -108,10 +113,11 @@ object TransitApi {
         return 0
     }
 
+    /** "19:52" or "7:52pm" by the phone's setting, Sydney time, written as the iPhone widgets and the watch write it. */
     fun clock(t: Long): String {
-        val f = SimpleDateFormat("h:mm", Locale.US)
+        val f = SimpleDateFormat(if (H24) "HH:mm" else "h:mma", Locale.US)
         f.timeZone = SYDNEY
-        return f.format(t)
+        return f.format(t).lowercase(Locale.US)
     }
 
     fun shortName(s: String): String = s.split(",")[0].trim().replace(" Station", "")

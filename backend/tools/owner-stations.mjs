@@ -15,17 +15,34 @@ export const LIMIT = 0.05;
 // or from a sample) carries this mark in a comment and is not counted as a mention.
 export const GUARD_MARK = "owner-stations: guard";
 
-export const OWNER_NAMES = [
-  "Strathfield", "Burwood", "Kings Cross", "Redfern", "Town Hall",
-  "Flemington", "Campsie", "Five Dock", "Chiswick",
-];
-export const OWNER_IDS = ["213510", "213516", "201110", "214020", "219410"];
+// The owner's stations are not written in this public repository (security review, 5 Nov 2026: this file listed them,
+// with their stop ids, which told anyone where the owner lives and works). They come from the OWNER_STATIONS variable,
+// JSON {"names": ["..."], "ids": ["..."]} (a GitHub Actions secret for the backend workflow), or from
+// owner-stations.local.json beside this file (ignored by git). With neither, there is nothing to look for: the count is
+// 0 and the guard test says it was skipped.
+function loadOwner() {
+  let raw = process.env.OWNER_STATIONS || "";
+  if (!raw) { const f = join(dirname(fileURLToPath(import.meta.url)), "owner-stations.local.json"); if (existsSync(f)) raw = readFileSync(f, "utf8"); }
+  try {
+    const j = raw ? JSON.parse(raw) : {};
+    const list = (v, ok) => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter(ok) : []);
+    return { names: list(j.names, (x) => /^[A-Za-z' ]{3,40}$/.test(x)), ids: list(j.ids, (x) => /^\d{3,10}$/.test(x)) };
+  } catch (e) { return { names: [], ids: [] }; }
+}
+const OWNER = loadOwner();
+export const OWNER_NAMES = OWNER.names;
+export const OWNER_IDS = OWNER.ids;
+export const OWNER_CONFIGURED = OWNER_NAMES.length > 0 || OWNER_IDS.length > 0;
 
-const nameRe = OWNER_NAMES.map((n) => n.split(" ").join("[\\s_-]*")).join("|");
-const OWNER_RE = new RegExp(`(?:${nameRe})|(?<![0-9])(?:${OWNER_IDS.join("|")})(?![0-9])`, "i");
+const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const parts = [
+  ...(OWNER_NAMES.length ? [`(?:${OWNER_NAMES.map((n) => n.split(" ").map(esc).join("[\\s_-]*")).join("|")})`] : []),
+  ...(OWNER_IDS.length ? [`(?<![0-9])(?:${OWNER_IDS.join("|")})(?![0-9])`] : []),
+];
+const OWNER_RE = parts.length ? new RegExp(parts.join("|"), "i") : null;
 
 export function mentionsOwner(text) {
-  return OWNER_RE.test(text);
+  return !!OWNER_RE && OWNER_RE.test(text);
 }
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");

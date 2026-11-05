@@ -43,7 +43,9 @@ const LISTS = ['/api/commutes?profile=p1', '/api/saved?profile=p1'];
 
 test('only Home reads go in a bundle: no paging, refresh trips, text answers or other paths', () => {
   for (const p of [TRIP, DEP, DEP + '&refresh=1', ...LISTS, '/api/watches?device=d&profile=p&since=0', '/api/app/config?platform=android']) assert.ok(B.homeReadOk(p), p);
-  for (const p of [TRIP + '&refresh=1', TRIP + '&page=1', TRIP + '&after=123', '/api/trip/live?legs=x', '/api/service?trip=1', '/api/search?q=x', DEP + '&format=text', '/api/commutes', 'x/api/saved?profile=1']) assert.ok(!B.homeReadOk(p), p);
+  // Saved trips and commutes carry the profile as a header since 5 Nov, so they have no query; other reads still need one.
+  for (const p of ['/api/saved', '/api/commutes']) assert.ok(B.homeReadOk(p), p);
+  for (const p of [TRIP + '&refresh=1', TRIP + '&page=1', TRIP + '&after=123', '/api/trip/live?legs=x', '/api/service?trip=1', '/api/search?q=x', DEP + '&format=text', '/api/trip', '/api/watches', '/api/commutes/dismiss', 'x/api/saved?profile=1']) assert.ok(!B.homeReadOk(p), p);
 });
 
 test('the bundle address carries each read once, encoded', () => {

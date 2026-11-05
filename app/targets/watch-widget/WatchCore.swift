@@ -315,12 +315,20 @@ enum Clock {
         return f.string(from: d) + (minuteOfDay(d) < 12 * 60 ? " am" : " pm")
     }
 
-    /// "9:41am", Sydney time, as the phone app writes times.
+    /// True when the watch (set from the iPhone) shows 24 hour time: the hour in the person's own locale's "j"
+    /// template is then H or k, not h or K.
+    static var uses24Hour: Bool {
+        let p = (DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: Locale.autoupdatingCurrent) ?? "")
+            .replacingOccurrences(of: "'[^']*'", with: "", options: .regularExpression)
+        return p.contains("H") || p.contains("k")
+    }
+
+    /// "19:41" or "9:41am" by the phone's setting, Sydney time, as the phone app writes times.
     static func hhmm(_ d: Date) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_AU")
         f.timeZone = sydney
-        f.dateFormat = "h:mma"
+        f.dateFormat = uses24Hour ? "HH:mm" : "h:mma"
         return f.string(from: d).lowercased().replacingOccurrences(of: " ", with: "")
     }
 

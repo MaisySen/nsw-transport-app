@@ -19,6 +19,8 @@ import { Icon, I } from '@/components/Icon';
 import { haptic } from '@/lib/haptic';
 import { apiBase } from '@/lib/server';
 import { getDevice, PROFILE } from '@/lib/device';
+import { loadServes, serves } from '@/lib/serves';
+import { ID_HEADERS, placeIds } from '@/lib/servesCore';
 import { usePalette } from '@/lib/theme';
 import { C24, PHONE24, durText } from '@/lib/format';
 import { useNow } from '@/lib/hooks';
@@ -313,17 +315,22 @@ export default function AskScreen() {
       const bctx = brainCtx(at, !!extra.lat);
       const a = toAction(u, bctx);
       if (a.kind !== 'ask') { bot({ text: a.text, choices: a.choices || [] }); return; }
-      const p: Record<string, string> = { q: a.q, profile: PROFILE, device: await getDevice(), fare: store.fareType(), ...(store.accOn() ? { acc: '1' } : {}), ...(a.extra || {}), ...extra };
+      const p: Record<string, string> = { q: a.q, fare: store.fareType(), ...(store.accOn() ? { acc: '1' } : {}), ...(a.extra || {}), ...extra };
       if (places?.home?.id) p.home = `${places.home.id}|${places.home.name || ''}`;
       if (places?.work?.id) p.work = `${places.work.id}|${places.work.name || ''}`;
       const qs = Object.entries(p).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+      // Device and profile ride as x-device and x-profile when the server reads them there, else in the address as
+      // before: the same rule as every other read (servesCore.placeIds, api.ts).
+      const [device] = await Promise.all([getDevice(), loadServes()]);
+      const base = apiBase();
+      const placed = placeIds(`/api/ask?${qs}`, { device, profile: PROFILE }, serves(ID_HEADERS, base));
       // A slow answer ends after 15 s (netErrCore.ts read deadline), so the chat never waits on a spinner for good. The
       // failure says whether it was the phone's connection or the live data (askFailText below).
       const ctl = new AbortController();
       const timer = setTimeout(() => ctl.abort(), READ_MS_EMPTY);
       let d: any;
       try {
-        const r = await fetch(`${apiBase()}/api/ask?${qs}`, { signal: ctl.signal });
+        const r = await fetch(base + placed.path, { signal: ctl.signal, headers: placed.headers });
         noteReach();
         if (!r.ok) throw httpError(r.status, await r.json().catch(() => ({})));
         d = await r.json();

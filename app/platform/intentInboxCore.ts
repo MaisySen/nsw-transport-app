@@ -37,3 +37,23 @@ export function startIndex(depsMs: number[], atSec: number | null | undefined, w
   });
   return gap <= withinMs ? best : 0;
 }
+
+/** A trip of this phone's own, by its two ends: a trip on Home, a saved trip, a commute, or Home and Work. */
+export type OwnTrip = { from?: { id?: string | null } | null; to?: { id?: string | null } | null } | null | undefined;
+
+/**
+ * Whether a start link (start=1) may start its trip at once: only when the trip is one of this phone's own, either
+ * way round (the widget's Smart choice can turn a saved trip round). The widget, Siri's "Start my commute" and
+ * Control Center only make start links for those. A start link from anywhere else (a web page, another app) opens
+ * the trip with the service picked and its Start trip button, so a stranger's link cannot start a live trip and its
+ * Lock Screen card on its own (5 Nov audit).
+ */
+export function ownStart(fromId: unknown, toId: unknown, own: OwnTrip[]): boolean {
+  const f = typeof fromId === 'string' ? fromId.trim() : '';
+  const t = typeof toId === 'string' ? toId.trim() : '';
+  if (!f || !t || f === t) return false;
+  return (own || []).some((x) => {
+    const a = String(x?.from?.id || ''), b = String(x?.to?.id || '');
+    return !!a && !!b && ((a === f && b === t) || (a === t && b === f));
+  });
+}

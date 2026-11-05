@@ -27,14 +27,15 @@ jobs:
       run:
         working-directory: app/native-tests/native-audit
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Xcode 27.1
         run: |
           sudo xcode-select -s /Applications/Xcode_27.1.app
           xcodebuild -version
       - name: Project
         run: |
-          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip
+          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  /tmp/xcodegen.zip" | shasum -a 256 -c -
           unzip -q /tmp/xcodegen.zip -d /tmp/xg
           "$(find /tmp/xg -type f -name xcodegen -perm -u+x | head -1)" generate
       - name: iPhone simulator
@@ -64,7 +65,7 @@ jobs:
         run: |
           python3 -m venv /tmp/v && /tmp/v/bin/pip -q install pillow
           /tmp/v/bin/python sheets.py "$GITHUB_WORKSPACE/out/ios" "$GITHUB_WORKSPACE/out/sheets" || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: native-audit-ios
@@ -80,7 +81,7 @@ jobs:
       run:
         working-directory: app/native-tests/native-audit
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Xcode 27.1
         run: |
           sudo xcode-select -s /Applications/Xcode_27.1.app
@@ -89,7 +90,8 @@ jobs:
           xcrun simctl runtime list | grep -i -A1 watchOS || true
       - name: Project
         run: |
-          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip
+          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  /tmp/xcodegen.zip" | shasum -a 256 -c -
           unzip -q /tmp/xcodegen.zip -d /tmp/xg
           "$(find /tmp/xg -type f -name xcodegen -perm -u+x | head -1)" generate
       - name: Compile the Watch code (no simulator needed)
@@ -139,7 +141,7 @@ jobs:
         run: |
           python3 -m venv /tmp/v && /tmp/v/bin/pip -q install pillow
           /tmp/v/bin/python sheets.py "$GITHUB_WORKSPACE/out/watch" "$GITHUB_WORKSPACE/out/sheets" || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: native-audit-watch

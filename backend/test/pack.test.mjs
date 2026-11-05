@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { sydneyMidnightS } from "./helpers/sydney.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
 const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {") + "\n" +
@@ -15,7 +16,7 @@ fs.writeFileSync(tmp, src);
 const W = await import(tmp); fs.unlinkSync(tmp);
 
 const day = W.engDayKey(Date.now());
-const base = Math.floor(new Date(new Date().toLocaleString("en-US", { timeZone: "Australia/Sydney" }).replace(/,.*/, "") + " 00:00").getTime() / 1000);
+const base = sydneyMidnightS(); // Sydney midnight on any machine (helpers/sydney.mjs; was right only with TZ=Australia/Sydney)
 const nowS = Math.floor(Date.now() / 1000);
 const sec = (minFromNow) => nowS + minFromNow * 60 - base;
 const meta = { days: { [day]: base }, routes: [["T1", 1, "#F99D1C", "train", "", "North Shore"], ["400", 5, "#00B5EF", "bus", "", "Bondi to Airport"]], heads: ["Hornsby", "Airport"], routeIds: { train: { NSN_1a: 0 }, bus: { "2500_400": 1 } } };

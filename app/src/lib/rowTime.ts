@@ -2,6 +2,11 @@
 // iPhone: Settings, General, Date and Time, 24-Hour Time, read from the app's settings copy react-native already
 // keeps (no new native module). Elsewhere, and when that key is missing, the locale's hour cycle from Intl.
 // Read at most once a minute, on demand while rows draw: no timer, no listener.
+// Android: the system "Use 24-hour format" switch is not readable from JavaScript in these builds. React Native core
+// does not expose it and no installed module does (expo-localization, whose getCalendars()[0].uses24hourClock reads
+// it, is not a dependency). So Android follows the locale's hour cycle from Intl: en-AU shows 12 hour times even with
+// the switch on. Reading it needs a native module in a new build (android.text.format.DateFormat.is24HourFormat); the
+// Android widgets already read it that way (plugins/widget/kotlin/TransitApi.kt).
 import { Platform, Settings } from 'react-native';
 import { rowClock, uses24h, type ClockSignals } from './rowTimeCore';
 

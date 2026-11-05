@@ -82,3 +82,31 @@ export async function getDevice(): Promise<string> {
   if (cached) return cached;
   return loadDevice();
 }
+
+/**
+ * Delete all my data: after the server has deleted everything, this install gets a new profile and a new device id,
+ * so nothing it keeps or sends later (saved trips, alerts, crash reports) links to the old ones. Each is written on
+ * its own with setItem: the iPhone widgets, Siri and the watch copy 'profile' from that write (platform/iosBridge.ts:
+ * apiProfile in the app group, the watch's context) and the Android widgets read it from storage on their next update.
+ * Push tokens were deleted on the server before this, under the old device id; turning alerts on again registers the
+ * new one. False when the phone has no secure random source: the ids are then removed, and the next start makes new ones.
+ */
+export async function renewIds(): Promise<boolean> {
+  let profile = '', device = '';
+  try { profile = randomId('u'); device = randomId('app'); } catch { profile = ''; device = ''; }
+  try {
+    if (!profile || !device) {
+      await AsyncStorage.multiRemove(['profile', 'device']);
+      return false;
+    }
+    await AsyncStorage.setItem('device', device);
+    await AsyncStorage.setItem('profile', profile);
+    await AsyncStorage.multiRemove(['profileReupload', 'profileMovedAt']);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    // The ids in memory follow at once, so the next request in this session uses them.
+    if (profile && device) { PROFILE = profile; cached = device; }
+  }
+}

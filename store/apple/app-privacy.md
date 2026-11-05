@@ -4,6 +4,8 @@ The answers to click in App Store Connect, App Privacy, and the code facts behin
 
 ## Status
 
+* **5 Nov 2026 (security review): App Store Connect needs one more type before the next submission: Diagnostics > Crash Data** (App Functionality, not linked, no tracking). The app has sent crash reports with its random install ID to our server since 27 Oct, and the privacy manifest on the build branches (build-209, build-212-rc) and now main already lists Crash Data; the published answers below said Diagnostics was not collected. Owner to click it in (about 1 minute). The same review added Alerts for my trips to the table below (reminder and morning check times go to the server with the trips when that switch is on).
+
 * Published in App Store Connect on 25 Oct 2026, 10:54 AM (the four types below). The App Store Connect API has no App Privacy endpoint, so the published answers cannot be read back by code; they were clicked from the same list.
 * Checked again against the code on 26 Oct 2026, 5:50 PM Sydney (g25, main `6ac34d9` plus the server deploy `3e88773d`): **the published answers stay correct; nothing to change in App Store Connect.**
 * What the check covered: every D1 table the server writes (`INSERT` in `backend/src/worker.js`) and every `DELETE` that ends it; every `/api` call in `app/src/lib/api.ts`, the Watch app and the widgets; each `Location` call in `app/src` (all foreground, `Balanced` or `Low`); the push token paths; the Workers Logs settings on the live script; the live board push (g17), own planner (g18), trip tracking (g19) and budget guard (g20) added on 26 Oct.
@@ -26,20 +28,21 @@ The App Store Connect API has no endpoint for App Privacy, so this is clicked by
    * Identifiers > Device ID
    * Search History > Search History
    * User Content > Other User Content
-3. For each of the four: Used for App Functionality only. Linked to the user's identity: No (there are no accounts; the IDs are random and made on the phone). Used for tracking: No.
+   * Diagnostics > Crash Data (added 5 Nov 2026, see Status)
+3. For each of the five: Used for App Functionality only. Linked to the user's identity: No (there are no accounts; the IDs are random and made on the phone). Used for tracking: No.
 4. Publish.
 
 Why each: Precise Location only when the user chooses it: Include my location on Share trip (kept while the share is live, at most 6 hours) or a last way home reminder set from where you are (kept until 12 hours after the service). Either way it is kept, so it counts as collected. Device ID is the random install and profile IDs plus the push token. Search History is the trip searches kept 90 days. Other User Content is saved trips, commutes, watches and checks.
 
-Not collected under Apple's definition: the position sent for nearby stops and trip planning (used to answer the request and not kept), Ask questions, calendar events (read on the phone; only an event's place is sent, as a search, with no ID, and not kept), Usage Data, Diagnostics, Contact Info. So Calendar leave by adds no App Privacy answer. Build 208 asks for full calendar access (iOS 17 and later) with the text in [docs/CALENDAR-LEAVE-BY.md](../../docs/CALENDAR-LEAVE-BY.md).
+Not collected under Apple's definition: the position sent for nearby stops and trip planning (used to answer the request and not kept), Ask questions, calendar events (read on the phone; only an event's place is sent, as a search, with no ID, and not kept), Usage Data, Contact Info. (Diagnostics was listed here until 5 Nov 2026; crash reports to our server carry the install ID and are kept until the fault is fixed, at most 12 months, so Crash Data is collected.) So Calendar leave by adds no App Privacy answer. Build 208 asks for full calendar access (iOS 17 and later) with the text in [docs/CALENDAR-LEAVE-BY.md](../../docs/CALENDAR-LEAVE-BY.md).
 
 Tracking: No. ATT is not needed (no IDFA, no tracking SDK). NSPrivacyTracking is false.
 
-The privacy manifest in app/app.json lists the same four types (not linked, no tracking, App Functionality); every build after 201 carries it. The widget and Watch complications carry their own manifests (UserDefaults CA92.1); the Watch app gets the app's manifest at prebuild (a second file there fails the build, `app/test/leaveby206.test.mjs`).
+The privacy manifest in app/app.json lists the same five types (Crash Data added to main on 5 Nov 2026; the build branches had it already) (not linked, no tracking, App Functionality); every build after 201 carries it. The widget and Watch complications carry their own manifests (UserDefaults CA92.1); the Watch app gets the app's manifest at prebuild (a second file there fails the build, `app/test/leaveby206.test.mjs`).
 
 ## What the code does
 
-Kept only on the phone (never sent): home and work stations, starred and recent stops, the fare type, Ask chat history, trip reminders (local notifications, 25 Oct), the Speak alerts switch, settings. Speak alerts use the phone's own speech.
+Kept only on the phone (never sent): home and work stations, starred and recent stops, the fare type, Ask chat history, trip reminders (local notifications, 25 Oct; with Alerts for my trips on, their days and times go to the server with the trips, see the table), the Speak alerts switch, settings. Speak alerts use the phone's own speech.
 
 Calendar (Calendar leave by, More, off by default; iPhone build 208 and later, Android builds with the calendar module; [docs/CALENDAR-LEAVE-BY.md](../../docs/CALENDAR-LEAVE-BY.md)): events in the next 6 hours are read on the phone, read only, while Home is on screen. The event name, notes, people and calendar never leave the phone. Two requests leave it, and neither is kept: the place written in the event, as a place search (`/api/places`, the same as typing in Plan), and the trip query to the place found, Arrive by the start time, sent with no install ID, profile or names so the server cannot add it to trip history or link it to a phone. Places found are kept on the phone (30 days, at most 60) and deleted when the switch is turned off or with Delete all my data. The server's place search keeps its usual in memory copy of answers by search text for up to 6 hours, not linked to any phone.
 
@@ -58,6 +61,8 @@ Sent to the server and kept, keyed by a random install ID and a random profile I
 | Push token (iPhone, Expo push) | expo_tokens | Until the app unregisters (alerts off, Delete all my data) or Apple says it is invalid. On api.transportsydney.app also deleted after 30 days with no working push when nothing on the server can still push to that install (no live watch, morning check, lift alert, car park watch or last way home) | Sending alerts |
 | iPhone trip card (Live Activity) push token, the trip and its legs (build 205 and later) | live_activities | Deleted when the trip ends on the phone; otherwise by the hourly clean up once the card has ended or expired, and never kept longer than 24 hours. Delete all my data deletes it at once (25 Oct, 5:28 PM) | Updating the Lock Screen card while the phone is locked |
 | iPhone device push token (build 205 and later) | apns_devices | The app sends it each time it opens; deleted when it has not been sent for 30 days. Delete all my data deletes it at once and the app does not send it again until alerts are turned on (25 Oct, 5:28 PM). Nothing is sent to it yet | Alerts later |
+| Alerts for my trips (More, on by default once alerts are allowed): each Home trip's stops and lines, and the days and minute of its reminders and morning checks | meta, key `ta:<install ID>` | Until the switch is turned off (the app sends no trips and the row is deleted) or Delete all my data | Warnings about service changes before the trip (backend/src/tripalerts.js) |
+| Crash and error reports: the error, the code location, the screen, platform, app version, build and update, the last server paths, and the install ID | feedback (topic problem) | Until the fault is fixed, at most 12 months; not reached by Delete all my data (email with the install ID shown in More) | Finding and fixing faults |
 | Shared trip, with the latest position only if the user taps Include my location | shares | Deleted when the trip ends or sharing stops, otherwise 30 min after arrival, never longer than 6 hours | The Share trip link |
 
 Sent for one request and not kept: the position for nearby stops, top up machines, Park and Ride distances and trip from where you are; Ask questions; with Calendar leave by on, an event's place (as a place search) and the trip query to it, with no install or profile ID.

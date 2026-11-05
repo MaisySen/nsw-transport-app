@@ -733,7 +733,7 @@ final class FlowTests: XCTestCase {
         shot("tabs-after-trip")
     }
 
-    /// Bidur's short trip: Burwood to Strathfield planned with live data, then Start trip replayed
+    /// A short trip planned with live data, then Start trip replayed
     /// on a fake clock (2 min late) to arrival and 15 minutes past it.
     func test16ReplayBurwoodToStrathfield() {
         app.launchArguments += ["-liveReplay", "YES", "-liveReplayShift", "2", "-liveReplayTick", "900"]

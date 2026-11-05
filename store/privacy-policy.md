@@ -2,7 +2,7 @@
 
 The text published at https://transportsydney.app/privacy/ (source: site/privacy/index.html). This copy is generated from that page; edit the page, then regenerate this file.
 
-Updated 30 October 2026
+Updated 5 November 2026
 
 This policy covers the Transport: Sydney Live app for iPhone and Android, this website and the server the apps use. The app and website are provided by Fintex Australia Pty Ltd (ABN 60 688 406 108), New South Wales, Australia ("we", "us"). Contact: privacy@transportsydney.app.
 
@@ -19,6 +19,7 @@ This policy covers the Transport: Sydney Live app for iPhone and Android, this w
 * **A notification token** if you allow notifications, so the server can send alerts to your phone. It is deleted when you turn alerts off or delete all your data. On the iPhone the app also sends the phone's own notification token each time it opens; it is deleted when the app has not sent it for 30 days.
 * **The trip card on the iPhone Lock Screen:** during a trip, the card's push token and the trip, so the server can keep the card up to date while your phone is locked. Both are deleted when the trip ends, and never kept longer than 24 hours.
 * **Alerts the server sends you,** so the app can show them under Watching. These are deleted after 3 days.
+* **Alerts for my trips,** if you turn them on in More: the trips on your Home screen (their stops and lines), and the days and times of their reminders and morning checks, so the server can warn you about changes before you travel. They are deleted when you turn the switch off or delete all your data.
 * **Your IP address, with a count of requests from it,** so the server can slow down anyone sending too many requests. The count covers one minute at a time, and it is deleted within an hour of your last request.
 
 ## Crash reports
@@ -33,7 +34,7 @@ The app does not add your position, your trips, what you searched for or your ph
 
 The apps use your phone's storage only to make the app work: your install ID, home and work stations, starred and recent stops, saved trips, trip reminders, Ask history and settings. This stays on your device and is removed when you delete the app.
 
-Trip reminders are scheduled on your phone, and nothing about them is sent to the server. Speak alerts use your phone's own voice; nothing you hear is sent anywhere.
+Trip reminders are scheduled on your phone. If you turn on Alerts for my trips, their days and times are sent with your trips (see What the server keeps); otherwise nothing about them is sent to the server. Speak alerts use your phone's own voice; nothing you hear is sent anywhere.
 
 This website sets no cookies, stores nothing on your device and counts no visits.
 
@@ -53,7 +54,7 @@ Add to Calendar on a trip uses your phone's own new event sheet; nothing is adde
 
 During a live trip your position is used on your phone to put you on the map. It is not sent to the server unless you share the trip.
 
-If you tap Share trip, the server keeps the trip, its progress (current leg, next stop, arrival time) and, only if you leave Include my location on, your latest position. Anyone with the link can see these until the trip ends. The shared trip is deleted when you end the trip or stop sharing, otherwise 30 minutes after the trip arrives, and never later than 6 hours after it starts.
+If you tap Share trip, the server keeps the trip, its progress (current leg, next stop, arrival time), your install ID (so Delete all my data can remove the shared trip) and, only if you leave Include my location on, your latest position. Anyone with the link can see these until the trip ends. The shared trip is deleted when you end the trip or stop sharing, otherwise 30 minutes after the trip arrives, and never later than 6 hours after it starts.
 
 ## Questions you ask
 
@@ -64,10 +65,10 @@ Questions typed in Ask, or asked through Siri, are sent to the server to find th
 If you email us, we keep your message and your email address so we can answer. We delete messages within 12 months, sooner if you ask, and never add you to a mailing list.
 
 ## Who else is involved
-* **Transport for NSW** provides the live transport data. The server asks it for stops, departures and trips; no information that identifies you is sent. When you plan a trip from where you are, that position is passed on for that one request. The same happens for stops near you when our own stop list cannot answer.
+* **Transport for NSW** provides the live transport data. The server asks it for stops, departures and trips; no information that identifies you is sent. When you plan a trip from where you are, that position is passed on for that one request. The same happens for stops near you when our own stop list cannot answer. When you open a stop, the app also loads that stop's page from the Transport for NSW website to show its station map, so that website sees your IP address and which stop you opened.
 * **Our hosting provider**, a company in the United States, hosts this website and the server in data centres around the world, usually one near you, and keeps the server's database in its Oceania region. It processes requests to deliver them and protect them from abuse. For us it keeps a short log of one request in ten for up to 7 days, so we can find faults: which part of the server was asked, the result and how long it took. The log does not keep what you searched for, your position or your install ID. It processes records about requests, including this log, in the United States and Europe.
 * **A notification relay service and Apple's and Google's push services** deliver notifications from the server: the relay service, in the United States, passes them on; Apple's push service, run from the United States, delivers them to iPhones; and Google's push service, which can process them in any country where Google has data centres, delivers them to Android phones. Reminders you set are scheduled on the phone and do not go through them.
-* **Maps:** the Android app loads map tiles from an open map tile service run by a company in Hungary, which may serve them from data centres around the world; the iPhone app uses Apple's maps. Like any website, these services see your IP address when a map loads.
+* **Maps:** the Android app loads map tiles from an open map tile service run by a company in Hungary, which may serve them from data centres around the world; the iPhone app uses Apple's maps. The shared live trip page loads map tiles from an open map tile service run by a foundation in the United Kingdom. Like any website, these services see your IP address when a map loads.
 * **Our app update service**, in the United States: each time the app opens, it asks this service whether a newer version is ready. The service sees your IP address, a random ID it makes on your phone for these checks (not your install ID), whether the phone is an iPhone or Android, and the app version and update it is running. We use it only to deliver app updates.
 * **A crash reporting service** (from app build 209) receives crash reports for us, in the United States, and keeps them for up to 30 days. It does not receive your install ID and does not store your IP address, and we have turned off its screenshots, session recording and performance tracking.
 
@@ -80,7 +81,7 @@ The app is for a general audience and does not knowingly collect information fro
 ## Your choices and deleting your data
 
 You can delete your data yourself, at any time:
-* **Everything:** in the app, open More, then Clear history, then Delete all my data. This deletes your saved trips, commutes, morning checks, watched trips, alerts, notification tokens, the Lock Screen trip card and trip history from the server, and clears the app's storage on your phone, straight away.
+* **Everything:** in the app, open More, then Clear history, then Delete all my data. This deletes your saved trips, commutes, morning checks, watched trips, alerts, notification tokens, the Lock Screen trip card and trip history from the server, and clears the app's storage on your phone, straight away. The app then makes a new install ID, so nothing it sends later is linked to the old one.
 * **Trip history on the server:** More, then Clear history.
 * **One trip or watch:** swipe left on it, or stop watching it in Watching.
 * **Crash reports:** Delete all my data does not reach them. Email us with your install ID and we will delete the reports your phone sent to our server. Reports sent to the crash reporting service carry no install ID, so they cannot be matched to your phone; they are deleted after 30 days.

@@ -8,6 +8,7 @@ import fs from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { efaTrip } from "./helpers/efa.mjs";
 import { makeD1 } from "./helpers/d1.mjs";
+import { sydneyMidnightS } from "./helpers/sydney.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
 const src = fs.readFileSync(root + "src/worker.js", "utf8").replace(/export default\s*\{/, "const __default = {") + "\n" +
@@ -33,7 +34,7 @@ globalThis.caches = { default: { match: async (req) => (edge.has(String(req.url 
 
 // ---- a small network around now ----
 const day = W.engDayKey(Date.now());
-const base = Math.floor(new Date(new Date().toLocaleString("en-US", { timeZone: "Australia/Sydney" }).replace(/,.*/, "") + " 00:00").getTime() / 1000);
+const base = sydneyMidnightS(); // Sydney midnight on any machine (helpers/sydney.mjs; was right only with TZ=Australia/Sydney)
 const nowS = Math.floor(Date.now() / 1000);
 const sec = (m) => nowS + m * 60 - base;
 const meta = {
@@ -164,8 +165,10 @@ test("a slow Trip Planner, first page: labelled timetable trips with page cursor
   assert.notEqual(r2.body.source, "timetable");
   assert.equal(r2.body.page.dir, "first");
   assert.equal(nswCalls, calls, "served from the kept page, no second planner call");
-  const row = await D.prepare("SELECT k FROM board_copies WHERE k = ?1").bind("tripp:200030>206710").first();
+  // A child fare page has its own copy (5 Nov 2026): under the plain key its fares were served to the next adult.
+  const row = await D.prepare("SELECT k FROM board_copies WHERE k = ?1").bind("tripp:200030>206710$child").first();
   assert.ok(row, "the live first page is saved under its own key");
+  assert.equal(await D.prepare("SELECT k FROM board_copies WHERE k = ?1").bind("tripp:200030>206710").first(), null, "not under the adult key");
 });
 
 test("no page copy but a saved plain trip copy (Home's card, the pre-warm): the first page answers at once from it", { timeout: 30000 }, async () => {

@@ -88,7 +88,7 @@ cd .. && node tools/verify-deploy.mjs
 
 Each `CHANGELOG.md` and `RELEASES.md` deploy entry names its rollback version. A rollback restores code and plain variables, not D1 data and not Durable Object storage. If the bad deploy added a Durable Object migration (for example `planner-v1`), the rollback still works: the older code simply does not use that class. After a rollback, tell the other workers in your report: their next deploy from main would bring the bad change back.
 
-**First address, until the switch.**  It runs the build from before the move (`node build.mjs site` writes one folder with the secrets filled in). Do not redeploy it unless Bidur asks; `backend/` deployed there keeps its full behaviour for old app builds. Its address is `nsw-transport-bot.sites.tab.bot`. Never deploy to it.
+**First address, until the switch.**  It runs the build from before the move (`node build.mjs <folder outside the repository>` writes one folder with the secrets filled in; since 5 Nov 2026 it refuses any folder inside the repository). Do not redeploy it unless Bidur asks; `backend/` deployed there keeps its full behaviour for old app builds. Its address is `nsw-transport-bot.sites.tab.bot`. Never deploy to it.
 
 **Update 30 Oct 2026 (Bidur: disable all tab.bot addresses).** The first address no longer runs the old build: the operator replaced it with a forwarder. Its /api paths reach api.transportsydney.app and its pages go to transportsydney.app. The rule above still holds: never deploy to it from this repo. The app (from tonight's update) and build 209 never name it.
 

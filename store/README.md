@@ -24,7 +24,7 @@ Identifiers: bundle `com.maisysen.nswtransport` (Watch `.watchkitapp`, complicat
 
 1. **The owner's written OK to submit.** Nothing is submitted without it.
 2. **Apple Watch screenshots** (required; none uploaded). Easiest: the owner takes 3 to 5 on his watch (screenshots/README.md).
-3. **Reshoot the iPhone screenshots or keep them.** The uploaded set shows the owner's own stations (Burwood, Strathfield, Kings Cross). The script now uses NSW wide stations, but needs live data: after about 1 AM, best 4:30 to 5 AM on 27 Oct.
+3. **Reshoot the iPhone screenshots or keep them.** The uploaded set shows the owner's own stations. The script now uses NSW wide stations, but needs live data: after about 1 AM, best 4:30 to 5 AM on 27 Oct.
 4. **Attach the newest build** to version 1.0.0 (206 today; 208 has Calendar leave by, which the notes mention; 209 from 1 Nov).
 5. **"Linked to you: No"** in App Privacy (random install IDs, no accounts). Keep, or switch all four types to Linked (apple/app-privacy.md).
 6. **Opal wording**: the listing no longer says "Opal" (a Transport for NSW brand). The app itself still says "Opal fare" and "Opal machines" on screen; that names the real card and is not listing branding, so it was left alone.

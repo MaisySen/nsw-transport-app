@@ -2,6 +2,8 @@
 
 How Transport is tested, what runs where, and the current results. Updated 25 Oct 2026, 5:25 PM Sydney time.
 
+
+Security review 5 Nov 2026: `backend/test/audit-nov5.test.mjs` (12) and `app/test/audit1105.test.mjs` (11) cover trip card passes with made up tokens (no Trip Planner call, proven cards kept), IPv6 /64 limits, the push endpoint allow list, saved trip copies (no request names, one per fare), the kept observation count, tick and route limits, watch errors, the profile link (old id kept), ids in headers, `start=1` only for the phone's own trips, new ids after Delete all, the install ID in More and the widget and Watch clocks. The owner stations guard is skipped unless `OWNER_STATIONS` or `backend/tools/owner-stations.local.json` is present. Backend timetable tests find Sydney midnight with `backend/test/helpers/sydney.mjs`, so they pass with any `TZ` at any hour (before 5 Nov, 45 failed in UTC between about 13:00 and 19:00 UTC); CI also sets `TZ: Australia/Sydney`.
 ## Levels
 
 | Level | Where | Runs |
@@ -304,7 +306,7 @@ Runs offline with recorded stop search answers in `backend/test/fixtures/stopfin
 3. No em or en dashes in the Ask files
 4. Trip phrasings split into from, to and via (16 phrasings)
 5. Bare suburbs and stations resolve to the station or suburb, never a business (49 place names)
-6. Bidur's sentence plans Campsie to Newcastle Interchange via Chatswood (checks origin 219410, destination 229310, via 206710)
+6. The sentence plans Campsie to Newcastle Interchange via Chatswood (checks origin 219410, destination 229310, via 206710)
 7. Typos and other phrasings reach the same trip
 8. Unclear places get Did you mean choices instead of a guess
 9. Multi stop phrasings split into from, stops and to
@@ -661,7 +663,7 @@ On a phone (not done yet): with NSW refusing, the Home commute card shows timeta
 stops; Ask answers with the timetable note; flight mode shows "Offline" and "check your signal"; after NSW is back
 (after 1 AM) cards show live times again with no note, and the trip screen's first open of a saved trip is instant.
 
-## Live trip follows realtime and location (26 Oct, Bidur's Strathfield to Bondi Junction trip)
+## Live trip follows realtime and location (26 Oct, the owner's test trip)
 
 Automated: `app/test/livetrack.test.mjs` (21 tests: a T8 9 minutes late whose stop off has no live time, the planned change flagged as missed at once, "change here" only when the train is really due, a missed change after you get off, a late ferry into an L2 change, a 610X with no realtime that never ends or says "You've arrived" by the clock, no service answer at all, your tap, GPS arrival on the M1 and GPS before your stop holding the leg, stale or rough fixes ignored, the vehicle over the clock, a server saying its next stop is only the timetable, the delay on the notification and card, carried delays, rode only from live data, and the owner's case). `backend/test/service-progress.test.mjs` (3 tests: a delay carried to your stop off, the vehicle 2 stops behind the clock wins, no live data gives `progress: timetable` and the watch's one stop check says nothing). 18 of the 21 app tests and all 3 server tests fail on the code before this change.
 
@@ -786,7 +788,7 @@ Local only, no production key, no cost: `node backend/tools/local-dev.mjs /tmp/t
 
 ## Owner stations in tests (30 Oct)
 
-At most 5% of tests may name the owner's own stations (Strathfield, Burwood, Kings Cross, Redfern, Town Hall, Flemington, Campsie, Five Dock, Chiswick; stop ids 213510, 213516, 201110, 214020, 219410), so the suites cover Sydney and NSW and not one commute. `backend/test/owner-stations.test.mjs` fails over the limit. It counts each `test(` in `app/test/*.test.mjs` and `backend/test/*.test.mjs` once; a test counts when its own code names a station (any case, spaced or joined) or one of the ids, or uses a top level constant, a top level set up or a fixture file of its test file that does. A test that lists the names to check they are absent carries the comment `owner-stations: guard` and is not counted (at most 5 may). New fixtures: use other real stations with their real ids from `backend/src/public/stations`. On 30 Oct: before 344 of 1510 (22.8%), after 27 of 1513 (1.8%); left are real station search and typo tests on the owner's names, `backend/test/ask.test.mjs`, the Ask corpus share test and fixtures captured from live answers. The browser scripts in `app/test/e2e/` are not counted.
+At most 5% of tests may name the owner's own stations (the list is not in this repository since 5 Nov 2026: it comes from the `OWNER_STATIONS` secret in the backend workflow or the ignored `backend/tools/owner-stations.local.json`, and the guard is skipped without it), so the suites cover Sydney and NSW and not one commute. `backend/test/owner-stations.test.mjs` fails over the limit. It counts each `test(` in `app/test/*.test.mjs` and `backend/test/*.test.mjs` once; a test counts when its own code names a station (any case, spaced or joined) or one of the ids, or uses a top level constant, a top level set up or a fixture file of its test file that does. A test that lists the names to check they are absent carries the comment `owner-stations: guard` and is not counted (at most 5 may). New fixtures: use other real stations with their real ids from `backend/src/public/stations`. On 30 Oct: before 344 of 1510 (22.8%), after 27 of 1513 (1.8%); left are real station search and typo tests on the owner's names, `backend/test/ask.test.mjs`, the Ask corpus share test and fixtures captured from live answers. The browser scripts in `app/test/e2e/` are not counted.
 
 ## Before a release
 

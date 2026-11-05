@@ -74,6 +74,12 @@ test("boardAt: no date means the current service day; before 4am is clamped to 4
   const at130 = W.sydneyMomentOf("20261026", "0130");
   assert.deepEqual([W.boardAt("2300", "", at130).date, W.boardAt("2300", "", at130).time], ["20261025", "2300"]);
   assert.deepEqual([W.boardAt("0200", "", at130).date, W.boardAt("0200", "", at130).time], ["20261026", "0200"]);
+  // 3:30am on 26 Oct (5 Nov fix): 5:00am is in 90 minutes, not yesterday's 5:00; 6:00am asked at 1:30am is this morning.
+  const at330 = W.sydneyMomentOf("20261026", "0330");
+  assert.deepEqual([W.boardAt("0500", "", at330).date, W.boardAt("0500", "", at330).time, W.boardAt("0500", "", at330).clamped], ["20261026", "0500", false]);
+  assert.deepEqual([W.boardAt("0600", "", at130).date, W.boardAt("0600", "", at130).time], ["20261026", "0600"]);
+  // Still the evening before when it is under 12 hours back.
+  assert.deepEqual([W.boardAt("2330", "", at330).date, W.boardAt("2330", "", at330).time], ["20261025", "2330"]);
   assert.equal(W.boardAt("", null, at7pm), null);
   assert.equal(W.boardAt("7pm", null, at7pm), null);
   // Daylight saving ends 5 Apr 2027 3:00am: 8:00am that day is UTC+10.

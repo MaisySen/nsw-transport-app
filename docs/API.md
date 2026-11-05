@@ -73,16 +73,19 @@ Example (Central to Chatswood by metro): `/api/plan?legs=[{"f":"200060","fn":"Ce
 
 `tod` is minutes after midnight (0 to 1439). `days` is a string of weekday numbers, 1 is Monday (default `12345`).
 
+
+Limits (security review, 5 Nov 2026): at most 10 commutes per profile (an 11th is `409`, "You can keep up to 10 usual trips."). The minute tick works on a commute only while its profile has read `GET /api/commutes` in the last 30 days (Home reads it on every start; the read writes `cseen:<profile>` in `meta` at most once a day; commutes made before 5 Nov count from that day). After a planner answer with no usable journey a commute waits 5 minutes before asking again.
+
 ## Watches and notifications
 
 | Endpoint | Method | Body or parameters | Returns |
 | --- | --- | --- | --- |
-| `/api/watch` | POST | `{device, profile, legs, lead, getOff}` | `watch` |
+| `/api/watch` | POST | `{device, profile, legs, lead, getOff}` | `watch`. At most 8 active watches per device: the oldest beyond that ends as `replaced` (5 Nov 2026). A bad body gets `{"error": "device needed" | "nothing to watch" | "This trip could not be watched."}`, never exception text |
 | `/api/watch` | GET | `id` | `watch` with recent `notes` |
 | `/api/watch` | DELETE | `id`, `device` | `ok` |
 | `/api/watches` | GET | `device`, `since` | Active watches with live snapshots, recent alerts, push counts. Runs a tick for the device if the scheduler is quiet |
 | `/api/push/key` | GET | none | `publicKey` (VAPID public key) |
-| `/api/push/subscribe` | POST | `{device, profile, subscription, welcome}` | `ok`, optional test result |
+| `/api/push/subscribe` | POST | `{device, profile, subscription, welcome}` | `ok`, optional test result. The endpoint must be a browser push service on port 443 (fcm.googleapis.com, android.googleapis.com, updates.push.services.mozilla.com, push.services.mozilla.com, web.push.apple.com, *.notify.windows.com); anything else is 400, and a stored one is answered as gone (5 Nov 2026) |
 | `/api/push/unsubscribe` | POST | `{device, endpoint}` | `ok` |
 | `/api/push/expo` | POST | `{device, profile, token, platform, welcome}` | `ok` |
 | `/api/push/expo/unregister` | POST | `{device, token}` | `ok` |
@@ -113,7 +116,7 @@ A shared live trip is a link someone else can open to follow a trip. No account.
 | `POST /api/share` | Body `{device, title, from:{id,name}, to:{id,name}, legs:[watch legs], pos?:{lat,lon,acc}, prog?}`. Returns `{id, key, url, expires}`. `key` is the owner's secret; keep it on the device. Rate limit 20 per 10 min per address. |
 | `POST /api/share/update` | Body `{id, key, pos?: {lat,lon,acc} or null, prog?: {leg, phase, next, stopsLeft, eta}, legs?, end?}`. `pos: null` removes the position. `end: true` deletes the share. Rate limit 240 per 10 min. |
 | `GET /api/share?id=` | For viewers: `{title, from, to, legs, pos (only if under 5 min old), prog, started, updated, expires, now}`. Never returns the key or the device id. 404 `{ended: true}` once the trip has ended. |
-| `DELETE /api/share?id=` | Header `x-share-key` (or `key=`). Deletes the share and every position in it. |
+| `DELETE /api/share?id=` | Header `x-share-key` only (the `key=` form was removed on 5 Nov 2026: a key in the address reaches logs). Deletes the share and every position in it. |
 
 Positions are rounded to 5 decimal places. Viewers get the vehicle from `/api/service` for the current leg.
 
@@ -133,8 +136,9 @@ Watches: `POST /api/watch` takes `track: true` (sent by Start trip). A tracked w
 | Endpoint | Method | Parameters | Returns |
 | --- | --- | --- | --- |
 | `/api/health` | GET | `x-admin-key` header | Feed fetch stats, cached realtime feeds and their age, storage status, and `upstream` for this server copy (`perS` budget, `last10s` Trip Planner calls, `busy`, `refused`, `staleServed`, `shared`, any rate or quota `headers` the hub sent). `403` without the key |
-| `/api/usage` | GET | `x-admin-key` header for the full answer | With the key: today's upstream calls against the 60,000 budget, observation count, last tick time. Without it: only `observations.n` (shown in Settings) |
-| `/api/obs` | GET | `route`, `stop`, `day`, `limit` (up to 1000) | Recorded live observations |
+| `/api/usage` | GET | `x-admin-key` header for the full answer | With the key: today's upstream calls against the 60,000 budget, observation count, last tick time. Without it: only `observations.n` (shown in Settings), from a count at most 10 minutes old (5 Nov 2026; it counted the whole table on every call) |
+| `/api/obs` | GET | `x-admin-key` header; `route`, `stop`, `day`, `limit` (up to 1000) | Recorded live observations. Admin only since 5 Nov 2026 (no app reads it) |
+| `/api/engine/status` | GET | none | The board engine's status, kept 15 s per server copy (5 Nov 2026) |
 
 ## Keyed endpoints
 
@@ -419,6 +423,9 @@ The trip card on the Lock Screen and in the Dynamic Island (Live Activity) is up
 * `GET /api/admin/live-activity` (admin key): the last 10 cards (token cut to 8 characters, trip title, pushes, Apple's last status and reason) and the count of saved phone tokens.
 * `POST /api/admin/live-activity` (admin key) body `{ token?, warning?, end? }`: sends the newest active card (or the one whose token starts with `token`) its live state now, with the warning line "Server test 9:41am" unless `warning` is given (`false` for none); `end: true` ends it. Answers Apple's status and reason, the event, phase and the content state sent.
 
+
+Since 5 Nov 2026 (security review): `POST /api/live-activity`, `/end` and `/api/apns/device` are limited to 40 in 10 minutes per address (an IPv6 /64 counts as one) and 60 a minute in the shared D1 limit. A card Apple has not yet taken a push for is worked out from the quick service answer only (no Trip Planner call, kept line alerts only), and at most 20 such cards go in one pass, oldest first; cards Apple has taken are read on their own, so new tokens can never push them out of a pass. A made up token is refused by Apple on that first push (BadDeviceToken) and the row ends.
+
 ## Remote config for the phone apps
 
 `GET /api/app/config?platform=ios` returns the settings the iPhone app reads at launch and each time it comes to the front (cached for 5 minutes at the edge; the app keeps its last good copy and has the same defaults built in, so it works offline). Native code cannot be changed over the air, so this only switches what the app already has.
@@ -504,7 +511,7 @@ Legs with `feed: "nswtrains"` (NSW TrainLink regional trains and coaches) are no
 `/api/departures` takes an optional `time` (`HHMM`, 24 hour Sydney time) and `date` (`YYYYMMDD`). Only api.transportsydney.app has it (25 Oct 2026); the first address ignores both and answers for now.
 
 * No `time`: the board for now, exactly as before (services gone over 45 s ago are dropped, no `at`).
-* `time` with no `date`: that time in the current service day, which runs 4am to 4am (at 1:30am, `2300` is the evening before and `0200` is tonight).
+* `time` with no `date`: that time in the current service day, which runs 4am to 4am (at 1:30am, `2300` is the evening before and `0200` is tonight). A moment that would fall more than 12 hours back means the next one (since 5 Nov 2026: at 3:30am, `0500` is in 90 minutes, not yesterday's 5am).
 * `time` with `date`: that day at that time.
 * Never before the start of the current service day (4am today, or yesterday's 4am when it is now before 4am): an earlier moment is answered from 4am with `at.clamped: true`. Never more than 14 days ahead.
 * The Trip Planner's departure monitor is asked for that moment (`itdDate`, `itdTime`, departures). Every service it returns is kept, gone or not. Each row carries `departed`: `true` when it left over a minute ago (its live time when there is one, else its timetable time). A gone service keeps the live time and `delayMin` it left with when Transport for NSW still reports them, else `realtime: false` (timetable only).

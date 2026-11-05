@@ -33,7 +33,7 @@ Publisher: Fintex Australia Pty Ltd (ABN 60 688 406 108), https://fintex.au.
 | `ios-native/` | The earlier native iPhone app in SwiftUI (builds up to 104, GitHub macOS runners). No longer shipped: the iPhone app has been built from `app/` since build 201. Kept for reference. |
 | `store/` | App Store and Google Play listing pack, screenshots, privacy answers and the policy audit. |
 | `SUBMIT.md` | Store submission steps for both stores. |
-| `.github/workflows/` | Backend tests (`backend.yml`), the Android App Bundle release (`android-aab-release.yml`) and the older SwiftUI build and TestFlight workflows (`ios-native.yml`, `ios-testflight.yml`). |
+| `.github/workflows/` | Backend tests (`backend.yml`), the nightly board engine timetable (`timetable.yml`), the iPhone build and TestFlight upload from a build branch (`ios-209-local.yml`), the native snapshot audit (`ios-native-audit.yml`), the Android App Bundle release (`android-aab-release.yml`) and the older SwiftUI build and TestFlight workflows (`ios-native.yml`, `ios-testflight.yml`). Actions and tools are pinned to exact versions. |
 | `docs/` | Project documentation, listed below. |
 
 ## Documentation

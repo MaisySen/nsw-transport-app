@@ -1059,6 +1059,10 @@ function boardAt(rawTime, rawDate, now = Date.now()) {
   else {
     t = sydneyMomentOf(startDay, time);
     if (t < floor) t = sydneyMomentOf(sydneyNow(new Date(floor + 24 * 3600000)).day, time);
+    // Before 4am the service day is yesterday's, so 5:00 asked at 3:30am was yesterday's 5:00, almost a day ago
+    // (found 5 Nov 2026 when a test ran at 3:30am). A moment more than 12 hours back means the next one: 11pm asked at
+    // 1:30am stays the evening before, 5:00 asked at 3:30am is in 90 minutes.
+    else if (t < now - 12 * 3600000) t = sydneyMomentOf(sydneyNow(new Date(t + 24 * 3600000)).day, time);
   }
   if (!Number.isFinite(t)) return null;
   const clamped = t < floor;
@@ -2398,7 +2402,12 @@ async function service(env, q) {
   if (!path.length) path = stops.map((s) => [s.lat, s.lon]);
   let lineAlerts = [];
   if (line && /^[a-z]{0,3}\d{1,3}[a-z]?$/i.test(line)) {
-    try { lineAlerts = (await alertsCached(env, line)).items.slice(0, 3).map((a) => ({ title: a.title, priority: a.priority, url: httpsUrl(a.url) })); } catch (e) { lineAlerts = []; }
+    // The quick answer takes kept alerts only (5 Nov 2026): add_info is a Trip Planner call, and the quick answer
+    // makes none. The full answer that follows asks.
+    try {
+      const al = q.quick ? alertsKept(line) : await alertsCached(env, line);
+      lineAlerts = al ? al.items.slice(0, 3).map((a) => ({ title: a.title, priority: a.priority, url: httpsUrl(a.url) })) : [];
+    } catch (e) { lineAlerts = []; }
   }
   return {
     alerts: lineAlerts,
@@ -2434,12 +2443,23 @@ async function nearby(env, lat, lon) {
 }
 
 const alertMem = new Map();
+const ALERT_KEEP_MS = 300000;
+/** Alerts already kept for this line or query (no call), or null. */
+function alertsKept(q) {
+  const hit = alertMem.get((q || "").toLowerCase());
+  return hit && Date.now() - hit.at < ALERT_KEEP_MS ? hit.data : null;
+}
 async function alertsCached(env, q) {
   const k = (q || "").toLowerCase();
-  const hit = alertMem.get(k);
-  if (hit && Date.now() - hit.at < 300000) return hit.data;
-  const data = await alerts(env, q);
+  const hit = alertsKept(q);
+  if (hit) return hit;
+  let data;
+  // A failed ask is remembered for a minute as no alerts (5 Nov 2026), so a down planner is not asked again on every
+  // request for the same line; the map holds at most 500 lines.
+  try { data = await alerts(env, q); }
+  catch (e) { alertMem.set(k, { at: Date.now() - ALERT_KEEP_MS + 60000, data: { items: [] } }); throw e; }
   alertMem.set(k, { at: Date.now(), data });
+  if (alertMem.size > 500) alertMem.delete(alertMem.keys().next().value);
   return data;
 }
 async function alerts(env, q) {
@@ -3635,8 +3655,15 @@ const RATE_RULES = [
   [/^\/api\/watch$/, "watch", 30, 600000, "POST"],
   [/^\/api\/(saved|commutes|commutes\/dismiss|push\/subscribe|push\/expo|push\/expo\/unregister|push\/unsubscribe)$/, "write", 60, 600000, "POST"],
   [/^\/api\/(history\/delete|live-activity\/forget)$/, "delete", 10, 600000],
+  // Trip cards (security review, 5 Nov 2026): a phone registers a card when a trip starts and again on each leg, replan
+  // and arrival, and its push token once a launch; 40 in 10 minutes is well above that.
+  [/^\/api\/(live-activity|live-activity\/end|apns\/device)$/, "la", 40, 600000, "POST"],
+  [/^\/api\/last-home$/, "write", 60, 600000, "POST"],
   [/^\/api\/hit$/, "hit", 120, 600000],
-  [/^\/api\/pack$/, "pack", 300, 60000],
+  // A phone asks one pack per saved stop, at most once a day (up to 24 stops): 300 in 10 minutes (was 300 a minute,
+  // security review 5 Nov 2026; a stop with no timetable costs a Durable Object request each time).
+  [/^\/api\/pack$/, "pack", 300, 600000],
+  [/^\/api\/timetable$/, "tt", 60, 600000],
   [/^\/api\/share$/, "share", 20, 600000, "POST"],
   [/^\/api\/share\/update$/, "shareup", 240, 600000],
   [/^\/api\/share$/, "read", 600, 60000],
@@ -3647,11 +3674,25 @@ const RATE_RULES = [
   // Live sockets (/api/live): opening one is a handful a minute per phone (a screen, a renewal every 10 minutes).
   [/^\/api\/live$/, "live", 30, 60000],
   [/^\/api\/(ask|trip|plan|departures|service|status|next|search|nearby|alerts|predict|obs|stations|station|parking|topup|lifts|usual)$/, "read", 600, 60000],
+  // Reads that reach the board engine or scan a table (security review, 5 Nov 2026): no limit before.
+  [/^\/api\/(trip\/live|engine\/status|timetable|usage|traffic)$/, "read", 600, 60000],
 ];
+// The address a limit counts (security review, 5 Nov 2026): IPv4 as it is, IPv6 by its /64, because a phone or a host
+// is given a whole /64 and can send from any address in it, so each address counting on its own made the limits moot.
+function rateIp(request) {
+  const raw = String(request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "?").split(",")[0].trim().toLowerCase();
+  if (!raw.includes(":")) return raw;
+  if (/\d+\.\d+\.\d+\.\d+$/.test(raw) && /^::ffff:/.test(raw)) return raw.slice(7);
+  const [head, tail] = raw.split("::");
+  const h = head ? head.split(":") : [];
+  const t = tail === undefined ? null : tail ? tail.split(":") : [];
+  const groups = t === null ? h : [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t];
+  return groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, "") || "0").join(":") + "::/64";
+}
 function rateOk(request, pathname) {
   const rule = RATE_RULES.find((r) => r[0].test(pathname) && (!r[4] || request.method === r[4]));
   if (!rule) return true;
-  const ip = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "?";
+  const ip = rateIp(request);
   const k = rule[1] + "|" + ip, now = Date.now();
   let e = rateMem.get(k);
   if (!e || now - e.at > rule[3]) { e = { at: now, n: 0 }; rateMem.set(k, e); }
@@ -3713,7 +3754,21 @@ function withSec(res, api) {
 const DAILY_BUDGET = 60000;           // Transport for NSW Bronze plan, calls per day
 const SAMPLE_BUDGET = 40000;          // background sampling stops above this many calls
 const WATCH_BUDGET = 56000;           // watches stop polling above this many calls
-const SAMPLE_STOPS = ["213516", "213510", "213410", "200060", "200070", "200080", "214110"];
+// Limits on what one profile or device can ask the minute tick to do (security review, 5 Nov 2026). Before, commutes and
+// watches had no cap, commutes never ended, and the tick read only the 25 oldest active watches, so one script could
+// spend the daily quota and keep everyone else's alerts from running.
+const COMMUTE_MAX_PER_PROFILE = 10;
+const WATCH_ACTIVE_PER_DEVICE = 8;
+// A commute whose profile has not opened its commutes (Home reads them on every start) for this long is no longer
+// worked on each morning. It is kept, and starts again the next time the app reads it. Commutes made before 5 Nov count
+// from that day, so none stops before 5 Dec.
+const COMMUTE_IDLE_MS = 30 * 86400000;
+const COMMUTE_SEEN_FROM = Date.UTC(2026, 10, 5);
+// After a planner answer with no usable journey, a commute waits this long before asking again.
+const COMMUTE_NONE_WAIT_MS = 5 * 60000;
+// Busy stations across Sydney (5 Nov 2026: was mostly the owner's own line, against the rule in docs/DECISIONS.md). The
+// stops people save and their commutes are added to these each time (sampleStops).
+const SAMPLE_STOPS = ["200060", "215020", "206710", "202210", "212110", "200030", "214010"];
 
 const upstream = { calls: 0 };
 
@@ -3794,7 +3849,18 @@ async function encryptPush(sub, payload) {
   return concatBytes(header, cipher);
 }
 
+// Web Push goes only to the browsers' own push services, on the standard port (security review, 5 Nov 2026). Before,
+// any https address was accepted as an endpoint and the worker posted to it and returned the status, so it could be used
+// to probe other hosts and ports. An endpoint elsewhere is answered as gone (410), so a stored one is removed.
+const PUSH_HOSTS = /^(fcm\.googleapis\.com|android\.googleapis\.com|updates\.push\.services\.mozilla\.com|push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com)$/;
+function pushEndpointOk(endpoint) {
+  try {
+    const u = new URL(String(endpoint || ""));
+    return u.protocol === "https:" && !u.port && !u.username && !u.password && PUSH_HOSTS.test(u.hostname);
+  } catch (e) { return false; }
+}
 async function sendPush(sub, msg, opts = {}) {
+  if (!pushEndpointOk(sub && sub.endpoint)) return { status: 410, ok: false, text: "endpoint not allowed" };
   const body = await encryptPush(sub, JSON.stringify(msg));
   const headers = {
     Authorization: await vapidAuth(sub.endpoint),
@@ -4023,6 +4089,24 @@ async function bumpUsage(env, f) {
       .bind(day, f.calls || 0, f.ticks || 0, f.rows || 0, f.pushes || 0).run();
   } catch (e) { /* best effort */ }
 }
+let engineStatusMem = null;
+const ENGINE_STATUS_MS = 15000;
+// The public count of recorded live times, kept 10 minutes in memory and in the meta table (shared by every copy).
+let obsCountMem = null;
+const OBS_COUNT_MS = 600000;
+async function obsCount(env, now = Date.now()) {
+  if (obsCountMem && now - obsCountMem.at < OBS_COUNT_MS) return obsCountMem.n;
+  const d = db(env);
+  if (!d) return null;
+  const row = await d.prepare("SELECT v FROM meta WHERE k = 'obs_count'").first().catch(() => null);
+  try { const j = row && JSON.parse(row.v); if (j && now - j.at < OBS_COUNT_MS) { obsCountMem = j; return j.n; } } catch (e) { /* counted again below */ }
+  const c = await d.prepare("SELECT COUNT(*) AS n FROM obs").first().catch(() => null);
+  if (!c) return null;
+  obsCountMem = { at: now, n: Number(c.n) || 0 };
+  await d.prepare("INSERT INTO meta (k, v) VALUES ('obs_count', ?1) ON CONFLICT(k) DO UPDATE SET v = excluded.v").bind(JSON.stringify(obsCountMem)).run().catch(() => null);
+  return obsCountMem.n;
+}
+
 async function usageToday(env) {
   const d = db(env);
   if (!d) return { calls: 0 };
@@ -4106,6 +4190,7 @@ async function serveFile(env, name, request) {
   h.set("content-disposition", `attachment; filename="${name}"`);
   h.set("cache-control", "public, max-age=300");
   h.set("accept-ranges", "bytes");
+  for (const [k, v] of Object.entries(API_SEC_HEADERS)) h.set(k, v);
   if (!("body" in obj) || !obj.body) return new Response(null, { status: 304, headers: h });
   if (obj.range && request.headers.get("range")) {
     const off = obj.range.offset || 0, len = obj.range.length != null ? obj.range.length : obj.size - off;
@@ -5650,6 +5735,9 @@ async function createWatch(env, b, now) {
   const end = Math.max(ms(L.arrPlanned || L.planned), ms(legs[0].planned)) + 3 * 3600000;
   const title = String(b.title || `${legs[0].line} ${legs[0].towards ? "to " + legs[0].towards : ""}`).slice(0, 90);
   const id = rid(8);
+  // At most WATCH_ACTIVE_PER_DEVICE active watches per device: the oldest beyond that ends, as if replaced.
+  await db(env).prepare(`UPDATE watches SET active = 0, ended = 'replaced' WHERE active = 1 AND device = ?1 AND id NOT IN
+    (SELECT id FROM watches WHERE active = 1 AND device = ?1 ORDER BY created DESC LIMIT ?2)`).bind(device, WATCH_ACTIVE_PER_DEVICE - 1).run().catch(() => null);
   await db(env).prepare("INSERT INTO watches (id, device, profile, kind, title, spec, state, created, updated, expires, active) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9, 1)")
     .bind(id, device, profile, legs.length > 1 || b.kind === "trip" ? "trip" : "svc", title, JSON.stringify(spec), JSON.stringify({}), now, Math.min(end, now + 6 * 3600000)).run();
   if (b.kind === "trip" && b.origin && b.to) await logSearch(env, { profile, device, from: b.origin, to: b.to, src: "watch", at: ms(legs[0].planned) - ((legs[0].walkBefore || 0) * 60000) });
@@ -5748,9 +5836,16 @@ async function processCommute(env, c, now, sn, opts = {}) {
   const sent = [];
   if (!opts.force && (dt < -40 || dt > 25 || st.leave)) return { id: c.id, skipped: true };
   if (!opts.force && st.planAt && now - st.planAt < 110000 && st.plan && ms(st.plan.leave) - now > 4 * 60000) return { id: c.id, waiting: true };
+  if (!opts.force && st.noneAt && now - st.noneAt < COMMUTE_NONE_WAIT_MS) return { id: c.id, waiting: true };
   const r = await trip(env, c.from_id, c.to_id, { count: 5, time: dt < -10 ? hhmmOf(c.tod - 10) : null, timetable: false });
   const j = pickCommuteJourney(r.journeys || [], c.tod, now);
-  if (!j) return { id: c.id, nothing: true };
+  if (!j) {
+    // Kept so the next minutes wait (COMMUTE_NONE_WAIT_MS) instead of asking the planner every minute of the window.
+    st.noneAt = now;
+    await db(env).prepare("UPDATE commutes SET state = ?2 WHERE id = ?1").bind(c.id, JSON.stringify(st)).run().catch(() => null);
+    return { id: c.id, nothing: true };
+  }
+  delete st.noneAt;
   const legs = journeyLegs(j);
   const first = legs[0];
   st.plan = { leave: j.leave, board: j.board, arrive: j.arrive, live: j.live, line: first && first.line, mode: first && first.mode, platform: first && first.fromPlatform, delay: first && first.delayMin, color: first && first.color, changes: j.changes, risk: j.risk };
@@ -6168,7 +6263,10 @@ async function processMorningChecks(env, now, opts = {}) {
   await morningSchema(env);
   const sn = sydneyNow(new Date(now));
   const out = [];
-  const due = await d1all(env, `SELECT * FROM morning_checks WHERE active = 1 AND ((tod - ?1 + 1440) % 1440) BETWEEN 3 AND lead ORDER BY tod LIMIT 30`, sn.tod);
+  // Checks already claimed for this departure (within 12 hours, checks are daily) are left out, so more than 30 due at
+  // once no longer means the same 30 come back every minute and the rest wait (security review, 5 Nov 2026).
+  const due = await d1all(env, `SELECT * FROM morning_checks WHERE active = 1 AND ((tod - ?1 + 1440) % 1440) BETWEEN 3 AND lead
+    AND id NOT IN (SELECT check_id FROM morning_sent WHERE at > ?2) ORDER BY tod LIMIT 30`, sn.tod, now - 12 * 3600000);
   for (const c of due) {
     const until = (c.tod - sn.tod + 1440) % 1440;
     const dep = sydneyNow(new Date(now + until * 60000));
@@ -6526,7 +6624,8 @@ async function runTick(env, opts = {}) {
   if (use.calls < WATCH_BUDGET) {
     const q = opts.device
       ? d1all(env, "SELECT * FROM watches WHERE active = 1 AND device = ?1 ORDER BY created LIMIT 10", opts.device)
-      : d1all(env, "SELECT * FROM watches WHERE active = 1 ORDER BY created LIMIT 25");
+      // Least recently worked on first (processWatch sets updated every time), so every active watch gets its turn.
+      : d1all(env, "SELECT * FROM watches WHERE active = 1 ORDER BY updated LIMIT 25");
     for (const w of await q) {
       try { out.watches.push(await processWatch(env, w, Date.now())); }
       catch (e) { out.watches.push({ id: w.id, error: String(e && e.message || e).slice(0, 160) }); }
@@ -6537,7 +6636,9 @@ async function runTick(env, opts = {}) {
   // Commutes
   if (!opts.device && use.calls < WATCH_BUDGET) {
     const days = String(sn.dow);
-    for (const c of await d1all(env, "SELECT * FROM commutes WHERE active = 1")) {
+    // Only commutes whose profile has read them in the last COMMUTE_IDLE_MS ('cseen:' rows, written by GET /api/commutes).
+    const idle = "SELECT c.* FROM commutes c LEFT JOIN meta m ON m.k = 'cseen:' || c.profile WHERE c.active = 1 AND MAX(COALESCE(CAST(m.v AS INTEGER), 0), COALESCE(c.created, 0), ?1) > ?2";
+    for (const c of await d1all(env, idle, COMMUTE_SEEN_FROM, Date.now() - COMMUTE_IDLE_MS)) {
       if (!String(c.days || "").includes(days)) continue;
       try { out.commutes.push(await processCommute(env, c, Date.now(), sn)); }
       catch (e) { out.commutes.push({ id: c.id, error: String(e && e.message || e).slice(0, 160) }); }
@@ -7270,6 +7371,13 @@ const LA_MAX_MS = 7 * 3600000;
 // at most about 30 s behind the server's and a missed push still leaves a second chance before the 2 minute stale date.
 const LA_EVERY_MS = 25000;
 const LA_PER_TICK = 150;
+// A card Apple has not yet taken a push for (a new token, or one whose last push failed) is worked out from the quick
+// service answer only, with no Trip Planner call, and at most LA_NEW_PER_PASS of them go in one pass, oldest first
+// (security review, 5 Nov 2026). Before, anyone could post made up tokens and each one cost up to about 10 Trip Planner
+// calls a pass and pushed real cards out of the pass. Apple refuses a made up token on its first push (BadDeviceToken),
+// which ends the row, so such a token never reaches the full answer.
+const LA_NEW_PER_PASS = 20;
+const laProven = (r) => Number(r && r.last_status) === 200;
 // Pushes in flight at once in one pass: Apple is one HTTP request each, and the live times come from the shared feed copies.
 const LA_CONCURRENCY = 12;
 // A push whose stale date is this close goes as priority 10. A priority 5 push may be held by the phone to save power
@@ -7353,10 +7461,12 @@ const laSentMem = new Map();
 const laUnwritten = new Map();
 const laLastPush = (r) => Math.max(Number(r.last_push) || 0, laSentMem.get(r.token) || 0);
 /** Which cards this pass updates: active, not expired, not pushed in the last 25 s, longest waiting first. */
-function laDue(rows, now, max = LA_PER_TICK) {
+function laDue(rows, now, max = LA_PER_TICK, maxNew = LA_NEW_PER_PASS) {
+  let fresh = 0;
   return rows
     .filter((r) => Number(r.active) === 1 && Number(r.expires) > now && (!laLastPush(r) || now - laLastPush(r) >= LA_EVERY_MS))
     .sort((a, b) => laLastPush(a) - laLastPush(b))
+    .filter((r) => laProven(r) || fresh++ < maxNew)
     .slice(0, max);
 }
 
@@ -7391,9 +7501,9 @@ function laLook(cs) {
 }
 
 /** The card for a trip now, from live times for each leg (the same /api/service data the app reads). */
-async function laCardFor(env, trip, now) {
+async function laCardFor(env, trip, now, o = {}) {
   const svcs = await Promise.all(trip.legs.map((l) =>
-    service(env, { trip: l.tripId, mode: l.mode, line: l.line, feed: l.feed, stop: l.stopId, destId: l.destId, planned: l.planned, to: l.toStopId, dest: l.towards, stopName: l.from, color: l.color })
+    service(env, { trip: l.tripId, mode: l.mode, line: l.line, feed: l.feed, stop: l.stopId, destId: l.destId, planned: l.planned, to: l.toStopId, dest: l.towards, stopName: l.from, color: l.color, quick: !!o.quick })
       .then((r) => (r && !r.error ? r : null)).catch(() => null)));
   const s = LIVECARD.computeLive(trip.legs, svcs, now, { rode: trip.rode, here: trip.here, arrivedAt: trip.arrivedAt });
   // "Updated" is when the oldest live time on the card was made (each service's feedTs), not when the tick ran, so the
@@ -7452,7 +7562,7 @@ const apnsGone = (res) => res.status === 410 || res.reason === "BadDeviceToken" 
 /** Sends one card its current state (or its final state on arrival). Updates the row with what Apple said. */
 async function laPushOne(env, row, now, o = {}) {
   const trip = JSON.parse(row.trip);
-  const { card, done } = await laCardFor(env, trip, now);
+  const { card, done } = await laCardFor(env, trip, now, { quick: !laProven(row) });
   if (o.warning) card.warning = o.warning;
   const end = done || now >= Number(row.expires) || !!o.end;
   const cs = laContentState(card);
@@ -7479,7 +7589,13 @@ async function laPushOne(env, row, now, o = {}) {
 async function tickLiveActivities(env, now = Date.now()) {
   if (!env.APNS_KEY || !env.APNS_BUNDLE || !(await ensureLiveActivities(env))) return { skipped: "no push key" };
   await db(env).prepare("UPDATE live_activities SET active = 0 WHERE active = 1 AND expires < ?1").bind(now - 3600000).run().catch(() => null);
-  const all = await d1all(env, "SELECT * FROM live_activities WHERE active = 1 AND expires > ?1 ORDER BY last_push LIMIT ?2", now - 600000, LA_PER_TICK * 2);
+  // Cards Apple has taken a push for, longest waiting first, and apart from them the newest arrivals oldest first, so a
+  // flood of new tokens can neither fill the pass nor keep real cards out of the rows read.
+  const [proven, fresh] = await Promise.all([
+    d1all(env, "SELECT * FROM live_activities WHERE active = 1 AND expires > ?1 AND last_status = 200 ORDER BY last_push LIMIT ?2", now - 600000, LA_PER_TICK * 2),
+    d1all(env, "SELECT * FROM live_activities WHERE active = 1 AND expires > ?1 AND (last_status IS NULL OR last_status <> 200) ORDER BY created LIMIT ?2", now - 600000, LA_NEW_PER_PASS * 2),
+  ]);
+  const all = [...proven, ...fresh];
   const rows = laDue(all, now);
   const out = [];
   let next = 0;
@@ -7694,7 +7810,9 @@ async function shareRoutes(request, env, url) {
     }
     return json(shareOut(row, now));
   }
-  const b = request.method === "DELETE" ? { id: p.get("id"), key: request.headers.get("x-share-key") || p.get("key") } : await request.json().catch(() => ({}));
+  // The owner key comes only from the x-share-key header, never the address, where it would reach logs and Referer
+  // headers (security review, 5 Nov 2026). The app and the web app have always sent the header.
+  const b = request.method === "DELETE" ? { id: p.get("id"), key: request.headers.get("x-share-key") } : await request.json().catch(() => ({}));
   if (path === "/api/share" && request.method === "POST") {
     const legs = (Array.isArray(b.legs) ? b.legs : []).slice(0, 6).map(legFromInput).filter((l) => l.stopId && l.planned);
     if (!legs.length) return json({ error: "legs needed" }, 400);
@@ -8163,7 +8281,9 @@ async function facTick(env, now, sn, opts = {}) {
   if (!(await facSchema(env).catch(() => false))) return { skipped: "no storage" };
   const out = { park: [], lifts: [] };
   const cps = await carparkList(env);
-  for (const w of await d1all(env, "SELECT * FROM park_watches WHERE done = 0 AND expires > ?1 ORDER BY created LIMIT 20", now)) {
+  // Up to 100 a minute (20 before, security review 5 Nov 2026): the live count is kept 90 s per car park (carparkLive), so
+  // more watches cost no more Transport for NSW calls, and watches past the 20th were never looked at.
+  for (const w of await d1all(env, "SELECT * FROM park_watches WHERE done = 0 AND expires > ?1 ORDER BY created LIMIT 100", now)) {
     const c = cps.find((x) => x.id === w.facility);
     if (!c) continue;
     const p = await carparkLive(env, c);
@@ -8473,6 +8593,9 @@ async function handleRequest(request, env, exec) {
         }
         case "/api/engine/status": {
           if (typeof engineCall !== "function") return json({ error: "engine not built in" }, 503);
+          // One answer per server copy for ENGINE_STATUS_MS: each call is 1 + 4 Durable Object requests (security review,
+          // 5 Nov 2026). The nightly timetable workflow and orient.mjs read it; neither needs it fresher.
+          if (engineStatusMem && Date.now() - engineStatusMem.at < ENGINE_STATUS_MS) return json(engineStatusMem.st, engineStatusMem.status);
           const r = await engineCall(env, "/status");
           const st = await r.json();
           // The board shards: starts (boots) and ticks of each, so a restart under load shows here.
@@ -8485,6 +8608,7 @@ async function handleRequest(request, env, exec) {
           }
           // This server copy's own feed freshness (feedFreshness): ages and error counts only.
           st.workerFeeds = feedFreshness();
+          engineStatusMem = { at: Date.now(), st, status: r.status };
           return json(st, r.status);
         }
         case "/api/pack":
@@ -8690,6 +8814,8 @@ async function handleRequest(request, env, exec) {
           return asTxt ? textRes(await asText(env, d)) : json(d);
         }
         case "/api/obs": {
+          // Admin only (security review, 5 Nov 2026): no app reads it, and each call scanned the whole obs table.
+          if (!adminOk(request, p)) return json({ error: "forbidden" }, 403);
           if (!(await ensureSchema(env).catch(() => false))) return json({ error: "storage not available" }, 503);
           const where = [], args = [];
           if (p.get("route")) { where.push(`route = ?${args.length + 1}`); args.push(p.get("route")); }
@@ -8729,7 +8855,7 @@ async function handleRequest(request, env, exec) {
           const b = await request.json().catch(() => ({}));
           const device = cleanId(b.device), s = b.subscription || {};
           if (!device || !s.endpoint || !s.keys || !s.keys.p256dh || !s.keys.auth) return json({ error: "subscription needed" }, 400);
-          if (!/^https:\/\//.test(s.endpoint) || s.endpoint.length > 1000) return json({ error: "bad endpoint" }, 400);
+          if (s.endpoint.length > 1000 || !pushEndpointOk(s.endpoint)) return json({ error: "bad endpoint" }, 400);
           const prof = profileId(b.profile || profile);
           await db(env).prepare(`INSERT INTO push_subs (endpoint, device, profile, p256dh, auth, ua, created, fails) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)
             ON CONFLICT (endpoint) DO UPDATE SET device = excluded.device, profile = excluded.profile, p256dh = excluded.p256dh, auth = excluded.auth, ua = excluded.ua, fails = 0`)
@@ -8807,7 +8933,12 @@ async function handleRequest(request, env, exec) {
           if (request.method === "POST") {
             const b = await request.json().catch(() => ({}));
             try { return json({ ok: true, watch: await createWatch(env, { ...b, profile: b.profile || profile }, Date.now()) }); }
-            catch (e) { return json({ error: String(e && e.message || e) }, 400); }
+            catch (e) {
+              // Only our own two answers go back; anything else is logged, never echoed (security review, 5 Nov 2026).
+              const m = String(e && e.message || e);
+              if (m !== "device needed" && m !== "nothing to watch") console.log(JSON.stringify({ t: "watch-error", e: m.slice(0, 200) }));
+              return json({ error: m === "device needed" || m === "nothing to watch" ? m : "This trip could not be watched." }, 400);
+            }
           }
           if (request.method === "DELETE") {
             await db(env).prepare("UPDATE watches SET active = 0, ended = 'stopped' WHERE id = ?1 AND device = ?2").bind(cleanId(p.get("id")), cleanId(p.get("device"))).run();
@@ -8854,6 +8985,8 @@ async function handleRequest(request, env, exec) {
             }
             const from = b.from || {}, to = b.to || {};
             if (!from.id || !to.id || !Number.isFinite(Number(b.tod))) return json({ error: "from, to and tod needed" }, 400);
+            const have = await d1all(env, "SELECT COUNT(*) AS n FROM commutes WHERE profile = ?1", profile);
+            if (have[0] && have[0].n >= COMMUTE_MAX_PER_PROFILE) return json({ error: `You can keep up to ${COMMUTE_MAX_PER_PROFILE} usual trips.` }, 409);
             const id = rid(6);
             await db(env).prepare("INSERT INTO commutes (id, profile, name, from_id, from_name, to_id, to_name, tod, days, active, created, state) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, ?10, '{}')")
               .bind(id, profile, String(b.name || commuteName(tod)).slice(0, 40), String(from.id).slice(0, 80), String(from.name || "").slice(0, 80), String(to.id).slice(0, 80), String(to.name || "").slice(0, 80), tod, days, Date.now()).run();
@@ -8863,8 +8996,13 @@ async function handleRequest(request, env, exec) {
             await db(env).prepare("DELETE FROM commutes WHERE id = ?1 AND profile = ?2").bind(cleanId(p.get("id")), profile).run();
             return json({ ok: true });
           }
-          const items = (await d1all(env, "SELECT * FROM commutes WHERE profile = ?1 ORDER BY tod", profile)).map(commuteOut);
-          return json({ items, suggestion: await commuteSuggestion(env, profile).catch(() => null), now: Date.now() });
+          const rows = await d1all(env, "SELECT * FROM commutes WHERE profile = ?1 ORDER BY tod", profile);
+          // The profile still uses its commutes: the minute tick keeps working on them (COMMUTE_IDLE_MS). At most one write a day.
+          if (rows.length) {
+            const seen = await db(env).prepare("SELECT v FROM meta WHERE k = ?1").bind("cseen:" + profile).first().catch(() => null);
+            if (!seen || Date.now() - Number(seen.v) > 20 * 3600000) await db(env).prepare("INSERT INTO meta (k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = excluded.v").bind("cseen:" + profile, String(Date.now())).run().catch(() => null);
+          }
+          return json({ items: rows.map(commuteOut), suggestion: await commuteSuggestion(env, profile).catch(() => null), now: Date.now() });
         }
         case "/api/commutes/dismiss": {
           await ensureSchema3(env);
@@ -8938,10 +9076,11 @@ async function handleRequest(request, env, exec) {
           return json({ prediction: it.pred || null });
         }
         case "/api/usage": {
-          // Without the admin key only the count of recorded live times is shown (Settings).
+          // Without the admin key only the count of recorded live times is shown (Settings), from a copy at most
+          // 10 minutes old (obsCount): before, every call counted the whole obs table (security review, 5 Nov 2026).
           await ensureSchema3(env);
+          if (!adminOk(request)) { const n = await obsCount(env); return json({ observations: n != null ? { n } : null }); }
           const c = await db(env).prepare("SELECT COUNT(*) AS n, COUNT(DISTINCT day) AS days FROM obs").first().catch(() => null);
-          if (!adminOk(request)) return json({ observations: c ? { n: c.n } : null });
           const u = await usageToday(env);
           const lt = await db(env).prepare("SELECT v FROM meta WHERE k = 'last_tick'").first().catch(() => null);
           return json({ today: u, budget: DAILY_BUDGET, observations: c, lastTick: lt ? new Date(Number(lt.v)).toISOString() : null });
@@ -9171,9 +9310,27 @@ function tripCopyKey(url) {
   // Max walk chips (tripWalkParse): a trip asked with a walking choice has its own copy, never the plain one.
   const wn = Number(p.get("maxWalk")), wl = p.get("lessWalk") === "1";
   const w = tripWalkTag(TRIP_WALK_MAX.includes(wn) || wl ? { max: TRIP_WALK_MAX.includes(wn) ? wn : 0, less: wl } : null);
-  const ws = w ? "~" + w : "";
+  // The fare type is part of the copy (security review, 5 Nov 2026): the answer carries one fare type's fares, so a
+  // concession answer saved under the plain key was served to the next adult asking for the same trip. The adult fare
+  // keeps the plain key (the one prewarm fills). Names are not kept in the copy at all (tripCopyPlain, fromSaved).
+  const fare = fareType(p);
+  const ws = (w ? "~" + w : "") + (fare === "adult" ? "" : "$" + fare);
   if (page) return { k: "tripp:" + from + ">" + to + ws, stop: "trip", page: true, plain: "trip:" + from + ">" + to + ws };
   return { k: "trip:" + from + ">" + to + ws, stop: "trip" };
+}
+/**
+ * A trip answer as it is saved for everyone (security review, 5 Nov 2026): the station names it echoed from this
+ * request (fromName, toName) are replaced by the names in its own first trip, so text one person sent never reaches the
+ * next person who gets the copy. fromSaved puts that person's own names back.
+ */
+function tripCopyPlain(body) {
+  try {
+    const d = JSON.parse(body);
+    if (!d || !d.from || !d.to) return body;
+    d.from = { ...d.from, name: tripEndName(d, "from") || d.from.id };
+    d.to = { ...d.to, name: tripEndName(d, "to") || d.to.id };
+    return JSON.stringify(d);
+  } catch (e) { return body; }
 }
 // A saved plain trip copy (Home's commute card, the pre-warm) as a first page: the same journeys, from the first to
 // leave, with the page cursors worked out the way tripPage does, so the trip list's first open has live trips at once
@@ -9542,13 +9699,19 @@ function badInput(p) {
 const IP_LIMITS = [
   [/^\/api\/(ask|trip|plan|departures|service|status|next|search|nearby|alerts|station|parking|topup|lifts)$/, "up", 120, "GET"],
   [/^\/api\/(saved|commutes|commutes\/dismiss|watch|push\/subscribe|push\/expo|push\/expo\/unregister|push\/unsubscribe|push\/test|share|share\/update|history\/delete|live-activity\/forget|lifts\/alerts|parking\/watch|feedback)$/, "w", 60, null],
+  // Writes that start work on every minute tick (security review, 5 Nov 2026): trip cards, last way home, morning checks
+  // and trip alerts were not counted here before.
+  [/^\/api\/(live-activity|live-activity\/end|apns\/device|last-home|morning-check|trip-alerts)$/, "w2", 60, null],
+  // Timetable reads that miss the edge copy reach the board engine (a Durable Object request each).
+  [/^\/api\/pack$/, "pk", 60, "GET"],
+  [/^\/api\/timetable$/, "tt", 10, "GET"],
 ];
 let ipSchemaOk = false;
 async function ipLimitOk(env, request, pathname) {
   const rule = IP_LIMITS.find((r) => r[0].test(pathname) && (r[3] ? request.method === r[3] : request.method !== "GET"));
   const d = db(env);
   if (!rule || !d) return true;
-  const ip = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "?";
+  const ip = rateIp(request);
   const win = Math.floor(Date.now() / 60000);
   try {
     if (!ipSchemaOk) { await d.prepare("CREATE TABLE IF NOT EXISTS ip_rate (k TEXT PRIMARY KEY, win INTEGER, n INTEGER)").run(); ipSchemaOk = true; }
@@ -9646,7 +9809,7 @@ async function edgeFetchInner(request, env, exec) {
       if (!out) {
         if (leader && exec && exec.waitUntil) exec.waitUntil(job.promise.catch(() => null));
         budget.staleServed++;
-        return kept ? fromCopy(hit, storedAt, "stale") : fromSaved(saved);
+        return kept ? fromCopy(hit, storedAt, "stale") : fromSaved(saved, url);
       }
     } else {
       // The upstream answer is finished and stored even when this phone stops waiting (the app gives up on a trip at
@@ -9735,7 +9898,7 @@ async function edgeFetchInner(request, env, exec) {
           // The Trip Planner is slow: a saved live copy if there is one, else labelled timetable trips, so the phone
           // has an answer before its own deadline. Neither is stored; the planner's answer replaces them on the next poll.
           budget.tripQuick = (budget.tripQuick || 0) + 1;
-          if (saved) { budget.staleServed++; return fromSaved(saved); }
+          if (saved) { budget.staleServed++; return fromSaved(saved, url); }
           startTt();
           const fb = await ttP;
           if (fb) { if (Date.now() - t0 < quick) budget.tripQuickTt = (budget.tripQuickTt || 0) + 1; return fb; }
@@ -9750,7 +9913,7 @@ async function edgeFetchInner(request, env, exec) {
     }
     if (out.status >= 500 && saved) {
       budget.staleServed++;
-      return fromSaved(saved);
+      return fromSaved(saved, url);
     }
     // No copy and the Trip Planner refused or failed: the engine's timetable board, labelled (engineOutage).
     if (out.status >= 500 && url.pathname === "/api/departures") {
@@ -10166,7 +10329,7 @@ const TRIP_TT_FIRST_MS = 1500;
 const TT_NO_OWN = new WeakSet(); // tt=1 requests that leave our own planner's pack out (TRIP_TT_OWN=off)
 function tripTtOn(env) { return servesOn(env, "TRIP_TT", "tripTt"); }
 function tripTtNone(why) {
-  return new Response(null, { status: 204, headers: { "cache-control": "no-store", "x-tt-first": why, "access-control-allow-origin": "*", "access-control-expose-headers": SERVES_EXPOSE + ", x-tt-first" } });
+  return new Response(null, { status: 204, headers: { ...API_SEC_HEADERS, "cache-control": "no-store", "x-tt-first": why, "access-control-allow-origin": "*", "access-control-expose-headers": SERVES_EXPOSE + ", x-tt-first" } });
 }
 async function tripTtFirst(request, env, exec, url) {
   if (!tripTtOn(env)) return tripTtNone("off");
@@ -10293,7 +10456,7 @@ async function answerAndStore(request, env, exec, cache, key, opts = {}) {
     // A live board is also saved for first opens anywhere (boardSave); a phone's own open marks the stop as opened.
     const bk = boardKey(url);
     if (bk && (bk.stop === "trip" ? tripCopyOk(body) : bk.stop === "park" ? parkCopyOk(body) : /"items":\[/.test(body))) {
-      const save = boardSave(env, bk, body, !opts.warm).catch(() => null);
+      const save = boardSave(env, bk, bk.stop === "trip" ? tripCopyPlain(body) : body, !opts.warm).catch(() => null);
       if (exec && exec.waitUntil) exec.waitUntil(save); else await save;
     }
     copy.headers.set("x-stored-at", String(Date.now()));
@@ -10337,13 +10500,18 @@ async function fromCopy(hit, storedAt, tag) {
 }
 // A board saved in D1 (boardSaved): the same shape as an edge copy, dataAt when it was fetched, tagged "saved".
 // Services that have already left (more than a minute ago) are taken out.
-function fromSaved(saved) {
+function fromSaved(saved, url = null) {
   let text = saved.body;
   try {
     const d = JSON.parse(text);
     if (d && Array.isArray(d.journeys)) {
       const cut = Date.now() - 60000;
       d.journeys = d.journeys.filter((j) => Date.parse((j && (j.board || j.leave)) || "") >= cut);
+      // This request's own station names, as the trip answer would have echoed them (tripCopyPlain kept none).
+      const p = url && url.searchParams;
+      const given = (k) => { const v = ((p && p.get(k)) || "").trim().slice(0, 120); return v && !/^\d+$/.test(v) ? v : null; };
+      if (d.from && given("fromName")) d.from = { ...d.from, name: given("fromName") };
+      if (d.to && given("toName")) d.to = { ...d.to, name: given("toName") };
       text = JSON.stringify(d);
     }
     if (d && (Array.isArray(d.carparks) || d.carpark)) text = JSON.stringify(parkRestale(d));

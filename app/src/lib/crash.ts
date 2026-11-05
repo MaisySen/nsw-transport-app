@@ -23,7 +23,8 @@ function buildNo(): string | null {
   try { const A = require('expo-application'); return (A && A.nativeBuildVersion) || null; } catch { return null; }
 }
 
-async function installId(): Promise<string> {
+/** The install ID every crash report carries: this phone's device id. More shows it under About (privacy policy). */
+export async function installId(): Promise<string> {
   try { return ((await AsyncStorage.getItem('device')) || '').slice(0, 40); } catch { return ''; }
 }
 
