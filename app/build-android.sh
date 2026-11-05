@@ -1,11 +1,12 @@
 #!/bin/bash
 # Local release build (native libs stored compressed and extracted on install, arm64 plus x86_64) of the Android app. Signing secrets come from ~/.nsw-secrets (never in the repo).
 set -e
-export ANDROID_HOME=/home/user/android-sdk ANDROID_SDK_ROOT=/home/user/android-sdk NODE_ENV=production
-cd /home/user/nsw-app
+export ANDROID_HOME=${ANDROID_HOME:-/home/user/android-sdk} ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-/home/user/android-sdk} NODE_ENV=production
+# The app folder this script is in, so prebuild and the signing patch run in the same tree build-android-aab.sh builds.
+cd "$(dirname "$0")"
 CI=1 npx expo prebuild --platform android --no-install
 cd android
-echo "sdk.dir=/home/user/android-sdk" > local.properties
+echo "sdk.dir=$ANDROID_HOME" > local.properties
 python3 - <<'PY'
 import json,re
 k=json.load(open('/home/user/.nsw-secrets/android-keystore.json'))

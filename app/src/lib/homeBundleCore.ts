@@ -24,7 +24,8 @@ export type HomeRead = { p: string; ids: boolean };
 export type HomePart = { p?: string; status: number; body?: unknown; late?: boolean };
 export type HomeLists = Partial<Record<HomeOccasion, HomeRead[]>>;
 
-const READ_RE = /^\/api\/(trip|departures|commutes|saved|watches|app\/config)\?[^#]*$/;
+// Saved trips and commutes may have no query at all: their profile rides as a header (5 Nov audit).
+const READ_RE = /^\/api\/((trip|departures|commutes|saved|watches|app\/config)\?[^#]*|commutes|saved)$/;
 
 /**
  * A read that may go into the bundle: one of Home's own reads, not a text answer. Trip reads that page (the trip
@@ -33,7 +34,8 @@ const READ_RE = /^\/api\/(trip|departures|commutes|saved|watches|app\/config)\?[
  */
 export function homeReadOk(path: string): boolean {
   if (typeof path !== 'string' || path.length > 1200 || !READ_RE.test(path)) return false;
-  const q = '&' + path.slice(path.indexOf('?') + 1) + '&';
+  const at = path.indexOf('?');
+  const q = '&' + (at < 0 ? '' : path.slice(at + 1)) + '&';
   if (/&format=/.test(q)) return false;
   if (path.startsWith('/api/trip?') && /&(refresh=1|page=|after=|before=)/.test(q)) return false;
   return true;
@@ -132,5 +134,7 @@ export function createHomeBundle(t: Timers, onSave?: (lists: HomeLists) => void)
     },
     /** Drops what a bundle brought (a write to the server: lists may have changed). */
     clear() { parts.clear(); },
+    /** Forgets the reads noted so far too (Delete all my data: they name the old device id), and saves that. */
+    reset() { parts.clear(); lists = {}; if (rec) rec.seen = []; onSave?.(lists); },
   };
 }

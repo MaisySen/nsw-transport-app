@@ -40,11 +40,12 @@ function qs(o: Record<string, any>) {
 /** A request's init, plus this phone's device and profile ids: placed per server (servesCore.placeIds). */
 type ApiInit = RequestInit & { ids?: { device: string; profile?: string } };
 
-/** Device and profile for a read: headers when the server in use reads them there (x-serves id-headers), else in
- * the address as before. The choice is made per server address in once(), so a fallback server gets the old form. */
-async function withIds(profile = true): Promise<ApiInit> {
-  const [device] = await Promise.all([getDevice(), loadServes()]);
-  return { ids: { device, profile: profile ? PROFILE : undefined } };
+/** Device and profile for a request: headers when the server in use reads them there (x-serves id-headers), else in
+ * the address as before. The choice is made per server address in once(), so a fallback server gets the old form.
+ * `device` false leaves the device out, for routes that read only the profile (saved trips, commutes). */
+async function withIds(profile = true, device = true): Promise<ApiInit> {
+  const [dev] = await Promise.all([device ? getDevice() : '', loadServes()]);
+  return { ids: { device: dev, profile: profile ? PROFILE : undefined } };
 }
 
 async function once<T>(path: string, init: ApiInit | undefined, timeoutMs: number, base: string = apiBase(), raw = false): Promise<T> {
@@ -195,7 +196,9 @@ export function startHomeBundle(occ: HomeOccasion, o: { config?: boolean } = {})
   if (base !== apiBase()) { homeBundle.begin(occ, base, null); return false; }
   return homeBundle.begin(occ, base, bundleSender(base), {
     extra: o.config ? [{ p: CONFIG_READ, ids: false }] : [],
-    drop: (r) => r.p === CONFIG_READ && !o.config,
+    // A read kept from before 5 Nov with the profile in its address (saved trips, commutes, watches) is not asked again:
+    // those reads now carry it as a header, and the new form is noted for next time.
+    drop: (r) => (r.p === CONFIG_READ && !o.config) || /[?&]profile=/.test(r.p),
   });
 }
 
@@ -280,21 +283,26 @@ export const api = {
    * older one answers 404 and the route view shows every stop as before (notStoppingCore.routeDetours). */
   detours: (line: string, mode = 'bus') => req<any>(`/api/detours?${qs({ line, mode })}`, undefined, 8000),
   alerts: (q = '') => req<{ items?: any[]; alerts?: any[] }>(`/api/alerts?${qs({ q })}`),
-  saved: () => req<{ items: Saved[] }>(`/api/saved?${qs({ profile: PROFILE })}`),
+  // Saved trips, commutes and watches: the profile rides as x-profile where the server reads it (withIds), never in
+  // the address of a server that does (5 Nov audit). Writes keep it in the body as before.
+  saved: async () => req<{ items: Saved[] }>(`/api/saved`, await withIds(true, false)),
   saveTrip: (name: string, from: Place, to: Place) => req<{ ok: boolean }>(`/api/saved`, { method: 'POST', body: JSON.stringify({ profile: PROFILE, name, from, to }) }),
   saveTripLegs: (name: string, legs: any[]) => req<{ ok: boolean }>(`/api/saved`, { method: 'POST', body: JSON.stringify({ profile: PROFILE, name, legs }) }),
-  deleteSaved: (name: string) => req<{ ok: boolean }>(`/api/saved?${qs({ profile: PROFILE, name })}`, { method: 'DELETE' }),
-  commutes: () => req<{ items: Commute[]; suggestion: any; now: number }>(`/api/commutes?${qs({ profile: PROFILE })}`),
-  saveCommute: (body: Partial<Commute> & { from?: Place; to?: Place }) => req<{ ok: boolean; item: Commute }>(`/api/commutes?${qs({ profile: PROFILE })}`, { method: 'POST', body: JSON.stringify(body) }),
-  deleteCommute: (id: string) => req<{ ok: boolean }>(`/api/commutes?${qs({ profile: PROFILE, id })}`, { method: 'DELETE' }),
-  dismissSuggestion: (key: string) => req<{ ok: boolean }>(`/api/commutes/dismiss?${qs({ profile: PROFILE })}`, { method: 'POST', body: JSON.stringify({ key }) }),
-  watches: async (since = 0) => req<WatchesResp>(`/api/watches?${qs({ device: await getDevice(), profile: PROFILE, since })}`),
+  deleteSaved: async (name: string) => req<{ ok: boolean }>(`/api/saved?${qs({ name })}`, { method: 'DELETE', ...(await withIds(true, false)) }),
+  commutes: async () => req<{ items: Commute[]; suggestion: any; now: number }>(`/api/commutes`, await withIds(true, false)),
+  saveCommute: async (body: Partial<Commute> & { from?: Place; to?: Place }) => req<{ ok: boolean; item: Commute }>(`/api/commutes`, { method: 'POST', body: JSON.stringify(body), ...(await withIds(true, false)) }),
+  deleteCommute: async (id: string) => req<{ ok: boolean }>(`/api/commutes?${qs({ id })}`, { method: 'DELETE', ...(await withIds(true, false)) }),
+  dismissSuggestion: async (key: string) => req<{ ok: boolean }>(`/api/commutes/dismiss`, { method: 'POST', body: JSON.stringify({ key }), ...(await withIds(true, false)) }),
+  // The server reads this list's device from the address only (backend /api/watches), so the device stays there.
+  watches: async (since = 0) => req<WatchesResp>(`/api/watches?${qs({ device: await getDevice(), since })}`, await withIds(true, false)),
   watch: async (body: any) => {
     const r = await req<{ ok: boolean; watch: { id: string } }>(`/api/watch`, { method: 'POST', body: JSON.stringify({ device: await getDevice(), profile: PROFILE, ...body }) });
     watchClock.startedAt = Date.now();
     return r;
   },
-  watchDetail: (id: string) => req<{ watch: Watch; notes: any[]; now: number }>(`/api/watch?${qs({ id })}`),
+  // The device goes with one watch's read too (x-device, else device= as the delete sends it), so the server can ask
+  // that it matches.
+  watchDetail: async (id: string) => req<{ watch: Watch; notes: any[]; now: number }>(`/api/watch?${qs({ id })}`, await withIds(false)),
   stopWatch: async (id: string) => req<{ ok: boolean }>(`/api/watch?${qs({ id, device: await getDevice() })}`, { method: 'DELETE' }),
   registerExpo: async (token: string, platform: string, welcome = false) =>
     req<{ ok: boolean; test?: any }>(`/api/push/expo`, { method: 'POST', body: JSON.stringify({ device: await getDevice(), profile: PROFILE, token, platform, welcome }) }),

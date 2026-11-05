@@ -36,6 +36,9 @@ import { setTrackworkHeadsUp } from '@/lib/trackwork';
 import { forgetPushTokens, PUSH_FORGOTTEN_KEY } from '@/lib/forgetTokens';
 import { askCalendarRead, calendarReadSupported } from '@/lib/calendarLeaveBy';
 import { hasSpeech } from '@/lib/nativeExtras';
+import { renewIds } from '@/lib/device';
+import { homeBundle } from '@/lib/homeBundle';
+import { installId } from '@/lib/crash';
 
 /** "1.0.0 (204) · update 01a16ff7": the build on the phone and the update it runs, for support. */
 function versionText() {
@@ -56,6 +59,9 @@ export default function Settings() {
     return { commutes: cm.items, watching: (w?.items || []).filter((x) => x.active).length };
   }, 60000, [], { cacheKey: LIST_KEYS.settings });
   useEffect(() => { getPushState().then(setPush); }, []);
+  // The install ID crash reports carry (lib/crash.ts), shown under About so a person can quote it to have them deleted.
+  const [install, setInstall] = useState('');
+  useEffect(() => { installId().then(setInstall).catch(() => {}); }, []);
   const st = useStore();
   // Same chat as the Ask tab (lib/askChat.ts), so clearing here empties Ask at once.
   const { msgs: askMsgs } = useAskChat();
@@ -89,12 +95,16 @@ export default function Settings() {
       clearLastHomeLocal();
       setTrackworkHeadsUp(false).catch(() => {});
       store.resetAll();
-      // Everything this app keeps on the phone goes, except the install's private id, device id, and the server
-      // address and switches (not personal data; the widgets read the address).
+      // Everything this app keeps on the phone goes, except the server address and switches (not personal data; the
+      // widgets read the address). The profile and device ids are made new instead (device.renewIds), after the
+      // server deleted everything under the old ones, so later data and crash reports do not link to them.
       try {
         const keys = await AsyncStorage.getAllKeys();
         await AsyncStorage.multiRemove(keys.filter((k) => !['profile', 'device', 'store', 'apiBase', 'remoteConfig', PUSH_FORGOTTEN_KEY].includes(k)));
       } catch {}
+      await renewIds();
+      homeBundle.reset();
+      setInstall(await installId());
       // The kept copies this session holds in memory go too, so no screen paints a deleted list from them.
       forgetOffline();
       await clearAskChat();
@@ -309,6 +319,14 @@ export default function Settings() {
           <Row title="Privacy policy" onPress={() => Linking.openURL(PRIVACY_URL).catch(() => {})} />
           <Sep />
           <Row title="Version" right={<T kind="body" tone="text2" selectable>{versionText()}</T>} chevron={false} />
+          {install ? (
+            <>
+              <Sep />
+              <Row title="Install ID" chevron={false} right={
+                <T kind="foot" tone="text2" selectable style={{ flexShrink: 1, textAlign: 'right', marginLeft: 12 }}
+                  accessibilityLabel={`Install ID ${install.split('').join(' ')}`}>{install}</T>} />
+            </>
+          ) : null}
         </Section>
       </Screen>
       <ActionSheet visible={!!sheet} title={sheet?.title} message={sheet?.message} actions={sheet?.actions || []} onClose={() => setSheet(null)} />

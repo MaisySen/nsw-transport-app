@@ -1,4 +1,4 @@
-// The order of a list of trips (Simple mode and the trip list). Bidur, 26 Oct 8:50 AM, Strathfield to Five Dock
+// The order of a list of trips (Simple mode and the trip list). Bidur, 26 Oct 8:50 AM
 // Shops: a T2 then a bus that gets there no sooner than the direct 415 should not sit above it. Pure logic, no
 // imports, unit tested in Node (test/rank.test.mjs).
 

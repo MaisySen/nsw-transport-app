@@ -29,7 +29,7 @@ import { ttFirstSeed, ttFirstWanted } from '@/lib/newTripCore';
 import { usePalette, radius, modeColor } from '@/lib/theme';
 import { C24, PHONE24, bestTime, clock, durText, ms, shortName } from '@/lib/format';
 import { plainText } from '@/lib/htmlTextCore';
-import { store, tripKeyOf, useStore } from '@/lib/store';
+import { store, tripKeyOf, useLoaded, useStore } from '@/lib/store';
 import { safeUrl, stShort } from '@/lib/access';
 import { LegAccessChips, ParkGroup } from '@/components/Access';
 import { fareKind, fareOf, fareWords, money, offPeakText, TRAINLINK_BOOKING_URL } from '@/lib/fare';
@@ -60,7 +60,7 @@ import { firstLeaveInMs, tripGapMs } from '@/lib/pollCore';
 import { rankTrips } from '@/lib/rankCore';
 import { planB, problemOf } from '@/lib/planBCore';
 import { busLegStatus, rowTraffic, trafficLine } from '@/lib/busLiveCore';
-import { startIndex } from '../../platform/intentInboxCore';
+import { ownStart, startIndex, type OwnTrip } from '../../platform/intentInboxCore';
 import { addToCalendar, hasCalendar } from '@/lib/nativeExtras';
 import { leaveByEvent } from '@/lib/leaveByCore';
 import { RemindLastButton } from '@/components/LastHome';
@@ -661,18 +661,24 @@ export default function TripScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [when.kind, whenKey, js.length, updatedAt]);
   const [viewH, setViewH] = useState(0);
-  // A start link opens the service leaving closest to `at` and starts it, once.
+  // A start link opens the service leaving closest to `at`, and starts it once when the trip is one of this phone's
+  // own (intentInboxCore.ownStart): Your trips, Home and Work, and the saved trips and commutes Home keeps. The
+  // widget, Siri and Control Center link only to those; any other start link waits for a tap on Start trip.
   const [autoStart, setAutoStart] = useState<number | null>(null);
   const startDone = useRef(false);
+  const storeLoaded = useLoaded();
   useEffect(() => {
-    if (p.start !== '1' || startDone.current || !js.length) return;
+    if (p.start !== '1' || startDone.current || !js.length || !storeLoaded) return;
     startDone.current = true;
     const i = startIndex(js.map(depMs), p.at ? Number(p.at) : null);
     if (i < 0) return;
     setOpen(i);
-    setAutoStart(i);
+    const lists = peekOffline<any>(cacheKey('home', 'lists'))?.data;
+    const pl = stNow.places || {};
+    const own: OwnTrip[] = [...(stNow.myTrips || []), { from: pl.home, to: pl.work }, ...(lists?.saved?.items || []), ...(lists?.commutes?.items || [])];
+    if (ownStart(from.id, to.id, own)) setAutoStart(i);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.start, p.at, js.length]);
+  }, [p.start, p.at, js.length, storeLoaded]);
   // Plan B: the chosen trip (the open one, else the first) has a cancelled service, a suspended line or a missed change.
   // Gone services are left out: Plan B is for the trip you can still take (the open one, else the next one to leave).
   const openJ = open != null && open < js.length ? js[open] : null;

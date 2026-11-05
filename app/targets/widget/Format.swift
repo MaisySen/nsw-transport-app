@@ -35,11 +35,20 @@ public enum Countdown {
 public enum Clock {
     public static let sydney = TimeZone(identifier: "Australia/Sydney") ?? .current
 
+    /// True when the phone is set to 24 hour time (Settings, General, Date and Time, 24-Hour Time): the hour in the
+    /// person's own locale's "j" template is then H or k, not h or K.
+    public static var uses24Hour: Bool {
+        let p = (DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: Locale.autoupdatingCurrent) ?? "")
+            .replacingOccurrences(of: "'[^']*'", with: "", options: .regularExpression)
+        return p.contains("H") || p.contains("k")
+    }
+
+    /// "19:52" or "7:52pm" by the phone's setting, Sydney time.
     public static func time(_ d: Date) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_AU")
         f.timeZone = sydney
-        f.dateFormat = "h:mm a"
+        f.dateFormat = uses24Hour ? "HH:mm" : "h:mm a"
         return f.string(from: d).lowercased().replacingOccurrences(of: " ", with: "")
     }
 
