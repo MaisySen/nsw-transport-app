@@ -77,9 +77,13 @@ test("API answers carry security headers and no internal error text", async () =
 
 test("observation queries cap the row limit", async () => {
   sql.length = 0;
-  await call("/api/obs?limit=-1");
-  await call("/api/obs?limit=abc");
-  await call("/api/obs?limit=99999");
+  // Admin only since 5 Nov 2026 (no app reads it, and each call scanned the whole table).
+  assert.equal((await call("/api/obs?limit=5")).status, 403);
+  assert.equal(sql.filter((q) => q.includes("FROM obs")).length, 0);
+  const admin = { headers: { "x-admin-key": "test-admin-key-123" } };
+  await call("/api/obs?limit=-1", admin);
+  await call("/api/obs?limit=abc", admin);
+  await call("/api/obs?limit=99999", admin);
   const lims = sql.filter((q) => q.includes("FROM obs") && q.includes("LIMIT")).map((q) => Number(q.match(/LIMIT (\S+)/)[1]));
   assert.deepEqual(lims, [1, 200, 1000]);
 });
