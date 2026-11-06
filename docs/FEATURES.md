@@ -4,6 +4,10 @@ What Transport: Sydney Live does today, where to find each thing, and what is st
 
 The iPhone and Android apps are one Expo app (`app/`). Anything below marked "over the air" reaches every iPhone build in the field (201 to 208) and the Android app without a new build. Release ids are in [RELEASES.md](RELEASES.md), and what changed when is in the [Changelog](../CHANGELOG.md).
 
+## Trip card on timetable times (server, 6 Nov, branch `server-ttfallback-6nov`)
+* With no live data for a train, the iPhone trip card moves to on board at the timetable departure and on to the next leg at the timetable arrival, labelled as timetable times. Before, it stayed on waiting for the whole trip.
+* Trip card and timetable limits count each phone, so phones sharing one mobile data address never block each other.
+
 ## Train details past a split (2 Nov evening, server branch `server-858n-2nov`; guard 3 Nov on `server-858n-guard-3nov`; deployed 4 Nov on `server-4nov`)
 * The open app's train details follow a train whose run continues under a new trip id at Central (858N then 858P) on to its last stop, instead of stopping at Central.
 * (3 Nov) It never follows on to a trip that does not start where the first one ends, or that turns back over stations already listed.

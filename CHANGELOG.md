@@ -2,6 +2,13 @@
 
 What changed in Transport, newest first. Times are Sydney time. Build numbers, update ids and links are in [docs/RELEASES.md](docs/RELEASES.md).
 
+## 6 Nov 2026
+
+### Server: trip card timetable fallback, safer trip card limits, and the server part of the 5 Nov security review (6 Nov, 11 PM; branch `server-ttfallback-6nov` from server-4nov 8895525; owner's go 6 Nov 10:58 PM, server only)
+* The new trip flow kept the iPhone trip card (Dynamic Island) on "waiting" for a whole trip with no live train data (owner's trip 6 Nov 4:54 AM, T1 Strathfield 4:59 then T4 Town Hall 5:22: 39 pushes, every one waiting at Strathfield). It only went on board from live evidence (the live train, your location, your tap). Now, with none of that and the leg on timetable times, the leg is on board from its planned departure and done at its planned arrival, as the old card did. It is still labelled timetable: no delay minutes, no stop count, no "Get off now" from the clock. Any live evidence keeps the live behaviour exactly. Changed in app/src/lib/liveCalc.ts and regenerated into worker.js (tools/gen-livecard.mjs); only the server copy is deployed now, the app copy rides a later update. Test: backend/test/tt-fallback.test.mjs (replay of the 4:54 trip every 30 s; 2 of 4 failed first).
+* Security review 5 Nov (PR #1) server commits ported onto server-4nov: a saved trip copy no longer carries one person's station names or fare to the next person (a concession fare could reach the next adult), fairer watch and morning check passes, at most 8 active watches per phone, Web Push only to the browsers' push services, admin only /api/obs, new trip card and pack limits, build and CI hardening, owner stations list from a secret, tests in Sydney time on any machine, departures at a time asked at 3:30 AM.
+* Trip card and timetable pack limits count each phone, not the address (changed from the PR): many phones on mobile data share one public IPv4 address, and a refused card registration means the card never starts. Trip card writes 40 per 10 minutes and pack reads 300 per 10 minutes per phone in each server copy, 60 a minute per phone across all copies; the address alone has ceilings of 400 per 10 minutes, 3000 per 10 minutes and 1500 a minute. Tests in backend/test/audit-nov5.test.mjs (100 phones on one address all accepted; both new tests failed on the PR code).
+
 ## 4 Nov 2026
 
 ### Server: 858N follow-on guard and the usage double count fix, one deploy (4 Nov, 1 AM; branch `server-4nov` from server-trip-2nov 69a8328; owner's go 3 Nov 7:33 PM and 4 Nov 1:10 AM; DEPLOYED 4 Nov 1:18 AM as transport-api 3db6acd2, roll back to a949c196, see docs/RELEASES.md)

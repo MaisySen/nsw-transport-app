@@ -835,6 +835,11 @@ At most 5% of tests may name the owner's own stations (Strathfield, Burwood, Kin
 * Backend: `TZ=Australia/Sydney node --test test/rt-fix-1nov.test.mjs` (4, all fail on server-lockedlive 51b46a4): POST /api/watch answers in under 3 s with the feed hanging and hands the first reading to waitUntil; the same key gives back the same watch, DELETE by key, a retry after End trip (or an End trip that came first) makes nothing, no key and a malformed key work as before; the card's push token riding with the watch registers the card; the card's words at 0.5, 2.5, 5.5 and 10.5 min with the feed down (live, "updated", "No live data since", "No live data. Open the app to refresh.") and a never-live service still "Timetable times, not live".
 * Real-time harness (app branch fix-rt-1nov, `node tools/rt-harness/run.mjs --server <checkout>`): all 48 scenarios; F-NSWSLOW-START, F-NSWHANG-START, F-NSWSLOW, F-NSWTIMEOUT (registration-ok) and F-NSWDOWN12 (stale words) pass with this server even on the build 214 app model (`RT_APP_OLD=1`).
 
+## Trip card timetable fallback and per phone limits, server (6 Nov, server-ttfallback-6nov)
+
+* Backend: `OFFLINE=1 TZ=Australia/Sydney node --test test/tt-fallback.test.mjs` (4; the two timetable replays of the 6 Nov 4:54 AM trip fail on server-4nov 8895525): on board at 4:59, at the change at 5:15, on board the T4 at 5:22, done after 5:26, never a delay or stop count; live evidence and rode unchanged.
+* Backend: `test/audit-nov5.test.mjs`: one phone 40 trip cards then 429; 100 phones on one IPv4 all accepted for cards and packs; no device id capped at 400 per address.
+
 ## Before a release
 
 1. `node --test test/*.test.mjs` in `backend/`: all 80 pass (a clean clone too, since the generated data is committed).

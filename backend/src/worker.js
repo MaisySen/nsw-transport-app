@@ -3839,12 +3839,12 @@ const RATE_RULES = [
   [/^\/api\/(history\/delete|live-activity\/forget)$/, "delete", 10, 600000],
   // Trip cards (security review, 5 Nov 2026): a phone registers a card when a trip starts and again on each leg, replan
   // and arrival, and its push token once a launch; 40 in 10 minutes is well above that.
-  [/^\/api\/(live-activity|live-activity\/end|apns\/device)$/, "la", 40, 600000, "POST"],
+  [/^\/api\/(live-activity|live-activity\/end|apns\/device)$/, "la", 40, 600000, "POST", 400],
   [/^\/api\/last-home$/, "write", 60, 600000, "POST"],
   [/^\/api\/hit$/, "hit", 120, 600000],
   // A phone asks one pack per saved stop, at most once a day (up to 24 stops): 300 in 10 minutes (was 300 a minute,
   // security review 5 Nov 2026; a stop with no timetable costs a Durable Object request each time).
-  [/^\/api\/pack$/, "pack", 300, 600000],
+  [/^\/api\/pack$/, "pack", 300, 600000, null, 3000],
   [/^\/api\/timetable$/, "tt", 60, 600000],
   [/^\/api\/share$/, "share", 20, 600000, "POST"],
   [/^\/api\/share\/update$/, "shareup", 240, 600000],
@@ -3871,16 +3871,34 @@ function rateIp(request) {
   const groups = t === null ? h : [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t];
   return groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, "") || "0").join(":") + "::/64";
 }
+// Per device limits (6 Nov 2026): many phones on mobile data share one public IPv4 address (carrier NAT), so a trip
+// card or pack limit counted per address could block real people at the morning peak, and a card that is refused never
+// starts. Rules with a sixth value count each phone by its device id (x-device header, or device= from older
+// installs) at the rule's limit, and the address only against that much larger ceiling. A request with no device id
+// counts against the address ceiling alone.
+function rateDevice(request) {
+  let d = request && request.headers ? cleanId(request.headers.get("x-device")) : "";
+  if (!d) { try { d = cleanId(new URL(request.url).searchParams.get("device")); } catch (e) { d = ""; } }
+  return d.length >= 6 ? d : "";
+}
+function rateHit(k, win, max, now) {
+  let e = rateMem.get(k);
+  if (!e || now - e.at > win) { e = { at: now, n: 0 }; rateMem.set(k, e); }
+  e.n++;
+  return e.n <= max;
+}
 function rateOk(request, pathname) {
   const rule = RATE_RULES.find((r) => r[0].test(pathname) && (!r[4] || request.method === r[4]));
   if (!rule) return true;
-  const ip = rateIp(request);
-  const k = rule[1] + "|" + ip, now = Date.now();
-  let e = rateMem.get(k);
-  if (!e || now - e.at > rule[3]) { e = { at: now, n: 0 }; rateMem.set(k, e); }
-  e.n++;
+  const ip = rateIp(request), now = Date.now();
+  let ok;
+  if (rule[5]) {
+    const dev = rateDevice(request);
+    const ipOk = rateHit(rule[1] + "|" + ip, rule[3], rule[5], now);
+    ok = (dev ? rateHit(rule[1] + "|d:" + dev, rule[3], rule[2], now) : true) && ipOk;
+  } else ok = rateHit(rule[1] + "|" + ip, rule[3], rule[2], now);
   if (rateMem.size > 5000) { for (const [kk, v] of rateMem) { if (now - v.at > 600000) rateMem.delete(kk); } if (rateMem.size > 5000) rateMem.clear(); }
-  return e.n <= rule[2];
+  return ok;
 }
 const API_SEC_HEADERS = {
   "x-content-type-options": "nosniff",
@@ -13032,9 +13050,11 @@ const IP_LIMITS = [
   [/^\/api\/(saved|commutes|commutes\/dismiss|watch|push\/subscribe|push\/expo|push\/expo\/unregister|push\/unsubscribe|push\/test|share|share\/update|history\/delete|live-activity\/forget|lifts\/alerts|parking\/watch|feedback)$/, "w", 60, null],
   // Writes that start work on every minute tick (security review, 5 Nov 2026): trip cards, last way home, morning checks
   // and trip alerts were not counted here before.
-  [/^\/api\/(live-activity|live-activity\/end|apns\/device|last-home|morning-check|trip-alerts)$/, "w2", 60, null],
+  // Counted per device (6 Nov 2026, the fifth value is the ceiling for the whole address; see rateDevice): phones behind
+  // one carrier NAT address must never block each other's trip cards.
+  [/^\/api\/(live-activity|live-activity\/end|apns\/device|last-home|morning-check|trip-alerts)$/, "w2", 60, null, 1500],
   // Timetable reads that miss the edge copy reach the board engine (a Durable Object request each).
-  [/^\/api\/pack$/, "pk", 60, "GET"],
+  [/^\/api\/pack$/, "pk", 60, "GET", 1500],
   [/^\/api\/timetable$/, "tt", 10, "GET"],
 ];
 let ipSchemaOk = false;
@@ -13046,8 +13066,14 @@ async function ipLimitOk(env, request, pathname) {
   const win = Math.floor(Date.now() / 60000);
   try {
     if (!ipSchemaOk) { await d.prepare("CREATE TABLE IF NOT EXISTS ip_rate (k TEXT PRIMARY KEY, win INTEGER, n INTEGER)").run(); ipSchemaOk = true; }
-    const r = await d.prepare("INSERT INTO ip_rate (k, win, n) VALUES (?1, ?2, 1) ON CONFLICT (k) DO UPDATE SET n = CASE WHEN win = ?2 THEN n + 1 ELSE 1 END, win = ?2 RETURNING n").bind(rule[1] + "|" + ip.slice(0, 64), win).first();
-    return !r || !(Number(r.n) > rule[2]);
+    const q = "INSERT INTO ip_rate (k, win, n) VALUES (?1, ?2, 1) ON CONFLICT (k) DO UPDATE SET n = CASE WHEN win = ?2 THEN n + 1 ELSE 1 END, win = ?2 RETURNING n";
+    const r = await d.prepare(q).bind(rule[1] + "|" + ip.slice(0, 64), win).first();
+    if (!rule[4]) return !r || !(Number(r.n) > rule[2]);
+    if (r && Number(r.n) > rule[4]) return false;
+    const dev = rateDevice(request);
+    if (!dev) return true;
+    const rd = await d.prepare(q).bind(rule[1] + "|d:" + dev, win).first();
+    return !rd || !(Number(rd.n) > rule[2]);
   } catch (e) { return true; }
 }
 

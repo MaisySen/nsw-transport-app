@@ -94,16 +94,47 @@ test("limits count an IPv6 /64 as one address", () => {
   assert.equal(W.rateIp(ip("::ffff:203.0.113.9")), "203.0.113.9");
 });
 
-test("trip card registrations are rate limited per /64 (they had no limit)", async () => {
+const postDev = (path, body, ip, dev) => { const r = post(path, body, ip); r.headers.set("x-device", dev); return r; };
+
+test("trip card registrations are limited per phone (x-device), 40 in 10 minutes; the /64 counts as one address", async () => {
   const env = { ...makeEnv(), ASSETS: { fetch: async () => new Response("", { status: 404 }) } };
   const ctx = { waitUntil() {} };
   const codes = [];
   for (let i = 0; i < 45; i++) {
-    const r = await W.__default.fetch(post("/api/live-activity", { token: token(i + 1), trip: trip() }, `2001:db8:77:1::${(i + 1).toString(16)}`), env, ctx);
+    const r = await W.__default.fetch(postDev("/api/live-activity", { token: token(i + 1), trip: trip() }, `2001:db8:77:1::${(i + 1).toString(16)}`, "phoneA123"), env, ctx);
     codes.push(r.status);
   }
   assert.ok(codes.slice(0, 40).every((c) => c === 200), codes.join(","));
   assert.ok(codes.slice(40).every((c) => c === 429), codes.join(","));
+});
+
+test("100 phones behind one mobile carrier address (one IPv4, different devices) all get their trip cards (6 Nov)", async () => {
+  const env = { ...makeEnv(), ASSETS: { fetch: async () => new Response("", { status: 404 }) } };
+  const ctx = { waitUntil() {} };
+  const codes = [];
+  for (let i = 0; i < 100; i++) {
+    const r = await W.__default.fetch(postDev("/api/live-activity", { token: token(i + 1), trip: trip() }, "198.51.100.77", "phone" + String(i).padStart(4, "0")), env, ctx);
+    codes.push(r.status);
+  }
+  assert.deepEqual(codes.filter((c) => c !== 200), [], "every card accepted");
+  // and the timetable pack misses from the same 100 phones are not refused by the address either
+  const pk = [];
+  for (let i = 0; i < 100; i++) {
+    const r = new Request("https://api.transportsydney.app/api/pack?stop=200060", { headers: { "cf-connecting-ip": "198.51.100.77", "x-device": "phone" + String(i).padStart(4, "0") } });
+    pk.push((await W.__default.fetch(r, env, ctx)).status);
+  }
+  assert.equal(pk.filter((c) => c === 429).length, 0, "no pack read refused: " + pk.join(","));
+});
+
+test("a script with no device id on one address still meets a ceiling", async () => {
+  const env = { ...makeEnv(), ASSETS: { fetch: async () => new Response("", { status: 404 }) } };
+  const ctx = { waitUntil() {} };
+  let refused = 0;
+  for (let i = 0; i < 405; i++) {
+    const r = await W.__default.fetch(post("/api/live-activity", { token: token(i + 1), trip: trip() }, "198.51.100.200"), env, ctx);
+    if (r.status === 429) refused++;
+  }
+  assert.equal(refused, 5, "400 in 10 minutes per address without a device id");
 });
 
 test("Web Push goes only to the browsers' push services", async () => {
