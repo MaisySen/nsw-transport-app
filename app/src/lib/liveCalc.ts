@@ -213,6 +213,13 @@ export function computeLive(legs: WatchLeg[], svc: (ServiceResp | null | undefin
     else if (e.passed || e.arrived) done = true;
     fin[i] = done;
     rideEv[i] = done || !!e.leftBoard || rode[i] != null || gps === 'before' && !!e.leftBoard;
+    // Timetable fallback (6 Nov): no live train, no location, no tap and never seen riding. The leg goes by its
+    // timetable times, as the old card did: on board from the planned departure, done at the planned arrival. The
+    // track stays 'timetable', so the card still says the times are not live and nothing rings "Get off now".
+    if (!gps && !e.leftBoard && !e.arrived && !e.passed && rode[i] == null && track === 'timetable' && Number.isFinite(dep)) {
+      if (Number.isFinite(arr) && t >= arr) { fin[i] = true; rideEv[i] = true; }
+      else if (t >= dep) rideEv[i] = true;
+    }
     if (gps === 'at' || gps === 'after') track = 'gps';
     if (!rideEv[i]) ni = mi;
     return { dep, arr, delay, live: anyLive, d, gone: past, arrLive, arrDelay, track, ni, phaseEv: e.arrived ? 'at' : e.leftBoard || rode[i] != null ? 'left' : 'wait',

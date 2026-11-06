@@ -9200,6 +9200,14 @@ const LIVECARD = (() => {
                 done = true;
             fin[i] = done;
             rideEv[i] = done || !!e.leftBoard || rode[i] != null || gps === 'before' && !!e.leftBoard;
+            if (!gps && !e.leftBoard && !e.arrived && !e.passed && rode[i] == null && track === 'timetable' && Number.isFinite(dep)) {
+                if (Number.isFinite(arr) && t >= arr) {
+                    fin[i] = true;
+                    rideEv[i] = true;
+                }
+                else if (t >= dep)
+                    rideEv[i] = true;
+            }
             if (gps === 'at' || gps === 'after')
                 track = 'gps';
             if (!rideEv[i])
